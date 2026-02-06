@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Synthwave VR Blaster</title>
+  <style>
+    /* ── Base Reset & Synthwave Theme ── */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0015;
+      color: #ff00ff;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* ── Info Overlay ── */
+    #info {
+      position: absolute;
+      top: 20px;
+      width: 100%;
+      text-align: center;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    #info h1 {
+      font-size: 2.2em;
+      color: #00ffff;
+      text-shadow: 0 0 10px #00ffff, 0 0 30px #00ffff, 0 0 60px #0066ff;
+      letter-spacing: 0.15em;
+    }
+
+    #info p {
+      margin-top: 8px;
+      font-size: 1em;
+      color: #ff00ff;
+      text-shadow: 0 0 8px #ff00ff;
+      opacity: 0.8;
+    }
+
+    /* ── WebXR Fallback ── */
+    #no-vr {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      z-index: 200;
+      background: rgba(10, 0, 21, 0.95);
+      border: 1px solid #ff00ff;
+      padding: 40px;
+      max-width: 500px;
+      box-shadow: 0 0 30px rgba(255, 0, 255, 0.3);
+    }
+
+    #no-vr h2 {
+      color: #ff00ff;
+      text-shadow: 0 0 10px #ff00ff;
+      margin-bottom: 15px;
+    }
+
+    #no-vr p {
+      color: #aa66cc;
+      line-height: 1.6;
+    }
+
+    /* ── Scanline Overlay (CRT effect on webpage only) ── */
+    #scanlines {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.08) 0px,
+        rgba(0, 0, 0, 0.08) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+      pointer-events: none;
+      z-index: 50;
+    }
+
+    /* ── Style the VR button (Three.js injects it) ── */
+    #VRButton {
+      font-family: 'Courier New', monospace !important;
+      letter-spacing: 0.1em !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Info overlay shown before entering VR -->
+  <div id="info">
+    <h1>SYNTHWAVE VR BLASTER</h1>
+    <p>Put on your VR headset and press ENTER VR</p>
+    <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Pull triggers to shoot</p>
+  </div>
+
+  <!-- Fallback if WebXR is not available -->
+  <div id="no-vr">
+    <h2>VR NOT AVAILABLE</h2>
+    <p>WebXR is not supported on this device or browser.</p>
+    <p>Please use a WebXR-compatible browser such as Meta Quest Browser or Chrome on a VR-capable device.</p>
+  </div>
+
+  <!-- CRT scanline overlay -->
+  <div id="scanlines"></div>
+
+  <!-- WebXR Polyfill (loaded before Three.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
+  <script>
+    // Initialize the WebXR polyfill for browsers that don't natively support WebXR
+    if (window.WebXRPolyfill) {
+      new WebXRPolyfill();
+    }
+  </script>
+
+  <!-- Three.js module import map (no build tools needed) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- Main game module -->
+  <script type="module" src="main.js"></script>
+
+</body>
+</html>
