@@ -8,11 +8,11 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, addScore, getComboMultiplier, damagePlayer, addUpgrade } from './game.js';
 import { getRandomUpgrades, getWeaponStats } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playProximityAlert, playUpgradeSound } from './audio.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playProximityAlert, playUpgradeSound, playSlowMoSound } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
-  applyEffects, getSpawnPosition, getEnemies
+  applyEffects, getSpawnPosition, getEnemies, getFastEnemies
 } from './enemies.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
@@ -43,6 +43,10 @@ let lastTime = 0;
 // Weapon firing cooldowns (per controller)
 const weaponCooldowns = [0, 0];
 
+// Lightning beam state (per controller)
+const lightningBeams = [null, null];
+const lightningTimers = [0, 0];
+
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
 let pendingUpgrades = [];
@@ -50,6 +54,11 @@ let upgradeHand = 'left';  // which hand is selecting
 
 // Game over cooldown
 let gameOverCooldown = 0;
+
+// Bullet-time slow-mo
+let slowMoActive = false;
+let slowMoDuration = 0;
+let timeScale = 1.0;
 
 // ── Bootstrap ──────────────────────────────────────────────
 init();
@@ -278,7 +287,11 @@ function onTriggerPress(controller, index) {
 }
 
 function onTriggerRelease(index) {
-  // Not used yet
+  // Stop lightning beam when trigger released
+  if (lightningBeams[index]) {
+    scene.remove(lightningBeams[index]);
+    lightningBeams[index] = null;
+  }
 }
 
 // ============================================================
@@ -356,6 +369,11 @@ function shootWeapon(controller, index) {
   const hand = index === 0 ? 'left' : 'right';
   const stats = getWeaponStats(game.upgrades[hand]);
 
+  // Lightning beam mode - handled separately in update loop
+  if (stats.lightning) {
+    return;  // Lightning is continuous hold-to-fire
+  }
+
   // Check cooldown
   if (now - weaponCooldowns[index] < stats.fireInterval) return;
   weaponCooldowns[index] = now;
@@ -375,6 +393,90 @@ function shootWeapon(controller, index) {
   }
 
   console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
+}
+
+function updateLightningBeam(controller, index, stats, dt) {
+  const origin = new THREE.Vector3();
+  const quat   = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+
+  // Find closest enemy within range
+  const enemies = getEnemies();
+  let closestEnemy = null;
+  let closestDist = stats.lightningRange;
+
+  enemies.forEach((e, i) => {
+    const dist = e.mesh.position.distanceTo(origin);
+    const toEnemy = e.mesh.position.clone().sub(origin).normalize();
+    const angle = toEnemy.dot(direction);
+
+    // Within range and roughly in front (45° cone)
+    if (dist < closestDist && angle > 0.7) {
+      closestDist = dist;
+      closestEnemy = { index: i, enemy: e };
+    }
+  });
+
+  // Create or update lightning beam visual
+  if (closestEnemy) {
+    const targetPos = closestEnemy.enemy.mesh.position;
+    const beamLength = origin.distanceTo(targetPos);
+    const color = index === 0 ? NEON_CYAN : NEON_PINK;
+
+    // Remove old beam
+    if (lightningBeams[index]) {
+      scene.remove(lightningBeams[index]);
+    }
+
+    // Create new beam (cylinder from controller to enemy)
+    const beamGeo = new THREE.CylinderGeometry(0.02, 0.02, beamLength, 6);
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0xffff44, transparent: true, opacity: 0.7 });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+
+    // Position beam midpoint and orient toward enemy
+    const midpoint = new THREE.Vector3().addVectors(origin, targetPos).multiplyScalar(0.5);
+    beam.position.copy(midpoint);
+    beam.lookAt(targetPos);
+    beam.rotateX(Math.PI / 2);
+
+    scene.add(beam);
+    lightningBeams[index] = beam;
+
+    // Apply damage every 0.5s
+    lightningTimers[index] += dt;
+    if (lightningTimers[index] >= 0.5) {
+      lightningTimers[index] = 0;
+      const result = hitEnemy(closestEnemy.index, stats.lightningDamage);
+      spawnDamageNumber(targetPos, stats.lightningDamage, '#ffff44');
+      playHitSound();
+
+      if (result.killed) {
+        playExplosionSound();
+        const destroyData = destroyEnemy(closestEnemy.index);
+        if (destroyData) {
+          game.kills++;
+          game.totalKills++;
+          game.killsWithoutHit++;
+          addScore(destroyData.scoreValue);
+
+          // Check level complete
+          const cfg = game._levelConfig;
+          if (cfg && game.kills >= cfg.killTarget) {
+            completeLevel();
+          }
+        }
+      }
+    }
+  } else {
+    // No target - clear beam
+    if (lightningBeams[index]) {
+      scene.remove(lightningBeams[index]);
+      lightningBeams[index] = null;
+    }
+    lightningTimers[index] = 0;
+  }
 }
 
 function spawnProjectile(origin, direction, controllerIndex, stats) {
@@ -628,8 +730,23 @@ function updateFastEnemyAlerts(dt, playerPos) {
 // ============================================================
 function render(timestamp) {
   const now = timestamp || performance.now();
-  const dt  = Math.min((now - lastTime) / 1000, 0.1);
+  let dt  = Math.min((now - lastTime) / 1000, 0.1);
   lastTime  = now;
+
+  // Apply bullet-time slow-mo
+  if (slowMoActive) {
+    slowMoDuration -= dt;
+    if (slowMoDuration <= 0) {
+      slowMoActive = false;
+      timeScale = 1.0;
+    } else {
+      timeScale = 0.25;
+    }
+  } else {
+    timeScale = 1.0;
+  }
+
+  dt *= timeScale;  // Scale time for slow-mo effect
 
   const st = game.state;
 
@@ -642,10 +759,23 @@ function render(timestamp) {
   else if (st === State.PLAYING) {
     spawnEnemyWave(dt);
 
-    // Full-auto shooting
+    // Full-auto shooting / Lightning beams
     for (let i = 0; i < 2; i++) {
       if (controllerTriggerPressed[i]) {
-        shootWeapon(controllers[i], i);
+        const hand = i === 0 ? 'left' : 'right';
+        const stats = getWeaponStats(game.upgrades[hand]);
+
+        if (stats.lightning) {
+          updateLightningBeam(controllers[i], i, stats, dt);
+        } else {
+          shootWeapon(controllers[i], i);
+        }
+      } else {
+        // Trigger released - clear lightning beam
+        if (lightningBeams[i]) {
+          scene.remove(lightningBeams[i]);
+          lightningBeams[i] = null;
+        }
       }
     }
 
@@ -654,6 +784,22 @@ function render(timestamp) {
 
     // Update enemies
     const playerPos = camera.position.clone();
+
+    // Check for near-miss bullet-time trigger
+    if (!slowMoActive) {
+      const enemies = getEnemies();
+      for (const e of enemies) {
+        const dist = e.mesh.position.distanceTo(playerPos);
+        if (dist < 0.5) {  // Enemy within 0.5m triggers slow-mo
+          slowMoActive = true;
+          slowMoDuration = 1.5;  // 1.5 seconds of slow-mo
+          playSlowMoSound();
+          console.log('[bullet-time] ACTIVATED!');
+          break;
+        }
+      }
+    }
+
     const collisions = updateEnemies(dt, now, playerPos);
 
     // Handle enemy collisions with player
@@ -662,6 +808,8 @@ function render(timestamp) {
       const dead = damagePlayer(1);
       triggerHitFlash();
       playDamageSound();
+      slowMoActive = false;  // End slow-mo on hit
+      timeScale = 1.0;
       console.log(`[damage] Player hit! Health: ${game.health}`);
       if (dead) {
         endGame(false);

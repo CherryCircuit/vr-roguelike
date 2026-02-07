@@ -164,3 +164,23 @@ export function playUpgradeSound() {
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.15);
 }
+
+// ── Bullet-time slow-down ──────────────────────────────────
+export function playSlowMoSound() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(300, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.8);
+
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.8);
+}
