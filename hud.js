@@ -151,24 +151,25 @@ export function initHUD(camera, scene) {
   sceneRef  = scene;
   cameraRef = camera;
 
-  // ── Title Screen ──
+  // ── Title Screen (world-space, fixed position) ──
   createTitleScreen();
+  titleGroup.position.set(0, 1.6, -6);
   scene.add(titleGroup);
 
-  // ── VR HUD (attached to camera) ──
+  // ── VR HUD (attached to camera but only follows Y rotation) ──
   createHUDElements();
   camera.add(hudGroup);
-  scene.add(camera);   // Required so camera children render
+  scene.add(camera);
 
-  // ── Level transition text ──
+  // ── Level transition text (world-space) ──
   levelTextGroup.visible = false;
   scene.add(levelTextGroup);
 
-  // ── Upgrade selection ──
+  // ── Upgrade selection (world-space) ──
   upgradeGroup.visible = false;
   scene.add(upgradeGroup);
 
-  // ── Game over / Victory ──
+  // ── Game over / Victory (world-space) ──
   gameOverGroup.visible = false;
   scene.add(gameOverGroup);
 
@@ -198,7 +199,7 @@ function createTitleScreen() {
     glow: true, glowColor: '#0088ff', glowSize: 30,
     scale: 1.8,
   });
-  titleSprite.position.set(0, 3.2, -6);
+  titleSprite.position.set(0, 1.6, 0);
   titleGroup.add(titleSprite);
 
   // Subtitle
@@ -208,7 +209,7 @@ function createTitleScreen() {
     glow: true, glowColor: '#ff00ff', glowSize: 10,
     scale: 0.6,
   });
-  subSprite.position.set(0, 2.4, -6);
+  subSprite.position.set(0, 0.8, 0);
   titleGroup.add(subSprite);
 
   // Blinking "Press Trigger to Begin"
@@ -218,7 +219,7 @@ function createTitleScreen() {
     glow: true, glowColor: '#ffffff',
     scale: 0.5,
   });
-  titleBlinkSprite.position.set(0, 1.6, -6);
+  titleBlinkSprite.position.set(0, 0, 0);
   titleGroup.add(titleBlinkSprite);
 }
 
@@ -245,29 +246,29 @@ function createHUDElements() {
 
   // Hearts — positioned bottom-left of view
   heartsSprite = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false }));
-  heartsSprite.position.set(-0.28, -0.22, -0.8);
+  heartsSprite.position.set(-0.35, -0.28, -1.0);
   heartsSprite.scale.set(0.22, 0.05, 1);
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
   // Kill counter — bottom-center
   killCountSprite = makeSprite('0/0', { fontSize: 40, color: '#ffffff', shadow: true, scale: 0.12 });
-  killCountSprite.position.set(0, -0.24, -0.8);
+  killCountSprite.position.set(0, -0.28, -1.0);
   hudGroup.add(killCountSprite);
 
-  // Level indicator — top-center
+  // Level indicator — bottom-right
   levelSprite = makeSprite('LEVEL 1', { fontSize: 40, color: '#00ffff', glow: true, scale: 0.12 });
-  levelSprite.position.set(0, 0.28, -0.8);
+  levelSprite.position.set(0.35, -0.28, -1.0);
   hudGroup.add(levelSprite);
 
-  // Score — top-right
+  // Score — top-left
   scoreSprite = makeSprite('0', { fontSize: 36, color: '#ffff00', shadow: true, scale: 0.1 });
-  scoreSprite.position.set(0.3, 0.28, -0.8);
+  scoreSprite.position.set(-0.35, 0.32, -1.0);
   hudGroup.add(scoreSprite);
 
   // Combo multiplier — below score
   comboSprite = makeSprite('1x', { fontSize: 32, color: '#ff8800', shadow: true, scale: 0.08 });
-  comboSprite.position.set(0.3, 0.22, -0.8);
+  comboSprite.position.set(-0.35, 0.26, -1.0);
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 }
@@ -331,18 +332,21 @@ export function updateHUD(gameState) {
 
 // ── Level Complete / Transition Text ───────────────────────
 
-export function showLevelComplete(level) {
+export function showLevelComplete(level, playerPos) {
   // Clear old
   while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
 
   const s1 = makeSprite('LEVEL COMPLETE!', { fontSize: 80, color: '#00ffff', glow: true, glowSize: 20, scale: 1.0 });
-  s1.position.set(0, 2.5, -5);
+  s1.position.set(0, 0.9, 0);
   levelTextGroup.add(s1);
 
   const s2 = makeSprite(`LEVEL ${level + 1}`, { fontSize: 60, color: '#ff00ff', glow: true, scale: 0.7 });
-  s2.position.set(0, 1.8, -5);
+  s2.position.set(0, 0.2, 0);
   levelTextGroup.add(s2);
 
+  // Position in front of player
+  levelTextGroup.position.set(playerPos.x, playerPos.y, playerPos.z);
+  levelTextGroup.position.z -= 5;
   levelTextGroup.visible = true;
 }
 
@@ -352,28 +356,34 @@ export function hideLevelComplete() {
 
 // ── Upgrade Selection Cards ────────────────────────────────
 
-export function showUpgradeCards(upgrades) {
+export function showUpgradeCards(upgrades, playerPos, hand) {
   hideAll();
   upgradeGroup.visible = true;
   upgradeCards   = [];
   upgradeChoices = upgrades;
+  upgradeGroup.userData.hand = hand;
 
-  // "Choose an upgrade" header
-  const header = makeSprite('CHOOSE AN UPGRADE', { fontSize: 56, color: '#ffffff', glow: true, scale: 0.7 });
-  header.position.set(0, 3.0, -4);
+  // Position in front of player
+  upgradeGroup.position.set(playerPos.x, playerPos.y, playerPos.z);
+  upgradeGroup.position.z -= 4;
+
+  // "Choose an upgrade for [HAND]" header
+  const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
+  const header = makeSprite(`CHOOSE UPGRADE: ${handName}`, { fontSize: 56, color: '#ffffff', glow: true, scale: 0.7 });
+  header.position.set(0, 1.4, 0);
   upgradeGroup.add(header);
 
   // Cooldown text
   const cooldownSprite = makeSprite('WAIT...', { fontSize: 40, color: '#ffff00', scale: 0.4 });
-  cooldownSprite.position.set(0, 2.4, -4);
+  cooldownSprite.position.set(0, 0.8, 0);
   cooldownSprite.name = 'cooldown';
   upgradeGroup.add(cooldownSprite);
 
   // Three cards in an arc
   const positions = [
-    new THREE.Vector3(-1.5, 1.5, -3.5),
-    new THREE.Vector3(0,    1.6, -3.5),
-    new THREE.Vector3(1.5,  1.5, -3.5),
+    new THREE.Vector3(-1.5, 0, 0),
+    new THREE.Vector3(0,    0, 0),
+    new THREE.Vector3(1.5,  0, 0),
   ];
 
   upgrades.forEach((upg, i) => {
@@ -485,50 +495,57 @@ export function getUpgradeCardHit(raycaster) {
   const hits = raycaster.intersectObjects(meshes, false);
   if (hits.length > 0) {
     const id = hits[0].object.userData.upgradeId;
-    return upgradeChoices.find(u => u.id === id) || null;
+    const upgrade = upgradeChoices.find(u => u.id === id) || null;
+    if (upgrade) {
+      return { upgrade, hand: upgradeGroup.userData.hand };
+    }
   }
   return null;
 }
 
 // ── Game Over / Victory ────────────────────────────────────
 
-export function showGameOver(score) {
+export function showGameOver(score, playerPos) {
   hideAll();
   while (gameOverGroup.children.length) gameOverGroup.remove(gameOverGroup.children[0]);
 
   const s1 = makeSprite('GAME OVER', { fontSize: 120, color: '#ff0044', glow: true, glowSize: 30, scale: 1.4 });
-  s1.position.set(0, 2.8, -5);
+  s1.position.set(0, 1.2, 0);
   gameOverGroup.add(s1);
 
   const s2 = makeSprite(`SCORE: ${score}`, { fontSize: 60, color: '#ffff00', glow: true, scale: 0.7 });
-  s2.position.set(0, 2.0, -5);
+  s2.position.set(0, 0.4, 0);
   gameOverGroup.add(s2);
 
   const s3 = makeSprite('PRESS TRIGGER TO RESTART', { fontSize: 44, color: '#ffffff', scale: 0.5 });
-  s3.position.set(0, 1.3, -5);
+  s3.position.set(0, -0.3, 0);
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
+  gameOverGroup.position.set(playerPos.x, playerPos.y, playerPos.z);
+  gameOverGroup.position.z -= 5;
   gameOverGroup.visible = true;
 }
 
-export function showVictory(score) {
+export function showVictory(score, playerPos) {
   hideAll();
   while (gameOverGroup.children.length) gameOverGroup.remove(gameOverGroup.children[0]);
 
   const s1 = makeSprite('VICTORY!', { fontSize: 120, color: '#ffff00', glow: true, glowSize: 30, scale: 1.5 });
-  s1.position.set(0, 2.8, -5);
+  s1.position.set(0, 1.2, 0);
   gameOverGroup.add(s1);
 
   const s2 = makeSprite(`FINAL SCORE: ${score}`, { fontSize: 60, color: '#00ffff', glow: true, scale: 0.7 });
-  s2.position.set(0, 2.0, -5);
+  s2.position.set(0, 0.4, 0);
   gameOverGroup.add(s2);
 
   const s3 = makeSprite('PRESS TRIGGER TO RETURN', { fontSize: 44, color: '#ffffff', scale: 0.5 });
-  s3.position.set(0, 1.3, -5);
+  s3.position.set(0, -0.3, 0);
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
+  gameOverGroup.position.set(playerPos.x, playerPos.y, playerPos.z);
+  gameOverGroup.position.z -= 5;
   gameOverGroup.visible = true;
 }
 
@@ -567,13 +584,13 @@ export function spawnDamageNumber(position, damage, color) {
   canvas.width = 128;
   canvas.height = 64;
 
-  const fontSize = Math.min(48, 24 + damage / 8);
+  const fontSize = Math.min(48, 28 + damage / 6);
   ctx.font = `bold ${fontSize}px "Courier New", monospace`;
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
 
   // Drop shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillText(Math.round(damage).toString(), 66, 34);
 
   // Main text
@@ -583,7 +600,7 @@ export function spawnDamageNumber(position, damage, color) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
 
-  const mat    = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.7, depthTest: false });
+  const mat    = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.9, depthTest: false, sizeAttenuation: false });
   const sprite = new THREE.Sprite(mat);
 
   sprite.position.copy(position);
@@ -591,7 +608,8 @@ export function spawnDamageNumber(position, damage, color) {
   sprite.position.y += Math.random() * 0.2;
   sprite.position.z += (Math.random() - 0.5) * 0.3;
 
-  const scale = 0.12 + Math.min(damage / 300, 0.3);
+  // Fixed screen size regardless of distance
+  const scale = 0.015 + Math.min(damage / 200, 0.015);
   sprite.scale.set(scale * 2, scale, 1);
   sprite.renderOrder = 998;
 
@@ -600,14 +618,14 @@ export function spawnDamageNumber(position, damage, color) {
     0.8 + Math.random() * 0.5,
     (Math.random() - 0.5) * 0.5,
   );
-  sprite.userData.lifetime  = 800;
+  sprite.userData.lifetime  = 1000;
   sprite.userData.createdAt = performance.now();
 
   sceneRef.add(sprite);
   damageNumbers.push(sprite);
 
   // Cap total to prevent perf issues
-  while (damageNumbers.length > 30) {
+  while (damageNumbers.length > 20) {
     const old = damageNumbers.shift();
     sceneRef.remove(old);
     old.material.map.dispose();

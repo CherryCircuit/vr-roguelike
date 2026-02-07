@@ -35,7 +35,7 @@ const LASER_DURATION = 250;
 // ── Module State ───────────────────────────────────────────
 let scene, camera, renderer;
 const controllers = [];
-const lasers = [];
+const projectiles = [];
 let lastTime = 0;
 
 // Weapon firing cooldowns (per controller)
@@ -44,6 +44,10 @@ const weaponCooldowns = [0, 0];
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
 let pendingUpgrades = [];
+let upgradeHand = 'left';  // which hand is selecting
+
+// Game over cooldown
+let gameOverCooldown = 0;
 
 // ── Bootstrap ──────────────────────────────────────────────
 init();
@@ -262,8 +266,11 @@ function onTriggerPress(controller, index) {
   } else if (st === State.UPGRADE_SELECT) {
     selectUpgrade(controller);
   } else if (st === State.GAME_OVER || st === State.VICTORY) {
-    resetGame();
-    showTitle();
+    if (gameOverCooldown <= 0) {
+      hideGameOver();
+      resetGame();
+      showTitle();
+    }
   }
 }
 
@@ -289,21 +296,25 @@ function completeLevel() {
   game.state = State.LEVEL_COMPLETE;
   clearAllEnemies();
   game.stateTimer = 2.0; // cooldown before upgrade screen
-  showLevelComplete(game.level);
+  showLevelComplete(game.level, camera.position);
 }
 
 function showUpgradeScreen() {
   console.log('[game] Showing upgrade selection');
   game.state = State.UPGRADE_SELECT;
   hideLevelComplete();
+
+  // Alternate between left and right hand
+  upgradeHand = upgradeHand === 'left' ? 'right' : 'left';
+
   pendingUpgrades = getRandomUpgrades(3);
-  showUpgradeCards(pendingUpgrades);
+  showUpgradeCards(pendingUpgrades, camera.position, upgradeHand);
   upgradeSelectionCooldown = 1.5; // prevent instant selection
 }
 
-function selectUpgradeAndAdvance(upgrade) {
-  console.log(`[game] Selected upgrade: ${upgrade.name}`);
-  addUpgrade(upgrade.id);
+function selectUpgradeAndAdvance(upgrade, hand) {
+  console.log(`[game] Selected upgrade: ${upgrade.name} for ${hand} hand`);
+  addUpgrade(upgrade.id, hand);
   hideUpgradeCards();
 
   // Advance to next level
@@ -324,11 +335,12 @@ function endGame(victory) {
   game.state = victory ? State.VICTORY : State.GAME_OVER;
   clearAllEnemies();
   hideHUD();
+  gameOverCooldown = 2.0;  // 2 second cooldown before restart allowed
 
   if (victory) {
-    showVictory(game.score);
+    showVictory(game.score, camera.position);
   } else {
-    showGameOver(game.score);
+    showGameOver(game.score, camera.position);
   }
 }
 
@@ -337,7 +349,8 @@ function endGame(victory) {
 // ============================================================
 function shootWeapon(controller, index) {
   const now = performance.now();
-  const stats = getWeaponStats(game.upgrades);
+  const hand = index === 0 ? 'left' : 'right';
+  const stats = getWeaponStats(game.upgrades[hand]);
 
   // Check cooldown
   if (now - weaponCooldowns[index] < stats.fireInterval) return;
@@ -354,49 +367,48 @@ function shootWeapon(controller, index) {
   for (let i = 0; i < count; i++) {
     const spreadOffset = count > 1 ? ((i / (count - 1)) - 0.5) * stats.spreadAngle : 0;
     const spreadDir = direction.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), spreadOffset).normalize();
-    fireProjectile(origin, spreadDir, index, stats);
+    spawnProjectile(origin, spreadDir, index, stats);
   }
 
-  console.log(`[shoot] controller ${index} fired ${count} projectile(s)`);
+  console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
 }
 
-function fireProjectile(origin, direction, controllerIndex, stats) {
-  const raycaster = new THREE.Raycaster(origin, direction, 0, LASER_RANGE);
-  const meshes = getEnemyMeshes();
-  const intersects = raycaster.intersectObjects(meshes, true);
+function spawnProjectile(origin, direction, controllerIndex, stats) {
+  const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
+  const isBuckshot = stats.spreadAngle > 0;
 
-  let endPoint = origin.clone().add(direction.clone().multiplyScalar(LASER_RANGE));
-  let hit = false;
-  let hitData = null;
-
-  if (intersects.length > 0) {
-    const firstHit = intersects[0];
-    endPoint = firstHit.point.clone();
-    const result = getEnemyByMesh(firstHit.object);
-
-    if (result) {
-      hit = true;
-      hitData = result;
-      handleHit(result.index, result.enemy, stats, firstHit.point);
-
-      // Piercing: continue and hit more enemies
-      if (stats.piercing && intersects.length > 1) {
-        for (let j = 1; j < intersects.length; j++) {
-          const nextResult = getEnemyByMesh(intersects[j].object);
-          if (nextResult && nextResult.index !== result.index) {
-            handleHit(nextResult.index, nextResult.enemy, stats, intersects[j].point);
-          }
-        }
-      }
-
-      // Ricochet
-      if (stats.ricochetBounces > 0) {
-        handleRicochet(firstHit.point, stats, 0);
-      }
-    }
+  // Projectile mesh - pellet for buckshot, glowing sphere for laser
+  let mesh;
+  if (isBuckshot) {
+    mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.03, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xcccccc })
+    );
+  } else {
+    const group = new THREE.Group();
+    // Core
+    group.add(new THREE.Mesh(
+      new THREE.SphereGeometry(0.04, 8, 8),
+      new THREE.MeshBasicMaterial({ color })
+    ));
+    // Glow
+    group.add(new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 8, 8),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.3 })
+    ));
+    mesh = group;
   }
 
-  createLaserBeam(origin, endPoint, controllerIndex);
+  mesh.position.copy(origin);
+  mesh.userData.velocity = direction.clone().multiplyScalar(isBuckshot ? 20 : 40);
+  mesh.userData.stats = stats;
+  mesh.userData.controllerIndex = controllerIndex;
+  mesh.userData.lifetime = 3000; // ms
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.hitEnemies = new Set(); // track hits for piercing
+
+  scene.add(mesh);
+  projectiles.push(mesh);
 }
 
 function handleHit(enemyIndex, enemy, stats, hitPoint) {
@@ -486,24 +498,44 @@ function handleRicochet(fromPoint, stats, bounceCount) {
   }
 }
 
-function createLaserBeam(start, end, controllerIndex) {
-  const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
-  const group = new THREE.Group();
+function updateProjectiles(dt) {
+  const now = performance.now();
+  const raycaster = new THREE.Raycaster();
+  const enemies = getEnemyMeshes();
 
-  const path = new THREE.LineCurve3(start.clone(), end.clone());
-  const coreGeo = new THREE.TubeGeometry(path, 1, 0.006, 6, false);
-  group.add(new THREE.Mesh(coreGeo, new THREE.MeshBasicMaterial({ color })));
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const proj = projectiles[i];
+    const age = now - proj.userData.createdAt;
 
-  const glowGeo = new THREE.TubeGeometry(path, 1, 0.025, 6, false);
-  group.add(new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.15 })));
+    // Remove expired projectiles
+    if (age > proj.userData.lifetime) {
+      scene.remove(proj);
+      projectiles.splice(i, 1);
+      continue;
+    }
 
-  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 }));
-  flash.position.copy(end);
-  group.add(flash);
+    // Move projectile
+    const moveDistance = proj.userData.velocity.length() * dt;
+    proj.position.addScaledVector(proj.userData.velocity, dt);
 
-  group.userData.createdAt = performance.now();
-  scene.add(group);
-  lasers.push(group);
+    // Check collision with enemies
+    raycaster.set(proj.position, proj.userData.velocity.clone().normalize());
+    const hits = raycaster.intersectObjects(enemies, true);
+
+    if (hits.length > 0 && hits[0].distance < moveDistance * 2) {
+      const result = getEnemyByMesh(hits[0].object);
+      if (result && !proj.userData.hitEnemies.has(result.index)) {
+        proj.userData.hitEnemies.add(result.index);
+        handleHit(result.index, result.enemy, proj.userData.stats, hits[0].point);
+
+        // Remove projectile if not piercing
+        if (!proj.userData.stats.piercing) {
+          scene.remove(proj);
+          projectiles.splice(i, 1);
+        }
+      }
+    }
+  }
 }
 
 function selectUpgrade(controller) {
@@ -516,10 +548,10 @@ function selectUpgrade(controller) {
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
 
   const raycaster = new THREE.Raycaster(origin, direction, 0, 10);
-  const upgrade = getUpgradeCardHit(raycaster);
+  const result = getUpgradeCardHit(raycaster);
 
-  if (upgrade) {
-    selectUpgradeAndAdvance(upgrade);
+  if (result) {
+    selectUpgradeAndAdvance(result.upgrade, result.hand);
   }
 }
 
@@ -628,10 +660,11 @@ function render(timestamp) {
   // ── Game over / Victory ──
   else if (st === State.GAME_OVER || st === State.VICTORY) {
     updateEndScreen(now);
+    gameOverCooldown = Math.max(0, gameOverCooldown - dt);
   }
 
   // ── Universal updates ──
-  updateLasers(dt, now);
+  updateProjectiles(dt);
   updateExplosions(dt, now);
   updateDamageNumbers(dt, now);
   updateHitFlash(dt);
@@ -639,24 +672,6 @@ function render(timestamp) {
   renderer.render(scene, camera);
 }
 
-function updateLasers(dt, now) {
-  for (let i = lasers.length - 1; i >= 0; i--) {
-    const laser = lasers[i];
-    const age = now - laser.userData.createdAt;
-
-    if (age > LASER_DURATION) {
-      scene.remove(laser);
-      lasers.splice(i, 1);
-    } else {
-      const alpha = 1 - age / LASER_DURATION;
-      laser.traverse(child => {
-        if (child.material && child.material.transparent !== undefined) {
-          child.material.opacity = (child.material.userData?.baseOpacity || 1) * alpha;
-        }
-      });
-    }
-  }
-}
 
 // ============================================================
 //  WINDOW RESIZE

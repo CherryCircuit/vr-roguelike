@@ -259,19 +259,10 @@ export function destroyEnemy(index) {
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
 
-  // Detach voxels and turn them into explosion particles
-  const children = [...e.mesh.children];
-  const particleCount = Math.min(children.length, 16); // cap for performance
-
+  // Spawn simple particle explosion (reduced count for performance)
+  const particleCount = 8;
   for (let i = 0; i < particleCount; i++) {
-    const voxel = children[i];
-    // Get world position before reparenting
-    const worldPos = new THREE.Vector3();
-    voxel.getWorldPosition(worldPos);
-
-    // Create a small independent cube (don't reuse the shared geo reference
-    // in case of material conflicts — use a fresh basic material)
-    const size = 0.04 + Math.random() * 0.04;
+    const size = 0.05 + Math.random() * 0.05;
     const partMesh = new THREE.Mesh(
       new THREE.BoxGeometry(size, size, size),
       new THREE.MeshBasicMaterial({
@@ -280,14 +271,14 @@ export function destroyEnemy(index) {
         opacity: 1,
       }),
     );
-    partMesh.position.copy(worldPos);
+    partMesh.position.copy(pos);
     partMesh.userData.velocity = new THREE.Vector3(
-      (Math.random() - 0.5) * 5,
-      (Math.random() - 0.5) * 5,
-      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 6,
+      (Math.random() - 0.5) * 6,
+      (Math.random() - 0.5) * 6,
     );
     partMesh.userData.createdAt = performance.now();
-    partMesh.userData.lifetime  = 500 + Math.random() * 400;
+    partMesh.userData.lifetime  = 400 + Math.random() * 300;
 
     sceneRef.add(partMesh);
     explosionParts.push(partMesh);
