@@ -8,6 +8,7 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, addScore, getComboMultiplier, damagePlayer, addUpgrade } from './game.js';
 import { getRandomUpgrades, getWeaponStats } from './upgrades.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playProximityAlert, playUpgradeSound } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
@@ -35,6 +36,7 @@ const LASER_DURATION = 250;
 // ── Module State ───────────────────────────────────────────
 let scene, camera, renderer;
 const controllers = [];
+const controllerTriggerPressed = [false, false];
 const projectiles = [];
 let lastTime = 0;
 
@@ -224,8 +226,8 @@ function setupControllers() {
   for (let i = 0; i < 2; i++) {
     const controller = renderer.xr.getController(i);
 
-    controller.addEventListener('selectstart', () => onTriggerPress(controller, i));
-    controller.addEventListener('selectend',   () => onTriggerRelease(i));
+    controller.addEventListener('selectstart', () => { controllerTriggerPressed[i] = true; onTriggerPress(controller, i); });
+    controller.addEventListener('selectend',   () => { controllerTriggerPressed[i] = false; onTriggerRelease(i); });
     controller.addEventListener('connected', (e) => {
       console.log(`[controller] ${i} connected — ${e.data.handedness}`);
       controller.userData.handedness = e.data.handedness;
@@ -247,8 +249,9 @@ function createControllerVisual(index) {
   group.add(new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color })));
   group.add(new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 16), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 })));
 
-  const aimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -0.4)]);
-  group.add(new THREE.Line(aimGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.4 })));
+  // Aim line extending forward
+  const aimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -10)]);
+  group.add(new THREE.Line(aimGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 })));
 
   return group;
 }
@@ -315,6 +318,7 @@ function showUpgradeScreen() {
 function selectUpgradeAndAdvance(upgrade, hand) {
   console.log(`[game] Selected upgrade: ${upgrade.name} for ${hand} hand`);
   addUpgrade(upgrade.id, hand);
+  playUpgradeSound();
   hideUpgradeCards();
 
   // Advance to next level
@@ -377,25 +381,31 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
   const isBuckshot = stats.spreadAngle > 0;
 
-  // Projectile mesh - pellet for buckshot, glowing sphere for laser
+  // Star Wars style laser bolt (thin cylinder) or pellet
   let mesh;
   if (isBuckshot) {
+    // Pellet: small sphere
     mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.03, 6, 6),
-      new THREE.MeshBasicMaterial({ color: 0xcccccc })
+      new THREE.SphereGeometry(0.025, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xdddddd })
     );
   } else {
+    // Laser bolt: elongated cylinder (3-4 feet ~ 1 meter)
     const group = new THREE.Group();
-    // Core
-    group.add(new THREE.Mesh(
-      new THREE.SphereGeometry(0.04, 8, 8),
-      new THREE.MeshBasicMaterial({ color })
-    ));
-    // Glow
-    group.add(new THREE.Mesh(
-      new THREE.SphereGeometry(0.08, 8, 8),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.3 })
-    ));
+    const boltLength = 1.0;
+    const boltGeo = new THREE.CylinderGeometry(0.015, 0.015, boltLength, 6);
+    const bolt = new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ color }));
+    bolt.rotation.x = Math.PI / 2; // align with forward direction
+    bolt.position.z = -boltLength / 2;
+    group.add(bolt);
+
+    // Glow cylinder
+    const glowGeo = new THREE.CylinderGeometry(0.035, 0.035, boltLength, 6);
+    const glowBolt = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
+    glowBolt.rotation.x = Math.PI / 2;
+    glowBolt.position.z = -boltLength / 2;
+    group.add(glowBolt);
+
     mesh = group;
   }
 
@@ -403,12 +413,18 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
   mesh.userData.velocity = direction.clone().multiplyScalar(isBuckshot ? 20 : 40);
   mesh.userData.stats = stats;
   mesh.userData.controllerIndex = controllerIndex;
-  mesh.userData.lifetime = 3000; // ms
+  mesh.userData.lifetime = 3000;
   mesh.userData.createdAt = performance.now();
-  mesh.userData.hitEnemies = new Set(); // track hits for piercing
+  mesh.userData.hitEnemies = new Set();
+
+  // Orient bolt along direction
+  if (!isBuckshot) {
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction);
+  }
 
   scene.add(mesh);
   projectiles.push(mesh);
+  playShoothSound();
 }
 
 function handleHit(enemyIndex, enemy, stats, hitPoint) {
@@ -430,6 +446,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint) {
 
   // Spawn damage number
   spawnDamageNumber(hitPoint, damage, '#ffffff');
+  playHitSound();
 
   // Apply status effects
   if (stats.effects.length > 0) {
@@ -443,6 +460,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint) {
 
   // If killed
   if (result.killed) {
+    playExplosionSound();
     const destroyData = destroyEnemy(enemyIndex);
     if (destroyData) {
       game.kills++;
@@ -574,8 +592,35 @@ function spawnEnemyWave(dt) {
       const type = types[Math.floor(Math.random() * types.length)];
       const pos = getSpawnPosition(cfg.airSpawns);
       spawnEnemy(type, pos, cfg);
+
+      // Alert on fast enemy spawn
+      if (type === 'fast') {
+        playFastEnemySpawn();
+      }
     }
   }
+}
+
+function updateFastEnemyAlerts(dt, playerPos) {
+  const fastEnemies = getFastEnemies();
+  fastEnemies.forEach(e => {
+    const dist = e.mesh.position.distanceTo(playerPos);
+    if (dist < 10) {
+      e.alertTimer = (e.alertTimer || 0) - dt;
+      if (e.alertTimer <= 0) {
+        e.alertTimer = 0.2; // play alert every 0.2s
+
+        // Calculate pan based on enemy position relative to player
+        const dx = e.mesh.position.x - playerPos.x;
+        const dz = e.mesh.position.z - playerPos.z;
+        const angle = Math.atan2(dx, -dz);
+        const pan = Math.sin(angle);
+        const intensity = 1 - (dist / 10);
+
+        playProximityAlert(pan, intensity);
+      }
+    }
+  });
 }
 
 // ============================================================
@@ -597,6 +642,16 @@ function render(timestamp) {
   else if (st === State.PLAYING) {
     spawnEnemyWave(dt);
 
+    // Full-auto shooting
+    for (let i = 0; i < 2; i++) {
+      if (controllerTriggerPressed[i]) {
+        shootWeapon(controllers[i], i);
+      }
+    }
+
+    // Fast enemy proximity alerts
+    updateFastEnemyAlerts(dt, camera.position);
+
     // Update enemies
     const playerPos = camera.position.clone();
     const collisions = updateEnemies(dt, now, playerPos);
@@ -606,6 +661,7 @@ function render(timestamp) {
       destroyEnemy(index);
       const dead = damagePlayer(1);
       triggerHitFlash();
+      playDamageSound();
       console.log(`[damage] Player hit! Health: ${game.health}`);
       if (dead) {
         endGame(false);
