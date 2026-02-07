@@ -1,32 +1,49 @@
 // ============================================================
-//  SYNTHWAVE VR BLASTER — Minimum Viable Demo
-//  A WebXR shooter with neon aesthetics, dual controllers,
-//  laser beams, and a destructible test enemy.
+//  SPACEOMICIDE — Main Game Controller
+//  Phase 1: Core game loop with levels, enemies, upgrades, HUD
 // ============================================================
 
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-// ── Colour Constants ───────────────────────────────────────
+import { State, game, resetGame, getLevelConfig, addScore, getComboMultiplier, damagePlayer, addUpgrade } from './game.js';
+import { getRandomUpgrades, getWeaponStats } from './upgrades.js';
+import {
+  initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
+  getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
+  applyEffects, getSpawnPosition, getEnemies
+} from './enemies.js';
+import {
+  initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
+  showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
+  updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
+  hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers
+} from './hud.js';
+
+// ── Constants ──────────────────────────────────────────────
 const NEON_PINK  = 0xff00ff;
 const NEON_CYAN  = 0x00ffff;
-const DARK_BG    = 0x0a0015;   // deep purple-black
+const DARK_BG    = 0x0a0015;
 const SUN_CORE   = 0xffaa00;
 const SUN_GLOW   = 0xff6600;
 const MTN_DARK   = 0x1a0033;
 const MTN_WIRE   = 0x6600aa;
 
-// ── Gameplay Constants ─────────────────────────────────────
 const LASER_RANGE    = 50;
-const LASER_DURATION = 250;   // ms before laser fades
+const LASER_DURATION = 250;
 
-// ── State ──────────────────────────────────────────────────
+// ── Module State ───────────────────────────────────────────
 let scene, camera, renderer;
 const controllers = [];
-let enemy = null;
 const lasers = [];
-const explosionParticles = [];
 let lastTime = 0;
+
+// Weapon firing cooldowns (per controller)
+const weaponCooldowns = [0, 0];
+
+// Upgrade selection
+let upgradeSelectionCooldown = 0;
+let pendingUpgrades = [];
 
 // ── Bootstrap ──────────────────────────────────────────────
 init();
@@ -35,18 +52,18 @@ init();
 //  INITIALISATION
 // ============================================================
 function init() {
-  // --- Scene ---
+  console.log('[SPACEOMICIDE] Initialising...');
+
+  // Scene
   scene = new THREE.Scene();
   scene.background = new THREE.Color(DARK_BG);
   scene.fog = new THREE.FogExp2(DARK_BG, 0.012);
 
-  // --- Camera (standing height; overridden by headset in VR) ---
-  camera = new THREE.PerspectiveCamera(
-    70, window.innerWidth / window.innerHeight, 0.1, 1000
-  );
+  // Camera
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(0, 1.6, 0);
 
-  // --- Renderer ---
+  // Renderer
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
@@ -55,56 +72,57 @@ function init() {
   renderer.toneMappingExposure = 1.5;
   document.body.appendChild(renderer.domElement);
 
-  // --- VR Button ---
-  // VRButton handles WebXR session creation and shows fallback text
-  // if the browser doesn't support immersive VR.
+  // VR Button
   const vrButton = VRButton.createButton(renderer);
   document.body.appendChild(vrButton);
 
-  // Extra fallback: show our styled message when WebXR is absent
   if (!navigator.xr) {
     document.getElementById('no-vr').style.display = 'block';
-    console.warn('WebXR not supported on this browser');
+    console.warn('[init] WebXR not supported');
   } else {
     navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
       if (!supported) {
         document.getElementById('no-vr').style.display = 'block';
-        console.warn('immersive-vr session not supported');
+        console.warn('[init] immersive-vr not supported');
       }
     });
   }
 
-  // --- Build the world ---
+  // Build world
   createEnvironment();
   setupControllers();
-  spawnEnemy();
 
-  // --- Listeners ---
+  // Init subsystems
+  initEnemies(scene);
+  initHUD(camera, scene);
+
+  // Start at title
+  resetGame();
+  showTitle();
+
+  // Listeners
   window.addEventListener('resize', onWindowResize);
 
-  // --- Render loop (WebXR-compatible) ---
+  // Render loop
   renderer.setAnimationLoop(render);
 
-  console.log('[init] Synthwave VR Blaster ready');
-  console.log('[init] Controls: pull either trigger to shoot');
+  console.log('[init] SPACEOMICIDE ready — pull trigger at title screen to start');
 }
 
 // ============================================================
 //  ENVIRONMENT
 // ============================================================
 function createEnvironment() {
-  // ── Grid Floor ──
-  // Neon magenta grid à la the synthwave concept art
+  // Grid floor
   const grid = new THREE.GridHelper(200, 80, NEON_PINK, 0x660044);
   if (Array.isArray(grid.material)) {
-    grid.material.forEach((m) => { m.transparent = true; m.opacity = 0.6; });
+    grid.material.forEach(m => { m.transparent = true; m.opacity = 0.6; });
   } else {
     grid.material.transparent = true;
     grid.material.opacity = 0.6;
   }
   scene.add(grid);
 
-  // Dark plane underneath to prevent seeing through the floor
   const floorGeo = new THREE.PlaneGeometry(200, 200);
   const floorMat = new THREE.MeshBasicMaterial({ color: 0x110022, side: THREE.DoubleSide });
   const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -112,94 +130,63 @@ function createEnvironment() {
   floor.position.y = -0.01;
   scene.add(floor);
 
-  // ── Synthwave Sun ──
   createSun();
-
-  // ── Mountain Silhouettes ──
   createMountains();
-
-  // ── Stars ──
   createStars();
 
-  // ── Lighting ──
+  // Lighting
   scene.add(new THREE.AmbientLight(0x330066, 0.4));
-
   const pinkLight = new THREE.PointLight(NEON_PINK, 1.5, 30);
   pinkLight.position.set(-6, 4, -6);
   scene.add(pinkLight);
-
   const cyanLight = new THREE.PointLight(NEON_CYAN, 1.5, 30);
   cyanLight.position.set(6, 4, -6);
   scene.add(cyanLight);
 }
 
-// ── Sun ────────────────────────────────────────────────────
 function createSun() {
-  // Bright core
   const coreMat = new THREE.MeshBasicMaterial({ color: SUN_CORE, side: THREE.DoubleSide });
   const core = new THREE.Mesh(new THREE.CircleGeometry(14, 64), coreMat);
   core.position.set(0, 10, -90);
   scene.add(core);
 
-  // Outer glow ring
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: SUN_GLOW, side: THREE.DoubleSide, transparent: true, opacity: 0.3,
-  });
+  const glowMat = new THREE.MeshBasicMaterial({ color: SUN_GLOW, side: THREE.DoubleSide, transparent: true, opacity: 0.3 });
   const glow = new THREE.Mesh(new THREE.CircleGeometry(20, 64), glowMat);
   glow.position.set(0, 10, -90.5);
   scene.add(glow);
 
-  // Horizontal stripe lines across the sun (retro look)
   const stripeMat = new THREE.LineBasicMaterial({ color: DARK_BG });
   for (let y = -10; y <= 0; y += 2) {
-    const points = [
-      new THREE.Vector3(-15, 10 + y, -89.9),
-      new THREE.Vector3(15, 10 + y, -89.9),
-    ];
-    const stripe = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(points), stripeMat
-    );
+    const points = [new THREE.Vector3(-15, 10 + y, -89.9), new THREE.Vector3(15, 10 + y, -89.9)];
+    const stripe = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), stripeMat);
     scene.add(stripe);
   }
 }
 
-// ── Mountains ──────────────────────────────────────────────
 function createMountains() {
-  // Two layers of low-poly mountain silhouettes on the horizon
   const layers = [
     { z: -85, color: 0x0d001a, peaks: generatePeaks(12, 6, 20) },
     { z: -75, color: MTN_DARK,  peaks: generatePeaks(10, 4, 14) },
   ];
-
   layers.forEach(({ z, color, peaks }) => {
-    // Solid fill silhouette
     const shape = new THREE.Shape();
     shape.moveTo(-100, 0);
     peaks.forEach(([x, y]) => shape.lineTo(x, y));
     shape.lineTo(100, 0);
     shape.closePath();
 
-    const fillMesh = new THREE.Mesh(
-      new THREE.ShapeGeometry(shape),
-      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
-    );
+    const fillMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
     fillMesh.position.set(0, 0, z);
     scene.add(fillMesh);
 
-    // Wireframe top edge
     const edgePoints = [new THREE.Vector3(-100, 0, z)];
     peaks.forEach(([x, y]) => edgePoints.push(new THREE.Vector3(x, y, z)));
     edgePoints.push(new THREE.Vector3(100, 0, z));
-
-    const edgeLine = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(edgePoints),
-      new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.5 })
-    );
+    const edgeLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(edgePoints), new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.5 }));
     scene.add(edgeLine);
   });
 }
 
-/** Generate random jagged mountain peaks spanning -100..100 on X */
 function generatePeaks(count, minH, maxH) {
   const peaks = [];
   const step = 200 / (count + 1);
@@ -211,24 +198,18 @@ function generatePeaks(count, minH, maxH) {
   return peaks;
 }
 
-// ── Stars ──────────────────────────────────────────────────
 function createStars() {
   const count = 1500;
   const positions = new Float32Array(count * 3);
-
   for (let i = 0; i < count; i++) {
     const i3 = i * 3;
-    positions[i3]     = (Math.random() - 0.5) * 300;  // x
-    positions[i3 + 1] = Math.random() * 80 + 10;      // y (above horizon)
-    positions[i3 + 2] = (Math.random() - 0.5) * 300;  // z
+    positions[i3]     = (Math.random() - 0.5) * 300;
+    positions[i3 + 1] = Math.random() * 80 + 10;
+    positions[i3 + 2] = (Math.random() - 0.5) * 300;
   }
-
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-  const mat = new THREE.PointsMaterial({
-    color: 0xffffff, size: 0.3, transparent: true, opacity: 0.7,
-  });
+  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.3, transparent: true, opacity: 0.7 });
   scene.add(new THREE.Points(geo, mat));
 }
 
@@ -239,122 +220,284 @@ function setupControllers() {
   for (let i = 0; i < 2; i++) {
     const controller = renderer.xr.getController(i);
 
-    // ── Events ──
     controller.addEventListener('selectstart', () => onTriggerPress(controller, i));
     controller.addEventListener('selectend',   () => onTriggerRelease(i));
     controller.addEventListener('connected', (e) => {
-      console.log(`[controller] ${i} connected — ${e.data.handedness} hand`);
+      console.log(`[controller] ${i} connected — ${e.data.handedness}`);
       controller.userData.handedness = e.data.handedness;
     });
     controller.addEventListener('disconnected', () => {
       console.log(`[controller] ${i} disconnected`);
     });
 
-    // ── Visual: glowing neon sphere + aim pointer ──
     controller.add(createControllerVisual(i));
     scene.add(controller);
     controllers.push(controller);
   }
 }
 
-/** Build a neon sphere + faint aim line for one controller */
 function createControllerVisual(index) {
   const color = index === 0 ? NEON_CYAN : NEON_PINK;
   const group = new THREE.Group();
 
-  // Bright core sphere
-  group.add(new THREE.Mesh(
-    new THREE.SphereGeometry(0.03, 16, 16),
-    new THREE.MeshBasicMaterial({ color })
-  ));
+  group.add(new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color })));
+  group.add(new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 16), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 })));
 
-  // Soft outer glow
-  group.add(new THREE.Mesh(
-    new THREE.SphereGeometry(0.055, 16, 16),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 })
-  ));
-
-  // Aim pointer (short line showing forward direction)
-  const aimGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0, 0, -0.4),
-  ]);
-  group.add(new THREE.Line(
-    aimGeo,
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.4 })
-  ));
+  const aimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -0.4)]);
+  group.add(new THREE.Line(aimGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.4 })));
 
   return group;
 }
 
 // ============================================================
-//  SHOOTING
+//  INPUT HANDLING
 // ============================================================
 function onTriggerPress(controller, index) {
-  console.log(`[shoot] trigger pressed — controller ${index}`);
-  shootLaser(controller, index);
+  const st = game.state;
+
+  if (st === State.TITLE) {
+    startGame();
+  } else if (st === State.PLAYING) {
+    shootWeapon(controller, index);
+  } else if (st === State.UPGRADE_SELECT) {
+    selectUpgrade(controller);
+  } else if (st === State.GAME_OVER || st === State.VICTORY) {
+    resetGame();
+    showTitle();
+  }
 }
 
 function onTriggerRelease(index) {
-  console.log(`[shoot] trigger released — controller ${index}`);
+  // Not used yet
 }
 
-function shootLaser(controller, index) {
-  // World-space position and forward direction of the controller
+// ============================================================
+//  GAME STATE TRANSITIONS
+// ============================================================
+function startGame() {
+  console.log('[game] Starting new game');
+  hideTitle();
+  resetGame();
+  game.state = State.PLAYING;
+  game.level = 1;
+  game._levelConfig = getLevelConfig();
+  showHUD();
+}
+
+function completeLevel() {
+  console.log(`[game] Level ${game.level} complete`);
+  game.state = State.LEVEL_COMPLETE;
+  clearAllEnemies();
+  game.stateTimer = 2.0; // cooldown before upgrade screen
+  showLevelComplete(game.level);
+}
+
+function showUpgradeScreen() {
+  console.log('[game] Showing upgrade selection');
+  game.state = State.UPGRADE_SELECT;
+  hideLevelComplete();
+  pendingUpgrades = getRandomUpgrades(3);
+  showUpgradeCards(pendingUpgrades);
+  upgradeSelectionCooldown = 1.5; // prevent instant selection
+}
+
+function selectUpgradeAndAdvance(upgrade) {
+  console.log(`[game] Selected upgrade: ${upgrade.name}`);
+  addUpgrade(upgrade.id);
+  hideUpgradeCards();
+
+  // Advance to next level
+  game.level++;
+  game.kills = 0;
+
+  if (game.level > 20) {
+    endGame(true); // victory
+  } else {
+    game.state = State.PLAYING;
+    game._levelConfig = getLevelConfig();
+    showHUD();
+  }
+}
+
+function endGame(victory) {
+  console.log(`[game] Game ${victory ? 'won' : 'over'} — score: ${game.score}`);
+  game.state = victory ? State.VICTORY : State.GAME_OVER;
+  clearAllEnemies();
+  hideHUD();
+
+  if (victory) {
+    showVictory(game.score);
+  } else {
+    showGameOver(game.score);
+  }
+}
+
+// ============================================================
+//  SHOOTING & COMBAT
+// ============================================================
+function shootWeapon(controller, index) {
+  const now = performance.now();
+  const stats = getWeaponStats(game.upgrades);
+
+  // Check cooldown
+  if (now - weaponCooldowns[index] < stats.fireInterval) return;
+  weaponCooldowns[index] = now;
+
   const origin = new THREE.Vector3();
   const quat   = new THREE.Quaternion();
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
 
-  // Raycast against the enemy
+  // Fire projectile(s)
+  const count = stats.projectileCount;
+  for (let i = 0; i < count; i++) {
+    const spreadOffset = count > 1 ? ((i / (count - 1)) - 0.5) * stats.spreadAngle : 0;
+    const spreadDir = direction.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), spreadOffset).normalize();
+    fireProjectile(origin, spreadDir, index, stats);
+  }
+
+  console.log(`[shoot] controller ${index} fired ${count} projectile(s)`);
+}
+
+function fireProjectile(origin, direction, controllerIndex, stats) {
   const raycaster = new THREE.Raycaster(origin, direction, 0, LASER_RANGE);
+  const meshes = getEnemyMeshes();
+  const intersects = raycaster.intersectObjects(meshes, true);
+
   let endPoint = origin.clone().add(direction.clone().multiplyScalar(LASER_RANGE));
   let hit = false;
+  let hitData = null;
 
-  if (enemy) {
-    const intersects = raycaster.intersectObject(enemy, true);
-    if (intersects.length > 0) {
-      endPoint = intersects[0].point.clone();
+  if (intersects.length > 0) {
+    const firstHit = intersects[0];
+    endPoint = firstHit.point.clone();
+    const result = getEnemyByMesh(firstHit.object);
+
+    if (result) {
       hit = true;
-      console.log(`[shoot] HIT enemy at distance ${intersects[0].distance.toFixed(2)}`);
-      destroyEnemy();
+      hitData = result;
+      handleHit(result.index, result.enemy, stats, firstHit.point);
+
+      // Piercing: continue and hit more enemies
+      if (stats.piercing && intersects.length > 1) {
+        for (let j = 1; j < intersects.length; j++) {
+          const nextResult = getEnemyByMesh(intersects[j].object);
+          if (nextResult && nextResult.index !== result.index) {
+            handleHit(nextResult.index, nextResult.enemy, stats, intersects[j].point);
+          }
+        }
+      }
+
+      // Ricochet
+      if (stats.ricochetBounces > 0) {
+        handleRicochet(firstHit.point, stats, 0);
+      }
     }
   }
 
-  if (!hit) {
-    console.log('[shoot] miss');
-  }
-
-  // Visual laser beam
-  createLaserBeam(origin, endPoint, index);
+  createLaserBeam(origin, endPoint, controllerIndex);
 }
 
-// ── Laser Beam Visual ──────────────────────────────────────
+function handleHit(enemyIndex, enemy, stats, hitPoint) {
+  // Calculate damage
+  let damage = stats.damage;
+
+  // Critical hit
+  if (stats.critChance > 0 && Math.random() < stats.critChance) {
+    damage *= 2;
+  }
+
+  // Fire debuff increases damage taken
+  if (enemy.statusEffects.fire.stacks > 0) {
+    damage *= stats.fireWeakenMult;
+  }
+
+  // Apply damage
+  const result = hitEnemy(enemyIndex, damage);
+
+  // Spawn damage number
+  spawnDamageNumber(hitPoint, damage, '#ffffff');
+
+  // Apply status effects
+  if (stats.effects.length > 0) {
+    applyEffects(enemyIndex, stats.effects);
+  }
+
+  // AOE explosion
+  if (stats.aoeRadius > 0) {
+    handleAOE(hitPoint, stats.aoeRadius, stats.damage * 0.6);
+  }
+
+  // If killed
+  if (result.killed) {
+    const destroyData = destroyEnemy(enemyIndex);
+    if (destroyData) {
+      game.kills++;
+      game.totalKills++;
+      game.killsWithoutHit++;
+      addScore(destroyData.scoreValue);
+
+      // Vampiric healing
+      if (stats.vampiricInterval > 0 && game.totalKills % stats.vampiricInterval === 0) {
+        game.health = Math.min(game.maxHealth, game.health + 1);
+        console.log('[vampiric] Healed 1 HP');
+      }
+
+      // Check level complete
+      const cfg = game._levelConfig;
+      if (cfg && game.kills >= cfg.killTarget) {
+        completeLevel();
+      }
+    }
+  }
+}
+
+function handleAOE(center, radius, damage) {
+  const enemies = getEnemies();
+  enemies.forEach((e, i) => {
+    const dist = e.mesh.position.distanceTo(center);
+    if (dist < radius) {
+      const aoeDamage = damage * (1 - dist / radius);
+      hitEnemy(i, aoeDamage);
+      spawnDamageNumber(e.mesh.position, aoeDamage, '#ff8800');
+    }
+  });
+}
+
+function handleRicochet(fromPoint, stats, bounceCount) {
+  if (bounceCount >= stats.ricochetBounces) return;
+
+  const enemies = getEnemies();
+  let closest = null;
+  let closestDist = 8;
+
+  enemies.forEach((e, i) => {
+    const dist = e.mesh.position.distanceTo(fromPoint);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closest = { index: i, enemy: e };
+    }
+  });
+
+  if (closest) {
+    handleHit(closest.index, closest.enemy, { ...stats, damage: stats.damage * 0.5 }, closest.enemy.mesh.position);
+    handleRicochet(closest.enemy.mesh.position, stats, bounceCount + 1);
+  }
+}
+
 function createLaserBeam(start, end, controllerIndex) {
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
   const group = new THREE.Group();
 
-  // Core beam (thin tube)
   const path = new THREE.LineCurve3(start.clone(), end.clone());
   const coreGeo = new THREE.TubeGeometry(path, 1, 0.006, 6, false);
-  group.add(new THREE.Mesh(
-    coreGeo,
-    new THREE.MeshBasicMaterial({ color })
-  ));
+  group.add(new THREE.Mesh(coreGeo, new THREE.MeshBasicMaterial({ color })));
 
-  // Glow beam (wider, semi-transparent tube)
   const glowGeo = new THREE.TubeGeometry(path, 1, 0.025, 6, false);
-  group.add(new THREE.Mesh(
-    glowGeo,
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.15 })
-  ));
+  group.add(new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.15 })));
 
-  // Impact flash at end point
-  const flash = new THREE.Mesh(
-    new THREE.SphereGeometry(0.06, 8, 8),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 })
-  );
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 }));
   flash.position.copy(end);
   group.add(flash);
 
@@ -363,74 +506,43 @@ function createLaserBeam(start, end, controllerIndex) {
   lasers.push(group);
 }
 
-// ============================================================
-//  ENEMY
-// ============================================================
-function spawnEnemy() {
-  const group = new THREE.Group();
+function selectUpgrade(controller) {
+  if (upgradeSelectionCooldown > 0) return;
 
-  // Solid core cube
-  group.add(new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.5, 0.5),
-    new THREE.MeshBasicMaterial({ color: NEON_PINK })
-  ));
+  const origin = new THREE.Vector3();
+  const quat   = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
 
-  // Wireframe overlay (slightly larger for depth)
-  group.add(new THREE.Mesh(
-    new THREE.BoxGeometry(0.52, 0.52, 0.52),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.4 })
-  ));
+  const raycaster = new THREE.Raycaster(origin, direction, 0, 10);
+  const upgrade = getUpgradeCardHit(raycaster);
 
-  // Outer glow shell
-  group.add(new THREE.Mesh(
-    new THREE.BoxGeometry(0.62, 0.62, 0.62),
-    new THREE.MeshBasicMaterial({ color: NEON_PINK, transparent: true, opacity: 0.12 })
-  ));
-
-  // Place in front of the player at eye level
-  group.position.set(0, 1.5, -5);
-  scene.add(group);
-  enemy = group;
-
-  console.log(`[enemy] spawned at (${group.position.x}, ${group.position.y}, ${group.position.z})`);
+  if (upgrade) {
+    selectUpgradeAndAdvance(upgrade);
+  }
 }
 
-function destroyEnemy() {
-  if (!enemy) return;
+// ============================================================
+//  ENEMY SPAWNING
+// ============================================================
+function spawnEnemyWave(dt) {
+  if (game.state !== State.PLAYING) return;
 
-  const pos = enemy.position.clone();
-  scene.remove(enemy);
-  enemy = null;
+  const cfg = game._levelConfig;
+  if (!cfg) return;
 
-  // Spawn explosion particles
-  spawnExplosion(pos);
-  console.log('[enemy] destroyed — explosion triggered');
-}
+  game.spawnTimer -= dt;
+  if (game.spawnTimer <= 0) {
+    game.spawnTimer = cfg.spawnInterval;
 
-// ── Explosion ──────────────────────────────────────────────
-function spawnExplosion(position) {
-  const count = 24;
-  for (let i = 0; i < count; i++) {
-    const size = 0.02 + Math.random() * 0.07;
-    const color = Math.random() > 0.5 ? NEON_PINK : NEON_CYAN;
-
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(size, size, size),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
-    );
-    mesh.position.copy(position);
-
-    // Random outward velocity
-    mesh.userData.velocity = new THREE.Vector3(
-      (Math.random() - 0.5) * 5,
-      (Math.random() - 0.5) * 5,
-      (Math.random() - 0.5) * 5,
-    );
-    mesh.userData.createdAt = performance.now();
-    mesh.userData.lifetime  = 800 + Math.random() * 400; // 0.8–1.2 s
-
-    scene.add(mesh);
-    explosionParticles.push(mesh);
+    // Don't spawn if we already have enough enemies
+    if (getEnemyCount() < 15) {
+      const types = cfg.enemyTypes;
+      const type = types[Math.floor(Math.random() * types.length)];
+      const pos = getSpawnPosition(cfg.airSpawns);
+      spawnEnemy(type, pos, cfg);
+    }
   }
 }
 
@@ -439,17 +551,95 @@ function spawnExplosion(position) {
 // ============================================================
 function render(timestamp) {
   const now = timestamp || performance.now();
-  const dt  = Math.min((now - lastTime) / 1000, 0.1); // seconds, capped
+  const dt  = Math.min((now - lastTime) / 1000, 0.1);
   lastTime  = now;
 
-  // ── Animate enemy (gentle hover + rotation) ──
-  if (enemy) {
-    enemy.rotation.y += 0.8 * dt;
-    enemy.rotation.x += 0.4 * dt;
-    enemy.position.y  = 1.5 + Math.sin(now * 0.002) * 0.1;
+  const st = game.state;
+
+  // ── Title screen ──
+  if (st === State.TITLE) {
+    updateTitle(now);
   }
 
-  // ── Fade & remove lasers ──
+  // ── Playing ──
+  else if (st === State.PLAYING) {
+    spawnEnemyWave(dt);
+
+    // Update enemies
+    const playerPos = camera.position.clone();
+    const collisions = updateEnemies(dt, now, playerPos);
+
+    // Handle enemy collisions with player
+    collisions.forEach(index => {
+      destroyEnemy(index);
+      const dead = damagePlayer(1);
+      triggerHitFlash();
+      console.log(`[damage] Player hit! Health: ${game.health}`);
+      if (dead) {
+        endGame(false);
+      }
+    });
+
+    // Check for DoT damage on enemies
+    const enemies = getEnemies();
+    enemies.forEach((e, i) => {
+      if (e._lastDoT) {
+        const colorMap = { fire: '#ff4400', shock: '#4488ff', freeze: '#88ccff' };
+        spawnDamageNumber(e.mesh.position, e._lastDoT.damage, colorMap[e._lastDoT.type] || '#ffffff');
+        delete e._lastDoT;
+
+        if (e.hp <= 0) {
+          const destroyData = destroyEnemy(i);
+          if (destroyData) {
+            game.kills++;
+            game.totalKills++;
+            game.killsWithoutHit++;
+            addScore(destroyData.scoreValue);
+
+            const cfg = game._levelConfig;
+            if (cfg && game.kills >= cfg.killTarget) {
+              completeLevel();
+            }
+          }
+        }
+      }
+    });
+
+    // Update HUD
+    game._levelConfig = getLevelConfig();
+    game._combo = getComboMultiplier();
+    updateHUD(game);
+  }
+
+  // ── Level complete (cooldown before upgrade screen) ──
+  else if (st === State.LEVEL_COMPLETE) {
+    game.stateTimer -= dt;
+    if (game.stateTimer <= 0) {
+      showUpgradeScreen();
+    }
+  }
+
+  // ── Upgrade selection ──
+  else if (st === State.UPGRADE_SELECT) {
+    upgradeSelectionCooldown = Math.max(0, upgradeSelectionCooldown - dt);
+    updateUpgradeCards(now, upgradeSelectionCooldown);
+  }
+
+  // ── Game over / Victory ──
+  else if (st === State.GAME_OVER || st === State.VICTORY) {
+    updateEndScreen(now);
+  }
+
+  // ── Universal updates ──
+  updateLasers(dt, now);
+  updateExplosions(dt, now);
+  updateDamageNumbers(dt, now);
+  updateHitFlash(dt);
+
+  renderer.render(scene, camera);
+}
+
+function updateLasers(dt, now) {
   for (let i = lasers.length - 1; i >= 0; i--) {
     const laser = lasers[i];
     const age = now - laser.userData.createdAt;
@@ -459,38 +649,13 @@ function render(timestamp) {
       lasers.splice(i, 1);
     } else {
       const alpha = 1 - age / LASER_DURATION;
-      laser.traverse((child) => {
+      laser.traverse(child => {
         if (child.material && child.material.transparent !== undefined) {
-          child.material.opacity = child.material.userData?.baseOpacity
-            ? child.material.userData.baseOpacity * alpha
-            : alpha;
+          child.material.opacity = (child.material.userData?.baseOpacity || 1) * alpha;
         }
       });
     }
   }
-
-  // ── Update explosion particles ──
-  for (let i = explosionParticles.length - 1; i >= 0; i--) {
-    const p   = explosionParticles[i];
-    const age = now - p.userData.createdAt;
-
-    if (age > p.userData.lifetime) {
-      scene.remove(p);
-      explosionParticles.splice(i, 1);
-    } else {
-      // Move
-      p.position.addScaledVector(p.userData.velocity, dt);
-      // Drag
-      p.userData.velocity.multiplyScalar(1 - 2.5 * dt);
-      // Fade
-      p.material.opacity = 1 - age / p.userData.lifetime;
-      // Tumble
-      p.rotation.x += 3 * dt;
-      p.rotation.z += 3 * dt;
-    }
-  }
-
-  renderer.render(scene, camera);
 }
 
 // ============================================================
