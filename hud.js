@@ -156,10 +156,10 @@ export function initHUD(camera, scene) {
   titleGroup.position.set(0, 1.6, -6);
   scene.add(titleGroup);
 
-  // ── VR HUD (attached to camera but only follows Y rotation) ──
+  // ── VR HUD (stationary on floor, Space Pirate Trainer style) ──
   createHUDElements();
-  camera.add(hudGroup);
-  scene.add(camera);
+  hudGroup.position.set(0, 0.05, -3);  // On floor, 3 feet in front of spawn
+  scene.add(hudGroup);
 
   // ── Level transition text (world-space) ──
   levelTextGroup.visible = false;
@@ -244,31 +244,32 @@ function createHUDElements() {
   hudGroup.visible   = false;
   hudGroup.renderOrder = 999;
 
-  // Hearts — positioned bottom-left of view
-  heartsSprite = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false }));
-  heartsSprite.position.set(-0.35, -0.28, -1.0);
-  heartsSprite.scale.set(0.22, 0.05, 1);
+  // Floor-based HUD layout (Space Pirate Trainer style)
+  // Lives (hearts) - left side on floor
+  heartsSprite = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: true, depthWrite: false }));
+  heartsSprite.position.set(-0.5, 0, 0);
+  heartsSprite.scale.set(0.4, 0.08, 1);
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
-  // Kill counter — bottom-center
-  killCountSprite = makeSprite('0/0', { fontSize: 40, color: '#ffffff', shadow: true, scale: 0.12 });
-  killCountSprite.position.set(0, -0.28, -1.0);
-  hudGroup.add(killCountSprite);
-
-  // Level indicator — bottom-right
-  levelSprite = makeSprite('LEVEL 1', { fontSize: 40, color: '#00ffff', glow: true, scale: 0.12 });
-  levelSprite.position.set(0.35, -0.28, -1.0);
-  hudGroup.add(levelSprite);
-
-  // Score — top-left
-  scoreSprite = makeSprite('0', { fontSize: 36, color: '#ffff00', shadow: true, scale: 0.1 });
-  scoreSprite.position.set(-0.35, 0.32, -1.0);
+  // Score - right side on floor
+  scoreSprite = makeSprite('0', { fontSize: 60, color: '#ffff00', shadow: true, scale: 0.25 });
+  scoreSprite.position.set(0.5, 0, 0);
   hudGroup.add(scoreSprite);
 
-  // Combo multiplier — below score
-  comboSprite = makeSprite('1x', { fontSize: 32, color: '#ff8800', shadow: true, scale: 0.08 });
-  comboSprite.position.set(-0.35, 0.26, -1.0);
+  // Kill counter — center on floor
+  killCountSprite = makeSprite('0/0', { fontSize: 50, color: '#ffffff', shadow: true, scale: 0.2 });
+  killCountSprite.position.set(0, 0, 0);
+  hudGroup.add(killCountSprite);
+
+  // Level indicator — above kill counter
+  levelSprite = makeSprite('LEVEL 1', { fontSize: 48, color: '#00ffff', glow: true, scale: 0.18 });
+  levelSprite.position.set(0, 0.15, 0);
+  hudGroup.add(levelSprite);
+
+  // Combo multiplier — near score
+  comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 0.15 });
+  comboSprite.position.set(0.5, -0.15, 0);
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 }
@@ -344,9 +345,8 @@ export function showLevelComplete(level, playerPos) {
   s2.position.set(0, 0.2, 0);
   levelTextGroup.add(s2);
 
-  // Position in front of player
-  levelTextGroup.position.set(playerPos.x, playerPos.y, playerPos.z);
-  levelTextGroup.position.z -= 5;
+  // Fixed world position in front of spawn
+  levelTextGroup.position.set(0, 1.6, -5);
   levelTextGroup.visible = true;
 }
 
@@ -363,9 +363,8 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
 
-  // Position in front of player
-  upgradeGroup.position.set(playerPos.x, playerPos.y, playerPos.z);
-  upgradeGroup.position.z -= 4;
+  // Fixed world position in front of spawn
+  upgradeGroup.position.set(0, 1.6, -4);
 
   // "Choose an upgrade for [HAND]" header
   const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
@@ -522,8 +521,8 @@ export function showGameOver(score, playerPos) {
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
-  gameOverGroup.position.set(playerPos.x, playerPos.y, playerPos.z);
-  gameOverGroup.position.z -= 5;
+  // Fixed world position in front of spawn
+  gameOverGroup.position.set(0, 1.6, -5);
   gameOverGroup.visible = true;
 }
 
@@ -544,8 +543,8 @@ export function showVictory(score, playerPos) {
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
-  gameOverGroup.position.set(playerPos.x, playerPos.y, playerPos.z);
-  gameOverGroup.position.z -= 5;
+  // Fixed world position in front of spawn
+  gameOverGroup.position.set(0, 1.6, -5);
   gameOverGroup.visible = true;
 }
 
@@ -608,8 +607,8 @@ export function spawnDamageNumber(position, damage, color) {
   sprite.position.y += Math.random() * 0.2;
   sprite.position.z += (Math.random() - 0.5) * 0.3;
 
-  // Fixed screen size regardless of distance
-  const scale = 0.015 + Math.min(damage / 200, 0.015);
+  // Large and readable regardless of distance
+  const scale = 0.06 + Math.min(damage / 100, 0.04);
   sprite.scale.set(scale * 2, scale, 1);
   sprite.renderOrder = 998;
 

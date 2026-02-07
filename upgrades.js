@@ -17,6 +17,7 @@ export const UPGRADE_POOL = [
   { id: 'double_shot', name: 'Double Shot', desc: 'Fire an extra projectile',          color: '#ff44ff' },
   { id: 'freeze',      name: 'Freeze',      desc: 'Greatly slows enemies',             color: '#88ccff' },
   { id: 'ricochet',    name: 'Ricochet',    desc: 'Shots bounce to nearby enemy',      color: '#aaffaa' },
+  { id: 'lightning',   name: 'Lightning',   desc: 'Hold for auto-lock beam',           color: '#ffff44' },
 ];
 
 /** Pick `count` random upgrades from the pool */
@@ -79,5 +80,8 @@ export function getWeaponStats(upgrades) {
     fireWeakenMult,
     effects,
     ricochetBounces:  u.ricochet || 0,
+    lightning:        (u.lightning || 0) > 0,
+    lightningRange:   8 + (u.lightning || 0) * 2,  // 8-14m range
+    lightningDamage:  10 + (u.lightning || 0) * 5,  // 10-25 damage per tick
   };
 }
