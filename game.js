@@ -54,7 +54,7 @@ export const game = {
   totalKills:   0,
   score:        0,
   nukes:        3,
-  upgrades:     {},      // { upgradeId: stackCount }
+  upgrades:     { left: {}, right: {} },  // separate per hand
   stateTimer:   0,
   spawnTimer:   0,
   killsWithoutHit: 0,    // for combo tracking
@@ -70,7 +70,7 @@ export function resetGame() {
     totalKills:   0,
     score:        0,
     nukes:        3,
-    upgrades:     {},
+    upgrades:     { left: {}, right: {} },
     stateTimer:   0,
     spawnTimer:   0,
     killsWithoutHit: 0,
@@ -101,6 +101,7 @@ export function healPlayer(amount) {
   game.health = Math.min(game.maxHealth, game.health + amount);
 }
 
-export function addUpgrade(id) {
-  game.upgrades[id] = (game.upgrades[id] || 0) + 1;
+export function addUpgrade(id, hand) {
+  const h = hand || 'left';
+  game.upgrades[h][id] = (game.upgrades[h][id] || 0) + 1;
 }
