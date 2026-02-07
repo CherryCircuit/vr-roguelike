@@ -5,36 +5,23 @@
 
 import * as THREE from 'three';
 
-// ── Voxel patterns (Space-Invaders-inspired, 3D) ──────────
-// Each row is a string: '1' = voxel, '.' = empty
+// ── Voxel patterns (simplified for performance) ───────────
 const PATTERNS = {
   basic: [
-    '..1.....1..',
-    '...1...1...',
-    '..1111111..',
-    '.11.111.11.',
-    '11111111111',
-    '1.1111111.1',
-    '1.1.....1.1',
-    '...11.11...',
-  ],
-  fast: [
     '.1.',
     '111',
     '.1.',
-    '1.1',
+  ],
+  fast: [
+    '1',
+    '1',
   ],
   tank: [
-    '.1111.',
-    '111111',
-    '11..11',
-    '11..11',
-    '111111',
-    '.1111.',
+    '111',
+    '111',
   ],
   swarm: [
-    '11',
-    '11',
+    '1',
   ],
 };
 
@@ -44,10 +31,10 @@ function parsePattern(strings) {
 
 // ── Enemy type stats ───────────────────────────────────────
 const ENEMY_DEFS = {
-  basic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.055, baseHp: 30, baseSpeed: 1.5, color: 0x00ff88, depth: 2, scoreValue: 10 },
-  fast:  { pattern: parsePattern(PATTERNS.fast),  voxelSize: 0.07,  baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 2, scoreValue: 15 },
-  tank:  { pattern: parsePattern(PATTERNS.tank),  voxelSize: 0.09,  baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 3, scoreValue: 25 },
-  swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.05,  baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5  },
+  basic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.12, baseHp: 30, baseSpeed: 1.5, color: 0x00ff88, depth: 1, scoreValue: 10, hitboxRadius: 0.25 },
+  fast:  { pattern: parsePattern(PATTERNS.fast),  voxelSize: 0.1,  baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.2 },
+  tank:  { pattern: parsePattern(PATTERNS.tank),  voxelSize: 0.15, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.35 },
+  swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.08, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.15 },
 };
 
 // ── Module state ───────────────────────────────────────────
@@ -115,6 +102,13 @@ export function spawnEnemy(type, position, levelConfig) {
   group.position.copy(position);
   group.userData.isEnemy = true;
 
+  // Add invisible sphere hitbox for better hit detection
+  const hitboxGeo = new THREE.SphereGeometry(def.hitboxRadius, 8, 8);
+  const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+  const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+  hitbox.userData.isEnemyHitbox = true;
+  group.add(hitbox);
+
   const enemy = {
     mesh:      group,
     material,
@@ -124,6 +118,8 @@ export function spawnEnemy(type, position, levelConfig) {
     speed:     def.baseSpeed * levelConfig.speedMultiplier,
     baseColor: new THREE.Color(def.color),
     scoreValue: def.scoreValue,
+    hitboxRadius: def.hitboxRadius,
+    alertTimer: 0,
     statusEffects: {
       fire:   { stacks: 0, remaining: 0, tickTimer: 0 },
       shock:  { stacks: 0, remaining: 0, tickTimer: 0 },
@@ -259,29 +255,32 @@ export function destroyEnemy(index) {
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
 
-  // Spawn simple particle explosion (reduced count for performance)
-  const particleCount = 8;
+  // Sprite-based explosion for performance
+  const particleCount = 5;
   for (let i = 0; i < particleCount; i++) {
-    const size = 0.05 + Math.random() * 0.05;
-    const partMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(size, size, size),
-      new THREE.MeshBasicMaterial({
-        color: Math.random() > 0.5 ? 0xff00ff : 0x00ffff,
-        transparent: true,
-        opacity: 1,
-      }),
-    );
-    partMesh.position.copy(pos);
-    partMesh.userData.velocity = new THREE.Vector3(
-      (Math.random() - 0.5) * 6,
-      (Math.random() - 0.5) * 6,
-      (Math.random() - 0.5) * 6,
-    );
-    partMesh.userData.createdAt = performance.now();
-    partMesh.userData.lifetime  = 400 + Math.random() * 300;
+    const canvas = document.createElement('canvas');
+    canvas.width = 16;
+    canvas.height = 16;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = Math.random() > 0.5 ? '#ff00ff' : '#00ffff';
+    ctx.fillRect(0, 0, 16, 16);
 
-    sceneRef.add(partMesh);
-    explosionParts.push(partMesh);
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 1 });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.1, 0.1, 1);
+    sprite.position.copy(pos);
+
+    sprite.userData.velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5,
+    );
+    sprite.userData.createdAt = performance.now();
+    sprite.userData.lifetime  = 300 + Math.random() * 200;
+
+    sceneRef.add(sprite);
+    explosionParts.push(sprite);
   }
 
   // Remove enemy mesh from scene
@@ -314,15 +313,13 @@ export function updateExplosions(dt, now) {
 
     if (age > p.userData.lifetime) {
       sceneRef.remove(p);
-      p.geometry.dispose();
+      if (p.material.map) p.material.map.dispose();
       p.material.dispose();
       explosionParts.splice(i, 1);
     } else {
       p.position.addScaledVector(p.userData.velocity, dt);
-      p.userData.velocity.multiplyScalar(1 - 3 * dt); // drag
+      p.userData.velocity.multiplyScalar(1 - 3 * dt);
       p.material.opacity = 1 - age / p.userData.lifetime;
-      p.rotation.x += 4 * dt;
-      p.rotation.z += 4 * dt;
     }
   }
 }
@@ -352,10 +349,10 @@ export function getEnemies() {
 }
 
 /**
- * Get a random spawn position in a 160° cone in front of the player.
+ * Get a random spawn position in a 100° cone in front of the player.
  */
 export function getSpawnPosition(airSpawns) {
-  const angle    = (Math.random() - 0.5) * (160 * Math.PI / 180);
+  const angle    = (Math.random() - 0.5) * (100 * Math.PI / 180);
   const distance = 18 + Math.random() * 7;
 
   const x = Math.sin(angle) * distance;
@@ -367,4 +364,9 @@ export function getSpawnPosition(airSpawns) {
   }
 
   return new THREE.Vector3(x, y, z);
+}
+
+/** Get all fast enemies (for proximity alerts) */
+export function getFastEnemies() {
+  return activeEnemies.filter(e => e.type === 'fast');
 }

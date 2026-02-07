@@ -42,7 +42,7 @@ function makeTextTexture(text, opts = {}) {
   const canvas = document.createElement('canvas');
   const ctx    = canvas.getContext('2d');
   const fontSize = opts.fontSize || 64;
-  const font     = `bold ${fontSize}px "Courier New", monospace`;
+  const font     = `bold ${fontSize}px Arial, sans-serif`;
 
   // Measure text to size canvas
   ctx.font = font;
@@ -585,7 +585,7 @@ export function spawnDamageNumber(position, damage, color) {
   canvas.height = 64;
 
   const fontSize = Math.min(48, 28 + damage / 6);
-  ctx.font = `bold ${fontSize}px "Courier New", monospace`;
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
 
