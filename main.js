@@ -8,7 +8,7 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, addScore, getComboMultiplier, damagePlayer, addUpgrade } from './game.js';
 import { getRandomUpgrades, getWeaponStats } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, startLightningSound, stopLightningSound } from './audio.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, startLightningSound, stopLightningSound, playMusic, stopMusic } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
@@ -128,6 +128,9 @@ function init() {
 
   // Render loop
   renderer.setAnimationLoop(render);
+
+  // Start menu music
+  playMusic('menu');
 
   console.log('[init] SPACEOMICIDE ready — pull trigger at title screen to start');
 }
@@ -414,6 +417,9 @@ function startGame() {
 
   // Hide blaster displays during gameplay
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
+
+  // Start level music
+  playMusic('levels1to5');
 }
 
 function completeLevel() {
@@ -459,6 +465,11 @@ function selectUpgradeAndAdvance(upgrade, hand) {
 
     // Hide blaster displays during gameplay
     blasterDisplays.forEach(d => { if (d) d.visible = false; });
+
+    // Change music on level 6 (levels 6-10)
+    if (game.level === 6) {
+      playMusic('levels6to10');
+    }
   }
 }
 
@@ -468,6 +479,9 @@ function endGame(victory) {
   clearAllEnemies();
   hideHUD();
   gameOverCooldown = 2.0;  // 2 second cooldown before restart allowed
+
+  // Stop music
+  stopMusic();
 
   if (victory) {
     showVictory(game.score, camera.position);
