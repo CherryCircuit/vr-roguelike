@@ -110,18 +110,25 @@ function makeTextTexture(text, opts = {}) {
 
 function makeSprite(text, opts = {}) {
   const { texture, aspect } = makeTextTexture(text, opts);
-  const mat = new THREE.SpriteMaterial({
+
+  // Use PlaneGeometry instead of Sprite to prevent billboarding
+  const scale = opts.scale || 0.3;
+  const width = aspect * scale;
+  const height = scale;
+
+  const geometry = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
     opacity: opts.opacity ?? 1,
     depthTest: opts.depthTest ?? false,
     depthWrite: false,
+    side: THREE.DoubleSide,
   });
-  const sprite  = new THREE.Sprite(mat);
-  const scale   = opts.scale || 0.3;
-  sprite.scale.set(aspect * scale, scale, 1);
-  sprite.renderOrder = opts.renderOrder ?? 999;
-  return sprite;
+
+  const mesh = new THREE.Mesh(geometry, mat);
+  mesh.renderOrder = opts.renderOrder ?? 999;
+  return mesh;
 }
 
 // ── Pixel heart drawing ────────────────────────────────────
@@ -453,11 +460,11 @@ function createUpgradeCard(upgrade, position) {
 
   // Name text
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
-    fontSize: 52,
+    fontSize: 36,
     color: upgrade.color || '#00ffff',
     glow: true,
     glowColor: upgrade.color,
-    scale: 0.25,
+    scale: 0.22,
     depthTest: true,
   });
   nameSprite.position.set(0, 0.25, 0.01);
@@ -465,9 +472,9 @@ function createUpgradeCard(upgrade, position) {
 
   // Description text (with word wrapping)
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 32,
+    fontSize: 24,
     color: '#cccccc',
-    scale: 0.18,
+    scale: 0.16,
     depthTest: true,
     maxWidth: 400,  // Max width before wrapping
   });
@@ -636,29 +643,38 @@ export function spawnDamageNumber(position, damage, color) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
 
-  const mat    = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.9, depthTest: false, sizeAttenuation: false });
-  const sprite = new THREE.Sprite(mat);
-
-  sprite.position.copy(position);
-  sprite.position.x += (Math.random() - 0.5) * 0.3;
-  sprite.position.y += Math.random() * 0.2;
-  sprite.position.z += (Math.random() - 0.5) * 0.3;
-
-  // Large and readable regardless of distance
+  // Use PlaneGeometry instead of Sprite to prevent billboarding
   const scale = 0.06 + Math.min(damage / 100, 0.04);
-  sprite.scale.set(scale * 2, scale, 1);
-  sprite.renderOrder = 998;
+  const width = scale * 2;
+  const height = scale;
 
-  sprite.userData.velocity = new THREE.Vector3(
+  const geometry = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.9,
+    depthTest: false,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geometry, mat);
+  mesh.position.copy(position);
+  mesh.position.x += (Math.random() - 0.5) * 0.3;
+  mesh.position.y += Math.random() * 0.2;
+  mesh.position.z += (Math.random() - 0.5) * 0.3;
+
+  mesh.renderOrder = 998;
+
+  mesh.userData.velocity = new THREE.Vector3(
     (Math.random() - 0.5) * 0.5,
     0.8 + Math.random() * 0.5,
     (Math.random() - 0.5) * 0.5,
   );
-  sprite.userData.lifetime  = 1000;
-  sprite.userData.createdAt = performance.now();
+  mesh.userData.lifetime  = 500;  // Reduced from 1000ms for performance
+  mesh.userData.createdAt = performance.now();
 
-  sceneRef.add(sprite);
-  damageNumbers.push(sprite);
+  sceneRef.add(mesh);
+  damageNumbers.push(mesh);
 
   // Cap total to prevent perf issues
   while (damageNumbers.length > 20) {
@@ -682,7 +698,7 @@ export function updateDamageNumbers(dt, now) {
     } else {
       s.position.addScaledVector(s.userData.velocity, dt);
       s.userData.velocity.y -= dt * 1.5;  // gravity
-      s.material.opacity = 0.7 * (1 - age / s.userData.lifetime);
+      // No fade - keep full opacity for performance
     }
   }
 }

@@ -264,18 +264,18 @@ let currentMusic = null;
 let musicVolume = 0.3;
 
 const musicTracks = {
-  menu: ['music/00_Main_Menu.mp3'],
+  menu: ['mnt/project/music/00_Main_Menu.mp3'],
   levels1to5: [
-    'music/0101_Levels_1-4.mp3',
-    'music/0102_Levels_1-4.mp3',
-    'music/0103_Levels_1-4.mp3',
-    'music/0104_Levels_1-4.mp3'
+    'mnt/project/music/0101_Levels_1-4.mp3',
+    'mnt/project/music/0102_Levels_1-4.mp3',
+    'mnt/project/music/0103_Levels_1-4.mp3',
+    'mnt/project/music/0104_Levels_1-4.mp3'
   ],
   levels6to10: [
-    'music/0201_Levels_6-9.mp3',
-    'music/0202_Levels_6-9.mp3',
-    'music/0203_Levels_6-9.mp3',
-    'music/0204_Levels_6-9.mp3'
+    'mnt/project/music/0201_Levels_6-9.mp3',
+    'mnt/project/music/0202_Levels_6-9.mp3',
+    'mnt/project/music/0203_Levels_6-9.mp3',
+    'mnt/project/music/0204_Levels_6-9.mp3'
   ]
 };
 
