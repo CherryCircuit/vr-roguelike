@@ -47,6 +47,9 @@ const weaponCooldowns = [0, 0];
 const lightningBeams = [null, null];
 const lightningTimers = [0, 0];
 
+// Holographic blaster displays (per controller)
+const blasterDisplays = [null, null];
+
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
 let pendingUpgrades = [];
@@ -267,7 +270,104 @@ function createControllerVisual(index) {
   const aimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -10)]);
   group.add(new THREE.Line(aimGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 })));
 
+  // Create holographic display (initially hidden)
+  const display = createBlasterDisplay(index);
+  display.visible = false;
+  display.name = 'blasterDisplay';
+  group.add(display);
+  blasterDisplays[index] = display;
+
   return group;
+}
+
+function createBlasterDisplay(controllerIndex) {
+  const group = new THREE.Group();
+  const hand = controllerIndex === 0 ? 'left' : 'right';
+
+  // Background panel with cyan glow
+  const panelGeo = new THREE.PlaneGeometry(0.2, 0.25);
+  const panelMat = new THREE.MeshBasicMaterial({
+    color: 0x003344,
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.DoubleSide
+  });
+  const panel = new THREE.Mesh(panelGeo, panelMat);
+  group.add(panel);
+
+  // Cyan scan lines for hologram effect
+  for (let i = 0; i < 10; i++) {
+    const lineGeo = new THREE.PlaneGeometry(0.2, 0.002);
+    const lineMat = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.3
+    });
+    const line = new THREE.Mesh(lineGeo, lineMat);
+    line.position.y = -0.1 + (i * 0.025);
+    line.position.z = 0.001;
+    group.add(line);
+  }
+
+  // Border
+  const borderGeo = new THREE.EdgesGeometry(panelGeo);
+  const borderMat = new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 2 });
+  const border = new THREE.LineSegments(borderGeo, borderMat);
+  border.position.z = 0.001;
+  group.add(border);
+
+  // Position above controller
+  group.position.set(0, 0.15, -0.05);
+  group.rotation.x = -Math.PI / 4;  // Tilt toward user
+
+  // Create text sprites (will be updated later)
+  group.userData.hand = hand;
+  group.userData.needsUpdate = true;
+
+  return group;
+}
+
+function updateBlasterDisplay(display, controllerIndex) {
+  if (!display || !display.visible) return;
+
+  const hand = display.userData.hand;
+  const stats = game.handStats[hand];
+  const upgrades = game.upgrades[hand];
+
+  // Remove old text
+  const oldText = display.children.filter(c => c.userData.isText);
+  oldText.forEach(t => display.remove(t));
+
+  // Create new text
+  const makeText = (text, yPos, size = 20) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 256;
+    canvas.height = 64;
+
+    ctx.font = `bold ${size}px Arial`;
+    ctx.fillStyle = '#00ffff';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, 128, 32);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.15, 0.04, 1);
+    sprite.position.set(0, yPos, 0.002);
+    sprite.userData.isText = true;
+    return sprite;
+  };
+
+  display.add(makeText(`${hand.toUpperCase()} BLASTER`, 0.1));
+  display.add(makeText(`KILLS: ${stats.kills}`, 0.04, 16));
+  display.add(makeText(`DMG: ${Math.round(stats.totalDamage)}`, -0.02, 16));
+
+  // Show upgrade count
+  const upgradeCount = Object.values(upgrades).reduce((sum, count) => sum + count, 0);
+  display.add(makeText(`UPGRADES: ${upgradeCount}`, -0.08, 16));
+
+  display.userData.needsUpdate = false;
 }
 
 // ============================================================
@@ -311,6 +411,9 @@ function startGame() {
   game.level = 1;
   game._levelConfig = getLevelConfig();
   showHUD();
+
+  // Hide blaster displays during gameplay
+  blasterDisplays.forEach(d => { if (d) d.visible = false; });
 }
 
 function completeLevel() {
@@ -332,6 +435,9 @@ function showUpgradeScreen() {
   pendingUpgrades = getRandomUpgrades(3);
   showUpgradeCards(pendingUpgrades, camera.position, upgradeHand);
   upgradeSelectionCooldown = 1.5; // prevent instant selection
+
+  // Mark blaster displays for update
+  blasterDisplays.forEach(d => { if (d) d.userData.needsUpdate = true; });
 }
 
 function selectUpgradeAndAdvance(upgrade, hand) {
@@ -350,6 +456,9 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     game.state = State.PLAYING;
     game._levelConfig = getLevelConfig();
     showHUD();
+
+    // Hide blaster displays during gameplay
+    blasterDisplays.forEach(d => { if (d) d.visible = false; });
   }
 }
 
@@ -953,6 +1062,16 @@ function render(timestamp) {
   else if (st === State.UPGRADE_SELECT) {
     upgradeSelectionCooldown = Math.max(0, upgradeSelectionCooldown - dt);
     updateUpgradeCards(now, upgradeSelectionCooldown);
+
+    // Show and update blaster displays
+    blasterDisplays.forEach((display, i) => {
+      if (display) {
+        display.visible = true;
+        if (display.userData.needsUpdate) {
+          updateBlasterDisplay(display, i);
+        }
+      }
+    });
   }
 
   // ── Game over / Victory ──
