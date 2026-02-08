@@ -380,11 +380,11 @@ export function showLevelComplete(level, playerPos) {
   // Clear old
   while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
 
-  const s1 = makeSprite('LEVEL COMPLETE!', { fontSize: 80, color: '#00ffff', glow: true, glowSize: 20, scale: 1.0 });
+  const s1 = makeSprite('LEVEL COMPLETE!', { fontSize: 80, color: '#00ffff', glow: true, glowSize: 20, scale: 1.5 });
   s1.position.set(0, 0.9, 0);
   levelTextGroup.add(s1);
 
-  const s2 = makeSprite(`LEVEL ${level + 1}`, { fontSize: 60, color: '#ff00ff', glow: true, scale: 0.7 });
+  const s2 = makeSprite(`LEVEL ${level + 1}`, { fontSize: 60, color: '#ff00ff', glow: true, scale: 1.0 });
   s2.position.set(0, 0.2, 0);
   levelTextGroup.add(s2);
 
@@ -411,12 +411,12 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
 
   // "Choose an upgrade for [HAND]" header
   const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
-  const header = makeSprite(`CHOOSE UPGRADE: ${handName}`, { fontSize: 56, color: '#ffffff', glow: true, scale: 1.2 });
+  const header = makeSprite(`CHOOSE UPGRADE: ${handName}`, { fontSize: 56, color: '#ffffff', glow: true, scale: 1.5 });
   header.position.set(0, 1.4, 0);
   upgradeGroup.add(header);
 
   // Cooldown text
-  const cooldownSprite = makeSprite('WAIT...', { fontSize: 40, color: '#ffff00', scale: 0.8 });
+  const cooldownSprite = makeSprite('WAIT...', { fontSize: 40, color: '#ffff00', scale: 1.0 });
   cooldownSprite.position.set(0, 0.8, 0);
   cooldownSprite.name = 'cooldown';
   upgradeGroup.add(cooldownSprite);
@@ -556,11 +556,11 @@ export function showGameOver(score, playerPos) {
   s1.position.set(0, 1.2, 0);
   gameOverGroup.add(s1);
 
-  const s2 = makeSprite(`SCORE: ${score}`, { fontSize: 60, color: '#ffff00', glow: true, scale: 0.7 });
+  const s2 = makeSprite(`SCORE: ${score}`, { fontSize: 60, color: '#ffff00', glow: true, scale: 1.0 });
   s2.position.set(0, 0.4, 0);
   gameOverGroup.add(s2);
 
-  const s3 = makeSprite('PRESS TRIGGER TO RESTART', { fontSize: 44, color: '#ffffff', scale: 0.5 });
+  const s3 = makeSprite('PRESS TRIGGER TO RESTART', { fontSize: 44, color: '#ffffff', scale: 0.8 });
   s3.position.set(0, -0.3, 0);
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
@@ -578,11 +578,11 @@ export function showVictory(score, playerPos) {
   s1.position.set(0, 1.2, 0);
   gameOverGroup.add(s1);
 
-  const s2 = makeSprite(`FINAL SCORE: ${score}`, { fontSize: 60, color: '#00ffff', glow: true, scale: 0.7 });
+  const s2 = makeSprite(`FINAL SCORE: ${score}`, { fontSize: 60, color: '#00ffff', glow: true, scale: 1.0 });
   s2.position.set(0, 0.4, 0);
   gameOverGroup.add(s2);
 
-  const s3 = makeSprite('PRESS TRIGGER TO RETURN', { fontSize: 44, color: '#ffffff', scale: 0.5 });
+  const s3 = makeSprite('PRESS TRIGGER TO RETURN', { fontSize: 44, color: '#ffffff', scale: 0.8 });
   s3.position.set(0, -0.3, 0);
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);

@@ -52,16 +52,25 @@ export function playHitSound() {
 }
 
 // ── Enemy death explosion ──────────────────────────────────
+// Pre-create noise buffer to avoid GC pauses
+let explosionBuffer = null;
+
+function getExplosionBuffer() {
+  if (!explosionBuffer) {
+    const ctx = getAudioContext();
+    explosionBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
+    const data = explosionBuffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+  }
+  return explosionBuffer;
+}
+
 export function playExplosionSound() {
   const ctx = getAudioContext();
   const noise = ctx.createBufferSource();
-  const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-
-  for (let i = 0; i < data.length; i++) {
-    data[i] = Math.random() * 2 - 1;
-  }
-  noise.buffer = buffer;
+  noise.buffer = getExplosionBuffer();
 
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
