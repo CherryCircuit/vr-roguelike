@@ -22,6 +22,7 @@ let killCountSprite  = null;
 let levelSprite      = null;
 let scoreSprite      = null;
 let comboSprite      = null;
+let fpsSprite        = null;
 
 // Damage numbers
 const damageNumbers  = [];
@@ -230,6 +231,12 @@ export function initHUD(camera, scene) {
   hitFlash.renderOrder = 1000;
   hitFlash.visible = false;
   camera.add(hitFlash);
+
+  // ── FPS Counter (top right, attached to camera) ──
+  fpsSprite = makeSprite('FPS: 0', { fontSize: 32, color: '#00ff00', shadow: true, scale: 0.15 });
+  fpsSprite.position.set(0.4, 0.25, -0.5);  // Top right of view
+  fpsSprite.renderOrder = 1001;
+  camera.add(fpsSprite);
 }
 
 // ── Title Screen ───────────────────────────────────────────
@@ -346,12 +353,13 @@ function updateSpriteText(sprite, text, opts = {}) {
 export function updateHUD(gameState) {
   if (!hudGroup.visible) return;
 
-  // Hearts
+  // Hearts - proper aspect ratio with correct scale
   const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth);
   if (heartsSprite.material.map) heartsSprite.material.map.dispose();
   heartsSprite.material.map = ht;
   heartsSprite.material.needsUpdate = true;
-  heartsSprite.scale.set(ha * 0.05, 0.05, 1);
+  // Use 0.24 height (matching initial 3x scale) with proper aspect ratio
+  heartsSprite.scale.set(ha * 0.24, 0.24, 1);
 
   // Kill counter
   const cfg = gameState._levelConfig;
@@ -410,14 +418,14 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   // Fixed world position in front of spawn
   upgradeGroup.position.set(0, 1.6, -4);
 
-  // "Choose an upgrade for [HAND]" header
+  // "Choose an upgrade for [HAND]" header - reduced size significantly
   const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
-  const header = makeSprite(`CHOOSE UPGRADE: ${handName}`, { fontSize: 56, color: '#ffffff', glow: true, scale: 0.7 });
+  const header = makeSprite(`CHOOSE UPGRADE: ${handName}`, { fontSize: 48, color: '#ffffff', glow: true, scale: 0.4 });
   header.position.set(0, 1.4, 0);
   upgradeGroup.add(header);
 
   // Cooldown text
-  const cooldownSprite = makeSprite('WAIT...', { fontSize: 40, color: '#ffff00', scale: 0.4 });
+  const cooldownSprite = makeSprite('WAIT...', { fontSize: 36, color: '#ffff00', scale: 0.3 });
   cooldownSprite.position.set(0, 0.8, 0);
   cooldownSprite.name = 'cooldown';
   upgradeGroup.add(cooldownSprite);
@@ -459,25 +467,25 @@ function createUpgradeCard(upgrade, position) {
   const borderMat = new THREE.LineBasicMaterial({ color: upgrade.color || '#00ffff' });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
-  // Name text
+  // Name text - smaller to prevent overlap
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
-    fontSize: 36,
+    fontSize: 28,
     color: upgrade.color || '#00ffff',
     glow: true,
     glowColor: upgrade.color,
-    scale: 0.5,
+    scale: 0.3,
     depthTest: true,
   });
   nameSprite.position.set(0, 0.35, 0.01);
   group.add(nameSprite);
 
-  // Description text (with word wrapping)
+  // Description text - much smaller and tighter wrapping
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 24,
+    fontSize: 18,
     color: '#cccccc',
-    scale: 0.4,
+    scale: 0.25,
     depthTest: true,
-    maxWidth: 200,  // Reduced from 400 to fit 0.9 wide card
+    maxWidth: 150,  // Tighter wrapping to prevent overlap
   });
   descSprite.position.set(0, -0.05, 0.01);
   group.add(descSprite);
@@ -702,6 +710,37 @@ export function updateDamageNumbers(dt, now) {
       s.userData.velocity.y -= dt * 1.5;  // gravity
       // No fade - keep full opacity for performance
     }
+  }
+}
+
+// ── FPS Counter ────────────────────────────────────────────
+let fpsFrames = [];
+let lastFpsUpdate = 0;
+
+export function updateFPS(now) {
+  if (!fpsSprite) return;
+
+  // Track frame times
+  fpsFrames.push(now);
+
+  // Keep only last second of frames
+  while (fpsFrames.length > 0 && fpsFrames[0] < now - 1000) {
+    fpsFrames.shift();
+  }
+
+  // Update display every 250ms
+  if (now - lastFpsUpdate > 250) {
+    const fps = Math.round(fpsFrames.length);
+    const { texture, aspect } = makeTextTexture(`FPS: ${fps}`, {
+      fontSize: 32,
+      color: fps < 30 ? '#ff0000' : fps < 60 ? '#ffff00' : '#00ff00',
+      shadow: true
+    });
+    if (fpsSprite.material.map) fpsSprite.material.map.dispose();
+    fpsSprite.material.map = texture;
+    fpsSprite.material.needsUpdate = true;
+    fpsSprite.scale.set(aspect * 0.15, 0.15, 1);
+    lastFpsUpdate = now;
   }
 }
 
