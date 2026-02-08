@@ -151,9 +151,11 @@ function drawHeart(ctx, x, y, pixSize, state) {
     row.forEach((px_on, px) => {
       if (!px_on) return;
       if (state === 'empty') {
-        ctx.fillStyle = '#331133';
+        // Don't draw empty hearts at all (transparent)
+        return;
       } else if (state === 'half' && px >= 4) {
-        ctx.fillStyle = '#331133';
+        // Don't draw right side of half hearts (gone, not faded)
+        return;
       } else {
         ctx.fillStyle = '#ff0044';
       }
@@ -276,7 +278,7 @@ function createTitleScreen() {
   titleGroup.add(titleBlinkSprite);
 
   // Version number
-  const versionSprite = makeSprite('v0.9.0', {
+  const versionSprite = makeSprite('v0.10.0', {
     fontSize: 32,
     color: '#888888',
     scale: 0.25,
@@ -375,27 +377,27 @@ export function updateHUD(gameState) {
   if (heartsSprite.material.map) heartsSprite.material.map.dispose();
   heartsSprite.material.map = ht;
   heartsSprite.material.needsUpdate = true;
-  // Update geometry to match aspect ratio (height 0.24, width based on aspect)
+  // Update geometry to match aspect ratio (200% larger: height 0.48)
   heartsSprite.geometry.dispose();
-  heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.24, 0.24);
+  heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
 
-  // Kill counter - larger for better visibility
+  // Kill counter - 200% larger
   const cfg = gameState._levelConfig;
   if (cfg) {
-    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.15 });
+    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.30 });
   }
 
-  // Level - larger for better visibility
-  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.15 });
+  // Level - 200% larger
+  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.30 });
 
-  // Score - larger for better visibility
-  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.13 });
+  // Score - 200% larger
+  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.26 });
 
-  // Combo - larger for better visibility
+  // Combo - 200% larger
   const combo = gameState._combo || 1;
   if (combo > 1) {
     comboSprite.visible = true;
-    updateSpriteText(comboSprite, `${combo}x`, { color: '#ff8800', scale: 0.11 });
+    updateSpriteText(comboSprite, `${combo}x`, { color: '#ff8800', scale: 0.22 });
   } else {
     comboSprite.visible = false;
   }
@@ -532,8 +534,8 @@ function createSkipCard(position) {
   group.position.copy(position);
   group.userData.upgradeId = 'SKIP';  // Special ID for skip
 
-  // Card background
-  const cardGeo = new THREE.PlaneGeometry(1.3, 1.5);
+  // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades)
+  const cardGeo = new THREE.PlaneGeometry(0.7, 0.9);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x220044,
     transparent: true,
@@ -552,33 +554,33 @@ function createSkipCard(position) {
 
   // "SKIP" text
   const nameSprite = makeSprite('SKIP', {
-    fontSize: 36,
+    fontSize: 28,
     color: '#00ff88',
     glow: true,
     glowColor: '#00ff88',
-    scale: 0.3,
+    scale: 0.2,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.4, 0.01);
+  nameSprite.position.set(0, 0.25, 0.01);
   group.add(nameSprite);
 
   // Description
-  const descSprite = makeSprite('Restore full health', {
-    fontSize: 20,
+  const descSprite = makeSprite('Full health', {
+    fontSize: 18,
     color: '#88ffaa',
-    scale: 0.15,
+    scale: 0.12,
     depthTest: true,
-    maxWidth: 180,
+    maxWidth: 120,
   });
-  descSprite.position.set(0, -0.05, 0.01);
+  descSprite.position.set(0, -0.02, 0.01);
   group.add(descSprite);
 
   // Heart icon
   const iconMesh = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.12, 0),
+    new THREE.OctahedronGeometry(0.08, 0),
     new THREE.MeshBasicMaterial({ color: '#ff0044', wireframe: true }),
   );
-  iconMesh.position.set(0, -0.35, 0.05);
+  iconMesh.position.set(0, -0.25, 0.05);
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
 

@@ -11,15 +11,16 @@ function getAudioContext() {
   return audioCtx;
 }
 
-// ── Shoot sound (laser pew) ────────────────────────────────
+// ── Shoot sound (laser pew) — random pitch variation ───────
 export function playShoothSound() {
   const ctx = getAudioContext();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
+  const pitch = 0.85 + Math.random() * 0.3;  // ±15% pitch variation
 
   osc.type = 'square';
-  osc.frequency.setValueAtTime(800, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.1);
+  osc.frequency.setValueAtTime(800 * pitch, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(200 * pitch, ctx.currentTime + 0.1);
 
   gain.gain.setValueAtTime(0.15, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
@@ -31,15 +32,16 @@ export function playShoothSound() {
   osc.stop(ctx.currentTime + 0.1);
 }
 
-// ── Enemy hit sound ────────────────────────────────────────
+// ── Enemy hit sound — random pitch variation ───────────────
 export function playHitSound() {
   const ctx = getAudioContext();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
+  const pitch = 0.8 + Math.random() * 0.4;  // ±20% pitch variation
 
   osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(400, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.08);
+  osc.frequency.setValueAtTime(400 * pitch, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(100 * pitch, ctx.currentTime + 0.08);
 
   gain.gain.setValueAtTime(0.12, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
@@ -71,10 +73,13 @@ export function playExplosionSound() {
   const ctx = getAudioContext();
   const noise = ctx.createBufferSource();
   noise.buffer = getExplosionBuffer();
+  // Random playback rate for pitch variation (±25%)
+  noise.playbackRate.value = 0.75 + Math.random() * 0.5;
 
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(2000, ctx.currentTime);
+  const filterPitch = 0.7 + Math.random() * 0.6;  // Vary filter cutoff
+  filter.frequency.setValueAtTime(2000 * filterPitch, ctx.currentTime);
   filter.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3);
 
   const gain = ctx.createGain();

@@ -35,8 +35,10 @@ function buildLevel(n) {
     isBoss: n % 5 === 0,
     killTarget,
     hpMultiplier:    1 + Math.pow(n - 1, 1.5) * 0.15,
-    speedMultiplier: 1 + (n - 1) * 0.09,
-    spawnInterval:   Math.max(0.4, 2.0 - n * 0.08),
+    // OLD: speedMultiplier: 1 + (n - 1) * 0.09,
+    speedMultiplier: (1 + (n - 1) * 0.09) * 1.75,  // +75% enemy speed
+    // OLD: spawnInterval: Math.max(0.4, 2.0 - n * 0.08),
+    spawnInterval:   Math.max(0.25, (2.0 - n * 0.08) * 0.57),  // +75% spawn rate
     enemyTypes:      getEnemyTypes(n),
     airSpawns:       n >= 6,
   };

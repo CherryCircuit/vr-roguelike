@@ -41,7 +41,8 @@ export function getWeaponStats(upgrades) {
 
   // Base values
   let damage        = 15 + (u.scope || 0) * 10;
-  let fireInterval  = 300 / (1 + (u.barrel || 0) * 0.15);   // ms
+  // OLD: let fireInterval = 300 / (1 + (u.barrel || 0) * 0.15);
+  let fireInterval  = (300 / (1 + (u.barrel || 0) * 0.15)) * 0.57;  // +75% fire rate
   let projectileCount = 1 + (u.double_shot || 0);
   let critChance    = Math.min((u.critical || 0) * 0.15, 0.9);
   let piercing      = (u.piercing || 0) > 0;
