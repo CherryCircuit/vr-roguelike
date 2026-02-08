@@ -296,6 +296,8 @@ let currentMusic = null;
 let musicVolume = 0.3;
 let currentPlaylist = [];
 let currentTrackIndex = 0;
+let musicAnalyser = null;
+let musicSource = null;
 
 const musicTracks = {
   menu: ['mnt/project/music/00_Main_Menu.mp3'],
@@ -329,9 +331,23 @@ function playNextTrack() {
   const track = currentPlaylist[currentTrackIndex];
   console.log(`[music] Playing track ${currentTrackIndex + 1}/${currentPlaylist.length}: ${track}`);
 
+  const ctx = getAudioContext();
+
+  // Create analyser if it doesn't exist
+  if (!musicAnalyser) {
+    musicAnalyser = ctx.createAnalyser();
+    musicAnalyser.fftSize = 64;  // Small for performance (32 frequency bins)
+    musicAnalyser.smoothingTimeConstant = 0.8;
+    musicAnalyser.connect(ctx.destination);
+  }
+
   currentMusic = new Audio(track);
   currentMusic.volume = musicVolume;
   currentMusic.loop = false;  // Don't loop individual tracks
+
+  // Connect audio through analyser for visualization
+  musicSource = ctx.createMediaElementSource(currentMusic);
+  musicSource.connect(musicAnalyser);
 
   // Auto-advance to next track when current ends
   currentMusic.addEventListener('ended', () => {
@@ -350,6 +366,14 @@ function playNextTrack() {
   currentMusic.play().catch(err => {
     console.warn('[music] Autoplay prevented, will start on first interaction');
   });
+}
+
+// Get audio frequency data for visualization
+export function getMusicFrequencyData() {
+  if (!musicAnalyser) return null;
+  const dataArray = new Uint8Array(musicAnalyser.frequencyBinCount);
+  musicAnalyser.getByteFrequencyData(dataArray);
+  return dataArray;
 }
 
 export function playMusic(category) {

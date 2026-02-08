@@ -8,7 +8,7 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, addScore, getComboMultiplier, damagePlayer, addUpgrade } from './game.js';
 import { getRandomUpgrades, getWeaponStats } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, startLightningSound, stopLightningSound, playMusic, stopMusic } from './audio.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, startLightningSound, stopLightningSound, playMusic, stopMusic, getMusicFrequencyData } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
@@ -49,6 +49,10 @@ const lightningTimers = [0, 0];
 
 // Holographic blaster displays (per controller)
 const blasterDisplays = [null, null];
+
+// Mountain visualizer
+const mountainLines = [];
+const mountainBasePeaks = [];
 
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
@@ -192,10 +196,13 @@ function createSun() {
 
 function createMountains() {
   const layers = [
-    { z: -85, color: 0x0d001a, peaks: generatePeaks(12, 6, 20) },
-    { z: -75, color: MTN_DARK,  peaks: generatePeaks(10, 4, 14) },
+    { z: -85, color: 0x0d001a, peaks: generatePeaks(12, 6, 20), layerIndex: 0 },
+    { z: -75, color: MTN_DARK,  peaks: generatePeaks(10, 4, 14), layerIndex: 1 },
   ];
-  layers.forEach(({ z, color, peaks }) => {
+  layers.forEach(({ z, color, peaks, layerIndex }) => {
+    // Store base peaks for animation
+    mountainBasePeaks[layerIndex] = peaks.map(([x, y]) => ({ x, y, baseY: y }));
+
     const shape = new THREE.Shape();
     shape.moveTo(-100, 0);
     peaks.forEach(([x, y]) => shape.lineTo(x, y));
@@ -209,8 +216,12 @@ function createMountains() {
     const edgePoints = [new THREE.Vector3(-100, 0, z)];
     peaks.forEach(([x, y]) => edgePoints.push(new THREE.Vector3(x, y, z)));
     edgePoints.push(new THREE.Vector3(100, 0, z));
-    const edgeLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(edgePoints), new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.5 }));
+    const geometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
+    const edgeLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.5 }));
     scene.add(edgeLine);
+
+    // Store for animation
+    mountainLines[layerIndex] = { line: edgeLine, geometry, z, fillMesh, shape };
   });
 }
 
@@ -348,6 +359,9 @@ function updateBlasterDisplay(display, controllerIndex) {
     const ctx = canvas.getContext('2d');
     canvas.width = 256;
     canvas.height = 64;
+
+    // Clear canvas to transparent
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     ctx.font = `bold ${size}px Arial`;
     ctx.fillStyle = '#00ffff';
@@ -1036,13 +1050,14 @@ function render(timestamp) {
         if (dist < 2.0) {  // Enemy within 2m triggers slow-mo (increased from 0.5m)
           slowMoActive = true;
           slowMoDuration = 2.5;  // 2.5 seconds of slow-mo (increased from 1.5s)
-          if (!slowMoSoundPlayed) {
-            playSlowMoSound();
-            slowMoSoundPlayed = true;
-          }
           console.log('[bullet-time] ACTIVATED!');
           break;
         }
+      }
+      // Play sound once per activation (outside loop)
+      if (slowMoActive && !slowMoSoundPlayed) {
+        playSlowMoSound();
+        slowMoSoundPlayed = true;
       }
     }
 
@@ -1149,7 +1164,45 @@ function render(timestamp) {
   updateDamageNumbers(dt, now);
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
 
+  // Music visualizer (throttled to every 3rd frame for performance)
+  if (now % 3 < 1) {
+    updateMountainVisualizer();
+  }
+
   renderer.render(scene, camera);
+}
+
+// ============================================================
+//  MUSIC VISUALIZER
+// ============================================================
+function updateMountainVisualizer() {
+  const freqData = getMusicFrequencyData();
+  if (!freqData || mountainLines.length === 0) return;
+
+  mountainLines.forEach((layer, layerIndex) => {
+    const peaks = mountainBasePeaks[layerIndex];
+    if (!peaks) return;
+
+    const points = [new THREE.Vector3(-100, 0, layer.z)];
+
+    peaks.forEach((peak, i) => {
+      // Map frequency bins to peaks (spread across spectrum)
+      const binIndex = Math.floor((i / peaks.length) * freqData.length);
+      const amplitude = freqData[binIndex] / 255;  // Normalize 0-1
+
+      // Subtle height modulation (max 2 units up/down)
+      const heightMod = amplitude * 2 * (layerIndex === 0 ? 0.8 : 1.2);
+      const newY = peak.baseY + heightMod;
+
+      points.push(new THREE.Vector3(peak.x, newY, layer.z));
+    });
+
+    points.push(new THREE.Vector3(100, 0, layer.z));
+
+    // Update line geometry
+    layer.geometry.setFromPoints(points);
+    layer.geometry.attributes.position.needsUpdate = true;
+  });
 }
 
 
