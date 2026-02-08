@@ -571,7 +571,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
   playShoothSound();
 }
 
-function handleHit(enemyIndex, enemy, stats, hitPoint) {
+function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex) {
   // Calculate damage
   let damage = stats.damage;
 
@@ -588,6 +588,12 @@ function handleHit(enemyIndex, enemy, stats, hitPoint) {
   // Apply damage
   const result = hitEnemy(enemyIndex, damage);
 
+  // Track damage for hand stats
+  if (controllerIndex !== undefined) {
+    const hand = controllerIndex === 0 ? 'left' : 'right';
+    game.handStats[hand].totalDamage += damage;
+  }
+
   // Spawn damage number
   spawnDamageNumber(hitPoint, damage, '#ffffff');
   playHitSound();
@@ -599,7 +605,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint) {
 
   // AOE explosion
   if (stats.aoeRadius > 0) {
-    handleAOE(hitPoint, stats.aoeRadius, stats.damage * 0.6);
+    handleAOE(hitPoint, stats.aoeRadius, stats.damage * 0.6, controllerIndex);
   }
 
   // If killed
@@ -611,6 +617,12 @@ function handleHit(enemyIndex, enemy, stats, hitPoint) {
       game.totalKills++;
       game.killsWithoutHit++;
       addScore(destroyData.scoreValue);
+
+      // Track kills for hand stats
+      if (controllerIndex !== undefined) {
+        const hand = controllerIndex === 0 ? 'left' : 'right';
+        game.handStats[hand].kills++;
+      }
 
       // Vampiric healing
       if (stats.vampiricInterval > 0 && game.totalKills % stats.vampiricInterval === 0) {
@@ -627,7 +639,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint) {
   }
 }
 
-function handleAOE(center, radius, damage) {
+function handleAOE(center, radius, damage, controllerIndex) {
   const enemies = getEnemies();
   enemies.forEach((e, i) => {
     const dist = e.mesh.position.distanceTo(center);
@@ -635,11 +647,17 @@ function handleAOE(center, radius, damage) {
       const aoeDamage = damage * (1 - dist / radius);
       hitEnemy(i, aoeDamage);
       spawnDamageNumber(e.mesh.position, aoeDamage, '#ff8800');
+
+      // Track AOE damage
+      if (controllerIndex !== undefined) {
+        const hand = controllerIndex === 0 ? 'left' : 'right';
+        game.handStats[hand].totalDamage += aoeDamage;
+      }
     }
   });
 }
 
-function handleRicochet(fromPoint, stats, bounceCount) {
+function handleRicochet(fromPoint, stats, bounceCount, controllerIndex) {
   if (bounceCount >= stats.ricochetBounces) return;
 
   const enemies = getEnemies();
@@ -655,8 +673,8 @@ function handleRicochet(fromPoint, stats, bounceCount) {
   });
 
   if (closest) {
-    handleHit(closest.index, closest.enemy, { ...stats, damage: stats.damage * 0.5 }, closest.enemy.mesh.position);
-    handleRicochet(closest.enemy.mesh.position, stats, bounceCount + 1);
+    handleHit(closest.index, closest.enemy, { ...stats, damage: stats.damage * 0.5 }, closest.enemy.mesh.position, controllerIndex);
+    handleRicochet(closest.enemy.mesh.position, stats, bounceCount + 1, controllerIndex);
   }
 }
 
@@ -688,7 +706,12 @@ function updateProjectiles(dt) {
       const result = getEnemyByMesh(hits[0].object);
       if (result && !proj.userData.hitEnemies.has(result.index)) {
         proj.userData.hitEnemies.add(result.index);
-        handleHit(result.index, result.enemy, proj.userData.stats, hits[0].point);
+        handleHit(result.index, result.enemy, proj.userData.stats, hits[0].point, proj.userData.controllerIndex);
+
+        // Ricochet effect
+        if (proj.userData.stats.ricochetBounces > 0) {
+          handleRicochet(hits[0].point, proj.userData.stats, 0, proj.userData.controllerIndex);
+        }
 
         // Remove projectile if not piercing
         if (!proj.userData.stats.piercing) {

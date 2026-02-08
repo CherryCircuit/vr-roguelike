@@ -58,6 +58,12 @@ export const game = {
   stateTimer:   0,
   spawnTimer:   0,
   killsWithoutHit: 0,    // for combo tracking
+
+  // Per-hand statistics for holographic display
+  handStats:    {
+    left:  { kills: 0, totalDamage: 0 },
+    right: { kills: 0, totalDamage: 0 }
+  }
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -74,6 +80,10 @@ export function resetGame() {
     stateTimer:   0,
     spawnTimer:   0,
     killsWithoutHit: 0,
+    handStats:    {
+      left:  { kills: 0, totalDamage: 0 },
+      right: { kills: 0, totalDamage: 0 }
+    }
   });
 }
 
