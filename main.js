@@ -199,65 +199,102 @@ function createEnvironment() {
 }
 
 function createSun() {
-  // Sun core
-  const coreMat = new THREE.MeshBasicMaterial({ color: SUN_CORE, side: THREE.DoubleSide });
-  const core = new THREE.Mesh(new THREE.CircleGeometry(14, 32), coreMat);
-  core.position.set(0, 10, -90);
-  core.renderOrder = -10;
-  scene.add(core);
+  // Generate synthwave sun as a canvas texture with built-in cutout bands
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
 
-  // Outer glow
-  const glowMat = new THREE.MeshBasicMaterial({ color: SUN_GLOW, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
-  const glow = new THREE.Mesh(new THREE.CircleGeometry(20, 32), glowMat);
+  // Draw sun circle with gradient (warm yellow at top, deep orange/red at bottom)
+  const sunGrad = ctx.createLinearGradient(256, 0, 256, 512);
+  sunGrad.addColorStop(0, '#ffcc00');
+  sunGrad.addColorStop(0.4, '#ff8800');
+  sunGrad.addColorStop(0.7, '#ff4400');
+  sunGrad.addColorStop(1.0, '#ff2200');
+
+  ctx.beginPath();
+  ctx.arc(256, 256, 250, 0, Math.PI * 2);
+  ctx.fillStyle = sunGrad;
+  ctx.fill();
+
+  // Cut horizontal bands in the lower half — thick at bottom, thin toward center
+  ctx.globalCompositeOperation = 'destination-out';
+  const bandDefs = [
+    { y: 0.92, h: 0.08 },  // Bottom: thickest
+    { y: 0.82, h: 0.06 },
+    { y: 0.73, h: 0.048 },
+    { y: 0.65, h: 0.036 },
+    { y: 0.58, h: 0.026 },
+    { y: 0.53, h: 0.016 },
+    { y: 0.50, h: 0.008 },  // Center: thinnest
+  ];
+  for (const b of bandDefs) {
+    const cy = b.y * 512;
+    const ch = b.h * 512;
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, cy - ch / 2, 512, ch);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  const sunTexture = new THREE.CanvasTexture(canvas);
+  const sunMat = new THREE.MeshBasicMaterial({
+    map: sunTexture,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), sunMat);
+  sunMesh.position.set(0, 10, -90);
+  sunMesh.renderOrder = -10;
+  scene.add(sunMesh);
+
+  // Outer glow behind sun
+  const glowMat = new THREE.MeshBasicMaterial({ color: SUN_GLOW, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(22, 32), glowMat);
   glow.position.set(0, 10, -90.5);
   glow.renderOrder = -11;
   scene.add(glow);
 
-  // Synthwave-style horizontal cutout bands across lower half of sun
-  // Thick at bottom, progressively thinner toward middle — like classic retrowave suns
-  const cutoutMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-  const bands = [
-    { y: -1.0, h: 3.5 },   // Thickest band near bottom
-    { y: 3.0,  h: 2.8 },
-    { y: 6.0,  h: 2.2 },
-    { y: 8.5,  h: 1.6 },
-    { y: 10.5, h: 1.0 },
-    { y: 12.0, h: 0.6 },
-    { y: 13.0, h: 0.35 },
-    { y: 13.7, h: 0.15 },  // Thinnest band near middle
-  ];
-  for (const band of bands) {
-    const stripe = new THREE.Mesh(
-      new THREE.PlaneGeometry(30, band.h),
-      cutoutMat
-    );
-    stripe.position.set(0, band.y, -89.8);
-    stripe.renderOrder = -9;
-    scene.add(stripe);
-  }
+  // Atmosphere: vertical gradient cylinder around player
+  // Full opacity warm color at base, fading to transparent going up
+  createAtmosphere();
+}
 
-  // Atmosphere gradient: fades from horizon color upward, occluding stars
-  // Uses multiple stacked transparent planes for a gradient effect
-  const atmColors = [0xff2200, 0xff4400, 0xff6600, 0xff8800, 0xffaa44];
-  const atmCount = 5;
-  for (let i = 0; i < atmCount; i++) {
-    const t = i / (atmCount - 1);  // 0 = bottom, 1 = top
-    const yPos = t * 18;  // From horizon (0) to top of sun (~18)
-    const height = 5 - t * 2;  // Taller at bottom, shorter at top
-    const opacity = 0.35 * (1 - t);  // Strongest at bottom, fades out
-    const atmPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(200, height),
-      new THREE.MeshBasicMaterial({
-        color: atmColors[i],
-        transparent: true,
-        opacity,
-        side: THREE.DoubleSide,
-      })
-    );
-    atmPlane.position.set(0, yPos, -91);  // Behind sun
-    atmPlane.renderOrder = -12;
-    scene.add(atmPlane);
-  }
+function createAtmosphere() {
+  // Use a half-cylinder (dome bottom ring) with vertex colors for gradient
+  // Simpler: use a large ring of vertical planes around the player at distance
+  const segments = 32;
+  const radius = 92;  // Just behind mountains
+  const height = 25;
+
+  // Create a canvas for the gradient texture
+  const canvas = document.createElement('canvas');
+  canvas.width = 4;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 128, 0, 0);  // bottom to top
+  grad.addColorStop(0, 'rgba(255, 68, 0, 0.6)');   // Strong warm orange at base
+  grad.addColorStop(0.3, 'rgba(255, 100, 40, 0.3)');
+  grad.addColorStop(0.6, 'rgba(180, 60, 80, 0.1)');
+  grad.addColorStop(1.0, 'rgba(100, 20, 60, 0.0)');  // Fully transparent at top
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 4, 128);
+
+  const atmTexture = new THREE.CanvasTexture(canvas);
+  atmTexture.wrapS = THREE.RepeatWrapping;
+
+  // Create a cylinder geometry (open-ended, only the side)
+  const cylGeo = new THREE.CylinderGeometry(radius, radius, height, segments, 1, true);
+  const cylMat = new THREE.MeshBasicMaterial({
+    map: atmTexture,
+    transparent: true,
+    side: THREE.BackSide,  // Visible from inside
+    depthWrite: false,
+  });
+  const cylinder = new THREE.Mesh(cylGeo, cylMat);
+  cylinder.position.set(0, height / 2 - 1, 0);  // Base near ground
+  cylinder.renderOrder = -13;
+  scene.add(cylinder);
 }
 
 function createMountains() {
@@ -441,6 +478,7 @@ function updateBlasterDisplay(display, controllerIndex) {
     const material = new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
+      alphaTest: 0.05,
       side: THREE.DoubleSide,
       depthTest: true
     });
@@ -460,20 +498,20 @@ function updateBlasterDisplay(display, controllerIndex) {
   display.add(makeText(`UPGRADES: ${upgradeCount}`, -0.08, 16));
 
   display.userData.needsUpdate = false;
+}
 
-  // Animate scrolling scan lines upward
+/** Animate hologram scan lines (called every frame, separate from data updates) */
+function animateBlasterScanLines(display) {
+  if (!display || !display.visible) return;
   const scanLines = display.userData.scanLines;
-  if (scanLines) {
-    const time = performance.now() * 0.001;
-    for (let i = 0; i < scanLines.length; i++) {
-      const line = scanLines[i];
-      // Scroll upward, wrap around
-      let y = ((time * 0.04 + i * 0.035) % 0.28) - 0.14;
-      line.position.y = y;
-      // Fade near edges
-      const edgeDist = Math.min(Math.abs(y + 0.125), Math.abs(y - 0.125));
-      line.material.opacity = Math.min(0.15, edgeDist * 2);
-    }
+  if (!scanLines) return;
+  const time = performance.now() * 0.001;
+  for (let i = 0; i < scanLines.length; i++) {
+    const line = scanLines[i];
+    let y = ((time * 0.06 + i * 0.035) % 0.28) - 0.14;
+    line.position.y = y;
+    const edgeDist = Math.min(Math.abs(y + 0.125), Math.abs(y - 0.125));
+    line.material.opacity = Math.min(0.2, edgeDist * 3);
   }
 }
 
@@ -1229,6 +1267,7 @@ function render(timestamp) {
         if (display.userData.needsUpdate) {
           updateBlasterDisplay(display, i);
         }
+        animateBlasterScanLines(display);
       }
     });
   }

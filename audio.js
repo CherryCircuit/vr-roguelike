@@ -16,9 +16,10 @@ export function playShoothSound() {
   const ctx = getAudioContext();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  const pitch = 0.6 + Math.random() * 0.8;  // ±40% pitch variation
-
-  osc.type = 'square';
+  // Wide pitch variation + randomize waveform for max variety
+  const pitch = 0.4 + Math.random() * 1.2;
+  const waveforms = ['square', 'sawtooth', 'triangle'];
+  osc.type = waveforms[Math.floor(Math.random() * waveforms.length)];
   osc.frequency.setValueAtTime(800 * pitch, ctx.currentTime);
   osc.frequency.exponentialRampToValueAtTime(200 * pitch, ctx.currentTime + 0.1);
 
@@ -37,9 +38,9 @@ export function playHitSound() {
   const ctx = getAudioContext();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  const pitch = 0.5 + Math.random() * 1.0;  // ±50% pitch variation
-
-  osc.type = 'sawtooth';
+  const pitch = 0.3 + Math.random() * 1.4;  // Very wide pitch variation
+  const hitWaves = ['sawtooth', 'square', 'triangle'];
+  osc.type = hitWaves[Math.floor(Math.random() * hitWaves.length)];
   osc.frequency.setValueAtTime(400 * pitch, ctx.currentTime);
   osc.frequency.exponentialRampToValueAtTime(100 * pitch, ctx.currentTime + 0.08);
 
