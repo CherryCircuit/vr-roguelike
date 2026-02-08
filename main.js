@@ -476,7 +476,15 @@ function showUpgradeScreen() {
 
 function selectUpgradeAndAdvance(upgrade, hand) {
   console.log(`[game] Selected upgrade: ${upgrade.name} for ${hand} hand`);
-  addUpgrade(upgrade.id, hand);
+
+  // Handle SKIP option - restore full health instead of upgrade
+  if (upgrade.id === 'SKIP') {
+    game.health = game.maxHealth;
+    console.log('[game] Skipped upgrade, health restored to full');
+  } else {
+    addUpgrade(upgrade.id, hand);
+  }
+
   playUpgradeSound();
   hideUpgradeCards();
 

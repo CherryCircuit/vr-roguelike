@@ -82,6 +82,9 @@ function makeTextTexture(text, opts = {}) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
+  // Clear canvas with transparency (prevent black background)
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
   // Optional glow
   if (opts.glow) {
     ctx.shadowColor = opts.glowColor || opts.color || '#00ffff';
@@ -376,23 +379,23 @@ export function updateHUD(gameState) {
   heartsSprite.geometry.dispose();
   heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.24, 0.24);
 
-  // Kill counter - reduced scale to fix horizontal stretching
+  // Kill counter - larger for better visibility
   const cfg = gameState._levelConfig;
   if (cfg) {
-    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.06 });
+    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.15 });
   }
 
-  // Level - reduced scale to fix horizontal stretching
-  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.06 });
+  // Level - larger for better visibility
+  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.15 });
 
-  // Score - reduced scale to fix horizontal stretching
-  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.05 });
+  // Score - larger for better visibility
+  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.13 });
 
-  // Combo - reduced scale to fix horizontal stretching
+  // Combo - larger for better visibility
   const combo = gameState._combo || 1;
   if (combo > 1) {
     comboSprite.visible = true;
-    updateSpriteText(comboSprite, `${combo}x`, { color: '#ff8800', scale: 0.04 });
+    updateSpriteText(comboSprite, `${combo}x`, { color: '#ff8800', scale: 0.11 });
   } else {
     comboSprite.visible = false;
   }
@@ -446,11 +449,12 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   cooldownSprite.name = 'cooldown';
   upgradeGroup.add(cooldownSprite);
 
-  // Three cards in an arc
+  // Four cards in an arc (3 upgrades + 1 skip option)
   const positions = [
-    new THREE.Vector3(-1.5, 0, 0),
-    new THREE.Vector3(0,    0, 0),
-    new THREE.Vector3(1.5,  0, 0),
+    new THREE.Vector3(-2, 0, 0),
+    new THREE.Vector3(-0.7, 0, 0),
+    new THREE.Vector3(0.7, 0, 0),
+    new THREE.Vector3(2, 0, 0),
   ];
 
   upgrades.forEach((upg, i) => {
@@ -458,6 +462,11 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
     upgradeGroup.add(card);
     upgradeCards.push(card);
   });
+
+  // Add SKIP card as 4th option
+  const skipCard = createSkipCard(positions[3]);
+  upgradeGroup.add(skipCard);
+  upgradeCards.push(skipCard);
 }
 
 function createUpgradeCard(upgrade, position) {
@@ -518,6 +527,64 @@ function createUpgradeCard(upgrade, position) {
   return group;
 }
 
+function createSkipCard(position) {
+  const group = new THREE.Group();
+  group.position.copy(position);
+  group.userData.upgradeId = 'SKIP';  // Special ID for skip
+
+  // Card background
+  const cardGeo = new THREE.PlaneGeometry(1.3, 1.5);
+  const cardMat = new THREE.MeshBasicMaterial({
+    color: 0x220044,
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.DoubleSide,
+  });
+  const card = new THREE.Mesh(cardGeo, cardMat);
+  card.userData.isUpgradeCard = true;
+  card.userData.upgradeId = 'SKIP';
+  group.add(card);
+
+  // Border
+  const borderGeo = new THREE.EdgesGeometry(cardGeo);
+  const borderMat = new THREE.LineBasicMaterial({ color: '#00ff88' });
+  group.add(new THREE.LineSegments(borderGeo, borderMat));
+
+  // "SKIP" text
+  const nameSprite = makeSprite('SKIP', {
+    fontSize: 36,
+    color: '#00ff88',
+    glow: true,
+    glowColor: '#00ff88',
+    scale: 0.3,
+    depthTest: true,
+  });
+  nameSprite.position.set(0, 0.4, 0.01);
+  group.add(nameSprite);
+
+  // Description
+  const descSprite = makeSprite('Restore full health', {
+    fontSize: 20,
+    color: '#88ffaa',
+    scale: 0.15,
+    depthTest: true,
+    maxWidth: 180,
+  });
+  descSprite.position.set(0, -0.05, 0.01);
+  group.add(descSprite);
+
+  // Heart icon
+  const iconMesh = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.12, 0),
+    new THREE.MeshBasicMaterial({ color: '#ff0044', wireframe: true }),
+  );
+  iconMesh.position.set(0, -0.35, 0.05);
+  group.add(iconMesh);
+  group.userData.iconMesh = iconMesh;
+
+  return group;
+}
+
 export function hideUpgradeCards() {
   while (upgradeGroup.children.length) upgradeGroup.remove(upgradeGroup.children[0]);
   upgradeGroup.visible = false;
@@ -563,6 +630,12 @@ export function getUpgradeCardHit(raycaster) {
   const hits = raycaster.intersectObjects(meshes, false);
   if (hits.length > 0) {
     const id = hits[0].object.userData.upgradeId;
+
+    // Handle SKIP card
+    if (id === 'SKIP') {
+      return { upgrade: { id: 'SKIP', name: 'Skip' }, hand: upgradeGroup.userData.hand };
+    }
+
     const upgrade = upgradeChoices.find(u => u.id === id) || null;
     if (upgrade) {
       return { upgrade, hand: upgradeGroup.userData.hand };
