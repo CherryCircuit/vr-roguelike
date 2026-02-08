@@ -145,8 +145,8 @@ function init() {
 //  ENVIRONMENT
 // ============================================================
 function createEnvironment() {
-  // Grid floor - brighter with higher opacity
-  const grid = new THREE.GridHelper(200, 80, NEON_PINK, 0xff0088);
+  // Grid floor - reduced size to cut ugly distant static
+  const grid = new THREE.GridHelper(120, 48, NEON_PINK, 0xff0088);
   if (Array.isArray(grid.material)) {
     grid.material.forEach(m => { m.transparent = true; m.opacity = 0.85; });
   } else {
@@ -156,11 +156,25 @@ function createEnvironment() {
   scene.add(grid);
 
   const floorGeo = new THREE.PlaneGeometry(200, 200);
-  const floorMat = new THREE.MeshBasicMaterial({ color: 0x220044 });  // FrontSide only (saves half the fragments)
+  const floorMat = new THREE.MeshBasicMaterial({ color: 0x220044 });
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
   scene.add(floor);
+
+  // Glowing horizon line to hide grid edge
+  const horizonGeo = new THREE.PlaneGeometry(200, 3);
+  const horizonMat = new THREE.MeshBasicMaterial({
+    color: 0xff88cc,
+    transparent: true,
+    opacity: 0.4,
+    side: THREE.DoubleSide,
+  });
+  const horizon = new THREE.Mesh(horizonGeo, horizonMat);
+  horizon.rotation.x = -Math.PI / 2;
+  horizon.position.set(0, 0.01, -60);
+  horizon.renderOrder = -2;
+  scene.add(horizon);
 
   createSun();
   createMountains();
@@ -186,10 +200,23 @@ function createSun() {
   glow.renderOrder = -11;  // Draw after core (further back)
   scene.add(glow);
 
-  const stripeMat = new THREE.LineBasicMaterial({ color: DARK_BG });
-  for (let y = -10; y <= 0; y += 2) {
-    const points = [new THREE.Vector3(-15, 10 + y, -89.9), new THREE.Vector3(15, 10 + y, -89.9)];
-    const stripe = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), stripeMat);
+  // 8 cutout bands: thick at bottom, thinning to nothing by middle
+  const cutoutMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+  const cutoutCount = 8;
+  for (let i = 0; i < cutoutCount; i++) {
+    const t = i / (cutoutCount - 1);  // 0 at bottom, 1 at top
+    const thickness = 1.5 * (1 - t * t);  // Thick at bottom, thin at top (quadratic)
+    if (thickness < 0.1) continue;  // Skip if too thin
+    const yPos = 10 + (-10 + i * (10 / cutoutCount));  // Bottom to middle of sun
+    const gap = 10 / cutoutCount;  // Space between bands
+    // Only draw if there's room (leave gaps between bands)
+    const bandHeight = Math.min(thickness, gap * 0.6);
+    const stripe = new THREE.Mesh(
+      new THREE.PlaneGeometry(30, bandHeight),
+      cutoutMat
+    );
+    stripe.position.set(0, yPos, -89.8);
+    stripe.renderOrder = -9;  // In front of sun core
     scene.add(stripe);
   }
 }
@@ -304,12 +331,12 @@ function createBlasterDisplay(controllerIndex) {
   const group = new THREE.Group();
   const hand = controllerIndex === 0 ? 'left' : 'right';
 
-  // Background panel with cyan glow
+  // Background panel — very subtle to avoid visible black rectangle
   const panelGeo = new THREE.PlaneGeometry(0.2, 0.25);
   const panelMat = new THREE.MeshBasicMaterial({
     color: 0x003344,
     transparent: true,
-    opacity: 0.7,
+    opacity: 0.15,
     side: THREE.DoubleSide
   });
   const panel = new THREE.Mesh(panelGeo, panelMat);
