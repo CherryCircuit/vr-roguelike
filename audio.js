@@ -258,3 +258,68 @@ export function stopLightningSound() {
   lightningOsc = null;
   lightningGain = null;
 }
+
+// ── Music System ───────────────────────────────────────────
+let currentMusic = null;
+let musicVolume = 0.3;
+
+const musicTracks = {
+  menu: ['music/00_Main_Menu.mp3'],
+  levels1to5: [
+    'music/0101_Levels_1-4.mp3',
+    'music/0102_Levels_1-4.mp3',
+    'music/0103_Levels_1-4.mp3',
+    'music/0104_Levels_1-4.mp3'
+  ],
+  levels6to10: [
+    'music/0201_Levels_6-9.mp3',
+    'music/0202_Levels_6-9.mp3',
+    'music/0203_Levels_6-9.mp3',
+    'music/0204_Levels_6-9.mp3'
+  ]
+};
+
+export function playMusic(category) {
+  // Stop current music
+  if (currentMusic) {
+    currentMusic.pause();
+    currentMusic.currentTime = 0;
+    currentMusic = null;
+  }
+
+  // Get tracks for category
+  const tracks = musicTracks[category];
+  if (!tracks || tracks.length === 0) return;
+
+  // Pick random track
+  const track = tracks[Math.floor(Math.random() * tracks.length)];
+
+  // Create and play audio element
+  currentMusic = new Audio(track);
+  currentMusic.volume = musicVolume;
+  currentMusic.loop = true;
+
+  // Handle loading errors
+  currentMusic.addEventListener('error', (e) => {
+    console.warn(`[music] Failed to load: ${track}`, e);
+  });
+
+  currentMusic.play().catch(err => {
+    console.warn('[music] Autoplay prevented, will start on first interaction');
+  });
+}
+
+export function stopMusic() {
+  if (currentMusic) {
+    currentMusic.pause();
+    currentMusic.currentTime = 0;
+    currentMusic = null;
+  }
+}
+
+export function setMusicVolume(vol) {
+  musicVolume = Math.max(0, Math.min(1, vol));
+  if (currentMusic) {
+    currentMusic.volume = musicVolume;
+  }
+}
