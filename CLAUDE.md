@@ -27,3 +27,31 @@ All code is vanilla JS ES modules with no build step:
 - Enemy hit detection uses Three.js Raycaster against enemy mesh groups, walking up parent chain to find the enemy group
 - Upgrades are stackable (stored as `{ id: count }`) and weapon stats are recomputed each shot
 - 20 levels with escalating difficulty; every 5th level is a boss level
+
+## WebXR Performance Best Practices (Meta Quest)
+
+These rules MUST be followed for all code changes to maintain VR performance:
+
+### Rendering & Overdraw
+- **Sort opaque objects front-to-back** relative to the camera. Maximize GPU early-Z rejection. Manually set `renderOrder` for known background objects (sky, sun, mountains) to draw LAST, not first.
+- **Minimize overdraw**: Each pixel should ideally be rendered only once per frame. Avoid stacking multiple transparent layers.
+- **Hide fully transparent objects**: When fading out objects, set `visible = false` once fully transparent. Never pay render cost for invisible geometry.
+
+### Materials & Shading
+- **Use MeshBasicMaterial** where possible (no lighting calculations). Only use PBR/MeshStandardMaterial when the visual difference justifies the cost.
+- **Limit real-time lights**: Maximum 1-2 lights. Directional lights are cheapest, then point lights, then spot lights. Avoid area lights entirely.
+- **No real-time shadows** unless absolutely necessary. Shadow maps require rendering the scene twice and are extremely expensive on mobile GPUs.
+
+### Textures
+- **Compress textures** using KTX 2.0/Basis Universal when possible for reduced GPU memory and bandwidth.
+- **Minimize texture resolution** — use the smallest textures that still look acceptable in VR.
+
+### Transparency & Particles
+- **Minimize transparent objects** — they must render back-to-front and cause overdraw.
+- **Limit particle effects** — overlapping transparent particles are one of the most expensive things to render. Keep particle counts low and particles small.
+
+### Performance Budgeting
+- **Set clear color to black or white** for Adreno GPU "Fast clear" optimization on Quest 1/2.
+- **Stagger updates across frames**: Not everything needs to update every frame. Animations, distant objects, and non-critical updates can run at 30fps (every 3rd frame) while rendering stays at 72-90fps.
+- **Object pooling**: Reuse geometry and materials. Don't create/destroy objects every frame. Pre-allocate pools for projectiles, particles, damage numbers, etc.
+- **Batch draw calls**: Merge static geometry where possible. Each unique material/mesh combo = 1 draw call. Fewer draw calls = better performance.
