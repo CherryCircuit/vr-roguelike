@@ -60,6 +60,11 @@ let slowMoActive = false;
 let slowMoDuration = 0;
 let timeScale = 1.0;
 
+// Camera shake on damage
+let cameraShake = 0;
+let cameraShakeIntensity = 0;
+const originalCameraPos = new THREE.Vector3();
+
 // ── Bootstrap ──────────────────────────────────────────────
 init();
 
@@ -730,15 +735,16 @@ function updateFastEnemyAlerts(dt, playerPos) {
 // ============================================================
 function render(timestamp) {
   const now = timestamp || performance.now();
-  let dt  = Math.min((now - lastTime) / 1000, 0.1);
+  const rawDt  = Math.min((now - lastTime) / 1000, 0.1);
   lastTime  = now;
 
-  // Apply bullet-time slow-mo
+  // Apply bullet-time slow-mo (use raw dt for countdown)
   if (slowMoActive) {
-    slowMoDuration -= dt;
+    slowMoDuration -= rawDt;
     if (slowMoDuration <= 0) {
       slowMoActive = false;
       timeScale = 1.0;
+      console.log('[bullet-time] ENDED');
     } else {
       timeScale = 0.25;
     }
@@ -746,7 +752,7 @@ function render(timestamp) {
     timeScale = 1.0;
   }
 
-  dt *= timeScale;  // Scale time for slow-mo effect
+  const dt = rawDt * timeScale;  // Scaled time for game logic
 
   const st = game.state;
 
@@ -808,6 +814,12 @@ function render(timestamp) {
       const dead = damagePlayer(1);
       triggerHitFlash();
       playDamageSound();
+
+      // Trigger camera shake
+      cameraShake = 0.5;  // 0.5 second shake duration
+      cameraShakeIntensity = 0.05;  // shake magnitude
+      originalCameraPos.copy(camera.position);
+
       slowMoActive = false;  // End slow-mo on hit
       timeScale = 1.0;
       console.log(`[damage] Player hit! Health: ${game.health}`);
@@ -865,6 +877,20 @@ function render(timestamp) {
   else if (st === State.GAME_OVER || st === State.VICTORY) {
     updateEndScreen(now);
     gameOverCooldown = Math.max(0, gameOverCooldown - dt);
+  }
+
+  // ── Camera shake on damage ──
+  if (cameraShake > 0) {
+    cameraShake -= rawDt;
+    if (cameraShake <= 0) {
+      cameraShake = 0;
+    } else {
+      // Apply random shake offset
+      const shake = cameraShakeIntensity * (cameraShake / 0.5);  // Fade out over duration
+      camera.position.x += (Math.random() - 0.5) * shake;
+      camera.position.y += (Math.random() - 0.5) * shake;
+      camera.position.z += (Math.random() - 0.5) * shake;
+    }
   }
 
   // ── Universal updates ──

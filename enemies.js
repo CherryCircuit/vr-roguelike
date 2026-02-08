@@ -31,10 +31,10 @@ function parsePattern(strings) {
 
 // ── Enemy type stats ───────────────────────────────────────
 const ENEMY_DEFS = {
-  basic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.12, baseHp: 30, baseSpeed: 1.5, color: 0x00ff88, depth: 1, scoreValue: 10, hitboxRadius: 0.25 },
-  fast:  { pattern: parsePattern(PATTERNS.fast),  voxelSize: 0.1,  baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.2 },
-  tank:  { pattern: parsePattern(PATTERNS.tank),  voxelSize: 0.15, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.35 },
-  swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.08, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.15 },
+  basic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.24, baseHp: 30, baseSpeed: 1.5, color: 0x00ff88, depth: 1, scoreValue: 10, hitboxRadius: 0.5 },
+  fast:  { pattern: parsePattern(PATTERNS.fast),  voxelSize: 0.2,  baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.4 },
+  tank:  { pattern: parsePattern(PATTERNS.tank),  voxelSize: 0.3,  baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.7 },
+  swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.16, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.3 },
 };
 
 // ── Module state ───────────────────────────────────────────

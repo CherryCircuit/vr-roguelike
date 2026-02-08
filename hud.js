@@ -43,12 +43,38 @@ function makeTextTexture(text, opts = {}) {
   const ctx    = canvas.getContext('2d');
   const fontSize = opts.fontSize || 64;
   const font     = `bold ${fontSize}px Arial, sans-serif`;
+  const maxWidth = opts.maxWidth || null;
+
+  ctx.font = font;
+
+  // Word wrapping if maxWidth is specified
+  let lines = [text];
+  if (maxWidth) {
+    lines = [];
+    const words = text.split(' ');
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+
+      if (metrics.width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+  }
 
   // Measure text to size canvas
-  ctx.font = font;
-  const metrics = ctx.measureText(text);
-  canvas.width  = Math.ceil(metrics.width) + 40;
-  canvas.height = Math.ceil(fontSize * 1.5);
+  const textWidth  = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
+  const lineHeight = fontSize * 1.3;
+  const textHeight = lines.length * lineHeight;
+
+  canvas.width  = Math.ceil(textWidth) + 40;
+  canvas.height = Math.ceil(textHeight);
 
   // Re-set after resize
   ctx.font      = font;
@@ -64,12 +90,18 @@ function makeTextTexture(text, opts = {}) {
   // Drop shadow
   if (opts.shadow) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillText(text, canvas.width / 2 + 2, canvas.height / 2 + 2);
+    lines.forEach((line, i) => {
+      const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+      ctx.fillText(line, canvas.width / 2 + 2, y + 2);
+    });
   }
 
   // Main text
   ctx.fillStyle = opts.color || '#00ffff';
-  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  lines.forEach((line, i) => {
+    const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+    ctx.fillText(line, canvas.width / 2, y);
+  });
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
@@ -159,18 +191,22 @@ export function initHUD(camera, scene) {
   // ── VR HUD (stationary on floor, Space Pirate Trainer style) ──
   createHUDElements();
   hudGroup.position.set(0, 0.05, -3);  // On floor, 3 feet in front of spawn
+  hudGroup.rotation.x = -Math.PI / 2;  // Rotate to face up (floor plane)
   scene.add(hudGroup);
 
   // ── Level transition text (world-space) ──
   levelTextGroup.visible = false;
+  levelTextGroup.rotation.set(0, 0, 0);  // Lock rotation
   scene.add(levelTextGroup);
 
   // ── Upgrade selection (world-space) ──
   upgradeGroup.visible = false;
+  upgradeGroup.rotation.set(0, 0, 0);  // Lock rotation
   scene.add(upgradeGroup);
 
   // ── Game over / Victory (world-space) ──
   gameOverGroup.visible = false;
+  gameOverGroup.rotation.set(0, 0, 0);  // Lock rotation
   scene.add(gameOverGroup);
 
   // ── Hit flash (red sphere around camera) ──
@@ -427,12 +463,13 @@ function createUpgradeCard(upgrade, position) {
   nameSprite.position.set(0, 0.25, 0.01);
   group.add(nameSprite);
 
-  // Description text
+  // Description text (with word wrapping)
   const descSprite = makeSprite(upgrade.desc, {
     fontSize: 32,
     color: '#cccccc',
     scale: 0.18,
     depthTest: true,
+    maxWidth: 400,  // Max width before wrapping
   });
   descSprite.position.set(0, -0.1, 0.01);
   group.add(descSprite);
