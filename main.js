@@ -973,7 +973,7 @@ function render(timestamp) {
       timeScale = 1.0;
       console.log('[bullet-time] ENDED');
     } else {
-      timeScale = 0.25;
+      timeScale = 0.2;  // Slower time scale (was 0.25)
     }
   } else {
     timeScale = 1.0;
@@ -1025,7 +1025,7 @@ function render(timestamp) {
         const dist = e.mesh.position.distanceTo(playerPos);
         if (dist < 2.0) {  // Enemy within 2m triggers slow-mo (increased from 0.5m)
           slowMoActive = true;
-          slowMoDuration = 1.5;  // 1.5 seconds of slow-mo
+          slowMoDuration = 2.5;  // 2.5 seconds of slow-mo (increased from 1.5s)
           playSlowMoSound();
           console.log('[bullet-time] ACTIVATED!');
           break;
