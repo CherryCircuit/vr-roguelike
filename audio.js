@@ -11,47 +11,88 @@ function getAudioContext() {
   return audioCtx;
 }
 
-// ── Shoot sound (laser pew) — random pitch variation ───────
+// ── Shoot sound (laser pew) — heavily randomized ───────────
 export function playShoothSound() {
   const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Randomize everything: base frequency, pitch sweep, waveform, duration
+  const baseFreqs = [600, 700, 800, 900, 1000, 1100];
+  const baseFreq = baseFreqs[Math.floor(Math.random() * baseFreqs.length)];
+  const pitch = 0.3 + Math.random() * 1.4;
+  const duration = 0.06 + Math.random() * 0.08;  // 60-140ms
+  const waveforms = ['square', 'sawtooth', 'triangle'];
+
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  // Wide pitch variation + randomize waveform for max variety
-  const pitch = 0.4 + Math.random() * 1.2;
-  const waveforms = ['square', 'sawtooth', 'triangle'];
   osc.type = waveforms[Math.floor(Math.random() * waveforms.length)];
-  osc.frequency.setValueAtTime(800 * pitch, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(200 * pitch, ctx.currentTime + 0.1);
 
-  gain.gain.setValueAtTime(0.15, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+  // Randomize sweep direction: most go down, some go up
+  if (Math.random() < 0.8) {
+    osc.frequency.setValueAtTime(baseFreq * pitch, t);
+    osc.frequency.exponentialRampToValueAtTime(150 * pitch, t + duration);
+  } else {
+    osc.frequency.setValueAtTime(300 * pitch, t);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * pitch, t + duration * 0.5);
+    osc.frequency.exponentialRampToValueAtTime(200 * pitch, t + duration);
+  }
+
+  gain.gain.setValueAtTime(0.14, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
 
   osc.connect(gain);
   gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + duration);
 
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.1);
+  // 30% chance: layer a second oscillator for "fat" laser sound
+  if (Math.random() < 0.3) {
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = waveforms[Math.floor(Math.random() * waveforms.length)];
+    osc2.frequency.setValueAtTime(baseFreq * pitch * (1.5 + Math.random()), t);
+    osc2.frequency.exponentialRampToValueAtTime(100, t + duration);
+    gain2.gain.setValueAtTime(0.06, t);
+    gain2.gain.exponentialRampToValueAtTime(0.01, t + duration);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(t);
+    osc2.stop(t + duration);
+  }
 }
 
-// ── Enemy hit sound — random pitch variation ───────────────
+// ── Enemy hit sound — heavily randomized ───────────────────
 export function playHitSound() {
   const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const baseFreqs = [300, 400, 500, 600];
+  const baseFreq = baseFreqs[Math.floor(Math.random() * baseFreqs.length)];
+  const pitch = 0.2 + Math.random() * 1.6;
+  const duration = 0.05 + Math.random() * 0.08;
+  const hitWaves = ['sawtooth', 'square', 'triangle'];
+
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  const pitch = 0.3 + Math.random() * 1.4;  // Very wide pitch variation
-  const hitWaves = ['sawtooth', 'square', 'triangle'];
   osc.type = hitWaves[Math.floor(Math.random() * hitWaves.length)];
-  osc.frequency.setValueAtTime(400 * pitch, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(100 * pitch, ctx.currentTime + 0.08);
+  osc.frequency.setValueAtTime(baseFreq * pitch, t);
+  osc.frequency.exponentialRampToValueAtTime(80 * pitch, t + duration);
 
-  gain.gain.setValueAtTime(0.12, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+  gain.gain.setValueAtTime(0.12, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
 
-  osc.connect(gain);
+  // Add a resonant filter for more tonal variety
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(500 + Math.random() * 2000, t);
+  filter.Q.setValueAtTime(1 + Math.random() * 4, t);
+
+  osc.connect(filter);
+  filter.connect(gain);
   gain.connect(ctx.destination);
 
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.08);
+  osc.start(t);
+  osc.stop(t + duration);
 }
 
 // ── Enemy death explosion ──────────────────────────────────
@@ -72,27 +113,47 @@ function getExplosionBuffer() {
 
 export function playExplosionSound() {
   const ctx = getAudioContext();
+  const t = ctx.currentTime;
   const noise = ctx.createBufferSource();
   noise.buffer = getExplosionBuffer();
-  // Random playback rate for pitch variation (±25%)
-  noise.playbackRate.value = 0.5 + Math.random() * 1.0;
+  // Very wide playback rate variation for unique explosions
+  noise.playbackRate.value = 0.3 + Math.random() * 1.4;
+
+  const duration = 0.15 + Math.random() * 0.3;  // 150-450ms
 
   const filter = ctx.createBiquadFilter();
-  filter.type = 'lowpass';
-  const filterPitch = 0.4 + Math.random() * 1.2;  // Wide filter cutoff variation
-  filter.frequency.setValueAtTime(2000 * filterPitch, ctx.currentTime);
-  filter.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3);
+  // Randomly choose filter type for different explosion characters
+  filter.type = Math.random() < 0.7 ? 'lowpass' : 'bandpass';
+  const filterPitch = 0.3 + Math.random() * 1.4;
+  filter.frequency.setValueAtTime(2500 * filterPitch, t);
+  filter.frequency.exponentialRampToValueAtTime(40, t + duration);
+  filter.Q.setValueAtTime(0.5 + Math.random() * 3, t);
 
   const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0.2, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+  gain.gain.setValueAtTime(0.18, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
 
   noise.connect(filter);
   filter.connect(gain);
   gain.connect(ctx.destination);
 
-  noise.start(ctx.currentTime);
-  noise.stop(ctx.currentTime + 0.3);
+  noise.start(t);
+  noise.stop(t + duration);
+
+  // 40% chance: add a tonal "boom" underneath for bigger feel
+  if (Math.random() < 0.4) {
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(80 + Math.random() * 60, t);
+    osc.frequency.exponentialRampToValueAtTime(30, t + duration);
+    oscGain.gain.setValueAtTime(0.1, t);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, t + duration * 0.8);
+    osc.connect(oscGain);
+    oscGain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + duration);
+  }
 }
 
 // ── Player damage ──────────────────────────────────────────
