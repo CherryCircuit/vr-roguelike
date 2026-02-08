@@ -18,7 +18,7 @@ import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
-  hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers
+  hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS
 } from './hud.js';
 
 // ── Constants ──────────────────────────────────────────────
@@ -144,18 +144,18 @@ function init() {
 //  ENVIRONMENT
 // ============================================================
 function createEnvironment() {
-  // Grid floor
-  const grid = new THREE.GridHelper(200, 80, NEON_PINK, 0x660044);
+  // Grid floor - brighter with higher opacity
+  const grid = new THREE.GridHelper(200, 80, NEON_PINK, 0xff0088);
   if (Array.isArray(grid.material)) {
-    grid.material.forEach(m => { m.transparent = true; m.opacity = 0.6; });
+    grid.material.forEach(m => { m.transparent = true; m.opacity = 0.85; });
   } else {
     grid.material.transparent = true;
-    grid.material.opacity = 0.6;
+    grid.material.opacity = 0.85;
   }
   scene.add(grid);
 
   const floorGeo = new THREE.PlaneGeometry(200, 200);
-  const floorMat = new THREE.MeshBasicMaterial({ color: 0x110022, side: THREE.DoubleSide });
+  const floorMat = new THREE.MeshBasicMaterial({ color: 0x220044, side: THREE.DoubleSide });
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
@@ -165,12 +165,12 @@ function createEnvironment() {
   createMountains();
   createStars();
 
-  // Lighting
-  scene.add(new THREE.AmbientLight(0x330066, 0.4));
-  const pinkLight = new THREE.PointLight(NEON_PINK, 1.5, 30);
+  // Lighting - much brighter
+  scene.add(new THREE.AmbientLight(0x5500aa, 0.8));
+  const pinkLight = new THREE.PointLight(NEON_PINK, 2.5, 35);
   pinkLight.position.set(-6, 4, -6);
   scene.add(pinkLight);
-  const cyanLight = new THREE.PointLight(NEON_CYAN, 1.5, 30);
+  const cyanLight = new THREE.PointLight(NEON_CYAN, 2.5, 35);
   cyanLight.position.set(6, 4, -6);
   scene.add(cyanLight);
 }
@@ -181,7 +181,8 @@ function createSun() {
   core.position.set(0, 10, -90);
   scene.add(core);
 
-  const glowMat = new THREE.MeshBasicMaterial({ color: SUN_GLOW, side: THREE.DoubleSide, transparent: true, opacity: 0.3 });
+  // Brighter glow with higher opacity
+  const glowMat = new THREE.MeshBasicMaterial({ color: SUN_GLOW, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
   const glow = new THREE.Mesh(new THREE.CircleGeometry(20, 64), glowMat);
   glow.position.set(0, 10, -90.5);
   scene.add(glow);
@@ -217,7 +218,7 @@ function createMountains() {
     peaks.forEach(([x, y]) => edgePoints.push(new THREE.Vector3(x, y, z)));
     edgePoints.push(new THREE.Vector3(100, 0, z));
     const geometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
-    const edgeLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.5 }));
+    const edgeLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.8 }));
     scene.add(edgeLine);
 
     // Store for animation
@@ -247,7 +248,8 @@ function createStars() {
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.3, transparent: true, opacity: 0.7 });
+  // Brighter stars with higher opacity
+  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.4, transparent: true, opacity: 0.95 });
   scene.add(new THREE.Points(geo, mat));
 }
 
@@ -458,6 +460,9 @@ function showUpgradeScreen() {
   game.state = State.UPGRADE_SELECT;
   hideLevelComplete();
 
+  // Stop lightning sound during upgrade screen
+  stopLightningSound();
+
   // Alternate between left and right hand
   upgradeHand = upgradeHand === 'left' ? 'right' : 'left';
 
@@ -613,9 +618,9 @@ function updateLightningBeam(controller, index, stats, dt) {
     scene.add(beamGroup);
     lightningBeams[index] = beamGroup;
 
-    // Apply damage every 0.5s to all chained targets
+    // Apply damage every 0.2s to all chained targets (250% faster than 0.5s)
     lightningTimers[index] += dt;
-    if (lightningTimers[index] >= 0.5) {
+    if (lightningTimers[index] >= 0.2) {
       lightningTimers[index] = 0;
 
       chainTargets.forEach(({ index: enemyIndex, enemy }) => {
@@ -1163,11 +1168,12 @@ function render(timestamp) {
   updateExplosions(dt, now);
   updateDamageNumbers(dt, now);
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
+  updateFPS(now);  // Update FPS counter
 
-  // Music visualizer (throttled to every 3rd frame for performance)
-  if (now % 3 < 1) {
-    updateMountainVisualizer();
-  }
+  // Music visualizer (DISABLED - causing FPS drops)
+  // if (now % 3 < 1) {
+  //   updateMountainVisualizer();
+  // }
 
   renderer.render(scene, camera);
 }

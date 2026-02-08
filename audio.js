@@ -239,46 +239,32 @@ export function playSlowMoSound() {
 }
 
 // ── Lightning beam continuous sound (electric crackle) ─────
-let lightningNoise = null;
-let lightningGain = null;
-let lightningFilter = null;
 let lightningInterval = null;
 
 export function startLightningSound() {
-  if (lightningNoise) return;  // Already playing
+  if (lightningInterval) return;  // Already playing
 
   const ctx = getAudioContext();
 
-  // Create noise buffer for crackling effect
-  const bufferSize = ctx.sampleRate * 0.05;  // 50ms of noise
-  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-
-  for (let i = 0; i < bufferSize; i++) {
-    data[i] = (Math.random() * 2 - 1) * (Math.sin(i / bufferSize * Math.PI));  // Shaped noise
-  }
-
-  // Play crackling bursts rapidly
+  // Play subtle reminder crackle every 2 seconds (not constant)
   lightningInterval = setInterval(() => {
-    const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 800 + Math.random() * 1200;  // Varying frequency
-    filter.Q.value = 2;
-
+    const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.12, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
 
-    noise.connect(filter);
-    filter.connect(gain);
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150 + Math.random() * 100, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.1);
+
+    // MUCH quieter - 0.03 instead of 0.12
+    gain.gain.setValueAtTime(0.03, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+
+    osc.connect(gain);
     gain.connect(ctx.destination);
 
-    noise.start(ctx.currentTime);
-    noise.stop(ctx.currentTime + 0.05);
-  }, 60);  // Rapid crackling every 60ms
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.1);
+  }, 2000);  // Every 2 seconds instead of every 60ms
 }
 
 export function stopLightningSound() {
@@ -286,9 +272,6 @@ export function stopLightningSound() {
     clearInterval(lightningInterval);
     lightningInterval = null;
   }
-  lightningNoise = null;
-  lightningGain = null;
-  lightningFilter = null;
 }
 
 // ── Music System ───────────────────────────────────────────
