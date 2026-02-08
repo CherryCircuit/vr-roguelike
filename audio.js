@@ -16,7 +16,7 @@ export function playShoothSound() {
   const ctx = getAudioContext();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  const pitch = 0.85 + Math.random() * 0.3;  // ±15% pitch variation
+  const pitch = 0.6 + Math.random() * 0.8;  // ±40% pitch variation
 
   osc.type = 'square';
   osc.frequency.setValueAtTime(800 * pitch, ctx.currentTime);
@@ -37,7 +37,7 @@ export function playHitSound() {
   const ctx = getAudioContext();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  const pitch = 0.8 + Math.random() * 0.4;  // ±20% pitch variation
+  const pitch = 0.5 + Math.random() * 1.0;  // ±50% pitch variation
 
   osc.type = 'sawtooth';
   osc.frequency.setValueAtTime(400 * pitch, ctx.currentTime);
@@ -74,11 +74,11 @@ export function playExplosionSound() {
   const noise = ctx.createBufferSource();
   noise.buffer = getExplosionBuffer();
   // Random playback rate for pitch variation (±25%)
-  noise.playbackRate.value = 0.75 + Math.random() * 0.5;
+  noise.playbackRate.value = 0.5 + Math.random() * 1.0;
 
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
-  const filterPitch = 0.7 + Math.random() * 0.6;  // Vary filter cutoff
+  const filterPitch = 0.4 + Math.random() * 1.2;  // Wide filter cutoff variation
   filter.frequency.setValueAtTime(2000 * filterPitch, ctx.currentTime);
   filter.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3);
 

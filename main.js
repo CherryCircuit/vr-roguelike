@@ -162,19 +162,32 @@ function createEnvironment() {
   floor.position.y = -0.01;
   scene.add(floor);
 
-  // Glowing horizon line to hide grid edge
-  const horizonGeo = new THREE.PlaneGeometry(200, 3);
+  // Strong glowing horizon band to hide grid edge
+  const horizonGeo = new THREE.PlaneGeometry(200, 8);
   const horizonMat = new THREE.MeshBasicMaterial({
-    color: 0xff88cc,
+    color: 0xffccee,
     transparent: true,
-    opacity: 0.4,
+    opacity: 0.7,
     side: THREE.DoubleSide,
   });
   const horizon = new THREE.Mesh(horizonGeo, horizonMat);
   horizon.rotation.x = -Math.PI / 2;
-  horizon.position.set(0, 0.01, -60);
+  horizon.position.set(0, 0.02, -58);
   horizon.renderOrder = -2;
   scene.add(horizon);
+
+  // Second horizon layer — vertical glow wall at grid edge
+  const horizonWallGeo = new THREE.PlaneGeometry(200, 4);
+  const horizonWallMat = new THREE.MeshBasicMaterial({
+    color: 0xff66aa,
+    transparent: true,
+    opacity: 0.5,
+    side: THREE.DoubleSide,
+  });
+  const horizonWall = new THREE.Mesh(horizonWallGeo, horizonWallMat);
+  horizonWall.position.set(0, 2, -60);
+  horizonWall.renderOrder = -3;
+  scene.add(horizonWall);
 
   createSun();
   createMountains();
@@ -186,38 +199,64 @@ function createEnvironment() {
 }
 
 function createSun() {
-  // Reduced segment count (32 vs 64) for perf, not visible at distance
+  // Sun core
   const coreMat = new THREE.MeshBasicMaterial({ color: SUN_CORE, side: THREE.DoubleSide });
   const core = new THREE.Mesh(new THREE.CircleGeometry(14, 32), coreMat);
   core.position.set(0, 10, -90);
-  core.renderOrder = -10;  // Draw last (background) to minimize overdraw
+  core.renderOrder = -10;
   scene.add(core);
 
-  // Brighter glow with higher opacity
+  // Outer glow
   const glowMat = new THREE.MeshBasicMaterial({ color: SUN_GLOW, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
   const glow = new THREE.Mesh(new THREE.CircleGeometry(20, 32), glowMat);
   glow.position.set(0, 10, -90.5);
-  glow.renderOrder = -11;  // Draw after core (further back)
+  glow.renderOrder = -11;
   scene.add(glow);
 
-  // 8 cutout bands: thick at bottom, thinning to nothing by middle
+  // Synthwave-style horizontal cutout bands across lower half of sun
+  // Thick at bottom, progressively thinner toward middle — like classic retrowave suns
   const cutoutMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-  const cutoutCount = 8;
-  for (let i = 0; i < cutoutCount; i++) {
-    const t = i / (cutoutCount - 1);  // 0 at bottom, 1 at top
-    const thickness = 1.5 * (1 - t * t);  // Thick at bottom, thin at top (quadratic)
-    if (thickness < 0.1) continue;  // Skip if too thin
-    const yPos = 10 + (-10 + i * (10 / cutoutCount));  // Bottom to middle of sun
-    const gap = 10 / cutoutCount;  // Space between bands
-    // Only draw if there's room (leave gaps between bands)
-    const bandHeight = Math.min(thickness, gap * 0.6);
+  const bands = [
+    { y: -1.0, h: 3.5 },   // Thickest band near bottom
+    { y: 3.0,  h: 2.8 },
+    { y: 6.0,  h: 2.2 },
+    { y: 8.5,  h: 1.6 },
+    { y: 10.5, h: 1.0 },
+    { y: 12.0, h: 0.6 },
+    { y: 13.0, h: 0.35 },
+    { y: 13.7, h: 0.15 },  // Thinnest band near middle
+  ];
+  for (const band of bands) {
     const stripe = new THREE.Mesh(
-      new THREE.PlaneGeometry(30, bandHeight),
+      new THREE.PlaneGeometry(30, band.h),
       cutoutMat
     );
-    stripe.position.set(0, yPos, -89.8);
-    stripe.renderOrder = -9;  // In front of sun core
+    stripe.position.set(0, band.y, -89.8);
+    stripe.renderOrder = -9;
     scene.add(stripe);
+  }
+
+  // Atmosphere gradient: fades from horizon color upward, occluding stars
+  // Uses multiple stacked transparent planes for a gradient effect
+  const atmColors = [0xff2200, 0xff4400, 0xff6600, 0xff8800, 0xffaa44];
+  const atmCount = 5;
+  for (let i = 0; i < atmCount; i++) {
+    const t = i / (atmCount - 1);  // 0 = bottom, 1 = top
+    const yPos = t * 18;  // From horizon (0) to top of sun (~18)
+    const height = 5 - t * 2;  // Taller at bottom, shorter at top
+    const opacity = 0.35 * (1 - t);  // Strongest at bottom, fades out
+    const atmPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(200, height),
+      new THREE.MeshBasicMaterial({
+        color: atmColors[i],
+        transparent: true,
+        opacity,
+        side: THREE.DoubleSide,
+      })
+    );
+    atmPlane.position.set(0, yPos, -91);  // Behind sun
+    atmPlane.renderOrder = -12;
+    scene.add(atmPlane);
   }
 }
 
@@ -331,34 +370,29 @@ function createBlasterDisplay(controllerIndex) {
   const group = new THREE.Group();
   const hand = controllerIndex === 0 ? 'left' : 'right';
 
-  // Background panel — very subtle to avoid visible black rectangle
-  const panelGeo = new THREE.PlaneGeometry(0.2, 0.25);
-  const panelMat = new THREE.MeshBasicMaterial({
-    color: 0x003344,
-    transparent: true,
-    opacity: 0.15,
-    side: THREE.DoubleSide
-  });
-  const panel = new THREE.Mesh(panelGeo, panelMat);
-  group.add(panel);
+  // No background panel — text floats as part of hologram
 
-  // Cyan scan lines for hologram effect
-  for (let i = 0; i < 10; i++) {
-    const lineGeo = new THREE.PlaneGeometry(0.2, 0.002);
+  // Scrolling scan lines for old-TV hologram effect
+  const scanLines = [];
+  for (let i = 0; i < 8; i++) {
+    const lineGeo = new THREE.PlaneGeometry(0.2, 0.001);
     const lineMat = new THREE.MeshBasicMaterial({
       color: 0x00ffff,
       transparent: true,
-      opacity: 0.3
+      opacity: 0.15
     });
     const line = new THREE.Mesh(lineGeo, lineMat);
-    line.position.y = -0.1 + (i * 0.025);
+    line.position.y = -0.125 + (i * 0.035);
     line.position.z = 0.001;
     group.add(line);
+    scanLines.push(line);
   }
+  group.userData.scanLines = scanLines;
 
-  // Border
-  const borderGeo = new THREE.EdgesGeometry(panelGeo);
-  const borderMat = new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 2 });
+  // Subtle border outline (no solid panel behind it)
+  const borderPanelGeo = new THREE.PlaneGeometry(0.2, 0.25);
+  const borderGeo = new THREE.EdgesGeometry(borderPanelGeo);
+  const borderMat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.4 });
   const border = new THREE.LineSegments(borderGeo, borderMat);
   border.position.z = 0.001;
   group.add(border);
@@ -426,6 +460,21 @@ function updateBlasterDisplay(display, controllerIndex) {
   display.add(makeText(`UPGRADES: ${upgradeCount}`, -0.08, 16));
 
   display.userData.needsUpdate = false;
+
+  // Animate scrolling scan lines upward
+  const scanLines = display.userData.scanLines;
+  if (scanLines) {
+    const time = performance.now() * 0.001;
+    for (let i = 0; i < scanLines.length; i++) {
+      const line = scanLines[i];
+      // Scroll upward, wrap around
+      let y = ((time * 0.04 + i * 0.035) % 0.28) - 0.14;
+      line.position.y = y;
+      // Fade near edges
+      const edgeDist = Math.min(Math.abs(y + 0.125), Math.abs(y - 0.125));
+      line.material.opacity = Math.min(0.15, edgeDist * 2);
+    }
+  }
 }
 
 // ============================================================

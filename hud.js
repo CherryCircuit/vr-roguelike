@@ -278,7 +278,10 @@ function createTitleScreen() {
   titleGroup.add(titleBlinkSprite);
 
   // Version number
-  const versionSprite = makeSprite('v0.10.0', {
+  const now = new Date();
+  const pst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+  const dateStr = `${pst.getMonth()+1}/${pst.getDate()}/${pst.getFullYear()} ${pst.getHours()}:${String(pst.getMinutes()).padStart(2,'0')} PT`;
+  const versionSprite = makeSprite(`ver. 0.022\n${dateStr}`, {
     fontSize: 32,
     color: '#888888',
     scale: 0.25,
@@ -500,7 +503,7 @@ function createUpgradeCard(upgrade, position) {
     color: upgrade.color || '#00ffff',
     glow: true,
     glowColor: upgrade.color,
-    scale: 0.25,
+    scale: 0.19,
     depthTest: true,
   });
   nameSprite.position.set(0, 0.35, 0.01);
