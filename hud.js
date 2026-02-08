@@ -281,7 +281,7 @@ function createTitleScreen() {
   const now = new Date();
   const pst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
   const dateStr = `${pst.getMonth()+1}/${pst.getDate()}/${pst.getFullYear()} ${pst.getHours()}:${String(pst.getMinutes()).padStart(2,'0')} PT`;
-  const versionSprite = makeSprite(`ver. 0.022\n${dateStr}`, {
+  const versionSprite = makeSprite(`ver. 0.023\n${dateStr}`, {
     fontSize: 32,
     color: '#888888',
     scale: 0.25,
