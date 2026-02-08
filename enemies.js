@@ -31,10 +31,10 @@ function parsePattern(strings) {
 
 // ── Enemy type stats ───────────────────────────────────────
 const ENEMY_DEFS = {
-  basic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.24, baseHp: 30, baseSpeed: 1.5, color: 0x00ff88, depth: 1, scoreValue: 10, hitboxRadius: 0.5 },
-  fast:  { pattern: parsePattern(PATTERNS.fast),  voxelSize: 0.2,  baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.4 },
-  tank:  { pattern: parsePattern(PATTERNS.tank),  voxelSize: 0.3,  baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.7 },
-  swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.16, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.3 },
+  basic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.29, baseHp: 30, baseSpeed: 1.5, color: 0x00ff88, depth: 1, scoreValue: 10, hitboxRadius: 0.6 },
+  fast:  { pattern: parsePattern(PATTERNS.fast),  voxelSize: 0.24, baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.48 },
+  tank:  { pattern: parsePattern(PATTERNS.tank),  voxelSize: 0.36, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.84 },
+  swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.19, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.36 },
 };
 
 // ── Module state ───────────────────────────────────────────
@@ -351,9 +351,9 @@ export function getEnemies() {
 /**
  * Get a random spawn position in a 100° cone in front of the player.
  */
-export function getSpawnPosition(airSpawns) {
+export function getSpawnPosition(airSpawns, verticalAngle = 0) {
   const angle    = (Math.random() - 0.5) * (100 * Math.PI / 180);
-  const distance = 18 + Math.random() * 7;
+  const distance = 14.4 + Math.random() * 5.6;  // 20% shorter (was 18-25, now 14.4-20)
 
   const x = Math.sin(angle) * distance;
   const z = -Math.cos(angle) * distance;
@@ -361,6 +361,13 @@ export function getSpawnPosition(airSpawns) {
 
   if (airSpawns) {
     y = 0.5 + Math.random() * 2.5;
+  }
+
+  // Apply vertical angle for difficulty progression
+  if (verticalAngle > 0) {
+    const vertRad = verticalAngle * Math.PI / 180;
+    const baseY = y;
+    y = baseY + Math.sin(vertRad) * distance * Math.random();
   }
 
   return new THREE.Vector3(x, y, z);

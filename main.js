@@ -516,8 +516,23 @@ function shootWeapon(controller, index) {
   // Fire projectile(s)
   const count = stats.projectileCount;
   for (let i = 0; i < count; i++) {
-    const spreadOffset = count > 1 ? ((i / (count - 1)) - 0.5) * stats.spreadAngle : 0;
-    const spreadDir = direction.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), spreadOffset).normalize();
+    let spreadDir;
+    if (count > 1) {
+      // Random spread within 7.5° cone for buckshot
+      const maxConeAngle = 7.5 * Math.PI / 180;  // 7.5 degrees in radians
+      const randomAngle = (Math.random() - 0.5) * 2 * maxConeAngle;
+      const randomPitch = (Math.random() - 0.5) * 2 * maxConeAngle;
+
+      spreadDir = direction.clone();
+      // Apply random yaw
+      spreadDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), randomAngle);
+      // Apply random pitch
+      const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+      spreadDir.applyAxisAngle(rightAxis, randomPitch);
+      spreadDir.normalize();
+    } else {
+      spreadDir = direction.clone();
+    }
     spawnProjectile(origin, spreadDir, index, stats);
   }
 
@@ -880,7 +895,14 @@ function spawnEnemyWave(dt) {
     if (getEnemyCount() < 15) {
       const types = cfg.enemyTypes;
       const type = types[Math.floor(Math.random() * types.length)];
-      const pos = getSpawnPosition(cfg.airSpawns);
+
+      // Calculate vertical spawn angle based on level
+      let verticalAngle = 0;
+      if (game.level >= 16) verticalAngle = 60;
+      else if (game.level >= 11) verticalAngle = 40;
+      else if (game.level >= 6) verticalAngle = 20;
+
+      const pos = getSpawnPosition(cfg.airSpawns, verticalAngle);
       spawnEnemy(type, pos, cfg);
 
       // Alert on fast/swarm enemy spawn
@@ -1001,7 +1023,7 @@ function render(timestamp) {
       const enemies = getEnemies();
       for (const e of enemies) {
         const dist = e.mesh.position.distanceTo(playerPos);
-        if (dist < 0.5) {  // Enemy within 0.5m triggers slow-mo
+        if (dist < 2.0) {  // Enemy within 2m triggers slow-mo (increased from 0.5m)
           slowMoActive = true;
           slowMoDuration = 1.5;  // 1.5 seconds of slow-mo
           playSlowMoSound();
@@ -1112,7 +1134,7 @@ function render(timestamp) {
   updateProjectiles(dt);
   updateExplosions(dt, now);
   updateDamageNumbers(dt, now);
-  updateHitFlash(dt);
+  updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
 
   renderer.render(scene, camera);
 }
