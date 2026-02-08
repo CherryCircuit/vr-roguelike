@@ -271,6 +271,15 @@ function createTitleScreen() {
   });
   titleBlinkSprite.position.set(0, 0, 0);
   titleGroup.add(titleBlinkSprite);
+
+  // Version number
+  const versionSprite = makeSprite('v0.9.0', {
+    fontSize: 32,
+    color: '#888888',
+    scale: 0.25,
+  });
+  versionSprite.position.set(0, -0.6, 0);
+  titleGroup.add(versionSprite);
 }
 
 export function showTitle() {
@@ -297,9 +306,11 @@ function createHUDElements() {
   // Floor-based HUD layout (Space Pirate Trainer style)
   // Increased by 200% (3x) for better visibility
   // Lives (hearts) - left side on floor
-  heartsSprite = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: true, depthWrite: false }));
+  // Use PlaneGeometry (not Sprite) to prevent billboarding/rotation
+  const heartsGeo = new THREE.PlaneGeometry(1.2, 0.24);
+  const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
+  heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
   heartsSprite.position.set(-1.5, 0, 0);  // Spread out horizontally
-  heartsSprite.scale.set(1.2, 0.24, 1);  // 3x scale
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
@@ -346,8 +357,11 @@ function updateSpriteText(sprite, text, opts = {}) {
   });
   sprite.material.map = texture;
   sprite.material.needsUpdate = true;
-  const scale = opts.scale || sprite.scale.y;
-  sprite.scale.set(aspect * scale, scale, 1);
+
+  // Update geometry to match aspect ratio (prevents stretching)
+  const scale = opts.scale || 0.3;
+  sprite.geometry.dispose();
+  sprite.geometry = new THREE.PlaneGeometry(aspect * scale, scale);
 }
 
 export function updateHUD(gameState) {
@@ -358,26 +372,27 @@ export function updateHUD(gameState) {
   if (heartsSprite.material.map) heartsSprite.material.map.dispose();
   heartsSprite.material.map = ht;
   heartsSprite.material.needsUpdate = true;
-  // Use 0.24 height (matching initial 3x scale) with proper aspect ratio
-  heartsSprite.scale.set(ha * 0.24, 0.24, 1);
+  // Update geometry to match aspect ratio (height 0.24, width based on aspect)
+  heartsSprite.geometry.dispose();
+  heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.24, 0.24);
 
-  // Kill counter
+  // Kill counter - reduced scale to fix horizontal stretching
   const cfg = gameState._levelConfig;
   if (cfg) {
-    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.12 });
+    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.06 });
   }
 
-  // Level
-  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.12 });
+  // Level - reduced scale to fix horizontal stretching
+  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.06 });
 
-  // Score
-  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.1 });
+  // Score - reduced scale to fix horizontal stretching
+  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.05 });
 
-  // Combo
+  // Combo - reduced scale to fix horizontal stretching
   const combo = gameState._combo || 1;
   if (combo > 1) {
     comboSprite.visible = true;
-    updateSpriteText(comboSprite, `${combo}x`, { color: '#ff8800', scale: 0.08 });
+    updateSpriteText(comboSprite, `${combo}x`, { color: '#ff8800', scale: 0.04 });
   } else {
     comboSprite.visible = false;
   }
@@ -389,11 +404,12 @@ export function showLevelComplete(level, playerPos) {
   // Clear old
   while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
 
-  const s1 = makeSprite('LEVEL COMPLETE!', { fontSize: 80, color: '#00ffff', glow: true, glowSize: 20, scale: 1.0 });
+  // Reduced by 25% (scale 1.0 → 0.75, 0.7 → 0.525)
+  const s1 = makeSprite('LEVEL COMPLETE!', { fontSize: 80, color: '#00ffff', glow: true, glowSize: 20, scale: 0.75 });
   s1.position.set(0, 0.9, 0);
   levelTextGroup.add(s1);
 
-  const s2 = makeSprite(`LEVEL ${level + 1}`, { fontSize: 60, color: '#ff00ff', glow: true, scale: 0.7 });
+  const s2 = makeSprite(`LEVEL ${level + 1}`, { fontSize: 60, color: '#ff00ff', glow: true, scale: 0.525 });
   s2.position.set(0, 0.2, 0);
   levelTextGroup.add(s2);
 
@@ -473,19 +489,19 @@ function createUpgradeCard(upgrade, position) {
     color: upgrade.color || '#00ffff',
     glow: true,
     glowColor: upgrade.color,
-    scale: 0.3,
+    scale: 0.25,
     depthTest: true,
   });
   nameSprite.position.set(0, 0.35, 0.01);
   group.add(nameSprite);
 
-  // Description text - much smaller and tighter wrapping
+  // Description text - standard size with padding (well inside box)
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 18,
+    fontSize: 20,  // Fixed font size for all descriptions
     color: '#cccccc',
-    scale: 0.25,
+    scale: 0.15,  // Smaller scale = more padding inside card
     depthTest: true,
-    maxWidth: 150,  // Tighter wrapping to prevent overlap
+    maxWidth: 180,  // Consistent wrapping width
   });
   descSprite.position.set(0, -0.05, 0.01);
   group.add(descSprite);
