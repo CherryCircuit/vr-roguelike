@@ -229,39 +229,64 @@ export function playSlowMoSound() {
   osc.stop(ctx.currentTime + 0.8);
 }
 
-// ── Lightning beam continuous sound ────────────────────────
-let lightningOsc = null;
+// ── Lightning beam continuous sound (electric crackle) ─────
+let lightningNoise = null;
 let lightningGain = null;
+let lightningFilter = null;
+let lightningInterval = null;
 
 export function startLightningSound() {
-  if (lightningOsc) return;  // Already playing
+  if (lightningNoise) return;  // Already playing
 
   const ctx = getAudioContext();
-  lightningOsc = ctx.createOscillator();
-  lightningGain = ctx.createGain();
 
-  lightningOsc.type = 'sawtooth';
-  lightningOsc.frequency.setValueAtTime(120, ctx.currentTime);
+  // Create noise buffer for crackling effect
+  const bufferSize = ctx.sampleRate * 0.05;  // 50ms of noise
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
 
-  lightningGain.gain.setValueAtTime(0.15, ctx.currentTime);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * (Math.sin(i / bufferSize * Math.PI));  // Shaped noise
+  }
 
-  lightningOsc.connect(lightningGain);
-  lightningGain.connect(ctx.destination);
+  // Play crackling bursts rapidly
+  lightningInterval = setInterval(() => {
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
 
-  lightningOsc.start(ctx.currentTime);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 800 + Math.random() * 1200;  // Varying frequency
+    filter.Q.value = 2;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    noise.start(ctx.currentTime);
+    noise.stop(ctx.currentTime + 0.05);
+  }, 60);  // Rapid crackling every 60ms
 }
 
 export function stopLightningSound() {
-  if (!lightningOsc) return;
-
-  lightningOsc.stop(lightningOsc.context.currentTime + 0.05);
-  lightningOsc = null;
+  if (lightningInterval) {
+    clearInterval(lightningInterval);
+    lightningInterval = null;
+  }
+  lightningNoise = null;
   lightningGain = null;
+  lightningFilter = null;
 }
 
 // ── Music System ───────────────────────────────────────────
 let currentMusic = null;
 let musicVolume = 0.3;
+let currentPlaylist = [];
+let currentTrackIndex = 0;
 
 const musicTracks = {
   menu: ['mnt/project/music/00_Main_Menu.mp3'],
@@ -279,6 +304,45 @@ const musicTracks = {
   ]
 };
 
+// Shuffle array using Fisher-Yates algorithm
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+function playNextTrack() {
+  if (currentPlaylist.length === 0) return;
+
+  const track = currentPlaylist[currentTrackIndex];
+  console.log(`[music] Playing track ${currentTrackIndex + 1}/${currentPlaylist.length}: ${track}`);
+
+  currentMusic = new Audio(track);
+  currentMusic.volume = musicVolume;
+  currentMusic.loop = false;  // Don't loop individual tracks
+
+  // Auto-advance to next track when current ends
+  currentMusic.addEventListener('ended', () => {
+    currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
+    playNextTrack();
+  });
+
+  // Handle loading errors
+  currentMusic.addEventListener('error', (e) => {
+    console.warn(`[music] Failed to load: ${track}`, e);
+    // Skip to next track on error
+    currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
+    playNextTrack();
+  });
+
+  currentMusic.play().catch(err => {
+    console.warn('[music] Autoplay prevented, will start on first interaction');
+  });
+}
+
 export function playMusic(category) {
   // Stop current music
   if (currentMusic) {
@@ -291,22 +355,12 @@ export function playMusic(category) {
   const tracks = musicTracks[category];
   if (!tracks || tracks.length === 0) return;
 
-  // Pick random track
-  const track = tracks[Math.floor(Math.random() * tracks.length)];
+  // Create randomized playlist
+  currentPlaylist = shuffleArray(tracks);
+  currentTrackIndex = 0;
 
-  // Create and play audio element
-  currentMusic = new Audio(track);
-  currentMusic.volume = musicVolume;
-  currentMusic.loop = true;
-
-  // Handle loading errors
-  currentMusic.addEventListener('error', (e) => {
-    console.warn(`[music] Failed to load: ${track}`, e);
-  });
-
-  currentMusic.play().catch(err => {
-    console.warn('[music] Autoplay prevented, will start on first interaction');
-  });
+  console.log(`[music] Starting playlist for ${category} with ${currentPlaylist.length} tracks`);
+  playNextTrack();
 }
 
 export function stopMusic() {
