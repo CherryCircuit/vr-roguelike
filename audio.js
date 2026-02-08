@@ -121,6 +121,50 @@ export function playFastEnemySpawn() {
   osc.stop(ctx.currentTime + 0.15);
 }
 
+// ── Swarm enemy spawn alert (higher pitch, faster) ─────────
+export function playSwarmEnemySpawn() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(1800, ctx.currentTime);
+  osc.frequency.setValueAtTime(2200, ctx.currentTime + 0.03);
+  osc.frequency.setValueAtTime(1800, ctx.currentTime + 0.06);
+
+  gain.gain.setValueAtTime(0.25, ctx.currentTime);
+  gain.gain.setValueAtTime(0, ctx.currentTime + 0.1);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.1);
+}
+
+// ── Swarm proximity alert (more aggressive) ────────────────
+export function playSwarmProximityAlert(pan, intensity) {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const panner = ctx.createStereoPanner();
+
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(900 + intensity * 600, ctx.currentTime);
+
+  gain.gain.setValueAtTime(Math.min(0.2 * intensity, 0.35), ctx.currentTime);
+  gain.gain.setValueAtTime(0, ctx.currentTime + 0.08);
+
+  panner.pan.setValueAtTime(pan, ctx.currentTime);
+
+  osc.connect(gain);
+  gain.connect(panner);
+  panner.connect(ctx.destination);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.08);
+}
+
 // ── Proximity alert (panned) ───────────────────────────────
 export function playProximityAlert(pan, intensity) {
   const ctx = getAudioContext();
@@ -183,4 +227,34 @@ export function playSlowMoSound() {
 
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.8);
+}
+
+// ── Lightning beam continuous sound ────────────────────────
+let lightningOsc = null;
+let lightningGain = null;
+
+export function startLightningSound() {
+  if (lightningOsc) return;  // Already playing
+
+  const ctx = getAudioContext();
+  lightningOsc = ctx.createOscillator();
+  lightningGain = ctx.createGain();
+
+  lightningOsc.type = 'sawtooth';
+  lightningOsc.frequency.setValueAtTime(120, ctx.currentTime);
+
+  lightningGain.gain.setValueAtTime(0.15, ctx.currentTime);
+
+  lightningOsc.connect(lightningGain);
+  lightningGain.connect(ctx.destination);
+
+  lightningOsc.start(ctx.currentTime);
+}
+
+export function stopLightningSound() {
+  if (!lightningOsc) return;
+
+  lightningOsc.stop(lightningOsc.context.currentTime + 0.05);
+  lightningOsc = null;
+  lightningGain = null;
 }
