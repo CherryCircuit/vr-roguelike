@@ -370,3 +370,8 @@ export function getSpawnPosition(airSpawns) {
 export function getFastEnemies() {
   return activeEnemies.filter(e => e.type === 'fast');
 }
+
+/** Get all swarm enemies (for proximity alerts) */
+export function getSwarmEnemies() {
+  return activeEnemies.filter(e => e.type === 'swarm');
+}

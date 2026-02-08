@@ -8,11 +8,11 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, addScore, getComboMultiplier, damagePlayer, addUpgrade } from './game.js';
 import { getRandomUpgrades, getWeaponStats } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playProximityAlert, playUpgradeSound, playSlowMoSound } from './audio.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, startLightningSound, stopLightningSound } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
-  applyEffects, getSpawnPosition, getEnemies, getFastEnemies
+  applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies
 } from './enemies.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
@@ -296,6 +296,7 @@ function onTriggerRelease(index) {
   if (lightningBeams[index]) {
     scene.remove(lightningBeams[index]);
     lightningBeams[index] = null;
+    stopLightningSound();
   }
 }
 
@@ -407,10 +408,10 @@ function updateLightningBeam(controller, index, stats, dt) {
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
 
-  // Find closest enemy within range
+  // Find all enemies within range and chain to them
   const enemies = getEnemies();
-  let closestEnemy = null;
-  let closestDist = stats.lightningRange;
+  const targets = [];
+  const maxChains = 2 + Math.floor(stats.lightningRange / 8);  // More chains with upgrades
 
   enemies.forEach((e, i) => {
     const dist = e.mesh.position.distanceTo(origin);
@@ -418,70 +419,106 @@ function updateLightningBeam(controller, index, stats, dt) {
     const angle = toEnemy.dot(direction);
 
     // Within range and roughly in front (45° cone)
-    if (dist < closestDist && angle > 0.7) {
-      closestDist = dist;
-      closestEnemy = { index: i, enemy: e };
+    if (dist < stats.lightningRange && angle > 0.7) {
+      targets.push({ index: i, enemy: e, dist });
     }
   });
 
-  // Create or update lightning beam visual
-  if (closestEnemy) {
-    const targetPos = closestEnemy.enemy.mesh.position;
-    const beamLength = origin.distanceTo(targetPos);
-    const color = index === 0 ? NEON_CYAN : NEON_PINK;
+  // Sort by distance, take closest N
+  targets.sort((a, b) => a.dist - b.dist);
+  const chainTargets = targets.slice(0, maxChains);
 
-    // Remove old beam
+  // Create or update lightning beam visuals
+  if (chainTargets.length > 0) {
+    // Start sound if not playing
+    startLightningSound();
+
+    // Remove old beam group
     if (lightningBeams[index]) {
       scene.remove(lightningBeams[index]);
     }
 
-    // Create new beam (cylinder from controller to enemy)
-    const beamGeo = new THREE.CylinderGeometry(0.02, 0.02, beamLength, 6);
-    const beamMat = new THREE.MeshBasicMaterial({ color: 0xffff44, transparent: true, opacity: 0.7 });
-    const beam = new THREE.Mesh(beamGeo, beamMat);
+    const beamGroup = new THREE.Group();
 
-    // Position beam midpoint and orient toward enemy
-    const midpoint = new THREE.Vector3().addVectors(origin, targetPos).multiplyScalar(0.5);
-    beam.position.copy(midpoint);
-    beam.lookAt(targetPos);
-    beam.rotateX(Math.PI / 2);
+    // Draw zigzag lightning bolts to each target
+    let lastPos = origin.clone();
+    chainTargets.forEach(({ enemy }) => {
+      const targetPos = enemy.mesh.position;
+      const bolt = createLightningBolt(lastPos, targetPos);
+      beamGroup.add(bolt);
+      lastPos = targetPos.clone();
+    });
 
-    scene.add(beam);
-    lightningBeams[index] = beam;
+    scene.add(beamGroup);
+    lightningBeams[index] = beamGroup;
 
-    // Apply damage every 0.5s
+    // Apply damage every 0.5s to all chained targets
     lightningTimers[index] += dt;
     if (lightningTimers[index] >= 0.5) {
       lightningTimers[index] = 0;
-      const result = hitEnemy(closestEnemy.index, stats.lightningDamage);
-      spawnDamageNumber(targetPos, stats.lightningDamage, '#ffff44');
-      playHitSound();
 
-      if (result.killed) {
-        playExplosionSound();
-        const destroyData = destroyEnemy(closestEnemy.index);
-        if (destroyData) {
-          game.kills++;
-          game.totalKills++;
-          game.killsWithoutHit++;
-          addScore(destroyData.scoreValue);
+      chainTargets.forEach(({ index: enemyIndex, enemy }) => {
+        const result = hitEnemy(enemyIndex, stats.lightningDamage);
+        spawnDamageNumber(enemy.mesh.position, stats.lightningDamage, '#ffff44');
+        playHitSound();
 
-          // Check level complete
-          const cfg = game._levelConfig;
-          if (cfg && game.kills >= cfg.killTarget) {
-            completeLevel();
+        if (result.killed) {
+          playExplosionSound();
+          const destroyData = destroyEnemy(enemyIndex);
+          if (destroyData) {
+            game.kills++;
+            game.totalKills++;
+            game.killsWithoutHit++;
+            addScore(destroyData.scoreValue);
+
+            // Check level complete
+            const cfg = game._levelConfig;
+            if (cfg && game.kills >= cfg.killTarget) {
+              completeLevel();
+            }
           }
         }
-      }
+      });
     }
   } else {
-    // No target - clear beam
+    // No targets - clear beam and stop sound
     if (lightningBeams[index]) {
       scene.remove(lightningBeams[index]);
       lightningBeams[index] = null;
     }
+    stopLightningSound();
     lightningTimers[index] = 0;
   }
+}
+
+// Create zigzag lightning bolt between two points
+function createLightningBolt(start, end) {
+  const points = [start.clone()];
+  const segments = 8;
+  const zigzagAmount = 0.15;
+
+  for (let i = 1; i < segments; i++) {
+    const t = i / segments;
+    const mid = new THREE.Vector3().lerpVectors(start, end, t);
+
+    // Random perpendicular offset
+    const dir = new THREE.Vector3().subVectors(end, start).normalize();
+    const perp = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+    const offset = perp.multiplyScalar((Math.random() - 0.5) * zigzagAmount);
+
+    mid.add(offset);
+    points.push(mid);
+  }
+  points.push(end.clone());
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({
+    color: 0xffff44,
+    linewidth: 2,
+    transparent: true,
+    opacity: 0.9
+  });
+  return new THREE.Line(geometry, material);
 }
 
 function spawnProjectile(origin, direction, controllerIndex, stats) {
@@ -700,9 +737,11 @@ function spawnEnemyWave(dt) {
       const pos = getSpawnPosition(cfg.airSpawns);
       spawnEnemy(type, pos, cfg);
 
-      // Alert on fast enemy spawn
+      // Alert on fast/swarm enemy spawn
       if (type === 'fast') {
         playFastEnemySpawn();
+      } else if (type === 'swarm') {
+        playSwarmEnemySpawn();
       }
     }
   }
@@ -725,6 +764,26 @@ function updateFastEnemyAlerts(dt, playerPos) {
         const intensity = 1 - (dist / 10);
 
         playProximityAlert(pan, intensity);
+      }
+    }
+  });
+
+  // Swarm enemies - more aggressive alerts
+  const swarmEnemies = getSwarmEnemies();
+  swarmEnemies.forEach(e => {
+    const dist = e.mesh.position.distanceTo(playerPos);
+    if (dist < 8) {  // Closer range for swarm
+      e.alertTimer = (e.alertTimer || 0) - dt;
+      if (e.alertTimer <= 0) {
+        e.alertTimer = 0.15; // More frequent alerts
+
+        const dx = e.mesh.position.x - playerPos.x;
+        const dz = e.mesh.position.z - playerPos.z;
+        const angle = Math.atan2(dx, -dz);
+        const pan = Math.sin(angle);
+        const intensity = 1 - (dist / 8);
+
+        playSwarmProximityAlert(pan, intensity);
       }
     }
   });
