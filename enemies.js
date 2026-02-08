@@ -52,6 +52,49 @@ function getGeo(size) {
   return sharedGeos[key];
 }
 
+// Shared materials per enemy type (avoid creating new material per spawn)
+const sharedMaterials = {};
+
+// Pre-built explosion sprite pool (avoid creating canvas/texture per particle)
+const EXPLOSION_POOL_SIZE = 60;
+const explosionPool = [];
+let explosionPoolReady = false;
+let explosionTexturePink = null;
+let explosionTextureCyan = null;
+
+function initExplosionPool() {
+  // Create two shared textures for explosion particles
+  const makeExpTex = (color) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 16;
+    canvas.height = 16;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 16, 16);
+    return new THREE.CanvasTexture(canvas);
+  };
+  explosionTexturePink = makeExpTex('#ff00ff');
+  explosionTextureCyan = makeExpTex('#00ffff');
+
+  for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
+    const tex = i % 2 === 0 ? explosionTexturePink : explosionTextureCyan;
+    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 1 });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.1, 0.1, 1);
+    sprite.visible = false;
+    explosionPool.push(sprite);
+  }
+  explosionPoolReady = true;
+}
+
+function getExplosionSprite() {
+  // Find an inactive sprite in the pool
+  for (const sprite of explosionPool) {
+    if (!sprite.visible) return sprite;
+  }
+  return null; // Pool exhausted, skip this particle
+}
+
 // Temp vectors (avoid allocation in hot loops)
 const _dir  = new THREE.Vector3();
 const _look = new THREE.Vector3();
@@ -60,6 +103,11 @@ const _look = new THREE.Vector3();
 
 export function initEnemies(scene) {
   sceneRef = scene;
+  if (!explosionPoolReady) {
+    initExplosionPool();
+    // Add all pool sprites to scene (hidden by default)
+    explosionPool.forEach(s => scene.add(s));
+  }
 }
 
 /**
@@ -70,11 +118,15 @@ export function spawnEnemy(type, position, levelConfig) {
   const def = ENEMY_DEFS[type];
   if (!def) return;
 
-  const material = new THREE.MeshBasicMaterial({
-    color: def.color,
-    transparent: true,
-    opacity: 0.7,
-  });
+  // Clone shared material (clone is cheap, shares shader program)
+  if (!sharedMaterials[type]) {
+    sharedMaterials[type] = new THREE.MeshBasicMaterial({
+      color: def.color,
+      transparent: true,
+      opacity: 0.7,
+    });
+  }
+  const material = sharedMaterials[type].clone();
 
   const group = new THREE.Group();
   const geo   = getGeo(def.voxelSize);
@@ -255,21 +307,16 @@ export function destroyEnemy(index) {
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
 
-  // Sprite-based explosion for performance
+  // Pooled explosion particles (no allocation per death)
   const particleCount = 5;
   for (let i = 0; i < particleCount; i++) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 16;
-    canvas.height = 16;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = Math.random() > 0.5 ? '#ff00ff' : '#00ffff';
-    ctx.fillRect(0, 0, 16, 16);
+    const sprite = getExplosionSprite();
+    if (!sprite) break;  // Pool exhausted
 
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 1 });
-    const sprite = new THREE.Sprite(spriteMat);
-    sprite.scale.set(0.1, 0.1, 1);
+    sprite.material.opacity = 1;
+    sprite.material.map = Math.random() > 0.5 ? explosionTexturePink : explosionTextureCyan;
     sprite.position.copy(pos);
+    sprite.visible = true;
 
     sprite.userData.velocity = new THREE.Vector3(
       (Math.random() - 0.5) * 5,
@@ -279,7 +326,6 @@ export function destroyEnemy(index) {
     sprite.userData.createdAt = performance.now();
     sprite.userData.lifetime  = 300 + Math.random() * 200;
 
-    sceneRef.add(sprite);
     explosionParts.push(sprite);
   }
 
@@ -312,9 +358,8 @@ export function updateExplosions(dt, now) {
     const age = now - p.userData.createdAt;
 
     if (age > p.userData.lifetime) {
-      sceneRef.remove(p);
-      if (p.material.map) p.material.map.dispose();
-      p.material.dispose();
+      // Return to pool (hide, don't destroy)
+      p.visible = false;
       explosionParts.splice(i, 1);
     } else {
       p.position.addScaledVector(p.userData.velocity, dt);

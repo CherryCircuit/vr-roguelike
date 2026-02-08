@@ -39,6 +39,7 @@ const controllers = [];
 const controllerTriggerPressed = [false, false];
 const projectiles = [];
 let lastTime = 0;
+let frameCount = 0;  // For staggering updates
 
 // Weapon firing cooldowns (per controller)
 const weaponCooldowns = [0, 0];
@@ -82,22 +83,22 @@ init();
 function init() {
   console.log('[SPACEOMICIDE] Initialising...');
 
-  // Scene
+  // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(DARK_BG);
-  scene.fog = new THREE.FogExp2(DARK_BG, 0.012);
+  scene.background = new THREE.Color(0x000000);
+  scene.fog = new THREE.FogExp2(0x000000, 0.012);
 
   // Camera
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(0, 1.6, 0);
 
-  // Renderer
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  // Renderer — optimized for Quest performance
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));  // Cap pixel ratio for perf
   renderer.xr.enabled = true;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.5;
+  // No tone mapping — we use MeshBasicMaterial so ACES adds shader cost with no benefit
+  renderer.toneMapping = THREE.NoToneMapping;
   document.body.appendChild(renderer.domElement);
 
   // VR Button
@@ -155,7 +156,7 @@ function createEnvironment() {
   scene.add(grid);
 
   const floorGeo = new THREE.PlaneGeometry(200, 200);
-  const floorMat = new THREE.MeshBasicMaterial({ color: 0x220044, side: THREE.DoubleSide });
+  const floorMat = new THREE.MeshBasicMaterial({ color: 0x220044 });  // FrontSide only (saves half the fragments)
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
@@ -165,26 +166,24 @@ function createEnvironment() {
   createMountains();
   createStars();
 
-  // Lighting - much brighter
-  scene.add(new THREE.AmbientLight(0x5500aa, 0.8));
-  const pinkLight = new THREE.PointLight(NEON_PINK, 2.5, 35);
-  pinkLight.position.set(-6, 4, -6);
-  scene.add(pinkLight);
-  const cyanLight = new THREE.PointLight(NEON_CYAN, 2.5, 35);
-  cyanLight.position.set(6, 4, -6);
-  scene.add(cyanLight);
+  // NOTE: Lights removed — all materials are MeshBasicMaterial (unlit)
+  // so lights have zero visual effect but cost GPU overhead.
+  // If PBR materials are added later, re-add lights here.
 }
 
 function createSun() {
+  // Reduced segment count (32 vs 64) for perf, not visible at distance
   const coreMat = new THREE.MeshBasicMaterial({ color: SUN_CORE, side: THREE.DoubleSide });
-  const core = new THREE.Mesh(new THREE.CircleGeometry(14, 64), coreMat);
+  const core = new THREE.Mesh(new THREE.CircleGeometry(14, 32), coreMat);
   core.position.set(0, 10, -90);
+  core.renderOrder = -10;  // Draw last (background) to minimize overdraw
   scene.add(core);
 
   // Brighter glow with higher opacity
   const glowMat = new THREE.MeshBasicMaterial({ color: SUN_GLOW, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
-  const glow = new THREE.Mesh(new THREE.CircleGeometry(20, 64), glowMat);
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(20, 32), glowMat);
   glow.position.set(0, 10, -90.5);
+  glow.renderOrder = -11;  // Draw after core (further back)
   scene.add(glow);
 
   const stripeMat = new THREE.LineBasicMaterial({ color: DARK_BG });
@@ -212,6 +211,7 @@ function createMountains() {
 
     const fillMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
     fillMesh.position.set(0, 0, z);
+    fillMesh.renderOrder = -5;  // Draw after foreground, before sun
     scene.add(fillMesh);
 
     const edgePoints = [new THREE.Vector3(-100, 0, z)];
@@ -238,7 +238,8 @@ function generatePeaks(count, minH, maxH) {
 }
 
 function createStars() {
-  const count = 1500;
+  // Reduced from 1500 to 800 — still looks great, fewer draw calls
+  const count = 800;
   const positions = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     const i3 = i * 3;
@@ -248,9 +249,11 @@ function createStars() {
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  // Brighter stars with higher opacity
-  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.4, transparent: true, opacity: 0.95 });
-  scene.add(new THREE.Points(geo, mat));
+  // Opaque stars (no transparency = cheaper to render, no sorting needed)
+  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
+  const stars = new THREE.Points(geo, mat);
+  stars.renderOrder = -20;  // Draw last (furthest background)
+  scene.add(stars);
 }
 
 // ============================================================
@@ -997,6 +1000,7 @@ function updateFastEnemyAlerts(dt, playerPos) {
 //  RENDER / UPDATE LOOP
 // ============================================================
 function render(timestamp) {
+  frameCount++;
   const now = timestamp || performance.now();
   const rawDt  = Math.min((now - lastTime) / 1000, 0.1);
   lastTime  = now;
@@ -1121,10 +1125,12 @@ function render(timestamp) {
       }
     });
 
-    // Update HUD
+    // Update HUD (staggered — every 3rd frame to reduce geometry recreation cost)
     game._levelConfig = getLevelConfig();
     game._combo = getComboMultiplier();
-    updateHUD(game);
+    if (frameCount % 3 === 0) {
+      updateHUD(game);
+    }
   }
 
   // ── Level complete (cooldown before upgrade screen) ──
