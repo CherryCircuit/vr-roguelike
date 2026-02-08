@@ -61,6 +61,7 @@ let gameOverCooldown = 0;
 // Bullet-time slow-mo
 let slowMoActive = false;
 let slowMoDuration = 0;
+let slowMoSoundPlayed = false;
 let timeScale = 1.0;
 
 // Camera shake on damage
@@ -341,7 +342,7 @@ function updateBlasterDisplay(display, controllerIndex) {
   const oldText = display.children.filter(c => c.userData.isText);
   oldText.forEach(t => display.remove(t));
 
-  // Create new text
+  // Create new text (using PlaneGeometry to respect parent rotation)
   const makeText = (text, yPos, size = 20) => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -354,12 +355,20 @@ function updateBlasterDisplay(display, controllerIndex) {
     ctx.fillText(text, 128, 32);
 
     const texture = new THREE.CanvasTexture(canvas);
-    const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-    const sprite = new THREE.Sprite(spriteMat);
-    sprite.scale.set(0.15, 0.04, 1);
-    sprite.position.set(0, yPos, 0.002);
-    sprite.userData.isText = true;
-    return sprite;
+
+    // Use PlaneGeometry instead of Sprite so it follows parent rotation
+    const geometry = new THREE.PlaneGeometry(0.15, 0.04);
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthTest: true
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, yPos, 0.002);
+    mesh.userData.isText = true;
+    return mesh;
   };
 
   display.add(makeText(`${hand.toUpperCase()} BLASTER`, 0.1));
@@ -970,6 +979,7 @@ function render(timestamp) {
     slowMoDuration -= rawDt;
     if (slowMoDuration <= 0) {
       slowMoActive = false;
+      slowMoSoundPlayed = false;  // Reset sound flag for next activation
       timeScale = 1.0;
       console.log('[bullet-time] ENDED');
     } else {
@@ -1026,7 +1036,10 @@ function render(timestamp) {
         if (dist < 2.0) {  // Enemy within 2m triggers slow-mo (increased from 0.5m)
           slowMoActive = true;
           slowMoDuration = 2.5;  // 2.5 seconds of slow-mo (increased from 1.5s)
-          playSlowMoSound();
+          if (!slowMoSoundPlayed) {
+            playSlowMoSound();
+            slowMoSoundPlayed = true;
+          }
           console.log('[bullet-time] ACTIVATED!');
           break;
         }
