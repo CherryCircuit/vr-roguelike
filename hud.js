@@ -35,6 +35,10 @@ let upgradeChoices   = [];
 let hitFlash         = null;
 let hitFlashOpacity  = 0;
 
+// Boss health bar (camera-attached, 3 segments for phases)
+let bossHealthGroup  = null;
+let bossHealthBars   = []; // 3 segments
+
 // Title blink
 let titleBlinkSprite = null;
 
@@ -241,7 +245,54 @@ export function initHUD(camera, scene) {
   fpsSprite = makeSprite('FPS: 0', { fontSize: 32, color: '#00ff00', shadow: true, scale: 0.15 });
   fpsSprite.position.set(0.4, 0.25, -0.5);  // Top right of view
   fpsSprite.renderOrder = 1001;
+  // Discard transparent pixels so the plane doesn't render as a dark box in VR
+  fpsSprite.material.alphaTest = 0.05;
   camera.add(fpsSprite);
+
+  // ── Boss health bar (top center, camera-attached, 3 segments) ──
+  bossHealthGroup = new THREE.Group();
+  bossHealthGroup.position.set(0, 0.3, -0.6);
+  bossHealthGroup.visible = false;
+  const barWidth = 0.25;
+  const barHeight = 0.03;
+  const gap = 0.01;
+  for (let i = 0; i < 3; i++) {
+    const geo = new THREE.PlaneGeometry(barWidth, barHeight);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff0044, side: THREE.DoubleSide, depthTest: false });
+    const bar = new THREE.Mesh(geo, mat);
+    bar.position.x = (i - 1) * (barWidth + gap);
+    bar.renderOrder = 1000;
+    bossHealthGroup.add(bar);
+    bossHealthBars.push(bar);
+  }
+  camera.add(bossHealthGroup);
+}
+
+export function showBossHealthBar(hp, maxHp, phases = 3) {
+  if (!bossHealthGroup) return;
+  bossHealthGroup.visible = true;
+  updateBossHealthBar(hp, maxHp, phases);
+}
+
+export function hideBossHealthBar() {
+  if (bossHealthGroup) bossHealthGroup.visible = false;
+}
+
+export function updateBossHealthBar(hp, maxHp, phases = 3) {
+  if (!bossHealthGroup || !bossHealthGroup.visible || phases < 1) return;
+  const segmentHp = maxHp / phases;
+  for (let i = 0; i < 3; i++) {
+    const bar = bossHealthBars[i];
+    if (!bar) continue;
+    if (i >= phases) {
+      bar.scale.x = 0;
+      continue;
+    }
+    const segStart = i * segmentHp;
+    const segEnd = (i + 1) * segmentHp;
+    const segFill = Math.max(0, Math.min(1, (hp - segStart) / (segEnd - segStart)));
+    bar.scale.x = segFill;
+  }
 }
 
 // ── Title Screen ───────────────────────────────────────────
@@ -492,9 +543,10 @@ function createUpgradeCard(upgrade, position) {
   card.userData.upgradeId     = upgrade.id;
   group.add(card);
 
-  // Border
+  // Border (gold for side-grade / shot-type cards)
+  const borderColor = upgrade.sideGrade ? 0xffdd00 : (typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff));
   const borderGeo = new THREE.EdgesGeometry(cardGeo);
-  const borderMat = new THREE.LineBasicMaterial({ color: upgrade.color || '#00ffff' });
+  const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
   // Name text - smaller to prevent overlap
@@ -511,14 +563,27 @@ function createUpgradeCard(upgrade, position) {
 
   // Description text - standard size with padding (well inside box)
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 20,  // Fixed font size for all descriptions
+    fontSize: 20,
     color: '#cccccc',
-    scale: 0.15,  // Smaller scale = more padding inside card
+    scale: 0.15,
     depthTest: true,
-    maxWidth: 180,  // Consistent wrapping width
+    maxWidth: 180,
   });
   descSprite.position.set(0, -0.05, 0.01);
   group.add(descSprite);
+
+  // Side-grade note (different color) when present
+  if (upgrade.sideGradeNote) {
+    const noteSprite = makeSprite(upgrade.sideGradeNote, {
+      fontSize: 16,
+      color: '#ffdd00',
+      scale: 0.12,
+      depthTest: true,
+      maxWidth: 200,
+    });
+    noteSprite.position.set(0, -0.22, 0.01);
+    group.add(noteSprite);
+  }
 
   // Simple colored sphere as icon
   const iconMesh = new THREE.Mesh(

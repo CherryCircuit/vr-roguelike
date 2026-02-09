@@ -305,6 +305,28 @@ export function playSlowMoSound() {
   osc.stop(ctx.currentTime + 0.8);
 }
 
+// ── Bullet-time ramp-up (when all nearby enemies cleared) ───
+export function playSlowMoReverseSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(80, t);
+  osc.frequency.exponentialRampToValueAtTime(300, t + 0.5);
+
+  gain.gain.setValueAtTime(0.01, t);
+  gain.gain.exponentialRampToValueAtTime(0.2, t + 0.25);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + 0.5);
+}
+
 // ── Lightning beam continuous sound (electric crackle) ─────
 let lightningInterval = null;
 
