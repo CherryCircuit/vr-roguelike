@@ -10,20 +10,47 @@ export const UPGRADE_POOL = [
   { id: 'shock',       name: 'Shock',       desc: 'Electrocutes: slows + shock DoT',   color: '#4488ff' },
   { id: 'fire',        name: 'Fire',        desc: 'Ignites: weakens + fire DoT',       color: '#ff4400' },
   { id: 'big_boom',    name: 'Big Boom',    desc: 'Explodes on impact (AOE)',          color: '#ff8800' },
-  { id: 'buckshot',    name: 'Buckshot',    desc: 'Multi-pellet spread shot',          color: '#cccccc' },
+  { id: 'buckshot',    name: 'Buckshot',    desc: 'Multi-pellet spread shot',          color: '#cccccc', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
   { id: 'piercing',    name: 'Piercing',    desc: 'Shots pass through enemies',        color: '#00ffaa' },
   { id: 'vampiric',    name: 'Vampiric',    desc: 'Heal half-heart every 5 kills',     color: '#cc0044' },
   { id: 'critical',    name: 'Critical',    desc: '+15% chance for 2x damage',         color: '#ffff00' },
   { id: 'double_shot', name: 'Double Shot', desc: 'Fire an extra projectile',          color: '#ff44ff' },
   { id: 'freeze',      name: 'Freeze',      desc: 'Greatly slows enemies',             color: '#88ccff' },
   { id: 'ricochet',    name: 'Ricochet',    desc: 'Shots bounce to nearby enemy',      color: '#aaffaa' },
-  { id: 'lightning',   name: 'Lightning',   desc: 'Hold for auto-lock beam',           color: '#ffff44' },
+  { id: 'lightning',   name: 'Lightning',   desc: 'Hold for auto-lock beam',           color: '#ffff44', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  { id: 'charge_shot', name: 'Charge Shot', desc: 'Hold to charge, release for big beam', color: '#ffffff', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
 ];
+
+/** Special upgrades offered after boss victories (really valuable) */
+export const SPECIAL_UPGRADE_POOL = [
+  { id: 'mega_scope',   name: 'Mega Scope',   desc: 'Damage +25 per stack',           color: '#00ff88' },
+  { id: 'turbo_barrel',  name: 'Turbo Barrel', desc: 'Fire rate +30%',                color: '#ffcc00' },
+  { id: 'triple_shot',   name: 'Triple Shot',  desc: 'Fire two extra projectiles',     color: '#ff66ff' },
+  { id: 'mega_boom',     name: 'Mega Boom',   desc: 'Bigger AOE, +50% explosion dmg', color: '#ffaa00' },
+  { id: 'super_crit',   name: 'Super Crit',   desc: '+25% chance for 3x damage',      color: '#ffff88' },
+  { id: 'life_steal',   name: 'Life Steal',   desc: 'Heal 1 HP every 3 kills',        color: '#ff0044' },
+  { id: 'chain_lightning', name: 'Chain Lightning', desc: 'Lightning chains to +2 enemies', color: '#ffff00' },
+  { id: 'overcharge',    name: 'Overcharge',  desc: 'Piercing + 20% damage',          color: '#00ffcc' },
+];
+
+/** Pick `count` random special upgrades (for after boss) */
+export function getRandomSpecialUpgrades(count) {
+  const shuffled = [...SPECIAL_UPGRADE_POOL].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, Math.min(count, shuffled.length));
+}
 
 /** Pick `count` random upgrades from the pool */
 export function getRandomUpgrades(count) {
   const shuffled = [...UPGRADE_POOL].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, Math.min(count, shuffled.length));
+}
+
+/** Pick one random upgrade excluding given ids (for side-grade replacement card) */
+export function getRandomUpgradeExcluding(excludeIds = []) {
+  const set = new Set(excludeIds);
+  const pool = UPGRADE_POOL.filter(u => !set.has(u.id));
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /** Look up an upgrade definition by id */
@@ -39,14 +66,15 @@ export function getUpgradeDef(id) {
 export function getWeaponStats(upgrades) {
   const u = upgrades || {};
 
-  // Base values
-  let damage        = 15 + (u.scope || 0) * 10;
-  // OLD: let fireInterval = 300 / (1 + (u.barrel || 0) * 0.15);
-  let fireInterval  = (300 / (1 + (u.barrel || 0) * 0.15)) * 0.57;  // +75% fire rate
-  let projectileCount = 1 + (u.double_shot || 0);
-  let critChance    = Math.min((u.critical || 0) * 0.15, 0.9);
-  let piercing      = (u.piercing || 0) > 0;
-  let aoeRadius     = (u.big_boom || 0) > 0 ? 0.5 + (u.big_boom || 0) * 0.3 : 0;
+  // Base values (include special boss upgrades)
+  let damage        = 15 + (u.scope || 0) * 10 + (u.mega_scope || 0) * 25;
+  let fireInterval  = (300 / (1 + (u.barrel || 0) * 0.15 + (u.turbo_barrel || 0) * 0.3)) * 0.57;
+  let projectileCount = 1 + (u.double_shot || 0) + (u.triple_shot || 0) * 2;
+  let critChance    = Math.min((u.critical || 0) * 0.15 + (u.super_crit || 0) * 0.25, 0.9);
+  let piercing      = (u.piercing || 0) > 0 || (u.overcharge || 0) > 0;
+  let aoeRadius     = (u.big_boom || 0) > 0 || (u.mega_boom || 0) > 0
+    ? 0.5 + ((u.big_boom || 0) + (u.mega_boom || 0) * 1.5) * 0.3
+    : 0;
   let spreadAngle   = 0;
 
   // Fire effect: enemies take +15% damage per stack
@@ -60,8 +88,10 @@ export function getWeaponStats(upgrades) {
     damage *= 0.5;       // each pellet does less
   }
 
-  // Vampiric: heal every N kills (fewer kills needed with more stacks)
-  const vampiricInterval = (u.vampiric || 0) > 0 ? Math.max(2, 6 - (u.vampiric || 0)) : 0;
+  // Vampiric / Life Steal: heal every N kills
+  const vampiricStacks = (u.vampiric || 0) + (u.life_steal || 0) * 2;
+  const vampiricInterval = vampiricStacks > 0 ? Math.max(2, (u.life_steal ? 3 : 6) - vampiricStacks) : 0;
+  if (u.overcharge) damage *= 1.2;
 
   // Collect status effects to apply on hit
   const effects = [];
@@ -69,11 +99,14 @@ export function getWeaponStats(upgrades) {
   if (u.shock)  effects.push({ type: 'shock',  stacks: u.shock });
   if (u.freeze) effects.push({ type: 'freeze', stacks: u.freeze });
 
+  const critMultiplier = (u.super_crit || 0) > 0 ? 3 : 2;
+
   return {
     damage:           Math.round(damage),
     fireInterval,
     projectileCount,
     critChance,
+    critMultiplier,
     piercing,
     aoeRadius,
     spreadAngle,
@@ -82,7 +115,9 @@ export function getWeaponStats(upgrades) {
     effects,
     ricochetBounces:  u.ricochet || 0,
     lightning:        (u.lightning || 0) > 0,
-    lightningRange:   8 + (u.lightning || 0) * 2,  // 8-14m range
-    lightningDamage:  10 + (u.lightning || 0) * 5,  // 10-25 damage per tick
+    lightningRange:   8 + (u.lightning || 0) * 2 + (u.chain_lightning || 0) * 4,
+    lightningDamage:  10 + (u.lightning || 0) * 5 + (u.chain_lightning || 0) * 5,
+    lightningTickInterval: (u.lightning || 0) > 0 ? Math.max(0.08, 0.2 / (1 + (u.barrel || 0) * 0.15)) : 0.2,
+    chargeShot: (u.charge_shot || 0) > 0,
   };
 }

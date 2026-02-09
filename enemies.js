@@ -154,6 +154,15 @@ export function spawnEnemy(type, position, levelConfig) {
   group.position.copy(position);
   group.userData.isEnemy = true;
 
+  // Tank: one random voxel is weak point (double damage)
+  if (type === 'tank') {
+    const voxels = group.children.filter(c => !c.userData.isEnemyHitbox);
+    if (voxels.length > 0) {
+      const weak = voxels[Math.floor(Math.random() * voxels.length)];
+      weak.userData.weakPoint = true;
+    }
+  }
+
   // Add invisible sphere hitbox for better hit detection
   const hitboxGeo = new THREE.SphereGeometry(def.hitboxRadius, 8, 8);
   const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
@@ -369,18 +378,215 @@ export function updateExplosions(dt, now) {
   }
 }
 
-/** Return all enemy mesh groups (for raycasting). */
-export function getEnemyMeshes() {
-  return activeEnemies.map(e => e.mesh);
+/** Return all enemy mesh groups (for raycasting). Optionally include boss mesh. */
+export function getEnemyMeshes(includeBoss = false) {
+  const list = activeEnemies.map(e => e.mesh);
+  if (includeBoss && activeBoss) list.push(activeBoss.mesh);
+  return list;
 }
 
 /** Find which enemy a raycasted mesh belongs to. */
 export function getEnemyByMesh(mesh) {
   let obj = mesh;
-  while (obj && !obj.userData.isEnemy) obj = obj.parent;
-  if (!obj || !obj.userData.isEnemy) return null;
-  const idx = activeEnemies.findIndex(e => e.mesh === obj);
-  return idx >= 0 ? { index: idx, enemy: activeEnemies[idx] } : null;
+  while (obj) {
+    if (obj.userData.isBoss) return { boss: activeBoss };
+    if (obj.userData.isEnemy) {
+      const idx = activeEnemies.findIndex(e => e.mesh === obj);
+      return idx >= 0 ? { index: idx, enemy: activeEnemies[idx] } : null;
+    }
+    obj = obj.parent;
+  }
+  return null;
+}
+
+// ── BOSS SYSTEM ───────────────────────────────────────────
+let activeBoss = null;
+
+const BOSS_SKULL_PATTERN = [
+  [0,1,1,1,0],
+  [1,1,1,1,1],
+  [1,1,0,1,1],
+  [1,1,1,1,1],
+  [0,1,0,1,0],
+];
+
+const BOSS_DEFS = {
+  skull:   { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.5, baseHp: 400, phases: 3, color: 0xcccccc, scoreValue: 100 },
+  cowboy:  { pattern: [[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.45, baseHp: 350, phases: 3, color: 0x8B4513, scoreValue: 100 },
+  orb:     { pattern: [[1,1],[1,1]], voxelSize: 0.6, baseHp: 300, phases: 2, color: 0xaa00ff, scoreValue: 100 },
+  serpent: { pattern: [[1,1,1,1]], voxelSize: 0.4, baseHp: 320, phases: 2, color: 0x00ff88, scoreValue: 100 },
+  turret:  { pattern: [[1,1,1],[1,1,1]], voxelSize: 0.5, baseHp: 380, phases: 2, color: 0x666666, scoreValue: 100 },
+  // Tier 2–4 reuse same ids with higher baseHp (handled in spawnBoss)
+  skull2:  { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.5, baseHp: 600, phases: 3, color: 0xcccccc, scoreValue: 150 },
+  cowboy2: { pattern: [[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.45, baseHp: 550, phases: 3, color: 0x8B4513, scoreValue: 150 },
+  orb2:    { pattern: [[1,1],[1,1]], voxelSize: 0.6, baseHp: 500, phases: 2, color: 0xaa00ff, scoreValue: 150 },
+  serpent2: { pattern: [[1,1,1,1]], voxelSize: 0.4, baseHp: 520, phases: 2, color: 0x00ff88, scoreValue: 150 },
+  turret2: { pattern: [[1,1,1],[1,1,1]], voxelSize: 0.5, baseHp: 580, phases: 2, color: 0x666666, scoreValue: 150 },
+  skull3:  { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.5, baseHp: 900, phases: 3, color: 0xcccccc, scoreValue: 200 },
+  cowboy3: { pattern: [[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.45, baseHp: 850, phases: 3, color: 0x8B4513, scoreValue: 200 },
+  orb3:    { pattern: [[1,1],[1,1]], voxelSize: 0.6, baseHp: 800, phases: 2, color: 0xaa00ff, scoreValue: 200 },
+  serpent3: { pattern: [[1,1,1,1]], voxelSize: 0.4, baseHp: 820, phases: 2, color: 0x00ff88, scoreValue: 200 },
+  turret3: { pattern: [[1,1,1],[1,1,1]], voxelSize: 0.5, baseHp: 880, phases: 2, color: 0x666666, scoreValue: 200 },
+  skull4:  { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.5, baseHp: 1200, phases: 3, color: 0xcccccc, scoreValue: 300 },
+  cowboy4: { pattern: [[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.45, baseHp: 1150, phases: 3, color: 0x8B4513, scoreValue: 300 },
+  orb4:    { pattern: [[1,1],[1,1]], voxelSize: 0.6, baseHp: 1100, phases: 2, color: 0xaa00ff, scoreValue: 300 },
+  serpent4: { pattern: [[1,1,1,1]], voxelSize: 0.4, baseHp: 1120, phases: 2, color: 0x00ff88, scoreValue: 300 },
+  turret4: { pattern: [[1,1,1],[1,1,1]], voxelSize: 0.5, baseHp: 1180, phases: 2, color: 0x666666, scoreValue: 300 },
+};
+
+function buildBossMesh(def, id) {
+  const group = new THREE.Group();
+  const geo = getGeo(def.voxelSize);
+  const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.9 });
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (def.pattern[r][c]) {
+        const cube = new THREE.Mesh(geo, mat.clone());
+        cube.position.set((c - cx) * def.voxelSize, (cy - r) * def.voxelSize, 0);
+        group.add(cube);
+      }
+    }
+  }
+  group.userData.isBoss = true;
+  return group;
+}
+
+export function spawnBoss(bossId, levelConfig) {
+  const def = BOSS_DEFS[bossId];
+  if (!def || !sceneRef) return null;
+  const mesh = buildBossMesh(def, bossId);
+  const maxHp = Math.round(def.baseHp * levelConfig.hpMultiplier);
+  mesh.position.set(0, 1.5, -12);
+  sceneRef.add(mesh);
+  activeBoss = {
+    mesh,
+    id: bossId,
+    hp: maxHp,
+    maxHp,
+    phase: 1,
+    phases: def.phases,
+    scoreValue: def.scoreValue,
+    baseColor: new THREE.Color(def.color),
+    spawnMinionTimer: 0,
+  };
+  return activeBoss;
+}
+
+export function getBoss() {
+  return activeBoss;
+}
+
+export function hitBoss(damage) {
+  if (!activeBoss) return { killed: false };
+  activeBoss.hp -= damage;
+  if (activeBoss.hp <= 0) activeBoss.hp = 0;
+  const prevPhase = activeBoss.phase;
+  const phaseThreshold2 = activeBoss.maxHp * (2 / 3);
+  const phaseThreshold1 = activeBoss.maxHp * (1 / 3);
+  if (activeBoss.phases >= 3 && activeBoss.hp > 0) {
+    if (activeBoss.hp <= phaseThreshold1) activeBoss.phase = 3;
+    else if (activeBoss.hp <= phaseThreshold2) activeBoss.phase = 2;
+  }
+  return { killed: activeBoss.hp <= 0, phaseChanged: activeBoss.phase !== prevPhase };
+}
+
+export function updateBoss(dt, now, playerPos) {
+  if (!activeBoss) return;
+  const b = activeBoss;
+  _dir.copy(playerPos).sub(b.mesh.position);
+  const dist = _dir.length();
+  if (dist > 0.01) _dir.divideScalar(dist);
+  const speed = 0.4 + (b.phase - 1) * 0.2;
+  b.mesh.position.addScaledVector(_dir, speed * dt);
+  _look.set(playerPos.x, b.mesh.position.y, playerPos.z);
+  b.mesh.lookAt(_look);
+  if (b.id === 'skull' || b.id.startsWith('skull')) {
+    b.spawnMinionTimer = (b.spawnMinionTimer || 0) - dt;
+    if (b.spawnMinionTimer <= 0) {
+      b.spawnMinionTimer = 2.5 - b.phase * 0.4;
+      spawnBossMinion(b.mesh.position.clone(), playerPos);
+    }
+  }
+}
+
+const bossMinions = [];
+function spawnBossMinion(fromPos, playerPos) {
+  const group = new THREE.Group();
+  const geo = getGeo(0.25);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.8 });
+  for (let i = 0; i < 4; i++) group.add(new THREE.Mesh(geo, mat.clone()));
+  group.children[0].position.set(0, 0, 0);
+  group.children[1].position.set(0.25, 0, 0);
+  group.children[2].position.set(0.5, 0, 0);
+  group.children[3].position.set(0.75, 0, 0);
+  group.position.copy(fromPos);
+  group.userData.isBossMinion = true;
+  group.userData.slideAngle = 0;
+  group.userData.slideTimer = 0;
+  sceneRef.add(group);
+  bossMinions.push({ mesh: group, hp: 20, maxHp: 20 });
+}
+
+export function getBossMinionMeshes() {
+  return bossMinions.map(m => m.mesh);
+}
+
+export function getBossMinionByMesh(mesh) {
+  let obj = mesh;
+  while (obj) {
+    if (obj.userData.isBossMinion) {
+      const idx = bossMinions.findIndex(m => m.mesh === obj);
+      return idx >= 0 ? { index: idx, minion: bossMinions[idx] } : null;
+    }
+    obj = obj.parent;
+  }
+  return null;
+}
+
+export function hitBossMinion(index, damage) {
+  const m = bossMinions[index];
+  if (!m) return { killed: false };
+  m.hp -= damage;
+  if (m.hp <= 0) {
+    sceneRef.remove(m.mesh);
+    m.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+    bossMinions.splice(index, 1);
+    return { killed: true };
+  }
+  return { killed: false };
+}
+
+export function updateBossMinions(dt, playerPos) {
+  for (let i = bossMinions.length - 1; i >= 0; i--) {
+    const m = bossMinions[i];
+    m.mesh.userData.slideTimer = (m.mesh.userData.slideTimer || 0) + dt;
+    let angle = m.mesh.userData.slideAngle || 0;
+    if (m.mesh.userData.slideTimer > 0.15) {
+      m.mesh.userData.slideTimer = 0;
+      angle = (angle + Math.PI / 4) % (Math.PI * 2);
+      if (angle > Math.PI) angle -= Math.PI * 2;
+      m.mesh.userData.slideAngle = angle;
+    }
+    m.mesh.rotation.y = m.mesh.userData.slideAngle || 0;
+    _dir.copy(playerPos).sub(m.mesh.position).normalize();
+    m.mesh.position.addScaledVector(_dir, 0.6 * dt);
+  }
+}
+
+export function clearBoss() {
+  if (!activeBoss) return;
+  sceneRef.remove(activeBoss.mesh);
+  activeBoss.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+  activeBoss = null;
+  bossMinions.forEach(m => {
+    sceneRef.remove(m.mesh);
+    m.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+  });
+  bossMinions.length = 0;
 }
 
 /** Get number of active enemies. */
