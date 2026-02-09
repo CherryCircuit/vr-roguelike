@@ -10,6 +10,10 @@ export const State = {
   UPGRADE_SELECT:  'upgrade_select',
   GAME_OVER:       'game_over',
   VICTORY:         'victory',
+  NAME_ENTRY:      'name_entry',
+  SCOREBOARD:      'scoreboard',
+  COUNTRY_SELECT:  'country_select',
+  REGIONAL_SCORES: 'regional_scores',
 };
 
 // ── Enemy types available per level ────────────────────────
@@ -91,6 +95,10 @@ export const game = {
 
   // After boss kill, show special upgrades
   justBossKill: false,
+
+  // Scoreboard
+  finalScore: 0,
+  finalLevel: 0,
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -112,6 +120,8 @@ export function resetGame() {
       right: { kills: 0, totalDamage: 0 }
     },
     justBossKill: false,
+    finalScore: 0,
+    finalLevel: 0,
   });
 }
 

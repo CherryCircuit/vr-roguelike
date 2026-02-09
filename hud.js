@@ -10,11 +10,14 @@ import { State } from './game.js';
 let sceneRef, cameraRef;
 
 // Groups for different UI states
-const titleGroup     = new THREE.Group();
-const hudGroup       = new THREE.Group();
-const levelTextGroup = new THREE.Group();
-const upgradeGroup   = new THREE.Group();
-const gameOverGroup  = new THREE.Group();
+const titleGroup        = new THREE.Group();
+const hudGroup          = new THREE.Group();
+const levelTextGroup    = new THREE.Group();
+const upgradeGroup      = new THREE.Group();
+const gameOverGroup     = new THREE.Group();
+const nameEntryGroup    = new THREE.Group();
+const scoreboardGroup   = new THREE.Group();
+const countrySelectGroup = new THREE.Group();
 
 // HUD element references
 let heartsSprite     = null;
@@ -41,6 +44,33 @@ let bossHealthBars   = []; // 3 segments
 
 // Title blink
 let titleBlinkSprite = null;
+
+// Title scoreboard button
+let titleScoreboardBtn = null;
+
+// Name entry state
+let nameEntryName = '';
+let nameEntryCursor = 0;
+let nameEntrySlots = [];
+let keyboardKeys = [];
+let hoveredKey = null;
+
+// Scoreboard state
+let scoreboardCanvas = null;
+let scoreboardTexture = null;
+let scoreboardMesh = null;
+let scoreboardScrollOffset = 0;
+let scoreboardScores = [];
+let scoreboardHeader = '';
+
+// Country select state
+let countryListCanvas = null;
+let countryListTexture = null;
+let countryListMesh = null;
+let countrySelectContinent = 'North America';
+let countrySelectScrollOffset = 0;
+let continentTabs = [];
+let countryItems = [];
 
 // ── Canvas text utility ────────────────────────────────────
 function makeTextTexture(text, opts = {}) {
@@ -223,8 +253,23 @@ export function initHUD(camera, scene) {
 
   // ── Game over / Victory (world-space) ──
   gameOverGroup.visible = false;
-  gameOverGroup.rotation.set(0, 0, 0);  // Lock rotation
+  gameOverGroup.rotation.set(0, 0, 0);
   scene.add(gameOverGroup);
+
+  // ── Name entry (world-space) ──
+  nameEntryGroup.visible = false;
+  nameEntryGroup.rotation.set(0, 0, 0);
+  scene.add(nameEntryGroup);
+
+  // ── Scoreboard (world-space) ──
+  scoreboardGroup.visible = false;
+  scoreboardGroup.rotation.set(0, 0, 0);
+  scene.add(scoreboardGroup);
+
+  // ── Country select (world-space) ──
+  countrySelectGroup.visible = false;
+  countrySelectGroup.rotation.set(0, 0, 0);
+  scene.add(countrySelectGroup);
 
   // ── Hit flash (red sphere around camera) ──
   hitFlash = new THREE.Mesh(
@@ -328,6 +373,33 @@ function createTitleScreen() {
   titleBlinkSprite.position.set(0, 0, 0);
   titleGroup.add(titleBlinkSprite);
 
+  // Scoreboard button
+  const btnGroup = new THREE.Group();
+  btnGroup.position.set(0, -0.6, 0);
+  const btnGeo = new THREE.PlaneGeometry(1.2, 0.3);
+  const btnMat = new THREE.MeshBasicMaterial({
+    color: 0x110033,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+  });
+  const btnMesh = new THREE.Mesh(btnGeo, btnMat);
+  btnMesh.userData.isTitleScoreboardBtn = true;
+  btnGroup.add(btnMesh);
+  const btnBorderGeo = new THREE.EdgesGeometry(btnGeo);
+  btnGroup.add(new THREE.LineSegments(btnBorderGeo, new THREE.LineBasicMaterial({ color: 0xffff00 })));
+  const btnText = makeSprite('SCOREBOARD', {
+    fontSize: 36,
+    color: '#ffff00',
+    glow: true,
+    glowColor: '#ffff00',
+    scale: 0.25,
+  });
+  btnText.position.set(0, 0, 0.01);
+  btnGroup.add(btnText);
+  titleGroup.add(btnGroup);
+  titleScoreboardBtn = btnMesh;
+
   // Version number
   const now = new Date();
   const pst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
@@ -337,7 +409,7 @@ function createTitleScreen() {
     color: '#888888',
     scale: 0.25,
   });
-  versionSprite.position.set(0, -0.6, 0);
+  versionSprite.position.set(0, -1.0, 0);
   titleGroup.add(versionSprite);
 }
 
@@ -931,8 +1003,628 @@ export function updateFPS(now, opts = {}) {
 // ── Helpers ────────────────────────────────────────────────
 
 function hideAll() {
-  titleGroup.visible     = false;
-  levelTextGroup.visible = false;
-  upgradeGroup.visible   = false;
-  gameOverGroup.visible  = false;
+  titleGroup.visible          = false;
+  levelTextGroup.visible      = false;
+  upgradeGroup.visible        = false;
+  gameOverGroup.visible       = false;
+  nameEntryGroup.visible      = false;
+  scoreboardGroup.visible     = false;
+  countrySelectGroup.visible  = false;
+}
+
+// ── Title Scoreboard Button Hit ─────────────────────────────
+
+export function getTitleButtonHit(raycaster) {
+  if (!titleScoreboardBtn || !titleGroup.visible) return null;
+  const hits = raycaster.intersectObject(titleScoreboardBtn, false);
+  if (hits.length > 0) return 'scoreboard';
+  return null;
+}
+
+// ── Name Entry Screen ───────────────────────────────────────
+
+export function showNameEntry(score, level, storedName) {
+  hideAll();
+  while (nameEntryGroup.children.length) nameEntryGroup.remove(nameEntryGroup.children[0]);
+  nameEntrySlots = [];
+  keyboardKeys = [];
+  hoveredKey = null;
+  nameEntryName = storedName || '';
+  nameEntryCursor = nameEntryName.length;
+
+  nameEntryGroup.position.set(0, 1.6, -4);
+  nameEntryGroup.visible = true;
+
+  // Header
+  const header = makeSprite('ENTER YOUR NAME', {
+    fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
+  });
+  header.position.set(0, 1.4, 0);
+  nameEntryGroup.add(header);
+
+  // Score display
+  const scoreText = makeSprite(`SCORE: ${score}  LEVEL: ${level}`, {
+    fontSize: 40, color: '#ffff00', scale: 0.4,
+  });
+  scoreText.position.set(0, 1.05, 0);
+  nameEntryGroup.add(scoreText);
+
+  // 6 character slot boxes
+  const slotWidth = 0.18;
+  const slotGap = 0.04;
+  const totalWidth = 6 * slotWidth + 5 * slotGap;
+  const startX = -totalWidth / 2 + slotWidth / 2;
+
+  for (let i = 0; i < 6; i++) {
+    const slotGroup = new THREE.Group();
+    const x = startX + i * (slotWidth + slotGap);
+    slotGroup.position.set(x, 0.75, 0);
+
+    const boxGeo = new THREE.PlaneGeometry(slotWidth, 0.22);
+    const boxMat = new THREE.MeshBasicMaterial({
+      color: i === nameEntryCursor ? 0x003344 : 0x110022,
+      transparent: true, opacity: 0.9, side: THREE.DoubleSide,
+    });
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    slotGroup.add(box);
+
+    const borderGeo = new THREE.EdgesGeometry(boxGeo);
+    const borderColor = i === nameEntryCursor ? 0x00ffff : 0x666666;
+    slotGroup.add(new THREE.LineSegments(borderGeo, new THREE.LineBasicMaterial({ color: borderColor })));
+
+    const char = nameEntryName[i] || '';
+    if (char) {
+      const charSprite = makeSprite(char, {
+        fontSize: 48, color: '#ffffff', scale: 0.18,
+      });
+      charSprite.position.set(0, 0, 0.01);
+      charSprite.userData.isSlotChar = true;
+      slotGroup.add(charSprite);
+    }
+
+    nameEntrySlots.push({ group: slotGroup, box, boxMat });
+    nameEntryGroup.add(slotGroup);
+  }
+
+  // Virtual keyboard
+  const rows = [
+    ['Q','W','E','R','T','Y','U','I','O','P'],
+    ['A','S','D','F','G','H','J','K','L'],
+    ['Z','X','C','V','B','N','M','DEL'],
+    ['SPACE','OK'],
+  ];
+
+  const keySize = 0.12;
+  const keyGap = 0.02;
+  let rowY = 0.4;
+
+  for (const row of rows) {
+    const rowWidth = row.reduce((sum, key) => {
+      if (key === 'SPACE') return sum + keySize * 3 + keyGap;
+      if (key === 'OK') return sum + keySize * 1.5 + keyGap;
+      if (key === 'DEL') return sum + keySize * 1.5 + keyGap;
+      return sum + keySize + keyGap;
+    }, -keyGap);
+    let keyX = -rowWidth / 2;
+
+    for (const key of row) {
+      let w = keySize;
+      if (key === 'SPACE') w = keySize * 3;
+      else if (key === 'OK' || key === 'DEL') w = keySize * 1.5;
+
+      const keyGroup = new THREE.Group();
+      keyGroup.position.set(keyX + w / 2, rowY, 0);
+
+      const keyGeo = new THREE.PlaneGeometry(w, keySize);
+      const isAction = key === 'OK' || key === 'DEL' || key === 'SPACE';
+      const keyColor = key === 'OK' ? 0x003300 : (key === 'DEL' ? 0x330000 : 0x111133);
+      const keyMat = new THREE.MeshBasicMaterial({
+        color: keyColor, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
+      });
+      const keyMesh = new THREE.Mesh(keyGeo, keyMat);
+      keyMesh.userData.keyValue = key;
+      keyMesh.userData.isKeyboardKey = true;
+      keyGroup.add(keyMesh);
+
+      const borderGeo = new THREE.EdgesGeometry(keyGeo);
+      const borderColor = key === 'OK' ? 0x00ff00 : (key === 'DEL' ? 0xff4444 : 0x444488);
+      keyGroup.add(new THREE.LineSegments(borderGeo, new THREE.LineBasicMaterial({ color: borderColor })));
+
+      const label = key === 'SPACE' ? '___' : key;
+      const textColor = key === 'OK' ? '#00ff00' : (key === 'DEL' ? '#ff4444' : '#ccccff');
+      const keyLabel = makeSprite(label, {
+        fontSize: 28, color: textColor, scale: 0.09,
+      });
+      keyLabel.position.set(0, 0, 0.01);
+      keyGroup.add(keyLabel);
+
+      keyboardKeys.push({ group: keyGroup, mesh: keyMesh, mat: keyMat, key, baseColor: keyColor });
+      nameEntryGroup.add(keyGroup);
+
+      keyX += w + keyGap;
+    }
+    rowY -= keySize + keyGap;
+  }
+}
+
+export function hideNameEntry() {
+  nameEntryGroup.visible = false;
+}
+
+export function getNameEntryName() {
+  return nameEntryName;
+}
+
+export function getKeyboardHit(raycaster) {
+  if (!nameEntryGroup.visible) return null;
+  const meshes = keyboardKeys.map(k => k.mesh);
+  const hits = raycaster.intersectObjects(meshes, false);
+  if (hits.length > 0) {
+    const key = hits[0].object.userData.keyValue;
+    return processKeyPress(key);
+  }
+  return null;
+}
+
+function processKeyPress(key) {
+  if (key === 'OK') {
+    if (nameEntryName.length > 0) return { action: 'submit', name: nameEntryName };
+    return null;
+  }
+  if (key === 'DEL') {
+    if (nameEntryCursor > 0) {
+      nameEntryName = nameEntryName.slice(0, -1);
+      nameEntryCursor = nameEntryName.length;
+      refreshNameSlots();
+    }
+    return null;
+  }
+  if (key === 'SPACE') {
+    if (nameEntryName.length < 6) {
+      nameEntryName += ' ';
+      nameEntryCursor = nameEntryName.length;
+      refreshNameSlots();
+    }
+    return null;
+  }
+  // Letter key
+  if (nameEntryName.length < 6) {
+    nameEntryName += key;
+    nameEntryCursor = nameEntryName.length;
+    refreshNameSlots();
+  }
+  return null;
+}
+
+function refreshNameSlots() {
+  nameEntrySlots.forEach((slot, i) => {
+    // Update cursor highlight
+    const isCursor = i === nameEntryCursor || (nameEntryCursor >= 6 && i === 5);
+    slot.boxMat.color.setHex(isCursor ? 0x003344 : 0x110022);
+
+    // Remove old char sprite
+    const old = slot.group.children.filter(c => c.userData && c.userData.isSlotChar);
+    old.forEach(c => slot.group.remove(c));
+
+    // Add new char
+    const char = nameEntryName[i] || '';
+    if (char) {
+      const charSprite = makeSprite(char, {
+        fontSize: 48, color: '#ffffff', scale: 0.18,
+      });
+      charSprite.position.set(0, 0, 0.01);
+      charSprite.userData.isSlotChar = true;
+      slot.group.add(charSprite);
+    }
+  });
+}
+
+export function updateKeyboardHover(raycaster) {
+  if (!nameEntryGroup.visible) return;
+
+  // Reset previous hover
+  if (hoveredKey) {
+    hoveredKey.mat.color.setHex(hoveredKey.baseColor);
+    hoveredKey = null;
+  }
+
+  const meshes = keyboardKeys.map(k => k.mesh);
+  const hits = raycaster.intersectObjects(meshes, false);
+  if (hits.length > 0) {
+    const hit = keyboardKeys.find(k => k.mesh === hits[0].object);
+    if (hit) {
+      hoveredKey = hit;
+      hit.mat.color.setHex(0x004455);
+    }
+  }
+}
+
+// ── Scoreboard Screen ───────────────────────────────────────
+
+export function showScoreboard(scores, headerText) {
+  hideAll();
+  while (scoreboardGroup.children.length) scoreboardGroup.remove(scoreboardGroup.children[0]);
+
+  scoreboardScores = scores;
+  scoreboardScrollOffset = 0;
+  scoreboardHeader = headerText || 'GLOBAL LEADERBOARD';
+  scoreboardGroup.position.set(0, 1.6, -5);
+  scoreboardGroup.visible = true;
+
+  // Header
+  const header = makeSprite(scoreboardHeader, {
+    fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
+  });
+  header.position.set(0, 1.8, 0);
+  scoreboardGroup.add(header);
+
+  // Score list canvas
+  renderScoreboardCanvas();
+  scoreboardMesh.position.set(0, 0.5, 0);
+  scoreboardGroup.add(scoreboardMesh);
+
+  // Buttons on right side
+  const btnDefs = [
+    { label: 'COUNTRY', y: 1.2, action: 'country' },
+    { label: 'CONTINENT', y: 0.85, action: 'continent' },
+    { label: 'SCROLL UP', y: 0.1, action: 'scroll_up' },
+    { label: 'SCROLL DOWN', y: -0.25, action: 'scroll_down' },
+  ];
+
+  for (const def of btnDefs) {
+    const btnGroup = new THREE.Group();
+    btnGroup.position.set(1.2, def.y, 0);
+
+    const btnGeo = new THREE.PlaneGeometry(0.5, 0.25);
+    const btnMat = new THREE.MeshBasicMaterial({
+      color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
+    });
+    const btnMesh = new THREE.Mesh(btnGeo, btnMat);
+    btnMesh.userData.scoreboardAction = def.action;
+    btnGroup.add(btnMesh);
+
+    btnGroup.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(btnGeo),
+      new THREE.LineBasicMaterial({ color: 0x888888 })
+    ));
+
+    const txt = makeSprite(def.label, { fontSize: 22, color: '#ffffff', scale: 0.12 });
+    txt.position.set(0, 0, 0.01);
+    btnGroup.add(txt);
+
+    scoreboardGroup.add(btnGroup);
+  }
+
+  // BACK button bottom center
+  const backGroup = new THREE.Group();
+  backGroup.position.set(0, -0.7, 0);
+  const backGeo = new THREE.PlaneGeometry(0.6, 0.25);
+  const backMat = new THREE.MeshBasicMaterial({
+    color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
+  });
+  const backMesh = new THREE.Mesh(backGeo, backMat);
+  backMesh.userData.scoreboardAction = 'back';
+  backGroup.add(backMesh);
+  backGroup.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(backGeo),
+    new THREE.LineBasicMaterial({ color: 0xff4444 })
+  ));
+  const backTxt = makeSprite('BACK', { fontSize: 28, color: '#ff4444', scale: 0.15 });
+  backTxt.position.set(0, 0, 0.01);
+  backGroup.add(backTxt);
+  scoreboardGroup.add(backGroup);
+}
+
+function renderScoreboardCanvas() {
+  const canvas = document.createElement('canvas');
+  const w = 800;
+  const h = 1000;
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+
+  // Background
+  ctx.fillStyle = 'rgba(10, 0, 30, 0.9)';
+  ctx.fillRect(0, 0, w, h);
+
+  // Border
+  ctx.strokeStyle = '#444488';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, w - 2, h - 2);
+
+  const rowHeight = 42;
+  const maxVisible = Math.floor(h / rowHeight);
+  const startIdx = scoreboardScrollOffset;
+  const endIdx = Math.min(startIdx + maxVisible, scoreboardScores.length);
+
+  ctx.font = 'bold 24px Arial, sans-serif';
+  ctx.textBaseline = 'middle';
+
+  for (let i = startIdx; i < endIdx; i++) {
+    const score = scoreboardScores[i];
+    const y = (i - startIdx) * rowHeight + rowHeight / 2 + 4;
+    const rank = i + 1;
+
+    // Rank color
+    if (rank === 1) ctx.fillStyle = '#ffdd00';
+    else if (rank === 2) ctx.fillStyle = '#cccccc';
+    else if (rank === 3) ctx.fillStyle = '#cc8844';
+    else ctx.fillStyle = '#888888';
+
+    ctx.textAlign = 'left';
+    ctx.fillText(`#${rank}`, 15, y);
+
+    // Name
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(score.name, 90, y);
+
+    // Score
+    ctx.fillStyle = '#ffff00';
+    ctx.textAlign = 'right';
+    ctx.fillText(score.score.toLocaleString(), 520, y);
+
+    // Level
+    ctx.fillStyle = '#00ffff';
+    ctx.textAlign = 'right';
+    ctx.fillText(`L${score.level_reached}`, 600, y);
+
+    // Country flag (if available)
+    if (score.country) {
+      try {
+        const flag = String.fromCodePoint(
+          ...[...score.country.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
+        );
+        ctx.textAlign = 'left';
+        ctx.font = '22px Arial, sans-serif';
+        ctx.fillText(flag, 640, y);
+        ctx.font = 'bold 24px Arial, sans-serif';
+      } catch (e) { /* skip flag */ }
+    }
+
+    // Divider line
+    ctx.strokeStyle = 'rgba(100, 100, 200, 0.2)';
+    ctx.beginPath();
+    ctx.moveTo(10, (i - startIdx + 1) * rowHeight + 4);
+    ctx.lineTo(w - 10, (i - startIdx + 1) * rowHeight + 4);
+    ctx.stroke();
+  }
+
+  // "Loading" or "No scores" message
+  if (scoreboardScores.length === 0) {
+    ctx.fillStyle = '#666666';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 32px Arial, sans-serif';
+    ctx.fillText('NO SCORES YET', w / 2, h / 2);
+  }
+
+  // Scroll indicator
+  if (scoreboardScores.length > maxVisible) {
+    ctx.fillStyle = '#444488';
+    ctx.textAlign = 'center';
+    ctx.font = '18px Arial, sans-serif';
+    ctx.fillText(`${startIdx + 1}-${endIdx} of ${scoreboardScores.length}`, w / 2, h - 15);
+  }
+
+  if (scoreboardTexture) scoreboardTexture.dispose();
+  scoreboardTexture = new THREE.CanvasTexture(canvas);
+  scoreboardTexture.minFilter = THREE.LinearFilter;
+
+  if (!scoreboardMesh) {
+    const geo = new THREE.PlaneGeometry(1.8, 2.2);
+    const mat = new THREE.MeshBasicMaterial({
+      map: scoreboardTexture, transparent: true, side: THREE.DoubleSide, depthTest: false,
+    });
+    scoreboardMesh = new THREE.Mesh(geo, mat);
+    scoreboardMesh.renderOrder = 999;
+  } else {
+    scoreboardMesh.material.map = scoreboardTexture;
+    scoreboardMesh.material.needsUpdate = true;
+  }
+}
+
+export function hideScoreboard() {
+  scoreboardGroup.visible = false;
+}
+
+export function getScoreboardHit(raycaster) {
+  if (!scoreboardGroup.visible) return null;
+  const actionMeshes = [];
+  scoreboardGroup.traverse(c => {
+    if (c.userData && c.userData.scoreboardAction) actionMeshes.push(c);
+  });
+  const hits = raycaster.intersectObjects(actionMeshes, false);
+  if (hits.length > 0) {
+    const action = hits[0].object.userData.scoreboardAction;
+    if (action === 'scroll_up') {
+      scoreboardScrollOffset = Math.max(0, scoreboardScrollOffset - 10);
+      renderScoreboardCanvas();
+      return null;
+    }
+    if (action === 'scroll_down') {
+      scoreboardScrollOffset = Math.min(
+        Math.max(0, scoreboardScores.length - 20),
+        scoreboardScrollOffset + 10
+      );
+      renderScoreboardCanvas();
+      return null;
+    }
+    return action;
+  }
+  return null;
+}
+
+export function updateScoreboardScroll(delta) {
+  if (!scoreboardGroup.visible) return;
+  scoreboardScrollOffset = Math.max(0, Math.min(
+    Math.max(0, scoreboardScores.length - 20),
+    scoreboardScrollOffset + delta
+  ));
+  renderScoreboardCanvas();
+}
+
+// ── Country Select Screen ───────────────────────────────────
+
+export function showCountrySelect(countries, continents, initialContinent) {
+  hideAll();
+  while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
+  continentTabs = [];
+  countryItems = [];
+  countrySelectContinent = initialContinent || 'North America';
+  countrySelectScrollOffset = 0;
+
+  countrySelectGroup.position.set(0, 1.6, -4);
+  countrySelectGroup.visible = true;
+
+  // Header
+  const header = makeSprite('SELECT YOUR COUNTRY', {
+    fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
+  });
+  header.position.set(0, 1.6, 0);
+  countrySelectGroup.add(header);
+
+  // Continent tabs across top
+  const tabWidth = 0.45;
+  const tabGap = 0.04;
+  const totalTabWidth = continents.length * tabWidth + (continents.length - 1) * tabGap;
+  let tabX = -totalTabWidth / 2 + tabWidth / 2;
+
+  for (const continent of continents) {
+    const tabGroup = new THREE.Group();
+    tabGroup.position.set(tabX, 1.2, 0);
+
+    const isActive = continent === countrySelectContinent;
+    const tabGeo = new THREE.PlaneGeometry(tabWidth, 0.2);
+    const tabMat = new THREE.MeshBasicMaterial({
+      color: isActive ? 0x003344 : 0x111133,
+      transparent: true, opacity: 0.9, side: THREE.DoubleSide,
+    });
+    const tabMesh = new THREE.Mesh(tabGeo, tabMat);
+    tabMesh.userData.continentTab = continent;
+    tabGroup.add(tabMesh);
+
+    tabGroup.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(tabGeo),
+      new THREE.LineBasicMaterial({ color: isActive ? 0x00ffff : 0x444466 })
+    ));
+
+    // Short label
+    const shortName = continent.length > 8 ? continent.slice(0, 7) + '.' : continent;
+    const tabLabel = makeSprite(shortName, {
+      fontSize: 18, color: isActive ? '#00ffff' : '#888888', scale: 0.1,
+    });
+    tabLabel.position.set(0, 0, 0.01);
+    tabGroup.add(tabLabel);
+
+    continentTabs.push({ group: tabGroup, mesh: tabMesh, continent });
+    countrySelectGroup.add(tabGroup);
+    tabX += tabWidth + tabGap;
+  }
+
+  // Country list
+  renderCountryList(countries);
+
+  // BACK button
+  const backGroup = new THREE.Group();
+  backGroup.position.set(0, -0.8, 0);
+  const backGeo = new THREE.PlaneGeometry(0.6, 0.25);
+  const backMat = new THREE.MeshBasicMaterial({
+    color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
+  });
+  const backMesh = new THREE.Mesh(backGeo, backMat);
+  backMesh.userData.countryAction = 'back';
+  backGroup.add(backMesh);
+  backGroup.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(backGeo),
+    new THREE.LineBasicMaterial({ color: 0xff4444 })
+  ));
+  const backTxt = makeSprite('BACK', { fontSize: 28, color: '#ff4444', scale: 0.15 });
+  backTxt.position.set(0, 0, 0.01);
+  backGroup.add(backTxt);
+  countrySelectGroup.add(backGroup);
+}
+
+function renderCountryList(countries) {
+  // Remove old country item meshes
+  countryItems.forEach(item => countrySelectGroup.remove(item.group));
+  countryItems = [];
+
+  const filtered = countries.filter(c => c.continent === countrySelectContinent);
+  const itemHeight = 0.22;
+  const itemGap = 0.04;
+  const startY = 0.85;
+
+  for (let i = 0; i < filtered.length; i++) {
+    const country = filtered[i];
+    const itemGroup = new THREE.Group();
+    const y = startY - i * (itemHeight + itemGap);
+    itemGroup.position.set(0, y, 0);
+
+    const itemGeo = new THREE.PlaneGeometry(1.8, itemHeight);
+    const itemMat = new THREE.MeshBasicMaterial({
+      color: 0x111133, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+    });
+    const itemMesh = new THREE.Mesh(itemGeo, itemMat);
+    itemMesh.userData.countryCode = country.code;
+    itemMesh.userData.countryAction = 'select';
+    itemGroup.add(itemMesh);
+
+    itemGroup.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(itemGeo),
+      new THREE.LineBasicMaterial({ color: 0x444466 })
+    ));
+
+    const label = makeSprite(`${country.flag}  ${country.name}`, {
+      fontSize: 28, color: '#ffffff', scale: 0.15,
+    });
+    label.position.set(0, 0, 0.01);
+    itemGroup.add(label);
+
+    countryItems.push({ group: itemGroup, mesh: itemMesh, code: country.code });
+    countrySelectGroup.add(itemGroup);
+  }
+}
+
+export function hideCountrySelect() {
+  countrySelectGroup.visible = false;
+}
+
+export function getCountrySelectHit(raycaster, countries) {
+  if (!countrySelectGroup.visible) return null;
+
+  // Check continent tabs
+  const tabMeshes = continentTabs.map(t => t.mesh);
+  let hits = raycaster.intersectObjects(tabMeshes, false);
+  if (hits.length > 0) {
+    const continent = hits[0].object.userData.continentTab;
+    if (continent !== countrySelectContinent) {
+      countrySelectContinent = continent;
+      // Refresh tabs and list
+      renderCountryList(countries);
+      // Update tab visuals
+      continentTabs.forEach(tab => {
+        const isActive = tab.continent === countrySelectContinent;
+        tab.mesh.material.color.setHex(isActive ? 0x003344 : 0x111133);
+      });
+    }
+    return null;
+  }
+
+  // Check country items
+  const itemMeshes = countryItems.map(i => i.mesh);
+  hits = raycaster.intersectObjects(itemMeshes, false);
+  if (hits.length > 0) {
+    const code = hits[0].object.userData.countryCode;
+    return { action: 'select', code };
+  }
+
+  // Check back button
+  const actionMeshes = [];
+  countrySelectGroup.traverse(c => {
+    if (c.userData && c.userData.countryAction === 'back') actionMeshes.push(c);
+  });
+  hits = raycaster.intersectObjects(actionMeshes, false);
+  if (hits.length > 0) return { action: 'back' };
+
+  return null;
 }
