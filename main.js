@@ -6,19 +6,21 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-import { State, game, resetGame, getLevelConfig, addScore, getComboMultiplier, damagePlayer, addUpgrade } from './game.js';
-import { getRandomUpgrades, getWeaponStats } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, startLightningSound, stopLightningSound, playMusic, stopMusic, getMusicFrequencyData } from './audio.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade } from './game.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, getMusicFrequencyData } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
-  applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies
+  applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
+  getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions
 } from './enemies.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
-  hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS
+  hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS,
+  showBossHealthBar, hideBossHealthBar, updateBossHealthBar
 } from './hud.js';
 
 // ── Constants ──────────────────────────────────────────────
@@ -44,9 +46,21 @@ let frameCount = 0;  // For staggering updates
 // Weapon firing cooldowns (per controller)
 const weaponCooldowns = [0, 0];
 
+// Big Boom: only one "exploding" shot per hand every 2.75s (ms)
+const BIG_BOOM_COOLDOWN_MS = 2750;
+const lastExplodingShotTime = [0, 0];
+
+// Explosion visuals (short-lived expanding spheres)
+const explosionVisuals = [];
+
 // Lightning beam state (per controller)
 const lightningBeams = [null, null];
 const lightningTimers = [0, 0];
+
+// Charge shot state (per controller): time when trigger was pressed (ms) or null
+const chargeShotStartTime = [null, null];
+const CHARGE_SHOT_MAX_TIME = 5.0;  // seconds
+const CHARGE_SHOT_MIN_FIRE = 0.6;  // seconds (below this, no fire or minimal)
 
 // Holographic blaster displays (per controller)
 const blasterDisplays = [null, null];
@@ -54,6 +68,11 @@ const blasterDisplays = [null, null];
 // Mountain visualizer
 const mountainLines = [];
 const mountainBasePeaks = [];
+
+// Environment refs for level-based scaling (sun, ominous horizon)
+let sunMeshRef = null;
+let sunGlowRef = null;
+let ominousRef = null;
 
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
@@ -67,6 +86,10 @@ let gameOverCooldown = 0;
 let slowMoActive = false;
 let slowMoDuration = 0;
 let slowMoSoundPlayed = false;
+let slowMoRampOut = false;       // Ramp timeScale back to 1 over 0.5s when nearby enemies cleared
+let slowMoRampOutTimer = 0;
+const SLOW_MO_TRIGGER_DIST = 2.0;
+const SLOW_MO_RAMP_OUT_DURATION = 0.5;
 let timeScale = 1.0;
 
 // Camera shake on damage
@@ -286,6 +309,7 @@ function createSun() {
   sunMesh.position.set(0, 12, -89);
   sunMesh.renderOrder = -10;
   scene.add(sunMesh);
+  sunMeshRef = sunMesh;
 
   // Outer glow behind sun (additive for bloom effect)
   const glowMat = new THREE.MeshBasicMaterial({
@@ -300,10 +324,61 @@ function createSun() {
   glow.position.set(0, 12, -89.5);
   glow.renderOrder = -11;
   scene.add(glow);
+  sunGlowRef = glow;
 
+  createOminousHorizon();
+  createAurora();
   // Atmosphere: vertical gradient cylinder around player
-  // Full opacity warm color at base, fading to transparent going up
   createAtmosphere();
+}
+
+/** Low-res aurora borealis on sky dome — performance friendly (small texture, single mesh) */
+function createAurora() {
+  const w = 32;
+  const h = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(0,40,60,0)');
+  grad.addColorStop(0.3, 'rgba(0,200,180,0.08)');
+  grad.addColorStop(0.5, 'rgba(0,255,200,0.12)');
+  grad.addColorStop(0.7, 'rgba(0,180,220,0.06)');
+  grad.addColorStop(1, 'rgba(0,40,80,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  const geo = new THREE.CylinderGeometry(95, 95, 25, 32, 1, true);
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(0, 15, 0);
+  mesh.renderOrder = -21;
+  scene.add(mesh);
+}
+
+/** Dark ominous shape over the horizon; appears from level 10, large by level 16 */
+function createOminousHorizon() {
+  const geo = new THREE.PlaneGeometry(80, 50);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x0a0015,
+    transparent: true,
+    opacity: 0,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(0, 28, -95);
+  mesh.renderOrder = -12;
+  scene.add(mesh);
+  ominousRef = mesh;
 }
 
 function createAtmosphere() {
@@ -597,6 +672,16 @@ function onTriggerPress(controller, index) {
 }
 
 function onTriggerRelease(index) {
+  // Charge shot: fire beam on release
+  if (chargeShotStartTime[index] !== null) {
+    const hand = index === 0 ? 'left' : 'right';
+    const stats = getWeaponStats(game.upgrades[hand]);
+    if (stats.chargeShot) {
+      const chargeTimeSec = (performance.now() - chargeShotStartTime[index]) / 1000;
+      fireChargeBeam(controllers[index], index, chargeTimeSec, stats);
+    }
+    chargeShotStartTime[index] = null;
+  }
   // Stop lightning beam when trigger released
   if (lightningBeams[index]) {
     scene.remove(lightningBeams[index]);
@@ -628,6 +713,7 @@ function completeLevel() {
   console.log(`[game] Level ${game.level} complete`);
   game.state = State.LEVEL_COMPLETE;
   clearAllEnemies();
+  game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
   game.stateTimer = 2.0; // cooldown before upgrade screen
   showLevelComplete(game.level, camera.position);
 }
@@ -643,8 +729,9 @@ function showUpgradeScreen() {
   // Alternate between left and right hand
   upgradeHand = upgradeHand === 'left' ? 'right' : 'left';
 
-  pendingUpgrades = getRandomUpgrades(3);
+  pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3);
   showUpgradeCards(pendingUpgrades, camera.position, upgradeHand);
+  if (game.justBossKill) game.justBossKill = false;
   upgradeSelectionCooldown = 1.5; // prevent instant selection
 
   // Mark blaster displays for update
@@ -658,14 +745,45 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   if (upgrade.id === 'SKIP') {
     game.health = game.maxHealth;
     console.log('[game] Skipped upgrade, health restored to full');
-  } else {
-    addUpgrade(upgrade.id, hand);
+    playUpgradeSound();
+    hideUpgradeCards();
+    advanceLevelAfterUpgrade();
+    return;
   }
 
+  const def = getUpgradeDef(upgrade.id) || upgrade;
+  const shotTypeIds = ['lightning', 'buckshot', 'charge_shot'];
+  const isShotTypeSideGrade = def.sideGrade && shotTypeIds.includes(upgrade.id);
+  const currentShotType = shotTypeIds.find(s => (game.upgrades[hand][s] || 0) > 0);
+  const handHasOtherShotType = currentShotType && currentShotType !== upgrade.id;
+
+  // Side-grade: change shot type and replace this card with another, then pick again
+  if (isShotTypeSideGrade && handHasOtherShotType) {
+    delete game.upgrades[hand][currentShotType];
+    addUpgrade(upgrade.id, hand);
+    playUpgradeSound();
+    const idx = pendingUpgrades.findIndex(u => u.id === upgrade.id);
+    const replacement = getRandomUpgradeExcluding([upgrade.id]);
+    if (replacement && idx >= 0) {
+      pendingUpgrades = [...pendingUpgrades];
+      pendingUpgrades[idx] = replacement;
+      hideUpgradeCards();
+      showUpgradeCards(pendingUpgrades, camera.position, hand);
+      upgradeSelectionCooldown = 1.5;
+    } else {
+      hideUpgradeCards();
+      advanceLevelAfterUpgrade();
+    }
+    return;
+  }
+
+  addUpgrade(upgrade.id, hand);
   playUpgradeSound();
   hideUpgradeCards();
+  advanceLevelAfterUpgrade();
+}
 
-  // Advance to next level
+function advanceLevelAfterUpgrade() {
   game.level++;
   game.kills = 0;
 
@@ -679,7 +797,6 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     // Hide blaster displays during gameplay
     blasterDisplays.forEach(d => { if (d) d.visible = false; });
 
-    // Change music on level 6 (levels 6-10)
     if (game.level === 6) {
       playMusic('levels6to10');
     }
@@ -690,7 +807,9 @@ function endGame(victory) {
   console.log(`[game] Game ${victory ? 'won' : 'over'} — score: ${game.score}`);
   game.state = victory ? State.VICTORY : State.GAME_OVER;
   clearAllEnemies();
+  clearBoss();
   hideHUD();
+  hideBossHealthBar();
   gameOverCooldown = 2.0;  // 2 second cooldown before restart allowed
 
   // Stop music
@@ -803,15 +922,17 @@ function updateLightningBeam(controller, index, stats, dt) {
     scene.add(beamGroup);
     lightningBeams[index] = beamGroup;
 
-    // Apply damage every 0.2s to all chained targets (250% faster than 0.5s)
+    // Apply damage at lightningTickInterval (reduced by barrel / fire rate upgrades)
+    const tickInterval = stats.lightningTickInterval != null ? stats.lightningTickInterval : 0.2;
     lightningTimers[index] += dt;
-    if (lightningTimers[index] >= 0.2) {
+    if (lightningTimers[index] >= tickInterval) {
       lightningTimers[index] = 0;
 
       chainTargets.forEach(({ index: enemyIndex, enemy }) => {
         const result = hitEnemy(enemyIndex, stats.lightningDamage);
         spawnDamageNumber(enemy.mesh.position, stats.lightningDamage, '#ffff44');
         playHitSound();
+        if (stats.effects && stats.effects.length > 0) applyEffects(enemyIndex, stats.effects);
 
         if (result.killed) {
           playExplosionSound();
@@ -872,9 +993,114 @@ function createLightningBolt(start, end) {
   return new THREE.Line(geometry, material);
 }
 
+/** Charge shot: scale 0.6s->0.2, 1.5s->0.3, 2.5s->0.4, 4s->0.6, 5s->1.0 */
+function chargeTimeToScale(t) {
+  if (t >= CHARGE_SHOT_MAX_TIME) return 1;
+  if (t <= 0.6) return (t / 0.6) * 0.2;
+  const keyframes = [[0.6, 0.2], [1.5, 0.3], [2.5, 0.4], [4, 0.6], [5, 1]];
+  for (let k = 1; k < keyframes.length; k++) {
+    if (t <= keyframes[k][0]) {
+      const [t0, s0] = keyframes[k - 1];
+      const [t1, s1] = keyframes[k];
+      return s0 + (s1 - s0) * (t - t0) / (t1 - t0);
+    }
+  }
+  return 1;
+}
+
+/** Distance from point to line segment (a to b) */
+function pointToSegmentDist(p, a, b) {
+  const ab = new THREE.Vector3().subVectors(b, a);
+  const ap = new THREE.Vector3().subVectors(p, a);
+  const t = Math.max(0, Math.min(1, ap.dot(ab) / ab.lengthSq()));
+  const proj = new THREE.Vector3().copy(a).addScaledVector(ab, t);
+  return p.distanceTo(proj);
+}
+
+const _chargeBeamA = new THREE.Vector3();
+const _chargeBeamB = new THREE.Vector3();
+
+function fireChargeBeam(controller, index, chargeTimeSec, stats) {
+  if (chargeTimeSec < 0.15) return; // minimum charge to fire
+  const scale = chargeTimeToScale(chargeTimeSec);
+  let damage = stats.damage * scale;
+  if (scale >= 1) damage = Math.max(300, damage);
+  const beamWidth = 0.2 + scale * 1.3;
+  const range = 50;
+
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+
+  _chargeBeamA.copy(origin);
+  _chargeBeamB.copy(origin).addScaledVector(direction, range);
+
+  const controllerIndex = index;
+  const hand = index === 0 ? 'left' : 'right';
+
+  const chargeStats = { ...stats, damage: Math.round(damage) };
+  getEnemies().forEach((e, i) => {
+    const dist = pointToSegmentDist(e.mesh.position, _chargeBeamA, _chargeBeamB);
+    if (dist < beamWidth) {
+      handleHit(i, e, chargeStats, e.mesh.position.clone(), controllerIndex, false, false);
+    }
+  });
+
+  const boss = getBoss();
+  if (boss) {
+    const dist = pointToSegmentDist(boss.mesh.position, _chargeBeamA, _chargeBeamB);
+    if (dist < beamWidth) {
+      const result = hitBoss(Math.round(damage));
+      spawnDamageNumber(boss.mesh.position.clone(), Math.round(damage), '#ff4444');
+      game.handStats[hand].totalDamage += damage;
+      if (result.killed) {
+        playExplosionSound();
+        clearBoss();
+        hideBossHealthBar();
+        game.kills++;
+        game.totalKills++;
+        addScore(boss.scoreValue);
+        completeLevel();
+      }
+    }
+  }
+
+  // Brief beam visual (cylinder)
+  const beamGeo = new THREE.CylinderGeometry(beamWidth * 0.5, beamWidth * 0.5, range, 8);
+  const beamMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.4 + scale * 0.4,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const beamMesh = new THREE.Mesh(beamGeo, beamMat);
+  beamMesh.position.copy(origin).addScaledVector(direction, range * 0.5);
+  beamMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  beamMesh.userData.createdAt = performance.now();
+  beamMesh.userData.duration = 150;
+  beamMesh.userData.isChargeBeam = true;
+  scene.add(beamMesh);
+  explosionVisuals.push(beamMesh);
+
+  playShoothSound();
+}
+
 function spawnProjectile(origin, direction, controllerIndex, stats) {
+  const now = performance.now();
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
   const isBuckshot = stats.spreadAngle > 0;
+
+  // Big Boom: only one exploding shot per hand every 2.75s
+  let isExploding = false;
+  if (stats.aoeRadius > 0) {
+    if (now - lastExplodingShotTime[controllerIndex] >= BIG_BOOM_COOLDOWN_MS) {
+      isExploding = true;
+      lastExplodingShotTime[controllerIndex] = now;
+    }
+  }
 
   // Star Wars style laser bolt (thin cylinder) or pellet
   let mesh;
@@ -908,6 +1134,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
   mesh.userData.velocity = direction.clone().multiplyScalar(isBuckshot ? 20 : 40);
   mesh.userData.stats = stats;
   mesh.userData.controllerIndex = controllerIndex;
+  mesh.userData.isExploding = isExploding;
   mesh.userData.lifetime = 3000;
   mesh.userData.createdAt = performance.now();
   mesh.userData.hitEnemies = new Set();
@@ -922,13 +1149,16 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
   playShoothSound();
 }
 
-function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex) {
+function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExploding = false, hitWeakPoint = false) {
   // Calculate damage
   let damage = stats.damage;
 
+  // Tank weak point (one random voxel takes double damage)
+  if (hitWeakPoint) damage *= 2;
+
   // Critical hit
   if (stats.critChance > 0 && Math.random() < stats.critChance) {
-    damage *= 2;
+    damage *= (stats.critMultiplier || 2);
   }
 
   // Fire debuff increases damage taken
@@ -954,9 +1184,10 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex) {
     applyEffects(enemyIndex, stats.effects);
   }
 
-  // AOE explosion
-  if (stats.aoeRadius > 0) {
-    handleAOE(hitPoint, stats.aoeRadius, stats.damage * 0.6, controllerIndex);
+  // AOE explosion: only when this projectile was an "exploding" shot (once per 2.75s per hand), with higher damage + visible boom
+  if (stats.aoeRadius > 0 && isExploding) {
+    handleAOE(hitPoint, stats.aoeRadius, stats.damage * 1.2, controllerIndex);
+    spawnExplosionVisual(hitPoint, stats.aoeRadius);
   }
 
   // If killed
@@ -990,6 +1221,28 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex) {
   }
 }
 
+function handleBossHit(boss, stats, hitPoint, controllerIndex) {
+  let damage = stats.damage;
+  if (stats.critChance > 0 && Math.random() < stats.critChance) damage *= (stats.critMultiplier || 2);
+  const result = hitBoss(damage);
+  if (controllerIndex !== undefined) {
+    const hand = controllerIndex === 0 ? 'left' : 'right';
+    game.handStats[hand].totalDamage += damage;
+  }
+  spawnDamageNumber(hitPoint, damage, '#ff4444');
+  playHitSound();
+  if (result.killed) {
+    playExplosionSound();
+    clearBoss();
+    hideBossHealthBar();
+    game.kills++;
+    game.totalKills++;
+    game.killsWithoutHit++;
+    addScore(boss.scoreValue);
+    completeLevel();
+  }
+}
+
 function handleAOE(center, radius, damage, controllerIndex) {
   const enemies = getEnemies();
   enemies.forEach((e, i) => {
@@ -1006,6 +1259,50 @@ function handleAOE(center, radius, damage, controllerIndex) {
       }
     }
   });
+}
+
+/** Spawn a short-lived visible explosion (expanding sphere) at center. */
+function spawnExplosionVisual(center, radius) {
+  const duration = 350; // ms
+  const geo = new THREE.SphereGeometry(radius * 0.3, 12, 12);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xff8800,
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.BackSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(center);
+  mesh.renderOrder = 900;
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.duration = duration;
+  mesh.userData.radius = radius;
+  scene.add(mesh);
+  explosionVisuals.push(mesh);
+}
+
+function updateExplosionVisuals(dt, now) {
+  for (let i = explosionVisuals.length - 1; i >= 0; i--) {
+    const m = explosionVisuals[i];
+    const age = now - m.userData.createdAt;
+    if (age > m.userData.duration) {
+      scene.remove(m);
+      m.geometry.dispose();
+      m.material.dispose();
+      explosionVisuals.splice(i, 1);
+    } else {
+      const t = age / m.userData.duration;
+      if (m.userData.isChargeBeam) {
+        m.material.opacity = (0.4 + 0.4) * (1 - t);
+      } else {
+        const scale = 1 + t * 2.5;
+        m.scale.setScalar(scale);
+        m.material.opacity = 0.7 * (1 - t);
+      }
+    }
+  }
 }
 
 function handleRicochet(fromPoint, stats, bounceCount, controllerIndex) {
@@ -1032,7 +1329,7 @@ function handleRicochet(fromPoint, stats, bounceCount, controllerIndex) {
 function updateProjectiles(dt) {
   const now = performance.now();
   const raycaster = new THREE.Raycaster();
-  const enemies = getEnemyMeshes();
+  const enemies = getEnemyMeshes(true).concat(getBossMinionMeshes());
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const proj = projectiles[i];
@@ -1055,9 +1352,17 @@ function updateProjectiles(dt) {
 
     if (hits.length > 0 && hits[0].distance < moveDistance * 2) {
       const result = getEnemyByMesh(hits[0].object);
-      if (result && !proj.userData.hitEnemies.has(result.index)) {
+      if (result && result.boss) {
+        handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex);
+        if (!proj.userData.stats.piercing) {
+          scene.remove(proj);
+          projectiles.splice(i, 1);
+        }
+      } else if (result && result.index !== undefined && !proj.userData.hitEnemies.has(result.index)) {
         proj.userData.hitEnemies.add(result.index);
-        handleHit(result.index, result.enemy, proj.userData.stats, hits[0].point, proj.userData.controllerIndex);
+        const hitObj = hits[0].object;
+        const hitWeakPoint = hitObj.userData && hitObj.userData.weakPoint === true;
+        handleHit(result.index, result.enemy, proj.userData.stats, hits[0].point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint);
 
         // Ricochet effect
         if (proj.userData.stats.ricochetBounces > 0) {
@@ -1068,6 +1373,17 @@ function updateProjectiles(dt) {
         if (!proj.userData.stats.piercing) {
           scene.remove(proj);
           projectiles.splice(i, 1);
+        }
+      } else {
+        const minionResult = getBossMinionByMesh(hits[0].object);
+        if (minionResult) {
+          const mResult = hitBossMinion(minionResult.index, proj.userData.stats.damage);
+          spawnDamageNumber(hits[0].point, proj.userData.stats.damage, '#ff8800');
+          if (mResult.killed) playExplosionSound();
+          if (!proj.userData.stats.piercing) {
+            scene.remove(proj);
+            projectiles.splice(i, 1);
+          }
         }
       }
     }
@@ -1099,6 +1415,15 @@ function spawnEnemyWave(dt) {
 
   const cfg = game._levelConfig;
   if (!cfg) return;
+
+  // Boss level: spawn boss once, no normal waves
+  if (cfg.isBoss) {
+    if (!getBoss()) {
+      const bossId = getRandomBossIdForLevel(game.level);
+      if (bossId) spawnBoss(bossId, cfg);
+    }
+    return;
+  }
 
   game.spawnTimer -= dt;
   if (game.spawnTimer <= 0) {
@@ -1179,16 +1504,24 @@ function render(timestamp) {
   const rawDt  = Math.min((now - lastTime) / 1000, 0.1);
   lastTime  = now;
 
-  // Apply bullet-time slow-mo (use raw dt for countdown)
-  if (slowMoActive) {
+  // Apply bullet-time slow-mo and ramp-out (use raw dt)
+  if (slowMoRampOut) {
+    slowMoRampOutTimer -= rawDt;
+    if (slowMoRampOutTimer <= 0) {
+      slowMoRampOut = false;
+      timeScale = 1.0;
+    } else {
+      timeScale = 0.2 + (1 - slowMoRampOutTimer / SLOW_MO_RAMP_OUT_DURATION) * 0.8;
+    }
+  } else if (slowMoActive) {
     slowMoDuration -= rawDt;
     if (slowMoDuration <= 0) {
       slowMoActive = false;
-      slowMoSoundPlayed = false;  // Reset sound flag for next activation
+      slowMoSoundPlayed = false;
       timeScale = 1.0;
       console.log('[bullet-time] ENDED');
     } else {
-      timeScale = 0.2;  // Slower time scale (was 0.25)
+      timeScale = 0.2;
     }
   } else {
     timeScale = 1.0;
@@ -1213,13 +1546,15 @@ function render(timestamp) {
         const hand = i === 0 ? 'left' : 'right';
         const stats = getWeaponStats(game.upgrades[hand]);
 
-        if (stats.lightning) {
+        if (stats.chargeShot) {
+          if (chargeShotStartTime[i] === null) chargeShotStartTime[i] = now;
+        } else if (stats.lightning) {
           updateLightningBeam(controllers[i], i, stats, dt);
         } else {
           shootWeapon(controllers[i], i);
         }
       } else {
-        // Trigger released - clear lightning beam
+        if (chargeShotStartTime[i] !== null) chargeShotStartTime[i] = null;
         if (lightningBeams[i]) {
           scene.remove(lightningBeams[i]);
           lightningBeams[i] = null;
@@ -1233,19 +1568,32 @@ function render(timestamp) {
     // Update enemies
     const playerPos = camera.position.clone();
 
+    // If in slow-mo, check whether all enemies in trigger range are gone → ramp out over 0.5s + reverse sound
+    if (slowMoActive && !slowMoRampOut) {
+      const enemiesForRamp = getEnemies();
+      const anyNear = enemiesForRamp.some(e => e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST);
+      if (!anyNear) {
+        slowMoActive = false;
+        slowMoSoundPlayed = false;
+        slowMoRampOut = true;
+        slowMoRampOutTimer = SLOW_MO_RAMP_OUT_DURATION;
+        playSlowMoReverseSound();
+        console.log('[bullet-time] RAMP OUT — enemies cleared');
+      }
+    }
+
     // Check for near-miss bullet-time trigger
-    if (!slowMoActive) {
+    if (!slowMoActive && !slowMoRampOut) {
       const enemies = getEnemies();
       for (const e of enemies) {
         const dist = e.mesh.position.distanceTo(playerPos);
-        if (dist < 2.0) {  // Enemy within 2m triggers slow-mo (increased from 0.5m)
+        if (dist < SLOW_MO_TRIGGER_DIST) {
           slowMoActive = true;
-          slowMoDuration = 2.5;  // 2.5 seconds of slow-mo (increased from 1.5s)
+          slowMoDuration = 2.5;
           console.log('[bullet-time] ACTIVATED!');
           break;
         }
       }
-      // Play sound once per activation (outside loop)
       if (slowMoActive && !slowMoSoundPlayed) {
         playSlowMoSound();
         slowMoSoundPlayed = true;
@@ -1253,6 +1601,17 @@ function render(timestamp) {
     }
 
     const collisions = updateEnemies(dt, now, playerPos);
+
+    // Boss update and health bar
+    const boss = getBoss();
+    if (boss) {
+      updateBoss(dt, now, playerPos);
+      updateBossMinions(dt, playerPos);
+      showBossHealthBar(boss.hp, boss.maxHp, boss.phases);
+      updateBossHealthBar(boss.hp, boss.maxHp, boss.phases);
+    } else {
+      hideBossHealthBar();
+    }
 
     // Handle enemy collisions with player
     collisions.forEach(index => {
@@ -1266,13 +1625,28 @@ function render(timestamp) {
       cameraShakeIntensity = 0.05;  // shake magnitude
       originalCameraPos.copy(camera.position);
 
-      slowMoActive = false;  // End slow-mo on hit
+      slowMoActive = false;
+      slowMoRampOut = false;
       timeScale = 1.0;
       console.log(`[damage] Player hit! Health: ${game.health}`);
       if (dead) {
         endGame(false);
       }
     });
+
+    // Boss collision with player
+    if (boss && boss.mesh.position.distanceTo(playerPos) < 1.5) {
+      const dead = damagePlayer(2);
+      triggerHitFlash();
+      playDamageSound();
+      cameraShake = 0.6;
+      cameraShakeIntensity = 0.06;
+      originalCameraPos.copy(camera.position);
+      slowMoActive = false;
+      slowMoRampOut = false;
+      timeScale = 1.0;
+      if (dead) endGame(false);
+    }
 
     // Check for DoT damage on enemies
     const enemies = getEnemies();
@@ -1352,9 +1726,28 @@ function render(timestamp) {
     }
   }
 
+  // ── Environment: sun and ominous horizon scale with level ──
+  const envLevel = game.state === State.PLAYING ? game.level : 1;
+  if (sunMeshRef && sunGlowRef) {
+    const sunScale = 1 + (envLevel - 1) * 0.04;
+    sunMeshRef.scale.setScalar(sunScale);
+    sunGlowRef.scale.setScalar(sunScale);
+  }
+  if (ominousRef) {
+    if (envLevel >= 10) {
+      const t = Math.min(1, (envLevel - 10) / 6); // 0 at 10, 1 at 16
+      ominousRef.visible = true;
+      ominousRef.material.opacity = 0.25 + t * 0.6;
+      ominousRef.scale.setScalar(0.5 + t * 1.2);
+    } else {
+      ominousRef.visible = false;
+    }
+  }
+
   // ── Universal updates ──
   updateProjectiles(dt);
   updateExplosions(dt, now);
+  updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
   updateFPS(now);  // Update FPS counter
