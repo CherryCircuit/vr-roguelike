@@ -872,33 +872,58 @@ export function updateDamageNumbers(dt, now) {
   }
 }
 
-// ── FPS Counter ────────────────────────────────────────────
+// ── FPS Counter & Performance Monitor ───────────────────────
 let fpsFrames = [];
+let fpsFrameTimes = [];
 let lastFpsUpdate = 0;
 
-export function updateFPS(now) {
+export function updateFPS(now, opts = {}) {
   if (!fpsSprite) return;
+
+  const perfMonitor = opts.perfMonitor || (typeof window !== 'undefined' && window.debugPerfMonitor);
+  const frameTimeMs = opts.frameTimeMs;
 
   // Track frame times
   fpsFrames.push(now);
+  if (frameTimeMs != null) fpsFrameTimes.push(frameTimeMs);
+  while (fpsFrameTimes.length > fpsFrames.length) fpsFrameTimes.shift();
 
-  // Keep only last second of frames
+  // Keep only last second
   while (fpsFrames.length > 0 && fpsFrames[0] < now - 1000) {
     fpsFrames.shift();
+    if (fpsFrameTimes.length > 0) fpsFrameTimes.shift();
   }
 
-  // Update display every 250ms
   if (now - lastFpsUpdate > 250) {
     const fps = Math.round(fpsFrames.length);
-    const { texture, aspect } = makeTextTexture(`FPS: ${fps}`, {
-      fontSize: 32,
-      color: fps < 30 ? '#ff0000' : fps < 60 ? '#ffff00' : '#00ff00',
-      shadow: true
+    const avgFrameMs = fpsFrameTimes.length > 0
+      ? fpsFrameTimes.reduce((a, b) => a + b, 0) / fpsFrameTimes.length
+      : (fps > 0 ? 1000 / fps : 0);
+    const memMb = typeof performance !== 'undefined' && performance.memory
+      ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0)
+      : null;
+
+    let text = `FPS: ${fps}`;
+    if (perfMonitor) {
+      text += ` | FT: ${avgFrameMs.toFixed(1)}ms`;
+      if (memMb != null) text += ` | Mem: ${memMb}MB`;
+    }
+
+    const fpsColor = fps < 30 ? '#ff0000' : fps < 60 ? '#ffff00' : '#00ff00';
+    const ftColor = avgFrameMs > 33 ? '#ff0000' : avgFrameMs > 20 ? '#ffff00' : '#00ff00';
+    const color = perfMonitor ? ftColor : fpsColor;
+
+    const { texture, aspect } = makeTextTexture(text, {
+      fontSize: perfMonitor ? 24 : 32,
+      color,
+      shadow: true,
+      maxWidth: perfMonitor ? 300 : null,
     });
     if (fpsSprite.material.map) fpsSprite.material.map.dispose();
     fpsSprite.material.map = texture;
     fpsSprite.material.needsUpdate = true;
     fpsSprite.scale.set(aspect * 0.15, 0.15, 1);
+    fpsSprite.visible = true;
     lastFpsUpdate = now;
   }
 }

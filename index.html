@@ -111,8 +111,17 @@
     <p>Please use a WebXR-compatible browser such as Meta Quest Browser or Chrome on a VR-capable device.</p>
   </div>
 
-  <!-- CRT scanline overlay -->
+  <!-- CRT scanline overlay (hidden in VR — obscures view) -->
   <div id="scanlines"></div>
+
+  <!-- Debug menu (show with ?debug=1 or click DEBUG) -->
+  <div id="debug-panel" style="display:none;position:fixed;bottom:20px;left:20px;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #00ffff;padding:12px;font-size:14px;">
+    <div style="color:#00ffff;margin-bottom:8px;">DEBUG</div>
+    <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;background:#220044;color:#fff;border:1px solid #ff00ff;"></label>
+    <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
+  </div>
+  <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
 
   <!-- WebXR Polyfill (loaded before Three.js) -->
   <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
@@ -135,6 +144,22 @@
 
   <!-- Main game module -->
   <script type="module" src="main.js"></script>
+  <script>
+    (function() {
+      const params = new URLSearchParams(location.search);
+      const panel = document.getElementById('debug-panel');
+      const toggle = document.getElementById('debug-toggle');
+      if (params.get('debug') === '1') panel.style.display = 'block';
+      toggle.addEventListener('click', function(e) { e.preventDefault(); panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
+      document.getElementById('debug-jump').addEventListener('click', function() {
+        const level = parseInt(document.getElementById('debug-level').value, 10) || 1;
+        window.debugJumpToLevel = Math.max(1, Math.min(20, level));
+      });
+      document.getElementById('debug-perf-monitor').addEventListener('change', function() {
+        window.debugPerfMonitor = this.checked;
+      });
+    })();
+  </script>
 
 </body>
 </html>
