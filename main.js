@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade } from './game.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
 import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, getMusicFrequencyData } from './audio.js';
 import {
@@ -693,6 +693,34 @@ function onTriggerRelease(index) {
 // ============================================================
 //  GAME STATE TRANSITIONS
 // ============================================================
+function debugJumpToLevel(targetLevel) {
+  console.log(`[debug] Jump to level ${targetLevel}`);
+  hideTitle();
+  resetGame();
+  game.state = State.PLAYING;
+  game.level = targetLevel;
+  game._levelConfig = getLevelConfig();
+  game.health = game.maxHealth;
+
+  const hand = (lvl, idx) => ((lvl + idx) % 2 === 1 ? 'left' : 'right');
+  for (let lvl = 1; lvl < targetLevel; lvl++) {
+    const cfg = LEVELS[lvl - 1];
+    if (cfg && cfg.isBoss) {
+      const special = getRandomSpecialUpgrades(1)[0];
+      if (special) addUpgrade(special.id, hand(lvl, 0));
+    } else {
+      const upgrades = getRandomUpgrades(3);
+      upgrades.forEach((u, idx) => addUpgrade(u.id, hand(lvl, idx)));
+    }
+  }
+  game.kills = 0;
+  game._levelConfig = getLevelConfig();
+  showHUD();
+  blasterDisplays.forEach(d => { if (d) d.visible = false; });
+  if (targetLevel >= 6) playMusic('levels6to10');
+  else playMusic('levels1to5');
+}
+
 function startGame() {
   console.log('[game] Starting new game');
   hideTitle();
@@ -1534,6 +1562,11 @@ function render(timestamp) {
   // ── Title screen ──
   if (st === State.TITLE) {
     updateTitle(now);
+    if (typeof window !== 'undefined' && window.debugJumpToLevel) {
+      const level = window.debugJumpToLevel;
+      window.debugJumpToLevel = null;
+      debugJumpToLevel(level);
+    }
   }
 
   // ── Playing ──
@@ -1750,12 +1783,19 @@ function render(timestamp) {
   updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
-  updateFPS(now);  // Update FPS counter
+  updateFPS(now, {
+    perfMonitor: typeof window !== 'undefined' && window.debugPerfMonitor,
+    frameTimeMs: rawDt * 1000,
+  });
 
   // Music visualizer (DISABLED - causing FPS drops)
   // if (now % 3 < 1) {
   //   updateMountainVisualizer();
   // }
+
+  // Hide scanlines overlay in VR — it creates a dark box that follows the head and obscures the view
+  const scanlinesEl = document.getElementById('scanlines');
+  if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
   renderer.render(scene, camera);
 }

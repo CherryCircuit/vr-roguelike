@@ -387,11 +387,20 @@ const musicTracks = {
   ]
 };
 
-// Shuffle array using Fisher-Yates algorithm
+// Shuffle array using Fisher-Yates with crypto.getRandomValues when available (avoids same order every session)
 function shuffleArray(array) {
   const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+  const n = shuffled.length;
+  const getRandom = (max) => {
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const arr = new Uint32Array(1);
+      crypto.getRandomValues(arr);
+      return (arr[0] / 0xffffffff) * max;
+    }
+    return Math.random() * max;
+  };
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(getRandom(i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   return shuffled;
@@ -456,8 +465,8 @@ export function playMusic(category) {
     currentMusic = null;
   }
 
-  // Get tracks for category
-  const tracks = musicTracks[category];
+  // Get tracks for category (fresh copy)
+  const tracks = musicTracks[category] ? [...musicTracks[category]] : [];
   if (!tracks || tracks.length === 0) return;
 
   // Create randomized playlist
