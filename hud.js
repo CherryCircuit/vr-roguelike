@@ -286,12 +286,13 @@ export function initHUD(camera, scene) {
   hitFlash.visible = false;
   camera.add(hitFlash);
 
-  // ── FPS Counter (top right, attached to camera) ──
-  fpsSprite = makeSprite('FPS: 0', { fontSize: 32, color: '#00ff00', shadow: true, scale: 0.15 });
-  fpsSprite.position.set(0.4, 0.25, -0.5);  // Top right of view
+  // ── FPS Counter (top left, attached to camera, more visible in VR) ──
+  fpsSprite = makeSprite('FPS: 0', { fontSize: 36, color: '#00ff00', shadow: true, scale: 0.2 });
+  fpsSprite.position.set(-0.35, 0.2, -0.5);  // Top left of view, more centered
   fpsSprite.renderOrder = 1001;
   // Discard transparent pixels so the plane doesn't render as a dark box in VR
   fpsSprite.material.alphaTest = 0.05;
+  fpsSprite.material.depthTest = false;  // Always render on top
   camera.add(fpsSprite);
 
   // ── Boss health bar (top center, camera-attached, 3 segments) ──
@@ -519,11 +520,11 @@ export function updateHUD(gameState) {
   // Score - 200% larger
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.26 });
 
-  // Combo - 200% larger
+  // Combo - 200% larger with descriptive label
   const combo = gameState._combo || 1;
   if (combo > 1) {
     comboSprite.visible = true;
-    updateSpriteText(comboSprite, `${combo}x`, { color: '#ff8800', scale: 0.22 });
+    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 });
   } else {
     comboSprite.visible = false;
   }
@@ -942,6 +943,92 @@ export function updateDamageNumbers(dt, now) {
       // No fade - keep full opacity for performance
     }
   }
+}
+
+// ── Combo Popups ────────────────────────────────────────────
+const comboPopups = [];
+let lastComboValue = 1;
+
+export function spawnComboPopup(combo, cameraPos) {
+  const canvas = document.createElement('canvas');
+  const ctx    = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 128;
+
+  const text = `${combo}X COMBO!`;
+  const fontSize = 72;
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillText(text, 258, 66);
+
+  // Main text - bright orange/yellow
+  ctx.fillStyle = '#ffaa00';
+  ctx.fillText(text, 256, 64);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  // Large, prominent display
+  const scale = 0.8;
+  const width = scale * 4;
+  const height = scale;
+
+  const geometry = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+
+  const mesh = new THREE.Mesh(geometry, mat);
+
+  // Position in front of player, slightly up
+  mesh.position.copy(cameraPos);
+  mesh.position.y += 0.8;
+  mesh.position.z -= 2.5;
+
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.lifetime  = 2000;  // 2 seconds
+  mesh.userData.velocity  = new THREE.Vector3(0, 0.3, 0);  // Float upward
+  mesh.renderOrder = 999;
+
+  sceneRef.add(mesh);
+  comboPopups.push(mesh);
+}
+
+export function updateComboPopups(dt, now) {
+  for (let i = comboPopups.length - 1; i >= 0; i--) {
+    const popup = comboPopups[i];
+    const age = now - popup.userData.createdAt;
+
+    if (age > popup.userData.lifetime) {
+      sceneRef.remove(popup);
+      popup.material.map.dispose();
+      popup.material.dispose();
+      popup.geometry.dispose();
+      comboPopups.splice(i, 1);
+    } else {
+      popup.position.addScaledVector(popup.userData.velocity, dt);
+      // Fade out in last 0.5s
+      const fadeStart = popup.userData.lifetime - 500;
+      if (age > fadeStart) {
+        popup.material.opacity = 1 - (age - fadeStart) / 500;
+      }
+    }
+  }
+}
+
+export function checkComboIncrease(currentCombo, cameraPos, playSoundFn) {
+  if (currentCombo > lastComboValue && currentCombo > 1) {
+    spawnComboPopup(currentCombo, cameraPos);
+    if (playSoundFn) playSoundFn();
+  }
+  lastComboValue = currentCombo;
 }
 
 // ── FPS Counter & Performance Monitor ───────────────────────

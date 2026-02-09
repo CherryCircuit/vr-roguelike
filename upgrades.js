@@ -39,9 +39,11 @@ export function getRandomSpecialUpgrades(count) {
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }
 
-/** Pick `count` random upgrades from the pool */
-export function getRandomUpgrades(count) {
-  const shuffled = [...UPGRADE_POOL].sort(() => Math.random() - 0.5);
+/** Pick `count` random upgrades from the pool, optionally excluding some IDs */
+export function getRandomUpgrades(count, excludeIds = []) {
+  const excludeSet = new Set(excludeIds);
+  const pool = UPGRADE_POOL.filter(u => !excludeSet.has(u.id));
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }
 
