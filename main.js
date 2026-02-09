@@ -20,8 +20,16 @@ import {
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS,
-  showBossHealthBar, hideBossHealthBar, updateBossHealthBar
+  showBossHealthBar, hideBossHealthBar, updateBossHealthBar,
+  getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
+  showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
+  showCountrySelect, hideCountrySelect, getCountrySelectHit
 } from './hud.js';
+import {
+  submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
+  isNameClean, COUNTRIES, CONTINENTS,
+  getStoredCountry, setStoredCountry, getStoredName, setStoredName
+} from './scoreboard.js';
 
 // ── Constants ──────────────────────────────────────────────
 const NEON_PINK  = 0xff00ff;
@@ -653,20 +661,178 @@ function animateBlasterScanLines(display) {
 // ============================================================
 //  INPUT HANDLING
 // ============================================================
+// Scoreboard flow context
+let scoreboardFromGameOver = false;  // true = came from game over, false = came from title
+
 function onTriggerPress(controller, index) {
   const st = game.state;
 
   if (st === State.TITLE) {
-    startGame();
+    handleTitleTrigger(controller);
   } else if (st === State.PLAYING) {
     shootWeapon(controller, index);
   } else if (st === State.UPGRADE_SELECT) {
     selectUpgrade(controller);
   } else if (st === State.GAME_OVER || st === State.VICTORY) {
     if (gameOverCooldown <= 0) {
-      hideGameOver();
-      resetGame();
-      showTitle();
+      handleGameOverTrigger(controller);
+    }
+  } else if (st === State.NAME_ENTRY) {
+    handleNameEntryTrigger(controller);
+  } else if (st === State.SCOREBOARD || st === State.REGIONAL_SCORES) {
+    handleScoreboardTrigger(controller);
+  } else if (st === State.COUNTRY_SELECT) {
+    handleCountrySelectTrigger(controller);
+  }
+}
+
+function handleTitleTrigger(controller) {
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const raycaster = new THREE.Raycaster(origin, direction, 0, 20);
+
+  const btnHit = getTitleButtonHit(raycaster);
+  if (btnHit === 'scoreboard') {
+    scoreboardFromGameOver = false;
+    game.state = State.SCOREBOARD;
+    hideTitle();
+    showScoreboard([], 'LOADING...');
+    fetchTopScores().then(scores => {
+      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+    });
+    return;
+  }
+  startGame();
+}
+
+function handleGameOverTrigger(controller) {
+  // Store final score/level for name entry
+  game.finalScore = game.score;
+  game.finalLevel = game.level;
+  scoreboardFromGameOver = true;
+  hideGameOver();
+
+  // If no stored country, go to country select first
+  if (!getStoredCountry()) {
+    game.state = State.COUNTRY_SELECT;
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+  } else {
+    game.state = State.NAME_ENTRY;
+    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+  }
+}
+
+function handleNameEntryTrigger(controller) {
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const raycaster = new THREE.Raycaster(origin, direction, 0, 10);
+
+  const result = getKeyboardHit(raycaster);
+  if (result && result.action === 'submit') {
+    const name = result.name.trim();
+    if (!isNameClean(name)) {
+      console.log('[scoreboard] Name rejected by profanity filter');
+      return;
+    }
+    setStoredName(name);
+    hideNameEntry();
+
+    // Submit score and show scoreboard
+    game.state = State.SCOREBOARD;
+    showScoreboard([], 'SUBMITTING...');
+    const country = getStoredCountry() || '';
+    submitScore(name, game.finalScore, game.finalLevel, country).then(() => {
+      return fetchTopScores();
+    }).then(scores => {
+      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+    });
+  }
+}
+
+function handleScoreboardTrigger(controller) {
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const raycaster = new THREE.Raycaster(origin, direction, 0, 20);
+
+  const action = getScoreboardHit(raycaster);
+  if (action === 'back') {
+    hideScoreboard();
+    resetGame();
+    showTitle();
+    return;
+  }
+  if (action === 'country') {
+    // Show country select for filtering
+    scoreboardFromGameOver = false;
+    game.state = State.COUNTRY_SELECT;
+    hideScoreboard();
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+    return;
+  }
+  if (action === 'continent') {
+    // Show continent picker — reuse country select but select a continent
+    scoreboardFromGameOver = false;
+    game.state = State.COUNTRY_SELECT;
+    hideScoreboard();
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+    return;
+  }
+}
+
+function handleCountrySelectTrigger(controller) {
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const raycaster = new THREE.Raycaster(origin, direction, 0, 10);
+
+  const result = getCountrySelectHit(raycaster, COUNTRIES);
+  if (!result) return;
+
+  if (result.action === 'back') {
+    hideCountrySelect();
+    if (scoreboardFromGameOver) {
+      // Back to name entry
+      game.state = State.NAME_ENTRY;
+      showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+    } else {
+      // Back to scoreboard
+      game.state = State.SCOREBOARD;
+      showScoreboard([], 'LOADING...');
+      fetchTopScores().then(scores => {
+        showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      });
+    }
+    return;
+  }
+
+  if (result.action === 'select') {
+    setStoredCountry(result.code);
+    hideCountrySelect();
+
+    if (scoreboardFromGameOver) {
+      // After setting country during game-over flow, go to name entry
+      game.state = State.NAME_ENTRY;
+      showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+    } else {
+      // Filtering scoreboard by country
+      game.state = State.REGIONAL_SCORES;
+      const country = COUNTRIES.find(c => c.code === result.code);
+      const label = country ? country.name : result.code;
+      showScoreboard([], 'LOADING...');
+      fetchScoresByCountry(result.code).then(scores => {
+        showScoreboard(scores, `${label.toUpperCase()} LEADERBOARD`);
+      });
     }
   }
 }
@@ -834,6 +1000,8 @@ function advanceLevelAfterUpgrade() {
 function endGame(victory) {
   console.log(`[game] Game ${victory ? 'won' : 'over'} — score: ${game.score}`);
   game.state = victory ? State.VICTORY : State.GAME_OVER;
+  game.finalScore = game.score;
+  game.finalLevel = game.level;
   clearAllEnemies();
   clearBoss();
   hideHUD();
@@ -1744,6 +1912,28 @@ function render(timestamp) {
     updateEndScreen(now);
     gameOverCooldown = Math.max(0, gameOverCooldown - dt);
   }
+
+  // ── Name entry (keyboard hover) ──
+  else if (st === State.NAME_ENTRY) {
+    for (let i = 0; i < controllers.length; i++) {
+      const ctrl = controllers[i];
+      if (!ctrl) continue;
+      const origin = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      ctrl.getWorldPosition(origin);
+      ctrl.getWorldQuaternion(quat);
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      const rc = new THREE.Raycaster(origin, dir, 0, 10);
+      updateKeyboardHover(rc);
+      break;  // Only need one controller for hover
+    }
+  }
+
+  // ── Scoreboard / Regional Scores ──
+  // (scrolling handled by button hits in trigger handler)
+
+  // ── Country Select ──
+  // (interaction handled in trigger handler)
 
   // ── Camera shake on damage ──
   if (cameraShake > 0) {
