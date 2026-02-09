@@ -13,7 +13,8 @@ import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
-  getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions
+  getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
+  updateBossProjectiles, getBossProjectiles
 } from './enemies.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
@@ -21,6 +22,7 @@ import {
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar,
+  updateComboPopups, checkComboIncrease,
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit
@@ -81,6 +83,12 @@ const mountainBasePeaks = [];
 let sunMeshRef = null;
 let sunGlowRef = null;
 let ominousRef = null;
+
+// Floor damage flash
+let floorMaterial = null;
+const FLOOR_BASE_COLOR = new THREE.Color(0x220044);
+let floorFlashTimer = 0;
+let floorFlashing = false;
 
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
@@ -188,6 +196,7 @@ function createEnvironment() {
 
   const floorGeo = new THREE.PlaneGeometry(200, 200);
   const floorMat = new THREE.MeshBasicMaterial({ color: 0x220044 });
+  floorMaterial = floorMat;  // Store reference for damage flash
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
@@ -923,7 +932,19 @@ function showUpgradeScreen() {
   // Alternate between left and right hand
   upgradeHand = upgradeHand === 'left' ? 'right' : 'left';
 
-  pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3);
+  // Determine what shot types to exclude (if both hands have the same one)
+  const shotTypeIds = ['lightning', 'buckshot', 'charge_shot'];
+  const leftShotType = shotTypeIds.find(s => (game.upgrades.left[s] || 0) > 0);
+  const rightShotType = shotTypeIds.find(s => (game.upgrades.right[s] || 0) > 0);
+  const excludeIds = [];
+
+  // If both hands have the same shot type, don't offer it
+  if (leftShotType && leftShotType === rightShotType) {
+    excludeIds.push(leftShotType);
+    console.log(`[game] Both hands have ${leftShotType}, excluding from upgrade pool`);
+  }
+
+  pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3, excludeIds);
   showUpgradeCards(pendingUpgrades, camera.position, upgradeHand);
   if (game.justBossKill) game.justBossKill = false;
   upgradeSelectionCooldown = 1.5; // prevent instant selection
@@ -1043,25 +1064,22 @@ function shootWeapon(controller, index) {
 
   // Fire projectile(s)
   const count = stats.projectileCount;
-  for (let i = 0; i < count; i++) {
-    let spreadDir;
-    if (count > 1) {
-      // Random spread within 7.5° cone for buckshot
-      const maxConeAngle = 7.5 * Math.PI / 180;  // 7.5 degrees in radians
-      const randomAngle = (Math.random() - 0.5) * 2 * maxConeAngle;
-      const randomPitch = (Math.random() - 0.5) * 2 * maxConeAngle;
 
-      spreadDir = direction.clone();
-      // Apply random yaw
-      spreadDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), randomAngle);
-      // Apply random pitch
-      const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
-      spreadDir.applyAxisAngle(rightAxis, randomPitch);
-      spreadDir.normalize();
-    } else {
-      spreadDir = direction.clone();
+  // Calculate perpendicular offset axis for parallel multi-shot
+  const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+  const gap = 0.08; // Gap between parallel shots
+
+  for (let i = 0; i < count; i++) {
+    let spawnOrigin = origin.clone();
+
+    if (count > 1) {
+      // Position shots side-by-side with small gap, all parallel
+      // Spread evenly around center: for 2 shots [-0.5, 0.5], for 3 [-1, 0, 1], etc.
+      const offsetIndex = i - (count - 1) / 2;
+      spawnOrigin.addScaledVector(rightAxis, offsetIndex * gap);
     }
-    spawnProjectile(origin, spreadDir, index, stats);
+
+    spawnProjectile(spawnOrigin, direction.clone(), index, stats);
   }
 
   console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
@@ -1249,6 +1267,23 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
     const dist = pointToSegmentDist(boss.mesh.position, _chargeBeamA, _chargeBeamB);
     if (dist < beamWidth) {
       const result = hitBoss(Math.round(damage));
+
+      // Shield reflection
+      if (result.shieldReflected) {
+        spawnDamageNumber(boss.mesh.position.clone(), 0, '#ff00ff');
+        playHitSound();
+        const dead = damagePlayer(1);
+        triggerHitFlash();
+        playDamageSound();
+        cameraShake = 0.3;
+        cameraShakeIntensity = 0.03;
+        originalCameraPos.copy(camera.position);
+        floorFlashing = true;
+        floorFlashTimer = 0.5;
+        if (dead) endGame(false);
+        return;
+      }
+
       spawnDamageNumber(boss.mesh.position.clone(), Math.round(damage), '#ff4444');
       game.handStats[hand].totalDamage += damage;
       if (result.killed) {
@@ -1421,6 +1456,24 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
   let damage = stats.damage;
   if (stats.critChance > 0 && Math.random() < stats.critChance) damage *= (stats.critMultiplier || 2);
   const result = hitBoss(damage);
+
+  // Shield reflection: damage player instead of boss
+  if (result.shieldReflected) {
+    spawnDamageNumber(hitPoint, 0, '#ff00ff');  // Show 0 damage in magenta
+    playHitSound();
+    const dead = damagePlayer(1);
+    triggerHitFlash();
+    playDamageSound();
+    cameraShake = 0.3;
+    cameraShakeIntensity = 0.03;
+    originalCameraPos.copy(camera.position);
+    floorFlashing = true;
+    floorFlashTimer = 0.5;
+    console.log('[boss] Shield reflected damage!');
+    if (dead) endGame(false);
+    return;
+  }
+
   if (controllerIndex !== undefined) {
     const hand = controllerIndex === 0 ? 'left' : 'right';
     game.handStats[hand].totalDamage += damage;
@@ -1826,6 +1879,10 @@ function render(timestamp) {
       cameraShakeIntensity = 0.05;  // shake magnitude
       originalCameraPos.copy(camera.position);
 
+      // Trigger floor flash
+      floorFlashing = true;
+      floorFlashTimer = 0.5;
+
       slowMoActive = false;
       slowMoRampOut = false;
       timeScale = 1.0;
@@ -1843,10 +1900,35 @@ function render(timestamp) {
       cameraShake = 0.6;
       cameraShakeIntensity = 0.06;
       originalCameraPos.copy(camera.position);
+      floorFlashing = true;
+      floorFlashTimer = 0.5;
       slowMoActive = false;
       slowMoRampOut = false;
       timeScale = 1.0;
       if (dead) endGame(false);
+    }
+
+    // Boss projectiles
+    updateBossProjectiles(dt, now, playerPos);
+    const bossProjs = getBossProjectiles();
+    for (let i = bossProjs.length - 1; i >= 0; i--) {
+      const proj = bossProjs[i];
+      if (proj.hitPlayer) {
+        sceneRef.remove(proj.mesh);
+        proj.mesh.geometry.dispose();
+        proj.mesh.material.dispose();
+        bossProjs.splice(i, 1);
+
+        const dead = damagePlayer(1);
+        triggerHitFlash();
+        playDamageSound();
+        cameraShake = 0.4;
+        cameraShakeIntensity = 0.04;
+        originalCameraPos.copy(camera.position);
+        floorFlashing = true;
+        floorFlashTimer = 0.5;
+        if (dead) endGame(false);
+      }
     }
 
     // Check for DoT damage on enemies
@@ -1877,6 +1959,7 @@ function render(timestamp) {
     // Update HUD (staggered — every 3rd frame to reduce geometry recreation cost)
     game._levelConfig = getLevelConfig();
     game._combo = getComboMultiplier();
+    checkComboIncrease(game._combo, camera.position, playUpgradeSound);
     if (frameCount % 3 === 0) {
       updateHUD(game);
     }
@@ -1949,6 +2032,20 @@ function render(timestamp) {
     }
   }
 
+  // ── Floor damage flash ──
+  if (floorFlashing && floorMaterial) {
+    floorFlashTimer -= rawDt;
+    if (floorFlashTimer <= 0) {
+      floorFlashing = false;
+      floorMaterial.color.copy(FLOOR_BASE_COLOR);
+    } else {
+      // Lerp from red/white back to base color
+      const t = floorFlashTimer / 0.5;  // 0.5s flash duration
+      const flashColor = new THREE.Color(0xff2222);  // Bright red
+      floorMaterial.color.lerpColors(FLOOR_BASE_COLOR, flashColor, t);
+    }
+  }
+
   // ── Environment: sun and ominous horizon scale with level ──
   const envLevel = game.state === State.PLAYING ? game.level : 1;
   if (sunMeshRef && sunGlowRef) {
@@ -1972,6 +2069,7 @@ function render(timestamp) {
   updateExplosions(dt, now);
   updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
+  updateComboPopups(dt, now);
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
   updateFPS(now, {
     perfMonitor: typeof window !== 'undefined' && window.debugPerfMonitor,
