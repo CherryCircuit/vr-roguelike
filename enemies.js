@@ -184,7 +184,7 @@ export function spawnEnemy(type, position, levelConfig) {
     statusEffects: {
       fire: { stacks: 0, remaining: 0, tickTimer: 0 },
       shock: { stacks: 0, remaining: 0, tickTimer: 0 },
-      freeze: { stacks: 0, remaining: 0 },
+      freeze: { stacks: 0, remaining: 0, tickTimer: 0 },
     },
   };
 
@@ -800,7 +800,7 @@ export function updateBossMinions(dt, playerPos) {
 const bossProjectiles = [];
 
 function spawnBossProjectile(fromPos, targetPos) {
-  const geo = getGeo(0.2);
+  const geo = getGeo(0.12);
   const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, emissive: 0xff0000 });
   const proj = new THREE.Mesh(geo, mat);
   proj.position.copy(fromPos);
