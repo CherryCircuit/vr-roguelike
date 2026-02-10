@@ -160,13 +160,13 @@ function makeSprite(text, opts = {}) {
     map: texture,
     transparent: true,
     opacity: opts.opacity !== undefined ? opts.opacity : 1,
-    depthTest: opts.depthTest ?? false,
+    depthTest: opts.depthTest !== undefined ? opts.depthTest : false,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(geometry, mat);
-  mesh.renderOrder = opts.renderOrder ?? 999;
+  mesh.renderOrder = opts.renderOrder !== undefined ? opts.renderOrder : 999;
   return mesh;
 }
 
@@ -233,7 +233,9 @@ export function initHUD(camera, scene) {
 
   // ── Title Screen (world-space, fixed position) ──
   createTitleScreen();
-  titleGroup.position.set(0, 1.6, -6);
+  titleGroup.position.set(0, 1.6, -3.5);
+  titleGroup.rotation.set(0, 0, 0);
+  titleGroup.visible = true;
   scene.add(titleGroup);
 
   // ── VR HUD (stationary on floor, Space Pirate Trainer style) ──
@@ -242,42 +244,12 @@ export function initHUD(camera, scene) {
   hudGroup.rotation.x = -Math.PI / 2;  // Rotate to face up (floor plane)
   scene.add(hudGroup);
 
-  // ── Level transition text (world-space) ──
-  levelTextGroup.visible = false;
-  levelTextGroup.rotation.set(0, 0, 0);  // Lock rotation
-  scene.add(levelTextGroup);
-
-  // ── Upgrade selection (world-space) ──
-  upgradeGroup.visible = false;
-  upgradeGroup.rotation.set(0, 0, 0);  // Lock rotation
-  scene.add(upgradeGroup);
-
-  // ── Game over / Victory (world-space) ──
-  gameOverGroup.visible = false;
-  gameOverGroup.rotation.set(0, 0, 0);
-  scene.add(gameOverGroup);
-
-  // ── Title Screen (world-space) ──
-  createTitleScreen();
-  titleGroup.visible = true;
-  titleGroup.position.set(0, 0, -3.5);  // Push back a bit
-  titleGroup.rotation.set(0, 0, 0);
-  scene.add(titleGroup);
-
-  // ── Level Complete text (world-space) ──
-  scoreboardGroup.visible = false;
-  scoreboardGroup.rotation.set(0, 0, 0);
-  scene.add(scoreboardGroup);
-
-  // ── Country select (world-space) ──
-  countrySelectGroup.visible = false;
-  countrySelectGroup.rotation.set(0, 0, 0);
-  scene.add(countrySelectGroup);
-
-  // ── Ready screen ──
-  readyGroup.visible = false;
-  readyGroup.rotation.set(0, 0, 0);
-  scene.add(readyGroup);
+  // ── UI Groups (initially hidden) ──
+  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup].forEach(g => {
+    g.visible = false;
+    g.rotation.set(0, 0, 0);
+    scene.add(g);
+  });
 
   // ── Hit flash (red sphere around camera) ──
   hitFlash = new THREE.Mesh(
@@ -408,8 +380,8 @@ function createTitleScreen() {
   titleScoreboardBtn = btnMesh;
 
   // Version number
-  const versionDate = 'FEB 9 2026   10:49PM PT';
-  const versionNum = 'v0.043';
+  const versionDate = 'FEB 10 2026   12:10PM PT';
+  const versionNum = 'v0.044';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 32,
     color: '#888888',
