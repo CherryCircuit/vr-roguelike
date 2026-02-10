@@ -28,7 +28,7 @@ import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
-  hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS,
+  hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, spawnOuchBubble, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar,
   updateComboPopups, checkComboIncrease,
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
@@ -1306,6 +1306,9 @@ function getChargeShotDamage(t) {
   return 1000;
 }
 
+const _chargeBeamA = new THREE.Vector3();
+const _chargeBeamB = new THREE.Vector3();
+
 function fireChargeShot(controller, index, totalTime) {
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -1520,7 +1523,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, hitInfo = {}) {
 
   // Shield reflection: body hit when shields active
   if (result.shieldReflected) {
-    import('./hud.js').then(h => h.spawnOuchBubble(hitPoint));
+    spawnOuchBubble(hitPoint);
     const dead = damagePlayer(1);
     triggerHitFlash();
     playDamageSound();
@@ -2284,13 +2287,3 @@ function spawnChargeParticle(controller, prog) {
   });
 }
 
-function pointToSegmentDist(p, a, b) {
-  const ab = new THREE.Vector3().subVectors(b, a);
-  const ap = new THREE.Vector3().subVectors(p, a);
-  const bp = new THREE.Vector3().subVectors(p, b);
-  const d1 = ab.dot(ap);
-  const d2 = ab.dot(bp);
-  if (d1 <= 0) return p.distanceTo(a);
-  if (d2 >= 0) return p.distanceTo(b);
-  return new THREE.Vector3().crossVectors(ab, ap).length() / ab.length();
-}
