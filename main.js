@@ -1634,7 +1634,7 @@ function spawnExplosionVisual(center, radius) {
   explosionVisuals.push(mesh);
 }
 
-function updateExplosionVisuals(dt, now) {
+function updateExplosionVisuals(now) {
   for (let i = explosionVisuals.length - 1; i >= 0; i--) {
     const m = explosionVisuals[i];
     const age = now - m.userData.createdAt;
@@ -1870,7 +1870,7 @@ function updateFastEnemyAlerts(dt, playerPos) {
 // ============================================================
 //  RENDER / UPDATE LOOP
 // ============================================================
-function render(timestamp) {
+function render(timestamp) { try {
   frameCount++;
   const now = timestamp || performance.now();
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
@@ -2265,7 +2265,7 @@ function render(timestamp) {
   const scanlinesEl = document.getElementById('scanlines');
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
-  renderer.render(scene, camera);
+  renderer.render(scene, camera); } catch (e) { showError(e); }
 }
 
 // ============================================================
@@ -2345,3 +2345,34 @@ function spawnChargeParticle(controller, prog) {
   });
 }
 
+
+let errorShown = false;
+function showError(e) {
+  if (errorShown) return;
+  errorShown = true;
+  console.error(e);
+  
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#440000";
+  ctx.fillRect(0, 0, 1024, 256);
+  ctx.fillStyle = "red";
+  ctx.font = "40px monospace";
+  ctx.fillText("ERROR: " + e.message, 20, 100);
+  ctx.fillText((e.stack || "").substring(0, 60), 20, 160);
+  
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, depthTest: false });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.5), mat);
+  
+  if (camera) {
+    camera.add(mesh);
+    mesh.position.set(0, 0, -1.5);
+    mesh.renderOrder = 9999;
+  } else if (scene) {
+    scene.add(mesh);
+    mesh.position.set(0, 1.6, -1.5);
+  }
+}
