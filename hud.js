@@ -406,13 +406,12 @@ function createTitleScreen() {
   titleScoreboardBtn = btnMesh;
 
   // Version number
-  const now = new Date();
-  const pst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-  const dateStr = `${pst.getMonth() + 1}/${pst.getDate()}/${pst.getFullYear()} ${pst.getHours()}:${String(pst.getMinutes()).padStart(2, '0')} PT`;
-  const versionSprite = makeSprite(`ver. 0.023\n${dateStr}`, {
+  const versionDate = 'FEB 10 2026';
+  const versionNum = 'v0.042';
+  const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 32,
     color: '#888888',
-    scale: 0.25,
+    scale: 0.28,
   });
   versionSprite.position.set(0, -1.0, 0);
   titleGroup.add(versionSprite);
@@ -889,8 +888,8 @@ export function spawnDamageNumber(position, damage, color) {
   texture.minFilter = THREE.LinearFilter;
 
   // Use PlaneGeometry instead of Sprite to prevent billboarding
-  // Increased scale significantly for better visibility
-  const scale = 0.25 + Math.min(damage / 100, 0.15);  // Much larger base scale
+  // Increased scale significantly for better visibility (+30% from before)
+  const scale = (0.25 + Math.min(damage / 100, 0.15)) * 1.3;
   const width = scale * 2;
   const height = scale;
 
@@ -929,6 +928,52 @@ export function spawnDamageNumber(position, damage, color) {
     old.material.map.dispose();
     old.material.dispose();
   }
+}
+
+export function spawnOuchBubble(position) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 128;
+
+  // Background bubble
+  ctx.fillStyle = '#ffff00';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 6;
+
+  // Flashy comic bubble shape
+  ctx.beginPath();
+  ctx.moveTo(40, 60);
+  ctx.lineTo(20, 20); ctx.lineTo(80, 40);
+  ctx.lineTo(128, 10); ctx.lineTo(176, 40);
+  ctx.lineTo(236, 20); ctx.lineTo(216, 60);
+  ctx.lineTo(236, 100); ctx.lineTo(176, 80);
+  ctx.lineTo(128, 110); ctx.lineTo(80, 80);
+  ctx.lineTo(20, 100); ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.font = 'bold 80px "Comic Sans MS", cursive, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ff0000';
+  ctx.fillText('OUCH!', 128, 64);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.5, 0.75),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, side: THREE.DoubleSide })
+  );
+  mesh.position.copy(position);
+  mesh.position.y += 1.0;
+  mesh.position.z += 0.5;
+  mesh.renderOrder = 999;
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.lifetime = 800;
+  mesh.userData.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.5, 1.5, (Math.random() - 0.5) * 0.5);
+
+  sceneRef.add(mesh);
+  damageNumbers.push(mesh);
 }
 
 export function updateDamageNumbers(dt, now) {
@@ -1102,7 +1147,8 @@ function hideAll() {
   scoreboardGroup.visible = false;
   countrySelectGroup.visible = false;
   readyGroup.visible = false;
-  hudGroup.visible = false;
+  // Floor HUD shouldn't necessarily disappear during everything
+  // Specifically don't hide it if we want it visible during upgrades
 }
 
 // ── Title Scoreboard Button Hit ─────────────────────────────
