@@ -33,10 +33,10 @@ export function getBossTier(level) {
 }
 
 // Pool of 5 boss ids per tier (picked at random for that level)
-const BOSS_POOL_TIER1 = ['skull', 'cowboy', 'orb', 'serpent', 'turret'];
-const BOSS_POOL_TIER2 = ['skull2', 'cowboy2', 'orb2', 'serpent2', 'turret2'];
-const BOSS_POOL_TIER3 = ['skull3', 'cowboy3', 'orb3', 'serpent3', 'turret3'];
-const BOSS_POOL_TIER4 = ['skull4', 'cowboy4', 'orb4', 'serpent4', 'turret4'];
+const BOSS_POOL_TIER1 = ['grave_voxel', 'iron_sentry', 'chrono_wraith', 'siege_ram', 'core_guardian'];
+const BOSS_POOL_TIER2 = ['grave_voxel2', 'iron_sentry2', 'chrono_wraith2', 'siege_ram2', 'core_guardian2'];
+const BOSS_POOL_TIER3 = ['grave_voxel3', 'iron_sentry3', 'chrono_wraith3', 'siege_ram3', 'core_guardian3'];
+const BOSS_POOL_TIER4 = ['grave_voxel4', 'iron_sentry4', 'chrono_wraith4', 'siege_ram4', 'core_guardian4'];
 
 export function getRandomBossIdForLevel(level) {
   const tier = getBossTier(level);
