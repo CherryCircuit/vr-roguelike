@@ -398,7 +398,7 @@ function createTitleScreen() {
     color: '#ffff00',
     glow: true,
     glowColor: '#ffff00',
-    scale: 0.25,
+    scale: 0.20,
   });
   btnText.position.set(0, 0, 0.01);
   btnGroup.add(btnText);
@@ -1828,4 +1828,79 @@ export function getCountrySelectHit(raycaster, countries) {
   if (hits.length > 0) return { action: 'back' };
 
   return null;
+}
+
+/**
+ * Unified hover effect for all HUD buttons and upgrade cards.
+ * Returns true if a NEW hover occurred (to trigger sound).
+ */
+export function updateHUDHover(raycaster) {
+  const hoverables = [];
+
+  // 1. Title Scoreboard
+  if (titleGroup.visible && titleScoreboardBtn) hoverables.push(titleScoreboardBtn);
+
+  // 2. Upgrade Cards
+  if (upgradeGroup.visible) {
+    upgradeCards.forEach(card => {
+      const mesh = card.children.find(c => c.userData.isUpgradeCard);
+      if (mesh) hoverables.push(mesh);
+    });
+  }
+
+  // 3. Scoreboard / Regional
+  if (scoreboardGroup.visible) {
+    scoreboardGroup.traverse(c => {
+      if (c.userData && c.userData.scoreboardAction) hoverables.push(c);
+    });
+  }
+
+  // 4. Country Select
+  if (countrySelectGroup.visible) {
+    countrySelectGroup.traverse(c => {
+      // Continent tabs, country grid items, or the BACK button
+      if (c.userData && (c.userData.continentTab || c.userData.countryCode || c.userData.countryAction)) {
+        hoverables.push(c);
+      }
+    });
+  }
+
+  // 5. Ready Screen
+  if (readyGroup.visible) {
+    readyGroup.traverse(c => {
+      if (c.userData && c.userData.readyAction) hoverables.push(c);
+    });
+  }
+
+  if (hoverables.length === 0) return false;
+
+  const hits = raycaster.intersectObjects(hoverables, false);
+  let hoveredObj = hits.length > 0 ? hits[0].object : null;
+  let newHover = false;
+
+  // We need to keep track of ALL hoverables to reset those NOT hovered
+  // Traverse and reset or set scale
+  hoverables.forEach(obj => {
+    let target = obj;
+    // For many of our UI elements, the 'active area' is a Mesh inside a Group. 
+    // We want to scale the Group for the best visual effect.
+    if (obj.parent && obj.parent.type === 'Group') {
+      target = obj.parent;
+    }
+
+    if (obj === hoveredObj) {
+      if (!obj.userData._isActuallyHovered) {
+        obj.userData._isActuallyHovered = true;
+        newHover = true;
+      }
+      target.scale.set(1.1, 1.1, 1.1);
+    } else {
+      if (obj.userData._isActuallyHovered) {
+        obj.userData._isActuallyHovered = false;
+        target.scale.set(1.0, 1.0, 1.0);
+      }
+    }
+  });
+
+  return newHover;
 }
