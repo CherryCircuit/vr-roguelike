@@ -11,6 +11,13 @@ function getAudioContext() {
   return audioCtx;
 }
 
+export function resumeAudioContext() {
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
+}
+
 // ── Shoot sound (laser pew) — heavily randomized ───────────
 export function playShoothSound() {
   const ctx = getAudioContext();
@@ -19,7 +26,7 @@ export function playShoothSound() {
   // Randomize everything: base frequency, pitch sweep, waveform, duration
   const baseFreqs = [600, 700, 800, 900, 1000, 1100];
   const baseFreq = baseFreqs[Math.floor(Math.random() * baseFreqs.length)];
-  const pitch = 0.3 + Math.random() * 1.4;
+  const pitch = 0.85 + Math.random() * 0.3; // 0.85 to 1.15
   const duration = 0.06 + Math.random() * 0.08;  // 60-140ms
   const waveforms = ['square', 'sawtooth', 'triangle'];
 

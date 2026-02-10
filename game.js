@@ -100,6 +100,7 @@ export const game = {
   // Scoreboard
   finalScore: 0,
   finalLevel: 0,
+  accuracyStreak: 0,
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -123,6 +124,7 @@ export function resetGame() {
     justBossKill: false,
     finalScore: 0,
     finalLevel: 0,
+    accuracyStreak: 0,
   });
 }
 
@@ -131,13 +133,13 @@ export function getLevelConfig() {
 }
 
 export function addScore(points) {
-  // Combo multiplier: every 10 kills without getting hit raises it (max 5×)
-  const combo = Math.min(5, 1 + Math.floor(game.killsWithoutHit / 10));
+  // Combo multiplier: every 10 accuracy streak hits raises it (max 5×)
+  const combo = getComboMultiplier();
   game.score += Math.floor(points * combo);
 }
 
 export function getComboMultiplier() {
-  return Math.min(5, 1 + Math.floor(game.killsWithoutHit / 10));
+  return Math.min(5, 1 + Math.floor(game.accuracyStreak / 10));
 }
 
 export function damagePlayer(amount) {

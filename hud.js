@@ -524,10 +524,11 @@ export function updateHUD(gameState) {
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.26 });
 
   // Combo - 200% larger with descriptive label
-  const combo = gameState._combo || 1;
+  const combo = getComboMultiplier();
   if (combo > 1) {
     comboSprite.visible = true;
-    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 });
+    const pulse = 1.0 + Math.sin(performance.now() * 0.01) * 0.1;
+    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 * pulse });
   } else {
     comboSprite.visible = false;
   }
@@ -930,14 +931,14 @@ export function spawnDamageNumber(position, damage, color) {
   }
 }
 
-export function spawnOuchBubble(position) {
+export function spawnOuchBubble(position, text = 'OUCH!') {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 256;
   canvas.height = 128;
 
   // Background bubble
-  ctx.fillStyle = '#ffff00';
+  ctx.fillStyle = text.includes('STREAK') ? '#00ff44' : '#ffff00';
   ctx.strokeStyle = '#000000';
   ctx.lineWidth = 6;
 
@@ -953,11 +954,12 @@ export function spawnOuchBubble(position) {
   ctx.fill();
   ctx.stroke();
 
-  ctx.font = 'bold 80px "Comic Sans MS", cursive, sans-serif';
+  ctx.font = 'bold 36px "Comic Sans MS", cursive, sans-serif';
+  if (text.length > 8) ctx.font = 'bold 24px "Comic Sans MS", cursive, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ff0000';
-  ctx.fillText('OUCH!', 128, 64);
+  ctx.fillStyle = text.includes('STREAK') ? '#003311' : '#ff0000';
+  ctx.fillText(text, 128, 64);
 
   const texture = new THREE.CanvasTexture(canvas);
   const mesh = new THREE.Mesh(
@@ -1508,7 +1510,7 @@ export function showScoreboard(scores, headerText) {
     new THREE.EdgesGeometry(backGeo),
     new THREE.LineBasicMaterial({ color: 0xff4444 })
   ));
-  const backTxt = makeSprite('BACK', { fontSize: 28, color: '#ff4444', scale: 0.15 });
+  const backTxt = makeSprite('BACK', { fontSize: 24, color: '#ff4444', scale: 0.12 });
   backTxt.position.set(0, 0, 0.01);
   backGroup.add(backTxt);
   scoreboardGroup.add(backGroup);
@@ -1532,12 +1534,12 @@ function renderScoreboardCanvas() {
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, w - 2, h - 2);
 
-  const rowHeight = 42;
+  const rowHeight = 30; // Reduced from 42
   const maxVisible = Math.floor(h / rowHeight);
   const startIdx = scoreboardScrollOffset;
   const endIdx = Math.min(startIdx + maxVisible, scoreboardScores.length);
 
-  ctx.font = 'bold 24px Arial, sans-serif';
+  ctx.font = 'bold 18px Arial, sans-serif'; // Reduced from 24
   ctx.textBaseline = 'middle';
 
   for (let i = startIdx; i < endIdx; i++) {
@@ -1577,9 +1579,9 @@ function renderScoreboardCanvas() {
           ...[...score.country.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
         );
         ctx.textAlign = 'left';
-        ctx.font = '22px Arial, sans-serif';
+        ctx.font = '16px Arial, sans-serif';
         ctx.fillText(flag, 640, y);
-        ctx.font = 'bold 24px Arial, sans-serif';
+        ctx.font = 'bold 18px Arial, sans-serif';
       } catch (e) { /* skip flag */ }
     }
 
@@ -1727,7 +1729,7 @@ export function showCountrySelect(countries, continents, initialContinent) {
 
   // BACK button
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -0.8, 0);
+  backGroup.position.set(0, -0.9, 0); // Moved down from -0.8
   const backGeo = new THREE.PlaneGeometry(0.6, 0.25);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -1832,9 +1834,10 @@ export function getCountrySelectHit(raycaster, countries) {
 
 /**
  * Unified hover effect for all HUD buttons and upgrade cards.
+ * Accepts an array of raycasters (one per controller).
  * Returns true if a NEW hover occurred (to trigger sound).
  */
-export function updateHUDHover(raycaster) {
+export function updateHUDHover(raycasters) {
   const hoverables = [];
 
   // 1. Title Scoreboard
@@ -1874,8 +1877,13 @@ export function updateHUDHover(raycaster) {
 
   if (hoverables.length === 0) return false;
 
-  const hits = raycaster.intersectObjects(hoverables, false);
-  let hoveredObj = hits.length > 0 ? hits[0].object : null;
+  // Find ALL hovered objects from ALL raycasters
+  const hoveredObjs = new Set();
+  raycasters.forEach(rc => {
+    const hits = rc.intersectObjects(hoverables, false);
+    if (hits.length > 0) hoveredObjs.add(hits[0].object);
+  });
+
   let newHover = false;
 
   // We need to keep track of ALL hoverables to reset those NOT hovered
@@ -1888,7 +1896,7 @@ export function updateHUDHover(raycaster) {
       target = obj.parent;
     }
 
-    if (obj === hoveredObj) {
+    if (hoveredObjs.has(obj)) {
       if (!obj.userData._isActuallyHovered) {
         obj.userData._isActuallyHovered = true;
         newHover = true;
@@ -1903,4 +1911,44 @@ export function updateHUDHover(raycaster) {
   });
 
   return newHover;
+}
+
+/** Highlights the controller currently selected for upgrade */
+export function showUpgradeHandHighlight(hand, controllers) {
+  controllers.forEach((ctrl, i) => {
+    const isHand = (i === 0 && hand === 'left') || (i === 1 && hand === 'right');
+    const existing = ctrl.getObjectByName('upgradeHighlight');
+    if (existing) ctrl.remove(existing);
+
+    if (isHand) {
+      const group = new THREE.Group();
+      group.name = 'upgradeHighlight';
+
+      const geo = new THREE.OctahedronGeometry(0.1, 0);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.6 });
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
+
+      const glow = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.2 }));
+      glow.scale.set(1.4, 1.4, 1.4);
+      group.add(glow);
+
+      group.position.set(0, 0.05, 0);
+      ctrl.add(group);
+    }
+  });
+}
+
+export function hideUpgradeHandHighlights(controllers) {
+  controllers.forEach(ctrl => {
+    const existing = ctrl.getObjectByName('upgradeHighlight');
+    if (existing) ctrl.remove(existing);
+  });
+}
+
+/** Updates the spinning animation of the highlight */
+export function updateUpgradeHandHighlights(now) {
+  [readyGroup, upgradeGroup].forEach(g => {
+    // This is handled via normal scene graph if attached to controller
+  });
 }

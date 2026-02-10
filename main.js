@@ -34,7 +34,8 @@ import {
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
-  showReadyScreen, hideReadyScreen, getReadyScreenHit, updateHUDHover
+  showReadyScreen, hideReadyScreen, getReadyScreenHit, updateHUDHover,
+  showUpgradeHandHighlight, hideUpgradeHandHighlights
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -67,7 +68,11 @@ const weaponCooldowns = [0, 0];
 
 // Big Boom: only one "exploding" shot per hand every 2.75s (ms)
 const BIG_BOOM_COOLDOWN_MS = 2750;
-const lastExplodingShotTime = [0, 0];
+let lastExplodingShotTime = [0, 0];
+
+// Shot tracking for accuracy streak
+let nextShotId = 0;
+const activeShots = new Map();
 
 // Explosion visuals (short-lived expanding spheres)
 const explosionVisuals = [];
@@ -484,17 +489,6 @@ function createMountains() {
   });
 }
 
-function generatePeaks(count, minH, maxH) {
-  const peaks = [];
-  const step = 200 / (count + 1);
-  for (let i = 1; i <= count; i++) {
-    const x = -100 + i * step + (Math.random() - 0.5) * step * 0.6;
-    const y = minH + Math.random() * (maxH - minH);
-    peaks.push([x, y]);
-  }
-  return peaks;
-}
-
 function createStars() {
   // Reduced from 1500 to 800 — still looks great, fewer draw calls
   const count = 800;
@@ -726,6 +720,7 @@ function handleTitleTrigger(controller) {
     });
     return;
   }
+  import('./audio.js').then(a => a.resumeAudioContext());
   playMenuClick();
   startGame();
 }
@@ -984,6 +979,7 @@ function showUpgradeScreen() {
 
   pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3, excludeIds);
   showUpgradeCards(pendingUpgrades, camera.position, upgradeHand);
+  showUpgradeHandHighlight(upgradeHand, controllers);
   if (game.justBossKill) game.justBossKill = false;
   upgradeSelectionCooldown = 1.5; // prevent instant selection
 
@@ -1000,6 +996,7 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     console.log('[game] Skipped upgrade, health restored to full');
     playUpgradeSound();
     hideUpgradeCards();
+    hideUpgradeHandHighlights(controllers);
     advanceLevelAfterUpgrade();
     return;
   }
@@ -1022,9 +1019,11 @@ function selectUpgradeAndAdvance(upgrade, hand) {
       pendingUpgrades[idx] = replacement;
       hideUpgradeCards();
       showUpgradeCards(pendingUpgrades, camera.position, hand);
+      showUpgradeHandHighlight(hand, controllers);
       upgradeSelectionCooldown = 1.5;
     } else {
       hideUpgradeCards();
+      hideUpgradeHandHighlights(controllers);
       advanceLevelAfterUpgrade();
     }
     return;
@@ -1033,6 +1032,7 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   addUpgrade(upgrade.id, hand);
   playUpgradeSound();
   hideUpgradeCards();
+  hideUpgradeHandHighlights(controllers);
   advanceLevelAfterUpgrade();
 }
 
@@ -1108,17 +1108,18 @@ function shootWeapon(controller, index) {
   const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
   const gap = 0.08; // Gap between parallel shots
 
+  const shotId = nextShotId++;
+  activeShots.set(shotId, { total: count, hits: 0, processed: false });
+
   for (let i = 0; i < count; i++) {
     let spawnOrigin = origin.clone();
 
     if (count > 1) {
-      // Position shots side-by-side with small gap, all parallel
-      // Spread evenly around center: for 2 shots [-0.5, 0.5], for 3 [-1, 0, 1], etc.
       const offsetIndex = i - (count - 1) / 2;
       spawnOrigin.addScaledVector(rightAxis, offsetIndex * gap);
     }
 
-    spawnProjectile(spawnOrigin, direction.clone(), index, stats);
+    spawnProjectile(spawnOrigin, direction.clone(), index, stats, shotId);
   }
 
   console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
@@ -1327,10 +1328,14 @@ function fireChargeShot(controller, index, totalTime) {
   const hand = index === 0 ? 'left' : 'right';
   const stats = getWeaponStats(game.upgrades[hand]);
 
+  const shotId = nextShotId++;
+  activeShots.set(shotId, { total: 0, hits: 0, processed: false }); // Total will be updated by hits
+
   getEnemies().forEach((e, i) => {
     const dist = pointToSegmentDist(e.mesh.position, _chargeBeamA, _chargeBeamB);
     if (dist < beamWidth) {
-      handleHit(i, e, { ...stats, damage }, e.mesh.position.clone(), index, false, false);
+      handleHit(i, e, { ...stats, damage, shotId }, e.mesh.position.clone(), index, false, false);
+      activeShots.get(shotId).total++;
     }
   });
 
@@ -1339,7 +1344,8 @@ function fireChargeShot(controller, index, totalTime) {
     const dist = pointToSegmentDist(boss.mesh.position, _chargeBeamA, _chargeBeamB);
     if (dist < beamWidth) {
       const result = getEnemyByMesh(boss.mesh);
-      handleBossHit(boss, { ...stats, damage }, boss.mesh.position.clone(), index, result);
+      handleBossHit(boss, { ...stats, damage, shotId }, boss.mesh.position.clone(), index, result);
+      activeShots.get(shotId).total++;
     }
   }
 
@@ -1378,7 +1384,7 @@ window.spawnEffectParticle = (pos, color) => {
   });
 };
 
-function spawnProjectile(origin, direction, controllerIndex, stats) {
+function spawnProjectile(origin, direction, controllerIndex, stats, shotId) {
   const now = performance.now();
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
   const isBuckshot = stats.spreadAngle > 0;
@@ -1428,6 +1434,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
   mesh.userData.lifetime = 3000;
   mesh.userData.createdAt = performance.now();
   mesh.userData.hitEnemies = new Set();
+  mesh.userData.shotId = shotId;
 
   // Orient bolt along direction
   if (!isBuckshot) {
@@ -1441,6 +1448,17 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
     playBuckshotSound();
   } else {
     playShoothSound();
+  }
+}
+
+function completeShot(sid) {
+  if (sid === undefined) return;
+  const s = activeShots.get(sid);
+  if (!s) return;
+  s.total--;
+  if (s.total <= 0) {
+    if (s.hits === 0) game.accuracyStreak = 0;
+    activeShots.delete(sid);
   }
 }
 
@@ -1463,6 +1481,28 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
 
   // Apply damage
   const result = hitEnemy(enemyIndex, damage);
+
+  // Track shot hit
+  if (stats.shotId !== undefined) {
+    const s = activeShots.get(stats.shotId);
+    if (s) s.hits++;
+  }
+
+  if (result.killed) {
+    game.accuracyStreak++;
+    // Multiplier text popup (move slightly further than before)
+    const combo = getComboMultiplier();
+    if (checkComboIncrease(game.accuracyStreak)) {
+      import('./hud.js').then(h => {
+        const offset = new THREE.Vector3(0, 0, -3.5); // Further away
+        h.spawnDamageNumber(camera.position.clone().add(offset), `${combo}X MULTIPLIER`, '#ffdd00');
+      });
+    }
+    // Notify on milestones
+    if (game.accuracyStreak > 0 && game.accuracyStreak % 10 === 0) {
+      import('./hud.js').then(h => h.spawnOuchBubble(hitPoint, `${game.accuracyStreak} STREAK!`));
+    }
+  }
 
   // Track damage for hand stats
   if (controllerIndex !== undefined) {
@@ -1648,6 +1688,7 @@ function updateProjectiles(dt) {
 
     // Remove expired projectiles
     if (age > proj.userData.lifetime) {
+      completeShot(proj.userData.shotId);
       scene.remove(proj);
       projectiles.splice(i, 1);
       continue;
@@ -1666,6 +1707,7 @@ function updateProjectiles(dt) {
       if (result && result.boss) {
         handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex, result);
         if (!proj.userData.stats.piercing) {
+          completeShot(proj.userData.shotId);
           scene.remove(proj);
           projectiles.splice(i, 1);
         }
@@ -1682,6 +1724,7 @@ function updateProjectiles(dt) {
 
         // Remove projectile if not piercing
         if (!proj.userData.stats.piercing) {
+          completeShot(proj.userData.shotId);
           scene.remove(proj);
           projectiles.splice(i, 1);
         }
@@ -1692,6 +1735,17 @@ function updateProjectiles(dt) {
           spawnDamageNumber(hits[0].point, proj.userData.stats.damage, '#ff8800');
           if (mResult.killed) playExplosionSound();
           if (!proj.userData.stats.piercing) {
+            const sid = proj.userData.shotId;
+            if (sid !== undefined) {
+              const s = activeShots.get(sid);
+              if (s) {
+                s.total--;
+                if (s.total <= 0) {
+                  if (s.hits === 0) game.accuracyStreak = 0;
+                  activeShots.delete(sid);
+                }
+              }
+            }
             scene.remove(proj);
             projectiles.splice(i, 1);
           }
@@ -2086,6 +2140,7 @@ function render(timestamp) {
   // ── Unified HUD Hover Logic (ForAll Menu States) ──
   const menuStates = [State.TITLE, State.UPGRADE_SELECT, State.READY_SCREEN, State.SCOREBOARD, State.REGIONAL_SCORES, State.COUNTRY_SELECT];
   if (menuStates.includes(st)) {
+    const activeRaycasters = [];
     for (let i = 0; i < controllers.length; i++) {
       const ctrl = controllers[i];
       if (!ctrl) continue;
@@ -2094,11 +2149,10 @@ function render(timestamp) {
       ctrl.getWorldPosition(origin);
       ctrl.getWorldQuaternion(quat);
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-      const rc = new THREE.Raycaster(origin, dir, 0, 20);
-      if (updateHUDHover(rc)) {
-        playMenuHoverSound();
-      }
-      break; // Only need one active raycaster for hovers generally
+      activeRaycasters.push(new THREE.Raycaster(origin, dir, 0, 20));
+    }
+    if (activeRaycasters.length > 0 && updateHUDHover(activeRaycasters)) {
+      playMenuHoverSound();
     }
   }
 
