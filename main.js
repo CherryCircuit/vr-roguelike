@@ -8,7 +8,15 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, getMusicFrequencyData } from './audio.js';
+import {
+  playShoothSound, playHitSound, playExplosionSound, playDamageSound,
+  playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
+  playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound,
+  playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
+  playSlowMoSound, playSlowMoReverseSound,
+  startLightningSound, stopLightningSound,
+  playMusic, stopMusic, getMusicFrequencyData
+} from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
@@ -25,7 +33,8 @@ import {
   updateComboPopups, checkComboIncrease,
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
-  showCountrySelect, hideCountrySelect, getCountrySelectHit
+  showCountrySelect, hideCountrySelect, getCountrySelectHit,
+  showDebugJumpScreen, getDebugJumpHit
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -692,6 +701,8 @@ function onTriggerPress(controller, index) {
     handleScoreboardTrigger(controller);
   } else if (st === State.COUNTRY_SELECT) {
     handleCountrySelectTrigger(controller);
+  } else if (st === State.READY_SCREEN) {
+    handleReadyScreenTrigger(controller);
   }
 }
 
@@ -705,6 +716,7 @@ function handleTitleTrigger(controller) {
 
   const btnHit = getTitleButtonHit(raycaster);
   if (btnHit === 'scoreboard') {
+    playMenuClick();
     scoreboardFromGameOver = false;
     game.state = State.SCOREBOARD;
     hideTitle();
@@ -714,6 +726,7 @@ function handleTitleTrigger(controller) {
     });
     return;
   }
+  playMenuClick();
   startGame();
 }
 
@@ -832,6 +845,7 @@ function handleCountrySelectTrigger(controller) {
   }
 
   if (result.action === 'select') {
+    playMenuClick();
     setStoredCountry(result.code);
     hideCountrySelect();
 
@@ -875,10 +889,10 @@ function onTriggerRelease(index) {
 //  GAME STATE TRANSITIONS
 // ============================================================
 function debugJumpToLevel(targetLevel) {
-  console.log(`[debug] Jump to level ${targetLevel}`);
+  console.log('[debug] Jump to level ' + targetLevel);
   hideTitle();
   resetGame();
-  game.state = State.PLAYING;
+  game.state = State.READY_SCREEN;
   game.level = targetLevel;
   game._levelConfig = getLevelConfig();
   game.health = game.maxHealth;
@@ -894,19 +908,37 @@ function debugJumpToLevel(targetLevel) {
       upgrades.forEach((u, idx) => addUpgrade(u.id, hand(lvl, idx)));
     }
   }
-  game.kills = 0;
-  game._levelConfig = getLevelConfig();
-  showHUD();
-  blasterDisplays.forEach(d => { if (d) d.visible = false; });
-  if (targetLevel >= 6) playMusic('levels6to10');
-  else playMusic('levels1to5');
+
+  showReadyScreen(targetLevel);
+}
+
+function handleReadyScreenTrigger(controller) {
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const raycaster = new THREE.Raycaster(origin, direction, 0, 10);
+
+  const action = getReadyScreenHit(raycaster);
+  if (action === 'start') {
+    playMenuClick();
+    hideHUD();
+
+    // Actually start playing
+    game.state = State.READY_SCREEN;
+    showHUD();
+
+    // Stagger setup
+    game.spawnTimer = 1.0;
+  }
 }
 
 function startGame() {
   console.log('[game] Starting new game');
   hideTitle();
   resetGame();
-  game.state = State.PLAYING;
+  game.state = State.READY_SCREEN;
   game.level = 1;
   game._levelConfig = getLevelConfig();
   showHUD();
@@ -1012,7 +1044,7 @@ function advanceLevelAfterUpgrade() {
   if (game.level > 20) {
     endGame(true); // victory
   } else {
-    game.state = State.PLAYING;
+    game.state = State.READY_SCREEN;
     game._levelConfig = getLevelConfig();
     showHUD();
 
@@ -1385,7 +1417,12 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
 
   scene.add(mesh);
   projectiles.push(mesh);
-  playShoothSound();
+
+  if (isBuckshot) {
+    playBuckshotSound();
+  } else {
+    playShoothSound();
+  }
 }
 
 function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExploding = false, hitWeakPoint = false) {
@@ -1677,7 +1714,10 @@ function spawnEnemyWave(dt) {
   if (cfg.isBoss) {
     if (!getBoss()) {
       const bossId = getRandomBossIdForLevel(game.level);
-      if (bossId) spawnBoss(bossId, cfg);
+      if (bossId) {
+        spawnBoss(bossId, cfg);
+        playBossSpawn();
+      }
     }
     return;
   }
@@ -1700,11 +1740,15 @@ function spawnEnemyWave(dt) {
       const pos = getSpawnPosition(cfg.airSpawns, verticalAngle);
       spawnEnemy(type, pos, cfg);
 
-      // Alert on fast/swarm enemy spawn
+      // Alert on enemy spawn
       if (type === 'fast') {
         playFastEnemySpawn();
       } else if (type === 'swarm') {
         playSwarmEnemySpawn();
+      } else if (type === 'tank') {
+        playTankEnemySpawn();
+      } else {
+        playBasicEnemySpawn();
       }
     }
   }
@@ -2080,7 +2124,7 @@ function render(timestamp) {
   updateComboPopups(dt, now);
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
   updateFPS(now, {
-    perfMonitor: typeof window !== 'undefined' && window.debugPerfMonitor,
+    perfMonitor: (typeof window !== 'undefined' && window.debugPerfMonitor) || game.debugPerfMonitor,
     frameTimeMs: rawDt * 1000,
   });
 

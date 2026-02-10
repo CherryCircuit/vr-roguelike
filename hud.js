@@ -18,6 +18,7 @@ const gameOverGroup = new THREE.Group();
 const nameEntryGroup = new THREE.Group();
 const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
+const debugJumpGroup = new THREE.Group();
 
 // HUD element references
 let heartsSprite = null;
@@ -271,6 +272,11 @@ export function initHUD(camera, scene) {
   countrySelectGroup.rotation.set(0, 0, 0);
   scene.add(countrySelectGroup);
 
+  // ── Debug jump screen ──
+  debugJumpGroup.visible = false;
+  debugJumpGroup.rotation.set(0, 0, 0);
+  scene.add(debugJumpGroup);
+
   // ── Hit flash (red sphere around camera) ──
   hitFlash = new THREE.Mesh(
     new THREE.SphereGeometry(0.4, 16, 16),
@@ -287,11 +293,9 @@ export function initHUD(camera, scene) {
   camera.add(hitFlash);
 
   // ── FPS Counter (top left, attached to camera, more visible in VR) ──
-  fpsSprite = makeSprite('FPS: 0', { fontSize: 36, color: '#00ff00', shadow: true, scale: 0.2 });
-  fpsSprite.position.set(-0.35, 0.2, -0.5);  // Top left of view, more centered
+  fpsSprite = makeSprite('FPS: 0', { fontSize: 36, color: '#00ff00', shadow: true, scale: 0.15 });
+  fpsSprite.position.set(-0.15, 0.12, -0.5);  // Moved closer to center
   fpsSprite.renderOrder = 1001;
-  // Discard transparent pixels so the plane doesn't render as a dark box in VR
-  fpsSprite.material.alphaTest = 0.05;
   fpsSprite.material.depthTest = false;  // Always render on top
   camera.add(fpsSprite);
 
@@ -1097,6 +1101,7 @@ function hideAll() {
   nameEntryGroup.visible = false;
   scoreboardGroup.visible = false;
   countrySelectGroup.visible = false;
+  debugJumpGroup.visible = false;
 }
 
 // ── Title Scoreboard Button Hit ─────────────────────────────
@@ -1105,6 +1110,58 @@ export function getTitleButtonHit(raycaster) {
   if (!titleScoreboardBtn || !titleGroup.visible) return null;
   const hits = raycaster.intersectObject(titleScoreboardBtn, false);
   if (hits.length > 0) return 'scoreboard';
+  return null;
+}
+
+// ── Debug Jump Screen ──────────────────────────────────────
+const debugJumpBtn = null;
+let debugJumpStarted = false;
+
+export function showReadyScreen(level) {
+  hideAll();
+  while (debugJumpGroup.children.length) debugJumpGroup.remove(debugJumpGroup.children[0]);
+
+  debugJumpGroup.position.set(0, 1.6, -4);
+  debugJumpGroup.visible = true;
+
+  const header = makeSprite(`DEBUG JUMP: LEVEL ${level}`, {
+    fontSize: 50, color: '#ffff00', glow: true, scale: 0.5,
+  });
+  header.position.set(0, 0.8, 0);
+  debugJumpGroup.add(header);
+
+  const subheader = makeSprite('SHOOT TO START', {
+    fontSize: 40, color: '#00ffff', scale: 0.4,
+  });
+  subheader.position.set(0, 0.4, 0);
+  debugJumpGroup.add(subheader);
+
+  // START target
+  const btnGeo = new THREE.PlaneGeometry(1, 0.4);
+  const btnMat = new THREE.MeshBasicMaterial({ color: 0x003300, transparent: true, opacity: 0.8 });
+  const btn = new THREE.Mesh(btnGeo, btnMat);
+  btn.userData.debugJumpAction = 'start';
+  btn.position.set(0, -0.2, 0);
+  debugJumpGroup.add(btn);
+
+  debugJumpGroup.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(btnGeo),
+    new THREE.LineBasicMaterial({ color: 0x00ff00 })
+  ));
+
+  const startTxt = makeSprite('START', { fontSize: 40, color: '#00ff00', scale: 0.3 });
+  startTxt.position.set(0, -0.2, 0.01);
+  debugJumpGroup.add(startTxt);
+}
+
+export function getReadyScreenHit(raycaster) {
+  if (!debugJumpGroup.visible) return null;
+  const actionMeshes = [];
+  debugJumpGroup.traverse(c => {
+    if (c.userData && c.userData.debugJumpAction) actionMeshes.push(c);
+  });
+  const hits = raycaster.intersectObjects(actionMeshes, false);
+  if (hits.length > 0) return hits[0].object.userData.debugJumpAction;
   return null;
 }
 
