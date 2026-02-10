@@ -34,7 +34,7 @@ import {
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
-  showReadyScreen, getReadyScreenHit
+  showReadyScreen, hideReadyScreen, getReadyScreenHit
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -909,7 +909,7 @@ function debugJumpToLevel(targetLevel) {
     }
   }
 
-  showReadyScreen(targetLevel);
+  showReadyScreen(targetLevel, camera.position);
 }
 
 function handleReadyScreenTrigger(controller) {
@@ -923,13 +923,13 @@ function handleReadyScreenTrigger(controller) {
   const action = getReadyScreenHit(raycaster);
   if (action === 'start') {
     playMenuClick();
-    hideHUD();
+    hideReadyScreen();
 
     // Actually start playing
     game.state = State.PLAYING;
     showHUD();
 
-    // Stagger setup
+    // Reset timers
     game.spawnTimer = 1.0;
   }
 }
@@ -941,12 +941,11 @@ function startGame() {
   game.state = State.READY_SCREEN;
   game.level = 1;
   game._levelConfig = getLevelConfig();
-  showReadyScreen(1);
+  showReadyScreen(1, camera.position);
 
-  // Hide blaster displays during gameplay
-  blasterDisplays.forEach(d => { if (d) d.visible = false; });
+  // Blasters should be VISIBLE for the ready screen
+  blasterDisplays.forEach(d => { if (d) d.visible = true; });
 
-  // Start level music
   playMusic('levels1to5');
 }
 
@@ -1046,10 +1045,10 @@ function advanceLevelAfterUpgrade() {
   } else {
     game.state = State.READY_SCREEN;
     game._levelConfig = getLevelConfig();
-    showHUD();
+    showReadyScreen(game.level, camera.position);
 
-    // Hide blaster displays during gameplay
-    blasterDisplays.forEach(d => { if (d) d.visible = false; });
+    // Ensure blasters are VISIBLE for the ready screen
+    blasterDisplays.forEach(d => { if (d) d.visible = true; });
 
     if (game.level === 6) {
       playMusic('levels6to10');
