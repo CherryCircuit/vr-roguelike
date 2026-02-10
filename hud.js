@@ -10,37 +10,37 @@ import { State } from './game.js';
 let sceneRef, cameraRef;
 
 // Groups for different UI states
-const titleGroup        = new THREE.Group();
-const hudGroup          = new THREE.Group();
-const levelTextGroup    = new THREE.Group();
-const upgradeGroup      = new THREE.Group();
-const gameOverGroup     = new THREE.Group();
-const nameEntryGroup    = new THREE.Group();
-const scoreboardGroup   = new THREE.Group();
+const titleGroup = new THREE.Group();
+const hudGroup = new THREE.Group();
+const levelTextGroup = new THREE.Group();
+const upgradeGroup = new THREE.Group();
+const gameOverGroup = new THREE.Group();
+const nameEntryGroup = new THREE.Group();
+const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
 
 // HUD element references
-let heartsSprite     = null;
-let killCountSprite  = null;
-let levelSprite      = null;
-let scoreSprite      = null;
-let comboSprite      = null;
-let fpsSprite        = null;
+let heartsSprite = null;
+let killCountSprite = null;
+let levelSprite = null;
+let scoreSprite = null;
+let comboSprite = null;
+let fpsSprite = null;
 
 // Damage numbers
-const damageNumbers  = [];
+const damageNumbers = [];
 
 // Upgrade card meshes (for raycasting)
-let upgradeCards     = [];
-let upgradeChoices   = [];
+let upgradeCards = [];
+let upgradeChoices = [];
 
 // Hit flash (red sphere inside camera)
-let hitFlash         = null;
-let hitFlashOpacity  = 0;
+let hitFlash = null;
+let hitFlashOpacity = 0;
 
 // Boss health bar (camera-attached, 3 segments for phases)
-let bossHealthGroup  = null;
-let bossHealthBars   = []; // 3 segments
+let bossHealthGroup = null;
+let bossHealthBars = []; // 3 segments
 
 // Title blink
 let titleBlinkSprite = null;
@@ -75,9 +75,9 @@ let countryItems = [];
 // ── Canvas text utility ────────────────────────────────────
 function makeTextTexture(text, opts = {}) {
   const canvas = document.createElement('canvas');
-  const ctx    = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d');
   const fontSize = opts.fontSize || 64;
-  const font     = `bold ${fontSize}px Arial, sans-serif`;
+  const font = `bold ${fontSize}px Arial, sans-serif`;
   const maxWidth = opts.maxWidth || null;
 
   ctx.font = font;
@@ -104,15 +104,15 @@ function makeTextTexture(text, opts = {}) {
   }
 
   // Measure text to size canvas
-  const textWidth  = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
+  const textWidth = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
   const lineHeight = fontSize * 1.3;
   const textHeight = lines.length * lineHeight;
 
-  canvas.width  = Math.ceil(textWidth) + 40;
+  canvas.width = Math.ceil(textWidth) + 40;
   canvas.height = Math.ceil(textHeight);
 
   // Re-set after resize
-  ctx.font      = font;
+  ctx.font = font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
@@ -122,7 +122,7 @@ function makeTextTexture(text, opts = {}) {
   // Optional glow
   if (opts.glow) {
     ctx.shadowColor = opts.glowColor || opts.color || '#00ffff';
-    ctx.shadowBlur  = opts.glowSize || 15;
+    ctx.shadowBlur = opts.glowSize || 15;
   }
 
   // Drop shadow
@@ -171,12 +171,12 @@ function makeSprite(text, opts = {}) {
 
 // ── Pixel heart drawing ────────────────────────────────────
 const HEART_PIXELS = [
-  [0,1,1,0,1,1,0],
-  [1,1,1,1,1,1,1],
-  [1,1,1,1,1,1,1],
-  [0,1,1,1,1,1,0],
-  [0,0,1,1,1,0,0],
-  [0,0,0,1,0,0,0],
+  [0, 1, 1, 0, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1, 1],
+  [1, 1, 1, 1, 1, 1, 1],
+  [0, 1, 1, 1, 1, 1, 0],
+  [0, 0, 1, 1, 1, 0, 0],
+  [0, 0, 0, 1, 0, 0, 0],
 ];
 
 function drawHeart(ctx, x, y, pixSize, state) {
@@ -200,14 +200,14 @@ function drawHeart(ctx, x, y, pixSize, state) {
 
 function makeHeartsTexture(health, maxHealth) {
   const heartCount = maxHealth / 2;
-  const pixSize    = 8;
-  const heartW     = 7 * pixSize;
-  const heartH     = 6 * pixSize;
-  const gap        = 6;
-  const canvas     = document.createElement('canvas');
-  canvas.width     = heartCount * (heartW + gap) + gap;
-  canvas.height    = heartH + 10;
-  const ctx        = canvas.getContext('2d');
+  const pixSize = 8;
+  const heartW = 7 * pixSize;
+  const heartH = 6 * pixSize;
+  const gap = 6;
+  const canvas = document.createElement('canvas');
+  canvas.width = heartCount * (heartW + gap) + gap;
+  canvas.height = heartH + 10;
+  const ctx = canvas.getContext('2d');
 
   for (let i = 0; i < heartCount; i++) {
     const hpForThisHeart = health - i * 2;
@@ -227,7 +227,7 @@ function makeHeartsTexture(health, maxHealth) {
 // ── Public API ─────────────────────────────────────────────
 
 export function initHUD(camera, scene) {
-  sceneRef  = scene;
+  sceneRef = scene;
   cameraRef = camera;
 
   // ── Title Screen (world-space, fixed position) ──
@@ -404,7 +404,7 @@ function createTitleScreen() {
   // Version number
   const now = new Date();
   const pst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-  const dateStr = `${pst.getMonth()+1}/${pst.getDate()}/${pst.getFullYear()} ${pst.getHours()}:${String(pst.getMinutes()).padStart(2,'0')} PT`;
+  const dateStr = `${pst.getMonth() + 1}/${pst.getDate()}/${pst.getFullYear()} ${pst.getHours()}:${String(pst.getMinutes()).padStart(2, '0')} PT`;
   const versionSprite = makeSprite(`ver. 0.023\n${dateStr}`, {
     fontSize: 32,
     color: '#888888',
@@ -416,7 +416,7 @@ function createTitleScreen() {
 
 export function showTitle() {
   titleGroup.visible = true;
-  hudGroup.visible   = false;
+  hudGroup.visible = false;
 }
 
 export function hideTitle() {
@@ -432,7 +432,7 @@ export function updateTitle(now) {
 // ── VR HUD (hearts, kill counter, level, score) ────────────
 
 function createHUDElements() {
-  hudGroup.visible   = false;
+  hudGroup.visible = false;
   hudGroup.renderOrder = 999;
 
   // Floor-based HUD layout (Space Pirate Trainer style)
@@ -559,7 +559,7 @@ export function hideLevelComplete() {
 export function showUpgradeCards(upgrades, playerPos, hand) {
   hideAll();
   upgradeGroup.visible = true;
-  upgradeCards   = [];
+  upgradeCards = [];
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
 
@@ -613,7 +613,7 @@ function createUpgradeCard(upgrade, position) {
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
   card.userData.isUpgradeCard = true;
-  card.userData.upgradeId     = upgrade.id;
+  card.userData.upgradeId = upgrade.id;
   group.add(card);
 
   // Border (gold for side-grade / shot-type cards)
@@ -864,13 +864,13 @@ export function updateHitFlash(dt) {
 
 export function spawnDamageNumber(position, damage, color) {
   const canvas = document.createElement('canvas');
-  const ctx    = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d');
   canvas.width = 128;
   canvas.height = 64;
 
   const fontSize = Math.min(48, 28 + damage / 6);
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  ctx.textAlign    = 'center';
+  ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
   // Drop shadow
@@ -912,7 +912,7 @@ export function spawnDamageNumber(position, damage, color) {
     0.8 + Math.random() * 0.5,
     (Math.random() - 0.5) * 0.5,
   );
-  mesh.userData.lifetime  = 500;  // Reduced from 1000ms for performance
+  mesh.userData.lifetime = 500;  // Reduced from 1000ms for performance
   mesh.userData.createdAt = performance.now();
 
   sceneRef.add(mesh);
@@ -929,7 +929,7 @@ export function spawnDamageNumber(position, damage, color) {
 
 export function updateDamageNumbers(dt, now) {
   for (let i = damageNumbers.length - 1; i >= 0; i--) {
-    const s   = damageNumbers[i];
+    const s = damageNumbers[i];
     const age = now - s.userData.createdAt;
 
     if (age > s.userData.lifetime) {
@@ -951,14 +951,14 @@ let lastComboValue = 1;
 
 export function spawnComboPopup(combo, cameraPos) {
   const canvas = document.createElement('canvas');
-  const ctx    = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d');
   canvas.width = 512;
   canvas.height = 128;
 
   const text = `${combo}X COMBO!`;
   const fontSize = 72;
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  ctx.textAlign    = 'center';
+  ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
   // Drop shadow
@@ -993,8 +993,8 @@ export function spawnComboPopup(combo, cameraPos) {
   mesh.position.z -= 2.5;
 
   mesh.userData.createdAt = performance.now();
-  mesh.userData.lifetime  = 2000;  // 2 seconds
-  mesh.userData.velocity  = new THREE.Vector3(0, 0.3, 0);  // Float upward
+  mesh.userData.lifetime = 2000;  // 2 seconds
+  mesh.userData.velocity = new THREE.Vector3(0, 0.3, 0);  // Float upward
   mesh.renderOrder = 999;
 
   sceneRef.add(mesh);
@@ -1090,13 +1090,13 @@ export function updateFPS(now, opts = {}) {
 // ── Helpers ────────────────────────────────────────────────
 
 function hideAll() {
-  titleGroup.visible          = false;
-  levelTextGroup.visible      = false;
-  upgradeGroup.visible        = false;
-  gameOverGroup.visible       = false;
-  nameEntryGroup.visible      = false;
-  scoreboardGroup.visible     = false;
-  countrySelectGroup.visible  = false;
+  titleGroup.visible = false;
+  levelTextGroup.visible = false;
+  upgradeGroup.visible = false;
+  gameOverGroup.visible = false;
+  nameEntryGroup.visible = false;
+  scoreboardGroup.visible = false;
+  countrySelectGroup.visible = false;
 }
 
 // ── Title Scoreboard Button Hit ─────────────────────────────
@@ -1175,10 +1175,10 @@ export function showNameEntry(score, level, storedName) {
 
   // Virtual keyboard
   const rows = [
-    ['Q','W','E','R','T','Y','U','I','O','P'],
-    ['A','S','D','F','G','H','J','K','L'],
-    ['Z','X','C','V','B','N','M','DEL'],
-    ['SPACE','OK'],
+    ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+    ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+    ['Z', 'X', 'C', 'V', 'B', 'N', 'M', 'DEL'],
+    ['SPACE', 'OK'],
   ];
 
   const keySize = 0.12;
@@ -1444,17 +1444,19 @@ function renderScoreboardCanvas() {
 
     // Name
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(score.name, 90, y);
+    ctx.fillText(score.name || 'ANONYMOUS', 90, y);
 
     // Score
     ctx.fillStyle = '#ffff00';
     ctx.textAlign = 'right';
-    ctx.fillText(score.score.toLocaleString(), 520, y);
+    const scoreVal = score.score !== undefined && score.score !== null ? score.score.toLocaleString() : '0';
+    ctx.fillText(scoreVal, 520, y);
 
     // Level
     ctx.fillStyle = '#00ffff';
     ctx.textAlign = 'right';
-    ctx.fillText(`L${score.level_reached}`, 600, y);
+    const levelVal = score.level_reached !== undefined && score.level_reached !== null ? `L${score.level_reached}` : 'L?';
+    ctx.fillText(levelVal, 600, y);
 
     // Country flag (if available)
     if (score.country) {
