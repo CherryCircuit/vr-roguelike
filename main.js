@@ -11,7 +11,7 @@ import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding,
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
-  playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound,
+  playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playMenuHoverSound,
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound,
   startLightningSound, stopLightningSound,
@@ -34,7 +34,7 @@ import {
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
-  showReadyScreen, hideReadyScreen, getReadyScreenHit
+  showReadyScreen, hideReadyScreen, getReadyScreenHit, updateHUDHover
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -938,10 +938,10 @@ function startGame() {
   console.log('[game] Starting new game');
   hideTitle();
   resetGame();
-  game.state = State.READY_SCREEN;
+  game.state = State.PLAYING;
   game.level = 1;
   game._levelConfig = getLevelConfig();
-  showReadyScreen(1, camera.position);
+  showHUD();
 
   // Blasters should be VISIBLE for the ready screen
   blasterDisplays.forEach(d => { if (d) d.visible = true; });
@@ -1043,9 +1043,9 @@ function advanceLevelAfterUpgrade() {
   if (game.level > 20) {
     endGame(true); // victory
   } else {
-    game.state = State.READY_SCREEN;
+    game.state = State.PLAYING;
     game._levelConfig = getLevelConfig();
-    showReadyScreen(game.level, camera.position);
+    showHUD();
 
     // Ensure blasters are VISIBLE for the ready screen
     blasterDisplays.forEach(d => { if (d) d.visible = true; });
@@ -2070,21 +2070,6 @@ function render(timestamp) {
     upgradeSelectionCooldown = Math.max(0, upgradeSelectionCooldown - dt);
     updateUpgradeCards(now, upgradeSelectionCooldown);
 
-    // Raycast for hover effects on cards
-    const cardRes = getUpgradeCardHit(controllers[0], controllers[1]);
-    game.availableUpgrades.forEach((card, idx) => {
-      const mesh = card.mesh;
-      if (cardRes && cardRes.index === idx) {
-        if (!mesh.userData.isHovered) {
-          mesh.userData.isHovered = true;
-          playMenuHoverSound();
-        }
-        mesh.scale.set(1.1, 1.1, 1.1);
-      } else {
-        mesh.userData.isHovered = false;
-        mesh.scale.set(1.0, 1.0, 1.0);
-      }
-    });
 
     // Show and update blaster displays
     blasterDisplays.forEach((display, i) => {
@@ -2098,7 +2083,26 @@ function render(timestamp) {
     });
   }
 
-  // ── Ready screen (pre-level transition) ──
+  // ── Unified HUD Hover Logic (ForAll Menu States) ──
+  const menuStates = [State.TITLE, State.UPGRADE_SELECT, State.READY_SCREEN, State.SCOREBOARD, State.REGIONAL_SCORES, State.COUNTRY_SELECT];
+  if (menuStates.includes(st)) {
+    for (let i = 0; i < controllers.length; i++) {
+      const ctrl = controllers[i];
+      if (!ctrl) continue;
+      const origin = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      ctrl.getWorldPosition(origin);
+      ctrl.getWorldQuaternion(quat);
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      const rc = new THREE.Raycaster(origin, dir, 0, 20);
+      if (updateHUDHover(rc)) {
+        playMenuHoverSound();
+      }
+      break; // Only need one active raycaster for hovers generally
+    }
+  }
+
+  // ── Ready screen ──
   else if (st === State.READY_SCREEN) {
     // Show blasters so player can aim at the START button
     blasterDisplays.forEach((display, i) => {
