@@ -264,6 +264,143 @@ export function playProximityAlert(pan, intensity) {
   osc.stop(ctx.currentTime + 0.1);
 }
 
+// ── Basic enemy spawn ──────────────────────────────────────
+export function playBasicEnemySpawn() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(400, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1);
+
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.1);
+}
+
+// ── Tank enemy spawn ───────────────────────────────────────
+export function playTankEnemySpawn() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(100, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(50, ctx.currentTime + 0.3);
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(200, ctx.currentTime);
+
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.3);
+}
+
+// ── Boss spawn/alert ───────────────────────────────────────
+export function playBossSpawn() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Create a deep, menacing drone
+  [40, 60, 80].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 1 ? 'sawtooth' : 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.5, t + 1.5);
+
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.1, t + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 1.5);
+  });
+}
+
+// ── Menu / UI Interaction ──────────────────────────────────
+export function playMenuClick() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(1200, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(1800, ctx.currentTime + 0.04);
+
+  gain.gain.setValueAtTime(0.1, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.04);
+}
+
+// ── Error / Rejection sound ────────────────────────────────
+export function playErrorSound() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(120, ctx.currentTime);
+  osc.frequency.setValueAtTime(100, ctx.currentTime + 0.1);
+
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.2);
+}
+
+// ── Buckshot fire (heavy mechanical thud) ──────────────────
+export function playBuckshotSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Low heavy thump
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(150, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+  gain.gain.setValueAtTime(0.3, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.15);
+
+  // Metallic "clack"
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'square';
+  osc2.frequency.setValueAtTime(800, t);
+  osc2.frequency.exponentialRampToValueAtTime(200, t + 0.05);
+  gain2.gain.setValueAtTime(0.08, t);
+  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.start(t);
+  osc2.stop(t + 0.05);
+}
+
 // ── Upgrade selected ───────────────────────────────────────
 export function playUpgradeSound() {
   const ctx = getAudioContext();
