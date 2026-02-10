@@ -757,9 +757,15 @@ function handleNameEntryTrigger(controller) {
     showScoreboard([], 'SUBMITTING...');
     const country = getStoredCountry() || '';
     submitScore(name, game.finalScore, game.finalLevel, country).then(() => {
+      // Small artificial delay to ensure DB indexing is finished for consistent read-after-write
+      return new Promise(resolve => setTimeout(resolve, 500));
+    }).then(() => {
       return fetchTopScores();
     }).then(scores => {
       showScoreboard(scores, 'GLOBAL LEADERBOARD');
+    }).catch(err => {
+      console.error('[scoreboard] Detailed error in submission flow:', err);
+      showScoreboard([], 'ERROR SUBMITTING SCORE');
     });
   }
 }
