@@ -159,7 +159,7 @@ function makeSprite(text, opts = {}) {
   const mat = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
-    opacity: opts.opacity ?? 1,
+    opacity: opts.opacity !== undefined ? opts.opacity : 1,
     depthTest: opts.depthTest ?? false,
     depthWrite: false,
     side: THREE.DoubleSide,
@@ -257,12 +257,14 @@ export function initHUD(camera, scene) {
   gameOverGroup.rotation.set(0, 0, 0);
   scene.add(gameOverGroup);
 
-  // ── Name entry (world-space) ──
-  nameEntryGroup.visible = false;
-  nameEntryGroup.rotation.set(0, 0, 0);
-  scene.add(nameEntryGroup);
+  // ── Title Screen (world-space) ──
+  createTitleScreen();
+  titleGroup.visible = true;
+  titleGroup.position.set(0, 0, -3.5);  // Push back a bit
+  titleGroup.rotation.set(0, 0, 0);
+  scene.add(titleGroup);
 
-  // ── Scoreboard (world-space) ──
+  // ── Level Complete text (world-space) ──
   scoreboardGroup.visible = false;
   scoreboardGroup.rotation.set(0, 0, 0);
   scene.add(scoreboardGroup);
@@ -406,8 +408,8 @@ function createTitleScreen() {
   titleScoreboardBtn = btnMesh;
 
   // Version number
-  const versionDate = 'FEB 10 2026';
-  const versionNum = 'v0.042';
+  const versionDate = 'FEB 9 2026   10:49PM PT';
+  const versionNum = 'v0.043';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 32,
     color: '#888888',
