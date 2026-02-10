@@ -34,7 +34,7 @@ import {
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
-  showDebugJumpScreen, getDebugJumpHit
+  showReadyScreen, getReadyScreenHit
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -926,7 +926,7 @@ function handleReadyScreenTrigger(controller) {
     hideHUD();
 
     // Actually start playing
-    game.state = State.READY_SCREEN;
+    game.state = State.PLAYING;
     showHUD();
 
     // Stagger setup
@@ -941,7 +941,7 @@ function startGame() {
   game.state = State.READY_SCREEN;
   game.level = 1;
   game._levelConfig = getLevelConfig();
-  showHUD();
+  showReadyScreen(1);
 
   // Hide blaster displays during gameplay
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
@@ -2031,6 +2031,20 @@ function render(timestamp) {
     updateUpgradeCards(now, upgradeSelectionCooldown);
 
     // Show and update blaster displays
+    blasterDisplays.forEach((display, i) => {
+      if (display) {
+        display.visible = true;
+        if (display.userData.needsUpdate) {
+          updateBlasterDisplay(display, i);
+        }
+        animateBlasterScanLines(display);
+      }
+    });
+  }
+
+  // ── Ready screen (pre-level transition) ──
+  else if (st === State.READY_SCREEN) {
+    // Show blasters so player can aim at the START button
     blasterDisplays.forEach((display, i) => {
       if (display) {
         display.visible = true;
