@@ -18,7 +18,7 @@ const gameOverGroup = new THREE.Group();
 const nameEntryGroup = new THREE.Group();
 const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
-const debugJumpGroup = new THREE.Group();
+const readyGroup = new THREE.Group();
 
 // HUD element references
 let heartsSprite = null;
@@ -272,10 +272,10 @@ export function initHUD(camera, scene) {
   countrySelectGroup.rotation.set(0, 0, 0);
   scene.add(countrySelectGroup);
 
-  // ── Debug jump screen ──
-  debugJumpGroup.visible = false;
-  debugJumpGroup.rotation.set(0, 0, 0);
-  scene.add(debugJumpGroup);
+  // ── Ready screen ──
+  readyGroup.visible = false;
+  readyGroup.rotation.set(0, 0, 0);
+  scene.add(readyGroup);
 
   // ── Hit flash (red sphere around camera) ──
   hitFlash = new THREE.Mesh(
@@ -1101,7 +1101,8 @@ function hideAll() {
   nameEntryGroup.visible = false;
   scoreboardGroup.visible = false;
   countrySelectGroup.visible = false;
-  debugJumpGroup.visible = false;
+  readyGroup.visible = false;
+  hudGroup.visible = false;
 }
 
 // ── Title Scoreboard Button Hit ─────────────────────────────
@@ -1113,55 +1114,63 @@ export function getTitleButtonHit(raycaster) {
   return null;
 }
 
-// ── Debug Jump Screen ──────────────────────────────────────
-const debugJumpBtn = null;
-let debugJumpStarted = false;
-
-export function showReadyScreen(level) {
+// ── Ready Screen ──────────────────────────────────────────
+export function showReadyScreen(level, playerPos) {
   hideAll();
-  while (debugJumpGroup.children.length) debugJumpGroup.remove(debugJumpGroup.children[0]);
+  while (readyGroup.children.length) readyGroup.remove(readyGroup.children[0]);
 
-  debugJumpGroup.position.set(0, 1.6, -4);
-  debugJumpGroup.visible = true;
+  // Position in front of the player
+  if (playerPos) {
+    readyGroup.position.copy(playerPos);
+    readyGroup.position.y = 1.6;
+    readyGroup.position.z -= 4;
+  } else {
+    readyGroup.position.set(0, 1.6, -4);
+  }
+  readyGroup.visible = true;
 
-  const header = makeSprite(`DEBUG JUMP: LEVEL ${level}`, {
-    fontSize: 50, color: '#ffff00', glow: true, scale: 0.5,
+  const header = makeSprite(`READY?`, {
+    fontSize: 70, color: '#ffff00', glow: true, scale: 0.6,
   });
   header.position.set(0, 0.8, 0);
-  debugJumpGroup.add(header);
+  readyGroup.add(header);
 
   const subheader = makeSprite('SHOOT TO START', {
     fontSize: 40, color: '#00ffff', scale: 0.4,
   });
   subheader.position.set(0, 0.4, 0);
-  debugJumpGroup.add(subheader);
+  readyGroup.add(subheader);
 
   // START target
   const btnGeo = new THREE.PlaneGeometry(1, 0.4);
   const btnMat = new THREE.MeshBasicMaterial({ color: 0x003300, transparent: true, opacity: 0.8 });
   const btn = new THREE.Mesh(btnGeo, btnMat);
-  btn.userData.debugJumpAction = 'start';
+  btn.userData.readyAction = 'start';
   btn.position.set(0, -0.2, 0);
-  debugJumpGroup.add(btn);
+  readyGroup.add(btn);
 
-  debugJumpGroup.add(new THREE.LineSegments(
+  readyGroup.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(btnGeo),
     new THREE.LineBasicMaterial({ color: 0x00ff00 })
   ));
 
   const startTxt = makeSprite('START', { fontSize: 40, color: '#00ff00', scale: 0.3 });
   startTxt.position.set(0, -0.2, 0.01);
-  debugJumpGroup.add(startTxt);
+  readyGroup.add(startTxt);
+}
+
+export function hideReadyScreen() {
+  readyGroup.visible = false;
 }
 
 export function getReadyScreenHit(raycaster) {
-  if (!debugJumpGroup.visible) return null;
+  if (!readyGroup.visible) return null;
   const actionMeshes = [];
-  debugJumpGroup.traverse(c => {
-    if (c.userData && c.userData.debugJumpAction) actionMeshes.push(c);
+  readyGroup.traverse(c => {
+    if (c.userData && c.userData.readyAction) actionMeshes.push(c);
   });
   const hits = raycaster.intersectObjects(actionMeshes, false);
-  if (hits.length > 0) return hits[0].object.userData.debugJumpAction;
+  if (hits.length > 0) return hits[0].object.userData.readyAction;
   return null;
 }
 
