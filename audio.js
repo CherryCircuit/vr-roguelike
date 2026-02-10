@@ -61,6 +61,106 @@ export function playShoothSound() {
   }
 }
 
+// ── Double Shot sound ──────────────────────────────────────
+export function playDoubleShotSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Two quick pulses
+  for (let i = 0; i < 2; i++) {
+    const start = t + i * 0.05;
+    const duration = 0.06;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(800 + i * 200, start);
+    osc.frequency.exponentialRampToValueAtTime(100, start + duration);
+    gain.gain.setValueAtTime(0.1, start);
+    gain.gain.exponentialRampToValueAtTime(0.01, start + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + duration);
+  }
+}
+
+// ── Charge Up Logic ────────────────────────────────────────
+let chargeOsc = null;
+let chargeGain = null;
+
+export function updateChargeUpSound(active, progress) {
+  const ctx = getAudioContext();
+  if (active) {
+    if (!chargeOsc) {
+      chargeOsc = ctx.createOscillator();
+      chargeGain = ctx.createGain();
+      chargeOsc.type = 'sawtooth';
+      chargeGain.gain.setValueAtTime(0, ctx.currentTime);
+      chargeOsc.connect(chargeGain);
+      chargeGain.connect(ctx.destination);
+      chargeOsc.start();
+    }
+    // Frequency rises from 100Hz to 600Hz based on charge
+    const freq = 100 + progress * 500;
+    chargeOsc.frequency.setTargetAtTime(freq, ctx.currentTime, 0.1);
+    const volume = 0.02 + progress * 0.08;
+    chargeGain.gain.setTargetAtTime(volume, ctx.currentTime, 0.1);
+  } else {
+    if (chargeOsc) {
+      chargeGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+      chargeOsc.stop(ctx.currentTime + 0.1);
+      chargeOsc = null;
+      chargeGain = null;
+    }
+  }
+}
+
+export function playChargeFireSound(damage) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Smash Bros "Clink" logic for high damage
+  if (damage >= 450) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(2000, t);
+    osc.frequency.exponentialRampToValueAtTime(500, t + 0.15);
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.15);
+
+    // Add low boom
+    const boom = ctx.createOscillator();
+    const boomGain = ctx.createGain();
+    boom.type = 'sine';
+    boom.frequency.setValueAtTime(80, t);
+    boom.frequency.exponentialRampToValueAtTime(20, t + 0.4);
+    boomGain.gain.setValueAtTime(0.5, t);
+    boomGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+    boom.connect(boomGain);
+    boomGain.connect(ctx.destination);
+    boom.start(t);
+    boom.stop(t + 0.4);
+  } else {
+    // Normal medium beam sound
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(400, t);
+    osc.frequency.exponentialRampToValueAtTime(50, t + 0.2);
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  }
+}
+
 // ── Enemy hit sound — heavily randomized ───────────────────
 export function playHitSound() {
   const ctx = getAudioContext();
@@ -348,6 +448,21 @@ export function playMenuClick() {
   gain.connect(ctx.destination);
   osc.start();
   osc.stop(ctx.currentTime + 0.04);
+}
+
+export function playMenuHoverSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(440, t);
+  gain.gain.setValueAtTime(0.05, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.03);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.03);
 }
 
 // ── Error / Rejection sound ────────────────────────────────

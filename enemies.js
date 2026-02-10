@@ -210,14 +210,32 @@ export function updateEnemies(dt, now, playerPos) {
 
     let speedMod = 1;
     const se = e.statusEffects;
-    if (se.shock.stacks > 0) speedMod *= Math.max(0.3, 1 - se.shock.stacks * 0.15);
-    if (se.freeze.stacks > 0) speedMod *= Math.max(0.1, 1 - se.freeze.stacks * 0.2);
+    if (se.shock.stacks > 0) speedMod *= Math.max(0.4, 1 - se.shock.stacks * 0.2); // Medium slow
+    if (se.freeze.stacks > 0) speedMod *= Math.max(0.05, 1 - se.freeze.stacks * 0.4); // HEAVY slow
 
     e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
 
     // Face player (horizontal only)
     _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
     e.mesh.lookAt(_look);
+
+    // Apply visual tints for status effects
+    e.mesh.traverse(c => {
+      if (c.isMesh && c.material) {
+        if (se.fire.stacks > 0) {
+          c.material.emissive = c.material.emissive || new THREE.Color();
+          c.material.emissive.setHex(0xff2200);
+        } else if (se.freeze.stacks > 0) {
+          c.material.emissive = c.material.emissive || new THREE.Color();
+          c.material.emissive.setHex(0x00ccff);
+        } else if (se.shock.stacks > 0) {
+          c.material.emissive = c.material.emissive || new THREE.Color();
+          c.material.emissive.setHex(0xaaaa00);
+        } else {
+          if (c.material.emissive) c.material.emissive.setHex(0x000000);
+        }
+      }
+    });
 
     // ── Collision with player ──
     if (dist < 0.9) {
@@ -241,39 +259,56 @@ const _redColor = new THREE.Color(0xff0000);
 function updateStatusEffects(e, dt) {
   const se = e.statusEffects;
 
-  // Fire DoT
+  // Fire DoT (Large)
   if (se.fire.remaining > 0) {
     se.fire.remaining -= dt;
     se.fire.tickTimer -= dt;
     if (se.fire.tickTimer <= 0) {
       se.fire.tickTimer = 0.5;
-      const fireDmg = se.fire.stacks * 3;
+      const fireDmg = Math.round(15 * se.fire.stacks);
       e.hp -= fireDmg;
       if (e.hp <= 0) e.hp = 0;
-      // Store last DoT info for damage numbers
       e._lastDoT = { type: 'fire', damage: fireDmg };
+      // Spawn fire particles
+      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+        window.spawnEffectParticle(e.mesh.position, 0xff4400);
+      }
     }
     if (se.fire.remaining <= 0) { se.fire.stacks = 0; se.fire.tickTimer = 0; }
   }
 
-  // Shock DoT
+  // Shock DoT (Medium)
   if (se.shock.remaining > 0) {
     se.shock.remaining -= dt;
     se.shock.tickTimer -= dt;
     if (se.shock.tickTimer <= 0) {
       se.shock.tickTimer = 0.5;
-      const shockDmg = se.shock.stacks * 2;
+      const shockDmg = Math.round(8 * se.shock.stacks);
       e.hp -= shockDmg;
       if (e.hp <= 0) e.hp = 0;
       e._lastDoT = { type: 'shock', damage: shockDmg };
+      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+        window.spawnEffectParticle(e.mesh.position, 0xffff44);
+      }
     }
     if (se.shock.remaining <= 0) { se.shock.stacks = 0; se.shock.tickTimer = 0; }
   }
 
-  // Freeze (slow only, no DoT — just tick down duration)
+  // Freeze DoT (Small)
   if (se.freeze.remaining > 0) {
     se.freeze.remaining -= dt;
-    if (se.freeze.remaining <= 0) se.freeze.stacks = 0;
+    se.freeze.tickTimer -= dt;
+    if (se.freeze.tickTimer <= 0) {
+      se.freeze.tickTimer = 0.5;
+      const freezeDmg = Math.round(2 * se.freeze.stacks);
+      e.hp -= freezeDmg;
+      if (e.hp <= 0) e.hp = 0;
+      e._lastDoT = { type: 'freeze', damage: freezeDmg };
+      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+        window.spawnEffectParticle(e.mesh.position, 0x00ffff);
+      }
+    }
+    if (se.freeze.remaining <= 0) { se.freeze.stacks = 0; se.freeze.tickTimer = 0; }
   }
 }
 
@@ -381,7 +416,12 @@ export function updateExplosions(dt, now) {
 /** Return all enemy mesh groups (for raycasting). Optionally include boss mesh. */
 export function getEnemyMeshes(includeBoss = false) {
   const list = activeEnemies.map(e => e.mesh);
-  if (includeBoss && activeBoss) list.push(activeBoss.mesh);
+  if (includeBoss && activeBoss) {
+    list.push(activeBoss.mesh);
+    if (activeBoss.shields) {
+      list.push(...activeBoss.shields);
+    }
+  }
   return list;
 }
 
@@ -389,7 +429,8 @@ export function getEnemyMeshes(includeBoss = false) {
 export function getEnemyByMesh(mesh) {
   let obj = mesh;
   while (obj) {
-    if (obj.userData.isBoss) return { boss: activeBoss };
+    if (obj.userData.isShield) return { boss: activeBoss, isShield: true };
+    if (obj.userData.isBoss) return { boss: activeBoss, isBody: true };
     if (obj.userData.isEnemy) {
       const idx = activeEnemies.findIndex(e => e.mesh === obj);
       return idx >= 0 ? { index: idx, enemy: activeEnemies[idx] } : null;
@@ -411,31 +452,31 @@ const BOSS_SKULL_PATTERN = [
 ];
 
 const BOSS_DEFS = {
-  // Tier 1 — Balanced HP (approx 2200 total at level 5)
+  // Tier 1 — Balanced HP (Shielded -30%)
   grave_voxel: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 1000, phases: 3, color: 0xcccccc, scoreValue: 100, behavior: 'spawner' },
   iron_sentry: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 900, phases: 3, color: 0x8B4513, scoreValue: 100, behavior: 'turret' },
-  core_guardian: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 800, phases: 3, color: 0xaa00ff, scoreValue: 100, behavior: 'shielded' },
+  core_guardian: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 560, phases: 3, color: 0xaa00ff, scoreValue: 100, behavior: 'shielded' },
   chrono_wraith: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 850, phases: 3, color: 0x00ff88, scoreValue: 100, behavior: 'dodger' },
   siege_ram: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 950, phases: 3, color: 0x666666, scoreValue: 100, behavior: 'charger' },
 
-  // Tier 2 — 1.5x stats
+  // Tier 2
   grave_voxel2: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 1500, phases: 3, color: 0xbbbbbb, scoreValue: 150, behavior: 'spawner' },
   iron_sentry2: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 1350, phases: 3, color: 0x7a3a10, scoreValue: 150, behavior: 'turret' },
-  core_guardian2: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 1200, phases: 3, color: 0x9900ee, scoreValue: 150, behavior: 'shielded' },
+  core_guardian2: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 840, phases: 3, color: 0x9900ee, scoreValue: 150, behavior: 'shielded' },
   chrono_wraith2: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 1275, phases: 3, color: 0x00ee77, scoreValue: 150, behavior: 'dodger' },
   siege_ram2: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 1425, phases: 3, color: 0x555555, scoreValue: 150, behavior: 'charger' },
 
-  // Tier 3 — 2.2x stats
+  // Tier 3
   grave_voxel3: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 2200, phases: 3, color: 0xaaaaaa, scoreValue: 200, behavior: 'spawner' },
   iron_sentry3: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 2000, phases: 3, color: 0x6b300d, scoreValue: 200, behavior: 'turret' },
-  core_guardian3: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 1800, phases: 3, color: 0x8800dd, scoreValue: 200, behavior: 'shielded' },
+  core_guardian3: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 1260, phases: 3, color: 0x8800dd, scoreValue: 200, behavior: 'shielded' },
   chrono_wraith3: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 1900, phases: 3, color: 0x00dd66, scoreValue: 200, behavior: 'dodger' },
   siege_ram3: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 2100, phases: 3, color: 0x444444, scoreValue: 200, behavior: 'charger' },
 
-  // Tier 4 — 3.2x stats
+  // Tier 4
   grave_voxel4: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 3200, phases: 3, color: 0x999999, scoreValue: 400, behavior: 'spawner' },
   iron_sentry4: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 2900, phases: 3, color: 0x59260a, scoreValue: 400, behavior: 'turret' },
-  core_guardian4: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 2600, phases: 3, color: 0x7700cc, scoreValue: 400, behavior: 'shielded' },
+  core_guardian4: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 1820, phases: 3, color: 0x7700cc, scoreValue: 400, behavior: 'shielded' },
   chrono_wraith4: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 2700, phases: 3, color: 0x00cc55, scoreValue: 400, behavior: 'dodger' },
   siege_ram4: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 3000, phases: 3, color: 0x333333, scoreValue: 400, behavior: 'charger' },
 };
@@ -519,12 +560,19 @@ export function getBoss() {
   return activeBoss;
 }
 
-export function hitBoss(damage) {
+export function hitBoss(damage, hitInfo = {}) {
   if (!activeBoss) return { killed: false, shieldReflected: false };
 
-  // Shield reflection: if shields are active, don't damage boss and reflect back
-  if (activeBoss.shieldsActive && activeBoss.shields && activeBoss.shields.length > 0) {
-    return { killed: false, shieldReflected: true, phaseChanged: false };
+  // Core Guardian logic: only take damage via shields. Direct body hits reflect.
+  if (activeBoss.behavior === 'shielded' && activeBoss.shieldsActive) {
+    if (hitInfo.isShield) {
+      // Taking damage via orbiting bits
+    } else if (hitInfo.isBody) {
+      return { killed: false, shieldReflected: true, phaseChanged: false };
+    } else {
+      // Indirect damage (fire/AOE)? Allow but maybe reduced?
+      // Let's allow AOE to tick damage normally or it becomes frustrating.
+    }
   }
 
   activeBoss.hp -= damage;
