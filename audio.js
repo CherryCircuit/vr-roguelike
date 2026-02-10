@@ -327,39 +327,38 @@ export function playSlowMoReverseSound() {
   osc.stop(t + 0.5);
 }
 
-// ── Lightning beam continuous sound (electric crackle) ─────
-let lightningInterval = null;
+// ── Lightning beam continuous sound (MP3 loop) ─────────────
+let lightningAudio = null;
+let lightningVolumeTimeout = null;
 
 export function startLightningSound() {
-  if (lightningInterval) return;  // Already playing
+  if (lightningAudio) return;  // Already playing
 
-  const ctx = getAudioContext();
+  lightningAudio = new Audio('mnt/project/soundfx/lightning_loop.mp3');
+  lightningAudio.loop = true;
+  lightningAudio.volume = 0.5; // "Full" starting volume
+  lightningAudio.play().catch(err => {
+    console.warn('[audio] Lightning loop playback failed:', err);
+  });
 
-  // Play subtle reminder crackle every 2 seconds (not constant)
-  lightningInterval = setInterval(() => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(150 + Math.random() * 100, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.1);
-
-    // MUCH quieter - 0.03 instead of 0.12
-    gain.gain.setValueAtTime(0.03, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.1);
-  }, 2000);  // Every 2 seconds instead of every 60ms
+  // After 4 seconds of continuous play, lower volume by 40%
+  lightningVolumeTimeout = setTimeout(() => {
+    if (lightningAudio) {
+      lightningAudio.volume = 0.3; // 40% reduction (0.5 * 0.6)
+      console.log('[audio] Lightning volume dipped (4s continuous)');
+    }
+  }, 4000);
 }
 
 export function stopLightningSound() {
-  if (lightningInterval) {
-    clearInterval(lightningInterval);
-    lightningInterval = null;
+  if (lightningAudio) {
+    lightningAudio.pause();
+    lightningAudio.currentTime = 0;
+    lightningAudio = null;
+  }
+  if (lightningVolumeTimeout) {
+    clearTimeout(lightningVolumeTimeout);
+    lightningVolumeTimeout = null;
   }
 }
 

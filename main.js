@@ -34,15 +34,15 @@ import {
 } from './scoreboard.js';
 
 // ── Constants ──────────────────────────────────────────────
-const NEON_PINK  = 0xff00ff;
-const NEON_CYAN  = 0x00ffff;
-const DARK_BG    = 0x0a0015;
-const SUN_CORE   = 0xffaa00;
-const SUN_GLOW   = 0xff6600;
-const MTN_DARK   = 0x1a0033;
-const MTN_WIRE   = 0x6600aa;
+const NEON_PINK = 0xff00ff;
+const NEON_CYAN = 0x00ffff;
+const DARK_BG = 0x0a0015;
+const SUN_CORE = 0xffaa00;
+const SUN_GLOW = 0xff6600;
+const MTN_DARK = 0x1a0033;
+const MTN_WIRE = 0x6600aa;
 
-const LASER_RANGE    = 50;
+const LASER_RANGE = 50;
 const LASER_DURATION = 250;
 
 // ── Module State ───────────────────────────────────────────
@@ -415,13 +415,13 @@ function createAtmosphere() {
   // Paint the gradient: warm colors at base, fading to transparent at top
   // Note: CSS rgba() alpha is 0.0-1.0
   const grad = ctx.createLinearGradient(0, 256, 0, 0);  // bottom to top
-  grad.addColorStop(0,    'rgba(255, 80, 20, 1.0)');    // Full intensity warm orange at base
+  grad.addColorStop(0, 'rgba(255, 80, 20, 1.0)');    // Full intensity warm orange at base
   grad.addColorStop(0.08, 'rgba(255, 60, 30, 0.85)');   // Still strong
-  grad.addColorStop(0.2,  'rgba(220, 50, 40, 0.55)');   // Red-orange
-  grad.addColorStop(0.4,  'rgba(160, 30, 60, 0.3)');    // Darker red
-  grad.addColorStop(0.6,  'rgba(100, 15, 50, 0.12)');   // Deep purple-red
-  grad.addColorStop(0.8,  'rgba(50, 5, 40, 0.04)');     // Nearly gone
-  grad.addColorStop(1.0,  'rgba(20, 0, 20, 0.0)');      // Fully transparent
+  grad.addColorStop(0.2, 'rgba(220, 50, 40, 0.55)');   // Red-orange
+  grad.addColorStop(0.4, 'rgba(160, 30, 60, 0.3)');    // Darker red
+  grad.addColorStop(0.6, 'rgba(100, 15, 50, 0.12)');   // Deep purple-red
+  grad.addColorStop(0.8, 'rgba(50, 5, 40, 0.04)');     // Nearly gone
+  grad.addColorStop(1.0, 'rgba(20, 0, 20, 0.0)');      // Fully transparent
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 4, 256);
 
@@ -446,7 +446,7 @@ function createAtmosphere() {
 function createMountains() {
   const layers = [
     { z: -85, color: 0x0d001a, peaks: generatePeaks(12, 6, 20), layerIndex: 0 },
-    { z: -75, color: MTN_DARK,  peaks: generatePeaks(10, 4, 14), layerIndex: 1 },
+    { z: -75, color: MTN_DARK, peaks: generatePeaks(10, 4, 14), layerIndex: 1 },
   ];
   layers.forEach(({ z, color, peaks, layerIndex }) => {
     // Store base peaks for animation
@@ -492,7 +492,7 @@ function createStars() {
   const positions = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     const i3 = i * 3;
-    positions[i3]     = (Math.random() - 0.5) * 300;
+    positions[i3] = (Math.random() - 0.5) * 300;
     positions[i3 + 1] = Math.random() * 80 + 10;
     positions[i3 + 2] = (Math.random() - 0.5) * 300;
   }
@@ -513,7 +513,7 @@ function setupControllers() {
     const controller = renderer.xr.getController(i);
 
     controller.addEventListener('selectstart', () => { controllerTriggerPressed[i] = true; onTriggerPress(controller, i); });
-    controller.addEventListener('selectend',   () => { controllerTriggerPressed[i] = false; onTriggerRelease(i); });
+    controller.addEventListener('selectend', () => { controllerTriggerPressed[i] = false; onTriggerRelease(i); });
     controller.addEventListener('connected', (e) => {
       console.log(`[controller] ${i} connected — ${e.data.handedness}`);
       controller.userData.handedness = e.data.handedness;
@@ -916,6 +916,7 @@ function completeLevel() {
   console.log(`[game] Level ${game.level} complete`);
   game.state = State.LEVEL_COMPLETE;
   clearAllEnemies();
+  stopLightningSound();
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
   game.stateTimer = 2.0; // cooldown before upgrade screen
   showLevelComplete(game.level, camera.position);
@@ -1031,6 +1032,7 @@ function endGame(victory) {
 
   // Stop music
   stopMusic();
+  stopLightningSound();
 
   if (victory) {
     showVictory(game.score, camera.position);
@@ -1057,7 +1059,7 @@ function shootWeapon(controller, index) {
   weaponCooldowns[index] = now;
 
   const origin = new THREE.Vector3();
-  const quat   = new THREE.Quaternion();
+  const quat = new THREE.Quaternion();
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
@@ -1087,7 +1089,7 @@ function shootWeapon(controller, index) {
 
 function updateLightningBeam(controller, index, stats, dt) {
   const origin = new THREE.Vector3();
-  const quat   = new THREE.Quaternion();
+  const quat = new THREE.Quaternion();
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
@@ -1643,7 +1645,7 @@ function selectUpgrade(controller) {
   if (upgradeSelectionCooldown > 0) return;
 
   const origin = new THREE.Vector3();
-  const quat   = new THREE.Quaternion();
+  const quat = new THREE.Quaternion();
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
@@ -1750,8 +1752,8 @@ function updateFastEnemyAlerts(dt, playerPos) {
 function render(timestamp) {
   frameCount++;
   const now = timestamp || performance.now();
-  const rawDt  = Math.min((now - lastTime) / 1000, 0.1);
-  lastTime  = now;
+  const rawDt = Math.min((now - lastTime) / 1000, 0.1);
+  lastTime = now;
 
   // Apply bullet-time slow-mo and ramp-out (use raw dt)
   if (slowMoRampOut) {
@@ -1914,7 +1916,7 @@ function render(timestamp) {
     for (let i = bossProjs.length - 1; i >= 0; i--) {
       const proj = bossProjs[i];
       if (proj.hitPlayer) {
-        sceneRef.remove(proj.mesh);
+        scene.remove(proj.mesh);
         proj.mesh.geometry.dispose();
         proj.mesh.material.dispose();
         bossProjs.splice(i, 1);
