@@ -401,8 +401,8 @@ function createTitleScreen() {
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
 
-  // Version number
-  const versionDate = 'FEB 11 2026   12:00AM PT';
+  // Version number (UPDATE THIS DATE/TIME ON EVERY CODE CHANGE)
+  const versionDate = 'FEB 11 2026   2:48PM PT';
   const versionNum = 'v0.045';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 32,
@@ -994,21 +994,26 @@ export function updateKillEncouragements(dt, now, cameraPos, levelConfig) {
 // ── Damage Numbers ─────────────────────────────────────────
 
 export function spawnDamageNumber(position, damage, color, isCrit = false) {
+  console.log('[spawnDamageNumber] START', { damage, color, isCrit });
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 128;
   canvas.height = 64;
+  console.log('[spawnDamageNumber] Canvas sized');
 
   let displayColor = color || '#ffffff';
   let critFontSize = Math.min(48, 28 + damage / 6);
   let critScale = 0.25 + Math.min(damage / 100, 0.15);
+  console.log('[spawnDamageNumber] Font size calculated', critFontSize, critScale);
 
   if (isCrit) {
+    console.log('[spawnDamageNumber] CRIT detected, adjusting size');
     displayColor = '#ffff00';  // Gold for CRIT
     critFontSize *= 2;  // Double font size
     critScale *= 2;     // Double scale
   }
 
+  console.log('[spawnDamageNumber] Setting font');
   ctx.font = `bold ${critFontSize}px Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -1022,6 +1027,7 @@ export function spawnDamageNumber(position, damage, color, isCrit = false) {
   ctx.fillText(Math.round(damage).toString(), 64, 32);
 
   const texture = new THREE.CanvasTexture(canvas);
+  console.log('[spawnDamageNumber] Texture created');
   texture.minFilter = THREE.LinearFilter;
 
   // Use PlaneGeometry instead of Sprite to prevent billboarding
@@ -1029,6 +1035,7 @@ export function spawnDamageNumber(position, damage, color, isCrit = false) {
   const width = critScale * 2;
   const height = critScale;
 
+  console.log('[spawnDamageNumber] Creating geometry and material');
   const geometry = new THREE.PlaneGeometry(width, height);
   const mat = new THREE.MeshBasicMaterial({
     map: texture,
@@ -1037,8 +1044,10 @@ export function spawnDamageNumber(position, damage, color, isCrit = false) {
     depthTest: false,
     side: THREE.DoubleSide,
   });
+  console.log('[spawnDamageNumber] Material created');
 
   const mesh = new THREE.Mesh(geometry, mat);
+  console.log('[spawnDamageNumber] Mesh created, adding to scene');
   mesh.position.copy(position);
   mesh.position.x += (Math.random() - 0.5) * 0.3;
   mesh.position.y += Math.random() * 0.2;
@@ -1054,9 +1063,11 @@ export function spawnDamageNumber(position, damage, color, isCrit = false) {
   mesh.userData.lifetime = 500;  // Reduced from 1000ms for performance
   mesh.userData.createdAt = performance.now();
 
+  console.log('[spawnDamageNumber] Adding mesh to sceneRef');
   sceneRef.add(mesh);
   damageNumbers.push(mesh);
 
+  console.log('[spawnDamageNumber] Mesh added successfully');
   // Cap total to prevent perf issues
   while (damageNumbers.length > 20) {
     const old = damageNumbers.shift();

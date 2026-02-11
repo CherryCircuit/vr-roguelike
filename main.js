@@ -1075,32 +1075,41 @@ function endGame(victory) {
 //  SHOOTING & COMBAT
 // ============================================================
 function shootWeapon(controller, index) {
+  console.log('[SHOOT] START');
   const now = performance.now();
   const hand = index === 0 ? 'left' : 'right';
+  console.log('[SHOOT] Hand:', hand);
   const stats = getWeaponStats(game.upgrades[hand]);
+  console.log('[SHOOT] Stats loaded:', stats);
 
   // Lightning beam mode - handled separately in update loop
   if (stats.lightning) {
+    console.log('[SHOOT] Lightning mode, returning');
     return;  // Lightning is continuous hold-to-fire
   }
 
   // Check cooldown
   if (now - weaponCooldowns[index] < stats.fireInterval) return;
   weaponCooldowns[index] = now;
+  console.log('[SHOOT] Cooldown passed, firing');
 
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
+  console.log('[SHOOT] Controller position:', origin);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  console.log('[SHOOT] Direction:', direction);
 
   // Fire projectile(s)
   const count = stats.projectileCount;
+  console.log('[SHOOT] Projectile count:', count);
 
   // Calculate perpendicular offset axis for parallel multi-shot
   const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
   const gap = 0.08; // Gap between parallel shots
 
+  console.log('[SHOOT] About to enter projectile loop');
   for (let i = 0; i < count; i++) {
     let spawnOrigin = origin.clone();
 
@@ -1352,9 +1361,11 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
 }
 
 function spawnProjectile(origin, direction, controllerIndex, stats) {
+  console.log('[SPAWN PROJ] START');
   const now = performance.now();
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
   const isBuckshot = stats.spreadAngle > 0;
+  console.log('[SPAWN PROJ] Is buckshot:', isBuckshot);
 
   // Big Boom: only one exploding shot per hand every 2.75s
   let isExploding = false;
@@ -1991,12 +2002,16 @@ function render(timestamp) {
     });
 
     // Update HUD (staggered — every 3rd frame to reduce geometry recreation cost)
+    console.log('[MAIN] About to update HUD, frameCount:', frameCount);
     game._levelConfig = getLevelConfig();
     game._combo = getComboMultiplier();
     checkComboIncrease(game._combo, camera.position, playUpgradeSound);
     if (frameCount % 3 === 0) {
+      console.log('[MAIN] Calling updateHUD');
       updateHUD(game);
+      console.log('[MAIN] Calling updateKillEncouragements');
       updateKillEncouragements(dt, now, camera.position, game._levelConfig);
+      console.log('[MAIN] Finished HUD updates');
     }
   }
 
