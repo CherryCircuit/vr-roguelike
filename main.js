@@ -8,7 +8,8 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, getMusicFrequencyData } from './audio.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic } from './audio.js';
+// getMusicFrequencyData removed - music visualizer commented out
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
@@ -108,10 +109,10 @@ const SLOW_MO_TRIGGER_DIST = 2.0;
 const SLOW_MO_RAMP_OUT_DURATION = 0.5;
 let timeScale = 1.0;
 
-// Camera shake on damage
-let cameraShake = 0;
-let cameraShakeIntensity = 0;
-const originalCameraPos = new THREE.Vector3();
+// Camera shake on damage - commented out (doesn't work in VR)
+// let cameraShake = 0;
+// let cameraShakeIntensity = 0;
+// const originalCameraPos = new THREE.Vector3();
 
 // ── Bootstrap ──────────────────────────────────────────────
 init();
@@ -254,6 +255,10 @@ function createEnvironment() {
   createMountains();
   createStars();
 
+  // createAurora();
+  // createOminousHorizon();
+  createAtmosphere();
+
   // NOTE: Lights removed — all materials are MeshBasicMaterial (unlit)
   // so lights have zero visual effect but cost GPU overhead.
   // If PBR materials are added later, re-add lights here.
@@ -349,37 +354,55 @@ function createSun() {
   createAtmosphere();
 }
 
-/** Low-res aurora borealis on sky dome — performance friendly (small texture, single mesh) */
-function createAurora() {
-  const w = 32;
-  const h = 64;
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, 'rgba(0,40,60,0)');
-  grad.addColorStop(0.3, 'rgba(0,200,180,0.08)');
-  grad.addColorStop(0.5, 'rgba(0,255,200,0.12)');
-  grad.addColorStop(0.7, 'rgba(0,180,220,0.06)');
-  grad.addColorStop(1, 'rgba(0,40,80,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, w, h);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  const geo = new THREE.CylinderGeometry(95, 95, 25, 32, 1, true);
-  const mat = new THREE.MeshBasicMaterial({
-    map: tex,
-    transparent: true,
-    opacity: 0.9,
-    side: THREE.BackSide,
-    depthWrite: false,
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(0, 15, 0);
-  mesh.renderOrder = -21;
-  scene.add(mesh);
-}
+/** Low-res aurora borealis on sky dome — performance friendly (small texture, single mesh) - COMMENTED OUT */
+// function createAurora() {
+//   const w = 32;
+//   const h = 64;
+//   const canvas = document.createElement('canvas');
+//   canvas.width = w;
+//   canvas.height = h;
+//   const ctx = canvas.getContext('2d');
+//   const grad = ctx.createLinearGradient(0, 0, 0, h);
+//   grad.addColorStop(0, 'rgba(0,40,60,0)');
+//   grad.addColorStop(0.3, 'rgba(0,200,180,0.08)');
+//   grad.addColorStop(0.5, 'rgba(0,255,200,0.12)');
+//   grad.addColorStop(0.7, 'rgba(0,180,220,0.06)');
+//   grad.addColorStop(1, 'rgba(0,40,80,0)');
+//   ctx.fillStyle = grad;
+//   ctx.fillRect(0, 0, w, h);
+//   const tex = new THREE.CanvasTexture(canvas);
+//   tex.wrapS = THREE.RepeatWrapping;
+//   const geo = new THREE.CylinderGeometry(95, 95, 25, 32, 1, true);
+//   const mat = new THREE.MeshBasicMaterial({
+//     map: tex,
+//     transparent: true,
+//     opacity: 0.9,
+//     side: THREE.BackSide,
+//     depthWrite: false,
+//   });
+//   const mesh = new THREE.Mesh(geo, mat);
+//   mesh.position.set(0, 15, 0);
+//   mesh.renderOrder = -21;
+//   scene.add(mesh);
+// }
+
+/** Dark ominous shape over horizon; appears from level 10, large by level 16 - COMMENTED OUT */
+// function createOminousHorizon() {
+//   const geo = new THREE.PlaneGeometry(80, 50);
+//   const mat = new THREE.MeshBasicMaterial({
+//     color: 0x0a0015,
+//     transparent: true,
+//     opacity: 0,
+//     side: THREE.DoubleSide,
+//     depthWrite: false,
+//   });
+//   const mesh = new THREE.Mesh(geo, mat);
+//   mesh.position.set(0, 28, -95);
+//   mesh.renderOrder = -12;
+//   scene.add(mesh);
+//   ominousRef = mesh;
+// }
+
 
 /** Dark ominous shape over the horizon; appears from level 10, large by level 16 */
 function createOminousHorizon() {
@@ -488,18 +511,19 @@ function generatePeaks(count, minH, maxH) {
 
 function createStars() {
   // Reduced from 1500 to 800 — still looks great, fewer draw calls
+  // Made stars further away (400 instead of 300) and smaller (0.3 instead of 0.5)
   const count = 800;
   const positions = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     const i3 = i * 3;
-    positions[i3] = (Math.random() - 0.5) * 300;
-    positions[i3 + 1] = Math.random() * 80 + 10;
-    positions[i3 + 2] = (Math.random() - 0.5) * 300;
+    positions[i3] = (Math.random() - 0.5) * 400;
+    positions[i3 + 1] = Math.random() * 100 + 20;
+    positions[i3 + 2] = (Math.random() - 0.5) * 400;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   // Opaque stars (no transparency = cheaper to render, no sorting needed)
-  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
+  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.3 });
   const stars = new THREE.Points(geo, mat);
   stars.renderOrder = -20;  // Draw last (furthest background)
   scene.add(stars);
@@ -1283,9 +1307,9 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
         const dead = damagePlayer(1);
         triggerHitFlash();
         playDamageSound();
-        cameraShake = 0.3;
-        cameraShakeIntensity = 0.03;
-        originalCameraPos.copy(camera.position);
+        // cameraShake = 0.3;
+        // cameraShakeIntensity = 0.03;
+        // originalCameraPos.copy(camera.position);
         floorFlashing = true;
         floorFlashTimer = 0.5;
         if (dead) endGame(false);
@@ -1472,9 +1496,9 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
     const dead = damagePlayer(1);
     triggerHitFlash();
     playDamageSound();
-    cameraShake = 0.3;
-    cameraShakeIntensity = 0.03;
-    originalCameraPos.copy(camera.position);
+    // cameraShake = 0.3;
+    // cameraShakeIntensity = 0.03;
+    // originalCameraPos.copy(camera.position);
     floorFlashing = true;
     floorFlashTimer = 0.5;
     console.log('[boss] Shield reflected damage!');
@@ -1882,10 +1906,10 @@ function render(timestamp) {
       triggerHitFlash();
       playDamageSound();
 
-      // Trigger camera shake
-      cameraShake = 0.5;  // 0.5 second shake duration
-      cameraShakeIntensity = 0.05;  // shake magnitude
-      originalCameraPos.copy(camera.position);
+      // Trigger camera shake - commented out (doesn't work in VR)
+      // cameraShake = 0.5;  // 0.5 second shake duration
+      // cameraShakeIntensity = 0.05;  // shake magnitude
+      // originalCameraPos.copy(camera.position);
 
       // Trigger floor flash
       floorFlashing = true;
@@ -1905,9 +1929,9 @@ function render(timestamp) {
       const dead = damagePlayer(2);
       triggerHitFlash();
       playDamageSound();
-      cameraShake = 0.6;
-      cameraShakeIntensity = 0.06;
-      originalCameraPos.copy(camera.position);
+      // cameraShake = 0.6;
+      // cameraShakeIntensity = 0.06;
+      // originalCameraPos.copy(camera.position);
       floorFlashing = true;
       floorFlashTimer = 0.5;
       slowMoActive = false;
@@ -1930,9 +1954,9 @@ function render(timestamp) {
         const dead = damagePlayer(1);
         triggerHitFlash();
         playDamageSound();
-        cameraShake = 0.4;
-        cameraShakeIntensity = 0.04;
-        originalCameraPos.copy(camera.position);
+        // cameraShake = 0.4;
+        // cameraShakeIntensity = 0.04;
+        // originalCameraPos.copy(camera.position);
         floorFlashing = true;
         floorFlashTimer = 0.5;
         if (dead) endGame(false);
@@ -2026,19 +2050,20 @@ function render(timestamp) {
   // ── Country Select ──
   // (interaction handled in trigger handler)
 
-  // ── Camera shake on damage ──
-  if (cameraShake > 0) {
-    cameraShake -= rawDt;
-    if (cameraShake <= 0) {
-      cameraShake = 0;
-    } else {
-      // Apply random shake offset
-      const shake = cameraShakeIntensity * (cameraShake / 0.5);  // Fade out over duration
-      camera.position.x += (Math.random() - 0.5) * shake;
-      camera.position.y += (Math.random() - 0.5) * shake;
-      camera.position.z += (Math.random() - 0.5) * shake;
-    }
-  }
+  // ── Camera shake on damage ── COMMENTED OUT (doesn't work in VR)
+  // if (cameraShake > 0) {
+  //   cameraShake -= rawDt;
+  //   if (cameraShake <= 0) {
+  //     cameraShake = 0;
+  //   } else {
+  //     // Apply random shake offset
+  //     const shake = cameraShakeIntensity * (cameraShake / 0.5);  // Fade out over duration
+  //     camera.position.x += (Math.random() - 0.5) * shake;
+  //     camera.position.y += (Math.random() - 0.5) * shake;
+  //     camera.position.z += (Math.random() - 0.5) * shake;
+  //   }
+  // }
+
 
   // ── Floor damage flash ──
   if (floorFlashing && floorMaterial) {
@@ -2097,37 +2122,38 @@ function render(timestamp) {
 }
 
 // ============================================================
-//  MUSIC VISUALIZER
+//  MUSIC VISUALIZER - COMMENTED OUT
 // ============================================================
-function updateMountainVisualizer() {
-  const freqData = getMusicFrequencyData();
-  if (!freqData || mountainLines.length === 0) return;
+// function updateMountainVisualizer() {
+//   const freqData = getMusicFrequencyData();
+//   if (!freqData || mountainLines.length === 0) return;
+//
+//   mountainLines.forEach((layer, layerIndex) => {
+//     const peaks = mountainBasePeaks[layerIndex];
+//     if (!peaks) return;
+//
+//     const points = [new THREE.Vector3(-100, 0, layer.z)];
+//
+//     peaks.forEach((peak, i) => {
+//       // Map frequency bins to peaks (spread across spectrum)
+//       const binIndex = Math.floor((i / peaks.length) * freqData.length);
+//       const amplitude = freqData[binIndex] / 255;  // Normalize 0-1
+//
+//       // Subtle height modulation (max 2 units up/down)
+//       const heightMod = amplitude * 2 * (layerIndex === 0 ? 0.8 : 1.2);
+//       const newY = peak.baseY + heightMod;
+//
+//       points.push(new THREE.Vector3(peak.x, newY, layer.z));
+//     });
+//
+//     points.push(new THREE.Vector3(100, 0, layer.z));
+//
+//     // Update line geometry
+//     layer.geometry.setFromPoints(points);
+//     layer.geometry.attributes.position.needsUpdate = true;
+//   });
+// }
 
-  mountainLines.forEach((layer, layerIndex) => {
-    const peaks = mountainBasePeaks[layerIndex];
-    if (!peaks) return;
-
-    const points = [new THREE.Vector3(-100, 0, layer.z)];
-
-    peaks.forEach((peak, i) => {
-      // Map frequency bins to peaks (spread across spectrum)
-      const binIndex = Math.floor((i / peaks.length) * freqData.length);
-      const amplitude = freqData[binIndex] / 255;  // Normalize 0-1
-
-      // Subtle height modulation (max 2 units up/down)
-      const heightMod = amplitude * 2 * (layerIndex === 0 ? 0.8 : 1.2);
-      const newY = peak.baseY + heightMod;
-
-      points.push(new THREE.Vector3(peak.x, newY, layer.z));
-    });
-
-    points.push(new THREE.Vector3(100, 0, layer.z));
-
-    // Update line geometry
-    layer.geometry.setFromPoints(points);
-    layer.geometry.attributes.position.needsUpdate = true;
-  });
-}
 
 
 // ============================================================

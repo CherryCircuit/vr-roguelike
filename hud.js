@@ -402,13 +402,12 @@ function createTitleScreen() {
   titleScoreboardBtn = btnMesh;
 
   // Version number
-  const now = new Date();
-  const pst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-  const dateStr = `${pst.getMonth() + 1}/${pst.getDate()}/${pst.getFullYear()} ${pst.getHours()}:${String(pst.getMinutes()).padStart(2, '0')} PT`;
-  const versionSprite = makeSprite(`ver. 0.023\n${dateStr}`, {
+  const versionDate = 'FEB 11 2026   12:00AM PT';
+  const versionNum = 'v0.045';
+  const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 32,
     color: '#888888',
-    scale: 0.25,
+    scale: 0.28,
   });
   versionSprite.position.set(0, -1.0, 0);
   titleGroup.add(versionSprite);
@@ -566,11 +565,15 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   // Fixed world position in front of spawn
   upgradeGroup.position.set(0, 1.6, -4);
 
-  // "Choose an upgrade for [HAND]" header - reduced size significantly
-  const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
-  const header = makeSprite(`CHOOSE UPGRADE: ${handName}`, { fontSize: 48, color: '#ffffff', glow: true, scale: 0.4 });
-  header.position.set(0, 1.4, 0);
+  // "Choose an upgrade for [HAND]" header - separated into two lines, centered
+  const header = makeSprite('CHOOSE UPGRADE:', { fontSize: 48, color: '#ffffff', glow: true, scale: 0.4 });
+  header.position.set(0, 1.6, 0);
   upgradeGroup.add(header);
+
+  const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
+  const handSprite = makeSprite(handName, { fontSize: 48, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.4 });
+  handSprite.position.set(0, 1.15, 0);
+  upgradeGroup.add(handSprite);
 
   // Cooldown text
   const cooldownSprite = makeSprite('WAIT...', { fontSize: 36, color: '#ffff00', scale: 0.3 });
@@ -751,13 +754,13 @@ export function updateUpgradeCards(now, cooldownRemaining) {
       cd.visible = true;
       // Update the cooldown sprite text
       if (cd.material && cd.material.map) cd.material.map.dispose();
-      const { texture, aspect } = makeTextTexture(
+      const { texture } = makeTextTexture(
         `WAIT ${Math.ceil(cooldownRemaining)}...`,
         { fontSize: 40, color: '#ffff00' }
       );
       cd.material.map = texture;
       cd.material.needsUpdate = true;
-      cd.scale.set(aspect * 0.4, 0.4, 1);
+      cd.scale.set(0.4, 0.4, 1);
     } else {
       cd.visible = false;
     }
@@ -785,6 +788,44 @@ export function getUpgradeCardHit(raycaster) {
     }
   }
   return null;
+}
+
+// ── Controller Hand Highlights for Upgrade Selection ───────
+
+export function showUpgradeHandHighlight(hand, controllers) {
+  controllers.forEach((ctrl, i) => {
+    const isHand = (i === 0 && hand === 'left') || (i === 1 && hand === 'right');
+    const existing = ctrl.getObjectByName('upgradeHighlight');
+    if (existing) ctrl.remove(existing);
+
+    if (isHand) {
+      const group = new THREE.Group();
+      group.name = 'upgradeHighlight';
+
+      const geo = new THREE.OctahedronGeometry(0.1, 0);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.6 });
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
+
+      const glow = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.2 }));
+      glow.scale.set(1.4, 1.4, 1.4);
+      group.add(glow);
+
+      group.position.set(0, 0.05, 0);
+      ctrl.add(group);
+    }
+  });
+}
+
+export function hideUpgradeHandHighlights(controllers) {
+  controllers.forEach(ctrl => {
+    const existing = ctrl.getObjectByName('upgradeHighlight');
+    if (existing) ctrl.remove(existing);
+  });
+}
+
+export function updateUpgradeHandHighlights(now) {
+  // This is handled via normal scene graph if attached to controller
 }
 
 // ── Game Over / Victory ────────────────────────────────────
@@ -942,6 +983,61 @@ export function updateDamageNumbers(dt, now) {
       s.userData.velocity.y -= dt * 1.5;  // gravity
       // No fade - keep full opacity for performance
     }
+  }
+}
+
+export function spawnOuchBubble(position, text = 'OUCH!') {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 128;
+
+  // Background bubble
+  ctx.fillStyle = text.includes('STREAK') ? '#00ff44' : '#ffff00';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 6;
+
+  // Flashy comic bubble shape
+  ctx.beginPath();
+  ctx.moveTo(40, 60);
+  ctx.lineTo(20, 20); ctx.lineTo(80, 40);
+  ctx.lineTo(128, 10); ctx.lineTo(176, 40);
+  ctx.lineTo(236, 20); ctx.lineTo(216, 60);
+  ctx.lineTo(236, 100); ctx.lineTo(176, 80);
+  ctx.lineTo(128, 110); ctx.lineTo(80, 80);
+  ctx.lineTo(20, 100); ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.font = 'bold 36px "Comic Sans MS", cursive, sans-serif';
+  if (text.length > 8) ctx.font = 'bold 24px "Comic Sans MS", cursive, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = text.includes('STREAK') ? '#003311' : '#ff0000';
+  ctx.fillText(text, 128, 64);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.5, 0.75),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, side: THREE.DoubleSide })
+  );
+  mesh.position.copy(position);
+  mesh.position.y += 1.0;
+  mesh.position.z += 0.5;
+  mesh.renderOrder = 999;
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.lifetime = 800;
+
+  sceneRef.add(mesh);
+
+  const ouchBubbles = damageNumbers;
+  ouchBubbles.push(mesh);
+
+  while (ouchBubbles.length > 5) {
+    const old = ouchBubbles.shift();
+    sceneRef.remove(old);
+    old.material.map.dispose();
+    old.material.dispose();
   }
 }
 
