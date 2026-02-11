@@ -1246,6 +1246,14 @@ export function runDiagnostics() {
   return allPassed;
 }
 
+export function getDebugJumpHit() {
+  return null;
+}
+
+export function getDebugJumpScreen() {
+  return null;
+}
+
 // ── Ready Screen ──────────────────────────────────────────
 export function showReadyScreen(level, playerPos) {
   hideAll();
