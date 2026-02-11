@@ -1246,12 +1246,43 @@ export function runDiagnostics() {
   return allPassed;
 }
 
-export function getDebugJumpHit() {
-  return null;
+export function getDebugJumpHit(raycaster) {
+  return getReadyScreenHit(raycaster);
 }
 
-export function getDebugJumpScreen() {
-  return null;
+export function showDebugJumpScreen(targetLevel) {
+  hideAll();
+  while (readyGroup.children.length) readyGroup.remove(readyGroup.children[0]);
+  readyGroup.position.set(0, 1.6, -4);
+  readyGroup.visible = true;
+
+  const header = makeSprite(`DEBUG JUMP`, {
+    fontSize: 70, color: '#ff00ff', glow: true, scale: 0.6,
+  });
+  header.position.set(0, 0.8, 0);
+  readyGroup.add(header);
+
+  const levelTxt = makeSprite(`LEVEL ${targetLevel}`, {
+    fontSize: 50, color: '#ffffff', scale: 0.5,
+  });
+  levelTxt.position.set(0, 0.4, 0);
+  readyGroup.add(levelTxt);
+
+  const btnGeo = new THREE.PlaneGeometry(1, 0.4);
+  const btnMat = new THREE.MeshBasicMaterial({ color: 0x330033, transparent: true, opacity: 0.8 });
+  const btn = new THREE.Mesh(btnGeo, btnMat);
+  btn.userData.readyAction = 'start';
+  btn.position.set(0, -0.2, 0);
+  readyGroup.add(btn);
+
+  readyGroup.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(btnGeo),
+    new THREE.LineBasicMaterial({ color: 0xff00ff })
+  ));
+
+  const startTxt = makeSprite('START', { fontSize: 40, color: '#ff00ff', scale: 0.3 });
+  startTxt.position.set(0, -0.2, 0.01);
+  readyGroup.add(startTxt);
 }
 
 // ── Ready Screen ──────────────────────────────────────────
