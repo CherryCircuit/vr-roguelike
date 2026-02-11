@@ -1909,64 +1909,11 @@ function updateFastEnemyAlerts(dt, playerPos) {
 // ============================================================
 //  RENDER / UPDATE LOOP
 // ============================================================
-function render(timestamp) { try {
+function render(timestamp) {
   frameCount++;
   const now = timestamp || performance.now();
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
-
-  // Self-diagnostic on first render (verify critical systems)
-  if (frameCount === 1) {
-    console.log('[self-test] First render - checking critical systems...');
-
-    const checks = [];
-
-    // Check scene has children
-    if (!scene || scene.children.length === 0) {
-      checks.push('FAIL: Scene is empty or undefined');
-    } else {
-      checks.push(`PASS: Scene has ${scene.children.length} objects`);
-    }
-
-    // Check camera position
-    if (!camera || !camera.position) {
-      checks.push('FAIL: Camera or camera.position is undefined');
-    } else {
-      checks.push(`PASS: Camera at (${camera.position.x.toFixed(1)}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)})`);
-    }
-
-    // Check renderer
-    if (!renderer) {
-      checks.push('FAIL: Renderer is undefined');
-    } else {
-      checks.push('PASS: Renderer initialized');
-    }
-
-    // Check XR session
-    if (typeof renderer !== 'undefined' && renderer.xr) {
-      checks.push(`PASS: XR presenting: ${renderer.xr.isPresenting}`);
-    }
-
-    // Check fog
-    if (!scene.fog) {
-      checks.push('FAIL: Scene fog is undefined');
-    } else {
-      const fogDensity = scene.fog.density || 0;
-      checks.push(`PASS: Fog density: ${fogDensity.toFixed(4)}`);
-    }
-
-    // Log all checks
-    checks.forEach(check => console.log('[self-test]', check));
-
-    // If any failures, show error
-    const failures = checks.filter(c => c.startsWith('FAIL'));
-    if (failures.length > 0) {
-      const error = new Error('Self-diagnostic failed: ' + failures.join('; '));
-      throw error;
-    }
-
-    console.log('[self-test] All checks passed!');
-  }
 
   // Apply bullet-time slow-mo and ramp-out (use raw dt)
   if (slowMoRampOut) {
@@ -2012,7 +1959,6 @@ function render(timestamp) { try {
 
     // Full-auto shooting / Lightning beams
     for (let i = 0; i < 2; i++) {
-      if (blasterDisplays[i]) blasterDisplays[i].visible = false; // Default hidden
       if (controllerTriggerPressed[i]) {
         const hand = i === 0 ? 'left' : 'right';
         const stats = getWeaponStats(game.upgrades[hand]);
@@ -2216,41 +2162,7 @@ function render(timestamp) { try {
     upgradeSelectionCooldown = Math.max(0, upgradeSelectionCooldown - dt);
     updateUpgradeCards(now, upgradeSelectionCooldown);
 
-
     // Show and update blaster displays
-    blasterDisplays.forEach((display, i) => {
-      if (display) {
-        display.visible = true;
-        if (display.userData.needsUpdate) {
-          updateBlasterDisplay(display, i);
-        }
-        animateBlasterScanLines(display);
-      }
-    });
-  }
-
-  // ── Unified HUD Hover Logic (ForAll Menu States) ──
-  const menuStates = [State.TITLE, State.UPGRADE_SELECT, State.READY_SCREEN, State.SCOREBOARD, State.REGIONAL_SCORES, State.COUNTRY_SELECT];
-  if (menuStates.includes(st)) {
-    const activeRaycasters = [];
-    for (let i = 0; i < controllers.length; i++) {
-      const ctrl = controllers[i];
-      if (!ctrl) continue;
-      const origin = new THREE.Vector3();
-      const quat = new THREE.Quaternion();
-      ctrl.getWorldPosition(origin);
-      ctrl.getWorldQuaternion(quat);
-      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-      activeRaycasters.push(new THREE.Raycaster(origin, dir, 0, 20));
-    }
-    if (activeRaycasters.length > 0 && updateHUDHover(activeRaycasters)) {
-      playMenuHoverSound();
-    }
-  }
-
-  // ── Ready screen ──
-  else if (st === State.READY_SCREEN) {
-    // Show blasters so player can aim at the START button
     blasterDisplays.forEach((display, i) => {
       if (display) {
         display.visible = true;
@@ -2327,7 +2239,7 @@ function render(timestamp) { try {
   }
   if (ominousRef) {
     if (envLevel >= 10) {
-      const t = Math.min(1, (envLevel - 10) / 6); // 0 at 10, 1 at 16
+      const t = Math.min(1, (envLevel - 10) / 6);  // 0 at 10, 1 at 16
       ominousRef.visible = true;
       ominousRef.material.opacity = 0.25 + t * 0.6;
       ominousRef.scale.setScalar(0.5 + t * 1.2);
@@ -2349,17 +2261,16 @@ function render(timestamp) { try {
   });
 
   // Music visualizer (DISABLED - causing FPS drops)
-  // Mountains react to music frequency data, but updating geometry every frame was too expensive
-  // Can be re-enabled in the future if performance is improved
   // if (now % 3 < 1) {
   //   updateMountainVisualizer();
   // }
 
-  // Hide scanlines overlay in VR — it creates a dark box that follows the head and obscures the view
+  // Hide scanlines overlay in VR — it creates a dark box that follows the head and obscures view
   const scanlinesEl = document.getElementById('scanlines');
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
-  renderer.render(scene, camera); } catch (e) { showError(e); }
+  renderer.render(scene, camera);
+}
 }
 
 // ============================================================
