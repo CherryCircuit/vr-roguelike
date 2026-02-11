@@ -121,7 +121,6 @@
     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
-    <button id="debug-copy-log" style="display:block;margin-top:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;width:100%;">Copy Log to Clipboard</button>
   </div>
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
 
@@ -175,23 +174,7 @@
       consolePanel.addEventListener('click', function() {
         consolePanel.style.display = 'none';
       });
-
-      document.getElementById('debug-copy-log').addEventListener('click', function() {
-        const logText = consoleLogs.innerText;
-        navigator.clipboard.writeText(logText).then(() => {
-          const btn = document.getElementById('debug-copy-log');
-          const originalText = btn.textContent;
-          btn.textContent = 'Copied!';
-          btn.style.background = '#004400';
-          setTimeout(() => {
-            btn.textContent = originalText;
-            btn.style.background = '#220044';
-          }, 1500);
-        }).catch(err => {
-          console.error('Failed to copy log:', err);
-        });
-      });
-
+      
       const originalLog = console.log;
       const originalError = console.error;
       const originalWarn = console.warn;
@@ -261,17 +244,11 @@
       console.debug = function() {
         originalDebug.apply(console, arguments);
         if (document.getElementById('debug-console').checked) {
-          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
           const div = document.createElement('div');
-          div.style.color = '#888888';
-          div.textContent = `[DEBUG] ${message}`;
+          div.textContent = '[LOG] Console enabled';
           consoleLogs.appendChild(div);
-          consoleLogs.scrollTop = consoleLogs.scrollHeight;
-          if (consoleLogs.children.length > 100) {
-            consoleLogs.removeChild(consoleLogs.firstChild);
-          }
         }
-      };
+      }
     })();
   </script>
 
