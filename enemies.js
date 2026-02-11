@@ -222,17 +222,16 @@ export function updateEnemies(dt, now, playerPos) {
     // Apply visual tints for status effects
     e.mesh.traverse(c => {
       if (c.isMesh && c.material) {
+        const baseColor = e.baseColor.clone();
         if (se.fire.stacks > 0) {
-          c.material.emissive = c.material.emissive || new THREE.Color();
-          c.material.emissive.setHex(0xff2200);
+          c.material.color.setHex(0xff4400);
         } else if (se.freeze.stacks > 0) {
-          c.material.emissive = c.material.emissive || new THREE.Color();
-          c.material.emissive.setHex(0x00ccff);
+          c.material.color.setHex(0x44aaff);
         } else if (se.shock.stacks > 0) {
-          c.material.emissive = c.material.emissive || new THREE.Color();
-          c.material.emissive.setHex(0xaaaa00);
+          c.material.color.setHex(0xffff44);
         } else {
-          if (c.material.emissive) c.material.emissive.setHex(0x000000);
+          const dmgRatio = 1 - e.hp / e.maxHp;
+          c.material.color.copy(baseColor).lerp(_redColor, dmgRatio);
         }
       }
     });
