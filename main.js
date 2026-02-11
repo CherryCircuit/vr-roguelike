@@ -255,8 +255,8 @@ function createEnvironment() {
   createMountains();
   createStars();
 
-  // createAurora();
-  // createOminousHorizon();
+  // createAurora();  // COMMENTED OUT - causing error
+  // createOminousHorizon();  // COMMENTED OUT - commented out earlier
   createAtmosphere();
 
   // NOTE: Lights removed — all materials are MeshBasicMaterial (unlit)
