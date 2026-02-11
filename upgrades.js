@@ -85,10 +85,12 @@ export function getWeaponStats(upgrades) {
   // Buckshot replaces normal projectiles with a spread
   if (u.buckshot) {
     const s = u.buckshot;
-    projectileCount = s === 1 ? 4 : s === 2 ? 7 : s === 3 ? 9 : 9 + (s - 3);
-    spreadAngle = 0.25;  // radians
-    damage *= 0.5;       // each pellet does less
+    projectileCount = s === 1 ? 5 : s === 2 ? 8 : s === 3 ? 11 : 11 + (s - 3);
+    spreadAngle = 0.0524; // 3 degrees (PI/180 * 3)
+    damage *= 1.25;      // Higher damage per pellet
+    fireInterval *= 3.0; // EVEN SLOWER fire rate for heavy shotgun feel
   }
+
 
   // Vampiric / Life Steal: heal every N kills
   const vampiricStacks = (u.vampiric || 0) + (u.life_steal || 0) * 2;

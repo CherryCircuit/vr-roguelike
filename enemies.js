@@ -182,9 +182,9 @@ export function spawnEnemy(type, position, levelConfig) {
     hitboxRadius: def.hitboxRadius,
     alertTimer: 0,
     statusEffects: {
-      fire:   { stacks: 0, remaining: 0, tickTimer: 0 },
-      shock:  { stacks: 0, remaining: 0, tickTimer: 0 },
-      freeze: { stacks: 0, remaining: 0 },
+      fire: { stacks: 0, remaining: 0, tickTimer: 0 },
+      shock: { stacks: 0, remaining: 0, tickTimer: 0 },
+      freeze: { stacks: 0, remaining: 0, tickTimer: 0 },
     },
   };
 
@@ -210,14 +210,32 @@ export function updateEnemies(dt, now, playerPos) {
 
     let speedMod = 1;
     const se = e.statusEffects;
-    if (se.shock.stacks > 0)  speedMod *= Math.max(0.3, 1 - se.shock.stacks * 0.15);
-    if (se.freeze.stacks > 0) speedMod *= Math.max(0.1, 1 - se.freeze.stacks * 0.2);
+    if (se.shock.stacks > 0) speedMod *= Math.max(0.4, 1 - se.shock.stacks * 0.2);
+    if (se.freeze.stacks > 0) speedMod *= Math.max(0.05, 1 - se.freeze.stacks * 0.4);
 
     e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
 
     // Face player (horizontal only)
     _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
     e.mesh.lookAt(_look);
+
+    // Apply visual tints for status effects
+    e.mesh.traverse(c => {
+      if (c.isMesh && c.material) {
+        if (se.fire.stacks > 0) {
+          c.material.emissive = c.material.emissive || new THREE.Color();
+          c.material.emissive.setHex(0xff2200);
+        } else if (se.freeze.stacks > 0) {
+          c.material.emissive = c.material.emissive || new THREE.Color();
+          c.material.emissive.setHex(0x00ccff);
+        } else if (se.shock.stacks > 0) {
+          c.material.emissive = c.material.emissive || new THREE.Color();
+          c.material.emissive.setHex(0xaaaa00);
+        } else {
+          if (c.material.emissive) c.material.emissive.setHex(0x000000);
+        }
+      }
+    });
 
     // ── Collision with player ──
     if (dist < 0.9) {
@@ -241,39 +259,58 @@ const _redColor = new THREE.Color(0xff0000);
 function updateStatusEffects(e, dt) {
   const se = e.statusEffects;
 
-  // Fire DoT
+  // Fire DoT (Large)
   if (se.fire.remaining > 0) {
     se.fire.remaining -= dt;
     se.fire.tickTimer -= dt;
     if (se.fire.tickTimer <= 0) {
       se.fire.tickTimer = 0.5;
-      const fireDmg = se.fire.stacks * 3;
+      const fireDmg = Math.round(15 * se.fire.stacks);
       e.hp -= fireDmg;
       if (e.hp <= 0) e.hp = 0;
-      // Store last DoT info for damage numbers
       e._lastDoT = { type: 'fire', damage: fireDmg };
+      // Spawn fire particles - commented out as window.spawnEffectParticle doesn't exist
+      // if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+      //   window.spawnEffectParticle(e.mesh.position, 0xff4400);
+      // }
     }
     if (se.fire.remaining <= 0) { se.fire.stacks = 0; se.fire.tickTimer = 0; }
   }
 
-  // Shock DoT
+  // Shock DoT (Medium)
   if (se.shock.remaining > 0) {
     se.shock.remaining -= dt;
     se.shock.tickTimer -= dt;
     if (se.shock.tickTimer <= 0) {
       se.shock.tickTimer = 0.5;
-      const shockDmg = se.shock.stacks * 2;
+      const shockDmg = Math.round(8 * se.shock.stacks);
       e.hp -= shockDmg;
       if (e.hp <= 0) e.hp = 0;
       e._lastDoT = { type: 'shock', damage: shockDmg };
+      // Spawn shock particles - commented out as window.spawnEffectParticle doesn't exist
+      // if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+      //   window.spawnEffectParticle(e.mesh.position, 0xffff44);
+      // }
     }
     if (se.shock.remaining <= 0) { se.shock.stacks = 0; se.shock.tickTimer = 0; }
   }
 
-  // Freeze (slow only, no DoT — just tick down duration)
+  // Freeze DoT (Small)
   if (se.freeze.remaining > 0) {
     se.freeze.remaining -= dt;
-    if (se.freeze.remaining <= 0) se.freeze.stacks = 0;
+    se.freeze.tickTimer -= dt;
+    if (se.freeze.tickTimer <= 0) {
+      se.freeze.tickTimer = 0.5;
+      const freezeDmg = Math.round(2 * se.freeze.stacks);
+      e.hp -= freezeDmg;
+      if (e.hp <= 0) e.hp = 0;
+      e._lastDoT = { type: 'freeze', damage: freezeDmg };
+      // Spawn freeze particles - commented out as window.spawnEffectParticle doesn't exist
+      // if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+      //   window.spawnEffectParticle(e.mesh.position, 0x00ffff);
+      // }
+    }
+    if (se.freeze.remaining <= 0) { se.freeze.stacks = 0; se.freeze.tickTimer = 0; }
   }
 }
 
@@ -381,7 +418,12 @@ export function updateExplosions(dt, now) {
 /** Return all enemy mesh groups (for raycasting). Optionally include boss mesh. */
 export function getEnemyMeshes(includeBoss = false) {
   const list = activeEnemies.map(e => e.mesh);
-  if (includeBoss && activeBoss) list.push(activeBoss.mesh);
+  if (includeBoss && activeBoss) {
+    list.push(activeBoss.mesh);
+    if (activeBoss.shields) {
+      list.push(...activeBoss.shields);
+    }
+  }
   return list;
 }
 
@@ -389,7 +431,8 @@ export function getEnemyMeshes(includeBoss = false) {
 export function getEnemyByMesh(mesh) {
   let obj = mesh;
   while (obj) {
-    if (obj.userData.isBoss) return { boss: activeBoss };
+    if (obj.userData.isShield) return { boss: activeBoss, isShield: true };
+    if (obj.userData.isBoss) return { boss: activeBoss, isBody: true };
     if (obj.userData.isEnemy) {
       const idx = activeEnemies.findIndex(e => e.mesh === obj);
       return idx >= 0 ? { index: idx, enemy: activeEnemies[idx] } : null;
@@ -411,30 +454,33 @@ const BOSS_SKULL_PATTERN = [
 ];
 
 const BOSS_DEFS = {
-  // Tier 1 — MUCH higher HP (5x), distinct behaviors, ALL 3 phases
-  skull:   { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.5, baseHp: 2000, phases: 3, color: 0xcccccc, scoreValue: 100, behavior: 'spawner' },      // Minion spam
-  cowboy:  { pattern: [[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.45, baseHp: 1800, phases: 3, color: 0x8B4513, scoreValue: 100, behavior: 'turret' },    // Stationary shooter
-  orb:     { pattern: [[1,1],[1,1]], voxelSize: 0.6, baseHp: 1600, phases: 3, color: 0xaa00ff, scoreValue: 100, behavior: 'shielded' },  // Orbiting shields
-  serpent: { pattern: [[1,1,1,1]], voxelSize: 0.4, baseHp: 1700, phases: 3, color: 0x00ff88, scoreValue: 100, behavior: 'dodger' },    // Evasive dodging
-  turret:  { pattern: [[1,1,1],[1,1,1]], voxelSize: 0.5, baseHp: 1900, phases: 3, color: 0x666666, scoreValue: 100, behavior: 'charger' },   // Charges in bursts
-  // Tier 2 — 50% more HP
-  skull2:  { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.5, baseHp: 3000, phases: 3, color: 0xcccccc, scoreValue: 150, behavior: 'spawner' },
-  cowboy2: { pattern: [[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.45, baseHp: 2700, phases: 3, color: 0x8B4513, scoreValue: 150, behavior: 'turret' },
-  orb2:    { pattern: [[1,1],[1,1]], voxelSize: 0.6, baseHp: 2400, phases: 3, color: 0xaa00ff, scoreValue: 150, behavior: 'shielded' },
-  serpent2: { pattern: [[1,1,1,1]], voxelSize: 0.4, baseHp: 2550, phases: 3, color: 0x00ff88, scoreValue: 150, behavior: 'dodger' },
-  turret2: { pattern: [[1,1,1],[1,1,1]], voxelSize: 0.5, baseHp: 2850, phases: 3, color: 0x666666, scoreValue: 150, behavior: 'charger' },
-  // Tier 3 — Double tier 1 HP
-  skull3:  { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.5, baseHp: 4000, phases: 3, color: 0xcccccc, scoreValue: 200, behavior: 'spawner' },
-  cowboy3: { pattern: [[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.45, baseHp: 3600, phases: 3, color: 0x8B4513, scoreValue: 200, behavior: 'turret' },
-  orb3:    { pattern: [[1,1],[1,1]], voxelSize: 0.6, baseHp: 3200, phases: 3, color: 0xaa00ff, scoreValue: 200, behavior: 'shielded' },
-  serpent3: { pattern: [[1,1,1,1]], voxelSize: 0.4, baseHp: 3400, phases: 3, color: 0x00ff88, scoreValue: 200, behavior: 'dodger' },
-  turret3: { pattern: [[1,1,1],[1,1,1]], voxelSize: 0.5, baseHp: 3800, phases: 3, color: 0x666666, scoreValue: 200, behavior: 'charger' },
-  // Tier 4 — 3x tier 1 HP
-  skull4:  { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.5, baseHp: 6000, phases: 3, color: 0xcccccc, scoreValue: 300, behavior: 'spawner' },
-  cowboy4: { pattern: [[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.45, baseHp: 5400, phases: 3, color: 0x8B4513, scoreValue: 300, behavior: 'turret' },
-  orb4:    { pattern: [[1,1],[1,1]], voxelSize: 0.6, baseHp: 4800, phases: 3, color: 0xaa00ff, scoreValue: 300, behavior: 'shielded' },
-  serpent4: { pattern: [[1,1,1,1]], voxelSize: 0.4, baseHp: 5100, phases: 3, color: 0x00ff88, scoreValue: 300, behavior: 'dodger' },
-  turret4: { pattern: [[1,1,1],[1,1,1]], voxelSize: 0.5, baseHp: 5700, phases: 3, color: 0x666666, scoreValue: 300, behavior: 'charger' },
+  // Tier 1 — Balanced HP (Shielded -30%)
+  grave_voxel: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 1000, phases: 3, color: 0xcccccc, scoreValue: 100, behavior: 'spawner' },
+  iron_sentry: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 900, phases: 3, color: 0x8B4513, scoreValue: 100, behavior: 'turret' },
+  core_guardian: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 560, phases: 3, color: 0xaa00ff, scoreValue: 100, behavior: 'shielded' },
+  chrono_wraith: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 850, phases: 3, color: 0x00ff88, scoreValue: 100, behavior: 'dodger' },
+  siege_ram: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 950, phases: 3, color: 0x666666, scoreValue: 100, behavior: 'charger' },
+
+  // Tier 2
+  grave_voxel2: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 1500, phases: 3, color: 0xbbbbbb, scoreValue: 150, behavior: 'spawner' },
+  iron_sentry2: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 1350, phases: 3, color: 0x7a3a10, scoreValue: 150, behavior: 'turret' },
+  core_guardian2: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 840, phases: 3, color: 0x9900ee, scoreValue: 150, behavior: 'shielded' },
+  chrono_wraith2: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 1275, phases: 3, color: 0x00ee77, scoreValue: 150, behavior: 'dodger' },
+  siege_ram2: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 1425, phases: 3, color: 0x555555, scoreValue: 150, behavior: 'charger' },
+
+  // Tier 3
+  grave_voxel3: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 2200, phases: 3, color: 0xaaaaaa, scoreValue: 200, behavior: 'spawner' },
+  iron_sentry3: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 2000, phases: 3, color: 0x6b300d, scoreValue: 200, behavior: 'turret' },
+  core_guardian3: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 1260, phases: 3, color: 0x8800dd, scoreValue: 200, behavior: 'shielded' },
+  chrono_wraith3: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 1900, phases: 3, color: 0x00dd66, scoreValue: 200, behavior: 'dodger' },
+  siege_ram3: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 2100, phases: 3, color: 0x444444, scoreValue: 200, behavior: 'charger' },
+
+  // Tier 4
+  grave_voxel4: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 3200, phases: 3, color: 0x999999, scoreValue: 400, behavior: 'spawner' },
+  iron_sentry4: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 2900, phases: 3, color: 0x59260a, scoreValue: 400, behavior: 'turret' },
+  core_guardian4: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 1820, phases: 3, color: 0x7700cc, scoreValue: 400, behavior: 'shielded' },
+  chrono_wraith4: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 2700, phases: 3, color: 0x00cc55, scoreValue: 400, behavior: 'dodger' },
+  siege_ram4: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 3000, phases: 3, color: 0x333333, scoreValue: 400, behavior: 'charger' },
 };
 
 function buildBossMesh(def, id) {
@@ -516,16 +562,35 @@ export function getBoss() {
   return activeBoss;
 }
 
-export function hitBoss(damage) {
+export function hitBoss(damage, hitInfo = {}) {
   if (!activeBoss) return { killed: false, shieldReflected: false };
 
-  // Shield reflection: if shields are active, don't damage boss and reflect back
-  if (activeBoss.shieldsActive && activeBoss.shields && activeBoss.shields.length > 0) {
-    return { killed: false, shieldReflected: true, phaseChanged: false };
+  // Core Guardian logic: only take damage via shields. Direct body hits reflect.
+  if (activeBoss.behavior === 'shielded' && activeBoss.shieldsActive) {
+    if (hitInfo.isShield) {
+      // Taking damage via orbiting bits
+    } else if (hitInfo.isBody) {
+      return { killed: false, shieldReflected: true, phaseChanged: false };
+    } else {
+      // Indirect damage (fire/AOE)? Allow but maybe reduced?
+      // Let's allow AOE to tick damage normally or it becomes frustrating.
+    }
   }
 
   activeBoss.hp -= damage;
   if (activeBoss.hp <= 0) activeBoss.hp = 0;
+
+  // DODGER behavior: Teleport on hit (chance increases with phase)
+  if (activeBoss.behavior === 'dodger' && Math.random() < 0.2 + activeBoss.phase * 0.1) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 6 + Math.random() * 4;
+    activeBoss.mesh.position.set(
+      Math.cos(angle) * dist,
+      1.5,
+      Math.sin(angle) * dist
+    );
+  }
+
   const prevPhase = activeBoss.phase;
   const phaseThreshold2 = activeBoss.maxHp * (2 / 3);
   const phaseThreshold1 = activeBoss.maxHp * (1 / 3);
@@ -551,95 +616,107 @@ export function updateBoss(dt, now, playerPos) {
   // === BEHAVIOR-SPECIFIC LOGIC ===
 
   if (b.behavior === 'spawner') {
-    // SPAWNER: Moves toward player, spawns lots of minions (more as phase increases)
-    const speed = 0.3 + (b.phase - 1) * 0.15;
+    // SPAWNER: Moves toward player, spawns minions
+    const speed = 0.25 + (b.phase - 1) * 0.1;
     b.mesh.position.addScaledVector(_dir, speed * dt);
 
     b.spawnMinionTimer -= dt;
     if (b.spawnMinionTimer <= 0) {
-      const spawnRate = 2.0 - b.phase * 0.5;  // Phase 3: spawn every 0.5s!
+      const spawnRate = 2.5 - b.phase * 0.6;
       b.spawnMinionTimer = spawnRate;
 
-      // Spawn multiple minions in higher phases
+      // Spawn multiple minions, potentially 'fast' ones in higher tiers
       const spawnCount = b.phase === 3 ? 3 : b.phase === 2 ? 2 : 1;
       for (let i = 0; i < spawnCount; i++) {
-        spawnBossMinion(b.mesh.position.clone(), playerPos);
+        const minionType = (b.id.includes('2') || b.id.includes('3') || b.id.includes('4')) && b.phase === 3 ? 'fast' : 'basic';
+        spawnBossMinion(b.mesh.position.clone(), playerPos, minionType);
       }
     }
   }
 
   else if (b.behavior === 'turret') {
-    // TURRET: Stationary, shoots projectiles at player (faster in higher phases)
-    // Stay at spawn position (no movement)
-
+    // TURRET: Stationary, shoots projectiles
     b.shootTimer -= dt;
     if (b.shootTimer <= 0) {
-      const shootRate = 1.5 - b.phase * 0.3;  // Phase 3: shoot every 0.6s
+      const shootRate = 1.8 - b.phase * 0.4;
       b.shootTimer = shootRate;
-      spawnBossProjectile(b.mesh.position.clone(), playerPos);
+
+      // Phase 1: 1 shot, Phase 2: 3 shots fan, Phase 3: 5 shots spray
+      if (b.phase === 1) {
+        spawnBossProjectile(b.mesh.position.clone(), playerPos);
+      } else if (b.phase === 2) {
+        // 3 shot fan
+        for (let i = -1; i <= 1; i++) {
+          const offset = new THREE.Vector3(i * 2, 0, 0).applyQuaternion(b.mesh.quaternion);
+          spawnBossProjectile(b.mesh.position.clone(), playerPos.clone().add(offset));
+        }
+      } else {
+        // 5 shot spray
+        for (let i = -2; i <= 2; i++) {
+          const offset = new THREE.Vector3(i * 1.5, (Math.random() - 0.5) * 2, 0).applyQuaternion(b.mesh.quaternion);
+          spawnBossProjectile(b.mesh.position.clone(), playerPos.clone().add(offset));
+        }
+      }
     }
   }
 
   else if (b.behavior === 'dodger') {
-    // DODGER: Moves erratically, hard to hit (strafe/dodge sideways)
+    // DODGER: Moves erratically, hard to hit
     b.dodgeTimer -= dt;
     if (b.dodgeTimer <= 0) {
-      // Pick new random dodge direction perpendicular to player
-      b.dodgeTimer = 0.8 / b.phase;  // Dodge more frequently in higher phases
-      const perp = new THREE.Vector3(-_dir.z, 0, _dir.x).normalize();  // Perpendicular
+      b.dodgeTimer = 0.6 / b.phase;
+      const perp = new THREE.Vector3(-_dir.z, 0, _dir.x).normalize();
       const randomDir = Math.random() < 0.5 ? 1 : -1;
       b.dodgeDir.copy(perp).multiplyScalar(randomDir);
     }
 
-    // Move perpendicular + slightly toward player
-    const approachSpeed = 0.2 + b.phase * 0.1;
-    const dodgeSpeed = 0.6 + b.phase * 0.2;
+    const approachSpeed = 0.15 + b.phase * 0.08;
+    const dodgeSpeed = 0.8 + b.phase * 0.3;
     b.mesh.position.addScaledVector(_dir, approachSpeed * dt);
     b.mesh.position.addScaledVector(b.dodgeDir, dodgeSpeed * dt);
   }
 
   else if (b.behavior === 'charger') {
-    // CHARGER: Bursts toward player in fast charges, then pauses
+    // CHARGER: Bursts toward player
     b.chargeTimer -= dt;
 
     if (b.chargeActive) {
-      // Charging toward player at high speed
-      const chargeSpeed = 3.0 + b.phase * 0.5;
+      const chargeSpeed = 3.5 + b.phase * 0.8;
       b.mesh.position.addScaledVector(_dir, chargeSpeed * dt);
 
       if (b.chargeTimer <= 0) {
         b.chargeActive = false;
-        b.chargeTimer = 1.5 - b.phase * 0.2;  // Pause duration
+        b.chargeTimer = 1.6 - b.phase * 0.3;
       }
     } else {
-      // Paused, waiting to charge again
       if (b.chargeTimer <= 0) {
         b.chargeActive = true;
-        b.chargeTimer = 0.5 + Math.random() * 0.3;  // Charge duration
+        b.chargeTimer = 0.45 + Math.random() * 0.25;
       }
     }
   }
 
   else if (b.behavior === 'shielded') {
-    // SHIELDED: Moves slowly, has orbiting shields that reflect damage
-    const speed = 0.25 + b.phase * 0.1;
+    // SHIELDED: Orbiting shields reflect damage
+    const speed = 0.2 + b.phase * 0.05;
     b.mesh.position.addScaledVector(_dir, speed * dt);
 
-    // Update shield positions (orbit around boss)
-    b.shieldAngle += dt * 2.0;  // Rotation speed
-    const radius = 1.5;
+    b.shieldAngle += dt * (2.0 + b.phase * 0.5);
+    const radius = 1.4 + Math.sin(now * 0.002) * 0.3;
 
-    // Shields active in phases 1 and 2, drop in phase 3 for vulnerability period
     b.shieldsActive = b.phase < 3;
 
     b.shields.forEach((shield, i) => {
       const angle = b.shieldAngle + (i * Math.PI * 2 / b.shields.length);
       shield.position.set(
         b.mesh.position.x + Math.cos(angle) * radius,
-        b.mesh.position.y,
+        b.mesh.position.y + Math.sin(now * 0.003 + i) * 0.5,
         b.mesh.position.z + Math.sin(angle) * radius
       );
       shield.visible = b.shieldsActive;
+      if (shield.material) {
+        shield.material.color.setHSL(0.8, 1, 0.5 + Math.sin(now * 0.01) * 0.2);
+      }
     });
   }
 
@@ -651,21 +728,27 @@ export function updateBoss(dt, now, playerPos) {
 }
 
 const bossMinions = [];
-function spawnBossMinion(fromPos, playerPos) {
+function spawnBossMinion(fromPos, playerPos, type = 'basic') {
   const group = new THREE.Group();
-  const geo = getGeo(0.25);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.8 });
-  for (let i = 0; i < 4; i++) group.add(new THREE.Mesh(geo, mat.clone()));
-  group.children[0].position.set(0, 0, 0);
-  group.children[1].position.set(0.25, 0, 0);
-  group.children[2].position.set(0.5, 0, 0);
-  group.children[3].position.set(0.75, 0, 0);
+  const def = ENEMY_DEFS[type] || ENEMY_DEFS.basic;
+  const geo = getGeo(def.voxelSize);
+  const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.8 });
+
+  // Create a small 2x2 voxel minion
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 2; c++) {
+      const cube = new THREE.Mesh(geo, mat.clone());
+      cube.position.set(c * def.voxelSize, r * def.voxelSize, 0);
+      group.add(cube);
+    }
+  }
+
   group.position.copy(fromPos);
   group.userData.isBossMinion = true;
   group.userData.slideAngle = 0;
   group.userData.slideTimer = 0;
   sceneRef.add(group);
-  bossMinions.push({ mesh: group, hp: 20, maxHp: 20 });
+  bossMinions.push({ mesh: group, hp: def.baseHp, maxHp: def.baseHp, speed: def.baseSpeed });
 }
 
 export function getBossMinionMeshes() {
@@ -710,7 +793,7 @@ export function updateBossMinions(dt, playerPos) {
     }
     m.mesh.rotation.y = m.mesh.userData.slideAngle || 0;
     _dir.copy(playerPos).sub(m.mesh.position).normalize();
-    m.mesh.position.addScaledVector(_dir, 0.6 * dt);
+    m.mesh.position.addScaledVector(_dir, (m.speed || 0.6) * dt);
   }
 }
 
@@ -718,7 +801,7 @@ export function updateBossMinions(dt, playerPos) {
 const bossProjectiles = [];
 
 function spawnBossProjectile(fromPos, targetPos) {
-  const geo = getGeo(0.2);
+  const geo = getGeo(0.12);
   const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, emissive: 0xff0000 });
   const proj = new THREE.Mesh(geo, mat);
   proj.position.copy(fromPos);
