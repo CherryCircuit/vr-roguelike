@@ -114,6 +114,13 @@
   <!-- CRT scanline overlay (hidden in VR — obscures view) -->
   <div id="scanlines"></div>
 
+  <!-- Error overlay (always visible in web view if errors occur) -->
+  <div id="error-overlay" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#ff0000;color:#ffffff;padding:30px;z-index:9999;max-width:90%;text-align:center;border:4px solid #ffffff;font-family:'Courier New',monospace;">
+    <h2 style="margin:0 0 20px 0;font-size:32px;">GAME ERROR</h2>
+    <p id="error-message" style="font-size:20px;margin:0;word-wrap:break-word;"></p>
+    <p id="error-stack" style="font-size:14px;margin:20px 0 0 0;white-space:pre-wrap;opacity:0.8;"></p>
+  </div>
+
   <!-- Debug menu (show with ?debug=1 or click DEBUG) -->
   <div id="debug-panel" style="display:none;position:fixed;bottom:20px;left:20px;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #00ffff;padding:12px;font-size:14px;">
     <div style="color:#00ffff;margin-bottom:8px;">DEBUG</div>
@@ -158,6 +165,25 @@
       });
       document.getElementById('debug-perf-monitor').addEventListener('change', function() {
         window.debugPerfMonitor = this.checked;
+      });
+
+      // Global error handler - catches ALL uncaught errors
+      window.showWebError = function(message, stack = '') {
+        const overlay = document.getElementById('error-overlay');
+        const msgEl = document.getElementById('error-message');
+        const stackEl = document.getElementById('error-stack');
+        msgEl.textContent = message || 'Unknown error';
+        stackEl.textContent = stack || 'No stack trace available';
+        overlay.style.display = 'block';
+        console.error('[GAME ERROR]', message, stack);
+      };
+
+      window.addEventListener('error', function(e) {
+        window.showWebError(e.message, e.error?.stack || e.stack || '');
+      });
+
+      window.addEventListener('unhandledrejection', function(e) {
+        window.showWebError('Unhandled Promise Rejection: ' + e.reason, e.reason?.stack || '');
       });
     })();
   </script>
