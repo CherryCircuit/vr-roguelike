@@ -959,14 +959,13 @@ export function spawnKillEncouragement(message, cameraPos) {
   killEncouragements.push(mesh);
 }
 
-export function updateKillEncouragements(dt, now, cameraPos, currentLevel) {
+export function updateKillEncouragements(dt, now, cameraPos, levelConfig) {
   // Show "5 KILLS REMAINING" encouragement message
-  if (currentLevel && lastEncouragementLevel !== currentLevel) {
-    const cfg = currentLevel;
-    const remaining = cfg.killTarget - currentLevel.kills;
+  if (levelConfig && lastEncouragementLevel !== levelConfig) {
+    const remaining = levelConfig.killTarget - levelConfig.kills;
     if (remaining === 5) {
       spawnKillEncouragement('5 KILLS REMAINING', cameraPos);
-      lastEncouragementLevel = currentLevel;
+      lastEncouragementLevel = levelConfig;
     }
   }
 
