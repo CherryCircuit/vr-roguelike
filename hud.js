@@ -402,7 +402,7 @@ function createTitleScreen() {
   titleScoreboardBtn = btnMesh;
 
   // Version number (UPDATE THIS DATE/TIME ON EVERY CODE CHANGE)
-  const versionDate = 'FEB 11 2026   2:48PM PT';
+  const versionDate = 'FEB 11 2026   2:56PM PT';
   const versionNum = 'v0.045';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 32,
