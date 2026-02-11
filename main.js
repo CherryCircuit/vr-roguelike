@@ -512,6 +512,17 @@ function createMountains() {
   });
 }
 
+function generatePeaks(count, minH, maxH) {
+  const peaks = [];
+  const step = 200 / (count + 1);
+  for (let i = 1; i <= count; i++) {
+    const x = -100 + i * step + (Math.random() - 0.5) * step * 0.6;
+    const y = minH + Math.random() * (maxH - minH);
+    peaks.push([x, y]);
+  }
+  return peaks;
+}
+
 function createStars() {
   // Reduced from 1500 to 800 — still looks great, fewer draw calls
   const count = 800;
@@ -2338,6 +2349,8 @@ function render(timestamp) { try {
   });
 
   // Music visualizer (DISABLED - causing FPS drops)
+  // Mountains react to music frequency data, but updating geometry every frame was too expensive
+  // Can be re-enabled in the future if performance is improved
   // if (now % 3 < 1) {
   //   updateMountainVisualizer();
   // }
