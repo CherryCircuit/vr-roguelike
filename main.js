@@ -23,7 +23,7 @@ import {
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar,
-  updateComboPopups, checkComboIncrease,
+  updateComboPopups, checkComboIncrease, updateKillEncouragements,
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit
@@ -1420,8 +1420,10 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
   if (hitWeakPoint) damage *= 2;
 
   // Critical hit
+  let isCrit = false;
   if (stats.critChance > 0 && Math.random() < stats.critChance) {
     damage *= (stats.critMultiplier || 2);
+    isCrit = true;
   }
 
   // Fire debuff increases damage taken
@@ -1439,7 +1441,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
   }
 
   // Spawn damage number
-  spawnDamageNumber(hitPoint, damage, '#ffffff');
+  spawnDamageNumber(hitPoint, damage, '#ffffff', isCrit);
   playHitSound();
 
   // Apply status effects
@@ -1491,7 +1493,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
 
   // Shield reflection: damage player instead of boss
   if (result.shieldReflected) {
-    spawnDamageNumber(hitPoint, 0, '#ff00ff');  // Show 0 damage in magenta
+    spawnDamageNumber(hitPoint, 0, '#ff00ff', false);  // Show 0 damage in magenta
     playHitSound();
     const dead = damagePlayer(1);
     triggerHitFlash();
@@ -1510,7 +1512,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
     const hand = controllerIndex === 0 ? 'left' : 'right';
     game.handStats[hand].totalDamage += damage;
   }
-  spawnDamageNumber(hitPoint, damage, '#ff4444');
+  spawnDamageNumber(hitPoint, damage, '#ff4444', isCrit);
   playHitSound();
   if (result.killed) {
     playExplosionSound();
@@ -1994,6 +1996,7 @@ function render(timestamp) {
     checkComboIncrease(game._combo, camera.position, playUpgradeSound);
     if (frameCount % 3 === 0) {
       updateHUD(game);
+      updateKillEncouragements(dt, now, camera.position, game._levelConfig);
     }
   }
 

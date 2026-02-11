@@ -527,6 +527,9 @@ export function updateHUD(gameState) {
   } else {
     comboSprite.visible = false;
   }
+
+  // Kill encouragement message
+  updateKillEncouragements(dt, now, cameraRef, gameState._levelConfig);
 }
 
 // ── Level Complete / Transition Text ───────────────────────
@@ -607,7 +610,7 @@ function createUpgradeCard(upgrade, position) {
   group.userData.upgradeId = upgrade.id;
 
   // Card background plane
-  const cardGeo = new THREE.PlaneGeometry(0.9, 1.1);
+  const cardGeo = new THREE.PlaneGeometry(1.035, 1.1);  // Widened by 15%
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -901,16 +904,113 @@ export function updateHitFlash(dt) {
   }
 }
 
+// ── Kill Encouragement ───────────────────────────────────────
+const killEncouragements = [];
+let lastEncouragementLevel = 0;
+
+export function spawnKillEncouragement(message, cameraPos) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 128;
+
+  const fontSize = 60;
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillText(message, 258, 66);
+
+  // Main text - bright gold
+  ctx.fillStyle = '#ffff00';
+  ctx.fillText(message, 256, 64);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  // Large, prominent display
+  const scale = 1.0;
+  const width = scale * 4;
+  const height = scale;
+
+  const geometry = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+
+  const mesh = new THREE.Mesh(geometry, mat);
+
+  // Position in front of player
+  mesh.position.copy(cameraPos);
+  mesh.position.y += 1.5;
+  mesh.position.z -= 2;
+
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.lifetime = 2500;  // 2.5 seconds
+  mesh.userData.velocity = new THREE.Vector3(0, 0.4, 0);
+  mesh.renderOrder = 999;
+
+  sceneRef.add(mesh);
+  killEncouragements.push(mesh);
+}
+
+export function updateKillEncouragements(dt, now, cameraPos, currentLevel) {
+  // Show "5 KILLS REMAINING" encouragement message
+  if (currentLevel && lastEncouragementLevel !== currentLevel) {
+    const cfg = currentLevel;
+    const remaining = cfg.killTarget - currentLevel.kills;
+    if (remaining === 5) {
+      spawnKillEncouragement('5 KILLS REMAINING', cameraPos);
+      lastEncouragementLevel = currentLevel;
+    }
+  }
+
+  // Update existing messages
+  for (let i = killEncouragements.length - 1; i >= 0; i--) {
+    const popup = killEncouragements[i];
+    const age = now - popup.userData.createdAt;
+
+    if (age > popup.userData.lifetime) {
+      sceneRef.remove(popup);
+      popup.material.map.dispose();
+      popup.material.dispose();
+      popup.geometry.dispose();
+      killEncouragements.splice(i, 1);
+    } else {
+      popup.position.addScaledVector(popup.userData.velocity, dt);
+      // Fade out in last 0.5s
+      const fadeStart = popup.userData.lifetime - 500;
+      if (age > fadeStart) {
+        popup.material.opacity = 1 - (age - fadeStart) / 500;
+      }
+    }
+  }
+}
+
 // ── Damage Numbers ─────────────────────────────────────────
 
-export function spawnDamageNumber(position, damage, color) {
+export function spawnDamageNumber(position, damage, color, isCrit = false) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 128;
   canvas.height = 64;
 
-  const fontSize = Math.min(48, 28 + damage / 6);
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  let displayColor = color || '#ffffff';
+  let critFontSize = Math.min(48, 28 + damage / 6);
+  let critScale = 0.25 + Math.min(damage / 100, 0.15);
+
+  if (isCrit) {
+    displayColor = '#ffff00';  // Gold for CRIT
+    critFontSize *= 2;  // Double font size
+    critScale *= 2;     // Double scale
+  }
+
+  ctx.font = `bold ${critFontSize}px Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
@@ -919,7 +1019,7 @@ export function spawnDamageNumber(position, damage, color) {
   ctx.fillText(Math.round(damage).toString(), 66, 34);
 
   // Main text
-  ctx.fillStyle = color || '#ffffff';
+  ctx.fillStyle = displayColor;
   ctx.fillText(Math.round(damage).toString(), 64, 32);
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -927,9 +1027,8 @@ export function spawnDamageNumber(position, damage, color) {
 
   // Use PlaneGeometry instead of Sprite to prevent billboarding
   // Increased scale significantly for better visibility
-  const scale = 0.25 + Math.min(damage / 100, 0.15);  // Much larger base scale
-  const width = scale * 2;
-  const height = scale;
+  const width = critScale * 2;
+  const height = critScale;
 
   const geometry = new THREE.PlaneGeometry(width, height);
   const mat = new THREE.MeshBasicMaterial({
@@ -965,6 +1064,68 @@ export function spawnDamageNumber(position, damage, color) {
     sceneRef.remove(old);
     old.material.map.dispose();
     old.material.dispose();
+  }
+
+  // Spawn CRIT! text above damage number if crit
+  if (isCrit) {
+    const critCanvas = document.createElement('canvas');
+    const critCtx = critCanvas.getContext('2d');
+    critCanvas.width = 256;
+    critCanvas.height = 64;
+
+    critCtx.font = `bold 48px Arial, sans-serif`;
+    critCtx.textAlign = 'center';
+    critCtx.textBaseline = 'middle';
+
+    // Drop shadow
+    critCtx.fillStyle = 'rgba(0,0,0,0.8)';
+    critCtx.fillText('CRIT!', 129, 34);
+
+    // Main text - bright gold
+    critCtx.fillStyle = '#ffffff';
+    critCtx.fillText('CRIT!', 128, 32);
+
+    const critTexture = new THREE.CanvasTexture(critCanvas);
+    critTexture.minFilter = THREE.LinearFilter;
+
+    const critWidth = critScale * 3;  // Extra wide for "CRIT!"
+    const critHeight = critScale;
+
+    const critGeometry = new THREE.PlaneGeometry(critWidth, critHeight);
+    const critMat = new THREE.MeshBasicMaterial({
+      map: critTexture,
+      transparent: true,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    });
+
+    const critMesh = new THREE.Mesh(critGeometry, critMat);
+
+    // Position above damage number
+    critMesh.position.copy(position);
+    critMesh.position.y += 0.6;  // Above the damage number
+    critMesh.position.z += 0.01;  // Slightly in front
+
+    critMesh.renderOrder = 999;
+
+    critMesh.userData.velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 0.3,
+      0.6 + Math.random() * 0.4,
+      (Math.random() - 0.5) * 0.3,
+    );
+    critMesh.userData.lifetime = 400;  // Shorter than damage number
+    critMesh.userData.createdAt = performance.now();
+
+    sceneRef.add(critMesh);
+    damageNumbers.push(critMesh);
+
+    // Cap total to prevent perf issues
+    while (damageNumbers.length > 20) {
+      const old = damageNumbers.shift();
+      sceneRef.remove(old);
+      old.material.map.dispose();
+      old.material.dispose();
+    }
   }
 }
 
@@ -1456,9 +1617,9 @@ export function showScoreboard(scores, headerText) {
 
   for (const def of btnDefs) {
     const btnGroup = new THREE.Group();
-    btnGroup.position.set(1.2, def.y, 0);
+    btnGroup.position.set(1.4, def.y, 0);
 
-    const btnGeo = new THREE.PlaneGeometry(0.5, 0.25);
+    const btnGeo = new THREE.PlaneGeometry(0.65, 0.25);
     const btnMat = new THREE.MeshBasicMaterial({
       color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
     });
@@ -1480,7 +1641,7 @@ export function showScoreboard(scores, headerText) {
 
   // BACK button bottom center
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -0.7, 0);
+  backGroup.position.set(0, -0.85, 0);
   const backGeo = new THREE.PlaneGeometry(0.6, 0.25);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
