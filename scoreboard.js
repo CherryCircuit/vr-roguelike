@@ -9,30 +9,38 @@ const SUPABASE_URL = 'https://yqmbizcfjfibqbpwaiun.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxbWJpemNmamZpYnFicHdhaXVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg5NzEyNTcsImV4cCI6MjA1NDU0NzI1N30.JpTSPMEMcSKMfJfpGEiPJGaaS4JTT_cEhP0RnsJf1tY';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+console.log('[scoreboard] Supabase client initialized:', !!supabase);
 
 // ── Score CRUD ──────────────────────────────────────────────
 
 export async function submitScore(name, score, levelReached, country) {
+  console.log(`[scoreboard] Submitting score for ${name}: ${score} (Level ${levelReached}, Country: ${country})`);
   const { data, error } = await supabase
     .from('scores')
-    .insert([{ name, score, level_reached: levelReached, country }]);
+    .insert([{ name, score, level_reached: levelReached, country }])
+    .select();
+
   if (error) {
-    console.error('[scoreboard] Submit error:', error.message);
+    console.error('[scoreboard] Submit error:', error.message, error.details, error.hint);
     return null;
   }
+  console.log('[scoreboard] Submit successful:', data);
   return data;
 }
 
 export async function fetchTopScores(limit = 100) {
+  console.log('[scoreboard] Fetching top scores...');
   const { data, error } = await supabase
     .from('scores')
     .select('name, score, level_reached, country, created_at')
     .order('score', { ascending: false })
     .limit(limit);
+
   if (error) {
-    console.error('[scoreboard] Fetch error:', error.message);
+    console.error('[scoreboard] Fetch error:', error.message, error.details, error.hint);
     return [];
   }
+  console.log(`[scoreboard] Fetch successful: ${data ? data.length : 0} scores found`);
   return data || [];
 }
 

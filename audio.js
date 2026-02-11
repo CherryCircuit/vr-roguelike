@@ -11,6 +11,13 @@ function getAudioContext() {
   return audioCtx;
 }
 
+export function resumeAudioContext() {
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
+}
+
 // ── Shoot sound (laser pew) — heavily randomized ───────────
 export function playShoothSound() {
   const ctx = getAudioContext();
@@ -19,7 +26,7 @@ export function playShoothSound() {
   // Randomize everything: base frequency, pitch sweep, waveform, duration
   const baseFreqs = [600, 700, 800, 900, 1000, 1100];
   const baseFreq = baseFreqs[Math.floor(Math.random() * baseFreqs.length)];
-  const pitch = 0.3 + Math.random() * 1.4;
+  const pitch = 0.85 + Math.random() * 0.3; // 0.85 to 1.15
   const duration = 0.06 + Math.random() * 0.08;  // 60-140ms
   const waveforms = ['square', 'sawtooth', 'triangle'];
 
@@ -58,6 +65,106 @@ export function playShoothSound() {
     gain2.connect(ctx.destination);
     osc2.start(t);
     osc2.stop(t + duration);
+  }
+}
+
+// ── Double Shot sound ──────────────────────────────────────
+export function playDoubleShotSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Two quick pulses
+  for (let i = 0; i < 2; i++) {
+    const start = t + i * 0.05;
+    const duration = 0.06;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(800 + i * 200, start);
+    osc.frequency.exponentialRampToValueAtTime(100, start + duration);
+    gain.gain.setValueAtTime(0.1, start);
+    gain.gain.exponentialRampToValueAtTime(0.01, start + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + duration);
+  }
+}
+
+// ── Charge Up Logic ────────────────────────────────────────
+let chargeOsc = null;
+let chargeGain = null;
+
+export function updateChargeUpSound(active, progress) {
+  const ctx = getAudioContext();
+  if (active) {
+    if (!chargeOsc) {
+      chargeOsc = ctx.createOscillator();
+      chargeGain = ctx.createGain();
+      chargeOsc.type = 'sawtooth';
+      chargeGain.gain.setValueAtTime(0, ctx.currentTime);
+      chargeOsc.connect(chargeGain);
+      chargeGain.connect(ctx.destination);
+      chargeOsc.start();
+    }
+    // Frequency rises from 100Hz to 600Hz based on charge
+    const freq = 100 + progress * 500;
+    chargeOsc.frequency.setTargetAtTime(freq, ctx.currentTime, 0.1);
+    const volume = 0.02 + progress * 0.08;
+    chargeGain.gain.setTargetAtTime(volume, ctx.currentTime, 0.1);
+  } else {
+    if (chargeOsc) {
+      chargeGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+      chargeOsc.stop(ctx.currentTime + 0.1);
+      chargeOsc = null;
+      chargeGain = null;
+    }
+  }
+}
+
+export function playChargeFireSound(damage) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Smash Bros "Clink" logic for high damage
+  if (damage >= 450) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(2000, t);
+    osc.frequency.exponentialRampToValueAtTime(500, t + 0.15);
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.15);
+
+    // Add low boom
+    const boom = ctx.createOscillator();
+    const boomGain = ctx.createGain();
+    boom.type = 'sine';
+    boom.frequency.setValueAtTime(80, t);
+    boom.frequency.exponentialRampToValueAtTime(20, t + 0.4);
+    boomGain.gain.setValueAtTime(0.5, t);
+    boomGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+    boom.connect(boomGain);
+    boomGain.connect(ctx.destination);
+    boom.start(t);
+    boom.stop(t + 0.4);
+  } else {
+    // Normal medium beam sound
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(400, t);
+    osc.frequency.exponentialRampToValueAtTime(50, t + 0.2);
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.2);
   }
 }
 
@@ -264,6 +371,158 @@ export function playProximityAlert(pan, intensity) {
   osc.stop(ctx.currentTime + 0.1);
 }
 
+// ── Basic enemy spawn ──────────────────────────────────────
+export function playBasicEnemySpawn() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(400, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1);
+
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.1);
+}
+
+// ── Tank enemy spawn ───────────────────────────────────────
+export function playTankEnemySpawn() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(100, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(50, ctx.currentTime + 0.3);
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(200, ctx.currentTime);
+
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.3);
+}
+
+// ── Boss spawn/alert ───────────────────────────────────────
+export function playBossSpawn() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Create a deep, menacing drone
+  [40, 60, 80].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 1 ? 'sawtooth' : 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.5, t + 1.5);
+
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.1, t + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 1.5);
+  });
+}
+
+// ── Menu / UI Interaction ──────────────────────────────────
+export function playMenuClick() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(1200, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(1800, ctx.currentTime + 0.04);
+
+  gain.gain.setValueAtTime(0.1, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.04);
+}
+
+export function playMenuHoverSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(440, t);
+  gain.gain.setValueAtTime(0.05, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.03);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.03);
+}
+
+// ── Error / Rejection sound ────────────────────────────────
+export function playErrorSound() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(120, ctx.currentTime);
+  osc.frequency.setValueAtTime(100, ctx.currentTime + 0.1);
+
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.2);
+}
+
+// ── Buckshot fire (heavy mechanical thud) ──────────────────
+export function playBuckshotSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Low heavy thump
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(150, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+  gain.gain.setValueAtTime(0.3, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.15);
+
+  // Metallic "clack"
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'square';
+  osc2.frequency.setValueAtTime(800, t);
+  osc2.frequency.exponentialRampToValueAtTime(200, t + 0.05);
+  gain2.gain.setValueAtTime(0.08, t);
+  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.start(t);
+  osc2.stop(t + 0.05);
+}
+
 // ── Upgrade selected ───────────────────────────────────────
 export function playUpgradeSound() {
   const ctx = getAudioContext();
@@ -327,39 +586,38 @@ export function playSlowMoReverseSound() {
   osc.stop(t + 0.5);
 }
 
-// ── Lightning beam continuous sound (electric crackle) ─────
-let lightningInterval = null;
+// ── Lightning beam continuous sound (MP3 loop) ─────────────
+let lightningAudio = null;
+let lightningVolumeTimeout = null;
 
 export function startLightningSound() {
-  if (lightningInterval) return;  // Already playing
+  if (lightningAudio) return;  // Already playing
 
-  const ctx = getAudioContext();
+  lightningAudio = new Audio('mnt/project/soundfx/lightning_loop.mp3');
+  lightningAudio.loop = true;
+  lightningAudio.volume = 0.5; // "Full" starting volume
+  lightningAudio.play().catch(err => {
+    console.warn('[audio] Lightning loop playback failed:', err);
+  });
 
-  // Play subtle reminder crackle every 2 seconds (not constant)
-  lightningInterval = setInterval(() => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(150 + Math.random() * 100, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.1);
-
-    // MUCH quieter - 0.03 instead of 0.12
-    gain.gain.setValueAtTime(0.03, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.1);
-  }, 2000);  // Every 2 seconds instead of every 60ms
+  // After 4 seconds of continuous play, lower volume by 40%
+  lightningVolumeTimeout = setTimeout(() => {
+    if (lightningAudio) {
+      lightningAudio.volume = 0.3; // 40% reduction (0.5 * 0.6)
+      console.log('[audio] Lightning volume dipped (4s continuous)');
+    }
+  }, 4000);
 }
 
 export function stopLightningSound() {
-  if (lightningInterval) {
-    clearInterval(lightningInterval);
-    lightningInterval = null;
+  if (lightningAudio) {
+    lightningAudio.pause();
+    lightningAudio.currentTime = 0;
+    lightningAudio = null;
+  }
+  if (lightningVolumeTimeout) {
+    clearTimeout(lightningVolumeTimeout);
+    lightningVolumeTimeout = null;
   }
 }
 

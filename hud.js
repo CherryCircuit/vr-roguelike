@@ -10,37 +10,38 @@ import { State } from './game.js';
 let sceneRef, cameraRef;
 
 // Groups for different UI states
-const titleGroup        = new THREE.Group();
-const hudGroup          = new THREE.Group();
-const levelTextGroup    = new THREE.Group();
-const upgradeGroup      = new THREE.Group();
-const gameOverGroup     = new THREE.Group();
-const nameEntryGroup    = new THREE.Group();
-const scoreboardGroup   = new THREE.Group();
+const titleGroup = new THREE.Group();
+const hudGroup = new THREE.Group();
+const levelTextGroup = new THREE.Group();
+const upgradeGroup = new THREE.Group();
+const gameOverGroup = new THREE.Group();
+const nameEntryGroup = new THREE.Group();
+const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
+const readyGroup = new THREE.Group();
 
 // HUD element references
-let heartsSprite     = null;
-let killCountSprite  = null;
-let levelSprite      = null;
-let scoreSprite      = null;
-let comboSprite      = null;
-let fpsSprite        = null;
+let heartsSprite = null;
+let killCountSprite = null;
+let levelSprite = null;
+let scoreSprite = null;
+let comboSprite = null;
+let fpsSprite = null;
 
 // Damage numbers
-const damageNumbers  = [];
+const damageNumbers = [];
 
 // Upgrade card meshes (for raycasting)
-let upgradeCards     = [];
-let upgradeChoices   = [];
+let upgradeCards = [];
+let upgradeChoices = [];
 
 // Hit flash (red sphere inside camera)
-let hitFlash         = null;
-let hitFlashOpacity  = 0;
+let hitFlash = null;
+let hitFlashOpacity = 0;
 
 // Boss health bar (camera-attached, 3 segments for phases)
-let bossHealthGroup  = null;
-let bossHealthBars   = []; // 3 segments
+let bossHealthGroup = null;
+let bossHealthBars = []; // 3 segments
 
 // Title blink
 let titleBlinkSprite = null;
@@ -75,9 +76,9 @@ let countryItems = [];
 // ── Canvas text utility ────────────────────────────────────
 function makeTextTexture(text, opts = {}) {
   const canvas = document.createElement('canvas');
-  const ctx    = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d');
   const fontSize = opts.fontSize || 64;
-  const font     = `bold ${fontSize}px Arial, sans-serif`;
+  const font = `bold ${fontSize}px Arial, sans-serif`;
   const maxWidth = opts.maxWidth || null;
 
   ctx.font = font;
@@ -104,15 +105,15 @@ function makeTextTexture(text, opts = {}) {
   }
 
   // Measure text to size canvas
-  const textWidth  = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
+  const textWidth = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
   const lineHeight = fontSize * 1.3;
   const textHeight = lines.length * lineHeight;
 
-  canvas.width  = Math.ceil(textWidth) + 40;
+  canvas.width = Math.ceil(textWidth) + 40;
   canvas.height = Math.ceil(textHeight);
 
   // Re-set after resize
-  ctx.font      = font;
+  ctx.font = font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
@@ -122,7 +123,7 @@ function makeTextTexture(text, opts = {}) {
   // Optional glow
   if (opts.glow) {
     ctx.shadowColor = opts.glowColor || opts.color || '#00ffff';
-    ctx.shadowBlur  = opts.glowSize || 15;
+    ctx.shadowBlur = opts.glowSize || 15;
   }
 
   // Drop shadow
@@ -158,25 +159,25 @@ function makeSprite(text, opts = {}) {
   const mat = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
-    opacity: opts.opacity ?? 1,
-    depthTest: opts.depthTest ?? false,
+    opacity: opts.opacity !== undefined ? opts.opacity : 1,
+    depthTest: opts.depthTest !== undefined ? opts.depthTest : false,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(geometry, mat);
-  mesh.renderOrder = opts.renderOrder ?? 999;
+  mesh.renderOrder = opts.renderOrder !== undefined ? opts.renderOrder : 999;
   return mesh;
 }
 
 // ── Pixel heart drawing ────────────────────────────────────
 const HEART_PIXELS = [
-  [0,1,1,0,1,1,0],
-  [1,1,1,1,1,1,1],
-  [1,1,1,1,1,1,1],
-  [0,1,1,1,1,1,0],
-  [0,0,1,1,1,0,0],
-  [0,0,0,1,0,0,0],
+  [0, 1, 1, 0, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1, 1],
+  [1, 1, 1, 1, 1, 1, 1],
+  [0, 1, 1, 1, 1, 1, 0],
+  [0, 0, 1, 1, 1, 0, 0],
+  [0, 0, 0, 1, 0, 0, 0],
 ];
 
 function drawHeart(ctx, x, y, pixSize, state) {
@@ -200,14 +201,14 @@ function drawHeart(ctx, x, y, pixSize, state) {
 
 function makeHeartsTexture(health, maxHealth) {
   const heartCount = maxHealth / 2;
-  const pixSize    = 8;
-  const heartW     = 7 * pixSize;
-  const heartH     = 6 * pixSize;
-  const gap        = 6;
-  const canvas     = document.createElement('canvas');
-  canvas.width     = heartCount * (heartW + gap) + gap;
-  canvas.height    = heartH + 10;
-  const ctx        = canvas.getContext('2d');
+  const pixSize = 8;
+  const heartW = 7 * pixSize;
+  const heartH = 6 * pixSize;
+  const gap = 6;
+  const canvas = document.createElement('canvas');
+  canvas.width = heartCount * (heartW + gap) + gap;
+  canvas.height = heartH + 10;
+  const ctx = canvas.getContext('2d');
 
   for (let i = 0; i < heartCount; i++) {
     const hpForThisHeart = health - i * 2;
@@ -227,12 +228,14 @@ function makeHeartsTexture(health, maxHealth) {
 // ── Public API ─────────────────────────────────────────────
 
 export function initHUD(camera, scene) {
-  sceneRef  = scene;
+  sceneRef = scene;
   cameraRef = camera;
 
   // ── Title Screen (world-space, fixed position) ──
   createTitleScreen();
-  titleGroup.position.set(0, 1.6, -6);
+  titleGroup.position.set(0, 1.6, -3.5);
+  titleGroup.rotation.set(0, 0, 0);
+  titleGroup.visible = true;
   scene.add(titleGroup);
 
   // ── VR HUD (stationary on floor, Space Pirate Trainer style) ──
@@ -241,35 +244,12 @@ export function initHUD(camera, scene) {
   hudGroup.rotation.x = -Math.PI / 2;  // Rotate to face up (floor plane)
   scene.add(hudGroup);
 
-  // ── Level transition text (world-space) ──
-  levelTextGroup.visible = false;
-  levelTextGroup.rotation.set(0, 0, 0);  // Lock rotation
-  scene.add(levelTextGroup);
-
-  // ── Upgrade selection (world-space) ──
-  upgradeGroup.visible = false;
-  upgradeGroup.rotation.set(0, 0, 0);  // Lock rotation
-  scene.add(upgradeGroup);
-
-  // ── Game over / Victory (world-space) ──
-  gameOverGroup.visible = false;
-  gameOverGroup.rotation.set(0, 0, 0);
-  scene.add(gameOverGroup);
-
-  // ── Name entry (world-space) ──
-  nameEntryGroup.visible = false;
-  nameEntryGroup.rotation.set(0, 0, 0);
-  scene.add(nameEntryGroup);
-
-  // ── Scoreboard (world-space) ──
-  scoreboardGroup.visible = false;
-  scoreboardGroup.rotation.set(0, 0, 0);
-  scene.add(scoreboardGroup);
-
-  // ── Country select (world-space) ──
-  countrySelectGroup.visible = false;
-  countrySelectGroup.rotation.set(0, 0, 0);
-  scene.add(countrySelectGroup);
+  // ── UI Groups (initially hidden) ──
+  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup].forEach(g => {
+    g.visible = false;
+    g.rotation.set(0, 0, 0);
+    scene.add(g);
+  });
 
   // ── Hit flash (red sphere around camera) ──
   hitFlash = new THREE.Mesh(
@@ -287,11 +267,9 @@ export function initHUD(camera, scene) {
   camera.add(hitFlash);
 
   // ── FPS Counter (top left, attached to camera, more visible in VR) ──
-  fpsSprite = makeSprite('FPS: 0', { fontSize: 36, color: '#00ff00', shadow: true, scale: 0.2 });
-  fpsSprite.position.set(-0.35, 0.2, -0.5);  // Top left of view, more centered
+  fpsSprite = makeSprite('FPS: 0', { fontSize: 36, color: '#00ff00', shadow: true, scale: 0.15 });
+  fpsSprite.position.set(-0.15, 0.12, -0.5);  // Moved closer to center
   fpsSprite.renderOrder = 1001;
-  // Discard transparent pixels so the plane doesn't render as a dark box in VR
-  fpsSprite.material.alphaTest = 0.05;
   fpsSprite.material.depthTest = false;  // Always render on top
   camera.add(fpsSprite);
 
@@ -394,7 +372,7 @@ function createTitleScreen() {
     color: '#ffff00',
     glow: true,
     glowColor: '#ffff00',
-    scale: 0.25,
+    scale: 0.20,
   });
   btnText.position.set(0, 0, 0.01);
   btnGroup.add(btnText);
@@ -402,13 +380,12 @@ function createTitleScreen() {
   titleScoreboardBtn = btnMesh;
 
   // Version number
-  const now = new Date();
-  const pst = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-  const dateStr = `${pst.getMonth()+1}/${pst.getDate()}/${pst.getFullYear()} ${pst.getHours()}:${String(pst.getMinutes()).padStart(2,'0')} PT`;
-  const versionSprite = makeSprite(`ver. 0.023\n${dateStr}`, {
+  const versionDate = 'FEB 10 2026   12:10PM PT';
+  const versionNum = 'v0.044';
+  const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 32,
     color: '#888888',
-    scale: 0.25,
+    scale: 0.28,
   });
   versionSprite.position.set(0, -1.0, 0);
   titleGroup.add(versionSprite);
@@ -416,7 +393,7 @@ function createTitleScreen() {
 
 export function showTitle() {
   titleGroup.visible = true;
-  hudGroup.visible   = false;
+  hudGroup.visible = false;
 }
 
 export function hideTitle() {
@@ -432,7 +409,7 @@ export function updateTitle(now) {
 // ── VR HUD (hearts, kill counter, level, score) ────────────
 
 function createHUDElements() {
-  hudGroup.visible   = false;
+  hudGroup.visible = false;
   hudGroup.renderOrder = 999;
 
   // Floor-based HUD layout (Space Pirate Trainer style)
@@ -521,10 +498,11 @@ export function updateHUD(gameState) {
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.26 });
 
   // Combo - 200% larger with descriptive label
-  const combo = gameState._combo || 1;
+  const combo = getComboMultiplier();
   if (combo > 1) {
     comboSprite.visible = true;
-    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 });
+    const pulse = 1.0 + Math.sin(performance.now() * 0.01) * 0.1;
+    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 * pulse });
   } else {
     comboSprite.visible = false;
   }
@@ -559,7 +537,7 @@ export function hideLevelComplete() {
 export function showUpgradeCards(upgrades, playerPos, hand) {
   hideAll();
   upgradeGroup.visible = true;
-  upgradeCards   = [];
+  upgradeCards = [];
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
 
@@ -613,7 +591,7 @@ function createUpgradeCard(upgrade, position) {
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
   card.userData.isUpgradeCard = true;
-  card.userData.upgradeId     = upgrade.id;
+  card.userData.upgradeId = upgrade.id;
   group.add(card);
 
   // Border (gold for side-grade / shot-type cards)
@@ -864,13 +842,13 @@ export function updateHitFlash(dt) {
 
 export function spawnDamageNumber(position, damage, color) {
   const canvas = document.createElement('canvas');
-  const ctx    = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d');
   canvas.width = 128;
   canvas.height = 64;
 
   const fontSize = Math.min(48, 28 + damage / 6);
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  ctx.textAlign    = 'center';
+  ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
   // Drop shadow
@@ -885,8 +863,8 @@ export function spawnDamageNumber(position, damage, color) {
   texture.minFilter = THREE.LinearFilter;
 
   // Use PlaneGeometry instead of Sprite to prevent billboarding
-  // Increased scale significantly for better visibility
-  const scale = 0.25 + Math.min(damage / 100, 0.15);  // Much larger base scale
+  // Increased scale significantly for better visibility (+30% from before)
+  const scale = (0.25 + Math.min(damage / 100, 0.15)) * 1.3;
   const width = scale * 2;
   const height = scale;
 
@@ -912,7 +890,7 @@ export function spawnDamageNumber(position, damage, color) {
     0.8 + Math.random() * 0.5,
     (Math.random() - 0.5) * 0.5,
   );
-  mesh.userData.lifetime  = 500;  // Reduced from 1000ms for performance
+  mesh.userData.lifetime = 500;  // Reduced from 1000ms for performance
   mesh.userData.createdAt = performance.now();
 
   sceneRef.add(mesh);
@@ -927,9 +905,56 @@ export function spawnDamageNumber(position, damage, color) {
   }
 }
 
+export function spawnOuchBubble(position, text = 'OUCH!') {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 128;
+
+  // Background bubble
+  ctx.fillStyle = text.includes('STREAK') ? '#00ff44' : '#ffff00';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 6;
+
+  // Flashy comic bubble shape
+  ctx.beginPath();
+  ctx.moveTo(40, 60);
+  ctx.lineTo(20, 20); ctx.lineTo(80, 40);
+  ctx.lineTo(128, 10); ctx.lineTo(176, 40);
+  ctx.lineTo(236, 20); ctx.lineTo(216, 60);
+  ctx.lineTo(236, 100); ctx.lineTo(176, 80);
+  ctx.lineTo(128, 110); ctx.lineTo(80, 80);
+  ctx.lineTo(20, 100); ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.font = 'bold 36px "Comic Sans MS", cursive, sans-serif';
+  if (text.length > 8) ctx.font = 'bold 24px "Comic Sans MS", cursive, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = text.includes('STREAK') ? '#003311' : '#ff0000';
+  ctx.fillText(text, 128, 64);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.5, 0.75),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, side: THREE.DoubleSide })
+  );
+  mesh.position.copy(position);
+  mesh.position.y += 1.0;
+  mesh.position.z += 0.5;
+  mesh.renderOrder = 999;
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.lifetime = 800;
+  mesh.userData.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.5, 1.5, (Math.random() - 0.5) * 0.5);
+
+  sceneRef.add(mesh);
+  damageNumbers.push(mesh);
+}
+
 export function updateDamageNumbers(dt, now) {
   for (let i = damageNumbers.length - 1; i >= 0; i--) {
-    const s   = damageNumbers[i];
+    const s = damageNumbers[i];
     const age = now - s.userData.createdAt;
 
     if (age > s.userData.lifetime) {
@@ -951,14 +976,14 @@ let lastComboValue = 1;
 
 export function spawnComboPopup(combo, cameraPos) {
   const canvas = document.createElement('canvas');
-  const ctx    = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d');
   canvas.width = 512;
   canvas.height = 128;
 
   const text = `${combo}X COMBO!`;
   const fontSize = 72;
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  ctx.textAlign    = 'center';
+  ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
   // Drop shadow
@@ -993,8 +1018,8 @@ export function spawnComboPopup(combo, cameraPos) {
   mesh.position.z -= 2.5;
 
   mesh.userData.createdAt = performance.now();
-  mesh.userData.lifetime  = 2000;  // 2 seconds
-  mesh.userData.velocity  = new THREE.Vector3(0, 0.3, 0);  // Float upward
+  mesh.userData.lifetime = 2000;  // 2 seconds
+  mesh.userData.velocity = new THREE.Vector3(0, 0.3, 0);  // Float upward
   mesh.renderOrder = 999;
 
   sceneRef.add(mesh);
@@ -1090,13 +1115,16 @@ export function updateFPS(now, opts = {}) {
 // ── Helpers ────────────────────────────────────────────────
 
 function hideAll() {
-  titleGroup.visible          = false;
-  levelTextGroup.visible      = false;
-  upgradeGroup.visible        = false;
-  gameOverGroup.visible       = false;
-  nameEntryGroup.visible      = false;
-  scoreboardGroup.visible     = false;
-  countrySelectGroup.visible  = false;
+  titleGroup.visible = false;
+  levelTextGroup.visible = false;
+  upgradeGroup.visible = false;
+  gameOverGroup.visible = false;
+  nameEntryGroup.visible = false;
+  scoreboardGroup.visible = false;
+  countrySelectGroup.visible = false;
+  readyGroup.visible = false;
+  // Floor HUD shouldn't necessarily disappear during everything
+  // Specifically don't hide it if we want it visible during upgrades
 }
 
 // ── Title Scoreboard Button Hit ─────────────────────────────
@@ -1105,6 +1133,66 @@ export function getTitleButtonHit(raycaster) {
   if (!titleScoreboardBtn || !titleGroup.visible) return null;
   const hits = raycaster.intersectObject(titleScoreboardBtn, false);
   if (hits.length > 0) return 'scoreboard';
+  return null;
+}
+
+// ── Ready Screen ──────────────────────────────────────────
+export function showReadyScreen(level, playerPos) {
+  hideAll();
+  while (readyGroup.children.length) readyGroup.remove(readyGroup.children[0]);
+
+  // Position in front of the player
+  if (playerPos) {
+    readyGroup.position.copy(playerPos);
+    readyGroup.position.y = 1.6;
+    readyGroup.position.z -= 4;
+  } else {
+    readyGroup.position.set(0, 1.6, -4);
+  }
+  readyGroup.visible = true;
+
+  const header = makeSprite(`READY?`, {
+    fontSize: 70, color: '#ffff00', glow: true, scale: 0.6,
+  });
+  header.position.set(0, 0.8, 0);
+  readyGroup.add(header);
+
+  const subheader = makeSprite('SHOOT TO START', {
+    fontSize: 40, color: '#00ffff', scale: 0.4,
+  });
+  subheader.position.set(0, 0.4, 0);
+  readyGroup.add(subheader);
+
+  // START target
+  const btnGeo = new THREE.PlaneGeometry(1, 0.4);
+  const btnMat = new THREE.MeshBasicMaterial({ color: 0x003300, transparent: true, opacity: 0.8 });
+  const btn = new THREE.Mesh(btnGeo, btnMat);
+  btn.userData.readyAction = 'start';
+  btn.position.set(0, -0.2, 0);
+  readyGroup.add(btn);
+
+  readyGroup.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(btnGeo),
+    new THREE.LineBasicMaterial({ color: 0x00ff00 })
+  ));
+
+  const startTxt = makeSprite('START', { fontSize: 40, color: '#00ff00', scale: 0.3 });
+  startTxt.position.set(0, -0.2, 0.01);
+  readyGroup.add(startTxt);
+}
+
+export function hideReadyScreen() {
+  readyGroup.visible = false;
+}
+
+export function getReadyScreenHit(raycaster) {
+  if (!readyGroup.visible) return null;
+  const actionMeshes = [];
+  readyGroup.traverse(c => {
+    if (c.userData && c.userData.readyAction) actionMeshes.push(c);
+  });
+  const hits = raycaster.intersectObjects(actionMeshes, false);
+  if (hits.length > 0) return hits[0].object.userData.readyAction;
   return null;
 }
 
@@ -1175,10 +1263,10 @@ export function showNameEntry(score, level, storedName) {
 
   // Virtual keyboard
   const rows = [
-    ['Q','W','E','R','T','Y','U','I','O','P'],
-    ['A','S','D','F','G','H','J','K','L'],
-    ['Z','X','C','V','B','N','M','DEL'],
-    ['SPACE','OK'],
+    ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+    ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+    ['Z', 'X', 'C', 'V', 'B', 'N', 'M', 'DEL'],
+    ['SPACE', 'OK'],
   ];
 
   const keySize = 0.12;
@@ -1396,7 +1484,7 @@ export function showScoreboard(scores, headerText) {
     new THREE.EdgesGeometry(backGeo),
     new THREE.LineBasicMaterial({ color: 0xff4444 })
   ));
-  const backTxt = makeSprite('BACK', { fontSize: 28, color: '#ff4444', scale: 0.15 });
+  const backTxt = makeSprite('BACK', { fontSize: 24, color: '#ff4444', scale: 0.12 });
   backTxt.position.set(0, 0, 0.01);
   backGroup.add(backTxt);
   scoreboardGroup.add(backGroup);
@@ -1420,12 +1508,12 @@ function renderScoreboardCanvas() {
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, w - 2, h - 2);
 
-  const rowHeight = 42;
+  const rowHeight = 30; // Reduced from 42
   const maxVisible = Math.floor(h / rowHeight);
   const startIdx = scoreboardScrollOffset;
   const endIdx = Math.min(startIdx + maxVisible, scoreboardScores.length);
 
-  ctx.font = 'bold 24px Arial, sans-serif';
+  ctx.font = 'bold 18px Arial, sans-serif'; // Reduced from 24
   ctx.textBaseline = 'middle';
 
   for (let i = startIdx; i < endIdx; i++) {
@@ -1444,17 +1532,19 @@ function renderScoreboardCanvas() {
 
     // Name
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(score.name, 90, y);
+    ctx.fillText(score.name || 'ANONYMOUS', 90, y);
 
     // Score
     ctx.fillStyle = '#ffff00';
     ctx.textAlign = 'right';
-    ctx.fillText(score.score.toLocaleString(), 520, y);
+    const scoreVal = score.score !== undefined && score.score !== null ? score.score.toLocaleString() : '0';
+    ctx.fillText(scoreVal, 520, y);
 
     // Level
     ctx.fillStyle = '#00ffff';
     ctx.textAlign = 'right';
-    ctx.fillText(`L${score.level_reached}`, 600, y);
+    const levelVal = score.level_reached !== undefined && score.level_reached !== null ? `L${score.level_reached}` : 'L?';
+    ctx.fillText(levelVal, 600, y);
 
     // Country flag (if available)
     if (score.country) {
@@ -1463,9 +1553,9 @@ function renderScoreboardCanvas() {
           ...[...score.country.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
         );
         ctx.textAlign = 'left';
-        ctx.font = '22px Arial, sans-serif';
+        ctx.font = '16px Arial, sans-serif';
         ctx.fillText(flag, 640, y);
-        ctx.font = 'bold 24px Arial, sans-serif';
+        ctx.font = 'bold 18px Arial, sans-serif';
       } catch (e) { /* skip flag */ }
     }
 
@@ -1613,7 +1703,7 @@ export function showCountrySelect(countries, continents, initialContinent) {
 
   // BACK button
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -0.8, 0);
+  backGroup.position.set(0, -0.9, 0); // Moved down from -0.8
   const backGeo = new THREE.PlaneGeometry(0.6, 0.25);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -1714,4 +1804,125 @@ export function getCountrySelectHit(raycaster, countries) {
   if (hits.length > 0) return { action: 'back' };
 
   return null;
+}
+
+/**
+ * Unified hover effect for all HUD buttons and upgrade cards.
+ * Accepts an array of raycasters (one per controller).
+ * Returns true if a NEW hover occurred (to trigger sound).
+ */
+export function updateHUDHover(raycasters) {
+  const hoverables = [];
+
+  // 1. Title Scoreboard
+  if (titleGroup.visible && titleScoreboardBtn) hoverables.push(titleScoreboardBtn);
+
+  // 2. Upgrade Cards
+  if (upgradeGroup.visible) {
+    upgradeCards.forEach(card => {
+      const mesh = card.children.find(c => c.userData.isUpgradeCard);
+      if (mesh) hoverables.push(mesh);
+    });
+  }
+
+  // 3. Scoreboard / Regional
+  if (scoreboardGroup.visible) {
+    scoreboardGroup.traverse(c => {
+      if (c.userData && c.userData.scoreboardAction) hoverables.push(c);
+    });
+  }
+
+  // 4. Country Select
+  if (countrySelectGroup.visible) {
+    countrySelectGroup.traverse(c => {
+      // Continent tabs, country grid items, or the BACK button
+      if (c.userData && (c.userData.continentTab || c.userData.countryCode || c.userData.countryAction)) {
+        hoverables.push(c);
+      }
+    });
+  }
+
+  // 5. Ready Screen
+  if (readyGroup.visible) {
+    readyGroup.traverse(c => {
+      if (c.userData && c.userData.readyAction) hoverables.push(c);
+    });
+  }
+
+  if (hoverables.length === 0) return false;
+
+  // Find ALL hovered objects from ALL raycasters
+  const hoveredObjs = new Set();
+  raycasters.forEach(rc => {
+    const hits = rc.intersectObjects(hoverables, false);
+    if (hits.length > 0) hoveredObjs.add(hits[0].object);
+  });
+
+  let newHover = false;
+
+  // We need to keep track of ALL hoverables to reset those NOT hovered
+  // Traverse and reset or set scale
+  hoverables.forEach(obj => {
+    let target = obj;
+    // For many of our UI elements, the 'active area' is a Mesh inside a Group. 
+    // We want to scale the Group for the best visual effect.
+    if (obj.parent && obj.parent.type === 'Group') {
+      target = obj.parent;
+    }
+
+    if (hoveredObjs.has(obj)) {
+      if (!obj.userData._isActuallyHovered) {
+        obj.userData._isActuallyHovered = true;
+        newHover = true;
+      }
+      target.scale.set(1.1, 1.1, 1.1);
+    } else {
+      if (obj.userData._isActuallyHovered) {
+        obj.userData._isActuallyHovered = false;
+        target.scale.set(1.0, 1.0, 1.0);
+      }
+    }
+  });
+
+  return newHover;
+}
+
+/** Highlights the controller currently selected for upgrade */
+export function showUpgradeHandHighlight(hand, controllers) {
+  controllers.forEach((ctrl, i) => {
+    const isHand = (i === 0 && hand === 'left') || (i === 1 && hand === 'right');
+    const existing = ctrl.getObjectByName('upgradeHighlight');
+    if (existing) ctrl.remove(existing);
+
+    if (isHand) {
+      const group = new THREE.Group();
+      group.name = 'upgradeHighlight';
+
+      const geo = new THREE.OctahedronGeometry(0.1, 0);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.6 });
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
+
+      const glow = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.2 }));
+      glow.scale.set(1.4, 1.4, 1.4);
+      group.add(glow);
+
+      group.position.set(0, 0.05, 0);
+      ctrl.add(group);
+    }
+  });
+}
+
+export function hideUpgradeHandHighlights(controllers) {
+  controllers.forEach(ctrl => {
+    const existing = ctrl.getObjectByName('upgradeHighlight');
+    if (existing) ctrl.remove(existing);
+  });
+}
+
+/** Updates the spinning animation of the highlight */
+export function updateUpgradeHandHighlights(now) {
+  [readyGroup, upgradeGroup].forEach(g => {
+    // This is handled via normal scene graph if attached to controller
+  });
 }
