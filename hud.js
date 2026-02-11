@@ -49,6 +49,9 @@ let titleBlinkSprite = null;
 // Title scoreboard button
 let titleScoreboardBtn = null;
 
+// Title diagnostics button
+let titleDiagBtn = null;
+
 // Name entry state
 let nameEntryName = '';
 let nameEntryCursor = 0;
@@ -379,6 +382,33 @@ function createTitleScreen() {
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
 
+  // Diagnostics button
+  const diagBtnGroup = new THREE.Group();
+  diagBtnGroup.position.set(1.5, -0.6, 0);
+  const diagBtnGeo = new THREE.PlaneGeometry(1.2, 0.3);
+  const diagBtnMat = new THREE.MeshBasicMaterial({
+    color: 0x001133,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+  });
+  const diagBtnMesh = new THREE.Mesh(diagBtnGeo, diagBtnMat);
+  diagBtnMesh.userData.isTitleDiagBtn = true;
+  diagBtnGroup.add(diagBtnMesh);
+  const diagBtnBorderGeo = new THREE.EdgesGeometry(diagBtnGeo);
+  diagBtnGroup.add(new THREE.LineSegments(diagBtnBorderGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
+  const diagBtnText = makeSprite('DIAGNOSTICS', {
+    fontSize: 36,
+    color: '#00ff88',
+    glow: true,
+    glowColor: '#00ff88',
+    scale: 0.20,
+  });
+  diagBtnText.position.set(0, 0, 0.01);
+  diagBtnGroup.add(diagBtnText);
+  titleGroup.add(diagBtnGroup);
+  titleDiagBtn = diagBtnMesh;
+
   // Version number
   const versionDate = 'FEB 10 2026   12:10PM PT';
   const versionNum = 'v0.044';
@@ -389,6 +419,17 @@ function createTitleScreen() {
   });
   versionSprite.position.set(0, -1.0, 0);
   titleGroup.add(versionSprite);
+
+  // Debug mode indicator
+  const isDebugMode = typeof window !== 'undefined' && window.debugPerfMonitor;
+  const debugText = isDebugMode ? 'DEBUG MODE: ON' : 'DEBUG MODE: OFF';
+  const debugSprite = makeSprite(debugText, {
+    fontSize: 24,
+    color: isDebugMode ? '#00ff00' : '#666666',
+    scale: 0.18,
+  });
+  debugSprite.position.set(2.5, -0.85, 0);
+  titleGroup.add(debugSprite);
 }
 
 export function showTitle() {
@@ -1130,10 +1171,79 @@ function hideAll() {
 // ── Title Scoreboard Button Hit ─────────────────────────────
 
 export function getTitleButtonHit(raycaster) {
-  if (!titleScoreboardBtn || !titleGroup.visible) return null;
-  const hits = raycaster.intersectObject(titleScoreboardBtn, false);
-  if (hits.length > 0) return 'scoreboard';
+  if (!titleGroup.visible) return null;
+
+  // Check diagnostics button
+  if (titleDiagBtn) {
+    const diagHits = raycaster.intersectObject(titleDiagBtn, false);
+    if (diagHits.length > 0) return 'diagnostics';
+  }
+
+  // Check scoreboard button
+  if (titleScoreboardBtn) {
+    const hits = raycaster.intersectObject(titleScoreboardBtn, false);
+    if (hits.length > 0) return 'scoreboard';
+  }
+
   return null;
+}
+
+// ── Run Diagnostics ──────────────────────────────────────
+export function runDiagnostics() {
+  const results = [];
+  let allPassed = true;
+
+  // Check scene
+  if (!sceneRef) {
+    results.push('❌ Scene reference is missing');
+    allPassed = false;
+  } else if (sceneRef.children.length === 0) {
+    results.push('❌ Scene is empty (no objects)');
+    allPassed = false;
+  } else {
+    results.push(`✅ Scene has ${sceneRef.children.length} objects`);
+  }
+
+  // Check camera
+  if (!cameraRef) {
+    results.push('❌ Camera reference is missing');
+    allPassed = false;
+  } else {
+    results.push(`✅ Camera at (${cameraRef.position.x.toFixed(1)}, ${cameraRef.position.y.toFixed(1)}, ${cameraRef.position.z.toFixed(1)})`);
+  }
+
+  // Check groups visibility
+  if (!titleGroup.visible) {
+    results.push('⚠️ Title group is not visible (expected)');
+  } else {
+    results.push('✅ Title group is visible');
+  }
+
+  // Check UI groups are in scene
+  const groupsToCheck = [titleGroup, hudGroup, levelTextGroup, upgradeGroup, gameOverGroup];
+  groupsToCheck.forEach((g, i) => {
+    if (g) {
+      if (!sceneRef.children.includes(g)) {
+        results.push(`❌ Group ${i} is not in scene`);
+        allPassed = false;
+      } else {
+        results.push(`✅ Group ${i} is in scene`);
+      }
+    }
+  });
+
+  // Show results in console
+  console.log('=== DIAGNOSTICS RESULTS ===');
+  results.forEach(r => console.log(r));
+  console.log('===========================');
+
+  // Also show on the web page
+  if (typeof window !== 'undefined' && window.showWebError) {
+    const status = allPassed ? 'ALL DIAGNOSTICS PASSED' : 'SOME DIAGNOSTICS FAILED';
+    window.showWebError(status, results.join('\n'));
+  }
+
+  return allPassed;
 }
 
 // ── Ready Screen ──────────────────────────────────────────
@@ -1814,8 +1924,11 @@ export function getCountrySelectHit(raycaster, countries) {
 export function updateHUDHover(raycasters) {
   const hoverables = [];
 
-  // 1. Title Scoreboard
-  if (titleGroup.visible && titleScoreboardBtn) hoverables.push(titleScoreboardBtn);
+  // 1. Title Scoreboard & Diagnostics
+  if (titleGroup.visible) {
+    if (titleScoreboardBtn) hoverables.push(titleScoreboardBtn);
+    if (titleDiagBtn) hoverables.push(titleDiagBtn);
+  }
 
   // 2. Upgrade Cards
   if (upgradeGroup.visible) {

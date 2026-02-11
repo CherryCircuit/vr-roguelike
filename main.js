@@ -35,7 +35,7 @@ import {
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showReadyScreen, hideReadyScreen, getReadyScreenHit, updateHUDHover,
-  showUpgradeHandHighlight, hideUpgradeHandHighlights
+  showUpgradeHandHighlight, hideUpgradeHandHighlights, runDiagnostics
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -136,62 +136,85 @@ init();
 function init() {
   console.log('[SPACEOMICIDE] Initialising...');
 
-  // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.012);
+  try {
+    // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+    scene.fog = new THREE.FogExp2(0x000000, 0.012);
 
-  // Camera
-  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 1.6, 0);
+    console.log('[init] Scene and fog created');
 
-  // Renderer — optimized for Quest performance
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));  // Cap pixel ratio for perf
-  renderer.xr.enabled = true;
-  // No tone mapping — we use MeshBasicMaterial so ACES adds shader cost with no benefit
-  renderer.toneMapping = THREE.NoToneMapping;
-  document.body.appendChild(renderer.domElement);
+    // Camera
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 1.6, 0);
+    console.log('[init] Camera created');
 
-  // VR Button
-  const vrButton = VRButton.createButton(renderer);
-  document.body.appendChild(vrButton);
+    // Renderer — optimized for Quest performance
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));  // Cap pixel ratio for perf
+    renderer.xr.enabled = true;
+    // No tone mapping — we use MeshBasicMaterial so ACES adds shader cost with no benefit
+    renderer.toneMapping = THREE.NoToneMapping;
+    document.body.appendChild(renderer.domElement);
+    console.log('[init] Renderer created');
 
-  if (!navigator.xr) {
-    document.getElementById('no-vr').style.display = 'block';
-    console.warn('[init] WebXR not supported');
-  } else {
-    navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
-      if (!supported) {
-        document.getElementById('no-vr').style.display = 'block';
-        console.warn('[init] immersive-vr not supported');
-      }
-    });
+    // VR Button
+    const vrButton = VRButton.createButton(renderer);
+    document.body.appendChild(vrButton);
+    console.log('[init] VR button created');
+
+    if (!navigator.xr) {
+      document.getElementById('no-vr').style.display = 'block';
+      console.warn('[init] WebXR not supported');
+    } else {
+      navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+        if (!supported) {
+          document.getElementById('no-vr').style.display = 'block';
+          console.warn('[init] immersive-vr not supported');
+        }
+      });
+    }
+
+    // Build world
+    createEnvironment();
+    console.log('[init] Environment created');
+
+    setupControllers();
+    console.log('[init] Controllers set up');
+
+    // Init subsystems
+    initEnemies(scene);
+    console.log('[init] Enemies initialized');
+
+    initHUD(camera, scene);
+    console.log('[init] HUD initialized');
+
+    // Start at title
+    resetGame();
+    showTitle();
+    console.log('[init] Title screen shown');
+
+    // Listeners
+    window.addEventListener('resize', onWindowResize);
+
+    // Render loop
+    renderer.setAnimationLoop(render);
+    console.log('[init] Render loop started');
+
+    // Start menu music
+    playMusic('menu');
+    console.log('[init] Menu music started');
+
+    console.log('[init] SPACEOMICIDE ready — pull trigger at title screen to start');
+  } catch (e) {
+    console.error('[INIT ERROR]', e);
+    if (typeof window !== 'undefined' && window.showWebError) {
+      window.showWebError('Initialization failed: ' + e.message, e.stack || '');
+    } else {
+      alert('Initialization failed: ' + e.message);
+    }
   }
-
-  // Build world
-  createEnvironment();
-  setupControllers();
-
-  // Init subsystems
-  initEnemies(scene);
-  initHUD(camera, scene);
-
-  // Start at title
-  resetGame();
-  showTitle();
-
-  // Listeners
-  window.addEventListener('resize', onWindowResize);
-
-  // Render loop
-  renderer.setAnimationLoop(render);
-
-  // Start menu music
-  playMusic('menu');
-
-  console.log('[init] SPACEOMICIDE ready — pull trigger at title screen to start');
 }
 
 // ============================================================
@@ -709,6 +732,11 @@ function handleTitleTrigger(controller) {
   const raycaster = new THREE.Raycaster(origin, direction, 0, 20);
 
   const btnHit = getTitleButtonHit(raycaster);
+  if (btnHit === 'diagnostics') {
+    playMenuClick();
+    runDiagnostics();
+    return;
+  }
   if (btnHit === 'scoreboard') {
     playMenuClick();
     scoreboardFromGameOver = false;
@@ -938,7 +966,7 @@ function startGame() {
   game._levelConfig = getLevelConfig();
   showHUD();
 
-  // Blasters should be VISIBLE for the ready screen
+  // Make blasters visible for gameplay (they're controlled by render loop for charge states)
   blasterDisplays.forEach(d => { if (d) d.visible = true; });
 
   playMusic('levels1to5');
@@ -1876,6 +1904,59 @@ function render(timestamp) { try {
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
+  // Self-diagnostic on first render (verify critical systems)
+  if (frameCount === 1) {
+    console.log('[self-test] First render - checking critical systems...');
+
+    const checks = [];
+
+    // Check scene has children
+    if (!scene || scene.children.length === 0) {
+      checks.push('FAIL: Scene is empty or undefined');
+    } else {
+      checks.push(`PASS: Scene has ${scene.children.length} objects`);
+    }
+
+    // Check camera position
+    if (!camera || !camera.position) {
+      checks.push('FAIL: Camera or camera.position is undefined');
+    } else {
+      checks.push(`PASS: Camera at (${camera.position.x.toFixed(1)}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)})`);
+    }
+
+    // Check renderer
+    if (!renderer) {
+      checks.push('FAIL: Renderer is undefined');
+    } else {
+      checks.push('PASS: Renderer initialized');
+    }
+
+    // Check XR session
+    if (typeof renderer !== 'undefined' && renderer.xr) {
+      checks.push(`PASS: XR presenting: ${renderer.xr.isPresenting}`);
+    }
+
+    // Check fog
+    if (!scene.fog) {
+      checks.push('FAIL: Scene fog is undefined');
+    } else {
+      const fogDensity = scene.fog.density || 0;
+      checks.push(`PASS: Fog density: ${fogDensity.toFixed(4)}`);
+    }
+
+    // Log all checks
+    checks.forEach(check => console.log('[self-test]', check));
+
+    // If any failures, show error
+    const failures = checks.filter(c => c.startsWith('FAIL'));
+    if (failures.length > 0) {
+      const error = new Error('Self-diagnostic failed: ' + failures.join('; '));
+      throw error;
+    }
+
+    console.log('[self-test] All checks passed!');
+  }
+
   // Apply bullet-time slow-mo and ramp-out (use raw dt)
   if (slowMoRampOut) {
     slowMoRampOutTimer -= rawDt;
@@ -2351,7 +2432,13 @@ function showError(e) {
   if (errorShown) return;
   errorShown = true;
   console.error(e);
-  
+
+  // Show DOM error overlay (visible in web view)
+  if (typeof window !== 'undefined' && window.showWebError) {
+    window.showWebError(e.message || 'Unknown error', e.stack || '');
+  }
+
+  // Create VR error mesh (visible in VR)
   const canvas = document.createElement("canvas");
   canvas.width = 1024;
   canvas.height = 256;
@@ -2362,11 +2449,11 @@ function showError(e) {
   ctx.font = "40px monospace";
   ctx.fillText("ERROR: " + e.message, 20, 100);
   ctx.fillText((e.stack || "").substring(0, 60), 20, 160);
-  
+
   const tex = new THREE.CanvasTexture(canvas);
   const mat = new THREE.MeshBasicMaterial({ map: tex, depthTest: false });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.5), mat);
-  
+
   if (camera) {
     camera.add(mesh);
     mesh.position.set(0, 0, -1.5);
