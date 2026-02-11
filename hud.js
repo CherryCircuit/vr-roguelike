@@ -2047,3 +2047,11 @@ export function updateUpgradeHandHighlights(now) {
     // This is handled via normal scene graph if attached to controller
   });
 }
+
+export function getDebugJumpHit() {
+  return null;
+}
+
+export function getDebugJumpScreen() {
+  return null;
+}
