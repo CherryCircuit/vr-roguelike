@@ -349,7 +349,7 @@ function createSun() {
   sunGlowRef = glow;
 
   createOminousHorizon();
-  createAurora();
+  // createAurora();
   // Atmosphere: vertical gradient cylinder around player
   createAtmosphere();
 }
