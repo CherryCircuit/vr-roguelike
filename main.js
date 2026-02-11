@@ -1364,7 +1364,8 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
   console.log('[SPAWN PROJ] START');
   const now = performance.now();
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
-  const isBuckshot = stats.spreadAngle > 0;
+  // TEMPORARILY REMOVED: const isBuckshot = stats.spreadAngle > 0;
+  const isBuckshot = false; // HARDCODED FALSE TO PREVENT CRASH
   console.log('[SPAWN PROJ] Is buckshot:', isBuckshot);
 
   // Big Boom: only one exploding shot per hand every 2.75s
