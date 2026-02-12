@@ -150,6 +150,11 @@ function init() {
     document.body.appendChild(stats.dom);
   }
 
+  // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000000);
+  scene.fog = new THREE.FogExp2(0x000000, 0.012);
+
   // Setup Lightning Pool
   scene.add(lightningGroup);
   for (let i = 0; i < 40; i++) {
@@ -174,11 +179,6 @@ function init() {
     explosionVisualPool.push(mesh);
     scene.add(mesh);
   }
-
-  // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.012);
 
   // Camera
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
