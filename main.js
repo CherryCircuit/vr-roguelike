@@ -9,7 +9,7 @@ import Stats from 'three/addons/libs/stats.module.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic } from './audio.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound } from './audio.js';
 // getMusicFrequencyData removed - music visualizer commented out
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -27,7 +27,9 @@ import {
   updateComboPopups, checkComboIncrease,
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
-  showCountrySelect, hideCountrySelect, getCountrySelectHit
+  showCountrySelect, hideCountrySelect, getCountrySelectHit,
+  // [Power Outage Update] #3, #8: New HUD functions
+  showBossAlert, hideBossAlert, updateBossAlert, showKillsRemainingMessage, updateKillsRemainingMessage
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -922,7 +924,11 @@ function handleCountrySelectTrigger(controller) {
       const label = country ? country.name : result.code;
       showScoreboard([], 'LOADING...');
       fetchScoresByCountry(result.code).then(scores => {
-        showScoreboard(scores, `${label.toUpperCase()} LEADERBOARD`);
+        // [Power Outage Update] #13: Pass country info for header split
+        showScoreboard(scores, `${label.toUpperCase()} LEADERBOARD`, {
+          countryCode: result.code,
+          countryName: label
+        });
       });
     }
   }
@@ -996,11 +1002,19 @@ function startGame() {
 
 function completeLevel() {
   console.log(`[game] Level ${game.level} complete`);
-  game.state = State.LEVEL_COMPLETE;
-  clearAllEnemies();
+  
+  // [Power Outage Update] #9: Store completed kill counts for HUD display
+  const cfg = game._levelConfig;
+  game._completedKills = game.kills;
+  game._completedKillTarget = cfg ? cfg.killTarget : game.kills;
+  
+  // [Power Outage Update] #6: Enter slow-mo finale instead of immediate completion
+  game.state = State.LEVEL_COMPLETE_SLOWMO;
+  game.stateTimer = 3.0; // 3 seconds of slow-mo
+  timeScale = 0.15; // Heavy slow-mo
+  playBigExplosionSound();
   stopLightningSound();
-  game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
-  game.stateTimer = 2.0; // cooldown before upgrade screen
+  game.justBossKill = cfg && cfg.isBoss;
   showLevelComplete(game.level, camera.position);
 }
 
@@ -1085,12 +1099,26 @@ function advanceLevelAfterUpgrade() {
   game.level++;
   game.kills = 0;
 
+  // [Power Outage Update] #9: Reset kills remaining flag for new level
+  game._shownKillsRemaining = false;
+
   if (game.level > 20) {
     endGame(true); // victory
   } else {
-    game.state = State.PLAYING;
     game._levelConfig = getLevelConfig();
-    showHUD();
+    
+    // [Power Outage Update] #2, #3: Check for boss level - enter BOSS_ALERT state
+    if (game._levelConfig.isBoss) {
+      game.state = State.BOSS_ALERT;
+      game.stateTimer = 3.0; // 3 second alert sequence
+      stopMusic(); // Silence before boss
+      playBossAlertSound();
+      showBossAlert();
+      console.log(`[game] Boss alert for level ${game.level}`);
+    } else {
+      game.state = State.PLAYING;
+      showHUD();
+    }
 
     // Hide blaster displays during gameplay
     blasterDisplays.forEach(d => { if (d) d.visible = false; });
@@ -1115,6 +1143,11 @@ function endGame(victory) {
   // Stop music
   stopMusic();
   stopLightningSound();
+
+  // [Power Outage Update] #15: Play game over sound on death
+  if (!victory) {
+    playGameOverSound();
+  }
 
   if (victory) {
     showVictory(game.score, camera.position);
@@ -1147,19 +1180,26 @@ function shootWeapon(controller, index) {
   // Fire projectile(s)
   const count = stats.projectileCount;
 
-  // Calculate perpendicular offset axis for parallel multi-shot
-  const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(_tempQuat);
-  const gap = 0.08; // Gap between parallel shots
-
+  // [Power Outage Update] #1: Buckshot now uses cone spread instead of parallel lines
   for (let i = 0; i < count; i++) {
-    let spawnOrigin = _tempVec.clone();
-
-    if (count > 1) {
-      const offsetIndex = i - (count - 1) / 2;
-      spawnOrigin.addScaledVector(rightAxis, offsetIndex * gap);
+    let pelletDir = _tempDir.clone();
+    
+    if (stats.spreadAngle > 0) {
+      // Apply random cone spread (~3° = 0.0524 radians default)
+      const spreadRad = (stats.spreadAngle * Math.PI) / 180;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * spreadRad;
+      const perturbX = Math.sin(phi) * Math.cos(theta);
+      const perturbY = Math.sin(phi) * Math.sin(theta);
+      const up = new THREE.Vector3(0, 1, 0);
+      const right = new THREE.Vector3().crossVectors(pelletDir, up).normalize();
+      const trueUp = new THREE.Vector3().crossVectors(right, pelletDir).normalize();
+      pelletDir.addScaledVector(right, perturbX);
+      pelletDir.addScaledVector(trueUp, perturbY);
+      pelletDir.normalize();
     }
 
-    spawnProjectile(spawnOrigin, _tempDir.clone(), index, stats);
+    spawnProjectile(_tempVec.clone(), pelletDir, index, stats);
   }
 
   // console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
@@ -1487,9 +1527,11 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
   // Tank weak point (one random voxel takes double damage)
   if (hitWeakPoint) damage *= 2;
 
-  // Critical hit
+  // [Power Outage Update] #14: Track crit for visual feedback
+  let isCrit = false;
   if (stats.critChance > 0 && Math.random() < stats.critChance) {
     damage *= (stats.critMultiplier || 2);
+    isCrit = true;
   }
 
   // Fire debuff increases damage taken
@@ -1506,8 +1548,8 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
     game.handStats[hand].totalDamage += damage;
   }
 
-  // Spawn damage number
-  spawnDamageNumber(hitPoint, damage, '#ffffff');
+  // [Power Outage Update] #14: Pass crit info to damage number
+  spawnDamageNumber(hitPoint, damage, isCrit ? '#ffff00' : '#ffffff', isCrit);
   playHitSound();
 
   // Apply status effects
@@ -1543,8 +1585,17 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
         console.log('[vampiric] Healed 1 HP');
       }
 
-      // Check level complete
+      // [Power Outage Update] #8: Show "5 KILLS REMAINING" message
       const cfg = game._levelConfig;
+      if (cfg) {
+        const remaining = cfg.killTarget - game.kills;
+        if (remaining === 5 && !game._shownKillsRemaining) {
+          game._shownKillsRemaining = true;
+          showKillsRemainingMessage(5);
+        }
+      }
+
+      // Check level complete
       if (cfg && game.kills >= cfg.killTarget) {
         completeLevel();
       }
@@ -1800,11 +1851,15 @@ function spawnEnemyWave(dt) {
       const pos = getSpawnPosition(cfg.airSpawns, verticalAngle);
       spawnEnemy(type, pos, cfg);
 
-      // Alert on fast/swarm enemy spawn
+      // [Power Outage Update] #7: Spawn sounds for all enemy types
       if (type === 'fast') {
         playFastEnemySpawn();
       } else if (type === 'swarm') {
         playSwarmEnemySpawn();
+      } else if (type === 'basic') {
+        playBasicEnemySpawn();
+      } else if (type === 'tank') {
+        playTankEnemySpawn();
       }
     }
   }
@@ -1983,8 +2038,9 @@ function render(timestamp) {
     if (boss) {
       updateBoss(dt, now, playerPos);
       updateBossMinions(dt, playerPos);
+      // [Power Outage Update] #4: Pass boss mesh for world-space health bar positioning
       showBossHealthBar(boss.hp, boss.maxHp, boss.phases);
-      updateBossHealthBar(boss.hp, boss.maxHp, boss.phases);
+      updateBossHealthBar(boss.hp, boss.maxHp, boss.phases, boss.mesh);
     } else {
       hideBossHealthBar();
     }
@@ -2095,8 +2151,77 @@ function render(timestamp) {
     }
   }
 
+  // [Power Outage Update] #6: Slow-mo level complete finale
+  else if (st === State.LEVEL_COMPLETE_SLOWMO) {
+    game.stateTimer -= rawDt; // Use raw time, not scaled
+    timeScale = 0.15; // Maintain slow-mo
+    
+    // After ~1.5s: explode all remaining enemies
+    if (game.stateTimer <= 1.5 && !game._slowMoExplosionsDone) {
+      game._slowMoExplosionsDone = true;
+      const enemies = getEnemies();
+      enemies.forEach((e, i) => {
+        // Trigger explosion effect
+        spawnDamageNumber(e.mesh.position, e.hp || 10, '#ff8800');
+        playExplosionSound();
+        destroyEnemy(i);
+      });
+    }
+    
+    // [Power Outage Update] #9: Show highlighted kill counter during slow-mo
+    if (frameCount % 3 === 0 && game._completedKills !== undefined) {
+      // Create highlighted HUD data
+      const highlightedGame = {
+        ...game,
+        kills: game._completedKills,
+        _levelConfig: { ...game._levelConfig, killTarget: game._completedKillTarget },
+        _highlighted: true
+      };
+      updateHUD(highlightedGame);
+    }
+    
+    // After 3s: restore time and transition to LEVEL_COMPLETE
+    if (game.stateTimer <= 0) {
+      timeScale = 1.0;
+      game._slowMoExplosionsDone = false;
+      clearAllEnemies();
+      hideLevelComplete();
+      game.state = State.LEVEL_COMPLETE;
+      game.stateTimer = 0.5;
+      showLevelComplete(game.level, camera.position);
+    }
+  }
+
+  // [Power Outage Update] #3: Boss alert sequence
+  else if (st === State.BOSS_ALERT) {
+    game.stateTimer -= rawDt;
+    updateBossAlert(now);
+    
+    // Play alert sound periodically
+    if (game.stateTimer > 1.0 && game.stateTimer < 2.5 && !game._alertSound2) {
+      game._alertSound2 = true;
+      playBossAlertSound();
+    }
+    
+    // After 3s: transition to PLAYING, spawn boss, start boss music
+    if (game.stateTimer <= 0) {
+      hideBossAlert();
+      game._alertSound2 = false;
+      game.state = State.PLAYING;
+      showHUD();
+      
+      // Start boss music
+      const bossCategory = `boss${game.level}`;
+      playMusic(bossCategory);
+      
+      console.log(`[game] Boss fight starting at level ${game.level}`);
+    }
+  }
+
   // ── Upgrade selection ──
   else if (st === State.UPGRADE_SELECT) {
+    // [Power Outage Update] #9: Hide HUD during upgrade selection
+    hideHUD();
     upgradeSelectionCooldown = Math.max(0, upgradeSelectionCooldown - dt);
     updateUpgradeCards(now, upgradeSelectionCooldown);
 
@@ -2194,6 +2319,9 @@ function render(timestamp) {
   updateDamageNumbers(dt, now);
   updateComboPopups(dt, now);
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
+  // [Power Outage Update] #3, #8: Update boss alert and kills remaining message
+  updateBossAlert(now);
+  updateKillsRemainingMessage(now);
   updateFPS(now, {
     perfMonitor: typeof window !== 'undefined' && window.debugPerfMonitor,
     frameTimeMs: rawDt * 1000,

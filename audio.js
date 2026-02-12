@@ -400,6 +400,33 @@ export function playBossSpawn() {
   });
 }
 
+// [Power Outage Update] #3: Boss alert klaxon sound (3 beeps over ~2 seconds)
+export function playBossAlertSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Three urgent beeps
+  for (let i = 0; i < 3; i++) {
+    const beepTime = t + i * 0.7;
+    
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(800, beepTime);
+    osc.frequency.setValueAtTime(1000, beepTime + 0.1);
+    osc.frequency.setValueAtTime(800, beepTime + 0.2);
+
+    gain.gain.setValueAtTime(0.25, beepTime);
+    gain.gain.setValueAtTime(0.25, beepTime + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.01, beepTime + 0.35);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(beepTime);
+    osc.stop(beepTime + 0.4);
+  }
+}
+
 // ── Menu / UI Interaction ──────────────────────────────────
 export function playMenuClick() {
   const ctx = getAudioContext();
@@ -539,6 +566,31 @@ const musicTracks = {
     'mnt/project/music/0202_Levels_6-9.mp3',
     'mnt/project/music/0203_Levels_6-9.mp3',
     'mnt/project/music/0204_Levels_6-9.mp3'
+  ],
+  // [Power Outage Update] #2: Boss music playlists for each boss level
+  boss5: [
+    'mnt/project/music/B101_Level_05_Boss.mp3',
+    'mnt/project/music/B102_Level_05_Boss.mp3',
+    'mnt/project/music/B103_Level_05_Boss.mp3',
+    'mnt/project/music/B104_Level_05_Boss.mp3'
+  ],
+  boss10: [
+    'mnt/project/music/B201_Level_10_Boss.mp3',
+    'mnt/project/music/B202_Level_10_Boss.mp3',
+    'mnt/project/music/B203_Level_10_Boss.mp3',
+    'mnt/project/music/B204_Level_10_Boss.mp3'
+  ],
+  boss15: [
+    'mnt/project/music/B301_Level_15_Boss.mp3',
+    'mnt/project/music/B302_Level_15_Boss.mp3',
+    'mnt/project/music/B303_Level_15_Boss.mp3',
+    'mnt/project/music/B304_Level_15_Boss.mp3'
+  ],
+  boss20: [
+    'mnt/project/music/B401_Level_20_Boss.mp3',
+    'mnt/project/music/B402_Level_20_Boss.mp3',
+    'mnt/project/music/B403_Level_20_Boss.mp3',
+    'mnt/project/music/B404_Level_20_Boss.mp3'
   ]
 };
 
@@ -644,4 +696,57 @@ export function setMusicVolume(vol) {
   if (currentMusic) {
     currentMusic.volume = musicVolume;
   }
+}
+
+// [Power Outage Update] #6: Big explosion sound for level complete finale
+export function playBigExplosionSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const noise = ctx.createBufferSource();
+  noise.buffer = getExplosionBuffer();
+  noise.playbackRate.value = 0.2 + Math.random() * 0.3; // Lower, deeper
+
+  const duration = 0.8 + Math.random() * 0.4; // Longer duration
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(1500, t);
+  filter.frequency.exponentialRampToValueAtTime(30, t + duration);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.35, t); // Louder
+  gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  noise.start(t);
+  noise.stop(t + duration);
+
+  // Add deep boom
+  const osc = ctx.createOscillator();
+  const oscGain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(60 + Math.random() * 30, t);
+  osc.frequency.exponentialRampToValueAtTime(20, t + duration);
+  oscGain.gain.setValueAtTime(0.2, t);
+  oscGain.gain.exponentialRampToValueAtTime(0.01, t + duration * 0.9);
+  osc.connect(oscGain);
+  oscGain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + duration);
+}
+
+// [Power Outage Update] #15: Game over sound effect
+let gameOverAudio = null;
+
+export function playGameOverSound() {
+  if (gameOverAudio) {
+    gameOverAudio.pause();
+    gameOverAudio.currentTime = 0;
+  }
+  gameOverAudio = new Audio('mnt/project/music/XX_Game_Over.mp3');
+  gameOverAudio.volume = 0.5;
+  gameOverAudio.play().catch(() => {});
 }
