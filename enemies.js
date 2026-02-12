@@ -4,6 +4,7 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ── Voxel patterns (simplified for performance) ───────────
 const PATTERNS = {
@@ -32,8 +33,8 @@ function parsePattern(strings) {
 // ── Enemy type stats ───────────────────────────────────────
 const ENEMY_DEFS = {
   basic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.29, baseHp: 30, baseSpeed: 1.5, color: 0x00ff88, depth: 1, scoreValue: 10, hitboxRadius: 0.6 },
-  fast:  { pattern: parsePattern(PATTERNS.fast),  voxelSize: 0.24, baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.48 },
-  tank:  { pattern: parsePattern(PATTERNS.tank),  voxelSize: 0.36, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.84 },
+  fast: { pattern: parsePattern(PATTERNS.fast), voxelSize: 0.24, baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.48 },
+  tank: { pattern: parsePattern(PATTERNS.tank), voxelSize: 0.36, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.84 },
   swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.19, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.36 },
 };
 
@@ -41,6 +42,15 @@ const ENEMY_DEFS = {
 let sceneRef = null;
 const activeEnemies = [];
 const explosionParts = [];
+
+// ── Mesh cache (avoid per-frame array allocation in getEnemyMeshes) ──
+let _cachedEnemyMeshes = [];
+let _enemyMeshesDirty = true;
+
+function rebuildMeshCache() {
+  _cachedEnemyMeshes = activeEnemies.map(e => e.mesh);
+  _enemyMeshesDirty = false;
+}
 
 // Shared cube geometry (reused across all voxel cubes)
 const sharedGeos = {};
@@ -96,7 +106,7 @@ function getExplosionSprite() {
 }
 
 // Temp vectors (avoid allocation in hot loops)
-const _dir  = new THREE.Vector3();
+const _dir = new THREE.Vector3();
 const _look = new THREE.Vector3();
 
 // ── Public API ─────────────────────────────────────────────
@@ -129,23 +139,56 @@ export function spawnEnemy(type, position, levelConfig) {
   const material = sharedMaterials[type].clone();
 
   const group = new THREE.Group();
-  const geo   = getGeo(def.voxelSize);
-  const rows  = def.pattern.length;
-  const cols  = def.pattern[0].length;
-  const cx    = (cols - 1) / 2;
-  const cy    = (rows - 1) / 2;
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+  const isTank = type === 'tank';
 
-  for (let d = 0; d < def.depth; d++) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (def.pattern[r][c]) {
-          const cube = new THREE.Mesh(geo, material);
-          cube.position.set(
-            (c - cx) * def.voxelSize,
-            (cy - r) * def.voxelSize,
-            d * def.voxelSize,
-          );
-          group.add(cube);
+  // For non-tank enemies, merge voxel geometries into a single mesh
+  // This reduces draw calls from ~10-20 per enemy down to 1
+  if (!isTank) {
+    const geometries = [];
+    for (let d = 0; d < def.depth; d++) {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (def.pattern[r][c]) {
+            const g = geo.clone();
+            g.translate(
+              (c - cx) * def.voxelSize,
+              (cy - r) * def.voxelSize,
+              d * def.voxelSize,
+            );
+            geometries.push(g);
+          }
+        }
+      }
+    }
+    if (geometries.length > 0) {
+      const mergedGeo = mergeGeometries(geometries);
+      if (mergedGeo) {
+        const mergedMesh = new THREE.Mesh(mergedGeo, material);
+        mergedMesh.userData.isMergedGeometry = true;
+        group.add(mergedMesh);
+      }
+      // Dispose cloned geometries (the merged one is a new copy)
+      geometries.forEach(g => g.dispose());
+    }
+  } else {
+    // Tank: keep individual voxels for weak-point targeting
+    for (let d = 0; d < def.depth; d++) {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (def.pattern[r][c]) {
+            const cube = new THREE.Mesh(geo, material);
+            cube.position.set(
+              (c - cx) * def.voxelSize,
+              (cy - r) * def.voxelSize,
+              d * def.voxelSize,
+            );
+            group.add(cube);
+          }
         }
       }
     }
@@ -155,7 +198,7 @@ export function spawnEnemy(type, position, levelConfig) {
   group.userData.isEnemy = true;
 
   // Tank: one random voxel is weak point (double damage)
-  if (type === 'tank') {
+  if (isTank) {
     const voxels = group.children.filter(c => !c.userData.isEnemyHitbox);
     if (voxels.length > 0) {
       const weak = voxels[Math.floor(Math.random() * voxels.length)];
@@ -171,12 +214,12 @@ export function spawnEnemy(type, position, levelConfig) {
   group.add(hitbox);
 
   const enemy = {
-    mesh:      group,
+    mesh: group,
     material,
     type,
-    hp:        Math.round(def.baseHp * levelConfig.hpMultiplier),
-    maxHp:     Math.round(def.baseHp * levelConfig.hpMultiplier),
-    speed:     def.baseSpeed * levelConfig.speedMultiplier,
+    hp: Math.round(def.baseHp * levelConfig.hpMultiplier),
+    maxHp: Math.round(def.baseHp * levelConfig.hpMultiplier),
+    speed: def.baseSpeed * levelConfig.speedMultiplier,
     baseColor: new THREE.Color(def.color),
     scoreValue: def.scoreValue,
     hitboxRadius: def.hitboxRadius,
@@ -189,6 +232,7 @@ export function spawnEnemy(type, position, levelConfig) {
   };
 
   activeEnemies.push(enemy);
+  _enemyMeshesDirty = true;  // Invalidate cache
   sceneRef.add(group);
   return enemy;
 }
@@ -369,16 +413,23 @@ export function destroyEnemy(index) {
       (Math.random() - 0.5) * 5,
     );
     sprite.userData.createdAt = performance.now();
-    sprite.userData.lifetime  = 300 + Math.random() * 200;
+    sprite.userData.lifetime = 300 + Math.random() * 200;
 
     explosionParts.push(sprite);
   }
 
   // Remove enemy mesh from scene
   sceneRef.remove(e.mesh);
+  // Dispose merged geometry if present
+  e.mesh.traverse(c => {
+    if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
+      c.geometry.dispose();
+    }
+  });
   // Dispose material
   e.material.dispose();
   activeEnemies.splice(index, 1);
+  _enemyMeshesDirty = true;  // Invalidate cache
 
   return { position: pos, scoreValue: e.scoreValue, baseColor: color };
 }
@@ -389,9 +440,16 @@ export function destroyEnemy(index) {
 export function clearAllEnemies() {
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     sceneRef.remove(activeEnemies[i].mesh);
+    // Dispose merged geometry
+    activeEnemies[i].mesh.traverse(c => {
+      if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
+        c.geometry.dispose();
+      }
+    });
     activeEnemies[i].material.dispose();
   }
   activeEnemies.length = 0;
+  _enemyMeshesDirty = true;  // Invalidate cache
 }
 
 /**
@@ -399,7 +457,7 @@ export function clearAllEnemies() {
  */
 export function updateExplosions(dt, now) {
   for (let i = explosionParts.length - 1; i >= 0; i--) {
-    const p   = explosionParts[i];
+    const p = explosionParts[i];
     const age = now - p.userData.createdAt;
 
     if (age > p.userData.lifetime) {
@@ -416,14 +474,19 @@ export function updateExplosions(dt, now) {
 
 /** Return all enemy mesh groups (for raycasting). Optionally include boss mesh. */
 export function getEnemyMeshes(includeBoss = false) {
-  const list = activeEnemies.map(e => e.mesh);
+  // Use cached array to avoid per-frame allocation
+  if (_enemyMeshesDirty) {
+    rebuildMeshCache();
+  }
   if (includeBoss && activeBoss) {
-    list.push(activeBoss.mesh);
+    // Boss queries are rare, so allocating here is fine
+    const list = [..._cachedEnemyMeshes, activeBoss.mesh];
     if (activeBoss.shields) {
       list.push(...activeBoss.shields);
     }
+    return list;
   }
-  return list;
+  return _cachedEnemyMeshes;
 }
 
 /** Find which enemy a raycasted mesh belongs to. */
@@ -445,11 +508,11 @@ export function getEnemyByMesh(mesh) {
 let activeBoss = null;
 
 const BOSS_SKULL_PATTERN = [
-  [0,1,1,1,0],
-  [1,1,1,1,1],
-  [1,1,0,1,1],
-  [1,1,1,1,1],
-  [0,1,0,1,0],
+  [0, 1, 1, 1, 0],
+  [1, 1, 1, 1, 1],
+  [1, 1, 0, 1, 1],
+  [1, 1, 1, 1, 1],
+  [0, 1, 0, 1, 0],
 ];
 
 const BOSS_DEFS = {
@@ -892,12 +955,12 @@ export function getEnemies() {
  * Get a random spawn position in a 100° cone in front of the player.
  */
 export function getSpawnPosition(airSpawns, verticalAngle = 0) {
-  const angle    = (Math.random() - 0.5) * (100 * Math.PI / 180);
+  const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
   const distance = 14.4 + Math.random() * 5.6;  // 20% shorter (was 18-25, now 14.4-20)
 
   const x = Math.sin(angle) * distance;
   const z = -Math.cos(angle) * distance;
-  let   y = 1.5;
+  let y = 1.5;
 
   if (airSpawns) {
     y = 0.5 + Math.random() * 2.5;
