@@ -73,9 +73,10 @@ let continentTabs = [];
 let countryItems = [];
 
 // ── Canvas text utility ────────────────────────────────────
-function makeTextTexture(text, opts = {}) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+function makeTextTexture(text, opts = {}, existingObj = null) {
+  let canvas = existingObj ? existingObj.canvas : document.createElement('canvas');
+  let ctx = existingObj ? existingObj.ctx : canvas.getContext('2d');
+
   const fontSize = opts.fontSize || 64;
   const font = `bold ${fontSize}px Arial, sans-serif`;
   const maxWidth = opts.maxWidth || null;
@@ -108,21 +109,27 @@ function makeTextTexture(text, opts = {}) {
   const lineHeight = fontSize * 1.3;
   const textHeight = lines.length * lineHeight;
 
-  canvas.width = Math.ceil(textWidth) + 40;
-  canvas.height = Math.ceil(textHeight);
+  const neededWidth = Math.ceil(textWidth) + 40;
+  const neededHeight = Math.ceil(textHeight);
+
+  if (canvas.width !== neededWidth || canvas.height !== neededHeight) {
+    canvas.width = neededWidth;
+    canvas.height = neededHeight;
+  } else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear if size didn't change
+  }
 
   // Re-set after resize
   ctx.font = font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Clear canvas with transparency (prevent black background)
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
   // Optional glow
   if (opts.glow) {
     ctx.shadowColor = opts.glowColor || opts.color || '#00ffff';
     ctx.shadowBlur = opts.glowSize || 15;
+  } else {
+    ctx.shadowBlur = 0;
   }
 
   // Drop shadow
@@ -141,20 +148,29 @@ function makeTextTexture(text, opts = {}) {
     ctx.fillText(line, canvas.width / 2, y);
   });
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  return { texture, aspect: canvas.width / canvas.height };
+  let texture;
+  if (existingObj && existingObj.texture) {
+    texture = existingObj.texture;
+    texture.image = canvas;
+    texture.needsUpdate = true;
+  } else {
+    texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+  }
+
+  return { texture, aspect: canvas.width / canvas.height, canvas, ctx };
 }
 
 function makeSprite(text, opts = {}) {
-  const { texture, aspect } = makeTextTexture(text, opts);
+  // Initial creation - no existing object
+  const { texture, aspect, canvas, ctx } = makeTextTexture(text, opts);
 
   // Use PlaneGeometry instead of Sprite to prevent billboarding
   const scale = opts.scale || 0.3;
   const width = aspect * scale;
   const height = scale;
 
-  const geometry = new THREE.PlaneGeometry(width, height);
+  const geometry = new THREE.PlaneGeometry(1, 1); // Unit quad
   const mat = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
@@ -165,7 +181,12 @@ function makeSprite(text, opts = {}) {
   });
 
   const mesh = new THREE.Mesh(geometry, mat);
+  mesh.scale.set(width, height, 1);
   mesh.renderOrder = opts.renderOrder ?? 999;
+
+  // Store rendering context for reuse
+  mesh.userData.renderContext = { canvas, ctx, texture };
+
   return mesh;
 }
 
@@ -198,16 +219,25 @@ function drawHeart(ctx, x, y, pixSize, state) {
   });
 }
 
-function makeHeartsTexture(health, maxHealth) {
+function makeHeartsTexture(health, maxHealth, existingObj = null) {
   const heartCount = maxHealth / 2;
   const pixSize = 8;
   const heartW = 7 * pixSize;
   const heartH = 6 * pixSize;
   const gap = 6;
-  const canvas = document.createElement('canvas');
-  canvas.width = heartCount * (heartW + gap) + gap;
-  canvas.height = heartH + 10;
-  const ctx = canvas.getContext('2d');
+
+  const width = heartCount * (heartW + gap) + gap;
+  const height = heartH + 10;
+
+  let canvas = existingObj ? existingObj.canvas : document.createElement('canvas');
+  let ctx = existingObj ? existingObj.ctx : canvas.getContext('2d');
+
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  } else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
 
   for (let i = 0; i < heartCount; i++) {
     const hpForThisHeart = health - i * 2;
@@ -219,9 +249,17 @@ function makeHeartsTexture(health, maxHealth) {
     drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  return { texture, aspect: canvas.width / canvas.height };
+  let texture;
+  if (existingObj && existingObj.texture) {
+    texture = existingObj.texture;
+    texture.image = canvas;
+    texture.needsUpdate = true;
+  } else {
+    texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+  }
+
+  return { texture, aspect: canvas.width / canvas.height, canvas, ctx };
 }
 
 // ── Public API ─────────────────────────────────────────────
@@ -438,7 +476,9 @@ function createHUDElements() {
   // Increased by 200% (3x) for better visibility
   // Lives (hearts) - left side on floor
   // Use PlaneGeometry (not Sprite) to prevent billboarding/rotation
-  const heartsGeo = new THREE.PlaneGeometry(1.2, 0.24);
+  // Lives (hearts) - left side on floor
+  // Use PlaneGeometry (not Sprite) to prevent billboarding/rotation
+  const heartsGeo = new THREE.PlaneGeometry(1, 1); // Unit quad
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
   heartsSprite.position.set(-1.5, 0, 0);  // Spread out horizontally
@@ -476,36 +516,46 @@ export function hideHUD() {
 }
 
 function updateSpriteText(sprite, text, opts = {}) {
-  // Dispose old texture
-  if (sprite.material.map) sprite.material.map.dispose();
+  // Reuse existing render context if available
+  const existingObj = sprite.userData.renderContext || null;
 
-  const { texture, aspect } = makeTextTexture(text, {
+  const { texture, aspect, canvas, ctx } = makeTextTexture(text, {
     fontSize: opts.fontSize || 40,
     color: opts.color || '#ffffff',
     shadow: true,
     glow: opts.glow,
     glowColor: opts.glowColor,
-  });
-  sprite.material.map = texture;
-  sprite.material.needsUpdate = true;
+  }, existingObj);
 
-  // Update geometry to match aspect ratio (prevents stretching)
+  if (!sprite.material.map) {
+    sprite.material.map = texture;
+  }
+  // Store context back if it was newly created
+  if (!existingObj) {
+    sprite.userData.renderContext = { canvas, ctx, texture };
+  }
+
+  // Update scale to match aspect ratio (prevents stretching)
   const scale = opts.scale || 0.3;
-  sprite.geometry.dispose();
-  sprite.geometry = new THREE.PlaneGeometry(aspect * scale, scale);
+  sprite.scale.set(aspect * scale, scale, 1);
 }
 
 export function updateHUD(gameState) {
   if (!hudGroup.visible) return;
 
   // Hearts - proper aspect ratio with correct scale
-  const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth);
-  if (heartsSprite.material.map) heartsSprite.material.map.dispose();
-  heartsSprite.material.map = ht;
-  heartsSprite.material.needsUpdate = true;
-  // Update geometry to match aspect ratio (200% larger: height 0.48)
-  heartsSprite.geometry.dispose();
-  heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
+  const existingObj = heartsSprite.userData.renderContext || null;
+  const { texture: ht, aspect: ha, canvas, ctx } = makeHeartsTexture(gameState.health, gameState.maxHealth, existingObj);
+
+  if (!heartsSprite.material.map) {
+    heartsSprite.material.map = ht;
+  }
+  if (!existingObj) {
+    heartsSprite.userData.renderContext = { canvas, ctx, texture: ht };
+  }
+
+  // Update scale (200% larger: height 0.48)
+  heartsSprite.scale.set(ha * 0.48, 0.48, 1);
 
   // Kill counter - 200% larger
   const cfg = gameState._levelConfig;

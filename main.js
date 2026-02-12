@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
+import Stats from 'three/addons/libs/stats.module.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
@@ -47,6 +48,25 @@ const LASER_RANGE = 50;
 const LASER_DURATION = 250;
 
 // ── Module State ───────────────────────────────────────────
+let stats;
+const lightningBoltPool = [];
+let lightningPoolIndex = 0;
+const explosionVisualPool = [];
+const sharedLightningMaterial = new THREE.LineBasicMaterial({
+  color: 0xffff44,
+  linewidth: 2,
+  transparent: true,
+  opacity: 0.9,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+});
+const lightningGroup = new THREE.Group();
+
+// Temp vectors
+const _tempVec = new THREE.Vector3();
+const _tempQuat = new THREE.Quaternion();
+const _tempDir = new THREE.Vector3();
+const _raycaster = new THREE.Raycaster();
 let scene, camera, renderer;
 const controllers = [];
 const controllerTriggerPressed = [false, false];
@@ -122,6 +142,38 @@ init();
 // ============================================================
 function init() {
   console.log('[SPACEOMICIDE] Initialising...');
+
+  // Setup Stats
+  if (typeof Stats !== 'undefined') {
+    stats = new Stats();
+    stats.dom.style.display = 'none';
+    document.body.appendChild(stats.dom);
+  }
+
+  // Setup Lightning Pool
+  scene.add(lightningGroup);
+  for (let i = 0; i < 40; i++) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(32 * 3), 3));
+    const bolt = new THREE.Line(geo, sharedLightningMaterial);
+    bolt.visible = false;
+    bolt.frustumCulled = false;
+    lightningBoltPool.push(bolt);
+    lightningGroup.add(bolt);
+  }
+
+  // Setup Explosion Pool
+  const sharedExplosionGeo = new THREE.SphereGeometry(1, 12, 12);
+  const sharedExplosionMat = new THREE.MeshBasicMaterial({
+    color: 0xff8800, transparent: true, opacity: 0.7, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending
+  });
+  for (let i = 0; i < 40; i++) {
+    const mesh = new THREE.Mesh(sharedExplosionGeo, sharedExplosionMat.clone());
+    mesh.visible = false;
+    mesh.userData.active = false;
+    explosionVisualPool.push(mesh);
+    scene.add(mesh);
+  }
 
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
@@ -1088,51 +1140,45 @@ function shootWeapon(controller, index) {
   if (now - weaponCooldowns[index] < stats.fireInterval) return;
   weaponCooldowns[index] = now;
 
-  const origin = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  controller.getWorldPosition(origin);
-  controller.getWorldQuaternion(quat);
-  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  controller.getWorldPosition(_tempVec);
+  controller.getWorldQuaternion(_tempQuat);
+  _tempDir.set(0, 0, -1).applyQuaternion(_tempQuat);
 
   // Fire projectile(s)
   const count = stats.projectileCount;
 
   // Calculate perpendicular offset axis for parallel multi-shot
-  const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+  const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(_tempQuat);
   const gap = 0.08; // Gap between parallel shots
 
   for (let i = 0; i < count; i++) {
-    let spawnOrigin = origin.clone();
+    let spawnOrigin = _tempVec.clone();
 
     if (count > 1) {
-      // Position shots side-by-side with small gap, all parallel
-      // Spread evenly around center: for 2 shots [-0.5, 0.5], for 3 [-1, 0, 1], etc.
       const offsetIndex = i - (count - 1) / 2;
       spawnOrigin.addScaledVector(rightAxis, offsetIndex * gap);
     }
 
-    spawnProjectile(spawnOrigin, direction.clone(), index, stats);
+    spawnProjectile(spawnOrigin, _tempDir.clone(), index, stats);
   }
 
-  console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
+  // console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
 }
 
 function updateLightningBeam(controller, index, stats, dt) {
-  const origin = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  controller.getWorldPosition(origin);
-  controller.getWorldQuaternion(quat);
-  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  controller.getWorldPosition(_tempVec);
+  controller.getWorldQuaternion(_tempQuat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(_tempQuat);
 
   // Find all enemies within range and chain to them
   const enemies = getEnemies();
   const targets = [];
-  const maxChains = 2 + Math.floor(stats.lightningRange / 8);  // More chains with upgrades
+  const maxChains = 2 + Math.floor(stats.lightningRange / 8);
 
   enemies.forEach((e, i) => {
-    const dist = e.mesh.position.distanceTo(origin);
-    const toEnemy = e.mesh.position.clone().sub(origin).normalize();
-    const angle = toEnemy.dot(direction);
+    const dist = e.mesh.position.distanceTo(_tempVec);
+    _tempDir.copy(e.mesh.position).sub(_tempVec).normalize();
+    const angle = _tempDir.dot(direction);
 
     // Within range and roughly in front (45° cone)
     if (dist < stats.lightningRange && angle > 0.7) {
@@ -1146,40 +1192,32 @@ function updateLightningBeam(controller, index, stats, dt) {
 
   // Create or update lightning beam visuals
   if (chainTargets.length > 0) {
-    // Start sound if not playing
     startLightningSound();
 
-    // Remove old beam group
-    if (lightningBeams[index]) {
-      scene.remove(lightningBeams[index]);
-    }
-
-    const beamGroup = new THREE.Group();
-
-    // Draw zigzag lightning bolts to each target
-    let lastPos = origin.clone();
+    let lastPos = _tempVec.clone();
     chainTargets.forEach(({ enemy }) => {
       const targetPos = enemy.mesh.position;
-      const bolt = createLightningBolt(lastPos, targetPos);
-      beamGroup.add(bolt);
+
+      // Get bolt from pool
+      if (lightningPoolIndex < lightningBoltPool.length) {
+        const bolt = lightningBoltPool[lightningPoolIndex++];
+        updateLightningBoltGeo(bolt, lastPos, targetPos);
+        bolt.visible = true;
+      }
+
       lastPos = targetPos.clone();
     });
 
-    scene.add(beamGroup);
-    lightningBeams[index] = beamGroup;
-
-    // Apply damage at lightningTickInterval (reduced by barrel / fire rate upgrades)
+    // Apply damage
     const tickInterval = stats.lightningTickInterval != null ? stats.lightningTickInterval : 0.2;
     lightningTimers[index] += dt;
     if (lightningTimers[index] >= tickInterval) {
       lightningTimers[index] = 0;
-
       chainTargets.forEach(({ index: enemyIndex, enemy }) => {
         const result = hitEnemy(enemyIndex, stats.lightningDamage);
         spawnDamageNumber(enemy.mesh.position, stats.lightningDamage, '#ffff44');
         playHitSound();
         if (stats.effects && stats.effects.length > 0) applyEffects(enemyIndex, stats.effects);
-
         if (result.killed) {
           playExplosionSound();
           const destroyData = destroyEnemy(enemyIndex);
@@ -1188,25 +1226,55 @@ function updateLightningBeam(controller, index, stats, dt) {
             game.totalKills++;
             game.killsWithoutHit++;
             addScore(destroyData.scoreValue);
-
-            // Check level complete
             const cfg = game._levelConfig;
-            if (cfg && game.kills >= cfg.killTarget) {
-              completeLevel();
-            }
+            if (cfg && game.kills >= cfg.killTarget) completeLevel();
           }
         }
       });
     }
   } else {
-    // No targets - clear beam and stop sound
-    if (lightningBeams[index]) {
-      scene.remove(lightningBeams[index]);
-      lightningBeams[index] = null;
-    }
     stopLightningSound();
     lightningTimers[index] = 0;
   }
+}
+
+// Update existing line geometry for zigzag
+function updateLightningBoltGeo(bolt, start, end) {
+  const positions = bolt.geometry.attributes.position.array;
+  const segments = 8;
+  const zigzagAmount = 0.15;
+  let idx = 0;
+
+  // Start point
+  positions[idx++] = start.x;
+  positions[idx++] = start.y;
+  positions[idx++] = start.z;
+
+  const dir = _tempDir.subVectors(end, start).normalize();
+  const perp = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+
+  for (let i = 1; i < segments; i++) {
+    const t = i / segments;
+    const mx = start.x + (end.x - start.x) * t;
+    const my = start.y + (end.y - start.y) * t;
+    const mz = start.z + (end.z - start.z) * t;
+
+    // Random offset
+    const offsetScale = (Math.random() - 0.5) * zigzagAmount;
+
+    positions[idx++] = mx + perp.x * offsetScale;
+    positions[idx++] = my + perp.y * offsetScale + (Math.random() - 0.5) * 0.1;
+    positions[idx++] = mz + perp.z * offsetScale;
+  }
+
+  // End point
+  positions[idx++] = end.x;
+  positions[idx++] = end.y;
+  positions[idx++] = end.z;
+
+  bolt.geometry.setDrawRange(0, segments + 1);
+  bolt.geometry.attributes.position.needsUpdate = true;
+  bolt.geometry.computeBoundingSphere();
 }
 
 // Create zigzag lightning bolt between two points
@@ -1544,23 +1612,20 @@ function handleAOE(center, radius, damage, controllerIndex) {
 
 /** Spawn a short-lived visible explosion (expanding sphere) at center. */
 function spawnExplosionVisual(center, radius) {
-  const duration = 350; // ms
-  const geo = new THREE.SphereGeometry(radius * 0.3, 12, 12);
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0xff8800,
-    transparent: true,
-    opacity: 0.7,
-    side: THREE.BackSide,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = explosionVisualPool.find(m => !m.userData.active);
+  if (!mesh) return; // Pool empty
+
+  mesh.userData.active = true;
+  mesh.visible = true;
   mesh.position.copy(center);
+  mesh.scale.setScalar(0.1);
+  mesh.material.opacity = 0.7;
   mesh.renderOrder = 900;
   mesh.userData.createdAt = performance.now();
-  mesh.userData.duration = duration;
+  mesh.userData.duration = 350;
   mesh.userData.radius = radius;
-  scene.add(mesh);
+  mesh.userData.isChargeBeam = false;
+
   explosionVisuals.push(mesh);
 }
 
@@ -1568,20 +1633,31 @@ function updateExplosionVisuals(dt, now) {
   for (let i = explosionVisuals.length - 1; i >= 0; i--) {
     const m = explosionVisuals[i];
     const age = now - m.userData.createdAt;
+
+    // Special handling for beam visual (not pooled yet, or different logic)
+    if (m.userData.isChargeBeam) {
+      if (age > m.userData.duration) {
+        scene.remove(m);
+        m.geometry.dispose();
+        m.material.dispose();
+        explosionVisuals.splice(i, 1);
+      } else {
+        const t = age / m.userData.duration;
+        m.material.opacity = (0.4 + 0.4) * (1 - t);
+      }
+      continue;
+    }
+
     if (age > m.userData.duration) {
-      scene.remove(m);
-      m.geometry.dispose();
-      m.material.dispose();
+      // Return to pool
+      m.visible = false;
+      m.userData.active = false;
       explosionVisuals.splice(i, 1);
     } else {
       const t = age / m.userData.duration;
-      if (m.userData.isChargeBeam) {
-        m.material.opacity = (0.4 + 0.4) * (1 - t);
-      } else {
-        const scale = 1 + t * 2.5;
-        m.scale.setScalar(scale);
-        m.material.opacity = 0.7 * (1 - t);
-      }
+      const targetScale = m.userData.radius * 0.3 * (1 + t * 2.5);
+      m.scale.setScalar(targetScale);
+      m.material.opacity = 0.7 * (1 - t);
     }
   }
 }
@@ -1780,6 +1856,20 @@ function updateFastEnemyAlerts(dt, playerPos) {
 //  RENDER / UPDATE LOOP
 // ============================================================
 function render(timestamp) {
+  // Stats update
+  if (typeof stats !== 'undefined' && stats) {
+    if (window.debugPerfMonitor) {
+      stats.dom.style.display = 'block';
+      stats.update();
+    } else {
+      stats.dom.style.display = 'none';
+    }
+  }
+
+  // Reset lightning pool
+  lightningPoolIndex = 0;
+  lightningBoltPool.forEach(b => b.visible = false);
+
   frameCount++;
   const now = timestamp || performance.now();
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
