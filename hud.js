@@ -38,9 +38,11 @@ let upgradeChoices = [];
 let hitFlash = null;
 let hitFlashOpacity = 0;
 
-// Boss health bar (camera-attached, 3 segments for phases)
+// Boss health bar (world-space, floats above boss head)
+// [Power Outage Update] #4: Changed from camera-attached 3 segments
 let bossHealthGroup = null;
-let bossHealthBars = []; // 3 segments
+let bossHealthFillBar = null; // Single continuous fill bar
+let bossHealthBars = []; // Kept for backwards compatibility (now empty)
 
 // Title blink
 let titleBlinkSprite = null;
@@ -333,49 +335,87 @@ export function initHUD(camera, scene) {
   fpsSprite.material.depthTest = false;  // Always render on top
   camera.add(fpsSprite);
 
-  // ── Boss health bar (top center, camera-attached, 3 segments) ──
+  // [Power Outage Update] #4: Boss health bar - now world-space, floats above boss head
+  // Single continuous bar instead of 3 segments
   bossHealthGroup = new THREE.Group();
-  bossHealthGroup.position.set(0, 0.3, -0.6);
   bossHealthGroup.visible = false;
-  const barWidth = 0.25;
-  const barHeight = 0.03;
-  const gap = 0.01;
-  for (let i = 0; i < 3; i++) {
-    const geo = new THREE.PlaneGeometry(barWidth, barHeight);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff0044, side: THREE.DoubleSide, depthTest: false });
-    const bar = new THREE.Mesh(geo, mat);
-    bar.position.x = (i - 1) * (barWidth + gap);
-    bar.renderOrder = 1000;
-    bossHealthGroup.add(bar);
-    bossHealthBars.push(bar);
-  }
-  camera.add(bossHealthGroup);
+  
+  // Background bar (dark)
+  const bossBarWidth = 1.5;
+  const bossBarHeight = 0.08;
+  const bgBarGeo = new THREE.PlaneGeometry(bossBarWidth, bossBarHeight);
+  const bgBarMat = new THREE.MeshBasicMaterial({ 
+    color: 0x224422, 
+    side: THREE.DoubleSide, 
+    depthTest: false,
+    transparent: true,
+    opacity: 0.8
+  });
+  const bgBar = new THREE.Mesh(bgBarGeo, bgBarMat);
+  bgBar.name = 'bossHealthBg';
+  bossHealthGroup.add(bgBar);
+  
+  // Fill bar (foreground, scales with HP)
+  const fillBarGeo = new THREE.PlaneGeometry(bossBarWidth, bossBarHeight);
+  const fillBarMat = new THREE.MeshBasicMaterial({ 
+    color: 0x00ff44, 
+    side: THREE.DoubleSide, 
+    depthTest: false 
+  });
+  bossHealthFillBar = new THREE.Mesh(fillBarGeo, fillBarMat);
+  bossHealthFillBar.name = 'bossHealthFill';
+  bossHealthFillBar.position.z = 0.01;
+  bossHealthGroup.add(bossHealthFillBar);
+  
+  scene.add(bossHealthGroup);
 }
 
+// [Power Outage Update] #4: Updated for world-space bar above boss
 export function showBossHealthBar(hp, maxHp, phases = 3) {
   if (!bossHealthGroup) return;
   bossHealthGroup.visible = true;
-  updateBossHealthBar(hp, maxHp, phases);
+  // Store for positioning in update
+  bossHealthGroup.userData.maxHp = maxHp;
+  bossHealthGroup.userData.phases = phases;
 }
 
 export function hideBossHealthBar() {
   if (bossHealthGroup) bossHealthGroup.visible = false;
 }
 
-export function updateBossHealthBar(hp, maxHp, phases = 3) {
-  if (!bossHealthGroup || !bossHealthGroup.visible || phases < 1) return;
-  const segmentHp = maxHp / phases;
-  for (let i = 0; i < 3; i++) {
-    const bar = bossHealthBars[i];
-    if (!bar) continue;
-    if (i >= phases) {
-      bar.scale.x = 0;
-      continue;
+// [Power Outage Update] #4: Updated - single continuous bar, color transitions
+export function updateBossHealthBar(hp, maxHp, phases = 3, bossMesh = null) {
+  if (!bossHealthGroup || !bossHealthGroup.visible) return;
+  
+  const t = Math.max(0, Math.min(1, hp / maxHp)); // 0..1
+  const barWidth = 1.5;
+  
+  // Scale fill bar
+  if (bossHealthFillBar) {
+    bossHealthFillBar.scale.x = Math.max(0.001, t);
+    // Position so it drains from right to left
+    bossHealthFillBar.position.x = -(1 - t) * barWidth / 2;
+    
+    // Color transition: green → yellow → red → dark red
+    const color = new THREE.Color();
+    if (t > 0.5) {
+      color.setHex(0x00ff44).lerp(new THREE.Color(0xffff00), (1 - (t - 0.5) * 2));
+    } else if (t > 0.25) {
+      color.setHex(0xffff00).lerp(new THREE.Color(0xff2200), (1 - (t - 0.25) * 4));
+    } else {
+      color.setHex(0xff2200).lerp(new THREE.Color(0x880000), (1 - t * 4));
     }
-    const segStart = i * segmentHp;
-    const segEnd = (i + 1) * segmentHp;
-    const segFill = Math.max(0, Math.min(1, (hp - segStart) / (segEnd - segStart)));
-    bar.scale.x = segFill;
+    bossHealthFillBar.material.color.copy(color);
+  }
+  
+  // Position above boss if mesh provided
+  if (bossMesh) {
+    bossHealthGroup.position.copy(bossMesh.position);
+    bossHealthGroup.position.y += 1.2;
+    // Billboard: always face camera
+    if (cameraRef) {
+      bossHealthGroup.lookAt(cameraRef.position);
+    }
   }
 }
 
@@ -632,11 +672,12 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.add(cooldownSprite);
 
   // Four cards in an arc (3 upgrades + 1 skip option)
+  // [Power Outage Update] #5: Wider card spacing for 15% wider cards
   const positions = [
-    new THREE.Vector3(-2, 0, 0),
+    new THREE.Vector3(-2.1, 0, 0),
     new THREE.Vector3(-0.7, 0, 0),
     new THREE.Vector3(0.7, 0, 0),
-    new THREE.Vector3(2, 0, 0),
+    new THREE.Vector3(2.1, 0, 0),
   ];
 
   upgrades.forEach((upg, i) => {
@@ -657,7 +698,8 @@ function createUpgradeCard(upgrade, position) {
   group.userData.upgradeId = upgrade.id;
 
   // Card background plane
-  const cardGeo = new THREE.PlaneGeometry(0.9, 1.1);
+  // [Power Outage Update] #5: Widened by 15% (0.9 * 1.15 = 1.035)
+  const cardGeo = new THREE.PlaneGeometry(1.035, 1.1);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -728,8 +770,9 @@ function createSkipCard(position) {
   group.position.copy(position);
   group.userData.upgradeId = 'SKIP';  // Special ID for skip
 
-  // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades)
-  const cardGeo = new THREE.PlaneGeometry(0.7, 0.9);
+  // [Power Outage Update] #5: Widened by 15% to match upgrade cards
+  // Smaller card (0.7×0.9 scaled by 1.15 ≈ 0.805)
+  const cardGeo = new THREE.PlaneGeometry(0.805, 0.9);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x220044,
     transparent: true,
@@ -935,6 +978,100 @@ export function hideGameOver() {
   gameOverGroup.visible = false;
 }
 
+// ── Boss Alert (Power Outage Update) #3 ─────────────────────────────────
+
+let bossAlertGroup = null;
+
+export function showBossAlert() {
+  if (!bossAlertGroup) {
+    bossAlertGroup = new THREE.Group();
+    
+    // Line 1: "⚠ ALERT! ALERT! ⚠" in red, large, with glow
+    const alertSprite = makeSprite('⚠ ALERT! ALERT! ⚠', {
+      fontSize: 64, color: '#ff0044', glow: true, glowColor: '#ff0000', glowSize: 25, scale: 0.7,
+    });
+    alertSprite.position.set(0, 0.3, 0);
+    alertSprite.name = 'alertLine1';
+    bossAlertGroup.add(alertSprite);
+
+    // Line 2: "INCOMING BOSS!" in yellow, pulsing
+    const incomingSprite = makeSprite('INCOMING BOSS!', {
+      fontSize: 56, color: '#ffff00', glow: true, glowColor: '#ffff00', glowSize: 20, scale: 0.6,
+    });
+    incomingSprite.position.set(0, -0.3, 0);
+    incomingSprite.name = 'alertLine2';
+    bossAlertGroup.add(incomingSprite);
+  }
+  
+  // Position at midfield, eye level
+  bossAlertGroup.position.set(0, 2.0, -4);
+  bossAlertGroup.visible = true;
+  sceneRef.add(bossAlertGroup);
+}
+
+export function hideBossAlert() {
+  if (bossAlertGroup) {
+    bossAlertGroup.visible = false;
+  }
+}
+
+export function updateBossAlert(now) {
+  if (!bossAlertGroup || !bossAlertGroup.visible) return;
+  
+  // Pulse the "INCOMING BOSS!" text
+  const line2 = bossAlertGroup.getObjectByName('alertLine2');
+  if (line2) {
+    line2.material.opacity = 0.6 + Math.sin(now * 0.008) * 0.4;
+  }
+}
+
+// ── Kills Remaining Message (Power Outage Update) #8 ─────────────────────
+
+let killsRemainingGroup = null;
+
+export function showKillsRemainingMessage(count) {
+  if (killsRemainingGroup) {
+    sceneRef.remove(killsRemainingGroup);
+  }
+  
+  killsRemainingGroup = new THREE.Group();
+  
+  const text = `${count} KILLS REMAINING`;
+  const sprite = makeSprite(text, {
+    fontSize: 52, color: '#ffff00', glow: true, glowColor: '#ffff00', glowSize: 15, scale: 0.6,
+  });
+  sprite.position.set(0, 0, 0);
+  killsRemainingGroup.add(sprite);
+  
+  // Position at midfield
+  killsRemainingGroup.position.set(0, 2.0, -5);
+  killsRemainingGroup.userData.createdAt = performance.now();
+  killsRemainingGroup.userData.lifetime = 2000; // 2 seconds
+  killsRemainingGroup.visible = true;
+  
+  sceneRef.add(killsRemainingGroup);
+}
+
+export function updateKillsRemainingMessage(now) {
+  if (!killsRemainingGroup || !killsRemainingGroup.visible) return;
+  
+  const age = now - killsRemainingGroup.userData.createdAt;
+  if (age > killsRemainingGroup.userData.lifetime) {
+    killsRemainingGroup.visible = false;
+    sceneRef.remove(killsRemainingGroup);
+    killsRemainingGroup = null;
+  } else {
+    // Fade out in last 0.5s
+    const fadeStart = killsRemainingGroup.userData.lifetime - 500;
+    if (age > fadeStart) {
+      const opacity = 1 - (age - fadeStart) / 500;
+      killsRemainingGroup.children.forEach(child => {
+        if (child.material) child.material.opacity = opacity;
+      });
+    }
+  }
+}
+
 // ── Hit Flash ──────────────────────────────────────────────
 
 export function triggerHitFlash() {
@@ -953,13 +1090,17 @@ export function updateHitFlash(dt) {
 
 // ── Damage Numbers ─────────────────────────────────────────
 
-export function spawnDamageNumber(position, damage, color) {
+// [Power Outage Update] #14: Modified to accept isCrit parameter
+export function spawnDamageNumber(position, damage, color, isCrit = false) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 128;
   canvas.height = 64;
 
-  const fontSize = Math.min(48, 28 + damage / 6);
+  // [Power Outage Update] #14: 2x size for crits
+  const fontSize = isCrit
+    ? Math.min(48, 28 + damage / 6) * 2
+    : Math.min(48, 28 + damage / 6);
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -968,16 +1109,18 @@ export function spawnDamageNumber(position, damage, color) {
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillText(Math.round(damage).toString(), 66, 34);
 
-  // Main text
-  ctx.fillStyle = color || '#ffffff';
+  // [Power Outage Update] #14: Use crit color override
+  const displayColor = isCrit ? '#ffff00' : (color || '#ffffff');
+  ctx.fillStyle = displayColor;
   ctx.fillText(Math.round(damage).toString(), 64, 32);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
 
-  // Use PlaneGeometry instead of Sprite to prevent billboarding
-  // Increased scale significantly for better visibility
-  const scale = 0.25 + Math.min(damage / 100, 0.15);  // Much larger base scale
+  // [Power Outage Update] #14: 2x mesh scale for crits
+  const scale = isCrit
+    ? (0.25 + Math.min(damage / 100, 0.15)) * 2
+    : (0.25 + Math.min(damage / 100, 0.15));
   const width = scale * 2;
   const height = scale;
 
@@ -1009,6 +1152,11 @@ export function spawnDamageNumber(position, damage, color) {
   sceneRef.add(mesh);
   damageNumbers.push(mesh);
 
+  // [Power Outage Update] #14: Spawn "CRIT!" label for critical hits
+  if (isCrit) {
+    spawnCritLabel(position);
+  }
+
   // Cap total to prevent perf issues
   while (damageNumbers.length > 20) {
     const old = damageNumbers.shift();
@@ -1016,6 +1164,62 @@ export function spawnDamageNumber(position, damage, color) {
     old.material.map.dispose();
     old.material.dispose();
   }
+}
+
+// [Power Outage Update] #14: New helper for crit label
+function spawnCritLabel(position) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 128;
+  canvas.height = 48;
+
+  ctx.font = 'bold 36px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillText('CRIT!', 66, 26);
+
+  // Orange/red crit text
+  ctx.fillStyle = '#ff4400';
+  ctx.fillText('CRIT!', 64, 24);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  const scale = 0.3;
+  const width = scale * 2;
+  const height = scale;
+
+  const geometry = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.9,
+    depthTest: false,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geometry, mat);
+  // Position slightly above the damage number
+  mesh.position.copy(position);
+  mesh.position.x += (Math.random() - 0.5) * 0.2;
+  mesh.position.y += 0.4 + Math.random() * 0.2;
+  mesh.position.z += (Math.random() - 0.5) * 0.2;
+
+  mesh.renderOrder = 998;
+
+  mesh.userData.velocity = new THREE.Vector3(
+    (Math.random() - 0.5) * 0.3,
+    0.6 + Math.random() * 0.3,
+    (Math.random() - 0.5) * 0.3,
+  );
+  mesh.userData.lifetime = 600;
+  mesh.userData.createdAt = performance.now();
+
+  sceneRef.add(mesh);
+  damageNumbers.push(mesh);
 }
 
 export function updateDamageNumbers(dt, now) {
@@ -1474,7 +1678,8 @@ export function updateKeyboardHover(raycaster) {
 
 // ── Scoreboard Screen ───────────────────────────────────────
 
-export function showScoreboard(scores, headerText) {
+// [Power Outage Update] #13: Accept optional country info for header split
+export function showScoreboard(scores, headerText, opts = null) {
   hideAll();
   while (scoreboardGroup.children.length) scoreboardGroup.remove(scoreboardGroup.children[0]);
 
@@ -1484,12 +1689,34 @@ export function showScoreboard(scores, headerText) {
   scoreboardGroup.position.set(0, 1.6, -5);
   scoreboardGroup.visible = true;
 
-  // Header
-  const header = makeSprite(scoreboardHeader, {
-    fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
-  });
-  header.position.set(0, 1.8, 0);
-  scoreboardGroup.add(header);
+  // [Power Outage Update] #13: Split header into two lines with flag for country leaderboards
+  if (opts && opts.countryCode && opts.countryName) {
+    // Get flag emoji from country code
+    const flag = String.fromCodePoint(
+      ...[...opts.countryCode.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
+    );
+    
+    // Line 1: Flag + country name in cyan
+    const countrySprite = makeSprite(`${flag} ${opts.countryName}`, {
+      fontSize: 52, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.55,
+    });
+    countrySprite.position.set(0, 2.0, 0);
+    scoreboardGroup.add(countrySprite);
+    
+    // Line 2: "LEADERBOARD" in white
+    const lbSprite = makeSprite('LEADERBOARD', {
+      fontSize: 42, color: '#ffffff', glow: true, glowColor: '#ffffff', scale: 0.45,
+    });
+    lbSprite.position.set(0, 1.55, 0);
+    scoreboardGroup.add(lbSprite);
+  } else {
+    // Default: single header
+    const header = makeSprite(scoreboardHeader, {
+      fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
+    });
+    header.position.set(0, 1.8, 0);
+    scoreboardGroup.add(header);
+  }
 
   // Score list canvas
   renderScoreboardCanvas();
@@ -1497,6 +1724,7 @@ export function showScoreboard(scores, headerText) {
   scoreboardGroup.add(scoreboardMesh);
 
   // Buttons on right side
+  // [Power Outage Update] #10, #11: Wider buttons, moved right, back button moved down
   const btnDefs = [
     { label: 'COUNTRY', y: 1.2, action: 'country' },
     { label: 'CONTINENT', y: 0.85, action: 'continent' },
@@ -1506,9 +1734,9 @@ export function showScoreboard(scores, headerText) {
 
   for (const def of btnDefs) {
     const btnGroup = new THREE.Group();
-    btnGroup.position.set(1.2, def.y, 0);
+    btnGroup.position.set(1.5, def.y, 0); // [Power Outage Update] #10: Moved right from 1.2 to 1.5
 
-    const btnGeo = new THREE.PlaneGeometry(0.5, 0.25);
+    const btnGeo = new THREE.PlaneGeometry(0.7, 0.25); // [Power Outage Update] #10: Wider from 0.5 to 0.7
     const btnMat = new THREE.MeshBasicMaterial({
       color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
     });
@@ -1529,8 +1757,9 @@ export function showScoreboard(scores, headerText) {
   }
 
   // BACK button bottom center
+  // [Power Outage Update] #11: Moved down from -0.7 to -0.95 to avoid overlap
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -0.7, 0);
+  backGroup.position.set(0, -0.95, 0);
   const backGeo = new THREE.PlaneGeometry(0.6, 0.25);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -1789,13 +2018,36 @@ function renderCountryList(countries) {
   const itemGap = 0.04;
   const startY = 0.85;
 
+  // [Power Outage Update] #12: Multi-column layout for long lists
+  const MAX_ROWS_PER_COLUMN = 5;
+  const useColumns = filtered.length > MAX_ROWS_PER_COLUMN;
+  const colWidth = 0.85;
+  const colGap = 0.1;
+  const cols = useColumns ? Math.ceil(filtered.length / MAX_ROWS_PER_COLUMN) : 1;
+  const totalWidth = cols * colWidth + (cols - 1) * colGap;
+  const startX = -totalWidth / 2 + colWidth / 2;
+
   for (let i = 0; i < filtered.length; i++) {
     const country = filtered[i];
     const itemGroup = new THREE.Group();
-    const y = startY - i * (itemHeight + itemGap);
-    itemGroup.position.set(0, y, 0);
+    
+    // Calculate position based on column layout
+    let x, y;
+    if (useColumns) {
+      const col = Math.floor(i / MAX_ROWS_PER_COLUMN);
+      const row = i % MAX_ROWS_PER_COLUMN;
+      x = startX + col * (colWidth + colGap);
+      y = startY - row * (itemHeight + itemGap);
+    } else {
+      x = 0;
+      y = startY - i * (itemHeight + itemGap);
+    }
+    
+    itemGroup.position.set(x, y, 0);
 
-    const itemGeo = new THREE.PlaneGeometry(1.8, itemHeight);
+    // [Power Outage Update] #12: Narrower width for multi-column layout
+    const itemWidth = useColumns ? colWidth : 1.8;
+    const itemGeo = new THREE.PlaneGeometry(itemWidth, itemHeight);
     const itemMat = new THREE.MeshBasicMaterial({
       color: 0x111133, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
     });
