@@ -804,8 +804,6 @@ function handleTitleTrigger(controller) {
   }
   startGame();
 }
-  startGame();
-}
 
 function handleGameOverTrigger(controller) {
   // Store final score/level for name entry
