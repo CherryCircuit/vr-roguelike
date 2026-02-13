@@ -69,7 +69,7 @@
       line-height: 1.6;
     }
 
-    /* ── Scanline Overlay (CRT effect on webpage only) ── */
+    /* ── Scanline Overlay (CRT effect on webpage only) 
     #scanlines {
       position: fixed;
       top: 0;
@@ -86,7 +86,8 @@
       pointer-events: none;
       z-index: 50;
     }
-
+	── */
+	
     /* ── Style the VR button (Three.js injects it) ── */
     #VRButton {
       font-family: 'Courier New', monospace !important;
@@ -111,9 +112,10 @@
     <p>Please use a WebXR-compatible browser such as Meta Quest Browser or Chrome on a VR-capable device.</p>
   </div>
 
-  <!-- CRT scanline overlay (hidden in VR — obscures view) -->
+  <!-- CRT scanline overlay (hidden in VR — obscures view) 
   <div id="scanlines"></div>
-
+  -->
+  
   <!-- Debug menu (show with ?debug=1 or click DEBUG) -->
   <div id="debug-panel" style="display:none;position:fixed;bottom:20px;left:20px;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #00ffff;padding:12px;font-size:14px;">
     <div style="color:#00ffff;margin-bottom:8px;">DEBUG</div>
