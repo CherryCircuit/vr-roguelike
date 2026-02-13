@@ -996,8 +996,8 @@ function debugJumpToLevel(targetLevel) {
   game._levelConfig = getLevelConfig();
   showHUD();
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
-  if (targetLevel >= 6) playMusic('levels6to10');
-  else playMusic('levels1to5');
+  if (targetLevel >= 6) playMusic('levels6to9');
+  else playMusic('levels1to4');
 }
 
 function startGame() {
@@ -1013,7 +1013,7 @@ function startGame() {
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
 
   // Start level music
-  playMusic('levels1to5');
+  playMusic('levels1to4');
 }
 
 function completeLevel() {
@@ -1050,7 +1050,7 @@ function showUpgradeScreen() {
 
   // Fade out all music over 4 seconds when next level is a boss level
   const nextLevel = game.level + 1;
-  if (nextLevel % 5 === 0 && nextLevel <= 20) {
+  if (nextLevel === 5 || 10 || 15 || 20 ) {
     fadeOutMusic(4.0);
     console.log(`[music] Fading out all music before boss level ${nextLevel}`);
   }
@@ -1154,11 +1154,14 @@ function advanceLevelAfterUpgrade() {
       
       // Start appropriate level music after boss or based on level range
       if (game.level >= 1 && game.level <= 5) {
-        playMusic('levels1to5');
-      } else if (game.level >= 6 && game.level <= 10) {
-        playMusic('levels6to10');
+        playMusic('levels1to4');
+      } else if (game.level >= 6 && game.level <= 9) {
+        playMusic('levels6to9');
+	  } else if (game.level >= 11 && game.level <= 14) {
+        playMusic('levels11to14');
+	  } else if (game.level >= 16 && game.level <= 19) {
+        playMusic('levels16to19');
       }
-      // Levels 11-20 currently use levels6to10 music (extend if needed)
     }
 
     // Hide blaster displays during gameplay

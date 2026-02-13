@@ -555,19 +555,30 @@ let currentTrackIndex = 0;
 
 const musicTracks = {
   menu: ['mnt/project/music/00_Main_Menu.mp3'],
-  levels1to5: [
+  levels1to4: [
     'mnt/project/music/0101_Levels_1-4.mp3',
     'mnt/project/music/0102_Levels_1-4.mp3',
     'mnt/project/music/0103_Levels_1-4.mp3',
     'mnt/project/music/0104_Levels_1-4.mp3'
   ],
-  levels6to10: [
+  levels6to9: [
     'mnt/project/music/0201_Levels_6-9.mp3',
     'mnt/project/music/0202_Levels_6-9.mp3',
     'mnt/project/music/0203_Levels_6-9.mp3',
     'mnt/project/music/0204_Levels_6-9.mp3'
   ],
-  // [Power Outage Update] #2: Boss music playlists for each boss level
+  levels11to14: [
+    'mnt/project/music/0301_Levels_11-14.mp3',
+    'mnt/project/music/0302_Levels_11-14.mp3',
+    'mnt/project/music/0303_Levels_11-14.mp3',
+    'mnt/project/music/0304_Levels_11-14.mp3'
+  ],
+  levels16to19: [
+    'mnt/project/music/0401_Levels_16-19.mp3',
+    'mnt/project/music/0402_Levels_16-19.mp3',
+    'mnt/project/music/0403_Levels_16-19.mp3',
+    'mnt/project/music/0404_Levels_16-19.mp3'
+  ],
   boss5: [
     'mnt/project/music/B101_Level_05_Boss.mp3',
     'mnt/project/music/B102_Level_05_Boss.mp3',
@@ -755,8 +766,11 @@ export function playGameOverSound() {
 let lastHoverSoundTime = 0;
 export function playButtonHoverSound() {
   const now = performance.now();
-  if (now - lastHoverSoundTime < 100) return; // Debounce: max 1 per 100ms
-  lastHoverSoundTime = now;
+  
+  // I commented this out. I want it to play fast if they hover fast. I don't care.
+  //
+  // if (now - lastHoverSoundTime < 100) return; // Debounce: max 1 per 100ms
+  // lastHoverSoundTime = now;
 
   const ctx = getAudioContext();
   const t = ctx.currentTime;
@@ -838,7 +852,7 @@ export function playLowHealthAlertSound() {
     lowHealthAudio.pause();
     lowHealthAudio.currentTime = 0;
   }
-  lowHealthAudio = new Audio('mnt/project/soundfx/lowhealth.wav');
+  lowHealthAudio = new Audio('mnt/project/soundfx/lowhealth.mp3');
   lowHealthAudio.volume = 0.5;
   lowHealthAudio.play().catch(() => {});
 }
@@ -850,7 +864,7 @@ export function playVampireHealSound() {
     vampireHealAudio.pause();
     vampireHealAudio.currentTime = 0;
   }
-  vampireHealAudio = new Audio('mnt/project/soundfx/vampiric.wav');
+  vampireHealAudio = new Audio('mnt/project/soundfx/vampiric.mp3');
   vampireHealAudio.volume = 0.4;
   vampireHealAudio.play().catch(() => {});
 }
@@ -862,7 +876,7 @@ export function playBuckshotSoundNew() {
     buckshotAudio.pause();
     buckshotAudio.currentTime = 0;
   }
-  buckshotAudio = new Audio('mnt/project/soundfx/buckshot.wav');
+  buckshotAudio = new Audio('mnt/project/soundfx/buckshot_01.mp3'); //But I want this to be random between "buckshot_01.mp3" and "buckshot_02.mp3"
   buckshotAudio.volume = 0.5;
   buckshotAudio.play().catch(() => {});
 }
