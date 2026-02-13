@@ -547,7 +547,7 @@ export function stopLightningSound() {
 
 // ── Music System ───────────────────────────────────────────
 let currentMusic = null;
-let musicVolume = 0.3;
+let musicVolume = 0.375; // Increased by 25% from 0.3
 let currentPlaylist = [];
 let currentTrackIndex = 0;
 // let musicAnalyser = null;  // Music visualizer - commented out
@@ -749,4 +749,226 @@ export function playGameOverSound() {
   gameOverAudio = new Audio('mnt/project/music/XX_Game_Over.mp3');
   gameOverAudio.volume = 0.5;
   gameOverAudio.play().catch(() => {});
+}
+
+// ── Button Hover Sound (sfxr params) ─────────────────────────
+let lastHoverSoundTime = 0;
+export function playButtonHoverSound() {
+  const now = performance.now();
+  if (now - lastHoverSoundTime < 100) return; // Debounce: max 1 per 100ms
+  lastHoverSoundTime = now;
+
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Based on sfxr params: wave_type 3 (noise), quick attack/decay
+  const noise = ctx.createBufferSource();
+  const bufferSize = ctx.sampleRate * 0.1;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  noise.buffer = buffer;
+  noise.playbackRate.value = 0.8;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.setValueAtTime(800, t);
+  filter.frequency.exponentialRampToValueAtTime(2000, t + 0.05);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.08, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.1);
+}
+
+// ── Button Click Sound (sfxr params) ───────────────────────────
+export function playButtonClickSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Based on sfxr params: wave_type 2 (square), arp mod
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'square';
+  
+  // Arpeggio-like frequency sweep
+  osc.frequency.setValueAtTime(600, t);
+  osc.frequency.setValueAtTime(800, t + 0.03);
+  osc.frequency.setValueAtTime(500, t + 0.08);
+  osc.frequency.exponentialRampToValueAtTime(200, t + 0.2);
+
+  gain.gain.setValueAtTime(0.1, t);
+  gain.gain.setValueAtTime(0.08, t + 0.1);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.25);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.25);
+
+  // Layer with noise for punch
+  const noise = ctx.createBufferSource();
+  const bufferSize = ctx.sampleRate * 0.05;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+  noise.buffer = buffer;
+  
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.04, t);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+  
+  noise.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.05);
+}
+
+// ── Low Health Alert Sound (sfxr params) ───────────────────────
+export function playLowHealthAlertSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Based on sfxr params: wave_type 0 (square), with vib and arp
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'square';
+
+  // Oscillating frequency with vibrato feel
+  osc.frequency.setValueAtTime(300, t);
+  osc.frequency.linearRampToValueAtTime(400, t + 0.1);
+  osc.frequency.linearRampToValueAtTime(250, t + 0.25);
+  osc.frequency.linearRampToValueAtTime(350, t + 0.4);
+
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(0.15, t + 0.05);
+  gain.gain.setValueAtTime(0.12, t + 0.3);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.5);
+
+  // Second oscillator for depth
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(150, t);
+  osc2.frequency.linearRampToValueAtTime(200, t + 0.2);
+  osc2.frequency.linearRampToValueAtTime(100, t + 0.4);
+
+  gain2.gain.setValueAtTime(0.08, t);
+  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.start(t);
+  osc2.stop(t + 0.4);
+}
+
+// ── Vampire Heal Sound (sfxr params) ───────────────────────────
+export function playVampireHealSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Based on sfxr params: wave_type 1 (sawtooth), quick riser
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+
+  // Rising frequency for "absorbing" feel
+  osc.frequency.setValueAtTime(180, t);
+  osc.frequency.exponentialRampToValueAtTime(400, t + 0.35);
+
+  // Vibrato
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  lfo.frequency.value = 8;
+  lfoGain.gain.value = 15;
+  lfo.connect(lfoGain);
+  lfoGain.connect(osc.frequency);
+
+  gain.gain.setValueAtTime(0.1, t);
+  gain.gain.setValueAtTime(0.08, t + 0.25);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  lfo.start(t);
+  osc.start(t);
+  osc.stop(t + 0.4);
+  lfo.stop(t + 0.4);
+}
+
+// ── New Buckshot Sound (sfxr params) ───────────────────────────
+export function playBuckshotSoundNew() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Based on sfxr params: wave_type 3 (noise), punchy
+  const noise = ctx.createBufferSource();
+  noise.buffer = getExplosionBuffer();
+  noise.playbackRate.value = 0.15;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(1200, t);
+  filter.frequency.exponentialRampToValueAtTime(100, t + 0.35);
+  filter.Q.value = 1;
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.25, t);
+  gain.gain.setValueAtTime(0.2, t + 0.15);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.4);
+
+  // Low thump layer
+  const osc = ctx.createOscillator();
+  const oscGain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(80, t);
+  osc.frequency.exponentialRampToValueAtTime(30, t + 0.2);
+  oscGain.gain.setValueAtTime(0.15, t);
+  oscGain.gain.exponentialRampToValueAtTime(0.01, t + 0.25);
+  osc.connect(oscGain);
+  oscGain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.25);
+}
+
+// ── Music Fade Out ─────────────────────────────────────────────
+export function fadeOutMusic(durationSec = 2.0) {
+  if (!currentMusic) return;
+  
+  const startVol = currentMusic.volume;
+  const startTime = performance.now();
+  const durationMs = durationSec * 1000;
+
+  function fadeStep() {
+    if (!currentMusic) return;
+    const elapsed = performance.now() - startTime;
+    const t = Math.min(1, elapsed / durationMs);
+    currentMusic.volume = startVol * (1 - t);
+    
+    if (t < 1) {
+      requestAnimationFrame(fadeStep);
+    } else {
+      stopMusic();
+    }
+  }
+  
+  fadeStep();
 }
