@@ -1024,12 +1024,10 @@ function completeLevel() {
   game._completedKills = game.kills;
   game._completedKillTarget = cfg ? cfg.killTarget : game.kills;
   
-  // [Power Outage Update] #8: Fade out music before boss levels (4, 9, 14, 19)
-  // Next level would be boss level
-  const nextLevel = game.level + 1;
-  if (nextLevel % 5 === 0 && nextLevel <= 20) {
-    fadeOutMusic(2.0);
-    console.log(`[music] Fading out before boss level ${nextLevel}`);
+  // Stop boss music when boss dies
+  if (cfg && cfg.isBoss) {
+    stopMusic();
+    console.log(`[music] Stopped boss music after defeating boss at level ${game.level}`);
   }
   
   // [Power Outage Update] #6: Enter slow-mo finale instead of immediate completion
@@ -1049,6 +1047,13 @@ function showUpgradeScreen() {
 
   // Stop lightning sound during upgrade screen
   stopLightningSound();
+
+  // Fade out all music over 4 seconds when next level is a boss level
+  const nextLevel = game.level + 1;
+  if (nextLevel % 5 === 0 && nextLevel <= 20) {
+    fadeOutMusic(4.0);
+    console.log(`[music] Fading out all music before boss level ${nextLevel}`);
+  }
 
   // Alternate between left and right hand
   upgradeHand = upgradeHand === 'left' ? 'right' : 'left';
@@ -1137,23 +1142,27 @@ function advanceLevelAfterUpgrade() {
     if (game._levelConfig.isBoss) {
       game.state = State.BOSS_ALERT;
       game.stateTimer = 3.0; // 3 second alert sequence
-      // Fade out music before boss (2 second fade)
-      fadeOutMusic(2.0);
+      // Start boss music immediately at alert screen
+      const bossCategory = `boss${game.level}`;
+      playMusic(bossCategory);
       playBossAlertSound();
       showBossAlert();
-      console.log(`[game] Boss alert for level ${game.level}`);
+      console.log(`[game] Boss alert for level ${game.level} - boss music started`);
     } else {
       game.state = State.PLAYING;
       showHUD();
+      
+      // Start appropriate level music after boss or based on level range
+      if (game.level >= 1 && game.level <= 5) {
+        playMusic('levels1to5');
+      } else if (game.level >= 6 && game.level <= 10) {
+        playMusic('levels6to10');
+      }
+      // Levels 11-20 currently use levels6to10 music (extend if needed)
     }
 
     // Hide blaster displays during gameplay
     blasterDisplays.forEach(d => { if (d) d.visible = false; });
-
-    // Only start non-boss music (boss music starts after alert)
-    if (game.level === 6 && !game._levelConfig.isBoss) {
-      playMusic('levels6to10');
-    }
   }
 }
 
@@ -1213,8 +1222,8 @@ function shootWeapon(controller, index) {
     let pelletDir = _tempDir.clone();
     
     if (stats.spreadAngle > 0) {
-      // Apply random cone spread (~3° = 0.0524 radians default)
-      const spreadRad = (stats.spreadAngle * Math.PI) / 180;
+      // Apply random cone spread (spreadAngle is already in radians from upgrades.js)
+      const spreadRad = stats.spreadAngle;
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.random() * spreadRad;
       const perturbX = Math.sin(phi) * Math.cos(theta);
@@ -2259,17 +2268,13 @@ function render(timestamp) {
       playBossAlertSound();
     }
     
-    // After 3s: transition to PLAYING, spawn boss, start boss music
+    // After 3s: transition to PLAYING, spawn boss (music already started)
     if (game.stateTimer <= 0) {
       hideBossAlert();
       game._alertSound2 = false;
       game.state = State.PLAYING;
       showHUD();
-      
-      // Start boss music
-      const bossCategory = `boss${game.level}`;
-      playMusic(bossCategory);
-      
+      // Boss music already started in advanceLevelAfterUpgrade
       console.log(`[game] Boss fight starting at level ${game.level}`);
     }
   }

@@ -82,71 +82,6 @@ let hoverSoundCooldown = 0;
 const HOVER_SCALE_MULT = 1.15;
 const HOVER_LERP_SPEED = 8.0;
 
-// Pulse ring pool for sonar effect
-const pulseRingPool = [];
-const MAX_PULSE_RINGS = 8;
-let pulseRingIndex = 0;
-
-function initPulseRingPool() {
-  for (let i = 0; i < MAX_PULSE_RINGS; i++) {
-    const geo = new THREE.RingGeometry(0.01, 0.015, 32);
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    const ring = new THREE.Mesh(geo, mat);
-    ring.visible = false;
-    ring.userData.active = false;
-    sceneRef.add(ring);
-    pulseRingPool.push(ring);
-  }
-}
-
-function spawnPulseRing(button) {
-  if (!sceneRef) return;
-  if (pulseRingPool.length === 0) initPulseRingPool();
-  
-  const ring = pulseRingPool.find(r => !r.userData.active);
-  if (!ring) return;
-  
-  ring.userData.active = true;
-  ring.userData.createdAt = performance.now();
-  ring.userData.lifetime = 1000;
-  ring.userData.button = button;
-  ring.visible = true;
-  ring.material.opacity = 0.6;
-  ring.scale.setScalar(1.0);
-  
-  // Position at button center
-  const btnPos = new THREE.Vector3();
-  button.mesh.getWorldPosition(btnPos);
-  ring.position.copy(btnPos);
-  ring.position.z += 0.02;
-}
-
-function updatePulseRings(now) {
-  for (let i = 0; i < pulseRingPool.length; i++) {
-    const ring = pulseRingPool[i];
-    if (!ring.userData.active) continue;
-    
-    const age = now - ring.userData.createdAt;
-    if (age > ring.userData.lifetime) {
-      ring.visible = false;
-      ring.userData.active = false;
-      continue;
-    }
-    
-    // Expand and fade
-    const t = age / ring.userData.lifetime;
-    const scale = 1.0 + t * 0.5;
-    ring.scale.setScalar(scale);
-    ring.material.opacity = 0.6 * (1 - t);
-  }
-}
-
 export function registerHoverableButton(buttonData) {
   hoverableButtons.push(buttonData);
 }
@@ -200,11 +135,6 @@ export function updateAllButtonHovers(raycaster, now, dt, playHoverSound, playCl
         btn.highlightBorder.material.opacity = 0.5 + Math.sin(now * 0.005) * 0.3;
       }
     }
-    
-    // Pulse ring on hover enter
-    if (isHovered && btn !== lastHoveredButton) {
-      spawnPulseRing(btn);
-    }
   });
   
   // Hover enter sound
@@ -215,19 +145,16 @@ export function updateAllButtonHovers(raycaster, now, dt, playHoverSound, playCl
   
   lastHoveredButton = hitButton;
   
-  // Update pulse rings
-  updatePulseRings(now);
-  
   return hitButton;
 }
 
-// Helper to create highlight border for a button
-function createHighlightBorder(geo, gap = 0.02) {
+// Helper to create highlight border for a button (thicker border)
+function createHighlightBorder(geo, gap = 0.025) {
   const scale = 1 + gap * 2;
   const highlightGeo = new THREE.EdgesGeometry(
     new THREE.PlaneGeometry(
-      geo.parameters.width * scale + 0.04,
-      geo.parameters.height * scale + 0.04
+      geo.parameters.width * scale + 0.05,
+      geo.parameters.height * scale + 0.05
     )
   );
   const highlightMat = new THREE.LineBasicMaterial({
@@ -1628,7 +1555,7 @@ export function spawnVampireHealIndicator(position) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
 
-  const scale = 0.2;
+  const scale = 0.4; // Doubled from 0.2 for 2x size
   const width = scale * 2;
   const height = scale;
 

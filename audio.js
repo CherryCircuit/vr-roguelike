@@ -547,7 +547,7 @@ export function stopLightningSound() {
 
 // ── Music System ───────────────────────────────────────────
 let currentMusic = null;
-let musicVolume = 0.375; // Increased by 25% from 0.3
+let musicVolume = 0.3;
 let currentPlaylist = [];
 let currentTrackIndex = 0;
 // let musicAnalyser = null;  // Music visualizer - commented out
@@ -831,122 +831,41 @@ export function playButtonClickSound() {
   noise.stop(t + 0.05);
 }
 
-// ── Low Health Alert Sound (sfxr params) ───────────────────────
+// ── Low Health Alert Sound (wav file) ───────────────────────
+let lowHealthAudio = null;
 export function playLowHealthAlertSound() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Based on sfxr params: wave_type 0 (square), with vib and arp
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'square';
-
-  // Oscillating frequency with vibrato feel
-  osc.frequency.setValueAtTime(300, t);
-  osc.frequency.linearRampToValueAtTime(400, t + 0.1);
-  osc.frequency.linearRampToValueAtTime(250, t + 0.25);
-  osc.frequency.linearRampToValueAtTime(350, t + 0.4);
-
-  gain.gain.setValueAtTime(0, t);
-  gain.gain.linearRampToValueAtTime(0.15, t + 0.05);
-  gain.gain.setValueAtTime(0.12, t + 0.3);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(t);
-  osc.stop(t + 0.5);
-
-  // Second oscillator for depth
-  const osc2 = ctx.createOscillator();
-  const gain2 = ctx.createGain();
-  osc2.type = 'sine';
-  osc2.frequency.setValueAtTime(150, t);
-  osc2.frequency.linearRampToValueAtTime(200, t + 0.2);
-  osc2.frequency.linearRampToValueAtTime(100, t + 0.4);
-
-  gain2.gain.setValueAtTime(0.08, t);
-  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
-
-  osc2.connect(gain2);
-  gain2.connect(ctx.destination);
-  osc2.start(t);
-  osc2.stop(t + 0.4);
+  if (lowHealthAudio) {
+    lowHealthAudio.pause();
+    lowHealthAudio.currentTime = 0;
+  }
+  lowHealthAudio = new Audio('mnt/project/soundfx/lowhealth.wav');
+  lowHealthAudio.volume = 0.5;
+  lowHealthAudio.play().catch(() => {});
 }
 
-// ── Vampire Heal Sound (sfxr params) ───────────────────────────
+// ── Vampire Heal Sound (wav file) ───────────────────────────
+let vampireHealAudio = null;
 export function playVampireHealSound() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Based on sfxr params: wave_type 1 (sawtooth), quick riser
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'sawtooth';
-
-  // Rising frequency for "absorbing" feel
-  osc.frequency.setValueAtTime(180, t);
-  osc.frequency.exponentialRampToValueAtTime(400, t + 0.35);
-
-  // Vibrato
-  const lfo = ctx.createOscillator();
-  const lfoGain = ctx.createGain();
-  lfo.frequency.value = 8;
-  lfoGain.gain.value = 15;
-  lfo.connect(lfoGain);
-  lfoGain.connect(osc.frequency);
-
-  gain.gain.setValueAtTime(0.1, t);
-  gain.gain.setValueAtTime(0.08, t + 0.25);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  lfo.start(t);
-  osc.start(t);
-  osc.stop(t + 0.4);
-  lfo.stop(t + 0.4);
+  if (vampireHealAudio) {
+    vampireHealAudio.pause();
+    vampireHealAudio.currentTime = 0;
+  }
+  vampireHealAudio = new Audio('mnt/project/soundfx/vampiric.wav');
+  vampireHealAudio.volume = 0.4;
+  vampireHealAudio.play().catch(() => {});
 }
 
-// ── New Buckshot Sound (sfxr params) ───────────────────────────
+// ── Buckshot Sound (wav file) ───────────────────────────
+let buckshotAudio = null;
 export function playBuckshotSoundNew() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Based on sfxr params: wave_type 3 (noise), punchy
-  const noise = ctx.createBufferSource();
-  noise.buffer = getExplosionBuffer();
-  noise.playbackRate.value = 0.15;
-
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(1200, t);
-  filter.frequency.exponentialRampToValueAtTime(100, t + 0.35);
-  filter.Q.value = 1;
-
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0.25, t);
-  gain.gain.setValueAtTime(0.2, t + 0.15);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
-
-  noise.connect(filter);
-  filter.connect(gain);
-  gain.connect(ctx.destination);
-  noise.start(t);
-  noise.stop(t + 0.4);
-
-  // Low thump layer
-  const osc = ctx.createOscillator();
-  const oscGain = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(80, t);
-  osc.frequency.exponentialRampToValueAtTime(30, t + 0.2);
-  oscGain.gain.setValueAtTime(0.15, t);
-  oscGain.gain.exponentialRampToValueAtTime(0.01, t + 0.25);
-  osc.connect(oscGain);
-  oscGain.connect(ctx.destination);
-  osc.start(t);
-  osc.stop(t + 0.25);
+  if (buckshotAudio) {
+    buckshotAudio.pause();
+    buckshotAudio.currentTime = 0;
+  }
+  buckshotAudio = new Audio('mnt/project/soundfx/buckshot.wav');
+  buckshotAudio.volume = 0.5;
+  buckshotAudio.play().catch(() => {});
+}
 }
 
 // ── Music Fade Out ─────────────────────────────────────────────
