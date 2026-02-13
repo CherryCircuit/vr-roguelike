@@ -866,7 +866,6 @@ export function playBuckshotSoundNew() {
   buckshotAudio.volume = 0.5;
   buckshotAudio.play().catch(() => {});
 }
-}
 
 // ── Music Fade Out ─────────────────────────────────────────────
 export function fadeOutMusic(durationSec = 2.0) {
