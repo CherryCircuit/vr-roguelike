@@ -49,6 +49,7 @@ let titleBlinkSprite = null;
 
 // Title scoreboard button
 let titleScoreboardBtn = null;
+let titleScoreboardBtnData = null;
 
 // Name entry state
 let nameEntryName = '';
@@ -73,6 +74,169 @@ let countrySelectContinent = 'North America';
 let countrySelectScrollOffset = 0;
 let continentTabs = [];
 let countryItems = [];
+
+// ── Button Hover System ───────────────────────────────────────
+const hoverableButtons = [];
+let lastHoveredButton = null;
+let hoverSoundCooldown = 0;
+const HOVER_SCALE_MULT = 1.15;
+const HOVER_LERP_SPEED = 8.0;
+
+// Pulse ring pool for sonar effect
+const pulseRingPool = [];
+const MAX_PULSE_RINGS = 8;
+let pulseRingIndex = 0;
+
+function initPulseRingPool() {
+  for (let i = 0; i < MAX_PULSE_RINGS; i++) {
+    const geo = new THREE.RingGeometry(0.01, 0.015, 32);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const ring = new THREE.Mesh(geo, mat);
+    ring.visible = false;
+    ring.userData.active = false;
+    sceneRef.add(ring);
+    pulseRingPool.push(ring);
+  }
+}
+
+function spawnPulseRing(button) {
+  if (!sceneRef) return;
+  if (pulseRingPool.length === 0) initPulseRingPool();
+  
+  const ring = pulseRingPool.find(r => !r.userData.active);
+  if (!ring) return;
+  
+  ring.userData.active = true;
+  ring.userData.createdAt = performance.now();
+  ring.userData.lifetime = 1000;
+  ring.userData.button = button;
+  ring.visible = true;
+  ring.material.opacity = 0.6;
+  ring.scale.setScalar(1.0);
+  
+  // Position at button center
+  const btnPos = new THREE.Vector3();
+  button.mesh.getWorldPosition(btnPos);
+  ring.position.copy(btnPos);
+  ring.position.z += 0.02;
+}
+
+function updatePulseRings(now) {
+  for (let i = 0; i < pulseRingPool.length; i++) {
+    const ring = pulseRingPool[i];
+    if (!ring.userData.active) continue;
+    
+    const age = now - ring.userData.createdAt;
+    if (age > ring.userData.lifetime) {
+      ring.visible = false;
+      ring.userData.active = false;
+      continue;
+    }
+    
+    // Expand and fade
+    const t = age / ring.userData.lifetime;
+    const scale = 1.0 + t * 0.5;
+    ring.scale.setScalar(scale);
+    ring.material.opacity = 0.6 * (1 - t);
+  }
+}
+
+export function registerHoverableButton(buttonData) {
+  hoverableButtons.push(buttonData);
+}
+
+export function clearHoverableButtons() {
+  hoverableButtons.length = 0;
+  lastHoveredButton = null;
+}
+
+export function updateAllButtonHovers(raycaster, now, dt, playHoverSound, playClickSound) {
+  if (hoverSoundCooldown > 0) hoverSoundCooldown -= dt * 1000;
+  
+  // Find hit
+  let hitButton = null;
+  const meshes = hoverableButtons.map(b => b.mesh).filter(Boolean);
+  const hits = raycaster.intersectObjects(meshes, false);
+  
+  if (hits.length > 0) {
+    hitButton = hoverableButtons.find(b => b.mesh === hits[0].object);
+  }
+  
+  // Update all buttons
+  hoverableButtons.forEach(btn => {
+    const isHovered = btn === hitButton;
+    const targetScale = isHovered ? HOVER_SCALE_MULT : 1.0;
+    
+    // Ease-out lerp (deceleration)
+    if (btn.currentScale === undefined) btn.currentScale = 1.0;
+    const lerpFactor = 1 - Math.exp(-HOVER_LERP_SPEED * dt);
+    btn.currentScale += (targetScale - btn.currentScale) * lerpFactor;
+    
+    // Apply scale to group
+    if (btn.group) {
+      btn.group.scale.setScalar(btn.currentScale);
+    }
+    
+    // Color change on hover
+    if (btn.baseColor !== undefined && btn.mat) {
+      if (isHovered) {
+        const brightColor = new THREE.Color(btn.baseColor).multiplyScalar(1.3);
+        btn.mat.color.copy(brightColor);
+      } else {
+        btn.mat.color.setHex(btn.baseColor);
+      }
+    }
+    
+    // Highlight border (thin white line, slightly offset)
+    if (btn.highlightBorder) {
+      btn.highlightBorder.visible = isHovered;
+      if (isHovered) {
+        btn.highlightBorder.material.opacity = 0.5 + Math.sin(now * 0.005) * 0.3;
+      }
+    }
+    
+    // Pulse ring on hover enter
+    if (isHovered && btn !== lastHoveredButton) {
+      spawnPulseRing(btn);
+    }
+  });
+  
+  // Hover enter sound
+  if (hitButton && hitButton !== lastHoveredButton && hoverSoundCooldown <= 0) {
+    if (playHoverSound) playHoverSound();
+    hoverSoundCooldown = 100;
+  }
+  
+  lastHoveredButton = hitButton;
+  
+  // Update pulse rings
+  updatePulseRings(now);
+  
+  return hitButton;
+}
+
+// Helper to create highlight border for a button
+function createHighlightBorder(geo, gap = 0.02) {
+  const scale = 1 + gap * 2;
+  const highlightGeo = new THREE.EdgesGeometry(
+    new THREE.PlaneGeometry(
+      geo.parameters.width * scale + 0.04,
+      geo.parameters.height * scale + 0.04
+    )
+  );
+  const highlightMat = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0,
+  });
+  return new THREE.LineSegments(highlightGeo, highlightMat);
+}
 
 // ── Canvas text utility ────────────────────────────────────
 function makeTextTexture(text, opts = {}, existingObj = null) {
@@ -467,6 +631,13 @@ function createTitleScreen() {
   btnGroup.add(btnMesh);
   const btnBorderGeo = new THREE.EdgesGeometry(btnGeo);
   btnGroup.add(new THREE.LineSegments(btnBorderGeo, new THREE.LineBasicMaterial({ color: 0xffff00 })));
+  
+  // Highlight border for hover
+  const btnHighlightBorder = createHighlightBorder(btnGeo, 0.02);
+  btnHighlightBorder.position.z = 0.02;
+  btnHighlightBorder.visible = false;
+  btnGroup.add(btnHighlightBorder);
+  
   const btnText = makeSprite('SCOREBOARD', {
     fontSize: 36,
     color: '#ffff00',
@@ -478,6 +649,16 @@ function createTitleScreen() {
   btnGroup.add(btnText);
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
+  
+  // Register title scoreboard button as hoverable
+  titleScoreboardBtnData = {
+    mesh: btnMesh,
+    group: btnGroup,
+    mat: btnMat,
+    baseColor: 0x110033,
+    currentScale: 1.0,
+    highlightBorder: btnHighlightBorder,
+  };
 
   // Version number
   const versionDate = 'FEB 11 2026   12:00AM PT';
@@ -494,6 +675,12 @@ function createTitleScreen() {
 export function showTitle() {
   titleGroup.visible = true;
   hudGroup.visible = false;
+  
+  // Register title scoreboard button as hoverable
+  clearHoverableButtons();
+  if (titleScoreboardBtnData) {
+    registerHoverableButton(titleScoreboardBtnData);
+  }
 }
 
 export function hideTitle() {
@@ -652,6 +839,9 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
 
+  // Clear hoverable buttons for fresh registration
+  clearHoverableButtons();
+
   // Fixed world position in front of spawn
   upgradeGroup.position.set(0, 1.6, -4);
 
@@ -717,6 +907,12 @@ function createUpgradeCard(upgrade, position) {
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
+  // Highlight border for hover
+  const highlightBorder = createHighlightBorder(cardGeo, 0.02);
+  highlightBorder.position.z = 0.02;
+  highlightBorder.visible = false;
+  group.add(highlightBorder);
+
   // Name text - smaller to prevent overlap
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
     fontSize: 28,
@@ -762,6 +958,16 @@ function createUpgradeCard(upgrade, position) {
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
 
+  // Register as hoverable
+  registerHoverableButton({
+    mesh: card,
+    group: group,
+    mat: cardMat,
+    baseColor: 0x110033,
+    currentScale: 1.0,
+    highlightBorder: highlightBorder,
+  });
+
   return group;
 }
 
@@ -788,6 +994,12 @@ function createSkipCard(position) {
   const borderGeo = new THREE.EdgesGeometry(cardGeo);
   const borderMat = new THREE.LineBasicMaterial({ color: '#00ff88' });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
+
+  // Highlight border for hover
+  const highlightBorder = createHighlightBorder(cardGeo, 0.02);
+  highlightBorder.position.z = 0.02;
+  highlightBorder.visible = false;
+  group.add(highlightBorder);
 
   // "SKIP" text
   const nameSprite = makeSprite('SKIP', {
@@ -820,6 +1032,16 @@ function createSkipCard(position) {
   iconMesh.position.set(0, -0.25, 0.05);
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
+
+  // Register as hoverable
+  registerHoverableButton({
+    mesh: card,
+    group: group,
+    mat: cardMat,
+    baseColor: 0x220044,
+    currentScale: 1.0,
+    highlightBorder: highlightBorder,
+  });
 
   return group;
 }
@@ -1097,9 +1319,9 @@ export function spawnDamageNumber(position, damage, color, isCrit = false) {
   canvas.width = 128;
   canvas.height = 64;
 
-  // [Power Outage Update] #14: 2x size for crits
+  // [Power Outage Update] #14: 1.5x size for crits (reduced from 2x by 25%)
   const fontSize = isCrit
-    ? Math.min(48, 28 + damage / 6) * 2
+    ? Math.min(48, 28 + damage / 6) * 1.5
     : Math.min(48, 28 + damage / 6);
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.textAlign = 'center';
@@ -1117,9 +1339,9 @@ export function spawnDamageNumber(position, damage, color, isCrit = false) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
 
-  // [Power Outage Update] #14: 2x mesh scale for crits
+  // [Power Outage Update] #14: 1.5x mesh scale for crits (reduced from 2x by 25%)
   const scale = isCrit
-    ? (0.25 + Math.min(damage / 100, 0.15)) * 2
+    ? (0.25 + Math.min(damage / 100, 0.15)) * 1.5
     : (0.25 + Math.min(damage / 100, 0.15));
   const width = scale * 2;
   const height = scale;
@@ -1370,6 +1592,74 @@ export function updateComboPopups(dt, now) {
         popup.material.opacity = 1 - (age - fadeStart) / 500;
       }
     }
+  }
+}
+
+// ── Vampire Heal Indicator ─────────────────────────────────────
+export function spawnVampireHealIndicator(position) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 96;
+  canvas.height = 48;
+
+  // Draw "+" symbol
+  ctx.fillStyle = '#00ff00';
+  ctx.font = 'bold 32px Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('+', 8, 24);
+
+  // Draw half pixel heart (left side only, same design as HUD hearts)
+  const pixSize = 4;
+  const heartOffsetX = 40;
+  const heartOffsetY = 12;
+  
+  ctx.fillStyle = '#ff0044';
+  HEART_PIXELS.forEach((row, py) => {
+    row.forEach((px_on, px) => {
+      if (!px_on) return;
+      // Only draw left half (px < 4)
+      if (px < 4) {
+        ctx.fillRect(heartOffsetX + px * pixSize, heartOffsetY + py * pixSize, pixSize, pixSize);
+      }
+    });
+  });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  const scale = 0.2;
+  const width = scale * 2;
+  const height = scale;
+
+  const geometry = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 1,
+    depthTest: false,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geometry, mat);
+  mesh.position.copy(position);
+  mesh.position.y += 0.3;
+  mesh.position.x += (Math.random() - 0.5) * 0.2;
+
+  mesh.renderOrder = 997;
+  mesh.userData.velocity = new THREE.Vector3(0, 0.8, 0);
+  mesh.userData.lifetime = 800;
+  mesh.userData.createdAt = performance.now();
+
+  sceneRef.add(mesh);
+  damageNumbers.push(mesh);
+
+  // Cap total
+  while (damageNumbers.length > 25) {
+    const old = damageNumbers.shift();
+    sceneRef.remove(old);
+    old.material.map.dispose();
+    old.material.dispose();
   }
 }
 
@@ -1683,6 +1973,9 @@ export function showScoreboard(scores, headerText, opts = null) {
   hideAll();
   while (scoreboardGroup.children.length) scoreboardGroup.remove(scoreboardGroup.children[0]);
 
+  // Clear hoverable buttons for fresh registration
+  clearHoverableButtons();
+
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
   scoreboardHeader = headerText || 'GLOBAL LEADERBOARD';
@@ -1749,11 +2042,27 @@ export function showScoreboard(scores, headerText, opts = null) {
       new THREE.LineBasicMaterial({ color: 0x888888 })
     ));
 
+    // Highlight border for hover
+    const highlightBorder = createHighlightBorder(btnGeo, 0.02);
+    highlightBorder.position.z = 0.02;
+    highlightBorder.visible = false;
+    btnGroup.add(highlightBorder);
+
     const txt = makeSprite(def.label, { fontSize: 22, color: '#ffffff', scale: 0.12 });
     txt.position.set(0, 0, 0.01);
     btnGroup.add(txt);
 
     scoreboardGroup.add(btnGroup);
+    
+    // Register as hoverable
+    registerHoverableButton({
+      mesh: btnMesh,
+      group: btnGroup,
+      mat: btnMat,
+      baseColor: 0x111133,
+      currentScale: 1.0,
+      highlightBorder: highlightBorder,
+    });
   }
 
   // BACK button bottom center
@@ -1767,6 +2076,12 @@ export function showScoreboard(scores, headerText, opts = null) {
   const backMesh = new THREE.Mesh(backGeo, backMat);
   backMesh.userData.scoreboardAction = 'back';
   backGroup.add(backMesh);
+  
+  const backHighlightBorder = createHighlightBorder(backGeo, 0.02);
+  backHighlightBorder.position.z = 0.02;
+  backHighlightBorder.visible = false;
+  backGroup.add(backHighlightBorder);
+  
   backGroup.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(backGeo),
     new THREE.LineBasicMaterial({ color: 0xff4444 })
@@ -1775,6 +2090,16 @@ export function showScoreboard(scores, headerText, opts = null) {
   backTxt.position.set(0, 0, 0.01);
   backGroup.add(backTxt);
   scoreboardGroup.add(backGroup);
+  
+  // Register back button as hoverable
+  registerHoverableButton({
+    mesh: backMesh,
+    group: backGroup,
+    mat: backMat,
+    baseColor: 0x330000,
+    currentScale: 1.0,
+    highlightBorder: backHighlightBorder,
+  });
 }
 
 function renderScoreboardCanvas() {
@@ -1932,6 +2257,10 @@ export function updateScoreboardScroll(delta) {
 export function showCountrySelect(countries, continents, initialContinent) {
   hideAll();
   while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
+  
+  // Clear hoverable buttons for fresh registration
+  clearHoverableButtons();
+  
   continentTabs = [];
   countryItems = [];
   countrySelectContinent = initialContinent || 'North America';
@@ -1967,6 +2296,12 @@ export function showCountrySelect(countries, continents, initialContinent) {
     tabMesh.userData.continentTab = continent;
     tabGroup.add(tabMesh);
 
+    // Highlight border for hover
+    const tabHighlightBorder = createHighlightBorder(tabGeo, 0.015);
+    tabHighlightBorder.position.z = 0.02;
+    tabHighlightBorder.visible = false;
+    tabGroup.add(tabHighlightBorder);
+
     tabGroup.add(new THREE.LineSegments(
       new THREE.EdgesGeometry(tabGeo),
       new THREE.LineBasicMaterial({ color: isActive ? 0x00ffff : 0x444466 })
@@ -1982,6 +2317,17 @@ export function showCountrySelect(countries, continents, initialContinent) {
 
     continentTabs.push({ group: tabGroup, mesh: tabMesh, continent });
     countrySelectGroup.add(tabGroup);
+    
+    // Register tab as hoverable
+    registerHoverableButton({
+      mesh: tabMesh,
+      group: tabGroup,
+      mat: tabMat,
+      baseColor: isActive ? 0x003344 : 0x111133,
+      currentScale: 1.0,
+      highlightBorder: tabHighlightBorder,
+    });
+    
     tabX += tabWidth + tabGap;
   }
 
@@ -1998,6 +2344,12 @@ export function showCountrySelect(countries, continents, initialContinent) {
   const backMesh = new THREE.Mesh(backGeo, backMat);
   backMesh.userData.countryAction = 'back';
   backGroup.add(backMesh);
+  
+  const backHighlightBorder = createHighlightBorder(backGeo, 0.02);
+  backHighlightBorder.position.z = 0.02;
+  backHighlightBorder.visible = false;
+  backGroup.add(backHighlightBorder);
+  
   backGroup.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(backGeo),
     new THREE.LineBasicMaterial({ color: 0xff4444 })
@@ -2006,6 +2358,16 @@ export function showCountrySelect(countries, continents, initialContinent) {
   backTxt.position.set(0, 0, 0.01);
   backGroup.add(backTxt);
   countrySelectGroup.add(backGroup);
+  
+  // Register back button as hoverable
+  registerHoverableButton({
+    mesh: backMesh,
+    group: backGroup,
+    mat: backMat,
+    baseColor: 0x330000,
+    currentScale: 1.0,
+    highlightBorder: backHighlightBorder,
+  });
 }
 
 function renderCountryList(countries) {
@@ -2056,6 +2418,12 @@ function renderCountryList(countries) {
     itemMesh.userData.countryAction = 'select';
     itemGroup.add(itemMesh);
 
+    // Highlight border for hover
+    const itemHighlightBorder = createHighlightBorder(itemGeo, 0.015);
+    itemHighlightBorder.position.z = 0.02;
+    itemHighlightBorder.visible = false;
+    itemGroup.add(itemHighlightBorder);
+
     itemGroup.add(new THREE.LineSegments(
       new THREE.EdgesGeometry(itemGeo),
       new THREE.LineBasicMaterial({ color: 0x444466 })
@@ -2069,6 +2437,16 @@ function renderCountryList(countries) {
 
     countryItems.push({ group: itemGroup, mesh: itemMesh, code: country.code });
     countrySelectGroup.add(itemGroup);
+    
+    // Register country item as hoverable
+    registerHoverableButton({
+      mesh: itemMesh,
+      group: itemGroup,
+      mat: itemMat,
+      baseColor: 0x111133,
+      currentScale: 1.0,
+      highlightBorder: itemHighlightBorder,
+    });
   }
 }
 

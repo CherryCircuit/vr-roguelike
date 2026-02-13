@@ -9,7 +9,7 @@ import Stats from 'three/addons/libs/stats.module.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound } from './audio.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic } from './audio.js';
 // getMusicFrequencyData removed - music visualizer commented out
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -29,7 +29,9 @@ import {
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   // [Power Outage Update] #3, #8: New HUD functions
-  showBossAlert, hideBossAlert, updateBossAlert, showKillsRemainingMessage, updateKillsRemainingMessage
+  showBossAlert, hideBossAlert, updateBossAlert, showKillsRemainingMessage, updateKillsRemainingMessage,
+  // Button hover system
+  updateAllButtonHovers, clearHoverableButtons, spawnVampireHealIndicator
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -112,6 +114,13 @@ let floorMaterial = null;
 const FLOOR_BASE_COLOR = new THREE.Color(0x220044);
 let floorFlashTimer = 0;
 let floorFlashing = false;
+
+// Low health alert state
+let lowHealthAlertActive = false;
+let lowHealthPulseTimer = 0;
+let lowHealthSoundTimer = 0;
+const LOW_HEALTH_PULSE_SPEED = 2.0; // Pulses per second
+const LOW_HEALTH_SOUND_INTERVAL = 3000; // 3 seconds between alert sounds
 
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
@@ -783,6 +792,7 @@ function handleTitleTrigger(controller) {
 
   const btnHit = getTitleButtonHit(raycaster);
   if (btnHit === 'scoreboard') {
+    playButtonClickSound();
     scoreboardFromGameOver = false;
     game.state = State.SCOREBOARD;
     hideTitle();
@@ -792,6 +802,8 @@ function handleTitleTrigger(controller) {
     });
     return;
   }
+  startGame();
+}
   startGame();
 }
 
@@ -822,6 +834,7 @@ function handleNameEntryTrigger(controller) {
 
   const result = getKeyboardHit(raycaster);
   if (result && result.action === 'submit') {
+    playButtonClickSound();
     const name = result.name.trim();
     if (!isNameClean(name)) {
       console.log('[scoreboard] Name rejected by profanity filter');
@@ -858,12 +871,14 @@ function handleScoreboardTrigger(controller) {
 
   const action = getScoreboardHit(raycaster);
   if (action === 'back') {
+    playButtonClickSound();
     hideScoreboard();
     resetGame();
     showTitle();
     return;
   }
   if (action === 'country') {
+    playButtonClickSound();
     // Show country select for filtering
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
@@ -872,6 +887,7 @@ function handleScoreboardTrigger(controller) {
     return;
   }
   if (action === 'continent') {
+    playButtonClickSound();
     // Show continent picker — reuse country select but select a continent
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
@@ -893,6 +909,7 @@ function handleCountrySelectTrigger(controller) {
   if (!result) return;
 
   if (result.action === 'back') {
+    playButtonClickSound();
     hideCountrySelect();
     if (scoreboardFromGameOver) {
       // Back to name entry
@@ -910,6 +927,7 @@ function handleCountrySelectTrigger(controller) {
   }
 
   if (result.action === 'select') {
+    playButtonClickSound();
     setStoredCountry(result.code);
     hideCountrySelect();
 
@@ -1008,6 +1026,14 @@ function completeLevel() {
   game._completedKills = game.kills;
   game._completedKillTarget = cfg ? cfg.killTarget : game.kills;
   
+  // [Power Outage Update] #8: Fade out music before boss levels (4, 9, 14, 19)
+  // Next level would be boss level
+  const nextLevel = game.level + 1;
+  if (nextLevel % 5 === 0 && nextLevel <= 20) {
+    fadeOutMusic(2.0);
+    console.log(`[music] Fading out before boss level ${nextLevel}`);
+  }
+  
   // [Power Outage Update] #6: Enter slow-mo finale instead of immediate completion
   game.state = State.LEVEL_COMPLETE_SLOWMO;
   game.stateTimer = 3.0; // 3 seconds of slow-mo
@@ -1052,6 +1078,8 @@ function showUpgradeScreen() {
 
 function selectUpgradeAndAdvance(upgrade, hand) {
   console.log(`[game] Selected upgrade: ${upgrade.name} for ${hand} hand`);
+  
+  playButtonClickSound();
 
   // Handle SKIP option - restore full health instead of upgrade
   if (upgrade.id === 'SKIP') {
@@ -1111,7 +1139,8 @@ function advanceLevelAfterUpgrade() {
     if (game._levelConfig.isBoss) {
       game.state = State.BOSS_ALERT;
       game.stateTimer = 3.0; // 3 second alert sequence
-      stopMusic(); // Silence before boss
+      // Fade out music before boss (2 second fade)
+      fadeOutMusic(2.0);
       playBossAlertSound();
       showBossAlert();
       console.log(`[game] Boss alert for level ${game.level}`);
@@ -1123,7 +1152,8 @@ function advanceLevelAfterUpgrade() {
     // Hide blaster displays during gameplay
     blasterDisplays.forEach(d => { if (d) d.visible = false; });
 
-    if (game.level === 6) {
+    // Only start non-boss music (boss music starts after alert)
+    if (game.level === 6 && !game._levelConfig.isBoss) {
       playMusic('levels6to10');
     }
   }
@@ -1200,6 +1230,13 @@ function shootWeapon(controller, index) {
     }
 
     spawnProjectile(_tempVec.clone(), pelletDir, index, stats);
+  }
+
+  // Play sound once for all pellets (not per pellet)
+  if (stats.spreadAngle > 0) {
+    playBuckshotSoundNew(); // New buckshot sound
+  } else {
+    playShoothSound();
   }
 
   // console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
@@ -1517,7 +1554,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
 
   scene.add(mesh);
   projectiles.push(mesh);
-  playShoothSound();
+  // Sound is now played once in shootWeapon() for all pellets
 }
 
 function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExploding = false, hitWeakPoint = false) {
@@ -1583,6 +1620,9 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       if (stats.vampiricInterval > 0 && game.totalKills % stats.vampiricInterval === 0) {
         game.health = Math.min(game.maxHealth, game.health + 1);
         console.log('[vampiric] Healed 1 HP');
+        // Play heal sound and show visual indicator
+        playVampireHealSound();
+        spawnVampireHealIndicator(destroyData.position);
       }
 
       // [Power Outage Update] #8: Show "5 KILLS REMAINING" message
@@ -1960,6 +2000,21 @@ function render(timestamp) {
   // ── Title screen ──
   if (st === State.TITLE) {
     updateTitle(now);
+    
+    // Button hover updates
+    for (let i = 0; i < controllers.length; i++) {
+      const ctrl = controllers[i];
+      if (!ctrl) continue;
+      const origin = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      ctrl.getWorldPosition(origin);
+      ctrl.getWorldQuaternion(quat);
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      const rc = new THREE.Raycaster(origin, dir, 0, 10);
+      updateAllButtonHovers(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
+      break; // Only need one controller for hover
+    }
+    
     if (typeof window !== 'undefined' && window.debugJumpToLevel) {
       const level = window.debugJumpToLevel;
       window.debugJumpToLevel = null;
@@ -2157,15 +2212,18 @@ function render(timestamp) {
     timeScale = 0.15; // Maintain slow-mo
     
     // After ~1.5s: explode all remaining enemies
+    // Fix: Collect all enemies first, then destroy in reverse order to avoid index issues
     if (game.stateTimer <= 1.5 && !game._slowMoExplosionsDone) {
       game._slowMoExplosionsDone = true;
       const enemies = getEnemies();
-      enemies.forEach((e, i) => {
+      // Process from end to beginning to avoid index shifting
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
         // Trigger explosion effect
         spawnDamageNumber(e.mesh.position, e.hp || 10, '#ff8800');
         playExplosionSound();
         destroyEnemy(i);
-      });
+      }
     }
     
     // [Power Outage Update] #9: Show highlighted kill counter during slow-mo
@@ -2235,6 +2293,20 @@ function render(timestamp) {
         animateBlasterScanLines(display);
       }
     });
+
+    // Button hover updates
+    for (let i = 0; i < controllers.length; i++) {
+      const ctrl = controllers[i];
+      if (!ctrl) continue;
+      const origin = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      ctrl.getWorldPosition(origin);
+      ctrl.getWorldQuaternion(quat);
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      const rc = new THREE.Raycaster(origin, dir, 0, 10);
+      updateAllButtonHovers(rc, now, dt, playButtonHoverSound, playButtonClickSound);
+      break;
+    }
   }
 
   // ── Game over / Victory ──
@@ -2255,15 +2327,42 @@ function render(timestamp) {
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
       const rc = new THREE.Raycaster(origin, dir, 0, 10);
       updateKeyboardHover(rc);
+      updateAllButtonHovers(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
       break;  // Only need one controller for hover
     }
   }
 
   // ── Scoreboard / Regional Scores ──
-  // (scrolling handled by button hits in trigger handler)
+  else if (st === State.SCOREBOARD || st === State.REGIONAL_SCORES) {
+    for (let i = 0; i < controllers.length; i++) {
+      const ctrl = controllers[i];
+      if (!ctrl) continue;
+      const origin = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      ctrl.getWorldPosition(origin);
+      ctrl.getWorldQuaternion(quat);
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      const rc = new THREE.Raycaster(origin, dir, 0, 10);
+      updateAllButtonHovers(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
+      break;
+    }
+  }
 
   // ── Country Select ──
-  // (interaction handled in trigger handler)
+  else if (st === State.COUNTRY_SELECT) {
+    for (let i = 0; i < controllers.length; i++) {
+      const ctrl = controllers[i];
+      if (!ctrl) continue;
+      const origin = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      ctrl.getWorldPosition(origin);
+      ctrl.getWorldQuaternion(quat);
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      const rc = new THREE.Raycaster(origin, dir, 0, 10);
+      updateAllButtonHovers(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
+      break;
+    }
+  }
 
   // ── Camera shake on damage ── COMMENTED OUT (doesn't work in VR)
   // if (cameraShake > 0) {
@@ -2291,6 +2390,39 @@ function render(timestamp) {
       const t = floorFlashTimer / 0.5;  // 0.5s flash duration
       const flashColor = new THREE.Color(0xff2222);  // Bright red
       floorMaterial.color.lerpColors(FLOOR_BASE_COLOR, flashColor, t);
+    }
+  }
+  
+  // ── Low health pulsing floor (1/2 heart = health === 1) ──
+  if (game.health === 1 && game.state === State.PLAYING) {
+    if (!lowHealthAlertActive) {
+      lowHealthAlertActive = true;
+      lowHealthPulseTimer = 0;
+      lowHealthSoundTimer = 0;
+    }
+    
+    lowHealthPulseTimer += rawDt * LOW_HEALTH_PULSE_SPEED * Math.PI;
+    lowHealthSoundTimer += rawDt * 1000;
+    
+    // Pulse floor color between base and red
+    if (floorMaterial && !floorFlashing) {
+      const pulseT = (Math.sin(lowHealthPulseTimer) + 1) / 2; // 0 to 1
+      const pulseColor = new THREE.Color(0xff2222);
+      floorMaterial.color.lerpColors(FLOOR_BASE_COLOR, pulseColor, pulseT * 0.5);
+    }
+    
+    // Play alert sound every 3 seconds
+    if (lowHealthSoundTimer >= LOW_HEALTH_SOUND_INTERVAL) {
+      lowHealthSoundTimer = 0;
+      playLowHealthAlertSound();
+    }
+  } else {
+    // Reset low health state when health is restored or game state changes
+    if (lowHealthAlertActive) {
+      lowHealthAlertActive = false;
+      if (floorMaterial && !floorFlashing) {
+        floorMaterial.color.copy(FLOOR_BASE_COLOR);
+      }
     }
   }
 
