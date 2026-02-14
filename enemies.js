@@ -65,6 +65,10 @@ function getGeo(size) {
 // Shared materials per enemy type (avoid creating new material per spawn)
 const sharedMaterials = {};
 
+// PHASE 1 FIX: Shared hitbox geometries and materials per enemy type
+const sharedHitboxGeos = {};
+const sharedHitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+
 // Pre-built explosion sprite pool (avoid creating canvas/texture per particle)
 const EXPLOSION_POOL_SIZE = 60;
 const explosionPool = [];
@@ -206,10 +210,11 @@ export function spawnEnemy(type, position, levelConfig) {
     }
   }
 
-  // Add invisible sphere hitbox for better hit detection
-  const hitboxGeo = new THREE.SphereGeometry(def.hitboxRadius, 8, 8);
-  const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-  const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+  // PHASE 1 FIX: Add invisible sphere hitbox using shared geometry
+  if (!sharedHitboxGeos[type]) {
+    sharedHitboxGeos[type] = new THREE.SphereGeometry(def.hitboxRadius, 8, 8);
+  }
+  const hitbox = new THREE.Mesh(sharedHitboxGeos[type], sharedHitboxMat);
   hitbox.userData.isEnemyHitbox = true;
   group.add(hitbox);
 
@@ -420,13 +425,14 @@ export function destroyEnemy(index) {
 
   // Remove enemy mesh from scene
   sceneRef.remove(e.mesh);
-  // Dispose merged geometry if present
+  // PHASE 1 FIX: Dispose merged geometry if present (but NOT shared hitbox geo)
   e.mesh.traverse(c => {
     if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
       c.geometry.dispose();
     }
+    // Hitbox uses shared geometry/material, so don't dispose
   });
-  // Dispose material
+  // Dispose material (cloned per-enemy)
   e.material.dispose();
   activeEnemies.splice(index, 1);
   _enemyMeshesDirty = true;  // Invalidate cache
@@ -440,11 +446,12 @@ export function destroyEnemy(index) {
 export function clearAllEnemies() {
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     sceneRef.remove(activeEnemies[i].mesh);
-    // Dispose merged geometry
+    // PHASE 1 FIX: Dispose merged geometry (but NOT shared hitbox geo)
     activeEnemies[i].mesh.traverse(c => {
       if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
         c.geometry.dispose();
       }
+      // Hitbox uses shared geometry/material, so don't dispose
     });
     activeEnemies[i].material.dispose();
   }

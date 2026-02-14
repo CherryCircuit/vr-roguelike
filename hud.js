@@ -597,23 +597,23 @@ export function updateHUD(gameState) {
   // Update scale (200% larger: height 0.48)
   heartsSprite.scale.set(ha * 0.48, 0.48, 1);
 
-  // Kill counter - 200% larger
+  // Kill counter (floor HUD scale must match creation scale)
   const cfg = gameState._levelConfig;
   if (cfg) {
-    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.30 });
+    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 2.1 });
   }
 
-  // Level - 200% larger
-  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.30 });
+  // Level (floor HUD scale must match creation scale)
+  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 1.95 });
 
-  // Score - 200% larger
-  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.26 });
+  // Score (floor HUD scale must match creation scale)
+  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 2.4 });
 
-  // Combo - 200% larger with descriptive label
+  // Combo (floor HUD scale must match creation scale)
   const combo = gameState._combo || 1;
   if (combo > 1) {
     comboSprite.visible = true;
-    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 });
+    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 1.8 });
   } else {
     comboSprite.visible = false;
   }
@@ -1161,8 +1161,11 @@ export function spawnDamageNumber(position, damage, color, isCrit = false) {
   while (damageNumbers.length > 20) {
     const old = damageNumbers.shift();
     sceneRef.remove(old);
-    old.material.map.dispose();
-    old.material.dispose();
+    if (old.geometry) old.geometry.dispose();  // PHASE 1 FIX: Dispose geometry
+    if (old.material) {
+      if (old.material.map) old.material.map.dispose();
+      old.material.dispose();
+    }
   }
 }
 
@@ -1229,8 +1232,11 @@ export function updateDamageNumbers(dt, now) {
 
     if (age > s.userData.lifetime) {
       sceneRef.remove(s);
-      s.material.map.dispose();
-      s.material.dispose();
+      if (s.geometry) s.geometry.dispose();  // PHASE 1 FIX: Dispose geometry
+      if (s.material) {
+        if (s.material.map) s.material.map.dispose();
+        s.material.dispose();
+      }
       damageNumbers.splice(i, 1);
     } else {
       s.position.addScaledVector(s.userData.velocity, dt);
@@ -1869,6 +1875,13 @@ function renderScoreboardCanvas() {
     ctx.font = '18px Arial, sans-serif';
     ctx.fillText(`${startIdx + 1}-${endIdx} of ${scoreboardScores.length}`, w / 2, h - 15);
   }
+
+  // PHASE 1 FIX: Dispose old canvas element
+  if (scoreboardCanvas && canvas !== scoreboardCanvas) {
+    // Old canvas no longer needed
+    scoreboardCanvas = null;
+  }
+  scoreboardCanvas = canvas;
 
   if (scoreboardTexture) scoreboardTexture.dispose();
   scoreboardTexture = new THREE.CanvasTexture(canvas);

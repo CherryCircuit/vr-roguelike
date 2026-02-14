@@ -199,6 +199,21 @@ function init() {
   const vrButton = VRButton.createButton(renderer);
   document.body.appendChild(vrButton);
 
+  // PHASE 1 FIX: Hide scanlines overlay reliably on VR session start/end
+  // (Previously in render loop where timing issues caused a dark box artifact)
+  renderer.xr.addEventListener('sessionstart', () => {
+    const el = document.getElementById('scanlines');
+    if (el) el.style.display = 'none';
+    const infoEl = document.getElementById('info');
+    if (infoEl) infoEl.style.display = 'none';
+  });
+  renderer.xr.addEventListener('sessionend', () => {
+    const el = document.getElementById('scanlines');
+    if (el) el.style.display = '';
+    const infoEl = document.getElementById('info');
+    if (infoEl) infoEl.style.display = '';
+  });
+
   if (!navigator.xr) {
     document.getElementById('no-vr').style.display = 'block';
     console.warn('[init] WebXR not supported');
@@ -680,9 +695,16 @@ function updateBlasterDisplay(display, controllerIndex) {
   const stats = game.handStats[hand];
   const upgrades = game.upgrades[hand];
 
-  // Remove old text
+  // Remove old text (PHASE 1 FIX: Add proper disposal)
   const oldText = display.children.filter(c => c.userData.isText);
-  oldText.forEach(t => display.remove(t));
+  oldText.forEach(t => {
+    display.remove(t);
+    if (t.geometry) t.geometry.dispose();
+    if (t.material) {
+      if (t.material.map) t.material.map.dispose();
+      t.material.dispose();
+    }
+  });
 
   // Create new text (using PlaneGeometry to respect parent rotation)
   const makeText = (text, yPos, size = 20) => {
@@ -2332,9 +2354,7 @@ function render(timestamp) {
   //   updateMountainVisualizer();
   // }
 
-  // Hide scanlines overlay in VR — it creates a dark box that follows the head and obscures the view
-  const scanlinesEl = document.getElementById('scanlines');
-  if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
+  // Scanlines hiding moved to sessionstart/sessionend events (PHASE 1 FIX)
 
   renderer.render(scene, camera);
 }
