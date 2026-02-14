@@ -199,21 +199,6 @@ function init() {
   const vrButton = VRButton.createButton(renderer);
   document.body.appendChild(vrButton);
 
-  // PHASE 1 FIX: Hide scanlines overlay reliably on VR session start/end
-  // (Previously in render loop where timing issues caused a dark box artifact)
-  renderer.xr.addEventListener('sessionstart', () => {
-    const el = document.getElementById('scanlines');
-    if (el) el.style.display = 'none';
-    const infoEl = document.getElementById('info');
-    if (infoEl) infoEl.style.display = 'none';
-  });
-  renderer.xr.addEventListener('sessionend', () => {
-    const el = document.getElementById('scanlines');
-    if (el) el.style.display = '';
-    const infoEl = document.getElementById('info');
-    if (infoEl) infoEl.style.display = '';
-  });
-
   if (!navigator.xr) {
     document.getElementById('no-vr').style.display = 'block';
     console.warn('[init] WebXR not supported');
@@ -2354,7 +2339,9 @@ function render(timestamp) {
   //   updateMountainVisualizer();
   // }
 
-  // Scanlines hiding moved to sessionstart/sessionend events (PHASE 1 FIX)
+  // Hide scanlines overlay in VR — it creates a dark box that follows the head and obscures the view
+  const scanlinesEl = document.getElementById('scanlines');
+  if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
   renderer.render(scene, camera);
 }

@@ -597,23 +597,23 @@ export function updateHUD(gameState) {
   // Update scale (200% larger: height 0.48)
   heartsSprite.scale.set(ha * 0.48, 0.48, 1);
 
-  // Kill counter (floor HUD scale must match creation scale)
+  // Kill counter - 200% larger
   const cfg = gameState._levelConfig;
   if (cfg) {
-    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 2.1 });
+    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.30 });
   }
 
-  // Level (floor HUD scale must match creation scale)
-  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 1.95 });
+  // Level - 200% larger
+  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.30 });
 
-  // Score (floor HUD scale must match creation scale)
-  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 2.4 });
+  // Score - 200% larger
+  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.26 });
 
-  // Combo (floor HUD scale must match creation scale)
+  // Combo - 200% larger with descriptive label
   const combo = gameState._combo || 1;
   if (combo > 1) {
     comboSprite.visible = true;
-    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 1.8 });
+    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 });
   } else {
     comboSprite.visible = false;
   }
