@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Synthwave VR Blaster</title>
+  <title>Synthwave VR Blaster - Babylon.js Port</title>
   <style>
     /* ── Base Reset & Synthwave Theme ── */
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -15,6 +15,12 @@
       overflow: hidden;
       width: 100vw;
       height: 100vh;
+    }
+
+    #renderCanvas {
+      width: 100%;
+      height: 100%;
+      touch-action: none;
     }
 
     /* ── Info Overlay ── */
@@ -69,7 +75,7 @@
       line-height: 1.6;
     }
 
-    /* ── Scanline Overlay (CRT effect on webpage only) ── */
+    /* ── Scanline Overlay ── */
     #scanlines {
       position: fixed;
       top: 0;
@@ -87,10 +93,35 @@
       z-index: 50;
     }
 
-    /* ── Style the VR button (Three.js injects it) ── */
-    #VRButton {
-      font-family: 'Courier New', monospace !important;
-      letter-spacing: 0.1em !important;
+    /* ── Debug Panel ── */
+    #debug-panel {
+      display: none;
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      z-index: 150;
+      background: rgba(10, 0, 21, 0.95);
+      border: 1px solid #00ffff;
+      padding: 12px;
+      font-size: 14px;
+    }
+
+    #debug-panel > div {
+      color: #00ffff;
+      margin-bottom: 8px;
+    }
+
+    #debug-panel input, #debug-panel button {
+      background: #220044;
+      color: #fff;
+      border: 1px solid #ff00ff;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+
+    #debug-panel label {
+      display: block;
+      margin-top: 8px;
     }
   </style>
 </head>
@@ -99,9 +130,9 @@
   <!-- Info overlay shown before entering VR -->
   <div id="info">
     <h1>SYNTHWAVE VR BLASTER</h1>
-    <p>Put on your VR headset and press ENTER VR</p>
-    <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Pull triggers to shoot</p>
-    <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">ver. 0.023</p>
+    <p>Babylon.js Port v0.1.0 | Put on headset and ENTER VR</p>
+    <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Top trigger: Main Weapon | Lower trigger: Alt Weapon | Menu button: Pause</p>
+    <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">Babylon.js Engine</p>
   </div>
 
   <!-- Fallback if WebXR is not available -->
@@ -111,40 +142,36 @@
     <p>Please use a WebXR-compatible browser such as Meta Quest Browser or Chrome on a VR-capable device.</p>
   </div>
 
-  <!-- CRT scanline overlay (hidden in VR — obscures view) -->
+  <!-- CRT scanline overlay (hidden in VR) -->
   <div id="scanlines"></div>
 
-  <!-- Debug menu (show with ?debug=1 or click DEBUG) -->
-  <div id="debug-panel" style="display:none;position:fixed;bottom:20px;left:20px;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #00ffff;padding:12px;font-size:14px;">
-    <div style="color:#00ffff;margin-bottom:8px;">DEBUG</div>
-    <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;background:#220044;color:#fff;border:1px solid #ff00ff;"></label>
-    <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
-    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
-    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
+  <!-- Debug menu -->
+  <div id="debug-panel">
+    <div>DEBUG</div>
+    <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;"></label>
+    <button id="debug-jump" style="margin-left:8px;">Jump</button>
+    <label><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
+    <label><input type="checkbox" id="debug-console"> Console log</label>
   </div>
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
 
-  <!-- Console log output panel (only visible when enabled) -->
+  <!-- Console log output panel -->
   <div id="console-panel" style="display:none;position:fixed;bottom:80px;left:20px;width:500px;max-height:300px;overflow-y:auto;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #ff00ff;padding:12px;font-size:12px;font-family:monospace;">
     <div style="color:#ff00ff;margin-bottom:4px;">CONSOLE OUTPUT</div>
     <div id="console-logs" style="color:#00ffff;word-break:break-all;"></div>
   </div>
 
-  <!-- WebXR Polyfill (loaded before Three.js) -->
-  <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
-  <script>
-    // Initialize the WebXR polyfill for browsers that don't natively support WebXR
-    if (window.WebXRPolyfill) {
-      new WebXRPolyfill();
-    }
-  </script>
+  <!-- Babylon.js Canvas -->
+  <canvas id="renderCanvas" touch-action="none"></canvas>
 
-  <!-- Three.js module import map (no build tools needed) -->
+  <!-- Babylon.js CDN with ES modules -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "@babylonjs/core": "https://cdn.jsdelivr.net/npm/@babylonjs/core@7.27.0/+esm",
+      "@babylonjs/gui": "https://cdn.jsdelivr.net/npm/@babylonjs/gui@7.27.0/+esm",
+      "@babylonjs/loaders": "https://cdn.jsdelivr.net/npm/@babylonjs/loaders@7.27.0/+esm",
+      "@babylonjs/materials": "https://cdn.jsdelivr.net/npm/@babylonjs/materials@7.27.0/+esm",
       "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm"
     }
   }
@@ -153,107 +180,58 @@
   <!-- Main game module -->
   <script type="module" src="main.js"></script>
   <script>
+    // Debug panel and console intercept logic
     (function() {
       const params = new URLSearchParams(location.search);
       const panel = document.getElementById('debug-panel');
       const toggle = document.getElementById('debug-toggle');
       const consolePanel = document.getElementById('console-panel');
       const consoleLogs = document.getElementById('console-logs');
+      
       if (params.get('debug') === '1') panel.style.display = 'block';
-      toggle.addEventListener('click', function(e) { e.preventDefault(); panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
+      toggle.addEventListener('click', function(e) { 
+        e.preventDefault(); 
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; 
+      });
+      
       document.getElementById('debug-jump').addEventListener('click', function() {
         const level = parseInt(document.getElementById('debug-level').value, 10) || 1;
         window.debugJumpToLevel = Math.max(1, Math.min(20, level));
       });
+      
       document.getElementById('debug-perf-monitor').addEventListener('change', function() {
         window.debugPerfMonitor = this.checked;
       });
+      
       document.getElementById('debug-console').addEventListener('change', function() {
         consolePanel.style.display = this.checked ? 'block' : 'none';
       });
+      
       consolePanel.addEventListener('click', function() {
         consolePanel.style.display = 'none';
       });
-      const originalLog = console.log;
-      const originalError = console.error;
-      const originalWarn = console.warn;
-      const originalInfo = console.info;
-      const originalDebug = console.debug;
-      
-      console.log = function() {
-        originalLog.apply(console, arguments);
-        if (document.getElementById('debug-console').checked) {
-          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
-          const div = document.createElement('div');
-          div.style.color = '#00ffff';
-          div.textContent = `[LOG] ${message}`;
-          consoleLogs.appendChild(div);
-          consoleLogs.scrollTop = consoleLogs.scrollHeight;
-          if (consoleLogs.children.length > 100) {
-            consoleLogs.removeChild(consoleLogs.firstChild);
+
+      // Console intercept for in-VR console output
+      ['log', 'error', 'warn', 'info', 'debug'].forEach(method => {
+        const original = console[method];
+        console[method] = function() {
+          original.apply(console, arguments);
+          if (document.getElementById('debug-console').checked) {
+            const message = Array.from(arguments).map(arg => 
+              typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            const div = document.createElement('div');
+            const colors = { log: '#00ffff', error: '#ff4444', warn: '#ffff44', info: '#44ffff', debug: '#888888' };
+            div.style.color = colors[method] || '#fff';
+            div.textContent = `[${method.toUpperCase()}] ${message}`;
+            consoleLogs.appendChild(div);
+            consoleLogs.scrollTop = consoleLogs.scrollHeight;
+            if (consoleLogs.children.length > 100) {
+              consoleLogs.removeChild(consoleLogs.firstChild);
+            }
           }
-        }
-      };
-      
-      console.error = function() {
-        originalError.apply(console, arguments);
-        if (document.getElementById('debug-console').checked) {
-          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
-          const div = document.createElement('div');
-          div.style.color = '#ff4444';
-          div.textContent = `[ERROR] ${message}`;
-          consoleLogs.appendChild(div);
-          consoleLogs.scrollTop = consoleLogs.scrollHeight;
-          if (consoleLogs.children.length > 100) {
-            consoleLogs.removeChild(consoleLogs.firstChild);
-          }
-        }
-      };
-      
-      console.warn = function() {
-        originalWarn.apply(console, arguments);
-        if (document.getElementById('debug-console').checked) {
-          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
-          const div = document.createElement('div');
-          div.style.color = '#ffff44';
-          div.textContent = `[WARN] ${message}`;
-          consoleLogs.appendChild(div);
-          consoleLogs.scrollTop = consoleLogs.scrollHeight;
-          if (consoleLogs.children.length > 100) {
-            consoleLogs.removeChild(consoleLogs.firstChild);
-          }
-        }
-      };
-      
-      console.info = function() {
-        originalInfo.apply(console, arguments);
-        if (document.getElementById('debug-console').checked) {
-          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
-          const div = document.createElement('div');
-          div.style.color = '#44ffff';
-          div.textContent = `[INFO] ${message}`;
-          consoleLogs.appendChild(div);
-          consoleLogs.scrollTop = consoleLogs.scrollHeight;
-          if (consoleLogs.children.length > 100) {
-            consoleLogs.removeChild(consoleLogs.firstChild);
-          }
-        }
-      };
-      
-      console.debug = function() {
-        originalDebug.apply(console, arguments);
-        if (document.getElementById('debug-console').checked) {
-          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
-          const div = document.createElement('div');
-          div.style.color = '#888888';
-          div.textContent = `[DEBUG] ${message}`;
-          consoleLogs.appendChild(div);
-          consoleLogs.scrollTop = consoleLogs.scrollHeight;
-          if (consoleLogs.children.length > 100) {
-            consoleLogs.removeChild(consoleLogs.firstChild);
-          }
-        }
-      };
+        };
+      });
     })();
   </script>
 
