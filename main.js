@@ -1,10 +1,10 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
+// Build: TWISTED SISTER
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/gui';
-import "@babylonjs/loaders/glTF/2.0";
 import { resumeAudioContext } from './audio.js';
 import * as game from './game.js';
 

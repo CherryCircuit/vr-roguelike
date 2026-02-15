@@ -11,6 +11,10 @@
   <!-- Synthwave favicon (pink background with cyan square) -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect fill='%23ff00ff' width='16' height='16'/><rect fill='%2300ffff' x='4' y='4' width='8' height='8'/></svg>">
   
+  <!-- Babylon.js CDN bundles (must load before ES modules for glTF loader to register) -->
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+  
   <style>
     /* ── Base Reset & Synthwave Theme ── */
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -137,7 +141,7 @@
   <!-- Info overlay shown before entering VR -->
   <div id="info">
     <h1>SYNTHWAVE VR BLASTER</h1>
-    <p>Babylon.js Port v0.1.0 | Put on headset and ENTER VR</p>
+    <p>Build: TWISTED SISTER | Babylon.js Port v0.1.0 | Put on headset and ENTER VR</p>
     <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Top trigger: Main Weapon | Lower trigger: Alt Weapon | Menu button: Pause</p>
     <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">Babylon.js Engine</p>
   </div>
