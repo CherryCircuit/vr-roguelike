@@ -4,6 +4,7 @@
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
+import { playBasicEnemySpawn, playFastEnemySpawn, playSwarmEnemySpawn, playTankEnemySpawn } from './audio.js';
 
 // ── Voxel patterns (simplified for performance) ───────────
 const PATTERNS = {
@@ -177,6 +178,24 @@ export function spawnEnemy(type, position, levelConfig) {
   enemyMesh.metadata = { isEnemy: true, enemyRef: enemy };
 
   activeEnemies.push(enemy);
+
+  switch (type) {
+    case 'basic':
+      playBasicEnemySpawn();
+      break;
+    case 'fast':
+      playFastEnemySpawn();
+      break;
+    case 'swarm':
+      playSwarmEnemySpawn();
+      break;
+    case 'tank':
+      playTankEnemySpawn();
+      break;
+    default:
+      break;
+  }
+
   return enemy;
 }
 

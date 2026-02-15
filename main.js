@@ -1,7 +1,7 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
-//  Build: DOKKEN
-//  Babylon.js Port v0.3.2 - WebXR Docs Sync
+//  Build: WHITESNAKE
+//  Babylon.js Port v0.3.3 - UI Orientation + Slow-Mo + Environment Fixes
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
@@ -300,7 +300,7 @@ function createShaderGridFloor(scene) {
   ctx.fillRect(0, 0, gridTextureSize, gridTextureSize);
   
   // Neon magenta grid lines
-  const gridDivisions = 40;
+  const gridDivisions = 16;
   const cellSize = gridTextureSize / gridDivisions;
   const lineWidth = Math.max(1, Math.floor(gridTextureSize * visualParams.gridLineThickness / 10));
   
@@ -330,8 +330,8 @@ function createShaderGridFloor(scene) {
   // Create material with the grid texture
   const gridMaterial = new BABYLON.StandardMaterial('gridMat', scene);
   gridMaterial.diffuseTexture = gridTexture;
-  gridMaterial.diffuseTexture.uScale = gridDivisions;
-  gridMaterial.diffuseTexture.vScale = gridDivisions;
+  gridMaterial.diffuseTexture.uScale = 8;
+  gridMaterial.diffuseTexture.vScale = 8;
   gridMaterial.diffuseTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
   gridMaterial.diffuseTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
   gridMaterial.emissiveTexture = gridTexture;
@@ -359,7 +359,6 @@ function createRetroSun(scene) {
     tessellation: 64
   }, scene);
   sunBacking.position = sunPosition.clone();
-  sunBacking.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
   sunBacking.isPickable = false;
   
   // Gradient material - orange at top, pink at bottom
@@ -402,12 +401,12 @@ function createRetroSun(scene) {
       sunPosition.y + y,
       sunPosition.z + 0.5
     );
-    stripe.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
     stripe.isPickable = false;
     
     const stripeMat = new BABYLON.StandardMaterial('stripeMat' + i, scene);
     stripeMat.disableLighting = true;
-    stripeMat.emissiveColor = new BABYLON.Color3(0.04, 0, 0.07); // Very dark purple #0a0012
+    stripeMat.emissiveColor = new BABYLON.Color3(0.04, 0, 0.09);
+    stripeMat.alpha = 0.8;
     stripeMat.backFaceCulling = false;
     stripe.material = stripeMat;
   }
@@ -419,7 +418,6 @@ function createRetroSun(scene) {
   }, scene);
   corona.position = sunPosition.clone();
   corona.position.z -= 0.5;
-  corona.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
   corona.isPickable = false;
   
   const coronaMat = new BABYLON.StandardMaterial('coronaMat', scene);
@@ -432,20 +430,15 @@ function createRetroSun(scene) {
   console.log('[main] Retro sun created with', totalStripes, 'stripes');
 }
 
-// ── Horizon Mountains (left/right clusters) ─────────────────────────────────────────
+// ── Horizon Mountains (360° ring) ─────────────────────────────────────────
 function createMountainRing(scene) {
-  const mountainCount = 14;
+  const mountainCount = 48;
   const minRadius = 120;
   const maxRadius = 160;
-  const mountainColor = new BABYLON.Color3(0.298, 0.941, 1); // #4cf0ff
+  const mountainColor = new BABYLON.Color3(0, 1, 1);
   
   for (let i = 0; i < mountainCount; i++) {
-    let angle;
-    if (i < mountainCount / 2) {
-      angle = Math.PI * 0.6 + (i / (mountainCount / 2)) * Math.PI * 0.3;
-    } else {
-      angle = Math.PI * 0.1 + ((i - mountainCount / 2) / (mountainCount / 2)) * Math.PI * 0.3;
-    }
+    const angle = (i / mountainCount) * Math.PI * 2;
     const radius = minRadius + Math.random() * (maxRadius - minRadius);
     const x = Math.cos(angle) * radius;
     const z = Math.sin(angle) * radius;
@@ -463,7 +456,7 @@ function createMountainRing(scene) {
     mountain.material = mountainMat;
   }
   
-  console.log('[main] Horizon mountain clusters created with', mountainCount, 'ridges');
+  console.log('[main] 360° mountain ring created with', mountainCount, 'ridges');
 }
 
 function createJaggedMountain(scene, index) {
@@ -2542,6 +2535,7 @@ function updateGameState(now, dt) {
 }
 
 function updatePlaying(now, dt) {
+  const unscaledDt = dt;
   const playerPos = getPlayerPosition();
   const levelConfig = gameState._levelConfig;
 
@@ -2573,7 +2567,7 @@ function updatePlaying(now, dt) {
   if (window._wasCloseEnemy === undefined) window._wasCloseEnemy = false;
   const targetScale = hasCloseEnemy ? SLOW_MO_FACTOR : 1.0;
   const lerpSpeed = hasCloseEnemy ? SLOW_MO_LERP_IN : SLOW_MO_LERP_OUT;
-  window._timeScale += (targetScale - window._timeScale) * Math.min(1, lerpSpeed * dt);
+  window._timeScale += (targetScale - window._timeScale) * Math.min(1, lerpSpeed * unscaledDt);
 
   if (hasCloseEnemy && !window._wasCloseEnemy) {
     playSlowMoSound();
@@ -2582,10 +2576,10 @@ function updatePlaying(now, dt) {
   }
   window._wasCloseEnemy = hasCloseEnemy;
 
-  dt *= window._timeScale;
+  const scaledDt = unscaledDt * window._timeScale;
   
   // Update enemies
-  const collisions = enemies.updateEnemies(dt, now, playerPos);
+  const collisions = enemies.updateEnemies(scaledDt, now, playerPos);
   
   // Handle player damage from collisions
   for (const idx of collisions) {
@@ -2615,7 +2609,7 @@ function updatePlaying(now, dt) {
   // Update boss
   const boss = enemies.getBoss();
   if (boss) {
-    enemies.updateBoss(dt, now, playerPos);
+    enemies.updateBoss(scaledDt, now, playerPos);
     hud.updateBossHealthBar(boss.hp, boss.maxHp, boss.phases, boss.mesh);
     
     // Check boss defeat
@@ -2631,7 +2625,7 @@ function updatePlaying(now, dt) {
   
   // Spawn enemies (non-boss levels)
   if (gameState.state === game.State.PLAYING) {
-    spawnTimer -= dt;
+    spawnTimer -= scaledDt;
     if (spawnTimer <= 0 && gameState.kills < levelConfig.killTarget) {
       spawnEnemy();
       spawnTimer = levelConfig.spawnInterval;
@@ -2681,19 +2675,19 @@ function updatePlaying(now, dt) {
   });
   
   // Update projectiles
-  updateProjectiles(dt, now);
+  updateProjectiles(scaledDt, now);
   
   // Update alt weapon entities
-  updateAltWeaponEntities(dt, now);
+  updateAltWeaponEntities(scaledDt, now);
   
   // Update gravity wells
-  updateGravityWells(dt, now);
+  updateGravityWells(scaledDt, now);
   
   // Update helper bots
-  updateHelperBots(dt, now);
+  updateHelperBots(scaledDt, now);
   
   // Update holograms
-  updateHolograms(dt, now);
+  updateHolograms(scaledDt, now);
   
   // Update shields
   updateShields(now);
@@ -2705,7 +2699,7 @@ function updatePlaying(now, dt) {
   updateLightningBeams(now);
   
   // Update weapon pickups
-  updatePickups(dt, now);
+  updatePickups(scaledDt, now);
   
   // Check pickup collisions
   checkPickupCollisions();
@@ -2714,12 +2708,12 @@ function updatePlaying(now, dt) {
   ['left', 'right'].forEach(hand => {
     const ws = weaponState[hand];
     if (!ws.isCharging && ws.plasmaRamp > 0) {
-      ws.plasmaRamp = Math.max(0, ws.plasmaRamp - dt * 5);
+      ws.plasmaRamp = Math.max(0, ws.plasmaRamp - scaledDt * 5);
     }
   });
   
   // Update combo decay
-  game.updateCombo(dt);
+  game.updateCombo(scaledDt);
 }
 
 function spawnEnemy() {

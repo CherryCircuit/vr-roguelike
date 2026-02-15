@@ -266,7 +266,7 @@ export function initHUD(camera, scene) {
 
   // ── Title Screen ──
   titleGroup = createTitleScreen();
-  titleGroup.position = new BABYLON.Vector3(0, 1.6, 6);
+  titleGroup.position = new BABYLON.Vector3(0, 1.6, -6);
   titleGroup.rotation.y = Math.PI;
   titleGroup.scaling.x = -1;
   
@@ -617,7 +617,7 @@ export function showLevelComplete(level, playerPos) {
   s2.position = new BABYLON.Vector3(0, 0.2, 0);
   s2.parent = levelTextGroup;
 
-  levelTextGroup.position = new BABYLON.Vector3(0, 1.6, 5);
+  levelTextGroup.position = new BABYLON.Vector3(0, 1.6, -5);
   levelTextGroup.rotation.y = Math.PI;
   levelTextGroup.scaling.x = -1;
   levelTextGroup.setEnabled(true);
@@ -638,7 +638,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.metadata = upgradeGroup.metadata || {};
   upgradeGroup.metadata.hand = hand;
 
-  upgradeGroup.position = new BABYLON.Vector3(0, 1.6, 4);
+  upgradeGroup.position = new BABYLON.Vector3(0, 1.6, -4);
   upgradeGroup.rotation.y = Math.PI;
   upgradeGroup.scaling.x = -1;
 
@@ -899,7 +899,7 @@ export function showGameOver(score, playerPos) {
   s3.name = 'restartBlink';
   s3.parent = gameOverGroup;
 
-  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, 5);
+  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, -5);
   gameOverGroup.rotation.y = Math.PI;
   gameOverGroup.scaling.x = -1;
   gameOverGroup.setEnabled(true);
@@ -922,7 +922,7 @@ export function showVictory(score, playerPos) {
   s3.name = 'restartBlink';
   s3.parent = gameOverGroup;
 
-  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, 5);
+  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, -5);
   gameOverGroup.rotation.y = Math.PI;
   gameOverGroup.scaling.x = -1;
   gameOverGroup.setEnabled(true);
@@ -962,7 +962,7 @@ export function showBossAlert() {
     incomingMesh.parent = bossAlertGroup;
   }
   
-  bossAlertGroup.position = new BABYLON.Vector3(0, 2.0, 4);
+  bossAlertGroup.position = new BABYLON.Vector3(0, 2.0, -4);
   bossAlertGroup.rotation.y = Math.PI;
   bossAlertGroup.scaling.x = -1;
   bossAlertGroup.setEnabled(true);
@@ -1000,7 +1000,7 @@ export function showKillsRemainingMessage(count) {
   });
   mesh.parent = killsRemainingGroup;
   
-  killsRemainingGroup.position = new BABYLON.Vector3(0, 2.0, 5);
+  killsRemainingGroup.position = new BABYLON.Vector3(0, 2.0, -5);
   killsRemainingGroup.rotation.y = Math.PI;
   killsRemainingGroup.scaling.x = -1;
   killsRemainingGroup.metadata = killsRemainingGroup.metadata || {};
@@ -1057,6 +1057,7 @@ function createDamageNumberEntry() {
   configureAlphaTestMaterial(mat, texture);
   plane.material = mat;
   plane.renderingGroupId = 1;
+  plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
   plane.setEnabled(false);
 
   const entry = { plane, canvas, ctx, texture, inUse: false };
@@ -1437,7 +1438,7 @@ export function showNameEntry(score, level, storedName) {
   nameEntryName = storedName || '';
   nameEntryCursor = nameEntryName.length;
 
-  nameEntryGroup.position = new BABYLON.Vector3(0, 1.6, 4);
+  nameEntryGroup.position = new BABYLON.Vector3(0, 1.6, -4);
   nameEntryGroup.rotation.y = Math.PI;
   nameEntryGroup.scaling.x = -1;
   nameEntryGroup.setEnabled(true);
@@ -1486,7 +1487,7 @@ export function showScoreboard(scores, headerText, opts = null) {
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
-  scoreboardGroup.position = new BABYLON.Vector3(0, 1.6, 5);
+  scoreboardGroup.position = new BABYLON.Vector3(0, 1.6, -5);
   scoreboardGroup.rotation.y = Math.PI;
   scoreboardGroup.scaling.x = -1;
   scoreboardGroup.setEnabled(true);
