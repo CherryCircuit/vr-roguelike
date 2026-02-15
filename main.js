@@ -1,7 +1,7 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
-//  Build: RATT
-//  Babylon.js Port v0.2.2 - Runtime/API Hotfixes
+//  Build: BON JOVI
+//  Babylon.js Port v0.2.2 - Orientation & Input Fix
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
@@ -191,7 +191,7 @@ function createEnvironment(scene) {
 
   // Sun
   const sun = BABYLON.MeshBuilder.CreatePlane('sun', { width: 30, height: 30 }, scene);
-  sun.position = new BABYLON.Vector3(0, 15, 100);
+  sun.position = new BABYLON.Vector3(0, 15, -100);
   const sunMat = new BABYLON.StandardMaterial('sunMat', scene);
   sunMat.disableLighting = true;
   sunMat.emissiveColor = new BABYLON.Color3(1, 0.4, 0.2);
@@ -199,7 +199,7 @@ function createEnvironment(scene) {
 
   for (let i = 0; i < 8; i++) {
     const band = BABYLON.MeshBuilder.CreatePlane('sunBand' + i, { width: 30, height: 1.5 }, scene);
-    band.position = new BABYLON.Vector3(0, 15 - (i * 1.8), 99.5);
+    band.position = new BABYLON.Vector3(0, 15 - (i * 1.8), -99.5);
     const bandMat = new BABYLON.StandardMaterial('sunBandMat' + i, scene);
     bandMat.disableLighting = true;
     const colorIntensity = 0.3 + (i * 0.1);
@@ -393,43 +393,25 @@ function setupController(controller) {
 
 // ── Custom Blaster Creation ───────────────────────────────
 function createCustomBlaster(xrController, handedness) {
-  const blaster = BABYLON.MeshBuilder.CreateCylinder('blaster_' + handedness, {
-    height: 0.18,
-    diameter: 0.035
+  const sphere = BABYLON.MeshBuilder.CreateSphere('blaster_' + handedness, {
+    diameter: 0.04
   }, scene);
-  blaster.rotation.x = Math.PI / 2;
-  blaster.position = new BABYLON.Vector3(0, 0, 0.12);
-  blaster.parent = xrController.grip;
-  
+  sphere.position = new BABYLON.Vector3(0, 0, 0);
+  sphere.parent = xrController.grip;
+
   const blasterMat = new BABYLON.StandardMaterial('blasterMat_' + handedness, scene);
   blasterMat.disableLighting = true;
   blasterMat.emissiveColor = new BABYLON.Color3(0, 1, 1);
-  blaster.material = blasterMat;
-  
-  const core = BABYLON.MeshBuilder.CreateCylinder('blasterCore_' + handedness, {
-    height: 0.18,
-    diameter: 0.015
-  }, scene);
-  core.rotation.x = Math.PI / 2;
-  core.position = new BABYLON.Vector3(0, 0, 0.12);
-  core.parent = xrController.grip;
-  
-  const coreMat = new BABYLON.StandardMaterial('blasterCoreMat_' + handedness, scene);
-  coreMat.disableLighting = true;
-  coreMat.emissiveColor = new BABYLON.Color3(0.5, 1, 1);
-  core.material = coreMat;
-  
-  const handle = BABYLON.MeshBuilder.CreateCylinder('blasterHandle_' + handedness, {
-    height: 0.08,
-    diameter: 0.025
-  }, scene);
-  handle.position = new BABYLON.Vector3(0, -0.04, 0);
-  handle.parent = xrController.grip;
-  
-  const handleMat = new BABYLON.StandardMaterial('blasterHandleMat_' + handedness, scene);
-  handleMat.disableLighting = true;
-  handleMat.emissiveColor = new BABYLON.Color3(0, 0.8, 0.8);
-  handle.material = handleMat;
+  sphere.material = blasterMat;
+
+  const aimPoints = [
+    new BABYLON.Vector3(0, 0, 0),
+    new BABYLON.Vector3(0, 0, 2)
+  ];
+  const aimLine = BABYLON.MeshBuilder.CreateLines('aimLine_' + handedness, { points: aimPoints }, scene);
+  aimLine.color = new BABYLON.Color3(0, 1, 1);
+  aimLine.parent = xrController.grip;
+  aimLine.isPickable = false;
 }
 
 // ── Charge Indicator ───────────────────────────────────────
@@ -1484,7 +1466,7 @@ function deployHologram(hand, def) {
   
   // Create hologram mesh (simplified player silhouette)
   const hologram = BABYLON.MeshBuilder.CreateBox('hologram', { width: 0.3, height: 1.6, depth: 0.2 }, scene);
-  hologram.position = playerPos.add(new BABYLON.Vector3(0, 0, 2));
+  hologram.position = playerPos.add(new BABYLON.Vector3(0, 0, -2));
   
   const mat = new BABYLON.StandardMaterial('hologramMat', scene);
   mat.disableLighting = true;
@@ -2209,25 +2191,29 @@ function updatePlaying(now, dt) {
     }
   }
   
-  // Continuous firing for lightning weapon
+  // Continuous firing while trigger held (all weapon types)
   ['left', 'right'].forEach(hand => {
     const ws = weaponState[hand];
     if (ws.isCharging) {
       const stats = getWeaponStats(gameState.upgrades[hand] || {}, gameState.globalUpgrades || {});
-      if (stats.lightning) {
-        // Fire lightning continuously while trigger held
+      if (stats.chargeShot) {
+        // Charge weapons fire on release only.
+        return;
+      } else if (stats.lightning) {
+        // Lightning fires on its own tick interval.
         if (now - ws.lastFireTime > stats.lightningTickInterval * 1000) {
           const xrController = xrControllers[hand];
           if (xrController && xrController.grip) {
+            const pos = xrController.grip.absolutePosition.clone();
             const dir = getControllerForward(xrController);
             if (dir) {
-              fireLightning(hand, xrController.grip.absolutePosition, dir, stats);
+              fireLightning(hand, pos, dir, stats);
             }
           }
           ws.lastFireTime = now;
         }
-      } else if (stats.plasma) {
-        // Fire plasma continuously
+      } else {
+        // Standard, buckshot, plasma, seeker all reuse fireWeapon rate checks.
         fireWeapon(hand);
       }
     }

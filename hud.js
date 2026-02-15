@@ -175,7 +175,7 @@ function makeTextPlane(text, opts = {}) {
   const width = aspect * scale;
   const height = scale;
 
-  const plane = BABYLON.MeshBuilder.CreatePlane('textPlane', { width, height }, sceneRef);
+  const plane = BABYLON.MeshBuilder.CreatePlane('textPlane', { width, height, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, sceneRef);
   
   const mat = new BABYLON.StandardMaterial('textMat', sceneRef);
   configureAlphaTestMaterial(mat, texture);
@@ -266,11 +266,11 @@ export function initHUD(camera, scene) {
 
   // ── Title Screen ──
   titleGroup = createTitleScreen();
-  titleGroup.position = new BABYLON.Vector3(0, 1.6, -6);
+  titleGroup.position = new BABYLON.Vector3(0, 1.6, 6);
   
   // ── VR HUD (floor-mounted) ──
   hudGroup = createHUDElements();
-  hudGroup.position = new BABYLON.Vector3(0, 0.05, -3);
+  hudGroup.position = new BABYLON.Vector3(0, 0.05, 3);
   hudGroup.rotation.x = -Math.PI / 2;
 
   // ── Level transition text ──
@@ -321,7 +321,7 @@ export function initHUD(camera, scene) {
   const bossBarWidth = 1.5;
   const bossBarHeight = 0.08;
   
-  const bgBar = BABYLON.MeshBuilder.CreatePlane('bossHealthBg', { width: bossBarWidth, height: bossBarHeight }, scene);
+  const bgBar = BABYLON.MeshBuilder.CreatePlane('bossHealthBg', { width: bossBarWidth, height: bossBarHeight, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, scene);
   const bgBarMat = new BABYLON.StandardMaterial('bossHealthBgMat', scene);
   bgBarMat.diffuseColor = new BABYLON.Color3(0.13, 0.27, 0.13);
   bgBarMat.backFaceCulling = false;
@@ -330,7 +330,7 @@ export function initHUD(camera, scene) {
   bgBar.material = bgBarMat;
   bgBar.parent = bossHealthGroup;
   
-  bossHealthFillBar = BABYLON.MeshBuilder.CreatePlane('bossHealthFill', { width: bossBarWidth, height: bossBarHeight }, scene);
+  bossHealthFillBar = BABYLON.MeshBuilder.CreatePlane('bossHealthFill', { width: bossBarWidth, height: bossBarHeight, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, scene);
   const fillBarMat = new BABYLON.StandardMaterial('bossHealthFillMat', scene);
   fillBarMat.diffuseColor = new BABYLON.Color3(0, 1, 0.27);
   fillBarMat.backFaceCulling = false;
@@ -423,7 +423,7 @@ function createTitleScreen() {
   titleBlinkMesh.parent = group;
 
   // Scoreboard button
-  const btnPlane = BABYLON.MeshBuilder.CreatePlane('titleBtn', { width: 1.2, height: 0.3 }, sceneRef);
+  const btnPlane = BABYLON.MeshBuilder.CreatePlane('titleBtn', { width: 1.2, height: 0.3, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, sceneRef);
   const btnMat = new BABYLON.StandardMaterial('btnMat', sceneRef);
   btnMat.diffuseColor = new BABYLON.Color3(0.07, 0, 0.2);
   btnMat.backFaceCulling = false;
@@ -455,7 +455,7 @@ function createTitleScreen() {
   titleScoreboardBtn = btnPlane;
 
   // Version number
-  const versionMesh = makeTextPlane('v0.2.2 (RATT)\nLAST UPDATED: FEB 15 2026', {
+  const versionMesh = makeTextPlane('v0.2.2 (BON JOVI)\nLAST UPDATED: FEB 15 2026', {
     fontSize: 32,
     color: '#888888',
     scale: 0.28,
@@ -489,7 +489,7 @@ function createHUDElements() {
 
   // Hearts (left side)
   const heartsTex = makeHeartsTexture(6, 6);
-  heartsMesh = BABYLON.MeshBuilder.CreatePlane('hearts', { width: 1, height: 1 }, sceneRef);
+  heartsMesh = BABYLON.MeshBuilder.CreatePlane('hearts', { width: 1, height: 1, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, sceneRef);
   const heartsMat = new BABYLON.StandardMaterial('heartsMat', sceneRef);
   heartsMat.diffuseTexture = heartsTex.texture;
   heartsMat.emissiveTexture = heartsTex.texture;
@@ -613,7 +613,7 @@ export function showLevelComplete(level, playerPos) {
   s2.position = new BABYLON.Vector3(0, 0.2, 0);
   s2.parent = levelTextGroup;
 
-  levelTextGroup.position = new BABYLON.Vector3(0, 1.6, -5);
+  levelTextGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   levelTextGroup.setEnabled(true);
 }
 
@@ -632,7 +632,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.metadata = upgradeGroup.metadata || {};
   upgradeGroup.metadata.hand = hand;
 
-  upgradeGroup.position = new BABYLON.Vector3(0, 1.6, -4);
+  upgradeGroup.position = new BABYLON.Vector3(0, 1.6, 4);
 
   // Header
   const header = makeTextPlane('CHOOSE UPGRADE:', { fontSize: 48, color: '#ffffff', glow: true, scale: 0.4 });
@@ -677,7 +677,7 @@ function createUpgradeCard(upgrade, position) {
   group.metadata.upgradeId = upgrade.id;
 
   // Card background
-  const cardPlane = BABYLON.MeshBuilder.CreatePlane('cardBg', { width: 1.035, height: 1.1 }, sceneRef);
+  const cardPlane = BABYLON.MeshBuilder.CreatePlane('cardBg', { width: 1.035, height: 1.1, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, sceneRef);
   const cardMat = new BABYLON.StandardMaterial('cardMat', sceneRef);
   cardMat.diffuseColor = new BABYLON.Color3(0.07, 0, 0.2);
   cardMat.backFaceCulling = false;
@@ -750,7 +750,7 @@ function createSkipCard(position) {
   group.metadata = group.metadata || {};
   group.metadata.upgradeId = 'SKIP';
 
-  const cardPlane = BABYLON.MeshBuilder.CreatePlane('skipBg', { width: 0.805, height: 0.9 }, sceneRef);
+  const cardPlane = BABYLON.MeshBuilder.CreatePlane('skipBg', { width: 0.805, height: 0.9, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, sceneRef);
   const cardMat = new BABYLON.StandardMaterial('skipMat', sceneRef);
   cardMat.diffuseColor = new BABYLON.Color3(0.13, 0, 0.27);
   cardMat.backFaceCulling = false;
@@ -891,7 +891,7 @@ export function showGameOver(score, playerPos) {
   s3.name = 'restartBlink';
   s3.parent = gameOverGroup;
 
-  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, -5);
+  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   gameOverGroup.setEnabled(true);
 }
 
@@ -912,7 +912,7 @@ export function showVictory(score, playerPos) {
   s3.name = 'restartBlink';
   s3.parent = gameOverGroup;
 
-  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, -5);
+  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   gameOverGroup.setEnabled(true);
 }
 
@@ -950,7 +950,7 @@ export function showBossAlert() {
     incomingMesh.parent = bossAlertGroup;
   }
   
-  bossAlertGroup.position = new BABYLON.Vector3(0, 2.0, -4);
+  bossAlertGroup.position = new BABYLON.Vector3(0, 2.0, 4);
   bossAlertGroup.setEnabled(true);
 }
 
@@ -986,7 +986,7 @@ export function showKillsRemainingMessage(count) {
   });
   mesh.parent = killsRemainingGroup;
   
-  killsRemainingGroup.position = new BABYLON.Vector3(0, 2.0, -5);
+  killsRemainingGroup.position = new BABYLON.Vector3(0, 2.0, 5);
   killsRemainingGroup.metadata = killsRemainingGroup.metadata || {};
   killsRemainingGroup.metadata.createdAt = performance.now();
   killsRemainingGroup.metadata.lifetime = 2000;
@@ -1036,7 +1036,7 @@ function createDamageNumberEntry() {
   const texture = new BABYLON.DynamicTexture('dmgTexPooled', canvas, sceneRef);
   texture.hasAlpha = true;
 
-  const plane = BABYLON.MeshBuilder.CreatePlane('dmgNumPooled', { width: 1, height: 1 }, sceneRef);
+  const plane = BABYLON.MeshBuilder.CreatePlane('dmgNumPooled', { width: 1, height: 1, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, sceneRef);
   const mat = new BABYLON.StandardMaterial('dmgMatPooled', sceneRef);
   configureAlphaTestMaterial(mat, texture);
   plane.material = mat;
@@ -1230,7 +1230,7 @@ export function spawnOuchBubble(position, text = 'OUCH!') {
   const texture = new BABYLON.DynamicTexture('ouchTex', canvas, sceneRef);
   texture.hasAlpha = true;
 
-  const plane = BABYLON.MeshBuilder.CreatePlane('ouchBubble', { width: 1.5, height: 0.75 }, sceneRef);
+  const plane = BABYLON.MeshBuilder.CreatePlane('ouchBubble', { width: 1.5, height: 0.75, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, sceneRef);
   const mat = new BABYLON.StandardMaterial('ouchMat', sceneRef);
   mat.diffuseTexture = texture;
   mat.emissiveTexture = texture;
@@ -1283,7 +1283,7 @@ export function spawnComboPopup(combo, cameraPos) {
   const width = scale * 4;
   const height = scale;
 
-  const plane = BABYLON.MeshBuilder.CreatePlane('comboPopup', { width, height }, sceneRef);
+  const plane = BABYLON.MeshBuilder.CreatePlane('comboPopup', { width, height, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, sceneRef);
   const mat = new BABYLON.StandardMaterial('comboMat', sceneRef);
   mat.diffuseTexture = texture;
   mat.emissiveTexture = texture;
@@ -1406,7 +1406,7 @@ export function showNameEntry(score, level, storedName) {
   nameEntryName = storedName || '';
   nameEntryCursor = nameEntryName.length;
 
-  nameEntryGroup.position = new BABYLON.Vector3(0, 1.6, -4);
+  nameEntryGroup.position = new BABYLON.Vector3(0, 1.6, 4);
   nameEntryGroup.setEnabled(true);
 
   const header = makeTextPlane('ENTER YOUR NAME', {
@@ -1453,7 +1453,7 @@ export function showScoreboard(scores, headerText, opts = null) {
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
-  scoreboardGroup.position = new BABYLON.Vector3(0, 1.6, -5);
+  scoreboardGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   scoreboardGroup.setEnabled(true);
 
   const header = makeTextPlane(headerText || 'GLOBAL LEADERBOARD', {
@@ -1476,7 +1476,7 @@ export function showScoreboard(scores, headerText, opts = null) {
   }
 
   // Back button
-  const backPlane = BABYLON.MeshBuilder.CreatePlane('backBtn', { width: 0.6, height: 0.25 }, sceneRef);
+  const backPlane = BABYLON.MeshBuilder.CreatePlane('backBtn', { width: 0.6, height: 0.25, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, sceneRef);
   const backMat = new BABYLON.StandardMaterial('backMat', sceneRef);
   backMat.diffuseColor = new BABYLON.Color3(0.2, 0, 0);
   backMat.backFaceCulling = false;
@@ -1518,7 +1518,7 @@ export function showCountrySelect(countries, continents, initialContinent) {
   countrySelectGroup.getChildren().forEach(c => c.dispose());
   countrySelectContinent = initialContinent || 'North America';
 
-  countrySelectGroup.position = new BABYLON.Vector3(0, 1.6, -4);
+  countrySelectGroup.position = new BABYLON.Vector3(0, 1.6, 4);
   countrySelectGroup.setEnabled(true);
 
   const header = makeTextPlane('SELECT YOUR COUNTRY', {

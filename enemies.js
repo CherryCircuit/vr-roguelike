@@ -408,7 +408,7 @@ export function getSpawnPosition(airSpawns, verticalAngle = 0) {
   const distance = 14.4 + Math.random() * 5.6;  // 20% shorter (was 18-25, now 14.4-20)
 
   const x = Math.sin(angle) * distance;
-  const z = -Math.cos(angle) * distance;
+  const z = Math.cos(angle) * distance;
   let y = 1.5;
 
   if (airSpawns) {
@@ -468,7 +468,7 @@ export function spawnBoss(bossId, levelConfig) {
 
   // Create boss container
   const bossMesh = new BABYLON.TransformNode('boss_' + bossId, sceneRef);
-  bossMesh.position = new BABYLON.Vector3(0, 1.5, -12);
+  bossMesh.position = new BABYLON.Vector3(0, 1.5, 12);
 
   // Create material
   const material = new BABYLON.StandardMaterial('bossMat', sceneRef);

@@ -547,7 +547,7 @@ export function stopLightningSound() {
 
 // ── Music System ───────────────────────────────────────────
 let currentMusic = null;
-let musicVolume = 0.3;
+let musicVolume = 0.21;
 let currentPlaylist = [];
 let currentTrackIndex = 0;
 // let musicAnalyser = null;  // Music visualizer - commented out
