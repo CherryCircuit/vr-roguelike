@@ -213,6 +213,9 @@ function setupWebXR(scene) {
   const xrHelper = scene.createDefaultXRExperienceAsync({
     floorMeshes: [],
     disableTeleportation: true,
+    inputOptions: {
+      doNotLoadControllerMeshes: true,  // Prevent loading default controller models
+    },
   });
 
   xrHelper.then((xrExperience) => {
@@ -276,12 +279,6 @@ function setupController(controller) {
     if (handedness === 'left') controllers.left = motionController;
     if (handedness === 'right') controllers.right = motionController;
 
-    // HIDE THE GENERIC CONTROLLER MODEL - Create custom blaster instead
-    if (motionController.mesh) {
-      motionController.mesh.isVisible = false;
-      console.log('[main] Hidden generic controller model for:', handedness);
-    }
-
     // Create custom synthwave blaster attached to controller
     createCustomBlaster(motionController, handedness);
 
@@ -303,13 +300,12 @@ function createCustomBlaster(controller, handedness) {
   
   // Position relative to controller grip
   blaster.position = new BABYLON.Vector3(0, -0.02, 0.08);
-  blaster.parent = controller.mesh || controller.grip;
+  blaster.parent = controller.grip;  // Attach directly to grip node
   
   // Glowing cyan material
   const blasterMat = new BABYLON.StandardMaterial('blasterMat_' + handedness, scene);
   blasterMat.disableLighting = true;
   blasterMat.emissiveColor = new BABYLON.Color3(0, 1, 1); // CYAN
-  blasterMat.alpha = 0.8;
   blaster.material = blasterMat;
   
   // Add glow effect (brighter core)
@@ -319,7 +315,7 @@ function createCustomBlaster(controller, handedness) {
   }, scene);
   core.rotation.z = Math.PI / 2;
   core.position = new BABYLON.Vector3(0, -0.02, 0.08);
-  core.parent = controller.mesh || controller.grip;
+  core.parent = controller.grip;  // Attach directly to grip node
   
   const coreMat = new BABYLON.StandardMaterial('blasterCoreMat_' + handedness, scene);
   coreMat.disableLighting = true;

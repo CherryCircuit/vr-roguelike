@@ -2,11 +2,41 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL: READ THIS FILE FIRST
+
+**At the START of every ACT MODE session, you MUST:**
+1. Read this entire AGENTS.md file
+2. Check against ALL rules below
+3. Include the MANDATORY CHECKLIST in your task_progress
+4. NEVER skip the checklist
+
+**Failure to follow this = you are not doing your job.**
+
 ## Project Overview
 
-**Synthwave VR Blaster** (aka "Spaceomicide") is a WebXR roguelike shooter for VR headsets. Built with Three.js, it runs entirely in the browser with no build step—just open `index.html` in a WebXR-capable browser (Meta Quest Browser, Chrome on VR devices).
+**Synthwave VR Blaster** (aka "Spaceomicide") is a WebXR roguelike shooter for VR headsets. Built with Babylon.js, it runs entirely in the browser with no build step—just open `index.html` in a WebXR-capable browser (Meta Quest Browser, Chrome on VR devices).
+
+**NOTE: Ported from Three.js to Babylon.js due to unfixable framebuffer alpha bug.**
 
 ## Development Workflow
+
+### MANDATORY PRE-COMPLETION CHECKLIST
+
+**Include this checklist in EVERY task_progress you create. Check off items as you complete them.**
+
+- [ ] Read AGENTS.md fully before starting
+- [ ] **SEARCH BEFORE FIXING** - Research Babylon.js docs, GitHub issues, Stack Overflow
+- [ ] Start local server: `python3 -m http.server 8000`
+- [ ] Open browser to `http://localhost:8000`
+- [ ] Open DevTools (F12) → Console tab
+- [ ] Read ALL console output (logs, warnings, errors)
+- [ ] Fix ANY red errors before proceeding
+- [ ] Fix warnings that break functionality
+- [ ] Test in VR headset if WebXR-related changes
+- [ ] Verify build name is visible in UI
+- [ ] Only THEN use `attempt_completion`
+
+**VIOLATION OF THIS CHECKLIST = YOU ARE NOT DOING YOUR JOB**
 
 ### CRITICAL: Test Locally Before Marking Done
 
@@ -24,6 +54,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - JavaScript syntax errors
    - Red error messages
    - Yellow warnings that break functionality
+   - Babylon.js loader warnings (e.g., "glTF loader was not registered")
 
 4. Verify no console errors exist before using `attempt_completion`
 
@@ -35,7 +66,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Why?** Issues that are obvious in browser console (like import resolution errors) should never reach the user. Local testing catches these before marking work complete.
 
-### Running the Game
+### Known Errors to Watch For
+
+These errors have happened before. Do NOT repeat them:
+
+1. **glTF Loader Not Registered**
+   - Error: `glTF / glb loader was not registered, using generic controller instead`
+   - Cause: Using bundle scripts instead of ES module import
+   - Fix: `import "@babylonjs/loaders";` in main.js (NOT bundle script)
+
+2. **Generic Controllers in VR**
+   - Error: Seeing ugly box controllers instead of custom blasters
+   - Cause: Didn't hide `motionController.mesh` or didn't create custom blasters
+   - Fix: `motionController.mesh.isVisible = false;` then call `createCustomBlaster()`
+
+3. **Cache Issues on Quest Browser**
+   - Error: Changes not showing up after refresh
+   - Cause: Quest browser aggressive caching
+   - Fix: Add cache-busting headers to index.html:
+     ```html
+     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+     <meta http-equiv="Pragma" content="no-cache">
+     <meta http-equiv="Expires" content="0">
+     ```
+
+4. **Missing Build Name in UI**
+   - Error: Build name not visible in browser
+   - Cause: Updated code but forgot to update index.html text
+   - Fix: Update `<p>` tag in #info div to show current build name
 
 ### Running the Game
 
@@ -81,7 +139,7 @@ No automated tests exist. Manual testing workflow:
 
 The codebase uses ES6 modules with clear separation of concerns:
 
-- **`main.js`**: Game loop, Three.js scene setup, WebXR session management, controller input, rendering
+- **`main.js`**: Game loop, Babylon.js scene setup, WebXR session management, controller input, rendering
 - **`game.js`**: Central state management, level configuration, score/health/combo tracking
 - **`enemies.js`**: Enemy spawning, AI movement, voxel geometry, collision detection, death explosions
 - **`upgrades.js`**: Upgrade definitions, weapon stat calculation from stacked upgrades
@@ -119,7 +177,7 @@ Performance-critical systems use object pooling to avoid GC pauses:
 - **Explosion sprites** (`enemies.js:explosionPool`): 60 pre-allocated Sprite objects with shared textures
 - **Damage numbers** (`hud.js`): Reused Sprite objects
 
-When adding new particle effects, follow the existing pool pattern: pre-allocate, set `.visible = false`, reuse by toggling visibility.
+When adding new particle effects, follow the existing pool pattern: pre-allocate, set `.isVisible = false`, reuse by toggling visibility.
 
 ### Weapon System
 
@@ -196,78 +254,104 @@ Never use external audio files—this keeps the game asset-free and improves loa
 
 ## CRITICAL RULE: SEARCH BEFORE FIXING
 
-**Before making any "fixes", search for other people who have the same problem and how they fixed it.**
+**MANDATORY: Before making ANY "fixes", you MUST do a thorough web search for solutions.**
 
-Check:
-1. **Official Babylon.js documentation** - https://doc.babylonjs.com
-2. **Babylon.js GitHub issues** - https://github.com/BabylonJS/Babylon.js/issues
-3. **Stack Overflow** - search with "babylon.js" + your error message
-4. **Babylon.js forum** - https://forum.babylonjs.com/
+Search these sources in order:
+1. **Official Babylon.js documentation** - https://doc.babylonjs.com (search: "WebXR controller", "custom controller mesh", "replace controller model")
+2. **Babylon.js GitHub issues** - https://github.com/BabylonJS/Babylon.js/issues (search: your exact error message)
+3. **Stack Overflow** - search: "babylon.js webxr" + your error message
+4. **Babylon.js forum** - https://forum.babylonjs.com/ (search: "controller", "WebXR", "custom mesh")
+5. **YouTube tutorials** - search: "Babylon.js WebXR controller tutorial"
 
 **Why?** Most common issues have known solutions documented by the community. Applying a fix without researching risks:
 - Wasting time on already-solved problems
 - Implementing workarounds that cause new issues
 - Missing the correct, documented solution
+- REPEATING MISTAKES (like this session's controller model issue)
 
-**Example:** The glTF loader registration issue was solved in Babylon.js docs at `/features/featuresDeepDive/importers/loadingFileTypes`. Using `registerBuiltIn
-| Fade-in/fade-out animations | `mesh.visible = true/false` or scale animation |
+**Example:** The glTF loader registration issue was solved in Babylon.js docs at `/features/featuresDeepDive/importers/loadingFileTypes`. Using `registerBuiltIn` without research caused repeated failures.
+
+**THIS MUST BE DONE BEFORE ANY CODE CHANGES. NO EXCEPTIONS.**
+
+## CRITICAL RULE: NEVER USE `transparent: true` OR `alpha: < 1`
+
+**This rule was for Three.js and may still apply to Babylon.js. Test carefully.**
+
+Any material with partial transparency causes black rectangles in WebXR on Quest Browser. The XR compositor treats any pixel with framebuffer alpha < 1.0 as see-through-to-black, creating dark head-locked overlays.
+
+### The Rule
+
+**NEVER use material with transparency in this project unless you've tested it in VR.**
+
+### What To Use Instead
+
+| Need | Solution |
+|------|----------|
+| Text with alpha background | `alphaTest: 0.5` (binary discard, no partial alpha) |
+| Texture with alpha gradients | `alphaTest: 0.1` (low threshold for soft gradients) |
+| Semi-transparent UI panels | Fully opaque with darker color |
+| Glow/bloom effects | `blending: BABYLON.Texture.ALMPHA_ADDITIVE` without transparency |
+| Fade-in/fade-out animations | `mesh.isVisible = true/false` or scale animation |
 | Semi-transparent enemies/shields | Solid color, or wireframe, or emissive |
-| Sprite textures with alpha | `SpriteMaterial({ alphaTest: 0.5 })` |
 
 ### Examples
 
 ```javascript
-// BAD — causes black box in VR
-new THREE.MeshBasicMaterial({ map: tex, transparent: true })
-new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8 })
+// BAD — may cause black box in VR
+new BABYLON.StandardMaterial('mat', scene);
+mat.alpha = 0.8;
 
 // GOOD — text/textures with alpha channels
-new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5 })
+mat.alphaTest = 0.5;
 
 // GOOD — glow effects
-new THREE.MeshBasicMaterial({ color: 0xff8800, blending: THREE.AdditiveBlending })
+mat.emissiveColor = new BABYLON.Color3(0, 1, 1);
+mat.disableLighting = true;
 
 // GOOD — UI panels (just use solid darker color)
-new THREE.MeshBasicMaterial({ color: 0x0f0f2e })
+mat.diffuseColor = new BABYLON.Color3(0.1, 0.05, 0.2);
+mat.disableLighting = true;
 ```
-
-### How We Discovered This
-
-Isolated via `test-vr.html` — a minimal WebXR scene built up incrementally. Any mesh with `transparent: true` caused black boxes. Removing all transparent materials eliminated them. Post-render alpha channel clearing (GL colorMask hack) was tested and does NOT work on Quest Browser.
 
 ## Performance Considerations
 
 - **Target**: 72fps on Meta Quest 2 (can drop to 60fps on intense levels)
-- **Geometry**: Use shared geometries (`getGeo()` in `enemies.js`) and merged geometries (`mergeGeometries`) to reduce draw calls
+- **Geometry**: Use shared geometries and merged geometries to reduce draw calls
 - **Materials**: Use shared materials per enemy type to reduce state changes
 - **Update Loops**: Stagger expensive updates across frames (`frameCount % N === 0`)
-- **Raycasting**: Only raycast against visible enemy meshes, cache results in `_cachedEnemyMeshes`
+- **Raycasting**: Only raycast against visible enemy meshes, cache results
+- **Use object pooling** for projectiles, explosions, damage numbers
 
 When adding new features, profile in VR using the performance monitor (`?debug=1`). WebXR cannot drop below 60fps without causing motion sickness.
 
 ## Version History Notes
 
-**Recent "Power Outage Update" (commit f9b68da - 17b400f):**
+**Babylon.js Port (Build: MÖTLEY CRÜE):**
+- Ported from Three.js to Babylon.js due to unfixable framebuffer alpha bug
+- Custom glowing cyan blasters replace generic controllers
+- Cache-busting headers for Quest browser
+- Proper glTF loader registration via ES module import
+- Build name visible in UI
+
+**Three.js "Power Outage Update" (commit f9b68da - 17b400f):**
 - Enemy speed +75% across all levels
 - Spawn rate +75% (lower interval)
 - Boss alert screen before boss spawns (new state: `BOSS_ALERT`)
 - Slow-mo level complete finale (new state: `LEVEL_COMPLETE_SLOWMO`)
 - Boss health bar changed from 3-segment camera-attached to single continuous world-space fill bar
-- Crash fix: Lightning/explosion pools now initialize after scene creation (L153-176 vs L179)
+- Crash fix: Lightning/explosion pools now initialize after scene creation
 
-When adding new particle systems, ensure pools are initialized AFTER `scene` is created to avoid null reference crashes.
+## WHEN USER EXPRESSES FRUSTRATION
 
-### Memory Leak Prevention (Three.js Disposal)
+**If the user shows frustration (e.g., "FUCK", angry tone, or repeats instructions):**
 
-When removing any Three.js object from the scene, you MUST dispose its geometry, material, and textures:
+1. **STOP immediately** - Don't continue with your current approach
+2. **ACKNOWLEDGE the failure** - Admit what you did wrong
+3. **INVESTIGATE root cause** - Not just symptoms, find why it's happening
+4. **DON'T repeat the same fix** - If you tried it once and it didn't work, try something different
+5. **READ AGENTS.md** - Re-read the relevant sections
+6. **CHECK known errors** - Look at the "Known Errors to Watch For" section
+7. **ASK if unsure** - Don't guess, ask clarifying questions
+8. **Proceed carefully** - Only when you understand the actual problem
 
-```javascript
-scene.remove(mesh);
-if (mesh.geometry) mesh.geometry.dispose();
-if (mesh.material) {
-  if (mesh.material.map) mesh.material.map.dispose();
-  mesh.material.dispose();
-}
-```
-
-**Do NOT dispose shared geometries/materials** (e.g., `sharedHitboxGeos` and `sharedHitboxMat` in `enemies.js`). Only dispose per-instance resources. Failing to dispose causes memory leaks that crash VR at higher levels (level 12+) — text and enemies disappear, FPS drops, then the headset freezes.
+**Remember:** Repeating the same mistake multiple times makes the problem worse. Stop, think, and investigate.
