@@ -32,6 +32,7 @@ And update the header in `main.js`:
 ### Build History
 - **v0.1.2 - MÖTLEY CRÜE**: Initial Babylon.js port with environment and controllers
 - **v0.1.3 - POISON**: Fixed glTF loader import, controller mesh hiding via doNotLoadControllerMeshes
+- **v0.1.4 - TWISTED SISTER**: Proper controller input pattern (changes.pressed), added Babylon.js code patterns to AGENTS.md
 
 ## Project Overview
 
@@ -272,6 +273,135 @@ All sounds are procedural Web Audio (`audio.js`):
 4. Randomize parameters for variation (see `playShoothSound()` as example)
 
 Never use external audio files—this keeps the game asset-free and improves load times.
+
+## Babylon.js Code Patterns
+
+**Use https://playground.babylonjs.com/ to test patterns before implementing!**
+
+### Debug Layer
+
+```javascript
+scene.debugLayer.show();  // Opens Babylon.js inspector for debugging
+```
+
+### WebXR Controller Input (from Playground #1FTUSC#37)
+
+```javascript
+xrHelper.input.onControllerAddedObservable.add((controller) => {
+    controller.onMotionControllerInitObservable.add((motionController) => {
+        const xr_ids = motionController.getComponentIds();
+        let triggerComponent = motionController.getComponent(xr_ids[0]); // xr-standard-trigger
+        
+        triggerComponent.onButtonStateChangedObservable.add(() => {
+            if (triggerComponent.changes.pressed) {  // Check for CHANGE, not just state
+                if (triggerComponent.pressed) {
+                    // Button pressed - grab object, fire weapon, etc.
+                    let mesh = xrHelper.pointerSelection.getMeshUnderPointer(controller.uniqueId);
+                    mesh && mesh.setParent(motionController.rootMesh);
+                } else {
+                    // Button released - drop object
+                    mesh && mesh.setParent(null);
+                }
+            }
+        });
+    });
+});
+```
+
+**Key pattern**: Use `component.changes.pressed` to detect state changes, not just `.pressed`.
+
+### Raycasting with Pointer Selection
+
+```javascript
+// Built-in pointer selection (cleaner than manual raycasting)
+let mesh = xrHelper.pointerSelection.getMeshUnderPointer(controller.uniqueId);
+```
+
+### Particle Systems (for explosions, effects)
+
+```javascript
+const particleSystem = new BABYLON.ParticleSystem("particles", 2000, scene);
+particleSystem.particleTexture = new BABYLON.Texture("textures/flare.png");
+
+// Color gradient over lifetime (magenta → cyan for synthwave!)
+particleSystem.addColorGradient(0, new BABYLON.Color4(1, 0, 1, 1), new BABYLON.Color4(1, 0, 1, 1));
+particleSystem.addColorGradient(1, new BABYLON.Color4(0, 1, 1, 1), new BABYLON.Color4(0, 1, 1, 1));
+
+// Size and lifetime
+particleSystem.minSize = 0.1;
+particleSystem.maxSize = 0.5;
+particleSystem.minLifeTime = 0.3;
+particleSystem.maxLifeTime = 1.5;
+
+// Emission
+particleSystem.emitRate = 1000;
+particleSystem.emitter = new BABYLON.Vector3(0, 0, 0); // Starting location
+particleSystem.createPointEmitter(new BABYLON.Vector3(-1, 1, -1), new BABYLON.Vector3(1, 1, 1));
+
+// Speed
+particleSystem.minEmitPower = 1;
+particleSystem.maxEmitPower = 3;
+
+particleSystem.start();
+```
+
+### Audio (BABYLON.Sound)
+
+```javascript
+// Music (loop)
+const music = new BABYLON.Sound("Music", "mnt/project/music/00_Main_Menu.mp3", scene, null, {
+    loop: true, 
+    autoplay: true
+});
+
+// Sound effect (one-shot)
+const shoot = new BABYLON.Sound("Shoot", "mnt/project/soundfx/laser.mp3", scene);
+shoot.play();  // Call when needed
+```
+
+**Note**: Audio files available in `/mnt/project/music/` and `/mnt/project/soundfx/`
+
+### Lens Flares (for synthwave SUN!)
+
+```javascript
+const lensFlareSystem = new BABYLON.LensFlareSystem("lensFlareSystem", sunMesh, scene);
+const flare1 = new BABYLON.LensFlare(0.1, 0, new BABYLON.Color3(1, 1, 1), "textures/flare.png", lensFlareSystem);
+const flare2 = new BABYLON.LensFlare(0.075, 0.5, new BABYLON.Color3(1, 0.5, 0.8), "textures/flare3.png", lensFlareSystem);
+```
+
+### Voxel Box Creation (for enemies)
+
+```javascript
+const box = BABYLON.MeshBuilder.CreateBox("box", {size: 2}, scene);
+box.position.y = 1;
+
+// With material
+const mat = new BABYLON.StandardMaterial("mat", scene);
+mat.diffuseColor = new BABYLON.Color3(1, 0.5, 0.8);
+mat.emissiveColor = new BABYLON.Color3(0.2, 0.1, 0.3);
+box.material = mat;
+```
+
+### Attaching Objects to Controllers
+
+```javascript
+// Attach to controller
+mesh.setParent(motionController.rootMesh);
+
+// Detach
+mesh.setParent(null);
+```
+
+## CRITICAL RULE: REPORT ALL RESEARCH ATTEMPTS
+
+**MANDATORY: Always report back on research attempts, even if they fail.**
+
+When asked to research a link or resource:
+- Report if the link 404'd, timed out, or was inaccessible
+- Report what you found, even if it's "nothing useful"
+- Never silently skip a research task
+
+**Why?** The user may have valuable context about that resource, or may provide an alternative.
 
 ## CRITICAL RULE: SEARCH BEFORE FIXING
 

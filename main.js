@@ -1,6 +1,6 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
-// Build: POISON
+// Build: TWISTED SISTER
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
@@ -366,13 +366,19 @@ function createCustomBlaster(xrController, handedness) {
 
 // ── Button Listeners ───────────────────────────────────────
 function setupButtonListeners(motionController) {
-  // Main trigger (top trigger)
+  // Main trigger (top trigger) - using proper pattern from Babylon.js playground #1FTUSC#37
   const trigger = motionController.getComponent('xr-standard-trigger');
   if (trigger) {
     trigger.onButtonStateChangedObservable.add((component) => {
-      if (component.pressed && component.changed) {
-        console.log('[main] Trigger pressed:', motionController.handedness);
-        handleMainTrigger(motionController.handedness);
+      // Use changes.pressed to detect state changes (not just checking .pressed)
+      if (component.changes.pressed) {
+        if (component.pressed) {
+          console.log('[main] Trigger pressed:', motionController.handedness);
+          handleMainTrigger(motionController.handedness);
+        } else {
+          console.log('[main] Trigger released:', motionController.handedness);
+          // Could add release handling here for charge shots etc.
+        }
       }
     });
   }
@@ -381,9 +387,11 @@ function setupButtonListeners(motionController) {
   const squeeze = motionController.getComponent('xr-standard-squeeze');
   if (squeeze) {
     squeeze.onButtonStateChangedObservable.add((component) => {
-      if (component.pressed && component.changed) {
-        console.log('[main] Squeeze pressed:', motionController.handedness);
-        handleAltTrigger(motionController.handedness);
+      if (component.changes.pressed) {
+        if (component.pressed) {
+          console.log('[main] Squeeze pressed:', motionController.handedness);
+          handleAltTrigger(motionController.handedness);
+        }
       }
     });
   }
@@ -392,7 +400,7 @@ function setupButtonListeners(motionController) {
   const menuButton = motionController.getComponent('xr-standard-menu');
   if (menuButton) {
     menuButton.onButtonStateChangedObservable.add((component) => {
-      if (component.pressed && component.changed && motionController.handedness === 'left') {
+      if (component.changes.pressed && component.pressed && motionController.handedness === 'left') {
         console.log('[main] Menu button pressed - toggling pause');
         handlePause();
       }
