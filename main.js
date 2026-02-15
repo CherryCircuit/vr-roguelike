@@ -1,10 +1,11 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
-// Build: TWISTED SISTER
+// Build: MÖTLEY CRÜE
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/gui';
+import "@babylonjs/loaders";
 import { resumeAudioContext } from './audio.js';
 import * as game from './game.js';
 
@@ -275,9 +276,57 @@ function setupController(controller) {
     if (handedness === 'left') controllers.left = motionController;
     if (handedness === 'right') controllers.right = motionController;
 
+    // HIDE THE GENERIC CONTROLLER MODEL - Create custom blaster instead
+    if (motionController.mesh) {
+      motionController.mesh.isVisible = false;
+      console.log('[main] Hidden generic controller model for:', handedness);
+    }
+
+    // Create custom synthwave blaster attached to controller
+    createCustomBlaster(motionController, handedness);
+
     // Set up button listeners
     setupButtonListeners(motionController);
   });
+}
+
+// ── Custom Blaster Creation ───────────────────────────────
+function createCustomBlaster(controller, handedness) {
+  // Create a glowing cylinder as the blaster
+  const blaster = BABYLON.MeshBuilder.CreateCylinder('blaster_' + handedness, {
+    height: 0.15,
+    diameter: 0.04
+  }, scene);
+  
+  // Rotate so it points forward (cylinder points up by default)
+  blaster.rotation.z = Math.PI / 2;
+  
+  // Position relative to controller grip
+  blaster.position = new BABYLON.Vector3(0, -0.02, 0.08);
+  blaster.parent = controller.mesh || controller.grip;
+  
+  // Glowing cyan material
+  const blasterMat = new BABYLON.StandardMaterial('blasterMat_' + handedness, scene);
+  blasterMat.disableLighting = true;
+  blasterMat.emissiveColor = new BABYLON.Color3(0, 1, 1); // CYAN
+  blasterMat.alpha = 0.8;
+  blaster.material = blasterMat;
+  
+  // Add glow effect (brighter core)
+  const core = BABYLON.MeshBuilder.CreateCylinder('blasterCore_' + handedness, {
+    height: 0.15,
+    diameter: 0.02
+  }, scene);
+  core.rotation.z = Math.PI / 2;
+  core.position = new BABYLON.Vector3(0, -0.02, 0.08);
+  core.parent = controller.mesh || controller.grip;
+  
+  const coreMat = new BABYLON.StandardMaterial('blasterCoreMat_' + handedness, scene);
+  coreMat.disableLighting = true;
+  coreMat.emissiveColor = new BABYLON.Color3(0, 1, 1); // BRIGHT CYAN
+  core.material = coreMat;
+  
+  console.log('[main] Created custom blaster for:', handedness);
 }
 
 // ── Button Listeners ───────────────────────────────────────
