@@ -270,17 +270,22 @@ function setupWebXR(scene) {
 
 // ── Controller Setup ───────────────────────────────────────
 function setupController(controller) {
+  // Store controller reference immediately (before motion controller init)
+  // controller is WebXRInputSource which has .grip and .pointer meshes
+  console.log('[main] Controller added, waiting for motion controller init:', controller.uniqueId);
+  
   controller.onMotionControllerInitObservable.add((motionController) => {
     console.log('[main] Motion controller initialized:', motionController.handedness);
     
     const handedness = motionController.handedness;
     
-    // Store controller reference
+    // Store motion controller reference for button input
     if (handedness === 'left') controllers.left = motionController;
     if (handedness === 'right') controllers.right = motionController;
 
     // Create custom synthwave blaster attached to controller
-    createCustomBlaster(motionController, handedness);
+    // Pass the WebXRInputSource (controller) which has .grip, not motionController
+    createCustomBlaster(controller, handedness);
 
     // Set up button listeners
     setupButtonListeners(motionController);
@@ -288,7 +293,10 @@ function setupController(controller) {
 }
 
 // ── Custom Blaster Creation ───────────────────────────────
-function createCustomBlaster(controller, handedness) {
+function createCustomBlaster(xrController, handedness) {
+  // xrController is WebXRInputSource with .grip and .pointer meshes that track pose
+  console.log('[main] Creating blaster, grip available:', !!xrController.grip);
+  
   // Create a glowing cylinder as the blaster
   const blaster = BABYLON.MeshBuilder.CreateCylinder('blaster_' + handedness, {
     height: 0.15,
@@ -300,7 +308,7 @@ function createCustomBlaster(controller, handedness) {
   
   // Position relative to controller grip
   blaster.position = new BABYLON.Vector3(0, -0.02, 0.08);
-  blaster.parent = controller.grip;  // Attach directly to grip node
+  blaster.parent = xrController.grip;  // Attach to grip mesh (tracks controller pose)
   
   // Glowing cyan material
   const blasterMat = new BABYLON.StandardMaterial('blasterMat_' + handedness, scene);
@@ -315,14 +323,14 @@ function createCustomBlaster(controller, handedness) {
   }, scene);
   core.rotation.z = Math.PI / 2;
   core.position = new BABYLON.Vector3(0, -0.02, 0.08);
-  core.parent = controller.grip;  // Attach directly to grip node
+  core.parent = xrController.grip;  // Attach to grip mesh (tracks controller pose)
   
   const coreMat = new BABYLON.StandardMaterial('blasterCoreMat_' + handedness, scene);
   coreMat.disableLighting = true;
   coreMat.emissiveColor = new BABYLON.Color3(0, 1, 1); // BRIGHT CYAN
   core.material = coreMat;
   
-  console.log('[main] Created custom blaster for:', handedness);
+  console.log('[main] Created custom blaster for:', handedness, 'parent:', xrController.grip ? 'grip' : 'NO GRIP!');
 }
 
 // ── Button Listeners ───────────────────────────────────────

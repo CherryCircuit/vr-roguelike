@@ -273,15 +273,15 @@ Search these sources in order:
 
 **THIS MUST BE DONE BEFORE ANY CODE CHANGES. NO EXCEPTIONS.**
 
-## CRITICAL RULE: NEVER USE `transparent: true` OR `alpha: < 1`
+## WARNING: USE TRANSPARENCY CAREFULLY IN VR
 
-**This rule was for Three.js and may still apply to Babylon.js. Test carefully.**
+**This was a major issue with Three.js. Babylon.js may handle it better, but test carefully.**
 
-Any material with partial transparency causes black rectangles in WebXR on Quest Browser. The XR compositor treats any pixel with framebuffer alpha < 1.0 as see-through-to-black, creating dark head-locked overlays.
+In Three.js, materials with partial transparency (`transparent: true`, `alpha < 1`) caused black rectangles in WebXR on Quest Browser. The XR compositor treats any pixel with framebuffer alpha < 1.0 as see-through-to-black, creating dark head-locked overlays.
 
-### The Rule
+### The Warning
 
-**NEVER use material with transparency in this project unless you've tested it in VR.**
+**AVOID transparency unless you've tested it in VR. If you use transparency, verify it works on the actual headset before proceeding.**
 
 ### What To Use Instead
 
