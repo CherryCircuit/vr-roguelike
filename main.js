@@ -4,7 +4,7 @@
 
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/gui';
-import '@babylonjs/loaders';
+import 'https://cdn.jsdelivr.net/npm/@babylonjs/loaders@7.27.0/glTF/glTFFileLoader.js';
 import { resumeAudioContext } from './audio.js';
 import * as game from './game.js';
 
@@ -74,9 +74,9 @@ function createScene() {
   const hemisphericLight = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
   hemisphericLight.intensity = 0.5;
 
-  // Fog for synthwave depth
+  // Fog for synthwave depth (reduced density so sun is visible)
   scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
-  scene.fogDensity = 0.012;
+  scene.fogDensity = 0.008;
   scene.fogColor = new BABYLON.Color3(0, 0, 0);
 
   // Create environment
@@ -113,9 +113,10 @@ function createEnvironment(scene) {
     stars.push(star);
   }
 
-  // Sun disk (retro synthwave style) - faces player by default (no rotation needed)
+  // Sun disk (retro synthwave style) - rotate 180° to face player
   const sun = BABYLON.MeshBuilder.CreatePlane('sun', { width: 30, height: 30 }, scene);
   sun.position = new BABYLON.Vector3(0, 15, -100);  // In front of player (negative Z)
+  sun.rotation.y = Math.PI;  // Rotate to face player
   
   const sunMat = new BABYLON.StandardMaterial('sunMat', scene);
   sunMat.disableLighting = true;
@@ -126,7 +127,7 @@ function createEnvironment(scene) {
   for (let i = 0; i < 8; i++) {
     const band = BABYLON.MeshBuilder.CreatePlane('sunBand' + i, { width: 30, height: 1.5 }, scene);
     band.position = new BABYLON.Vector3(0, 15 - (i * 1.8), -99.5);
-    // No rotation needed - planes face -Z by default
+    band.rotation.y = Math.PI;  // Same rotation as sun
     
     const bandMat = new BABYLON.StandardMaterial('sunBandMat' + i, scene);
     bandMat.disableLighting = true;
@@ -274,41 +275,9 @@ function setupController(controller) {
     if (handedness === 'left') controllers.left = motionController;
     if (handedness === 'right') controllers.right = motionController;
 
-    // Create blaster mesh for controller
-    createBlasterMesh(motionController);
-
     // Set up button listeners
     setupButtonListeners(motionController);
   });
-}
-
-// ── Blaster Mesh ───────────────────────────────────────────
-function createBlasterMesh(motionController) {
-  // Simple voxel-style blaster
-  const blasterGroup = new BABYLON.TransformNode('blaster_' + motionController.handedness, scene);
-  blasterGroup.parent = motionController.grip || motionController.pointer;
-  
-  // Main body
-  const body = BABYLON.MeshBuilder.CreateBox('blaster_body', { width: 0.1, height: 0.15, depth: 0.4 }, scene);
-  body.position = new BABYLON.Vector3(0, 0, 0.2);
-  body.parent = blasterGroup;
-  
-  const bodyMat = new BABYLON.StandardMaterial('blasterMat_' + motionController.handedness, scene);
-  bodyMat.disableLighting = true;
-  bodyMat.emissiveColor = new BABYLON.Color3(0.2, 0.8, 1);
-  body.material = bodyMat;
-
-  // Barrel
-  const barrel = BABYLON.MeshBuilder.CreateBox('blaster_barrel', { width: 0.08, height: 0.08, depth: 0.3 }, scene);
-  barrel.position = new BABYLON.Vector3(0, 0.06, 0.4);
-  barrel.parent = blasterGroup;
-  
-  const barrelMat = new BABYLON.StandardMaterial('barrelMat_' + motionController.handedness, scene);
-  barrelMat.disableLighting = true;
-  barrelMat.emissiveColor = new BABYLON.Color3(1, 0, 1);
-  barrel.material = barrelMat;
-
-  console.log('[main] Blaster mesh created for', motionController.handedness);
 }
 
 // ── Button Listeners ───────────────────────────────────────

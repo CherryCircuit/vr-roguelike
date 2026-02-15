@@ -156,6 +156,7 @@
     <button id="debug-jump" style="margin-left:8px;">Jump</button>
     <label><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
     <label><input type="checkbox" id="debug-console"> Console log</label>
+    <button id="debug-copy" style="margin-left:8px; margin-top:4px;">COPY LOG</button>
   </div>
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
 
@@ -213,6 +214,21 @@
       
       consolePanel.addEventListener('click', function() {
         consolePanel.style.display = 'none';
+      });
+      
+      // Copy log to clipboard
+      document.getElementById('debug-copy').addEventListener('click', function() {
+        const allLogs = Array.from(consoleLogs.children)
+          .map(div => div.textContent)
+          .join('\n');
+        navigator.clipboard.writeText(allLogs).then(() => {
+          const btn = document.getElementById('debug-copy');
+          const originalText = btn.textContent;
+          btn.textContent = 'COPIED!';
+          setTimeout(() => btn.textContent = originalText, 1500);
+        }).catch(err => {
+          console.error('Failed to copy log:', err);
+        });
       });
 
       // Console intercept for in-VR console output
