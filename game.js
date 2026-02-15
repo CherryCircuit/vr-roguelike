@@ -6,10 +6,12 @@
 export const State = {
   TITLE: 'title',
   PLAYING: 'playing',
+  PAUSED: 'paused',
   LEVEL_COMPLETE: 'level_complete',
   UPGRADE_SELECT: 'upgrade_select',
   GAME_OVER: 'game_over',
   VICTORY: 'victory',
+  BOSS_FIGHT: 'boss_fight',
   NAME_ENTRY: 'name_entry',
   SCOREBOARD: 'scoreboard',
   COUNTRY_SELECT: 'country_select',
@@ -104,9 +106,63 @@ export const game = {
   finalScore: 0,
   finalLevel: 0,
   accuracyStreak: 0,
+  name: '',
+  _combo: 1,
+  _comboTimer: 0,
+  _comboTimeout: 3.0,
+  _levelConfig: LEVELS[0],
+  lastUpgradeHand: 'left',
+
+  // ── PHASE 5: GLOBAL UPGRADES ─────────────────────────────
+  // These apply to both hands and persist across levels
+  globalUpgrades: {
+    // RARE (Tier 1)
+    volatile: false,           // Enemies explode on death
+    second_wind: false,        // Survive death once
+    second_wind_used: false,   // Has Second Wind been consumed?
+    
+    // EPIC (Tier 2)
+    neon_overdrive: false,           // Has the upgrade
+    neon_overdrive_active: false,    // Currently in buff state
+    neon_overdrive_kills: 0,         // Kill counter toward activation
+    neon_overdrive_timer: 0,         // Time remaining in buff
+    
+    // ULTRA (Tier 3)
+    time_lord: false,                // Alt weapon slows time
+    time_lord_active: false,         // Time slow currently active
+    time_lord_timer: 0,              // Duration remaining
+    death_aura: false,               // Continuous close-range damage
+    infinity_loop: false,            // Repeat last alt weapon
+    infinity_loop_alt: null,         // Last alt weapon used
+    infinity_loop_timer: 0,          // Timer for auto-fire
+    
+    // LEGENDARY (Tier 4)
+    god_caliber: false,              // 3x all damage
+    chrono_shift: false,             // Teleport on damage
+    chrono_shift_cooldown: 0,        // Cooldown timer
+    final_form: false,               // Start levels at max power
+    soul_harvest: false,             // Kills add permanent damage
+    soul_harvest_kills: 0,           // Total kills with soul harvest
+    cosmic_shield: false,            // Block damage periodically
+    cosmic_shield_cooldown: 0,       // Cooldown timer
+    cosmic_shield_active: false,     // Currently blocking
+    
+    // Time slow effect (for Time Lord)
+    time_slow_active: false,
+    time_slow_multiplier: 1.0,       // 1.0 = normal, 0.25 = 75% slow
+  },
 };
 
 // ── Helpers ────────────────────────────────────────────────
+function clampLevel(level) {
+  return Math.max(1, Math.min(LEVELS.length, level));
+}
+
+function syncLevelConfig() {
+  game.level = clampLevel(game.level);
+  game._levelConfig = LEVELS[game.level - 1];
+}
+
 export function resetGame() {
   Object.assign(game, {
     state: State.TITLE,
@@ -128,17 +184,24 @@ export function resetGame() {
     finalScore: 0,
     finalLevel: 0,
     accuracyStreak: 0,
+    name: '',
+    _combo: 1,
+    _comboTimer: 0,
+    _comboTimeout: 3.0,
+    _levelConfig: LEVELS[0],
+    lastUpgradeHand: 'left',
   });
+  resetGlobalUpgrades();
+  syncLevelConfig();
 }
 
 export function getLevelConfig() {
+  syncLevelConfig();
   return LEVELS[game.level - 1];
 }
 
 export function addScore(points) {
-  // Combo multiplier: every 10 accuracy streak hits raises it (max 5×)
-  const combo = getComboMultiplier();
-  game.score += Math.floor(points * combo);
+  game.score += Math.floor(points);
 }
 
 export function getComboMultiplier() {
@@ -148,6 +211,8 @@ export function getComboMultiplier() {
 export function damagePlayer(amount) {
   game.health = Math.max(0, game.health - amount);
   game.killsWithoutHit = 0;   // reset combo
+  game._combo = 1;
+  game._comboTimer = 0;
   return game.health <= 0;
 }
 
@@ -158,4 +223,250 @@ export function healPlayer(amount) {
 export function addUpgrade(id, hand) {
   const h = hand || 'left';
   game.upgrades[h][id] = (game.upgrades[h][id] || 0) + 1;
+  game.lastUpgradeHand = h;
 }
+
+// ── PHASE 5: GLOBAL UPGRADE HELPERS ─────────────────────────
+
+/**
+ * Apply a global upgrade by ID (for upgrades with global: true)
+ */
+export function addGlobalUpgrade(id) {
+  const g = game.globalUpgrades;
+  
+  switch (id) {
+    // RARE (Tier 1)
+    case 'add_heart':
+      game.maxHealth += 2;
+      game.health = Math.min(game.health + 2, game.maxHealth);
+      break;
+    case 'volatile':
+      g.volatile = true;
+      break;
+    case 'second_wind':
+      g.second_wind = true;
+      g.second_wind_used = false;
+      break;
+    case 'crit_core':
+    case 'cooldown_tuner':
+      // These are per-hand, not global - handled by addUpgrade()
+      break;
+      
+    // EPIC (Tier 2)
+    case 'neon_overdrive':
+      g.neon_overdrive = true;
+      g.neon_overdrive_kills = 0;
+      break;
+    case 'heavy_hunter':
+      // Per-hand, handled by addUpgrade()
+      break;
+      
+    // ULTRA (Tier 3)
+    case 'time_lord':
+      g.time_lord = true;
+      break;
+    case 'death_aura':
+      g.death_aura = true;
+      break;
+    case 'infinity_loop':
+      g.infinity_loop = true;
+      g.infinity_loop_timer = 0;
+      break;
+    case 'hyper_crit':
+      // Per-hand, handled by addUpgrade()
+      break;
+      
+    // LEGENDARY (Tier 4)
+    case 'god caliber':
+      g.god_caliber = true;
+      break;
+    case 'chrono shift':
+      g.chrono_shift = true;
+      g.chrono_shift_cooldown = 0;
+      break;
+    case 'final form':
+      g.final_form = true;
+      break;
+    case 'soul harvest':
+      g.soul_harvest = true;
+      break;
+    case 'reality tear':
+      // Per-hand, handled by addUpgrade()
+      break;
+    case 'cosmic shield':
+      g.cosmic_shield = true;
+      g.cosmic_shield_cooldown = 0;
+      break;
+  }
+}
+
+/**
+ * Check if a global upgrade is active
+ */
+export function hasGlobalUpgrade(id) {
+  const g = game.globalUpgrades;
+  
+  switch (id) {
+    case 'volatile': return g.volatile;
+    case 'second_wind': return g.second_wind && !g.second_wind_used;
+    case 'neon_overdrive': return g.neon_overdrive;
+    case 'neon_overdrive_active': return g.neon_overdrive_active;
+    case 'time_lord': return g.time_lord;
+    case 'death_aura': return g.death_aura;
+    case 'infinity_loop': return g.infinity_loop;
+    case 'god_caliber': return g.god_caliber;
+    case 'chrono_shift': return g.chrono_shift;
+    case 'final_form': return g.final_form;
+    case 'soul_harvest': return g.soul_harvest;
+    case 'cosmic_shield': return g.cosmic_shield;
+    default: return false;
+  }
+}
+
+/**
+ * Get global upgrades state for weapon stats calculation
+ */
+export function getGlobalUpgradesState() {
+  const g = game.globalUpgrades;
+  return {
+    volatile: g.volatile,
+    neon_overdrive_active: g.neon_overdrive_active,
+    time_lord: g.time_lord,
+    death_aura: g.death_aura,
+    infinity_loop: g.infinity_loop,
+    god_caliber: g.god_caliber,
+    chrono_shift: g.chrono_shift,
+    final_form: g.final_form,
+    soul_harvest: g.soul_harvest,
+    soul_harvest_kills: g.soul_harvest_kills,
+    cosmic_shield: g.cosmic_shield,
+    cosmic_shield_active: g.cosmic_shield_active,
+  };
+}
+
+/**
+ * Reset global upgrades (called on new game)
+ */
+export function resetGlobalUpgrades() {
+  game.globalUpgrades = {
+    volatile: false,
+    second_wind: false,
+    second_wind_used: false,
+    neon_overdrive: false,
+    neon_overdrive_active: false,
+    neon_overdrive_kills: 0,
+    neon_overdrive_timer: 0,
+    time_lord: false,
+    time_lord_active: false,
+    time_lord_timer: 0,
+    death_aura: false,
+    infinity_loop: false,
+    infinity_loop_alt: null,
+    infinity_loop_timer: 0,
+    god_caliber: false,
+    chrono_shift: false,
+    chrono_shift_cooldown: 0,
+    final_form: false,
+    soul_harvest: false,
+    soul_harvest_kills: 0,
+    cosmic_shield: false,
+    cosmic_shield_cooldown: 0,
+    cosmic_shield_active: false,
+    time_slow_active: false,
+    time_slow_multiplier: 1.0,
+  };
+}
+
+// ── Compatibility API used by main.js ───────────────────────
+export function init() {
+  resetGame();
+  return game;
+}
+
+export function startGame() {
+  // Preserve debug-set level index across game resets.
+  const preservedLevel = clampLevel(game.level);
+  resetGame();
+  game.level = preservedLevel;
+  syncLevelConfig();
+  game.state = State.PLAYING;
+  return game;
+}
+
+export function setState(state) {
+  game.state = state;
+  game.stateTimer = 0;
+  return game.state;
+}
+
+export function startLevel() {
+  game.kills = 0;
+  game.spawnTimer = 0;
+  game.stateTimer = 0;
+  game._combo = 1;
+  game._comboTimer = 0;
+  syncLevelConfig();
+  if (game.state !== State.BOSS_ALERT && game.state !== State.BOSS_FIGHT) {
+    game.state = State.PLAYING;
+  }
+  return game._levelConfig;
+}
+
+export function completeLevel() {
+  game.state = State.LEVEL_COMPLETE;
+  game.finalLevel = game.level;
+  return game.state;
+}
+
+export function nextLevel() {
+  game.level = clampLevel(game.level + 1);
+  syncLevelConfig();
+  game.kills = 0;
+  return game.level;
+}
+
+// Maintains previous 0-based behavior used by debug jump in main.js.
+export function setLevel(levelIndex) {
+  const idx = Math.max(0, Math.floor(levelIndex));
+  game.level = clampLevel(idx + 1);
+  syncLevelConfig();
+  return game.level;
+}
+
+export function reset() {
+  resetGame();
+  return game;
+}
+
+export function addKill() {
+  game.kills += 1;
+  game.totalKills += 1;
+  game.killsWithoutHit += 1;
+  game.accuracyStreak += 1;
+  game._comboTimer = game._comboTimeout;
+  game._combo = Math.min(5, 1 + Math.floor(game.killsWithoutHit / 5));
+  return game.kills;
+}
+
+export function damage(amount) {
+  return damagePlayer(amount);
+}
+
+export function setName(name) {
+  game.name = String(name || '').trim().slice(0, 16);
+  return game.name;
+}
+
+export function updateCombo(dt) {
+  if (game._comboTimer > 0) {
+    game._comboTimer -= dt;
+    if (game._comboTimer <= 0) {
+      game._comboTimer = 0;
+      game._combo = 1;
+      game.killsWithoutHit = 0;
+    }
+  }
+  return game._combo;
+}
+
+export { getEnemyTypes };

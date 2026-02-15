@@ -142,7 +142,7 @@
   <!-- Info overlay shown before entering VR -->
   <div id="info">
     <h1>SYNTHWAVE VR BLASTER</h1>
-    <p>Build: TWISTED SISTER (Optimized) | Babylon.js Port v0.1.5 | Put on headset and ENTER VR</p>
+    <p>Build: RATT | Babylon.js Port v0.2.2 | Runtime/API Hotfixes | Put on headset and ENTER VR</p>
     <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Top trigger: Main Weapon | Lower trigger: Alt Weapon | Menu button: Pause</p>
     <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">Babylon.js Engine</p>
   </div>
@@ -159,12 +159,41 @@
 
   <!-- Debug menu -->
   <div id="debug-panel">
-    <div>DEBUG</div>
+    <div style="color:#ff00ff;border-bottom:1px solid #ff00ff;padding-bottom:4px;margin-bottom:8px;">⚡ DEBUG CONTROLS</div>
+    
+    <!-- Gameplay -->
+    <div style="color:#00ffff;font-size:12px;margin-top:4px;">GAMEPLAY</div>
     <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;"></label>
     <button id="debug-jump" style="margin-left:8px;">Jump</button>
+    
+    <!-- Visual Parameters -->
+    <div style="color:#00ffff;font-size:12px;margin-top:12px;border-top:1px solid #333;padding-top:8px;">VISUALS</div>
+    <label style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Glow Intensity:</span>
+      <input type="range" id="vis-glow" min="0" max="2" step="0.1" value="1.0" style="width:80px;">
+      <span id="vis-glow-val" style="width:30px;text-align:right;">1.0</span>
+    </label>
+    <label style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Fog Density:</span>
+      <input type="range" id="vis-fog" min="0" max="0.02" step="0.001" value="0.006" style="width:80px;">
+      <span id="vis-fog-val" style="width:30px;text-align:right;">0.006</span>
+    </label>
+    <label style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Grid Brightness:</span>
+      <input type="range" id="vis-grid" min="0.5" max="2" step="0.1" value="1.2" style="width:80px;">
+      <span id="vis-grid-val" style="width:30px;text-align:right;">1.2</span>
+    </label>
+    <label style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Sun Stripes:</span>
+      <input type="range" id="vis-stripes" min="4" max="12" step="1" value="8" style="width:80px;">
+      <span id="vis-stripes-val" style="width:30px;text-align:right;">8</span>
+    </label>
+    
+    <!-- Tools -->
+    <div style="color:#00ffff;font-size:12px;margin-top:12px;border-top:1px solid #333;padding-top:8px;">TOOLS</div>
     <label><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
     <label><input type="checkbox" id="debug-console"> Console log</label>
-    <button id="debug-copy" style="margin-left:8px; margin-top:4px;">COPY LOG</button>
+    <button id="debug-copy" style="margin-left:8px;margin-top:4px;">COPY LOG</button>
   </div>
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
 
@@ -260,6 +289,44 @@
             }
           }
         };
+      });
+
+      // Visual parameter sliders
+      const visGlow = document.getElementById('vis-glow');
+      const visGlowVal = document.getElementById('vis-glow-val');
+      const visFog = document.getElementById('vis-fog');
+      const visFogVal = document.getElementById('vis-fog-val');
+      const visGrid = document.getElementById('vis-grid');
+      const visGridVal = document.getElementById('vis-grid-val');
+      const visStripes = document.getElementById('vis-stripes');
+      const visStripesVal = document.getElementById('vis-stripes-val');
+
+      visGlow.addEventListener('input', function() {
+        visGlowVal.textContent = this.value;
+        if (window.updateVisualParams) {
+          window.updateVisualParams({ glowIntensity: parseFloat(this.value) });
+        }
+      });
+
+      visFog.addEventListener('input', function() {
+        visFogVal.textContent = this.value;
+        if (window.updateVisualParams) {
+          window.updateVisualParams({ fogDensity: parseFloat(this.value) });
+        }
+      });
+
+      visGrid.addEventListener('input', function() {
+        visGridVal.textContent = this.value;
+        if (window.updateVisualParams) {
+          window.updateVisualParams({ gridBrightness: parseFloat(this.value) });
+        }
+      });
+
+      visStripes.addEventListener('input', function() {
+        visStripesVal.textContent = this.value;
+        if (window.updateVisualParams) {
+          window.updateVisualParams({ sunStripeCount: parseInt(this.value) });
+        }
       });
     })();
   </script>

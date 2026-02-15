@@ -750,3 +750,241 @@ export function playGameOverSound() {
   gameOverAudio.volume = 0.5;
   gameOverAudio.play().catch(() => {});
 }
+
+// ── Phase 3: New Weapon Sounds ───────────────────────────────
+
+// Rocket Launcher - deep whoosh followed by explosion
+export function playRocketSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Whoosh launch sound
+  const noise = ctx.createBufferSource();
+  noise.buffer = getExplosionBuffer();
+  noise.playbackRate.value = 0.8 + Math.random() * 0.4;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(800, t);
+  filter.frequency.exponentialRampToValueAtTime(200, t + 0.3);
+  filter.Q.setValueAtTime(2, t);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.3);
+
+  // Low thump
+  const osc = ctx.createOscillator();
+  const oscGain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(100, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.2);
+  oscGain.gain.setValueAtTime(0.15, t);
+  oscGain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+  osc.connect(oscGain);
+  oscGain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.2);
+}
+
+// Lightning sound - electric crackle
+export function playLightningSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // High frequency crackle
+  const noise = ctx.createBufferSource();
+  noise.buffer = getExplosionBuffer();
+  noise.playbackRate.value = 2 + Math.random();
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.setValueAtTime(2000, t);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.12, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.1);
+
+  // Electric buzz
+  const osc = ctx.createOscillator();
+  const oscGain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(1200 + Math.random() * 400, t);
+  osc.frequency.exponentialRampToValueAtTime(600, t + 0.08);
+  oscGain.gain.setValueAtTime(0.08, t);
+  oscGain.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
+  osc.connect(oscGain);
+  oscGain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.08);
+}
+
+// Charge Cannon - charging up sound
+export function playChargeSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Rising pitch
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(200, t);
+  osc.frequency.exponentialRampToValueAtTime(1500, t + 0.15);
+
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.15);
+
+  // Bass punch on release
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(80, t + 0.05);
+  osc2.frequency.exponentialRampToValueAtTime(30, t + 0.3);
+  gain2.gain.setValueAtTime(0.2, t + 0.05);
+  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.start(t + 0.05);
+  osc2.stop(t + 0.3);
+}
+
+// Plasma Carbine - rapid fire zaps
+export function playPlasmaSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const baseFreq = 1500 + Math.random() * 500;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(baseFreq, t);
+  osc.frequency.exponentialRampToValueAtTime(300, t + 0.04);
+
+  gain.gain.setValueAtTime(0.08, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.04);
+
+  // Add slight stereo variation
+  const panner = ctx.createStereoPanner();
+  panner.pan.setValueAtTime((Math.random() - 0.5) * 0.3, t);
+
+  osc.connect(gain);
+  gain.connect(panner);
+  panner.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.04);
+}
+
+// Seeker Burst - multiple tracking sounds
+export function playSeekerSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Create 3 quick tones
+  for (let i = 0; i < 3; i++) {
+    const delay = i * 0.05;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(600 + i * 200, t + delay);
+    osc.frequency.exponentialRampToValueAtTime(400 + i * 100, t + delay + 0.1);
+
+    gain.gain.setValueAtTime(0.1, t + delay);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + delay + 0.1);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t + delay);
+    osc.stop(t + delay + 0.1);
+  }
+}
+
+// Shield activation - protective hum
+export function playShieldSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Activation hum
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(400, t);
+  osc.frequency.setValueAtTime(600, t + 0.1);
+  osc.frequency.setValueAtTime(500, t + 0.2);
+
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.setValueAtTime(0.15, t + 0.2);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.4);
+
+  // Shimmer
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'triangle';
+  osc2.frequency.setValueAtTime(1200, t);
+  osc2.frequency.exponentialRampToValueAtTime(800, t + 0.15);
+  gain2.gain.setValueAtTime(0.08, t);
+  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.start(t);
+  osc2.stop(t + 0.15);
+}
+
+// Gravity Well - deep warble
+export function playGravityWellSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Deep oscillating tone
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+
+  // LFO-style warble
+  osc.frequency.setValueAtTime(80, t);
+  osc.frequency.setValueAtTime(100, t + 0.1);
+  osc.frequency.setValueAtTime(70, t + 0.2);
+  osc.frequency.setValueAtTime(90, t + 0.3);
+
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.5);
+
+  // Sub bass
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(40, t);
+  gain2.gain.setValueAtTime(0.15, t);
+  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.start(t);
+  osc2.stop(t + 0.4);
+}

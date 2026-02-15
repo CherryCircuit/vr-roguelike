@@ -34,6 +34,9 @@ And update the header in `main.js`:
 - **v0.1.3 - POISON**: Fixed glTF loader import, controller mesh hiding via doNotLoadControllerMeshes
 - **v0.1.4 - TWISTED SISTER**: Proper controller input pattern (changes.pressed), added Babylon.js code patterns to AGENTS.md
 - **v0.1.5 - TWISTED SISTER (Optimized)**: Performance fix - replaced 2000 star meshes with ParticleSystem, merged 121 grid lines into LineSystem (~98% reduction in draw calls)
+- **v0.2.0 - DEF LEPPARD**: Phase 5 Special Upgrades - tiered upgrade pools (RARE/EPIC/ULTRA/LEGENDARY), global upgrades system, 17+ new upgrades with mechanics
+- **v0.2.1 - EUROPE**: Phase 2 Core Gameplay - ported enemies (voxel meshes, AI, collision, death), shooting (projectiles, hit detection, damage numbers), HUD (hearts, score, combo, kill counter), game states (TITLE, PLAYING, LEVEL_COMPLETE, UPGRADE_SELECT, GAME_OVER)
+- **v0.2.2 - RATT**: Runtime/API hotfixes - restored missing `game.js` API surface and states, fixed Babylon.js API misuse (`Color3`, controller direction/rays, `createBoxEmitter`, `metadata`), removed duplicate SKIP card, reused lightning line mesh, added projectile/damage-number pooling, synchronized build/version text across UI files
 
 ## Project Overview
 
@@ -93,6 +96,29 @@ And update the header in `main.js`:
 
 These errors have happened before. Do NOT repeat them:
 
+0. **Missing game.js Exports (CODE REVIEW Feb 15, 2026)**
+   - Error: `TypeError: Cannot read property 'BOSS_FIGHT' of undefined` or `game.State.BOSS_FIGHT is undefined`
+   - Cause: `main.js` references states and functions that don't exist in `game.js`
+   - **Missing State Constants** (in `State` object):
+     - `BOSS_FIGHT: 'boss_fight'` - Referenced in main.js for boss battle state
+     - `PAUSED: 'paused'` - Referenced in `handlePause()` function
+   - **Missing Function Exports** (main.js calls these but game.js doesn't export them):
+     - `init()` - Called as `gameState = game.init()`
+     - `startGame()` - Called to begin a new game
+     - `startLevel()` - Called to start a level
+     - `completeLevel()` - Called when level ends
+     - `setState()` - Called to change game state
+     - `addKill()` - Called when enemy dies
+     - `damage()` / `damagePlayer()` - Inconsistent naming (main.js uses `damage()`)
+     - `nextLevel()` - Called to advance levels
+     - `setLevel()` - Called to set specific level
+     - `setName()` - Called during name entry
+     - `reset()` - Called to reset game (exists as `resetGame()`)
+     - `updateCombo()` - Called to update combo multiplier
+   - **Missing Property**:
+     - `_levelConfig` - Accessed in main.js but never set in game.js
+   - Fix: Add all missing State constants and export all required functions from `game.js`
+
 1. **glTF Loader Not Registered**
    - Error: `glTF / glb loader was not registered, using generic controller instead`
    - Cause: Using bundle scripts instead of ES module import
@@ -117,6 +143,28 @@ These errors have happened before. Do NOT repeat them:
    - Error: Build name not visible in browser
    - Cause: Updated code but forgot to update index.html text
    - Fix: Update `<p>` tag in #info div to show current build name
+
+5. **Babylon.js Port Regression Guardrails (v0.2.2 Hotfix)**
+   - `Color3.set(...)` and `Color3.lerpInPlace(...)` are not valid in this port path.
+     - Use `copyFromFloats(...)` and `BABYLON.Color3.LerpToRef(...)`.
+   - XR controller forward vector:
+     - Never use `xrController.grip.forward`.
+     - Use `xrController.grip.getDirection(BABYLON.Axis.Z)`.
+   - XR selection rays:
+     - `WebXRInputSource` has no `getForwardRay()`.
+     - Build ray manually from grip absolute position + `getDirection(...)`.
+   - `ParticleSystem.createBoxEmitter(...)` must pass 4 args:
+     - `direction1, direction2, minEmitBox, maxEmitBox`.
+   - Use `mesh.metadata` for custom mesh data, not `mesh.userData`.
+   - Do not dispose/recreate lightning line meshes every tick.
+     - Update existing lines via `MeshBuilder.CreateLines(..., { instance })`.
+   - Keep upgrade SKIP card in a single place (HUD), never push SKIP in both `main.js` and `hud.js`.
+   - Keep WebXR setup async-aware:
+     - `createScene()` should `await setupWebXR(scene)` so init doesn’t race XR setup.
+   - Do not allocate projectile mesh/material per shot.
+     - Reuse pooled meshes and shared materials.
+   - Do not allocate a new DynamicTexture/Plane for every damage number.
+     - Reuse pooled damage-number entries.
 
 ### Running the Game
 
@@ -475,6 +523,150 @@ mat.disableLighting = true;
 - **Use object pooling** for projectiles, explosions, damage numbers
 
 When adding new features, profile in VR using the performance monitor (`?debug=1`). WebXR cannot drop below 60fps without causing motion sickness.
+
+## Phase 3: Weapon System Overhaul Design Preferences
+
+### Implementation Approach
+1. **Port original Three.js system first** - Get the balanced version working, then optimize in Babylon.js
+2. **Alt-weapons are enemy drops** - Spinning voxel 3D icons appear where enemies die
+3. **Helper Bot AI** - Simple behavior (shoot at nearest enemy)
+
+### Alt-Weapon Drop System
+- Enemies have a chance to drop alt-weapon pickups on death
+- Each pickup is a small spinning voxel 3D icon
+- Players touch the pickup to equip that alt-weapon
+- Only one alt-weapon equipped at a time (per hand or global TBD)
+
+### Projectile Visuals
+- Each weapon type should have UNIQUE projectile visuals
+- Use Babylon.js particle systems for glowing effects
+- Color, size, trail effects should vary per weapon/upgrade
+
+### Main Weapons (Top Trigger)
+| Weapon | Description |
+|--------|-------------|
+| **Standard Blaster** | Default, reliable |
+| **Buckshot** | Multi-pellet spread |
+| **Lightning Rod** | Continuous beam, auto-lock |
+| **Charge Cannon** | Hold & release for big beam |
+| **Plasma Carbine** | Rapid fire, ramping damage |
+| **Seeker Burst** | Homing shots |
+
+### Alt Weapons (Squeeze/Lower Trigger) - Pickup Drops
+| Weapon | Damage | Cooldown | Icon Idea |
+|--------|--------|----------|-----------|
+| **Rocket Launcher** | 250 + splash | 15s | Red rocket |
+| **Helper Bot** | 15s duration | 30s | Small robot |
+| **Shield** | 5 hits | 15s | Blue hexagon |
+| **Gravity Well** | 4s pull | 25s | Purple sphere |
+| **Ion Mortar** | 400 damage | 20s | Green mortar |
+| **Hologram Decoy** | 6s distraction | 28s | Cyan figure |
+
+### Main Weapon Upgrades
+#### Standard Blaster
+- DoubleShot (extra projectile)
+- TripleShot (two extra projectiles)
+
+#### Buckshot
+- Focused Frenzy (-25% spread)
+- Buckshot, Gentlemen (+50% pellets)
+- Duck Hunt (+30% pellet damage)
+
+#### Lightning Rod
+- It's Electric! (+2 chain targets)
+- Tesla Coil (auto-fire + ball attack)
+
+#### Charge Cannon
+- Visual charge indicator
+- Ain't Nobody Got Time For That (+50% charge speed)
+- Excess Heat (2nd shot within 2s)
+- Death Ray (+50% damage)
+
+#### Plasma Carbine
+- Hold It Together (-30% spread)
+
+#### Seeker Burst
+- Gimme Gimme More (+3 shots per burst)
+
+### General Upgrades
+- **Execute** (+40% damage below 25% HP)
+- **Magnetic** (tag enemies, pull together)
+- **Reflex** (+100% fire rate after damage)
+- **Hollow-Point** (+15% damage)
+- **Nova Tip** (every 12th shot AoE)
+- **Siphon** (15 kills = 25% cooldown reduction)
+
+## Phase 6: Visual Polish & Menus Design Preferences
+
+### Aesthetic Vision
+The game should feel like stepping into an 80s synthwave album cover or a retro-futuristic Miami Beach night drive. Think Tron, Neon Drive, and Hotline Miami aesthetics.
+
+### Color Palette (Synthwave Standard)
+| Element | Hex | Usage |
+|---------|-----|-------|
+| Sky deep purple | `#160022` | Background sky, fog |
+| Sky mid purple | `#2b0042` | Horizon haze |
+| Horizon glow | `#ff3dbb` | Magenta bloom effect |
+| Grid neon lines | `#ff4fd6` | Floor grid primary |
+| Mountain wire cyan | `#4cf0ff` | Cyan wireframe ridges |
+| Mountain wire pink | `#ff64d8` | Pink wireframe ridges |
+| Sun top orange | `#ff9a3a` | Retro sun gradient top |
+| Sun bottom pink | `#ff3aa8` | Retro sun gradient bottom |
+
+### Environment Elements
+- **Retro Sun**: Large disc with horizontal stripe cutouts, gradient from orange to pink
+- **Neon Grid Floor**: Tiled texture with bright magenta lines, dark gaps, perspective convergence
+- **360° Wireframe Mountains**: Low-poly jagged ridges in alternating cyan/pink, full ring around player
+- **Star Field**: Particle system with soft-glow stars, sparse but bright
+- **Glow Effects**: GlowLayer for emissive materials to make neon pop
+- **Fog**: Purple exponential fog for atmospheric depth
+
+### Visual Debug Controls
+Debug UI should include sliders for:
+- Glow intensity (0-2)
+- Fog density (0-0.02)
+- Grid brightness (0.5-2)
+- Sun stripe count (4-12)
+
+### UI/Menus Style
+- Neon tube text effects (glowing cyan/magenta)
+- Animated scanline overlay for retro CRT feel
+- Card-based upgrade selection with hover glow effects
+- Smooth transitions between states
+
+### Performance Considerations
+- Shader-based grid floor (1 draw call) instead of line meshes
+- Object pooling for all particles
+- GlowLayer with reasonable blur kernel (64)
+- Target 72fps on Meta Quest 2
+
+## Phase 5: Special Upgrades Design Preferences
+
+### Tiered Upgrade Pools
+
+After boss victories, players can choose from tiered upgrade pools:
+
+- **RARE** (Tier 1 - Level 5 boss): 5 upgrades
+- **EPIC** (Tier 2 - Level 10 boss): RARE + 2 EPIC upgrades
+- **ULTRA** (Tier 3 - Level 15 boss): RARE + EPIC + 4 ULTRA upgrades
+- **LEGENDARY** (Tier 4 - Level 20 boss): All above + creative final upgrades
+
+### Upgrade Mechanic Preferences
+
+| Upgrade | Design Decision |
+|---------|-----------------|
+| **Death Aura** | ~3m radius, 5 damage/second |
+| **Neon Overdrive** | 30 kills = 8s buff with: 2x fire rate, 2x damage, invincibility |
+| **Time Lord** | 75% slow (enemies move at 25% speed for 5s) |
+| **Second Wind** | Dramatic visual effect (screen flash, sound, "SECOND WIND!" text) |
+
+### Boss Fight Design
+
+- **Target Duration**: 2-4 minutes per boss fight
+- **Phases**: Multiple phases per boss recommended
+  - Phase 1: Base behavior
+  - Phase 2: More aggressive, spawn minions, faster movement
+  - Phase 3: Final phase with all abilities amplified
 
 ## Version History Notes
 
