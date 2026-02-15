@@ -4,6 +4,7 @@
 
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/gui';
+import '@babylonjs/loaders';
 import { resumeAudioContext } from './audio.js';
 import * as game from './game.js';
 
@@ -112,10 +113,10 @@ function createEnvironment(scene) {
     stars.push(star);
   }
 
-  // Sun disk (retro synthwave style) - rotate 180° to face player
+  // Sun disk (retro synthwave style) - WebXR player faces +Z, so sun at +Z is in front
   const sun = BABYLON.MeshBuilder.CreatePlane('sun', { width: 30, height: 30 }, scene);
-  sun.position = new BABYLON.Vector3(0, 15, -100);  // In front of player (negative Z)
-  sun.rotation.y = Math.PI;  // Rotate to face player
+  sun.position = new BABYLON.Vector3(0, 15, 100);  // In front of player (positive Z)
+  // No rotation needed - plane faces -Z by default, which is correct for sun at +Z
   
   const sunMat = new BABYLON.StandardMaterial('sunMat', scene);
   sunMat.disableLighting = true;
@@ -125,8 +126,8 @@ function createEnvironment(scene) {
   // Sun gradient bands (horizontal strips)
   for (let i = 0; i < 8; i++) {
     const band = BABYLON.MeshBuilder.CreatePlane('sunBand' + i, { width: 30, height: 1.5 }, scene);
-    band.position = new BABYLON.Vector3(0, 15 - (i * 1.8), -99.5);
-    band.rotation.y = Math.PI;  // Same rotation as sun
+    band.position = new BABYLON.Vector3(0, 15 - (i * 1.8), 99.5);  // Same Z as sun (positive)
+    // No rotation needed - plane faces -Z by default, which is correct for sun at +Z
     
     const bandMat = new BABYLON.StandardMaterial('sunBandMat' + i, scene);
     bandMat.disableLighting = true;
