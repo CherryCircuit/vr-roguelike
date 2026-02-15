@@ -4,7 +4,7 @@
 
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/gui';
-import '@babylonjs/loaders/glTF';
+import '@babylonjs/loaders';
 import { resumeAudioContext } from './audio.js';
 import * as game from './game.js';
 
