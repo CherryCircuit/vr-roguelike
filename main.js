@@ -5,9 +5,12 @@
 
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/gui';
-import "@babylonjs/loaders";
+import { registerBuiltInLoaders } from '@babylonjs/loaders/dynamic';
 import { resumeAudioContext } from './audio.js';
 import * as game from './game.js';
+
+// Register all built-in loaders (glTF, OBJ, etc.) - MUST be done before loading any models
+registerBuiltInLoaders();
 
 // ── Global Variables ─────────────────────────────────────────
 let engine;
@@ -252,12 +255,12 @@ function setupWebXR(scene) {
 
     // Get controller references
     xr.input.onControllerAddedObservable.add((controller) => {
-      console.log('[main] Controller added:', controller.id);
+      console.log('[main] Controller added:', controller.uniqueId);
       setupController(controller);
     });
 
     xr.input.onControllerRemovedObservable.add((controller) => {
-      console.log('[main] Controller removed:', controller.id);
+      console.log('[main] Controller removed:', controller.uniqueId);
       if (controller.handedness === 'left') controllers.left = null;
       if (controller.handedness === 'right') controllers.right = null;
     });
@@ -283,6 +286,11 @@ function setupController(controller) {
     if (handedness === 'left') controllers.left = motionController;
     if (handedness === 'right') controllers.right = motionController;
 
+    // CRITICAL: Disable the default controller mesh entirely
+    // This prevents the laggy default .glb models from rendering
+    motionController.setEnabled(false);
+    console.log('[main] Disabled default controller mesh for:', handedness);
+
     // Create custom synthwave blaster attached to controller
     // Pass the WebXRInputSource (controller) which has .grip, not motionController
     createCustomBlaster(controller, handedness);
@@ -297,17 +305,17 @@ function createCustomBlaster(xrController, handedness) {
   // xrController is WebXRInputSource with .grip and .pointer meshes that track pose
   console.log('[main] Creating blaster, grip available:', !!xrController.grip);
   
-  // Create a glowing cylinder as the blaster
+  // Create a glowing cylinder as the blaster barrel
   const blaster = BABYLON.MeshBuilder.CreateCylinder('blaster_' + handedness, {
-    height: 0.15,
-    diameter: 0.04
+    height: 0.18,    // Length of barrel
+    diameter: 0.035  // Thickness
   }, scene);
   
-  // Rotate so it points forward (cylinder points up by default)
-  blaster.rotation.z = Math.PI / 2;
+  // Cylinder axis is Y by default - rotate around X to point forward (Z direction)
+  blaster.rotation.x = Math.PI / 2;
   
-  // Position relative to controller grip
-  blaster.position = new BABYLON.Vector3(0, -0.02, 0.08);
+  // Position in front of grip, pointing forward
+  blaster.position = new BABYLON.Vector3(0, 0, 0.12);  // Forward from grip
   blaster.parent = xrController.grip;  // Attach to grip mesh (tracks controller pose)
   
   // Glowing cyan material
@@ -316,19 +324,33 @@ function createCustomBlaster(xrController, handedness) {
   blasterMat.emissiveColor = new BABYLON.Color3(0, 1, 1); // CYAN
   blaster.material = blasterMat;
   
-  // Add glow effect (brighter core)
+  // Add glow effect (brighter core inside barrel)
   const core = BABYLON.MeshBuilder.CreateCylinder('blasterCore_' + handedness, {
-    height: 0.15,
-    diameter: 0.02
+    height: 0.18,
+    diameter: 0.015
   }, scene);
-  core.rotation.z = Math.PI / 2;
-  core.position = new BABYLON.Vector3(0, -0.02, 0.08);
+  core.rotation.x = Math.PI / 2;
+  core.position = new BABYLON.Vector3(0, 0, 0.12);
   core.parent = xrController.grip;  // Attach to grip mesh (tracks controller pose)
   
   const coreMat = new BABYLON.StandardMaterial('blasterCoreMat_' + handedness, scene);
   coreMat.disableLighting = true;
-  coreMat.emissiveColor = new BABYLON.Color3(0, 1, 1); // BRIGHT CYAN
+  coreMat.emissiveColor = new BABYLON.Color3(0.5, 1, 1); // BRIGHTER CYAN
   core.material = coreMat;
+  
+  // Create a handle that attaches to the grip point
+  const handle = BABYLON.MeshBuilder.CreateCylinder('blasterHandle_' + handedness, {
+    height: 0.08,
+    diameter: 0.025
+  }, scene);
+  // Handle points down from grip (Y axis)
+  handle.position = new BABYLON.Vector3(0, -0.04, 0);
+  handle.parent = xrController.grip;
+  
+  const handleMat = new BABYLON.StandardMaterial('blasterHandleMat_' + handedness, scene);
+  handleMat.disableLighting = true;
+  handleMat.emissiveColor = new BABYLON.Color3(0, 0.8, 0.8); // Darker cyan
+  handle.material = handleMat;
   
   console.log('[main] Created custom blaster for:', handedness, 'parent:', xrController.grip ? 'grip' : 'NO GRIP!');
 }
