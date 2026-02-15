@@ -173,7 +173,9 @@ function makeTextPlane(text, opts = {}) {
   const width = aspect * scale;
   const height = scale;
 
-  const plane = BABYLON.MeshBuilder.CreatePlane('textPlane', { width, height }, sceneRef);
+  const plane = BABYLON.MeshBuilder.CreatePlane('textPlane', { width: 1, height: 1 }, sceneRef);
+  plane.scaling.x = width;
+  plane.scaling.y = height;
   
   const mat = new BABYLON.StandardMaterial('textMat', sceneRef);
   configureAlphaTestMaterial(mat, texture);
@@ -266,6 +268,7 @@ export function initHUD(camera, scene) {
   titleGroup = createTitleScreen();
   titleGroup.position = new BABYLON.Vector3(0, 1.6, 6);
   titleGroup.rotation.y = Math.PI;
+  titleGroup.scaling.x = -1;
   
   // ── VR HUD (floor-mounted) ──
   hudGroup = createHUDElements();
@@ -454,7 +457,7 @@ function createTitleScreen() {
   titleScoreboardBtn = btnPlane;
 
   // Version number
-  const versionMesh = makeTextPlane('v0.2.5 (WARRANT)\nLAST UPDATED: FEB 15 2026', {
+  const versionMesh = makeTextPlane('v0.3.1 (SKID ROW)\nLAST UPDATED: FEB 15 2026', {
     fontSize: 32,
     color: '#888888',
     scale: 0.28,
@@ -616,6 +619,7 @@ export function showLevelComplete(level, playerPos) {
 
   levelTextGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   levelTextGroup.rotation.y = Math.PI;
+  levelTextGroup.scaling.x = -1;
   levelTextGroup.setEnabled(true);
 }
 
@@ -636,6 +640,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
 
   upgradeGroup.position = new BABYLON.Vector3(0, 1.6, 4);
   upgradeGroup.rotation.y = Math.PI;
+  upgradeGroup.scaling.x = -1;
 
   // Header
   const header = makeTextPlane('CHOOSE UPGRADE:', { fontSize: 48, color: '#ffffff', glow: true, scale: 0.4 });
@@ -896,6 +901,7 @@ export function showGameOver(score, playerPos) {
 
   gameOverGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   gameOverGroup.rotation.y = Math.PI;
+  gameOverGroup.scaling.x = -1;
   gameOverGroup.setEnabled(true);
 }
 
@@ -918,6 +924,7 @@ export function showVictory(score, playerPos) {
 
   gameOverGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   gameOverGroup.rotation.y = Math.PI;
+  gameOverGroup.scaling.x = -1;
   gameOverGroup.setEnabled(true);
 }
 
@@ -957,6 +964,7 @@ export function showBossAlert() {
   
   bossAlertGroup.position = new BABYLON.Vector3(0, 2.0, 4);
   bossAlertGroup.rotation.y = Math.PI;
+  bossAlertGroup.scaling.x = -1;
   bossAlertGroup.setEnabled(true);
 }
 
@@ -994,6 +1002,7 @@ export function showKillsRemainingMessage(count) {
   
   killsRemainingGroup.position = new BABYLON.Vector3(0, 2.0, 5);
   killsRemainingGroup.rotation.y = Math.PI;
+  killsRemainingGroup.scaling.x = -1;
   killsRemainingGroup.metadata = killsRemainingGroup.metadata || {};
   killsRemainingGroup.metadata.createdAt = performance.now();
   killsRemainingGroup.metadata.lifetime = 2000;
@@ -1128,6 +1137,7 @@ export function spawnDamageNumber(position, damage, color, isCrit = false) {
   plane.position.x += (Math.random() - 0.5) * 0.3;
   plane.position.y += Math.random() * 0.2;
   plane.position.z += (Math.random() - 0.5) * 0.3;
+  plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
 
   plane.renderingGroupId = 1;
 
@@ -1176,6 +1186,7 @@ function spawnCritLabel(position) {
   plane.position.x += (Math.random() - 0.5) * 0.2;
   plane.position.y += 0.4 + Math.random() * 0.2;
   plane.position.z += (Math.random() - 0.5) * 0.2;
+  plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
 
   plane.renderingGroupId = 1;
 
@@ -1250,6 +1261,7 @@ export function spawnOuchBubble(position, text = 'OUCH!') {
   plane.position = position.clone();
   plane.position.y += 1.0;
   plane.position.z += 0.5;
+  plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
   plane.renderingGroupId = 1;
   plane.metadata = plane.metadata || {};
   plane.metadata.createdAt = performance.now();
@@ -1304,6 +1316,7 @@ export function spawnComboPopup(combo, cameraPos) {
   plane.position = cameraPos.clone();
   plane.position.y += 0.8;
   plane.position.z -= 2.5;
+  plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
 
   plane.metadata = plane.metadata || {};
   plane.metadata.createdAt = performance.now();
@@ -1359,6 +1372,14 @@ export function updateFPS(now, opts = {}) {
     const fps = Math.round(fpsFrames.length);
     
     let text = `FPS: ${fps}`;
+    if (perfMonitor && sceneRef) {
+      const activeMeshes = sceneRef.getActiveMeshes().length;
+      const activeParticles = typeof sceneRef.getActiveParticles === 'function' ? sceneRef.getActiveParticles() : 0;
+      const totalVertices = sceneRef.getTotalVertices();
+      const drawCalls = opts.engine?.drawCallsLast ?? opts.engine?.drawCalls ?? 0;
+      const timeScale = (typeof window !== 'undefined' && window._timeScale) ? window._timeScale.toFixed(2) : '1.00';
+      text = `FPS: ${fps}\nMeshes: ${activeMeshes}\nParticles: ${activeParticles}\nVerts: ${totalVertices}\nDraw: ${drawCalls}\nTimeScale: ${timeScale}`;
+    }
     const fpsColor = fps < 30 ? '#ff0000' : fps < 60 ? '#ffff00' : '#00ff00';
 
     const existingObj = fpsMesh.metadata?.renderContext || null;
@@ -1418,6 +1439,7 @@ export function showNameEntry(score, level, storedName) {
 
   nameEntryGroup.position = new BABYLON.Vector3(0, 1.6, 4);
   nameEntryGroup.rotation.y = Math.PI;
+  nameEntryGroup.scaling.x = -1;
   nameEntryGroup.setEnabled(true);
 
   const header = makeTextPlane('ENTER YOUR NAME', {
@@ -1466,6 +1488,7 @@ export function showScoreboard(scores, headerText, opts = null) {
   scoreboardScrollOffset = 0;
   scoreboardGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   scoreboardGroup.rotation.y = Math.PI;
+  scoreboardGroup.scaling.x = -1;
   scoreboardGroup.setEnabled(true);
 
   const header = makeTextPlane(headerText || 'GLOBAL LEADERBOARD', {
@@ -1532,6 +1555,7 @@ export function showCountrySelect(countries, continents, initialContinent) {
 
   countrySelectGroup.position = new BABYLON.Vector3(0, 1.6, 4);
   countrySelectGroup.rotation.y = Math.PI;
+  countrySelectGroup.scaling.x = -1;
   countrySelectGroup.setEnabled(true);
 
   const header = makeTextPlane('SELECT YOUR COUNTRY', {

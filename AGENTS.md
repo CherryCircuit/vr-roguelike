@@ -40,7 +40,9 @@ And update the header in `main.js`:
 - **v0.2.3 - BON JOVI**: HUD + Combat Fixes - forward-facing world-space UI orientation, pointer-based aiming, boss projectile collision checks, weapon-state reset guards, pickup visibility scaling
 - **v0.2.4 - CINDERELLA**: Release workflow notes added for worker output formatting
 - **v0.2.5 - WARRANT**: Agent output workflow moved into AGENTS.md; MODELS.md removed
-- **v0.3.0 - JOURNEY**: Phase 6 Visual Overhaul - Neon Dreams environment (gradient sky dome, shader-based neon grid floor, retro striped sun, 360° wireframe mountains, enhanced star field, GlowLayer, purple fog, debug visual sliders)
+- **v0.3.0 - JOURNEY**: Phase 6 Neon Dreams visual overhaul (sky dome, shader grid floor, retro sun, mountain ring, glow tuning)
+- **v0.3.1 - SKID ROW**: HUD readability + XR pointer alignment + proximity slow-mo + environment tuning + VR perf readout
+- **v0.3.2 - DOKKEN**: WebXR documentation quick-reference expansion in AGENTS.md (controller input, pointer rays, features manager, secure-context constraints)
 
 ## Project Overview
 
@@ -472,6 +474,53 @@ mesh.setParent(motionController.rootMesh);
 // Detach
 mesh.setParent(null);
 ```
+
+## WebXR Docs Quick Reference (Researched Feb 15, 2026)
+
+Primary docs root for this project:
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/
+
+Priority pages to check first:
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/introToWebXR/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/WebXRSelectedFeatures/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/webXRInputControllerSupport/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/webXRExperienceHelpers/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/webXRFeaturesManager/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/webXRCamera/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/webXRSessionManagers/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/webXRARFeatures/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/WebXRSelectedFeatures/WebXTTeleportation/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/WebXRSelectedFeatures/WebXRHandTracking/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/WebXRSelectedFeatures/WebXRMovement/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/WebXRSelectedFeatures/WebXRLayers/
+- https://doc.babylonjs.com/features/featuresDeepDive/webXR/webXRDemos/
+
+If doc pages render blank in headless tools, use the Babylon docs source markdown in GitHub:
+- https://github.com/BabylonJS/Documentation/tree/master/content/features/featuresDeepDive/webXR
+
+WebXR implementation rules learned from docs:
+1. WebXR requires secure context (`https://`) or localhost. `127.0.0.1` may fail on some headset/browser paths; prefer `https://` for headset testing.
+2. Default setup is `scene.createDefaultXRExperienceAsync(...)`. For custom wiring, use `BABYLON.WebXRExperienceHelper.CreateAsync(scene)` and configure features manually.
+3. Use the features manager for feature toggles (pointer selection, teleportation, movement, hand tracking, layers). Enable features with explicit options instead of ad-hoc behavior.
+4. Controller input flow should be:
+   - `xr.input.onControllerAddedObservable`
+   - `controller.onMotionControllerInitObservable`
+   - `motionController.getComponentIds()` + `motionController.getComponent(id)`
+   - `component.onButtonStateChangedObservable`
+   - gate on `component.changes.pressed` before using `component.pressed`
+5. For aiming/rays, use pointer-space APIs:
+   - `controller.getWorldPointerRayToRef(...)` when possible
+   - or pointer transform (`controller.pointer`) for shot origin/direction
+   - do not rely on non-existent shortcuts like `grip.forward` or `getForwardRay()` on WebXR input sources
+6. Keep visual gun model choice explicit:
+   - attach physical gun mesh to `grip` if you want hand-held physical alignment
+   - attach aim aids/rays to `pointer` if you want true input-ray alignment
+7. Teleportation and movement features depend on correct setup (`floorMeshes`, feature options) and should be enabled/disabled intentionally in this project.
+8. Hand tracking and layers are optional features; gate with feature support checks and profile performance on Quest.
+9. When changing XR features, always retest: enter XR, verify controller orientation, trigger behavior, and pointer visuals in-headset.
+
+Known practical gotcha:
+- Pointer selection drives useful pointer transforms. If you disable pointer selection for visuals, confirm `controller.pointer` behavior still matches aiming needs. Safer default: keep feature enabled and hide laser/selection mesh visuals.
 
 ## CRITICAL RULE: REPORT ALL RESEARCH ATTEMPTS
 

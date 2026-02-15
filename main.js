@@ -1,7 +1,7 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
-//  Build: JOURNEY
-//  Babylon.js Port v0.3.0 - Phase 6: Neon Dreams Visual Overhaul
+//  Build: DOKKEN
+//  Babylon.js Port v0.3.2 - WebXR Docs Sync
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
@@ -28,6 +28,8 @@ let gameState = null;
 // Performance monitoring
 let perfMonitor = { fps: 0, frameTime: 0 };
 let perfMonitorEnabled = false;
+let glowLayerRef = null;
+let gridMaterialRef = null;
 
 // Debug flags
 window.debugJumpToLevel = null;
@@ -209,6 +211,7 @@ function createEnvironment(scene) {
   
   // Create all environment elements in order
   createSynthwaveSky(scene);
+  createHorizonGlow(scene);
   createShaderGridFloor(scene);
   createRetroSun(scene);
   createMountainRing(scene);
@@ -233,11 +236,14 @@ function createSynthwaveSky(scene) {
   const skyTexture = new BABYLON.DynamicTexture('skyTex', skyTextureSize, scene);
   const ctx = skyTexture.getContext();
   
-  // Vertical gradient: deep purple at top to mid purple at bottom
+  // Vertical gradient tuned to match inspiration (hot pink horizon glow).
   const gradient = ctx.createLinearGradient(0, 0, 0, skyTextureSize);
-  gradient.addColorStop(0, '#160022');     // Top: Deep purple
-  gradient.addColorStop(0.7, '#2b0042');   // Mid: Darker purple
-  gradient.addColorStop(1, '#3d0055');     // Bottom: Magenta haze
+  gradient.addColorStop(0, '#0a0018');
+  gradient.addColorStop(0.4, '#1a0030');
+  gradient.addColorStop(0.7, '#3d0055');
+  gradient.addColorStop(0.85, '#aa1177');
+  gradient.addColorStop(0.95, '#ff3dbb');
+  gradient.addColorStop(1, '#ff6ec7');
   
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, skyTextureSize, skyTextureSize);
@@ -253,6 +259,23 @@ function createSynthwaveSky(scene) {
   skyDome.material = skyMaterial;
   
   console.log('[main] Sky dome created with gradient texture');
+}
+
+function createHorizonGlow(scene) {
+  const glow = BABYLON.MeshBuilder.CreatePlane('horizonGlow', {
+    width: 400,
+    height: 8,
+  }, scene);
+  glow.position = new BABYLON.Vector3(0, 0.5, 0);
+  glow.rotation.x = Math.PI / 2;
+  glow.isPickable = false;
+
+  const mat = new BABYLON.StandardMaterial('horizonGlowMat', scene);
+  mat.disableLighting = true;
+  // Keep this opaque to avoid XR compositor alpha issues on Quest.
+  mat.emissiveColor = new BABYLON.Color3(1, 0.2, 0.7);
+  mat.backFaceCulling = false;
+  glow.material = mat;
 }
 
 // ── Shader-Based Neon Grid Floor ─────────────────────────────────────────
@@ -312,13 +335,10 @@ function createShaderGridFloor(scene) {
   gridMaterial.diffuseTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
   gridMaterial.diffuseTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
   gridMaterial.emissiveTexture = gridTexture;
-  gridMaterial.emissiveColor = new BABYLON.Color3(
-    visualParams.gridBrightness,
-    visualParams.gridBrightness * 0.3,
-    visualParams.gridBrightness * 0.8
-  );
+  gridMaterial.emissiveColor = new BABYLON.Color3(1.5, 0.2, 1.2);
   gridMaterial.disableLighting = true;
   gridMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+  gridMaterialRef = gridMaterial;
   
   ground.material = gridMaterial;
   
@@ -366,28 +386,23 @@ function createRetroSun(scene) {
   backingMat.backFaceCulling = false;
   sunBacking.material = backingMat;
   
-  // Create horizontal stripe cutouts
-  const stripeHeight = sunHeight / (stripeCount * 2 + 1);
-  const stripeYs = [];
-  
-  // Calculate stripe positions (evenly spaced through bottom half)
-  for (let i = 0; i < stripeCount; i++) {
-    const y = -sunHeight / 2 + (i + 1) * stripeHeight * 1.5;
-    stripeYs.push(y);
-  }
-  
-  // Create stripe meshes (dark bars that overlay the sun)
-  for (let i = 0; i < stripeCount; i++) {
+  // Create horizontal stripe cutouts concentrated in lower half.
+  const totalStripes = Math.max(8, stripeCount + 4);
+  for (let i = 0; i < totalStripes; i++) {
+    const t = i / totalStripes;
+    const y = -sunHeight * 0.05 - t * sunHeight * 0.45;
+    const stripeThickness = sunHeight * 0.008 + t * sunHeight * 0.015;
     const stripe = BABYLON.MeshBuilder.CreatePlane('sunStripe' + i, {
-      width: sunWidth * 1.1,  // Slightly wider than sun
-      height: stripeHeight * 0.6
+      width: sunWidth * 1.1,
+      height: stripeThickness
     }, scene);
     
     stripe.position = new BABYLON.Vector3(
       sunPosition.x,
-      sunPosition.y + stripeYs[i],
-      sunPosition.z + 0.5  // Slightly in front
+      sunPosition.y + y,
+      sunPosition.z + 0.5
     );
+    stripe.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
     stripe.isPickable = false;
     
     const stripeMat = new BABYLON.StandardMaterial('stripeMat' + i, scene);
@@ -414,25 +429,23 @@ function createRetroSun(scene) {
   coronaMat.backFaceCulling = false;
   corona.material = coronaMat;
   
-  console.log('[main] Retro sun created with', stripeCount, 'stripes');
+  console.log('[main] Retro sun created with', totalStripes, 'stripes');
 }
 
-// ── 360° Wireframe Mountain Ring ─────────────────────────────────────────
+// ── Horizon Mountains (left/right clusters) ─────────────────────────────────────────
 function createMountainRing(scene) {
-  const mountainCount = 18;  // More mountains for better coverage
-  const minRadius = 100;
+  const mountainCount = 14;
+  const minRadius = 120;
   const maxRadius = 160;
-  
-  // Color palette for mountains
-  const mountainColors = [
-    new BABYLON.Color3(0.298, 0.941, 1),    // Cyan #4cf0ff
-    new BABYLON.Color3(1, 0.392, 0.847),    // Pink #ff64d8
-    new BABYLON.Color3(0.2, 0.8, 0.9),      // Teal cyan
-    new BABYLON.Color3(1, 0.2, 0.7),        // Hot pink
-  ];
+  const mountainColor = new BABYLON.Color3(0.298, 0.941, 1); // #4cf0ff
   
   for (let i = 0; i < mountainCount; i++) {
-    const angle = (i / mountainCount) * Math.PI * 2;
+    let angle;
+    if (i < mountainCount / 2) {
+      angle = Math.PI * 0.6 + (i / (mountainCount / 2)) * Math.PI * 0.3;
+    } else {
+      angle = Math.PI * 0.1 + ((i - mountainCount / 2) / (mountainCount / 2)) * Math.PI * 0.3;
+    }
     const radius = minRadius + Math.random() * (maxRadius - minRadius);
     const x = Math.cos(angle) * radius;
     const z = Math.sin(angle) * radius;
@@ -443,21 +456,19 @@ function createMountainRing(scene) {
     mountain.rotation.y = angle + Math.PI / 2;  // Face center
     mountain.isPickable = false;
     
-    // Assign alternating colors
-    const colorIndex = i % mountainColors.length;
     const mountainMat = new BABYLON.StandardMaterial('mountainMat' + i, scene);
     mountainMat.wireframe = true;
     mountainMat.disableLighting = true;
-    mountainMat.emissiveColor = mountainColors[colorIndex];
+    mountainMat.emissiveColor = mountainColor;
     mountain.material = mountainMat;
   }
   
-  console.log('[main] 360° mountain ring created with', mountainCount, 'ridges');
+  console.log('[main] Horizon mountain clusters created with', mountainCount, 'ridges');
 }
 
 function createJaggedMountain(scene, index) {
   // Create a jagged mountain silhouette using extrusion
-  const height = 20 + Math.random() * 35;  // 20-55 units tall
+  const height = 12 + Math.random() * 20;  // 12-32 units tall
   const width = 15 + Math.random() * 20;   // 15-35 units wide
   
   // Create jagged peak profile
@@ -552,6 +563,7 @@ function createGlowEffects(scene) {
   });
   
   gl.intensity = visualParams.glowIntensity;
+  glowLayerRef = gl;
   
   // The glow layer will automatically pick up emissive materials
   // which is perfect for our neon grid, sun, and mountains
@@ -564,8 +576,27 @@ window.updateVisualParams = function(params) {
   Object.assign(visualParams, params);
   
   // Update fog
-  if (scene && scene.fogDensity !== undefined) {
+  if (scene && params.fogDensity !== undefined) {
     scene.fogDensity = visualParams.fogDensity;
+  }
+
+  // Update glow intensity
+  if (glowLayerRef && params.glowIntensity !== undefined) {
+    glowLayerRef.intensity = visualParams.glowIntensity;
+  }
+
+  // Update grid brightness
+  if (gridMaterialRef && params.gridBrightness !== undefined) {
+    gridMaterialRef.emissiveColor = new BABYLON.Color3(
+      visualParams.gridBrightness,
+      visualParams.gridBrightness * 0.15,
+      visualParams.gridBrightness * 0.8
+    );
+  }
+
+  // Sun stripe count requires scene rebuild.
+  if (params.sunStripeCount !== undefined) {
+    console.log('[main] Sun stripe count changed to', visualParams.sunStripeCount, '- requires scene reload');
   }
   
   // Log changes
@@ -594,6 +625,14 @@ async function setupWebXR(scene) {
       return;
     }
 
+    const pointerFeature = xr.baseExperience.featuresManager.getEnabledFeature(
+      BABYLON.WebXRFeatureName.POINTER_SELECTION
+    );
+    if (pointerFeature) {
+      pointerFeature.displayLaserPointer = false;
+      pointerFeature.displaySelectionMesh = false;
+    }
+
     xr.baseExperience.onStateChangedObservable.add((state) => {
       console.log('[main] XR state changed:', state);
       
@@ -611,6 +650,14 @@ async function setupWebXR(scene) {
         
         // Start menu music
         playMusic('menu');
+
+        const pointerFeature = xr.baseExperience.featuresManager.getEnabledFeature(
+          BABYLON.WebXRFeatureName.POINTER_SELECTION
+        );
+        if (pointerFeature) {
+          pointerFeature.displayLaserPointer = false;
+          pointerFeature.displaySelectionMesh = false;
+        }
       } else if (state === BABYLON.WebXRState.NOT_IN_XR) {
         console.log('[main] Exited VR session');
         document.getElementById('scanlines').style.display = 'block';
@@ -664,11 +711,12 @@ function setupController(controller) {
 
 // ── Custom Blaster Creation ───────────────────────────────
 function createCustomBlaster(xrController, handedness) {
+  const mount = xrController.pointer || xrController.grip;
   const sphere = BABYLON.MeshBuilder.CreateSphere('blaster_' + handedness, {
     diameter: 0.04
   }, scene);
   sphere.position = new BABYLON.Vector3(0, 0, 0);
-  sphere.parent = xrController.grip;
+  sphere.parent = mount;
 
   const blasterMat = new BABYLON.StandardMaterial('blasterMat_' + handedness, scene);
   blasterMat.disableLighting = true;
@@ -681,12 +729,13 @@ function createCustomBlaster(xrController, handedness) {
   ];
   const aimLine = BABYLON.MeshBuilder.CreateLines('aimLine_' + handedness, { points: aimPoints }, scene);
   aimLine.color = new BABYLON.Color3(0, 1, 1);
-  aimLine.parent = xrController.grip;
+  aimLine.parent = mount;
   aimLine.isPickable = false;
 }
 
 // ── Charge Indicator ───────────────────────────────────────
 function createChargeIndicator(xrController, handedness) {
+  const mount = xrController.pointer || xrController.grip;
   // Create a ring that expands as charge builds
   const indicator = BABYLON.MeshBuilder.CreateTorus('chargeIndicator_' + handedness, {
     diameter: 0.06,
@@ -694,7 +743,7 @@ function createChargeIndicator(xrController, handedness) {
     tessellation: 16
   }, scene);
   indicator.position = new BABYLON.Vector3(0, 0, 0.2);
-  indicator.parent = xrController.grip;
+  indicator.parent = mount;
   indicator.isVisible = false;
   
   const mat = new BABYLON.StandardMaterial('chargeIndicatorMat_' + handedness, scene);
@@ -2442,7 +2491,7 @@ function renderLoop() {
   }
   
   // Update HUD
-  hud.updateFPS(now, { perfMonitor: perfMonitorEnabled });
+  hud.updateFPS(now, { perfMonitor: perfMonitorEnabled, engine });
   
   scene.render();
 }
@@ -2495,6 +2544,45 @@ function updateGameState(now, dt) {
 function updatePlaying(now, dt) {
   const playerPos = getPlayerPosition();
   const levelConfig = gameState._levelConfig;
+
+  // ── Proximity slow-mo ──────────────────────────────
+  const SLOW_MO_RADIUS = 2.0;
+  const SLOW_MO_FACTOR = 0.3;
+  const SLOW_MO_LERP_IN = 5.0;
+  const SLOW_MO_LERP_OUT = 3.0;
+
+  let hasCloseEnemy = false;
+  const allEnemies = enemies.getEnemies();
+  for (let i = 0; i < allEnemies.length; i++) {
+    const dist = BABYLON.Vector3.Distance(playerPos, allEnemies[i].mesh.position);
+    if (dist < SLOW_MO_RADIUS) {
+      hasCloseEnemy = true;
+      break;
+    }
+  }
+
+  const bossCheck = enemies.getBoss();
+  if (bossCheck && bossCheck.mesh) {
+    const bossDist = BABYLON.Vector3.Distance(playerPos, bossCheck.mesh.position);
+    if (bossDist < SLOW_MO_RADIUS * 1.5) {
+      hasCloseEnemy = true;
+    }
+  }
+
+  if (window._timeScale === undefined) window._timeScale = 1.0;
+  if (window._wasCloseEnemy === undefined) window._wasCloseEnemy = false;
+  const targetScale = hasCloseEnemy ? SLOW_MO_FACTOR : 1.0;
+  const lerpSpeed = hasCloseEnemy ? SLOW_MO_LERP_IN : SLOW_MO_LERP_OUT;
+  window._timeScale += (targetScale - window._timeScale) * Math.min(1, lerpSpeed * dt);
+
+  if (hasCloseEnemy && !window._wasCloseEnemy) {
+    playSlowMoSound();
+  } else if (!hasCloseEnemy && window._wasCloseEnemy) {
+    playSlowMoReverseSound();
+  }
+  window._wasCloseEnemy = hasCloseEnemy;
+
+  dt *= window._timeScale;
   
   // Update enemies
   const collisions = enemies.updateEnemies(dt, now, playerPos);
