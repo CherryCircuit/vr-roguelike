@@ -8,6 +8,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Workflow
 
+### CRITICAL: Test Locally Before Marking Done
+
+**Before marking ANY task as "done", you MUST:**
+
+1. Start a local web server:
+   ```bash
+   python3 -m http.server 8000
+   ```
+
+2. Check the page loads: `http://localhost:8000`
+
+3. Open browser DevTools (F12) and check the Console tab for:
+   - Module import errors (`Failed to resolve module specifier`)
+   - JavaScript syntax errors
+   - Red error messages
+   - Yellow warnings that break functionality
+
+4. Verify no console errors exist before using `attempt_completion`
+
+5. After making changes, stop and restart the server to ensure fresh cache:
+   ```bash
+   pkill -f "python3 -m http.server"
+   python3 -m http.server 8000
+   ```
+
+**Why?** Issues that are obvious in browser console (like import resolution errors) should never reach the user. Local testing catches these before marking work complete.
+
+### Running the Game
+
 ### Running the Game
 
 The game requires a local web server (not file://) to load ES modules:
@@ -180,24 +209,7 @@ Check:
 - Implementing workarounds that cause new issues
 - Missing the correct, documented solution
 
-**Example:** The glTF loader registration issue was solved in Babylon.js docs at `/features/featuresDeepDive/importers/loadingFileTypes`. Using `registerBuiltInLoaders()` from `@babylonjs/loaders/dynamic` is the official solution.
-
-## CRITICAL: NEVER USE `transparent: true` IN THIS PROJECT
-
-**Any Three.js material with `transparent: true` causes black rectangles in VR on Meta Quest Browser.** The XR compositor treats any pixel with framebuffer alpha < 1.0 as see-through-to-black, creating dark head-locked overlays. No post-render GL hack fixes this — it was tested and confirmed broken.
-
-### The Rule
-
-**NEVER set `transparent: true` on any Three.js material. No exceptions.**
-
-### What To Use Instead
-
-| Need | Solution |
-|------|----------|
-| Canvas text with alpha background | `alphaTest: 0.5` (binary discard, no partial alpha) |
-| Canvas texture with alpha gradients | `alphaTest: 0.1` (low threshold for soft gradients) |
-| Semi-transparent UI panels (opacity 0.7-0.9) | Fully opaque with darker color |
-| Glow/bloom effects | `blending: THREE.AdditiveBlending` WITHOUT `transparent: true` |
+**Example:** The glTF loader registration issue was solved in Babylon.js docs at `/features/featuresDeepDive/importers/loadingFileTypes`. Using `registerBuiltIn
 | Fade-in/fade-out animations | `mesh.visible = true/false` or scale animation |
 | Semi-transparent enemies/shields | Solid color, or wireframe, or emissive |
 | Sprite textures with alpha | `SpriteMaterial({ alphaTest: 0.5 })` |
