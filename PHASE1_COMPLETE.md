@@ -1,175 +1,232 @@
-# Phase 1 Complete: Babylon.js Port Foundation
+# Babylon.js Port - Phase 1 Complete ✅
 
-## Status: ✅ COMPLETE
+## Current Status: Build v0.1.5 - TWISTED SISTER (Optimized)
 
-The Babylon.js port foundation is now complete and ready for testing.
-
-## What's Been Implemented
-
-### ✅ index.html
-- Updated with Babylon.js CDN imports (core, GUI, loaders, materials)
-- ES module import map configured
-- Debug panel with jump to level, performance monitor, console log
-- WebXR polyfill still included
-- Styling updated for synthwave theme
-
-### ✅ main.js
-- Babylon.js engine and scene initialization
-- Synthwave environment:
-  - Magenta grid floor (200x200, 60x60 divisions)
-  - 2000 stars in background
-  - Sun disk with gradient bands
-  - 12 wireframe mountains with **GLOWING CYAN** edges (as requested!)
-  - Black fog for depth
-- WebXR VR experience setup with glTF loader for proper Quest controller models
-- Controller tracking (left and right)
-- VR blaster meshes attached to controllers
-- Button input handlers:
-  - Top trigger → Main Weapon
-  - Lower trigger (squeeze) → Alt Weapon
-  - Menu button (left controller) → Pause
-- Game loop with delta time and frame counting
-- Performance monitoring infrastructure
-
-### ✅ Existing Files (No Changes Needed)
-- `audio.js` - Pure Web Audio API, Babylon-compatible
-- `game.js` - Pure state management, ES6 exports, Babylon-compatible
-- `scoreboard.js` - Pure Supabase integration, Babylon-compatible
-
-### ✅ Reused Files
-- All music and sound effects in `mnt/project/music/` and `mnt/project/soundfx/`
-
-### ✅ VR Test Fixes Applied (Post-Initial Implementation)
-After initial VR testing, these fixes were applied:
-- **glTF Loader:** Added `@babylonjs/loaders/glTF` import for proper Quest controller models
-- **Sun Position:** Fixed rotation - sun now correctly faces player (was behind, now in front)
-- **Touch Warnings:** Disabled canvas touch handling to eliminate console spam
-- **WebXR Recognition:** Added theme-color meta tag for browser VR button detection
-- **Transparency:** Babylon.js handles transparency correctly in VR - no black boxes! 🎉
+**Last Updated:** Feb 14, 2026
 
 ---
 
-## Testing Instructions
+## ✅ Phase 1: Basic Scene & VR Setup (COMPLETE)
 
-### 1. Start the Local Server
-The server should already be running on port 8000. If not, run:
-```bash
-cd /Users/graemefindlay/Documents/GitHub/vr-roguelike
-python3 -m http.server 8000
-```
+### What's Working:
+- [x] Babylon.js scene with black void background
+- [x] Synthwave grid floor (magenta lines) - **OPTIMIZED: Single LineSystem**
+- [x] Sun disk with gradient bands (retro synthwave style)
+- [x] Wireframe cyan mountains surrounding player (12 total)
+- [x] Star field background - **OPTIMIZED: ParticleSystem (2000 stars in 1 draw call)**
+- [x] Fog for depth effect
+- [x] WebXR immersive-vr session working
+- [x] Custom cyan glowing blaster controllers (both hands)
+- [x] Controller input detection (trigger, squeeze, menu buttons)
+- [x] Proper button state change detection (`changes.pressed` pattern)
+- [x] Performance optimized (~98% reduction in draw calls)
 
-### 2. Open in Browser
-
-**Option A - Local Testing:**
-Navigate to: `http://localhost:8000`
-
-**Option B - GitHub Pages Testing (Recommended for VR):**
-After committing to GitHub, navigate to your GitHub Pages URL to test in VR headsets without local network issues.
-
-**Note:** You cannot access localhost from VR headsets (they're on different networks). Use GitHub Pages for VR testing.
-
-### 3. Test Desktop Mode (Non-VR)
-- You should see a black scene with:
-  - Magenta grid floor
-  - Cyan wireframe mountains
-  - Orange sun disk
-  - Stars
-- Camera controls: Click and drag to look around
-
-### 4. Test VR Mode (with Headset)
-- Put on your Quest headset
-- Navigate to the same URL in Quest Browser
-- Click "Enter VR"
-- **CRITICAL TEST:** Verify NO BLACK BOXES appear anywhere
-- Verify both controllers appear with blaster meshes
-- Test trigger presses (should see console logs)
-- Test pause button (left controller menu button)
-
-### 5. Check Browser Console
-- Open Developer Tools (F12)
-- Look for these logs:
-  - `[main] Initializing Babylon.js...`
-  - `[main] Engine created: XX.X FPS`
-  - `[main] Creating environment...`
-  - `[main] Environment created`
-  - `[main] Setting up WebXR...`
-  - `[main] WebXR experience created`
-
-### 6. Test Debug Features
-- Add `?debug=1` to URL: `http://localhost:8000/?debug=1`
-- Debug panel should appear at bottom-left
-- Test "Jump to level" (currently just sets a flag, no effect yet)
-- Enable "Performance monitor" (should log FPS to console)
-- Enable "Console log" to see all logs in-VR overlay
+### Performance Fix History:
+| Build | Issue | Fix |
+|-------|-------|-----|
+| v0.1.2-0.1.4 | Low FPS, controller lag | Identified: 2141 separate meshes |
+| v0.1.5 | Fixed | ParticleSystem for stars, LineSystem for grid → ~20 meshes total |
 
 ---
 
-## Known Current Limitations (Phase 1 Only)
+## ❌ Phase 2: Core Gameplay (NOT STARTED)
 
-These are **expected** for Phase 1 - they will be implemented in later phases:
+### Next Steps (Priority Order):
 
-- No actual weapon firing (just console logs)
-- No enemies
-- No projectiles
-- No HUD/UI elements (besides web overlay)
-- No game state management (TITLE → PLAYING, etc.)
-- No damage, health, scoring
-- No pause menu
-- No upgrade system
+#### 2.1 Enemies
+- [ ] Spawn enemy voxel meshes
+- [ ] AI movement toward player
+- [ ] Collision detection
+- [ ] Damage and death
+- [ ] Explosion effects (object pooling)
+- [ ] Enemy types: basic, fast, tank, swarm
+- [ ] Flying enemies (level 6+)
 
----
+#### 2.2 Shooting / Projectiles
+- [ ] Raycasting from controller
+- [ ] Laser projectile visuals
+- [ ] Hit detection on enemies
+- [ ] Damage numbers (floating text)
+- [ ] Fire rate control
+- [ ] Sound effects integration
 
-## Technical Notes
+#### 2.3 HUD
+- [ ] Health hearts display (floor-mounted)
+- [ ] Score counter
+- [ ] Level indicator
+- [ ] Combo meter
+- [ ] Wave/kill counter
 
-### Materials Used
-- `StandardMaterial` with `disableLighting = true` (emissive only)
-- `wireframe = true` for mountains
-- `isPickable = false` for environment objects
-- **Transparency:** Babylon.js handles transparency correctly in VR! No black boxes. We can use transparency for effects in later phases.
-
-### Object Count
-- Stars: 2000
-- Grid lines: 122 (60 horizontal + 60 vertical + 2 edges)
-- Mountains: 12
-- Sun elements: 9 (1 disk + 8 bands)
-
----
-
-## Next Phase: Phase 2
-
-**Goal:** Create automated testing framework for AI agents to test VR game functions without user input.
-
-**What you'll need:**
-- Test harness that can simulate VR controllers
-- Mock input system
-- Automated test scripts for:
-  - Weapon firing
-  - Enemy spawning
-  - Collision detection
-  - Game state transitions
-  - VR session management
-
-**Please provide any planning files or requirements you have for this.**
+#### 2.4 Game States
+- [ ] TITLE state with "Start Game" button
+- [ ] PLAYING state
+- [ ] LEVEL_COMPLETE state
+- [ ] UPGRADE_SELECT state
+- [ ] GAME_OVER state
+- [ ] Pause menu (menu button)
 
 ---
 
-## Phase 1 Files Modified
+## ❌ Phase 3: Weapon System Overhaul (NOT STARTED)
 
-- ✅ `index.html` - Completely rewritten for Babylon.js
-- ✅ `main.js` - Completely rewritten (new file, not ported from Three.js)
-- ✅ `PHASE1_COMPLETE.md` - This file
+### MAIN WEAPONS (Top Trigger):
+- [ ] STANDARD BLASTER (default)
+  - [ ] DoubleShot upgrade
+  - [ ] TripleShot upgrade
+- [ ] BUCKSHOT (spread)
+  - [ ] Focused Frenzy (-25% spread)
+  - [ ] Buckshot, Gentlemen (+50% pellets)
+  - [ ] Duck Hunt (+30% pellet damage)
+- [ ] LIGHTNING ROD (continuous beam)
+  - [ ] It's Electric! (+2 chain targets)
+  - [ ] Tesla Coil (auto-fire + ball attack)
+- [ ] CHARGE CANNON (hold & release)
+  - [ ] Visual charge indicator
+  - [ ] Ain't Nobody Got Time For That (+50% charge speed)
+  - [ ] Excess Heat (2nd shot within 2s)
+  - [ ] Death Ray (+50% damage)
+- [ ] PLASMA CARBINE (rapid fire, ramping damage)
+  - [ ] Hold It Together (-30% spread)
+- [ ] SEEKER BURST (homing shots)
+  - [ ] Gimme Gimme More (+3 shots per burst)
 
-## Phase 1 Files Unchanged
+### ALT WEAPONS (Lower Trigger):
+- [ ] ROCKET LAUNCHER (250 damage, splash, 15s cooldown)
+- [ ] HELPER BOT (15s duration, 30s cooldown)
+- [ ] SHIELD (5 hits, 15s cooldown)
+- [ ] GRAVITY WELL (4s pull, 25s cooldown)
+- [ ] ION MORTAR (400 damage, 20s cooldown)
+- [ ] HOLOGRAM DECOY (6s distraction, 28s cooldown)
 
-- ✅ `audio.js` - No changes needed
-- ✅ `game.js` - No changes needed  
-- ✅ `scoreboard.js` - No changes needed
-- ✅ `upgrades.js` - Will be expanded in Phase 5
-- ✅ `enemies.js` - Will be ported in Phase 4
-- ✅ `hud.js` - Will be ported in Phase 6
+### General Upgrades:
+- [ ] Execute (+40% damage below 25% HP)
+- [ ] Magnetic (tag enemies, pull together)
+- [ ] Reflex (+100% fire rate after damage)
+- [ ] Hollow-Point (+15% damage)
+- [ ] Nova Tip (every 12th shot AoE)
+- [ ] Siphon (15 kills = 25% cooldown reduction)
 
 ---
 
-**Phase 1 Status: COMPLETE ✅**
+## ❌ Phase 4: Boss System (NOT STARTED)
 
-Ready for your review and testing before proceeding to Phase 2!
+### Boss Levels: 5, 10, 15, 20
+- [ ] BOSS_ALERT state before boss spawn
+- [ ] Boss health bars (world-space)
+- [ ] Boss types:
+  - [ ] Grave Voxel (summons minions)
+  - [ ] Iron Sentry (projectile attacks)
+  - [ ] Chrono Wraith (teleportation)
+  - [ ] Siege Ram (charge attacks)
+  - [ ] Core Guardian (shield mechanics)
+- [ ] Tier scaling (stronger at 10, 15, 20)
+
+---
+
+## ❌ Phase 5: Special Upgrades (NOT STARTED)
+
+### RARE (after Level 5 boss):
+- [ ] Add 1 Heart
+- [ ] Volatile (enemies explode on death)
+- [ ] Second Wind (survive death once)
+- [ ] Crit Core (+50% crit damage, +10% crit chance)
+- [ ] Cooldown Tuner (-30% alt cooldowns)
+
+### EPIC (after Level 10 boss):
+- [ ] Neon Overdrive (30 kills = 8s buff)
+- [ ] Heavy Hunter (+35% damage to tanks/bosses)
+
+### ULTRA (after Level 15 boss):
+- [ ] Time Lord (alt weapon = 5s slow time)
+- [ ] Death Aura (continuous close-range damage)
+- [ ] Infinity Loop (repeat last alt weapon every 10s)
+- [ ] Hyper Crit (+50% crit chance, shockwave on crit)
+
+---
+
+## ❌ Phase 6: Menus & Polish (NOT STARTED)
+
+- [ ] Title screen with animated background
+- [ ] Upgrade card selection UI (3 cards)
+- [ ] Pause menu (resume, quit)
+- [ ] Settings (volume, etc.)
+- [ ] Hover effects on buttons
+- [ ] Animated transitions
+- [ ] Level complete fanfare
+- [ ] Game over screen
+
+---
+
+## ❌ Phase 7: Scoreboard (NOT STARTED)
+
+- [ ] Port Supabase integration from Three.js version
+- [ ] Name entry keyboard (in-VR)
+- [ ] Country selection
+- [ ] Global leaderboard
+- [ ] Per-country leaderboard
+- [ ] Profanity filter
+
+---
+
+## ❌ Phase 8: Audio Integration (NOT STARTED)
+
+- [ ] Integrate audio.js with Babylon.js
+- [ ] Shoot sound effects
+- [ ] Hit sounds
+- [ ] Explosion sounds
+- [ ] Menu sounds
+- [ ] Boss alert sound
+- [ ] Level complete sound
+- [ ] Background music (from /mnt/project/music/)
+
+---
+
+## ❌ Phase 9: AI Testing Infrastructure (NOT STARTED)
+
+- [ ] Automated test mode (no VR required)
+- [ ] Simulated controller input
+- [ ] Enemy spawn testing
+- [ ] Weapon firing tests
+- [ ] Performance regression tests
+
+---
+
+## Files Status:
+
+| File | Status | Notes |
+|------|--------|-------|
+| `main.js` | ✅ Babylon.js ported | Scene, VR, controllers working |
+| `game.js` | ⚠️ Unchanged | Pure state logic, should work |
+| `enemies.js` | ❌ Not ported | Still Three.js code |
+| `hud.js` | ❌ Not ported | Still Three.js code |
+| `upgrades.js` | ⚠️ Unchanged | Pure data, needs weapon overhaul |
+| `audio.js` | ✅ Unchanged | Pure Web Audio API |
+| `scoreboard.js` | ⚠️ Unchanged | Supabase integration, needs testing |
+| `index.html` | ✅ Updated | Babylon.js CDN, cache-busting |
+| `AGENTS.md` | ✅ Updated | Babylon.js patterns added |
+
+---
+
+## Key Learnings from Phase 1:
+
+1. **Performance is critical in VR** - 2000 star meshes caused 2000 draw calls, tanking FPS on Quest 2
+2. **Use ParticleSystem for many small objects** - 1 draw call vs thousands
+3. **Use LineSystem for grid lines** - Merged 121 lines into 1 draw call
+4. **Controller input requires `changes.pressed`** - Not just `.pressed` state
+5. **glTF loader must be imported** - `import "@babylonjs/loaders"` as ES module
+6. **Hide controller meshes with scaling** - `rootMesh.scaling = Vector3(0,0,0)` not `setEnabled(false)`
+7. **Never use transparency in VR** - Causes black rectangles on Quest Browser
+
+---
+
+## Next Session Start:
+
+1. Read `AGENTS.md` for rules and patterns
+2. Pick up at **Phase 2.1: Enemies**
+3. Create enemy spawning and basic AI
+4. Add shooting mechanics
+5. Test on Quest headset
+
+---
+
+*"The journey of a thousand miles begins with a single step... and about 2000 fewer meshes."*
