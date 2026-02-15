@@ -1,7 +1,7 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
 //  Build: BON JOVI
-//  Babylon.js Port v0.2.2 - Orientation & Input Fix
+//  Babylon.js Port v0.2.3 - HUD + Combat Fix
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
@@ -504,15 +504,17 @@ function setupButtonListeners(motionController) {
 }
 
 function getControllerForward(xrController) {
-  if (!xrController || !xrController.grip) return null;
-  return xrController.grip.getDirection(BABYLON.Axis.Z).normalize();
+  if (!xrController || !xrController.pointer) return new BABYLON.Vector3(0, 0, 1);
+  const forward = new BABYLON.Vector3(0, 0, 1);
+  const worldMatrix = xrController.pointer.getWorldMatrix();
+  return BABYLON.Vector3.TransformNormal(forward, worldMatrix).normalize();
 }
 
 function getControllerRay(xrController, length = 100) {
-  if (!xrController || !xrController.grip) return null;
+  if (!xrController || !xrController.pointer) return null;
   const direction = getControllerForward(xrController);
   if (!direction) return null;
-  const origin = xrController.grip.absolutePosition.clone();
+  const origin = xrController.pointer.absolutePosition.clone();
   return new BABYLON.Ray(origin, direction, length);
 }
 
@@ -599,6 +601,30 @@ function handlePause() {
   }
 }
 
+function resetWeaponState() {
+  ['left', 'right'].forEach(hand => {
+    weaponState[hand].isCharging = false;
+    weaponState[hand].chargeStartTime = 0;
+    weaponState[hand].plasmaRamp = 0;
+
+    if (chargeIndicators[hand]) chargeIndicators[hand].isVisible = false;
+    if (lightningBeams[hand]) lightningBeams[hand].isVisible = false;
+  });
+}
+
+function clearActiveProjectiles() {
+  projectiles.forEach(proj => releaseProjectile(proj));
+  projectiles.length = 0;
+}
+
+function clearAltWeaponProjectiles() {
+  altWeaponEntities.forEach(entity => {
+    if (entity.mesh) entity.mesh.dispose();
+    if (entity.particles) entity.particles.dispose();
+  });
+  altWeaponEntities.length = 0;
+}
+
 // ── Game Flow ───────────────────────────────────────────────
 function startGame() {
   console.log('[main] Starting game!');
@@ -621,6 +647,7 @@ function startGame() {
 
 function restartGame() {
   console.log('[main] Restarting game');
+  resetWeaponState();
   
   enemies.clearAllEnemies();
   enemies.clearBoss();
@@ -690,6 +717,8 @@ function startLevel() {
 
 function startBossFight(tier) {
   console.log('[main] Starting boss fight, tier:', tier);
+  resetWeaponState();
+  clearActiveProjectiles();
   
   game.setState(game.State.BOSS_ALERT);
   hud.showBossAlert();
@@ -721,9 +750,12 @@ function startBossFight(tier) {
 
 function completeLevel() {
   console.log('[main] Level complete!');
+  resetWeaponState();
   
   game.completeLevel();
   enemies.clearAllEnemies();
+  clearActiveProjectiles();
+  clearAltWeaponProjectiles();
   
   hud.showLevelComplete(gameState.level, getPlayerPosition());
   playSlowMoSound();
@@ -736,6 +768,7 @@ function completeLevel() {
 }
 
 function showUpgradeSelection() {
+  resetWeaponState();
   const level = gameState.level;
   const hand = gameState.lastUpgradeHand || 'left';
   
@@ -816,6 +849,7 @@ function submitNameEntry() {
 
 function victory() {
   console.log('[main] VICTORY!');
+  resetWeaponState();
   game.setState(game.State.VICTORY);
   hud.showVictory(gameState.score, getPlayerPosition());
   stopMusic();
@@ -823,6 +857,7 @@ function victory() {
 
 function gameOver() {
   console.log('[main] GAME OVER');
+  resetWeaponState();
   game.setState(game.State.GAME_OVER);
   hud.showGameOver(gameState.score, getPlayerPosition());
   enemies.clearAllEnemies();
@@ -849,9 +884,9 @@ function fireWeapon(hand) {
   
   // Get controller position and direction
   const xrController = xrControllers[hand];
-  if (!xrController || !xrController.grip) return;
+  if (!xrController || !xrController.pointer) return;
   
-  const pos = xrController.grip.absolutePosition.clone();
+  const pos = xrController.pointer.absolutePosition.clone();
   const dir = getControllerForward(xrController);
   if (!dir) return;
   
@@ -897,9 +932,9 @@ function fireChargeShot(hand, chargePercent, stats) {
   
   // Get controller position and direction
   const xrController = xrControllers[hand];
-  if (!xrController || !xrController.grip) return;
+  if (!xrController || !xrController.pointer) return;
   
-  const pos = xrController.grip.absolutePosition.clone();
+  const pos = xrController.pointer.absolutePosition.clone();
   const dir = getControllerForward(xrController);
   if (!dir) return;
   
@@ -947,8 +982,8 @@ function fireLightning(hand, pos, dir, stats) {
     const beam = lightningBeams[hand];
     if (beam) {
       const xrController = xrControllers[hand];
-      if (xrController && xrController.grip) {
-        const origin = xrController.grip.absolutePosition.clone();
+      if (xrController && xrController.pointer) {
+        const origin = xrController.pointer.absolutePosition.clone();
         const targetPos = nearestEnemy.enemy.mesh.position.clone();
         BABYLON.MeshBuilder.CreateLines('lightningBeam_' + hand, {
           points: [origin, targetPos],
@@ -1257,9 +1292,9 @@ function fireAltWeapon(hand) {
 
 function fireRocket(hand, def) {
   const xrController = xrControllers[hand];
-  if (!xrController || !xrController.grip) return;
+  if (!xrController || !xrController.pointer) return;
   
-  const pos = xrController.grip.absolutePosition.clone();
+  const pos = xrController.pointer.absolutePosition.clone();
   const dir = getControllerForward(xrController);
   if (!dir) return;
   
@@ -1296,9 +1331,9 @@ function fireRocket(hand, def) {
 
 function deployHelperBot(hand, def) {
   const xrController = xrControllers[hand];
-  if (!xrController || !xrController.grip) return;
+  if (!xrController || !xrController.pointer) return;
   
-  const pos = xrController.grip.absolutePosition.clone();
+  const pos = xrController.pointer.absolutePosition.clone();
   
   // Create bot mesh (small voxel robot)
   const bot = createHelperBotMesh(pos);
@@ -1361,10 +1396,10 @@ function activateShield(hand, def) {
 
 function deployGravityWell(hand, def) {
   const xrController = xrControllers[hand];
-  if (!xrController || !xrController.grip) return;
+  if (!xrController || !xrController.pointer) return;
   
   // Deploy at point 3m in front of controller
-  const pos = xrController.grip.absolutePosition.clone();
+  const pos = xrController.pointer.absolutePosition.clone();
   const dir = getControllerForward(xrController);
   if (!dir) return;
   const deployPos = pos.add(dir.scale(3));
@@ -1426,9 +1461,9 @@ function createGravityWellParticles(emitter) {
 
 function fireIonMortar(hand, def) {
   const xrController = xrControllers[hand];
-  if (!xrController || !xrController.grip) return;
+  if (!xrController || !xrController.pointer) return;
   
-  const pos = xrController.grip.absolutePosition.clone();
+  const pos = xrController.pointer.absolutePosition.clone();
   const dir = getControllerForward(xrController);
   if (!dir) return;
   
@@ -1543,29 +1578,29 @@ function createPickupMesh(position, def) {
   // Create different mesh shapes based on type
   switch (def.iconMesh) {
     case 'rocket':
-      mesh = BABYLON.MeshBuilder.CreateCylinder('pickup', { height: 0.12, diameter: 0.04 }, scene);
+      mesh = BABYLON.MeshBuilder.CreateCylinder('pickup', { height: 0.48, diameter: 0.16 }, scene);
       break;
     case 'robot':
-      mesh = BABYLON.MeshBuilder.CreateBox('pickup', { width: 0.06, height: 0.08, depth: 0.06 }, scene);
+      mesh = BABYLON.MeshBuilder.CreateBox('pickup', { width: 0.24, height: 0.32, depth: 0.24 }, scene);
       break;
     case 'hexagon':
-      mesh = BABYLON.MeshBuilder.CreateDisc('pickup', { radius: 0.05, tessellation: 6 }, scene);
+      mesh = BABYLON.MeshBuilder.CreateDisc('pickup', { radius: 0.20, tessellation: 6 }, scene);
       break;
     case 'sphere':
-      mesh = BABYLON.MeshBuilder.CreateSphere('pickup', { diameter: 0.08 }, scene);
+      mesh = BABYLON.MeshBuilder.CreateSphere('pickup', { diameter: 0.32 }, scene);
       break;
     case 'mortar':
-      mesh = BABYLON.MeshBuilder.CreateCylinder('pickup', { height: 0.06, diameter: 0.08 }, scene);
+      mesh = BABYLON.MeshBuilder.CreateCylinder('pickup', { height: 0.24, diameter: 0.32 }, scene);
       break;
     case 'figure':
-      mesh = BABYLON.MeshBuilder.CreateCylinder('pickup', { height: 0.1, diameter: 0.03 }, scene);
+      mesh = BABYLON.MeshBuilder.CreateCylinder('pickup', { height: 0.40, diameter: 0.12 }, scene);
       break;
     default:
-      mesh = BABYLON.MeshBuilder.CreateBox('pickup', { size: 0.06 }, scene);
+      mesh = BABYLON.MeshBuilder.CreateBox('pickup', { size: 0.24 }, scene);
   }
   
   mesh.position = position.clone();
-  mesh.position.y += 0.3;  // Float above ground
+  mesh.position.y += 0.8;  // Float above ground
   
   const mat = new BABYLON.StandardMaterial('pickupMat', scene);
   mat.disableLighting = true;
@@ -1649,7 +1684,7 @@ function updatePickups(dt, now) {
     
     // Spin animation
     pickup.mesh.rotation.y += dt * 2;
-    pickup.mesh.position.y = 0.3 + Math.sin(now / 300) * 0.05;  // Bob up and down
+    pickup.mesh.position.y = 0.8 + Math.sin(now / 300) * 0.1;  // Bob up and down
     
     // Lifetime check
     if (now - pickup.createdAt > pickup.lifetime) {
@@ -1692,6 +1727,7 @@ function updateProjectiles(dt, now) {
     }
     
     // Check enemy hits
+    let hitTargetThisFrame = false;
     const enemyList = enemies.getEnemies();
     for (let j = enemyList.length - 1; j >= 0; j--) {
       const enemy = enemyList[j];
@@ -1730,8 +1766,42 @@ function updateProjectiles(dt, now) {
         } else {
           proj.pierced.push(j);
         }
+        hitTargetThisFrame = true;
         
         break;
+      }
+    }
+
+    if (hitTargetThisFrame) {
+      continue;
+    }
+
+    // Check boss hit
+    const boss = enemies.getBoss();
+    if (boss && boss.mesh) {
+      const bossPos = boss.mesh.position;
+      const dist = BABYLON.Vector3.Distance(proj.mesh.position, bossPos);
+      const bossHitboxRadius = 1.5;
+
+      if (dist < bossHitboxRadius) {
+        let damage = proj.damage;
+        if (proj.stats.executeBonus > 0 && boss.hp / boss.maxHp < 0.25) {
+          damage *= (1 + proj.stats.executeBonus);
+        }
+        if (proj.stats.heavyHunterBonus > 0) {
+          damage *= (1 + proj.stats.heavyHunterBonus);
+        }
+
+        enemies.hitBoss(damage);
+        hud.spawnDamageNumber(bossPos, damage, '#ffffff');
+        playHitSound();
+
+        if (!proj.stats.piercing) {
+          releaseProjectile(proj);
+          projectiles.splice(i, 1);
+        }
+
+        continue;
       }
     }
   }
@@ -1764,6 +1834,7 @@ function updateAltWeaponEntities(dt, now) {
     }
     
     // Check enemy hits
+    let hitTargetThisFrame = false;
     const enemyList = enemies.getEnemies();
     for (let j = enemyList.length - 1; j >= 0; j--) {
       const enemy = enemyList[j];
@@ -1776,7 +1847,29 @@ function updateAltWeaponEntities(dt, now) {
         entity.mesh.dispose();
         if (entity.particles) entity.particles.dispose();
         altWeaponEntities.splice(i, 1);
+        hitTargetThisFrame = true;
         break;
+      }
+    }
+
+    if (hitTargetThisFrame) {
+      continue;
+    }
+
+    // Check boss hits for alt-weapon projectiles (rocket/mortar)
+    const boss = enemies.getBoss();
+    if (boss && boss.mesh) {
+      const dist = BABYLON.Vector3.Distance(entity.mesh.position, boss.mesh.position);
+      const bossHitboxRadius = 1.5;
+
+      if (dist < bossHitboxRadius) {
+        enemies.hitBoss(entity.damage);
+        hud.spawnDamageNumber(boss.mesh.position, entity.damage, '#ff8800');
+        playHitSound();
+        createExplosion(entity.mesh.position, entity.damage, entity.splashRadius);
+        entity.mesh.dispose();
+        if (entity.particles) entity.particles.dispose();
+        altWeaponEntities.splice(i, 1);
       }
     }
   }
@@ -2194,28 +2287,37 @@ function updatePlaying(now, dt) {
   // Continuous firing while trigger held (all weapon types)
   ['left', 'right'].forEach(hand => {
     const ws = weaponState[hand];
-    if (ws.isCharging) {
-      const stats = getWeaponStats(gameState.upgrades[hand] || {}, gameState.globalUpgrades || {});
-      if (stats.chargeShot) {
-        // Charge weapons fire on release only.
+    if (!ws.isCharging) return;
+
+    const mc = controllers[hand];
+    if (mc) {
+      const trigger = mc.getComponent('xr-standard-trigger');
+      if (trigger && !trigger.pressed) {
+        ws.isCharging = false;
         return;
-      } else if (stats.lightning) {
-        // Lightning fires on its own tick interval.
-        if (now - ws.lastFireTime > stats.lightningTickInterval * 1000) {
-          const xrController = xrControllers[hand];
-          if (xrController && xrController.grip) {
-            const pos = xrController.grip.absolutePosition.clone();
-            const dir = getControllerForward(xrController);
-            if (dir) {
-              fireLightning(hand, pos, dir, stats);
-            }
-          }
-          ws.lastFireTime = now;
-        }
-      } else {
-        // Standard, buckshot, plasma, seeker all reuse fireWeapon rate checks.
-        fireWeapon(hand);
       }
+    }
+
+    const stats = getWeaponStats(gameState.upgrades[hand] || {}, gameState.globalUpgrades || {});
+    if (stats.chargeShot) {
+      // Charge weapons fire on release only.
+      return;
+    } else if (stats.lightning) {
+      // Lightning fires on its own tick interval.
+      if (now - ws.lastFireTime > stats.lightningTickInterval * 1000) {
+        const xrController = xrControllers[hand];
+        if (xrController && xrController.pointer) {
+          const pos = xrController.pointer.absolutePosition.clone();
+          const dir = getControllerForward(xrController);
+          if (dir) {
+            fireLightning(hand, pos, dir, stats);
+          }
+        }
+        ws.lastFireTime = now;
+      }
+    } else {
+      // Standard, buckshot, plasma, seeker all reuse fireWeapon rate checks.
+      fireWeapon(hand);
     }
   });
   
