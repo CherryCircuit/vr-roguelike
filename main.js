@@ -1,6 +1,6 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
-// Build: MÖTLEY CRÜE
+// Build: POISON
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';

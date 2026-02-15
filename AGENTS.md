@@ -12,6 +12,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Failure to follow this = you are not doing your job.**
 
+## Build Versioning
+
+**CRITICAL: Every edit must update the build name and version number!**
+
+In `index.html`, update the build info in the `#info` div:
+```html
+<p>Build: BAND_NAME | Babylon.js Port v0.X.Y | ...</p>
+```
+
+And update the header in `main.js`:
+```javascript
+// Build: BAND_NAME
+```
+
+**Version number**: Increment Y for bug fixes, X for features.
+**Build name**: Use a new 80s hair band name for each significant change.
+
+### Build History
+- **v0.1.2 - MÖTLEY CRÜE**: Initial Babylon.js port with environment and controllers
+- **v0.1.3 - POISON**: Fixed glTF loader import, controller mesh hiding via doNotLoadControllerMeshes
+
 ## Project Overview
 
 **Synthwave VR Blaster** (aka "Spaceomicide") is a WebXR roguelike shooter for VR headsets. Built with Babylon.js, it runs entirely in the browser with no build step—just open `index.html` in a WebXR-capable browser (Meta Quest Browser, Chrome on VR devices).
