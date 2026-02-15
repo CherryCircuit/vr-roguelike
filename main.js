@@ -4,9 +4,12 @@
 
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/gui';
-import '@babylonjs/loaders';
+import { registerBuiltInLoaders } from '@babylonjs/loaders/dynamic';
 import { resumeAudioContext } from './audio.js';
 import * as game from './game.js';
+
+// Register all built-in loaders (including glTF for VR controllers)
+registerBuiltInLoaders();
 
 // ── Global Variables ─────────────────────────────────────────
 let engine;

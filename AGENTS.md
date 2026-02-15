@@ -165,6 +165,23 @@ All sounds are procedural Web Audio (`audio.js`):
 
 Never use external audio files—this keeps the game asset-free and improves load times.
 
+## CRITICAL RULE: SEARCH BEFORE FIXING
+
+**Before making any "fixes", search for other people who have the same problem and how they fixed it.**
+
+Check:
+1. **Official Babylon.js documentation** - https://doc.babylonjs.com
+2. **Babylon.js GitHub issues** - https://github.com/BabylonJS/Babylon.js/issues
+3. **Stack Overflow** - search with "babylon.js" + your error message
+4. **Babylon.js forum** - https://forum.babylonjs.com/
+
+**Why?** Most common issues have known solutions documented by the community. Applying a fix without researching risks:
+- Wasting time on already-solved problems
+- Implementing workarounds that cause new issues
+- Missing the correct, documented solution
+
+**Example:** The glTF loader registration issue was solved in Babylon.js docs at `/features/featuresDeepDive/importers/loadingFileTypes`. Using `registerBuiltInLoaders()` from `@babylonjs/loaders/dynamic` is the official solution.
+
 ## CRITICAL: NEVER USE `transparent: true` IN THIS PROJECT
 
 **Any Three.js material with `transparent: true` causes black rectangles in VR on Meta Quest Browser.** The XR compositor treats any pixel with framebuffer alpha < 1.0 as see-through-to-black, creating dark head-locked overlays. No post-render GL hack fixes this — it was tested and confirmed broken.
