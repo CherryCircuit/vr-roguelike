@@ -5,7 +5,7 @@
 
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/gui';
-import '@babylonjs/loaders';  // Auto-registers glTF loader
+import '@babylonjs/loaders/glTF/2.0/glTFLoader';  // Register glTF loader with SceneLoader
 import { resumeAudioContext } from './audio.js';
 import * as game from './game.js';
 
@@ -283,10 +283,22 @@ function setupController(controller) {
     if (handedness === 'left') controllers.left = motionController;
     if (handedness === 'right') controllers.right = motionController;
 
-    // CRITICAL: Disable the default controller mesh entirely
-    // This prevents the laggy default .glb models from rendering
-    motionController.setEnabled(false);
-    console.log('[main] Disabled default controller mesh for:', handedness);
+    // Hide the default controller mesh by scaling it to 0 (don't use setEnabled - it destroys the controller!)
+    // The rootMesh is loaded async, so we need to wait for it
+    const hideDefaultMesh = () => {
+      if (motionController.rootMesh) {
+        motionController.rootMesh.scaling = new BABYLON.Vector3(0, 0, 0);  // Invisible but still tracked
+        console.log('[main] Hidden default controller mesh for:', handedness);
+      }
+    };
+    
+    // Try immediately first
+    hideDefaultMesh();
+    
+    // Also try when mesh loads (async)
+    controller.onMeshLoadedObservable.add((mesh) => {
+      hideDefaultMesh();
+    });
 
     // Create custom synthwave blaster attached to controller
     // Pass the WebXRInputSource (controller) which has .grip, not motionController
