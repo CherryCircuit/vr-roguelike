@@ -5,12 +5,9 @@
 
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/gui';
-import { registerBuiltInLoaders } from '@babylonjs/loaders/dynamic';
+import '@babylonjs/loaders';  // Auto-registers glTF loader
 import { resumeAudioContext } from './audio.js';
 import * as game from './game.js';
-
-// Register all built-in loaders (glTF, OBJ, etc.) - MUST be done before loading any models
-registerBuiltInLoaders();
 
 // ── Global Variables ─────────────────────────────────────────
 let engine;
