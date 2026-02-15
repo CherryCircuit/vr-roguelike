@@ -1,6 +1,6 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
-// Build: TWISTED SISTER
+// Build: TWISTED SISTER (Optimized)
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
@@ -96,23 +96,9 @@ function createEnvironment(scene) {
   // Synthwave grid floor using lines (simpler, no GridMaterial dependency)
   createGridFloor(scene);
 
-  // Stars background
-  const starCount = 2000;
-  const stars = [];
-  for (let i = 0; i < starCount; i++) {
-    const x = (Math.random() - 0.5) * 200;
-    const y = Math.random() * 50 + 5;
-    const z = (Math.random() - 0.5) * 200;
-    const star = BABYLON.MeshBuilder.CreateBox('star', { size: 0.1 }, scene);
-    star.position = new BABYLON.Vector3(x, y, z);
-    star.isPickable = false;
-    
-    const starMat = new BABYLON.StandardMaterial('starMat', scene);
-    starMat.disableLighting = true;
-    starMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
-    star.material = starMat;
-    stars.push(star);
-  }
+  // Stars background - OPTIMIZED: Use single particle system instead of 2000 meshes
+  // This reduces draw calls from 2000 to just 1!
+  createStarField(scene);
 
   // Sun disk (retro synthwave style) - WebXR player faces +Z, so sun at +Z is in front
   const sun = BABYLON.MeshBuilder.CreatePlane('sun', { width: 30, height: 30 }, scene);
@@ -143,35 +129,88 @@ function createEnvironment(scene) {
   console.log('[main] Environment created');
 }
 
-// ── Grid Floor ──────────────────────────────────────────────
+// ── Grid Floor (OPTIMIZED: Single LineSystem instead of 121 separate lines) ───
 function createGridFloor(scene) {
   const gridSize = 200;
-  const divisions = 60;
+  const divisions = 40;  // Reduced from 60 to 40 (fewer lines, still looks good)
   const step = gridSize / divisions;
+  const gridLines = [];
 
-  // Create horizontal lines
+  // Collect all horizontal line points
   for (let i = -divisions / 2; i <= divisions / 2; i++) {
-    const points = [
+    gridLines.push([
       new BABYLON.Vector3(-gridSize / 2, 0, i * step),
       new BABYLON.Vector3(gridSize / 2, 0, i * step)
-    ];
-    const line = BABYLON.MeshBuilder.CreateLines('grid_line_x_' + i, { points }, scene);
-    line.color = new BABYLON.Color3(1, 0, 1); // Magenta
-    line.isPickable = false;
+    ]);
   }
 
-  // Create vertical lines
+  // Collect all vertical line points
   for (let i = -divisions / 2; i <= divisions / 2; i++) {
-    const points = [
+    gridLines.push([
       new BABYLON.Vector3(i * step, 0, -gridSize / 2),
       new BABYLON.Vector3(i * step, 0, gridSize / 2)
-    ];
-    const line = BABYLON.MeshBuilder.CreateLines('grid_line_z_' + i, { points }, scene);
-    line.color = new BABYLON.Color3(1, 0, 1); // Magenta
-    line.isPickable = false;
+    ]);
   }
 
-  console.log('[main] Grid floor created');
+  // Create a single LineSystem (one draw call for all grid lines!)
+  const lineSystem = BABYLON.MeshBuilder.CreateLineSystem('grid', { lines: gridLines }, scene);
+  lineSystem.color = new BABYLON.Color3(1, 0, 1); // Magenta
+  lineSystem.isPickable = false;
+  
+  console.log('[main] Grid floor created (optimized: 82 lines in 1 draw call)');
+}
+
+// ── Star Field (OPTIMIZED: ParticleSystem instead of 2000 meshes) ───
+function createStarField(scene) {
+  const starCount = 2000;
+  
+  // Create particle system
+  const particleSystem = new BABYLON.ParticleSystem('stars', starCount, scene);
+  
+  // Use a simple white texture (procedural)
+  // Create a small dynamic texture for the star
+  const starTexture = new BABYLON.DynamicTexture('starTex', 32, scene);
+  const ctx = starTexture.getContext();
+  ctx.fillStyle = 'white';
+  ctx.beginPath();
+  ctx.arc(16, 16, 8, 0, Math.PI * 2);
+  ctx.fill();
+  starTexture.update();
+  particleSystem.particleTexture = starTexture;
+  
+  // Emitter covers the sky dome
+  particleSystem.createBoxEmitter(
+    new BABYLON.Vector3(0, -0.1, 0),  // Direction: slightly down
+    new BABYLON.Vector3(-100, 5, -100),  // Min emit box
+    new BABYLON.Vector3(100, 55, 100)    // Max emit box
+  );
+  
+  // Star appearance
+  particleSystem.minSize = 0.1;
+  particleSystem.maxSize = 0.3;
+  particleSystem.minLifeTime = 999999;  // Essentially permanent
+  particleSystem.maxLifeTime = 999999;
+  particleSystem.emitRate = 0;  // Don't emit new particles
+  
+  // Manual initial particles (2000 stars in random positions)
+  particleSystem.manualEmitCount = starCount;
+  
+  // White color, no alpha variation
+  particleSystem.color1 = new BABYLON.Color4(1, 1, 1, 1);
+  particleSystem.color2 = new BABYLON.Color4(0.9, 0.9, 1, 1);
+  particleSystem.colorDead = new BABYLON.Color4(1, 1, 1, 1);
+  
+  // No movement (static stars)
+  particleSystem.minEmitPower = 0;
+  particleSystem.maxEmitPower = 0;
+  particleSystem.updateSpeed = 0;  // Don't update (static)
+  
+  // Blending
+  particleSystem.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+  
+  particleSystem.start();
+  
+  console.log('[main] Star field created (optimized: 2000 stars in 1 draw call)');
 }
 
 // ── Wireframe Mountains ─────────────────────────────────────

@@ -33,6 +33,7 @@ And update the header in `main.js`:
 - **v0.1.2 - MÖTLEY CRÜE**: Initial Babylon.js port with environment and controllers
 - **v0.1.3 - POISON**: Fixed glTF loader import, controller mesh hiding via doNotLoadControllerMeshes
 - **v0.1.4 - TWISTED SISTER**: Proper controller input pattern (changes.pressed), added Babylon.js code patterns to AGENTS.md
+- **v0.1.5 - TWISTED SISTER (Optimized)**: Performance fix - replaced 2000 star meshes with ParticleSystem, merged 121 grid lines into LineSystem (~98% reduction in draw calls)
 
 ## Project Overview
 
