@@ -1,9 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
+  <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Synthwave VR Blaster - Babylon.js Port</title>
+  
+  <!-- WebXR session hints for browser VR button -->
+  <meta name="theme-color" content="#0a0015">
+  
   <style>
     /* ── Base Reset & Synthwave Theme ── */
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -161,8 +165,8 @@
     <div id="console-logs" style="color:#00ffff;word-break:break-all;"></div>
   </div>
 
-  <!-- Babylon.js Canvas -->
-  <canvas id="renderCanvas" touch-action="none"></canvas>
+  <!-- Babylon.js Canvas (touch and mouse actions disabled - VR only) -->
+  <canvas id="renderCanvas" style="touch-action: none; pointer-events: none;"></canvas>
 
   <!-- Babylon.js CDN with ES modules -->
   <script type="importmap">

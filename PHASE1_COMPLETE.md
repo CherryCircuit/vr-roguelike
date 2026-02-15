@@ -21,8 +21,7 @@ The Babylon.js port foundation is now complete and ready for testing.
   - Sun disk with gradient bands
   - 12 wireframe mountains with **GLOWING CYAN** edges (as requested!)
   - Black fog for depth
-  - Opaque black background (NO transparency - critical for avoiding black box bug)
-- WebXR VR experience setup
+- WebXR VR experience setup with glTF loader for proper Quest controller models
 - Controller tracking (left and right)
 - VR blaster meshes attached to controllers
 - Button input handlers:
@@ -39,6 +38,14 @@ The Babylon.js port foundation is now complete and ready for testing.
 
 ### ✅ Reused Files
 - All music and sound effects in `mnt/project/music/` and `mnt/project/soundfx/`
+
+### ✅ VR Test Fixes Applied (Post-Initial Implementation)
+After initial VR testing, these fixes were applied:
+- **glTF Loader:** Added `@babylonjs/loaders/glTF` import for proper Quest controller models
+- **Sun Position:** Fixed rotation - sun now correctly faces player (was behind, now in front)
+- **Touch Warnings:** Disabled canvas touch handling to eliminate console spam
+- **WebXR Recognition:** Added theme-color meta tag for browser VR button detection
+- **Transparency:** Babylon.js handles transparency correctly in VR - no black boxes! 🎉
 
 ---
 
@@ -114,13 +121,11 @@ These are **expected** for Phase 1 - they will be implemented in later phases:
 
 ## Technical Notes
 
-### Critical: No Transparency
-All materials use `opacity: 1` (fully opaque). This is to avoid the Three.js black box bug in VR. Babylon.js should handle this correctly.
-
 ### Materials Used
 - `StandardMaterial` with `disableLighting = true` (emissive only)
 - `wireframe = true` for mountains
 - `isPickable = false` for environment objects
+- **Transparency:** Babylon.js handles transparency correctly in VR! No black boxes. We can use transparency for effects in later phases.
 
 ### Object Count
 - Stars: 2000

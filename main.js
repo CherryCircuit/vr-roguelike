@@ -4,6 +4,7 @@
 
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/gui';
+import '@babylonjs/loaders/glTF';
 import { resumeAudioContext } from './audio.js';
 import * as game from './game.js';
 
@@ -112,10 +113,9 @@ function createEnvironment(scene) {
     stars.push(star);
   }
 
-  // Sun disk (retro synthwave style)
+  // Sun disk (retro synthwave style) - faces player by default (no rotation needed)
   const sun = BABYLON.MeshBuilder.CreatePlane('sun', { width: 30, height: 30 }, scene);
-  sun.position = new BABYLON.Vector3(0, 15, -100);
-  sun.rotation.y = Math.PI;
+  sun.position = new BABYLON.Vector3(0, 15, -100);  // In front of player (negative Z)
   
   const sunMat = new BABYLON.StandardMaterial('sunMat', scene);
   sunMat.disableLighting = true;
@@ -126,7 +126,7 @@ function createEnvironment(scene) {
   for (let i = 0; i < 8; i++) {
     const band = BABYLON.MeshBuilder.CreatePlane('sunBand' + i, { width: 30, height: 1.5 }, scene);
     band.position = new BABYLON.Vector3(0, 15 - (i * 1.8), -99.5);
-    band.rotation.y = Math.PI;
+    // No rotation needed - planes face -Z by default
     
     const bandMat = new BABYLON.StandardMaterial('sunBandMat' + i, scene);
     bandMat.disableLighting = true;
