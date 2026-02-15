@@ -1,7 +1,7 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
-//  Build: BON JOVI
-//  Babylon.js Port v0.2.3 - HUD + Combat Fix
+//  Build: WARRANT
+//  Babylon.js Port v0.2.5 - Agent Output Workflow
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';

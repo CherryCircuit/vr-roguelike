@@ -454,7 +454,7 @@ function createTitleScreen() {
   titleScoreboardBtn = btnPlane;
 
   // Version number
-  const versionMesh = makeTextPlane('v0.2.3 (BON JOVI)\nLAST UPDATED: FEB 15 2026', {
+  const versionMesh = makeTextPlane('v0.2.5 (WARRANT)\nLAST UPDATED: FEB 15 2026', {
     fontSize: 32,
     color: '#888888',
     scale: 0.28,

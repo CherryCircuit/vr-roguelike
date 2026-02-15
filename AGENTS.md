@@ -37,6 +37,9 @@ And update the header in `main.js`:
 - **v0.2.0 - DEF LEPPARD**: Phase 5 Special Upgrades - tiered upgrade pools (RARE/EPIC/ULTRA/LEGENDARY), global upgrades system, 17+ new upgrades with mechanics
 - **v0.2.1 - EUROPE**: Phase 2 Core Gameplay - ported enemies (voxel meshes, AI, collision, death), shooting (projectiles, hit detection, damage numbers), HUD (hearts, score, combo, kill counter), game states (TITLE, PLAYING, LEVEL_COMPLETE, UPGRADE_SELECT, GAME_OVER)
 - **v0.2.2 - RATT**: Runtime/API hotfixes - restored missing `game.js` API surface and states, fixed Babylon.js API misuse (`Color3`, controller direction/rays, `createBoxEmitter`, `metadata`), removed duplicate SKIP card, reused lightning line mesh, added projectile/damage-number pooling, synchronized build/version text across UI files
+- **v0.2.3 - BON JOVI**: HUD + Combat Fixes - forward-facing world-space UI orientation, pointer-based aiming, boss projectile collision checks, weapon-state reset guards, pickup visibility scaling
+- **v0.2.4 - CINDERELLA**: Release workflow notes added for worker output formatting
+- **v0.2.5 - WARRANT**: Agent output workflow moved into AGENTS.md; MODELS.md removed
 
 ## Project Overview
 
@@ -45,6 +48,34 @@ And update the header in `main.js`:
 **NOTE: Ported from Three.js to Babylon.js due to unfixable framebuffer alpha bug.**
 
 ## Development Workflow
+
+### MANDATORY: Release Label + Notes + Commit Suggestions
+
+**After every completed round of edits, worker bots MUST include this in the final response:**
+
+Release label:
+
+<short release title>
+
+Notes:
+
+- <detailed note 1>
+- <detailed note 2>
+- <detailed note 3>
+  - <subnote>
+  - <subnote>
+
+**Requirements for notes:**
+- Use concrete technical notes (files, systems, and behavior changes)
+- Do not use generic wording
+
+**After the release block, worker bots MUST suggest commit options in this format:**
+
+1. `<type(scope): short title>` - <one-line summary>
+2. `<type(scope): short title>` - <one-line summary>
+3. `<type(scope): short title>` - <one-line summary>
+
+Prefer conventional commit style and keep each title short and scannable.
 
 ### MANDATORY PRE-COMPLETION CHECKLIST
 
