@@ -1,7 +1,7 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
-//  Build: WARRANT
-//  Babylon.js Port v0.2.5 - Agent Output Workflow
+//  Build: JOURNEY
+//  Babylon.js Port v0.3.0 - Phase 6: Neon Dreams Visual Overhaul
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
@@ -183,123 +183,394 @@ async function createScene() {
   return scene;
 }
 
+// ── Visual Parameters (Tweakable via Debug UI) ─────────────────────────
+const visualParams = {
+  glowIntensity: 1.0,
+  fogStart: 50,
+  fogEnd: 180,
+  fogDensity: 0.006,
+  gridLineThickness: 0.04,
+  gridBrightness: 1.2,
+  sunStripeCount: 8,
+  sunGlowIntensity: 0.8,
+};
+
 // ── Environment Setup ───────────────────────────────────────
 function createEnvironment(scene) {
-  console.log('[main] Creating environment...');
-  createGridFloor(scene);
+  console.log('[main] Creating NEON DREAMS environment...');
+  
+  // Configure fog for atmospheric depth - deep purple synthwave
+  scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
+  scene.fogDensity = visualParams.fogDensity;
+  scene.fogColor = new BABYLON.Color3(0.086, 0, 0.133); // Deep purple #160022
+  
+  // Clear color - deep space purple
+  scene.clearColor = new BABYLON.Color4(0.086, 0, 0.133, 1);
+  
+  // Create all environment elements in order
+  createSynthwaveSky(scene);
+  createShaderGridFloor(scene);
+  createRetroSun(scene);
+  createMountainRing(scene);
   createStarField(scene);
-
-  // Sun
-  const sun = BABYLON.MeshBuilder.CreatePlane('sun', { width: 30, height: 30 }, scene);
-  sun.position = new BABYLON.Vector3(0, 15, -100);
-  const sunMat = new BABYLON.StandardMaterial('sunMat', scene);
-  sunMat.disableLighting = true;
-  sunMat.emissiveColor = new BABYLON.Color3(1, 0.4, 0.2);
-  sun.material = sunMat;
-
-  for (let i = 0; i < 8; i++) {
-    const band = BABYLON.MeshBuilder.CreatePlane('sunBand' + i, { width: 30, height: 1.5 }, scene);
-    band.position = new BABYLON.Vector3(0, 15 - (i * 1.8), -99.5);
-    const bandMat = new BABYLON.StandardMaterial('sunBandMat' + i, scene);
-    bandMat.disableLighting = true;
-    const colorIntensity = 0.3 + (i * 0.1);
-    bandMat.emissiveColor = new BABYLON.Color3(1, colorIntensity * 0.4, colorIntensity * 0.2);
-    band.material = bandMat;
-  }
-
-  createWireframeMountains(scene);
-  console.log('[main] Environment created');
+  createGlowEffects(scene);
+  
+  console.log('[main] NEON DREAMS environment complete!');
 }
 
-function createGridFloor(scene) {
-  const gridSize = 200;
-  const divisions = 40;
-  const step = gridSize / divisions;
-  const gridLines = [];
-
-  for (let i = -divisions / 2; i <= divisions / 2; i++) {
-    gridLines.push([
-      new BABYLON.Vector3(-gridSize / 2, 0, i * step),
-      new BABYLON.Vector3(gridSize / 2, 0, i * step)
-    ]);
-  }
-
-  for (let i = -divisions / 2; i <= divisions / 2; i++) {
-    gridLines.push([
-      new BABYLON.Vector3(i * step, 0, -gridSize / 2),
-      new BABYLON.Vector3(i * step, 0, gridSize / 2)
-    ]);
-  }
-
-  const lineSystem = BABYLON.MeshBuilder.CreateLineSystem('grid', { lines: gridLines }, scene);
-  lineSystem.color = new BABYLON.Color3(1, 0, 1);
-  lineSystem.isPickable = false;
+// ── Gradient Sky Dome ─────────────────────────────────────────
+function createSynthwaveSky(scene) {
+  // Large sphere for sky dome - we'll view from inside
+  const skyDome = BABYLON.MeshBuilder.CreateSphere('skyDome', {
+    diameter: 500,
+    segments: 32
+  }, scene);
+  
+  skyDome.isPickable = false;
+  
+  // Create a gradient texture for the sky
+  const skyTextureSize = 256;
+  const skyTexture = new BABYLON.DynamicTexture('skyTex', skyTextureSize, scene);
+  const ctx = skyTexture.getContext();
+  
+  // Vertical gradient: deep purple at top to mid purple at bottom
+  const gradient = ctx.createLinearGradient(0, 0, 0, skyTextureSize);
+  gradient.addColorStop(0, '#160022');     // Top: Deep purple
+  gradient.addColorStop(0.7, '#2b0042');   // Mid: Darker purple
+  gradient.addColorStop(1, '#3d0055');     // Bottom: Magenta haze
+  
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, skyTextureSize, skyTextureSize);
+  skyTexture.update();
+  
+  // Material for sky - disable backface culling so we see inside
+  const skyMaterial = new BABYLON.StandardMaterial('skyMat', scene);
+  skyMaterial.disableLighting = true;
+  skyMaterial.emissiveTexture = skyTexture;
+  skyMaterial.emissiveColor = new BABYLON.Color3(1, 1, 1);
+  skyMaterial.backFaceCulling = false;  // See inside of sphere
+  skyMaterial.sideOrientation = BABYLON.Material.ClockWiseSideOrientation;
+  skyDome.material = skyMaterial;
+  
+  console.log('[main] Sky dome created with gradient texture');
 }
 
+// ── Shader-Based Neon Grid Floor ─────────────────────────────────────────
+function createShaderGridFloor(scene) {
+  // Create large ground plane
+  const groundSize = 300;
+  const ground = BABYLON.MeshBuilder.CreateGround('gridFloor', {
+    width: groundSize,
+    height: groundSize,
+    subdivisions: 1  // Minimal geometry - shader does the work
+  }, scene);
+  ground.isPickable = false;
+  
+  // Custom shader material for the neon grid
+  // Using DynamicTexture for a procedural grid pattern
+  const gridTextureSize = 512;
+  const gridTexture = new BABYLON.DynamicTexture('gridTex', gridTextureSize, scene);
+  const ctx = gridTexture.getContext();
+  
+  // Dark background
+  ctx.fillStyle = '#0a0015';
+  ctx.fillRect(0, 0, gridTextureSize, gridTextureSize);
+  
+  // Neon magenta grid lines
+  const gridDivisions = 40;
+  const cellSize = gridTextureSize / gridDivisions;
+  const lineWidth = Math.max(1, Math.floor(gridTextureSize * visualParams.gridLineThickness / 10));
+  
+  ctx.strokeStyle = '#ff4fd6';  // Neon magenta
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'square';
+  
+  // Draw grid lines
+  for (let i = 0; i <= gridDivisions; i++) {
+    const pos = i * cellSize;
+    
+    // Horizontal lines
+    ctx.beginPath();
+    ctx.moveTo(0, pos);
+    ctx.lineTo(gridTextureSize, pos);
+    ctx.stroke();
+    
+    // Vertical lines
+    ctx.beginPath();
+    ctx.moveTo(pos, 0);
+    ctx.lineTo(pos, gridTextureSize);
+    ctx.stroke();
+  }
+  
+  gridTexture.update();
+  
+  // Create material with the grid texture
+  const gridMaterial = new BABYLON.StandardMaterial('gridMat', scene);
+  gridMaterial.diffuseTexture = gridTexture;
+  gridMaterial.diffuseTexture.uScale = gridDivisions;
+  gridMaterial.diffuseTexture.vScale = gridDivisions;
+  gridMaterial.diffuseTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+  gridMaterial.diffuseTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+  gridMaterial.emissiveTexture = gridTexture;
+  gridMaterial.emissiveColor = new BABYLON.Color3(
+    visualParams.gridBrightness,
+    visualParams.gridBrightness * 0.3,
+    visualParams.gridBrightness * 0.8
+  );
+  gridMaterial.disableLighting = true;
+  gridMaterial.specularColor = new BABYLON.Color3(0, 0, 0);
+  
+  ground.material = gridMaterial;
+  
+  console.log('[main] Shader grid floor created');
+}
+
+// ── Retro Striped Sun ─────────────────────────────────────────
+function createRetroSun(scene) {
+  // Sun parameters
+  const sunWidth = 70;
+  const sunHeight = 70;
+  const sunPosition = new BABYLON.Vector3(0, 35, 150);
+  const stripeCount = visualParams.sunStripeCount;
+  
+  // Create sun backing disc (the gradient)
+  const sunBacking = BABYLON.MeshBuilder.CreateDisc('sunBacking', {
+    radius: sunWidth / 2,
+    tessellation: 64
+  }, scene);
+  sunBacking.position = sunPosition.clone();
+  sunBacking.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+  sunBacking.isPickable = false;
+  
+  // Gradient material - orange at top, pink at bottom
+  const backingMat = new BABYLON.StandardMaterial('sunBackingMat', scene);
+  backingMat.disableLighting = true;
+  
+  // Create gradient texture
+  const gradientSize = 256;
+  const gradientTexture = new BABYLON.DynamicTexture('sunGradient', gradientSize, scene);
+  const gctx = gradientTexture.getContext();
+  
+  // Vertical gradient: orange (#ff9a3a) to pink (#ff3aa8)
+  const gradient = gctx.createLinearGradient(0, 0, 0, gradientSize);
+  gradient.addColorStop(0, '#ff9a3a');     // Top: Orange
+  gradient.addColorStop(0.5, '#ff6b5b');   // Middle: Coral
+  gradient.addColorStop(1, '#ff3aa8');     // Bottom: Hot Pink
+  
+  gctx.fillStyle = gradient;
+  gctx.fillRect(0, 0, gradientSize, gradientSize);
+  gradientTexture.update();
+  
+  backingMat.emissiveTexture = gradientTexture;
+  backingMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+  backingMat.backFaceCulling = false;
+  sunBacking.material = backingMat;
+  
+  // Create horizontal stripe cutouts
+  const stripeHeight = sunHeight / (stripeCount * 2 + 1);
+  const stripeYs = [];
+  
+  // Calculate stripe positions (evenly spaced through bottom half)
+  for (let i = 0; i < stripeCount; i++) {
+    const y = -sunHeight / 2 + (i + 1) * stripeHeight * 1.5;
+    stripeYs.push(y);
+  }
+  
+  // Create stripe meshes (dark bars that overlay the sun)
+  for (let i = 0; i < stripeCount; i++) {
+    const stripe = BABYLON.MeshBuilder.CreatePlane('sunStripe' + i, {
+      width: sunWidth * 1.1,  // Slightly wider than sun
+      height: stripeHeight * 0.6
+    }, scene);
+    
+    stripe.position = new BABYLON.Vector3(
+      sunPosition.x,
+      sunPosition.y + stripeYs[i],
+      sunPosition.z + 0.5  // Slightly in front
+    );
+    stripe.isPickable = false;
+    
+    const stripeMat = new BABYLON.StandardMaterial('stripeMat' + i, scene);
+    stripeMat.disableLighting = true;
+    stripeMat.emissiveColor = new BABYLON.Color3(0.04, 0, 0.07); // Very dark purple #0a0012
+    stripeMat.backFaceCulling = false;
+    stripe.material = stripeMat;
+  }
+  
+  // Create glow corona around sun
+  const corona = BABYLON.MeshBuilder.CreateDisc('sunCorona', {
+    radius: sunWidth / 2 + 5,
+    tessellation: 64
+  }, scene);
+  corona.position = sunPosition.clone();
+  corona.position.z -= 0.5;
+  corona.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+  corona.isPickable = false;
+  
+  const coronaMat = new BABYLON.StandardMaterial('coronaMat', scene);
+  coronaMat.disableLighting = true;
+  coronaMat.emissiveColor = new BABYLON.Color3(1, 0.3, 0.6);
+  coronaMat.alpha = 0.3;
+  coronaMat.backFaceCulling = false;
+  corona.material = coronaMat;
+  
+  console.log('[main] Retro sun created with', stripeCount, 'stripes');
+}
+
+// ── 360° Wireframe Mountain Ring ─────────────────────────────────────────
+function createMountainRing(scene) {
+  const mountainCount = 18;  // More mountains for better coverage
+  const minRadius = 100;
+  const maxRadius = 160;
+  
+  // Color palette for mountains
+  const mountainColors = [
+    new BABYLON.Color3(0.298, 0.941, 1),    // Cyan #4cf0ff
+    new BABYLON.Color3(1, 0.392, 0.847),    // Pink #ff64d8
+    new BABYLON.Color3(0.2, 0.8, 0.9),      // Teal cyan
+    new BABYLON.Color3(1, 0.2, 0.7),        // Hot pink
+  ];
+  
+  for (let i = 0; i < mountainCount; i++) {
+    const angle = (i / mountainCount) * Math.PI * 2;
+    const radius = minRadius + Math.random() * (maxRadius - minRadius);
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    
+    // Create jagged low-poly mountain using custom path
+    const mountain = createJaggedMountain(scene, i);
+    mountain.position = new BABYLON.Vector3(x, 0, z);
+    mountain.rotation.y = angle + Math.PI / 2;  // Face center
+    mountain.isPickable = false;
+    
+    // Assign alternating colors
+    const colorIndex = i % mountainColors.length;
+    const mountainMat = new BABYLON.StandardMaterial('mountainMat' + i, scene);
+    mountainMat.wireframe = true;
+    mountainMat.disableLighting = true;
+    mountainMat.emissiveColor = mountainColors[colorIndex];
+    mountain.material = mountainMat;
+  }
+  
+  console.log('[main] 360° mountain ring created with', mountainCount, 'ridges');
+}
+
+function createJaggedMountain(scene, index) {
+  // Create a jagged mountain silhouette using extrusion
+  const height = 20 + Math.random() * 35;  // 20-55 units tall
+  const width = 15 + Math.random() * 20;   // 15-35 units wide
+  
+  // Create jagged peak profile
+  const shape = [
+    new BABYLON.Vector3(-width / 2, 0, 0),
+    new BABYLON.Vector3(-width / 3, height * 0.3, 0),
+    new BABYLON.Vector3(-width / 6, height * 0.5, 0),
+    new BABYLON.Vector3(0, height, 0),  // Peak
+    new BABYLON.Vector3(width / 6, height * 0.6, 0),
+    new BABYLON.Vector3(width / 3, height * 0.4, 0),
+    new BABYLON.Vector3(width / 2, 0, 0),
+  ];
+  
+  // Extrude slightly to give depth
+  const extrusionPath = [
+    new BABYLON.Vector3(0, 0, 0),
+    new BABYLON.Vector3(0, 0, 3)
+  ];
+  
+  const mountain = BABYLON.MeshBuilder.ExtrudeShape('mountain' + index, {
+    shape: shape,
+    path: extrusionPath,
+    cap: BABYLON.Mesh.CAP_ALL,
+    sideOrientation: BABYLON.Mesh.DOUBLESIDE
+  }, scene);
+  
+  return mountain;
+}
+
+// ── Enhanced Star Field ─────────────────────────────────────────
 function createStarField(scene) {
-  const starCount = 2000;
+  const starCount = 1500;  // Slightly fewer but bigger/brighter stars
   const particleSystem = new BABYLON.ParticleSystem('stars', starCount, scene);
   
-  const starTexture = new BABYLON.DynamicTexture('starTex', 32, scene);
+  // Create a better star texture with glow
+  const starSize = 64;
+  const starTexture = new BABYLON.DynamicTexture('starTex', starSize, scene);
   const ctx = starTexture.getContext();
-  ctx.fillStyle = 'white';
-  ctx.beginPath();
-  ctx.arc(16, 16, 8, 0, Math.PI * 2);
-  ctx.fill();
+  
+  // Create radial gradient for soft glow
+  const gradient = ctx.createRadialGradient(
+    starSize / 2, starSize / 2, 0,
+    starSize / 2, starSize / 2, starSize / 2
+  );
+  gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  gradient.addColorStop(0.2, 'rgba(200, 220, 255, 0.8)');
+  gradient.addColorStop(0.5, 'rgba(150, 180, 255, 0.3)');
+  gradient.addColorStop(1, 'rgba(100, 150, 255, 0)');
+  
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, starSize, starSize);
   starTexture.update();
   particleSystem.particleTexture = starTexture;
   
-  particleSystem.createBoxEmitter(
-    new BABYLON.Vector3(0, -0.1, 0),
-    new BABYLON.Vector3(0, -0.1, 0),
-    new BABYLON.Vector3(-100, 5, -100),
-    new BABYLON.Vector3(100, 55, 100)
-  );
+  // Emit from a large sphere around the scene
+  particleSystem.createSphereEmitter(200, 1);
   
-  particleSystem.minSize = 0.1;
-  particleSystem.maxSize = 0.3;
+  // Position the emitter high up
+  particleSystem.emitter = new BABYLON.Vector3(0, 80, 0);
+  
+  // Star properties - bigger and brighter
+  particleSystem.minSize = 0.3;
+  particleSystem.maxSize = 0.8;
   particleSystem.minLifeTime = 999999;
   particleSystem.maxLifeTime = 999999;
   particleSystem.emitRate = 0;
   particleSystem.manualEmitCount = starCount;
+  
+  // Color variation: white, blue-white, slight pink
   particleSystem.color1 = new BABYLON.Color4(1, 1, 1, 1);
-  particleSystem.color2 = new BABYLON.Color4(0.9, 0.9, 1, 1);
+  particleSystem.color2 = new BABYLON.Color4(0.8, 0.9, 1, 1);
   particleSystem.colorDead = new BABYLON.Color4(1, 1, 1, 1);
+  
+  // No movement - static stars
   particleSystem.minEmitPower = 0;
   particleSystem.maxEmitPower = 0;
   particleSystem.updateSpeed = 0;
+  
+  // Additive blending for glow
   particleSystem.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+  
   particleSystem.start();
+  console.log('[main] Enhanced star field created');
 }
 
-function createWireframeMountains(scene) {
-  const mountainCount = 12;
-  const radius = 80;
+// ── Glow Effects ─────────────────────────────────────────
+function createGlowEffects(scene) {
+  // Create GlowLayer for neon pop
+  const gl = new BABYLON.GlowLayer('glow', scene, {
+    mainTextureFixedSize: 512,
+    blurKernelSize: 64
+  });
+  
+  gl.intensity = visualParams.glowIntensity;
+  
+  // The glow layer will automatically pick up emissive materials
+  // which is perfect for our neon grid, sun, and mountains
+  
+  console.log('[main] Glow effects created with intensity:', visualParams.glowIntensity);
+}
 
-  for (let i = 0; i < mountainCount; i++) {
-    const angle = (i / mountainCount) * Math.PI * 2;
-    const x = Math.cos(angle) * radius;
-    const z = Math.sin(angle) * radius;
-
-    const height = 15 + Math.random() * 20;
-    const mountain = BABYLON.MeshBuilder.CreateCylinder('mountain' + i, {
-      diameterTop: 0,
-      diameterBottom: 20 + Math.random() * 10,
-      height: height,
-      tessellation: 4
-    }, scene);
-    
-    mountain.position = new BABYLON.Vector3(x, height / 2, z);
-    mountain.rotation.y = angle + Math.PI / 4;
-    mountain.isPickable = false;
-
-    const mountainMat = new BABYLON.StandardMaterial('mountainMat' + i, scene);
-    mountainMat.wireframe = true;
-    mountainMat.disableLighting = true;
-    mountainMat.emissiveColor = new BABYLON.Color3(0, 1, 1);
-    mountain.material = mountainMat;
+// ── Debug: Update Visual Parameters ─────────────────────────────────────────
+window.updateVisualParams = function(params) {
+  Object.assign(visualParams, params);
+  
+  // Update fog
+  if (scene && scene.fogDensity !== undefined) {
+    scene.fogDensity = visualParams.fogDensity;
   }
-}
+  
+  // Log changes
+  console.log('[main] Visual params updated:', visualParams);
+};
 
 // ── WebXR Setup ────────────────────────────────────────────
 async function setupWebXR(scene) {

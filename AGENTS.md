@@ -40,6 +40,7 @@ And update the header in `main.js`:
 - **v0.2.3 - BON JOVI**: HUD + Combat Fixes - forward-facing world-space UI orientation, pointer-based aiming, boss projectile collision checks, weapon-state reset guards, pickup visibility scaling
 - **v0.2.4 - CINDERELLA**: Release workflow notes added for worker output formatting
 - **v0.2.5 - WARRANT**: Agent output workflow moved into AGENTS.md; MODELS.md removed
+- **v0.3.0 - JOURNEY**: Phase 6 Visual Overhaul - Neon Dreams environment (gradient sky dome, shader-based neon grid floor, retro striped sun, 360° wireframe mountains, enhanced star field, GlowLayer, purple fog, debug visual sliders)
 
 ## Project Overview
 
