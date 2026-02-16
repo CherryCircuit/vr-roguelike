@@ -104,6 +104,45 @@ export const game = {
   finalScore: 0,
   finalLevel: 0,
   accuracyStreak: 0,
+
+  // ── GLOBAL UPGRADES (from Babylon.js merge) ─────────────────
+  // These apply to both hands and persist across levels
+  globalUpgrades: {
+    // RARE (Tier 1)
+    volatile: false,           // Enemies explode on death
+    second_wind: false,        // Survive death once
+    second_wind_used: false,   // Has Second Wind been consumed?
+
+    // EPIC (Tier 2)
+    neon_overdrive: false,           // Has the upgrade
+    neon_overdrive_active: false,    // Currently in buff state
+    neon_overdrive_kills: 0,         // Kill counter toward activation
+    neon_overdrive_timer: 0,         // Time remaining in buff
+
+    // ULTRA (Tier 3)
+    time_lord: false,                // Alt weapon slows time
+    time_lord_active: false,         // Time slow currently active
+    time_lord_timer: 0,              // Duration remaining
+    death_aura: false,               // Continuous close-range damage
+    infinity_loop: false,            // Repeat last alt weapon
+    infinity_loop_alt: null,         // Last alt weapon used
+    infinity_loop_timer: 0,          // Timer for auto-fire
+
+    // LEGENDARY (Tier 4)
+    god_caliber: false,              // 3x all damage
+    chrono_shift: false,             // Teleport on damage
+    chrono_shift_cooldown: 0,        // Cooldown timer
+    final_form: false,               // Start levels at max power
+    soul_harvest: false,             // Kills add permanent damage
+    soul_harvest_kills: 0,           // Total kills with soul harvest
+    cosmic_shield: false,            // Block damage periodically
+    cosmic_shield_cooldown: 0,       // Cooldown timer
+    cosmic_shield_active: false,     // Currently blocking
+
+    // Time slow effect (for Time Lord)
+    time_slow_active: false,
+    time_slow_multiplier: 1.0,       // 1.0 = normal, 0.25 = 75% slow
+  },
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -129,6 +168,7 @@ export function resetGame() {
     finalLevel: 0,
     accuracyStreak: 0,
   });
+  resetGlobalUpgrades();
 }
 
 export function getLevelConfig() {
@@ -158,4 +198,142 @@ export function healPlayer(amount) {
 export function addUpgrade(id, hand) {
   const h = hand || 'left';
   game.upgrades[h][id] = (game.upgrades[h][id] || 0) + 1;
+}
+
+// ── GLOBAL UPGRADE HELPERS (from Babylon.js merge) ─────────
+
+/**
+ * Apply a global upgrade by ID (for upgrades with global: true)
+ */
+export function addGlobalUpgrade(id) {
+  const g = game.globalUpgrades;
+
+  switch (id) {
+    // RARE (Tier 1)
+    case 'add_heart':
+      game.maxHealth += 2;
+      game.health = Math.min(game.health + 2, game.maxHealth);
+      break;
+    case 'volatile':
+      g.volatile = true;
+      break;
+    case 'second_wind':
+      g.second_wind = true;
+      g.second_wind_used = false;
+      break;
+
+    // EPIC (Tier 2)
+    case 'neon_overdrive':
+      g.neon_overdrive = true;
+      g.neon_overdrive_kills = 0;
+      break;
+
+    // ULTRA (Tier 3)
+    case 'time_lord':
+      g.time_lord = true;
+      break;
+    case 'death_aura':
+      g.death_aura = true;
+      break;
+    case 'infinity_loop':
+      g.infinity_loop = true;
+      g.infinity_loop_timer = 0;
+      break;
+
+    // LEGENDARY (Tier 4)
+    case 'god_caliber':
+      g.god_caliber = true;
+      break;
+    case 'chrono_shift':
+      g.chrono_shift = true;
+      g.chrono_shift_cooldown = 0;
+      break;
+    case 'final_form':
+      g.final_form = true;
+      break;
+    case 'soul_harvest':
+      g.soul_harvest = true;
+      break;
+    case 'cosmic_shield':
+      g.cosmic_shield = true;
+      g.cosmic_shield_cooldown = 0;
+      break;
+  }
+}
+
+/**
+ * Check if a global upgrade is active
+ */
+export function hasGlobalUpgrade(id) {
+  const g = game.globalUpgrades;
+
+  switch (id) {
+    case 'volatile': return g.volatile;
+    case 'second_wind': return g.second_wind && !g.second_wind_used;
+    case 'neon_overdrive': return g.neon_overdrive;
+    case 'neon_overdrive_active': return g.neon_overdrive_active;
+    case 'time_lord': return g.time_lord;
+    case 'death_aura': return g.death_aura;
+    case 'infinity_loop': return g.infinity_loop;
+    case 'god_caliber': return g.god_caliber;
+    case 'chrono_shift': return g.chrono_shift;
+    case 'final_form': return g.final_form;
+    case 'soul_harvest': return g.soul_harvest;
+    case 'cosmic_shield': return g.cosmic_shield;
+    default: return false;
+  }
+}
+
+/**
+ * Get global upgrades state for weapon stats calculation
+ */
+export function getGlobalUpgradesState() {
+  const g = game.globalUpgrades;
+  return {
+    volatile: g.volatile,
+    neon_overdrive_active: g.neon_overdrive_active,
+    time_lord: g.time_lord,
+    death_aura: g.death_aura,
+    infinity_loop: g.infinity_loop,
+    god_caliber: g.god_caliber,
+    chrono_shift: g.chrono_shift,
+    final_form: g.final_form,
+    soul_harvest: g.soul_harvest,
+    soul_harvest_kills: g.soul_harvest_kills,
+    cosmic_shield: g.cosmic_shield,
+    cosmic_shield_active: g.cosmic_shield_active,
+  };
+}
+
+/**
+ * Reset global upgrades (called on new game)
+ */
+export function resetGlobalUpgrades() {
+  game.globalUpgrades = {
+    volatile: false,
+    second_wind: false,
+    second_wind_used: false,
+    neon_overdrive: false,
+    neon_overdrive_active: false,
+    neon_overdrive_kills: 0,
+    neon_overdrive_timer: 0,
+    time_lord: false,
+    time_lord_active: false,
+    time_lord_timer: 0,
+    death_aura: false,
+    infinity_loop: false,
+    infinity_loop_alt: null,
+    infinity_loop_timer: 0,
+    god_caliber: false,
+    chrono_shift: false,
+    chrono_shift_cooldown: 0,
+    final_form: false,
+    soul_harvest: false,
+    soul_harvest_kills: 0,
+    cosmic_shield: false,
+    cosmic_shield_cooldown: 0,
+    cosmic_shield_active: false,
+    time_slow_active: false,
+    time_slow_multiplier: 1.0,
+  };
 }
