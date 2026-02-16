@@ -24,7 +24,7 @@ export function playShoothSound() {
   const t = ctx.currentTime;
 
   // Randomize everything: base frequency, pitch sweep, waveform, duration
-  const baseFreqs = [600, 700, 800, 900, 1000, 1100];
+  const baseFreqs = [700, 800, 900];
   const baseFreq = baseFreqs[Math.floor(Math.random() * baseFreqs.length)];
   const pitch = 0.85 + Math.random() * 0.3;
   const duration = 0.06 + Math.random() * 0.08;  // 60-140ms
@@ -776,7 +776,6 @@ export function playButtonHoverSound() {
   const t = ctx.currentTime;
 
   // Based on sfxr params: wave_type 3 (noise), quick attack/decay
-  const noise = ctx.createBufferSource();
   const bufferSize = ctx.sampleRate * 0.1;
   const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
   const data = buffer.getChannelData(0);

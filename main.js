@@ -8,7 +8,7 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 import Stats from 'three/addons/libs/stats.module.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats, ALT_WEAPON_DEFS, fireRocket, spawnHelperBot, activateShield, createGravityWell, fireIonMortar, spawnHologram } from './upgrades.js';
 import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound } from './audio.js';
 // getMusicFrequencyData removed - music visualizer commented out
 import {
@@ -16,7 +16,9 @@ import {
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
-  updateBossProjectiles, getBossProjectiles
+  updateBossProjectiles, getBossProjectiles,
+  // [Instruction 1] Alt weapon star drop callback
+  setOnEnemyDestroyedCallback
 } from './enemies.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
@@ -31,7 +33,11 @@ import {
   // [Power Outage Update] #3, #8: New HUD functions
   showBossAlert, hideBossAlert, updateBossAlert, showKillsRemainingMessage, updateKillsRemainingMessage,
   // Button hover system
-  updateAllButtonHovers, clearHoverableButtons, spawnVampireHealIndicator
+  updateAllButtonHovers, clearHoverableButtons, spawnVampireHealIndicator,
+  // [Instruction 1] Alt weapon HUD functions
+  initAltWeaponIndicators, updateAltWeaponIndicators, createAltWeaponStar,
+  addAltWeaponStar, getAltWeaponStars, removeAltWeaponStar, getAltWeaponStarHit,
+  showAltWeaponAcquired, updateAltWeaponAcquired, showStarTooltip, hideStarTooltip
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -76,6 +82,14 @@ const controllers = [];
 const controllerTriggerPressed = [false, false];
 const projectiles = [];
 let lastTime = 0;
+
+// [Instruction 1] Alt weapon projectile tracking arrays
+const rocketProjectiles = [];
+const helperBots = [];
+const gravityWells = [];
+const mortarProjectiles = [];
+const holograms = [];
+const activeShields = { left: null, right: null };
 let frameCount = 0;  // For staggering updates
 
 // Weapon firing cooldowns (per controller)
@@ -227,6 +241,23 @@ function init() {
   // Init subsystems
   initEnemies(scene);
   initHUD(camera, scene);
+  
+  // [Instruction 1] Initialize alt weapon HUD indicators
+  initAltWeaponIndicators(camera);
+  
+  // [Instruction 1] Set callback for alt weapon star drops (3% chance on enemy death)
+  setOnEnemyDestroyedCallback((position) => {
+    // 3% chance to drop an alt weapon star
+    if (Math.random() < 0.03) {
+      const weaponIds = Object.keys(ALT_WEAPON_DEFS);
+      const randomWeaponId = weaponIds[Math.floor(Math.random() * weaponIds.length)];
+      const star = createAltWeaponStar(position, randomWeaponId, ALT_WEAPON_DEFS);
+      if (star) {
+        addAltWeaponStar(star);
+        console.log(`[alt-weapon] Dropped ${randomWeaponId} star at enemy death location`);
+      }
+    }
+  });
 
   // Start at title
   resetGame();
@@ -595,12 +626,18 @@ function createStars() {
 // ============================================================
 //  CONTROLLERS
 // ============================================================
+// [Instruction 1] Squeeze button state for alt weapons
+const controllerSqueezePressed = [false, false];
+
 function setupControllers() {
   for (let i = 0; i < 2; i++) {
     const controller = renderer.xr.getController(i);
 
     controller.addEventListener('selectstart', () => { controllerTriggerPressed[i] = true; onTriggerPress(controller, i); });
     controller.addEventListener('selectend', () => { controllerTriggerPressed[i] = false; onTriggerRelease(i); });
+    // [Instruction 1] Squeeze button for alt weapons
+    controller.addEventListener('squeezestart', () => { controllerSqueezePressed[i] = true; onSqueezePress(controller, i); });
+    controller.addEventListener('squeezeend', () => { controllerSqueezePressed[i] = false; });
     controller.addEventListener('connected', (e) => {
       console.log(`[controller] ${i} connected — ${e.data.handedness}`);
       controller.userData.handedness = e.data.handedness;
@@ -613,6 +650,72 @@ function setupControllers() {
     scene.add(controller);
     controllers.push(controller);
   }
+}
+
+// [Instruction 1] Alt weapon firing via squeeze button
+function onSqueezePress(controller, index) {
+  const st = game.state;
+  
+  // Only fire alt weapons during gameplay
+  if (st !== State.PLAYING) return;
+  
+  const hand = index === 0 ? 'left' : 'right';
+  const altWeaponId = game.altWeapons[hand];
+  
+  // Check if player has an alt weapon
+  if (!altWeaponId) {
+    console.log(`[alt-weapon] No alt weapon on ${hand} hand`);
+    return;
+  }
+  
+  // Check cooldown
+  if (game.altCooldowns[hand] > 0) {
+    playErrorSound();
+    console.log(`[alt-weapon] ${hand} alt weapon on cooldown: ${game.altCooldowns[hand].toFixed(1)}s`);
+    return;
+  }
+  
+  // Fire the alt weapon
+  fireAltWeapon(controller, index, altWeaponId, hand);
+}
+
+// [Instruction 1] Alt weapon firing - uses imported functions from upgrades.js
+function fireAltWeapon(controller, index, altWeaponId, hand) {
+  // Get alt weapon definition
+  const def = ALT_WEAPON_DEFS[altWeaponId];
+  if (!def) {
+    console.error(`[alt-weapon] Unknown alt weapon: ${altWeaponId}`);
+    return;
+  }
+  
+  // Set cooldown
+  game.altCooldowns[hand] = def.cooldown;
+  game.altReadySoundPlayed[hand] = false;  // Reset sound flag when fired
+  
+  // Fire based on type
+  switch (altWeaponId) {
+    case 'rocket':
+      fireRocket(controller, hand, scene);
+      break;
+    case 'helper_bot':
+      spawnHelperBot(controller, hand);
+      break;
+    case 'shield':
+      activateShield(hand);
+      break;
+    case 'gravity_well':
+      createGravityWell(controller, scene);
+      break;
+    case 'ion_mortar':
+      fireIonMortar(controller, scene);
+      break;
+    case 'hologram':
+      spawnHologram(controller, scene);
+      break;
+  }
+  
+  playShoothSound(); // Reuse existing sound for now
+  console.log(`[alt-weapon] Fired ${altWeaponId} from ${hand} hand`);
 }
 
 function createControllerVisual(index) {
@@ -1055,22 +1158,48 @@ function showUpgradeScreen() {
     console.log(`[music] Fading out all music before boss level ${nextLevel}`);
   }
 
-  // Alternate between left and right hand
-  upgradeHand = upgradeHand === 'left' ? 'right' : 'left';
+  // [Instruction 1] First weapon offer must be a side-grade (buckshot, lightning, charge_shot)
+  // After first weapon, upgrades alternate left-right-left-right
+  if (!game.firstWeaponOffered) {
+    // First upgrade MUST be a side-grade weapon
+    const sideGradeIds = ['buckshot', 'lightning', 'charge_shot'];
+    const sideGradeUpgrades = [];
+    sideGradeIds.forEach(id => {
+      const def = getUpgradeDef(id);
+      if (def) sideGradeUpgrades.push(def);
+    });
+    
+    // Shuffle and take 3
+    for (let i = sideGradeUpgrades.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sideGradeUpgrades[i], sideGradeUpgrades[j]] = [sideGradeUpgrades[j], sideGradeUpgrades[i]];
+    }
+    pendingUpgrades = sideGradeUpgrades.slice(0, 3);
+    
+    game.firstWeaponOffered = true;
+    game.nextUpgradeHand = 'left';  // First weapon goes to left hand
+    upgradeHand = 'left';
+    
+    console.log('[Instruction 1] First weapon offer - showing only side-grades');
+  } else {
+    // Alternate between left and right hand
+    upgradeHand = game.nextUpgradeHand || 'left';
 
-  // Determine what shot types to exclude (if both hands have the same one)
-  const shotTypeIds = ['lightning', 'buckshot', 'charge_shot'];
-  const leftShotType = shotTypeIds.find(s => (game.upgrades.left[s] || 0) > 0);
-  const rightShotType = shotTypeIds.find(s => (game.upgrades.right[s] || 0) > 0);
-  const excludeIds = [];
+    // Determine what shot types to exclude (if both hands have the same one)
+    const shotTypeIds = ['lightning', 'buckshot', 'charge_shot'];
+    const leftShotType = shotTypeIds.find(s => (game.upgrades.left[s] || 0) > 0);
+    const rightShotType = shotTypeIds.find(s => (game.upgrades.right[s] || 0) > 0);
+    const excludeIds = [];
 
-  // If both hands have the same shot type, don't offer it
-  if (leftShotType && leftShotType === rightShotType) {
-    excludeIds.push(leftShotType);
-    console.log(`[game] Both hands have ${leftShotType}, excluding from upgrade pool`);
+    // If both hands have the same shot type, don't offer it
+    if (leftShotType && leftShotType === rightShotType) {
+      excludeIds.push(leftShotType);
+      console.log(`[game] Both hands have ${leftShotType}, excluding from upgrade pool`);
+    }
+
+    pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3, excludeIds);
   }
 
-  pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3, excludeIds);
   showUpgradeCards(pendingUpgrades, camera.position, upgradeHand);
   if (game.justBossKill) game.justBossKill = false;
   upgradeSelectionCooldown = 1.5; // prevent instant selection
@@ -1123,6 +1252,10 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   addUpgrade(upgrade.id, hand);
   playUpgradeSound();
   hideUpgradeCards();
+  
+  // [Instruction 1] Alternate hands for next upgrade
+  game.nextUpgradeHand = hand === 'left' ? 'right' : 'left';
+  
   advanceLevelAfterUpgrade();
 }
 
@@ -2198,6 +2331,63 @@ function render(timestamp) {
         }
       }
     });
+
+    // [Instruction 1] Update alt weapon cooldowns
+    ['left', 'right'].forEach(hand => {
+      if (game.altCooldowns[hand] > 0) {
+        const wasOnCooldown = game.altCooldowns[hand] > 0;
+        game.altCooldowns[hand] = Math.max(0, game.altCooldowns[hand] - rawDt);
+        
+        // Play "ready" sound when cooldown completes
+        if (wasOnCooldown && game.altCooldowns[hand] <= 0 && game.altWeapons[hand]) {
+          if (!game.altReadySoundPlayed[hand]) {
+            playAltWeaponReadySound();
+            game.altReadySoundPlayed[hand] = true;
+            console.log(`[alt-weapon] ${hand} hand alt weapon ready!`);
+          }
+        }
+      }
+    });
+
+    // [Instruction 1] Check for alt weapon star collection
+    const stars = getAltWeaponStars();
+    if (stars.length > 0) {
+      for (let i = 0; i < controllers.length; i++) {
+        const ctrl = controllers[i];
+        if (!ctrl || !controllerTriggerPressed[i]) continue;
+        
+        const origin = new THREE.Vector3();
+        const quat = new THREE.Quaternion();
+        ctrl.getWorldPosition(origin);
+        ctrl.getWorldQuaternion(quat);
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+        const rc = new THREE.Raycaster(origin, dir, 0, 5); // 5 meter range
+        
+        const starHit = getAltWeaponStarHit(rc);
+        if (starHit) {
+          const hand = i === 0 ? 'left' : 'right';
+          const weaponId = starHit.weaponId;
+          
+          // Award alt weapon to this hand
+          game.altWeapons[hand] = weaponId;
+          game.altCooldowns[hand] = 0; // Ready to use immediately
+          game.altReadySoundPlayed[hand] = true;
+          
+          // Remove star from scene
+          removeAltWeaponStar(starHit);
+          
+          // Play collection sound
+          playUpgradeSound();
+          
+          // Show acquisition notification
+          const def = ALT_WEAPON_DEFS[weaponId];
+          showAltWeaponAcquired(def ? def.name : weaponId, hand);
+          
+          console.log(`[alt-weapon] Collected ${weaponId} for ${hand} hand`);
+          break;
+        }
+      }
+    }
 
     // Update HUD (staggered — every 3rd frame to reduce geometry recreation cost)
     game._levelConfig = getLevelConfig();
