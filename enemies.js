@@ -386,6 +386,17 @@ export function hitEnemy(index, damage) {
   return { killed: false, enemy: e };
 }
 
+// [Instruction 1] Alt weapon star drop callback - set by main.js
+let onEnemyDestroyedCallback = null;
+
+/**
+ * Set callback to be called when an enemy is destroyed.
+ * Used for alt weapon star drops (3% chance).
+ */
+export function setOnEnemyDestroyedCallback(callback) {
+  onEnemyDestroyedCallback = callback;
+}
+
 /**
  * Destroy enemy at `index` — remove from scene, spawn explosion.
  */

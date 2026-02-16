@@ -486,3 +486,243 @@ export function getWeaponStats(upgrades, globalUpgrades = {}) {
     soulHarvestKills: g.soul_harvest_kills || 0,
   };
 }
+
+// ============================================================
+//  ALT WEAPON IMPLEMENTATIONS (Instruction 1)
+//  Stub functions for each alt weapon type.
+//  These are called from main.js when squeeze button is pressed.
+// ============================================================
+
+/**
+ * Fire a homing rocket that seeks enemies and explodes on impact.
+ * @param {THREE.Controller} controller - The controller that fired
+ * @param {string} hand - 'left' or 'right'
+ * @param {THREE.Scene} scene - The scene to add the rocket to
+ */
+export function fireRocket(controller, hand, scene) {
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+
+  // Create rocket mesh (elongated octahedron)
+  const rocketGeo = new THREE.ConeGeometry(0.08, 0.3, 6);
+  const rocketMat = new THREE.MeshBasicMaterial({ 
+    color: 0xff4444, 
+    emissive: 0xff4444,
+    transparent: true, 
+    opacity: 0.9 
+  });
+  const rocket = new THREE.Mesh(rocketGeo, rocketMat);
+  
+  // Orient along direction
+  rocket.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  rocket.position.copy(origin);
+  
+  // Rocket data
+  rocket.userData = {
+    isRocket: true,
+    hand: hand,
+    velocity: direction.clone().multiplyScalar(20), // Initial velocity
+    damage: ALT_WEAPON_DEFS.rocket.damage,
+    splashRadius: ALT_WEAPON_DEFS.rocket.splashRadius,
+    lifetime: 5000,
+    createdAt: performance.now(),
+    homingStrength: 8, // How strongly it homes
+    target: null,
+  };
+  
+  scene.add(rocket);
+  
+  // Return rocket so main.js can track it
+  return rocket;
+}
+
+/**
+ * Spawn a helper bot that auto-targets and shoots nearby enemies.
+ * @param {THREE.Controller} controller - The controller that spawned it
+ * @param {string} hand - 'left' or 'right'
+ */
+export function spawnHelperBot(controller, hand) {
+  const origin = new THREE.Vector3();
+  controller.getWorldPosition(origin);
+  
+  // Create bot mesh (small sphere with wireframe)
+  const botGeo = new THREE.IcosahedronGeometry(0.15, 1);
+  const botMat = new THREE.MeshBasicMaterial({ 
+    color: 0x44ff44, 
+    wireframe: true,
+    transparent: true,
+    opacity: 0.8
+  });
+  const bot = new THREE.Mesh(botGeo, botMat);
+  bot.position.copy(origin);
+  bot.position.y += 0.5; // Float above controller
+  
+  // Bot data
+  bot.userData = {
+    isHelperBot: true,
+    hand: hand,
+    damage: ALT_WEAPON_DEFS.helper_bot.damage,
+    fireRate: ALT_WEAPON_DEFS.helper_bot.fireRate,
+    lastFireTime: 0,
+    duration: ALT_WEAPON_DEFS.helper_bot.duration,
+    createdAt: performance.now(),
+    orbitAngle: 0,
+    orbitRadius: 1.5,
+  };
+  
+  return bot;
+}
+
+/**
+ * Activate a protective shield that blocks enemy damage.
+ * @param {string} hand - 'left' or 'right'
+ */
+export function activateShield(hand) {
+  // Return shield data - main.js will create the visual and track state
+  return {
+    type: 'shield',
+    hand: hand,
+    maxHits: ALT_WEAPON_DEFS.shield.maxHits,
+    hitsRemaining: ALT_WEAPON_DEFS.shield.maxHits,
+    duration: ALT_WEAPON_DEFS.shield.duration,
+    createdAt: performance.now(),
+  };
+}
+
+/**
+ * Create a gravity well that pulls enemies toward its center.
+ * @param {THREE.Controller} controller - The controller that created it
+ * @param {THREE.Scene} scene - The scene to add the well to
+ */
+export function createGravityWell(controller, scene) {
+  const origin = new THREE.Vector3();
+  controller.getWorldPosition(origin);
+  
+  // Create gravity well mesh (wireframe sphere)
+  const wellGeo = new THREE.IcosahedronGeometry(ALT_WEAPON_DEFS.gravity_well.pullRadius, 1);
+  const wellMat = new THREE.MeshBasicMaterial({ 
+    color: 0xaa44ff, 
+    wireframe: true,
+    transparent: true,
+    opacity: 0.4
+  });
+  const well = new THREE.Mesh(wellGeo, wellMat);
+  
+  // Position where controller is pointing (forward a bit)
+  const quat = new THREE.Quaternion();
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  well.position.copy(origin).addScaledVector(direction, 3);
+  well.position.y = Math.max(0.5, well.position.y); // Don't go below floor
+  
+  // Well data
+  well.userData = {
+    isGravityWell: true,
+    pullRadius: ALT_WEAPON_DEFS.gravity_well.pullRadius,
+    pullForce: ALT_WEAPON_DEFS.gravity_well.pullForce,
+    duration: ALT_WEAPON_DEFS.gravity_well.duration,
+    createdAt: performance.now(),
+  };
+  
+  scene.add(well);
+  
+  return well;
+}
+
+/**
+ * Fire an ion mortar - arcing projectile with large explosion.
+ * @param {THREE.Controller} controller - The controller that fired
+ * @param {THREE.Scene} scene - The scene to add the mortar to
+ */
+export function fireIonMortar(controller, scene) {
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  
+  // Arc upward then come down
+  const direction = new THREE.Vector3(0, 0.7, -1).normalize().applyQuaternion(quat);
+  
+  // Create mortar mesh (larger sphere)
+  const mortarGeo = new THREE.SphereGeometry(0.12, 8, 8);
+  const mortarMat = new THREE.MeshBasicMaterial({ 
+    color: 0x44ffaa,
+    transparent: true,
+    opacity: 0.9
+  });
+  const mortar = new THREE.Mesh(mortarGeo, mortarMat);
+  mortar.position.copy(origin);
+  
+  // Mortar data
+  mortar.userData = {
+    isIonMortar: true,
+    velocity: direction.clone().multiplyScalar(15),
+    gravity: -15, // Arcing motion
+    damage: ALT_WEAPON_DEFS.ion_mortar.damage,
+    splashRadius: ALT_WEAPON_DEFS.ion_mortar.splashRadius,
+    lifetime: 4000,
+    createdAt: performance.now(),
+  };
+  
+  scene.add(mortar);
+  
+  return mortar;
+}
+
+/**
+ * Spawn a holographic decoy that attracts enemy fire.
+ * @param {THREE.Controller} controller - The controller that spawned it
+ * @param {THREE.Scene} scene - The scene to add the hologram to
+ */
+export function spawnHologram(controller, scene) {
+  const origin = new THREE.Vector3();
+  controller.getWorldPosition(origin);
+  
+  // Create hologram mesh (wireframe humanoid shape - simplified)
+  const hologramGroup = new THREE.Group();
+  
+  // Body (tall box wireframe)
+  const bodyGeo = new THREE.BoxGeometry(0.4, 1.2, 0.2);
+  const bodyMat = new THREE.MeshBasicMaterial({ 
+    color: 0x44ffff, 
+    wireframe: true,
+    transparent: true,
+    opacity: 0.6
+  });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 0.6;
+  hologramGroup.add(body);
+  
+  // Head (small sphere)
+  const headGeo = new THREE.SphereGeometry(0.15, 8, 8);
+  const headMat = new THREE.MeshBasicMaterial({ 
+    color: 0x44ffff,
+    transparent: true,
+    opacity: 0.7
+  });
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.y = 1.35;
+  hologramGroup.add(head);
+  
+  // Position in front of player
+  const quat = new THREE.Quaternion();
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  hologramGroup.position.copy(origin).addScaledVector(direction, 2);
+  hologramGroup.position.y = 0; // On floor
+  
+  // Hologram data
+  hologramGroup.userData = {
+    isHologram: true,
+    duration: ALT_WEAPON_DEFS.hologram.duration,
+    createdAt: performance.now(),
+    attractRadius: 8, // Enemies within this range target the hologram
+  };
+  
+  scene.add(hologramGroup);
+  
+  return hologramGroup;
+}
