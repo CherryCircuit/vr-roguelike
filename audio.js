@@ -881,6 +881,30 @@ export function playBuckshotSoundNew() {
   buckshotAudio.play().catch(() => {});
 }
 
+// ── [Instruction 1] Alt Weapon Ready Sound ───────────────────────────
+export function playAltWeaponReadySound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Pleasant "ready" chime - two ascending tones
+  const frequencies = [600, 900];
+  frequencies.forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t + i * 0.1);
+    
+    gain.gain.setValueAtTime(0, t + i * 0.1);
+    gain.gain.linearRampToValueAtTime(0.15, t + i * 0.1 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + i * 0.1 + 0.2);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t + i * 0.1);
+    osc.stop(t + i * 0.1 + 0.25);
+  });
+}
+
 // ── Music Fade Out ─────────────────────────────────────────────
 export function fadeOutMusic(durationSec = 2.0) {
   if (!currentMusic) return;

@@ -100,6 +100,24 @@ export const game = {
   // After boss kill, show special upgrades
   justBossKill: false,
 
+  // [Instruction 1] First weapon offer tracking for side-grade enforcement
+  firstWeaponOffered: false,
+  nextUpgradeHand: null,  // 'left' or 'right', alternates after each upgrade
+
+  // [Instruction 1] Alt weapon system (rare drops, per-hand)
+  altWeapons: {
+    left: null,   // Alt weapon ID or null (rocket, helper_bot, shield, gravity_well, ion_mortar, hologram)
+    right: null
+  },
+  altCooldowns: {
+    left: 0,      // Cooldown timer in seconds
+    right: 0
+  },
+  altReadySoundPlayed: {
+    left: true,   // Track if "ready" sound played for this hand
+    right: true
+  },
+
   // Scoreboard
   finalScore: 0,
   finalLevel: 0,
@@ -164,6 +182,13 @@ export function resetGame() {
       right: { kills: 0, totalDamage: 0 }
     },
     justBossKill: false,
+    // [Instruction 1] Reset first weapon offer tracking
+    firstWeaponOffered: false,
+    nextUpgradeHand: null,
+    // [Instruction 1] Reset alt weapon state
+    altWeapons: { left: null, right: null },
+    altCooldowns: { left: 0, right: 0 },
+    altReadySoundPlayed: { left: true, right: true },
     finalScore: 0,
     finalLevel: 0,
     accuracyStreak: 0,
