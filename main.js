@@ -9,7 +9,7 @@ import Stats from 'three/addons/libs/stats.module.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic } from './audio.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound } from './audio.js';
 // getMusicFrequencyData removed - music visualizer commented out
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
