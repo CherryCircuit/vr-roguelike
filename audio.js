@@ -550,6 +550,7 @@ let currentMusic = null;
 let musicVolume = 0.3;
 let currentPlaylist = [];
 let currentTrackIndex = 0;
+let currentMusicCategory = null;  // Track what's currently playing to avoid restarts
 // let musicAnalyser = null;  // Music visualizer - commented out
 // let musicSource = null;  // Music visualizer - commented out
 
@@ -675,6 +676,12 @@ function playNextTrack() {
 // }
 
 export function playMusic(category) {
+  // If same category is already playing, don't restart
+  if (currentMusicCategory === category && currentMusic && !currentMusic.paused) {
+    console.log(`[music] Category "${category}" already playing, skipping restart`);
+    return;
+  }
+
   // Stop current music
   if (currentMusic) {
     currentMusic.pause();
@@ -685,6 +692,9 @@ export function playMusic(category) {
   // Get tracks for category (fresh copy)
   const tracks = musicTracks[category] ? [...musicTracks[category]] : [];
   if (!tracks || tracks.length === 0) return;
+
+  // Track the current category
+  currentMusicCategory = category;
 
   // Create randomized playlist
   currentPlaylist = shuffleArray(tracks);
@@ -700,6 +710,12 @@ export function stopMusic() {
     currentMusic.currentTime = 0;
     currentMusic = null;
   }
+  currentMusicCategory = null;  // Clear category tracking
+}
+
+// Get the currently playing music category (for checking what's playing)
+export function getCurrentMusicCategory() {
+  return currentMusicCategory;
 }
 
 export function setMusicVolume(vol) {
@@ -749,6 +765,70 @@ export function playBigExplosionSound() {
   osc.stop(t + duration);
 }
 
+// ── Epic Boss Death Sound (much more dramatic than regular explosion) ────────
+export function playBossDeathSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  
+  // Multiple layered explosions for epic feel
+  const durations = [2.5, 1.8, 1.2, 0.8];
+  
+  durations.forEach((duration, layer) => {
+    const noise = ctx.createBufferSource();
+    noise.buffer = getExplosionBuffer();
+    noise.playbackRate.value = 0.15 + layer * 0.1 + Math.random() * 0.1;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = layer % 2 === 0 ? 'lowpass' : 'bandpass';
+    filter.frequency.setValueAtTime(2000 - layer * 300, t + layer * 0.1);
+    filter.frequency.exponentialRampToValueAtTime(20, t + layer * 0.1 + duration);
+    filter.Q.setValueAtTime(2 + layer, t);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t + layer * 0.1);
+    gain.gain.linearRampToValueAtTime(0.4 - layer * 0.05, t + layer * 0.1 + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + layer * 0.1 + duration);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    noise.start(t + layer * 0.1);
+    noise.stop(t + layer * 0.1 + duration);
+  });
+
+  // Deep rumbling bass (multiple oscillators)
+  [25, 35, 50].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(15, t + 3);
+    oscGain.gain.setValueAtTime(0, t);
+    oscGain.gain.linearRampToValueAtTime(0.25 - i * 0.05, t + 0.1);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, t + 3);
+    osc.connect(oscGain);
+    oscGain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 3);
+  });
+
+  // High-pitched shriek for dramatic effect
+  const shriekOsc = ctx.createOscillator();
+  const shriekGain = ctx.createGain();
+  shriekOsc.type = 'sawtooth';
+  shriekOsc.frequency.setValueAtTime(800, t + 0.3);
+  shriekOsc.frequency.exponentialRampToValueAtTime(100, t + 1.5);
+  shriekGain.gain.setValueAtTime(0, t + 0.3);
+  shriekGain.gain.linearRampToValueAtTime(0.15, t + 0.4);
+  shriekGain.gain.exponentialRampToValueAtTime(0.01, t + 1.5);
+  shriekOsc.connect(shriekGain);
+  shriekGain.connect(ctx.destination);
+  shriekOsc.start(t + 0.3);
+  shriekOsc.stop(t + 1.5);
+
+  console.log('[audio] Epic boss death sound played');
+}
+
 // [Power Outage Update] #15: Game over sound effect
 let gameOverAudio = null;
 
@@ -782,6 +862,7 @@ export function playButtonHoverSound() {
   for (let i = 0; i < bufferSize; i++) {
     data[i] = Math.random() * 2 - 1;
   }
+  const noise = ctx.createBufferSource();
   noise.buffer = buffer;
   noise.playbackRate.value = 0.8;
 
