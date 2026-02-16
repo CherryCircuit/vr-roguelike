@@ -202,10 +202,32 @@ export function getRandomSpecialUpgrades(count) {
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }
 
-/** Pick `count` random upgrades from the pool, optionally excluding some IDs */
-export function getRandomUpgrades(count, excludeIds = []) {
+/**
+ * Pick `count` random upgrades from the pool, optionally excluding some IDs.
+ * CRITICAL FIX: Filter out weapon-specific upgrades if player doesn't have that weapon.
+ * @param {number} count - Number of upgrades to return
+ * @param {Array} excludeIds - IDs to exclude
+ * @param {Object} currentUpgrades - Player's current upgrades for this hand (to check weapon type)
+ */
+export function getRandomUpgrades(count, excludeIds = [], currentUpgrades = {}) {
   const excludeSet = new Set(excludeIds);
-  const pool = UPGRADE_POOL.filter(u => !excludeSet.has(u.id));
+  const currentWeaponType = getWeaponType(currentUpgrades);
+
+  const pool = UPGRADE_POOL.filter(u => {
+    // Exclude if in excludeSet
+    if (excludeSet.has(u.id)) return false;
+
+    // If upgrade requires a specific weapon, check if player has it
+    if (u.requiresWeapon) {
+      const requiredType = WEAPON_TYPES[u.requiresWeapon.toUpperCase()];
+      if (currentWeaponType !== requiredType) {
+        return false; // Don't offer weapon-specific upgrades if player doesn't have that weapon
+      }
+    }
+
+    return true;
+  });
+
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }
