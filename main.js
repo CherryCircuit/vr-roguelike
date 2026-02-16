@@ -9,7 +9,7 @@ import Stats from 'three/addons/libs/stats.module.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats, ALT_WEAPON_DEFS, fireRocket, spawnHelperBot, activateShield, createGravityWell, fireIonMortar, spawnHologram } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound } from './audio.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound, playBossDeathSound } from './audio.js';
 // getMusicFrequencyData removed - music visualizer commented out
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -1127,10 +1127,11 @@ function completeLevel() {
   game._completedKills = game.kills;
   game._completedKillTarget = cfg ? cfg.killTarget : game.kills;
   
-  // Stop boss music when boss dies
+  // Stop boss music when boss dies and play epic death sound
   if (cfg && cfg.isBoss) {
     stopMusic();
-    console.log(`[music] Stopped boss music after defeating boss at level ${game.level}`);
+    playBossDeathSound();  // Epic boss death sound
+    console.log(`[music] Stopped boss music and played epic death sound after defeating boss at level ${game.level}`);
   }
   
   // [Power Outage Update] #6: Enter slow-mo finale instead of immediate completion
@@ -1151,11 +1152,12 @@ function showUpgradeScreen() {
   // Stop lightning sound during upgrade screen
   stopLightningSound();
 
-  // Fade out all music over 4 seconds when next level is a boss level
+  // Fade out music over 4 seconds when next level is a boss level ("calm before the storm")
+  // This happens after completing levels 4, 9, 14, and 19
   const nextLevel = game.level + 1;
-  if (nextLevel === 5 || 10 || 15 || 20 ) {
+  if (nextLevel === 5 || nextLevel === 10 || nextLevel === 15 || nextLevel === 20) {
     fadeOutMusic(4.0);
-    console.log(`[music] Fading out all music before boss level ${nextLevel}`);
+    console.log(`[music] Fading out music before boss level ${nextLevel} - calm before the storm`);
   }
 
   // [Instruction 1] First weapon offer must be a side-grade (buckshot, lightning, charge_shot)
@@ -1286,13 +1288,14 @@ function advanceLevelAfterUpgrade() {
       showHUD();
       
       // Start appropriate level music after boss or based on level range
-      if (game.level >= 1 && game.level <= 5) {
+      // Note: Boss levels (5, 10, 15, 20) are handled separately above
+      if (game.level >= 1 && game.level <= 4) {
         playMusic('levels1to4');
       } else if (game.level >= 6 && game.level <= 9) {
         playMusic('levels6to9');
-	  } else if (game.level >= 11 && game.level <= 14) {
+      } else if (game.level >= 11 && game.level <= 14) {
         playMusic('levels11to14');
-	  } else if (game.level >= 16 && game.level <= 19) {
+      } else if (game.level >= 16 && game.level <= 19) {
         playMusic('levels16to19');
       }
     }
