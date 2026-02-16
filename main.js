@@ -1,13 +1,14 @@
 // ============================================================
 //  SYNTHWAVE VR BLASTER - Babylon.js Port (main.js)
-//  Build: THE VAPORS
-//  Babylon.js Port v0.4.0 - Vaporwave Sphere + Celestial Progression
+//  Build: WHITESNAKE
+//  Babylon.js Port v0.4.1 - UI Front-Facing + Slow-Mo/Audio + glTF Fallback
 // ============================================================
 
 import * as BABYLON from '@babylonjs/core';
+import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
 import '@babylonjs/gui';
-import '@babylonjs/loaders/glTF/2.0/glTFLoader';
-import { resumeAudioContext, playShoothSound, playHitSound, playExplosionSound, playDamageSound, playUpgradeSound, playMenuClick, playMusic, stopMusic, playBossSpawn, playBossAlertSound, playSlowMoSound, playSlowMoReverseSound, playGameOverSound, playRocketSound, playLightningSound, playChargeSound, playPlasmaSound, playSeekerSound, playShieldSound, playGravityWellSound } from './audio.js';
+import '@babylonjs/loaders/glTF';
+import { resumeAudioContext, playShoothSound, playHitSound, playExplosionSound, playDamageSound, playUpgradeSound, playMenuClick, playMusic, stopMusic, playBossSpawn, playBossAlertSound, playSlowMoSound, playSlowMoReverseSound, playGameOverSound, playRocketSound, playLightningSound, playChargeSound, playPlasmaSound, playSeekerSound, playShieldSound, playGravityWellSound, playProximityAlert, playSwarmProximityAlert } from './audio.js';
 import * as game from './game.js';
 import { getSpecialUpgradesForBossTier, getWeaponStats, getRandomUpgrades, getRandomSpecialUpgrades, WEAPON_TYPES, ALT_WEAPON_DEFS, getWeaponType } from './upgrades.js';
 import * as enemies from './enemies.js';
@@ -113,6 +114,8 @@ let spawnTimer = 0;
 let levelStartTime = 0;
 let upgradeCooldown = 0;
 const UPGRADE_COOLDOWN_TIME = 1.5;
+let lastProximityAlertTime = 0;
+const PROXIMITY_ALERT_COOLDOWN = 150;
 
 // Reflex buff tracking
 let reflexBuffUntil = 0;
@@ -215,7 +218,7 @@ async function createEnvironment(scene) {
 
   try {
     // Load the vaporwave glTF scene
-    const result = await BABYLON.SceneLoader.ImportMeshAsync(
+    const result = await SceneLoader.ImportMeshAsync(
       '',
       './mnt/project/inspo/vaporwave_sunset/',
       'scene.gltf',
@@ -261,8 +264,8 @@ async function createEnvironment(scene) {
       });
     }
   } catch (err) {
-    console.error('[main] Failed to load vaporwave glTF:', err);
-    // Continue without the glTF - will just have stars and glow
+    console.warn('[main] Failed to load vaporwave glTF, using fallback sphere:', err);
+    createFallbackRotatingSphere(scene);
   }
 
   // Create the progressive sun/moon system
@@ -275,6 +278,43 @@ async function createEnvironment(scene) {
   createGlowEffects(scene);
 
   console.log('[main] VAPORWAVE environment complete!');
+}
+
+function createFallbackRotatingSphere(scene) {
+  const sphere = BABYLON.MeshBuilder.CreateSphere('horizonSphere', {
+    diameter: 400,
+    segments: 64,
+    sideOrientation: BABYLON.Mesh.BACKSIDE,
+  }, scene);
+
+  sphere.isPickable = false;
+  vaporwaveSphere = sphere;
+
+  const texSize = 512;
+  const tex = new BABYLON.DynamicTexture('sphereTex', texSize, scene);
+  const ctx = tex.getContext();
+  const gradient = ctx.createLinearGradient(0, 0, 0, texSize);
+  gradient.addColorStop(0, '#ff66ff');
+  gradient.addColorStop(0.5, '#6622aa');
+  gradient.addColorStop(1, '#1a0033');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, texSize, texSize);
+  tex.update();
+
+  const mat = new BABYLON.StandardMaterial('sphereMat', scene);
+  mat.disableLighting = true;
+  mat.emissiveTexture = tex;
+  mat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+  mat.backFaceCulling = false;
+  sphere.material = mat;
+
+  scene.onBeforeRenderObservable.add(() => {
+    if (sphere && !sphere.isDisposed()) {
+      sphere.rotation.y += 0.0002;
+    }
+  });
+
+  console.log('[main] Fallback rotating sphere created');
 }
 
 // ── Progressive Celestial System: Sun → Moon → Sun → Skull Moon ────────────
@@ -2527,30 +2567,44 @@ function updateGameState(now, dt) {
 }
 
 function updatePlaying(now, dt) {
-  const unscaledDt = dt;
   const playerPos = getPlayerPosition();
   const levelConfig = gameState._levelConfig;
 
   // ── Proximity slow-mo ──────────────────────────────
-  const SLOW_MO_RADIUS = 2.0;
-  const SLOW_MO_FACTOR = 0.3;
-  const SLOW_MO_LERP_IN = 5.0;
-  const SLOW_MO_LERP_OUT = 3.0;
+  const SLOW_MO_RADIUS = 3.5;
+  const SLOW_MO_FACTOR = 0.25;
+  const SLOW_MO_LERP_IN = 8.0;
+  const SLOW_MO_LERP_OUT = 2.0;
+  const ALERT_RADIUS = 4.0;
 
   let hasCloseEnemy = false;
   const allEnemies = enemies.getEnemies();
+  let closestFastEnemy = null;
+  let closestFastDist = Infinity;
+  let closestSwarmEnemy = null;
+  let closestSwarmDist = Infinity;
+
   for (let i = 0; i < allEnemies.length; i++) {
-    const dist = BABYLON.Vector3.Distance(playerPos, allEnemies[i].mesh.position);
+    const enemy = allEnemies[i];
+    const dist = BABYLON.Vector3.Distance(playerPos, enemy.mesh.position);
+
     if (dist < SLOW_MO_RADIUS) {
       hasCloseEnemy = true;
-      break;
+    }
+
+    if (enemy.type === 'fast' && dist < ALERT_RADIUS && dist < closestFastDist) {
+      closestFastDist = dist;
+      closestFastEnemy = enemy;
+    } else if (enemy.type === 'swarm' && dist < ALERT_RADIUS && dist < closestSwarmDist) {
+      closestSwarmDist = dist;
+      closestSwarmEnemy = enemy;
     }
   }
 
   const bossCheck = enemies.getBoss();
   if (bossCheck && bossCheck.mesh) {
     const bossDist = BABYLON.Vector3.Distance(playerPos, bossCheck.mesh.position);
-    if (bossDist < SLOW_MO_RADIUS * 1.5) {
+    if (bossDist < SLOW_MO_RADIUS * 2.0) {
       hasCloseEnemy = true;
     }
   }
@@ -2559,7 +2613,8 @@ function updatePlaying(now, dt) {
   if (window._wasCloseEnemy === undefined) window._wasCloseEnemy = false;
   const targetScale = hasCloseEnemy ? SLOW_MO_FACTOR : 1.0;
   const lerpSpeed = hasCloseEnemy ? SLOW_MO_LERP_IN : SLOW_MO_LERP_OUT;
-  window._timeScale += (targetScale - window._timeScale) * Math.min(1, lerpSpeed * unscaledDt);
+  const deltaLerp = Math.min(1, lerpSpeed * dt);
+  window._timeScale += (targetScale - window._timeScale) * deltaLerp;
 
   if (hasCloseEnemy && !window._wasCloseEnemy) {
     playSlowMoSound();
@@ -2568,10 +2623,28 @@ function updatePlaying(now, dt) {
   }
   window._wasCloseEnemy = hasCloseEnemy;
 
-  const scaledDt = unscaledDt * window._timeScale;
+  dt *= window._timeScale;
+  const originalDt = dt / (window._timeScale || 1);
+
+  // ── Proximity alerts for fast/swarm enemies ──────────────
+  if (now - lastProximityAlertTime > PROXIMITY_ALERT_COOLDOWN) {
+    if (closestFastEnemy && closestFastDist < ALERT_RADIUS) {
+      const intensity = 1 - (closestFastDist / ALERT_RADIUS);
+      const relativePos = closestFastEnemy.mesh.position.subtract(playerPos);
+      const pan = Math.max(-1, Math.min(1, relativePos.x / 5));
+      playProximityAlert(pan, intensity);
+      lastProximityAlertTime = now;
+    } else if (closestSwarmEnemy && closestSwarmDist < ALERT_RADIUS) {
+      const intensity = 1 - (closestSwarmDist / ALERT_RADIUS);
+      const relativePos = closestSwarmEnemy.mesh.position.subtract(playerPos);
+      const pan = Math.max(-1, Math.min(1, relativePos.x / 5));
+      playSwarmProximityAlert(pan, intensity);
+      lastProximityAlertTime = now;
+    }
+  }
   
   // Update enemies
-  const collisions = enemies.updateEnemies(scaledDt, now, playerPos);
+  const collisions = enemies.updateEnemies(dt, now, playerPos);
   
   // Handle player damage from collisions
   for (const idx of collisions) {
@@ -2601,7 +2674,7 @@ function updatePlaying(now, dt) {
   // Update boss
   const boss = enemies.getBoss();
   if (boss) {
-    enemies.updateBoss(scaledDt, now, playerPos);
+    enemies.updateBoss(dt, now, playerPos);
     hud.updateBossHealthBar(boss.hp, boss.maxHp, boss.phases, boss.mesh);
     
     // Check boss defeat
@@ -2617,7 +2690,7 @@ function updatePlaying(now, dt) {
   
   // Spawn enemies (non-boss levels)
   if (gameState.state === game.State.PLAYING) {
-    spawnTimer -= scaledDt;
+    spawnTimer -= originalDt;
     if (spawnTimer <= 0 && gameState.kills < levelConfig.killTarget) {
       spawnEnemy();
       spawnTimer = levelConfig.spawnInterval;
@@ -2667,19 +2740,19 @@ function updatePlaying(now, dt) {
   });
   
   // Update projectiles
-  updateProjectiles(scaledDt, now);
+  updateProjectiles(dt, now);
   
   // Update alt weapon entities
-  updateAltWeaponEntities(scaledDt, now);
+  updateAltWeaponEntities(dt, now);
   
   // Update gravity wells
-  updateGravityWells(scaledDt, now);
+  updateGravityWells(dt, now);
   
   // Update helper bots
-  updateHelperBots(scaledDt, now);
+  updateHelperBots(dt, now);
   
   // Update holograms
-  updateHolograms(scaledDt, now);
+  updateHolograms(dt, now);
   
   // Update shields
   updateShields(now);
@@ -2691,7 +2764,7 @@ function updatePlaying(now, dt) {
   updateLightningBeams(now);
   
   // Update weapon pickups
-  updatePickups(scaledDt, now);
+  updatePickups(dt, now);
   
   // Check pickup collisions
   checkPickupCollisions();
@@ -2700,12 +2773,12 @@ function updatePlaying(now, dt) {
   ['left', 'right'].forEach(hand => {
     const ws = weaponState[hand];
     if (!ws.isCharging && ws.plasmaRamp > 0) {
-      ws.plasmaRamp = Math.max(0, ws.plasmaRamp - scaledDt * 5);
+      ws.plasmaRamp = Math.max(0, ws.plasmaRamp - dt * 5);
     }
   });
   
   // Update combo decay
-  game.updateCombo(scaledDt);
+  game.updateCombo(dt);
 }
 
 function spawnEnemy() {

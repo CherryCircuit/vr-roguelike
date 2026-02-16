@@ -266,9 +266,7 @@ export function initHUD(camera, scene) {
 
   // ── Title Screen ──
   titleGroup = createTitleScreen();
-  titleGroup.position = new BABYLON.Vector3(0, 1.6, -6);
-  titleGroup.rotation.y = Math.PI;
-  titleGroup.scaling.x = -1;
+  titleGroup.position = new BABYLON.Vector3(0, 1.6, 6);
   
   // ── VR HUD (floor-mounted) ──
   hudGroup = createHUDElements();
@@ -617,9 +615,7 @@ export function showLevelComplete(level, playerPos) {
   s2.position = new BABYLON.Vector3(0, 0.2, 0);
   s2.parent = levelTextGroup;
 
-  levelTextGroup.position = new BABYLON.Vector3(0, 1.6, -5);
-  levelTextGroup.rotation.y = Math.PI;
-  levelTextGroup.scaling.x = -1;
+  levelTextGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   levelTextGroup.setEnabled(true);
 }
 
@@ -638,9 +634,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.metadata = upgradeGroup.metadata || {};
   upgradeGroup.metadata.hand = hand;
 
-  upgradeGroup.position = new BABYLON.Vector3(0, 1.6, -4);
-  upgradeGroup.rotation.y = Math.PI;
-  upgradeGroup.scaling.x = -1;
+  upgradeGroup.position = new BABYLON.Vector3(0, 1.6, 4);
 
   // Header
   const header = makeTextPlane('CHOOSE UPGRADE:', { fontSize: 48, color: '#ffffff', glow: true, scale: 0.4 });
@@ -899,9 +893,7 @@ export function showGameOver(score, playerPos) {
   s3.name = 'restartBlink';
   s3.parent = gameOverGroup;
 
-  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, -5);
-  gameOverGroup.rotation.y = Math.PI;
-  gameOverGroup.scaling.x = -1;
+  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   gameOverGroup.setEnabled(true);
 }
 
@@ -922,9 +914,7 @@ export function showVictory(score, playerPos) {
   s3.name = 'restartBlink';
   s3.parent = gameOverGroup;
 
-  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, -5);
-  gameOverGroup.rotation.y = Math.PI;
-  gameOverGroup.scaling.x = -1;
+  gameOverGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   gameOverGroup.setEnabled(true);
 }
 
@@ -962,9 +952,7 @@ export function showBossAlert() {
     incomingMesh.parent = bossAlertGroup;
   }
   
-  bossAlertGroup.position = new BABYLON.Vector3(0, 2.0, -4);
-  bossAlertGroup.rotation.y = Math.PI;
-  bossAlertGroup.scaling.x = -1;
+  bossAlertGroup.position = new BABYLON.Vector3(0, 2.0, 4);
   bossAlertGroup.setEnabled(true);
 }
 
@@ -1000,9 +988,7 @@ export function showKillsRemainingMessage(count) {
   });
   mesh.parent = killsRemainingGroup;
   
-  killsRemainingGroup.position = new BABYLON.Vector3(0, 2.0, -5);
-  killsRemainingGroup.rotation.y = Math.PI;
-  killsRemainingGroup.scaling.x = -1;
+  killsRemainingGroup.position = new BABYLON.Vector3(0, 2.0, 5);
   killsRemainingGroup.metadata = killsRemainingGroup.metadata || {};
   killsRemainingGroup.metadata.createdAt = performance.now();
   killsRemainingGroup.metadata.lifetime = 2000;
@@ -1438,9 +1424,7 @@ export function showNameEntry(score, level, storedName) {
   nameEntryName = storedName || '';
   nameEntryCursor = nameEntryName.length;
 
-  nameEntryGroup.position = new BABYLON.Vector3(0, 1.6, -4);
-  nameEntryGroup.rotation.y = Math.PI;
-  nameEntryGroup.scaling.x = -1;
+  nameEntryGroup.position = new BABYLON.Vector3(0, 1.6, 4);
   nameEntryGroup.setEnabled(true);
 
   const header = makeTextPlane('ENTER YOUR NAME', {
@@ -1487,9 +1471,7 @@ export function showScoreboard(scores, headerText, opts = null) {
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
-  scoreboardGroup.position = new BABYLON.Vector3(0, 1.6, -5);
-  scoreboardGroup.rotation.y = Math.PI;
-  scoreboardGroup.scaling.x = -1;
+  scoreboardGroup.position = new BABYLON.Vector3(0, 1.6, 5);
   scoreboardGroup.setEnabled(true);
 
   const header = makeTextPlane(headerText || 'GLOBAL LEADERBOARD', {
