@@ -985,6 +985,229 @@ export function playAltWeaponReadySound() {
   });
 }
 
+// ── Charge Shot Sounds (Mega Man style) ───────────────────────────────
+
+// Charge sound oscillators and gain nodes (per hand: 0=left, 1=right)
+const chargeOscillators = [null, null];
+const chargeGains = [null, null];
+const chargeLfoOscillators = [null, null];
+const chargeLfoGains = [null, null];
+let chargeAudioCtx = null;
+
+/**
+ * Start the Mega Man-style charging sound.
+ * Creates a pulsing tone that rises in pitch and intensity.
+ * @param {number} handIndex - 0 for left, 1 for right
+ */
+export function startChargeSound(handIndex = 0) {
+  const ctx = getAudioContext();
+  if (!chargeAudioCtx) chargeAudioCtx = ctx;
+  
+  // Stop any existing charge sound for this hand
+  stopChargeSound(handIndex);
+  
+  const t = ctx.currentTime;
+  
+  // Main oscillator - starts low, rises as charge increases
+  const mainOsc = ctx.createOscillator();
+  mainOsc.type = 'sawtooth';
+  mainOsc.frequency.setValueAtTime(80, t);  // Start at 80Hz (low hum)
+  
+  // Gain for main oscillator
+  const mainGain = ctx.createGain();
+  mainGain.gain.setValueAtTime(0.05, t);  // Start quiet
+  
+  // LFO for pulsing effect (classic Mega Man "wub wub wub")
+  const lfoOsc = ctx.createOscillator();
+  lfoOsc.type = 'sine';
+  lfoOsc.frequency.setValueAtTime(4, t);  // 4 pulses per second initially
+  
+  // LFO gain (modulation depth)
+  const lfoGain = ctx.createGain();
+  lfoGain.gain.setValueAtTime(0.03, t);  // Subtle initial pulse
+  
+  // Filter to shape the sound
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(300, t);
+  filter.Q.setValueAtTime(5, t);
+  
+  // Connect: LFO modulates main oscillator frequency
+  lfoOsc.connect(lfoGain);
+  lfoGain.connect(mainOsc.frequency);
+  
+  // Main oscillator path
+  mainOsc.connect(filter);
+  filter.connect(mainGain);
+  mainGain.connect(ctx.destination);
+  
+  // Start oscillators
+  mainOsc.start(t);
+  lfoOsc.start(t);
+  
+  // Store references
+  chargeOscillators[handIndex] = mainOsc;
+  chargeGains[handIndex] = mainGain;
+  chargeLfoOscillators[handIndex] = lfoOsc;
+  chargeLfoGains[handIndex] = lfoGain;
+  
+  // Store additional nodes for updating
+  mainOsc.userData = { filter, lfoOsc, startTime: t };
+}
+
+/**
+ * Update the charge sound based on charge progress (0-1).
+ * Pitch rises, pulse rate increases, volume grows.
+ * @param {number} handIndex - 0 for left, 1 for right
+ * @param {number} progress - Charge progress from 0 to 1
+ */
+export function updateChargeSound(handIndex = 0, progress = 0) {
+  const ctx = chargeAudioCtx || getAudioContext();
+  const osc = chargeOscillators[handIndex];
+  const gain = chargeGains[handIndex];
+  const lfoOsc = chargeLfoOscillators[handIndex];
+  const lfoGain = chargeLfoGains[handIndex];
+  
+  if (!osc || !gain || !lfoOsc || !lfoGain) return;
+  
+  const t = ctx.currentTime;
+  
+  // Frequency ramps from 80Hz to 400Hz based on charge
+  const targetFreq = 80 + progress * 320;
+  osc.frequency.linearRampToValueAtTime(targetFreq, t + 0.05);
+  
+  // Volume increases with charge (0.05 to 0.25)
+  const targetVolume = 0.05 + progress * 0.20;
+  gain.gain.linearRampToValueAtTime(targetVolume, t + 0.05);
+  
+  // LFO pulse rate increases (4Hz to 15Hz as charge builds)
+  const targetLfoRate = 4 + progress * 11;
+  lfoOsc.frequency.linearRampToValueAtTime(targetLfoRate, t + 0.05);
+  
+  // LFO modulation depth increases
+  const targetLfoDepth = 0.03 + progress * 0.12;
+  lfoGain.gain.linearRampToValueAtTime(targetLfoDepth, t + 0.05);
+  
+  // Filter opens up for brighter sound at high charge
+  if (osc.userData.filter) {
+    const targetFilterFreq = 300 + progress * 2000;
+    osc.userData.filter.frequency.linearRampToValueAtTime(targetFilterFreq, t + 0.05);
+  }
+}
+
+/**
+ * Stop the charge sound (when shot is fired or cancelled).
+ * @param {number} handIndex - 0 for left, 1 for right
+ */
+export function stopChargeSound(handIndex = 0) {
+  const ctx = chargeAudioCtx || getAudioContext();
+  const t = ctx.currentTime;
+  
+  const osc = chargeOscillators[handIndex];
+  const lfoOsc = chargeLfoOscillators[handIndex];
+  
+  if (osc) {
+    try {
+      osc.stop(t + 0.05);
+    } catch (e) {
+      // Already stopped
+    }
+    chargeOscillators[handIndex] = null;
+  }
+  
+  if (lfoOsc) {
+    try {
+      lfoOsc.stop(t + 0.05);
+    } catch (e) {
+      // Already stopped
+    }
+    chargeLfoOscillators[handIndex] = null;
+  }
+  
+  chargeGains[handIndex] = null;
+  chargeLfoGains[handIndex] = null;
+}
+
+/**
+ * Play the fully charged "ready" sound (high-pitched sustained tone).
+ * @param {number} handIndex - 0 for left, 1 for right
+ */
+export function playChargeReadySound(handIndex = 0) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  
+  // High-pitched "ready" beep
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(880, t);
+  osc.frequency.setValueAtTime(1100, t + 0.05);
+  osc.frequency.setValueAtTime(1320, t + 0.1);
+  
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.setValueAtTime(0.15, t + 0.15);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  osc.start(t);
+  osc.stop(t + 0.3);
+}
+
+/**
+ * Play the charge shot release sound (powerful blast).
+ * @param {number} progress - Charge progress (affects sound intensity)
+ */
+export function playChargeFireSound(progress = 0) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  
+  // Base intensity scales with charge
+  const intensity = 0.5 + progress * 0.5;
+  
+  // Main blast oscillator
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(200 + progress * 300, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.3);
+  
+  gain.gain.setValueAtTime(0.3 * intensity, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.3);
+  
+  // Add noise burst for impact
+  const bufferSize = ctx.sampleRate * 0.15;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  noise.playbackRate.value = 0.8 + progress * 0.4;
+  
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.2 * intensity, t);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+  
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(2000 + progress * 3000, t);
+  
+  noise.connect(filter);
+  filter.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.15);
+}
+
 // ── Music Fade Out ─────────────────────────────────────────────
 export function fadeOutMusic(durationSec = 2.0) {
   if (!currentMusic) return;
