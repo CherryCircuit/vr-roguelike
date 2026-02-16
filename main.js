@@ -9,7 +9,7 @@ import Stats from 'three/addons/libs/stats.module.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats, ALT_WEAPON_DEFS, fireRocket, spawnHelperBot, activateShield, createGravityWell, fireIonMortar, spawnHologram } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound, playBossDeathSound, resumeAudioContext } from './audio.js';
+import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound, playBossDeathSound, resumeAudioContext, startChargeSound, updateChargeSound, stopChargeSound, playChargeReadySound, playChargeFireSound } from './audio.js';
 // getMusicFrequencyData removed - music visualizer commented out
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -108,8 +108,14 @@ const lightningTimers = [0, 0];
 
 // Charge shot state (per controller): time when trigger was pressed (ms) or null
 const chargeShotStartTime = [null, null];
-const CHARGE_SHOT_MAX_TIME = 5.0;  // seconds
-const CHARGE_SHOT_MIN_FIRE = 0.6;  // seconds (below this, no fire or minimal)
+const CHARGE_SHOT_MAX_TIME = 3.0;  // seconds - full charge at 3 seconds
+const CHARGE_SHOT_MIN_FIRE = 0.1;  // minimum charge time to fire (was 0.6)
+const CHARGE_SHOT_MIN_DAMAGE = 20;   // minimum damage at no charge
+const CHARGE_SHOT_MAX_DAMAGE = 1000; // maximum damage at full charge
+
+// Charge shot visual effects (per controller)
+const chargeGlowSpheres = [null, null];
+const chargeParticleSystems = [null, null];
 
 // Holographic blaster displays (per controller)
 const blasterDisplays = [null, null];
@@ -1536,19 +1542,151 @@ function createLightningBolt(start, end) {
   return new THREE.Line(geometry, material);
 }
 
-/** Charge shot: scale 0.6s->0.2, 1.5s->0.3, 2.5s->0.4, 4s->0.6, 5s->1.0 */
+/**
+ * Charge shot damage calculation: Mega Man style ramp
+ * - Minimum damage: 20 at instant release
+ * - Maximum damage: 1000 at 3 seconds
+ * - Fast initial ramp, slow crawl to max (ease-out curve)
+ * @param {number} t - charge time in seconds
+ * @returns {number} damage value
+ */
+function chargeTimeToDamage(t) {
+  // Clamp to max time
+  const clampedT = Math.min(t, CHARGE_SHOT_MAX_TIME);
+  
+  // Use exponential ease-out for fast initial ramp, slow approach to max
+  // Formula: min + (max - min) * (1 - e^(-k*t)) where k controls curve shape
+  // k = 2 gives: ~63% of remaining damage in first second, then slower approach
+  const k = 2.0;
+  const progress = 1 - Math.exp(-k * clampedT);
+  
+  // Interpolate between min and max damage
+  return CHARGE_SHOT_MIN_DAMAGE + (CHARGE_SHOT_MAX_DAMAGE - CHARGE_SHOT_MIN_DAMAGE) * progress;
+}
+
+/**
+ * Get charge progress (0-1) for visual effects
+ * Uses the same curve as damage for consistent feedback
+ */
+function chargeTimeToProgress(t) {
+  const clampedT = Math.min(t, CHARGE_SHOT_MAX_TIME);
+  const k = 2.0;
+  return 1 - Math.exp(-k * clampedT);
+}
+
+// Keep old function for backwards compatibility with any existing code
 function chargeTimeToScale(t) {
-  if (t >= CHARGE_SHOT_MAX_TIME) return 1;
-  if (t <= 0.6) return (t / 0.6) * 0.2;
-  const keyframes = [[0.6, 0.2], [1.5, 0.3], [2.5, 0.4], [4, 0.6], [5, 1]];
-  for (let k = 1; k < keyframes.length; k++) {
-    if (t <= keyframes[k][0]) {
-      const [t0, s0] = keyframes[k - 1];
-      const [t1, s1] = keyframes[k];
-      return s0 + (s1 - s0) * (t - t0) / (t1 - t0);
+  return chargeTimeToProgress(t);
+}
+
+/**
+ * Create or update charge visual effects on controller
+ * - Glowing sphere that gets brighter with charge
+ * - Orbiting particles for Mega Man style charging
+ * @param {THREE.Controller} controller - The controller
+ * @param {number} index - Controller index (0=left, 1=right)
+ * @param {number} progress - Charge progress from 0 to 1
+ */
+function updateChargeVisuals(controller, index, progress) {
+  // Initialize glow sphere if needed
+  if (!chargeGlowSpheres[index]) {
+    // Main glow sphere at controller tip
+    const glowGeo = new THREE.SphereGeometry(0.05, 16, 16);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const glowSphere = new THREE.Mesh(glowGeo, glowMat);
+    glowSphere.position.set(0, 0, -0.1);  // In front of controller
+    controller.add(glowSphere);
+    chargeGlowSpheres[index] = glowSphere;
+    
+    // Create orbiting particles (8 small spheres in a ring)
+    const particleGroup = new THREE.Group();
+    const particleCount = 8;
+    for (let i = 0; i < particleCount; i++) {
+      const particleGeo = new THREE.SphereGeometry(0.015, 8, 8);
+      const particleMat = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.5,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const particle = new THREE.Mesh(particleGeo, particleMat);
+      particle.userData.orbitAngle = (i / particleCount) * Math.PI * 2;
+      particle.userData.orbitRadius = 0.08;
+      particleGroup.add(particle);
     }
+    particleGroup.position.set(0, 0, -0.1);
+    controller.add(particleGroup);
+    chargeParticleSystems[index] = particleGroup;
   }
-  return 1;
+  
+  const glowSphere = chargeGlowSpheres[index];
+  const particleGroup = chargeParticleSystems[index];
+  
+  if (!glowSphere || !particleGroup) return;
+  
+  // Show the effects
+  glowSphere.visible = true;
+  particleGroup.visible = true;
+  
+  // Update glow sphere: scale and color based on charge
+  // Scale from 0.05 to 0.15 radius
+  const scale = 1 + progress * 2;
+  glowSphere.scale.setScalar(scale);
+  
+  // Color shifts from cyan (low) to white/pink (high)
+  const color = new THREE.Color().lerpColors(
+    new THREE.Color(0x00ffff),  // Cyan
+    new THREE.Color(0xffffff),  // White
+    progress
+  );
+  glowSphere.material.color.copy(color);
+  
+  // Opacity increases with charge
+  glowSphere.material.opacity = 0.1 + progress * 0.6;
+  
+  // Update orbiting particles
+  const time = performance.now() * 0.001;
+  const orbitSpeed = 2 + progress * 6;  // Faster orbit as charge increases
+  const orbitRadius = 0.08 + progress * 0.07;  // Wider orbit as charge increases
+  
+  particleGroup.children.forEach((particle, i) => {
+    const baseAngle = particle.userData.orbitAngle;
+    const angle = baseAngle + time * orbitSpeed;
+    
+    particle.position.x = Math.cos(angle) * orbitRadius;
+    particle.position.y = Math.sin(angle) * orbitRadius;
+    particle.position.z = Math.sin(angle * 0.5) * 0.02;  // Slight wobble
+    
+    // Particle color matches glow
+    particle.material.color.copy(color);
+    
+    // Particles get brighter as charge increases
+    particle.material.opacity = 0.3 + progress * 0.7;
+    
+    // Particle size increases
+    const particleScale = 0.5 + progress * 1.5;
+    particle.scale.setScalar(particleScale);
+  });
+}
+
+/**
+ * Hide and clean up charge visual effects
+ * @param {number} index - Controller index (0=left, 1=right)
+ */
+function hideChargeVisuals(index) {
+  if (chargeGlowSpheres[index]) {
+    chargeGlowSpheres[index].visible = false;
+  }
+  if (chargeParticleSystems[index]) {
+    chargeParticleSystems[index].visible = false;
+  }
 }
 
 /** Distance from point to line segment (a to b) */
@@ -1564,11 +1702,20 @@ const _chargeBeamA = new THREE.Vector3();
 const _chargeBeamB = new THREE.Vector3();
 
 function fireChargeBeam(controller, index, chargeTimeSec, stats) {
-  if (chargeTimeSec < 0.15) return; // minimum charge to fire
-  const scale = chargeTimeToScale(chargeTimeSec);
-  let damage = stats.damage * scale;
-  if (scale >= 1) damage = Math.max(300, damage);
-  const beamWidth = 0.2 + scale * 1.3;
+  if (chargeTimeSec < CHARGE_SHOT_MIN_FIRE) return; // minimum charge to fire (0.1s)
+  
+  // Use new Mega Man style damage curve: 20-1000 damage over 3 seconds
+  const damage = Math.round(chargeTimeToDamage(chargeTimeSec));
+  const progress = chargeTimeToProgress(chargeTimeSec);
+  
+  // Apply Death Ray upgrade (+50% charge shot damage per stack)
+  let finalDamage = damage;
+  if (stats.chargeDamageMult) {
+    finalDamage = Math.round(damage * stats.chargeDamageMult);
+  }
+  
+  // Beam width scales with progress (0.2 at min, 1.5 at max)
+  const beamWidth = 0.2 + progress * 1.3;
   const range = 50;
 
   const origin = new THREE.Vector3();
@@ -1627,14 +1774,21 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
     }
   }
 
-  // Brief beam visual (cylinder)
+  // Brief beam visual (cylinder) - color shifts from cyan to white based on charge
   const beamGeo = new THREE.CylinderGeometry(beamWidth * 0.5, beamWidth * 0.5, range, 8);
+  // Color interpolates from cyan (low charge) to white/pink (high charge)
+  const beamColor = new THREE.Color().lerpColors(
+    new THREE.Color(0x00ffff),  // Cyan at low charge
+    new THREE.Color(0xffffff),  // White at full charge
+    progress
+  );
   const beamMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+    color: beamColor,
     transparent: true,
-    opacity: 0.4 + scale * 0.4,
+    opacity: 0.4 + progress * 0.5,  // More opaque at higher charge
     side: THREE.DoubleSide,
     depthWrite: false,
+    blending: THREE.AdditiveBlending,  // Glow effect
   });
   const beamMesh = new THREE.Mesh(beamGeo, beamMat);
   beamMesh.position.copy(origin).addScaledVector(direction, range * 0.5);
@@ -1645,7 +1799,10 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   scene.add(beamMesh);
   explosionVisuals.push(beamMesh);
 
-  playShoothSound();
+  // Play charge fire sound with intensity based on charge
+  playChargeFireSound(progress);
+  // Also stop the charging sound
+  stopChargeSound(index);
 }
 
 function spawnProjectile(origin, direction, controllerIndex, stats) {
@@ -2178,21 +2335,44 @@ function render(timestamp) {
   else if (st === State.PLAYING) {
     spawnEnemyWave(dt);
 
-    // Full-auto shooting / Lightning beams
+    // Full-auto shooting / Lightning beams / Charge shot visuals
     for (let i = 0; i < 2; i++) {
       if (controllerTriggerPressed[i]) {
         const hand = i === 0 ? 'left' : 'right';
         const stats = getWeaponStats(game.upgrades[hand]);
 
         if (stats.chargeShot) {
-          if (chargeShotStartTime[i] === null) chargeShotStartTime[i] = now;
+          if (chargeShotStartTime[i] === null) {
+            // Start charging
+            chargeShotStartTime[i] = now;
+            startChargeSound(i);
+            updateChargeVisuals(controllers[i], i, 0);  // Initialize visual at 0 charge
+          } else {
+            // Update charge progress
+            const chargeTimeSec = (now - chargeShotStartTime[i]) / 1000;
+            const progress = chargeTimeToProgress(chargeTimeSec);
+            updateChargeSound(i, progress);
+            updateChargeVisuals(controllers[i], i, progress);
+            
+            // Play "ready" sound when fully charged (once)
+            if (progress >= 0.99 && !controllers[i].userData.chargeReadySoundPlayed) {
+              playChargeReadySound(i);
+              controllers[i].userData.chargeReadySoundPlayed = true;
+            }
+          }
         } else if (stats.lightning) {
           updateLightningBeam(controllers[i], i, stats, dt);
         } else {
           shootWeapon(controllers[i], i);
         }
       } else {
-        if (chargeShotStartTime[i] !== null) chargeShotStartTime[i] = null;
+        // Trigger released - clean up charge state
+        if (chargeShotStartTime[i] !== null) {
+          stopChargeSound(i);
+          hideChargeVisuals(i);
+          controllers[i].userData.chargeReadySoundPlayed = false;
+        }
+        chargeShotStartTime[i] = null;
         if (lightningBeams[i]) {
           scene.remove(lightningBeams[i]);
           lightningBeams[i] = null;
