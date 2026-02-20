@@ -749,3 +749,161 @@ export function setMusicVolume(vol) {
     currentMusic.volume = musicVolume;
   }
 }
+
+// ── Boss teleport disappear (warp out) ─────────────────────
+export function playBossTeleportDisappear() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Reverse sweep - high to low
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(800, t);
+  osc.frequency.exponentialRampToValueAtTime(100, t + 0.25);
+
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.25);
+
+  // Add stereo panning effect
+  const panner = ctx.createStereoPanner();
+  panner.pan.setValueAtTime((Math.random() - 0.5) * 2, t);
+
+  osc.connect(gain);
+  gain.connect(panner);
+  panner.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + 0.25);
+
+  // Layer a second osc for richness
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'square';
+  osc2.frequency.setValueAtTime(600, t);
+  osc2.frequency.exponentialRampToValueAtTime(80, t + 0.2);
+  gain2.gain.setValueAtTime(0.08, t);
+  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.start(t);
+  osc2.stop(t + 0.2);
+}
+
+// ── Boss teleport reappear (warp in) ───────────────────────
+export function playBossTeleportReappear() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Forward sweep - low to high
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(100, t);
+  osc.frequency.exponentialRampToValueAtTime(800, t + 0.2);
+
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(0.15, t + 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+
+  const panner = ctx.createStereoPanner();
+  panner.pan.setValueAtTime((Math.random() - 0.5) * 2, t);
+
+  osc.connect(gain);
+  gain.connect(panner);
+  panner.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + 0.2);
+
+  // Layer a second osc
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'square';
+  osc2.frequency.setValueAtTime(80, t);
+  osc2.frequency.exponentialRampToValueAtTime(600, t + 0.15);
+  gain2.gain.setValueAtTime(0.08, t + 0.02);
+  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.start(t);
+  osc2.stop(t + 0.15);
+}
+
+// ── Boss explosion (charge up explosion) ────────────────────
+export function playBossExplosion() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Noise burst for explosion
+  const noise = ctx.createBufferSource();
+  const bufferSize = ctx.sampleRate * 0.4;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  noise.buffer = buffer;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(3000, t);
+  filter.frequency.exponentialRampToValueAtTime(100, t + 0.4);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.3, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.4);
+
+  // Low boom underneath
+  const osc = ctx.createOscillator();
+  const oscGain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(60, t);
+  osc.frequency.exponentialRampToValueAtTime(30, t + 0.5);
+  oscGain.gain.setValueAtTime(0.25, t);
+  oscGain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+  osc.connect(oscGain);
+  oscGain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.5);
+}
+
+// ── Boss stunned (electrical buzz) ─────────────────────────
+export function playBossStunned() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Electrical buzzing sound
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(120, t);
+  // Frequency wobble for electrical effect
+  osc.frequency.linearRampToValueAtTime(150, t + 0.05);
+  osc.frequency.linearRampToValueAtTime(120, t + 0.1);
+  osc.frequency.linearRampToValueAtTime(140, t + 0.15);
+
+  gain.gain.setValueAtTime(0.12, t);
+  gain.gain.setValueAtTime(0.15, t + 0.05);
+  gain.gain.linearRampToValueAtTime(0.08, t + 0.15);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(800, t);
+  filter.Q.setValueAtTime(2, t);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + 0.2);
+}
