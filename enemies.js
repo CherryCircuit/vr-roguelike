@@ -575,19 +575,30 @@ export function hitBoss(damage, hitInfo = {}) {
     }
   }
 
-  activeBoss.hp -= damage;
-  if (activeBoss.hp <= 0) activeBoss.hp = 0;
+  // DODGER behavior: Handle stun when hit during charge
+  if (activeBoss.behavior === 'dodger') {
+    if (activeBoss.state === 'charging' && !activeBoss.chargeHasExploded) {
+      // Stun the boss!
+      activeBoss.state = 'stunned';
+      activeBoss.stunTimer = 2; // 2s stun
 
-  // DODGER behavior: Teleport on hit (chance increases with phase)
-  if (activeBoss.behavior === 'dodger' && Math.random() < 0.2 + activeBoss.phase * 0.1) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 6 + Math.random() * 4;
-    activeBoss.mesh.position.set(
-      Math.cos(angle) * dist,
-      1.5,
-      Math.sin(angle) * dist
-    );
+      // Play stunned sound
+      if (typeof window !== 'undefined' && window.playBossStunned) {
+        window.playBossStunned();
+      }
+
+      // Double damage during stun (as mentioned: "vulnerable to damage")
+      activeBoss.hp -= damage * 2;
+    } else {
+      // Normal damage outside of charge
+      activeBoss.hp -= damage;
+    }
+  } else {
+    // Other boss behaviors: normal damage
+    activeBoss.hp -= damage;
   }
+
+  if (activeBoss.hp <= 0) activeBoss.hp = 0;
 
   const prevPhase = activeBoss.phase;
   const phaseThreshold2 = activeBoss.maxHp * (2 / 3);
@@ -599,6 +610,199 @@ export function hitBoss(damage, hitInfo = {}) {
   return { killed: activeBoss.hp <= 0, shieldReflected: false, phaseChanged: activeBoss.phase !== prevPhase };
 }
 
+// ── Dodger Boss State Machine Helper ───────────────────────
+function updateDodgerBoss(b, dt, now, playerPos, dirToPlayer) {
+  // Initialize state machine if not set
+  if (!b.state) {
+    b.state = 'hidden';
+    b.teleportTimer = 0;
+    b.chargeTimer = 0;
+    b.stunTimer = 0;
+    b.hideTimer = 0;
+    b.hasFirstAppeared = false;
+    b.firstAppearanceFront = true; // First appearance always in front
+  }
+
+  // Always look at player when visible
+  if (b.state !== 'hidden') {
+    _look.set(playerPos.x, b.mesh.position.y, playerPos.z);
+    b.mesh.lookAt(_look);
+  }
+
+  // Visual: pulsing/charging indicator during charge phase
+  if (b.state === 'charging') {
+    const pulse = 1 + Math.sin(now * 0.01) * 0.1;
+    b.mesh.scale.set(pulse, pulse, pulse);
+  } else {
+    b.mesh.scale.set(1, 1, 1);
+  }
+
+  // Visual: stunned shake effect
+  if (b.state === 'stunned') {
+    b.mesh.position.x += (Math.random() - 0.5) * 0.05;
+    b.mesh.position.y += (Math.random() - 0.5) * 0.05;
+  }
+
+  // Visual: hidden (invisible)
+  if (b.state === 'hidden') {
+    b.mesh.visible = false;
+    b.teleportTimer -= dt;
+    if (b.teleportTimer <= 0) {
+      // Transition to appearing
+      b.state = 'appearing';
+      b.mesh.visible = true;
+
+      // Determine teleport angle based on health
+      const healthRatio = b.hp / b.maxHp;
+      let maxAngleDeg;
+      if (healthRatio > 0.66) {
+        maxAngleDeg = 50; // Initial: max 50° left/right
+      } else if (healthRatio > 0.33) {
+        maxAngleDeg = 80; // At 66% health: increase to 80°
+      } else {
+        maxAngleDeg = 120; // At 33% health: increase to 120°
+      }
+
+      // First appearance: always directly in front
+      let angle;
+      if (!b.hasFirstAppeared || b.firstAppearanceFront) {
+        angle = 0;
+        b.firstAppearanceFront = false;
+      } else {
+        // Random angle within cone
+        const halfAngleRad = (maxAngleDeg * Math.PI / 180) / 2;
+        angle = (Math.random() - 0.5) * 2 * halfAngleRad;
+      }
+
+      // Calculate position in front of player
+      const distance = 8 + Math.random() * 4;
+      const x = Math.sin(angle) * distance;
+      const z = -Math.cos(angle) * distance;
+      b.mesh.position.set(x, 1.5, z);
+
+      // Play reappear sound
+      if (typeof window !== 'undefined' && window.playBossTeleportReappear) {
+        window.playBossTeleportReappear();
+      }
+
+      b.hasFirstAppeared = true;
+
+      // Immediately transition to charging
+      b.state = 'charging';
+      b.chargeTimer = 1.5; // 1.5s charge-up
+      b.chargeHasExploded = false;
+    }
+    return; // Early return when hidden
+  }
+
+  // ── CHARGING STATE ──
+  if (b.state === 'charging') {
+    b.chargeTimer -= dt;
+
+    if (b.chargeTimer <= 0 && !b.chargeHasExploded) {
+      b.chargeHasExploded = true;
+
+      // Check if player is in range for damage
+      const distToPlayer = b.mesh.position.distanceTo(playerPos);
+      if (distToPlayer < 3) {
+        // Player hit! Disappear for 3s
+        b.state = 'hidden';
+        b.teleportTimer = 3;
+
+        // Play explosion sound
+        if (typeof window !== 'undefined' && window.playBossExplosion) {
+          window.playBossExplosion();
+        }
+
+        // Visual explosion effect
+        spawnBossExplosion(b.mesh.position, 0xff00ff);
+
+        // Return damage flag (main.js will handle)
+        b.lastExplosionHitPlayer = true;
+      } else {
+        // Missed! Continue to normal movement
+        b.state = 'normal';
+        b.hideTimer = 4 + Math.random() * 2; // 4-6s before hiding
+
+        // Play explosion sound (smaller, no damage)
+        if (typeof window !== 'undefined' && window.playBossExplosion) {
+          window.playBossExplosion();
+        }
+
+        spawnBossExplosion(b.mesh.position, 0x8800ff);
+      }
+    }
+    return; // Don't move while charging
+  }
+
+  // ── STUNNED STATE ──
+  if (b.state === 'stunned') {
+    b.stunTimer -= dt;
+
+    if (b.stunTimer <= 0) {
+      // Stun over, disappear for 2s
+      b.state = 'hidden';
+      b.teleportTimer = 2;
+
+      if (typeof window !== 'undefined' && window.playBossTeleportDisappear) {
+        window.playBossTeleportDisappear();
+      }
+    }
+    return; // Don't move while stunned
+  }
+
+  // ── NORMAL STATE ──
+  if (b.state === 'normal') {
+    b.hideTimer -= dt;
+
+    // Move erratically toward player
+    b.dodgeTimer = (b.dodgeTimer || 0) - dt;
+    if (b.dodgeTimer <= 0) {
+      b.dodgeTimer = 0.4 / b.phase;
+      const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
+      const randomDir = Math.random() < 0.5 ? 1 : -1;
+      b.dodgeDir = perp.multiplyScalar(randomDir);
+    }
+
+    const approachSpeed = 0.2 + b.phase * 0.1;
+    const dodgeSpeed = 1.0 + b.phase * 0.4;
+    b.mesh.position.addScaledVector(dirToPlayer, approachSpeed * dt);
+    if (b.dodgeDir) {
+      b.mesh.position.addScaledVector(b.dodgeDir, dodgeSpeed * dt);
+    }
+
+    if (b.hideTimer <= 0) {
+      b.state = 'hiding';
+
+      if (typeof window !== 'undefined' && window.playBossTeleportDisappear) {
+        window.playBossTeleportDisappear();
+      }
+    }
+    return;
+  }
+
+  // ── HIDING STATE ──
+  if (b.state === 'hiding') {
+    // Brief fade out, then hidden
+    b.state = 'hidden';
+    b.teleportTimer = 1.5 + Math.random() * 1.5; // 1.5-3s before reappearing
+    return;
+  }
+}
+
+function spawnBossExplosion(position, color) {
+  if (typeof window === 'undefined' || !window.spawnEffectParticle) return;
+
+  // Spawn multiple particles for explosion effect
+  for (let i = 0; i < 12; i++) {
+    window.spawnEffectParticle(position.clone().add(new THREE.Vector3(
+      (Math.random() - 0.5) * 1,
+      (Math.random() - 0.5) * 1,
+      (Math.random() - 0.5) * 1
+    )), color);
+  }
+}
+
 export function updateBoss(dt, now, playerPos) {
   if (!activeBoss) return;
   const b = activeBoss;
@@ -607,9 +811,11 @@ export function updateBoss(dt, now, playerPos) {
   const dist = _dir.length();
   if (dist > 0.01) _dir.divideScalar(dist);
 
-  // Always look at player
-  _look.set(playerPos.x, b.mesh.position.y, playerPos.z);
-  b.mesh.lookAt(_look);
+  // Always look at player (handled by dodger state machine internally)
+  if (b.behavior !== 'dodger') {
+    _look.set(playerPos.x, b.mesh.position.y, playerPos.z);
+    b.mesh.lookAt(_look);
+  }
 
   // === BEHAVIOR-SPECIFIC LOGIC ===
 
@@ -659,19 +865,9 @@ export function updateBoss(dt, now, playerPos) {
   }
 
   else if (b.behavior === 'dodger') {
-    // DODGER: Moves erratically, hard to hit
-    b.dodgeTimer -= dt;
-    if (b.dodgeTimer <= 0) {
-      b.dodgeTimer = 0.6 / b.phase;
-      const perp = new THREE.Vector3(-_dir.z, 0, _dir.x).normalize();
-      const randomDir = Math.random() < 0.5 ? 1 : -1;
-      b.dodgeDir.copy(perp).multiplyScalar(randomDir);
-    }
-
-    const approachSpeed = 0.15 + b.phase * 0.08;
-    const dodgeSpeed = 0.8 + b.phase * 0.3;
-    b.mesh.position.addScaledVector(_dir, approachSpeed * dt);
-    b.mesh.position.addScaledVector(b.dodgeDir, dodgeSpeed * dt);
+    // DODGER: Teleporting boss with charge-up explosion mechanic
+    // State machine: hidden → appearing → charging → stunned/normal → hiding → hidden
+    updateDodgerBoss(b, dt, now, playerPos, _dir);
   }
 
   else if (b.behavior === 'charger') {
