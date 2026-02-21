@@ -528,9 +528,8 @@ export function updateHUD(gameState) {
 
   // Kill counter - 200% larger
   const cfg = gameState._levelConfig;
-  if (cfg) {
-    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.30 });
-  }
+  const killTarget = cfg ? cfg.killTarget : 0;
+  updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.30 });
 
   // Level - 200% larger
   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.30 });
