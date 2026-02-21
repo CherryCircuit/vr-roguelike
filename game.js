@@ -82,7 +82,14 @@ export const game = {
   totalKills: 0,
   score: 0,
   nukes: 3,
-  upgrades: { left: {}, right: {} },
+  
+  // NEW: Weapon system
+  mainWeapon: { left: 'standard_blaster', right: 'standard_blaster' },  // MAIN weapon per hand
+  altWeapon: { left: null, right: null },  // ALT weapon per hand (unlocked via upgrades)
+  altCooldowns: { left: 0, right: 0 },  // ALT weapon cooldowns (ms)
+  upgrades: { left: {}, right: {} },  // Upgrades per hand
+  mainWeaponLocked: { left: false, right: false },  // Whether MAIN weapon is locked (chosen)
+  
   stateTimer: 0,
   spawnTimer: 0,
   killsWithoutHit: 0,
@@ -93,6 +100,7 @@ export const game = {
   },
 
   justBossKill: false,
+  nextUpgradeHand: 'left',  // Alternating hand for upgrades (left → right → left...)
 
   finalScore: 0,
   finalLevel: 0,
@@ -109,7 +117,14 @@ export function resetGame() {
     totalKills: 0,
     score: 0,
     nukes: 3,
+    
+    // NEW: Weapon system
+    mainWeapon: { left: 'standard_blaster', right: 'standard_blaster' },
+    altWeapon: { left: null, right: null },
+    altCooldowns: { left: 0, right: 0 },
     upgrades: { left: {}, right: {} },
+    mainWeaponLocked: { left: false, right: false },
+    
     stateTimer: 0,
     spawnTimer: 0,
     killsWithoutHit: 0,
@@ -118,6 +133,7 @@ export function resetGame() {
       right: { kills: 0, totalDamage: 0 }
     },
     justBossKill: false,
+    nextUpgradeHand: 'left',
     finalScore: 0,
     finalLevel: 0,
     accuracyStreak: 0,
@@ -150,4 +166,41 @@ export function healPlayer(amount) {
 export function addUpgrade(id, hand) {
   const h = hand || 'left';
   game.upgrades[h][id] = (game.upgrades[h][id] || 0) + 1;
+}
+
+// ── NEW: Weapon System Helpers ───────────────────────────────
+
+/**
+ * Set the MAIN weapon for a hand (locks it)
+ */
+export function setMainWeapon(weaponId, hand) {
+  const h = hand || 'left';
+  game.mainWeapon[h] = weaponId;
+  game.mainWeaponLocked[h] = true;
+}
+
+/**
+ * Set the ALT weapon for a hand
+ */
+export function setAltWeapon(weaponId, hand) {
+  const h = hand || 'left';
+  game.altWeapon[h] = weaponId;
+}
+
+/**
+ * Get the next hand for upgrade selection (alternating)
+ */
+export function getNextUpgradeHand() {
+  const hand = game.nextUpgradeHand;
+  game.nextUpgradeHand = hand === 'left' ? 'right' : 'left';
+  return hand;
+}
+
+/**
+ * Check if player needs to choose a MAIN weapon (level 2, first upgrade)
+ */
+export function needsMainWeaponChoice() {
+  // After level 1 completion, before level 2 starts
+  // If neither hand has locked a main weapon yet
+  return game.level === 1 && !game.mainWeaponLocked.left && !game.mainWeaponLocked.right;
 }
