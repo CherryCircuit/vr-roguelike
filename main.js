@@ -1915,6 +1915,20 @@ function render(timestamp) {
       updateBossMinions(dt, playerPos);
       showBossHealthBar(boss.hp, boss.maxHp, boss.phases);
       updateBossHealthBar(boss.hp, boss.maxHp, boss.phases);
+
+      // Check if boss was killed
+      if (boss.hp <= 0) {
+        console.log(`[boss] Boss defeated!`);
+        if (typeof window !== 'undefined' && window.playBossDeath) {
+          window.playBossDeath();
+        }
+
+        // Clean up boss
+        clearBoss();
+
+        // Complete the level (boss level)
+        completeLevel();
+      }
     } else {
       hideBossHealthBar();
     }
