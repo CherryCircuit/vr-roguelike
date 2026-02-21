@@ -15,7 +15,8 @@ import {
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound,
   startLightningSound, stopLightningSound,
-  playMusic, stopMusic, getMusicFrequencyData
+  playMusic, stopMusic, getMusicFrequencyData,
+  playBossTeleportDisappear, playBossTeleportReappear, playBossExplosion, playBossStunned
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -172,6 +173,12 @@ function init() {
   // Init subsystems
   initEnemies(scene);
   initHUD(camera, scene);
+
+  // Expose audio functions to window for enemies module
+  window.playBossTeleportDisappear = playBossTeleportDisappear;
+  window.playBossTeleportReappear = playBossTeleportReappear;
+  window.playBossExplosion = playBossExplosion;
+  window.playBossStunned = playBossStunned;
 
   // Start at title
   resetGame();
@@ -1915,6 +1922,26 @@ function render(timestamp) {
       updateBossMinions(dt, playerPos);
       showBossHealthBar(boss.hp, boss.maxHp, boss.phases);
       updateBossHealthBar(boss.hp, boss.maxHp, boss.phases);
+
+      // Check if boss explosion hit player (dodger behavior)
+      if (boss.lastExplosionHitPlayer) {
+        boss.lastExplosionHitPlayer = false; // Reset flag
+        const dead = damagePlayer(3); // 3 damage from explosion
+        triggerHitFlash();
+        playDamageSound();
+        cameraShake = 0.8;
+        cameraShakeIntensity = 0.1;
+        originalCameraPos.copy(camera.position);
+        floorFlashing = true;
+        floorFlashTimer = 0.7;
+        slowMoActive = false;
+        slowMoRampOut = false;
+        timeScale = 1.0;
+        console.log(`[boss-explosion] Player hit by boss explosion! Health: ${game.health}`);
+        if (dead) {
+          endGame(false);
+        }
+      }
     } else {
       hideBossHealthBar();
     }
