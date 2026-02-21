@@ -117,14 +117,14 @@ export function resetGame() {
     totalKills: 0,
     score: 0,
     nukes: 3,
-    
+
     // NEW: Weapon system
     mainWeapon: { left: 'standard_blaster', right: 'standard_blaster' },
     altWeapon: { left: null, right: null },
     altCooldowns: { left: 0, right: 0 },
     upgrades: { left: {}, right: {} },
     mainWeaponLocked: { left: false, right: false },
-    
+
     stateTimer: 0,
     spawnTimer: 0,
     killsWithoutHit: 0,
@@ -137,6 +137,10 @@ export function resetGame() {
     finalScore: 0,
     finalLevel: 0,
     accuracyStreak: 0,
+
+    // Reset level config to prevent stale data
+    _levelConfig: null,
+    _combo: 1,
   });
 }
 
