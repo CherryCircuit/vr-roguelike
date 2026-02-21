@@ -32,17 +32,18 @@ export function getBossTier(level) {
   return level / 5; // 1..4
 }
 
-// Pool of 5 boss ids per tier (picked at random for that level)
-const BOSS_POOL_TIER1 = ['grave_voxel', 'iron_sentry', 'chrono_wraith', 'siege_ram', 'core_guardian'];
-const BOSS_POOL_TIER2 = ['grave_voxel2', 'iron_sentry2', 'chrono_wraith2', 'siege_ram2', 'core_guardian2'];
-const BOSS_POOL_TIER3 = ['grave_voxel3', 'iron_sentry3', 'chrono_wraith3', 'siege_ram3', 'core_guardian3'];
-const BOSS_POOL_TIER4 = ['grave_voxel4', 'iron_sentry4', 'chrono_wraith4', 'siege_ram4', 'core_guardian4'];
+// Pool of bosses per tier (randomly picked for that level)
+const BOSS_POOLS = {
+  1: ['chrono_wraith'],
+  2: ['chrono_wraith'],
+  3: ['chrono_wraith'],
+  4: ['chrono_wraith'],
+};
 
 export function getRandomBossIdForLevel(level) {
   const tier = getBossTier(level);
   if (tier === 0) return null;
-  const pools = { 1: BOSS_POOL_TIER1, 2: BOSS_POOL_TIER2, 3: BOSS_POOL_TIER3, 4: BOSS_POOL_TIER4 };
-  const pool = pools[tier];
+  const pool = BOSS_POOLS[tier];
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -50,22 +51,20 @@ export function getRandomBossIdForLevel(level) {
 function buildLevel(n) {
   let killTarget;
   const isBoss = n % 5 === 0;
-  if (isBoss) killTarget = 1;    // boss level: kill the boss
-  else if (n === 20) killTarget = 50;   // (non-boss final would be 50)
-  else if (n <= 5) killTarget = 12 + n * 3;          // 15–27
-  else if (n <= 10) killTarget = 25 + (n - 5) * 8;   // 33–65
-  else if (n <= 15) killTarget = 65 + (n - 10) * 15;  // 80–140
-  else killTarget = 140 + (n - 15) * 25; // 165–240
+  if (isBoss) killTarget = 1;
+  else if (n === 20) killTarget = 50;
+  else if (n <= 5) killTarget = 12 + n * 3;
+  else if (n <= 10) killTarget = 25 + (n - 5) * 8;
+  else if (n <= 15) killTarget = 65 + (n - 10) * 15;
+  else killTarget = 140 + (n - 15) * 25;
 
   return {
     level: n,
     isBoss,
     killTarget,
     hpMultiplier: 1 + Math.pow(n - 1, 1.5) * 0.15,
-    // OLD: speedMultiplier: 1 + (n - 1) * 0.09,
-    speedMultiplier: (1 + (n - 1) * 0.09) * 1.75,  // +75% enemy speed
-    // OLD: spawnInterval: Math.max(0.4, 2.0 - n * 0.08),
-    spawnInterval: Math.max(0.25, (2.0 - n * 0.08) * 0.57),  // +75% spawn rate
+    speedMultiplier: (1 + (n - 1) * 0.09) * 1.75,
+    spawnInterval: Math.max(0.25, (2.0 - n * 0.08) * 0.57),
     enemyTypes: getEnemyTypes(n),
     airSpawns: n >= 6,
   };
@@ -83,21 +82,18 @@ export const game = {
   totalKills: 0,
   score: 0,
   nukes: 3,
-  upgrades: { left: {}, right: {} },  // separate per hand
+  upgrades: { left: {}, right: {} },
   stateTimer: 0,
   spawnTimer: 0,
-  killsWithoutHit: 0,    // for combo tracking
+  killsWithoutHit: 0,
 
-  // Per-hand statistics for holographic display
   handStats: {
     left: { kills: 0, totalDamage: 0 },
     right: { kills: 0, totalDamage: 0 }
   },
 
-  // After boss kill, show special upgrades
   justBossKill: false,
 
-  // Scoreboard
   finalScore: 0,
   finalLevel: 0,
   accuracyStreak: 0,
@@ -133,7 +129,6 @@ export function getLevelConfig() {
 }
 
 export function addScore(points) {
-  // Combo multiplier: every 10 accuracy streak hits raises it (max 5×)
   const combo = getComboMultiplier();
   game.score += Math.floor(points * combo);
 }
@@ -144,7 +139,7 @@ export function getComboMultiplier() {
 
 export function damagePlayer(amount) {
   game.health = Math.max(0, game.health - amount);
-  game.killsWithoutHit = 0;   // reset combo
+  game.killsWithoutHit = 0;
   return game.health <= 0;
 }
 
