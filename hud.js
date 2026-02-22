@@ -66,6 +66,12 @@ let levelIntroStage = 'level'; // 'level', 'level_fading', 'start', 'start_fadin
 let levelIntroLevelText = null;
 let levelIntroStartText = null;
 
+// Kills remaining alert state
+let killsAlertActive = false;
+let killsAlertStartTime = 0;
+let killsAlertDisplayTime = 0;
+let killsAlertMesh = null;
+
 // Scoreboard state
 let scoreboardCanvas = null;
 let scoreboardTexture = null;
@@ -1435,6 +1441,63 @@ export function updateLevelIntro(now) {
 export function hideLevelIntro() {
   levelIntroActive = false;
   levelTextGroup.visible = false;
+}
+
+// ── Kills Remaining Alert ─────────────────────────────────
+
+export function showKillsRemainingAlert(remaining) {
+  if (killsAlertActive) return; // Already showing an alert
+
+  killsAlertActive = true;
+  killsAlertStartTime = performance.now();
+  killsAlertDisplayTime = 2000; // Display for 2 seconds
+
+  // Position further from player (better depth)
+  // Place at midfield distance but offset forward
+  levelTextGroup.position.set(0, 1.6, -3); // -3 instead of -4 for better depth
+  levelTextGroup.visible = true;
+
+  // Clear any existing content
+  while (levelTextGroup.children.length) {
+    levelTextGroup.remove(levelTextGroup.children[0]);
+  }
+
+  const alertText = makeSprite(`${remaining} KILLS REMAINING`, {
+    fontSize: 60,
+    color: '#ff8800',
+    glow: true,
+    glowColor: '#ff8800',
+    scale: 0.5,
+  });
+  alertText.position.set(0, 0, 0);
+  levelTextGroup.add(alertText);
+  killsAlertMesh = alertText;
+}
+
+export function updateKillsAlert(now) {
+  if (!killsAlertActive) return false;
+
+  const elapsed = now - killsAlertStartTime;
+
+  // Hide after display time
+  if (elapsed >= killsAlertDisplayTime) {
+    hideKillsAlert();
+    return false; // Alert is no longer visible
+  }
+
+  return true; // Still visible
+}
+
+export function hideKillsAlert() {
+  killsAlertActive = false;
+  levelTextGroup.visible = false;
+  if (killsAlertMesh) {
+    killsAlertMesh = null;
+  }
+}
+
+export function isKillsAlertActive() {
+  return killsAlertActive;
 }
 
 export function getReadyScreenHit(raycaster) {
