@@ -631,6 +631,62 @@ export function playKillsAlertSound() {
   osc.stop(t + sustain + decay);
 }
 
+// ── Low health alert sound ─────────────────────────────────
+// Based on sfxr parameters from issue #24:
+// wave_type: 0 (sine), p_env_attack: 0.388, p_env_sustain: 0.08,
+// p_env_punch: 0, p_env_decay: 0.478, p_base_freq: 0.567,
+// p_freq_ramp: 0.0967, p_freq_dramp: 0.1433, p_vib_strength: -0.0535,
+// p_vib_speed: 0.0627, p_duty: 0.217, p_lpf_freq: 0.619,
+// p_hpf_freq: 0.513, sound_vol: 0.25
+export function playLowHealthAlertSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  // Wave type: 0 = sine
+  osc.type = 'sine';
+
+  // Base frequency: p_base_freq 0.567 maps to ~567Hz
+  const baseFreq = 567;
+  osc.frequency.setValueAtTime(baseFreq, t);
+
+  // Frequency ramp: p_freq_ramp 0.0967
+  osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.1, t + 0.95);
+
+  // Envelope: attack, sustain, no punch, decay
+  const attack = 0.388;
+  const sustain = 0.08;
+  const decay = 0.478;
+  const totalDuration = attack + sustain + decay;
+  const volume = 0.25;
+
+  // Attack (ramp up)
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(volume, t + attack);
+
+  // Hold sustain
+  gain.gain.setValueAtTime(volume, t + attack);
+
+  // Decay (fade to silence)
+  gain.gain.linearRampToValueAtTime(volume, t + attack + sustain);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + totalDuration);
+
+  // Low-pass filter: p_lpf_freq 0.619
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(0.619 * 44100, t);
+  filter.Q.setValueAtTime(1, t);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + totalDuration);
+}
+
 // ── Lightning beam continuous sound (MP3 loop) ─────────────
 let lightningAudio = null;
 let lightningVolumeTimeout = null;
