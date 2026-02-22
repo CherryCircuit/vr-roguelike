@@ -971,6 +971,9 @@ function showUpgradeScreen() {
   game.state = State.UPGRADE_SELECT;
   hideLevelComplete();
 
+  // Show HUD during level-up (health hearts and score)
+  showHUD();
+
   // Stop lightning sound during upgrade screen
   stopLightningSound();
 
@@ -1067,6 +1070,12 @@ function advanceLevelAfterUpgrade() {
       // Standard levels use level intro sequence
       game.state = State.LEVEL_INTRO;
       showLevelIntro(game.level);
+
+      // Show HUD during level-up (health hearts and score)
+      showHUD();
+
+      // Hide blaster displays during level-up
+      blasterDisplays.forEach(d => { if (d) d.visible = false; });
     }
   }
 }
