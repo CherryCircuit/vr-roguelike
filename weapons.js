@@ -23,9 +23,9 @@ export const MAIN_WEAPONS = {
     },
   },
   
-  shotgun: {
-    id: 'shotgun',
-    name: 'Shotgun',
+  buckshot: {
+    id: 'buckshot',
+    name: 'Buckshot',
     desc: 'Multi-pellet spread, close range',
     color: '#ff8800',
     type: 'main',
@@ -41,63 +41,9 @@ export const MAIN_WEAPONS = {
     },
   },
   
-  assault_rifle: {
-    id: 'assault_rifle',
-    name: 'Assault Rifle',
-    desc: 'High fire rate, lower damage',
-    color: '#ffff00',
-    type: 'main',
-    baseStats: {
-      damage: 8,
-      fireInterval: 90,  // Very fast
-      projectileCount: 1,
-      critChance: 0.05,
-      critMultiplier: 2,
-      piercing: false,
-      aoeRadius: 0,
-      spreadAngle: 0,
-    },
-  },
-  
-  sniper: {
-    id: 'sniper',
-    name: 'Sniper',
-    desc: 'High damage, slow fire, piercing',
-    color: '#00ff00',
-    type: 'main',
-    baseStats: {
-      damage: 50,
-      fireInterval: 800,  // Very slow
-      projectileCount: 1,
-      critChance: 0.25,
-      critMultiplier: 3,
-      piercing: true,
-      aoeRadius: 0,
-      spreadAngle: 0,
-    },
-  },
-  
-  cannon: {
-    id: 'cannon',
-    name: 'Cannon',
-    desc: 'Explosive shots, AOE damage',
-    color: '#ff4444',
-    type: 'main',
-    baseStats: {
-      damage: 25,
-      fireInterval: 600,
-      projectileCount: 1,
-      critChance: 0.1,
-      critMultiplier: 2,
-      piercing: false,
-      aoeRadius: 1.2,
-      spreadAngle: 0,
-    },
-  },
-  
-  laser_beam: {
-    id: 'laser_beam',
-    name: 'Laser Beam',
+  lightning_rod: {
+    id: 'lightning_rod',
+    name: 'Lightning Rod',
     desc: 'Continuous beam, auto-lock',
     color: '#ff00ff',
     type: 'main',
@@ -113,6 +59,67 @@ export const MAIN_WEAPONS = {
       lightning: true,
       lightningRange: 10,
       lightningTickInterval: 0.1,
+    },
+  },
+  
+  charge_cannon: {
+    id: 'charge_cannon',
+    name: 'Charge Cannon',
+    desc: 'Hold to charge, release for massive damage',
+    color: '#ff4444',
+    type: 'main',
+    baseStats: {
+      damage: 20,  // Base damage (scales with charge)
+      fireInterval: 0,  // No cooldown, charge-based
+      projectileCount: 1,
+      critChance: 0.15,
+      critMultiplier: 2.5,
+      piercing: false,
+      aoeRadius: 0,
+      spreadAngle: 0,
+      chargeShot: true,
+      chargeTimeMax: 5.0,  // Max charge time in seconds
+      chargeDamageMultiplier: 3.0,  // Max damage = base * 3.0
+    },
+  },
+  
+  plasma_carbine: {
+    id: 'plasma_carbine',
+    name: 'Plasma Carbine',
+    desc: 'Fast shooting, ramps up damage, slight spread',
+    color: '#88ff88',
+    type: 'main',
+    baseStats: {
+      damage: 6,
+      fireInterval: 100,  // Fast
+      projectileCount: 1,
+      critChance: 0.08,
+      critMultiplier: 2,
+      piercing: false,
+      aoeRadius: 0,
+      spreadAngle: 0.0262,  // 1.5 degrees
+      damageRampUp: true,  // Damage increases with consecutive hits
+      damageRampUpMax: 2.0,  // Max 2x damage after ramp-up
+    },
+  },
+  
+  seeker_burst: {
+    id: 'seeker_burst',
+    name: 'Seeker Burst',
+    desc: 'Fires 3 homing shots, lower DPS but reliable',
+    color: '#aa88ff',
+    type: 'main',
+    baseStats: {
+      damage: 12,
+      fireInterval: 450,  // Moderate
+      projectileCount: 3,
+      critChance: 0.05,
+      critMultiplier: 2,
+      piercing: false,
+      aoeRadius: 0,
+      spreadAngle: 0.1745,  // 10 degrees
+      homing: true,  // Shots track enemies
+      homingRange: 15,  // Tracking range
     },
   },
 };
@@ -202,13 +209,29 @@ export const UPGRADE_POOL = [
   { id: 'freeze', name: 'Freeze', desc: 'Greatly slows enemies', color: '#88ccff', type: 'universal' },
   { id: 'ricochet', name: 'Ricochet', desc: 'Shots bounce to nearby enemy', color: '#aaffaa', type: 'universal' },
   
-  // Weapon-specific upgrades
-  { id: 'shotgun_choke', name: 'Choke', desc: 'Shotgun: Tighter spread', color: '#ff8800', type: 'weapon_specific', weapon: 'shotgun' },
-  { id: 'shotgun_drum', name: 'Drum Mag', desc: 'Shotgun: +3 pellets', color: '#ff8800', type: 'weapon_specific', weapon: 'shotgun' },
-  { id: 'rifle_burst', name: 'Burst Fire', desc: 'Assault Rifle: 3-round burst', color: '#ffff00', type: 'weapon_specific', weapon: 'assault_rifle' },
-  { id: 'sniper_scope', name: 'Sniper Scope', desc: 'Sniper: +50% crit damage', color: '#00ff00', type: 'weapon_specific', weapon: 'sniper' },
-  { id: 'cannon_napalm', name: 'Napalm', desc: 'Cannon: Fire DoT on explosion', color: '#ff4444', type: 'weapon_specific', weapon: 'cannon' },
-  { id: 'laser_overcharge', name: 'Overcharge', desc: 'Laser Beam: +20% damage', color: '#ff00ff', type: 'weapon_specific', weapon: 'laser_beam' },
+  // Standard Blaster specific upgrades
+  { id: 'doubleshot', name: 'Doubleshot', desc: 'Standard Blaster: Fire 2 shots at once', color: '#00ffff', type: 'weapon_specific', weapon: 'standard_blaster' },
+  { id: 'triple_shot', name: 'Triple Shot', desc: 'Standard Blaster: Fire 3 shots at once', color: '#00ffff', type: 'weapon_specific', weapon: 'standard_blaster' },
+  
+  // Buckshot specific upgrades
+  { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot' },
+  { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot' },
+  { id: 'duck_hunt', name: 'Duck Hunt', desc: 'Buckshot: Critical hits stun', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot' },
+  
+  // Lightning Rod specific upgrades
+  { id: 'its_electric', name: 'It\'s Electric!', desc: 'Lightning Rod: Chains to +2 enemies', color: '#ff00ff', type: 'weapon_specific', weapon: 'lightning_rod' },
+  { id: 'tesla_coil', name: 'Tesla Coil', desc: 'Lightning Rod: +50% damage, +20% range', color: '#ff00ff', type: 'weapon_specific', weapon: 'lightning_rod' },
+  
+  // Charge Cannon specific upgrades
+  { id: 'quick_charge', name: 'Ain\'t Nobody Got Time For That', desc: 'Charge Cannon: 2x charge speed', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
+  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Adds fire DoT to charged shots', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
+  { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
+  
+  // Plasma Carbine specific upgrades
+  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: Faster ramp-up, higher max damage', color: '#88ff88', type: 'weapon_specific', weapon: 'plasma_carbine' },
+  
+  // Seeker Burst specific upgrades
+  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff', type: 'weapon_specific', weapon: 'seeker_burst' },
 ];
 
 // Special upgrades (after boss victories)

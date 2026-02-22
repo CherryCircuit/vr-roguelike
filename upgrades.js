@@ -10,15 +10,44 @@ export const UPGRADE_POOL = [
   { id: 'shock', name: 'Shock', desc: 'Electrocutes: slows + shock DoT', color: '#4488ff' },
   { id: 'fire', name: 'Fire', desc: 'Ignites: weakens + fire DoT', color: '#ff4400' },
   { id: 'big_boom', name: 'Big Boom', desc: 'Explodes on impact (AOE)', color: '#ff8800' },
-  { id: 'buckshot', name: 'Buckshot', desc: 'Multi-pellet spread shot', color: '#cccccc', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  
+  // Side-grade weapon types (change shot type)
+  { id: 'buckshot', name: 'Buckshot', desc: 'Multi-pellet spread shot', color: '#ff8800', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  { id: 'lightning', name: 'Lightning Rod', desc: 'Hold for auto-lock beam', color: '#ff00ff', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  { id: 'charge_shot', name: 'Charge Cannon', desc: 'Hold to charge, release for big beam', color: '#ff4444', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  { id: 'plasma_carbine', name: 'Plasma Carbine', desc: 'Fast fire, damage ramps up', color: '#88ff88', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  { id: 'seeker_burst', name: 'Seeker Burst', desc: 'Fires 3 homing shots', color: '#aa88ff', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  
+  // Universal upgrades
   { id: 'piercing', name: 'Piercing', desc: 'Shots pass through enemies', color: '#00ffaa' },
   { id: 'vampiric', name: 'Vampiric', desc: 'Heal half-heart every 5 kills', color: '#cc0044' },
   { id: 'critical', name: 'Critical', desc: '+15% chance for 2x damage', color: '#ffff00' },
-  { id: 'double_shot', name: 'Double Shot', desc: 'Fire an extra projectile', color: '#ff44ff' },
+  { id: 'double_shot', name: 'Doubleshot', desc: 'Fire an extra projectile', color: '#ff44ff' },
   { id: 'freeze', name: 'Freeze', desc: 'Greatly slows enemies', color: '#88ccff' },
   { id: 'ricochet', name: 'Ricochet', desc: 'Shots bounce to nearby enemy', color: '#aaffaa' },
-  { id: 'lightning', name: 'Lightning', desc: 'Hold for auto-lock beam', color: '#ffff44', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
-  { id: 'charge_shot', name: 'Charge Shot', desc: 'Hold to charge, release for big beam', color: '#ffffff', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  
+  // Standard Blaster specific
+  { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#00ffff' },
+  
+  // Buckshot specific
+  { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800' },
+  { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800' },
+  { id: 'duck_hunt', name: 'Duck Hunt', desc: 'Buckshot: Critical hits stun', color: '#ff8800' },
+  
+  // Lightning Rod specific
+  { id: 'its_electric', name: 'It\'s Electric!', desc: 'Lightning Rod: Chains to +2 enemies', color: '#ff00ff' },
+  { id: 'tesla_coil', name: 'Tesla Coil', desc: 'Lightning Rod: +50% damage, +20% range', color: '#ff00ff' },
+  
+  // Charge Cannon specific
+  { id: 'quick_charge', name: 'Ain\'t Nobody Got Time For That', desc: 'Charge Cannon: 2x charge speed', color: '#ff4444' },
+  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Adds fire DoT to charged shots', color: '#ff4444' },
+  { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444' },
+  
+  // Plasma Carbine specific
+  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: Faster ramp-up, higher max', color: '#88ff88' },
+  
+  // Seeker Burst specific
+  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff' },
 ];
 
 /** Special upgrades offered after boss victories (really valuable) */
@@ -89,6 +118,41 @@ export function getWeaponStats(upgrades) {
     spreadAngle = 0.0524; // 3 degrees (PI/180 * 3)
     damage *= 1.25;      // Higher damage per pellet
     fireInterval *= 3.0; // EVEN SLOWER fire rate for heavy shotgun feel
+    
+    // Buckshot-specific upgrades
+    if (u.focused_frenzy) {
+      spreadAngle *= 0.5;  // Tighter spread
+      fireInterval *= 0.7;  // Faster fire
+    }
+    if (u.buckshot_gentlemen) {
+      projectileCount += 4;  // +4 pellets
+    }
+  }
+
+  // Plasma Carbine: fast fire with damage ramp-up
+  if (u.plasma_carbine) {
+    damage = 6 + (u.scope || 0) * 10;  // Lower base damage
+    fireInterval = 100 / (1 + (u.barrel || 0) * 0.15);  // Fast fire
+    spreadAngle = 0.0262;  // 1.5 degrees
+    // Damage ramp-up is handled in main.js firing logic
+    if (u.hold_together) {
+      // Faster ramp-up and higher max damage
+      // This is a flag checked in main.js
+    }
+  }
+
+  // Seeker Burst: homing projectiles
+  if (u.seeker_burst) {
+    damage = 12 + (u.scope || 0) * 10;
+    fireInterval = 450 / (1 + (u.barrel || 0) * 0.15);
+    projectileCount = 3 + (u.gimme_more || 0) * 2;  // 3 base, +2 per upgrade
+    spreadAngle = 0.1745;  // 10 degrees
+    // Homing is handled in main.js projectile update
+  }
+
+  // Charge Cannon charge speed
+  if (u.charge_shot && u.quick_charge) {
+    // 2x charge speed is handled in main.js
   }
 
   // Vampiric / Life Steal: heal every N kills
@@ -118,9 +182,18 @@ export function getWeaponStats(upgrades) {
     effects,
     ricochetBounces: u.ricochet || 0,
     lightning: (u.lightning || 0) > 0,
-    lightningRange: 8 + (u.lightning || 0) * 2 + (u.chain_lightning || 0) * 4,
-    lightningDamage: 10 + (u.lightning || 0) * 5 + (u.chain_lightning || 0) * 5,
+    lightningRange: 8 + (u.lightning || 0) * 2 + (u.chain_lightning || 0) * 4 + (u.its_electric || 0) * 2 + (u.tesla_coil || 0) * 2,
+    lightningDamage: 10 + (u.lightning || 0) * 5 + (u.chain_lightning || 0) * 5 + (u.tesla_coil || 0) * 5,
     lightningTickInterval: (u.lightning || 0) > 0 ? Math.max(0.08, 0.2 / (1 + (u.barrel || 0) * 0.15)) : 0.2,
     chargeShot: (u.charge_shot || 0) > 0,
+    chargeSpeedMultiplier: u.quick_charge ? 2.0 : 1.0,
+    chargeDamageMultiplier: u.death_ray ? 6.0 : 3.0,  // 3x base, 6x with Death Ray
+    plasmaCarbine: (u.plasma_carbine || 0) > 0,
+    damageRampUp: (u.plasma_carbine || 0) > 0,
+    damageRampUpMax: u.hold_together ? 3.0 : 2.0,  // 2x base, 3x with Hold Together
+    seekerBurst: (u.seeker_burst || 0) > 0,
+    homing: (u.seeker_burst || 0) > 0,
+    homingRange: 15,
+    excessHeat: u.excess_heat || false,  // Adds fire DoT to charge shots
   };
 }
