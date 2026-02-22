@@ -15,7 +15,7 @@ import {
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound,
   startLightningSound, stopLightningSound,
-  playMusic, stopMusic, getMusicFrequencyData
+  playMusic, stopMusic, getMusicFrequencyData, playTransitionSound
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -25,7 +25,7 @@ import {
   updateBossProjectiles, getBossProjectiles
 } from './enemies.js';
 import {
-  initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
+  initHUD, showTitle, hideTitle, hideTitleWithFade, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS,
@@ -34,7 +34,7 @@ import {
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
-  showDebugJumpScreen, getDebugJumpHit
+  showDebugJumpScreen, getDebugJumpHit, areTitleButtonsEnabled
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -726,8 +726,18 @@ function handleTitleTrigger(controller) {
     });
     return;
   }
+
+  // Check if buttons are enabled (not during fade)
+  if (!areTitleButtonsEnabled()) {
+    return;
+  }
+
   playMenuClick();
-  startGame();
+  playTransitionSound();
+  game.state = State.TITLE_TRANSITION;
+  hideTitleWithFade(() => {
+    startGame();
+  });
 }
 
 function handleGameOverTrigger(controller) {
@@ -1840,6 +1850,11 @@ function render(timestamp) {
       window.debugJumpToLevel = null;
       debugJumpToLevel(level);
     }
+  }
+
+  // ── Title transition (fade out) ──
+  else if (st === State.TITLE_TRANSITION) {
+    updateTitle(now);
   }
 
   // ── Playing ──

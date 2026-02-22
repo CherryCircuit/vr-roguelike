@@ -49,6 +49,12 @@ let titleBlinkSprite = null;
 // Title scoreboard button
 let titleScoreboardBtn = null;
 
+// Transition fade state
+let titleFadeActive = false;
+let titleFadeStartTime = 0;
+let titleFadeDuration = 3000; // 3 seconds
+let titleButtonsEnabled = true;
+
 // Title diagnostics button
 let titleDiagBtn = null;
 
@@ -434,6 +440,13 @@ function createTitleScreen() {
 
 export function showTitle() {
   titleGroup.visible = true;
+  titleFadeActive = false;
+  titleButtonsEnabled = true;
+  titleGroup.traverse(child => {
+    if (child.material) {
+      child.material.opacity = 1;
+    }
+  });
   hudGroup.visible = false;
 }
 
@@ -441,10 +454,59 @@ export function hideTitle() {
   titleGroup.visible = false;
 }
 
+export function hideTitleWithFade(onComplete) {
+  if (titleFadeActive) return; // Already fading
+
+  titleFadeActive = true;
+  titleButtonsEnabled = false;
+  titleFadeStartTime = performance.now();
+
+  // Store completion callback
+  titleFadeActive = true;
+
+  // Return a promise that resolves when fade completes
+  return new Promise(resolve => {
+    titleFadeCompleteCallback = resolve;
+  });
+}
+
+let titleFadeCompleteCallback = null;
+
 export function updateTitle(now) {
-  if (titleBlinkSprite) {
+  // Update fade animation
+  if (titleFadeActive) {
+    const elapsed = now - titleFadeStartTime;
+    const progress = Math.min(elapsed / titleFadeDuration, 1);
+
+    // Fade out all materials in titleGroup
+    titleGroup.traverse(child => {
+      if (child.material) {
+        child.material.opacity = 1 - progress;
+      }
+    });
+
+    // Fade complete
+    if (progress >= 1) {
+      titleFadeActive = false;
+      titleGroup.visible = false;
+
+      // Call completion callback if set
+      if (titleFadeCompleteCallback) {
+        const callback = titleFadeCompleteCallback;
+        titleFadeCompleteCallback = null;
+        callback();
+      }
+    }
+  }
+
+  // Only animate blink if not fading
+  if (titleBlinkSprite && !titleFadeActive) {
     titleBlinkSprite.material.opacity = 0.5 + Math.sin(now * 0.004) * 0.5;
   }
+}
+
+export function areTitleButtonsEnabled() {
+  return titleButtonsEnabled;
 }
 
 // ── VR HUD (hearts, kill counter, level, score) ────────────
