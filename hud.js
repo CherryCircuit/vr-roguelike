@@ -76,78 +76,135 @@ let countrySelectScrollOffset = 0;
 let continentTabs = [];
 let countryItems = [];
 
-// ── Canvas text utility ────────────────────────────────────
-function makeTextTexture(text, opts = {}) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  const fontSize = opts.fontSize || 64;
-  const font = `bold ${fontSize}px Arial, sans-serif`;
-  const maxWidth = opts.maxWidth || null;
+// ── TEXTURE CACHING SYSTEM ────────────────────────────────────────────
 
-  ctx.font = font;
+// Cache for HUD element textures to avoid recreation every frame
+const hudTextureCache = {};
 
-  // Word wrapping if maxWidth is specified
-  let lines = [text];
-  if (maxWidth) {
-    lines = [];
-    const words = text.split(' ');
-    let currentLine = '';
-
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const metrics = ctx.measureText(testLine);
-
-      if (metrics.width > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-    if (currentLine) lines.push(currentLine);
+/**
+ * Create or get a cached texture for the given text and color.
+ * Returns the texture and aspect ratio.
+ */
+function getCachedTextTexture(text, fontSize, color, shadow, glow, glowColor, maxWidth) {
+  const cacheKey = `${text}:${fontSize}:${color}:${shadow}:${glow}:${glowColor}:${maxWidth}`;
+  
+  if (hudTextureCache[cacheKey]) {
+    return hudTextureCache[cacheKey];
   }
 
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
   // Measure text to size canvas
-  const textWidth = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  const textWidth = maxWidth || Math.ceil(ctx.measureText(text).width);
   const lineHeight = fontSize * 1.3;
-  const textHeight = lines.length * lineHeight;
+  const textHeight = lineHeight; // Single line
 
   canvas.width = Math.ceil(textWidth) + 40;
-  canvas.height = Math.ceil(textHeight);
+  canvas.height = Math.ceil(textHeight) + 40;
 
   // Re-set after resize
-  ctx.font = font;
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Clear canvas with transparency (prevent black background)
+  // Clear canvas with transparency
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Optional glow
-  if (opts.glow) {
-    ctx.shadowColor = opts.glowColor || opts.color || '#00ffff';
-    ctx.shadowBlur = opts.glowSize || 15;
+  if (glow) {
+    ctx.shadowColor = glowColor || color;
+    ctx.shadowBlur = 15;
   }
 
   // Drop shadow
-  if (opts.shadow) {
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    lines.forEach((line, i) => {
-      const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
-      ctx.fillText(line, canvas.width / 2 + 2, y + 2);
-    });
+  if (shadow) {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillText(text, canvas.width / 2 + 2, canvas.height / 2 + 2);
   }
 
   // Main text
-  ctx.fillStyle = opts.color || '#00ffff';
-  lines.forEach((line, i) => {
-    const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
-    ctx.fillText(line, canvas.width / 2, y);
-  });
+  ctx.fillStyle = color;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
-  return { texture, aspect: canvas.width / canvas.height };
+
+  // Cache the texture
+  hudTextureCache[cacheKey] = { texture, aspect: canvas.width / canvas.height };
+
+  return hudTextureCache[cacheKey];
+}
+
+/**
+ * Create or get a cached texture for the hearts display.
+ */
+function getCachedHeartsTexture(health, maxHealth, scaleMultiplier) {
+  const cacheKey = `hearts:${health}:${maxHealth}:${scaleMultiplier}`;
+  
+  if (hudTextureCache[cacheKey]) {
+    return hudTextureCache[cacheKey];
+  }
+
+  const heartCount = maxHealth / 2;
+  const pixSize = 8;
+  const heartW = 7 * pixSize;
+  const heartH = 6 * pixSize;
+  const gap = 6;
+  const canvasWidth = heartCount * (heartW + gap) + gap;
+  const canvasHeight = heartH + 10;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  const ctx = canvas.getContext('2d');
+
+  for (let i = 0; i < heartCount; i++) {
+    const hpForThisHeart = health - i * 2;
+    let state;
+    if (hpForThisHeart >= 2) state = 'full';
+    else if (hpForThisHeart === 1) state = 'half';
+    else state = 'empty';
+
+    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  const aspect = canvasWidth / canvasHeight;
+  hudTextureCache[cacheKey] = { texture, aspect };
+
+  return hudTextureCache[cacheKey];
+}
+
+/**
+ * Clear the texture cache periodically to prevent memory buildup.
+ * Called once per second or when needed.
+ */
+function clearHudCache() {
+  Object.keys(hudTextureCache).forEach(key => {
+    if (hudTextureCache[key]) {
+      if (hudTextureCache[key].texture) {
+        hudTextureCache[key].texture.dispose();
+      }
+    }
+    delete hudTextureCache[key];
+  });
+}
+
+// ── Canvas text utility ────────────────────────────────────
+function makeTextTexture(text, opts = {}) {
+  return getCachedTextTexture(
+    text,
+    opts.fontSize || 64,
+    opts.color || '#00ffff',
+    opts.shadow,
+    opts.glow,
+    opts.glowColor,
+    opts.maxWidth
+  );
 }
 
 function makeSprite(text, opts = {}) {
@@ -200,32 +257,6 @@ function drawHeart(ctx, x, y, pixSize, state) {
       ctx.fillRect(x + px * pixSize, y + py * pixSize, pixSize, pixSize);
     });
   });
-}
-
-function makeHeartsTexture(health, maxHealth) {
-  const heartCount = maxHealth / 2;
-  const pixSize = 8;
-  const heartW = 7 * pixSize;
-  const heartH = 6 * pixSize;
-  const gap = 6;
-  const canvas = document.createElement('canvas');
-  canvas.width = heartCount * (heartW + gap) + gap;
-  canvas.height = heartH + 10;
-  const ctx = canvas.getContext('2d');
-
-  for (let i = 0; i < heartCount; i++) {
-    const hpForThisHeart = health - i * 2;
-    let state;
-    if (hpForThisHeart >= 2) state = 'full';
-    else if (hpForThisHeart === 1) state = 'half';
-    else state = 'empty';
-
-    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  return { texture, aspect: canvas.width / canvas.height };
 }
 
 // ── Public API ─────────────────────────────────────────────
@@ -293,6 +324,9 @@ export function initHUD(camera, scene) {
     bossHealthBars.push(bar);
   }
   camera.add(bossHealthGroup);
+
+  // ── Start cache clear timer (every 60 seconds) ──
+  setInterval(clearHudCache, 60000);
 }
 
 export function showBossHealthBar(hp, maxHp, phases = 3) {
@@ -495,16 +529,18 @@ export function hideHUD() {
 }
 
 function updateSpriteText(sprite, text, opts = {}) {
-  // Dispose old texture
+  // Use cached texture
+  const { texture, aspect } = getCachedTextTexture(
+    text,
+    opts.fontSize || 40,
+    opts.color || '#ffffff',
+    opts.shadow,
+    opts.glow,
+    opts.glowColor,
+    opts.maxWidth
+  );
+  
   if (sprite.material.map) sprite.material.map.dispose();
-
-  const { texture, aspect } = makeTextTexture(text, {
-    fontSize: opts.fontSize || 40,
-    color: opts.color || '#ffffff',
-    shadow: true,
-    glow: opts.glow,
-    glowColor: opts.glowColor,
-  });
   sprite.material.map = texture;
   sprite.material.needsUpdate = true;
 
@@ -517,20 +553,25 @@ function updateSpriteText(sprite, text, opts = {}) {
 export function updateHUD(gameState) {
   if (!hudGroup.visible) return;
 
-  // Hearts - proper aspect ratio with correct scale
-  const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth);
+  // Hearts - use cached texture
+  const cfg = gameState._levelConfig;
+  const killTarget = cfg ? cfg.killTarget : 0;
+  
+  // Use scale based on level to prevent overwhelming UI at high levels
+  const level = gameState.level;
+  const scaleMultiplier = Math.min(3.0, 1.0 + level * 0.08);  // Cap at 3x
+  
+  const { texture: ht, aspect: ha } = getCachedHeartsTexture(gameState.health, gameState.maxHealth, scaleMultiplier);
   if (heartsSprite.material.map) heartsSprite.material.map.dispose();
   heartsSprite.material.map = ht;
   heartsSprite.material.needsUpdate = true;
+  
   // Update geometry to match aspect ratio (200% larger: height 0.48)
   heartsSprite.geometry.dispose();
   heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
 
   // Kill counter - 200% larger
-  const cfg = gameState._levelConfig;
-  if (cfg) {
-    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.30 });
-  }
+  updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.30 });
 
   // Level - 200% larger
   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.30 });
@@ -770,9 +811,14 @@ export function updateUpgradeCards(now, cooldownRemaining) {
       cd.visible = true;
       // Update the cooldown sprite text
       if (cd.material && cd.material.map) cd.material.map.dispose();
-      const { texture, aspect } = makeTextTexture(
+      const { texture, aspect } = getCachedTextTexture(
         `WAIT ${Math.ceil(cooldownRemaining)}...`,
-        { fontSize: 40, color: '#ffff00' }
+        40,
+        '#ffff00',
+        false,
+        false,
+        null,
+        null
       );
       cd.material.map = texture;
       cd.material.needsUpdate = true;
@@ -1138,12 +1184,7 @@ export function updateFPS(now, opts = {}) {
     const ftColor = avgFrameMs > 33 ? '#ff0000' : avgFrameMs > 20 ? '#ffff00' : '#00ff00';
     const color = perfMonitor ? ftColor : fpsColor;
 
-    const { texture, aspect } = makeTextTexture(text, {
-      fontSize: perfMonitor ? 24 : 32,
-      color,
-      shadow: true,
-      maxWidth: perfMonitor ? 300 : null,
-    });
+    const { texture, aspect } = getCachedTextTexture(text, perfMonitor ? 24 : 32, color, true, false, null, perfMonitor ? 300 : null);
     if (fpsSprite.material.map) fpsSprite.material.map.dispose();
     fpsSprite.material.map = texture;
     fpsSprite.material.needsUpdate = true;
@@ -1793,6 +1834,7 @@ export function updateScoreboardScroll(delta) {
 
 export function showCountrySelect(countries, continents, initialContinent) {
   hideAll();
+
   while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
   continentTabs = [];
   countryItems = [];

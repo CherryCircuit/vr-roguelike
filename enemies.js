@@ -1245,7 +1245,8 @@ export function destroyEnemy(index) {
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
 
-  for (let i = 0; i < 5; i++) {
+  // PERFORMANCE: Reduced from 5 to 3 particles per death
+    for (let i = 0; i < 3; i++) {
     const sprite = getExplosionSprite();
     if (!sprite) break;
 
@@ -1532,7 +1533,8 @@ export function destroyEnemy(index) {
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
 
-  for (let i = 0; i < 5; i++) {
+  // PERFORMANCE: Reduced from 5 to 3 particles per death
+    for (let i = 0; i < 3; i++) {
     const sprite = getExplosionSprite();
     if (!sprite) break;
 
