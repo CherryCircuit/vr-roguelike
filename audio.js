@@ -438,6 +438,81 @@ export function playBossSpawn() {
   });
 }
 
+// ── Boss death - dramatic explosion ───────────────────────────────
+export function playBossDeathSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Layer 1: Deep rumble
+  const rumble = ctx.createOscillator();
+  const rumbleGain = ctx.createGain();
+  rumble.type = 'sine';
+  rumble.frequency.setValueAtTime(60, t);
+  rumble.frequency.exponentialRampToValueAtTime(20, t + 2.0);
+  rumbleGain.gain.setValueAtTime(0.3, t);
+  rumbleGain.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
+  rumble.connect(rumbleGain);
+  rumbleGain.connect(ctx.destination);
+  rumble.start(t);
+  rumble.stop(t + 2.0);
+
+  // Layer 2: Explosion noise burst
+  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.8, ctx.sampleRate);
+  const noiseData = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < noiseData.length; i++) {
+    noiseData[i] = Math.random() * 2 - 1;
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = noiseBuffer;
+  noise.playbackRate.value = 0.5;
+
+  const noiseFilter = ctx.createBiquadFilter();
+  noiseFilter.type = 'lowpass';
+  noiseFilter.frequency.setValueAtTime(2000, t);
+  noiseFilter.frequency.exponentialRampToValueAtTime(100, t + 1.5);
+
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.25, t);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+
+  noise.connect(noiseFilter);
+  noiseFilter.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 1.5);
+
+  // Layer 3: Rising then falling sweep
+  const sweep = ctx.createOscillator();
+  const sweepGain = ctx.createGain();
+  sweep.type = 'sawtooth';
+  sweep.frequency.setValueAtTime(100, t);
+  sweep.frequency.exponentialRampToValueAtTime(400, t + 0.2);
+  sweep.frequency.exponentialRampToValueAtTime(50, t + 1.5);
+  sweepGain.gain.setValueAtTime(0.15, t);
+  sweepGain.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+  sweep.connect(sweepGain);
+  sweepGain.connect(ctx.destination);
+  sweep.start(t);
+  sweep.stop(t + 1.5);
+
+  // Layer 4: High-pitched shimmer
+  for (let i = 0; i < 3; i++) {
+    const shimmer = ctx.createOscillator();
+    const shimmerGain = ctx.createGain();
+    shimmer.type = 'sine';
+    const baseFreq = 800 + i * 200;
+    shimmer.frequency.setValueAtTime(baseFreq, t + i * 0.1);
+    shimmer.frequency.exponentialRampToValueAtTime(baseFreq * 0.3, t + 1.0 + i * 0.1);
+    shimmerGain.gain.setValueAtTime(0, t);
+    shimmerGain.gain.linearRampToValueAtTime(0.08, t + 0.1 + i * 0.1);
+    shimmerGain.gain.exponentialRampToValueAtTime(0.001, t + 1.0 + i * 0.1);
+    shimmer.connect(shimmerGain);
+    shimmerGain.connect(ctx.destination);
+    shimmer.start(t + i * 0.1);
+    shimmer.stop(t + 1.0 + i * 0.1);
+  }
+}
+
 // ── Menu / UI Interaction ──────────────────────────────────
 export function playMenuClick() {
   const ctx = getAudioContext();
