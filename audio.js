@@ -492,44 +492,63 @@ export function playErrorSound() {
 }
 
 // ── Level transition sound ──────────────────────────────────
+// Based on sfxr parameters from issue #17:
+// wave_type: 2 (sawtooth), p_env_attack: 0.024, p_env_sustain: 0.134,
+// p_env_punch: 0.072, p_env_decay: 0.237, p_base_freq: 0.835,
+// p_arp_mod: 0.228, p_arp_speed: 0.653, p_hpf_freq: 0.997, sound_vol: 0.25
+//
+// Note: This sound is used for the TITLE → PLAYING transition (main menu to level 1).
+// Subsequent levels use LEVEL_INTRO sequence (issue #18) which doesn't require this transition.
 export function playTransitionSound() {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
-  // Main oscillator with arpeggio-like sweep
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
 
+  // Wave type: 2 = sawtooth
   osc.type = 'sawtooth';
 
-  // Arpeggio-style frequency sweep: rising with some modulation
-  const baseFreq = 400;
+  // Base frequency: p_base_freq 0.835 maps to ~835Hz
+  const baseFreq = 835;
   osc.frequency.setValueAtTime(baseFreq, t);
-  osc.frequency.setValueAtTime(baseFreq * 1.2, t + 0.05);
-  osc.frequency.setValueAtTime(baseFreq * 1.4, t + 0.1);
-  osc.frequency.setValueAtTime(baseFreq * 1.3, t + 0.15);
-  osc.frequency.setValueAtTime(baseFreq * 1.5, t + 0.2);
-  osc.frequency.exponentialRampToValueAtTime(baseFreq * 2, t + 0.35);
 
-  // Envelope: quick attack, sustain, decay
+  // Envelope: ADSR with punch (from sfxr parameters)
+  const attack = 0.024;
+  const sustain = 0.134;
+  const punch = 0.072;
+  const decay = 0.237;
+  const totalDuration = attack + sustain + punch + decay;
+  const volume = 0.25;
+
+  // Attack (0 to full)
   gain.gain.setValueAtTime(0, t);
-  gain.gain.linearRampToValueAtTime(0.25, t + 0.024);  // Attack
-  gain.gain.linearRampToValueAtTime(0.2, t + 0.134);  // Sustain (minus attack)
-  gain.gain.linearRampToValueAtTime(0.15, t + 0.18);  // Punch
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.35);  // Decay
+  gain.gain.linearRampToValueAtTime(volume, t + attack);
 
-  // High-pass filter for bright character
+  // Sustain with punch (hold, then quick dip and back)
+  gain.gain.setValueAtTime(volume, t + attack);
+  gain.gain.linearRampToValueAtTime(volume * 0.7, t + attack + punch / 2); // Dip
+  gain.gain.linearRampToValueAtTime(volume, t + attack + punch); // Back up
+
+  // Hold sustain
+  gain.gain.setValueAtTime(volume, t + attack + punch);
+
+  // Decay (fade to silence)
+  gain.gain.linearRampToValueAtTime(volume, t + attack + punch + sustain);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + totalDuration);
+
+  // High-pass filter: p_hpf_freq 0.997 ≈ 19940Hz (basically full range)
   const filter = ctx.createBiquadFilter();
   filter.type = 'highpass';
-  filter.frequency.setValueAtTime(800, t);
-  filter.Q.setValueAtTime(2, t);
+  filter.frequency.setValueAtTime(19940, t);
+  filter.Q.setValueAtTime(0.5, t);
 
   osc.connect(filter);
   filter.connect(gain);
   gain.connect(ctx.destination);
 
   osc.start(t);
-  osc.stop(t + 0.4);
+  osc.stop(t + totalDuration);
 }
 
 // ── Buckshot fire (heavy mechanical thud) ──────────────────
