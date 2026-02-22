@@ -15,8 +15,7 @@ export const State = {
   COUNTRY_SELECT: 'country_select',
   REGIONAL_SCORES: 'regional_scores',
   READY_SCREEN: 'ready_screen',
-  LEVEL_INTRO: 'level_intro',
-  ALT_TUTORIAL: 'alt_tutorial',
+  DEBUG_MENU: 'debug_menu',
 };
 
 // ── Enemy types available per level ────────────────────────
@@ -36,10 +35,10 @@ export function getBossTier(level) {
 
 // Pool of bosses per tier (randomly picked for that level)
 const BOSS_POOLS = {
-  1: ['chrono_wraith'], // Tier 1 (Level 5)
-  2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'], // Tier 2 (Level 10) - harder bosses
-  3: ['chrono_wraith'], // Tier 3 (Level 15)
-  4: ['chrono_wraith'], // Tier 4 (Level 20)
+  1: ['chrono_wraith'],
+  2: ['chrono_wraith'],
+  3: ['chrono_wraith'],
+  4: ['chrono_wraith'],
 };
 
 export function getRandomBossIdForLevel(level) {
@@ -90,7 +89,6 @@ export const game = {
   altWeapon: { left: null, right: null },  // ALT weapon per hand (unlocked via upgrades)
   altCooldowns: { left: 0, right: 0 },  // ALT weapon cooldowns (ms)
   upgrades: { left: {}, right: {} },  // Upgrades per hand
-  altFireTutorialSeen: false,  // Track if player has seen alt fire tutorial
   mainWeaponLocked: { left: false, right: false },  // Whether MAIN weapon is locked (chosen)
   
   stateTimer: 0,
@@ -108,10 +106,22 @@ export const game = {
   finalScore: 0,
   finalLevel: 0,
   accuracyStreak: 0,
+  
+  // DEBUG: Performance monitoring settings
+  debugPerfMonitor: false,  // Extended FPS stats (frame time, memory)
+  debugShowFPS: true,  // Always show FPS counter in VR
+  debugShowStats: false,  // Live game stats overlay (entity counts, state)
+  debugShowUpgrades: false,  // Show upgrade counts per hand
 };
 
 // ── Helpers ────────────────────────────────────────────────
 export function resetGame() {
+  // Preserve debug settings across resets
+  const preservedDebug = {
+    debugPerfMonitor: game.debugPerfMonitor,
+    debugShowFPS: game.debugShowFPS,
+  };
+  
   Object.assign(game, {
     state: State.TITLE,
     level: 1,
@@ -144,7 +154,108 @@ export function resetGame() {
     // Reset level config to prevent stale data
     _levelConfig: null,
     _combo: 1,
+    
+    // Restore debug settings
+    ...preservedDebug,
   });
+}
+
+// ── Debug Settings Helpers ──────────────────────────────────
+
+/**
+ * Load debug settings from localStorage
+ */
+export function loadDebugSettings() {
+  try {
+    const stored = localStorage.getItem('spaceomicide_debug');
+    if (stored) {
+      const settings = JSON.parse(stored);
+      game.debugPerfMonitor = settings.debugPerfMonitor ?? false;
+      game.debugShowFPS = settings.debugShowFPS ?? true;
+      game.debugShowStats = settings.debugShowStats ?? false;
+      game.debugShowUpgrades = settings.debugShowUpgrades ?? false;
+      console.log('[debug] Loaded settings:', settings);
+    }
+  } catch (e) {
+    console.warn('[debug] Failed to load settings:', e);
+  }
+}
+
+/**
+ * Save debug settings to localStorage
+ */
+export function saveDebugSettings() {
+  try {
+    const settings = {
+      debugPerfMonitor: game.debugPerfMonitor,
+      debugShowFPS: game.debugShowFPS,
+      debugShowStats: game.debugShowStats,
+      debugShowUpgrades: game.debugShowUpgrades,
+    };
+    localStorage.setItem('spaceomicide_debug', JSON.stringify(settings));
+    console.log('[debug] Saved settings:', settings);
+  } catch (e) {
+    console.warn('[debug] Failed to save settings:', e);
+  }
+}
+
+/**
+ * Toggle performance monitor mode
+ */
+export function togglePerfMonitor() {
+  game.debugPerfMonitor = !game.debugPerfMonitor;
+  saveDebugSettings();
+  return game.debugPerfMonitor;
+}
+
+/**
+ * Toggle FPS display
+ */
+export function toggleFPSDisplay() {
+  game.debugShowFPS = !game.debugShowFPS;
+  saveDebugSettings();
+  return game.debugShowFPS;
+}
+
+/**
+ * Toggle live stats display
+ */
+export function toggleStatsDisplay() {
+  game.debugShowStats = !game.debugShowStats;
+  saveDebugSettings();
+  return game.debugShowStats;
+}
+
+/**
+ * Toggle upgrades display
+ */
+export function toggleUpgradesDisplay() {
+  game.debugShowUpgrades = !game.debugShowUpgrades;
+  saveDebugSettings();
+  return game.debugShowUpgrades;
+}
+
+/**
+ * Get debug stats snapshot for display
+ */
+export function getDebugStats() {
+  const cfg = getLevelConfig();
+  return {
+    state: game.state,
+    level: game.level,
+    health: `${game.health}/${game.maxHealth}`,
+    score: game.score,
+    kills: game.kills,
+    totalKills: game.totalKills,
+    killTarget: cfg ? cfg.killTarget : 0,
+    combo: getComboMultiplier(),
+    streak: game.accuracyStreak,
+    mainWeapon: game.mainWeapon,
+    altWeapon: game.altWeapon,
+    isBoss: cfg ? cfg.isBoss : false,
+    spawnTimer: game.spawnTimer.toFixed(2),
+    stateTimer: game.stateTimer.toFixed(2),
+  };
 }
 
 export function getLevelConfig() {
