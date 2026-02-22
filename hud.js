@@ -358,7 +358,7 @@ function createTitleScreen() {
   // Scoreboard button
   const btnGroup = new THREE.Group();
   btnGroup.position.set(0, -0.6, 0);
-  const btnGeo = new THREE.PlaneGeometry(1.2, 0.3);
+  const btnGeo = new THREE.PlaneGeometry(1.35, 0.3);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -371,11 +371,11 @@ function createTitleScreen() {
   const btnBorderGeo = new THREE.EdgesGeometry(btnGeo);
   btnGroup.add(new THREE.LineSegments(btnBorderGeo, new THREE.LineBasicMaterial({ color: 0xffff00 })));
   const btnText = makeSprite('SCOREBOARD', {
-    fontSize: 36,
+    fontSize: 32,
     color: '#ffff00',
     glow: true,
     glowColor: '#ffff00',
-    scale: 0.20,
+    scale: 0.16,
   });
   btnText.position.set(0, 0, 0.01);
   btnGroup.add(btnText);
@@ -385,7 +385,7 @@ function createTitleScreen() {
   // Diagnostics button
   const diagBtnGroup = new THREE.Group();
   diagBtnGroup.position.set(1.5, -0.6, 0);
-  const diagBtnGeo = new THREE.PlaneGeometry(1.2, 0.3);
+  const diagBtnGeo = new THREE.PlaneGeometry(1.35, 0.3);
   const diagBtnMat = new THREE.MeshBasicMaterial({
     color: 0x001133,
     transparent: true,
@@ -398,11 +398,11 @@ function createTitleScreen() {
   const diagBtnBorderGeo = new THREE.EdgesGeometry(diagBtnGeo);
   diagBtnGroup.add(new THREE.LineSegments(diagBtnBorderGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
   const diagBtnText = makeSprite('DIAGNOSTICS', {
-    fontSize: 36,
+    fontSize: 32,
     color: '#00ff88',
     glow: true,
     glowColor: '#00ff88',
-    scale: 0.20,
+    scale: 0.16,
   });
   diagBtnText.position.set(0, 0, 0.01);
   diagBtnGroup.add(diagBtnText);
