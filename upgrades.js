@@ -26,6 +26,14 @@ export const UPGRADE_POOL = [
   { id: 'freeze', name: 'Freeze', desc: 'Greatly slows enemies', color: '#88ccff' },
   { id: 'ricochet', name: 'Ricochet', desc: 'Shots bounce to nearby enemy', color: '#aaffaa' },
   
+  // New universal upgrades (issue #36)
+  { id: 'execute', name: 'Execute', desc: '+40% damage to enemies below 25% health', color: '#ff0044' },
+  { id: 'magnetic', name: 'Magnetic', desc: 'Shots tag enemies, tagged enemies pull together', color: '#4488ff' },
+  { id: 'reflex', name: 'Reflex', desc: '+100% fire rate for 2s after taking damage (10s cooldown)', color: '#ffaa00' },
+  { id: 'hollow_point', name: 'Hollow-Point', desc: '+15% damage', color: '#ff8888' },
+  { id: 'nova_tip', name: 'Nova Tip', desc: 'Every 12th shot detonates AoE (60 damage)', color: '#ff44ff' },
+  { id: 'siphon', name: 'Siphon', desc: 'Every 15 kills reduces ALT cooldown by 25%', color: '#aa88ff' },
+  
   // Standard Blaster specific
   { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#00ffff' },
   
@@ -160,6 +168,11 @@ export function getWeaponStats(upgrades) {
   const vampiricInterval = vampiricStacks > 0 ? Math.max(2, (u.life_steal ? 3 : 6) - vampiricStacks) : 0;
   if (u.overcharge) damage *= 1.2;
 
+  // Hollow-Point: +15% damage (issue #36)
+  if (u.hollow_point) {
+    damage *= 1.15;
+  }
+
   // Collect status effects to apply on hit
   const effects = [];
   if (u.fire) effects.push({ type: 'fire', stacks: u.fire });
@@ -195,5 +208,20 @@ export function getWeaponStats(upgrades) {
     homing: (u.seeker_burst || 0) > 0,
     homingRange: 15,
     excessHeat: u.excess_heat || false,  // Adds fire DoT to charge shots
+    
+    // New universal upgrades (issue #36)
+    execute: (u.execute || 0) > 0,  // +40% damage to enemies below 25% health
+    executeDamageMultiplier: 1.4,  // 40% more damage
+    magnetic: (u.magnetic || 0) > 0,  // Shots tag enemies, tagged enemies pull together
+    reflex: (u.reflex || 0) > 0,  // +100% fire rate for 2s after taking damage
+    reflexFireRateMultiplier: 0.5,  // Half fire interval (2x speed)
+    reflexDuration: 2000,  // 2 seconds in ms
+    reflexCooldown: 10000,  // 10 seconds in ms
+    novaTip: (u.nova_tip || 0) > 0,  // Every 12th shot detonates AoE
+    novaTipInterval: 12,  // Every 12th shot
+    novaTipDamage: 60,  // 60 damage AoE
+    siphon: (u.siphon || 0) > 0,  // Every 15 kills reduces ALT cooldown by 25%
+    siphonKillInterval: 15,  // Every 15 kills
+    siphonCooldownReduction: 0.25,  // 25% reduction
   };
 }
