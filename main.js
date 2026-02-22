@@ -62,6 +62,13 @@ const projectiles = [];
 let lastTime = 0;
 let frameCount = 0;  // For staggering updates
 
+// PERFORMANCE: Hard cap on active projectiles to prevent accumulation
+const MAX_PROJECTILES = 50;
+
+// PERFORMANCE: Projectile pool for reuse (avoid creating geometry per shot)
+const projectilePool = [];
+const PROJECTILE_POOL_SIZE = 60;
+
 // Weapon firing cooldowns (per controller)
 const weaponCooldowns = [0, 0];
 
@@ -172,6 +179,9 @@ function init() {
   // Init subsystems
   initEnemies(scene);
   initHUD(camera, scene);
+
+  // PERFORMANCE: Initialize projectile pool
+  initProjectilePool();
 
   // Start at title
   resetGame();
@@ -954,10 +964,27 @@ function completeLevel() {
   console.log(`[game] Level ${game.level} complete`);
   game.state = State.LEVEL_COMPLETE;
   clearAllEnemies();
+
+  // PERFORMANCE: Clear all projectiles on level complete
+  clearAllProjectiles();
+
   stopLightningSound();
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
   game.stateTimer = 2.0; // cooldown before upgrade screen
   showLevelComplete(game.level, camera.position);
+}
+
+// PERFORMANCE: Clear all active projectiles and return them to pool
+function clearAllProjectiles() {
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const proj = projectiles[i];
+    if (proj.userData.isPooled) {
+      returnProjectileToPool(proj);
+    } else {
+      scene.remove(proj);
+    }
+  }
+  projectiles.length = 0;
 }
 
 function showUpgradeScreen() {
@@ -1064,6 +1091,10 @@ function endGame(victory) {
   game.finalLevel = game.level;
   clearAllEnemies();
   clearBoss();
+
+  // PERFORMANCE: Clear all projectiles on game end
+  clearAllProjectiles();
+
   hideHUD();
   hideBossHealthBar();
   gameOverCooldown = 2.0;  // 2 second cooldown before restart allowed
@@ -1082,6 +1113,87 @@ function endGame(victory) {
 // ============================================================
 //  SHOOTING & COMBAT
 // ============================================================
+
+// PERFORMANCE: Initialize projectile pool for reuse
+function initProjectilePool() {
+  // Pre-create pooled projectile meshes (both types: laser and buckshot)
+  const colors = [NEON_CYAN, NEON_PINK];
+
+  for (let i = 0; i < PROJECTILE_POOL_SIZE; i++) {
+    const color = colors[i % 2];
+
+    // Create laser bolt (most common)
+    const group = new THREE.Group();
+    const boltLength = 1.0;
+    const boltGeo = new THREE.CylinderGeometry(0.015, 0.015, boltLength, 6);
+    const bolt = new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ color }));
+    bolt.rotation.x = Math.PI / 2;
+    bolt.position.z = -boltLength / 2;
+    group.add(bolt);
+
+    // Glow cylinder
+    const glowGeo = new THREE.CylinderGeometry(0.035, 0.035, boltLength, 6);
+    const glowBolt = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
+    glowBolt.rotation.x = Math.PI / 2;
+    glowBolt.position.z = -boltLength / 2;
+    group.add(glowBolt);
+
+    group.visible = false;
+    group.userData.isPooled = true;
+    group.userData.poolType = 'laser';
+    scene.add(group);
+    projectilePool.push(group);
+  }
+
+  // Add some buckshot pellets to pool
+  for (let i = 0; i < 20; i++) {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xdddddd })
+    );
+    mesh.visible = false;
+    mesh.userData.isPooled = true;
+    mesh.userData.poolType = 'buckshot';
+    scene.add(mesh);
+    projectilePool.push(mesh);
+  }
+
+  console.log(`[performance] Projectile pool initialized: ${projectilePool.length} objects`);
+}
+
+// PERFORMANCE: Get a projectile from pool or return null if exhausted
+function getPooledProjectile(isBuckshot, color) {
+  const poolType = isBuckshot ? 'buckshot' : 'laser';
+
+  // Find inactive projectile of correct type
+  for (const proj of projectilePool) {
+    if (!proj.visible && proj.userData.poolType === poolType) {
+      // Update color for laser bolts
+      if (!isBuckshot && proj.children) {
+        proj.children.forEach(child => {
+          if (child.material) child.material.color.setHex(color);
+        });
+      }
+      return proj;
+    }
+  }
+
+  // Pool exhausted - return null (caller should skip spawn)
+  return null;
+}
+
+// PERFORMANCE: Return projectile to pool instead of destroying
+function returnProjectileToPool(proj) {
+  proj.visible = false;
+  proj.userData.velocity = null;
+  proj.userData.stats = null;
+  proj.userData.controllerIndex = undefined;
+  proj.userData.isExploding = undefined;
+  proj.userData.lifetime = undefined;
+  proj.userData.createdAt = undefined;
+  proj.userData.hitEnemies = null;
+}
+
 function shootWeapon(controller, index) {
   const now = performance.now();
   const hand = index === 0 ? 'left' : 'right';
@@ -1360,6 +1472,13 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
 }
 
 function spawnProjectile(origin, direction, controllerIndex, stats) {
+  // PERFORMANCE: Enforce hard cap on active projectiles
+  if (projectiles.length >= MAX_PROJECTILES) {
+    // Skip spawning - too many projectiles active
+    // This prevents accumulation with dual blasters + multi-shot upgrades
+    return;
+  }
+
   const now = performance.now();
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
   const isBuckshot = stats.spreadAngle > 0;
@@ -1373,34 +1492,15 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
     }
   }
 
-  // Star Wars style laser bolt (thin cylinder) or pellet
-  let mesh;
-  if (isBuckshot) {
-    // Pellet: small sphere
-    mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.025, 6, 6),
-      new THREE.MeshBasicMaterial({ color: 0xdddddd })
-    );
-  } else {
-    // Laser bolt: elongated cylinder (3-4 feet ~ 1 meter)
-    const group = new THREE.Group();
-    const boltLength = 1.0;
-    const boltGeo = new THREE.CylinderGeometry(0.015, 0.015, boltLength, 6);
-    const bolt = new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ color }));
-    bolt.rotation.x = Math.PI / 2; // align with forward direction
-    bolt.position.z = -boltLength / 2;
-    group.add(bolt);
+  // PERFORMANCE: Get projectile from pool instead of creating new
+  let mesh = getPooledProjectile(isBuckshot, color);
 
-    // Glow cylinder
-    const glowGeo = new THREE.CylinderGeometry(0.035, 0.035, boltLength, 6);
-    const glowBolt = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
-    glowBolt.rotation.x = Math.PI / 2;
-    glowBolt.position.z = -boltLength / 2;
-    group.add(glowBolt);
-
-    mesh = group;
+  if (!mesh) {
+    // Pool exhausted - skip this projectile (prevents unbounded growth)
+    return;
   }
 
+  // Reset and activate pooled projectile
   mesh.position.copy(origin);
   mesh.userData.velocity = direction.clone().multiplyScalar(isBuckshot ? 20 : 40);
   mesh.userData.stats = stats;
@@ -1409,13 +1509,13 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
   mesh.userData.lifetime = 3000;
   mesh.userData.createdAt = performance.now();
   mesh.userData.hitEnemies = new Set();
+  mesh.visible = true;
 
   // Orient bolt along direction
   if (!isBuckshot) {
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction);
   }
 
-  scene.add(mesh);
   projectiles.push(mesh);
 
   if (isBuckshot) {
@@ -1557,6 +1657,16 @@ function handleAOE(center, radius, damage, controllerIndex) {
 
 /** Spawn a short-lived visible explosion (expanding sphere) at center. */
 function spawnExplosionVisual(center, radius) {
+  // PERFORMANCE: Cap explosion visuals to prevent accumulation
+  const MAX_EXPLOSION_VISUALS = 15;
+  if (explosionVisuals.length >= MAX_EXPLOSION_VISUALS) {
+    // Remove oldest explosion visual
+    const oldest = explosionVisuals.shift();
+    scene.remove(oldest);
+    oldest.geometry.dispose();
+    oldest.material.dispose();
+  }
+
   const duration = 350; // ms
   const geo = new THREE.SphereGeometry(radius * 0.3, 12, 12);
   const mat = new THREE.MeshBasicMaterial({
@@ -1629,9 +1739,13 @@ function updateProjectiles(dt) {
     const proj = projectiles[i];
     const age = now - proj.userData.createdAt;
 
-    // Remove expired projectiles
+    // Remove expired projectiles - return to pool
     if (age > proj.userData.lifetime) {
-      scene.remove(proj);
+      if (proj.userData.isPooled) {
+        returnProjectileToPool(proj);
+      } else {
+        scene.remove(proj);
+      }
       projectiles.splice(i, 1);
       continue;
     }
@@ -1649,7 +1763,11 @@ function updateProjectiles(dt) {
       if (result && result.boss) {
         handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex);
         if (!proj.userData.stats.piercing) {
-          scene.remove(proj);
+          if (proj.userData.isPooled) {
+            returnProjectileToPool(proj);
+          } else {
+            scene.remove(proj);
+          }
           projectiles.splice(i, 1);
         }
       } else if (result && result.index !== undefined && !proj.userData.hitEnemies.has(result.index)) {
@@ -1663,9 +1781,13 @@ function updateProjectiles(dt) {
           handleRicochet(hits[0].point, proj.userData.stats, 0, proj.userData.controllerIndex);
         }
 
-        // Remove projectile if not piercing
+        // Remove projectile if not piercing - return to pool
         if (!proj.userData.stats.piercing) {
-          scene.remove(proj);
+          if (proj.userData.isPooled) {
+            returnProjectileToPool(proj);
+          } else {
+            scene.remove(proj);
+          }
           projectiles.splice(i, 1);
         }
       } else {
@@ -1675,7 +1797,11 @@ function updateProjectiles(dt) {
           spawnDamageNumber(hits[0].point, proj.userData.stats.damage, '#ff8800');
           if (mResult.killed) playExplosionSound();
           if (!proj.userData.stats.piercing) {
-            scene.remove(proj);
+            if (proj.userData.isPooled) {
+              returnProjectileToPool(proj);
+            } else {
+              scene.remove(proj);
+            }
             projectiles.splice(i, 1);
           }
         }
@@ -1805,6 +1931,13 @@ function render(timestamp) {
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
+  // PERFORMANCE: Log stats every 5 seconds in debug mode
+  if (typeof window !== 'undefined' && window.debugPerfMonitor && frameCount % 300 === 0) {
+    console.log(`[PERF] Projectiles: ${projectiles.length}/${MAX_PROJECTILES}, ` +
+                `Pool: ${projectilePool.filter(p => p.visible).length}/${projectilePool.length} active, ` +
+                `Explosions: ${explosionVisuals.length}`);
+  }
+
   // Apply bullet-time slow-mo and ramp-out (use raw dt)
   if (slowMoRampOut) {
     slowMoRampOutTimer -= rawDt;
@@ -1844,6 +1977,9 @@ function render(timestamp) {
 
   // ── Playing ──
   else if (st === State.PLAYING) {
+    // SAFEGUARD: Ensure blaster displays are visible during gameplay
+    // Prevents text/billboard elements from disappearing
+    blasterDisplays.forEach(d => { if (d) d.visible = false; });  // Hidden during gameplay
     spawnEnemyWave(dt);
 
     // Full-auto shooting / Lightning beams
