@@ -61,14 +61,17 @@ let hoveredKey = null;
 
 // Scoreboard state
 let scoreboardCanvas = null;
+let scoreboardCtx = null;  // PERFORMANCE: Reuse canvas context
 let scoreboardTexture = null;
 let scoreboardMesh = null;
 let scoreboardScrollOffset = 0;
 let scoreboardScores = [];
 let scoreboardHeader = '';
+let scoreboardNeedsRender = false;  // PERFORMANCE: Only render when data changes
 
 // Country select state
 let countryListCanvas = null;
+let countryListCtx = null;  // PERFORMANCE: Reuse canvas context
 let countryListTexture = null;
 let countryListMesh = null;
 let countrySelectContinent = 'North America';
@@ -76,78 +79,138 @@ let countrySelectScrollOffset = 0;
 let continentTabs = [];
 let countryItems = [];
 
-// ── Canvas text utility ────────────────────────────────────
-function makeTextTexture(text, opts = {}) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  const fontSize = opts.fontSize || 64;
-  const font = `bold ${fontSize}px Arial, sans-serif`;
-  const maxWidth = opts.maxWidth || null;
+// PERFORMANCE: Cached country sprites to avoid recreating textures
+const countrySpriteCache = new Map();
 
-  ctx.font = font;
+// ── TEXTURE CACHING SYSTEM ────────────────────────────────────────────
 
-  // Word wrapping if maxWidth is specified
-  let lines = [text];
-  if (maxWidth) {
-    lines = [];
-    const words = text.split(' ');
-    let currentLine = '';
+// Cache for HUD element textures to avoid recreation every frame
+const hudTextureCache = {};
 
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const metrics = ctx.measureText(testLine);
-
-      if (metrics.width > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-    if (currentLine) lines.push(currentLine);
+/**
+ * Create or get a cached texture for the given text and color.
+ * Returns the texture and aspect ratio.
+ */
+function getCachedTextTexture(text, fontSize, color, shadow, glow, glowColor, maxWidth) {
+  const cacheKey = `${text}:${fontSize}:${color}:${shadow}:${glow}:${glowColor}:${maxWidth}`;
+  
+  if (hudTextureCache[cacheKey]) {
+    return hudTextureCache[cacheKey];
   }
 
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
   // Measure text to size canvas
-  const textWidth = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  const textWidth = maxWidth || Math.ceil(ctx.measureText(text).width);
   const lineHeight = fontSize * 1.3;
-  const textHeight = lines.length * lineHeight;
+  const textHeight = lineHeight; // Single line
 
   canvas.width = Math.ceil(textWidth) + 40;
-  canvas.height = Math.ceil(textHeight);
+  canvas.height = Math.ceil(textHeight) + 40;
 
   // Re-set after resize
-  ctx.font = font;
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Clear canvas with transparency (prevent black background)
+  // Clear canvas with transparency
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Optional glow
-  if (opts.glow) {
-    ctx.shadowColor = opts.glowColor || opts.color || '#00ffff';
-    ctx.shadowBlur = opts.glowSize || 15;
+  if (glow) {
+    ctx.shadowColor = glowColor || color;
+    ctx.shadowBlur = 15;
   }
 
   // Drop shadow
-  if (opts.shadow) {
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    lines.forEach((line, i) => {
-      const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
-      ctx.fillText(line, canvas.width / 2 + 2, y + 2);
-    });
+  if (shadow) {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillText(text, canvas.width / 2 + 2, canvas.height / 2 + 2);
   }
 
   // Main text
-  ctx.fillStyle = opts.color || '#00ffff';
-  lines.forEach((line, i) => {
-    const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
-    ctx.fillText(line, canvas.width / 2, y);
-  });
+  ctx.fillStyle = color;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
-  return { texture, aspect: canvas.width / canvas.height };
+
+  // Cache the texture
+  hudTextureCache[cacheKey] = { texture, aspect: canvas.width / canvas.height };
+
+  return hudTextureCache[cacheKey];
+}
+
+/**
+ * Create or get a cached texture for the hearts display.
+ */
+function getCachedHeartsTexture(health, maxHealth, scaleMultiplier) {
+  const cacheKey = `hearts:${health}:${maxHealth}:${scaleMultiplier}`;
+  
+  if (hudTextureCache[cacheKey]) {
+    return hudTextureCache[cacheKey];
+  }
+
+  const heartCount = maxHealth / 2;
+  const pixSize = 8;
+  const heartW = 7 * pixSize;
+  const heartH = 6 * pixSize;
+  const gap = 6;
+  const canvasWidth = heartCount * (heartW + gap) + gap;
+  const canvasHeight = heartH + 10;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  const ctx = canvas.getContext('2d');
+
+  for (let i = 0; i < heartCount; i++) {
+    const hpForThisHeart = health - i * 2;
+    let state;
+    if (hpForThisHeart >= 2) state = 'full';
+    else if (hpForThisHeart === 1) state = 'half';
+    else state = 'empty';
+
+    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  const aspect = canvasWidth / canvasHeight;
+  hudTextureCache[cacheKey] = { texture, aspect };
+
+  return hudTextureCache[cacheKey];
+}
+
+/**
+ * Clear the texture cache periodically to prevent memory buildup.
+ * Called once per second or when needed.
+ */
+function clearHudCache() {
+  Object.keys(hudTextureCache).forEach(key => {
+    if (hudTextureCache[key]) {
+      if (hudTextureCache[key].texture) {
+        hudTextureCache[key].texture.dispose();
+      }
+    }
+    delete hudTextureCache[key];
+  });
+}
+
+// ── Canvas text utility ────────────────────────────────────
+function makeTextTexture(text, opts = {}) {
+  return getCachedTextTexture(
+    text,
+    opts.fontSize || 64,
+    opts.color || '#00ffff',
+    opts.shadow,
+    opts.glow,
+    opts.glowColor,
+    opts.maxWidth
+  );
 }
 
 function makeSprite(text, opts = {}) {
@@ -200,32 +263,6 @@ function drawHeart(ctx, x, y, pixSize, state) {
       ctx.fillRect(x + px * pixSize, y + py * pixSize, pixSize, pixSize);
     });
   });
-}
-
-function makeHeartsTexture(health, maxHealth) {
-  const heartCount = maxHealth / 2;
-  const pixSize = 8;
-  const heartW = 7 * pixSize;
-  const heartH = 6 * pixSize;
-  const gap = 6;
-  const canvas = document.createElement('canvas');
-  canvas.width = heartCount * (heartW + gap) + gap;
-  canvas.height = heartH + 10;
-  const ctx = canvas.getContext('2d');
-
-  for (let i = 0; i < heartCount; i++) {
-    const hpForThisHeart = health - i * 2;
-    let state;
-    if (hpForThisHeart >= 2) state = 'full';
-    else if (hpForThisHeart === 1) state = 'half';
-    else state = 'empty';
-
-    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  return { texture, aspect: canvas.width / canvas.height };
 }
 
 // ── Public API ─────────────────────────────────────────────
@@ -293,6 +330,9 @@ export function initHUD(camera, scene) {
     bossHealthBars.push(bar);
   }
   camera.add(bossHealthGroup);
+
+  // ── Start cache clear timer (every 60 seconds) ──
+  setInterval(clearHudCache, 60000);
 }
 
 export function showBossHealthBar(hp, maxHp, phases = 3) {
@@ -495,16 +535,18 @@ export function hideHUD() {
 }
 
 function updateSpriteText(sprite, text, opts = {}) {
-  // Dispose old texture
+  // Use cached texture
+  const { texture, aspect } = getCachedTextTexture(
+    text,
+    opts.fontSize || 40,
+    opts.color || '#ffffff',
+    opts.shadow,
+    opts.glow,
+    opts.glowColor,
+    opts.maxWidth
+  );
+  
   if (sprite.material.map) sprite.material.map.dispose();
-
-  const { texture, aspect } = makeTextTexture(text, {
-    fontSize: opts.fontSize || 40,
-    color: opts.color || '#ffffff',
-    shadow: true,
-    glow: opts.glow,
-    glowColor: opts.glowColor,
-  });
   sprite.material.map = texture;
   sprite.material.needsUpdate = true;
 
@@ -517,20 +559,25 @@ function updateSpriteText(sprite, text, opts = {}) {
 export function updateHUD(gameState) {
   if (!hudGroup.visible) return;
 
-  // Hearts - proper aspect ratio with correct scale
-  const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth);
+  // Hearts - use cached texture
+  const cfg = gameState._levelConfig;
+  const killTarget = cfg ? cfg.killTarget : 0;
+  
+  // Use scale based on level to prevent overwhelming UI at high levels
+  const level = gameState.level;
+  const scaleMultiplier = Math.min(3.0, 1.0 + level * 0.08);  // Cap at 3x
+  
+  const { texture: ht, aspect: ha } = getCachedHeartsTexture(gameState.health, gameState.maxHealth, scaleMultiplier);
   if (heartsSprite.material.map) heartsSprite.material.map.dispose();
   heartsSprite.material.map = ht;
   heartsSprite.material.needsUpdate = true;
+  
   // Update geometry to match aspect ratio (200% larger: height 0.48)
   heartsSprite.geometry.dispose();
   heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
 
   // Kill counter - 200% larger
-  const cfg = gameState._levelConfig;
-  if (cfg) {
-    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.30 });
-  }
+  updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.30 });
 
   // Level - 200% larger
   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.30 });
@@ -770,9 +817,14 @@ export function updateUpgradeCards(now, cooldownRemaining) {
       cd.visible = true;
       // Update the cooldown sprite text
       if (cd.material && cd.material.map) cd.material.map.dispose();
-      const { texture, aspect } = makeTextTexture(
+      const { texture, aspect } = getCachedTextTexture(
         `WAIT ${Math.ceil(cooldownRemaining)}...`,
-        { fontSize: 40, color: '#ffff00' }
+        40,
+        '#ffff00',
+        false,
+        false,
+        null,
+        null
       );
       cd.material.map = texture;
       cd.material.needsUpdate = true;
@@ -1138,12 +1190,7 @@ export function updateFPS(now, opts = {}) {
     const ftColor = avgFrameMs > 33 ? '#ff0000' : avgFrameMs > 20 ? '#ffff00' : '#00ff00';
     const color = perfMonitor ? ftColor : fpsColor;
 
-    const { texture, aspect } = makeTextTexture(text, {
-      fontSize: perfMonitor ? 24 : 32,
-      color,
-      shadow: true,
-      maxWidth: perfMonitor ? 300 : null,
-    });
+    const { texture, aspect } = getCachedTextTexture(text, perfMonitor ? 24 : 32, color, true, false, null, perfMonitor ? 300 : null);
     if (fpsSprite.material.map) fpsSprite.material.map.dispose();
     fpsSprite.material.map = texture;
     fpsSprite.material.needsUpdate = true;
@@ -1640,12 +1687,19 @@ export function showScoreboard(scores, headerText) {
 }
 
 function renderScoreboardCanvas() {
-  const canvas = document.createElement('canvas');
+  // PERFORMANCE: Reuse canvas instead of recreating every frame
   const w = 800;
   const h = 1000;
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
+  
+  if (!scoreboardCanvas) {
+    scoreboardCanvas = document.createElement('canvas');
+    scoreboardCanvas.width = w;
+    scoreboardCanvas.height = h;
+    scoreboardCtx = scoreboardCanvas.getContext('2d');
+  }
+  
+  const canvas = scoreboardCanvas;
+  const ctx = scoreboardCtx;
   ctx.clearRect(0, 0, w, h);
 
   // Background
@@ -1732,9 +1786,13 @@ function renderScoreboardCanvas() {
     ctx.fillText(`${startIdx + 1}-${endIdx} of ${scoreboardScores.length}`, w / 2, h - 15);
   }
 
-  if (scoreboardTexture) scoreboardTexture.dispose();
-  scoreboardTexture = new THREE.CanvasTexture(canvas);
-  scoreboardTexture.minFilter = THREE.LinearFilter;
+  // PERFORMANCE: Only create texture once, then just update it
+  if (!scoreboardTexture) {
+    scoreboardTexture = new THREE.CanvasTexture(canvas);
+    scoreboardTexture.minFilter = THREE.LinearFilter;
+  } else {
+    scoreboardTexture.needsUpdate = true;
+  }
 
   if (!scoreboardMesh) {
     const geo = new THREE.PlaneGeometry(1.8, 2.2);
@@ -1751,6 +1809,22 @@ function renderScoreboardCanvas() {
 
 export function hideScoreboard() {
   scoreboardGroup.visible = false;
+  
+  // PERFORMANCE: Clean up scoreboard resources
+  while (scoreboardGroup.children.length) {
+    const child = scoreboardGroup.children[0];
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (child.material.map && child.material.map !== scoreboardTexture) {
+        child.material.map.dispose();
+      }
+      child.material.dispose();
+    }
+    scoreboardGroup.remove(child);
+  }
+  
+  // Reset mesh reference (keep canvas and texture for reuse)
+  scoreboardMesh = null;
 }
 
 export function getScoreboardHit(raycaster) {
@@ -1793,11 +1867,25 @@ export function updateScoreboardScroll(delta) {
 
 export function showCountrySelect(countries, continents, initialContinent) {
   hideAll();
-  while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
+
+  // PERFORMANCE: Clean up old resources before recreating
+  while (countrySelectGroup.children.length) {
+    const child = countrySelectGroup.children[0];
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (child.material.map) child.material.map.dispose();
+      child.material.dispose();
+    }
+    countrySelectGroup.remove(child);
+  }
+  
   continentTabs = [];
   countryItems = [];
   countrySelectContinent = initialContinent || 'North America';
   countrySelectScrollOffset = 0;
+  
+  // Reset canvas mesh reference
+  countryListMesh = null;
 
   countrySelectGroup.position.set(0, 1.6, -4);
   countrySelectGroup.visible = true;
@@ -1850,6 +1938,36 @@ export function showCountrySelect(countries, continents, initialContinent) {
   // Country list
   renderCountryList(countries);
 
+  // Scroll buttons on right side (only if there are more countries than visible)
+  const btnDefs = [
+    { label: 'UP', y: 0.5, action: 'scroll_up' },
+    { label: 'DOWN', y: -0.3, action: 'scroll_down' },
+  ];
+
+  for (const def of btnDefs) {
+    const btnGroup = new THREE.Group();
+    btnGroup.position.set(1.2, def.y, 0);
+
+    const btnGeo = new THREE.PlaneGeometry(0.4, 0.25);
+    const btnMat = new THREE.MeshBasicMaterial({
+      color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
+    });
+    const btnMesh = new THREE.Mesh(btnGeo, btnMat);
+    btnMesh.userData.countryAction = def.action;
+    btnGroup.add(btnMesh);
+
+    btnGroup.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(btnGeo),
+      new THREE.LineBasicMaterial({ color: 0x888888 })
+    ));
+
+    const txt = makeSprite(def.label, { fontSize: 20, color: '#ffffff', scale: 0.1 });
+    txt.position.set(0, 0, 0.01);
+    btnGroup.add(txt);
+
+    countrySelectGroup.add(btnGroup);
+  }
+
   // BACK button
   const backGroup = new THREE.Group();
   backGroup.position.set(0, -0.9, 0); // Moved down from -0.8
@@ -1870,63 +1988,220 @@ export function showCountrySelect(countries, continents, initialContinent) {
   countrySelectGroup.add(backGroup);
 }
 
-function renderCountryList(countries) {
+// PERFORMANCE: Render country list to a single canvas (like scoreboard)
+// This avoids creating 50+ individual 3D objects which kills performance
+function renderCountryList(countries, scrollOffset = 0) {
   // Remove old country item meshes
-  countryItems.forEach(item => countrySelectGroup.remove(item.group));
+  countryItems.forEach(item => {
+    if (item.group) {
+      countrySelectGroup.remove(item.group);
+    }
+    if (item.mesh) {
+      countrySelectGroup.remove(item.mesh);
+      if (item.mesh.geometry) item.mesh.geometry.dispose();
+      if (item.mesh.material) item.mesh.material.dispose();
+    }
+  });
   countryItems = [];
+  
+  // Remove old canvas mesh if exists
+  if (countryListMesh) {
+    countrySelectGroup.remove(countryListMesh);
+    if (countryListMesh.geometry) countryListMesh.geometry.dispose();
+    if (countryListMesh.material) countryListMesh.material.dispose();
+    countryListMesh = null;
+  }
 
   const filtered = countries.filter(c => c.continent === countrySelectContinent);
-  const itemHeight = 0.22;
-  const itemGap = 0.04;
-  const startY = 0.85;
-
-  for (let i = 0; i < filtered.length; i++) {
-    const country = filtered[i];
-    const itemGroup = new THREE.Group();
-    const y = startY - i * (itemHeight + itemGap);
-    itemGroup.position.set(0, y, 0);
-
-    const itemGeo = new THREE.PlaneGeometry(1.8, itemHeight);
-    const itemMat = new THREE.MeshBasicMaterial({
-      color: 0x111133, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
-    });
-    const itemMesh = new THREE.Mesh(itemGeo, itemMat);
-    itemMesh.userData.countryCode = country.code;
-    itemMesh.userData.countryAction = 'select';
-    itemGroup.add(itemMesh);
-
-    itemGroup.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(itemGeo),
-      new THREE.LineBasicMaterial({ color: 0x444466 })
-    ));
-
-    const label = makeSprite(`${country.flag}  ${country.name}`, {
-      fontSize: 28, color: '#ffffff', scale: 0.15,
-    });
-    label.position.set(0, 0, 0.01);
-    itemGroup.add(label);
-
-    countryItems.push({ group: itemGroup, mesh: itemMesh, code: country.code });
-    countrySelectGroup.add(itemGroup);
+  
+  // Clamp scroll offset
+  const maxVisible = 12;
+  const maxScroll = Math.max(0, filtered.length - maxVisible);
+  scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
+  
+  // PERFORMANCE: Use single canvas for all countries
+  const w = 600;
+  const rowHeight = 32;
+  const visibleCount = Math.min(filtered.length - scrollOffset, maxVisible);
+  const h = visibleCount * rowHeight + 20;
+  
+  if (!countryListCanvas) {
+    countryListCanvas = document.createElement('canvas');
+    countryListCtx = countryListCanvas.getContext('2d');
   }
+  
+  countryListCanvas.width = w;
+  countryListCanvas.height = h;
+  const ctx = countryListCtx;
+  ctx.clearRect(0, 0, w, h);
+
+  // Background
+  ctx.fillStyle = 'rgba(10, 0, 30, 0.9)';
+  ctx.fillRect(0, 0, w, h);
+
+  // Border
+  ctx.strokeStyle = '#444488';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, w - 2, h - 2);
+
+  ctx.font = 'bold 22px Arial, sans-serif';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i < visibleCount; i++) {
+    const country = filtered[scrollOffset + i];
+    const y = i * rowHeight + rowHeight / 2 + 10;
+
+    // Row background
+    ctx.fillStyle = 'rgba(17, 17, 51, 0.85)';
+    ctx.fillRect(5, i * rowHeight + 5, w - 10, rowHeight - 4);
+
+    // Country flag and name
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${country.flag}  ${country.name}`, 20, y);
+
+    // Divider line
+    if (i < visibleCount - 1) {
+      ctx.strokeStyle = 'rgba(68, 68, 102, 0.5)';
+      ctx.beginPath();
+      ctx.moveTo(10, (i + 1) * rowHeight + 5);
+      ctx.lineTo(w - 10, (i + 1) * rowHeight + 5);
+      ctx.stroke();
+    }
+  }
+  
+  // Scroll indicator
+  if (filtered.length > maxVisible) {
+    ctx.fillStyle = '#444488';
+    ctx.textAlign = 'center';
+    ctx.font = '16px Arial, sans-serif';
+    ctx.fillText(`${scrollOffset + 1}-${scrollOffset + visibleCount} of ${filtered.length}`, w / 2, h - 10);
+  }
+
+  // Create or update texture
+  if (!countryListTexture) {
+    countryListTexture = new THREE.CanvasTexture(countryListCanvas);
+    countryListTexture.minFilter = THREE.LinearFilter;
+  } else {
+    countryListTexture.needsUpdate = true;
+  }
+
+  // Create mesh for the canvas
+  const aspect = w / h;
+  const meshHeight = 1.8;
+  const meshWidth = meshHeight * aspect;
+  const geo = new THREE.PlaneGeometry(meshWidth, meshHeight);
+  const mat = new THREE.MeshBasicMaterial({
+    map: countryListTexture,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthTest: false,
+  });
+  countryListMesh = new THREE.Mesh(geo, mat);
+  countryListMesh.position.set(0, 0.1, 0);
+  countryListMesh.renderOrder = 999;
+  countrySelectGroup.add(countryListMesh);
+
+  // Create invisible hitboxes for each visible country (much cheaper than full 3D objects)
+  const startY = 0.85;
+  const itemHeight = meshHeight / visibleCount;
+  const topY = startY - itemHeight / 2;
+  
+  for (let i = 0; i < visibleCount; i++) {
+    const country = filtered[scrollOffset + i];
+    const y = topY - i * itemHeight;
+    
+    // Create a simple invisible hitbox
+    const hitboxGeo = new THREE.PlaneGeometry(meshWidth * 0.95, itemHeight * 0.9);
+    const hitboxMat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+    });
+    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    hitbox.position.set(0, y, 0.01);
+    hitbox.userData.countryCode = country.code;
+    hitbox.userData.countryAction = 'select';
+    countrySelectGroup.add(hitbox);
+    countryItems.push({ mesh: hitbox, code: country.code });
+  }
+  
+  // Store filtered countries and scroll info
+  countrySelectGroup.userData.filteredCountries = filtered;
+  countrySelectGroup.userData.scrollOffset = scrollOffset;
+  countrySelectGroup.userData.maxVisible = maxVisible;
+  countrySelectScrollOffset = scrollOffset;
 }
 
 export function hideCountrySelect() {
   countrySelectGroup.visible = false;
+  
+  // PERFORMANCE: Clean up country list resources
+  countryItems.forEach(item => {
+    if (item.group) {
+      countrySelectGroup.remove(item.group);
+    }
+    if (item.mesh) {
+      countrySelectGroup.remove(item.mesh);
+      if (item.mesh.geometry) item.mesh.geometry.dispose();
+      if (item.mesh.material) item.mesh.material.dispose();
+    }
+  });
+  countryItems = [];
+  
+  // Clean up canvas mesh
+  if (countryListMesh) {
+    countrySelectGroup.remove(countryListMesh);
+    if (countryListMesh.geometry) countryListMesh.geometry.dispose();
+    if (countryListMesh.material) countryListMesh.material.dispose();
+    countryListMesh = null;
+  }
 }
 
 export function getCountrySelectHit(raycaster, countries) {
   if (!countrySelectGroup.visible) return null;
 
+  // Check scroll and action buttons first
+  const actionMeshes = [];
+  countrySelectGroup.traverse(c => {
+    if (c.userData && c.userData.countryAction) actionMeshes.push(c);
+  });
+  let hits = raycaster.intersectObjects(actionMeshes, false);
+  if (hits.length > 0) {
+    const action = hits[0].object.userData.countryAction;
+    
+    // Handle scroll actions
+    if (action === 'scroll_up') {
+      const newOffset = Math.max(0, countrySelectScrollOffset - 4);
+      if (newOffset !== countrySelectScrollOffset) {
+        renderCountryList(countries, newOffset);
+      }
+      return null;
+    }
+    if (action === 'scroll_down') {
+      const filtered = countries.filter(c => c.continent === countrySelectContinent);
+      const maxScroll = Math.max(0, filtered.length - 12);
+      const newOffset = Math.min(maxScroll, countrySelectScrollOffset + 4);
+      if (newOffset !== countrySelectScrollOffset) {
+        renderCountryList(countries, newOffset);
+      }
+      return null;
+    }
+    
+    return { action };
+  }
+
   // Check continent tabs
   const tabMeshes = continentTabs.map(t => t.mesh);
-  let hits = raycaster.intersectObjects(tabMeshes, false);
+  hits = raycaster.intersectObjects(tabMeshes, false);
   if (hits.length > 0) {
     const continent = hits[0].object.userData.continentTab;
     if (continent !== countrySelectContinent) {
       countrySelectContinent = continent;
+      // Reset scroll when changing continent
+      countrySelectScrollOffset = 0;
       // Refresh tabs and list
-      renderCountryList(countries);
+      renderCountryList(countries, 0);
       // Update tab visuals
       continentTabs.forEach(tab => {
         const isActive = tab.continent === countrySelectContinent;
@@ -1937,20 +2212,12 @@ export function getCountrySelectHit(raycaster, countries) {
   }
 
   // Check country items
-  const itemMeshes = countryItems.map(i => i.mesh);
+  const itemMeshes = countryItems.map(i => i.mesh).filter(Boolean);
   hits = raycaster.intersectObjects(itemMeshes, false);
   if (hits.length > 0) {
     const code = hits[0].object.userData.countryCode;
     return { action: 'select', code };
   }
-
-  // Check back button
-  const actionMeshes = [];
-  countrySelectGroup.traverse(c => {
-    if (c.userData && c.userData.countryAction === 'back') actionMeshes.push(c);
-  });
-  hits = raycaster.intersectObjects(actionMeshes, false);
-  if (hits.length > 0) return { action: 'back' };
 
   return null;
 }
