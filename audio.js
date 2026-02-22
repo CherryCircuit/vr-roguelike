@@ -491,6 +491,47 @@ export function playErrorSound() {
   osc.stop(ctx.currentTime + 0.2);
 }
 
+// ── Level transition sound ──────────────────────────────────
+export function playTransitionSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Main oscillator with arpeggio-like sweep
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sawtooth';
+
+  // Arpeggio-style frequency sweep: rising with some modulation
+  const baseFreq = 400;
+  osc.frequency.setValueAtTime(baseFreq, t);
+  osc.frequency.setValueAtTime(baseFreq * 1.2, t + 0.05);
+  osc.frequency.setValueAtTime(baseFreq * 1.4, t + 0.1);
+  osc.frequency.setValueAtTime(baseFreq * 1.3, t + 0.15);
+  osc.frequency.setValueAtTime(baseFreq * 1.5, t + 0.2);
+  osc.frequency.exponentialRampToValueAtTime(baseFreq * 2, t + 0.35);
+
+  // Envelope: quick attack, sustain, decay
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(0.25, t + 0.024);  // Attack
+  gain.gain.linearRampToValueAtTime(0.2, t + 0.134);  // Sustain (minus attack)
+  gain.gain.linearRampToValueAtTime(0.15, t + 0.18);  // Punch
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.35);  // Decay
+
+  // High-pass filter for bright character
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.setValueAtTime(800, t);
+  filter.Q.setValueAtTime(2, t);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + 0.4);
+}
+
 // ── Buckshot fire (heavy mechanical thud) ──────────────────
 export function playBuckshotSound() {
   const ctx = getAudioContext();

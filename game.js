@@ -5,6 +5,7 @@
 
 export const State = {
   TITLE: 'title',
+  TITLE_TRANSITION: 'title_transition',
   PLAYING: 'playing',
   LEVEL_COMPLETE: 'level_complete',
   UPGRADE_SELECT: 'upgrade_select',
