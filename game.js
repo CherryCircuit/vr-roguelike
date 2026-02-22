@@ -15,6 +15,7 @@ export const State = {
   COUNTRY_SELECT: 'country_select',
   REGIONAL_SCORES: 'regional_scores',
   READY_SCREEN: 'ready_screen',
+  LEVEL_INTRO: 'level_intro',
 };
 
 // ── Enemy types available per level ────────────────────────
