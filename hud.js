@@ -32,13 +32,6 @@ let fpsSprite = null;
 // Debug menu state
 let debugToggleItems = [];
 
-// Live debug stats overlay (shown during gameplay)
-let debugStatsGroup = null;
-let debugStatsMesh = null;
-let debugStatsCanvas = null;
-let debugStatsCtx = null;
-let debugStatsTexture = null;
-
 // Damage numbers
 const damageNumbers = [];
 
@@ -341,9 +334,6 @@ export function initHUD(camera, scene) {
     bossHealthBars.push(bar);
   }
   camera.add(bossHealthGroup);
-
-  // ── Debug Stats Overlay (camera-attached) ──
-  initDebugStatsOverlay();
 
   // ── Start cache clear timer (every 60 seconds) ──
   setInterval(clearHudCache, 60000);
@@ -1353,41 +1343,25 @@ export function showDebugMenu() {
   header.position.set(0, 1.4, 0);
   debugMenuGroup.add(header);
 
-  // Toggle options - expanded with more debug features
+  // Toggle options
   const options = [
     { 
       id: 'fps', 
       label: 'FPS COUNTER', 
-      desc: 'Show FPS in VR',
       getState: () => game.debugShowFPS,
       toggle: () => { game.debugShowFPS = !game.debugShowFPS; }
     },
     { 
       id: 'perf', 
       label: 'PERF MONITOR', 
-      desc: 'Show frame time + memory',
       getState: () => game.debugPerfMonitor,
       toggle: () => { game.debugPerfMonitor = !game.debugPerfMonitor; }
     },
-    { 
-      id: 'stats', 
-      label: 'LIVE STATS', 
-      desc: 'Game state overlay',
-      getState: () => game.debugShowStats,
-      toggle: () => { game.debugShowStats = !game.debugShowStats; }
-    },
-    { 
-      id: 'upgrades', 
-      label: 'UPGRADE INFO', 
-      desc: 'Show upgrade counts',
-      getState: () => game.debugShowUpgrades,
-      toggle: () => { game.debugShowUpgrades = !game.debugShowUpgrades; }
-    },
   ];
 
-  const startY = 1.0;
-  const itemHeight = 0.38;
-  const itemWidth = 2.0;
+  const startY = 0.8;
+  const itemHeight = 0.35;
+  const itemWidth = 1.8;
 
   options.forEach((opt, i) => {
     const y = startY - i * itemHeight;
@@ -1397,7 +1371,7 @@ export function showDebugMenu() {
     const itemGroup = new THREE.Group();
     itemGroup.position.set(0, y, 0);
 
-    const bgGeo = new THREE.PlaneGeometry(itemWidth, 0.32);
+    const bgGeo = new THREE.PlaneGeometry(itemWidth, 0.28);
     const bgMat = new THREE.MeshBasicMaterial({
       color: isOn ? 0x003322 : 0x221133,
       transparent: true,
@@ -1416,25 +1390,18 @@ export function showDebugMenu() {
 
     // Label
     const label = makeSprite(opt.label, {
-      fontSize: 26, color: '#ffffff', scale: 0.16,
+      fontSize: 28, color: '#ffffff', scale: 0.18,
     });
-    label.position.set(-0.4, 0.05, 0.01);
+    label.position.set(-0.3, 0, 0.01);
     itemGroup.add(label);
-
-    // Description (smaller text below label)
-    const desc = makeSprite(opt.desc, {
-      fontSize: 18, color: '#888888', scale: 0.12,
-    });
-    desc.position.set(-0.4, -0.08, 0.01);
-    itemGroup.add(desc);
 
     // Status indicator (ON/OFF)
     const statusText = isOn ? 'ON' : 'OFF';
     const statusColor = isOn ? '#00ff88' : '#ff4444';
     const status = makeSprite(statusText, {
-      fontSize: 26, color: statusColor, glow: isOn, glowColor: statusColor, scale: 0.14,
+      fontSize: 28, color: statusColor, glow: isOn, glowColor: statusColor, scale: 0.15,
     });
-    status.position.set(0.7, 0, 0.01);
+    status.position.set(0.6, 0, 0.01);
     status.userData.isStatusLabel = true;
     itemGroup.add(status);
 
@@ -1442,29 +1409,17 @@ export function showDebugMenu() {
     debugToggleItems.push({ group: itemGroup, mesh: bgMesh, option: opt });
   });
 
-  // System info section
-  const sysInfoY = startY - options.length * itemHeight - 0.15;
-  const sysInfo = makeSprite('SYSTEM INFO', {
-    fontSize: 22, color: '#666666', scale: 0.14,
+  // Instructions
+  const instructions = makeSprite('CLICK TO TOGGLE', {
+    fontSize: 24, color: '#888888', scale: 0.15,
   });
-  sysInfo.position.set(-0.7, sysInfoY, 0);
-  debugMenuGroup.add(sysInfo);
-
-  // Show current debug status
-  const memInfo = typeof performance !== 'undefined' && performance.memory
-    ? `${(performance.memory.usedJSHeapSize / 1048576).toFixed(0)}MB`
-    : 'N/A';
-  const sysText = makeSprite(`Memory: ${memInfo}`, {
-    fontSize: 18, color: '#888888', scale: 0.11,
-  });
-  sysText.position.set(-0.5, sysInfoY - 0.15, 0);
-  sysText.name = 'sysMemInfo';
-  debugMenuGroup.add(sysText);
+  instructions.position.set(0, -0.3, 0);
+  debugMenuGroup.add(instructions);
 
   // BACK button
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -1.1, 0);
-  const backGeo = new THREE.PlaneGeometry(1.0, 0.3);
+  backGroup.position.set(0, -0.7, 0);
+  const backGeo = new THREE.PlaneGeometry(0.8, 0.28);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
   });
@@ -1550,144 +1505,6 @@ export function getDebugMenuHit(raycaster) {
   }
 
   return null;
-}
-
-// ── Live Debug Stats Overlay ─────────────────────────────────
-
-/**
- * Initialize the debug stats overlay (called once during initHUD)
- */
-function initDebugStatsOverlay() {
-  debugStatsGroup = new THREE.Group();
-  debugStatsGroup.visible = false;
-  
-  // Create canvas for stats display
-  debugStatsCanvas = document.createElement('canvas');
-  debugStatsCanvas.width = 400;
-  debugStatsCanvas.height = 300;
-  debugStatsCtx = debugStatsCanvas.getContext('2d');
-  
-  debugStatsTexture = new THREE.CanvasTexture(debugStatsCanvas);
-  debugStatsTexture.minFilter = THREE.LinearFilter;
-  
-  // Create mesh
-  const geo = new THREE.PlaneGeometry(0.5, 0.375);
-  const mat = new THREE.MeshBasicMaterial({
-    map: debugStatsTexture,
-    transparent: true,
-    opacity: 0.9,
-    side: THREE.DoubleSide,
-    depthTest: false,
-  });
-  debugStatsMesh = new THREE.Mesh(geo, mat);
-  debugStatsMesh.renderOrder = 1002;
-  
-  // Position in bottom-right of camera view
-  debugStatsGroup.add(debugStatsMesh);
-  
-  // Attach to camera
-  cameraRef.add(debugStatsGroup);
-}
-
-/**
- * Update the live debug stats overlay
- * @param {Object} stats - Debug stats from getDebugStats()
- * @param {Object} entityCounts - Entity counts {enemies, projectiles, explosions, particles}
- */
-export function updateDebugStatsOverlay(stats, entityCounts) {
-  if (!debugStatsCanvas || !game.debugShowStats) {
-    if (debugStatsGroup) debugStatsGroup.visible = false;
-    return;
-  }
-  
-  debugStatsGroup.visible = true;
-  
-  const ctx = debugStatsCtx;
-  const w = debugStatsCanvas.width;
-  const h = debugStatsCanvas.height;
-  
-  // Clear
-  ctx.clearRect(0, 0, w, h);
-  
-  // Background
-  ctx.fillStyle = 'rgba(0, 0, 20, 0.85)';
-  ctx.fillRect(0, 0, w, h);
-  
-  // Border
-  ctx.strokeStyle = '#00ffff';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, w - 2, h - 2);
-  
-  ctx.font = 'bold 14px monospace';
-  ctx.textBaseline = 'top';
-  
-  let y = 10;
-  const lineHeight = 18;
-  
-  // State info
-  ctx.fillStyle = '#00ffff';
-  ctx.fillText(`STATE: ${stats.state}`, 10, y);
-  y += lineHeight;
-  
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(`LVL: ${stats.level} | ${stats.isBoss ? 'BOSS' : 'KILLS: ' + stats.kills + '/' + stats.killTarget}`, 10, y);
-  y += lineHeight;
-  
-  ctx.fillStyle = '#ff00ff';
-  ctx.fillText(`HP: ${stats.health} | SCORE: ${stats.score}`, 10, y);
-  y += lineHeight;
-  
-  ctx.fillStyle = '#ffff00';
-  ctx.fillText(`COMBO: ${stats.combo}x | STREAK: ${stats.streak}`, 10, y);
-  y += lineHeight + 5;
-  
-  // Entity counts
-  ctx.fillStyle = '#888888';
-  ctx.fillText('─── ENTITIES ───', 10, y);
-  y += lineHeight;
-  
-  ctx.fillStyle = '#ff8800';
-  ctx.fillText(`Enemies: ${entityCounts.enemies}`, 10, y);
-  y += lineHeight;
-  
-  ctx.fillStyle = '#00ff00';
-  ctx.fillText(`Projectiles: ${entityCounts.projectiles}`, 10, y);
-  y += lineHeight;
-  
-  ctx.fillStyle = '#ff4444';
-  ctx.fillText(`Explosions: ${entityCounts.explosions}`, 10, y);
-  y += lineHeight;
-  
-  ctx.fillStyle = '#ffff88';
-  ctx.fillText(`Particles: ${entityCounts.particles}`, 10, y);
-  y += lineHeight + 5;
-  
-  // Weapons
-  ctx.fillStyle = '#888888';
-  ctx.fillText('─── WEAPONS ───', 10, y);
-  y += lineHeight;
-  
-  ctx.fillStyle = '#00ffff';
-  ctx.fillText(`L: ${stats.mainWeapon.left}${stats.altWeapon.left ? ' + ' + stats.altWeapon.left : ''}`, 10, y);
-  y += lineHeight;
-  
-  ctx.fillStyle = '#ff00ff';
-  ctx.fillText(`R: ${stats.mainWeapon.right}${stats.altWeapon.right ? ' + ' + stats.altWeapon.right : ''}`, 10, y);
-  
-  // Update texture
-  debugStatsTexture.needsUpdate = true;
-  
-  // Position in bottom-right corner of camera view
-  debugStatsMesh.position.set(0.25, -0.12, -0.5);
-}
-
-/**
- * Show/hide debug stats overlay based on settings
- */
-export function setDebugStatsVisible(visible) {
-  if (debugStatsGroup) {
-    debugStatsGroup.visible = visible && game.debugShowStats;
-  }
 }
 
 export function getDebugJumpHit(raycaster) {

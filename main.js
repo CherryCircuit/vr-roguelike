@@ -35,8 +35,7 @@ import {
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
-  showDebugMenu, hideDebugMenu, getDebugMenuHit, updateTitleDebugIndicator,
-  updateDebugStatsOverlay
+  showDebugMenu, hideDebugMenu, getDebugMenuHit, updateTitleDebugIndicator
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -2427,33 +2426,6 @@ function render(timestamp) {
     perfMonitor: (typeof window !== 'undefined' && window.debugPerfMonitor) || game.debugPerfMonitor,
     frameTimeMs: rawDt * 1000,
   });
-
-  // Update debug stats overlay if enabled
-  if (game.debugShowStats) {
-    const stats = {
-      state: game.state,
-      level: game.level,
-      health: `${game.health}/${game.maxHealth}`,
-      score: game.score,
-      kills: game.kills,
-      totalKills: game.totalKills,
-      killTarget: game._levelConfig ? game._levelConfig.killTarget : 0,
-      combo: getComboMultiplier(),
-      streak: game.accuracyStreak,
-      mainWeapon: game.mainWeapon,
-      altWeapon: game.altWeapon,
-      isBoss: game._levelConfig ? game._levelConfig.isBoss : false,
-      spawnTimer: game.spawnTimer.toFixed(2),
-      stateTimer: game.stateTimer.toFixed(2),
-    };
-    const entityCounts = {
-      enemies: getEnemyCount(),
-      projectiles: projectiles.length,
-      explosions: explosionVisuals.length,
-      particles: damageNumbers.length,
-    };
-    updateDebugStatsOverlay(stats, entityCounts);
-  }
 
   // Music visualizer (DISABLED - causing FPS drops)
   // if (now % 3 < 1) {

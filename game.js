@@ -110,8 +110,6 @@ export const game = {
   // DEBUG: Performance monitoring settings
   debugPerfMonitor: false,  // Extended FPS stats (frame time, memory)
   debugShowFPS: true,  // Always show FPS counter in VR
-  debugShowStats: false,  // Live game stats overlay (entity counts, state)
-  debugShowUpgrades: false,  // Show upgrade counts per hand
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -172,8 +170,6 @@ export function loadDebugSettings() {
       const settings = JSON.parse(stored);
       game.debugPerfMonitor = settings.debugPerfMonitor ?? false;
       game.debugShowFPS = settings.debugShowFPS ?? true;
-      game.debugShowStats = settings.debugShowStats ?? false;
-      game.debugShowUpgrades = settings.debugShowUpgrades ?? false;
       console.log('[debug] Loaded settings:', settings);
     }
   } catch (e) {
@@ -189,8 +185,6 @@ export function saveDebugSettings() {
     const settings = {
       debugPerfMonitor: game.debugPerfMonitor,
       debugShowFPS: game.debugShowFPS,
-      debugShowStats: game.debugShowStats,
-      debugShowUpgrades: game.debugShowUpgrades,
     };
     localStorage.setItem('spaceomicide_debug', JSON.stringify(settings));
     console.log('[debug] Saved settings:', settings);
@@ -215,47 +209,6 @@ export function toggleFPSDisplay() {
   game.debugShowFPS = !game.debugShowFPS;
   saveDebugSettings();
   return game.debugShowFPS;
-}
-
-/**
- * Toggle live stats display
- */
-export function toggleStatsDisplay() {
-  game.debugShowStats = !game.debugShowStats;
-  saveDebugSettings();
-  return game.debugShowStats;
-}
-
-/**
- * Toggle upgrades display
- */
-export function toggleUpgradesDisplay() {
-  game.debugShowUpgrades = !game.debugShowUpgrades;
-  saveDebugSettings();
-  return game.debugShowUpgrades;
-}
-
-/**
- * Get debug stats snapshot for display
- */
-export function getDebugStats() {
-  const cfg = getLevelConfig();
-  return {
-    state: game.state,
-    level: game.level,
-    health: `${game.health}/${game.maxHealth}`,
-    score: game.score,
-    kills: game.kills,
-    totalKills: game.totalKills,
-    killTarget: cfg ? cfg.killTarget : 0,
-    combo: getComboMultiplier(),
-    streak: game.accuracyStreak,
-    mainWeapon: game.mainWeapon,
-    altWeapon: game.altWeapon,
-    isBoss: cfg ? cfg.isBoss : false,
-    spawnTimer: game.spawnTimer.toFixed(2),
-    stateTimer: game.stateTimer.toFixed(2),
-  };
 }
 
 export function getLevelConfig() {
