@@ -1530,6 +1530,9 @@ export function updateLowHealthAlert(now, gameState, floorMaterial) {
   const healthRatio = gameState.health / gameState.maxHealth;
 
   // Floor pulse - continuous red flash
+  // Check if hit flash is active to avoid conflict
+  if (hitFlash && hitFlash.visible) return; // Don't override hit flash
+
   // Use same red color as hit flash
   const pulseSpeed = 2.0; // Faster than normal hit flash
   const pulseIntensity = 0.5 + Math.sin(elapsed * 0.005 * pulseSpeed) * 0.5;

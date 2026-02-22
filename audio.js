@@ -652,35 +652,57 @@ export function playLowHealthAlertSound() {
   const baseFreq = 567;
   osc.frequency.setValueAtTime(baseFreq, t);
 
-  // Frequency ramp: p_freq_ramp 0.0967
-  osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.1, t + 0.95);
-
-  // Envelope: attack, sustain, no punch, decay
+  // Total duration
   const attack = 0.388;
   const sustain = 0.08;
   const decay = 0.478;
   const totalDuration = attack + sustain + decay;
   const volume = 0.25;
 
+  // Vibrato LFO (for frequency modulation)
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  lfo.type = 'sine';
+  lfo.frequency.setValueAtTime(15, t); // ~15Hz vibrato
+  lfoGain.gain.setValueAtTime(Math.abs(-0.0535 * 0.5), t); // Half of strength
+
+  // Frequency ramp: p_freq_ramp 0.0967 (exponential ramp)
+  const rampDuration = 0.95;
+  osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.1, t + rampDuration);
+
+  // Frequency drift: p_freq_dramp 0.1433 (linear drift downward)
+  const driftAmount = baseFreq * 0.1433;
+  osc.frequency.linearRampToValueAtTime(baseFreq - driftAmount, t + totalDuration);
+
+  // Vibrato frequency modulation
+  lfo.connect(lfoGain);
+  lfoGain.connect(osc.frequency);
+  lfo.start(t);
+  lfo.stop(t + totalDuration);
+
+  // Envelope
   // Attack (ramp up)
   gain.gain.setValueAtTime(0, t);
   gain.gain.linearRampToValueAtTime(volume, t + attack);
 
-  // Hold sustain
+  // Sustain (hold volume)
   gain.gain.setValueAtTime(volume, t + attack);
+
+  // Punch (none - p_env_punch is 0)
+  // No punch effect
 
   // Decay (fade to silence)
   gain.gain.linearRampToValueAtTime(volume, t + attack + sustain);
   gain.gain.exponentialRampToValueAtTime(0.001, t + totalDuration);
 
-  // Low-pass filter: p_lpf_freq 0.619
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(0.619 * 44100, t);
-  filter.Q.setValueAtTime(1, t);
+  // High-pass filter: p_hpf_freq 0.513
+  const hpf = ctx.createBiquadFilter();
+  hpf.type = 'highpass';
+  hpf.frequency.setValueAtTime(0.513 * 44100, t); // ~22600Hz
+  hpf.Q.setValueAtTime(1, t);
 
-  osc.connect(filter);
-  filter.connect(gain);
+  osc.connect(hpf);
+  hpf.connect(gain);
   gain.connect(ctx.destination);
 
   osc.start(t);
