@@ -586,6 +586,29 @@ export function playSlowMoReverseSound() {
   osc.stop(t + 0.5);
 }
 
+// ── Kills remaining alert sound ────────────────────────────────
+export function playKillsAlertSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(208, t);
+  osc.frequency.linearRampToValueAtTime(520, t + 0.47);
+
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(0.25, t + 0);
+  gain.gain.setValueAtTime(0.25, t + 0.058);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.47);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + 0.47);
+}
+
 // ── Lightning beam continuous sound (MP3 loop) ─────────────
 let lightningAudio = null;
 let lightningVolumeTimeout = null;

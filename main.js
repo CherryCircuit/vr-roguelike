@@ -15,7 +15,7 @@ import {
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound,
   startLightningSound, stopLightningSound,
-  playMusic, stopMusic, getMusicFrequencyData
+  playMusic, stopMusic, getMusicFrequencyData, playKillsAlertSound
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -35,7 +35,8 @@ import {
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
-  showLevelIntro, updateLevelIntro, hideLevelIntro
+  showLevelIntro, updateLevelIntro, hideLevelIntro,
+  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -122,6 +123,10 @@ let timeScale = 1.0;
 let cameraShake = 0;
 let cameraShakeIntensity = 0;
 const originalCameraPos = new THREE.Vector3();
+
+// Kills remaining alert
+let killsAlertShownThisLevel = false;
+let killsAlertTriggerKill = null;
 
 // ── Bootstrap ──────────────────────────────────────────────
 init();
@@ -958,6 +963,7 @@ function completeLevel() {
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
   game.stateTimer = 2.0; // cooldown before upgrade screen
   showLevelComplete(game.level, camera.position);
+  hideKillsAlert();
 }
 
 function showUpgradeScreen() {
@@ -1046,6 +1052,9 @@ function advanceLevelAfterUpgrade() {
   } else {
     game._levelConfig = getLevelConfig();
     const isBossLevel = game.level % 5 === 0;
+
+    // Hide kills alert from previous level
+    hideKillsAlert();
 
     if (isBossLevel) {
       // Boss levels skip the intro sequence
@@ -1201,6 +1210,15 @@ function updateLightningBeam(controller, index, stats, dt) {
             game.totalKills++;
             game.killsWithoutHit++;
             addScore(destroyData.scoreValue);
+
+            // Check for kills remaining alert
+            if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+              const cfg = game._levelConfig;
+              const remaining = cfg ? cfg.killTarget - game.kills : 0;
+              showKillsRemainingAlert(remaining);
+              playKillsAlertSound();
+              killsAlertShownThisLevel = true;
+            }
 
             // Check level complete
             const cfg = game._levelConfig;
@@ -1856,6 +1874,21 @@ function render(timestamp) {
       showHUD();
       hideLevelIntro();
 
+      // Set up kills remaining alert trigger
+      killsAlertShownThisLevel = false;
+      const cfg = game._levelConfig;
+      if (cfg) {
+        if (game.level > 10) {
+          // Levels 11+: Alert at 10 kills remaining
+          killsAlertTriggerKill = cfg.killTarget - 10;
+        } else {
+          // Levels 1-10: Alert at 5 kills remaining
+          killsAlertTriggerKill = cfg.killTarget - 5;
+        }
+      } else {
+        killsAlertTriggerKill = null;
+      }
+
       // Hide blaster displays during gameplay
       blasterDisplays.forEach(d => { if (d) d.visible = false; });
 
@@ -1868,6 +1901,10 @@ function render(timestamp) {
 
   // ── Playing ──
   else if (st === State.PLAYING) {
+
+    // Update kills remaining alert
+    updateKillsAlert(now);
+
     spawnEnemyWave(dt);
 
     // Full-auto shooting / Lightning beams
