@@ -90,10 +90,11 @@ const blasterDisplays = [null, null];
 const mountainLines = [];
 const mountainBasePeaks = [];
 
-// Environment refs for level-based scaling (sun, ominous horizon)
+// Environment refs for level-based scaling (sun, ominous horizon, aurora)
 let sunMeshRef = null;
 let sunGlowRef = null;
 let ominousRef = null;
+let auroraRef = null;
 
 // Floor damage flash
 let floorMaterial = null;
@@ -364,36 +365,69 @@ function createSun() {
   createAtmosphere();
 }
 
-/** Low-res aurora borealis on sky dome — performance friendly (small texture, single mesh) */
+/** Low-res aurora borealis on sky dome — performance friendly (small texture, dual layers with animation) */
 function createAurora() {
   const w = 32;
   const h = 64;
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, 'rgba(0,40,60,0)');
-  grad.addColorStop(0.3, 'rgba(0,200,180,0.08)');
-  grad.addColorStop(0.5, 'rgba(0,255,200,0.12)');
-  grad.addColorStop(0.7, 'rgba(0,180,220,0.06)');
-  grad.addColorStop(1, 'rgba(0,40,80,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, w, h);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  const geo = new THREE.CylinderGeometry(95, 95, 25, 32, 1, true);
-  const mat = new THREE.MeshBasicMaterial({
-    map: tex,
+
+  // Layer 1: Main aurora curtain (cyan/teal)
+  const canvas1 = document.createElement('canvas');
+  canvas1.width = w;
+  canvas1.height = h;
+  const ctx1 = canvas1.getContext('2d');
+  const grad1 = ctx1.createLinearGradient(0, 0, 0, h);
+  grad1.addColorStop(0, 'rgba(0,40,60,0)');
+  grad1.addColorStop(0.3, 'rgba(0,200,180,0.08)');
+  grad1.addColorStop(0.5, 'rgba(0,255,200,0.12)');
+  grad1.addColorStop(0.7, 'rgba(0,180,220,0.06)');
+  grad1.addColorStop(1, 'rgba(0,40,80,0)');
+  ctx1.fillStyle = grad1;
+  ctx1.fillRect(0, 0, w, h);
+  const tex1 = new THREE.CanvasTexture(canvas1);
+  tex1.wrapS = THREE.RepeatWrapping;
+  const geo1 = new THREE.CylinderGeometry(95, 95, 25, 32, 1, true);
+  const mat1 = new THREE.MeshBasicMaterial({
+    map: tex1,
     transparent: true,
     opacity: 0.9,
     side: THREE.BackSide,
     depthWrite: false,
   });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(0, 15, 0);
-  mesh.renderOrder = -21;
-  scene.add(mesh);
+  const mesh1 = new THREE.Mesh(geo1, mat1);
+  mesh1.position.set(0, 15, 0);
+  mesh1.renderOrder = -21;
+  scene.add(mesh1);
+
+  // Layer 2: Secondary aurora curtain (green/cyan, different speed)
+  const canvas2 = document.createElement('canvas');
+  canvas2.width = w;
+  canvas2.height = h;
+  const ctx2 = canvas2.getContext('2d');
+  const grad2 = ctx2.createLinearGradient(0, 0, 0, h);
+  grad2.addColorStop(0, 'rgba(0,60,40,0)');
+  grad2.addColorStop(0.4, 'rgba(0,255,150,0.05)');
+  grad2.addColorStop(0.6, 'rgba(50,255,200,0.08)');
+  grad2.addColorStop(0.8, 'rgba(0,200,180,0.04)');
+  grad2.addColorStop(1, 'rgba(0,60,80,0)');
+  ctx2.fillStyle = grad2;
+  ctx2.fillRect(0, 0, w, h);
+  const tex2 = new THREE.CanvasTexture(canvas2);
+  tex2.wrapS = THREE.RepeatWrapping;
+  const geo2 = new THREE.CylinderGeometry(96, 96, 28, 32, 1, true);
+  const mat2 = new THREE.MeshBasicMaterial({
+    map: tex2,
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
+  const mesh2 = new THREE.Mesh(geo2, mat2);
+  mesh2.position.set(0, 16, 0);
+  mesh2.renderOrder = -22;
+  scene.add(mesh2);
+
+  // Save reference to primary layer for animation
+  auroraRef = { layer1: mesh1, layer2: mesh2 };
 }
 
 /** Dark ominous shape over the horizon; appears from level 10, large by level 16 */
@@ -2207,6 +2241,20 @@ function render(timestamp) {
       ominousRef.scale.setScalar(0.5 + t * 1.2);
     } else {
       ominousRef.visible = false;
+    }
+  }
+
+  // ── Aurora borealis animation ──
+  // Subtle rotation at different speeds for each layer (performance-friendly)
+  if (auroraRef) {
+    const auroraIntensity = 0.8 + Math.sin(now * 0.0005) * 0.2; // Subtle pulsing
+    if (auroraRef.layer1) {
+      auroraRef.layer1.rotation.y += 0.0003; // Very slow rotation
+      auroraRef.layer1.material.opacity = 0.9 * auroraIntensity;
+    }
+    if (auroraRef.layer2) {
+      auroraRef.layer2.rotation.y -= 0.0002; // Opposite direction, slower
+      auroraRef.layer2.material.opacity = 0.7 * auroraIntensity;
     }
   }
 
