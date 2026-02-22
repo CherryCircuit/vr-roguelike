@@ -19,6 +19,14 @@ export const UPGRADE_POOL = [
   { id: 'ricochet', name: 'Ricochet', desc: 'Shots bounce to nearby enemy', color: '#aaffaa' },
   { id: 'lightning', name: 'Lightning', desc: 'Hold for auto-lock beam', color: '#ffff44', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
   { id: 'charge_shot', name: 'Charge Shot', desc: 'Hold to charge, release for big beam', color: '#ffffff', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  
+  // ALT WEAPONS (side-grades with cooldowns, fired via lower trigger)
+  { id: 'rocket_launcher', name: 'Rocket Launcher', desc: 'Homing rocket, 250 damage + splash, 15s cooldown', color: '#ff6644', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
+  { id: 'helper_bot', name: 'Helper Bot', desc: 'Auto-firing buddy for 15s, 30s cooldown', color: '#88ff88', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
+  { id: 'shield_alt', name: 'Shield', desc: 'Blocks 10 hits, 15s cooldown', color: '#4488ff', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
+  { id: 'gravity_well', name: 'Gravity Well', desc: 'Pulls enemies for 4s, 25s cooldown', color: '#aa88ff', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
+  { id: 'ion_mortar', name: 'Ion Mortar', desc: 'Arcing shell, 400 damage + big splash, 20s cooldown', color: '#ffaa00', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
+  { id: 'hologram_decoy', name: 'Hologram Decoy', desc: 'Distraction for 6s then explodes, 28s cooldown', color: '#ff88ff', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
 ];
 
 /** Special upgrades offered after boss victories (really valuable) */
@@ -122,5 +130,19 @@ export function getWeaponStats(upgrades) {
     lightningDamage: 10 + (u.lightning || 0) * 5 + (u.chain_lightning || 0) * 5,
     lightningTickInterval: (u.lightning || 0) > 0 ? Math.max(0.08, 0.2 / (1 + (u.barrel || 0) * 0.15)) : 0.2,
     chargeShot: (u.charge_shot || 0) > 0,
+    
+    // ALT WEAPONS (cooldowns in milliseconds)
+    altWeapon: u.rocket_launcher ? 'rocket_launcher' : 
+               u.helper_bot ? 'helper_bot' :
+               u.shield_alt ? 'shield_alt' :
+               u.gravity_well ? 'gravity_well' :
+               u.ion_mortar ? 'ion_mortar' :
+               u.hologram_decoy ? 'hologram_decoy' : null,
+    altCooldown: u.rocket_launcher ? 15000 :
+                  u.helper_bot ? 30000 :
+                  u.shield_alt ? 15000 :
+                  u.gravity_well ? 25000 :
+                  u.ion_mortar ? 20000 :
+                  u.hologram_decoy ? 28000 : 0,
   };
 }
