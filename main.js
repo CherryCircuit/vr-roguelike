@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats, isAltWeaponUpgrade } from './upgrades.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
@@ -15,8 +15,7 @@ import {
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound,
   startLightningSound, stopLightningSound,
-  playMusic, stopMusic, getMusicFrequencyData, playKillsAlertSound,
-  playBossTeleportReappear, playBossExplosion, playBossStunned
+  playMusic, stopMusic, getMusicFrequencyData, playKillsAlertSound
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -37,20 +36,13 @@ import {
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
   showLevelIntro, updateLevelIntro, hideLevelIntro,
-  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive,
-  showAltFireTutorial, hideAltFireTutorial
+  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
-import {
-  initDesktopControls, enable as enableDesktop, disable as disableDesktop,
-  toggleMode, isEnabled as isDesktopEnabled,
-  update as updateDesktop, getWeaponState as getDesktopWeaponState,
-  getVirtualController, getControlScheme
-} from './desktop-controls.js';
 
 // ── Constants ──────────────────────────────────────────────
 const NEON_PINK = 0xff00ff;
@@ -79,10 +71,6 @@ const weaponCooldowns = [0, 0];
 const BIG_BOOM_COOLDOWN_MS = 2750;
 const lastExplodingShotTime = [0, 0];
 
-// Wide beam visual indicator vectors
-let chargeBeamA = new THREE.Vector3();
-let chargeBeamB = new THREE.Vector3();
-
 // Explosion visuals (short-lived expanding spheres)
 const explosionVisuals = [];
 
@@ -92,7 +80,7 @@ const lightningTimers = [0, 0];
 
 // Charge shot state (per controller): time when trigger was pressed (ms) or null
 const chargeShotStartTime = [null, null];
-const CHARGE_SHOT_MAX_TIME = 6.0;  // seconds
+const CHARGE_SHOT_MAX_TIME = 5.0;  // seconds
 const CHARGE_SHOT_MIN_FIRE = 0.6;  // seconds (below this, no fire or minimal)
 
 // Holographic blaster displays (per controller)
@@ -102,11 +90,10 @@ const blasterDisplays = [null, null];
 const mountainLines = [];
 const mountainBasePeaks = [];
 
-// Environment refs for level-based scaling (sun, ominous horizon, aurora)
+// Environment refs for level-based scaling (sun, ominous horizon)
 let sunMeshRef = null;
 let sunGlowRef = null;
 let ominousRef = null;
-let auroraRef = null;
 
 // Floor damage flash
 let floorMaterial = null;
@@ -135,11 +122,11 @@ let timeScale = 1.0;
 // Camera shake on damage
 let cameraShake = 0;
 let cameraShakeIntensity = 0;
+const originalCameraPos = new THREE.Vector3();
 
 // Kills remaining alert
 let killsAlertShownThisLevel = false;
-let killsAlertTriggerKill = null; // When to show the alert
-const originalCameraPos = new THREE.Vector3();
+let killsAlertTriggerKill = null;
 
 // ── Bootstrap ──────────────────────────────────────────────
 init();
@@ -191,15 +178,6 @@ function init() {
   // Init subsystems
   initEnemies(scene);
   initHUD(camera, scene);
-  initDesktopControls(scene, camera, renderer);
-
-  // Expose audio functions to window for enemies module
-  window.playBossTeleportReappear = playBossTeleportReappear;
-  window.playBossExplosion = playBossExplosion;
-  window.playBossStunned = playBossStunned;
-
-  // Expose toggle function for debug
-  window.toggleDesktopMode = toggleMode;
 
   // Start at title
   resetGame();
@@ -386,69 +364,36 @@ function createSun() {
   createAtmosphere();
 }
 
-/** Low-res aurora borealis on sky dome — performance friendly (small texture, dual layers with animation) */
+/** Low-res aurora borealis on sky dome — performance friendly (small texture, single mesh) */
 function createAurora() {
   const w = 32;
   const h = 64;
-
-  // Layer 1: Main aurora curtain (cyan/teal)
-  const canvas1 = document.createElement('canvas');
-  canvas1.width = w;
-  canvas1.height = h;
-  const ctx1 = canvas1.getContext('2d');
-  const grad1 = ctx1.createLinearGradient(0, 0, 0, h);
-  grad1.addColorStop(0, 'rgba(0,40,60,0)');
-  grad1.addColorStop(0.3, 'rgba(0,200,180,0.08)');
-  grad1.addColorStop(0.5, 'rgba(0,255,200,0.12)');
-  grad1.addColorStop(0.7, 'rgba(0,180,220,0.06)');
-  grad1.addColorStop(1, 'rgba(0,40,80,0)');
-  ctx1.fillStyle = grad1;
-  ctx1.fillRect(0, 0, w, h);
-  const tex1 = new THREE.CanvasTexture(canvas1);
-  tex1.wrapS = THREE.RepeatWrapping;
-  const geo1 = new THREE.CylinderGeometry(95, 95, 25, 32, 1, true);
-  const mat1 = new THREE.MeshBasicMaterial({
-    map: tex1,
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(0,40,60,0)');
+  grad.addColorStop(0.3, 'rgba(0,200,180,0.08)');
+  grad.addColorStop(0.5, 'rgba(0,255,200,0.12)');
+  grad.addColorStop(0.7, 'rgba(0,180,220,0.06)');
+  grad.addColorStop(1, 'rgba(0,40,80,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  const geo = new THREE.CylinderGeometry(95, 95, 25, 32, 1, true);
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
     transparent: true,
     opacity: 0.9,
     side: THREE.BackSide,
     depthWrite: false,
   });
-  const mesh1 = new THREE.Mesh(geo1, mat1);
-  mesh1.position.set(0, 15, 0);
-  mesh1.renderOrder = -21;
-  scene.add(mesh1);
-
-  // Layer 2: Secondary aurora curtain (green/cyan, different speed)
-  const canvas2 = document.createElement('canvas');
-  canvas2.width = w;
-  canvas2.height = h;
-  const ctx2 = canvas2.getContext('2d');
-  const grad2 = ctx2.createLinearGradient(0, 0, 0, h);
-  grad2.addColorStop(0, 'rgba(0,60,40,0)');
-  grad2.addColorStop(0.4, 'rgba(0,255,150,0.05)');
-  grad2.addColorStop(0.6, 'rgba(50,255,200,0.08)');
-  grad2.addColorStop(0.8, 'rgba(0,200,180,0.04)');
-  grad2.addColorStop(1, 'rgba(0,60,80,0)');
-  ctx2.fillStyle = grad2;
-  ctx2.fillRect(0, 0, w, h);
-  const tex2 = new THREE.CanvasTexture(canvas2);
-  tex2.wrapS = THREE.RepeatWrapping;
-  const geo2 = new THREE.CylinderGeometry(96, 96, 28, 32, 1, true);
-  const mat2 = new THREE.MeshBasicMaterial({
-    map: tex2,
-    transparent: true,
-    opacity: 0.7,
-    side: THREE.BackSide,
-    depthWrite: false,
-  });
-  const mesh2 = new THREE.Mesh(geo2, mat2);
-  mesh2.position.set(0, 16, 0);
-  mesh2.renderOrder = -22;
-  scene.add(mesh2);
-
-  // Save reference to primary layer for animation
-  auroraRef = { layer1: mesh1, layer2: mesh2 };
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(0, 15, 0);
+  mesh.renderOrder = -21;
+  scene.add(mesh);
 }
 
 /** Dark ominous shape over the horizon; appears from level 10, large by level 16 */
@@ -596,22 +541,6 @@ function setupControllers() {
     scene.add(controller);
     controllers.push(controller);
   }
-
-  // Desktop click handler
-  document.addEventListener('mousedown', (e) => {
-    if (isDesktopEnabled() && e.button === 0) {
-      handleDesktopClick();
-    }
-  });
-
-  // ESC handler for pause menu
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && game.state === State.PLAYING) {
-      // Toggle pause or show menu
-      console.log('[game] ESC pressed - pause/menu');
-      // TODO: Implement pause menu
-    }
-  });
 }
 
 function createControllerVisual(index) {
@@ -780,180 +709,7 @@ function onTriggerPress(controller, index) {
     handleCountrySelectTrigger(controller);
   } else if (st === State.READY_SCREEN) {
     handleReadyScreenTrigger(controller);
-  } else if (st === State.ALT_TUTORIAL) {
-    handleAltFireTutorialTrigger(controller);
   }
-}
-
-// ── Desktop Controls Handlers ───────────────────────────────
-
-function handleDesktopClick() {
-  if (!isDesktopEnabled()) return;
-
-  const st = game.state;
-
-  if (st === State.TITLE) {
-    handleDesktopTitleClick();
-  } else if (st === State.UPGRADE_SELECT) {
-    handleDesktopUpgradeSelectClick();
-  } else if (st === State.GAME_OVER || st === State.VICTORY) {
-    if (gameOverCooldown <= 0) {
-      handleDesktopGameOverClick();
-    }
-  } else if (st === State.NAME_ENTRY) {
-    handleDesktopNameEntryClick();
-  } else if (st === State.SCOREBOARD || st === State.REGIONAL_SCORES) {
-    handleDesktopScoreboardClick();
-  } else if (st === State.COUNTRY_SELECT) {
-    handleDesktopCountrySelectClick();
-  } else if (st === State.READY_SCREEN) {
-    handleDesktopReadyScreenClick();
-  } else if (st === State.ALT_TUTORIAL) {
-    handleDesktopAltFireTutorialClick();
-  }
-}
-
-function handleDesktopTitleClick() {
-  const raycaster = getAimRaycaster();
-  if (!raycaster) return;
-
-  const btnHit = getTitleButtonHit(raycaster);
-  if (btnHit === 'scoreboard') {
-    playMenuClick();
-    scoreboardFromGameOver = false;
-    game.state = State.SCOREBOARD;
-    hideTitle();
-    showScoreboard([], 'LOADING...');
-    fetchTopScores().then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD');
-    });
-    return;
-  }
-  playMenuClick();
-  startGame();
-}
-
-function handleDesktopGameOverClick() {
-  game.finalScore = game.score;
-  game.finalLevel = game.level;
-  scoreboardFromGameOver = true;
-  hideGameOver();
-
-  if (!getStoredCountry()) {
-    game.state = State.COUNTRY_SELECT;
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
-  } else {
-    game.state = State.NAME_ENTRY;
-    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
-  }
-}
-
-function handleDesktopNameEntryClick() {
-  const raycaster = getAimRaycaster();
-  if (!raycaster) return;
-
-  const result = getKeyboardHit(raycaster);
-  if (result) {
-    if (result === 'submit') {
-      const name = getNameEntryName();
-      if (isNameClean(name)) {
-        setStoredName(name);
-        hideNameEntry();
-        submitScore(name).then(() => {
-          game.state = State.SCOREBOARD;
-          showScoreboard([], 'LOADING...');
-          fetchTopScores().then(scores => {
-            showScoreboard(scores, 'GLOBAL LEADERBOARD');
-          });
-        });
-      } else {
-        playErrorSound();
-      }
-    } else if (result === 'backspace') {
-      updateKeyboardHover('backspace');
-    } else if (result && result.key) {
-      updateKeyboardHover(result.key);
-    }
-  }
-}
-
-function handleDesktopScoreboardClick() {
-  const raycaster = getAimRaycaster();
-  if (!raycaster) return;
-
-  const hit = getScoreboardHit(raycaster);
-  if (hit === 'back') {
-    playMenuClick();
-    hideScoreboard();
-    if (scoreboardFromGameOver) {
-      game.state = State.TITLE;
-      showTitle();
-    } else {
-      game.state = State.SCOREBOARD;
-      showScoreboard([], 'LOADING...');
-      fetchTopScores().then(scores => {
-        showScoreboard(scores, 'GLOBAL LEADERBOARD');
-      });
-    }
-  } else if (hit === 'region') {
-    const country = getStoredCountry();
-    if (country) {
-      const continent = CONTINENTS.find(c => c.name === country.continent);
-      if (continent) {
-        playMenuClick();
-        hideScoreboard();
-        game.state = State.REGIONAL_SCORES;
-        showScoreboard([], 'LOADING...');
-        fetchScoresByContinent(continent.id).then(scores => {
-          showScoreboard(scores, `${continent.name.toUpperCase()} LEADERBOARD`);
-        });
-      }
-    }
-  }
-}
-
-function handleDesktopCountrySelectClick() {
-  const raycaster = getAimRaycaster();
-  if (!raycaster) return;
-
-  const hit = getCountrySelectHit(raycaster);
-  if (hit && hit.country) {
-    setStoredCountry(hit.country);
-    playMenuClick();
-    hideCountrySelect();
-    game.state = State.NAME_ENTRY;
-    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
-  } else if (hit === 'back') {
-    playMenuClick();
-    hideCountrySelect();
-    game.state = State.SCOREBOARD;
-    showScoreboard([], 'LOADING...');
-    fetchTopScores().then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD');
-    });
-  }
-}
-
-function handleDesktopUpgradeSelectClick() {
-  const raycaster = getAimRaycaster();
-  if (!raycaster) return;
-
-  const hit = getUpgradeCardHit(raycaster);
-  if (hit && hit !== null) {
-    selectUpgradeAt(hit);
-  }
-}
-
-function handleDesktopReadyScreenClick() {
-  playMenuClick();
-  hideUpgradeCards();
-  game.state = State.PLAYING;
-}
-
-function handleDesktopAltFireTutorialClick() {
-  playMenuClick();
-  hideAltFireTutorial();
-  advanceLevelAfterUpgrade();
 }
 
 function handleTitleTrigger(controller) {
@@ -1127,18 +883,12 @@ function onTriggerRelease(index) {
     }
     chargeShotStartTime[index] = null;
   }
-// Stop lightning beam when trigger released
+  // Stop lightning beam when trigger released
   if (lightningBeams[index]) {
     scene.remove(lightningBeams[index]);
     lightningBeams[index] = null;
     stopLightningSound();
   }
-
-  // Satisfying charge beam release - big, dramatic sound
-  explosionVisuals.push(beamInner);
-  explosionVisuals.push(beamOuter);
-
-  playChargeFireSound(damage);
 }
 
 // ============================================================
@@ -1190,13 +940,6 @@ function handleReadyScreenTrigger(controller) {
   }
 }
 
-function handleAltFireTutorialTrigger(controller) {
-  // Dismiss tutorial on any trigger press
-  playMenuClick();
-  hideAltFireTutorial();
-  advanceLevelAfterUpgrade();
-}
-
 function startGame() {
   console.log('[game] Starting new game');
   hideTitle();
@@ -1227,9 +970,6 @@ function showUpgradeScreen() {
   console.log('[game] Showing upgrade selection');
   game.state = State.UPGRADE_SELECT;
   hideLevelComplete();
-
-  // Show HUD during level-up (health hearts and score)
-  showHUD();
 
   // Stop lightning sound during upgrade screen
   stopLightningSound();
@@ -1300,24 +1040,6 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   addUpgrade(upgrade.id, hand);
   playUpgradeSound();
   hideUpgradeCards();
-
-  // Handle alt weapon unlock
-  if (isAltWeaponUpgrade(upgrade.id)) {
-    // Map alt weapon upgrade ID to alt weapon ID
-    const altWeaponId = upgrade.id.replace('alt_', '');
-    game.altWeapon[hand] = altWeaponId;
-    console.log(`[game] Unlocked alt weapon: ${altWeaponId} for ${hand} hand`);
-
-    // Show tutorial on first alt weapon
-    if (!game.altFireTutorialSeen) {
-      game.altFireTutorialSeen = true;
-      game.state = State.ALT_TUTORIAL;
-      showAltFireTutorial();
-      console.log('[game] Showing alt fire tutorial for first alt weapon');
-      return;
-    }
-  }
-
   advanceLevelAfterUpgrade();
 }
 
@@ -1345,12 +1067,6 @@ function advanceLevelAfterUpgrade() {
       // Standard levels use level intro sequence
       game.state = State.LEVEL_INTRO;
       showLevelIntro(game.level);
-
-      // Show HUD during level-up (health hearts and score)
-      showHUD();
-
-      // Hide blaster displays during level-up
-      blasterDisplays.forEach(d => { if (d) d.visible = false; });
     }
   }
 }
@@ -1582,20 +1298,12 @@ const _chargeBeamA = new THREE.Vector3();
 const _chargeBeamB = new THREE.Vector3();
 
 function fireChargeBeam(controller, index, chargeTimeSec, stats) {
-  if (chargeTimeSec < 1.0) return; // minimum charge to fire
+  if (chargeTimeSec < 0.15) return; // minimum charge to fire
   const scale = chargeTimeToScale(chargeTimeSec);
   let damage = stats.damage * scale;
   if (scale >= 1) damage = Math.max(300, damage);
   const beamWidth = 0.2 + scale * 1.3;
-
-  const range = 50;  // Wide beam with inner/outer glow
-  const beamColor = new THREE.Color(0xffaa00);
-  const beamGlow = new THREE.Color(0xffcc00);
-  const beamLength = range;
-
-  // Wide beam visual indicators (for tracking)
-  let chargeBeamA = new THREE.Vector3();
-  let chargeBeamB = new THREE.Vector3();
+  const range = 50;
 
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -1603,43 +1311,8 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
 
-  // Wide beam visual with inner/outer glow
-  const beamColor = new THREE.Color(0xffaa00);
-  const beamGlow = new THREE.Color(0xffcc00);
-  const beamInnerGeo = new THREE.CylinderGeometry(2.0, range, 8);  // Wide beam (2.0 width)
-  const beamOuterGeo = new THREE.CylinderGeometry(2.5, range, 8);  // Outer glow layer
-  const beamInnerMat = new THREE.MeshBasicMaterial({
-    color: beamColor,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-  });
-  const beamOuterMat = new THREE.MeshBasicMaterial({
-    color: beamGlow,
-    transparent: true,
-    opacity: 0.4,
-    blending: THREE.AdditiveBlending,
-  });
-
-  const beamInner = new THREE.Mesh(beamInnerGeo, beamInnerMat);
-  const beamOuter = new THREE.Mesh(beamOuterGeo, beamOuterMat);
-  beamInner.position.copy(origin).addScaledVector(direction, range * 0.5);
-  beamOuter.position.copy(origin).addScaledVector(direction, range * 0.5);
-  beamInner.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
-  beamOuter.quaternion.copy(beamInner.quaternion);
-
-  // Duration: longer for satisfying feel
-  beamInner.userData.createdAt = performance.now();
-  beamInner.userData.duration = 300;  // 0.3 seconds
-  beamOuter.userData.createdAt = performance.now();
-  beamOuter.userData.duration = 300;
-  beamInner.userData.isChargeBeam = true;
-  beamOuter.userData.isChargeBeam = true;
-
-  scene.add(beamInner);
-  scene.add(beamOuter);
-  explosionVisuals.push(beamInner);
-  explosionVisuals.push(beamOuter);
+  _chargeBeamA.copy(origin);
+  _chargeBeamB.copy(origin).addScaledVector(direction, range);
 
   const controllerIndex = index;
   const hand = index === 0 ? 'left' : 'right';
@@ -2051,18 +1724,6 @@ function selectUpgrade(controller) {
   }
 }
 
-function selectUpgradeAt(index) {
-  if (upgradeSelectionCooldown > 0) return;
-
-  const upgrades = getRandomUpgrades(3);
-  if (index >= 0 && index < upgrades.length) {
-    const upgrade = upgrades[index];
-    // Randomly assign to left or right hand
-    const hand = Math.random() < 0.5 ? 'left' : 'right';
-    selectUpgradeAndAdvance(upgrade, hand);
-  }
-}
-
 // ============================================================
 //  ENEMY SPAWNING
 // ============================================================
@@ -2216,10 +1877,16 @@ function render(timestamp) {
       // Set up kills remaining alert trigger
       killsAlertShownThisLevel = false;
       const cfg = game._levelConfig;
-      if (cfg && cfg.killTarget > 5) {
-        killsAlertTriggerKill = cfg.killTarget - 5; // Alert when 5 kills remaining
+      if (cfg) {
+        if (game.level > 10) {
+          // Levels 11+: Alert at 10 kills remaining
+          killsAlertTriggerKill = cfg.killTarget - 10;
+        } else {
+          // Levels 1-10: Alert at 5 kills remaining
+          killsAlertTriggerKill = cfg.killTarget - 5;
+        }
       } else {
-        killsAlertTriggerKill = null; // Don't alert if level has 5 or fewer kills
+        killsAlertTriggerKill = null;
       }
 
       // Hide blaster displays during gameplay
@@ -2238,28 +1905,9 @@ function render(timestamp) {
     // Update kills remaining alert
     updateKillsAlert(now);
 
-    // HUD hover detection for both controllers
-    const HUD_RAYCASTERS = [];
-    for (let i = 0; i < 2; i++) {
-      const origin = new THREE.Vector3();
-      const quat = new THREE.Quaternion();
-      controllers[i].getWorldPosition(origin);
-      controllers[i].getWorldQuaternion(quat);
-      const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-      const raycaster = new THREE.Raycaster(origin, direction, 0, 20);
-      HUD_RAYCASTERS.push(raycaster);
-    }
-
-    if (updateHUDHover(HUD_RAYCASTERS)) {
-      playMenuHoverSound();
-    }
-
     spawnEnemyWave(dt);
 
-    // Update desktop controls movement
-    const desktopMove = updateDesktop(dt);
-
-    // Full-auto shooting / Lightning beams (VR controllers)
+    // Full-auto shooting / Lightning beams
     for (let i = 0; i < 2; i++) {
       if (controllerTriggerPressed[i]) {
         const hand = i === 0 ? 'left' : 'right';
@@ -2279,43 +1927,6 @@ function render(timestamp) {
           lightningBeams[i] = null;
         }
       }
-    }
-
-    // Desktop firing
-    const desktopWeapon = getDesktopWeaponState();
-    if (desktopWeapon.triggerPressed) {
-      // Handle fire mode: left, right, or both
-      if (desktopWeapon.fireMode === 'left' || desktopWeapon.fireMode === 'both') {
-        const virtualController = getVirtualController('left');
-        if (virtualController) {
-          const stats = getWeaponStats(game.upgrades.left);
-          if (stats.chargeShot) {
-            if (chargeShotStartTime[0] === null) chargeShotStartTime[0] = now;
-          } else if (stats.lightning) {
-            updateLightningBeam(virtualController, 0, stats, dt);
-          } else {
-            shootWeapon(virtualController, 0);
-          }
-        }
-      }
-
-      if (desktopWeapon.fireMode === 'right' || desktopWeapon.fireMode === 'both') {
-        const virtualController = getVirtualController('right');
-        if (virtualController) {
-          const stats = getWeaponStats(game.upgrades.right);
-          if (stats.chargeShot) {
-            if (chargeShotStartTime[1] === null) chargeShotStartTime[1] = now;
-          } else if (stats.lightning) {
-            updateLightningBeam(virtualController, 1, stats, dt);
-          } else {
-            shootWeapon(virtualController, 1);
-          }
-        }
-      }
-    } else {
-      // Release charge shots when not pressing fire
-      if (chargeShotStartTime[0] !== null) chargeShotStartTime[0] = null;
-      if (chargeShotStartTime[1] !== null) chargeShotStartTime[1] = null;
     }
 
     // Fast enemy proximity alerts
@@ -2365,26 +1976,6 @@ function render(timestamp) {
       updateBossMinions(dt, playerPos);
       showBossHealthBar(boss.hp, boss.maxHp, boss.phases);
       updateBossHealthBar(boss.hp, boss.maxHp, boss.phases);
-
-      // Check if boss explosion hit player (dodger behavior)
-      if (boss.lastExplosionHitPlayer) {
-        boss.lastExplosionHitPlayer = false; // Reset flag
-        const dead = damagePlayer(3); // 3 damage from explosion
-        triggerHitFlash();
-        playDamageSound();
-        cameraShake = 0.8;
-        cameraShakeIntensity = 0.1;
-        originalCameraPos.copy(camera.position);
-        floorFlashing = true;
-        floorFlashTimer = 0.7;
-        slowMoActive = false;
-        slowMoRampOut = false;
-        timeScale = 1.0;
-        console.log(`[boss-explosion] Player hit by boss explosion! Health: ${game.health}`);
-        if (dead) {
-          endGame(false);
-        }
-      }
 
       // Check if boss was killed
       if (boss.hp <= 0) {
@@ -2597,20 +2188,6 @@ function render(timestamp) {
       ominousRef.scale.setScalar(0.5 + t * 1.2);
     } else {
       ominousRef.visible = false;
-    }
-  }
-
-  // ── Aurora borealis animation ──
-  // Subtle rotation at different speeds for each layer (performance-friendly)
-  if (auroraRef) {
-    const auroraIntensity = 0.8 + Math.sin(now * 0.0005) * 0.2; // Subtle pulsing
-    if (auroraRef.layer1) {
-      auroraRef.layer1.rotation.y += 0.0003; // Very slow rotation
-      auroraRef.layer1.material.opacity = 0.9 * auroraIntensity;
-    }
-    if (auroraRef.layer2) {
-      auroraRef.layer2.rotation.y -= 0.0002; // Opposite direction, slower
-      auroraRef.layer2.material.opacity = 0.7 * auroraIntensity;
     }
   }
 
