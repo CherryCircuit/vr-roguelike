@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { State, getComboMultiplier } from './game.js';
+import { playLowHealthAlertSound } from './audio.js';
 
 // ── Module state ───────────────────────────────────────────
 let sceneRef, cameraRef;
@@ -71,6 +72,12 @@ let killsAlertActive = false;
 let killsAlertStartTime = 0;
 let killsAlertDisplayTime = 0;
 let killsAlertMesh = null;
+
+// Low health alert state
+let lowHealthAlertActive = false;
+let lowHealthAlertStartTime = 0;
+let lowHealthAlertInterval = 3000; // 3 seconds
+let lowHealthAlertLastSoundTime = 0;
 
 // Scoreboard state
 let scoreboardCanvas = null;
@@ -1498,6 +1505,50 @@ export function hideKillsAlert() {
 
 export function isKillsAlertActive() {
   return killsAlertActive;
+}
+
+// ── Low Health Alert (Floor Pulse) ─────────────────────────
+
+export function startLowHealthAlert() {
+  if (lowHealthAlertActive) return; // Already active
+
+  lowHealthAlertActive = true;
+  lowHealthAlertStartTime = performance.now();
+  lowHealthAlertLastSoundTime = 0;
+}
+
+export function updateLowHealthAlert(now, gameState, floorMaterial) {
+  if (!lowHealthAlertActive) return;
+
+  // Stop alert if health recovers
+  if (gameState.health > LOW_HEALTH_THRESHOLD) {
+    stopLowHealthAlert();
+    return;
+  }
+
+  const elapsed = now - lowHealthAlertStartTime;
+  const healthRatio = gameState.health / gameState.maxHealth;
+
+  // Floor pulse - continuous red flash
+  // Use same red color as hit flash
+  const pulseSpeed = 2.0; // Faster than normal hit flash
+  const pulseIntensity = 0.5 + Math.sin(elapsed * 0.005 * pulseSpeed) * 0.5;
+  const flashColor = new THREE.Color(0xff2222); // Bright red
+  floorMaterial.color.copy(FLOOR_BASE_COLOR).lerp(flashColor, pulseIntensity);
+
+  // Play alert sound every 3 seconds
+  if (now - lowHealthAlertLastSoundTime >= lowHealthAlertInterval) {
+    playLowHealthAlertSound();
+    lowHealthAlertLastSoundTime = now;
+  }
+}
+
+export function stopLowHealthAlert() {
+  lowHealthAlertActive = false;
+}
+
+export function isLowHealthAlertActive() {
+  return lowHealthAlertActive;
 }
 
 export function getReadyScreenHit(raycaster) {

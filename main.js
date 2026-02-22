@@ -15,7 +15,7 @@ import {
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound,
   startLightningSound, stopLightningSound,
-  playMusic, stopMusic, getMusicFrequencyData, playKillsAlertSound
+  playMusic, stopMusic, getMusicFrequencyData, playKillsAlertSound, playLowHealthAlertSound
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -36,7 +36,8 @@ import {
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
   showLevelIntro, updateLevelIntro, hideLevelIntro,
-  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive
+  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive,
+  startLowHealthAlert, updateLowHealthAlert, stopLowHealthAlert, isLowHealthAlertActive
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -126,7 +127,13 @@ let cameraShakeIntensity = 0;
 // Kills remaining alert
 let killsAlertShownThisLevel = false;
 let killsAlertTriggerKill = null; // When to show the alert
-const originalCameraPos = new THREE.Vector3();
+
+// Low health alert
+let lowHealthAlertActive = false;
+let lowHealthAlertStartTime = 0;
+let lowHealthAlertInterval = 3000; // 3 seconds
+let lowHealthAlertLastSoundTime = 0;
+const LOW_HEALTH_THRESHOLD = 0.5; // 0.5 health = 1/2 heart
 
 // ── Bootstrap ──────────────────────────────────────────────
 init();
@@ -1898,6 +1905,17 @@ function render(timestamp) {
 
     // Update kills remaining alert
     updateKillsAlert(now);
+
+    // Check for low health alert (1/2 heart = 0.5 health)
+    const healthRatio = game.health / game.maxHealth;
+    if (healthRatio <= LOW_HEALTH_THRESHOLD && !isLowHealthAlertActive()) {
+      startLowHealthAlert();
+    }
+
+    // Update low health alert (floor pulse + sound every 3s)
+    if (floorMaterial) {
+      updateLowHealthAlert(now, game, floorMaterial);
+    }
 
     spawnEnemyWave(dt);
 
