@@ -6,8 +6,8 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings } from './game.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
@@ -15,14 +15,16 @@ import {
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound,
   startLightningSound, stopLightningSound,
-  playMusic, stopMusic, getMusicFrequencyData
+  playMusic, stopMusic, getMusicFrequencyData,
+  playBossDeathSound
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
-  updateBossProjectiles, getBossProjectiles
+  updateBossProjectiles, getBossProjectiles,
+  updateBossDebris, clearBossDebris
 } from './enemies.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
@@ -34,7 +36,9 @@ import {
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
-  showDebugJumpScreen, getDebugJumpHit
+  showDebugJumpScreen, getDebugJumpHit,
+  showDebugMenu, hideDebugMenu, getDebugMenuHit, updateTitleDebugIndicator,
+  updateDebugStatsOverlay
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -61,6 +65,13 @@ const controllerTriggerPressed = [false, false];
 const projectiles = [];
 let lastTime = 0;
 let frameCount = 0;  // For staggering updates
+
+// PERFORMANCE: Hard cap on active projectiles to prevent accumulation
+const MAX_PROJECTILES = 50;
+
+// PERFORMANCE: Projectile pool for reuse (avoid creating geometry per shot)
+const projectilePool = [];
+const PROJECTILE_POOL_SIZE = 60;
 
 // Weapon firing cooldowns (per controller)
 const weaponCooldowns = [0, 0];
@@ -102,7 +113,6 @@ let floorFlashing = false;
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
 let pendingUpgrades = [];
-let upgradeHand = 'left';  // which hand is selecting
 
 // Game over cooldown
 let gameOverCooldown = 0;
@@ -130,6 +140,9 @@ init();
 // ============================================================
 function init() {
   console.log('[SPACEOMICIDE] Initialising...');
+
+  // Load debug settings from localStorage
+  loadDebugSettings();
 
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
@@ -172,6 +185,9 @@ function init() {
   // Init subsystems
   initEnemies(scene);
   initHUD(camera, scene);
+
+  // PERFORMANCE: Initialize projectile pool
+  initProjectilePool();
 
   // Start at title
   resetGame();
@@ -521,8 +537,14 @@ function setupControllers() {
   for (let i = 0; i < 2; i++) {
     const controller = renderer.xr.getController(i);
 
+    // MAIN weapon triggers (top/select trigger)
     controller.addEventListener('selectstart', () => { controllerTriggerPressed[i] = true; onTriggerPress(controller, i); });
     controller.addEventListener('selectend', () => { controllerTriggerPressed[i] = false; onTriggerRelease(i); });
+    
+    // ALT weapon triggers (bottom/squeeze trigger)
+    controller.addEventListener('squeezestart', () => { onSqueezePress(controller, i); });
+    controller.addEventListener('squeezeend', () => { onSqueezeRelease(i); });
+    
     controller.addEventListener('connected', (e) => {
       console.log(`[controller] ${i} connected — ${e.data.handedness}`);
       controller.userData.handedness = e.data.handedness;
@@ -688,7 +710,7 @@ function onTriggerPress(controller, index) {
   if (st === State.TITLE) {
     handleTitleTrigger(controller);
   } else if (st === State.PLAYING) {
-    shootWeapon(controller, index);
+    fireMainWeapon(controller, index);  // Changed from shootWeapon
   } else if (st === State.UPGRADE_SELECT) {
     selectUpgrade(controller);
   } else if (st === State.GAME_OVER || st === State.VICTORY) {
@@ -703,6 +725,8 @@ function onTriggerPress(controller, index) {
     handleCountrySelectTrigger(controller);
   } else if (st === State.READY_SCREEN) {
     handleReadyScreenTrigger(controller);
+  } else if (st === State.DEBUG_MENU) {
+    handleDebugMenuTrigger(controller);
   }
 }
 
@@ -724,6 +748,13 @@ function handleTitleTrigger(controller) {
     fetchTopScores().then(scores => {
       showScoreboard(scores, 'GLOBAL LEADERBOARD');
     });
+    return;
+  }
+  if (btnHit === 'debug_menu') {
+    playMenuClick();
+    game.state = State.DEBUG_MENU;
+    hideTitle();
+    showDebugMenu();
     return;
   }
   playMenuClick();
@@ -870,7 +901,7 @@ function onTriggerRelease(index) {
   // Charge shot: fire beam on release
   if (chargeShotStartTime[index] !== null) {
     const hand = index === 0 ? 'left' : 'right';
-    const stats = getWeaponStats(game.upgrades[hand]);
+    const stats = getWeaponStats(game.mainWeapon[hand], game.upgrades[hand]);
     if (stats.chargeShot) {
       const chargeTimeSec = (performance.now() - chargeShotStartTime[index]) / 1000;
       fireChargeBeam(controllers[index], index, chargeTimeSec, stats);
@@ -883,6 +914,100 @@ function onTriggerRelease(index) {
     lightningBeams[index] = null;
     stopLightningSound();
   }
+}
+
+// ============================================================
+//  ALT WEAPON HANDLERS (squeeze trigger)
+// ============================================================
+function onSqueezePress(controller, index) {
+  const st = game.state;
+  
+  // Only fire ALT weapons during gameplay
+  if (st === State.PLAYING) {
+    fireAltWeapon(controller, index);
+  }
+}
+
+function onSqueezeRelease(index) {
+  // Currently no release logic needed for ALT weapons
+  // Could add charge-up ALT weapons in future
+}
+
+// ============================================================
+//  ALT WEAPON FIRING
+// ============================================================
+function fireAltWeapon(controller, index) {
+  const hand = index === 0 ? 'left' : 'right';
+  const altWeaponId = game.altWeapon[hand];
+  
+  // Check if ALT weapon is equipped
+  if (!altWeaponId) {
+    // No ALT weapon equipped for this hand
+    return;
+  }
+  
+  // Check cooldown
+  const now = performance.now();
+  if (now < game.altCooldowns[hand]) {
+    // Still on cooldown
+    return;
+  }
+  
+  const altWeapon = getAltWeapon(altWeaponId);
+  if (!altWeapon) {
+    console.warn(`Unknown ALT weapon: ${altWeaponId}`);
+    return;
+  }
+  
+  // Get controller position and direction
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  
+  // Execute ALT weapon specific logic
+  console.log(`[ALT weapon] Firing ${altWeaponId} from ${hand} hand`);
+  
+  switch (altWeaponId) {
+    case 'shield':
+      // TODO: Implement shield
+      console.log('[ALT] Shield activated (not implemented yet)');
+      break;
+      
+    case 'grenade':
+      // TODO: Implement grenade
+      console.log('[ALT] Grenade thrown (not implemented yet)');
+      break;
+      
+    case 'mine':
+      // TODO: Implement mine
+      console.log('[ALT] Mine placed (not implemented yet)');
+      break;
+      
+    case 'drone':
+      // TODO: Implement drone
+      console.log('[ALT] Drone deployed (not implemented yet)');
+      break;
+      
+    case 'emp':
+      // TODO: Implement EMP
+      console.log('[ALT] EMP activated (not implemented yet)');
+      break;
+      
+    case 'teleport':
+      // TODO: Implement teleport
+      console.log('[ALT] Teleport (not implemented yet)');
+      break;
+      
+    default:
+      console.warn(`Unknown ALT weapon type: ${altWeaponId}`);
+      return;
+  }
+  
+  // Set cooldown
+  game.altCooldowns[hand] = now + altWeapon.cooldown;
+  playShoothSound();  // Placeholder sound
 }
 
 // ============================================================
@@ -934,6 +1059,27 @@ function handleReadyScreenTrigger(controller) {
   }
 }
 
+function handleDebugMenuTrigger(controller) {
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const raycaster = new THREE.Raycaster(origin, direction, 0, 10);
+
+  const result = getDebugMenuHit(raycaster);
+  if (result && result.action === 'back') {
+    playMenuClick();
+    saveDebugSettings();  // Save settings before leaving
+    hideDebugMenu();
+    resetGame();
+    showTitle();
+    updateTitleDebugIndicator();  // Update the indicator on title screen
+    return;
+  }
+  // Toggle clicks are handled in getDebugMenuHit with visual updates
+}
+
 function startGame() {
   console.log('[game] Starting new game');
   hideTitle();
@@ -954,10 +1100,30 @@ function completeLevel() {
   console.log(`[game] Level ${game.level} complete`);
   game.state = State.LEVEL_COMPLETE;
   clearAllEnemies();
+
+  // PERFORMANCE: Clear all projectiles on level complete
+  clearAllProjectiles();
+
+  // Clear boss debris from death animation
+  clearBossDebris();
+
   stopLightningSound();
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
   game.stateTimer = 2.0; // cooldown before upgrade screen
   showLevelComplete(game.level, camera.position);
+}
+
+// PERFORMANCE: Clear all active projectiles and return them to pool
+function clearAllProjectiles() {
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const proj = projectiles[i];
+    if (proj.userData.isPooled) {
+      returnProjectileToPool(proj);
+    } else {
+      scene.remove(proj);
+    }
+  }
+  projectiles.length = 0;
 }
 
 function showUpgradeScreen() {
@@ -968,23 +1134,39 @@ function showUpgradeScreen() {
   // Stop lightning sound during upgrade screen
   stopLightningSound();
 
-  // Alternate between left and right hand
-  upgradeHand = upgradeHand === 'left' ? 'right' : 'left';
+  // Get the hand for this upgrade
+  const hand = getNextUpgradeHand();
 
-  // Determine what shot types to exclude (if both hands have the same one)
-  const shotTypeIds = ['lightning', 'buckshot', 'charge_shot'];
-  const leftShotType = shotTypeIds.find(s => (game.upgrades.left[s] || 0) > 0);
-  const rightShotType = shotTypeIds.find(s => (game.upgrades.right[s] || 0) > 0);
-  const excludeIds = [];
-
-  // If both hands have the same shot type, don't offer it
-  if (leftShotType && leftShotType === rightShotType) {
-    excludeIds.push(leftShotType);
-    console.log(`[game] Both hands have ${leftShotType}, excluding from upgrade pool`);
+  // Check if this is the level 1→2 transition where player chooses MAIN weapon
+  if (needsMainWeaponChoice()) {
+    // Show MAIN weapon selection (all 6 types)
+    console.log('[game] Level 1→2: Showing MAIN weapon selection');
+    const mainWeaponOptions = Object.values(MAIN_WEAPONS);
+    pendingUpgrades = mainWeaponOptions;
+    showUpgradeCards(pendingUpgrades, camera.position, hand);
+    upgradeSelectionCooldown = 1.5;
+    blasterDisplays.forEach(d => { if (d) d.userData.needsUpdate = true; });
+    return;
   }
 
-  pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3, excludeIds);
-  showUpgradeCards(pendingUpgrades, camera.position, upgradeHand);
+  // Normal upgrade selection
+  // Get the MAIN weapon for this hand
+  const mainWeaponId = game.mainWeapon[hand];
+  
+  // Check if MAIN weapon is already locked for this hand
+  if (game.mainWeaponLocked[hand]) {
+    // Show upgrades filtered by equipped MAIN weapon
+    console.log(`[game] Showing upgrades for ${hand} hand (${mainWeaponId})`);
+    pendingUpgrades = game.justBossKill ? 
+      getRandomSpecialUpgrades(3, mainWeaponId) : 
+      getRandomUpgrades(3, mainWeaponId);
+  } else {
+    // MAIN weapon not locked yet - show all upgrades (shouldn't happen after level 2)
+    console.log(`[game] WARNING: MAIN weapon not locked for ${hand} hand at level ${game.level}`);
+    pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3);
+  }
+
+  showUpgradeCards(pendingUpgrades, camera.position, hand);
   if (game.justBossKill) game.justBossKill = false;
   upgradeSelectionCooldown = 1.5; // prevent instant selection
 
@@ -993,7 +1175,7 @@ function showUpgradeScreen() {
 }
 
 function selectUpgradeAndAdvance(upgrade, hand) {
-  console.log(`[game] Selected upgrade: ${upgrade.name} for ${hand} hand`);
+  console.log(`[game] Selected: ${upgrade.name} for ${hand} hand`);
 
   // Handle SKIP option - restore full health instead of upgrade
   if (upgrade.id === 'SKIP') {
@@ -1005,32 +1187,27 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     return;
   }
 
-  const def = getUpgradeDef(upgrade.id) || upgrade;
-  const shotTypeIds = ['lightning', 'buckshot', 'charge_shot'];
-  const isShotTypeSideGrade = def.sideGrade && shotTypeIds.includes(upgrade.id);
-  const currentShotType = shotTypeIds.find(s => (game.upgrades[hand][s] || 0) > 0);
-  const handHasOtherShotType = currentShotType && currentShotType !== upgrade.id;
-
-  // Side-grade: change shot type and replace this card with another, then pick again
-  if (isShotTypeSideGrade && handHasOtherShotType) {
-    delete game.upgrades[hand][currentShotType];
-    addUpgrade(upgrade.id, hand);
+  // Check if this is a MAIN weapon selection (level 1→2)
+  if (upgrade.type === 'main') {
+    console.log(`[game] Selected MAIN weapon: ${upgrade.id} for ${hand} hand`);
+    setMainWeapon(upgrade.id, hand);
     playUpgradeSound();
-    const idx = pendingUpgrades.findIndex(u => u.id === upgrade.id);
-    const replacement = getRandomUpgradeExcluding([upgrade.id]);
-    if (replacement && idx >= 0) {
-      pendingUpgrades = [...pendingUpgrades];
-      pendingUpgrades[idx] = replacement;
-      hideUpgradeCards();
-      showUpgradeCards(pendingUpgrades, camera.position, hand);
-      upgradeSelectionCooldown = 1.5;
-    } else {
-      hideUpgradeCards();
-      advanceLevelAfterUpgrade();
-    }
+    hideUpgradeCards();
+    advanceLevelAfterUpgrade();
     return;
   }
 
+  // Check if this is an ALT weapon
+  if (upgrade.type === 'alt') {
+    console.log(`[game] Selected ALT weapon: ${upgrade.id} for ${hand} hand`);
+    setAltWeapon(upgrade.id, hand);
+    playUpgradeSound();
+    hideUpgradeCards();
+    advanceLevelAfterUpgrade();
+    return;
+  }
+
+  // Regular upgrade
   addUpgrade(upgrade.id, hand);
   playUpgradeSound();
   hideUpgradeCards();
@@ -1064,6 +1241,13 @@ function endGame(victory) {
   game.finalLevel = game.level;
   clearAllEnemies();
   clearBoss();
+
+  // PERFORMANCE: Clear all projectiles on game end
+  clearAllProjectiles();
+
+  // Clear boss debris
+  clearBossDebris();
+
   hideHUD();
   hideBossHealthBar();
   gameOverCooldown = 2.0;  // 2 second cooldown before restart allowed
@@ -1082,10 +1266,95 @@ function endGame(victory) {
 // ============================================================
 //  SHOOTING & COMBAT
 // ============================================================
-function shootWeapon(controller, index) {
+
+// PERFORMANCE: Initialize projectile pool for reuse
+function initProjectilePool() {
+  // Pre-create pooled projectile meshes (both types: laser and buckshot)
+  const colors = [NEON_CYAN, NEON_PINK];
+
+  for (let i = 0; i < PROJECTILE_POOL_SIZE; i++) {
+    const color = colors[i % 2];
+
+    // Create laser bolt (most common)
+    const group = new THREE.Group();
+    const boltLength = 1.0;
+    const boltGeo = new THREE.CylinderGeometry(0.015, 0.015, boltLength, 6);
+    const bolt = new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ color }));
+    bolt.rotation.x = Math.PI / 2;
+    bolt.position.z = -boltLength / 2;
+    group.add(bolt);
+
+    // Glow cylinder
+    const glowGeo = new THREE.CylinderGeometry(0.035, 0.035, boltLength, 6);
+    const glowBolt = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
+    glowBolt.rotation.x = Math.PI / 2;
+    glowBolt.position.z = -boltLength / 2;
+    group.add(glowBolt);
+
+    group.visible = false;
+    group.userData.isPooled = true;
+    group.userData.poolType = 'laser';
+    scene.add(group);
+    projectilePool.push(group);
+  }
+
+  // Add some buckshot pellets to pool
+  for (let i = 0; i < 20; i++) {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xdddddd })
+    );
+    mesh.visible = false;
+    mesh.userData.isPooled = true;
+    mesh.userData.poolType = 'buckshot';
+    scene.add(mesh);
+    projectilePool.push(mesh);
+  }
+
+  console.log(`[performance] Projectile pool initialized: ${projectilePool.length} objects`);
+}
+
+// PERFORMANCE: Get a projectile from pool or return null if exhausted
+function getPooledProjectile(isBuckshot, color) {
+  const poolType = isBuckshot ? 'buckshot' : 'laser';
+
+  // Find inactive projectile of correct type
+  for (const proj of projectilePool) {
+    if (!proj.visible && proj.userData.poolType === poolType) {
+      // Update color for laser bolts
+      if (!isBuckshot && proj.children) {
+        proj.children.forEach(child => {
+          if (child.material) child.material.color.setHex(color);
+        });
+      }
+      return proj;
+    }
+  }
+
+  // Pool exhausted - return null (caller should skip spawn)
+  return null;
+}
+
+// PERFORMANCE: Return projectile to pool instead of destroying
+function returnProjectileToPool(proj) {
+  proj.visible = false;
+  proj.userData.velocity = null;
+  proj.userData.stats = null;
+  proj.userData.controllerIndex = undefined;
+  proj.userData.isExploding = undefined;
+  proj.userData.lifetime = undefined;
+  proj.userData.createdAt = undefined;
+  proj.userData.hitEnemies = null;
+}
+
+// ============================================================
+//  MAIN WEAPON FIRING
+// ============================================================
+function fireMainWeapon(controller, index) {
   const now = performance.now();
   const hand = index === 0 ? 'left' : 'right';
-  const stats = getWeaponStats(game.upgrades[hand]);
+  const mainWeaponId = game.mainWeapon[hand];
+  const stats = getWeaponStats(mainWeaponId, game.upgrades[hand]);
 
   // Lightning beam mode - handled separately in update loop
   if (stats.lightning) {
@@ -1122,7 +1391,7 @@ function shootWeapon(controller, index) {
     spawnProjectile(spawnOrigin, direction.clone(), index, stats);
   }
 
-  console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
+  console.log(`[MAIN weapon] ${hand} hand fired ${count} projectile(s) from ${mainWeaponId}`);
 }
 
 function updateLightningBeam(controller, index, stats, dt) {
@@ -1360,6 +1629,13 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
 }
 
 function spawnProjectile(origin, direction, controllerIndex, stats) {
+  // PERFORMANCE: Enforce hard cap on active projectiles
+  if (projectiles.length >= MAX_PROJECTILES) {
+    // Skip spawning - too many projectiles active
+    // This prevents accumulation with dual blasters + multi-shot upgrades
+    return;
+  }
+
   const now = performance.now();
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
   const isBuckshot = stats.spreadAngle > 0;
@@ -1373,34 +1649,15 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
     }
   }
 
-  // Star Wars style laser bolt (thin cylinder) or pellet
-  let mesh;
-  if (isBuckshot) {
-    // Pellet: small sphere
-    mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.025, 6, 6),
-      new THREE.MeshBasicMaterial({ color: 0xdddddd })
-    );
-  } else {
-    // Laser bolt: elongated cylinder (3-4 feet ~ 1 meter)
-    const group = new THREE.Group();
-    const boltLength = 1.0;
-    const boltGeo = new THREE.CylinderGeometry(0.015, 0.015, boltLength, 6);
-    const bolt = new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ color }));
-    bolt.rotation.x = Math.PI / 2; // align with forward direction
-    bolt.position.z = -boltLength / 2;
-    group.add(bolt);
+  // PERFORMANCE: Get projectile from pool instead of creating new
+  let mesh = getPooledProjectile(isBuckshot, color);
 
-    // Glow cylinder
-    const glowGeo = new THREE.CylinderGeometry(0.035, 0.035, boltLength, 6);
-    const glowBolt = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
-    glowBolt.rotation.x = Math.PI / 2;
-    glowBolt.position.z = -boltLength / 2;
-    group.add(glowBolt);
-
-    mesh = group;
+  if (!mesh) {
+    // Pool exhausted - skip this projectile (prevents unbounded growth)
+    return;
   }
 
+  // Reset and activate pooled projectile
   mesh.position.copy(origin);
   mesh.userData.velocity = direction.clone().multiplyScalar(isBuckshot ? 20 : 40);
   mesh.userData.stats = stats;
@@ -1409,13 +1666,13 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
   mesh.userData.lifetime = 3000;
   mesh.userData.createdAt = performance.now();
   mesh.userData.hitEnemies = new Set();
+  mesh.visible = true;
 
   // Orient bolt along direction
   if (!isBuckshot) {
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction);
   }
 
-  scene.add(mesh);
   projectiles.push(mesh);
 
   if (isBuckshot) {
@@ -1557,6 +1814,16 @@ function handleAOE(center, radius, damage, controllerIndex) {
 
 /** Spawn a short-lived visible explosion (expanding sphere) at center. */
 function spawnExplosionVisual(center, radius) {
+  // PERFORMANCE: Cap explosion visuals to prevent accumulation
+  const MAX_EXPLOSION_VISUALS = 15;
+  if (explosionVisuals.length >= MAX_EXPLOSION_VISUALS) {
+    // Remove oldest explosion visual
+    const oldest = explosionVisuals.shift();
+    scene.remove(oldest);
+    oldest.geometry.dispose();
+    oldest.material.dispose();
+  }
+
   const duration = 350; // ms
   const geo = new THREE.SphereGeometry(radius * 0.3, 12, 12);
   const mat = new THREE.MeshBasicMaterial({
@@ -1629,9 +1896,13 @@ function updateProjectiles(dt) {
     const proj = projectiles[i];
     const age = now - proj.userData.createdAt;
 
-    // Remove expired projectiles
+    // Remove expired projectiles - return to pool
     if (age > proj.userData.lifetime) {
-      scene.remove(proj);
+      if (proj.userData.isPooled) {
+        returnProjectileToPool(proj);
+      } else {
+        scene.remove(proj);
+      }
       projectiles.splice(i, 1);
       continue;
     }
@@ -1649,7 +1920,11 @@ function updateProjectiles(dt) {
       if (result && result.boss) {
         handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex);
         if (!proj.userData.stats.piercing) {
-          scene.remove(proj);
+          if (proj.userData.isPooled) {
+            returnProjectileToPool(proj);
+          } else {
+            scene.remove(proj);
+          }
           projectiles.splice(i, 1);
         }
       } else if (result && result.index !== undefined && !proj.userData.hitEnemies.has(result.index)) {
@@ -1663,9 +1938,13 @@ function updateProjectiles(dt) {
           handleRicochet(hits[0].point, proj.userData.stats, 0, proj.userData.controllerIndex);
         }
 
-        // Remove projectile if not piercing
+        // Remove projectile if not piercing - return to pool
         if (!proj.userData.stats.piercing) {
-          scene.remove(proj);
+          if (proj.userData.isPooled) {
+            returnProjectileToPool(proj);
+          } else {
+            scene.remove(proj);
+          }
           projectiles.splice(i, 1);
         }
       } else {
@@ -1675,7 +1954,11 @@ function updateProjectiles(dt) {
           spawnDamageNumber(hits[0].point, proj.userData.stats.damage, '#ff8800');
           if (mResult.killed) playExplosionSound();
           if (!proj.userData.stats.piercing) {
-            scene.remove(proj);
+            if (proj.userData.isPooled) {
+              returnProjectileToPool(proj);
+            } else {
+              scene.remove(proj);
+            }
             projectiles.splice(i, 1);
           }
         }
@@ -1805,6 +2088,13 @@ function render(timestamp) {
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
+  // PERFORMANCE: Log stats every 5 seconds in debug mode
+  if (typeof window !== 'undefined' && window.debugPerfMonitor && frameCount % 300 === 0) {
+    console.log(`[PERF] Projectiles: ${projectiles.length}/${MAX_PROJECTILES}, ` +
+                `Pool: ${projectilePool.filter(p => p.visible).length}/${projectilePool.length} active, ` +
+                `Explosions: ${explosionVisuals.length}`);
+  }
+
   // Apply bullet-time slow-mo and ramp-out (use raw dt)
   if (slowMoRampOut) {
     slowMoRampOutTimer -= rawDt;
@@ -1844,20 +2134,24 @@ function render(timestamp) {
 
   // ── Playing ──
   else if (st === State.PLAYING) {
+    // SAFEGUARD: Ensure blaster displays are visible during gameplay
+    // Prevents text/billboard elements from disappearing
+    blasterDisplays.forEach(d => { if (d) d.visible = false; });  // Hidden during gameplay
     spawnEnemyWave(dt);
 
     // Full-auto shooting / Lightning beams
     for (let i = 0; i < 2; i++) {
       if (controllerTriggerPressed[i]) {
         const hand = i === 0 ? 'left' : 'right';
-        const stats = getWeaponStats(game.upgrades[hand]);
+        const mainWeaponId = game.mainWeapon[hand];
+        const stats = getWeaponStats(mainWeaponId, game.upgrades[hand]);
 
         if (stats.chargeShot) {
           if (chargeShotStartTime[i] === null) chargeShotStartTime[i] = now;
         } else if (stats.lightning) {
           updateLightningBeam(controllers[i], i, stats, dt);
         } else {
-          shootWeapon(controllers[i], i);
+          fireMainWeapon(controllers[i], i);
         }
       } else {
         if (chargeShotStartTime[i] !== null) chargeShotStartTime[i] = null;
@@ -1915,6 +2209,20 @@ function render(timestamp) {
       updateBossMinions(dt, playerPos);
       showBossHealthBar(boss.hp, boss.maxHp, boss.phases);
       updateBossHealthBar(boss.hp, boss.maxHp, boss.phases);
+
+      // Check if boss was killed
+      if (boss.hp <= 0) {
+        console.log(`[boss] Boss defeated!`);
+        if (typeof window !== 'undefined' && window.playBossDeath) {
+          window.playBossDeath();
+        }
+
+        // Clean up boss
+        clearBoss();
+
+        // Complete the level (boss level)
+        completeLevel();
+      }
     } else {
       hideBossHealthBar();
     }
@@ -2123,10 +2431,38 @@ function render(timestamp) {
   updateDamageNumbers(dt, now);
   updateComboPopups(dt, now);
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
+  updateBossDebris(dt, now);  // Boss voxel physics
   updateFPS(now, {
     perfMonitor: (typeof window !== 'undefined' && window.debugPerfMonitor) || game.debugPerfMonitor,
     frameTimeMs: rawDt * 1000,
   });
+
+  // Update debug stats overlay if enabled
+  if (game.debugShowStats) {
+    const stats = {
+      state: game.state,
+      level: game.level,
+      health: `${game.health}/${game.maxHealth}`,
+      score: game.score,
+      kills: game.kills,
+      totalKills: game.totalKills,
+      killTarget: game._levelConfig ? game._levelConfig.killTarget : 0,
+      combo: getComboMultiplier(),
+      streak: game.accuracyStreak,
+      mainWeapon: game.mainWeapon,
+      altWeapon: game.altWeapon,
+      isBoss: game._levelConfig ? game._levelConfig.isBoss : false,
+      spawnTimer: game.spawnTimer.toFixed(2),
+      stateTimer: game.stateTimer.toFixed(2),
+    };
+    const entityCounts = {
+      enemies: getEnemyCount(),
+      projectiles: projectiles.length,
+      explosions: explosionVisuals.length,
+      particles: damageNumbers.length,
+    };
+    updateDebugStatsOverlay(stats, entityCounts);
+  }
 
   // Music visualizer (DISABLED - causing FPS drops)
   // if (now % 3 < 1) {
@@ -2181,4 +2517,18 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ============================================================
+//  WINDOW EXPORTS (for enemies.js audio callbacks)
+// ============================================================
+if (typeof window !== 'undefined') {
+  window.stopAllMusic = stopMusic;
+  window.playBossDeathSound = playBossDeathSound;
+  window.playBossDeath = playBossDeathSound;  // Alias for compatibility
+  window.playBossSpawn = playBossSpawn;
+  window.spawnEffectParticle = (pos, color) => {
+    // Spawn explosion particle at position
+    spawnDamageNumber(pos, 0, '#ffffff');
+  };
 }
