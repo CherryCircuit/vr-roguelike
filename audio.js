@@ -586,6 +586,51 @@ export function playSlowMoReverseSound() {
   osc.stop(t + 0.5);
 }
 
+// ── Kills remaining alert sound ────────────────────────────────
+// Based on sfxr parameters:
+// wave_type: 0 (sine), p_env_attack: 0, p_env_sustain: 0.0558,
+// p_env_punch: 0, p_env_decay: 0.4149, p_base_freq: 0.2083,
+// p_freq_ramp: 0.2424, sound_vol: 0.25
+export function playKillsAlertSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  // Wave type: 0 = sine
+  osc.type = 'sine';
+
+  // Base frequency: p_base_freq 0.2083 maps to ~208Hz
+  const baseFreq = 208;
+  osc.frequency.setValueAtTime(baseFreq, t);
+
+  // Frequency ramp: p_freq_ramp 0.2424 means upward sweep
+  // Sweep from 208Hz up over duration
+  const duration = 0.0558 + 0.4149; // sustain + decay
+  osc.frequency.linearRampToValueAtTime(baseFreq * 2.5, t + duration);
+
+  // Envelope: no attack, sustain, no punch, decay
+  const sustain = 0.0558;
+  const decay = 0.4149;
+  const volume = 0.25;
+
+  // No attack (immediate)
+  gain.gain.setValueAtTime(volume, t);
+
+  // Hold sustain
+  gain.gain.setValueAtTime(volume, t + sustain);
+
+  // Decay (fade to silence)
+  gain.gain.exponentialRampToValueAtTime(0.001, t + sustain + decay);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + sustain + decay);
+}
+
 // ── Lightning beam continuous sound (MP3 loop) ─────────────
 let lightningAudio = null;
 let lightningVolumeTimeout = null;
