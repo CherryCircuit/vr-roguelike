@@ -6,8 +6,8 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS } from './game.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
@@ -109,7 +109,6 @@ let floorFlashing = false;
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
 let pendingUpgrades = [];
-let upgradeHand = 'left';  // which hand is selecting
 
 // Game over cooldown
 let gameOverCooldown = 0;
@@ -531,8 +530,14 @@ function setupControllers() {
   for (let i = 0; i < 2; i++) {
     const controller = renderer.xr.getController(i);
 
+    // MAIN weapon triggers (top/select trigger)
     controller.addEventListener('selectstart', () => { controllerTriggerPressed[i] = true; onTriggerPress(controller, i); });
     controller.addEventListener('selectend', () => { controllerTriggerPressed[i] = false; onTriggerRelease(i); });
+    
+    // ALT weapon triggers (bottom/squeeze trigger)
+    controller.addEventListener('squeezestart', () => { onSqueezePress(controller, i); });
+    controller.addEventListener('squeezeend', () => { onSqueezeRelease(i); });
+    
     controller.addEventListener('connected', (e) => {
       console.log(`[controller] ${i} connected — ${e.data.handedness}`);
       controller.userData.handedness = e.data.handedness;
@@ -698,7 +703,7 @@ function onTriggerPress(controller, index) {
   if (st === State.TITLE) {
     handleTitleTrigger(controller);
   } else if (st === State.PLAYING) {
-    shootWeapon(controller, index);
+    fireMainWeapon(controller, index);  // Changed from shootWeapon
   } else if (st === State.UPGRADE_SELECT) {
     selectUpgrade(controller);
   } else if (st === State.GAME_OVER || st === State.VICTORY) {
@@ -880,7 +885,7 @@ function onTriggerRelease(index) {
   // Charge shot: fire beam on release
   if (chargeShotStartTime[index] !== null) {
     const hand = index === 0 ? 'left' : 'right';
-    const stats = getWeaponStats(game.upgrades[hand]);
+    const stats = getWeaponStats(game.mainWeapon[hand], game.upgrades[hand]);
     if (stats.chargeShot) {
       const chargeTimeSec = (performance.now() - chargeShotStartTime[index]) / 1000;
       fireChargeBeam(controllers[index], index, chargeTimeSec, stats);
@@ -893,6 +898,100 @@ function onTriggerRelease(index) {
     lightningBeams[index] = null;
     stopLightningSound();
   }
+}
+
+// ============================================================
+//  ALT WEAPON HANDLERS (squeeze trigger)
+// ============================================================
+function onSqueezePress(controller, index) {
+  const st = game.state;
+  
+  // Only fire ALT weapons during gameplay
+  if (st === State.PLAYING) {
+    fireAltWeapon(controller, index);
+  }
+}
+
+function onSqueezeRelease(index) {
+  // Currently no release logic needed for ALT weapons
+  // Could add charge-up ALT weapons in future
+}
+
+// ============================================================
+//  ALT WEAPON FIRING
+// ============================================================
+function fireAltWeapon(controller, index) {
+  const hand = index === 0 ? 'left' : 'right';
+  const altWeaponId = game.altWeapon[hand];
+  
+  // Check if ALT weapon is equipped
+  if (!altWeaponId) {
+    // No ALT weapon equipped for this hand
+    return;
+  }
+  
+  // Check cooldown
+  const now = performance.now();
+  if (now < game.altCooldowns[hand]) {
+    // Still on cooldown
+    return;
+  }
+  
+  const altWeapon = getAltWeapon(altWeaponId);
+  if (!altWeapon) {
+    console.warn(`Unknown ALT weapon: ${altWeaponId}`);
+    return;
+  }
+  
+  // Get controller position and direction
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  
+  // Execute ALT weapon specific logic
+  console.log(`[ALT weapon] Firing ${altWeaponId} from ${hand} hand`);
+  
+  switch (altWeaponId) {
+    case 'shield':
+      // TODO: Implement shield
+      console.log('[ALT] Shield activated (not implemented yet)');
+      break;
+      
+    case 'grenade':
+      // TODO: Implement grenade
+      console.log('[ALT] Grenade thrown (not implemented yet)');
+      break;
+      
+    case 'mine':
+      // TODO: Implement mine
+      console.log('[ALT] Mine placed (not implemented yet)');
+      break;
+      
+    case 'drone':
+      // TODO: Implement drone
+      console.log('[ALT] Drone deployed (not implemented yet)');
+      break;
+      
+    case 'emp':
+      // TODO: Implement EMP
+      console.log('[ALT] EMP activated (not implemented yet)');
+      break;
+      
+    case 'teleport':
+      // TODO: Implement teleport
+      console.log('[ALT] Teleport (not implemented yet)');
+      break;
+      
+    default:
+      console.warn(`Unknown ALT weapon type: ${altWeaponId}`);
+      return;
+  }
+  
+  // Set cooldown
+  game.altCooldowns[hand] = now + altWeapon.cooldown;
+  playShoothSound();  // Placeholder sound
 }
 
 // ============================================================
@@ -995,23 +1094,39 @@ function showUpgradeScreen() {
   // Stop lightning sound during upgrade screen
   stopLightningSound();
 
-  // Alternate between left and right hand
-  upgradeHand = upgradeHand === 'left' ? 'right' : 'left';
+  // Get the hand for this upgrade
+  const hand = getNextUpgradeHand();
 
-  // Determine what shot types to exclude (if both hands have the same one)
-  const shotTypeIds = ['lightning', 'buckshot', 'charge_shot'];
-  const leftShotType = shotTypeIds.find(s => (game.upgrades.left[s] || 0) > 0);
-  const rightShotType = shotTypeIds.find(s => (game.upgrades.right[s] || 0) > 0);
-  const excludeIds = [];
-
-  // If both hands have the same shot type, don't offer it
-  if (leftShotType && leftShotType === rightShotType) {
-    excludeIds.push(leftShotType);
-    console.log(`[game] Both hands have ${leftShotType}, excluding from upgrade pool`);
+  // Check if this is the level 1→2 transition where player chooses MAIN weapon
+  if (needsMainWeaponChoice()) {
+    // Show MAIN weapon selection (all 6 types)
+    console.log('[game] Level 1→2: Showing MAIN weapon selection');
+    const mainWeaponOptions = Object.values(MAIN_WEAPONS);
+    pendingUpgrades = mainWeaponOptions;
+    showUpgradeCards(pendingUpgrades, camera.position, hand);
+    upgradeSelectionCooldown = 1.5;
+    blasterDisplays.forEach(d => { if (d) d.userData.needsUpdate = true; });
+    return;
   }
 
-  pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3, excludeIds);
-  showUpgradeCards(pendingUpgrades, camera.position, upgradeHand);
+  // Normal upgrade selection
+  // Get the MAIN weapon for this hand
+  const mainWeaponId = game.mainWeapon[hand];
+  
+  // Check if MAIN weapon is already locked for this hand
+  if (game.mainWeaponLocked[hand]) {
+    // Show upgrades filtered by equipped MAIN weapon
+    console.log(`[game] Showing upgrades for ${hand} hand (${mainWeaponId})`);
+    pendingUpgrades = game.justBossKill ? 
+      getRandomSpecialUpgrades(3, mainWeaponId) : 
+      getRandomUpgrades(3, mainWeaponId);
+  } else {
+    // MAIN weapon not locked yet - show all upgrades (shouldn't happen after level 2)
+    console.log(`[game] WARNING: MAIN weapon not locked for ${hand} hand at level ${game.level}`);
+    pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3);
+  }
+
+  showUpgradeCards(pendingUpgrades, camera.position, hand);
   if (game.justBossKill) game.justBossKill = false;
   upgradeSelectionCooldown = 1.5; // prevent instant selection
 
@@ -1020,7 +1135,7 @@ function showUpgradeScreen() {
 }
 
 function selectUpgradeAndAdvance(upgrade, hand) {
-  console.log(`[game] Selected upgrade: ${upgrade.name} for ${hand} hand`);
+  console.log(`[game] Selected: ${upgrade.name} for ${hand} hand`);
 
   // Handle SKIP option - restore full health instead of upgrade
   if (upgrade.id === 'SKIP') {
@@ -1032,32 +1147,27 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     return;
   }
 
-  const def = getUpgradeDef(upgrade.id) || upgrade;
-  const shotTypeIds = ['lightning', 'buckshot', 'charge_shot'];
-  const isShotTypeSideGrade = def.sideGrade && shotTypeIds.includes(upgrade.id);
-  const currentShotType = shotTypeIds.find(s => (game.upgrades[hand][s] || 0) > 0);
-  const handHasOtherShotType = currentShotType && currentShotType !== upgrade.id;
-
-  // Side-grade: change shot type and replace this card with another, then pick again
-  if (isShotTypeSideGrade && handHasOtherShotType) {
-    delete game.upgrades[hand][currentShotType];
-    addUpgrade(upgrade.id, hand);
+  // Check if this is a MAIN weapon selection (level 1→2)
+  if (upgrade.type === 'main') {
+    console.log(`[game] Selected MAIN weapon: ${upgrade.id} for ${hand} hand`);
+    setMainWeapon(upgrade.id, hand);
     playUpgradeSound();
-    const idx = pendingUpgrades.findIndex(u => u.id === upgrade.id);
-    const replacement = getRandomUpgradeExcluding([upgrade.id]);
-    if (replacement && idx >= 0) {
-      pendingUpgrades = [...pendingUpgrades];
-      pendingUpgrades[idx] = replacement;
-      hideUpgradeCards();
-      showUpgradeCards(pendingUpgrades, camera.position, hand);
-      upgradeSelectionCooldown = 1.5;
-    } else {
-      hideUpgradeCards();
-      advanceLevelAfterUpgrade();
-    }
+    hideUpgradeCards();
+    advanceLevelAfterUpgrade();
     return;
   }
 
+  // Check if this is an ALT weapon
+  if (upgrade.type === 'alt') {
+    console.log(`[game] Selected ALT weapon: ${upgrade.id} for ${hand} hand`);
+    setAltWeapon(upgrade.id, hand);
+    playUpgradeSound();
+    hideUpgradeCards();
+    advanceLevelAfterUpgrade();
+    return;
+  }
+
+  // Regular upgrade
   addUpgrade(upgrade.id, hand);
   playUpgradeSound();
   hideUpgradeCards();
@@ -1194,10 +1304,14 @@ function returnProjectileToPool(proj) {
   proj.userData.hitEnemies = null;
 }
 
-function shootWeapon(controller, index) {
+// ============================================================
+//  MAIN WEAPON FIRING
+// ============================================================
+function fireMainWeapon(controller, index) {
   const now = performance.now();
   const hand = index === 0 ? 'left' : 'right';
-  const stats = getWeaponStats(game.upgrades[hand]);
+  const mainWeaponId = game.mainWeapon[hand];
+  const stats = getWeaponStats(mainWeaponId, game.upgrades[hand]);
 
   // Lightning beam mode - handled separately in update loop
   if (stats.lightning) {
@@ -1234,7 +1348,7 @@ function shootWeapon(controller, index) {
     spawnProjectile(spawnOrigin, direction.clone(), index, stats);
   }
 
-  console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
+  console.log(`[MAIN weapon] ${hand} hand fired ${count} projectile(s) from ${mainWeaponId}`);
 }
 
 function updateLightningBeam(controller, index, stats, dt) {
@@ -1986,14 +2100,15 @@ function render(timestamp) {
     for (let i = 0; i < 2; i++) {
       if (controllerTriggerPressed[i]) {
         const hand = i === 0 ? 'left' : 'right';
-        const stats = getWeaponStats(game.upgrades[hand]);
+        const mainWeaponId = game.mainWeapon[hand];
+        const stats = getWeaponStats(mainWeaponId, game.upgrades[hand]);
 
         if (stats.chargeShot) {
           if (chargeShotStartTime[i] === null) chargeShotStartTime[i] = now;
         } else if (stats.lightning) {
           updateLightningBeam(controllers[i], i, stats, dt);
         } else {
-          shootWeapon(controllers[i], i);
+          fireMainWeapon(controllers[i], i);
         }
       } else {
         if (chargeShotStartTime[i] !== null) chargeShotStartTime[i] = null;
