@@ -34,7 +34,8 @@ import {
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
-  showDebugJumpScreen, getDebugJumpHit
+  showDebugJumpScreen, getDebugJumpHit,
+  showLevelIntro, updateLevelIntro, hideLevelIntro
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -938,16 +939,15 @@ function startGame() {
   console.log('[game] Starting new game');
   hideTitle();
   resetGame();
-  game.state = State.READY_SCREEN;
   game.level = 1;
   game._levelConfig = getLevelConfig();
-  showHUD();
+
+  // Use level intro for level 1
+  game.state = State.LEVEL_INTRO;
+  showLevelIntro(1);
 
   // Hide blaster displays during gameplay
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
-
-  // Start level music
-  playMusic('levels1to5');
 }
 
 function completeLevel() {
@@ -1044,15 +1044,20 @@ function advanceLevelAfterUpgrade() {
   if (game.level > 20) {
     endGame(true); // victory
   } else {
-    game.state = State.READY_SCREEN;
     game._levelConfig = getLevelConfig();
-    showHUD();
+    const isBossLevel = game.level % 5 === 0;
 
-    // Hide blaster displays during gameplay
-    blasterDisplays.forEach(d => { if (d) d.visible = false; });
+    if (isBossLevel) {
+      // Boss levels skip the intro sequence
+      game.state = State.READY_SCREEN;
+      showHUD();
 
-    if (game.level === 6) {
-      playMusic('levels6to10');
+      // Hide blaster displays during gameplay
+      blasterDisplays.forEach(d => { if (d) d.visible = false; });
+    } else {
+      // Standard levels use level intro sequence
+      game.state = State.LEVEL_INTRO;
+      showLevelIntro(game.level);
     }
   }
 }
@@ -1839,6 +1844,25 @@ function render(timestamp) {
       const level = window.debugJumpToLevel;
       window.debugJumpToLevel = null;
       debugJumpToLevel(level);
+    }
+  }
+
+  // ── Level Intro ──
+  else if (st === State.LEVEL_INTRO) {
+    const introComplete = updateLevelIntro(now);
+    if (introComplete) {
+      // Start the game - enemies begin spawning
+      game.state = State.PLAYING;
+      showHUD();
+      hideLevelIntro();
+
+      // Hide blaster displays during gameplay
+      blasterDisplays.forEach(d => { if (d) d.visible = false; });
+
+      // Start music on levels 1, 6, 11, 16 (after boss levels 5, 10, 15, 20)
+      if (game.level === 1 || game.level === 6 || game.level === 11 || game.level === 16) {
+        playMusic(game.level <= 5 ? 'levels1to5' : 'levels6to10');
+      }
     }
   }
 

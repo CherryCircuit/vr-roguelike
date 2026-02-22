@@ -59,6 +59,13 @@ let nameEntrySlots = [];
 let keyboardKeys = [];
 let hoveredKey = null;
 
+// Level intro state
+let levelIntroActive = false;
+let levelIntroStartTime = 0;
+let levelIntroStage = 'level'; // 'level', 'level_fading', 'start', 'start_fading', 'done'
+let levelIntroLevelText = null;
+let levelIntroStartText = null;
+
 // Scoreboard state
 let scoreboardCanvas = null;
 let scoreboardTexture = null;
@@ -1331,6 +1338,103 @@ export function showReadyScreen(level, playerPos) {
 
 export function hideReadyScreen() {
   readyGroup.visible = false;
+}
+
+// ── Level Intro Screen ───────────────────────────────────────
+
+export function showLevelIntro(level) {
+  hideAll();
+  levelIntroActive = true;
+  levelIntroStartTime = performance.now();
+  levelIntroStage = 'level';
+
+  // Position in front of spawn
+  levelTextGroup.position.set(0, 1.6, -4);
+  levelTextGroup.visible = true;
+
+  // "LEVEL" text
+  const levelHeader = makeSprite('LEVEL', {
+    fontSize: 80, color: '#ff00ff', glow: true, glowColor: '#ff00ff', scale: 0.7,
+  });
+  levelHeader.position.set(0, 0.5, 0);
+  levelTextGroup.add(levelHeader);
+  levelIntroLevelText = levelHeader;
+
+  // Level number
+  const levelNum = makeSprite(`${level}`, {
+    fontSize: 120, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 1.0,
+  });
+  levelNum.position.set(0, -0.2, 0);
+  levelTextGroup.add(levelNum);
+}
+
+export function updateLevelIntro(now) {
+  if (!levelIntroActive) return;
+
+  const elapsed = now - levelIntroStartTime;
+  const LEVEL_FADE_DURATION = 500; // 0.5 seconds
+  const START_DISPLAY_DURATION = 1000; // 1 second
+
+  if (levelIntroStage === 'level') {
+    // Show "LEVEL X" for 0.5 seconds
+    if (elapsed >= LEVEL_FADE_DURATION) {
+      levelIntroStage = 'level_fading';
+      levelIntroStartTime = now;
+    }
+  } else if (levelIntroStage === 'level_fading') {
+    // Fade out "LEVEL X" over 0.5 seconds
+    const progress = Math.min(elapsed / LEVEL_FADE_DURATION, 1);
+
+    if (levelIntroLevelText) {
+      levelTextGroup.traverse(child => {
+        if (child.material) {
+          child.material.opacity = 1 - progress;
+        }
+      });
+    }
+
+    if (progress >= 1) {
+      // Clear and show "START!"
+      while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
+
+      const startText = makeSprite('START!', {
+        fontSize: 100, color: '#00ff00', glow: true, glowColor: '#00ff00', scale: 0.9,
+      });
+      startText.position.set(0, 0, 0);
+      levelTextGroup.add(startText);
+      levelIntroStartText = startText;
+
+      levelIntroStage = 'start';
+      levelIntroStartTime = now;
+    }
+  } else if (levelIntroStage === 'start') {
+    // Show "START!" for 1 second
+    if (elapsed >= START_DISPLAY_DURATION) {
+      levelIntroStage = 'start_fading';
+      levelIntroStartTime = now;
+    }
+  } else if (levelIntroStage === 'start_fading') {
+    // Fade out "START!" over 0.5 seconds
+    const progress = Math.min(elapsed / LEVEL_FADE_DURATION, 1);
+
+    if (levelIntroStartText) {
+      levelIntroStartText.material.opacity = 1 - progress;
+    }
+
+    if (progress >= 1) {
+      levelIntroStage = 'done';
+      levelIntroActive = false;
+      levelTextGroup.visible = false;
+      return true; // Signal that intro is complete
+    }
+  }
+
+  return false; // Still in progress
+}
+
+export function hideLevelIntro() {
+  levelIntroActive = false;
+  levelTextGroup.visible = false;
 }
 
 export function getReadyScreenHit(raycaster) {
