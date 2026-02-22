@@ -421,6 +421,13 @@ class Boss {
       const idx = Math.floor(Math.random() * voxels.length);
       const weak = voxels[idx];
       weak.userData.weakPoint = true;
+      // Make weak point visually distinct: lighter color + higher opacity
+      const weakMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,  // White - very obvious in VR
+        transparent: true,
+        opacity: 0.95,   // Higher opacity for visibility
+      });
+      weak.material = weakMaterial;
       this.weakPoints.push(weak);
     }
   }
@@ -1098,6 +1105,13 @@ export function spawnEnemy(type, position, levelConfig) {
     if (voxels.length > 0) {
       const weak = voxels[Math.floor(Math.random() * voxels.length)];
       weak.userData.weakPoint = true;
+      // Make weak point visually distinct: lighter color + higher opacity
+      const weakMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,  // White - very obvious in VR
+        transparent: true,
+        opacity: 0.95,   // Higher opacity for visibility
+      });
+      weak.material = weakMaterial;
     }
   }
 
@@ -1385,6 +1399,13 @@ export function spawnEnemy(type, position, levelConfig) {
     if (voxels.length > 0) {
       const weak = voxels[Math.floor(Math.random() * voxels.length)];
       weak.userData.weakPoint = true;
+      // Make weak point visually distinct: lighter color + higher opacity
+      const weakMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,  // White - very obvious in VR
+        transparent: true,
+        opacity: 0.95,   // Higher opacity for visibility
+      });
+      weak.material = weakMaterial;
     }
   }
 
