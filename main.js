@@ -951,10 +951,7 @@ function startGame() {
   game.state = State.LEVEL_INTRO;
   showLevelIntro(1);
 
-  // Show HUD during level-up (health hearts and score)
-  showHUD();
-
-  // Hide blaster displays during level-up
+  // Hide blaster displays during gameplay
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
 }
 
@@ -973,6 +970,9 @@ function showUpgradeScreen() {
   console.log('[game] Showing upgrade selection');
   game.state = State.UPGRADE_SELECT;
   hideLevelComplete();
+
+  // Show HUD during level-up (health hearts and score)
+  showHUD();
 
   // Stop lightning sound during upgrade screen
   stopLightningSound();
