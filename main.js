@@ -951,7 +951,10 @@ function startGame() {
   game.state = State.LEVEL_INTRO;
   showLevelIntro(1);
 
-  // Hide blaster displays during gameplay
+  // Show HUD during level-up (health hearts and score)
+  showHUD();
+
+  // Hide blaster displays during level-up
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
 }
 
@@ -1067,6 +1070,12 @@ function advanceLevelAfterUpgrade() {
       // Standard levels use level intro sequence
       game.state = State.LEVEL_INTRO;
       showLevelIntro(game.level);
+
+      // Show HUD during level-up (health hearts and score)
+      showHUD();
+
+      // Hide blaster displays during level-up
+      blasterDisplays.forEach(d => { if (d) d.visible = false; });
     }
   }
 }
