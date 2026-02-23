@@ -438,6 +438,118 @@ export function playBossSpawn() {
   });
 }
 
+// ── Boss death explosion ─────────────────────────────────────
+export function playBossDeath() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Epic explosion with descending tone
+  [80, 120, 160, 200].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i % 2 === 0 ? 'sine' : 'sawtooth';
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.25, t + 2);
+
+    gain.gain.setValueAtTime(0.15, t);
+    gain.gain.linearRampToValueAtTime(0.1, t + 0.3);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 2);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 2);
+  });
+}
+
+// ── Boss stunned (hit during vulnerable state) ───────────────
+export function playBossStunned() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Sharp crack sound
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(400, t);
+  osc.frequency.exponentialRampToValueAtTime(100, t + 0.2);
+
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.2);
+}
+
+// ── Boss teleport reappear ───────────────────────────────────
+export function playBossTeleportReappear() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Rising shimmer
+  [200, 400, 600].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 2, t + 0.3);
+
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.08, t + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t + i * 0.05);
+    osc.stop(t + 0.35);
+  });
+}
+
+// ── Boss explosion (during fight) ────────────────────────────
+export function playBossExplosion() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Short boom
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(150, t);
+  osc.frequency.exponentialRampToValueAtTime(50, t + 0.3);
+
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.3);
+}
+
+// ── Boss attack sound (generic) ──────────────────────────────
+export function playBossAttackSound(type, duration) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Attack based on type
+  const freq = type === 'laser' ? 800 : type === 'missile' ? 150 : 300;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type === 'laser' ? 'sawtooth' : 'square';
+  osc.frequency.setValueAtTime(freq, t);
+  osc.frequency.exponentialRampToValueAtTime(freq * 0.5, t + duration / 1000);
+
+  gain.gain.setValueAtTime(0.1, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + duration / 1000);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + duration / 1000);
+}
+
 // ── Menu / UI Interaction ──────────────────────────────────
 export function playMenuClick() {
   const ctx = getAudioContext();
