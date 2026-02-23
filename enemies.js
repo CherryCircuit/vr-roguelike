@@ -774,6 +774,374 @@ class DodgerBoss extends Boss {
   }
 }
 
+// ── CYBER KNIGHT BOSS (Level 5) ───────────────────────────────
+class CyberKnightBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Knight-specific state
+    this.state = 'idle';
+    this.shieldActive = true;
+    this.dashTimer = 0;
+    this.dashCooldown = 3;
+    this.dashActive = false;
+    this.dashTarget = null;
+    this.swordComboTimer = 0;
+    this.swordComboStep = 0;
+    this.approachTimer = 0;
+    this.chargeSpeed = 8;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    const distToPlayer = this.mesh.position.distanceTo(playerPos);
+
+    // Shield breaks at 50% HP (Phase 2)
+    if (this.phase >= 2 && this.shieldActive) {
+      this.shieldActive = false;
+      this.showTelegraph('teleport', 0.8, 0x00aaff);
+    }
+
+    // State machine
+    switch (this.state) {
+      case 'idle':
+        this.approachTimer -= dt;
+        if (this.approachTimer <= 0) {
+          // Decide action based on distance
+          if (distToPlayer > 6) {
+            this.state = 'approaching';
+          } else {
+            this.state = this.dashCooldown <= 0 && Math.random() > 0.3 ? 'dashing' : 'sword_combo';
+          }
+          this.approachTimer = 0.5 + Math.random() * 0.5;
+        }
+        this.dashCooldown -= dt;
+        break;
+
+      case 'approaching':
+        // Move toward player
+        this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+        this.mesh.position.addScaledVector(dirToPlayer, (2 + this.phase * 0.5) * dt);
+        
+        if (distToPlayer < 4) {
+          this.state = 'idle';
+          this.approachTimer = 0.3;
+        }
+        break;
+
+      case 'dashing':
+        if (!this.dashActive) {
+          // Start dash
+          this.showTelegraph('charge', 0.5, 0xff8800);
+          this.dashActive = true;
+          this.dashTarget = playerPos.clone();
+          this.dashTimer = 0.8;
+        }
+        
+        this.dashTimer -= dt;
+        if (this.dashTimer > 0) {
+          // Dash toward target
+          const dashDir = this.dashTarget.clone().sub(this.mesh.position).normalize();
+          this.mesh.position.addScaledVector(dashDir, this.chargeSpeed * dt);
+          this.mesh.lookAt(_look.set(this.dashTarget.x, this.mesh.position.y, this.dashTarget.z));
+        } else {
+          // Dash complete
+          this.dashActive = false;
+          this.dashCooldown = 4 - this.phase; // Faster cooldown in phase 2
+          this.state = 'idle';
+          this.approachTimer = 0.5;
+          
+          // Spawn projectile on dash end
+          if (this.projectileRate > 0) {
+            this.fireProjectile(playerPos);
+          }
+        }
+        break;
+
+      case 'sword_combo':
+        this.swordComboTimer -= dt;
+        this.swordComboStep = Math.floor((1 - this.swordComboTimer / 1.0) * 3);
+        
+        if (this.swordComboTimer <= 0) {
+          this.swordComboTimer = 1.0 + this.phase * 0.2; // Faster in phase 2
+          this.swordComboStep = 0;
+          this.state = 'idle';
+          this.approachTimer = 0.4;
+        }
+        
+        // Move slightly during combo
+        if (this.swordComboStep > 0) {
+          this.mesh.position.addScaledVector(dirToPlayer, 1.5 * dt);
+        }
+        break;
+    }
+
+    // Visual effects
+    this.updateVisualEffects(now);
+  }
+
+  updateVisualEffects(now) {
+    // Shield glow effect
+    if (this.shieldActive) {
+      const pulse = 1 + Math.sin(now * 0.005) * 0.1;
+      this.mesh.scale.set(pulse, pulse, pulse);
+      
+      // Slight blue tint on shield
+      this.mesh.traverse(c => {
+        if (c.isMesh && c.material) {
+          c.material.color.setHex(0x66ccff);
+        }
+      });
+    } else {
+      this.mesh.scale.set(1, 1, 1);
+      // Restore base color
+      this.mesh.traverse(c => {
+        if (c.isMesh && c.material) {
+          c.material.color.copy(this.baseColor);
+        }
+      });
+    }
+
+    // Dash trail
+    if (this.dashActive) {
+      // Visual dash effect - slight stretching
+      const stretch = 1 + (0.8 - this.dashTimer) * 0.3;
+      this.mesh.scale.set(1, 1, stretch);
+    }
+
+    // Sword combo visual
+    if (this.state === 'sword_combo') {
+      const comboPulse = 1 + Math.sin(now * 0.02) * 0.15;
+      this.mesh.scale.set(comboPulse, 1, 1);
+    }
+  }
+
+  takeDamage(amount, hitInfo = {}) {
+    // Shield blocks 50% damage in phase 1
+    if (this.shieldActive && !hitInfo.isWeakPoint) {
+      amount = Math.floor(amount * 0.5);
+    }
+    return super.takeDamage(amount, hitInfo);
+  }
+
+  onProjectileFire(playerPos) {
+    // Knight fires energy sword projectiles
+    if (typeof spawnBossProjectile === 'function') {
+      // Fire 3 projectiles in spread
+      for (let i = -1; i <= 1; i++) {
+        const offset = new THREE.Vector3(i * 0.5, 0, 0);
+        spawnBossProjectile(
+          this.mesh.position.clone().add(offset),
+          playerPos.clone().add(offset)
+        );
+      }
+    }
+  }
+}
+
+// ── AURORA GUARDIAN BOSS (Level 10) ───────────────────────────
+class AuroraGuardianBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Aurora-specific state
+    this.state = 'rotating';
+    this.rotateSpeed = 0.5;
+    this.missileTimer = 0;
+    this.missileCount = 3;
+    this.laserTimer = 0;
+    this.laserActive = false;
+    this.laserDuration = 0;
+    this.shieldSegments = [];
+    this.shieldCount = 8;
+    this.orbitAngle = 0;
+
+    // Create orbiting shield segments
+    this.createShieldSegments();
+  }
+
+  createShieldSegments() {
+    const segmentGeo = new THREE.BoxGeometry(0.3, 0.3, 0.15);
+    
+    for (let i = 0; i < this.shieldCount; i++) {
+      const angle = (i / this.shieldCount) * Math.PI * 2;
+      const segmentMat = new THREE.MeshBasicMaterial({
+        color: 0xff88ff,
+        transparent: true,
+        opacity: 0.8
+      });
+      const segment = new THREE.Mesh(segmentGeo, segmentMat);
+      segment.userData.isShieldSegment = true;
+      segment.userData.shieldIndex = i;
+      segment.userData.angle = angle;
+      this.shieldSegments.push(segment);
+      this.mesh.add(segment);
+    }
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    
+    // Update orbiting shields
+    this.updateShieldOrbit(dt, now);
+    
+    // Phase-based behavior
+    switch (this.state) {
+      case 'rotating':
+        // Rotate toward player
+        this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+        
+        // Fire missiles periodically
+        this.missileTimer -= dt;
+        if (this.missileTimer <= 0) {
+          this.fireMissiles(playerPos);
+          this.missileTimer = 3 - this.phase * 0.5; // Faster in later phases
+        }
+        
+        // Transition to laser in phase 3
+        if (this.phase >= 3 && Math.random() > 0.99) {
+          this.state = 'laser_charging';
+          this.laserTimer = 1.5;
+          this.showTelegraph('charge', 1.0, 0xff00ff);
+        }
+        break;
+
+      case 'laser_charging':
+        // Telegraph laser attack
+        this.laserTimer -= dt;
+        if (this.laserTimer <= 0) {
+          this.state = 'laser_firing';
+          this.laserActive = true;
+          this.laserDuration = 2;
+        }
+        break;
+
+      case 'laser_firing':
+        // Fire laser beam
+        this.laserDuration -= dt;
+        this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+        
+        // Spawn laser effect (visual line toward player)
+        if (typeof spawnBossProjectile === 'function' && Math.random() > 0.8) {
+          spawnBossProjectile(this.mesh.position.clone(), playerPos.clone());
+        }
+        
+        if (this.laserDuration <= 0) {
+          this.laserActive = false;
+          this.state = 'rotating';
+          this.missileTimer = 2;
+        }
+        break;
+    }
+
+    // Visual effects
+    this.updateVisualEffects(now);
+  }
+
+  updateShieldOrbit(dt, now) {
+    // Orbit speed increases with phase
+    const orbitSpeed = 0.8 + this.phase * 0.3;
+    this.orbitAngle += orbitSpeed * dt;
+
+    // Update each shield segment position
+    const activeShields = this.shieldSegments.filter(s => s.userData.active !== false);
+    
+    this.shieldSegments.forEach((segment, i) => {
+      if (segment.userData.active === false) return;
+      
+      const angle = segment.userData.angle + this.orbitAngle;
+      const radius = 1.2;
+      segment.position.set(
+        Math.cos(angle) * radius,
+        Math.sin(now * 0.002 + i) * 0.1, // Slight bob
+        Math.sin(angle) * radius
+      );
+      segment.rotation.y = angle;
+    });
+
+    // Phase 2: Destroy some shields
+    if (this.phase >= 2 && activeShields.length > 4) {
+      const toDestroy = activeShields[Math.floor(Math.random() * activeShields.length)];
+      if (toDestroy && Math.random() > 0.995) {
+        toDestroy.userData.active = false;
+        toDestroy.visible = false;
+      }
+    }
+
+    // Phase 3: Destroy more shields
+    if (this.phase >= 3 && activeShields.length > 2) {
+      const toDestroy = activeShields[Math.floor(Math.random() * activeShields.length)];
+      if (toDestroy && Math.random() > 0.99) {
+        toDestroy.userData.active = false;
+        toDestroy.visible = false;
+      }
+    }
+  }
+
+  fireMissiles(playerPos) {
+    if (typeof spawnBossProjectile !== 'function') return;
+
+    // Fire homing missiles
+    const count = this.missileCount + this.phase; // More missiles per phase
+    for (let i = 0; i < count; i++) {
+      const offset = new THREE.Vector3(
+        (Math.random() - 0.5) * 1,
+        Math.random() * 0.5,
+        (Math.random() - 0.5) * 1
+      );
+      spawnBossProjectile(
+        this.mesh.position.clone().add(offset),
+        playerPos.clone()
+      );
+    }
+  }
+
+  updateVisualEffects(now) {
+    // Pulsing core
+    const pulse = 1 + Math.sin(now * 0.008) * 0.1;
+    this.mesh.scale.setScalar(pulse);
+
+    // Color shift based on phase
+    const colors = [0xff44ff, 0xff44aa, 0xff4488]; // Purple to red
+    const colorIdx = Math.min(this.phase - 1, colors.length - 1);
+    
+    this.mesh.traverse(c => {
+      if (c.isMesh && c.material && !c.userData.isShieldSegment) {
+        c.material.color.setHex(colors[colorIdx]);
+      }
+    });
+
+    // Laser glow effect
+    if (this.laserActive) {
+      this.mesh.scale.setScalar(1.3);
+    }
+  }
+
+  takeDamage(amount, hitInfo = {}) {
+    // Check if shield segment was hit
+    if (hitInfo.shieldSegment !== undefined) {
+      const segment = this.shieldSegments[hitInfo.shieldSegment];
+      if (segment && segment.userData.active !== false) {
+        // Destroy shield segment
+        segment.userData.active = false;
+        segment.visible = false;
+        return { killed: false, phaseChanged: false, isWeakPointHit: false, shieldDestroyed: true };
+      }
+    }
+
+    return super.takeDamage(amount, hitInfo);
+  }
+
+  destroy() {
+    // Clean up shield segments
+    this.shieldSegments.forEach(s => {
+      if (s.geometry) s.geometry.dispose();
+      if (s.material) s.material.dispose();
+    });
+    super.destroy();
+  }
+}
+
 // ── BOSS DEFINITIONS ─────────────────────────────────────────
 const BOSS_SKULL_PATTERN = [
   [0, 1, 1, 1, 0],
@@ -784,7 +1152,52 @@ const BOSS_SKULL_PATTERN = [
 ];
 
 const BOSS_DEFS = {
-  // Teleporting boss - the ONLY boss to preserve
+  // ── Level 5 Boss: Cyber Knight ─────────────────────────────
+  // Shield mechanic, dash attack, sword combo
+  // Phase 1: Shielded, dash attacks
+  // Phase 2: Shield breaks, aggressive melee
+  cyber_knight: {
+    pattern: [
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.42,
+    baseHp: 600,  // ~5x level 5 enemies
+    phases: 2,
+    color: 0x00aaff,
+    scoreValue: 75,
+    behavior: 'knight',
+    hitboxRadius: 0.6,
+    projectileRate: 2.5,
+  },
+
+  // ── Level 10 Boss: Aurora Guardian ────────────────────────
+  // Rotating shield tiles, homing missiles, laser beam
+  // Phase 1 (100%-66%): Full shields, missiles
+  // Phase 2 (66%-33%): Some shields destroyed, faster attacks
+  // Phase 3 (33%-0%): All shields destroyed, laser + missiles
+  aurora_guardian: {
+    pattern: [
+      [1, 0, 1, 0, 1],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [1, 0, 1, 0, 1],
+    ],
+    voxelSize: 0.38,
+    baseHp: 1200,  // ~6x level 10 enemies
+    phases: 3,
+    color: 0xff44ff,
+    scoreValue: 150,
+    behavior: 'aurora',
+    hitboxRadius: 0.7,
+    projectileRate: 1.8,
+    minionSpawnRate: 8,
+  },
+
+  // ── Teleporting Boss (existing) ────────────────────────────
   chrono_wraith: {
     pattern: [[1, 1, 1, 1]],
     voxelSize: 0.45,
@@ -798,11 +1211,15 @@ const BOSS_DEFS = {
 };
 
 // ── BOSS POOL MANAGEMENT ─────────────────────────────────────
+// Tier 1 (Level 5): Cyber Knight
+// Tier 2 (Level 10): Aurora Guardian
+// Tier 3 (Level 15): Placeholder for future bosses
+// Tier 4 (Level 20): Placeholder for future bosses
 const BOSS_POOLS = {
-  1: ['chrono_wraith'], // Tier 1 - only teleporting boss
-  2: ['chrono_wraith'], // Tier 2
-  3: ['chrono_wraith'], // Tier 3
-  4: ['chrono_wraith'], // Tier 4
+  1: ['cyber_knight'],
+  2: ['aurora_guardian'],
+  3: ['chrono_wraith'],  // Placeholder - will be replaced with Level 15 bosses
+  4: ['chrono_wraith'],  // Placeholder - will be replaced with Level 20 bosses
 };
 
 // ── GLOBAL BOSS STATE ─────────────────────────────────────────
@@ -842,13 +1259,21 @@ export function spawnBoss(bossId, levelConfig, camera) {
   const def = BOSS_DEFS[bossId];
   if (!def || !sceneRef) return null;
 
-  // Create appropriate boss class
+  // Create appropriate boss class based on behavior type
   let boss;
-  if (def.behavior === 'dodger') {
-    boss = new DodgerBoss(def, levelConfig, sceneRef, telegraphingSystem);
-  } else {
-    // Default to simple boss for now
-    boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
+  switch (def.behavior) {
+    case 'dodger':
+      boss = new DodgerBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'knight':
+      boss = new CyberKnightBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'aurora':
+      boss = new AuroraGuardianBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    default:
+      // Default to simple boss
+      boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
   }
 
   // Show boss health bar
@@ -1056,300 +1481,6 @@ export function getEnemyByMesh(mesh) {
 }
 
 // ── ALL OTHER ENEMY FUNCTIONS (unchanged) ─────────────────────
-
-/**
- * Spawn a single enemy of the given type at `position`.
- */
-export function spawnEnemy(type, position, levelConfig) {
-  const def = ENEMY_DEFS[type];
-  if (!def) return;
-
-  if (!sharedMaterials[type]) {
-    sharedMaterials[type] = new THREE.MeshBasicMaterial({
-      color: def.color,
-      transparent: true,
-      opacity: 0.7,
-    });
-  }
-  const material = sharedMaterials[type].clone();
-
-  const group = new THREE.Group();
-  const geo = getGeo(def.voxelSize);
-  const rows = def.pattern.length;
-  const cols = def.pattern[0].length;
-  const cx = (cols - 1) / 2;
-  const cy = (rows - 1) / 2;
-
-  for (let d = 0; d < def.depth; d++) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (def.pattern[r][c]) {
-          const cube = new THREE.Mesh(geo, material);
-          cube.position.set(
-            (c - cx) * def.voxelSize,
-            (cy - r) * def.voxelSize,
-            d * def.voxelSize,
-          );
-          group.add(cube);
-        }
-      }
-    }
-  }
-
-  group.position.copy(position);
-  group.userData.isEnemy = true;
-
-  // Tank: one random voxel is weak point
-  if (type === 'tank') {
-    const voxels = group.children.filter(c => !c.userData.isEnemyHitbox);
-    if (voxels.length > 0) {
-      const weak = voxels[Math.floor(Math.random() * voxels.length)];
-      weak.userData.weakPoint = true;
-      // Make weak point visually distinct: lighter color + higher opacity
-      const weakMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff,  // White - very obvious in VR
-        transparent: true,
-        opacity: 0.95,   // Higher opacity for visibility
-      });
-      weak.material = weakMaterial;
-    }
-  }
-
-  const hitboxGeo = new THREE.SphereGeometry(def.hitboxRadius, 8, 8);
-  const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-  const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
-  hitbox.userData.isEnemyHitbox = true;
-  group.add(hitbox);
-
-  const enemy = {
-    mesh: group,
-    material,
-    type,
-    hp: Math.round(def.baseHp * levelConfig.hpMultiplier),
-    maxHp: Math.round(def.baseHp * levelConfig.hpMultiplier),
-    speed: def.baseSpeed * levelConfig.speedMultiplier,
-    baseColor: new THREE.Color(def.color),
-    scoreValue: def.scoreValue,
-    hitboxRadius: def.hitboxRadius,
-    alertTimer: 0,
-    statusEffects: {
-      fire: { stacks: 0, remaining: 0, tickTimer: 0 },
-      shock: { stacks: 0, remaining: 0, tickTimer: 0 },
-      freeze: { stacks: 0, remaining: 0, tickTimer: 0 },
-    },
-  };
-
-  activeEnemies.push(enemy);
-  sceneRef.add(group);
-  return enemy;
-}
-
-export function updateEnemies(dt, now, playerPos) {
-  const collisions = [];
-
-  for (let i = activeEnemies.length - 1; i >= 0; i--) {
-    const e = activeEnemies[i];
-
-    _dir.copy(playerPos).sub(e.mesh.position);
-    const dist = _dir.length();
-    if (dist > 0.01) _dir.divideScalar(dist);
-
-    let speedMod = 1;
-    const se = e.statusEffects;
-    if (se.shock.stacks > 0) speedMod *= Math.max(0.4, 1 - se.shock.stacks * 0.2);
-    if (se.freeze.stacks > 0) speedMod *= Math.max(0.05, 1 - se.freeze.stacks * 0.4);
-
-    e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
-
-    _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
-    e.mesh.lookAt(_look);
-
-    if (dist < 0.9) {
-      collisions.push(i);
-      continue;
-    }
-
-    updateStatusEffects(e, dt);
-
-    const dmgRatio = 1 - e.hp / e.maxHp;
-    e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
-  }
-
-  return collisions;
-}
-
-const _redColor = new THREE.Color(0xff0000);
-
-function updateStatusEffects(e, dt) {
-  const se = e.statusEffects;
-
-  if (se.fire.remaining > 0) {
-    se.fire.remaining -= dt;
-    se.fire.tickTimer -= dt;
-    if (se.fire.tickTimer <= 0) {
-      se.fire.tickTimer = 0.5;
-      const fireDmg = Math.round(15 * se.fire.stacks);
-      e.hp -= fireDmg;
-      if (e.hp <= 0) e.hp = 0;
-      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
-        window.spawnEffectParticle(e.mesh.position, 0xff4400);
-      }
-    }
-    if (se.fire.remaining <= 0) { se.fire.stacks = 0; se.fire.tickTimer = 0; }
-  }
-
-  if (se.shock.remaining > 0) {
-    se.shock.remaining -= dt;
-    se.shock.tickTimer -= dt;
-    if (se.shock.tickTimer <= 0) {
-      se.shock.tickTimer = 0.5;
-      const shockDmg = Math.round(8 * se.shock.stacks);
-      e.hp -= shockDmg;
-      if (e.hp <= 0) e.hp = 0;
-      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
-        window.spawnEffectParticle(e.mesh.position, 0xffff44);
-      }
-    }
-    if (se.shock.remaining <= 0) { se.shock.stacks = 0; se.shock.tickTimer = 0; }
-  }
-
-  if (se.freeze.remaining > 0) {
-    se.freeze.remaining -= dt;
-    se.freeze.tickTimer -= dt;
-    if (se.freeze.tickTimer <= 0) {
-      se.freeze.tickTimer = 0.5;
-      const freezeDmg = Math.round(2 * se.freeze.stacks);
-      e.hp -= freezeDmg;
-      if (e.hp <= 0) e.hp = 0;
-      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
-        window.spawnEffectParticle(e.mesh.position, 0x00ffff);
-      }
-    }
-    if (se.freeze.remaining <= 0) { se.freeze.stacks = 0; se.freeze.tickTimer = 0; }
-  }
-}
-
-export function applyEffects(enemyIndex, effects) {
-  const e = activeEnemies[enemyIndex];
-  if (!e) return;
-
-  effects.forEach(({ type, stacks }) => {
-    const se = e.statusEffects[type];
-    if (!se) return;
-    se.stacks = Math.max(se.stacks, stacks);
-    se.remaining = 2 + stacks * 0.5;
-  });
-}
-
-export function hitEnemy(index, damage) {
-  const e = activeEnemies[index];
-  if (!e) return { killed: false };
-
-  e.hp -= damage;
-  if (e.hp <= 0) {
-    return { killed: true, enemy: e, overkill: -e.hp };
-  }
-  return { killed: false, enemy: e };
-}
-
-export function destroyEnemy(index) {
-  const e = activeEnemies[index];
-  if (!e) return null;
-
-  const pos = e.mesh.position.clone();
-  const color = e.baseColor.clone();
-
-  for (let i = 0; i < 5; i++) {
-    const sprite = getExplosionSprite();
-    if (!sprite) break;
-
-    sprite.material.opacity = 1;
-    sprite.material.map = Math.random() > 0.5 ? explosionTexturePink : explosionTextureCyan;
-    sprite.position.copy(pos);
-    sprite.visible = true;
-
-    sprite.userData.velocity = new THREE.Vector3(
-      (Math.random() - 0.5) * 5,
-      (Math.random() - 0.5) * 5,
-      (Math.random() - 0.5) * 5,
-    );
-    sprite.userData.createdAt = performance.now();
-    sprite.userData.lifetime = 300 + Math.random() * 200;
-
-    explosionParts.push(sprite);
-  }
-
-  sceneRef.remove(e.mesh);
-  e.material.dispose();
-  activeEnemies.splice(index, 1);
-
-  return { position: pos, scoreValue: e.scoreValue, baseColor: color };
-}
-
-export function clearAllEnemies() {
-  for (let i = activeEnemies.length - 1; i >= 0; i--) {
-    sceneRef.remove(activeEnemies[i].mesh);
-    activeEnemies[i].material.dispose();
-  }
-  activeEnemies.length = 0;
-}
-
-export function updateExplosions(dt, now) {
-  for (let i = explosionParts.length - 1; i >= 0; i--) {
-    const p = explosionParts[i];
-    const age = now - p.userData.createdAt;
-
-    if (age > p.userData.lifetime) {
-      p.visible = false;
-      explosionParts.splice(i, 1);
-    } else {
-      p.position.addScaledVector(p.userData.velocity, dt);
-      p.userData.velocity.multiplyScalar(1 - 3 * dt);
-      p.material.opacity = 1 - age / p.userData.lifetime;
-    }
-  }
-}
-
-export function getEnemyCount() {
-  return activeEnemies.length;
-}
-
-export function getEnemies() {
-  return activeEnemies;
-}
-
-export function getSpawnPosition(airSpawns, verticalAngle = 0) {
-  const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
-  const distance = 14.4 + Math.random() * 5.6;
-
-  const x = Math.sin(angle) * distance;
-  const z = -Math.cos(angle) * distance;
-  let y = 1.5;
-
-  if (airSpawns) {
-    y = 0.5 + Math.random() * 2.5;
-  }
-
-  if (verticalAngle > 0) {
-    const vertRad = verticalAngle * Math.PI / 180;
-    const baseY = y;
-    y = baseY + Math.sin(vertRad) * distance * Math.random();
-  }
-
-  return new THREE.Vector3(x, y, z);
-}
-
-export function getFastEnemies() {
-  return activeEnemies.filter(e => e.type === 'fast');
-}
-
-export function getSwarmEnemies() {
-  return activeEnemies.filter(e => e.type === 'swarm');
-}
-
-// [Full implementation would continue with all the original enemy spawning and updating logic]
-
-// ── REMAINING EXPORTS (from original file) ───────────────────
 
 /**
  * Spawn a single enemy of the given type at `position`.

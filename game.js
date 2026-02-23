@@ -16,6 +16,8 @@ export const State = {
   REGIONAL_SCORES: 'regional_scores',
   READY_SCREEN: 'ready_screen',
   LEVEL_INTRO: 'level_intro',
+  BOSS_INTRO: 'boss_intro',   // Boss entrance animation
+  BOSS_FIGHT: 'boss_fight',   // Active boss battle
 };
 
 // ── Enemy types available per level ────────────────────────
@@ -34,11 +36,12 @@ export function getBossTier(level) {
 }
 
 // Pool of bosses per tier (randomly picked for that level)
+// Must match BOSS_POOLS in enemies.js
 const BOSS_POOLS = {
-  1: ['chrono_wraith'],
-  2: ['chrono_wraith'],
-  3: ['chrono_wraith'],
-  4: ['chrono_wraith'],
+  1: ['cyber_knight'],      // Level 5
+  2: ['aurora_guardian'],   // Level 10
+  3: ['chrono_wraith'],     // Level 15 (placeholder)
+  4: ['chrono_wraith'],     // Level 20 (placeholder)
 };
 
 export function getRandomBossIdForLevel(level) {
