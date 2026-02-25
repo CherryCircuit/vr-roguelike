@@ -360,6 +360,9 @@ class Boss {
     this.weakPoints = [];
     if (def.weakPoints !== false) {
       this.createWeakPoints();
+    } else {
+      // Skip automatic weak point creation for bosses with custom weak points
+      // Subclasses will add their own weak points
     }
 
     // Minion spawning
@@ -774,6 +777,725 @@ class DodgerBoss extends Boss {
   }
 }
 
+// ── HUNTER BOSS (Redmond "Hunter" Breakenridge) ─────────────
+class HunterBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Hunter-specific state
+    this.droneOrbitAngle = 0;
+    this.droneOrbitRadius = 1.5;
+    this.rifleFireTimer = 0;
+    this.droneFireTimer = 0;
+    this.rifleFireRate = def.rifleFireRate || 2.5;
+    this.droneFireRate = def.droneFireRate || 1.5;
+    this.movingPattern = 'strafe';
+    this.patternTimer = 0;
+    this.strafeDir = 1;
+
+    // Create drone mesh
+    this.createDrone();
+  }
+
+  createDrone() {
+    const droneGroup = new THREE.Group();
+    const geo = getGeo(0.15);
+    const droneMat = new THREE.MeshBasicMaterial({
+      color: 0xff6600,
+      transparent: true,
+      opacity: 0.95
+    });
+
+    // Drone body (2x2 pattern)
+    for (let r = 0; r < 2; r++) {
+      for (let c = 0; c < 2; c++) {
+        const cube = new THREE.Mesh(geo, droneMat.clone());
+        cube.position.set(c * 0.15, r * 0.15, 0);
+        droneGroup.add(cube);
+      }
+    }
+
+    // Drone is weak point
+    droneGroup.userData.isWeakPoint = true;
+    droneGroup.userData.isBossDrone = true;
+
+    this.droneMesh = droneGroup;
+    this.mesh.add(droneMesh);
+    this.weakPoints.push(droneMesh);
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+
+    // Update drone orbit
+    this.droneOrbitAngle += (2 + this.phase) * dt;
+    this.droneMesh.position.set(
+      Math.cos(this.droneOrbitAngle) * this.droneOrbitRadius,
+      Math.sin(this.droneOrbitAngle * 2) * 0.3,
+      Math.sin(this.droneOrbitAngle) * this.droneOrbitRadius
+    );
+
+    // Rifle fire (from boss)
+    this.rifleFireTimer -= dt;
+    if (this.rifleFireTimer <= 0) {
+      this.rifleFireTimer = this.rifleFireRate / this.phase;
+      if (this.telegraphing) {
+        this.showTelegraph('projectile', 0.4, 0xff6600, this.mesh.position.clone(), dirToPlayer);
+      }
+      setTimeout(() => this.fireProjectile(playerPos), 400);
+    }
+
+    // Drone fire (from drone position)
+    this.droneFireTimer -= dt;
+    if (this.droneFireTimer <= 0 && this.droneFireTimer > -dt) {
+      this.droneFireTimer = this.droneFireRate / this.phase;
+      const droneWorldPos = this.droneMesh.getWorldPosition(new THREE.Vector3());
+      const droneDir = playerPos.clone().sub(droneWorldPos).normalize();
+      if (this.telegraphing) {
+        this.showTelegraph('projectile', 0.3, 0xffaa00, droneWorldPos, droneDir);
+      }
+      setTimeout(() => {
+        if (typeof spawnBossProjectile === 'function') {
+          spawnBossProjectile(droneWorldPos, playerPos);
+        }
+      }, 300);
+    }
+
+    // Movement pattern
+    this.patternTimer -= dt;
+    if (this.patternTimer <= 0) {
+      this.patternTimer = 2 + Math.random() * 2;
+      this.movingPattern = Math.random() < 0.5 ? 'strafe' : 'approach';
+      this.strafeDir = Math.random() < 0.5 ? 1 : -1;
+    }
+
+    // Execute movement
+    if (this.movingPattern === 'strafe') {
+      const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
+      this.mesh.position.addScaledVector(perp, (1.5 + this.phase * 0.3) * this.strafeDir * dt);
+    } else {
+      this.mesh.position.addScaledVector(dirToPlayer, (0.5 + this.phase * 0.2) * dt);
+    }
+
+    // Keep distance
+    const dist = this.mesh.position.distanceTo(playerPos);
+    if (dist < 6) {
+      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 1 * dt);
+    } else if (dist > 12) {
+      this.mesh.position.addScaledVector(dirToPlayer, 1 * dt);
+    }
+
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2+: faster drone orbit
+    if (newPhase >= 2) {
+      this.droneOrbitRadius = 2.0;
+    }
+    // Phase 3+: add second drone orbit
+    if (newPhase >= 3) {
+      this.rifleFireRate = 2.0;
+      this.droneFireRate = 1.0;
+    }
+  }
+}
+
+// ── DJ BOSS (DJ Drax) ─────────────────────────────────────
+class DJBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // DJ-specific state
+    this.beatTimer = 0;
+    this.beatRate = def.beatRate || 0.6;
+    this.fanSpawnTimer = 0;
+    this.fanSpawnRate = def.fanSpawnRate || 4.0;
+    this.speakerPulsePhase = 0;
+    this.speakers = [];
+
+    // Create speaker stacks
+    this.createSpeakers();
+  }
+
+  createSpeakers() {
+    const speakerPositions = [
+      { x: -0.8, y: 0.5, z: -0.3 },
+      { x: 0.8, y: 0.5, z: -0.3 },
+      { x: -0.8, y: -0.5, z: -0.3 },
+      { x: 0.8, y: -0.5, z: -0.3 },
+    ];
+
+    speakerPositions.forEach((pos, idx) => {
+      const speakerGroup = new THREE.Group();
+      const geo = getGeo(0.25);
+      const speakerMat = new THREE.MeshBasicMaterial({
+        color: 0x8800ff,
+        transparent: true,
+        opacity: 0.9
+      });
+
+      // Speaker body
+      for (let i = 0; i < 2; i++) {
+        const cube = new THREE.Mesh(geo, speakerMat.clone());
+        cube.position.set(pos.x, pos.y + i * 0.25, pos.z);
+        speakerGroup.add(cube);
+      }
+
+      speakerGroup.userData.isWeakPoint = true;
+      speakerGroup.userData.isBossSpeaker = true;
+      speakerGroup.userData.speakerIndex = idx;
+
+      this.mesh.add(speakerGroup);
+      this.speakers.push(speakerGroup);
+      this.weakPoints.push(speakerGroup);
+    });
+
+    // Add DJ booth
+    const boothGeo = getGeo(0.3);
+    const boothMat = new THREE.MeshBasicMaterial({
+      color: 0x4400aa,
+      transparent: true,
+      opacity: 0.85
+    });
+    const booth = new THREE.Mesh(boothGeo, boothMat);
+    booth.position.set(0, 0, 0.5);
+    booth.userData.isBossBody = true;
+    this.mesh.add(booth);
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    // Beat system
+    this.beatTimer -= dt;
+    if (this.beatTimer <= 0) {
+      this.beatTimer = this.beatRate / (1 + (this.phase - 1) * 0.3);
+      this.speakerPulsePhase = 1.0;
+      
+      // Telegraph fan spawn on every 3rd beat
+      this.beatCounter = (this.beatCounter || 0) + 1;
+      if (this.beatCounter % 3 === 0 && this.telegraphing) {
+        this.showTelegraph('minion', 0.8, 0xff00ff);
+      }
+    }
+
+    // Fan minion spawning
+    this.fanSpawnTimer -= dt;
+    if (this.fanSpawnTimer <= 0) {
+      this.fanSpawnTimer = this.fanSpawnRate / this.phase;
+      this.spawnFanMinion(playerPos);
+    }
+
+    // Animate speakers
+    this.speakerPulsePhase = Math.max(0, this.speakerPulsePhase - dt * 4);
+    this.speakers.forEach((speaker, idx) => {
+      const offset = idx * Math.PI / 2;
+      const pulse = 1 + Math.sin(this.speakerPulsePhase * Math.PI * 2 + offset) * 0.3 * this.speakerPulsePhase;
+      speaker.scale.setScalar(pulse);
+    });
+
+    // Slight movement to the beat
+    const beatOffset = Math.sin(now * 0.01) * 0.1;
+    this.mesh.position.y = 1.5 + beatOffset;
+
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  spawnFanMinion(playerPos) {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 6 + Math.random() * 3;
+    const spawnPos = new THREE.Vector3(
+      Math.cos(angle) * distance,
+      1.5 + Math.random() * 1,
+      Math.sin(angle) * distance
+    );
+
+    this.spawnMinion(spawnPos, playerPos, 'swarm');
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2+: faster beat, spawn 2 fans
+    if (newPhase >= 2) {
+      this.beatRate = 0.5;
+      this.fanSpawnRate = 3.0;
+    }
+    // Phase 3+: even faster, spawn 3 fans
+    if (newPhase >= 3) {
+      this.beatRate = 0.4;
+      this.fanSpawnRate = 2.0;
+    }
+  }
+}
+
+// ── STARFIGHTER BOSS (Captain Kestrel) ─────────────────────
+class StarfighterBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Starfighter-specific state
+    this.cannonFireTimer = 0;
+    this.cannonFireRate = def.cannonFireRate || 2.0;
+    this.missileTimer = 0;
+    this.missileRate = def.missileRate || 5.0;
+    this.attackPattern = 0;
+    this.patternTimer = 0;
+    this.strafing = false;
+    this.strafeDir = 1;
+
+    // Add wings
+    this.createWings();
+  }
+
+  createWings() {
+    const wingGeo = getGeo(0.25);
+    const wingMat = new THREE.MeshBasicMaterial({
+      color: 0x00aaff,
+      transparent: true,
+      opacity: 0.9
+    });
+
+    // Left wing
+    const leftWing = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+      const cube = new THREE.Mesh(wingGeo, wingMat.clone());
+      cube.position.set(-0.4 - i * 0.25, 0, i * 0.1);
+      leftWing.add(cube);
+    }
+    this.mesh.add(leftWing);
+
+    // Right wing
+    const rightWing = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+      const cube = new THREE.Mesh(wingGeo, wingMat.clone());
+      cube.position.set(0.4 + i * 0.25, 0, i * 0.1);
+      rightWing.add(cube);
+    }
+    this.mesh.add(rightWing);
+
+    // Cockpit (weak point)
+    const cockpitGeo = getGeo(0.2);
+    const cockpitMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.95
+    });
+    const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
+    cockpit.position.set(0, 0, 0.5);
+    cockpit.userData.isWeakPoint = true;
+    cockpit.userData.isBossCockpit = true;
+    this.mesh.add(cockpit);
+    this.weakPoints.push(cockpit);
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+
+    // Pattern management
+    this.patternTimer -= dt;
+    if (this.patternTimer <= 0) {
+      this.patternTimer = 3 + Math.random() * 2;
+      this.attackPattern = (this.attackPattern + 1) % 3;
+      this.strafing = Math.random() < 0.5;
+      this.strafeDir = Math.random() < 0.5 ? 1 : -1;
+    }
+
+    // Twin cannons
+    this.cannonFireTimer -= dt;
+    if (this.cannonFireTimer <= 0) {
+      this.cannonFireTimer = this.cannonFireRate / this.phase;
+
+      if (this.attackPattern === 0 || this.attackPattern === 1) {
+        // Spread shot
+        const leftOffset = new THREE.Vector3(-0.3, 0, 0);
+        const rightOffset = new THREE.Vector3(0.3, 0, 0);
+        leftOffset.applyQuaternion(this.mesh.quaternion);
+        rightOffset.applyQuaternion(this.mesh.quaternion);
+
+        if (this.telegraphing) {
+          this.showTelegraph('projectile', 0.3, 0x00aaff, this.mesh.position.clone().add(leftOffset), dirToPlayer);
+        }
+        setTimeout(() => {
+          if (typeof spawnBossProjectile === 'function') {
+            spawnBossProjectile(this.mesh.position.clone().add(leftOffset), playerPos);
+          }
+        }, 300);
+
+        setTimeout(() => {
+          if (typeof spawnBossProjectile === 'function') {
+            spawnBossProjectile(this.mesh.position.clone().add(rightOffset), playerPos);
+          }
+        }, 350);
+      }
+    }
+
+    // Missiles
+    this.missileTimer -= dt;
+    if (this.missileTimer <= 0) {
+      this.missileTimer = this.missileRate / this.phase;
+
+      if (this.attackPattern === 1 || this.attackPattern === 2) {
+        if (this.telegraphing) {
+          this.showTelegraph('projectile', 0.8, 0xff0000, this.mesh.position.clone(), dirToPlayer);
+        }
+        setTimeout(() => {
+          // Spawn 3 missiles in a spread
+          for (let i = -1; i <= 1; i++) {
+            const offset = new THREE.Vector3(i * 0.5, 0, 0);
+            offset.applyQuaternion(this.mesh.quaternion);
+            if (typeof spawnBossProjectile === 'function') {
+              spawnBossProjectile(this.mesh.position.clone().add(offset), playerPos);
+            }
+          }
+        }, 800);
+      }
+    }
+
+    // Movement
+    if (this.strafing) {
+      const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
+      this.mesh.position.addScaledVector(perp, (2.0 + this.phase * 0.4) * this.strafeDir * dt);
+    } else {
+      this.mesh.position.addScaledVector(dirToPlayer, (0.6 + this.phase * 0.2) * dt);
+    }
+
+    const dist = this.mesh.position.distanceTo(playerPos);
+    if (dist < 7) {
+      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 1.5 * dt);
+    } else if (dist > 14) {
+      this.mesh.position.addScaledVector(dirToPlayer, 1 * dt);
+    }
+
+    // Banking animation
+    this.mesh.rotation.z = Math.sin(now * 0.003) * 0.2 * this.strafeDir;
+
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2+: faster fire rate
+    if (newPhase >= 2) {
+      this.cannonFireRate = 1.5;
+      this.missileRate = 4.0;
+    }
+    // Phase 3+: even faster
+    if (newPhase >= 3) {
+      this.cannonFireRate = 1.0;
+      this.missileRate = 3.0;
+    }
+  }
+}
+
+// ── SCIENTIST BOSS (Dr. Aster) ──────────────────────────────
+class ScientistBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Scientist-specific state
+    this.compilerActive = true;
+    this.minionSpawnTimer = 0;
+    this.minionSpawnRate = def.minionSpawnRate || 5.0;
+    this.orbitingData = [];
+    this.compilationTimer = 0;
+    this.shieldActive = false;
+
+    // Create compiler cube
+    this.createCompiler();
+  }
+
+  createCompiler() {
+    const compilerGroup = new THREE.Group();
+    const geo = getGeo(0.2);
+    const compilerMat = new THREE.MeshBasicMaterial({
+      color: 0xff00ff,
+      transparent: true,
+      opacity: 0.9
+    });
+
+    // 3x3x3 cube
+    for (let x = 0; x < 3; x++) {
+      for (let y = 0; y < 3; y++) {
+        for (let z = 0; z < 3; z++) {
+          const cube = new THREE.Mesh(geo, compilerMat.clone());
+          cube.position.set(
+            (x - 1) * 0.2,
+            (y - 1) * 0.2,
+            (z - 1) * 0.2
+          );
+          cube.userData.isCompiler = true;
+          compilerGroup.add(cube);
+        }
+      }
+    }
+
+    compilerGroup.userData.isWeakPoint = true;
+    compilerGroup.userData.isBossCompiler = true;
+    this.compilerMesh = compilerGroup;
+    this.mesh.add(compilerGroup);
+    this.weakPoints.push(compilerGroup);
+
+    // Orbiting data packets
+    for (let i = 0; i < 4; i++) {
+      const dataGeo = getGeo(0.08);
+      const dataMat = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.95
+      });
+      const dataCube = new THREE.Mesh(dataGeo, dataMat);
+      const angle = (i / 4) * Math.PI * 2;
+      dataCube.position.set(
+        Math.cos(angle) * 1.0,
+        Math.sin(angle) * 0.5,
+        Math.sin(angle) * 1.0
+      );
+      dataCube.userData.angle = angle;
+      dataCube.userData.isBossData = true;
+      this.orbitingData.push(dataCube);
+      this.mesh.add(dataCube);
+    }
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    // Animate compiler cube
+    this.compilerMesh.rotation.y += dt * (1 + this.phase * 0.5);
+    this.compilerMesh.rotation.x += dt * 0.5;
+
+    // Animate orbiting data
+    this.orbitingData.forEach((data, idx) => {
+      data.userData.angle += (1 + this.phase * 0.3) * dt;
+      const angle = data.userData.angle;
+      const radius = 1.2 + Math.sin(now * 0.002 + idx) * 0.3;
+      data.position.set(
+        Math.cos(angle) * radius,
+        Math.sin(angle * 2) * 0.5,
+        Math.sin(angle) * radius
+      );
+      data.rotation.x += dt * 2;
+      data.rotation.y += dt * 2;
+    });
+
+    // Compilation timer (spawns minions)
+    this.compilationTimer += dt;
+    const compileThreshold = this.minionSpawnRate / this.phase;
+
+    if (this.compilationTimer >= compileThreshold && this.telegraphing) {
+      this.showTelegraph('minion', 0.6, 0xff00ff);
+    }
+
+    if (this.compilationTimer >= compileThreshold) {
+      this.compilationTimer = 0;
+      this.spawnCompiledMinion(playerPos);
+    }
+
+    // Slow drift toward player
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
+
+    // Maintain distance
+    const dist = this.mesh.position.distanceTo(playerPos);
+    if (dist < 8) {
+      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.5 * dt);
+    }
+
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  spawnCompiledMinion(playerPos) {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 7 + Math.random() * 3;
+    const spawnPos = new THREE.Vector3(
+      Math.cos(angle) * distance,
+      1.5,
+      Math.sin(angle) * distance
+    );
+
+    // Mix of basic and fast enemies
+    const minionType = Math.random() < 0.6 ? 'basic' : 'fast';
+    this.spawnMinion(spawnPos, playerPos, minionType);
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2+: more data packets
+    if (newPhase >= 2) {
+      this.minionSpawnRate = 4.0;
+    }
+    // Phase 3+: even faster compilation
+    if (newPhase >= 3) {
+      this.minionSpawnRate = 3.0;
+    }
+  }
+}
+
+// ── MONK BOSS (Sunflare Seraph) ─────────────────────────────
+class MonkBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Monk-specific state
+    this.sunNodes = [];
+    this.nodeOrbitSpeed = 1.0;
+    this.meditationTimer = 0;
+    this.meditationDuration = def.meditationDuration || 3.0;
+    this.isMeditating = false;
+    this.auraPulse = 0;
+
+    // Create sun nodes
+    this.createSunNodes();
+  }
+
+  createSunNodes() {
+    const nodeCount = 5;
+    const geo = getGeo(0.2);
+    const nodeMat = new THREE.MeshBasicMaterial({
+      color: 0xffdd00,
+      transparent: true,
+      opacity: 0.95
+    });
+
+    for (let i = 0; i < nodeCount; i++) {
+      const nodeGroup = new THREE.Group();
+      const angle = (i / nodeCount) * Math.PI * 2;
+
+      // Sun node (2x2 pattern)
+      for (let r = 0; r < 2; r++) {
+        for (let c = 0; c < 2; c++) {
+          const cube = new THREE.Mesh(geo, nodeMat.clone());
+          cube.position.set(c * 0.2, r * 0.2, 0);
+          nodeGroup.add(cube);
+        }
+      }
+
+      nodeGroup.userData.isWeakPoint = true;
+      nodeGroup.userData.isBossSunNode = true;
+      nodeGroup.userData.nodeIndex = i;
+      nodeGroup.userData.angle = angle;
+
+      this.sunNodes.push(nodeGroup);
+      this.mesh.add(nodeGroup);
+      this.weakPoints.push(nodeGroup);
+    }
+
+    // Central body (monk)
+    const bodyGeo = getGeo(0.3);
+    const bodyMat = new THREE.MeshBasicMaterial({
+      color: 0xffaa00,
+      transparent: true,
+      opacity: 0.85
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.userData.isBossBody = true;
+    this.mesh.add(body);
+
+    // Aura ring
+    const auraGeo = new THREE.RingGeometry(0.8, 1.0, 32);
+    const auraMat = new THREE.MeshBasicMaterial({
+      color: 0xffaa00,
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide
+    });
+    this.auraMesh = new THREE.Mesh(auraGeo, auraMat);
+    this.auraMesh.rotation.x = -Math.PI / 2;
+    this.mesh.add(this.auraMesh);
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    // Update sun node orbits
+    this.sunNodes.forEach((node, idx) => {
+      node.userData.angle += this.nodeOrbitSpeed * dt * (1 + (this.phase - 1) * 0.5);
+      const angle = node.userData.angle;
+      const radius = 1.5 + Math.sin(now * 0.001 + idx) * 0.4;
+      const height = Math.sin(angle * 3) * 0.5;
+
+      node.position.set(
+        Math.cos(angle) * radius,
+        height,
+        Math.sin(angle) * radius
+      );
+
+      // Node rotation
+      node.rotation.y += dt * 2;
+      node.rotation.x += dt;
+    });
+
+    // Meditation cycle
+    if (this.isMeditating) {
+      this.meditationTimer -= dt;
+      if (this.meditationTimer <= 0) {
+        this.isMeditating = false;
+        this.meditationTimer = this.meditationDuration * (1 + (this.phase - 1) * 0.3);
+      }
+    } else {
+      this.meditationTimer -= dt;
+      if (this.meditationTimer <= 0) {
+        this.isMeditating = true;
+        // Telegraph meditation burst
+        if (this.telegraphing) {
+          this.showTelegraph('charge', 1.0, 0xffdd00);
+        }
+        setTimeout(() => this.fireMeditationBurst(playerPos), 1000);
+      }
+    }
+
+    // Aura pulse
+    this.auraPulse += dt * (2 + this.phase);
+    const pulseScale = 1 + Math.sin(this.auraPulse) * 0.3;
+    this.auraMesh.scale.setScalar(pulseScale);
+    this.auraMesh.material.opacity = 0.3 + Math.sin(this.auraPulse) * 0.2;
+
+    // Slow movement
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    if (!this.isMeditating) {
+      this.mesh.position.addScaledVector(dirToPlayer, 0.2 * dt);
+    }
+
+    // Maintain distance
+    const dist = this.mesh.position.distanceTo(playerPos);
+    if (dist < 6) {
+      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.8 * dt);
+    } else if (dist > 10) {
+      this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
+    }
+
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.rotation.y += dt * 0.5;
+  }
+
+  fireMeditationBurst(playerPos) {
+    // Fire projectiles from each sun node
+    this.sunNodes.forEach(node => {
+      const nodeWorldPos = node.getWorldPosition(new THREE.Vector3());
+      const dir = playerPos.clone().sub(nodeWorldPos).normalize();
+
+      if (typeof spawnBossProjectile === 'function') {
+        spawnBossProjectile(nodeWorldPos, playerPos);
+      }
+    });
+
+    // Central burst
+    if (typeof spawnBossProjectile === 'function') {
+      spawnBossProjectile(this.mesh.position.clone(), playerPos);
+    }
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2+: faster orbit
+    if (newPhase >= 2) {
+      this.nodeOrbitSpeed = 1.5;
+      this.meditationDuration = 2.5;
+    }
+    // Phase 3+: even faster
+    if (newPhase >= 3) {
+      this.nodeOrbitSpeed = 2.0;
+      this.meditationDuration = 2.0;
+    }
+  }
+}
+
 // ── BOSS DEFINITIONS ─────────────────────────────────────────
 const BOSS_SKULL_PATTERN = [
   [0, 1, 1, 1, 0],
@@ -784,7 +1506,7 @@ const BOSS_SKULL_PATTERN = [
 ];
 
 const BOSS_DEFS = {
-  // Teleporting boss - the ONLY boss to preserve
+  // Teleporting boss (Level 5)
   chrono_wraith: {
     pattern: [[1, 1, 1, 1]],
     voxelSize: 0.45,
@@ -794,15 +1516,114 @@ const BOSS_DEFS = {
     scoreValue: 100,
     behavior: 'dodger',
     hitboxRadius: 0.45
+  },
+
+  // Level 10 bosses (Tier 2 - HARDER)
+  hunter_breakenridge: {
+    name: 'Redmond "Hunter" Breakenridge',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.35,
+    baseHp: 1200,
+    phases: 3,
+    color: 0xff6600,
+    scoreValue: 200,
+    behavior: 'hunter',
+    hitboxRadius: 0.6,
+    rifleFireRate: 2.5,
+    droneFireRate: 1.5,
+    weakPoints: false  // Custom weak points (drone)
+  },
+
+  dj_drax: {
+    name: 'DJ Drax',
+    pattern: [
+      [1, 1, 1],
+      [1, 1, 1],
+    ],
+    voxelSize: 0.3,
+    baseHp: 1300,
+    phases: 3,
+    color: 0x8800ff,
+    scoreValue: 200,
+    behavior: 'dj',
+    hitboxRadius: 0.7,
+    beatRate: 0.6,
+    fanSpawnRate: 4.0,
+    weakPoints: false  // Custom weak points (speakers)
+  },
+
+  captain_kestrel: {
+    name: 'Captain Kestrel',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.3,
+    baseHp: 1150,
+    phases: 3,
+    color: 0x00aaff,
+    scoreValue: 200,
+    behavior: 'starfighter',
+    hitboxRadius: 0.65,
+    cannonFireRate: 2.0,
+    missileRate: 5.0,
+    weakPoints: false  // Custom weak points (cockpit)
+  },
+
+  dr_aster: {
+    name: 'Dr. Aster',
+    pattern: [
+      [0, 1, 0],
+      [1, 1, 1],
+      [0, 1, 0],
+    ],
+    voxelSize: 0.35,
+    baseHp: 1100,
+    phases: 3,
+    color: 0xff00ff,
+    scoreValue: 200,
+    behavior: 'scientist',
+    hitboxRadius: 0.55,
+    minionSpawnRate: 5.0,
+    weakPoints: false  // Custom weak points (compiler)
+  },
+
+  sunflare_seraph: {
+    name: 'Sunflare Seraph',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.3,
+    baseHp: 1250,
+    phases: 3,
+    color: 0xffdd00,
+    scoreValue: 200,
+    behavior: 'monk',
+    hitboxRadius: 0.7,
+    meditationDuration: 3.0,
+    weakPoints: false  // Custom weak points (sun nodes)
   }
 };
 
 // ── BOSS POOL MANAGEMENT ─────────────────────────────────────
 const BOSS_POOLS = {
-  1: ['chrono_wraith'], // Tier 1 - only teleporting boss
-  2: ['chrono_wraith'], // Tier 2
-  3: ['chrono_wraith'], // Tier 3
-  4: ['chrono_wraith'], // Tier 4
+  1: ['chrono_wraith'], // Tier 1 (Level 5) - only teleporting boss
+  2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'], // Tier 2 (Level 10) - harder bosses
+  3: ['chrono_wraith'], // Tier 3 (Level 15)
+  4: ['chrono_wraith'], // Tier 4 (Level 20)
 };
 
 // ── GLOBAL BOSS STATE ─────────────────────────────────────────
@@ -842,13 +1663,30 @@ export function spawnBoss(bossId, levelConfig, camera) {
   const def = BOSS_DEFS[bossId];
   if (!def || !sceneRef) return null;
 
-  // Create appropriate boss class
+  // Create appropriate boss class based on behavior
   let boss;
-  if (def.behavior === 'dodger') {
-    boss = new DodgerBoss(def, levelConfig, sceneRef, telegraphingSystem);
-  } else {
-    // Default to simple boss for now
-    boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
+  switch (def.behavior) {
+    case 'dodger':
+      boss = new DodgerBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'hunter':
+      boss = new HunterBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'dj':
+      boss = new DJBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'starfighter':
+      boss = new StarfighterBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'scientist':
+      boss = new ScientistBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'monk':
+      boss = new MonkBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    default:
+      boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
   }
 
   // Show boss health bar
