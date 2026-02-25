@@ -15,7 +15,8 @@ import {
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound,
   startLightningSound, stopLightningSound,
-  playMusic, stopMusic, getMusicFrequencyData, playKillsAlertSound
+  playMusic, stopMusic, getMusicFrequencyData, playKillsAlertSound,
+  playBossTeleportDisappear, playBossTeleportReappear, playBossExplosion, playBossStunned
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -43,6 +44,12 @@ import {
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
+import {
+  initDesktopControls, enable: enableDesktop, disable: disableDesktop,
+  toggleMode, isEnabled: isDesktopEnabled,
+  update: updateDesktop, getWeaponState: getDesktopWeaponState,
+  getVirtualController, getControlScheme
+} from './desktop-controls.js';
 
 // ── Constants ──────────────────────────────────────────────
 const NEON_PINK = 0xff00ff;
@@ -179,6 +186,16 @@ function init() {
   // Init subsystems
   initEnemies(scene);
   initHUD(camera, scene);
+  initDesktopControls(scene, camera, renderer);
+
+  // Expose audio functions to window for enemies module
+  window.playBossTeleportDisappear = playBossTeleportDisappear;
+  window.playBossTeleportReappear = playBossTeleportReappear;
+  window.playBossExplosion = playBossExplosion;
+  window.playBossStunned = playBossStunned;
+
+  // Expose toggle function for debug
+  window.toggleDesktopMode = toggleMode;
 
   // Start at title
   resetGame();
@@ -575,6 +592,22 @@ function setupControllers() {
     scene.add(controller);
     controllers.push(controller);
   }
+
+  // Desktop click handler
+  document.addEventListener('mousedown', (e) => {
+    if (isDesktopEnabled() && e.button === 0) {
+      handleDesktopClick();
+    }
+  });
+
+  // ESC handler for pause menu
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && game.state === State.PLAYING) {
+      // Toggle pause or show menu
+      console.log('[game] ESC pressed - pause/menu');
+      // TODO: Implement pause menu
+    }
+  });
 }
 
 function createControllerVisual(index) {
@@ -744,6 +777,169 @@ function onTriggerPress(controller, index) {
   } else if (st === State.READY_SCREEN) {
     handleReadyScreenTrigger(controller);
   }
+}
+
+// ── Desktop Controls Handlers ───────────────────────────────
+
+function handleDesktopClick() {
+  if (!isDesktopEnabled()) return;
+
+  const st = game.state;
+
+  if (st === State.TITLE) {
+    handleDesktopTitleClick();
+  } else if (st === State.UPGRADE_SELECT) {
+    handleDesktopUpgradeSelectClick();
+  } else if (st === State.GAME_OVER || st === State.VICTORY) {
+    if (gameOverCooldown <= 0) {
+      handleDesktopGameOverClick();
+    }
+  } else if (st === State.NAME_ENTRY) {
+    handleDesktopNameEntryClick();
+  } else if (st === State.SCOREBOARD || st === State.REGIONAL_SCORES) {
+    handleDesktopScoreboardClick();
+  } else if (st === State.COUNTRY_SELECT) {
+    handleDesktopCountrySelectClick();
+  } else if (st === State.READY_SCREEN) {
+    handleDesktopReadyScreenClick();
+  }
+}
+
+function handleDesktopTitleClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const btnHit = getTitleButtonHit(raycaster);
+  if (btnHit === 'scoreboard') {
+    playMenuClick();
+    scoreboardFromGameOver = false;
+    game.state = State.SCOREBOARD;
+    hideTitle();
+    showScoreboard([], 'LOADING...');
+    fetchTopScores().then(scores => {
+      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+    });
+    return;
+  }
+  playMenuClick();
+  startGame();
+}
+
+function handleDesktopGameOverClick() {
+  game.finalScore = game.score;
+  game.finalLevel = game.level;
+  scoreboardFromGameOver = true;
+  hideGameOver();
+
+  if (!getStoredCountry()) {
+    game.state = State.COUNTRY_SELECT;
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+  } else {
+    game.state = State.NAME_ENTRY;
+    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+  }
+}
+
+function handleDesktopNameEntryClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const result = getKeyboardHit(raycaster);
+  if (result) {
+    if (result === 'submit') {
+      const name = getNameEntryName();
+      if (isNameClean(name)) {
+        setStoredName(name);
+        hideNameEntry();
+        submitScore(name).then(() => {
+          game.state = State.SCOREBOARD;
+          showScoreboard([], 'LOADING...');
+          fetchTopScores().then(scores => {
+            showScoreboard(scores, 'GLOBAL LEADERBOARD');
+          });
+        });
+      } else {
+        playErrorSound();
+      }
+    } else if (result === 'backspace') {
+      updateKeyboardHover('backspace');
+    } else if (result && result.key) {
+      updateKeyboardHover(result.key);
+    }
+  }
+}
+
+function handleDesktopScoreboardClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const hit = getScoreboardHit(raycaster);
+  if (hit === 'back') {
+    playMenuClick();
+    hideScoreboard();
+    if (scoreboardFromGameOver) {
+      game.state = State.TITLE;
+      showTitle();
+    } else {
+      game.state = State.SCOREBOARD;
+      showScoreboard([], 'LOADING...');
+      fetchTopScores().then(scores => {
+        showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      });
+    }
+  } else if (hit === 'region') {
+    const country = getStoredCountry();
+    if (country) {
+      const continent = CONTINENTS.find(c => c.name === country.continent);
+      if (continent) {
+        playMenuClick();
+        hideScoreboard();
+        game.state = State.REGIONAL_SCORES;
+        showScoreboard([], 'LOADING...');
+        fetchScoresByContinent(continent.id).then(scores => {
+          showScoreboard(scores, `${continent.name.toUpperCase()} LEADERBOARD`);
+        });
+      }
+    }
+  }
+}
+
+function handleDesktopCountrySelectClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const hit = getCountrySelectHit(raycaster);
+  if (hit && hit.country) {
+    setStoredCountry(hit.country);
+    playMenuClick();
+    hideCountrySelect();
+    game.state = State.NAME_ENTRY;
+    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+  } else if (hit === 'back') {
+    playMenuClick();
+    hideCountrySelect();
+    game.state = State.SCOREBOARD;
+    showScoreboard([], 'LOADING...');
+    fetchTopScores().then(scores => {
+      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+    });
+  }
+}
+
+function handleDesktopUpgradeSelectClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const hit = getUpgradeCardHit(raycaster);
+  if (hit && hit !== null) {
+    selectUpgradeAt(hit);
+  }
+}
+
+function handleDesktopReadyScreenClick() {
+  playMenuClick();
+  hideUpgradeCards();
+  game.state = State.PLAYING;
 }
 
 function handleTitleTrigger(controller) {
@@ -1767,6 +1963,18 @@ function selectUpgrade(controller) {
   }
 }
 
+function selectUpgradeAt(index) {
+  if (upgradeSelectionCooldown > 0) return;
+
+  const upgrades = getRandomUpgrades(3);
+  if (index >= 0 && index < upgrades.length) {
+    const upgrade = upgrades[index];
+    // Randomly assign to left or right hand
+    const hand = Math.random() < 0.5 ? 'left' : 'right';
+    selectUpgradeAndAdvance(upgrade, hand);
+  }
+}
+
 // ============================================================
 //  ENEMY SPAWNING
 // ============================================================
@@ -1960,7 +2168,10 @@ function render(timestamp) {
 
     spawnEnemyWave(dt);
 
-    // Full-auto shooting / Lightning beams
+    // Update desktop controls movement
+    const desktopMove = updateDesktop(dt);
+
+    // Full-auto shooting / Lightning beams (VR controllers)
     for (let i = 0; i < 2; i++) {
       if (controllerTriggerPressed[i]) {
         const hand = i === 0 ? 'left' : 'right';
@@ -1980,6 +2191,43 @@ function render(timestamp) {
           lightningBeams[i] = null;
         }
       }
+    }
+
+    // Desktop firing
+    const desktopWeapon = getDesktopWeaponState();
+    if (desktopWeapon.triggerPressed) {
+      // Handle fire mode: left, right, or both
+      if (desktopWeapon.fireMode === 'left' || desktopWeapon.fireMode === 'both') {
+        const virtualController = getVirtualController('left');
+        if (virtualController) {
+          const stats = getWeaponStats(game.upgrades.left);
+          if (stats.chargeShot) {
+            if (chargeShotStartTime[0] === null) chargeShotStartTime[0] = now;
+          } else if (stats.lightning) {
+            updateLightningBeam(virtualController, 0, stats, dt);
+          } else {
+            shootWeapon(virtualController, 0);
+          }
+        }
+      }
+
+      if (desktopWeapon.fireMode === 'right' || desktopWeapon.fireMode === 'both') {
+        const virtualController = getVirtualController('right');
+        if (virtualController) {
+          const stats = getWeaponStats(game.upgrades.right);
+          if (stats.chargeShot) {
+            if (chargeShotStartTime[1] === null) chargeShotStartTime[1] = now;
+          } else if (stats.lightning) {
+            updateLightningBeam(virtualController, 1, stats, dt);
+          } else {
+            shootWeapon(virtualController, 1);
+          }
+        }
+      }
+    } else {
+      // Release charge shots when not pressing fire
+      if (chargeShotStartTime[0] !== null) chargeShotStartTime[0] = null;
+      if (chargeShotStartTime[1] !== null) chargeShotStartTime[1] = null;
     }
 
     // Fast enemy proximity alerts
@@ -2029,6 +2277,26 @@ function render(timestamp) {
       updateBossMinions(dt, playerPos);
       showBossHealthBar(boss.hp, boss.maxHp, boss.phases);
       updateBossHealthBar(boss.hp, boss.maxHp, boss.phases);
+
+      // Check if boss explosion hit player (dodger behavior)
+      if (boss.lastExplosionHitPlayer) {
+        boss.lastExplosionHitPlayer = false; // Reset flag
+        const dead = damagePlayer(3); // 3 damage from explosion
+        triggerHitFlash();
+        playDamageSound();
+        cameraShake = 0.8;
+        cameraShakeIntensity = 0.1;
+        originalCameraPos.copy(camera.position);
+        floorFlashing = true;
+        floorFlashTimer = 0.7;
+        slowMoActive = false;
+        slowMoRampOut = false;
+        timeScale = 1.0;
+        console.log(`[boss-explosion] Player hit by boss explosion! Health: ${game.health}`);
+        if (dead) {
+          endGame(false);
+        }
+      }
 
       // Check if boss was killed
       if (boss.hp <= 0) {
