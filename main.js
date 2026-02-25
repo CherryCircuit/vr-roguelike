@@ -2099,7 +2099,7 @@ function render(timestamp) {
         proj.mesh.material.dispose();
         bossProjs.splice(i, 1);
 
-        const dead = damagePlayer(1);
+        const dead = damagePlayer(proj.damage || 1);
         triggerHitFlash();
         playDamageSound();
         cameraShake = 0.4;

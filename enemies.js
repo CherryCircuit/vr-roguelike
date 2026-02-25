@@ -774,6 +774,326 @@ class DodgerBoss extends Boss {
   }
 }
 
+// ── LEVEL 10 BOSS IMPLEMENTATIONS ─────────────────────────────
+
+// 1. Hunter Boss - Ranged attacks with rifle, spawns drone minions
+class HunterBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    this.state = 'tracking';
+    this.trackingTimer = 0;
+    this.aimTimer = 0;
+    this.strafeDir = 1;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const distToPlayer = this.mesh.position.distanceTo(playerPos);
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+
+    // Phase-based behavior
+    const speedMult = 1.0 + (this.phase - 1) * 0.25;
+
+    // Strafe movement
+    this.mesh.position.addScaledVector(dirToPlayer, 0.3 * speedMult * dt);
+
+    // Perpendicular strafe
+    const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x);
+    this.mesh.position.addScaledVector(perp, this.strafeDir * 0.8 * speedMult * dt);
+
+    // Change strafe direction periodically
+    this.trackingTimer -= dt;
+    if (this.trackingTimer <= 0) {
+      this.trackingTimer = 2.0;
+      this.strafeDir *= -1;
+    }
+
+    // Always face player
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  onProjectileFire(playerPos) {
+    // Rifle shot - accurate, aimed
+    this.showTelegraph('projectile', 0.8, 0xff4400, this.mesh.position.clone(), playerPos.clone().sub(this.mesh.position).normalize());
+    this.fireProjectile(playerPos);
+  }
+
+  onMinionSpawn(playerPos) {
+    // Spawn drone minion
+    const offset = new THREE.Vector3((Math.random() - 0.5) * 4, 0, (Math.random() - 0.5) * 4);
+    this.spawnMinion(this.mesh.position.clone().add(offset), playerPos, 'fast');
+  }
+}
+
+// 2. DJ Boss - Spawns fan minions frequently, moves around booth
+class DJBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    this.state = 'spinning';
+    this.spinAngle = 0;
+    this.spinSpeed = 2.0;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    // Spin around booth
+    this.spinAngle += this.spinSpeed * dt * (1 + (this.phase - 1) * 0.3);
+
+    const radius = 3.0;
+    const centerX = 0;
+    const centerZ = -12;
+
+    this.mesh.position.x = centerX + Math.cos(this.spinAngle) * radius;
+    this.mesh.position.z = centerZ + Math.sin(this.spinAngle) * radius;
+
+    // Face center while spinning
+    this.mesh.lookAt(new THREE.Vector3(centerX, this.mesh.position.y, centerZ));
+
+    // Pulse effect
+    const pulse = 1 + Math.sin(now * 0.005) * 0.1;
+    this.mesh.scale.set(pulse, pulse, pulse);
+  }
+
+  onMinionSpawn(playerPos) {
+    // Spawn fan minions in a ring
+    const count = 2 + this.phase;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const offset = new THREE.Vector3(Math.cos(angle) * 2, 0, Math.sin(angle) * 2);
+      this.spawnMinion(this.mesh.position.clone().add(offset), playerPos, 'swarm');
+    }
+  }
+}
+
+// 3. Fighter Boss - Twin cannons, missiles, strafing movement
+class FighterBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    this.state = 'strafing';
+    this.strafeTimer = 0;
+    this.strafeDir = 1;
+    this.missileTimer = 0;
+    this.missileRate = 4.0;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const speedMult = 1.0 + (this.phase - 1) * 0.3;
+
+    // Strafe left/right
+    this.mesh.position.x += this.strafeDir * 1.5 * speedMult * dt;
+
+    // Maintain distance
+    const distToPlayer = this.mesh.position.distanceTo(playerPos);
+    if (distToPlayer < 6) {
+      const dir = this.mesh.position.clone().sub(playerPos).normalize();
+      this.mesh.position.addScaledVector(dir, 1.0 * dt);
+    } else if (distToPlayer > 15) {
+      const dir = playerPos.clone().sub(this.mesh.position).normalize();
+      this.mesh.position.addScaledVector(dir, 0.8 * dt);
+    }
+
+    // Change direction periodically
+    this.strafeTimer -= dt;
+    if (this.strafeTimer <= 0 || Math.abs(this.mesh.position.x) > 8) {
+      this.strafeTimer = 3.0;
+      this.strafeDir *= -1;
+    }
+
+    // Fire missiles
+    this.missileTimer -= dt;
+    if (this.missileTimer <= 0) {
+      this.missileTimer = this.missileRate / (1 + (this.phase - 1) * 0.2);
+      this.fireMissile(playerPos);
+    }
+
+    // Always face player
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  fireMissile(targetPos) {
+    // Slower, more damaging projectile
+    const missileSpeed = 3.0;
+    const missileDamage = 2;
+
+    if (typeof spawnBossProjectile === 'function') {
+      const dir = targetPos.clone().sub(this.mesh.position).normalize();
+      const proj = spawnBossProjectile(this.mesh.position.clone(), targetPos, missileSpeed, missileDamage);
+      this.showTelegraph('projectile', 1.2, 0xff0000, this.mesh.position.clone(), dir);
+    }
+  }
+
+  onProjectileFire(playerPos) {
+    // Twin cannon fire - two projectiles
+    const leftGun = this.mesh.position.clone().add(new THREE.Vector3(-0.3, 0, -0.2));
+    const rightGun = this.mesh.position.clone().add(new THREE.Vector3(0.3, 0, -0.2));
+
+    this.showTelegraph('projectile', 0.6, 0x00ffff, leftGun, playerPos.clone().sub(leftGun).normalize());
+    this.fireProjectile(playerPos);
+  }
+}
+
+// 4. Scientist Boss - Compiler cube spawns minions, teleportation
+class ScientistBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    this.state = 'researching';
+    this.teleportTimer = 0;
+    this.compileTimer = 0;
+    this.compileRate = 6.0;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const distToPlayer = this.mesh.position.distanceTo(playerPos);
+
+    // Teleport periodically
+    this.teleportTimer -= dt;
+    if (this.teleportTimer <= 0) {
+      this.teleportTimer = 5.0 / (1 + (this.phase - 1) * 0.2);
+      this.teleport(playerPos);
+    }
+
+    // Compile minions (faster in later phases)
+    this.compileTimer -= dt;
+    if (this.compileTimer <= 0) {
+      this.compileTimer = this.compileRate / (1 + (this.phase - 1) * 0.3);
+      this.compileMinions(playerPos);
+    }
+
+    // Keep distance from player
+    if (distToPlayer < 5) {
+      const dir = this.mesh.position.clone().sub(playerPos).normalize();
+      this.mesh.position.addScaledVector(dir, 0.6 * dt);
+    }
+
+    // Face player
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+
+    // Compiler cube visual effect
+    const pulse = 1 + Math.sin(now * 0.008) * 0.15;
+    this.mesh.scale.set(pulse, pulse, pulse);
+  }
+
+  teleport(playerPos) {
+    // Teleport to random position around player
+    this.showTelegraph('teleport', 0.6, 0x88ff00);
+
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 8 + Math.random() * 4;
+
+    this.mesh.position.set(
+      playerPos.x + Math.cos(angle) * distance,
+      1.5,
+      playerPos.z + Math.sin(angle) * distance
+    );
+
+    // Play teleport sound
+    if (typeof window !== 'undefined' && window.playBossTeleportReappear) {
+      window.playBossTeleportReappear();
+    }
+  }
+
+  compileMinions(playerPos) {
+    // Spawn compiled minions
+    const count = 2 + this.phase;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const offset = new THREE.Vector3(Math.cos(angle) * 1.5, 0, Math.sin(angle) * 1.5);
+      this.spawnMinion(this.mesh.position.clone().add(offset), playerPos, 'basic');
+    }
+  }
+
+  onMinionSpawn(playerPos) {
+    // Called by base class timer - spawn single minion
+    const offset = new THREE.Vector3((Math.random() - 0.5) * 3, 0, (Math.random() - 0.5) * 3);
+    this.spawnMinion(this.mesh.position.clone().add(offset), playerPos, 'tank');
+  }
+}
+
+// 5. Monk Boss - Orbiting sun nodes, energy attacks
+class MonkBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    this.state = 'meditating';
+    this.sunNodes = [];
+    this.sunAngle = 0;
+    this.meditateTimer = 0;
+    this.createSunNodes();
+  }
+
+  createSunNodes() {
+    // Create orbiting sun nodes
+    const nodeCount = 4 + this.phase;
+    for (let i = 0; i < nodeCount; i++) {
+      const nodeGeo = new THREE.SphereGeometry(0.15, 8, 8);
+      const nodeMat = new THREE.MeshBasicMaterial({
+        color: 0xffff00,
+        transparent: true,
+        opacity: 0.9,
+      });
+      const node = new THREE.Mesh(nodeGeo, nodeMat);
+      node.userData.isSunNode = true;
+      this.sunNodes.push({
+        mesh: node,
+        angle: (i / nodeCount) * Math.PI * 2,
+        radius: 1.5,
+      });
+      this.mesh.add(node);
+    }
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    // Orbit sun nodes
+    this.sunAngle += 2.0 * dt * (1 + (this.phase - 1) * 0.3);
+
+    this.sunNodes.forEach((node, i) => {
+      const angle = node.angle + this.sunAngle + i * 0.5;
+      const radius = node.radius + Math.sin(now * 0.003 + i) * 0.3;
+      node.mesh.position.set(
+        Math.cos(angle) * radius,
+        Math.sin(now * 0.002 + i) * 0.5,
+        Math.sin(angle) * radius
+      );
+    });
+
+    // Hover toward player
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    const distToPlayer = this.mesh.position.distanceTo(playerPos);
+
+    if (distToPlayer > 8) {
+      this.mesh.position.addScaledVector(dirToPlayer, 0.4 * dt);
+    } else if (distToPlayer < 4) {
+      this.mesh.position.addScaledVector(dirToPlayer, -0.3 * dt);
+    }
+
+    // Meditative hover
+    this.mesh.position.y = 1.5 + Math.sin(now * 0.001) * 0.3;
+
+    // Face player
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  onProjectileFire(playerPos) {
+    // Fire energy burst from sun nodes
+    const nodeCount = Math.min(this.sunNodes.length, 2 + this.phase);
+
+    for (let i = 0; i < nodeCount; i++) {
+      const node = this.sunNodes[i];
+      const worldPos = new THREE.Vector3();
+      node.mesh.getWorldPosition(worldPos);
+
+      this.showTelegraph('projectile', 0.5, 0xffff00, worldPos, playerPos.clone().sub(worldPos).normalize());
+      this.fireProjectile(playerPos);
+    }
+  }
+
+  destroy() {
+    // Clean up sun nodes
+    this.sunNodes.forEach(node => {
+      if (node.mesh.geometry) node.mesh.geometry.dispose();
+      if (node.mesh.material) node.mesh.material.dispose();
+    });
+    super.destroy();
+  }
+}
+
 // ── BOSS DEFINITIONS ─────────────────────────────────────────
 const BOSS_SKULL_PATTERN = [
   [0, 1, 1, 1, 0],
@@ -794,7 +1114,100 @@ const BOSS_DEFS = {
     scoreValue: 100,
     behavior: 'dodger',
     hitboxRadius: 0.45
-  }
+  },
+
+  // LEVEL 10 BOSSES (Tier 2 - HARDER)
+
+  // 1. Redmond "Hunter" Breakenridge - Bounty hunter with rifle and drone
+  hunter_breakenridge: {
+    pattern: [
+      [0, 1, 0],
+      [1, 1, 1],
+      [0, 1, 0],
+      [1, 0, 1],
+    ],
+    voxelSize: 0.38,
+    baseHp: 1200,
+    phases: 3,
+    color: 0xcc4400,
+    scoreValue: 150,
+    behavior: 'hunter',
+    hitboxRadius: 0.55,
+    projectileRate: 1.2,
+    minionSpawnRate: 8.0,
+  },
+
+  // 2. DJ Drax - DJ booth with speaker stacks and fan minions
+  dj_drax: {
+    pattern: [
+      [1, 0, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+      [0, 1, 0],
+    ],
+    voxelSize: 0.42,
+    baseHp: 1000,
+    phases: 3,
+    color: 0xff00ff,
+    scoreValue: 140,
+    behavior: 'dj',
+    hitboxRadius: 0.60,
+    minionSpawnRate: 3.5,
+  },
+
+  // 3. Captain Kestrel - Starfighter with twin cannons and missiles
+  captain_kestrel: {
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+    ],
+    voxelSize: 0.35,
+    baseHp: 1400,
+    phases: 3,
+    color: 0x00ccff,
+    scoreValue: 160,
+    behavior: 'fighter',
+    hitboxRadius: 0.58,
+    projectileRate: 0.8,
+  },
+
+  // 4. Dr. Aster - Scientist with compiler cube that spawns minions
+  dr_aster: {
+    pattern: [
+      [1, 1, 1],
+      [1, 0, 1],
+      [1, 1, 1],
+      [0, 1, 0],
+    ],
+    voxelSize: 0.40,
+    baseHp: 1100,
+    phases: 3,
+    color: 0x88ff00,
+    scoreValue: 145,
+    behavior: 'scientist',
+    hitboxRadius: 0.52,
+    minionSpawnRate: 5.0,
+  },
+
+  // 5. Sunflare Seraph - Monk with orbiting sun nodes
+  sunflare_seraph: {
+    pattern: [
+      [0, 1, 0],
+      [1, 1, 1],
+      [1, 1, 1],
+      [0, 1, 0],
+    ],
+    voxelSize: 0.36,
+    baseHp: 1300,
+    phases: 3,
+    color: 0xffcc00,
+    scoreValue: 155,
+    behavior: 'monk',
+    hitboxRadius: 0.50,
+    projectileRate: 1.5,
+  },
 };
 
 // ── BOSS POOL MANAGEMENT ─────────────────────────────────────
@@ -842,13 +1255,30 @@ export function spawnBoss(bossId, levelConfig, camera) {
   const def = BOSS_DEFS[bossId];
   if (!def || !sceneRef) return null;
 
-  // Create appropriate boss class
+  // Create appropriate boss class based on behavior
   let boss;
-  if (def.behavior === 'dodger') {
-    boss = new DodgerBoss(def, levelConfig, sceneRef, telegraphingSystem);
-  } else {
-    // Default to simple boss for now
-    boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
+  switch (def.behavior) {
+    case 'dodger':
+      boss = new DodgerBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'hunter':
+      boss = new HunterBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'dj':
+      boss = new DJBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'fighter':
+      boss = new FighterBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'scientist':
+      boss = new ScientistBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'monk':
+      boss = new MonkBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    default:
+      // Default to simple boss
+      boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
   }
 
   // Show boss health bar
@@ -985,14 +1415,13 @@ export function updateBossMinions(dt, playerPos) {
 
 // ── PROJECTILES (for compatibility) ───────────────────────────
 const bossProjectiles = [];
-export function spawnBossProjectile(fromPos, targetPos) {
+export function spawnBossProjectile(fromPos, targetPos, speed = 4.0, damage = 1) {
   const geo = getGeo(0.12);
   const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, emissive: 0xff0000 });
   const proj = new THREE.Mesh(geo, mat);
   proj.position.copy(fromPos);
 
   const dir = new THREE.Vector3().copy(targetPos).sub(fromPos).normalize();
-  const speed = 4.0;
 
   sceneRef.add(proj);
   bossProjectiles.push({
@@ -1000,6 +1429,7 @@ export function spawnBossProjectile(fromPos, targetPos) {
     velocity: dir.multiplyScalar(speed),
     createdAt: performance.now(),
     lifetime: 5000,
+    damage: damage,
   });
 }
 
