@@ -45,7 +45,7 @@ import {
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
 import {
-  initDesktopControls, enable: enableDesktop, disable: disableDesktop,
+  initDesktopControls, enable as enableDesktop, disable as disableDesktop,
   toggleMode, isEnabled: isDesktopEnabled,
   update: updateDesktop, getWeaponState: getDesktopWeaponState,
   getVirtualController, getControlScheme
