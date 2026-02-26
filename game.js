@@ -37,7 +37,7 @@ export function getBossTier(level) {
 const BOSS_POOLS = {
   1: ['chrono_wraith'], // Tier 1 (Level 5)
   2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'], // Tier 2 (Level 10) - harder bosses
-  3: ['chrono_wraith'], // Tier 3 (Level 15)
+  3: ['theodore_breakenridge', 'commander_halcyon', 'madame_coda', 'twin_glitch', 'neon_minotaur'], // Tier 3 (Level 15) - TOUGH bosses
   4: ['chrono_wraith'], // Tier 4 (Level 20)
 };
 

@@ -1615,14 +1615,934 @@ const BOSS_DEFS = {
     hitboxRadius: 0.7,
     meditationDuration: 3.0,
     weakPoints: false  // Custom weak points (sun nodes)
+  },
+
+  // Level 15 bosses (Tier 3 - TOUGH)
+  theodore_breakenridge: {
+    name: 'Theodore "Shady" Breakenridge',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.4,
+    baseHp: 1800,
+    phases: 3,
+    color: 0x8800ff,
+    scoreValue: 400,
+    behavior: 'outlaw',
+    hitboxRadius: 0.7,
+    vanishDuration: 2.0,
+    shadowBulletRate: 0.8,
+    weakPoints: true
+  },
+
+  commander_halcyon: {
+    name: 'Commander Halcyon',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.38,
+    baseHp: 1750,
+    phases: 3,
+    color: 0x00aaff,
+    scoreValue: 400,
+    behavior: 'commander',
+    hitboxRadius: 0.75,
+    laserRate: 1.5,
+    weakPoints: false  // Shield tiles act as damage reduction
+  },
+
+  madame_coda: {
+    name: 'Madame Coda',
+    pattern: [
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+    ],
+    voxelSize: 0.32,
+    baseHp: 1700,
+    phases: 3,
+    color: 0xff00ff,
+    scoreValue: 400,
+    behavior: 'diva',
+    hitboxRadius: 0.7,
+    beamRate: 1.2,
+    performanceDuration: 3.0,
+    weakPoints: false  // Custom weak points (microphones)
+  },
+
+  twin_glitch: {
+    name: 'Twin Glitch Units',
+    pattern: [
+      [1, 1],
+      [1, 1],
+    ],
+    voxelSize: 0.25,
+    baseHp: 1600,
+    phases: 3,
+    color: 0x00ffff,
+    scoreValue: 400,
+    behavior: 'twin_glitch',
+    hitboxRadius: 1.2, // Larger hitbox for both sisters
+    vulnerabilitySwapRate: 4.0,
+    weakPoints: false  // Custom weak points (sister cores)
+  },
+
+  neon_minotaur: {
+    name: 'Neon Minotaur',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.42,
+    baseHp: 1900,
+    phases: 3,
+    color: 0xff0088,
+    scoreValue: 400,
+    behavior: 'minotaur',
+    hitboxRadius: 0.8,
+    chargeDuration: 2.5,
+    slamRate: 5.0,
+    shardRate: 0.6,
+    weakPoints: true
   }
 };
+
+// ── OUTLAW BOSS (Theodore "Shady" Breakenridge) ───────────
+class OutlawBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Outlaw-specific state
+    this.vanishTimer = 0;
+    this.vanishDuration = def.vanishDuration || 2.0;
+    this.shadowBulletTimer = 0;
+    this.shadowBulletRate = def.shadowBulletRate || 0.8;
+    this.isVanished = false;
+    this.reappearPosition = null;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+
+    // Vanish cycle
+    if (!this.isVanished) {
+      this.vanishTimer -= dt;
+      if (this.vanishTimer <= 0) {
+        this.vanish(now, playerPos);
+        return;
+      }
+
+      // Fire shadow bullets
+      this.shadowBulletTimer -= dt;
+      if (this.shadowBulletTimer <= 0) {
+        this.shadowBulletTimer = this.shadowBulletRate / this.phase;
+        this.fireShadowBullets(playerPos);
+      }
+
+      // Move toward player
+      const speed = 0.8 + this.phase * 0.2;
+      this.mesh.position.addScaledVector(dirToPlayer, speed * dt);
+
+      // Keep distance
+      const dist = this.mesh.position.distanceTo(playerPos);
+      if (dist < 6) {
+        this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 1 * dt);
+      } else if (dist > 12) {
+        this.mesh.position.addScaledVector(dirToPlayer, 0.5 * dt);
+      }
+
+      // Visible - show mesh
+      this.mesh.visible = true;
+
+    } else {
+      // Vanished - invisible, moving to reappear position
+      this.mesh.visible = false;
+
+      // Move to reappear position
+      if (this.reappearPosition) {
+        const dirToReappear = this.reappearPosition.clone().sub(this.mesh.position);
+        const distToReappear = dirToReappear.length();
+        if (distToReappear > 0.1) {
+          dirToReappear.normalize();
+          this.mesh.position.addScaledVector(dirToReappear, 8 * dt);
+        }
+
+        this.vanishTimer -= dt;
+        if (this.vanishTimer <= 0) {
+          this.reappear();
+        }
+      }
+    }
+
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  vanish(now, playerPos) {
+    this.isVanished = true;
+    this.vanishTimer = this.vanishDuration / this.phase;
+
+    // Telegraph vanish
+    if (this.telegraphing) {
+      this.showTelegraph('teleport', 0.5, 0x8800ff);
+    }
+
+    // Choose reappear position (behind or flanking player)
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 6 + Math.random() * 3;
+    this.reappearPosition = new THREE.Vector3(
+      Math.sin(angle) * distance,
+      1.5,
+      Math.cos(angle) * distance
+    );
+
+    if (typeof window !== 'undefined' && window.playBossTeleportReappear) {
+      window.playBossTeleportReappear();
+    }
+  }
+
+  reappear() {
+    this.isVanished = false;
+    this.mesh.position.copy(this.reappearPosition);
+    this.vanishTimer = 4 + Math.random() * 2;
+
+    // Telegraph ambush attack
+    if (this.telegraphing) {
+      this.showTelegraph('charge', 0.6, 0x8800ff);
+    }
+
+    // Fire burst of shadow bullets
+    setTimeout(() => {
+      if (typeof window !== 'undefined' && window.updateBossHealthBar) {
+        // Boss is back
+      }
+    }, 600);
+  }
+
+  fireShadowBullets(playerPos) {
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.3, 0x440088);
+    }
+
+    // Fire multiple shadow bullets in a spread
+    const bulletCount = 2 + this.phase;
+    for (let i = 0; i < bulletCount; i++) {
+      setTimeout(() => {
+        if (typeof spawnBossProjectile === 'function') {
+          spawnBossProjectile(this.mesh.position.clone(), playerPos);
+        }
+      }, i * 100);
+    }
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2+: faster vanish cycle
+    if (newPhase >= 2) {
+      this.vanishDuration = 1.5;
+      this.shadowBulletRate = 0.6;
+    }
+    // Phase 3+: even faster
+    if (newPhase >= 3) {
+      this.vanishDuration = 1.0;
+      this.shadowBulletRate = 0.5;
+    }
+  }
+}
+
+// ── COMMANDER BOSS (Commander Halcyon) ────────────────────
+class CommanderBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Commander-specific state
+    this.shieldTiles = [];
+    this.shieldOrbitAngle = 0;
+    this.shieldOrbitSpeed = 1.0;
+    this.laserTimer = 0;
+    this.laserRate = def.laserRate || 1.5;
+    this.shieldActive = true;
+
+    // Create shield tiles
+    this.createShieldTiles();
+  }
+
+  createShieldTiles() {
+    const tileCount = 6;
+    const geo = getGeo(0.2);
+    const tileMat = new THREE.MeshBasicMaterial({
+      color: 0x00aaff,
+      transparent: true,
+      opacity: 0.7
+    });
+
+    for (let i = 0; i < tileCount; i++) {
+      const tileGroup = new THREE.Group();
+      const angle = (i / tileCount) * Math.PI * 2;
+
+      // Shield tile (2x1 pattern)
+      for (let r = 0; r < 2; r++) {
+        const cube = new THREE.Mesh(geo, tileMat.clone());
+        cube.position.set(0, r * 0.2, 0);
+        tileGroup.add(cube);
+      }
+
+      tileGroup.userData.isShieldTile = true;
+      tileGroup.userData.tileIndex = i;
+      tileGroup.userData.angle = angle;
+
+      this.shieldTiles.push(tileGroup);
+      this.mesh.add(tileGroup);
+    }
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+
+    // Update shield orbit
+    this.shieldOrbitAngle += this.shieldOrbitSpeed * dt * (1 + (this.phase - 1) * 0.3);
+
+    this.shieldTiles.forEach((tile, idx) => {
+      const baseAngle = tile.userData.angle;
+      const orbitRadius = 2.0 + Math.sin(now * 0.002 + idx) * 0.3;
+      const angle = baseAngle + this.shieldOrbitAngle;
+
+      tile.position.set(
+        Math.cos(angle) * orbitRadius,
+        Math.sin(angle * 2) * 0.5,
+        Math.sin(angle) * orbitRadius
+      );
+
+      // Tile rotation
+      tile.rotation.y += dt;
+      tile.rotation.x += dt * 0.5;
+    });
+
+    // Laser fire
+    this.laserTimer -= dt;
+    if (this.laserTimer <= 0) {
+      this.laserTimer = this.laserRate / this.phase;
+      this.fireLaser(playerPos);
+    }
+
+    // Slow movement
+    const speed = 0.4 + this.phase * 0.1;
+    this.mesh.position.addScaledVector(dirToPlayer, speed * dt);
+
+    // Keep distance
+    const dist = this.mesh.position.distanceTo(playerPos);
+    if (dist < 7) {
+      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.8 * dt);
+    } else if (dist > 14) {
+      this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
+    }
+
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  fireLaser(playerPos) {
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.5, 0x00aaff);
+    }
+
+    // Fire laser from shield tiles
+    const activeTiles = this.shieldTiles.slice(0, 2 + this.phase);
+    activeTiles.forEach((tile, idx) => {
+      setTimeout(() => {
+        if (typeof spawnBossProjectile === 'function') {
+          const tileWorldPos = tile.getWorldPosition(new THREE.Vector3());
+          spawnBossProjectile(tileWorldPos, playerPos);
+        }
+      }, idx * 150);
+    });
+  }
+
+  takeDamage(amount, hitInfo = {}) {
+    // Shield absorbs some damage
+    let damageTaken = amount;
+    if (this.shieldActive && !hitInfo.bypassShield) {
+      damageTaken = amount * 0.6;
+      if (Math.random() < 0.1 * this.phase) {
+        // Shield breaks temporarily
+        this.shieldActive = false;
+        setTimeout(() => { this.shieldActive = true; }, 2000);
+      }
+    }
+
+    return super.takeDamage(damageTaken, hitInfo);
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2+: faster shield orbit
+    if (newPhase >= 2) {
+      this.shieldOrbitSpeed = 1.5;
+      this.laserRate = 1.2;
+    }
+    // Phase 3+: even faster
+    if (newPhase >= 3) {
+      this.shieldOrbitSpeed = 2.0;
+      this.laserRate = 1.0;
+    }
+  }
+}
+
+// ── DIVA BOSS (Madame Coda) ───────────────────────────────
+class DivaBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Diva-specific state
+    this.microphones = [];
+    this.beamTimer = 0;
+    this.beamRate = def.beamRate || 1.2;
+    this.performanceTimer = 0;
+    this.performanceDuration = def.performanceDuration || 3.0;
+
+    // Create microphone turrets
+    this.createMicrophones();
+  }
+
+  createMicrophones() {
+    const micPositions = [
+      { x: -1.2, y: 0.3, z: 0.2 },
+      { x: 1.2, y: 0.3, z: 0.2 },
+      { x: 0, y: 0.8, z: 0.3 },
+    ];
+
+    micPositions.forEach((pos, idx) => {
+      const micGroup = new THREE.Group();
+      const geo = getGeo(0.15);
+      const micMat = new THREE.MeshBasicMaterial({
+        color: 0xff00ff,
+        transparent: true,
+        opacity: 0.9
+      });
+
+      // Microphone stand
+      for (let i = 0; i < 3; i++) {
+        const cube = new THREE.Mesh(geo, micMat.clone());
+        cube.position.set(pos.x + i * 0.05, pos.y + i * 0.15, pos.z);
+        micGroup.add(cube);
+      }
+
+      // Mic head (weak point)
+      const headGeo = getGeo(0.12);
+      const headMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.95
+      });
+      const head = new THREE.Mesh(headGeo, headMat);
+      head.position.set(pos.x + 0.1, pos.y + 0.45, pos.z);
+      head.userData.isWeakPoint = true;
+      head.userData.isMicrophone = true;
+      micGroup.add(head);
+      this.weakPoints.push(head);
+
+      micGroup.userData.microphoneIndex = idx;
+      this.microphones.push(micGroup);
+      this.mesh.add(micGroup);
+    });
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+
+    // Performance cycle
+    this.performanceTimer -= dt;
+    if (this.performanceTimer <= 0) {
+      this.performanceTimer = this.performanceDuration / this.phase;
+
+      // Telegraph performance
+      if (this.telegraphing) {
+        this.showTelegraph('charge', 0.8, 0xff00ff);
+      }
+
+      // Fire all microphones
+      setTimeout(() => this.fireAllMicrophones(playerPos), 800);
+    }
+
+    // Beam fire
+    this.beamTimer -= dt;
+    if (this.beamTimer <= 0) {
+      this.beamTimer = this.beamRate / this.phase;
+
+      // Random microphone fires
+      const activeMics = this.microphones.filter(mic => mic.children[3] && mic.children[3].userData.isWeakPoint);
+      if (activeMics.length > 0) {
+        const mic = activeMics[Math.floor(Math.random() * activeMics.length)];
+        this.fireMicrophoneBeam(mic, playerPos);
+      }
+    }
+
+    // Animate microphones
+    this.microphones.forEach((mic, idx) => {
+      const offset = idx * Math.PI / 2;
+      mic.rotation.y = Math.sin(now * 0.002 + offset) * 0.3;
+      mic.position.y += Math.sin(now * 0.003 + idx) * 0.002;
+    });
+
+    // Slight movement
+    this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
+
+    // Maintain distance
+    const dist = this.mesh.position.distanceTo(playerPos);
+    if (dist < 6) {
+      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.6 * dt);
+    } else if (dist > 12) {
+      this.mesh.position.addScaledVector(dirToPlayer, 0.2 * dt);
+    }
+
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  fireMicrophoneBeam(mic, playerPos) {
+    if (this.telegraphing) {
+      const micPos = mic.getWorldPosition(new THREE.Vector3());
+      this.showTelegraph('projectile', 0.4, 0xff00ff, micPos);
+    }
+
+    setTimeout(() => {
+      if (typeof spawnBossProjectile === 'function') {
+        const micPos = mic.getWorldPosition(new THREE.Vector3());
+        spawnBossProjectile(micPos, playerPos);
+      }
+    }, 400);
+  }
+
+  fireAllMicrophones(playerPos) {
+    this.microphones.forEach((mic, idx) => {
+      setTimeout(() => {
+        if (mic.children[3] && mic.children[3].userData.isWeakPoint) {
+          this.fireMicrophoneBeam(mic, playerPos);
+        }
+      }, idx * 100);
+    });
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2+: faster performance cycle
+    if (newPhase >= 2) {
+      this.beamRate = 1.0;
+      this.performanceDuration = 2.5;
+    }
+    // Phase 3+: even faster
+    if (newPhase >= 3) {
+      this.beamRate = 0.8;
+      this.performanceDuration = 2.0;
+    }
+  }
+}
+
+// ── TWIN GLITCH UNITS BOSS ───────────────────────────────
+class TwinGlitchBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Twin-specific state
+    this.sisters = [];
+    this.vulnerabilitySwapTimer = 0;
+    this.vulnerabilitySwapRate = def.vulnerabilitySwapRate || 4.0;
+    this.activeSisterIndex = 0; // Which sister is vulnerable
+    this.glitchTimer = 0;
+
+    // Create twin sisters
+    this.createSisters();
+  }
+
+  createSisters() {
+    const sisterData = [
+      { xOffset: -1.5, color: 0x00ffff, name: 'Glitch-Sister-Alpha' },
+      { xOffset: 1.5, color: 0xff00ff, name: 'Glitch-Sister-Beta' }
+    ];
+
+    sisterData.forEach((data, idx) => {
+      const sisterGroup = new THREE.Group();
+      const geo = getGeo(0.25);
+      const sisterMat = new THREE.MeshBasicMaterial({
+        color: data.color,
+        transparent: true,
+        opacity: 0.9
+      });
+
+      // Sister body (3x3 pattern)
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          const cube = new THREE.Mesh(geo, sisterMat.clone());
+          cube.position.set(c * 0.25, r * 0.25, 0);
+          cube.userData.sisterIndex = idx;
+          sisterGroup.add(cube);
+        }
+      }
+
+      // Core (weak point, only vulnerable when active)
+      const coreGeo = getGeo(0.18);
+      const coreMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.95
+      });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      core.position.set(0.375, 0.375, 0.2);
+      core.userData.isWeakPoint = true;
+      core.userData.isSisterCore = true;
+      core.userData.sisterIndex = idx;
+      sisterGroup.add(core);
+      this.weakPoints.push(core);
+
+      sisterGroup.userData.sisterIndex = idx;
+      sisterGroup.userData.sisterData = data;
+
+      this.sisters.push({
+        group: sisterGroup,
+        data: data,
+        positionOffset: new THREE.Vector3(data.xOffset, 0, 0)
+      });
+
+      this.mesh.add(sisterGroup);
+    });
+
+    // Initial vulnerability
+    this.updateVulnerability();
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+
+    // Vulnerability swap
+    this.vulnerabilitySwapTimer -= dt;
+    if (this.vulnerabilitySwapTimer <= 0) {
+      this.vulnerabilitySwapTimer = this.vulnerabilitySwapRate / this.phase;
+      this.swapVulnerability();
+    }
+
+    // Glitch effect
+    this.glitchTimer += dt;
+    if (this.glitchTimer > 0.1) {
+      this.glitchTimer = 0;
+      this.applyGlitchEffect();
+    }
+
+    // Animate sisters
+    this.sisters.forEach((sister, idx) => {
+      const isActive = idx === this.activeSisterIndex;
+
+      // Orbit around center
+      const orbitSpeed = 0.5 + this.phase * 0.2;
+      const orbitAngle = now * orbitSpeed * (idx === 0 ? 1 : -1);
+      const orbitRadius = 1.5 + Math.sin(now * 0.001) * 0.3;
+
+      sister.group.position.set(
+        Math.cos(orbitAngle) * orbitRadius,
+        Math.sin(now * 0.002 + idx) * 0.5,
+        Math.sin(orbitAngle) * orbitRadius
+      );
+
+      // Sister rotation
+      sister.group.rotation.y += dt * (1 + this.phase * 0.3);
+
+      // Visual feedback for vulnerability
+      sister.group.traverse(c => {
+        if (c.userData.isSisterCore) {
+          c.material.opacity = isActive ? 0.95 : 0.3;
+          c.material.color.setHex(isActive ? 0xffffff : sister.data.color);
+        }
+      });
+    });
+
+    // Projectile fire from active sister
+    this.beamTimer = (this.beamTimer || 0) - dt;
+    if (this.beamTimer <= 0) {
+      this.beamTimer = 1.5 / this.phase;
+      this.fireFromActiveSister(playerPos);
+    }
+
+    // Slow movement
+    this.mesh.position.addScaledVector(dirToPlayer, 0.25 * dt);
+
+    // Keep distance
+    const dist = this.mesh.position.distanceTo(playerPos);
+    if (dist < 7) {
+      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.5 * dt);
+    } else if (dist > 14) {
+      this.mesh.position.addScaledVector(dirToPlayer, 0.2 * dt);
+    }
+
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  swapVulnerability() {
+    // Telegraph swap
+    if (this.telegraphing) {
+      this.showTelegraph('teleport', 0.4, 0x00ffff);
+    }
+
+    this.activeSisterIndex = (this.activeSisterIndex + 1) % 2;
+    this.updateVulnerability();
+  }
+
+  updateVulnerability() {
+    this.sisters.forEach((sister, idx) => {
+      sister.group.userData.isVulnerable = (idx === this.activeSisterIndex);
+    });
+  }
+
+  applyGlitchEffect() {
+    // Random position jitter
+    this.sisters.forEach((sister, idx) => {
+      sister.group.position.x += (Math.random() - 0.5) * 0.05;
+      sister.group.position.y += (Math.random() - 0.5) * 0.05;
+    });
+  }
+
+  fireFromActiveSister(playerPos) {
+    const activeSister = this.sisters[this.activeSisterIndex];
+    const sisterPos = activeSister.group.getWorldPosition(new THREE.Vector3());
+
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.3, 0x00ffff, sisterPos);
+    }
+
+    setTimeout(() => {
+      if (typeof spawnBossProjectile === 'function') {
+        spawnBossProjectile(sisterPos, playerPos);
+      }
+    }, 300);
+  }
+
+  takeDamage(amount, hitInfo = {}) {
+    // Check if hitting vulnerable sister
+    if (hitInfo.sisterIndex !== undefined && hitInfo.sisterIndex !== this.activeSisterIndex) {
+      // Hitting invulnerable sister - minimal damage
+      return super.takeDamage(amount * 0.1, hitInfo);
+    }
+
+    return super.takeDamage(amount, hitInfo);
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2+: faster vulnerability swap
+    if (newPhase >= 2) {
+      this.vulnerabilitySwapRate = 3.0;
+    }
+    // Phase 3+: even faster
+    if (newPhase >= 3) {
+      this.vulnerabilitySwapRate = 2.0;
+    }
+  }
+}
+
+// ── NEON MINOTAUR BOSS ─────────────────────────────────────
+class MinotaurBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Minotaur-specific state
+    this.hornShards = [];
+    this.chargeTimer = 0;
+    this.chargeDuration = def.chargeDuration || 2.5;
+    this.isCharging = false;
+    this.chargeDirection = null;
+    this.slamTimer = 0;
+    this.slamRate = def.slamRate || 5.0;
+    this.shardTimer = 0;
+    this.shardRate = def.shardRate || 0.6;
+
+    // Create horns
+    this.createHorns();
+  }
+
+  createHorns() {
+    const hornPositions = [
+      { x: -0.3, y: 0.8, z: 0.4 },
+      { x: 0.3, y: 0.8, z: 0.4 }
+    ];
+
+    hornPositions.forEach((pos, idx) => {
+      const hornGroup = new THREE.Group();
+      const geo = getGeo(0.15);
+      const hornMat = new THREE.MeshBasicMaterial({
+        color: 0xff0088,
+        transparent: true,
+        opacity: 0.9
+      });
+
+      // Horn (tapered up)
+      for (let i = 0; i < 4; i++) {
+        const cube = new THREE.Mesh(geo, hornMat.clone());
+        const size = 0.2 + i * 0.05;
+        cube.position.set(pos.x, pos.y + i * 0.12, pos.z + i * 0.08);
+        hornGroup.add(cube);
+      }
+
+      hornGroup.userData.isHorn = true;
+      hornGroup.userData.hornIndex = idx;
+      this.mesh.add(hornGroup);
+      this.hornShards.push(hornGroup);
+    });
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+
+    if (this.isCharging) {
+      // Charging - move fast in charge direction
+      this.chargeTimer -= dt;
+      if (this.chargeTimer <= 0) {
+        this.isCharging = false;
+
+        // Ground slam at end of charge
+        this.groundSlam(playerPos);
+      } else {
+        this.mesh.position.addScaledVector(this.chargeDirection, (8 + this.phase * 2) * dt);
+      }
+    } else {
+      // Normal behavior
+      this.chargeTimer -= dt;
+      if (this.chargeTimer <= 0) {
+        this.chargeTimer = this.chargeDuration / this.phase;
+        this.startCharge(playerPos);
+      }
+
+      // Horn shards
+      this.shardTimer -= dt;
+      if (this.shardTimer <= 0) {
+        this.shardTimer = this.shardRate / this.phase;
+        this.fireHornShards(playerPos);
+      }
+
+      // Ground slam
+      this.slamTimer -= dt;
+      if (this.slamTimer <= 0) {
+        this.slamTimer = this.slamRate / this.phase;
+        this.groundSlam(playerPos);
+      }
+
+      // Slow movement toward player
+      const speed = 0.6 + this.phase * 0.15;
+      this.mesh.position.addScaledVector(dirToPlayer, speed * dt);
+
+      // Keep distance
+      const dist = this.mesh.position.distanceTo(playerPos);
+      if (dist < 5) {
+        this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.8 * dt);
+      } else if (dist > 14) {
+        this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
+      }
+    }
+
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+
+  startCharge(playerPos) {
+    this.isCharging = true;
+    this.chargeDirection = playerPos.clone().sub(this.mesh.position).normalize();
+
+    // Telegraph charge
+    if (this.telegraphing) {
+      this.showTelegraph('charge', 0.8, 0xff0088);
+    }
+
+    if (typeof window !== 'undefined' && window.playBossAttackSound) {
+      window.playBossAttackSound('charge', 0.8);
+    }
+  }
+
+  groundSlam(playerPos) {
+    // Telegraph slam
+    if (this.telegraphing) {
+      this.showTelegraph('melee', 0.6, 0xff0088);
+    }
+
+    // Fire shockwave projectiles in all directions
+    const shardCount = 8 + this.phase * 2;
+    for (let i = 0; i < shardCount; i++) {
+      const angle = (i / shardCount) * Math.PI * 2;
+      const targetPos = new THREE.Vector3(
+        this.mesh.position.x + Math.cos(angle) * 10,
+        this.mesh.position.y,
+        this.mesh.position.z + Math.sin(angle) * 10
+      );
+
+      setTimeout(() => {
+        if (typeof spawnBossProjectile === 'function') {
+          spawnBossProjectile(this.mesh.position.clone(), targetPos);
+        }
+      }, i * 50);
+    }
+
+    if (typeof window !== 'undefined' && window.playBossExplosion) {
+      window.playBossExplosion();
+    }
+  }
+
+  fireHornShards(playerPos) {
+    // Fire shards from both horns
+    this.hornShards.forEach((horn, idx) => {
+      const hornPos = horn.getWorldPosition(new THREE.Vector3());
+
+      if (this.telegraphing) {
+        this.showTelegraph('projectile', 0.2, 0xff0088, hornPos);
+      }
+
+      setTimeout(() => {
+        if (typeof spawnBossProjectile === 'function') {
+          // Add some spread
+          const spread = (idx === 0 ? -1 : 1) * 0.3;
+          const target = playerPos.clone();
+          target.x += spread;
+          spawnBossProjectile(hornPos, target);
+        }
+      }, 200);
+    });
+  }
+
+  takeDamage(amount, hitInfo = {}) {
+    let damageTaken = amount;
+
+    // Minotaur takes reduced damage while charging
+    if (this.isCharging) {
+      damageTaken = amount * 0.4;
+    }
+
+    return super.takeDamage(damageTaken, hitInfo);
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2+: faster charge, more shards
+    if (newPhase >= 2) {
+      this.chargeDuration = 2.0;
+      this.shardRate = 0.5;
+      this.slamRate = 4.0;
+    }
+    // Phase 3+: even faster
+    if (newPhase >= 3) {
+      this.chargeDuration = 1.5;
+      this.shardRate = 0.4;
+      this.slamRate = 3.0;
+    }
+  }
+}
 
 // ── BOSS POOL MANAGEMENT ─────────────────────────────────────
 const BOSS_POOLS = {
   1: ['chrono_wraith'], // Tier 1 (Level 5) - only teleporting boss
   2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'], // Tier 2 (Level 10) - harder bosses
-  3: ['chrono_wraith'], // Tier 3 (Level 15)
+  3: ['theodore_breakenridge', 'commander_halcyon', 'madame_coda', 'twin_glitch', 'neon_minotaur'], // Tier 3 (Level 15) - TOUGH bosses
   4: ['chrono_wraith'], // Tier 4 (Level 20)
 };
 
@@ -1683,6 +2603,21 @@ export function spawnBoss(bossId, levelConfig, camera) {
       break;
     case 'monk':
       boss = new MonkBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'outlaw':
+      boss = new OutlawBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'commander':
+      boss = new CommanderBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'diva':
+      boss = new DivaBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'twin_glitch':
+      boss = new TwinGlitchBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'minotaur':
+      boss = new MinotaurBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
     default:
       boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
