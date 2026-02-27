@@ -78,6 +78,10 @@ const weaponCooldowns = [0, 0];
 const BIG_BOOM_COOLDOWN_MS = 2750;
 const lastExplodingShotTime = [0, 0];
 
+// Wide beam visual indicator vectors
+let chargeBeamA = new THREE.Vector3();
+let chargeBeamB = new THREE.Vector3();
+
 // Explosion visuals (short-lived expanding spheres)
 const explosionVisuals = [];
 
@@ -87,7 +91,7 @@ const lightningTimers = [0, 0];
 
 // Charge shot state (per controller): time when trigger was pressed (ms) or null
 const chargeShotStartTime = [null, null];
-const CHARGE_SHOT_MAX_TIME = 5.0;  // seconds
+const CHARGE_SHOT_MAX_TIME = 6.0;  // seconds
 const CHARGE_SHOT_MIN_FIRE = 0.6;  // seconds (below this, no fire or minimal)
 
 // Holographic blaster displays (per controller)
@@ -1112,12 +1116,18 @@ function onTriggerRelease(index) {
     }
     chargeShotStartTime[index] = null;
   }
-  // Stop lightning beam when trigger released
+// Stop lightning beam when trigger released
   if (lightningBeams[index]) {
     scene.remove(lightningBeams[index]);
     lightningBeams[index] = null;
     stopLightningSound();
   }
+
+  // Satisfying charge beam release - big, dramatic sound
+  explosionVisuals.push(beamInner);
+  explosionVisuals.push(beamOuter);
+
+  playChargeFireSound(damage);
 }
 
 // ============================================================
@@ -1536,12 +1546,20 @@ const _chargeBeamA = new THREE.Vector3();
 const _chargeBeamB = new THREE.Vector3();
 
 function fireChargeBeam(controller, index, chargeTimeSec, stats) {
-  if (chargeTimeSec < 0.15) return; // minimum charge to fire
+  if (chargeTimeSec < 1.0) return; // minimum charge to fire
   const scale = chargeTimeToScale(chargeTimeSec);
   let damage = stats.damage * scale;
   if (scale >= 1) damage = Math.max(300, damage);
   const beamWidth = 0.2 + scale * 1.3;
-  const range = 50;
+
+  const range = 50;  // Wide beam with inner/outer glow
+  const beamColor = new THREE.Color(0xffaa00);
+  const beamGlow = new THREE.Color(0xffcc00);
+  const beamLength = range;
+
+  // Wide beam visual indicators (for tracking)
+  let chargeBeamA = new THREE.Vector3();
+  let chargeBeamB = new THREE.Vector3();
 
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -1549,8 +1567,43 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
 
-  _chargeBeamA.copy(origin);
-  _chargeBeamB.copy(origin).addScaledVector(direction, range);
+  // Wide beam visual with inner/outer glow
+  const beamColor = new THREE.Color(0xffaa00);
+  const beamGlow = new THREE.Color(0xffcc00);
+  const beamInnerGeo = new THREE.CylinderGeometry(2.0, range, 8);  // Wide beam (2.0 width)
+  const beamOuterGeo = new THREE.CylinderGeometry(2.5, range, 8);  // Outer glow layer
+  const beamInnerMat = new THREE.MeshBasicMaterial({
+    color: beamColor,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+  });
+  const beamOuterMat = new THREE.MeshBasicMaterial({
+    color: beamGlow,
+    transparent: true,
+    opacity: 0.4,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const beamInner = new THREE.Mesh(beamInnerGeo, beamInnerMat);
+  const beamOuter = new THREE.Mesh(beamOuterGeo, beamOuterMat);
+  beamInner.position.copy(origin).addScaledVector(direction, range * 0.5);
+  beamOuter.position.copy(origin).addScaledVector(direction, range * 0.5);
+  beamInner.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  beamOuter.quaternion.copy(beamInner.quaternion);
+
+  // Duration: longer for satisfying feel
+  beamInner.userData.createdAt = performance.now();
+  beamInner.userData.duration = 300;  // 0.3 seconds
+  beamOuter.userData.createdAt = performance.now();
+  beamOuter.userData.duration = 300;
+  beamInner.userData.isChargeBeam = true;
+  beamOuter.userData.isChargeBeam = true;
+
+  scene.add(beamInner);
+  scene.add(beamOuter);
+  explosionVisuals.push(beamInner);
+  explosionVisuals.push(beamOuter);
 
   const controllerIndex = index;
   const hand = index === 0 ? 'left' : 'right';
