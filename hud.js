@@ -885,6 +885,19 @@ function createUpgradeCard(upgrade, position) {
     new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff', wireframe: true }),
   );
   iconMesh.position.set(0, -0.35, 0.05);
+
+  // NEW WEAPON badge for side-grades
+  if (upgrade.sideGrade) {
+    const badge = makeSprite("⚡ NEW WEAPON ⚡", {
+      fontSize: 18,
+      color: '#ffdd00',
+      glow: true,
+      glowColor: '#ffdd00',
+      scale: 0.12
+    });
+    badge.position.set(0, 0.52, 0.01);
+    group.add(badge);
+  }
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
 
