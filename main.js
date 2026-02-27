@@ -108,7 +108,7 @@ const lightningTimers = [0, 0];
 
 // Charge shot state (per controller): time when trigger was pressed (ms) or null
 const chargeShotStartTime = [null, null];
-const CHARGE_SHOT_MAX_TIME = 3.0;  // seconds - full charge at 3 seconds
+const CHARGE_SHOT_MAX_TIME = 2.0;  // seconds - full charge at 3 seconds
 const CHARGE_SHOT_MIN_FIRE = 0.1;  // minimum charge time to fire (was 0.6)
 const CHARGE_SHOT_MIN_DAMAGE = 20;   // minimum damage at no charge
 const CHARGE_SHOT_MAX_DAMAGE = 1000; // maximum damage at full charge
@@ -1557,7 +1557,7 @@ function chargeTimeToDamage(t) {
   // Use exponential ease-out for fast initial ramp, slow approach to max
   // Formula: min + (max - min) * (1 - e^(-k*t)) where k controls curve shape
   // k = 2 gives: ~63% of remaining damage in first second, then slower approach
-  const k = 2.0;
+  const k = 1.5;
   const progress = 1 - Math.exp(-k * clampedT);
   
   // Interpolate between min and max damage
@@ -1570,7 +1570,7 @@ function chargeTimeToDamage(t) {
  */
 function chargeTimeToProgress(t) {
   const clampedT = Math.min(t, CHARGE_SHOT_MAX_TIME);
-  const k = 2.0;
+  const k = 1.5;
   return 1 - Math.exp(-k * clampedT);
 }
 
