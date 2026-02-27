@@ -4,7 +4,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { State, getComboMultiplier } from './game.js';
+import { State, game, getComboMultiplier } from './game.js';
 
 // ── Module state ───────────────────────────────────────────
 let sceneRef, cameraRef;
@@ -19,6 +19,7 @@ const nameEntryGroup = new THREE.Group();
 const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
 const readyGroup = new THREE.Group();
+const altTutorialGroup = new THREE.Group();
 
 // HUD element references
 let heartsSprite = null;
@@ -27,6 +28,8 @@ let levelSprite = null;
 let scoreSprite = null;
 let comboSprite = null;
 let fpsSprite = null;
+let leftAltCooldownSprite = null;
+let rightAltCooldownSprite = null;
 
 // Damage numbers
 const damageNumbers = [];
@@ -59,19 +62,29 @@ let nameEntrySlots = [];
 let keyboardKeys = [];
 let hoveredKey = null;
 
+// Level intro state
+let levelIntroActive = false;
+let levelIntroStartTime = 0;
+let levelIntroStage = 'level'; // 'level', 'level_fading', 'start', 'start_fading', 'done'
+let levelIntroLevelText = null;
+let levelIntroStartText = null;
+
+// Kills remaining alert state
+let killsAlertActive = false;
+let killsAlertStartTime = 0;
+let killsAlertDisplayTime = 0;
+let killsAlertMesh = null;
+
 // Scoreboard state
 let scoreboardCanvas = null;
-let scoreboardCtx = null;  // PERFORMANCE: Reuse canvas context
 let scoreboardTexture = null;
 let scoreboardMesh = null;
 let scoreboardScrollOffset = 0;
 let scoreboardScores = [];
 let scoreboardHeader = '';
-let scoreboardNeedsRender = false;  // PERFORMANCE: Only render when data changes
 
 // Country select state
 let countryListCanvas = null;
-let countryListCtx = null;  // PERFORMANCE: Reuse canvas context
 let countryListTexture = null;
 let countryListMesh = null;
 let countrySelectContinent = 'North America';
@@ -79,138 +92,78 @@ let countrySelectScrollOffset = 0;
 let continentTabs = [];
 let countryItems = [];
 
-// PERFORMANCE: Cached country sprites to avoid recreating textures
-const countrySpriteCache = new Map();
-
-// ── TEXTURE CACHING SYSTEM ────────────────────────────────────────────
-
-// Cache for HUD element textures to avoid recreation every frame
-const hudTextureCache = {};
-
-/**
- * Create or get a cached texture for the given text and color.
- * Returns the texture and aspect ratio.
- */
-function getCachedTextTexture(text, fontSize, color, shadow, glow, glowColor, maxWidth) {
-  const cacheKey = `${text}:${fontSize}:${color}:${shadow}:${glow}:${glowColor}:${maxWidth}`;
-  
-  if (hudTextureCache[cacheKey]) {
-    return hudTextureCache[cacheKey];
-  }
-
+// ── Canvas text utility ────────────────────────────────────
+function makeTextTexture(text, opts = {}) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
+  const fontSize = opts.fontSize || 64;
+  const font = `bold ${fontSize}px Arial, sans-serif`;
+  const maxWidth = opts.maxWidth || null;
+
+  ctx.font = font;
+
+  // Word wrapping if maxWidth is specified
+  let lines = [text];
+  if (maxWidth) {
+    lines = [];
+    const words = text.split(' ');
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+
+      if (metrics.width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+  }
 
   // Measure text to size canvas
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  const textWidth = maxWidth || Math.ceil(ctx.measureText(text).width);
+  const textWidth = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
   const lineHeight = fontSize * 1.3;
-  const textHeight = lineHeight; // Single line
+  const textHeight = lines.length * lineHeight;
 
   canvas.width = Math.ceil(textWidth) + 40;
-  canvas.height = Math.ceil(textHeight) + 40;
+  canvas.height = Math.ceil(textHeight);
 
   // Re-set after resize
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.font = font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Clear canvas with transparency
+  // Clear canvas with transparency (prevent black background)
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Optional glow
-  if (glow) {
-    ctx.shadowColor = glowColor || color;
-    ctx.shadowBlur = 15;
+  if (opts.glow) {
+    ctx.shadowColor = opts.glowColor || opts.color || '#00ffff';
+    ctx.shadowBlur = opts.glowSize || 15;
   }
 
   // Drop shadow
-  if (shadow) {
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillText(text, canvas.width / 2 + 2, canvas.height / 2 + 2);
+  if (opts.shadow) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    lines.forEach((line, i) => {
+      const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+      ctx.fillText(line, canvas.width / 2 + 2, y + 2);
+    });
   }
 
   // Main text
-  ctx.fillStyle = color;
-  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-
-  // Cache the texture
-  hudTextureCache[cacheKey] = { texture, aspect: canvas.width / canvas.height };
-
-  return hudTextureCache[cacheKey];
-}
-
-/**
- * Create or get a cached texture for the hearts display.
- */
-function getCachedHeartsTexture(health, maxHealth, scaleMultiplier) {
-  const cacheKey = `hearts:${health}:${maxHealth}:${scaleMultiplier}`;
-  
-  if (hudTextureCache[cacheKey]) {
-    return hudTextureCache[cacheKey];
-  }
-
-  const heartCount = maxHealth / 2;
-  const pixSize = 8;
-  const heartW = 7 * pixSize;
-  const heartH = 6 * pixSize;
-  const gap = 6;
-  const canvasWidth = heartCount * (heartW + gap) + gap;
-  const canvasHeight = heartH + 10;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
-  const ctx = canvas.getContext('2d');
-
-  for (let i = 0; i < heartCount; i++) {
-    const hpForThisHeart = health - i * 2;
-    let state;
-    if (hpForThisHeart >= 2) state = 'full';
-    else if (hpForThisHeart === 1) state = 'half';
-    else state = 'empty';
-
-    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-
-  const aspect = canvasWidth / canvasHeight;
-  hudTextureCache[cacheKey] = { texture, aspect };
-
-  return hudTextureCache[cacheKey];
-}
-
-/**
- * Clear the texture cache periodically to prevent memory buildup.
- * Called once per second or when needed.
- */
-function clearHudCache() {
-  Object.keys(hudTextureCache).forEach(key => {
-    if (hudTextureCache[key]) {
-      if (hudTextureCache[key].texture) {
-        hudTextureCache[key].texture.dispose();
-      }
-    }
-    delete hudTextureCache[key];
+  ctx.fillStyle = opts.color || '#00ffff';
+  lines.forEach((line, i) => {
+    const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+    ctx.fillText(line, canvas.width / 2, y);
   });
-}
 
-// ── Canvas text utility ────────────────────────────────────
-function makeTextTexture(text, opts = {}) {
-  return getCachedTextTexture(
-    text,
-    opts.fontSize || 64,
-    opts.color || '#00ffff',
-    opts.shadow,
-    opts.glow,
-    opts.glowColor,
-    opts.maxWidth
-  );
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  return { texture, aspect: canvas.width / canvas.height };
 }
 
 function makeSprite(text, opts = {}) {
@@ -265,6 +218,32 @@ function drawHeart(ctx, x, y, pixSize, state) {
   });
 }
 
+function makeHeartsTexture(health, maxHealth) {
+  const heartCount = maxHealth / 2;
+  const pixSize = 8;
+  const heartW = 7 * pixSize;
+  const heartH = 6 * pixSize;
+  const gap = 6;
+  const canvas = document.createElement('canvas');
+  canvas.width = heartCount * (heartW + gap) + gap;
+  canvas.height = heartH + 10;
+  const ctx = canvas.getContext('2d');
+
+  for (let i = 0; i < heartCount; i++) {
+    const hpForThisHeart = health - i * 2;
+    let state;
+    if (hpForThisHeart >= 2) state = 'full';
+    else if (hpForThisHeart === 1) state = 'half';
+    else state = 'empty';
+
+    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  return { texture, aspect: canvas.width / canvas.height };
+}
+
 // ── Public API ─────────────────────────────────────────────
 
 export function initHUD(camera, scene) {
@@ -285,7 +264,7 @@ export function initHUD(camera, scene) {
   scene.add(hudGroup);
 
   // ── UI Groups (initially hidden) ──
-  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup].forEach(g => {
+  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup, altTutorialGroup].forEach(g => {
     g.visible = false;
     g.rotation.set(0, 0, 0);
     scene.add(g);
@@ -330,9 +309,6 @@ export function initHUD(camera, scene) {
     bossHealthBars.push(bar);
   }
   camera.add(bossHealthGroup);
-
-  // ── Start cache clear timer (every 60 seconds) ──
-  setInterval(clearHudCache, 60000);
 }
 
 export function showBossHealthBar(hp, maxHp, phases = 3) {
@@ -398,7 +374,7 @@ function createTitleScreen() {
   // Scoreboard button
   const btnGroup = new THREE.Group();
   btnGroup.position.set(0, -0.6, 0);
-  const btnGeo = new THREE.PlaneGeometry(1.2, 0.3);
+  const btnGeo = new THREE.PlaneGeometry(1.35, 0.3);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -411,11 +387,11 @@ function createTitleScreen() {
   const btnBorderGeo = new THREE.EdgesGeometry(btnGeo);
   btnGroup.add(new THREE.LineSegments(btnBorderGeo, new THREE.LineBasicMaterial({ color: 0xffff00 })));
   const btnText = makeSprite('SCOREBOARD', {
-    fontSize: 36,
+    fontSize: 32,
     color: '#ffff00',
     glow: true,
     glowColor: '#ffff00',
-    scale: 0.20,
+    scale: 0.16,
   });
   btnText.position.set(0, 0, 0.01);
   btnGroup.add(btnText);
@@ -425,7 +401,7 @@ function createTitleScreen() {
   // Diagnostics button
   const diagBtnGroup = new THREE.Group();
   diagBtnGroup.position.set(1.5, -0.6, 0);
-  const diagBtnGeo = new THREE.PlaneGeometry(1.2, 0.3);
+  const diagBtnGeo = new THREE.PlaneGeometry(1.35, 0.3);
   const diagBtnMat = new THREE.MeshBasicMaterial({
     color: 0x001133,
     transparent: true,
@@ -438,11 +414,11 @@ function createTitleScreen() {
   const diagBtnBorderGeo = new THREE.EdgesGeometry(diagBtnGeo);
   diagBtnGroup.add(new THREE.LineSegments(diagBtnBorderGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
   const diagBtnText = makeSprite('DIAGNOSTICS', {
-    fontSize: 36,
+    fontSize: 32,
     color: '#00ff88',
     glow: true,
     glowColor: '#00ff88',
-    scale: 0.20,
+    scale: 0.16,
   });
   diagBtnText.position.set(0, 0, 0.01);
   diagBtnGroup.add(diagBtnText);
@@ -524,6 +500,17 @@ function createHUDElements() {
   comboSprite.position.set(1.5, -0.45, 0);  // Moved down proportionally
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
+
+  // Alt weapon cooldown indicators - left and right sides
+  leftAltCooldownSprite = makeSprite('', { fontSize: 32, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 1.2 });
+  leftAltCooldownSprite.position.set(-2.2, -0.6, 0);
+  leftAltCooldownSprite.visible = false;
+  hudGroup.add(leftAltCooldownSprite);
+
+  rightAltCooldownSprite = makeSprite('', { fontSize: 32, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 1.2 });
+  rightAltCooldownSprite.position.set(2.2, -0.6, 0);
+  rightAltCooldownSprite.visible = false;
+  hudGroup.add(rightAltCooldownSprite);
 }
 
 export function showHUD() {
@@ -535,18 +522,16 @@ export function hideHUD() {
 }
 
 function updateSpriteText(sprite, text, opts = {}) {
-  // Use cached texture
-  const { texture, aspect } = getCachedTextTexture(
-    text,
-    opts.fontSize || 40,
-    opts.color || '#ffffff',
-    opts.shadow,
-    opts.glow,
-    opts.glowColor,
-    opts.maxWidth
-  );
-  
+  // Dispose old texture
   if (sprite.material.map) sprite.material.map.dispose();
+
+  const { texture, aspect } = makeTextTexture(text, {
+    fontSize: opts.fontSize || 40,
+    color: opts.color || '#ffffff',
+    shadow: true,
+    glow: opts.glow,
+    glowColor: opts.glowColor,
+  });
   sprite.material.map = texture;
   sprite.material.needsUpdate = true;
 
@@ -559,24 +544,18 @@ function updateSpriteText(sprite, text, opts = {}) {
 export function updateHUD(gameState) {
   if (!hudGroup.visible) return;
 
-  // Hearts - use cached texture
-  const cfg = gameState._levelConfig;
-  const killTarget = cfg ? cfg.killTarget : 0;
-  
-  // Use scale based on level to prevent overwhelming UI at high levels
-  const level = gameState.level;
-  const scaleMultiplier = Math.min(3.0, 1.0 + level * 0.08);  // Cap at 3x
-  
-  const { texture: ht, aspect: ha } = getCachedHeartsTexture(gameState.health, gameState.maxHealth, scaleMultiplier);
+  // Hearts - proper aspect ratio with correct scale
+  const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth);
   if (heartsSprite.material.map) heartsSprite.material.map.dispose();
   heartsSprite.material.map = ht;
   heartsSprite.material.needsUpdate = true;
-  
   // Update geometry to match aspect ratio (200% larger: height 0.48)
   heartsSprite.geometry.dispose();
   heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
 
   // Kill counter - 200% larger
+  const cfg = gameState._levelConfig;
+  const killTarget = cfg ? cfg.killTarget : 0;
   updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.30 });
 
   // Level - 200% larger
@@ -593,6 +572,52 @@ export function updateHUD(gameState) {
     updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 * pulse });
   } else {
     comboSprite.visible = false;
+  }
+
+  // Alt weapon cooldown indicators
+  updateAltCooldownIndicators(gameState);
+}
+
+/**
+ * Update alt weapon cooldown indicators on HUD
+ */
+function updateAltCooldownIndicators(gameState) {
+  const now = performance.now();
+
+  // Update left hand alt cooldown
+  const leftAltId = gameState.altWeapon.left;
+  if (leftAltId) {
+    leftAltCooldownSprite.visible = true;
+    const leftCooldownEnd = gameState.altCooldowns.left || 0;
+    if (now >= leftCooldownEnd) {
+      // Ready - show pulsing indicator
+      const pulse = 1.0 + Math.sin(now * 0.008) * 0.15;
+      updateSpriteText(leftAltCooldownSprite, 'ALT READY', { color: '#00ff00', glow: true, glowColor: '#00ff00', scale: 0.14 * pulse });
+    } else {
+      // On cooldown - show timer
+      const remaining = Math.ceil((leftCooldownEnd - now) / 1000);
+      updateSpriteText(leftAltCooldownSprite, `ALT ${remaining}s`, { color: '#ff4444', scale: 0.14 });
+    }
+  } else {
+    leftAltCooldownSprite.visible = false;
+  }
+
+  // Update right hand alt cooldown
+  const rightAltId = gameState.altWeapon.right;
+  if (rightAltId) {
+    rightAltCooldownSprite.visible = true;
+    const rightCooldownEnd = gameState.altCooldowns.right || 0;
+    if (now >= rightCooldownEnd) {
+      // Ready - show pulsing indicator
+      const pulse = 1.0 + Math.sin(now * 0.008) * 0.15;
+      updateSpriteText(rightAltCooldownSprite, 'ALT READY', { color: '#00ff00', glow: true, glowColor: '#00ff00', scale: 0.14 * pulse });
+    } else {
+      // On cooldown - show timer
+      const remaining = Math.ceil((rightCooldownEnd - now) / 1000);
+      updateSpriteText(rightAltCooldownSprite, `ALT ${remaining}s`, { color: '#ff4444', scale: 0.14 });
+    }
+  } else {
+    rightAltCooldownSprite.visible = false;
   }
 }
 
@@ -669,12 +694,13 @@ function createUpgradeCard(upgrade, position) {
   group.position.copy(position);
   group.userData.upgradeId = upgrade.id;
 
-  // Card background plane
+  // Card background plane - different color for alt weapons
+  const isAltWeapon = upgrade.type === 'alt';
   const cardGeo = new THREE.PlaneGeometry(0.9, 1.1);
   const cardMat = new THREE.MeshBasicMaterial({
-    color: 0x110033,
+    color: isAltWeapon ? 0x003366 : 0x110033,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.9,
     side: THREE.DoubleSide,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
@@ -682,11 +708,27 @@ function createUpgradeCard(upgrade, position) {
   card.userData.upgradeId = upgrade.id;
   group.add(card);
 
-  // Border (gold for side-grade / shot-type cards)
-  const borderColor = upgrade.sideGrade ? 0xffdd00 : (typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff));
+  // Border - distinctive cyan glow for alt weapons
+  const borderColor = isAltWeapon ? 0x00ffff :
+    upgrade.sideGrade ? 0xffdd00 :
+    (typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff));
   const borderGeo = new THREE.EdgesGeometry(cardGeo);
-  const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
+  const borderMat = new THREE.LineBasicMaterial({ color: borderColor, linewidth: isAltWeapon ? 2 : 1 });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
+
+  // Inner glow border for alt weapons
+  if (isAltWeapon) {
+    const innerGeo = new THREE.PlaneGeometry(0.8, 1.0);
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: 0x00aaff,
+      transparent: true,
+      opacity: 0.2,
+      side: THREE.DoubleSide,
+    });
+    const innerBorder = new THREE.Mesh(innerGeo, innerMat);
+    innerBorder.position.z = 0.01;
+    group.add(innerBorder);
+  }
 
   // Name text - smaller to prevent overlap
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
@@ -715,7 +757,7 @@ function createUpgradeCard(upgrade, position) {
   if (upgrade.sideGradeNote) {
     const noteSprite = makeSprite(upgrade.sideGradeNote, {
       fontSize: 16,
-      color: '#ffdd00',
+      color: isAltWeapon ? '#00ffff' : '#ffdd00',
       scale: 0.12,
       depthTest: true,
       maxWidth: 200,
@@ -724,11 +766,27 @@ function createUpgradeCard(upgrade, position) {
     group.add(noteSprite);
   }
 
-  // Simple colored sphere as icon
-  const iconMesh = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.12, 0),
-    new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff', wireframe: true }),
-  );
+  // Icon - different shape for alt weapons (star vs octahedron)
+  let iconMesh;
+  if (isAltWeapon) {
+    // Star icon for alt weapons
+    iconMesh = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.15, 0),
+      new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff' }),
+    );
+    // Add glowing wireframe overlay
+    const wireframe = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.16, 0),
+      new THREE.MeshBasicMaterial({ color: '#ffffff', wireframe: true, transparent: true, opacity: 0.5 }),
+    );
+    iconMesh.add(wireframe);
+  } else {
+    // Simple octahedron for regular upgrades
+    iconMesh = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.12, 0),
+      new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff', wireframe: true }),
+    );
+  }
   iconMesh.position.set(0, -0.35, 0.05);
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
@@ -817,14 +875,9 @@ export function updateUpgradeCards(now, cooldownRemaining) {
       cd.visible = true;
       // Update the cooldown sprite text
       if (cd.material && cd.material.map) cd.material.map.dispose();
-      const { texture, aspect } = getCachedTextTexture(
+      const { texture, aspect } = makeTextTexture(
         `WAIT ${Math.ceil(cooldownRemaining)}...`,
-        40,
-        '#ffff00',
-        false,
-        false,
-        null,
-        null
+        { fontSize: 40, color: '#ffff00' }
       );
       cd.material.map = texture;
       cd.material.needsUpdate = true;
@@ -1190,7 +1243,12 @@ export function updateFPS(now, opts = {}) {
     const ftColor = avgFrameMs > 33 ? '#ff0000' : avgFrameMs > 20 ? '#ffff00' : '#00ff00';
     const color = perfMonitor ? ftColor : fpsColor;
 
-    const { texture, aspect } = getCachedTextTexture(text, perfMonitor ? 24 : 32, color, true, false, null, perfMonitor ? 300 : null);
+    const { texture, aspect } = makeTextTexture(text, {
+      fontSize: perfMonitor ? 24 : 32,
+      color,
+      shadow: true,
+      maxWidth: perfMonitor ? 300 : null,
+    });
     if (fpsSprite.material.map) fpsSprite.material.map.dispose();
     fpsSprite.material.map = texture;
     fpsSprite.material.needsUpdate = true;
@@ -1211,6 +1269,7 @@ function hideAll() {
   scoreboardGroup.visible = false;
   countrySelectGroup.visible = false;
   readyGroup.visible = false;
+  altTutorialGroup.visible = false;
   // Floor HUD shouldn't necessarily disappear during everything
   // Specifically don't hide it if we want it visible during upgrades
 }
@@ -1379,6 +1438,292 @@ export function showReadyScreen(level, playerPos) {
 
 export function hideReadyScreen() {
   readyGroup.visible = false;
+}
+
+// ── Level Intro Screen ───────────────────────────────────────
+
+/**
+ * Show alt fire tutorial modal when player gets first alt weapon
+ */
+export function showAltFireTutorial() {
+  hideAll();
+  altTutorialGroup.clear();
+
+  // Position in front of player
+  altTutorialGroup.position.set(0, 1.6, -4);
+  altTutorialGroup.visible = true;
+
+  // Title
+  const titleSprite = makeSprite('NEW ABILITY UNLOCKED!', {
+    fontSize: 60,
+    color: '#00ffff',
+    glow: true,
+    glowColor: '#00ffff',
+    scale: 0.6,
+  });
+  titleSprite.position.set(0, 0.6, 0);
+  altTutorialGroup.add(titleSprite);
+
+  // Instruction
+  const instructionSprite = makeSprite('To use abilities, press the lower trigger', {
+    fontSize: 32,
+    color: '#ffffff',
+    scale: 0.3,
+    maxWidth: 300,
+  });
+  instructionSprite.position.set(0, 0.2, 0);
+  altTutorialGroup.add(instructionSprite);
+
+  // Explanation
+  const explanationSprite = makeSprite('Abilities have a cooldown, shown on the HUD', {
+    fontSize: 28,
+    color: '#aaaaaa',
+    scale: 0.25,
+    maxWidth: 280,
+  });
+  explanationSprite.position.set(0, 0.0, 0);
+  altTutorialGroup.add(explanationSprite);
+
+  // Create controller diagram
+  const controllerGroup = createControllerDiagram();
+  controllerGroup.position.set(0, -0.5, 0);
+  altTutorialGroup.add(controllerGroup);
+
+  // Press trigger to dismiss text
+  const dismissSprite = makeSprite('Press TRIGGER to continue', {
+    fontSize: 24,
+    color: '#ffdd00',
+    scale: 0.2,
+  });
+  dismissSprite.position.set(0, -1.1, 0);
+  altTutorialGroup.add(dismissSprite);
+}
+
+/**
+ * Create a stylized Quest 3 controller diagram with highlighted lower trigger
+ */
+function createControllerDiagram() {
+  const group = new THREE.Group();
+
+  // Controller body (stylized)
+  const controllerBody = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.5, 0.1),
+    new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.8 }),
+  );
+  group.add(controllerBody);
+
+  // Upper trigger (index finger) - shown in white
+  const upperTrigger = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.15, 0.06),
+    new THREE.MeshBasicMaterial({ color: 0x666666 }),
+  );
+  upperTrigger.position.set(0.19, 0.15, 0);
+  group.add(upperTrigger);
+
+  // Upper trigger label
+  const upperLabel = makeSprite('MAIN FIRE', {
+    fontSize: 16,
+    color: '#666666',
+    scale: 0.15,
+  });
+  upperLabel.position.set(0.35, 0.15, 0);
+  group.add(upperLabel);
+
+  // Lower trigger (middle finger) - HIGHLIGHTED in cyan
+  const lowerTrigger = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.12, 0.06),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 0.5 }),
+  );
+  lowerTrigger.position.set(0.19, -0.1, 0.05);
+  group.add(lowerTrigger);
+
+  // Glow effect around lower trigger
+  const triggerGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 }),
+  );
+  triggerGlow.position.set(0.19, -0.1, 0.05);
+  group.add(triggerGlow);
+
+  // Lower trigger label
+  const lowerLabel = makeSprite('ALT ABILITY', {
+    fontSize: 18,
+    color: '#00ffff',
+    glow: true,
+    glowColor: '#00ffff',
+    scale: 0.18,
+  });
+  lowerLabel.position.set(0.38, -0.1, 0.05);
+  group.add(lowerLabel);
+
+  // Grip button
+  const gripBtn = new THREE.Mesh(
+    new THREE.BoxGeometry(0.05, 0.1, 0.04),
+    new THREE.MeshBasicMaterial({ color: 0x444444 }),
+  );
+  gripBtn.position.set(-0.16, -0.05, 0);
+  group.add(gripBtn);
+
+  return group;
+}
+
+export function hideAltFireTutorial() {
+  altTutorialGroup.visible = false;
+  while (altTutorialGroup.children.length > 0) {
+    altTutorialGroup.remove(altTutorialGroup.children[0]);
+  }
+}
+
+export function showLevelIntro(level) {
+  hideAll();
+  levelIntroActive = true;
+  levelIntroStartTime = performance.now();
+  levelIntroStage = 'level';
+
+  // Position in front of spawn
+  levelTextGroup.position.set(0, 1.6, -4);
+  levelTextGroup.visible = true;
+
+  // "LEVEL" text
+  const levelHeader = makeSprite('LEVEL', {
+    fontSize: 80, color: '#ff00ff', glow: true, glowColor: '#ff00ff', scale: 0.7,
+  });
+  levelHeader.position.set(0, 0.5, 0);
+  levelTextGroup.add(levelHeader);
+  levelIntroLevelText = levelHeader;
+
+  // Level number
+  const levelNum = makeSprite(`${level}`, {
+    fontSize: 120, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 1.0,
+  });
+  levelNum.position.set(0, -0.2, 0);
+  levelTextGroup.add(levelNum);
+}
+
+export function updateLevelIntro(now) {
+  if (!levelIntroActive) return;
+
+  const elapsed = now - levelIntroStartTime;
+  const LEVEL_FADE_DURATION = 500; // 0.5 seconds
+  const START_DISPLAY_DURATION = 1000; // 1 second
+
+  if (levelIntroStage === 'level') {
+    // Show "LEVEL X" for 0.5 seconds
+    if (elapsed >= LEVEL_FADE_DURATION) {
+      levelIntroStage = 'level_fading';
+      levelIntroStartTime = now;
+    }
+  } else if (levelIntroStage === 'level_fading') {
+    // Fade out "LEVEL X" over 0.5 seconds
+    const progress = Math.min(elapsed / LEVEL_FADE_DURATION, 1);
+
+    if (levelIntroLevelText) {
+      levelTextGroup.traverse(child => {
+        if (child.material) {
+          child.material.opacity = 1 - progress;
+        }
+      });
+    }
+
+    if (progress >= 1) {
+      // Clear and show "START!"
+      while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
+
+      const startText = makeSprite('START!', {
+        fontSize: 100, color: '#00ff00', glow: true, glowColor: '#00ff00', scale: 0.9,
+      });
+      startText.position.set(0, 0, 0);
+      levelTextGroup.add(startText);
+      levelIntroStartText = startText;
+
+      levelIntroStage = 'start';
+      levelIntroStartTime = now;
+    }
+  } else if (levelIntroStage === 'start') {
+    // Show "START!" for 1 second
+    if (elapsed >= START_DISPLAY_DURATION) {
+      levelIntroStage = 'start_fading';
+      levelIntroStartTime = now;
+    }
+  } else if (levelIntroStage === 'start_fading') {
+    // Fade out "START!" over 0.5 seconds
+    const progress = Math.min(elapsed / LEVEL_FADE_DURATION, 1);
+
+    if (levelIntroStartText) {
+      levelIntroStartText.material.opacity = 1 - progress;
+    }
+
+    if (progress >= 1) {
+      levelIntroStage = 'done';
+      levelIntroActive = false;
+      levelTextGroup.visible = false;
+      return true; // Signal that intro is complete
+    }
+  }
+
+  return false; // Still in progress
+}
+
+export function hideLevelIntro() {
+  levelIntroActive = false;
+  levelTextGroup.visible = false;
+}
+
+// ── Kills Remaining Alert ─────────────────────────────────
+
+export function showKillsRemainingAlert(remaining) {
+  if (killsAlertActive) return; // Already showing an alert
+
+  killsAlertActive = true;
+  killsAlertStartTime = performance.now();
+  killsAlertDisplayTime = 2000; // Display for 2 seconds
+
+  // Position further from player (better depth)
+  // Place at midfield distance but offset forward
+  levelTextGroup.position.set(0, 1.6, -3); // -3 instead of -4 for better depth
+  levelTextGroup.visible = true;
+
+  // Clear any existing content
+  while (levelTextGroup.children.length) {
+    levelTextGroup.remove(levelTextGroup.children[0]);
+  }
+
+  const alertText = makeSprite(`${remaining} KILLS REMAINING`, {
+    fontSize: 60,
+    color: '#ff8800',
+    glow: true,
+    glowColor: '#ff8800',
+    scale: 0.5,
+  });
+  alertText.position.set(0, 0, 0);
+  levelTextGroup.add(alertText);
+  killsAlertMesh = alertText;
+}
+
+export function updateKillsAlert(now) {
+  if (!killsAlertActive) return false;
+
+  const elapsed = now - killsAlertStartTime;
+
+  // Hide after display time
+  if (elapsed >= killsAlertDisplayTime) {
+    hideKillsAlert();
+    return false; // Alert is no longer visible
+  }
+
+  return true; // Still visible
+}
+
+export function hideKillsAlert() {
+  killsAlertActive = false;
+  levelTextGroup.visible = false;
+  if (killsAlertMesh) {
+    killsAlertMesh = null;
+  }
+}
+
+export function isKillsAlertActive() {
+  return killsAlertActive;
 }
 
 export function getReadyScreenHit(raycaster) {
@@ -1687,19 +2032,12 @@ export function showScoreboard(scores, headerText) {
 }
 
 function renderScoreboardCanvas() {
-  // PERFORMANCE: Reuse canvas instead of recreating every frame
+  const canvas = document.createElement('canvas');
   const w = 800;
   const h = 1000;
-  
-  if (!scoreboardCanvas) {
-    scoreboardCanvas = document.createElement('canvas');
-    scoreboardCanvas.width = w;
-    scoreboardCanvas.height = h;
-    scoreboardCtx = scoreboardCanvas.getContext('2d');
-  }
-  
-  const canvas = scoreboardCanvas;
-  const ctx = scoreboardCtx;
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, w, h);
 
   // Background
@@ -1786,13 +2124,9 @@ function renderScoreboardCanvas() {
     ctx.fillText(`${startIdx + 1}-${endIdx} of ${scoreboardScores.length}`, w / 2, h - 15);
   }
 
-  // PERFORMANCE: Only create texture once, then just update it
-  if (!scoreboardTexture) {
-    scoreboardTexture = new THREE.CanvasTexture(canvas);
-    scoreboardTexture.minFilter = THREE.LinearFilter;
-  } else {
-    scoreboardTexture.needsUpdate = true;
-  }
+  if (scoreboardTexture) scoreboardTexture.dispose();
+  scoreboardTexture = new THREE.CanvasTexture(canvas);
+  scoreboardTexture.minFilter = THREE.LinearFilter;
 
   if (!scoreboardMesh) {
     const geo = new THREE.PlaneGeometry(1.8, 2.2);
@@ -1809,22 +2143,6 @@ function renderScoreboardCanvas() {
 
 export function hideScoreboard() {
   scoreboardGroup.visible = false;
-  
-  // PERFORMANCE: Clean up scoreboard resources
-  while (scoreboardGroup.children.length) {
-    const child = scoreboardGroup.children[0];
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) {
-      if (child.material.map && child.material.map !== scoreboardTexture) {
-        child.material.map.dispose();
-      }
-      child.material.dispose();
-    }
-    scoreboardGroup.remove(child);
-  }
-  
-  // Reset mesh reference (keep canvas and texture for reuse)
-  scoreboardMesh = null;
 }
 
 export function getScoreboardHit(raycaster) {
@@ -1867,25 +2185,11 @@ export function updateScoreboardScroll(delta) {
 
 export function showCountrySelect(countries, continents, initialContinent) {
   hideAll();
-
-  // PERFORMANCE: Clean up old resources before recreating
-  while (countrySelectGroup.children.length) {
-    const child = countrySelectGroup.children[0];
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) {
-      if (child.material.map) child.material.map.dispose();
-      child.material.dispose();
-    }
-    countrySelectGroup.remove(child);
-  }
-  
+  while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
   continentTabs = [];
   countryItems = [];
   countrySelectContinent = initialContinent || 'North America';
   countrySelectScrollOffset = 0;
-  
-  // Reset canvas mesh reference
-  countryListMesh = null;
 
   countrySelectGroup.position.set(0, 1.6, -4);
   countrySelectGroup.visible = true;
@@ -1938,36 +2242,6 @@ export function showCountrySelect(countries, continents, initialContinent) {
   // Country list
   renderCountryList(countries);
 
-  // Scroll buttons on right side (only if there are more countries than visible)
-  const btnDefs = [
-    { label: 'UP', y: 0.5, action: 'scroll_up' },
-    { label: 'DOWN', y: -0.3, action: 'scroll_down' },
-  ];
-
-  for (const def of btnDefs) {
-    const btnGroup = new THREE.Group();
-    btnGroup.position.set(1.2, def.y, 0);
-
-    const btnGeo = new THREE.PlaneGeometry(0.4, 0.25);
-    const btnMat = new THREE.MeshBasicMaterial({
-      color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
-    });
-    const btnMesh = new THREE.Mesh(btnGeo, btnMat);
-    btnMesh.userData.countryAction = def.action;
-    btnGroup.add(btnMesh);
-
-    btnGroup.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(btnGeo),
-      new THREE.LineBasicMaterial({ color: 0x888888 })
-    ));
-
-    const txt = makeSprite(def.label, { fontSize: 20, color: '#ffffff', scale: 0.1 });
-    txt.position.set(0, 0, 0.01);
-    btnGroup.add(txt);
-
-    countrySelectGroup.add(btnGroup);
-  }
-
   // BACK button
   const backGroup = new THREE.Group();
   backGroup.position.set(0, -0.9, 0); // Moved down from -0.8
@@ -1988,220 +2262,63 @@ export function showCountrySelect(countries, continents, initialContinent) {
   countrySelectGroup.add(backGroup);
 }
 
-// PERFORMANCE: Render country list to a single canvas (like scoreboard)
-// This avoids creating 50+ individual 3D objects which kills performance
-function renderCountryList(countries, scrollOffset = 0) {
+function renderCountryList(countries) {
   // Remove old country item meshes
-  countryItems.forEach(item => {
-    if (item.group) {
-      countrySelectGroup.remove(item.group);
-    }
-    if (item.mesh) {
-      countrySelectGroup.remove(item.mesh);
-      if (item.mesh.geometry) item.mesh.geometry.dispose();
-      if (item.mesh.material) item.mesh.material.dispose();
-    }
-  });
+  countryItems.forEach(item => countrySelectGroup.remove(item.group));
   countryItems = [];
-  
-  // Remove old canvas mesh if exists
-  if (countryListMesh) {
-    countrySelectGroup.remove(countryListMesh);
-    if (countryListMesh.geometry) countryListMesh.geometry.dispose();
-    if (countryListMesh.material) countryListMesh.material.dispose();
-    countryListMesh = null;
-  }
 
   const filtered = countries.filter(c => c.continent === countrySelectContinent);
-  
-  // Clamp scroll offset
-  const maxVisible = 12;
-  const maxScroll = Math.max(0, filtered.length - maxVisible);
-  scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
-  
-  // PERFORMANCE: Use single canvas for all countries
-  const w = 600;
-  const rowHeight = 32;
-  const visibleCount = Math.min(filtered.length - scrollOffset, maxVisible);
-  const h = visibleCount * rowHeight + 20;
-  
-  if (!countryListCanvas) {
-    countryListCanvas = document.createElement('canvas');
-    countryListCtx = countryListCanvas.getContext('2d');
-  }
-  
-  countryListCanvas.width = w;
-  countryListCanvas.height = h;
-  const ctx = countryListCtx;
-  ctx.clearRect(0, 0, w, h);
-
-  // Background
-  ctx.fillStyle = 'rgba(10, 0, 30, 0.9)';
-  ctx.fillRect(0, 0, w, h);
-
-  // Border
-  ctx.strokeStyle = '#444488';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, w - 2, h - 2);
-
-  ctx.font = 'bold 22px Arial, sans-serif';
-  ctx.textBaseline = 'middle';
-
-  for (let i = 0; i < visibleCount; i++) {
-    const country = filtered[scrollOffset + i];
-    const y = i * rowHeight + rowHeight / 2 + 10;
-
-    // Row background
-    ctx.fillStyle = 'rgba(17, 17, 51, 0.85)';
-    ctx.fillRect(5, i * rowHeight + 5, w - 10, rowHeight - 4);
-
-    // Country flag and name
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'left';
-    ctx.fillText(`${country.flag}  ${country.name}`, 20, y);
-
-    // Divider line
-    if (i < visibleCount - 1) {
-      ctx.strokeStyle = 'rgba(68, 68, 102, 0.5)';
-      ctx.beginPath();
-      ctx.moveTo(10, (i + 1) * rowHeight + 5);
-      ctx.lineTo(w - 10, (i + 1) * rowHeight + 5);
-      ctx.stroke();
-    }
-  }
-  
-  // Scroll indicator
-  if (filtered.length > maxVisible) {
-    ctx.fillStyle = '#444488';
-    ctx.textAlign = 'center';
-    ctx.font = '16px Arial, sans-serif';
-    ctx.fillText(`${scrollOffset + 1}-${scrollOffset + visibleCount} of ${filtered.length}`, w / 2, h - 10);
-  }
-
-  // Create or update texture
-  if (!countryListTexture) {
-    countryListTexture = new THREE.CanvasTexture(countryListCanvas);
-    countryListTexture.minFilter = THREE.LinearFilter;
-  } else {
-    countryListTexture.needsUpdate = true;
-  }
-
-  // Create mesh for the canvas
-  const aspect = w / h;
-  const meshHeight = 1.8;
-  const meshWidth = meshHeight * aspect;
-  const geo = new THREE.PlaneGeometry(meshWidth, meshHeight);
-  const mat = new THREE.MeshBasicMaterial({
-    map: countryListTexture,
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthTest: false,
-  });
-  countryListMesh = new THREE.Mesh(geo, mat);
-  countryListMesh.position.set(0, 0.1, 0);
-  countryListMesh.renderOrder = 999;
-  countrySelectGroup.add(countryListMesh);
-
-  // Create invisible hitboxes for each visible country (much cheaper than full 3D objects)
+  const itemHeight = 0.22;
+  const itemGap = 0.04;
   const startY = 0.85;
-  const itemHeight = meshHeight / visibleCount;
-  const topY = startY - itemHeight / 2;
-  
-  for (let i = 0; i < visibleCount; i++) {
-    const country = filtered[scrollOffset + i];
-    const y = topY - i * itemHeight;
-    
-    // Create a simple invisible hitbox
-    const hitboxGeo = new THREE.PlaneGeometry(meshWidth * 0.95, itemHeight * 0.9);
-    const hitboxMat = new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
+
+  for (let i = 0; i < filtered.length; i++) {
+    const country = filtered[i];
+    const itemGroup = new THREE.Group();
+    const y = startY - i * (itemHeight + itemGap);
+    itemGroup.position.set(0, y, 0);
+
+    const itemGeo = new THREE.PlaneGeometry(1.8, itemHeight);
+    const itemMat = new THREE.MeshBasicMaterial({
+      color: 0x111133, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
     });
-    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
-    hitbox.position.set(0, y, 0.01);
-    hitbox.userData.countryCode = country.code;
-    hitbox.userData.countryAction = 'select';
-    countrySelectGroup.add(hitbox);
-    countryItems.push({ mesh: hitbox, code: country.code });
+    const itemMesh = new THREE.Mesh(itemGeo, itemMat);
+    itemMesh.userData.countryCode = country.code;
+    itemMesh.userData.countryAction = 'select';
+    itemGroup.add(itemMesh);
+
+    itemGroup.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(itemGeo),
+      new THREE.LineBasicMaterial({ color: 0x444466 })
+    ));
+
+    const label = makeSprite(`${country.flag}  ${country.name}`, {
+      fontSize: 28, color: '#ffffff', scale: 0.15,
+    });
+    label.position.set(0, 0, 0.01);
+    itemGroup.add(label);
+
+    countryItems.push({ group: itemGroup, mesh: itemMesh, code: country.code });
+    countrySelectGroup.add(itemGroup);
   }
-  
-  // Store filtered countries and scroll info
-  countrySelectGroup.userData.filteredCountries = filtered;
-  countrySelectGroup.userData.scrollOffset = scrollOffset;
-  countrySelectGroup.userData.maxVisible = maxVisible;
-  countrySelectScrollOffset = scrollOffset;
 }
 
 export function hideCountrySelect() {
   countrySelectGroup.visible = false;
-  
-  // PERFORMANCE: Clean up country list resources
-  countryItems.forEach(item => {
-    if (item.group) {
-      countrySelectGroup.remove(item.group);
-    }
-    if (item.mesh) {
-      countrySelectGroup.remove(item.mesh);
-      if (item.mesh.geometry) item.mesh.geometry.dispose();
-      if (item.mesh.material) item.mesh.material.dispose();
-    }
-  });
-  countryItems = [];
-  
-  // Clean up canvas mesh
-  if (countryListMesh) {
-    countrySelectGroup.remove(countryListMesh);
-    if (countryListMesh.geometry) countryListMesh.geometry.dispose();
-    if (countryListMesh.material) countryListMesh.material.dispose();
-    countryListMesh = null;
-  }
 }
 
 export function getCountrySelectHit(raycaster, countries) {
   if (!countrySelectGroup.visible) return null;
 
-  // Check scroll and action buttons first
-  const actionMeshes = [];
-  countrySelectGroup.traverse(c => {
-    if (c.userData && c.userData.countryAction) actionMeshes.push(c);
-  });
-  let hits = raycaster.intersectObjects(actionMeshes, false);
-  if (hits.length > 0) {
-    const action = hits[0].object.userData.countryAction;
-    
-    // Handle scroll actions
-    if (action === 'scroll_up') {
-      const newOffset = Math.max(0, countrySelectScrollOffset - 4);
-      if (newOffset !== countrySelectScrollOffset) {
-        renderCountryList(countries, newOffset);
-      }
-      return null;
-    }
-    if (action === 'scroll_down') {
-      const filtered = countries.filter(c => c.continent === countrySelectContinent);
-      const maxScroll = Math.max(0, filtered.length - 12);
-      const newOffset = Math.min(maxScroll, countrySelectScrollOffset + 4);
-      if (newOffset !== countrySelectScrollOffset) {
-        renderCountryList(countries, newOffset);
-      }
-      return null;
-    }
-    
-    return { action };
-  }
-
   // Check continent tabs
   const tabMeshes = continentTabs.map(t => t.mesh);
-  hits = raycaster.intersectObjects(tabMeshes, false);
+  let hits = raycaster.intersectObjects(tabMeshes, false);
   if (hits.length > 0) {
     const continent = hits[0].object.userData.continentTab;
     if (continent !== countrySelectContinent) {
       countrySelectContinent = continent;
-      // Reset scroll when changing continent
-      countrySelectScrollOffset = 0;
       // Refresh tabs and list
-      renderCountryList(countries, 0);
+      renderCountryList(countries);
       // Update tab visuals
       continentTabs.forEach(tab => {
         const isActive = tab.continent === countrySelectContinent;
@@ -2212,12 +2329,20 @@ export function getCountrySelectHit(raycaster, countries) {
   }
 
   // Check country items
-  const itemMeshes = countryItems.map(i => i.mesh).filter(Boolean);
+  const itemMeshes = countryItems.map(i => i.mesh);
   hits = raycaster.intersectObjects(itemMeshes, false);
   if (hits.length > 0) {
     const code = hits[0].object.userData.countryCode;
     return { action: 'select', code };
   }
+
+  // Check back button
+  const actionMeshes = [];
+  countrySelectGroup.traverse(c => {
+    if (c.userData && c.userData.countryAction === 'back') actionMeshes.push(c);
+  });
+  hits = raycaster.intersectObjects(actionMeshes, false);
+  if (hits.length > 0) return { action: 'back' };
 
   return null;
 }

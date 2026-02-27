@@ -7,11 +7,7 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
-import { perfMonitor } from './performance.js';
-import { initPools, projectilePool, explosionPool, getPoolCounts } from './object-pool.js';
-import { testTracker } from './test-tracker.js';
-
+import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats, isAltWeaponUpgrade } from './upgrades.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
@@ -41,7 +37,8 @@ import {
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
   showLevelIntro, updateLevelIntro, hideLevelIntro,
-  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive, updateHUDHover
+  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive,
+  showAltFireTutorial, hideAltFireTutorial
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -52,7 +49,7 @@ import {
   initDesktopControls, enable as enableDesktop, disable as disableDesktop,
   toggleMode, isEnabled as isDesktopEnabled,
   update as updateDesktop, getWeaponState as getDesktopWeaponState,
-  getVirtualController, getControlScheme, getAimRaycaster
+  getVirtualController, getControlScheme
 } from './desktop-controls.js';
 
 // ── Constants ──────────────────────────────────────────────
@@ -176,12 +173,12 @@ function init() {
   document.body.appendChild(vrButton);
 
   if (!navigator.xr) {
-    // document.getElementById('no-vr').style.display = 'block'; /* Hidden for desktop testing */
+    document.getElementById('no-vr').style.display = 'block';
     console.warn('[init] WebXR not supported');
   } else {
     navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
       if (!supported) {
-        // document.getElementById('no-vr').style.display = 'block'; /* Hidden for desktop testing */
+        document.getElementById('no-vr').style.display = 'block';
         console.warn('[init] immersive-vr not supported');
       }
     });
@@ -213,10 +210,6 @@ function init() {
 
   // Render loop
   renderer.setAnimationLoop(render);
-
-  // Init performance monitoring and object pools
-  initPools(scene);
-  perfMonitor.start();
 
   // Start menu music
   playMusic('menu');
@@ -405,9 +398,9 @@ function createAurora() {
   const ctx1 = canvas1.getContext('2d');
   const grad1 = ctx1.createLinearGradient(0, 0, 0, h);
   grad1.addColorStop(0, 'rgba(0,40,60,0)');
-  grad1.addColorStop(0.3, 'rgba(0,255,220,0.4)');
-  grad1.addColorStop(0.5, 'rgba(100,255,220,0.6)');
-  grad1.addColorStop(0.7, 'rgba(0,200,255,0.3)');
+  grad1.addColorStop(0.3, 'rgba(0,200,180,0.08)');
+  grad1.addColorStop(0.5, 'rgba(0,255,200,0.12)');
+  grad1.addColorStop(0.7, 'rgba(0,180,220,0.06)');
   grad1.addColorStop(1, 'rgba(0,40,80,0)');
   ctx1.fillStyle = grad1;
   ctx1.fillRect(0, 0, w, h);
@@ -422,7 +415,7 @@ function createAurora() {
     depthWrite: false,
   });
   const mesh1 = new THREE.Mesh(geo1, mat1);
-  mesh1.position.set(0, 8, 0);
+  mesh1.position.set(0, 15, 0);
   mesh1.renderOrder = -21;
   scene.add(mesh1);
 
@@ -433,9 +426,9 @@ function createAurora() {
   const ctx2 = canvas2.getContext('2d');
   const grad2 = ctx2.createLinearGradient(0, 0, 0, h);
   grad2.addColorStop(0, 'rgba(0,60,40,0)');
-  grad2.addColorStop(0.4, 'rgba(50,255,180,0.35)');
-  grad2.addColorStop(0.6, 'rgba(100,255,220,0.5)');
-  grad2.addColorStop(0.8, 'rgba(0,220,200,0.25)');
+  grad2.addColorStop(0.4, 'rgba(0,255,150,0.05)');
+  grad2.addColorStop(0.6, 'rgba(50,255,200,0.08)');
+  grad2.addColorStop(0.8, 'rgba(0,200,180,0.04)');
   grad2.addColorStop(1, 'rgba(0,60,80,0)');
   ctx2.fillStyle = grad2;
   ctx2.fillRect(0, 0, w, h);
@@ -450,7 +443,7 @@ function createAurora() {
     depthWrite: false,
   });
   const mesh2 = new THREE.Mesh(geo2, mat2);
-  mesh2.position.set(0, 9, 0);
+  mesh2.position.set(0, 16, 0);
   mesh2.renderOrder = -22;
   scene.add(mesh2);
 
@@ -787,6 +780,8 @@ function onTriggerPress(controller, index) {
     handleCountrySelectTrigger(controller);
   } else if (st === State.READY_SCREEN) {
     handleReadyScreenTrigger(controller);
+  } else if (st === State.ALT_TUTORIAL) {
+    handleAltFireTutorialTrigger(controller);
   }
 }
 
@@ -813,6 +808,8 @@ function handleDesktopClick() {
     handleDesktopCountrySelectClick();
   } else if (st === State.READY_SCREEN) {
     handleDesktopReadyScreenClick();
+  } else if (st === State.ALT_TUTORIAL) {
+    handleDesktopAltFireTutorialClick();
   }
 }
 
@@ -951,6 +948,12 @@ function handleDesktopReadyScreenClick() {
   playMenuClick();
   hideUpgradeCards();
   game.state = State.PLAYING;
+}
+
+function handleDesktopAltFireTutorialClick() {
+  playMenuClick();
+  hideAltFireTutorial();
+  advanceLevelAfterUpgrade();
 }
 
 function handleTitleTrigger(controller) {
@@ -1132,6 +1135,8 @@ function onTriggerRelease(index) {
   }
 
   // Satisfying charge beam release - big, dramatic sound
+  explosionVisuals.push(beamInner);
+  explosionVisuals.push(beamOuter);
 
   playChargeFireSound(damage);
 }
@@ -1155,12 +1160,8 @@ function debugJumpToLevel(targetLevel) {
       const special = getRandomSpecialUpgrades(1)[0];
       if (special) addUpgrade(special.id, hand(lvl, 0));
     } else {
-      // For each upgrade, determine which hand it goes to and filter accordingly
-      for (let idx = 0; idx < 3; idx++) {
-        const h = hand(lvl, idx);
-        const upgrade = getRandomUpgrades(1, [], game.upgrades[h])[0];
-        if (upgrade) addUpgrade(upgrade.id, h);
-      }
+      const upgrades = getRandomUpgrades(3);
+      upgrades.forEach((u, idx) => addUpgrade(u.id, hand(lvl, idx)));
     }
   }
 
@@ -1187,6 +1188,13 @@ function handleReadyScreenTrigger(controller) {
     // Stagger setup
     game.spawnTimer = 1.0;
   }
+}
+
+function handleAltFireTutorialTrigger(controller) {
+  // Dismiss tutorial on any trigger press
+  playMenuClick();
+  hideAltFireTutorial();
+  advanceLevelAfterUpgrade();
 }
 
 function startGame() {
@@ -1241,7 +1249,7 @@ function showUpgradeScreen() {
     console.log(`[game] Both hands have ${leftShotType}, excluding from upgrade pool`);
   }
 
-  pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3, excludeIds, game.upgrades[upgradeHand]);
+  pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3, excludeIds);
   showUpgradeCards(pendingUpgrades, camera.position, upgradeHand);
   if (game.justBossKill) game.justBossKill = false;
   upgradeSelectionCooldown = 1.5; // prevent instant selection
@@ -1292,6 +1300,24 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   addUpgrade(upgrade.id, hand);
   playUpgradeSound();
   hideUpgradeCards();
+
+  // Handle alt weapon unlock
+  if (isAltWeaponUpgrade(upgrade.id)) {
+    // Map alt weapon upgrade ID to alt weapon ID
+    const altWeaponId = upgrade.id.replace('alt_', '');
+    game.altWeapon[hand] = altWeaponId;
+    console.log(`[game] Unlocked alt weapon: ${altWeaponId} for ${hand} hand`);
+
+    // Show tutorial on first alt weapon
+    if (!game.altFireTutorialSeen) {
+      game.altFireTutorialSeen = true;
+      game.state = State.ALT_TUTORIAL;
+      showAltFireTutorial();
+      console.log('[game] Showing alt fire tutorial for first alt weapon');
+      return;
+    }
+  }
+
   advanceLevelAfterUpgrade();
 }
 
@@ -1394,7 +1420,7 @@ function shootWeapon(controller, index) {
     spawnProjectile(spawnOrigin, direction.clone(), index, stats);
   }
 
-  console.log(`[shoot] ${hand} hand fired ${count} projectile(s) from`, +stats.damage + ` damage`);
+  console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
 }
 
 function updateLightningBeam(controller, index, stats, dt) {
@@ -1578,6 +1604,8 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
 
   // Wide beam visual with inner/outer glow
+  const beamColor = new THREE.Color(0xffaa00);
+  const beamGlow = new THREE.Color(0xffcc00);
   const beamInnerGeo = new THREE.CylinderGeometry(2.0, range, 8);  // Wide beam (2.0 width)
   const beamOuterGeo = new THREE.CylinderGeometry(2.5, range, 8);  // Outer glow layer
   const beamInnerMat = new THREE.MeshBasicMaterial({
@@ -1947,16 +1975,6 @@ function updateProjectiles(dt) {
   const raycaster = new THREE.Raycaster();
   const enemies = getEnemyMeshes(true).concat(getBossMinionMeshes());
 
-  if (projectiles.length > 0 && enemies.length > 0) {
-    console.log(`[projectile] Checking ${projectiles.length} projectiles vs ${enemies.length} enemies`);
-
-    // Log sample enemy positions
-    for (let j = 0; j < Math.min(3, enemies.length); j++) {
-      const enemy = enemies[j];
-      console.log(`[projectile] Enemy ${j}: pos=(${enemy.position.x.toFixed(2)}, ${enemy.position.y.toFixed(2)}, ${enemy.position.z.toFixed(2)}), type=${enemy.type}`);
-    }
-  }
-
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const proj = projectiles[i];
     const age = now - proj.userData.createdAt;
@@ -1972,25 +1990,12 @@ function updateProjectiles(dt) {
     const moveDistance = proj.userData.velocity.length() * dt;
     proj.position.addScaledVector(proj.userData.velocity, dt);
 
-    // Log projectile details
-    if (enemies.length > 0) {
-      const dir = proj.userData.velocity.clone().normalize();
-      console.log(`[projectile] Projectile ${i}: pos=(${proj.position.x.toFixed(2)}, ${proj.position.y.toFixed(2)}, ${proj.position.z.toFixed(2)}), dir=(${dir.x.toFixed(2)}, ${dir.y.toFixed(2)}, ${dir.z.toFixed(2)}), moveDist=${moveDistance.toFixed(3)}`);
-    }
-
     // Check collision with enemies
     raycaster.set(proj.position, proj.userData.velocity.clone().normalize());
     const hits = raycaster.intersectObjects(enemies, true);
 
-    console.log(`[projectile] Raycast result: hits.length=${hits.length}, raycaster.near=${raycaster.near}, raycaster.far=${raycaster.far}`);
-    if (hits.length > 0) {
-      console.log(`[projectile] First hit: distance=${hits[0].distance.toFixed(2)}, threshold=${(moveDistance * 2).toFixed(2)}, object=${hits[0].object.type}`);
-    }
-
     if (hits.length > 0 && hits[0].distance < moveDistance * 2) {
-      console.log(`[projectile] HIT! distance=${hits[0].distance.toFixed(2)}, object=${hits[0].object.type}`);
       const result = getEnemyByMesh(hits[0].object);
-      console.log(`[projectile] getEnemyByMesh result:`, result);
       if (result && result.boss) {
         handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex);
         if (!proj.userData.stats.piercing) {
@@ -2049,8 +2054,7 @@ function selectUpgrade(controller) {
 function selectUpgradeAt(index) {
   if (upgradeSelectionCooldown > 0) return;
 
-  // Use the already-shown pending upgrades instead of regenerating
-  const upgrades = pendingUpgrades;
+  const upgrades = getRandomUpgrades(3);
   if (index >= 0 && index < upgrades.length) {
     const upgrade = upgrades[index];
     // Randomly assign to left or right hand
@@ -2188,19 +2192,7 @@ function render(timestamp) {
 
   const dt = rawDt * timeScale;  // Scaled time for game logic
 
-  perfMonitor.recordFrame(rawDt * 1000);
-
-  // Update object counts for performance monitoring
   const st = game.state;
-  if (st === State.PLAYING || st === State.LEVEL_COMPLETE || st === State.BOSS_FIGHT) {
-    perfMonitor.updateObjectCounts({
-      projectiles: projectiles.length,
-      enemies: getEnemyCount(),
-      explosions: explosionVisuals.length,
-      particles: 0,
-    });
-  }
-
 
   // ── Title screen ──
   if (st === State.TITLE) {
@@ -2505,7 +2497,7 @@ function render(timestamp) {
     game._combo = getComboMultiplier();
     checkComboIncrease(game._combo, camera.position, playUpgradeSound);
     if (frameCount % 3 === 0) {
-updateHUD(game);
+      updateHUD(game);
     }
   }
 
