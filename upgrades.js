@@ -79,119 +79,116 @@ export const ALT_WEAPON_DEFS = {
 };
 
 export const UPGRADE_POOL = [
-  // ── Standard Blaster Upgrades ─────────────────────────────
-  { id: 'scope',       name: 'Scope',       desc: 'Damage +10 per stack',              color: '#00ff44' },
-  { id: 'barrel',      name: 'Barrel',      desc: 'Fire rate +15%',                    color: '#ffaa00' },
-  { id: 'double_shot', name: 'Double Shot', desc: 'Fire an extra projectile',          color: '#ff44ff' },
-  { id: 'critical',    name: 'Critical',    desc: '+15% chance for 2x damage',         color: '#ffff00' },
-  { id: 'piercing',    name: 'Piercing',    desc: 'Shots pass through enemies',        color: '#00ffaa' },
-
-  // ── Status Effects ────────────────────────────────────────
-  { id: 'shock',       name: 'Shock',       desc: 'Electrocutes: slows + shock DoT',   color: '#4488ff' },
-  { id: 'fire',        name: 'Fire',        desc: 'Ignites: weakens + fire DoT',       color: '#ff4400' },
-  { id: 'freeze',      name: 'Freeze',      desc: 'Greatly slows enemies',             color: '#88ccff' },
-
-  // ── Utility Upgrades ──────────────────────────────────────
-  { id: 'vampiric',    name: 'Vampiric',    desc: 'Heal half-heart every 5 kills',     color: '#cc0044' },
-  { id: 'ricochet',    name: 'Ricochet',    desc: 'Shots bounce to nearby enemy',      color: '#aaffaa' },
-  { id: 'big_boom',    name: 'Big Boom',    desc: 'Explodes on impact (AOE)',          color: '#ff8800' },
-
-  // ── Weapon Type: Buckshot (Shotgun) ───────────────────────
-  { id: 'buckshot',           name: 'Buckshot',           desc: 'Multi-pellet spread shot',              color: '#cccccc', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
-  { id: 'buckshot_focused',   name: 'Focused Frenzy',     desc: '-25% spread for Buckshot',              color: '#88aaff', requiresWeapon: 'buckshot' },
-  { id: 'buckshot_pellets',   name: 'Buckshot, Gentlemen', desc: '+50% pellets for Buckshot',            color: '#ffaa88', requiresWeapon: 'buckshot' },
-  { id: 'buckshot_damage',    name: 'Duck Hunt',          desc: '+30% pellet damage for Buckshot',       color: '#ff8844', requiresWeapon: 'buckshot' },
-
-  // ── Weapon Type: Lightning Rod ────────────────────────────
-  { id: 'lightning',          name: 'Lightning Rod',      desc: 'Hold for auto-lock beam',               color: '#ffff44', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
-  { id: 'lightning_chain',    name: "It's Electric!",     desc: '+2 chain targets for Lightning',        color: '#88ffff', requiresWeapon: 'lightning' },
-  { id: 'lightning_tesla',    name: 'Tesla Coil',         desc: 'Auto-fire + ball attack',               color: '#ffff88', requiresWeapon: 'lightning' },
-
-  // ── Weapon Type: Charge Cannon ────────────────────────────
-  { id: 'charge_shot',        name: 'Charge Cannon',      desc: 'Hold to charge, release for big beam',  color: '#ffffff', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
-  { id: 'charge_speed',       name: "Ain't Nobody Got Time For That", desc: '+50% charge speed',       color: '#ffaaff', requiresWeapon: 'charge_shot' },
-  { id: 'charge_excess',      name: 'Excess Heat',        desc: '2nd shot free within 2s',               color: '#ff88ff', requiresWeapon: 'charge_shot' },
-  { id: 'charge_damage',      name: 'Death Ray',          desc: '+50% charge shot damage',               color: '#ff44ff', requiresWeapon: 'charge_shot' },
-
-  // ── Weapon Type: Plasma Carbine ───────────────────────────
-  { id: 'plasma',             name: 'Plasma Carbine',     desc: 'Rapid fire, ramping damage',            color: '#44ff44', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
-  { id: 'plasma_spread',      name: 'Hold It Together',   desc: '-30% spread for Plasma',                color: '#88ff88', requiresWeapon: 'plasma' },
-
-  // ── Weapon Type: Seeker Burst ─────────────────────────────
-  { id: 'seeker',             name: 'Seeker Burst',       desc: 'Homing shots',                          color: '#ff8844', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
-  { id: 'seeker_more',        name: 'Gimme Gimme More',   desc: '+3 shots per burst',                    color: '#ffaa44', requiresWeapon: 'seeker' },
-
-  // ── General Upgrades ──────────────────────────────────────
-  { id: 'execute',            name: 'Execute',            desc: '+40% damage below 25% HP',              color: '#ff0044' },
-  { id: 'magnetic',           name: 'Magnetic',           desc: 'Tag enemies, pull together',            color: '#4488ff' },
-  { id: 'reflex',             name: 'Reflex',             desc: '+100% fire rate after taking damage',   color: '#ffff44' },
-  { id: 'hollow_point',       name: 'Hollow-Point',       desc: '+15% damage',                           color: '#ff8844' },
-  { id: 'nova_tip',           name: 'Nova Tip',           desc: 'Every 12th shot causes AoE',            color: '#ff44ff' },
-  { id: 'siphon',             name: 'Siphon',             desc: '15 kills = 25% cooldown reduction',     color: '#aa44ff' },
+  // Core upgrades
+  { id: 'scope', name: 'Scope', desc: 'Damage +10 per stack', color: '#00ff44' },
+  { id: 'barrel', name: 'Barrel', desc: 'Fire rate +15%', color: '#ffaa00' },
+  { id: 'shock', name: 'Shock', desc: 'Electrocutes: slows + shock DoT', color: '#4488ff' },
+  { id: 'fire', name: 'Fire', desc: 'Ignites: weakens + fire DoT', color: '#ff4400' },
+  { id: 'big_boom', name: 'Big Boom', desc: 'Explodes on impact (AOE)', color: '#ff8800' },
+  
+  // Side-grade weapon types
+  { id: 'buckshot', name: 'Buckshot', desc: 'Multi-pellet spread shot', color: '#ff8800', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  { id: 'lightning', name: 'Lightning Rod', desc: 'Hold for auto-lock beam', color: '#ff00ff', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  { id: 'charge_shot', name: 'Charge Cannon', desc: 'Hold to charge, release for big beam', color: '#ff4444', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  { id: 'plasma_carbine', name: 'Plasma Carbine', desc: 'Fast fire, damage ramps up', color: '#88ff88', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  { id: 'seeker_burst', name: 'Seeker Burst', desc: 'Fires 3 homing shots', color: '#aa88ff', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  
+  // Universal upgrades
+  { id: 'piercing', name: 'Piercing', desc: 'Shots pass through enemies', color: '#00ffaa' },
+  { id: 'vampiric', name: 'Vampiric', desc: 'Heal half-heart every 5 kills', color: '#cc0044' },
+  { id: 'critical', name: 'Critical', desc: '+15% chance for 2x damage', color: '#ffff00' },
+  { id: 'double_shot', name: 'Doubleshot', desc: 'Fire an extra projectile', color: '#ff44ff' },
+  { id: 'freeze', name: 'Freeze', desc: 'Greatly slows enemies', color: '#88ccff' },
+  { id: 'ricochet', name: 'Ricochet', desc: 'Shots bounce to nearby enemy', color: '#aaffaa' },
+  
+  // Universal upgrades (issue #36)
+  { id: 'execute', name: 'Execute', desc: '+40% damage to enemies below 25% health', color: '#ff0044' },
+  { id: 'magnetic', name: 'Magnetic', desc: 'Shots tag enemies, tagged enemies pull together', color: '#4488ff' },
+  { id: 'reflex', name: 'Reflex', desc: '+100% fire rate for 2s after taking damage (10s cooldown)', color: '#ffaa00' },
+  { id: 'hollow_point', name: 'Hollow-Point', desc: '+15% damage', color: '#ff8888' },
+  { id: 'nova_tip', name: 'Nova Tip', desc: 'Every 12th shot detonates AoE (60 damage)', color: '#ff44ff' },
+  { id: 'siphon', name: 'Siphon', desc: 'Every 15 kills reduces ALT cooldown by 25%', color: '#aa88ff' },
+  
+  // Standard Blaster specific
+  { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#00ffff' },
+  
+  // Buckshot specific
+  { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800' },
+  { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800' },
+  { id: 'duck_hunt', name: 'Duck Hunt', desc: 'Buckshot: Critical hits stun', color: '#ff8800' },
+  
+  // Lightning Rod specific
+  { id: 'its_electric', name: "It's Electric!", desc: 'Lightning Rod: Chains to +2 enemies', color: '#ff00ff' },
+  { id: 'tesla_coil', name: 'Tesla Coil', desc: 'Lightning Rod: +50% damage, +20% range', color: '#ff00ff' },
+  
+  // Charge Cannon specific
+  { id: 'quick_charge', name: "Ain't Nobody Got Time For That", desc: 'Charge Cannon: 2x charge speed', color: '#ff4444' },
+  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Adds fire DoT to charged shots', color: '#ff4444' },
+  { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444' },
+  
+  // Plasma Carbine specific
+  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: Faster ramp-up, higher max', color: '#88ff88' },
+  
+  // Seeker Burst specific
+  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff' },
 ];
 
-/** Special upgrades offered after boss victories (really valuable) */
-export const SPECIAL_UPGRADE_POOL = [
-  { id: 'mega_scope',   name: 'Mega Scope',   desc: 'Damage +25 per stack',           color: '#00ff88' },
-  { id: 'turbo_barrel',  name: 'Turbo Barrel', desc: 'Fire rate +30%',                color: '#ffcc00' },
-  { id: 'triple_shot',   name: 'Triple Shot',  desc: 'Fire two extra projectiles',     color: '#ff66ff' },
-  { id: 'mega_boom',     name: 'Mega Boom',   desc: 'Bigger AOE, +50% explosion dmg', color: '#ffaa00' },
-  { id: 'super_crit',   name: 'Super Crit',   desc: '+25% chance for 3x damage',      color: '#ffff88' },
-  { id: 'life_steal',   name: 'Life Steal',   desc: 'Heal 1 HP every 3 kills',        color: '#ff0044' },
-  { id: 'chain_lightning', name: 'Chain Lightning', desc: 'Lightning chains to +2 enemies', color: '#ffff00' },
-  { id: 'overcharge',    name: 'Overcharge',  desc: 'Piercing + 20% damage',          color: '#00ffcc' },
-];
-
-// ── TIERED SPECIAL UPGRADES ─────────────────────────────────
-
-/** RARE upgrades - After Level 5 boss (Tier 1) */
+/** RARE upgrades offered after Level 5 boss */
 export const RARE_UPGRADE_POOL = [
-  { id: 'add_heart',       name: 'Add 1 Heart',     desc: '+2 max HP permanently',            color: '#ff0044', global: true },
-  { id: 'volatile',        name: 'Volatile',        desc: 'Enemies explode on death',         color: '#ff8800', global: true },
-  { id: 'second_wind',     name: 'Second Wind',     desc: 'Survive death once',               color: '#ffff00', global: true },
-  { id: 'crit_core',       name: 'Crit Core',       desc: '+50% crit dmg, +10% crit chance',  color: '#ffaa00' },
-  { id: 'cooldown_tuner',  name: 'Cooldown Tuner',  desc: '-30% alt-fire cooldowns',          color: '#00ffff' },
+  { id: 'add_heart', name: 'ADD 1 HEART', desc: 'Max health +1', color: '#ff4488', tier: 'rare', level: 5 },
+  { id: 'volatile', name: 'VOLATILE', desc: 'Enemies explode on death', color: '#ff8844', tier: 'rare', level: 5 },
+  { id: 'second_wind', name: 'SECOND WIND', desc: 'Survive fatal hit once per level', color: '#44ff88', tier: 'rare', level: 5 },
+  { id: 'crit_core', name: 'CRIT CORE', desc: '+50% crit damage, +10% crit chance', color: '#ffff44', tier: 'rare', level: 5 },
+  { id: 'cooldown_tuner', name: 'COOLDOWN TUNER', desc: '-30% ALT cooldowns', color: '#4488ff', tier: 'rare', level: 5 },
 ];
 
-/** EPIC upgrades - After Level 10 boss (Tier 2) */
+/** EPIC upgrades offered after Level 10 boss */
 export const EPIC_UPGRADE_POOL = [
-  { id: 'neon_overdrive',  name: 'Neon Overdrive',  desc: '30 kills = 8s god mode',           color: '#ff00ff', global: true },
-  { id: 'heavy_hunter',    name: 'Heavy Hunter',    desc: '+35% damage to tanks/bosses',      color: '#00ff88' },
+  { id: 'neon_overdrive', name: 'NEON OVERDRIVE', desc: 'After 30 kills: +20% damage/fire rate for 8s', color: '#ff00ff', tier: 'epic', level: 10, global: true },
+  { id: 'heavy_hunter', name: 'HEAVY HUNTER', desc: '+35% damage to tanks/bosses, heal on boss damage', color: '#00ffff', tier: 'epic', level: 10 },
 ];
 
-/** ULTRA upgrades - After Level 15 boss (Tier 3) */
+/** ULTRA upgrades offered after Level 15 boss */
 export const ULTRA_UPGRADE_POOL = [
-  { id: 'time_lord',       name: 'Time Lord',       desc: 'Alt-fire slows time 75% for 5s',   color: '#aa00ff', global: true },
-  { id: 'death_aura',      name: 'Death Aura',      desc: '3m aura deals 5 dmg/sec',          color: '#ff4400', global: true },
-  { id: 'infinity_loop',   name: 'Infinity Loop',   desc: 'Repeat last alt-fire every 10s',   color: '#4488ff', global: true },
-  { id: 'hyper_crit',      name: 'Hyper Crit',      desc: '+50% crit chance, shockwave',      color: '#ffff00' },
+  { id: 'time_lord', name: 'TIME LORD', desc: 'ALT usage causes 5s slow-time', color: '#aa00ff', tier: 'ultra', level: 15, global: true },
+  { id: 'death_aura', name: 'DEATH AURA', desc: 'Continuous damage to nearby enemies', color: '#ff0000', tier: 'ultra', level: 15, global: true },
+  { id: 'infinity_loop', name: 'INFINITY LOOP', desc: 'Repeat last ALT at 40% power every 10s', color: '#8800ff', tier: 'ultra', level: 15, global: true },
+  { id: 'hyper_crit', name: 'HYPER CRIT', desc: '+50% crit chance, crits create shockwaves', color: '#ffaa00', tier: 'ultra', level: 15 },
 ];
 
-/** LEGENDARY upgrades - After Level 20 boss (Tier 4 - Final Boss) */
+/** LEGENDARY upgrades - After Level 20 boss (Tier 4) */
 export const LEGENDARY_UPGRADE_POOL = [
-  { id: 'god_caliber',     name: 'GOD CALIBER',     desc: 'ALL attacks deal 3x damage',       color: '#ffdd00', global: true, legendary: true },
-  { id: 'chrono_shift',    name: 'CHRONO SHIFT',    desc: 'Teleport on damage, 2s cooldown',  color: '#00ffff', global: true, legendary: true },
-  { id: 'final_form',      name: 'FINAL FORM',      desc: 'Start each level at max power',    color: '#ff00ff', global: true, legendary: true },
-  { id: 'soul_harvest',    name: 'SOUL HARVEST',    desc: 'Kills permanently add +1 damage',  color: '#ff0044', global: true, legendary: true },
-  { id: 'reality_tear',    name: 'REALITY TEAR',    desc: 'Shots rift to hit 3 extra enemies', color: '#aa00ff', legendary: true },
-  { id: 'cosmic_shield',   name: 'COSMIC SHIELD',   desc: 'Block all damage for 2s every 15s', color: '#00ff88', global: true, legendary: true },
+  { id: 'god_caliber', name: 'GOD CALIBER', desc: 'ALL attacks deal 3x damage', color: '#ffdd00', global: true, legendary: true },
+  { id: 'chrono_shift', name: 'CHRONO SHIFT', desc: 'Teleport on damage, 2s cooldown', color: '#00ffff', global: true, legendary: true },
+  { id: 'final_form', name: 'FINAL FORM', desc: 'Start each level at max power', color: '#ff00ff', global: true, legendary: true },
+  { id: 'soul_harvest', name: 'SOUL HARVEST', desc: 'Kills permanently add +1 damage', color: '#ff0044', global: true, legendary: true },
+  { id: 'reality_tear', name: 'REALITY TEAR', desc: 'Shots rift to hit 3 extra enemies', color: '#aa00ff', legendary: true },
+  { id: 'cosmic_shield', name: 'COSMIC SHIELD', desc: 'Block all damage for 2s every 15s', color: '#00ff88', global: true, legendary: true },
 ];
 
-/**
- * Get special upgrades based on boss tier.
- * Tier 1 (Level 5): RARE only
- * Tier 2 (Level 10): RARE + EPIC
- * Tier 3 (Level 15): RARE + EPIC + ULTRA
- * Tier 4 (Level 20): All pools including LEGENDARY
- */
+/** Combined special upgrade pool */
+export const SPECIAL_UPGRADE_POOL = [
+  ...RARE_UPGRADE_POOL,
+  ...EPIC_UPGRADE_POOL,
+  ...ULTRA_UPGRADE_POOL,
+  ...LEGENDARY_UPGRADE_POOL,
+];
+
+/** Get upgrades by tier */
+export function getUpgradesByTier(level) {
+  if (level >= 15) return ULTRA_UPGRADE_POOL;
+  if (level >= 10) return EPIC_UPGRADE_POOL;
+  if (level >= 5) return RARE_UPGRADE_POOL;
+  return [];
+}
+
+/** Get special upgrades based on boss tier */
 export function getSpecialUpgradesForBossTier(tier, count = 3) {
   let pool = [];
-
   if (tier >= 1) pool = [...pool, ...RARE_UPGRADE_POOL];
   if (tier >= 2) pool = [...pool, ...EPIC_UPGRADE_POOL];
   if (tier >= 3) pool = [...pool, ...ULTRA_UPGRADE_POOL];
   if (tier >= 4) pool = [...pool, ...LEGENDARY_UPGRADE_POOL];
-
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }
@@ -273,23 +270,63 @@ export function getWeaponStats(upgrades, globalUpgrades = {}) {
   const g = globalUpgrades || {};
 
   // Base values (include special boss upgrades)
-  let damage        = 15 + (u.scope || 0) * 10 + (u.mega_scope || 0) * 25;
-  let fireInterval  = (300 / (1 + (u.barrel || 0) * 0.15 + (u.turbo_barrel || 0) * 0.3)) * 0.57;
+  let damage = 15 + (u.scope || 0) * 10 + (u.mega_scope || 0) * 25;
+  let fireInterval = (300 / (1 + (u.barrel || 0) * 0.15 + (u.turbo_barrel || 0) * 0.3)) * 0.57;
   let projectileCount = 1 + (u.double_shot || 0) + (u.triple_shot || 0) * 2;
-  let critChance    = Math.min((u.critical || 0) * 0.15 + (u.super_crit || 0) * 0.25, 0.9);
-  let piercing      = (u.piercing || 0) > 0 || (u.overcharge || 0) > 0;
-  let aoeRadius     = (u.big_boom || 0) > 0 || (u.mega_boom || 0) > 0
+  let critChance = Math.min((u.critical || 0) * 0.15 + (u.super_crit || 0) * 0.25, 0.9);
+  
+  // Crit Core: +10% crit chance
+  if (u.crit_core) critChance += 0.1;
+  
+  // Hyper Crit: +50% crit chance
+  if (u.hyper_crit) critChance += 0.5;
+  
+  // Cap at 100%
+  critChance = Math.min(critChance, 1.0);
+  let piercing = (u.piercing || 0) > 0 || (u.overcharge || 0) > 0;
+  let aoeRadius = (u.big_boom || 0) > 0 || (u.mega_boom || 0) > 0
     ? 0.5 + ((u.big_boom || 0) + (u.mega_boom || 0) * 1.5) * 0.3
     : 0;
-  let spreadAngle   = 0;
-  let weaponType    = getWeaponType(u);
+  let spreadAngle = 0;
+  let weaponType = getWeaponType(u);
 
   // Fire effect: enemies take +15% damage per stack
   const fireWeakenMult = 1 + (u.fire || 0) * 0.15;
 
   // Hollow-Point: +15% damage
   if (u.hollow_point) {
-    damage *= 1 + (u.hollow_point || 0) * 0.15;
+    damage *= 1.15;
+  }
+
+  // Buckshot replaces normal projectiles with a spread
+  if (u.buckshot) {
+    const s = u.buckshot;
+    projectileCount = s === 1 ? 5 : s === 2 ? 8 : s === 3 ? 11 : 11 + (s - 3);
+    spreadAngle = 0.0524;
+    damage *= 1.25;
+    fireInterval *= 3.0;
+    if (u.focused_frenzy) {
+      spreadAngle *= 0.5;
+      fireInterval *= 0.7;
+    }
+    if (u.buckshot_gentlemen) {
+      projectileCount += 4;
+    }
+  }
+
+  // Plasma Carbine
+  if (u.plasma_carbine) {
+    damage = 6 + (u.scope || 0) * 10;
+    fireInterval = 100 / (1 + (u.barrel || 0) * 0.15);
+    spreadAngle = 0.0262;
+  }
+
+  // Seeker Burst
+  if (u.seeker_burst) {
+    damage = 12 + (u.scope || 0) * 10;
+    fireInterval = 450 / (1 + (u.barrel || 0) * 0.15);
+    projectileCount = 3 + (u.gimme_more || 0) * 2;
+    spreadAngle = 0.1745;
   }
 
   // ── Weapon-Specific Stats ───────────────────────────────────
@@ -405,39 +442,27 @@ export function getWeaponStats(upgrades, globalUpgrades = {}) {
 
   if (u.overcharge) damage *= 1.2;
 
-  // ── NEW TIERED UPGRADES ───────────────────────────────────
-
-  // Crit Core: +50% crit damage, +10% crit chance
-  if (u.crit_core) {
-    critChance += (u.crit_core || 0) * 0.10;
-  }
-
+  // Crit Core: +10% crit chance
+  if (u.crit_core) critChance += (u.crit_core || 0) * 0.10;
   // Hyper Crit: +50% crit chance
-  if (u.hyper_crit) {
-    critChance += (u.hyper_crit || 0) * 0.50;
-  }
-
-  // Cap crit chance at 95%
+  if (u.hyper_crit) critChance += (u.hyper_crit || 0) * 0.50;
   critChance = Math.min(critChance, 0.95);
 
   // Heavy Hunter: +35% damage to tanks/bosses (handled in combat)
   const heavyHunterBonus = (u.heavy_hunter || 0) * 0.35;
 
-  // Crit multiplier (from Crit Core and Super Crit)
-  let critMultiplier = 2;
-  if (u.super_crit || u.crit_core) {
-    if (u.super_crit) critMultiplier = 3;
-    if (u.crit_core) critMultiplier += 0.5; // +50% crit damage = 1.5x more
-  }
+  // Crit multiplier
+  let critMultiplier = (u.super_crit || 0) > 0 ? 3 : 2;
+  if (u.crit_core) critMultiplier *= 1.5;
 
   // Collect status effects to apply on hit
   const effects = [];
-  if (u.fire)   effects.push({ type: 'fire',   stacks: u.fire });
-  if (u.shock)  effects.push({ type: 'shock',  stacks: u.shock });
+  if (u.fire) effects.push({ type: 'fire', stacks: u.fire });
+  if (u.shock) effects.push({ type: 'shock', stacks: u.shock });
   if (u.freeze) effects.push({ type: 'freeze', stacks: u.freeze });
 
   return {
-    damage:           Math.round(damage),
+    damage: Math.round(damage),
     fireInterval,
     projectileCount,
     critChance,
@@ -448,41 +473,81 @@ export function getWeaponStats(upgrades, globalUpgrades = {}) {
     vampiricInterval,
     fireWeakenMult,
     effects,
-    ricochetBounces:  u.ricochet || 0,
+    ricochetBounces: u.ricochet || 0,
+    weaponType,
 
     // Lightning stats
-    lightning:        weaponType === WEAPON_TYPES.LIGHTNING,
-    lightningRange,
-    lightningDamage,
-    lightningTickInterval: weaponType === WEAPON_TYPES.LIGHTNING ? Math.max(0.08, 0.2 / (1 + (u.barrel || 0) * 0.15)) : 0.2,
-    lightningChainTargets,
-    lightningTesla:   (u.lightning_tesla || 0) > 0,
+    lightning: (u.lightning || 0) > 0,
+    lightningRange: 8 + (u.lightning || 0) * 2 + (u.chain_lightning || 0) * 4 + (u.its_electric || 0) * 2 + (u.tesla_coil || 0) * 2,
+    lightningDamage: 10 + (u.lightning || 0) * 5 + (u.chain_lightning || 0) * 5 + (u.tesla_coil || 0) * 5,
+    lightningTickInterval: (u.lightning || 0) > 0 ? Math.max(0.08, 0.2 / (1 + (u.barrel || 0) * 0.15)) : 0.2,
 
     // Charge shot stats
-    chargeShot:       weaponType === WEAPON_TYPES.CHARGE,
-    chargeTime,
-    chargeDamageMult,
-    chargeExcess:     (u.charge_excess || 0) > 0,
+    chargeShot: (u.charge_shot || 0) > 0,
+    chargeSpeedMultiplier: u.quick_charge ? 2.0 : 1.0,
+    chargeDamageMultiplier: u.death_ray ? 6.0 : 3.0,
 
     // Plasma stats
-    plasma:           weaponType === WEAPON_TYPES.PLASMA,
-    plasmaRampDamage,
+    plasmaCarbine: (u.plasma_carbine || 0) > 0,
+    damageRampUp: (u.plasma_carbine || 0) > 0,
+    damageRampUpMax: u.hold_together ? 3.0 : 2.0,
 
     // Seeker stats
-    seeker:           weaponType === WEAPON_TYPES.SEEKER,
-    seekerHomingStrength,
+    seekerBurst: (u.seeker_burst || 0) > 0,
+    homing: (u.seeker_burst || 0) > 0,
+    homingRange: 15,
+    excessHeat: u.excess_heat || false,
 
-    // New upgrades
-    executeBonus,
-    reflexBonus,
-    novaTipInterval,
-    siphonKills,
-    siphonCooldownReduction,
+    // Universal upgrades
+    execute: (u.execute || 0) > 0,
+    executeDamageMultiplier: 1.4,
+    magnetic: (u.magnetic || 0) > 0,
+    reflex: (u.reflex || 0) > 0,
+    reflexFireRateMultiplier: 0.5,
+    reflexDuration: 2000,
+    reflexCooldown: 10000,
+    novaTip: (u.nova_tip || 0) > 0,
+    novaTipInterval: 12,
+    novaTipDamage: 60,
+    siphon: (u.siphon || 0) > 0,
+    siphonKillInterval: 15,
+    siphonCooldownReduction: 0.25,
+
+    // RARE upgrades
+    volatile: (u.volatile || 0) > 0,
+    volatileDamage: 30,
+    volatileRadius: 2.0,
+    secondWind: (u.second_wind || 0) > 0,
+    cooldownTuner: (u.cooldown_tuner || 0) > 0,
+    altCooldownMultiplier: u.cooldown_tuner ? 0.7 : 1.0,
+
+    // EPIC upgrades
+    neonOverdrive: (u.neon_overdrive || 0) > 0,
+    neonOverdriveKillThreshold: 30,
+    neonOverdriveDuration: 8000,
+    neonOverdriveDamageMultiplier: 1.2,
+    neonOverdriveFireRateMultiplier: 0.833,
+    heavyHunter: (u.heavy_hunter || 0) > 0,
+    heavyHunterDamageMultiplier: 1.35,
     heavyHunterBonus,
-    magnetic:         (u.magnetic || 0) > 0,
+
+    // ULTRA upgrades
+    timeLord: (u.time_lord || 0) > 0,
+    timeLordSlowDuration: 5000,
+    timeLordSlowFactor: 0.3,
+    deathAura: (u.death_aura || 0) > 0,
+    deathAuraRadius: 3.0,
+    deathAuraDamage: 5,
+    deathAuraTickInterval: 500,
+    infinityLoop: (u.infinity_loop || 0) > 0,
+    infinityLoopInterval: 10000,
+    infinityLoopPowerMultiplier: 0.4,
+    hyperCrit: (u.hyper_crit || 0) > 0,
+    hyperCritShockwaveRadius: 3.0,
+    hyperCritShockwaveDamage: 40,
 
     // Global upgrades (from game.js)
-    godCaliber:       g.god_caliber || false,
+    godCaliber: g.god_caliber || false,
     soulHarvestKills: g.soul_harvest_kills || 0,
   };
 }
