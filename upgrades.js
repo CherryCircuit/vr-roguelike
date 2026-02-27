@@ -4,6 +4,16 @@
 //  from the player's stacked upgrades.
 // ============================================================
 
+// ── Weapon Type Enum ──────────────────────────────────────
+export const WEAPON_TYPES = {
+  STANDARD: 'standard',
+  BUCKSHOT: 'buckshot',
+  LIGHTNING: 'lightning',
+  CHARGE: 'charge',
+  PLASMA: 'plasma',
+  SEEKER: 'seeker',
+};
+
 export const UPGRADE_POOL = [
   { id: 'scope', name: 'Scope', desc: 'Damage +10 per stack', color: '#00ff44' },
   { id: 'barrel', name: 'Barrel', desc: 'Fire rate +15%', color: '#ffaa00' },
@@ -35,27 +45,27 @@ export const UPGRADE_POOL = [
   { id: 'siphon', name: 'Siphon', desc: 'Every 15 kills reduces ALT cooldown by 25%', color: '#aa88ff' },
   
   // Standard Blaster specific
-  { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#00ffff' },
-  
+  { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#00ffff', requiresWeapon: 'STANDARD' },
+
   // Buckshot specific
-  { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800' },
-  { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800' },
-  { id: 'duck_hunt', name: 'Duck Hunt', desc: 'Buckshot: Critical hits stun', color: '#ff8800' },
-  
+  { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800', requiresWeapon: 'BUCKSHOT' },
+  { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800', requiresWeapon: 'BUCKSHOT' },
+  { id: 'duck_hunt', name: 'Duck Hunt', desc: 'Buckshot: Critical hits stun', color: '#ff8800', requiresWeapon: 'BUCKSHOT' },
+
   // Lightning Rod specific
-  { id: 'its_electric', name: 'It\'s Electric!', desc: 'Lightning Rod: Chains to +2 enemies', color: '#ff00ff' },
-  { id: 'tesla_coil', name: 'Tesla Coil', desc: 'Lightning Rod: +50% damage, +20% range', color: '#ff00ff' },
-  
+  { id: 'its_electric', name: 'It\'s Electric!', desc: 'Lightning Rod: Chains to +2 enemies', color: '#ff00ff', requiresWeapon: 'LIGHTNING' },
+  { id: 'tesla_coil', name: 'Tesla Coil', desc: 'Lightning Rod: +50% damage, +20% range', color: '#ff00ff', requiresWeapon: 'LIGHTNING' },
+
   // Charge Cannon specific
-  { id: 'quick_charge', name: 'Ain\'t Nobody Got Time For That', desc: 'Charge Cannon: 2x charge speed', color: '#ff4444' },
-  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Adds fire DoT to charged shots', color: '#ff4444' },
-  { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444' },
-  
+  { id: 'quick_charge', name: 'Ain\'t Nobody Got Time For That', desc: 'Charge Cannon: 2x charge speed', color: '#ff4444', requiresWeapon: 'CHARGE' },
+  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Adds fire DoT to charged shots', color: '#ff4444', requiresWeapon: 'CHARGE' },
+  { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444', requiresWeapon: 'CHARGE' },
+
   // Plasma Carbine specific
-  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: Faster ramp-up, higher max', color: '#88ff88' },
-  
+  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: Faster ramp-up, higher max', color: '#88ff88', requiresWeapon: 'PLASMA' },
+
   // Seeker Burst specific
-  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff' },
+  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff', requiresWeapon: 'SEEKER' },
 ];
 
 /** RARE upgrades offered after Level 5 boss */
@@ -102,10 +112,47 @@ export function getRandomSpecialUpgrades(count) {
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }
 
-/** Pick `count` random upgrades from the pool, optionally excluding some IDs */
-export function getRandomUpgrades(count, excludeIds = []) {
+/**
+ * Determine the weapon type from the player's current upgrades.
+ * @param {Object} upgrades  e.g. { buckshot: 1, scope: 2 }
+ * @returns {string} Weapon type from WEAPON_TYPES
+ */
+export function getWeaponType(upgrades) {
+  const u = upgrades || {};
+  if (u.buckshot) return WEAPON_TYPES.BUCKSHOT;
+  if (u.lightning) return WEAPON_TYPES.LIGHTNING;
+  if (u.charge_shot) return WEAPON_TYPES.CHARGE;
+  if (u.plasma_carbine) return WEAPON_TYPES.PLASMA;
+  if (u.seeker_burst) return WEAPON_TYPES.SEEKER;
+  return WEAPON_TYPES.STANDARD;
+}
+
+/**
+ * Pick `count` random upgrades from the pool, optionally excluding some IDs.
+ * CRITICAL FIX: Filter out weapon-specific upgrades if player doesn't have that weapon.
+ * @param {number} count - Number of upgrades to return
+ * @param {Array} excludeIds - IDs to exclude
+ * @param {Object} currentUpgrades - Player's current upgrades for this hand (to check weapon type)
+ */
+export function getRandomUpgrades(count, excludeIds = [], currentUpgrades = {}) {
   const excludeSet = new Set(excludeIds);
-  const pool = UPGRADE_POOL.filter(u => !excludeSet.has(u.id));
+  const currentWeaponType = getWeaponType(currentUpgrades);
+
+  const pool = UPGRADE_POOL.filter(u => {
+    // Exclude if in excludeSet
+    if (excludeSet.has(u.id)) return false;
+
+    // If upgrade requires a specific weapon, check if player has it
+    if (u.requiresWeapon) {
+      const requiredType = WEAPON_TYPES[u.requiresWeapon.toUpperCase()];
+      if (currentWeaponType !== requiredType) {
+        return false; // Don't offer weapon-specific upgrades if player doesn't have that weapon
+      }
+    }
+
+    return true;
+  });
+
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }

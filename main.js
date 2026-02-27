@@ -1149,8 +1149,12 @@ function debugJumpToLevel(targetLevel) {
       const special = getRandomSpecialUpgrades(1)[0];
       if (special) addUpgrade(special.id, hand(lvl, 0));
     } else {
-      const upgrades = getRandomUpgrades(3);
-      upgrades.forEach((u, idx) => addUpgrade(u.id, hand(lvl, idx)));
+      // For each upgrade, determine which hand it goes to and filter accordingly
+      for (let idx = 0; idx < 3; idx++) {
+        const h = hand(lvl, idx);
+        const upgrade = getRandomUpgrades(1, [], game.upgrades[h])[0];
+        if (upgrade) addUpgrade(upgrade.id, h);
+      }
     }
   }
 
@@ -1231,7 +1235,7 @@ function showUpgradeScreen() {
     console.log(`[game] Both hands have ${leftShotType}, excluding from upgrade pool`);
   }
 
-  pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3, excludeIds);
+  pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3) : getRandomUpgrades(3, excludeIds, game.upgrades[upgradeHand]);
   showUpgradeCards(pendingUpgrades, camera.position, upgradeHand);
   if (game.justBossKill) game.justBossKill = false;
   upgradeSelectionCooldown = 1.5; // prevent instant selection
@@ -2018,7 +2022,8 @@ function selectUpgrade(controller) {
 function selectUpgradeAt(index) {
   if (upgradeSelectionCooldown > 0) return;
 
-  const upgrades = getRandomUpgrades(3);
+  // Use the already-shown pending upgrades instead of regenerating
+  const upgrades = pendingUpgrades;
   if (index >= 0 && index < upgrades.length) {
     const upgrade = upgrades[index];
     // Randomly assign to left or right hand
