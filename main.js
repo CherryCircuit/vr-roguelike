@@ -1917,6 +1917,19 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       game.kills++;
       game.totalKills++;
       game.killsWithoutHit++;
+
+function disposeProjectile(proj) {
+  if (proj.children && proj.children.length > 0) {
+    for (const child of proj.children) {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    }
+  } else {
+    if (proj.geometry) proj.geometry.dispose();
+    if (proj.material) proj.material.dispose();
+  }
+  disposeProjectile(proj);
+}
       addScore(destroyData.scoreValue);
 
       // Track kills for hand stats
@@ -2094,7 +2107,7 @@ function updateProjectiles(dt) {
 
     // Remove expired projectiles
     if (age > proj.userData.lifetime) {
-      scene.remove(proj);
+      disposeProjectile(proj);
       projectiles.splice(i, 1);
       continue;
     }
@@ -2112,7 +2125,7 @@ function updateProjectiles(dt) {
       if (result && result.boss) {
         handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex);
         if (!proj.userData.stats.piercing) {
-          scene.remove(proj);
+          disposeProjectile(proj);
           projectiles.splice(i, 1);
         }
       } else if (result && result.index !== undefined && !proj.userData.hitEnemies.has(result.index)) {
@@ -2128,7 +2141,7 @@ function updateProjectiles(dt) {
 
         // Remove projectile if not piercing
         if (!proj.userData.stats.piercing) {
-          scene.remove(proj);
+          disposeProjectile(proj);
           projectiles.splice(i, 1);
         }
       } else {
@@ -2138,7 +2151,7 @@ function updateProjectiles(dt) {
           spawnDamageNumber(hits[0].point, proj.userData.stats.damage, '#ff8800');
           if (mResult.killed) playExplosionSound();
           if (!proj.userData.stats.piercing) {
-            scene.remove(proj);
+            disposeProjectile(proj);
             projectiles.splice(i, 1);
           }
         }
