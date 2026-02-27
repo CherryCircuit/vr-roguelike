@@ -16,7 +16,7 @@ import {
   playSlowMoSound, playSlowMoReverseSound,
   startLightningSound, stopLightningSound,
   playMusic, stopMusic, getMusicFrequencyData, playKillsAlertSound,
-  playBossTeleportDisappear, playBossTeleportReappear, playBossExplosion, playBossStunned
+  playBossTeleportReappear, playBossExplosion, playBossStunned
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -189,7 +189,6 @@ function init() {
   initDesktopControls(scene, camera, renderer);
 
   // Expose audio functions to window for enemies module
-  window.playBossTeleportDisappear = playBossTeleportDisappear;
   window.playBossTeleportReappear = playBossTeleportReappear;
   window.playBossExplosion = playBossExplosion;
   window.playBossStunned = playBossStunned;
