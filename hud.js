@@ -4,7 +4,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { State, getComboMultiplier } from './game.js';
+import { State, game, getComboMultiplier } from './game.js';
 
 // ── Module state ───────────────────────────────────────────
 let sceneRef, cameraRef;
