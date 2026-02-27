@@ -109,30 +109,28 @@ export const UPGRADE_POOL = [
   { id: 'nova_tip', name: 'Nova Tip', desc: 'Every 12th shot detonates AoE (60 damage)', color: '#ff44ff' },
   { id: 'siphon', name: 'Siphon', desc: 'Every 15 kills reduces ALT cooldown by 25%', color: '#aa88ff' },
   
-  // Standard Blaster specific
+  // Standard Blaster specific (standard is default, no requirement)
   { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#00ffff' },
   
   // Buckshot specific
-  { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800' },
-  { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800' },
-  { id: 'duck_hunt', name: 'Duck Hunt', desc: 'Buckshot: Critical hits stun', color: '#ff8800' },
+  { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800', requiresWeapon: 'buckshot' },
+  { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800', requiresWeapon: 'buckshot' },
+  { id: 'duck_hunt', name: 'Duck Hunt', desc: 'Buckshot: Critical hits stun', color: '#ff8800', requiresWeapon: 'buckshot' },
   
   // Lightning Rod specific
-  { id: 'its_electric', name: "It's Electric!", desc: 'Lightning Rod: Chains to +2 enemies', color: '#ff00ff' },
-  { id: 'tesla_coil', name: 'Tesla Coil', desc: 'Lightning Rod: +50% damage, +20% range', color: '#ff00ff' },
+  { id: 'its_electric', name: "It's Electric!", desc: 'Lightning Rod: Chains to +2 enemies', color: '#ff00ff', requiresWeapon: 'lightning' },
+  { id: 'tesla_coil', name: 'Tesla Coil', desc: 'Lightning Rod: +50% damage, +20% range', color: '#ff00ff', requiresWeapon: 'lightning' },
   
   // Charge Cannon specific
-  { id: 'quick_charge', name: "Ain't Nobody Got Time For That", desc: 'Charge Cannon: 2x charge speed', color: '#ff4444' },
-  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Adds fire DoT to charged shots', color: '#ff4444' },
-  { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444' },
+  { id: 'quick_charge', name: "Ain't Nobody Got Time For That", desc: 'Charge Cannon: 2x charge speed', color: '#ff4444', requiresWeapon: 'charge' },
+  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Adds fire DoT to charged shots', color: '#ff4444', requiresWeapon: 'charge' },
+  { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444', requiresWeapon: 'charge' },
   
   // Plasma Carbine specific
-  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: Faster ramp-up, higher max', color: '#88ff88' },
+  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: Faster ramp-up, higher max', color: '#88ff88', requiresWeapon: 'plasma' },
   
   // Seeker Burst specific
-  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff' },
-];
-
+  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff', requiresWeapon: 'seeker' },
 /** RARE upgrades offered after Level 5 boss */
 export const RARE_UPGRADE_POOL = [
   { id: 'add_heart', name: 'ADD 1 HEART', desc: 'Max health +1', color: '#ff4488', tier: 'rare', level: 5 },
