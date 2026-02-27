@@ -46,8 +46,8 @@ import {
 } from './scoreboard.js';
 import {
   initDesktopControls, enable as enableDesktop, disable as disableDesktop,
-  toggleMode, isEnabled: isDesktopEnabled,
-  update: updateDesktop, getWeaponState: getDesktopWeaponState,
+  toggleMode, isEnabled as isDesktopEnabled,
+  update as updateDesktop, getWeaponState as getDesktopWeaponState,
   getVirtualController, getControlScheme
 } from './desktop-controls.js';
 
