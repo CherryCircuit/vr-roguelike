@@ -14,10 +14,10 @@ export const State = {
   SCOREBOARD: 'scoreboard',
   COUNTRY_SELECT: 'country_select',
   REGIONAL_SCORES: 'regional_scores',
-  // [Power Outage Update] #3: Boss alert state before boss spawns
   BOSS_ALERT: 'boss_alert',
-  // [Power Outage Update] #6: Slow-mo level complete finale
   LEVEL_COMPLETE_SLOWMO: 'level_complete_slowmo',
+  READY_SCREEN: 'ready_screen',
+  LEVEL_INTRO: 'level_intro',
 };
 
 // ── Enemy types available per level ────────────────────────
@@ -35,17 +35,18 @@ export function getBossTier(level) {
   return level / 5; // 1..4
 }
 
-// Pool of 5 boss ids per tier (picked at random for that level)
-const BOSS_POOL_TIER1 = ['grave_voxel', 'iron_sentry', 'chrono_wraith', 'siege_ram', 'core_guardian'];
-const BOSS_POOL_TIER2 = ['grave_voxel2', 'iron_sentry2', 'chrono_wraith2', 'siege_ram2', 'core_guardian2'];
-const BOSS_POOL_TIER3 = ['grave_voxel3', 'iron_sentry3', 'chrono_wraith3', 'siege_ram3', 'core_guardian3'];
-const BOSS_POOL_TIER4 = ['grave_voxel4', 'iron_sentry4', 'chrono_wraith4', 'siege_ram4', 'core_guardian4'];
+// Pool of bosses per tier (randomly picked for that level)
+const BOSS_POOLS = {
+  1: ['chrono_wraith'], // Tier 1 (Level 5)
+  2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'], // Tier 2 (Level 10)
+  3: ['chrono_wraith'], // Tier 3 (Level 15)
+  4: ['chrono_wraith'], // Tier 4 (Level 20)
+};
 
 export function getRandomBossIdForLevel(level) {
   const tier = getBossTier(level);
   if (tier === 0) return null;
-  const pools = { 1: BOSS_POOL_TIER1, 2: BOSS_POOL_TIER2, 3: BOSS_POOL_TIER3, 4: BOSS_POOL_TIER4 };
-  const pool = pools[tier];
+  const pool = BOSS_POOLS[tier];
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -53,22 +54,20 @@ export function getRandomBossIdForLevel(level) {
 function buildLevel(n) {
   let killTarget;
   const isBoss = n % 5 === 0;
-  if (isBoss) killTarget = 1;    // boss level: kill the boss
-  else if (n === 20) killTarget = 50;   // (non-boss final would be 50)
-  else if (n <= 5) killTarget = 12 + n * 3;          // 15–27
-  else if (n <= 10) killTarget = 25 + (n - 5) * 8;   // 33–65
-  else if (n <= 15) killTarget = 65 + (n - 10) * 15;  // 80–140
-  else killTarget = 140 + (n - 15) * 25; // 165–240
+  if (isBoss) killTarget = 1;
+  else if (n === 20) killTarget = 50;
+  else if (n <= 5) killTarget = 12 + n * 3;
+  else if (n <= 10) killTarget = 25 + (n - 5) * 8;
+  else if (n <= 15) killTarget = 65 + (n - 10) * 15;
+  else killTarget = 140 + (n - 15) * 25;
 
   return {
     level: n,
     isBoss,
     killTarget,
     hpMultiplier: 1 + Math.pow(n - 1, 1.5) * 0.15,
-    // OLD: speedMultiplier: 1 + (n - 1) * 0.09,
-    speedMultiplier: (1 + (n - 1) * 0.09) * 1.75,  // +75% enemy speed
-    // OLD: spawnInterval: Math.max(0.4, 2.0 - n * 0.08),
-    spawnInterval: Math.max(0.25, (2.0 - n * 0.08) * 0.57),  // +75% spawn rate
+    speedMultiplier: (1 + (n - 1) * 0.09) * 1.75,
+    spawnInterval: Math.max(0.25, (2.0 - n * 0.08) * 0.57),
     enemyTypes: getEnemyTypes(n),
     airSpawns: n >= 6,
   };
@@ -86,80 +85,70 @@ export const game = {
   totalKills: 0,
   score: 0,
   nukes: 3,
-  upgrades: { left: {}, right: {} },  // separate per hand
+  // Weapon system
+  mainWeapon: { left: 'standard_blaster', right: 'standard_blaster' },
+  altWeapon: { left: null, right: null },
+  altCooldowns: { left: 0, right: 0 },
+  upgrades: { left: {}, right: {} },
+  mainWeaponLocked: { left: false, right: false },
+  
   stateTimer: 0,
   spawnTimer: 0,
-  killsWithoutHit: 0,    // for combo tracking
+  killsWithoutHit: 0,
 
-  // Per-hand statistics for holographic display
+
   handStats: {
     left: { kills: 0, totalDamage: 0 },
     right: { kills: 0, totalDamage: 0 }
   },
 
-  // After boss kill, show special upgrades
   justBossKill: false,
+  nextUpgradeHand: 'left',  // Alternating hand for upgrades (left → right → left...)
 
-  // [Instruction 1] First weapon offer tracking for side-grade enforcement
   firstWeaponOffered: false,
-  nextUpgradeHand: null,  // 'left' or 'right', alternates after each upgrade
+  nextUpgradeHand: null,
 
-  // [Instruction 1] Alt weapon system (rare drops, per-hand)
+  // Alt weapon system (rare drops, per-hand)
   altWeapons: {
-    left: null,   // Alt weapon ID or null (rocket, helper_bot, shield, gravity_well, ion_mortar, hologram)
+    left: null,
     right: null
   },
-  altCooldowns: {
-    left: 0,      // Cooldown timer in seconds
-    right: 0
-  },
   altReadySoundPlayed: {
-    left: true,   // Track if "ready" sound played for this hand
+    left: true,
     right: true
   },
 
-  // Scoreboard
   finalScore: 0,
   finalLevel: 0,
   accuracyStreak: 0,
 
-  // ── GLOBAL UPGRADES (from Babylon.js merge) ─────────────────
-  // These apply to both hands and persist across levels
+  // Global upgrades (apply to both hands, persist across levels)
   globalUpgrades: {
-    // RARE (Tier 1)
-    volatile: false,           // Enemies explode on death
-    second_wind: false,        // Survive death once
-    second_wind_used: false,   // Has Second Wind been consumed?
-
-    // EPIC (Tier 2)
-    neon_overdrive: false,           // Has the upgrade
-    neon_overdrive_active: false,    // Currently in buff state
-    neon_overdrive_kills: 0,         // Kill counter toward activation
-    neon_overdrive_timer: 0,         // Time remaining in buff
-
-    // ULTRA (Tier 3)
-    time_lord: false,                // Alt weapon slows time
-    time_lord_active: false,         // Time slow currently active
-    time_lord_timer: 0,              // Duration remaining
-    death_aura: false,               // Continuous close-range damage
-    infinity_loop: false,            // Repeat last alt weapon
-    infinity_loop_alt: null,         // Last alt weapon used
-    infinity_loop_timer: 0,          // Timer for auto-fire
-
-    // LEGENDARY (Tier 4)
-    god_caliber: false,              // 3x all damage
-    chrono_shift: false,             // Teleport on damage
-    chrono_shift_cooldown: 0,        // Cooldown timer
-    final_form: false,               // Start levels at max power
-    soul_harvest: false,             // Kills add permanent damage
-    soul_harvest_kills: 0,           // Total kills with soul harvest
-    cosmic_shield: false,            // Block damage periodically
-    cosmic_shield_cooldown: 0,       // Cooldown timer
-    cosmic_shield_active: false,     // Currently blocking
-
-    // Time slow effect (for Time Lord)
+    volatile: false,
+    second_wind: false,
+    second_wind_used: false,
+    neon_overdrive: false,
+    neon_overdrive_active: false,
+    neon_overdrive_kills: 0,
+    neon_overdrive_timer: 0,
+    time_lord: false,
+    time_lord_active: false,
+    time_lord_timer: 0,
+    death_aura: false,
+    infinity_loop: false,
+    infinity_loop_alt: null,
+    infinity_loop_timer: 0,
+    god_caliber: false,
+    chrono_shift: false,
+    chrono_shift_cooldown: 0,
+    final_form: false,
+    soul_harvest: false,
+    soul_harvest_kills: 0,
+    cosmic_shield: false,
+    cosmic_shield_cooldown: 0,
+    cosmic_shield_active: false,
     time_slow_active: false,
-    time_slow_multiplier: 1.0,       // 1.0 = normal, 0.25 = 75% slow
+    time_slow_multiplier: 1.0,
   },
 };
 
@@ -173,7 +162,12 @@ export function resetGame() {
     totalKills: 0,
     score: 0,
     nukes: 3,
+    mainWeapon: { left: 'standard_blaster', right: 'standard_blaster' },
+    altWeapon: { left: null, right: null },
+    altCooldowns: { left: 0, right: 0 },
     upgrades: { left: {}, right: {} },
+    mainWeaponLocked: { left: false, right: false },
+
     stateTimer: 0,
     spawnTimer: 0,
     killsWithoutHit: 0,
@@ -182,16 +176,15 @@ export function resetGame() {
       right: { kills: 0, totalDamage: 0 }
     },
     justBossKill: false,
-    // [Instruction 1] Reset first weapon offer tracking
     firstWeaponOffered: false,
-    nextUpgradeHand: null,
-    // [Instruction 1] Reset alt weapon state
+    nextUpgradeHand: 'left',
     altWeapons: { left: null, right: null },
-    altCooldowns: { left: 0, right: 0 },
     altReadySoundPlayed: { left: true, right: true },
     finalScore: 0,
     finalLevel: 0,
     accuracyStreak: 0,
+    _levelConfig: null,
+    _combo: 1,
   });
   resetGlobalUpgrades();
 }
@@ -201,7 +194,7 @@ export function getLevelConfig() {
 }
 
 export function addScore(points) {
-  // Combo multiplier: every 10 accuracy streak hits raises it (max 5×)
+
   const combo = getComboMultiplier();
   game.score += Math.floor(points * combo);
 }
@@ -212,7 +205,7 @@ export function getComboMultiplier() {
 
 export function damagePlayer(amount) {
   game.health = Math.max(0, game.health - amount);
-  game.killsWithoutHit = 0;   // reset combo
+  game.killsWithoutHit = 0;
   return game.health <= 0;
 }
 
@@ -225,73 +218,31 @@ export function addUpgrade(id, hand) {
   game.upgrades[h][id] = (game.upgrades[h][id] || 0) + 1;
 }
 
-// ── GLOBAL UPGRADE HELPERS (from Babylon.js merge) ─────────
+// ── GLOBAL UPGRADE HELPERS ─────────────────────────────────
 
-/**
- * Apply a global upgrade by ID (for upgrades with global: true)
- */
 export function addGlobalUpgrade(id) {
   const g = game.globalUpgrades;
-
   switch (id) {
-    // RARE (Tier 1)
     case 'add_heart':
       game.maxHealth += 2;
       game.health = Math.min(game.health + 2, game.maxHealth);
       break;
-    case 'volatile':
-      g.volatile = true;
-      break;
-    case 'second_wind':
-      g.second_wind = true;
-      g.second_wind_used = false;
-      break;
-
-    // EPIC (Tier 2)
-    case 'neon_overdrive':
-      g.neon_overdrive = true;
-      g.neon_overdrive_kills = 0;
-      break;
-
-    // ULTRA (Tier 3)
-    case 'time_lord':
-      g.time_lord = true;
-      break;
-    case 'death_aura':
-      g.death_aura = true;
-      break;
-    case 'infinity_loop':
-      g.infinity_loop = true;
-      g.infinity_loop_timer = 0;
-      break;
-
-    // LEGENDARY (Tier 4)
-    case 'god_caliber':
-      g.god_caliber = true;
-      break;
-    case 'chrono_shift':
-      g.chrono_shift = true;
-      g.chrono_shift_cooldown = 0;
-      break;
-    case 'final_form':
-      g.final_form = true;
-      break;
-    case 'soul_harvest':
-      g.soul_harvest = true;
-      break;
-    case 'cosmic_shield':
-      g.cosmic_shield = true;
-      g.cosmic_shield_cooldown = 0;
-      break;
+    case 'volatile': g.volatile = true; break;
+    case 'second_wind': g.second_wind = true; g.second_wind_used = false; break;
+    case 'neon_overdrive': g.neon_overdrive = true; g.neon_overdrive_kills = 0; break;
+    case 'time_lord': g.time_lord = true; break;
+    case 'death_aura': g.death_aura = true; break;
+    case 'infinity_loop': g.infinity_loop = true; g.infinity_loop_timer = 0; break;
+    case 'god_caliber': g.god_caliber = true; break;
+    case 'chrono_shift': g.chrono_shift = true; g.chrono_shift_cooldown = 0; break;
+    case 'final_form': g.final_form = true; break;
+    case 'soul_harvest': g.soul_harvest = true; break;
+    case 'cosmic_shield': g.cosmic_shield = true; g.cosmic_shield_cooldown = 0; break;
   }
 }
 
-/**
- * Check if a global upgrade is active
- */
 export function hasGlobalUpgrade(id) {
   const g = game.globalUpgrades;
-
   switch (id) {
     case 'volatile': return g.volatile;
     case 'second_wind': return g.second_wind && !g.second_wind_used;
@@ -309,9 +260,6 @@ export function hasGlobalUpgrade(id) {
   }
 }
 
-/**
- * Get global upgrades state for weapon stats calculation
- */
 export function getGlobalUpgradesState() {
   const g = game.globalUpgrades;
   return {
@@ -330,9 +278,6 @@ export function getGlobalUpgradesState() {
   };
 }
 
-/**
- * Reset global upgrades (called on new game)
- */
 export function resetGlobalUpgrades() {
   game.globalUpgrades = {
     volatile: false,
@@ -361,4 +306,27 @@ export function resetGlobalUpgrades() {
     time_slow_active: false,
     time_slow_multiplier: 1.0,
   };
+}
+
+// ── Weapon System Helpers ───────────────────────────────────
+
+export function setMainWeapon(weaponId, hand) {
+  const h = hand || 'left';
+  game.mainWeapon[h] = weaponId;
+  game.mainWeaponLocked[h] = true;
+}
+
+export function setAltWeapon(weaponId, hand) {
+  const h = hand || 'left';
+  game.altWeapon[h] = weaponId;
+}
+
+export function getNextUpgradeHand() {
+  const hand = game.nextUpgradeHand;
+  game.nextUpgradeHand = hand === 'left' ? 'right' : 'left';
+  return hand;
+}
+
+export function needsMainWeaponChoice() {
+  return game.level === 1 && !game.mainWeaponLocked.left && !game.mainWeaponLocked.right;
 }
