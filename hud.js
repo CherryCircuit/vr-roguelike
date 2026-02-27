@@ -19,6 +19,7 @@ const nameEntryGroup = new THREE.Group();
 const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
 const readyGroup = new THREE.Group();
+const altTutorialGroup = new THREE.Group();
 
 // HUD element references
 let heartsSprite = null;
@@ -27,6 +28,8 @@ let levelSprite = null;
 let scoreSprite = null;
 let comboSprite = null;
 let fpsSprite = null;
+let leftAltCooldownSprite = null;
+let rightAltCooldownSprite = null;
 
 // Damage numbers
 const damageNumbers = [];
@@ -261,7 +264,7 @@ export function initHUD(camera, scene) {
   scene.add(hudGroup);
 
   // ── UI Groups (initially hidden) ──
-  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup].forEach(g => {
+  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup, altTutorialGroup].forEach(g => {
     g.visible = false;
     g.rotation.set(0, 0, 0);
     scene.add(g);
@@ -497,6 +500,17 @@ function createHUDElements() {
   comboSprite.position.set(1.5, -0.45, 0);  // Moved down proportionally
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
+
+  // Alt weapon cooldown indicators - left and right sides
+  leftAltCooldownSprite = makeSprite('', { fontSize: 32, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 1.2 });
+  leftAltCooldownSprite.position.set(-2.2, -0.6, 0);
+  leftAltCooldownSprite.visible = false;
+  hudGroup.add(leftAltCooldownSprite);
+
+  rightAltCooldownSprite = makeSprite('', { fontSize: 32, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 1.2 });
+  rightAltCooldownSprite.position.set(2.2, -0.6, 0);
+  rightAltCooldownSprite.visible = false;
+  hudGroup.add(rightAltCooldownSprite);
 }
 
 export function showHUD() {
@@ -558,6 +572,52 @@ export function updateHUD(gameState) {
     updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 * pulse });
   } else {
     comboSprite.visible = false;
+  }
+
+  // Alt weapon cooldown indicators
+  updateAltCooldownIndicators(gameState);
+}
+
+/**
+ * Update alt weapon cooldown indicators on HUD
+ */
+function updateAltCooldownIndicators(gameState) {
+  const now = performance.now();
+
+  // Update left hand alt cooldown
+  const leftAltId = gameState.altWeapon.left;
+  if (leftAltId) {
+    leftAltCooldownSprite.visible = true;
+    const leftCooldownEnd = gameState.altCooldowns.left || 0;
+    if (now >= leftCooldownEnd) {
+      // Ready - show pulsing indicator
+      const pulse = 1.0 + Math.sin(now * 0.008) * 0.15;
+      updateSpriteText(leftAltCooldownSprite, 'ALT READY', { color: '#00ff00', glow: true, glowColor: '#00ff00', scale: 0.14 * pulse });
+    } else {
+      // On cooldown - show timer
+      const remaining = Math.ceil((leftCooldownEnd - now) / 1000);
+      updateSpriteText(leftAltCooldownSprite, `ALT ${remaining}s`, { color: '#ff4444', scale: 0.14 });
+    }
+  } else {
+    leftAltCooldownSprite.visible = false;
+  }
+
+  // Update right hand alt cooldown
+  const rightAltId = gameState.altWeapon.right;
+  if (rightAltId) {
+    rightAltCooldownSprite.visible = true;
+    const rightCooldownEnd = gameState.altCooldowns.right || 0;
+    if (now >= rightCooldownEnd) {
+      // Ready - show pulsing indicator
+      const pulse = 1.0 + Math.sin(now * 0.008) * 0.15;
+      updateSpriteText(rightAltCooldownSprite, 'ALT READY', { color: '#00ff00', glow: true, glowColor: '#00ff00', scale: 0.14 * pulse });
+    } else {
+      // On cooldown - show timer
+      const remaining = Math.ceil((rightCooldownEnd - now) / 1000);
+      updateSpriteText(rightAltCooldownSprite, `ALT ${remaining}s`, { color: '#ff4444', scale: 0.14 });
+    }
+  } else {
+    rightAltCooldownSprite.visible = false;
   }
 }
 
@@ -634,12 +694,13 @@ function createUpgradeCard(upgrade, position) {
   group.position.copy(position);
   group.userData.upgradeId = upgrade.id;
 
-  // Card background plane
+  // Card background plane - different color for alt weapons
+  const isAltWeapon = upgrade.type === 'alt';
   const cardGeo = new THREE.PlaneGeometry(0.9, 1.1);
   const cardMat = new THREE.MeshBasicMaterial({
-    color: 0x110033,
+    color: isAltWeapon ? 0x003366 : 0x110033,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.9,
     side: THREE.DoubleSide,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
@@ -647,11 +708,27 @@ function createUpgradeCard(upgrade, position) {
   card.userData.upgradeId = upgrade.id;
   group.add(card);
 
-  // Border (gold for side-grade / shot-type cards)
-  const borderColor = upgrade.sideGrade ? 0xffdd00 : (typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff));
+  // Border - distinctive cyan glow for alt weapons
+  const borderColor = isAltWeapon ? 0x00ffff :
+    upgrade.sideGrade ? 0xffdd00 :
+    (typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff));
   const borderGeo = new THREE.EdgesGeometry(cardGeo);
-  const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
+  const borderMat = new THREE.LineBasicMaterial({ color: borderColor, linewidth: isAltWeapon ? 2 : 1 });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
+
+  // Inner glow border for alt weapons
+  if (isAltWeapon) {
+    const innerGeo = new THREE.PlaneGeometry(0.8, 1.0);
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: 0x00aaff,
+      transparent: true,
+      opacity: 0.2,
+      side: THREE.DoubleSide,
+    });
+    const innerBorder = new THREE.Mesh(innerGeo, innerMat);
+    innerBorder.position.z = 0.01;
+    group.add(innerBorder);
+  }
 
   // Name text - smaller to prevent overlap
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
@@ -680,7 +757,7 @@ function createUpgradeCard(upgrade, position) {
   if (upgrade.sideGradeNote) {
     const noteSprite = makeSprite(upgrade.sideGradeNote, {
       fontSize: 16,
-      color: '#ffdd00',
+      color: isAltWeapon ? '#00ffff' : '#ffdd00',
       scale: 0.12,
       depthTest: true,
       maxWidth: 200,
@@ -689,11 +766,27 @@ function createUpgradeCard(upgrade, position) {
     group.add(noteSprite);
   }
 
-  // Simple colored sphere as icon
-  const iconMesh = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.12, 0),
-    new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff', wireframe: true }),
-  );
+  // Icon - different shape for alt weapons (star vs octahedron)
+  let iconMesh;
+  if (isAltWeapon) {
+    // Star icon for alt weapons
+    iconMesh = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.15, 0),
+      new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff' }),
+    );
+    // Add glowing wireframe overlay
+    const wireframe = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.16, 0),
+      new THREE.MeshBasicMaterial({ color: '#ffffff', wireframe: true, transparent: true, opacity: 0.5 }),
+    );
+    iconMesh.add(wireframe);
+  } else {
+    // Simple octahedron for regular upgrades
+    iconMesh = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.12, 0),
+      new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff', wireframe: true }),
+    );
+  }
   iconMesh.position.set(0, -0.35, 0.05);
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
@@ -1176,6 +1269,7 @@ function hideAll() {
   scoreboardGroup.visible = false;
   countrySelectGroup.visible = false;
   readyGroup.visible = false;
+  altTutorialGroup.visible = false;
   // Floor HUD shouldn't necessarily disappear during everything
   // Specifically don't hide it if we want it visible during upgrades
 }
@@ -1347,6 +1441,138 @@ export function hideReadyScreen() {
 }
 
 // ── Level Intro Screen ───────────────────────────────────────
+
+/**
+ * Show alt fire tutorial modal when player gets first alt weapon
+ */
+export function showAltFireTutorial() {
+  hideAll();
+  altTutorialGroup.clear();
+
+  // Position in front of player
+  altTutorialGroup.position.set(0, 1.6, -4);
+  altTutorialGroup.visible = true;
+
+  // Title
+  const titleSprite = makeSprite('NEW ABILITY UNLOCKED!', {
+    fontSize: 60,
+    color: '#00ffff',
+    glow: true,
+    glowColor: '#00ffff',
+    scale: 0.6,
+  });
+  titleSprite.position.set(0, 0.6, 0);
+  altTutorialGroup.add(titleSprite);
+
+  // Instruction
+  const instructionSprite = makeSprite('To use abilities, press the lower trigger', {
+    fontSize: 32,
+    color: '#ffffff',
+    scale: 0.3,
+    maxWidth: 300,
+  });
+  instructionSprite.position.set(0, 0.2, 0);
+  altTutorialGroup.add(instructionSprite);
+
+  // Explanation
+  const explanationSprite = makeSprite('Abilities have a cooldown, shown on the HUD', {
+    fontSize: 28,
+    color: '#aaaaaa',
+    scale: 0.25,
+    maxWidth: 280,
+  });
+  explanationSprite.position.set(0, 0.0, 0);
+  altTutorialGroup.add(explanationSprite);
+
+  // Create controller diagram
+  const controllerGroup = createControllerDiagram();
+  controllerGroup.position.set(0, -0.5, 0);
+  altTutorialGroup.add(controllerGroup);
+
+  // Press trigger to dismiss text
+  const dismissSprite = makeSprite('Press TRIGGER to continue', {
+    fontSize: 24,
+    color: '#ffdd00',
+    scale: 0.2,
+  });
+  dismissSprite.position.set(0, -1.1, 0);
+  altTutorialGroup.add(dismissSprite);
+}
+
+/**
+ * Create a stylized Quest 3 controller diagram with highlighted lower trigger
+ */
+function createControllerDiagram() {
+  const group = new THREE.Group();
+
+  // Controller body (stylized)
+  const controllerBody = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.5, 0.1),
+    new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.8 }),
+  );
+  group.add(controllerBody);
+
+  // Upper trigger (index finger) - shown in white
+  const upperTrigger = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.15, 0.06),
+    new THREE.MeshBasicMaterial({ color: 0x666666 }),
+  );
+  upperTrigger.position.set(0.19, 0.15, 0);
+  group.add(upperTrigger);
+
+  // Upper trigger label
+  const upperLabel = makeSprite('MAIN FIRE', {
+    fontSize: 16,
+    color: '#666666',
+    scale: 0.15,
+  });
+  upperLabel.position.set(0.35, 0.15, 0);
+  group.add(upperLabel);
+
+  // Lower trigger (middle finger) - HIGHLIGHTED in cyan
+  const lowerTrigger = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.12, 0.06),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 0.5 }),
+  );
+  lowerTrigger.position.set(0.19, -0.1, 0.05);
+  group.add(lowerTrigger);
+
+  // Glow effect around lower trigger
+  const triggerGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 }),
+  );
+  triggerGlow.position.set(0.19, -0.1, 0.05);
+  group.add(triggerGlow);
+
+  // Lower trigger label
+  const lowerLabel = makeSprite('ALT ABILITY', {
+    fontSize: 18,
+    color: '#00ffff',
+    glow: true,
+    glowColor: '#00ffff',
+    scale: 0.18,
+  });
+  lowerLabel.position.set(0.38, -0.1, 0.05);
+  group.add(lowerLabel);
+
+  // Grip button
+  const gripBtn = new THREE.Mesh(
+    new THREE.BoxGeometry(0.05, 0.1, 0.04),
+    new THREE.MeshBasicMaterial({ color: 0x444444 }),
+  );
+  gripBtn.position.set(-0.16, -0.05, 0);
+  group.add(gripBtn);
+
+  return group;
+}
+
+export function hideAltFireTutorial() {
+  altTutorialGroup.visible = false;
+  while (altTutorialGroup.children.length > 0) {
+    altTutorialGroup.remove(altTutorialGroup.children[0]);
+  }
+}
 
 export function showLevelIntro(level) {
   hideAll();
