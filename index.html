@@ -137,6 +137,7 @@
   <div id="console-panel" style="display:none;position:fixed;bottom:80px;left:20px;width:500px;max-height:300px;overflow-y:auto;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #ff00ff;padding:12px;font-size:12px;font-family:monospace;">
     <div style="color:#ff00ff;margin-bottom:4px;">CONSOLE OUTPUT</div>
     <div id="console-logs" style="color:#00ffff;word-break:break-all;"></div>
+    <button id="copy-log" style="position:absolute;top:8px;right:8px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;font-size:12px;">📋 Copy Log</button>
   </div>
 
   <!-- WebXR Polyfill (loaded before Three.js) -->
@@ -181,6 +182,18 @@
         consolePanel.style.display = this.checked ? 'block' : 'none';
       });
       consolePanel.addEventListener('click', function() {
+      document.getElementById('copy-log').addEventListener('click', function(e) {
+        e.stopPropagation();
+        const logs = document.getElementById('console-logs').textContent;
+        navigator.clipboard.writeText(logs).then(() => {
+          const btn = document.getElementById('copy-log');
+          const original = btn.textContent;
+          btn.textContent = '✅ Copied!';
+          setTimeout(() => btn.textContent = original, 2000);
+        }).catch(err => {
+          console.error('Failed to copy logs:', err);
+        });
+      });
         consolePanel.style.display = 'none';
       });
       const originalLog = console.log;
