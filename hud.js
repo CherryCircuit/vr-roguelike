@@ -655,11 +655,12 @@ function createUpgradeCard(upgrade, position) {
 
   // Name text - smaller to prevent overlap
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
-    fontSize: 28,
+    fontSize: 22,
     color: upgrade.color || '#00ffff',
+    maxWidth: 200,
     glow: true,
     glowColor: upgrade.color,
-    scale: 0.19,
+    scale: 0.16,
     depthTest: true,
   });
   nameSprite.position.set(0, 0.35, 0.01);
@@ -667,11 +668,11 @@ function createUpgradeCard(upgrade, position) {
 
   // Description text - standard size with padding (well inside box)
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 20,
+    fontSize: 14,
     color: '#cccccc',
-    scale: 0.15,
+    scale: 0.13,
     depthTest: true,
-    maxWidth: 180,
+    maxWidth: 160,
   });
   descSprite.position.set(0, -0.05, 0.01);
   group.add(descSprite);
@@ -679,9 +680,9 @@ function createUpgradeCard(upgrade, position) {
   // Side-grade note (different color) when present
   if (upgrade.sideGradeNote) {
     const noteSprite = makeSprite(upgrade.sideGradeNote, {
-      fontSize: 16,
+      fontSize: 14,
       color: '#ffdd00',
-      scale: 0.12,
+      scale: 0.10,
       depthTest: true,
       maxWidth: 200,
     });
@@ -726,8 +727,9 @@ function createSkipCard(position) {
 
   // "SKIP" text
   const nameSprite = makeSprite('SKIP', {
-    fontSize: 28,
+    fontSize: 22,
     color: '#00ff88',
+    maxWidth: 200,
     glow: true,
     glowColor: '#00ff88',
     scale: 0.2,
@@ -740,7 +742,7 @@ function createSkipCard(position) {
   const descSprite = makeSprite('Full health', {
     fontSize: 18,
     color: '#88ffaa',
-    scale: 0.12,
+    scale: 0.10,
     depthTest: true,
     maxWidth: 120,
   });
@@ -2067,7 +2069,7 @@ function renderCountryList(countries) {
     ));
 
     const label = makeSprite(`${country.flag}  ${country.name}`, {
-      fontSize: 28, color: '#ffffff', scale: 0.15,
+      fontSize: 28, color: '#ffffff', scale: 0.13,
     });
     label.position.set(0, 0, 0.01);
     itemGroup.add(label);
