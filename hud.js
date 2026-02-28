@@ -24,9 +24,6 @@ const readyGroup = new THREE.Group();
 let heartsSprite = null;
 let killCountSprite = null;
 let levelSprite = null;
-
-// [Instruction 1] Alt weapon cooldown indicators (per hand)
-let altWeaponIndicators = { left: null, right: null };
 let scoreSprite = null;
 let comboSprite = null;
 let fpsSprite = null;
@@ -128,19 +125,13 @@ function makeTextTexture(text, opts = {}) {
   const lineHeight = fontSize * 1.3;
   const textHeight = lines.length * lineHeight;
 
-  // Add proper padding for glow effects (glowSize needs at least glowSize+5 pixels on each side)
-  const padding = opts.glow ? (opts.glowSize || 15) + 10 : 40;
-  canvas.width = Math.ceil(textWidth) + padding * 2;
-  canvas.height = Math.ceil(textHeight) + padding * 2;
+  canvas.width = Math.ceil(textWidth) + 40;
+  canvas.height = Math.ceil(textHeight);
 
   // Re-set after resize
   ctx.font = font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-
-  // Adjust drawing position for new padding
-  const offsetX = padding;
-  const offsetY = padding;
 
   // Clear canvas with transparency (prevent black background)
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -156,7 +147,7 @@ function makeTextTexture(text, opts = {}) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     lines.forEach((line, i) => {
       const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
-      ctx.fillText(line, canvas.width / 2 + 2, y + 2 + offsetY);
+      ctx.fillText(line, canvas.width / 2 + 2, y + 2);
     });
   }
 
@@ -164,7 +155,7 @@ function makeTextTexture(text, opts = {}) {
   ctx.fillStyle = opts.color || '#00ffff';
   lines.forEach((line, i) => {
     const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
-    ctx.fillText(line, canvas.width / 2, y + offsetY);
+    ctx.fillText(line, canvas.width / 2, y);
   });
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -349,30 +340,30 @@ export function updateBossHealthBar(hp, maxHp, phases = 3) {
 function createTitleScreen() {
   // Big title: SPACEOMICIDE
   const titleSprite = makeSprite('SPACEOMICIDE', {
-    fontSize: 70,
+    fontSize: 140,
     color: '#00ffff',
-    glow: true, glowColor: '#0088ff', glowSize: 15,
-    scale: 0.9,
+    glow: true, glowColor: '#0088ff', glowSize: 30,
+    scale: 1.8,
   });
   titleSprite.position.set(0, 1.6, 0);
   titleGroup.add(titleSprite);
 
   // Subtitle
   const subSprite = makeSprite('VR ROGUELIKE BLASTER', {
-    fontSize: 24,
+    fontSize: 48,
     color: '#ff00ff',
-    glow: true, glowColor: '#ff00ff', glowSize: 5,
-    scale: 0.3,
+    glow: true, glowColor: '#ff00ff', glowSize: 10,
+    scale: 0.6,
   });
   subSprite.position.set(0, 0.8, 0);
   titleGroup.add(subSprite);
 
   // Blinking "Press Trigger to Begin"
   titleBlinkSprite = makeSprite('PRESS TRIGGER TO BEGIN', {
-    fontSize: 26,
+    fontSize: 52,
     color: '#ffffff',
     glow: true, glowColor: '#ffffff',
-    scale: 0.25,
+    scale: 0.5,
   });
   titleBlinkSprite.position.set(0, 0, 0);
   titleGroup.add(titleBlinkSprite);
@@ -404,17 +395,54 @@ function createTitleScreen() {
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
 
-// Version number
-  const versionDate = 'FEB 28 2026';
-  const versionNum = 'v0.024';
+  // Diagnostics button
+  const diagBtnGroup = new THREE.Group();
+  diagBtnGroup.position.set(1.5, -0.6, 0);
+  const diagBtnGeo = new THREE.PlaneGeometry(1.35, 0.3);
+  const diagBtnMat = new THREE.MeshBasicMaterial({
+    color: 0x001133,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+  });
+  const diagBtnMesh = new THREE.Mesh(diagBtnGeo, diagBtnMat);
+  diagBtnMesh.userData.isTitleDiagBtn = true;
+  diagBtnGroup.add(diagBtnMesh);
+  const diagBtnBorderGeo = new THREE.EdgesGeometry(diagBtnGeo);
+  diagBtnGroup.add(new THREE.LineSegments(diagBtnBorderGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
+  const diagBtnText = makeSprite('DIAGNOSTICS', {
+    fontSize: 32,
+    color: '#00ff88',
+    glow: true,
+    glowColor: '#00ff88',
+    scale: 0.16,
+  });
+  diagBtnText.position.set(0, 0, 0.01);
+  diagBtnGroup.add(diagBtnText);
+  titleGroup.add(diagBtnGroup);
+  titleDiagBtn = diagBtnMesh;
+
+  // Version number
+  const versionDate = 'FEB 10 2026   12:10PM PT';
+  const versionNum = 'v0.044';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
-    fontSize: 16,
+    fontSize: 32,
     color: '#888888',
-    scale: 0.14,
+    scale: 0.28,
   });
   versionSprite.position.set(0, -1.0, 0);
   titleGroup.add(versionSprite);
 
+  // Debug mode indicator
+  const isDebugMode = typeof window !== 'undefined' && window.debugPerfMonitor;
+  const debugText = isDebugMode ? 'DEBUG MODE: ON' : 'DEBUG MODE: OFF';
+  const debugSprite = makeSprite(debugText, {
+    fontSize: 24,
+    color: isDebugMode ? '#00ff00' : '#666666',
+    scale: 0.18,
+  });
+  debugSprite.position.set(2.5, -0.85, 0);
+  titleGroup.add(debugSprite);
 }
 
 export function showTitle() {
@@ -548,10 +576,8 @@ export function showLevelComplete(level, playerPos) {
   s2.position.set(0, 0.2, 0);
   levelTextGroup.add(s2);
 
-  // Position in front of player (VR-friendly)
-  levelTextGroup.position.copy(playerPos);
-  levelTextGroup.position.y += 1.6; // Eye level
-  levelTextGroup.position.z -= 3; // 3 feet in front of player
+  // Fixed world position in front of spawn
+  levelTextGroup.position.set(0, 1.6, -5);
   levelTextGroup.visible = true;
 }
 
@@ -568,10 +594,8 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
 
-  // Position in front of player (VR-friendly)
-  upgradeGroup.position.copy(playerPos);
-  upgradeGroup.position.y += 1.6; // Eye level
-  upgradeGroup.position.z -= 4; // 4 feet in front of player
+  // Fixed world position in front of spawn
+  upgradeGroup.position.set(0, 1.6, -4);
 
   // "Choose an upgrade for [HAND]" header - reduced size significantly
   const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
@@ -611,7 +635,7 @@ function createUpgradeCard(upgrade, position) {
   group.userData.upgradeId = upgrade.id;
 
   // Card background plane
-  const cardGeo = new THREE.PlaneGeometry(1.2, 1.5);
+  const cardGeo = new THREE.PlaneGeometry(0.9, 1.1);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -629,39 +653,40 @@ function createUpgradeCard(upgrade, position) {
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
-  // Name text - increased proportionally to card size
+  // Name text - smaller to prevent overlap
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
-    fontSize: 36,
+    fontSize: 22,
     color: upgrade.color || '#00ffff',
+    maxWidth: 200,
     glow: true,
     glowColor: upgrade.color,
-    scale: 0.19,
+    scale: 0.16,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.40, 0.01);
+  nameSprite.position.set(0, 0.35, 0.01);
   group.add(nameSprite);
 
-  // Description text - increased proportionally with proper maxWidth
+  // Description text - standard size with padding (well inside box)
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 26,
+    fontSize: 14,
     color: '#cccccc',
-    scale: 0.15,
+    scale: 0.13,
     depthTest: true,
-    maxWidth: 280,
+    maxWidth: 160,
   });
-  descSprite.position.set(0, -0.02, 0.01);
+  descSprite.position.set(0, -0.05, 0.01);
   group.add(descSprite);
 
   // Side-grade note (different color) when present
   if (upgrade.sideGradeNote) {
     const noteSprite = makeSprite(upgrade.sideGradeNote, {
-      fontSize: 22,
+      fontSize: 14,
       color: '#ffdd00',
-      scale: 0.14,
+      scale: 0.10,
       depthTest: true,
-      maxWidth: 280,
+      maxWidth: 200,
     });
-    noteSprite.position.set(0, -0.28, 0.01);
+    noteSprite.position.set(0, -0.22, 0.01);
     group.add(noteSprite);
   }
 
@@ -683,7 +708,7 @@ function createSkipCard(position) {
   group.userData.upgradeId = 'SKIP';  // Special ID for skip
 
   // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades)
-  const cardGeo = new THREE.PlaneGeometry(1.0, 1.3);
+  const cardGeo = new THREE.PlaneGeometry(0.7, 0.9);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x220044,
     transparent: true,
@@ -700,27 +725,28 @@ function createSkipCard(position) {
   const borderMat = new THREE.LineBasicMaterial({ color: '#00ff88' });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
-  // "SKIP" text - increased proportionally
+  // "SKIP" text
   const nameSprite = makeSprite('SKIP', {
-    fontSize: 40,
+    fontSize: 22,
     color: '#00ff88',
+    maxWidth: 200,
     glow: true,
     glowColor: '#00ff88',
     scale: 0.2,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.30, 0.01);
+  nameSprite.position.set(0, 0.25, 0.01);
   group.add(nameSprite);
 
   // Description
   const descSprite = makeSprite('Full health', {
-    fontSize: 26,
+    fontSize: 18,
     color: '#88ffaa',
-    scale: 0.14,
+    scale: 0.10,
     depthTest: true,
-    maxWidth: 220,
+    maxWidth: 120,
   });
-  descSprite.position.set(0, 0.02, 0.01);
+  descSprite.position.set(0, -0.02, 0.01);
   group.add(descSprite);
 
   // Heart icon
@@ -813,10 +839,8 @@ export function showGameOver(score, playerPos) {
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
-  // Position in front of player (VR-friendly)
-  gameOverGroup.position.copy(playerPos);
-  gameOverGroup.position.y += 1.6; // Eye level
-  gameOverGroup.position.z -= 5; // 5 feet in front of player
+  // Fixed world position in front of spawn
+  gameOverGroup.position.set(0, 1.6, -5);
   gameOverGroup.visible = true;
 }
 
@@ -837,10 +861,8 @@ export function showVictory(score, playerPos) {
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
-  // Position in front of player (VR-friendly)
-  gameOverGroup.position.copy(playerPos);
-  gameOverGroup.position.y += 1.6; // Eye level
-  gameOverGroup.position.z -= 5; // 5 feet in front of player
+  // Fixed world position in front of spawn
+  gameOverGroup.position.set(0, 1.6, -5);
   gameOverGroup.visible = true;
 }
 
@@ -1493,7 +1515,7 @@ export function getReadyScreenHit(raycaster) {
 
 // ── Name Entry Screen ───────────────────────────────────────
 
-export function showNameEntry(score, level, storedName, playerPos) {
+export function showNameEntry(score, level, storedName) {
   hideAll();
   while (nameEntryGroup.children.length) nameEntryGroup.remove(nameEntryGroup.children[0]);
   nameEntrySlots = [];
@@ -1502,14 +1524,7 @@ export function showNameEntry(score, level, storedName, playerPos) {
   nameEntryName = storedName || '';
   nameEntryCursor = nameEntryName.length;
 
-  // Position in front of player (VR-friendly)
-  if (playerPos) {
-    nameEntryGroup.position.copy(playerPos);
-    nameEntryGroup.position.y += 1.6; // Eye level
-    nameEntryGroup.position.z -= 4; // 4 feet in front of player
-  } else {
-    nameEntryGroup.position.set(0, 1.6, -4); // Fallback
-  }
+  nameEntryGroup.position.set(0, 1.6, -4);
   nameEntryGroup.visible = true;
 
   // Header
@@ -1718,21 +1733,14 @@ export function updateKeyboardHover(raycaster) {
 
 // ── Scoreboard Screen ───────────────────────────────────────
 
-export function showScoreboard(scores, headerText, playerPos) {
+export function showScoreboard(scores, headerText) {
   hideAll();
   while (scoreboardGroup.children.length) scoreboardGroup.remove(scoreboardGroup.children[0]);
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
   scoreboardHeader = headerText || 'GLOBAL LEADERBOARD';
-  // Position in front of player (VR-friendly)
-  if (playerPos) {
-    scoreboardGroup.position.copy(playerPos);
-    scoreboardGroup.position.y += 1.6; // Eye level
-    scoreboardGroup.position.z -= 5; // 5 feet in front of player
-  } else {
-    scoreboardGroup.position.set(0, 1.6, -5); // Fallback
-  }
+  scoreboardGroup.position.set(0, 1.6, -5);
   scoreboardGroup.visible = true;
 
   // Header
@@ -1951,7 +1959,7 @@ export function updateScoreboardScroll(delta) {
 
 // ── Country Select Screen ───────────────────────────────────
 
-export function showCountrySelect(countries, continents, initialContinent, playerPos) {
+export function showCountrySelect(countries, continents, initialContinent) {
   hideAll();
   while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
   continentTabs = [];
@@ -1959,14 +1967,7 @@ export function showCountrySelect(countries, continents, initialContinent, playe
   countrySelectContinent = initialContinent || 'North America';
   countrySelectScrollOffset = 0;
 
-  // Position in front of player (VR-friendly)
-  if (playerPos) {
-    countrySelectGroup.position.copy(playerPos);
-    countrySelectGroup.position.y += 1.6; // Eye level
-    countrySelectGroup.position.z -= 4; // 4 feet in front of player
-  } else {
-    countrySelectGroup.position.set(0, 1.6, -4); // Fallback
-  }
+  countrySelectGroup.position.set(0, 1.6, -4);
   countrySelectGroup.visible = true;
 
   // Header
@@ -2068,7 +2069,7 @@ function renderCountryList(countries) {
     ));
 
     const label = makeSprite(`${country.flag}  ${country.name}`, {
-      fontSize: 28, color: '#ffffff', scale: 0.15,
+      fontSize: 28, color: '#ffffff', scale: 0.13,
     });
     label.position.set(0, 0, 0.01);
     itemGroup.add(label);
@@ -2244,422 +2245,4 @@ export function updateUpgradeHandHighlights(now) {
   [readyGroup, upgradeGroup].forEach(g => {
     // This is handled via normal scene graph if attached to controller
   });
-}
-
-// ── [Instruction 1] Alt Weapon Cooldown Indicators ─────────────────────────
-
-/**
- * Create circular cooldown indicators attached to the camera.
- * Shows fill progress that empties as cooldown progresses, fills when ready.
- * Position: bottom corners of view (left hand = bottom left, right hand = bottom right)
- */
-export function initAltWeaponIndicators(camera) {
-  const indicatorSize = 0.12;
-  const positions = {
-    left: new THREE.Vector3(-0.38, -0.25, -0.6),   // Bottom left of view
-    right: new THREE.Vector3(0.38, -0.25, -0.6),   // Bottom right of view
-  };
-
-  ['left', 'right'].forEach(hand => {
-    const group = new THREE.Group();
-    group.name = `altWeaponIndicator_${hand}`;
-
-    // Background ring (dark, full circle)
-    const bgRingGeo = new THREE.RingGeometry(indicatorSize * 0.7, indicatorSize, 32);
-    const bgRingMat = new THREE.MeshBasicMaterial({
-      color: 0x222233,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.6,
-      depthTest: false,
-    });
-    const bgRing = new THREE.Mesh(bgRingGeo, bgRingMat);
-    bgRing.name = 'bgRing';
-    group.add(bgRing);
-
-    // Progress ring (fills as cooldown decreases)
-    // Using a separate ring that scales from 0 to 1
-    const progressRingGeo = new THREE.RingGeometry(indicatorSize * 0.7, indicatorSize, 32, 1, 0, Math.PI * 2);
-    const progressRingMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.8,
-      depthTest: false,
-    });
-    const progressRing = new THREE.Mesh(progressRingGeo, progressRingMat);
-    progressRing.name = 'progressRing';
-    progressRing.userData.indicatorSize = indicatorSize;
-    group.add(progressRing);
-
-    // Inner glow (brightens when ready)
-    const innerGlowGeo = new THREE.CircleGeometry(indicatorSize * 0.65, 32);
-    const innerGlowMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
-    });
-    const innerGlow = new THREE.Mesh(innerGlowGeo, innerGlowMat);
-    innerGlow.name = 'innerGlow';
-    group.add(innerGlow);
-
-    // Weapon name label (hidden by default)
-    const labelSprite = makeSprite('', {
-      fontSize: 20, color: '#ffffff', scale: 0.08,
-    });
-    labelSprite.name = 'weaponLabel';
-    labelSprite.position.set(0, -indicatorSize * 1.5, 0);
-    labelSprite.visible = false;
-    group.add(labelSprite);
-
-    group.position.copy(positions[hand]);
-    group.visible = false; // Hidden until player has an alt weapon
-
-    camera.add(group);
-    altWeaponIndicators[hand] = group;
-  });
-}
-
-/**
- * Update alt weapon cooldown indicators.
- * @param {Object} altWeapons - { left: weaponId|null, right: weaponId|null }
- * @param {Object} altCooldowns - { left: secondsRemaining, right: secondsRemaining }
- * @param {Object} altReadySoundPlayed - { left: bool, right: bool } - tracks if "ready" sound played
- * @param {Object} weaponDefs - ALT_WEAPON_DEFS from upgrades.js
- * @returns {Object} which hands just became ready (to trigger sound) { left: bool, right: bool }
- */
-export function updateAltWeaponIndicators(altWeapons, altCooldowns, altReadySoundPlayed, weaponDefs, now) {
-  const readyStatus = { left: false, right: false };
-
-  ['left', 'right'].forEach(hand => {
-    const group = altWeaponIndicators[hand];
-    if (!group) return;
-
-    const weaponId = altWeapons[hand];
-    const cooldown = altCooldowns[hand] || 0;
-
-    // Hide if no weapon for this hand
-    if (!weaponId) {
-      group.visible = false;
-      return;
-    }
-
-    group.visible = true;
-
-    const def = weaponDefs[weaponId] || {};
-    const maxCooldown = (def.cooldown || 10000) / 1000; // Convert ms to seconds
-    const weaponColor = def.color ? parseInt(def.color.replace('#', ''), 16) : 0x00ffff;
-
-    // Calculate progress: 0 = just fired (empty), 1 = ready (full)
-    const progress = Math.max(0, Math.min(1, 1 - (cooldown / maxCooldown)));
-    const isReady = cooldown <= 0;
-
-    // Update progress ring
-    const progressRing = group.getObjectByName('progressRing');
-    if (progressRing) {
-      // Scale the progress ring based on cooldown
-      // When progress = 0 (just fired), ring is small
-      // When progress = 1 (ready), ring is full size
-      const baseSize = progressRing.userData.indicatorSize;
-      const innerRadius = baseSize * 0.7;
-      const outerRadius = innerRadius + (baseSize - innerRadius) * progress;
-
-      // Recreate geometry with new outer radius for "fill" effect
-      progressRing.geometry.dispose();
-      progressRing.geometry = new THREE.RingGeometry(innerRadius, outerRadius, 32);
-
-      // Color: dim when cooling down, bright when ready
-      progressRing.material.color.setHex(isReady ? weaponColor : 0x666688);
-      progressRing.material.opacity = isReady ? 1.0 : 0.6;
-    }
-
-    // Update inner glow (pulses when ready)
-    const innerGlow = group.getObjectByName('innerGlow');
-    if (innerGlow) {
-      if (isReady) {
-        // Pulse glow when ready
-        const pulse = 0.3 + Math.sin(now * 0.006) * 0.2;
-        innerGlow.material.opacity = pulse;
-        innerGlow.material.color.setHex(weaponColor);
-      } else {
-        innerGlow.material.opacity = 0;
-      }
-    }
-
-    // Update weapon label
-    const label = group.getObjectByName('weaponLabel');
-    if (label) {
-      if (def.name) {
-        label.visible = true;
-        // Update text if changed
-        const labelText = def.name.toUpperCase();
-        if (label.userData.lastText !== labelText) {
-          const { texture, aspect } = makeTextTexture(labelText, {
-            fontSize: 18, color: isReady ? '#ffffff' : '#888888',
-          });
-          if (label.material.map) label.material.map.dispose();
-          label.material.map = texture;
-          label.scale.set(aspect * 0.08, 0.08, 1);
-          label.userData.lastText = labelText;
-        }
-      } else {
-        label.visible = false;
-      }
-    }
-
-    // Check if just became ready (for sound trigger)
-    if (isReady && !altReadySoundPlayed[hand]) {
-      readyStatus[hand] = true;
-    }
-  });
-
-  return readyStatus;
-}
-
-/**
- * Show the "Acquired New Alternate Weapon" message.
- * Creates a floating popup near the center of the screen.
- */
-let altWeaponAcquiredGroup = null;
-
-export function showAltWeaponAcquired(weaponName, weaponColor) {
-  // Remove existing if present
-  if (altWeaponAcquiredGroup) {
-    sceneRef.remove(altWeaponAcquiredGroup);
-  }
-
-  altWeaponAcquiredGroup = new THREE.Group();
-
-  // Line 1: "ACQUIRED NEW"
-  const line1 = makeSprite('ACQUIRED NEW', {
-    fontSize: 36, color: '#00ffff', glow: true, glowColor: '#00ffff', glowSize: 10, scale: 0.4,
-  });
-  line1.position.set(0, 0.2, 0);
-  altWeaponAcquiredGroup.add(line1);
-
-  // Line 2: "ALTERNATE WEAPON:"
-  const line2 = makeSprite('ALTERNATE WEAPON:', {
-    fontSize: 32, color: '#ffffff', scale: 0.35,
-  });
-  line2.position.set(0, 0, 0);
-  altWeaponAcquiredGroup.add(line2);
-
-  // Line 3: Weapon name (in weapon color)
-  const line3 = makeSprite(weaponName.toUpperCase(), {
-    fontSize: 48, color: weaponColor || '#ff00ff', glow: true, glowColor: weaponColor || '#ff00ff', glowSize: 15, scale: 0.5,
-  });
-  line3.position.set(0, -0.3, 0);
-  altWeaponAcquiredGroup.add(line3);
-
-  // Position in front of player
-  altWeaponAcquiredGroup.position.set(0, 1.6, -3);
-  altWeaponAcquiredGroup.userData.createdAt = performance.now();
-  altWeaponAcquiredGroup.userData.lifetime = 3000; // 3 seconds
-  altWeaponAcquiredGroup.visible = true;
-
-  sceneRef.add(altWeaponAcquiredGroup);
-}
-
-export function updateAltWeaponAcquired(now) {
-  if (!altWeaponAcquiredGroup || !altWeaponAcquiredGroup.visible) return;
-
-  const age = now - altWeaponAcquiredGroup.userData.createdAt;
-  if (age > altWeaponAcquiredGroup.userData.lifetime) {
-    altWeaponAcquiredGroup.visible = false;
-    sceneRef.remove(altWeaponAcquiredGroup);
-    altWeaponAcquiredGroup = null;
-  } else {
-    // Fade out in last 0.5s
-    const fadeStart = altWeaponAcquiredGroup.userData.lifetime - 500;
-    if (age > fadeStart) {
-      const opacity = 1 - (age - fadeStart) / 500;
-      altWeaponAcquiredGroup.children.forEach(child => {
-        if (child.material) child.material.opacity = opacity;
-      });
-    }
-  }
-}
-
-/**
- * Create a spinning 3D star pickup for alt weapon drops.
- * These are rare drops from enemies that give the player alt weapons.
- */
-export function createAltWeaponStar(position, weaponId, weaponDefs) {
-  const def = weaponDefs[weaponId];
-  if (!def) return null;
-
-  const color = def.color ? parseInt(def.color.replace('#', ''), 16) : 0x00ffff;
-
-  // Create star geometry (3D octahedron style)
-  const group = new THREE.Group();
-
-  // Core star shape (double pyramid / octahedron)
-  const coreGeo = new THREE.OctahedronGeometry(0.15, 0);
-  const coreMat = new THREE.MeshBasicMaterial({
-    color: color,
-    wireframe: false,
-    transparent: true,
-    opacity: 0.9,
-  });
-  const core = new THREE.Mesh(coreGeo, coreMat);
-  group.add(core);
-
-  // Wireframe outer glow
-  const wireGeo = new THREE.OctahedronGeometry(0.2, 0);
-  const wireMat = new THREE.MeshBasicMaterial({
-    color: color,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.5,
-  });
-  const wire = new THREE.Mesh(wireGeo, wireMat);
-  group.add(wire);
-
-  // Point light glow effect (additive sphere)
-  const glowGeo = new THREE.SphereGeometry(0.25, 8, 8);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: color,
-    transparent: true,
-    opacity: 0.2,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const glow = new THREE.Mesh(glowGeo, glowMat);
-  group.add(glow);
-
-  // Position and metadata
-  group.position.copy(position);
-  group.userData = {
-    isAltWeaponStar: true,
-    weaponId: weaponId,
-    weaponName: def.name,
-    weaponColor: def.color,
-    createdAt: performance.now(),
-    lifetime: 15000, // 15 seconds before disappearing
-    bobOffset: Math.random() * Math.PI * 2,
-  };
-
-  return group;
-}
-
-/**
- * Update all alt weapon stars (spinning, bobbing animation).
- * Called from main.js render loop.
- */
-const altWeaponStars = [];
-
-export function updateAltWeaponStars(dt, now) {
-  for (let i = altWeaponStars.length - 1; i >= 0; i--) {
-    const star = altWeaponStars[i];
-    const age = now - star.userData.createdAt;
-
-    // Remove expired stars
-    if (age > star.userData.lifetime) {
-      sceneRef.remove(star);
-      altWeaponStars.splice(i, 1);
-      continue;
-    }
-
-    // Spin animation
-    star.rotation.y += dt * 2;
-    star.rotation.x += dt * 0.5;
-
-    // Bob up and down
-    const bob = Math.sin(now * 0.003 + star.userData.bobOffset) * 0.1;
-    star.position.y = star.userData.baseY + bob;
-
-    // Pulse glow
-    const pulse = 0.3 + Math.sin(now * 0.005) * 0.1;
-    star.children.forEach(child => {
-      if (child.material && child.material.opacity !== undefined && child !== star.children[0]) {
-        child.material.opacity = pulse + 0.2;
-      }
-    });
-
-    // Fade out in last 3 seconds
-    const fadeStart = star.userData.lifetime - 3000;
-    if (age > fadeStart) {
-      const fadeOpacity = 1 - (age - fadeStart) / 3000;
-      star.children.forEach(child => {
-        if (child.material) {
-          child.material.opacity *= fadeOpacity;
-        }
-      });
-    }
-  }
-}
-
-export function addAltWeaponStar(star) {
-  if (!star) return;
-  star.userData.baseY = star.position.y;
-  sceneRef.add(star);
-  altWeaponStars.push(star);
-}
-
-export function getAltWeaponStars() {
-  return altWeaponStars;
-}
-
-export function removeAltWeaponStar(star) {
-  const idx = altWeaponStars.indexOf(star);
-  if (idx >= 0) {
-    altWeaponStars.splice(idx, 1);
-    sceneRef.remove(star);
-  }
-}
-
-/**
- * Check if a raycaster hits an alt weapon star.
- * Returns the star or null.
- */
-export function getAltWeaponStarHit(raycaster) {
-  const starMeshes = altWeaponStars.map(s => s.children[0]).filter(Boolean);
-  const hits = raycaster.intersectObjects(starMeshes, false);
-  if (hits.length > 0) {
-    // Find the parent star group
-    return altWeaponStars.find(s => s.children.includes(hits[0].object)) || null;
-  }
-  return null;
-}
-
-/**
- * Show weapon name tooltip when hovering over a star.
- */
-let starTooltipGroup = null;
-
-export function showStarTooltip(star, playerPos) {
-  if (!star) return;
-
-  if (!starTooltipGroup) {
-    starTooltipGroup = new THREE.Group();
-    sceneRef.add(starTooltipGroup);
-  }
-
-  // Clear old children
-  while (starTooltipGroup.children.length) {
-    starTooltipGroup.remove(starTooltipGroup.children[0]);
-  }
-
-  // Create tooltip text
-  const name = star.userData.weaponName || 'Unknown Weapon';
-  const color = star.userData.weaponColor || '#00ffff';
-
-  const tooltip = makeSprite(name.toUpperCase(), {
-    fontSize: 28, color: color, glow: true, glowColor: color, glowSize: 8, scale: 0.25,
-  });
-  tooltip.position.set(0, 0, 0);
-  starTooltipGroup.add(tooltip);
-
-  // Position above the star
-  starTooltipGroup.position.copy(star.position);
-  starTooltipGroup.position.y += 0.4;
-  starTooltipGroup.visible = true;
-}
-
-export function hideStarTooltip() {
-  if (starTooltipGroup) {
-    starTooltipGroup.visible = false;
-  }
 }
