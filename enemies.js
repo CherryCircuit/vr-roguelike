@@ -3598,6 +3598,4 @@ export function getFastEnemies() {
 
 export function getSwarmEnemies() {
   return activeEnemies.filter(e => e.type === 'swarm');
-}
 
-} // End of module
