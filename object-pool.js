@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 // ============================================================
 //  OBJECT POOLING SYSTEM
 //  Reuses objects instead of creating/destroying them

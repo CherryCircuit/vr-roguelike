@@ -52,7 +52,7 @@ import {
   initDesktopControls, enable as enableDesktop, disable as disableDesktop,
   toggleMode, isEnabled as isDesktopEnabled,
   update as updateDesktop, getWeaponState as getDesktopWeaponState,
-  getVirtualController, getControlScheme
+  getVirtualController, getControlScheme, getAimRaycaster
 } from './desktop-controls.js';
 
 // ── Constants ──────────────────────────────────────────────
@@ -2167,6 +2167,8 @@ function render(timestamp) {
 
   const dt = rawDt * timeScale;  // Scaled time for game logic
 
+  const st = game.state;
+
   perfMonitor.recordFrame(rawDt * 1000);
 
   // Update object counts for performance monitoring
@@ -2179,7 +2181,6 @@ function render(timestamp) {
     });
   }
 
-  const st = game.state;
 
   // ── Title screen ──
   if (st === State.TITLE) {
