@@ -176,12 +176,12 @@ function init() {
   document.body.appendChild(vrButton);
 
   if (!navigator.xr) {
-    document.getElementById('no-vr').style.display = 'block';
+    // document.getElementById('no-vr').style.display = 'block'; /* Hidden for desktop testing */
     console.warn('[init] WebXR not supported');
   } else {
     navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
       if (!supported) {
-        document.getElementById('no-vr').style.display = 'block';
+        // document.getElementById('no-vr').style.display = 'block'; /* Hidden for desktop testing */
         console.warn('[init] immersive-vr not supported');
       }
     });
