@@ -527,7 +527,16 @@ function updateSpriteText(sprite, text, opts = {}) {
   sprite.geometry = new THREE.PlaneGeometry(aspect * scale, scale);
 }
 
+export function updateHUD(gameState) {
+  if (!hudGroup.visible) return;
 
+  // Hearts - proper aspect ratio with correct scale
+  const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth);
+  if (heartsSprite.material.map) heartsSprite.material.map.dispose();
+  heartsSprite.material.map = ht;
+  heartsSprite.material.needsUpdate = true;
+  // Update geometry to match aspect ratio (200% larger: height 0.48)
+  heartsSprite.geometry.dispose();
   heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
 
   // Kill counter - 200% larger
@@ -539,7 +548,6 @@ function updateSpriteText(sprite, text, opts = {}) {
   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.30 });
 
   // Score - 200% larger
-    console.log(`[hud] Score: ${gameState.score}, updating scoreSprite`);
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.26 });
 
   // Combo - 200% larger with descriptive label

@@ -149,8 +149,7 @@ export function getLevelConfig() {
   return LEVELS[game.level - 1];
 }
 
-game.score += Math.floor(points * combo);
-  }
+export function addScore(points) {
   const combo = getComboMultiplier();
   game.score += Math.floor(points * combo);
 }
