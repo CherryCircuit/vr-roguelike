@@ -10,7 +10,7 @@ import Stats from 'three/addons/libs/stats.module.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats, ALT_WEAPON_DEFS, fireRocket, spawnHelperBot, activateShield, createGravityWell, fireIonMortar, spawnHologram } from './upgrades.js';
-import { playShootSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound, playBossDeathSound, resumeAudioContext, startChargeSound, updateChargeSound, stopChargeSound, playChargeReadySound, playChargeFireSound } from './audio.js';
+import { playShootSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound, playBossDeathSound, playBossTeleportReappear, playBossStunned, playBossExplosion, playBossAttackSound, playBossDeath, resumeAudioContext, startChargeSound, updateChargeSound, stopChargeSound, playChargeReadySound, playChargeFireSound } from './audio.js';
 // getMusicFrequencyData removed - music visualizer commented out
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -286,6 +286,13 @@ function init() {
   renderer.xr.addEventListener('sessionstart', () => {
     console.log('[vr] Session started - starting menu music');
     resumeAudioContext();
+
+  // Expose boss audio functions to window for enemies module
+  window.playBossTeleportReappear = playBossTeleportReappear;
+  window.playBossExplosion = playBossExplosion;
+  window.playBossStunned = playBossStunned;
+  window.playBossAttackSound = playBossAttackSound;
+  window.playBossDeath = playBossDeath;
     if (game.state === State.TITLE) {
       playMusic('menu');
     }
