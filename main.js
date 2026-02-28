@@ -9,7 +9,7 @@ import Stats from 'three/addons/libs/stats.module.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats, ALT_WEAPON_DEFS, fireRocket, spawnHelperBot, activateShield, createGravityWell, fireIonMortar, spawnHologram } from './upgrades.js';
-import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound, playBossDeathSound, resumeAudioContext, startChargeSound, updateChargeSound, stopChargeSound, playChargeReadySound, playChargeFireSound } from './audio.js';
+import { playShootSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound, playBossDeathSound, resumeAudioContext, startChargeSound, updateChargeSound, stopChargeSound, playChargeReadySound, playChargeFireSound } from './audio.js';
 // getMusicFrequencyData removed - music visualizer commented out
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -726,7 +726,7 @@ function fireAltWeapon(controller, index, altWeaponId, hand) {
       break;
   }
   
-  playShoothSound(); // Reuse existing sound for now
+  playShootSound(); // Reuse existing sound for now
   console.log(`[alt-weapon] Fired ${altWeaponId} from ${hand} hand`);
 }
 
@@ -1394,7 +1394,7 @@ function shootWeapon(controller, index) {
   if (stats.spreadAngle > 0) {
     playBuckshotSoundNew(); // New buckshot sound
   } else {
-    playShoothSound();
+    playShootSound();
   }
 
   // console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
