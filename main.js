@@ -8,6 +8,10 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
+import { perfMonitor } from './performance.js';
+import { initPools, projectilePool, explosionPool, getPoolCounts } from './object-pool.js';
+import { testTracker } from './test-tracker.js';
+
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
@@ -42,6 +46,7 @@ import {
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
   isNameClean, COUNTRIES, CONTINENTS,
+"45,10p
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
 import {

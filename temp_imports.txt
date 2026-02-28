@@ -1,0 +1,3 @@
+import { perfMonitor } from './performance.js';
+import { initPools, projectilePool, explosionPool, getPoolCounts } from './object-pool.js';
+import { testTracker } from './test-tracker.js';

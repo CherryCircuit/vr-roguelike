@@ -1,0 +1,9 @@
+{
+  "testSessions": [],
+  "currentSession": null,
+  "config": {
+    "autoSave": true,
+    "logToConsole": true,
+    "trackPerformance": true
+  }
+}
