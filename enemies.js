@@ -209,7 +209,6 @@ class TelegraphingSystem {
         break;
 
       case 'teleport':
-        // Spinning eye effect
         const eyeGeo = new THREE.CircleGeometry(0.8, 32);
         const eyeMat = new THREE.MeshBasicMaterial({
           color: effect.color,
@@ -1714,8 +1713,7 @@ const BOSS_DEFS = {
     chargeDuration: 2.5,
     slamRate: 5.0,
     shardRate: 0.6,
-    weakPoints: true
-,
+    weakPoints: true,
 
   // Level 20 Final Bosses (Tier 4 - VERY TOUGH)
   walter_breakenridge: {
@@ -3601,3 +3599,5 @@ export function getFastEnemies() {
 export function getSwarmEnemies() {
   return activeEnemies.filter(e => e.type === 'swarm');
 }
+
+} // End of module
