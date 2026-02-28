@@ -150,7 +150,6 @@ export function getLevelConfig() {
 }
 
 game.score += Math.floor(points * combo);
-  console.log(`[game] Score updated: +${Math.floor(points * combo)} = ${game.score}`);
   }
   const combo = getComboMultiplier();
   game.score += Math.floor(points * combo);
