@@ -766,6 +766,208 @@ export function playBigExplosionSound() {
 }
 
 // ── Epic Boss Death Sound (much more dramatic than regular explosion) ────────
+export function playBossTeleportReappear() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Sudden materialization sound
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(800, t);
+  osc.frequency.exponentialRampToValueAtTime(200, t + 0.2);
+
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.2);
+}
+
+// ── Boss stunned ─────────────────────────────────────────────
+export function playBossStunned() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Confusion/shatter sound
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(400, t);
+  osc.frequency.linearRampToValueAtTime(100, t + 0.3);
+
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.linearRampToValueAtTime(0, t + 0.3);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.3);
+}
+
+// ── Boss explosion ─────────────────────────────────────────
+export function playBossExplosion() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Big explosion with layered sounds
+  // Low boom
+  const boom = ctx.createOscillator();
+  const boomGain = ctx.createGain();
+  boom.type = 'sine';
+  boom.frequency.setValueAtTime(60, t);
+  boom.frequency.exponentialRampToValueAtTime(20, t + 0.6);
+
+  boomGain.gain.setValueAtTime(0.4, t);
+  boomGain.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
+
+  boom.connect(boomGain);
+  boomGain.connect(ctx.destination);
+  boom.start(t);
+  boom.stop(t + 0.6);
+
+  // Crunchy noise
+  const noise = ctx.createBufferSource();
+  noise.buffer = getExplosionBuffer();
+  noise.playbackRate.value = 0.5 + Math.random() * 0.5;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(2000, t);
+  filter.frequency.exponentialRampToValueAtTime(100, t + 0.5);
+
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.3, t);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+
+  noise.connect(filter);
+  filter.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.5);
+}
+
+// ── Boss death ─────────────────────────────────────────────
+export function playBossDeath() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Epic death sound - descending then rising
+  // Descending scream
+  const scream = ctx.createOscillator();
+  const screamGain = ctx.createGain();
+  scream.type = 'sawtooth';
+  scream.frequency.setValueAtTime(600, t);
+  scream.frequency.exponentialRampToValueAtTime(80, t + 1.2);
+
+  screamGain.gain.setValueAtTime(0.25, t);
+  screamGain.gain.linearRampToValueAtTime(0, t + 1.2);
+
+  scream.connect(screamGain);
+  screamGain.connect(ctx.destination);
+  scream.start(t);
+  scream.stop(t + 1.2);
+
+  // Big finale explosion
+  setTimeout(() => {
+    playBossExplosion();
+  }, 800);
+}
+
+// ── Boss attack sound ───────────────────────────────────────
+export function playBossAttackSound(type, duration) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  switch (type) {
+    case 'projectile':
+      // Warning ping before attack
+      const ping = ctx.createOscillator();
+      const pingGain = ctx.createGain();
+      ping.type = 'sine';
+      ping.frequency.setValueAtTime(1200, t);
+      ping.frequency.exponentialRampToValueAtTime(600, t + 0.15);
+
+      pingGain.gain.setValueAtTime(0.15, t);
+      pingGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+
+      ping.connect(pingGain);
+      pingGain.connect(ctx.destination);
+      ping.start(t);
+      ping.stop(t + 0.15);
+      break;
+
+    case 'charge':
+      // Charging up sound
+      const charge = ctx.createOscillator();
+      const chargeGain = ctx.createGain();
+      charge.type = 'sawtooth';
+      charge.frequency.setValueAtTime(200, t);
+      charge.frequency.linearRampToValueAtTime(800, t + duration);
+
+      chargeGain.gain.setValueAtTime(0.1, t);
+      chargeGain.gain.linearRampToValueAtTime(0, t + duration);
+
+      charge.connect(chargeGain);
+      chargeGain.connect(ctx.destination);
+      charge.start(t);
+      charge.stop(t + duration);
+      break;
+
+    case 'minion':
+      // Spawn alert
+      const spawn = ctx.createOscillator();
+      const spawnGain = ctx.createGain();
+      spawn.type = 'square';
+      spawn.frequency.setValueAtTime(500, t);
+      spawn.frequency.setValueAtTime(700, t + 0.1);
+
+      spawnGain.gain.setValueAtTime(0.12, t);
+      spawnGain.gain.linearRampToValueAtTime(0, t + 0.2);
+
+      spawn.connect(spawnGain);
+      spawnGain.connect(ctx.destination);
+      spawn.start(t);
+      spawn.stop(t + 0.2);
+      break;
+
+    case 'teleport':
+      // Teleport warning
+      const tele = ctx.createOscillator();
+      const teleGain = ctx.createGain();
+      tele.type = 'sine';
+      tele.frequency.setValueAtTime(400, t);
+      tele.frequency.exponentialRampToValueAtTime(100, t + 0.4);
+
+      teleGain.gain.setValueAtTime(0.15, t);
+      teleGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+      tele.connect(teleGain);
+      teleGain.connect(ctx.destination);
+      tele.start(t);
+      tele.stop(t + 0.4);
+      break;
+
+    case 'melee':
+      // Melee swing warning
+      const melee = ctx.createOscillator();
+      const meleeGain = ctx.createGain();
+      melee.type = 'triangle';
+      melee.frequency.setValueAtTime(300, t);
+      melee.frequency.linearRampToValueAtTime(600, t + 0.3);
+
+      meleeGain.gain.setValueAtTime(0.12, t);
+      meleeGain.gain.linearRampToValueAtTime(0, t + 0.3);
+
+      melee.connect(meleeGain);
+      meleeGain.connect(ctx.destination);
+      melee.start(t);
+      melee.stop(t + 0.3);
+      break;
+  }
+}
 export function playBossDeathSound() {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
