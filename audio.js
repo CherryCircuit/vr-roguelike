@@ -19,7 +19,7 @@ export function resumeAudioContext() {
 }
 
 // ── Shoot sound (laser pew) — heavily randomized ───────────
-export function playShoothSound() {
+export function playShootSound() {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
