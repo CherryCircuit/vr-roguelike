@@ -185,7 +185,7 @@ export function isLocked() {
 export function update(dt) {
   if (!enabled || !cameraRef) return;
 
-  const moveSpeed = 5.0; // units per second
+  const moveSpeed = 0; // Disabled for testing - player should be stationary // units per second
   const mouseSensitivity = 0.002;
 
   // Process keyboard input
@@ -241,8 +241,8 @@ export function getVirtualController(hand = 'both') {
   if (!enabled || !cameraRef) return null;
 
   return {
-    getWorldPosition: () => cameraRef.position.clone(),
-    getWorldQuaternion: () => cameraRef.quaternion.clone(),
+    getWorldPosition: (target) => { target.copy(cameraRef.position); return target; },
+    getWorldQuaternion: (target) => { target.copy(cameraRef.quaternion); return target; },
     userData: { handedness: hand }
   };
 }
@@ -382,7 +382,7 @@ function onPointerLockChange() {
 }
 
 function onPointerLockError() {
-  console.warn('[desktop-controls] Pointer lock error');
+  // Pointer lock errors are normal when user presses ESC - ignore
 }
 
 function handleFireInput() {

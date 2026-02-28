@@ -405,9 +405,9 @@ function createAurora() {
   const ctx1 = canvas1.getContext('2d');
   const grad1 = ctx1.createLinearGradient(0, 0, 0, h);
   grad1.addColorStop(0, 'rgba(0,40,60,0)');
-  grad1.addColorStop(0.3, 'rgba(0,200,180,0.15)');
-  grad1.addColorStop(0.5, 'rgba(0,255,200,0.25)');
-  grad1.addColorStop(0.7, 'rgba(0,180,220,0.12)');
+  grad1.addColorStop(0.3, 'rgba(0,255,220,0.4)');
+  grad1.addColorStop(0.5, 'rgba(100,255,220,0.6)');
+  grad1.addColorStop(0.7, 'rgba(0,200,255,0.3)');
   grad1.addColorStop(1, 'rgba(0,40,80,0)');
   ctx1.fillStyle = grad1;
   ctx1.fillRect(0, 0, w, h);
@@ -422,7 +422,7 @@ function createAurora() {
     depthWrite: false,
   });
   const mesh1 = new THREE.Mesh(geo1, mat1);
-  mesh1.position.set(0, 15, 0);
+  mesh1.position.set(0, 8, 0);
   mesh1.renderOrder = -21;
   scene.add(mesh1);
 
@@ -433,9 +433,9 @@ function createAurora() {
   const ctx2 = canvas2.getContext('2d');
   const grad2 = ctx2.createLinearGradient(0, 0, 0, h);
   grad2.addColorStop(0, 'rgba(0,60,40,0)');
-  grad2.addColorStop(0.4, 'rgba(0,255,150,0.12)');
-  grad2.addColorStop(0.6, 'rgba(50,255,200,0.18)');
-  grad2.addColorStop(0.8, 'rgba(0,200,180,0.10)');
+  grad2.addColorStop(0.4, 'rgba(50,255,180,0.35)');
+  grad2.addColorStop(0.6, 'rgba(100,255,220,0.5)');
+  grad2.addColorStop(0.8, 'rgba(0,220,200,0.25)');
   grad2.addColorStop(1, 'rgba(0,60,80,0)');
   ctx2.fillStyle = grad2;
   ctx2.fillRect(0, 0, w, h);
@@ -450,7 +450,7 @@ function createAurora() {
     depthWrite: false,
   });
   const mesh2 = new THREE.Mesh(geo2, mat2);
-  mesh2.position.set(0, 16, 0);
+  mesh2.position.set(0, 9, 0);
   mesh2.renderOrder = -22;
   scene.add(mesh2);
 
