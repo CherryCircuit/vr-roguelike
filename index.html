@@ -1,742 +1,247 @@
-f (!confirm(Clear
 <!DOCTYPE html>
-sync function clearAllScores() {
-f (!confirm(Clear
 <html lang="en">
-sync function clearAllScores() {
-f (!confirm(Clear
 <head>
-sync function clearAllScores() {
-f (!confirm(Clear
   <meta charset="utf-8">
-sync function clearAllScores() {
-f (!confirm(Clear
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-sync function clearAllScores() {
-f (!confirm(Clear
   <title>Synthwave VR Blaster</title>
-sync function clearAllScores() {
-f (!confirm(Clear
   <style>
-sync function clearAllScores() {
-f (!confirm(Clear
     /* ── Base Reset & Synthwave Theme ── */
-sync function clearAllScores() {
-f (!confirm(Clear
     * { margin: 0; padding: 0; box-sizing: border-box; }
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
     body {
-sync function clearAllScores() {
-f (!confirm(Clear
       background: #0a0015;
-sync function clearAllScores() {
-f (!confirm(Clear
       color: #ff00ff;
-sync function clearAllScores() {
-f (!confirm(Clear
       font-family: 'Courier New', monospace;
-sync function clearAllScores() {
-f (!confirm(Clear
       overflow: hidden;
-sync function clearAllScores() {
-f (!confirm(Clear
       width: 100vw;
-sync function clearAllScores() {
-f (!confirm(Clear
       height: 100vh;
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
     /* ── Info Overlay ── */
-sync function clearAllScores() {
-f (!confirm(Clear
     #info {
-sync function clearAllScores() {
-f (!confirm(Clear
       position: absolute;
-sync function clearAllScores() {
-f (!confirm(Clear
       top: 20px;
-sync function clearAllScores() {
-f (!confirm(Clear
       width: 100%;
-sync function clearAllScores() {
-f (!confirm(Clear
       text-align: center;
-sync function clearAllScores() {
-f (!confirm(Clear
       z-index: 100;
-sync function clearAllScores() {
-f (!confirm(Clear
       pointer-events: none;
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
     #info h1 {
-sync function clearAllScores() {
-f (!confirm(Clear
       font-size: 1.1em;
-sync function clearAllScores() {
-f (!confirm(Clear
       color: #00ffff;
-sync function clearAllScores() {
-f (!confirm(Clear
       text-shadow: 0 0 10px #00ffff, 0 0 30px #00ffff, 0 0 60px #0066ff;
-sync function clearAllScores() {
-f (!confirm(Clear
       letter-spacing: 0.15em;
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
     #info p {
-sync function clearAllScores() {
-f (!confirm(Clear
       margin-top: 8px;
-sync function clearAllScores() {
-f (!confirm(Clear
-      font-size: 1em;
-sync function clearAllScores() {
-f (!confirm(Clear
+      font-size: 0.5em;
       color: #ff00ff;
-sync function clearAllScores() {
-f (!confirm(Clear
       text-shadow: 0 0 8px #ff00ff;
-sync function clearAllScores() {
-f (!confirm(Clear
       opacity: 0.8;
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
     /* ── WebXR Fallback ── */
-sync function clearAllScores() {
-f (!confirm(Clear
     #no-vr {
-sync function clearAllScores() {
-f (!confirm(Clear
       display: none !important; /* Hidden for desktop testing */
-sync function clearAllScores() {
-f (!confirm(Clear
       position: absolute;
-sync function clearAllScores() {
-f (!confirm(Clear
       top: 50%;
-sync function clearAllScores() {
-f (!confirm(Clear
       left: 50%;
-sync function clearAllScores() {
-f (!confirm(Clear
       transform: translate(-50%, -50%);
-sync function clearAllScores() {
-f (!confirm(Clear
       text-align: center;
-sync function clearAllScores() {
-f (!confirm(Clear
       z-index: 200;
-sync function clearAllScores() {
-f (!confirm(Clear
       background: rgba(10, 0, 21, 0.95);
-sync function clearAllScores() {
-f (!confirm(Clear
       border: 1px solid #ff00ff;
-sync function clearAllScores() {
-f (!confirm(Clear
       padding: 40px;
-sync function clearAllScores() {
-f (!confirm(Clear
       max-width: 500px;
-sync function clearAllScores() {
-f (!confirm(Clear
       box-shadow: 0 0 30px rgba(255, 0, 255, 0.3);
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
     #no-vr h2 {
-sync function clearAllScores() {
-f (!confirm(Clear
       color: #ff00ff;
-sync function clearAllScores() {
-f (!confirm(Clear
       text-shadow: 0 0 10px #ff00ff;
-sync function clearAllScores() {
-f (!confirm(Clear
       margin-bottom: 15px;
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
     #no-vr p {
-sync function clearAllScores() {
-f (!confirm(Clear
       color: #aa66cc;
-sync function clearAllScores() {
-f (!confirm(Clear
       line-height: 1.6;
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
     /* ── Scanline Overlay (CRT effect on webpage only) ── */
-sync function clearAllScores() {
-f (!confirm(Clear
     #scanlines {
-sync function clearAllScores() {
-f (!confirm(Clear
       position: fixed;
-sync function clearAllScores() {
-f (!confirm(Clear
       top: 0;
-sync function clearAllScores() {
-f (!confirm(Clear
       left: 0;
-sync function clearAllScores() {
-f (!confirm(Clear
       width: 100%;
-sync function clearAllScores() {
-f (!confirm(Clear
       height: 100%;
-sync function clearAllScores() {
-f (!confirm(Clear
       background: repeating-linear-gradient(
-sync function clearAllScores() {
-f (!confirm(Clear
         0deg,
-sync function clearAllScores() {
-f (!confirm(Clear
         rgba(0, 0, 0, 0.08) 0px,
-sync function clearAllScores() {
-f (!confirm(Clear
         rgba(0, 0, 0, 0.08) 1px,
-sync function clearAllScores() {
-f (!confirm(Clear
         transparent 1px,
-sync function clearAllScores() {
-f (!confirm(Clear
         transparent 3px
-sync function clearAllScores() {
-f (!confirm(Clear
       );
-sync function clearAllScores() {
-f (!confirm(Clear
       pointer-events: none;
-sync function clearAllScores() {
-f (!confirm(Clear
       z-index: 50;
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
     /* ── Style the VR button (Three.js injects it) ── */
-sync function clearAllScores() {
-f (!confirm(Clear
     #VRButton {
-sync function clearAllScores() {
-f (!confirm(Clear
-    display: none !important; /* Hidden for desktop testing *//
-sync function clearAllScores() {
-f (!confirm(Clear
+      display: none !important; /* Hidden for desktop testing */
+    }
       font-family: 'Courier New', monospace !important;
-sync function clearAllScores() {
-f (!confirm(Clear
       letter-spacing: 0.1em !important;
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
   </style>
-sync function clearAllScores() {
-f (!confirm(Clear
 </head>
-sync function clearAllScores() {
-f (!confirm(Clear
 <body>
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
   <!-- Info overlay shown before entering VR -->
-sync function clearAllScores() {
-f (!confirm(Clear
   <div id="info">
-sync function clearAllScores() {
-f (!confirm(Clear
     <h1>SYNTHWAVE VR BLASTER</h1>
-sync function clearAllScores() {
-f (!confirm(Clear
     <p>Put on your VR headset and press ENTER VR</p>
-sync function clearAllScores() {
-f (!confirm(Clear
     <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Pull triggers to shoot</p>
-sync function clearAllScores() {
-f (!confirm(Clear
     <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">ver. 0.024 • Feb 28, 2026</p>
-sync function clearAllScores() {
-f (!confirm(Clear
   </div>
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
   <!-- Fallback if WebXR is not available -->
-sync function clearAllScores() {
-f (!confirm(Clear
   <div id="no-vr">
-sync function clearAllScores() {
-f (!confirm(Clear
     <h2>VR NOT AVAILABLE</h2>
-sync function clearAllScores() {
-f (!confirm(Clear
     <p>WebXR is not supported on this device or browser.</p>
-sync function clearAllScores() {
-f (!confirm(Clear
     <p>Please use a WebXR-compatible browser such as Meta Quest Browser or Chrome on a VR-capable device.</p>
-sync function clearAllScores() {
-f (!confirm(Clear
   </div>
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
   <!-- CRT scanline overlay (hidden in VR — obscures view) -->
-sync function clearAllScores() {
-f (!confirm(Clear
   <div id="scanlines"></div>
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
   <!-- Error overlay (always visible in web view if errors occur) -->
-sync function clearAllScores() {
-f (!confirm(Clear
   <div id="error-overlay" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#ff0000;color:#ffffff;padding:30px;z-index:9999;max-width:90%;text-align:center;border:4px solid #ffffff;font-family:'Courier New',monospace;">
-sync function clearAllScores() {
-f (!confirm(Clear
     <h2 style="margin:0 0 20px 0;font-size:32px;">GAME ERROR</h2>
-sync function clearAllScores() {
-f (!confirm(Clear
     <p id="error-message" style="font-size:20px;margin:0;word-wrap:break-word;"></p>
-sync function clearAllScores() {
-f (!confirm(Clear
     <p id="error-stack" style="font-size:14px;margin:20px 0 0 0;white-space:pre-wrap;opacity:0.8;"></p>
-sync function clearAllScores() {
-f (!confirm(Clear
   </div>
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
   <!-- Debug menu (show with ?debug=1 or click DEBUG) -->
-sync function clearAllScores() {
-f (!confirm(Clear
   <div id="debug-panel" style="display:none;position:fixed;bottom:20px;left:20px;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #00ffff;padding:12px;font-size:14px;">
-sync function clearAllScores() {
-f (!confirm(Clear
     <div style="color:#00ffff;margin-bottom:8px;">DEBUG</div>
-sync function clearAllScores() {
-f (!confirm(Clear
     <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;background:#220044;color:#fff;border:1px solid #ff00ff;"></label>
-sync function clearAllScores() {
-f (!confirm(Clear
     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
-sync function clearAllScores() {
-f (!confirm(Clear
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
-sync function clearAllScores() {
-f (!confirm(Clear
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Show Console</label>
-sync function clearAllScores() {
-f (!confirm(Clear
-    <button id="clear-scores" onclick="clearAllScores()" style="display:block;margin-top:8px;background:#440022;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;font-size:12px;width:100%;">🗑 Clear Scores</button>
-sync function clearAllScores() {
-f (!confirm(Clear
+    <button id="clear-scores" style="display:block;margin-top:8px;background:#440022;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;font-size:12px;width:100%;">🗑 Clear Scores</button>
     <button id="copy-log" style="display:block;margin-top:12px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;font-size:12px;width:100%;">📋 Copy Log</button>
-sync function clearAllScores() {
-f (!confirm(Clear
-    <button id="clear-scores" style="display:block;margin-top:8px;background:#440022;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;font-size:12px;width:100%;">🗑 Clear Scores</button>/
-sync function clearAllScores() {
-f (!confirm(Clear
   </div>
-sync function clearAllScores() {
-f (!confirm(Clear
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
   <!-- Console log output panel (only visible when enabled) -->
-sync function clearAllScores() {
-f (!confirm(Clear
   <div id="console-panel" style="display:none;position:fixed;bottom:80px;left:20px;width:500px;max-height:300px;overflow-y:auto;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #ff00ff;padding:12px;font-size:12px;font-family:monospace;">
-sync function clearAllScores() {
-f (!confirm(Clear
     <div style="color:#ff00ff;margin-bottom:4px;">CONSOLE OUTPUT</div>
-sync function clearAllScores() {
-f (!confirm(Clear
     <div id="console-logs" style="color:#00ffff;word-break:break-all;"></div>
-sync function clearAllScores() {
-f (!confirm(Clear
   </div>
-sync function clearAllScores() {
-f (!confirm(Clear
   <!-- WebXR Polyfill (loaded before Three.js) -->
-sync function clearAllScores() {
-f (!confirm(Clear
   <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
-sync function clearAllScores() {
-f (!confirm(Clear
   <script>
-sync function clearAllScores() {
-f (!confirm(Clear
     // Initialize the WebXR polyfill for browsers that don't natively support WebXR
-sync function clearAllScores() {
-f (!confirm(Clear
     if (window.WebXRPolyfill) {
-sync function clearAllScores() {
-f (!confirm(Clear
       new WebXRPolyfill();
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
   </script>
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
   <!-- Three.js module import map (no build tools needed) -->
-sync function clearAllScores() {
-f (!confirm(Clear
   <script type="importmap">
-sync function clearAllScores() {
-f (!confirm(Clear
   {
-sync function clearAllScores() {
-f (!confirm(Clear
     "imports": {
-sync function clearAllScores() {
-f (!confirm(Clear
       "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-sync function clearAllScores() {
-f (!confirm(Clear
       "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
-sync function clearAllScores() {
-f (!confirm(Clear
       "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm"
-sync function clearAllScores() {
-f (!confirm(Clear
     }
-sync function clearAllScores() {
-f (!confirm(Clear
   }
-sync function clearAllScores() {
-f (!confirm(Clear
   </script>
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
   <!-- Main game module -->
-sync function clearAllScores() {
-f (!confirm(Clear
   <script type="module" src="main.js"></script>
-sync function clearAllScores() {
-f (!confirm(Clear
   <script>
-sync function clearAllScores() {
-f (!confirm(Clear
     (function() {
-sync function clearAllScores() {
-f (!confirm(Clear
       const params = new URLSearchParams(location.search);
-sync function clearAllScores() {
-f (!confirm(Clear
       const panel = document.getElementById('debug-panel');
-sync function clearAllScores() {
-f (!confirm(Clear
       const toggle = document.getElementById('debug-toggle');
-sync function clearAllScores() {
-f (!confirm(Clear
       const consolePanel = document.getElementById('console-panel');
-sync function clearAllScores() {
-f (!confirm(Clear
       const consoleLogs = document.getElementById('console-logs');
-sync function clearAllScores() {
-f (!confirm(Clear
       
-sync function clearAllScores() {
-f (!confirm(Clear
       if (params.get('debug') === '1') panel.style.display = 'block';
-sync function clearAllScores() {
-f (!confirm(Clear
       toggle.addEventListener('click', function(e) { e.preventDefault(); panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
-sync function clearAllScores() {
-f (!confirm(Clear
       
-sync function clearAllScores() {
-f (!confirm(Clear
       document.getElementById('debug-jump').addEventListener('click', function() {
-sync function clearAllScores() {
-f (!confirm(Clear
         const level = parseInt(document.getElementById('debug-level').value, 10) || 1;
-sync function clearAllScores() {
-f (!confirm(Clear
         window.debugJumpToLevel = Math.max(1, Math.min(20, level));
-sync function clearAllScores() {
-f (!confirm(Clear
       });
-sync function clearAllScores() {
-f (!confirm(Clear
       
-sync function clearAllScores() {
-f (!confirm(Clear
       document.getElementById('debug-perf-monitor').addEventListener('change', function() {
-sync function clearAllScores() {
-f (!confirm(Clear
         window.debugPerfMonitor = this.checked;
-sync function clearAllScores() {
-f (!confirm(Clear
       });
-sync function clearAllScores() {
-f (!confirm(Clear
       
-sync function clearAllScores() {
-f (!confirm(Clear
       document.getElementById('debug-console').addEventListener('change', function() {
-sync function clearAllScores() {
-f (!confirm(Clear
         consolePanel.style.display = this.checked ? 'block' : 'none';
-sync function clearAllScores() {
-f (!confirm(Clear
       });
-sync function clearAllScores() {
-f (!confirm(Clear
       
-sync function clearAllScores() {
-    // Add clear scores function before copy-log handler
-f (!confirm(Clear
       document.getElementById('copy-log').addEventListener('click', function(e) {
-sync function clearAllScores() {
-f (!confirm(Clear
         e.stopPropagation();
-sync function clearAllScores() {
-f (!confirm(Clear
         const logs = consoleLogs.textContent;
-sync function clearAllScores() {
-f (!confirm(Clear
         navigator.clipboard.writeText(logs).then(() => {
-sync function clearAllScores() {
-f (!confirm(Clear
           const btn = document.getElementById('copy-log');
-sync function clearAllScores() {
-f (!confirm(Clear
           const original = btn.textContent;
-sync function clearAllScores() {
-f (!confirm(Clear
           btn.textContent = '✅ Copied!';
-sync function clearAllScores() {
-f (!confirm(Clear
           setTimeout(() => btn.textContent = original, 2000);
-sync function clearAllScores() {
-f (!confirm(Clear
         }).catch(err => console.error('Failed to copy logs:', err));
-sync function clearAllScores() {
-f (!confirm(Clear
       });
-sync function clearAllScores() {
-f (!confirm(Clear
       
-sync function clearAllScores() {
-f (!confirm(Clear
       // Capture console logs for the panel
-sync function clearAllScores() {
-f (!confirm(Clear
       const originalLog = console.log;
-sync function clearAllScores() {
-f (!confirm(Clear
       const originalError = console.error;
-sync function clearAllScores() {
-f (!confirm(Clear
       const originalWarn = console.warn;
-sync function clearAllScores() {
-f (!confirm(Clear
       
-sync function clearAllScores() {
-f (!confirm(Clear
       function addLog(type, args) {
-sync function clearAllScores() {
-f (!confirm(Clear
         const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-sync function clearAllScores() {
-f (!confirm(Clear
         const line = document.createElement('div');
-sync function clearAllScores() {
-f (!confirm(Clear
         line.style.color = type === 'error' ? '#ff4444' : type === 'warn' ? '#ffaa00' : '#00ffff';
-sync function clearAllScores() {
-f (!confirm(Clear
         line.textContent = msg;
-sync function clearAllScores() {
-f (!confirm(Clear
         consoleLogs.appendChild(line);
-sync function clearAllScores() {
-f (!confirm(Clear
         consoleLogs.scrollTop = consoleLogs.scrollHeight;
-sync function clearAllScores() {
-f (!confirm(Clear
         // Keep only last 100 lines
-sync function clearAllScores() {
-f (!confirm(Clear
         while (consoleLogs.children.length > 100) {
-sync function clearAllScores() {
-f (!confirm(Clear
           consoleLogs.removeChild(consoleLogs.firstChild);
-sync function clearAllScores() {
-f (!confirm(Clear
         }
-sync function clearAllScores() {
-f (!confirm(Clear
       }
-sync function clearAllScores() {
-f (!confirm(Clear
       
-sync function clearAllScores() {
-f (!confirm(Clear
       console.log = function(...args) { originalLog.apply(console, args); addLog('log', args); };
-sync function clearAllScores() {
-f (!confirm(Clear
       console.error = function(...args) { originalError.apply(console, args); addLog('error', args); };
-sync function clearAllScores() {
-f (!confirm(Clear
       console.warn = function(...args) { originalWarn.apply(console, args); addLog('warn', args); };
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
       // Global error handler - catches ALL uncaught errors
-sync function clearAllScores() {
-f (!confirm(Clear
       window.showWebError = function(message, stack = '') {
-sync function clearAllScores() {
-f (!confirm(Clear
         const overlay = document.getElementById('error-overlay');
-sync function clearAllScores() {
-f (!confirm(Clear
         const msgEl = document.getElementById('error-message');
-sync function clearAllScores() {
-f (!confirm(Clear
         const stackEl = document.getElementById('error-stack');
-sync function clearAllScores() {
-f (!confirm(Clear
         msgEl.textContent = message || 'Unknown error';
-sync function clearAllScores() {
-f (!confirm(Clear
         stackEl.textContent = stack || 'No stack trace available';
-sync function clearAllScores() {
-f (!confirm(Clear
         overlay.style.display = 'block';
-sync function clearAllScores() {
-f (!confirm(Clear
         console.error('[GAME ERROR]', message, stack);
-sync function clearAllScores() {
-f (!confirm(Clear
       };
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
       window.addEventListener('error', function(e) {
-sync function clearAllScores() {
-f (!confirm(Clear
         window.showWebError(e.message, e.error?.stack || e.stack || '');
-sync function clearAllScores() {
-f (!confirm(Clear
       });
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
       window.addEventListener('unhandledrejection', function(e) {
-sync function clearAllScores() {
-f (!confirm(Clear
         // Ignore pointer lock errors (normal when user presses ESC)
-sync function clearAllScores() {
-f (!confirm(Clear
         if (e.reason && (e.reason.toString().includes('lock') || e.reason.toString().includes('SecurityError'))) return;
-sync function clearAllScores() {
-f (!confirm(Clear
         window.showWebError('Unhandled Promise Rejection: ' + e.reason, e.reason?.stack || '');
-sync function clearAllScores() {
-f (!confirm(Clear
       });
-sync function clearAllScores() {
-f (!confirm(Clear
     })();
-sync function clearAllScores() {
-f (!confirm(Clear
   </script>
-sync function clearAllScores() {
-f (!confirm(Clear
 
-sync function clearAllScores() {
-f (!confirm(Clear
 </body>
-sync function clearAllScores() {
-f (!confirm(Clear
 </html>
-sync function clearAllScores() {
