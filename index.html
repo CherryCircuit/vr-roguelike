@@ -127,6 +127,7 @@
     <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;background:#220044;color:#fff;border:1px solid #ff00ff;"></label>
     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Show Console</label>
   </div>
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
 
@@ -164,15 +165,57 @@
       const params = new URLSearchParams(location.search);
       const panel = document.getElementById('debug-panel');
       const toggle = document.getElementById('debug-toggle');
+      const consolePanel = document.getElementById('console-panel');
+      const consoleLogs = document.getElementById('console-logs');
+      
       if (params.get('debug') === '1') panel.style.display = 'block';
       toggle.addEventListener('click', function(e) { e.preventDefault(); panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
+      
       document.getElementById('debug-jump').addEventListener('click', function() {
         const level = parseInt(document.getElementById('debug-level').value, 10) || 1;
         window.debugJumpToLevel = Math.max(1, Math.min(20, level));
       });
+      
       document.getElementById('debug-perf-monitor').addEventListener('change', function() {
         window.debugPerfMonitor = this.checked;
       });
+      
+      document.getElementById('debug-console').addEventListener('change', function() {
+        consolePanel.style.display = this.checked ? 'block' : 'none';
+      });
+      
+      document.getElementById('copy-log').addEventListener('click', function(e) {
+        e.stopPropagation();
+        const logs = consoleLogs.textContent;
+        navigator.clipboard.writeText(logs).then(() => {
+          const btn = document.getElementById('copy-log');
+          const original = btn.textContent;
+          btn.textContent = '✅ Copied!';
+          setTimeout(() => btn.textContent = original, 2000);
+        }).catch(err => console.error('Failed to copy logs:', err));
+      });
+      
+      // Capture console logs for the panel
+      const originalLog = console.log;
+      const originalError = console.error;
+      const originalWarn = console.warn;
+      
+      function addLog(type, args) {
+        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+        const line = document.createElement('div');
+        line.style.color = type === 'error' ? '#ff4444' : type === 'warn' ? '#ffaa00' : '#00ffff';
+        line.textContent = msg;
+        consoleLogs.appendChild(line);
+        consoleLogs.scrollTop = consoleLogs.scrollHeight;
+        // Keep only last 100 lines
+        while (consoleLogs.children.length > 100) {
+          consoleLogs.removeChild(consoleLogs.firstChild);
+        }
+      }
+      
+      console.log = function(...args) { originalLog.apply(console, args); addLog('log', args); };
+      console.error = function(...args) { originalError.apply(console, args); addLog('error', args); };
+      console.warn = function(...args) { originalWarn.apply(console, args); addLog('warn', args); };
 
       // Global error handler - catches ALL uncaught errors
       window.showWebError = function(message, stack = '') {
