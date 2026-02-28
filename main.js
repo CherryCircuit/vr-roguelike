@@ -52,7 +52,7 @@ import {
   initDesktopControls, enable as enableDesktop, disable as disableDesktop,
   toggleMode, isEnabled as isDesktopEnabled,
   update as updateDesktop, getWeaponState as getDesktopWeaponState,
-  getVirtualController, getControlScheme
+  getVirtualController, getControlScheme, getAimRaycaster
 } from './desktop-controls.js';
 
 // ── Constants ──────────────────────────────────────────────
@@ -2170,6 +2170,7 @@ function render(timestamp) {
   perfMonitor.recordFrame(rawDt * 1000);
 
   // Update object counts for performance monitoring
+  const st = game.state;
   if (st === State.PLAYING || st === State.LEVEL_COMPLETE || st === State.BOSS_FIGHT) {
     perfMonitor.updateObjectCounts({
       projectiles: projectiles.length,
