@@ -4,6 +4,7 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { initDesktopControls, update as updateDesktopControls, isEnabled as isDesktopMode } from './desktop-controls.js';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import Stats from 'three/addons/libs/stats.module.js';
 
@@ -116,6 +117,11 @@ const CHARGE_SHOT_MAX_DAMAGE = 1000; // maximum damage at full charge
 // Charge shot visual effects (per controller)
 const chargeGlowSpheres = [null, null];
 const chargeParticleSystems = [null, null];
+
+// Pre-allocated colors for charge visuals (avoid per-frame GC pressure)
+const _chargeColorLow = new THREE.Color(0x00ffff);
+const _chargeColorHigh = new THREE.Color(0xffffff);
+const _chargeColorTemp = new THREE.Color();
 
 // Holographic blaster displays (per controller)
 const blasterDisplays = [null, null];
@@ -245,6 +251,7 @@ function init() {
   setupControllers();
 
   // Init subsystems
+  initDesktopControls(scene, camera, renderer);
   initEnemies(scene);
   initHUD(camera, scene);
   
@@ -1640,13 +1647,9 @@ function updateChargeVisuals(controller, index, progress) {
   const scale = 1 + progress * 2;
   glowSphere.scale.setScalar(scale);
   
-  // Color shifts from cyan (low) to white/pink (high)
-  const color = new THREE.Color().lerpColors(
-    new THREE.Color(0x00ffff),  // Cyan
-    new THREE.Color(0xffffff),  // White
-    progress
-  );
-  glowSphere.material.color.copy(color);
+  // Color shifts from cyan (low) to white/pink (high) - reuse static colors to avoid GC pressure
+  _chargeColorTemp.lerpColors(_chargeColorLow, _chargeColorHigh, progress);
+  glowSphere.material.color.copy(_chargeColorTemp);
   
   // Opacity increases with charge
   glowSphere.material.opacity = 0.1 + progress * 0.6;
@@ -1665,7 +1668,7 @@ function updateChargeVisuals(controller, index, progress) {
     particle.position.z = Math.sin(angle * 0.5) * 0.02;  // Slight wobble
     
     // Particle color matches glow
-    particle.material.color.copy(color);
+    particle.material.color.copy(_chargeColorTemp);
     
     // Particles get brighter as charge increases
     particle.material.opacity = 0.3 + progress * 0.7;
@@ -2292,6 +2295,9 @@ function render(timestamp) {
   const now = timestamp || performance.now();
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
+
+  // Update desktop controls if in non-VR mode
+  if (isDesktopMode()) updateDesktopControls(rawDt);
 
   // Apply bullet-time slow-mo and ramp-out (use raw dt)
   if (slowMoRampOut) {
