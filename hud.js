@@ -423,8 +423,8 @@ function createTitleScreen() {
   titleDiagBtn = diagBtnMesh;
 
   // Version number
-  const versionDate = 'FEB 10 2026   12:10PM PT';
-  const versionNum = 'v0.044';
+  const versionDate = 'FEB 28 2026';
+  const versionNum = 'v0.024';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 32,
     color: '#888888',
