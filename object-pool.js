@@ -3,6 +3,7 @@
 //  Reuses objects instead of creating/destroying them
 // ============================================================
 
+import * as THREE from 'three';
 /**
  * Generic object pool for reusable game objects
  */

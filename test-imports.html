@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Import Test</title>
+</head>
+<body>
+    <h1>Testing ES6 Module Imports</h1>
+    <div id="results"></div>
+    <script type="module">
+        const results = document.getElementById('results');
+        const tests = [
+            { name: 'THREE', test: () => import('https://unpkg.com/three@0.160.0/build/three.module.js') },
+            { name: 'desktop-controls', test: () => import('./desktop-controls.js') },
+            { name: 'performance', test: () => import('./performance.js') },
+            { name: 'object-pool', test: () => import('./object-pool.js') },
+            { name: 'test-tracker', test: () => import('./test-tracker.js') },
+        ];
+        
+        tests.forEach(async ({ name, test }) => {
+            try {
+                await test();
+                results.innerHTML += `<p style="color: green">✓ ${name} loaded successfully</p>`;
+            } catch (error) {
+                results.innerHTML += `<p style="color: red">✗ ${name} failed: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
