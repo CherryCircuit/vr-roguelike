@@ -340,30 +340,30 @@ export function updateBossHealthBar(hp, maxHp, phases = 3) {
 function createTitleScreen() {
   // Big title: SPACEOMICIDE
   const titleSprite = makeSprite('SPACEOMICIDE', {
-    fontSize: 140,
+    fontSize: 70,
     color: '#00ffff',
-    glow: true, glowColor: '#0088ff', glowSize: 30,
-    scale: 1.8,
+    glow: true, glowColor: '#0088ff', glowSize: 15,
+    scale: 0.9,
   });
   titleSprite.position.set(0, 1.6, 0);
   titleGroup.add(titleSprite);
 
   // Subtitle
   const subSprite = makeSprite('VR ROGUELIKE BLASTER', {
-    fontSize: 48,
+    fontSize: 24,
     color: '#ff00ff',
-    glow: true, glowColor: '#ff00ff', glowSize: 10,
-    scale: 0.6,
+    glow: true, glowColor: '#ff00ff', glowSize: 5,
+    scale: 0.3,
   });
   subSprite.position.set(0, 0.8, 0);
   titleGroup.add(subSprite);
 
   // Blinking "Press Trigger to Begin"
   titleBlinkSprite = makeSprite('PRESS TRIGGER TO BEGIN', {
-    fontSize: 52,
+    fontSize: 26,
     color: '#ffffff',
     glow: true, glowColor: '#ffffff',
-    scale: 0.5,
+    scale: 0.25,
   });
   titleBlinkSprite.position.set(0, 0, 0);
   titleGroup.add(titleBlinkSprite);
@@ -395,54 +395,17 @@ function createTitleScreen() {
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
 
-  // Diagnostics button
-  const diagBtnGroup = new THREE.Group();
-  diagBtnGroup.position.set(1.5, -0.6, 0);
-  const diagBtnGeo = new THREE.PlaneGeometry(1.35, 0.3);
-  const diagBtnMat = new THREE.MeshBasicMaterial({
-    color: 0x001133,
-    transparent: true,
-    opacity: 0.85,
-    side: THREE.DoubleSide,
-  });
-  const diagBtnMesh = new THREE.Mesh(diagBtnGeo, diagBtnMat);
-  diagBtnMesh.userData.isTitleDiagBtn = true;
-  diagBtnGroup.add(diagBtnMesh);
-  const diagBtnBorderGeo = new THREE.EdgesGeometry(diagBtnGeo);
-  diagBtnGroup.add(new THREE.LineSegments(diagBtnBorderGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
-  const diagBtnText = makeSprite('DIAGNOSTICS', {
-    fontSize: 32,
-    color: '#00ff88',
-    glow: true,
-    glowColor: '#00ff88',
-    scale: 0.16,
-  });
-  diagBtnText.position.set(0, 0, 0.01);
-  diagBtnGroup.add(diagBtnText);
-  titleGroup.add(diagBtnGroup);
-  titleDiagBtn = diagBtnMesh;
-
-  // Version number
+// Version number
   const versionDate = 'FEB 28 2026';
   const versionNum = 'v0.024';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
-    fontSize: 32,
+    fontSize: 16,
     color: '#888888',
-    scale: 0.28,
+    scale: 0.14,
   });
   versionSprite.position.set(0, -1.0, 0);
   titleGroup.add(versionSprite);
 
-  // Debug mode indicator
-  const isDebugMode = typeof window !== 'undefined' && window.debugPerfMonitor;
-  const debugText = isDebugMode ? 'DEBUG MODE: ON' : 'DEBUG MODE: OFF';
-  const debugSprite = makeSprite(debugText, {
-    fontSize: 24,
-    color: isDebugMode ? '#00ff00' : '#666666',
-    scale: 0.18,
-  });
-  debugSprite.position.set(2.5, -0.85, 0);
-  titleGroup.add(debugSprite);
 }
 
 export function showTitle() {
