@@ -2466,7 +2466,7 @@ function render(timestamp) {
     game._combo = getComboMultiplier();
     checkComboIncrease(game._combo, camera.position, playUpgradeSound);
     if (frameCount % 3 === 0) {
-      updateHUD(game);
+updateHUD(game);
     }
   }
 
