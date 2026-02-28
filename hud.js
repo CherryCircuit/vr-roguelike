@@ -1649,6 +1649,17 @@ export function updateFPS(now, opts = {}) {
     if (perfMonitor) {
       text += ` | FT: ${avgFrameMs.toFixed(1)}ms`;
       if (memMb != null) text += ` | Mem: ${memMb}MB`;
+      
+      // Add pool statistics if available
+      if (typeof window !== 'undefined' && window.perfStats) {
+        const ps = window.perfStats;
+        const poolHitRate = (ps.poolHits + ps.poolMisses) > 0
+          ? (ps.poolHits / (ps.poolHits + ps.poolMisses) * 100).toFixed(1)
+          : 'N/A';
+        text += ` | Proj: ${ps.activeProjectiles}/${ps.pooledProjectiles}`;
+        text += ` | Pool: ${poolHitRate}%`;
+        if (ps.gcEvents > 0) text += ` | GC: ${ps.gcEvents}`;
+      }
     }
 
     const fpsColor = fps < 30 ? '#ff0000' : fps < 60 ? '#ffff00' : '#00ff00';
@@ -1656,10 +1667,10 @@ export function updateFPS(now, opts = {}) {
     const color = perfMonitor ? ftColor : fpsColor;
 
     const { texture, aspect } = makeTextTexture(text, {
-      fontSize: perfMonitor ? 24 : 32,
+      fontSize: perfMonitor ? 20 : 32,
       color,
       shadow: true,
-      maxWidth: perfMonitor ? 300 : null,
+      maxWidth: perfMonitor ? 500 : null,
     });
     if (fpsSprite.material.map) fpsSprite.material.map.dispose();
     fpsSprite.material.map = texture;

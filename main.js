@@ -63,6 +63,30 @@ let stats;
 const lightningBoltPool = [];
 let lightningPoolIndex = 0;
 const explosionVisualPool = [];
+
+// Projectile object pool for performance optimization
+const PROJECTILE_POOL_SIZE = 200;
+const projectilePool = [];
+let projectilePoolIndex = 0;
+
+// Performance monitoring statistics
+const perfStats = {
+  activeProjectiles: 0,
+  pooledProjectiles: 0,
+  poolHits: 0,
+  poolMisses: 0,
+  gcEvents: 0,
+  frameTimes: [],
+  systemTimes: {
+    updateProjectiles: 0,
+    updateEnemies: 0,
+    updateExplosions: 0,
+    updateHUD: 0,
+    render: 0
+  },
+  lastMemoryCheck: 0,
+  memoryHistory: []
+};
 const sharedLightningMaterial = new THREE.LineBasicMaterial({
   color: 0xffff44,
   linewidth: 2,
@@ -215,6 +239,52 @@ function init() {
     mesh.userData.active = false;
     explosionVisualPool.push(mesh);
     scene.add(mesh);
+  }
+
+  // Setup Projectile Pool
+  // Pre-create projectile meshes for object pooling (reduces GC pressure)
+  const sharedBoltGeo = new THREE.CylinderGeometry(0.015, 0.015, 1.0, 6);
+  const sharedBoltGlowGeo = new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6);
+  const sharedPelletGeo = new THREE.SphereGeometry(0.025, 6, 6);
+  const sharedPelletMat = new THREE.MeshBasicMaterial({ color: 0xdddddd });
+  
+  for (let i = 0; i < PROJECTILE_POOL_SIZE; i++) {
+    // Create group-based projectile (laser bolt with glow)
+    const group = new THREE.Group();
+    const bolt = new THREE.Mesh(sharedBoltGeo, new THREE.MeshBasicMaterial({ color: 0x00ffff }));
+    bolt.rotation.x = Math.PI / 2;
+    bolt.position.z = -0.5;
+    group.add(bolt);
+    
+    const glowBolt = new THREE.Mesh(sharedBoltGlowGeo, new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.2 }));
+    glowBolt.rotation.x = Math.PI / 2;
+    glowBolt.position.z = -0.5;
+    group.add(glowBolt);
+    
+    group.visible = false;
+    group.userData.active = false;
+    group.userData.type = 'bolt';
+    projectilePool.push(group);
+    scene.add(group);
+  }
+  
+  perfStats.pooledProjectiles = PROJECTILE_POOL_SIZE;
+  
+  // Monitor garbage collection events
+  if (typeof PerformanceObserver !== 'undefined') {
+    try {
+      const perfObserver = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.entryType === 'measure' || entry.name.includes('gc')) {
+            perfStats.gcEvents++;
+          }
+        }
+      });
+      perfObserver.observe({ entryTypes: ['measure', 'resource'] });
+      console.log('[perf] GC monitoring enabled');
+    } catch (e) {
+      console.log('[perf] GC monitoring not available:', e.message);
+    }
   }
 
   // Camera
@@ -1808,9 +1878,67 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   stopChargeSound(index);
 }
 
-function spawnProjectile(origin, direction, controllerIndex, stats) {
+
+// ============================================================
+//  PROJECTILE OBJECT POOL - Performance Optimization
+// ============================================================
+
+function getProjectileFromPool() {
+  // Find an inactive projectile in the pool
+  for (let i = 0; i < projectilePool.length; i++) {
+    const proj = projectilePool[i];
+    if (!proj.userData.active) {
+      perfStats.poolHits++;
+      return proj;
+    }
+  }
+  
+  // Pool exhausted, create new projectile (should rarely happen)
+  perfStats.poolMisses++;
+  console.warn('[perf] Projectile pool exhausted, creating new mesh');
+  return null;
+}
+
+function returnProjectileToPool(proj) {
+  if (!proj) return;
+  
+  proj.visible = false;
+  proj.userData.active = false;
+  proj.userData.hitEnemies = null; // Release the Set to avoid memory leaks
+  
+  // Reset position to origin
+  proj.position.set(0, 0, 0);
+}
+
+function resetProjectileUserData(proj, origin, direction, controllerIndex, stats, isBuckshot, isExploding) {
   const now = performance.now();
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
+  
+  // Reset or update color
+  if (!isBuckshot && proj.children.length >= 2) {
+    proj.children[0].material.color.setHex(color);
+    proj.children[1].material.color.setHex(color);
+  }
+  
+  proj.position.copy(origin);
+  proj.visible = true;
+  proj.userData.active = true;
+  proj.userData.velocity = direction.clone().multiplyScalar(isBuckshot ? 20 : 40);
+  proj.userData.stats = stats;
+  proj.userData.controllerIndex = controllerIndex;
+  proj.userData.isExploding = isExploding;
+  proj.userData.lifetime = 3000;
+  proj.userData.createdAt = now;
+  proj.userData.hitEnemies = new Set();
+  
+  // Orient bolt along direction
+  if (!isBuckshot) {
+    proj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction);
+  }
+}
+
+function spawnProjectile(origin, direction, controllerIndex, stats) {
+  const now = performance.now();
   const isBuckshot = stats.spreadAngle > 0;
 
   // Big Boom: only one exploding shot per hand every 2.75s
@@ -1822,50 +1950,69 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
     }
   }
 
-  // Star Wars style laser bolt (thin cylinder) or pellet
   let mesh;
+
   if (isBuckshot) {
-    // Pellet: small sphere
+    // Pellet: small sphere - not pooled yet (rarely used compared to bolts)
     mesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.025, 6, 6),
       new THREE.MeshBasicMaterial({ color: 0xdddddd })
     );
+    mesh.userData.active = true;
+    mesh.userData.velocity = direction.clone().multiplyScalar(20);
+    mesh.userData.stats = stats;
+    mesh.userData.controllerIndex = controllerIndex;
+    mesh.userData.isExploding = isExploding;
+    mesh.userData.lifetime = 3000;
+    mesh.userData.createdAt = now;
+    mesh.userData.hitEnemies = new Set();
+    scene.add(mesh);
+    projectiles.push(mesh);
   } else {
-    // Laser bolt: elongated cylinder (3-4 feet ~ 1 meter)
-    const group = new THREE.Group();
-    const boltLength = 1.0;
-    const boltGeo = new THREE.CylinderGeometry(0.015, 0.015, boltLength, 6);
-    const bolt = new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ color }));
-    bolt.rotation.x = Math.PI / 2; // align with forward direction
-    bolt.position.z = -boltLength / 2;
-    group.add(bolt);
+    // Laser bolt: get from object pool
+    mesh = getProjectileFromPool();
+    
+    if (mesh) {
+      // Reuse pooled projectile
+      resetProjectileUserData(mesh, origin, direction, controllerIndex, stats, false, isExploding);
+      projectiles.push(mesh);
+    } else {
+      // Pool exhausted - fallback to creating new mesh
+      const group = new THREE.Group();
+      const boltLength = 1.0;
+      const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
+      const boltGeo = new THREE.CylinderGeometry(0.015, 0.015, boltLength, 6);
+      const bolt = new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ color }));
+      bolt.rotation.x = Math.PI / 2;
+      bolt.position.z = -boltLength / 2;
+      group.add(bolt);
 
-    // Glow cylinder
-    const glowGeo = new THREE.CylinderGeometry(0.035, 0.035, boltLength, 6);
-    const glowBolt = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
-    glowBolt.rotation.x = Math.PI / 2;
-    glowBolt.position.z = -boltLength / 2;
-    group.add(glowBolt);
+      const glowGeo = new THREE.CylinderGeometry(0.035, 0.035, boltLength, 6);
+      const glowBolt = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
+      glowBolt.rotation.x = Math.PI / 2;
+      glowBolt.position.z = -boltLength / 2;
+      group.add(glowBolt);
 
-    mesh = group;
+      mesh = group;
+      mesh.position.copy(origin);
+      mesh.userData.active = true;
+      mesh.userData.velocity = direction.clone().multiplyScalar(40);
+      mesh.userData.stats = stats;
+      mesh.userData.controllerIndex = controllerIndex;
+      mesh.userData.isExploding = isExploding;
+      mesh.userData.lifetime = 3000;
+      mesh.userData.createdAt = now;
+      mesh.userData.hitEnemies = new Set();
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction);
+      
+      scene.add(mesh);
+      projectiles.push(mesh);
+    }
   }
-
-  mesh.position.copy(origin);
-  mesh.userData.velocity = direction.clone().multiplyScalar(isBuckshot ? 20 : 40);
-  mesh.userData.stats = stats;
-  mesh.userData.controllerIndex = controllerIndex;
-  mesh.userData.isExploding = isExploding;
-  mesh.userData.lifetime = 3000;
-  mesh.userData.createdAt = performance.now();
-  mesh.userData.hitEnemies = new Set();
-
-  // Orient bolt along direction
-  if (!isBuckshot) {
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction);
-  }
-
-  scene.add(mesh);
-  projectiles.push(mesh);
+  
+  // Update performance stats
+  perfStats.activeProjectiles = projectiles.length;
+  
   // Sound is now played once in shootWeapon() for all pellets
 }
 
@@ -2015,16 +2162,23 @@ function handleAOE(center, radius, damage, controllerIndex) {
 }
 
 function disposeProjectile(proj) {
-  if (proj.children && proj.children.length > 0) {
-    for (const child of proj.children) {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    }
+  // Check if this is a pooled projectile
+  if (proj.userData.type === 'bolt' || (proj.children && proj.children.length >= 2)) {
+    // Return to pool instead of disposing
+    returnProjectileToPool(proj);
   } else {
-    if (proj.geometry) proj.geometry.dispose();
-    if (proj.material) proj.material.dispose();
+    // Non-pooled projectile (e.g., pellets) - dispose normally
+    if (proj.children && proj.children.length > 0) {
+      for (const child of proj.children) {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+      }
+    } else {
+      if (proj.geometry) proj.geometry.dispose();
+      if (proj.material) proj.material.dispose();
+    }
+    scene.remove(proj);
   }
-  scene.remove(proj);
 }
 
 /** Spawn a short-lived visible explosion (expanding sphere) at center. */
@@ -2276,6 +2430,71 @@ function updateFastEnemyAlerts(dt, playerPos) {
 // ============================================================
 //  RENDER / UPDATE LOOP
 // ============================================================
+
+// ============================================================
+//  PERFORMANCE MONITORING
+// ============================================================
+
+function updatePerfStats(frameTimeMs) {
+  perfStats.frameTimes.push(frameTimeMs);
+  if (perfStats.frameTimes.length > 60) perfStats.frameTimes.shift();
+  
+  // Check memory usage every 5 seconds
+  const now = performance.now();
+  if (now - perfStats.lastMemoryCheck > 5000) {
+    perfStats.lastMemoryCheck = now;
+    if (typeof performance !== 'undefined' && performance.memory) {
+      const memMb = performance.memory.usedJSHeapSize / 1048576;
+      perfStats.memoryHistory.push({
+        time: now,
+        mb: memMb
+      });
+      if (perfStats.memoryHistory.length > 60) perfStats.memoryHistory.shift();
+      
+      // Alert if memory usage is high
+      if (memMb > 500) {
+        console.warn(`[perf] High memory usage: ${memMb.toFixed(0)}MB`);
+      }
+    }
+  }
+}
+
+function getPerfStatsDisplay() {
+  const avgFrameMs = perfStats.frameTimes.length > 0
+    ? perfStats.frameTimes.reduce((a, b) => a + b, 0) / perfStats.frameTimes.length
+    : 0;
+  const fps = avgFrameMs > 0 ? 1000 / avgFrameMs : 0;
+  
+  const poolHitRate = perfStats.poolHits + perfStats.poolMisses > 0
+    ? (perfStats.poolHits / (perfStats.poolHits + perfStats.poolMisses) * 100).toFixed(1)
+    : 'N/A';
+  
+  return {
+    fps: fps.toFixed(0),
+    avgFrameMs: avgFrameMs.toFixed(2),
+    activeProjectiles: perfStats.activeProjectiles,
+    pooledProjectiles: perfStats.pooledProjectiles,
+    poolHitRate,
+    poolHits: perfStats.poolHits,
+    poolMisses: perfStats.poolMisses,
+    gcEvents: perfStats.gcEvents,
+    memMb: perfStats.memoryHistory.length > 0
+      ? perfStats.memoryHistory[perfStats.memoryHistory.length - 1].mb.toFixed(0)
+      : 'N/A'
+  };
+}
+
+function logPerfStats() {
+  const stats = getPerfStatsDisplay();
+  console.log('[perf]', stats);
+}
+
+// Expose to window for debugging
+if (typeof window !== 'undefined') {
+  window.perfStats = perfStats;
+  window.getPerfStats = getPerfStatsDisplay;
+  window.logPerfStats = logPerfStats;
+}
 function render(timestamp) {
   // Stats update
   if (typeof stats !== 'undefined' && stats) {
@@ -2294,6 +2513,7 @@ function render(timestamp) {
   frameCount++;
   const now = timestamp || performance.now();
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
+  updatePerfStats(rawDt * 1000);  // Track frame times
   lastTime = now;
 
   // Update desktop controls if in non-VR mode
@@ -2874,7 +3094,10 @@ function render(timestamp) {
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
   renderer.render(scene, camera);
-}
+
+  if (typeof stats !== 'undefined' && stats) {
+    stats.end();
+  }}
 
 // ============================================================
 //  MUSIC VISUALIZER - COMMENTED OUT
