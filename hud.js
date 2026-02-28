@@ -655,7 +655,7 @@ function createUpgradeCard(upgrade, position) {
 
   // Name text - smaller to prevent overlap
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
-    fontSize: 28,
+    fontSize: 21,
     color: upgrade.color || '#00ffff',
     glow: true,
     glowColor: upgrade.color,
@@ -667,11 +667,11 @@ function createUpgradeCard(upgrade, position) {
 
   // Description text - standard size with padding (well inside box)
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 20,
+    fontSize: 16,
     color: '#cccccc',
     scale: 0.15,
     depthTest: true,
-    maxWidth: 180,
+    maxWidth: 200,
   });
   descSprite.position.set(0, -0.05, 0.01);
   group.add(descSprite);
