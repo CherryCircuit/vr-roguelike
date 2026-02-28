@@ -1715,6 +1715,104 @@ const BOSS_DEFS = {
     slamRate: 5.0,
     shardRate: 0.6,
     weakPoints: true
+,
+
+  // Level 20 Final Bosses (Tier 4 - VERY TOUGH)
+  walter_breakenridge: {
+    name: 'Walter "Pa" Breakenridge',
+    pattern: [
+      [0, 0, 1, 1, 1, 0, 0],
+      [0, 1, 1, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 1, 1, 0],
+      [0, 0, 1, 1, 1, 0, 0],
+    ],
+    voxelSize: 0.5,
+    baseHp: 1800,
+    phases: 4,
+    color: 0x88ff00,
+    scoreValue: 500,
+    behavior: 'walter',
+    hitboxRadius: 1.2,
+    minionSpawnRate: 4.0,
+    projectileRate: 2.5
+  },
+
+  kernel_monolith: {
+    name: 'KERNEL Monolith',
+    pattern: [
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+    ],
+    voxelSize: 0.55,
+    baseHp: 2000,
+    phases: 3,
+    color: 0xff8800,
+    scoreValue: 500,
+    behavior: 'kernel',
+    hitboxRadius: 1.0,
+    projectileRate: 1.8
+  },
+
+  synth_kraken: {
+    name: 'Synth Kraken',
+    pattern: [
+      [0, 0, 1, 1, 0, 0],
+      [0, 1, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 1, 0],
+    ],
+    voxelSize: 0.48,
+    baseHp: 1900,
+    phases: 4,
+    color: 0x00ffff,
+    scoreValue: 500,
+    behavior: 'kraken',
+    hitboxRadius: 1.1,
+    minionSpawnRate: 5.0,
+    projectileRate: 3.0
+  },
+
+  afterimage_seraphim: {
+    name: 'Afterimage Seraphim',
+    pattern: [
+      [1, 0, 0, 0, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [0, 1, 0, 1, 0],
+      [0, 1, 0, 1, 0],
+    ],
+    voxelSize: 0.45,
+    baseHp: 1700,
+    phases: 3,
+    color: 0xffff88,
+    scoreValue: 500,
+    behavior: 'seraphim',
+    hitboxRadius: 0.9,
+    minionSpawnRate: 6.0
+  },
+
+  sun_eater_train: {
+    name: 'Sun-Eater Train',
+    pattern: [
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+    ],
+    voxelSize: 0.6,
+    baseHp: 2200,
+    phases: 5,
+    color: 0xffaa00,
+    scoreValue: 500,
+    behavior: 'train',
+    hitboxRadius: 1.3,
+    projectileRate: 2.0
   }
 };
 
@@ -2539,11 +2637,380 @@ class MinotaurBoss extends Boss {
 }
 
 // ── BOSS POOL MANAGEMENT ─────────────────────────────────────
+
+// ── LEVEL 20 FINAL BOSSES ────────────────────────────────────
+
+/**
+ * Walter "Pa" Breakenridge - Patriarch on CRT throne
+ * Phase 1: Hologram projections (2-3 fake Walters)
+ * Phase 2: CRT barrage (rapid projectiles)
+ * Phase 3: Combination attack
+ * Phase 4: Desperate assault (all mechanics)
+ */
+class WalterBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    this.holograms = [];
+    this.hologramTimer = 0;
+    this.crtBarrageTimer = 0;
+    this.isBarraging = false;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    this.updateHolograms(dt, now, playerPos);
+    this.updateCRTBarrage(dt, now, playerPos);
+    _dir.copy(playerPos).sub(this.mesh.position);
+    const dist = _dir.length();
+    if (dist > 0.01) _dir.divideScalar(dist);
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    const speed = 0.15 + this.phase * 0.05;
+    this.mesh.position.addScaledVector(_dir, speed * dt);
+  }
+
+  updateHolograms(dt, now, playerPos) {
+    this.hologramTimer -= dt;
+    if (this.phase >= 1 && this.hologramTimer <= 0) {
+      const hologramCount = Math.min(3, this.phase);
+      this.holograms.forEach(h => this.sceneRef.remove(h.mesh));
+      this.holograms = [];
+      for (let i = 0; i < hologramCount; i++) {
+        const angle = (i / hologramCount) * Math.PI * 2;
+        const hologram = {
+          mesh: this.mesh.clone(),
+          angle: angle,
+          distance: 3 + Math.random() * 2
+        };
+        hologram.mesh.material = hologram.mesh.material.clone();
+        hologram.mesh.material.opacity = 0.4;
+        this.sceneRef.add(hologram.mesh);
+        this.holograms.push(hologram);
+      }
+      this.hologramTimer = 5.0 + Math.random() * 3.0;
+    }
+    this.holograms.forEach((h, i) => {
+      h.angle += dt * 0.5;
+      h.mesh.position.copy(this.mesh.position);
+      h.mesh.position.x += Math.cos(h.angle) * h.distance;
+      h.mesh.position.z += Math.sin(h.angle) * h.distance;
+      h.mesh.material.opacity = 0.3 + Math.sin(now * 0.003 + i) * 0.2;
+    });
+  }
+
+  updateCRTBarrage(dt, now, playerPos) {
+    if (this.phase >= 2) {
+      this.crtBarrageTimer -= dt;
+      if (this.crtBarrageTimer <= 0 && !this.isBarraging) {
+        this.isBarraging = true;
+        this.showTelegraph('charge', 1.0, 0x88ff00);
+        this.crtBarrageTimer = 0.1;
+        this.barrageCount = 5 + this.phase * 2;
+      }
+      if (this.isBarraging) {
+        this.crtBarrageTimer -= dt;
+        if (this.crtBarrageTimer <= 0) {
+          this.fireProjectile(playerPos);
+          this.barrageCount--;
+          if (this.barrageCount <= 0) {
+            this.isBarraging = false;
+            this.crtBarrageTimer = 3.0 - this.phase * 0.5;
+          } else {
+            this.crtBarrageTimer = 0.1;
+          }
+        }
+      }
+    }
+  }
+
+  onProjectileFire(playerPos) {}
+  onPhaseChange(newPhase) { super.onPhaseChange(newPhase); this.hologramTimer = 0; }
+}
+
+/**
+ * KERNEL - Monolith with 3 ports
+ */
+class KernelBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    this.activePort = 1;
+    this.portSwitchTimer = 0;
+    this.corePhaseActive = false;
+  }
+
+  buildMesh(def) {
+    const mesh = super.buildMesh(def);
+    const voxels = mesh.children.filter(c => c.userData.isBossBody);
+    if (voxels.length >= 3) {
+      voxels[0].userData.port = 1;
+      voxels[1].userData.port = 2;
+      voxels[2].userData.port = 3;
+    }
+    return mesh;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    this.updatePorts(dt, now);
+    _dir.copy(playerPos).sub(this.mesh.position);
+    const dist = _dir.length();
+    if (dist > 0.01) _dir.divideScalar(dist);
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    const speed = 0.05 + this.phase * 0.02;
+    this.mesh.position.addScaledVector(_dir, speed * dt);
+  }
+
+  updatePorts(dt, now) {
+    this.portSwitchTimer -= dt;
+    if (this.phase === 3 && !this.corePhaseActive) {
+      this.corePhaseActive = true;
+      this.activePort = 0;
+      this.mesh.children.forEach(c => {
+        if (c.userData && c.userData.isBossBody) {
+          c.userData.weakPoint = true;
+          c.material.color.setHex(0xff8800);
+          c.material.opacity = 1.0;
+        }
+      });
+    } else if (this.phase < 3 && this.portSwitchTimer <= 0) {
+      this.activePort = (this.activePort % 3) + 1;
+      this.portSwitchTimer = 8.0 - this.phase * 2.0;
+      this.mesh.children.forEach(c => {
+        if (c.userData && c.userData.isBossBody && c.userData.port) {
+          if (c.userData.port === this.activePort) {
+            c.userData.weakPoint = true;
+            c.material.opacity = 1.0;
+          } else {
+            c.userData.weakPoint = false;
+            c.material.opacity = 0.5;
+          }
+        }
+      });
+    }
+  }
+
+  onProjectileFire(playerPos) {
+    if (this.phase >= 2) {
+      this.fireProjectile(playerPos);
+      if (this.corePhaseActive) {
+        const spread = Math.PI / 6;
+        for (let i = -1; i <= 1; i++) {
+          const angle = new THREE.Vector3(
+            playerPos.x - this.mesh.position.x, 0,
+            playerPos.z - this.mesh.position.z
+          ).normalize();
+          angle.applyAxisAngle(new THREE.Vector3(0, 1, 0), i * spread);
+          this.fireProjectile(this.mesh.position.clone().add(angle.multiplyScalar(2)));
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Synth Kraken - Portal with tentacles
+ */
+class KrakenBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    this.tentacles = [];
+    this.tentacleSpawnTimer = 0;
+    this.rotationSpeed = 0;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    this.updateTentacles(dt, now, playerPos);
+    if (this.phase >= 3) {
+      this.rotationSpeed = 0.5 + this.phase * 0.2;
+      this.mesh.rotation.y += this.rotationSpeed * dt;
+    }
+    _dir.copy(playerPos).sub(this.mesh.position);
+    const dist = _dir.length();
+    if (dist > 0.01) _dir.divideScalar(dist);
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    const speed = 0.1 + this.phase * 0.03;
+    this.mesh.position.addScaledVector(_dir, speed * dt);
+  }
+
+  updateTentacles(dt, now, playerPos) {
+    this.tentacleSpawnTimer -= dt;
+    if (this.tentacleSpawnTimer <= 0) {
+      const maxTentacles = 2 + this.phase;
+      if (this.tentacles.length < maxTentacles) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 3 + Math.random() * 2;
+        const pos = this.mesh.position.clone();
+        pos.x += Math.cos(angle) * dist;
+        pos.z += Math.sin(angle) * dist;
+        this.spawnMinion(pos, playerPos, 'basic');
+        this.tentacles.push({ angle, spawnTime: now });
+      }
+      this.tentacleSpawnTimer = 6.0 - this.phase * 0.5;
+    }
+  }
+
+  onProjectileFire(playerPos) {
+    if (this.phase >= 2) {
+      this.fireProjectile(playerPos);
+      if (this.phase >= 4) {
+        const spread = Math.PI / 8;
+        for (let i = -1; i <= 1; i++) {
+          const angle = new THREE.Vector3(
+            playerPos.x - this.mesh.position.x, 0,
+            playerPos.z - this.mesh.position.z
+          ).normalize();
+          angle.applyAxisAngle(new THREE.Vector3(0, 1, 0), i * spread);
+          const target = this.mesh.position.clone().add(angle.multiplyScalar(10));
+          this.fireProjectile(target);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Afterimage Seraphim - Angel with afterimage turrets
+ */
+class SeraphimBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    this.afterimages = [];
+    this.afterimageSpawnTimer = 0;
+    this.isDiving = false;
+    this.diveTimer = 0;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    this.updateAfterimages(dt, now, playerPos);
+    if (this.phase >= 2) this.updateDiveAttack(dt, now, playerPos);
+    if (!this.isDiving) {
+      _dir.copy(playerPos).sub(this.mesh.position);
+      const dist = _dir.length();
+      if (dist > 0.01) _dir.divideScalar(dist);
+      this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+      const baseY = 1.5;
+      this.mesh.position.y = baseY + Math.sin(now * 0.002) * 0.3;
+      const speed = 0.2 + this.phase * 0.05;
+      this.mesh.position.addScaledVector(_dir, speed * dt);
+    }
+  }
+
+  updateAfterimages(dt, now, playerPos) {
+    this.afterimageSpawnTimer -= dt;
+    if (this.afterimageSpawnTimer <= 0) {
+      const maxAfterimages = 2 + this.phase;
+      if (this.afterimages.length < maxAfterimages) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 4 + Math.random() * 2;
+        const pos = this.mesh.position.clone();
+        pos.x += Math.cos(angle) * dist;
+        pos.z += Math.sin(angle) * dist;
+        this.spawnMinion(pos, playerPos, 'basic');
+        this.afterimages.push({ position: pos.clone(), spawnTime: now });
+      }
+      this.afterimageSpawnTimer = 7.0 - this.phase * 0.5;
+    }
+  }
+
+  updateDiveAttack(dt, now, playerPos) {
+    this.diveTimer -= dt;
+    if (this.diveTimer <= 0 && !this.isDiving) {
+      this.isDiving = true;
+      this.showTelegraph('charge', 1.5, 0xffff88);
+      this.diveStartPos = this.mesh.position.clone();
+      this.diveTargetPos = playerPos.clone();
+      this.diveDuration = 1.5;
+      this.diveElapsed = 0;
+    }
+    if (this.isDiving) {
+      this.diveElapsed += dt;
+      const t = this.diveElapsed / this.diveDuration;
+      if (t >= 1.0) {
+        this.isDiving = false;
+        this.diveTimer = 5.0;
+      } else {
+        this.mesh.position.lerpVectors(this.diveStartPos, this.diveTargetPos, t);
+      }
+    }
+  }
+
+  onMinionSpawn(playerPos) {}
+}
+
+/**
+ * Sun-Eater Train - 3 cars that cycle active states
+ */
+class TrainBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    this.activeCar = 1;
+    this.carSwitchTimer = 0;
+    this.cars = [];
+  }
+
+  buildMesh(def) {
+    const mesh = super.buildMesh(def);
+    const voxels = mesh.children.filter(c => c.userData.isBossBody);
+    const totalVoxels = voxels.length;
+    const voxelsPerCar = Math.floor(totalVoxels / 3);
+    for (let i = 0; i < 3; i++) {
+      const start = i * voxelsPerCar;
+      const end = (i === 2) ? totalVoxels : start + voxelsPerCar;
+      for (let j = start; j < end; j++) voxels[j].userData.car = i + 1;
+    }
+    return mesh;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    this.updateCars(dt, now);
+    const angle = now * 0.0002;
+    this.mesh.position.x = Math.sin(angle) * 6;
+    this.mesh.position.z = -8 + Math.cos(angle) * 6;
+    this.mesh.rotation.y = angle + Math.PI / 2;
+  }
+
+  updateCars(dt, now) {
+    this.carSwitchTimer -= dt;
+    if (this.phase <= 3) {
+      if (this.carSwitchTimer <= 0) {
+        this.activeCar = (this.activeCar % 3) + 1;
+        this.carSwitchTimer = 10.0 - this.phase * 1.5;
+        this.mesh.children.forEach(c => {
+          if (c.userData && c.userData.isBossBody && c.userData.car) {
+            if (c.userData.car === this.activeCar) {
+              c.userData.weakPoint = true;
+              c.material.opacity = 1.0;
+              c.material.emissive = new THREE.Color(0xffaa00);
+            } else {
+              c.userData.weakPoint = false;
+              c.material.opacity = 0.4;
+              c.material.emissive = new THREE.Color(0x000000);
+            }
+          }
+        });
+      }
+    } else {
+      this.mesh.children.forEach(c => {
+        if (c.userData && c.userData.isBossBody && c.userData.car) {
+          c.userData.weakPoint = true;
+          c.material.opacity = 1.0;
+          c.material.emissive = new THREE.Color(0xffaa00);
+        }
+      });
+    }
+  }
+
+  onProjectileFire(playerPos) {
+    if (this.phase >= 4) {
+      for (let i = 0; i < 3; i++) {
+        this.fireProjectile(playerPos);
+      }
+    }
+  }
+}
+
 const BOSS_POOLS = {
   1: ['chrono_wraith'], // Tier 1 (Level 5) - only teleporting boss
   2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'], // Tier 2 (Level 10) - harder bosses
   3: ['theodore_breakenridge', 'commander_halcyon', 'madame_coda', 'twin_glitch', 'neon_minotaur'], // Tier 3 (Level 15) - TOUGH bosses
-  4: ['chrono_wraith'], // Tier 4 (Level 20)
+  4: ['walter_breakenridge', 'kernel_monolith', 'synth_kraken', 'afterimage_seraphim', 'sun_eater_train'], // Tier 4 (Level 20) - FINAL bosses
 };
 
 // ── GLOBAL BOSS STATE ─────────────────────────────────────────
@@ -2618,6 +3085,21 @@ export function spawnBoss(bossId, levelConfig, camera) {
       break;
     case 'minotaur':
       boss = new MinotaurBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'walter':
+      boss = new WalterBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'kernel':
+      boss = new KernelBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'kraken':
+      boss = new KrakenBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'seraphim':
+      boss = new SeraphimBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'train':
+      boss = new TrainBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
     default:
       boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
