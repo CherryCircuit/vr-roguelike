@@ -1948,6 +1948,10 @@ function updateProjectiles(dt) {
   const now = performance.now();
   const raycaster = new THREE.Raycaster();
   const enemies = getEnemyMeshes(true).concat(getBossMinionMeshes());
+  
+  if (projectiles.length > 0 && enemies.length > 0) {
+    console.log(`[projectile] Checking ${projectiles.length} projectiles vs ${enemies.length} enemies`);
+  }
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const proj = projectiles[i];
@@ -1969,7 +1973,9 @@ function updateProjectiles(dt) {
     const hits = raycaster.intersectObjects(enemies, true);
 
     if (hits.length > 0 && hits[0].distance < moveDistance * 2) {
+      console.log(`[projectile] HIT! distance=${hits[0].distance.toFixed(2)}, object=${hits[0].object.type}`);
       const result = getEnemyByMesh(hits[0].object);
+      console.log(`[projectile] getEnemyByMesh result:`, result);
       if (result && result.boss) {
         handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex);
         if (!proj.userData.stats.piercing) {
