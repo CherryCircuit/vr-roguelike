@@ -188,3 +188,39 @@ export function getStoredName() {
 export function setStoredName(name) {
   localStorage.setItem('spaceomicide_name', name);
 }
+
+// Add at end of scoreboard.js, before the last export
+
+export async function clearAllScores() {
+  try {
+    const { error } = await supabase
+      .from('scores')
+      .delete()
+      .neq('id', 'gt', 0);
+    
+    if (error) {
+      console.error('[scoreboard] Failed to clear:', error);
+      return { success: false, error };
+    }
+    
+    return { success: true };
+  } catch (err) {
+    console.error('[scoreboard] Error clearing scores:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function clearAllScores() {
+  const { error } = await supabase
+    .from('scores')
+    .delete()
+    .neq('id', 'gt', 0);
+  
+  if (error) {
+    console.error('[scoreboard] Clear failed:', error);
+    return { success: false, error };
+  }
+  
+  console.log('[scoreboard] All scores cleared');
+  return { success: true, deleted: count };
+}

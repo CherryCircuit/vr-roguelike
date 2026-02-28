@@ -1396,7 +1396,7 @@ function shootWeapon(controller, index) {
     spawnProjectile(spawnOrigin, direction.clone(), index, stats);
   }
 
-  console.log(`[shoot] ${hand} hand fired ${count} projectile(s)`);
+  console.log(`[shoot] ${hand} hand fired ${count} projectile(s) from`, +stats.damage + ` damage`);
 }
 
 function updateLightningBeam(controller, index, stats, dt) {
