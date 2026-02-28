@@ -130,6 +130,13 @@
   </div>
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
 
+
+  <!-- Console log output panel (only visible when enabled) -->
+  <div id="console-panel" style="display:none;position:fixed;bottom:80px;left:20px;width:500px;max-height:300px;overflow-y:auto;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #ff00ff;padding:12px;font-size:12px;font-family:monospace;">
+    <div style="color:#ff00ff;margin-bottom:4px;">CONSOLE OUTPUT</div>
+    <div id="console-logs" style="color:#00ffff;word-break:break-all;"></div>
+    <button id="copy-log" style="display:block;margin-top:8px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;font-size:12px;">📋 Copy Log</button>
+  </div>
   <!-- WebXR Polyfill (loaded before Three.js) -->
   <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
   <script>
