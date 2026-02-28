@@ -2180,7 +2180,6 @@ function render(timestamp) {
     });
   }
 
-  const st = game.state;
 
   // ── Title screen ──
   if (st === State.TITLE) {
