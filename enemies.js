@@ -3304,6 +3304,10 @@ export function getEnemyByMesh(mesh) {
     if (obj.userData.isBoss) {
       return { boss: activeBoss, isBody: true };
     }
+    if (obj.userData.isEnemy) {
+      const idx = activeEnemies.findIndex(e => e.mesh === obj);
+      return idx >= 0 ? { index: idx, enemy: activeEnemies[idx] } : null;
+    }
     obj = obj.parent;
   }
   return null;

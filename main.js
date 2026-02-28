@@ -1948,9 +1948,15 @@ function updateProjectiles(dt) {
   const now = performance.now();
   const raycaster = new THREE.Raycaster();
   const enemies = getEnemyMeshes(true).concat(getBossMinionMeshes());
-  
+
   if (projectiles.length > 0 && enemies.length > 0) {
     console.log(`[projectile] Checking ${projectiles.length} projectiles vs ${enemies.length} enemies`);
+
+    // Log sample enemy positions
+    for (let j = 0; j < Math.min(3, enemies.length); j++) {
+      const enemy = enemies[j];
+      console.log(`[projectile] Enemy ${j}: pos=(${enemy.position.x.toFixed(2)}, ${enemy.position.y.toFixed(2)}, ${enemy.position.z.toFixed(2)}), type=${enemy.type}`);
+    }
   }
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
@@ -1968,9 +1974,20 @@ function updateProjectiles(dt) {
     const moveDistance = proj.userData.velocity.length() * dt;
     proj.position.addScaledVector(proj.userData.velocity, dt);
 
+    // Log projectile details
+    if (enemies.length > 0) {
+      const dir = proj.userData.velocity.clone().normalize();
+      console.log(`[projectile] Projectile ${i}: pos=(${proj.position.x.toFixed(2)}, ${proj.position.y.toFixed(2)}, ${proj.position.z.toFixed(2)}), dir=(${dir.x.toFixed(2)}, ${dir.y.toFixed(2)}, ${dir.z.toFixed(2)}), moveDist=${moveDistance.toFixed(3)}`);
+    }
+
     // Check collision with enemies
     raycaster.set(proj.position, proj.userData.velocity.clone().normalize());
     const hits = raycaster.intersectObjects(enemies, true);
+
+    console.log(`[projectile] Raycast result: hits.length=${hits.length}, raycaster.near=${raycaster.near}, raycaster.far=${raycaster.far}`);
+    if (hits.length > 0) {
+      console.log(`[projectile] First hit: distance=${hits[0].distance.toFixed(2)}, threshold=${(moveDistance * 2).toFixed(2)}, object=${hits[0].object.type}`);
+    }
 
     if (hits.length > 0 && hits[0].distance < moveDistance * 2) {
       console.log(`[projectile] HIT! distance=${hits[0].distance.toFixed(2)}, object=${hits[0].object.type}`);
