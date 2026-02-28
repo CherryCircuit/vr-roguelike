@@ -8,6 +8,10 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
+import { perfMonitor } from './performance.js';
+import { initPools, projectilePool, explosionPool, getPoolCounts } from './object-pool.js';
+import { testTracker } from './test-tracker.js';
+
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
@@ -42,6 +46,7 @@ import {
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
   isNameClean, COUNTRIES, CONTINENTS,
+"45,10p
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
 import {
@@ -209,6 +214,10 @@ function init() {
 
   // Render loop
   renderer.setAnimationLoop(render);
+
+  // Init performance monitoring and object pools
+  initPools(scene);
+  perfMonitor.start();
 
   // Start menu music
   playMusic('menu');
@@ -2160,6 +2169,18 @@ function render(timestamp) {
   }
 
   const dt = rawDt * timeScale;  // Scaled time for game logic
+
+  perfMonitor.recordFrame(rawDt * 1000);
+
+  // Update object counts for performance monitoring
+  if (st === State.PLAYING || st === State.LEVEL_COMPLETE || st === State.BOSS_FIGHT) {
+    perfMonitor.updateObjectCounts({
+      projectiles: projectiles.length,
+      enemies: getEnemyCount(),
+      explosions: explosionVisuals.length,
+      particles: 0,
+    });
+  }
 
   const st = game.state;
 
