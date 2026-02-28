@@ -528,7 +528,19 @@ function updateSpriteText(sprite, text, opts = {}) {
 }
 
 export function updateHUD(gameState) {
+
+  console.log(`[hud] Updating HUD, score: ${gameState.score}`);
+
+  console.log(`[hud] hudGroup.visible: ${hudGroup.visible}`);
+
+
   if (!hudGroup.visible) return;
+
+  console.log(`[hud] Updating HUD, score: ${gameState.score}`);
+
+  console.log(`[hud] hudGroup.visible: ${hudGroup.visible}`);
+
+
 
   // Hearts - proper aspect ratio with correct scale
   const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth);
@@ -548,6 +560,8 @@ export function updateHUD(gameState) {
   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.30 });
 
   // Score - 200% larger
+    console.log(`[hud] Score: ${gameState.score}, updating scoreSprite`);
+
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.26 });
 
   // Combo - 200% larger with descriptive label
