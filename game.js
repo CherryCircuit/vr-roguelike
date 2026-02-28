@@ -16,6 +16,7 @@ export const State = {
   REGIONAL_SCORES: 'regional_scores',
   READY_SCREEN: 'ready_screen',
   LEVEL_INTRO: 'level_intro',
+  ALT_TUTORIAL: 'alt_tutorial',
 };
 
 // ── Enemy types available per level ────────────────────────
@@ -89,6 +90,7 @@ export const game = {
   altWeapon: { left: null, right: null },  // ALT weapon per hand (unlocked via upgrades)
   altCooldowns: { left: 0, right: 0 },  // ALT weapon cooldowns (ms)
   upgrades: { left: {}, right: {} },  // Upgrades per hand
+  altFireTutorialSeen: false,  // Track if player has seen alt fire tutorial
   mainWeaponLocked: { left: false, right: false },  // Whether MAIN weapon is locked (chosen)
   
   stateTimer: 0,

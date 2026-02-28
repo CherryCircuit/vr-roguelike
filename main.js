@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats } from './upgrades.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats, isAltWeaponUpgrade } from './upgrades.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
@@ -37,7 +37,8 @@ import {
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
   showLevelIntro, updateLevelIntro, hideLevelIntro,
-  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive
+  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive,
+  showAltFireTutorial, hideAltFireTutorial
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -779,6 +780,8 @@ function onTriggerPress(controller, index) {
     handleCountrySelectTrigger(controller);
   } else if (st === State.READY_SCREEN) {
     handleReadyScreenTrigger(controller);
+  } else if (st === State.ALT_TUTORIAL) {
+    handleAltFireTutorialTrigger(controller);
   }
 }
 
@@ -805,6 +808,8 @@ function handleDesktopClick() {
     handleDesktopCountrySelectClick();
   } else if (st === State.READY_SCREEN) {
     handleDesktopReadyScreenClick();
+  } else if (st === State.ALT_TUTORIAL) {
+    handleDesktopAltFireTutorialClick();
   }
 }
 
@@ -943,6 +948,12 @@ function handleDesktopReadyScreenClick() {
   playMenuClick();
   hideUpgradeCards();
   game.state = State.PLAYING;
+}
+
+function handleDesktopAltFireTutorialClick() {
+  playMenuClick();
+  hideAltFireTutorial();
+  advanceLevelAfterUpgrade();
 }
 
 function handleTitleTrigger(controller) {
@@ -1183,6 +1194,13 @@ function handleReadyScreenTrigger(controller) {
   }
 }
 
+function handleAltFireTutorialTrigger(controller) {
+  // Dismiss tutorial on any trigger press
+  playMenuClick();
+  hideAltFireTutorial();
+  advanceLevelAfterUpgrade();
+}
+
 function startGame() {
   console.log('[game] Starting new game');
   hideTitle();
@@ -1286,6 +1304,24 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   addUpgrade(upgrade.id, hand);
   playUpgradeSound();
   hideUpgradeCards();
+
+  // Handle alt weapon unlock
+  if (isAltWeaponUpgrade(upgrade.id)) {
+    // Map alt weapon upgrade ID to alt weapon ID
+    const altWeaponId = upgrade.id.replace('alt_', '');
+    game.altWeapon[hand] = altWeaponId;
+    console.log(`[game] Unlocked alt weapon: ${altWeaponId} for ${hand} hand`);
+
+    // Show tutorial on first alt weapon
+    if (!game.altFireTutorialSeen) {
+      game.altFireTutorialSeen = true;
+      game.state = State.ALT_TUTORIAL;
+      showAltFireTutorial();
+      console.log('[game] Showing alt fire tutorial for first alt weapon');
+      return;
+    }
+  }
+
   advanceLevelAfterUpgrade();
 }
 

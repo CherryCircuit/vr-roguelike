@@ -43,7 +43,13 @@ export const UPGRADE_POOL = [
   { id: 'hollow_point', name: 'Hollow-Point', desc: '+15% damage', color: '#ff8888' },
   { id: 'nova_tip', name: 'Nova Tip', desc: 'Every 12th shot detonates AoE (60 damage)', color: '#ff44ff' },
   { id: 'siphon', name: 'Siphon', desc: 'Every 15 kills reduces ALT cooldown by 25%', color: '#aa88ff' },
-  
+
+  // Alt weapons (unlocked as upgrades)
+  { id: 'alt_shield', name: 'SHIELD', desc: 'Blocks enemy projectiles', color: '#4488ff', type: 'alt', sideGradeNote: 'ALT FIRE ABILITY' },
+  { id: 'alt_grenade', name: 'GRENADE', desc: 'Throwable explosive', color: '#ff4444', type: 'alt', sideGradeNote: 'ALT FIRE ABILITY' },
+  { id: 'alt_mine', name: 'MINE', desc: 'Placeable explosive trap', color: '#ffaa00', type: 'alt', sideGradeNote: 'ALT FIRE ABILITY' },
+  { id: 'alt_drone', name: 'DRONE', desc: 'Auto-targeting helper', color: '#88ff88', type: 'alt', sideGradeNote: 'ALT FIRE ABILITY' },
+
   // Standard Blaster specific
   { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#00ffff', requiresWeapon: 'STANDARD' },
 
@@ -168,6 +174,14 @@ export function getRandomUpgradeExcluding(excludeIds = []) {
 /** Look up an upgrade definition by id */
 export function getUpgradeDef(id) {
   return UPGRADE_POOL.find(u => u.id === id) || null;
+}
+
+/**
+ * Check if an upgrade is an alt weapon type
+ */
+export function isAltWeaponUpgrade(upgradeId) {
+  const def = getUpgradeDef(upgradeId);
+  return def && def.type === 'alt';
 }
 
 /**
