@@ -1580,8 +1580,6 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
 
   // Wide beam visual with inner/outer glow
-  const beamColor = new THREE.Color(0xffaa00);
-  const beamGlow = new THREE.Color(0xffcc00);
   const beamInnerGeo = new THREE.CylinderGeometry(2.0, range, 8);  // Wide beam (2.0 width)
   const beamOuterGeo = new THREE.CylinderGeometry(2.5, range, 8);  // Outer glow layer
   const beamInnerMat = new THREE.MeshBasicMaterial({
