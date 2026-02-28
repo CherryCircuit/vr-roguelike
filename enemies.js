@@ -1715,6 +1715,7 @@ const BOSS_DEFS = {
     shardRate: 0.6,
     weakPoints: true,
 
+  },
   // Level 20 Final Bosses (Tier 4 - VERY TOUGH)
   walter_breakenridge: {
     name: 'Walter "Pa" Breakenridge',
