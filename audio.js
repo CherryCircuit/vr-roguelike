@@ -639,6 +639,107 @@ export function playBossAttackSound(type, duration) {
       melee.start(t);
       melee.stop(t + 0.3);
       break;
+
+    case 'shadow_bullet':
+      // Shadow bullet whisper (Theodore)
+      const shadow = ctx.createOscillator();
+      const shadowGain = ctx.createGain();
+      shadow.type = 'triangle';
+      shadow.frequency.setValueAtTime(800, t);
+      shadow.frequency.exponentialRampToValueAtTime(200, t + 0.25);
+
+      shadowGain.gain.setValueAtTime(0.1, t);
+      shadowGain.gain.exponentialRampToValueAtTime(0.01, t + 0.25);
+
+      const shadowFilter = ctx.createBiquadFilter();
+      shadowFilter.type = 'lowpass';
+      shadowFilter.frequency.setValueAtTime(1500, t);
+      shadowFilter.frequency.exponentialRampToValueAtTime(200, t + 0.25);
+
+      shadow.connect(shadowFilter);
+      shadowFilter.connect(shadowGain);
+      shadowGain.connect(ctx.destination);
+      shadow.start(t);
+      shadow.stop(t + 0.25);
+      break;
+
+    case 'shield':
+      // Shield activation (Commander)
+      const shield = ctx.createOscillator();
+      const shieldGain = ctx.createGain();
+      shield.type = 'sine';
+      shield.frequency.setValueAtTime(600, t);
+      shield.frequency.linearRampToValueAtTime(900, t + 0.2);
+      shield.frequency.linearRampToValueAtTime(700, t + 0.4);
+
+      shieldGain.gain.setValueAtTime(0, t);
+      shieldGain.gain.linearRampToValueAtTime(0.12, t + 0.1);
+      shieldGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+      shield.connect(shieldGain);
+      shieldGain.connect(ctx.destination);
+      shield.start(t);
+      shield.stop(t + 0.4);
+      break;
+
+    case 'performance':
+      // Diva performance crescendo (Madame Coda)
+      const perf = ctx.createOscillator();
+      const perfGain = ctx.createGain();
+      perf.type = 'triangle';
+      perf.frequency.setValueAtTime(400, t);
+      perf.frequency.exponentialRampToValueAtTime(1200, t + 0.8);
+
+      perfGain.gain.setValueAtTime(0, t);
+      perfGain.gain.linearRampToValueAtTime(0.15, t + 0.6);
+      perfGain.gain.exponentialRampToValueAtTime(0.01, t + 0.8);
+
+      perf.connect(perfGain);
+      perfGain.connect(ctx.destination);
+      perf.start(t);
+      perf.stop(t + 0.8);
+      break;
+
+    case 'glitch':
+      // Glitch swap (Twin Glitch)
+      const glitch = ctx.createOscillator();
+      const glitchGain = ctx.createGain();
+      glitch.type = 'square';
+      glitch.frequency.setValueAtTime(1000, t);
+      glitch.frequency.setValueAtTime(500, t + 0.05);
+      glitch.frequency.setValueAtTime(1000, t + 0.1);
+      glitch.frequency.setValueAtTime(500, t + 0.15);
+
+      glitchGain.gain.setValueAtTime(0.1, t);
+      glitchGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+
+      const glitchFilter = ctx.createBiquadFilter();
+      glitchFilter.type = 'highpass';
+      glitchFilter.frequency.setValueAtTime(2000, t);
+
+      glitch.connect(glitchFilter);
+      glitchFilter.connect(glitchGain);
+      glitchGain.connect(ctx.destination);
+      glitch.start(t);
+      glitch.stop(t + 0.15);
+      break;
+
+    case 'horn_shard':
+      // Horn shard fire (Neon Minotaur)
+      const horn = ctx.createOscillator();
+      const hornGain = ctx.createGain();
+      horn.type = 'sawtooth';
+      horn.frequency.setValueAtTime(600, t);
+      horn.frequency.exponentialRampToValueAtTime(150, t + 0.15);
+
+      hornGain.gain.setValueAtTime(0.12, t);
+      hornGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+
+      horn.connect(hornGain);
+      hornGain.connect(ctx.destination);
+      horn.start(t);
+      horn.stop(t + 0.15);
+      break;
   }
 }
 
