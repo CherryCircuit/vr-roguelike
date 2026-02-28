@@ -28,7 +28,7 @@
     }
 
     #info h1 {
-      font-size: 2.2em;
+      font-size: 1.1em;
       color: #00ffff;
       text-shadow: 0 0 10px #00ffff, 0 0 30px #00ffff, 0 0 60px #0066ff;
       letter-spacing: 0.15em;
@@ -44,7 +44,7 @@
 
     /* ── WebXR Fallback ── */
     #no-vr {
-      display: none;
+      display: none !important; /* Hidden for desktop testing */
       position: absolute;
       top: 50%;
       left: 50%;
@@ -101,7 +101,7 @@
     <h1>SYNTHWAVE VR BLASTER</h1>
     <p>Put on your VR headset and press ENTER VR</p>
     <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Pull triggers to shoot</p>
-    <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">ver. 0.023</p>
+    <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">ver. 0.024 • Feb 28, 2026</p>
   </div>
 
   <!-- Fallback if WebXR is not available -->
@@ -128,6 +128,7 @@
     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Show Console</label>
+    <button id="copy-log" style="display:block;margin-top:12px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;font-size:12px;width:100%;">📋 Copy Log</button>
   </div>
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
 
@@ -136,7 +137,6 @@
   <div id="console-panel" style="display:none;position:fixed;bottom:80px;left:20px;width:500px;max-height:300px;overflow-y:auto;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #ff00ff;padding:12px;font-size:12px;font-family:monospace;">
     <div style="color:#ff00ff;margin-bottom:4px;">CONSOLE OUTPUT</div>
     <div id="console-logs" style="color:#00ffff;word-break:break-all;"></div>
-    <button id="copy-log" style="display:block;margin-top:8px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;font-size:12px;">📋 Copy Log</button>
   </div>
   <!-- WebXR Polyfill (loaded before Three.js) -->
   <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
@@ -233,6 +233,8 @@
       });
 
       window.addEventListener('unhandledrejection', function(e) {
+        // Ignore pointer lock errors (normal when user presses ESC)
+        if (e.reason && (e.reason.toString().includes('lock') || e.reason.toString().includes('SecurityError'))) return;
         window.showWebError('Unhandled Promise Rejection: ' + e.reason, e.reason?.stack || '');
       });
     })();
