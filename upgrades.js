@@ -35,37 +35,16 @@ export const UPGRADE_POOL = [
   { id: 'double_shot', name: 'Doubleshot', desc: 'Fire an extra projectile', color: '#ff44ff' },
   { id: 'freeze', name: 'Freeze', desc: 'Greatly slows enemies', color: '#88ccff' },
   { id: 'ricochet', name: 'Ricochet', desc: 'Shots bounce to nearby enemy', color: '#aaffaa' },
+  { id: 'lightning', name: 'Lightning', desc: 'Hold for auto-lock beam', color: '#ffff44', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
+  { id: 'charge_shot', name: 'Charge Shot', desc: 'Hold to charge, release for big beam', color: '#ffffff', sideGrade: true, sideGradeNote: 'Changes SHOT TYPE. Pick another upgrade after.' },
   
-  // New universal upgrades (issue #36)
-  { id: 'execute', name: 'Execute', desc: '+40% damage to enemies below 25% health', color: '#ff0044' },
-  { id: 'magnetic', name: 'Magnetic', desc: 'Shots tag enemies, tagged enemies pull together', color: '#4488ff' },
-  { id: 'reflex', name: 'Reflex', desc: '+100% fire rate for 2s after taking damage (10s cooldown)', color: '#ffaa00' },
-  { id: 'hollow_point', name: 'Hollow-Point', desc: '+15% damage', color: '#ff8888' },
-  { id: 'nova_tip', name: 'Nova Tip', desc: 'Every 12th shot detonates AoE (60 damage)', color: '#ff44ff' },
-  { id: 'siphon', name: 'Siphon', desc: 'Every 15 kills reduces ALT cooldown by 25%', color: '#aa88ff' },
-  
-  // Standard Blaster specific
-  { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#00ffff', requiresWeapon: 'STANDARD' },
-
-  // Buckshot specific
-  { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800', requiresWeapon: 'BUCKSHOT' },
-  { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800', requiresWeapon: 'BUCKSHOT' },
-  { id: 'duck_hunt', name: 'Duck Hunt', desc: 'Buckshot: Critical hits stun', color: '#ff8800', requiresWeapon: 'BUCKSHOT' },
-
-  // Lightning Rod specific
-  { id: 'its_electric', name: 'It\'s Electric!', desc: 'Lightning Rod: Chains to +2 enemies', color: '#ff00ff', requiresWeapon: 'LIGHTNING' },
-  { id: 'tesla_coil', name: 'Tesla Coil', desc: 'Lightning Rod: +50% damage, +20% range', color: '#ff00ff', requiresWeapon: 'LIGHTNING' },
-
-  // Charge Cannon specific
-  { id: 'quick_charge', name: 'Ain\'t Nobody Got Time For That', desc: 'Charge Cannon: 2x charge speed', color: '#ff4444', requiresWeapon: 'CHARGE' },
-  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Adds fire DoT to charged shots', color: '#ff4444', requiresWeapon: 'CHARGE' },
-  { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444', requiresWeapon: 'CHARGE' },
-
-  // Plasma Carbine specific
-  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: Faster ramp-up, higher max', color: '#88ff88', requiresWeapon: 'PLASMA' },
-
-  // Seeker Burst specific
-  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff', requiresWeapon: 'SEEKER' },
+  // ALT WEAPONS (side-grades with cooldowns, fired via lower trigger)
+  { id: 'rocket_launcher', name: 'Rocket Launcher', desc: 'Homing rocket, 250 damage + splash, 15s cooldown', color: '#ff6644', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
+  { id: 'helper_bot', name: 'Helper Bot', desc: 'Auto-firing buddy for 15s, 30s cooldown', color: '#88ff88', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
+  { id: 'shield_alt', name: 'Shield', desc: 'Blocks 10 hits, 15s cooldown', color: '#4488ff', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
+  { id: 'gravity_well', name: 'Gravity Well', desc: 'Pulls enemies for 4s, 25s cooldown', color: '#aa88ff', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
+  { id: 'ion_mortar', name: 'Ion Mortar', desc: 'Arcing shell, 400 damage + big splash, 20s cooldown', color: '#ffaa00', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
+  { id: 'hologram_decoy', name: 'Hologram Decoy', desc: 'Distraction for 6s then explodes, 28s cooldown', color: '#ff88ff', sideGrade: true, sideGradeNote: 'ALT WEAPON. Fires on lower trigger.' },
 ];
 
 /** RARE upgrades offered after Level 5 boss */
@@ -284,64 +263,19 @@ export function getWeaponStats(upgrades) {
     lightningDamage: 10 + (u.lightning || 0) * 5 + (u.chain_lightning || 0) * 5 + (u.tesla_coil || 0) * 5,
     lightningTickInterval: (u.lightning || 0) > 0 ? Math.max(0.08, 0.2 / (1 + (u.barrel || 0) * 0.15)) : 0.2,
     chargeShot: (u.charge_shot || 0) > 0,
-    chargeSpeedMultiplier: u.quick_charge ? 2.0 : 1.0,
-    chargeDamageMultiplier: u.death_ray ? 6.0 : 3.0,  // 3x base, 6x with Death Ray
-    plasmaCarbine: (u.plasma_carbine || 0) > 0,
-    damageRampUp: (u.plasma_carbine || 0) > 0,
-    damageRampUpMax: u.hold_together ? 3.0 : 2.0,  // 2x base, 3x with Hold Together
-    seekerBurst: (u.seeker_burst || 0) > 0,
-    homing: (u.seeker_burst || 0) > 0,
-    homingRange: 15,
-    excessHeat: u.excess_heat || false,  // Adds fire DoT to charge shots
     
-    // New universal upgrades (issue #36)
-    execute: (u.execute || 0) > 0,  // +40% damage to enemies below 25% health
-    executeDamageMultiplier: 1.4,  // 40% more damage
-    magnetic: (u.magnetic || 0) > 0,  // Shots tag enemies, tagged enemies pull together
-    reflex: (u.reflex || 0) > 0,  // +100% fire rate for 2s after taking damage
-    reflexFireRateMultiplier: 0.5,  // Half fire interval (2x speed)
-    reflexDuration: 2000,  // 2 seconds in ms
-    reflexCooldown: 10000,  // 10 seconds in ms
-    novaTip: (u.nova_tip || 0) > 0,  // Every 12th shot detonates AoE
-    novaTipInterval: 12,  // Every 12th shot
-    novaTipDamage: 60,  // 60 damage AoE
-    siphon: (u.siphon || 0) > 0,  // Every 15 kills reduces ALT cooldown by 25%
-    siphonKillInterval: 15,  // Every 15 kills
-    siphonCooldownReduction: 0.25,  // 25% reduction
-    
-    // RARE upgrades (Level 5 boss)
-    addHeart: (u.add_heart || 0) > 0,  // +1 max health
-    volatile: (u.volatile || 0) > 0,  // Enemies explode on death
-    volatileDamage: 30,  // 30 damage explosion
-    volatileRadius: 2.0,  // 2m radius
-    secondWind: (u.second_wind || 0) > 0,  // Survive fatal hit once per level
-    critCore: (u.crit_core || 0) > 0,  // +50% crit damage, +10% crit chance
-    cooldownTuner: (u.cooldown_tuner || 0) > 0,  // -30% ALT cooldowns
-    altCooldownMultiplier: u.cooldown_tuner ? 0.7 : 1.0,  // 30% reduction
-    
-    // EPIC upgrades (Level 10 boss)
-    neonOverdrive: (u.neon_overdrive || 0) > 0,  // After 30 kills: buff for 8s
-    neonOverdriveKillThreshold: 30,  // 30 kills to activate
-    neonOverdriveDuration: 8000,  // 8 seconds
-    neonOverdriveDamageMultiplier: 1.2,  // +20% damage
-    neonOverdriveFireRateMultiplier: 0.833,  // +20% fire rate (1/1.2)
-    heavyHunter: (u.heavy_hunter || 0) > 0,  // +35% damage to tanks/bosses
-    heavyHunterDamageMultiplier: 1.35,  // +35% damage
-    heavyHunterHealAmount: 1,  // Heal 1 HP on boss damage
-    
-    // ULTRA upgrades (Level 15 boss)
-    timeLord: (u.time_lord || 0) > 0,  // ALT usage causes 5s slow-time
-    timeLordSlowDuration: 5000,  // 5 seconds
-    timeLordSlowFactor: 0.3,  // 30% speed
-    deathAura: (u.death_aura || 0) > 0,  // Continuous damage to nearby enemies
-    deathAuraRadius: 3.0,  // 3m radius
-    deathAuraDamage: 5,  // 5 damage per tick
-    deathAuraTickInterval: 500,  // 0.5s ticks
-    infinityLoop: (u.infinity_loop || 0) > 0,  // Repeat last ALT at 40% power every 10s
-    infinityLoopInterval: 10000,  // 10 seconds
-    infinityLoopPowerMultiplier: 0.4,  // 40% power
-    hyperCrit: (u.hyper_crit || 0) > 0,  // +50% crit chance, crits create shockwaves
-    hyperCritShockwaveRadius: 3.0,  // 3m radius
-    hyperCritShockwaveDamage: 40,  // 40 damage
+    // ALT WEAPONS (cooldowns in milliseconds)
+    altWeapon: u.rocket_launcher ? 'rocket_launcher' : 
+               u.helper_bot ? 'helper_bot' :
+               u.shield_alt ? 'shield_alt' :
+               u.gravity_well ? 'gravity_well' :
+               u.ion_mortar ? 'ion_mortar' :
+               u.hologram_decoy ? 'hologram_decoy' : null,
+    altCooldown: u.rocket_launcher ? 15000 :
+                  u.helper_bot ? 30000 :
+                  u.shield_alt ? 15000 :
+                  u.gravity_well ? 25000 :
+                  u.ion_mortar ? 20000 :
+                  u.hologram_decoy ? 28000 : 0,
   };
 }
