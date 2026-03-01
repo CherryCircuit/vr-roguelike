@@ -2539,6 +2539,7 @@ function render(timestamp) {
               completeLevel();
           }
         }
+        }
       }
     });
 
