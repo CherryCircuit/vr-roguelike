@@ -19,7 +19,9 @@ import {
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles,
   // [Instruction 1] Alt weapon star drop callback
-  setOnEnemyDestroyedCallback
+  setOnEnemyDestroyedCallback,
+  // [Visual Overhaul] VFX reference for voxel explosions
+  setVFXReference
 } from './enemies.js';
 
 // [Visual Overhaul] Import new environment, VFX, weapon models, and scenery systems
