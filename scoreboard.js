@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // ── Supabase client ─────────────────────────────────────────
 const SUPABASE_URL = 'https://lseixvdlsbietnalbhhe.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxbWJpemNmamZpYnFicHdhaXVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg5NzEyNTcsImV4cCI6MjA1NDU0NzI1N30.JpTSPMEMcSKMfJfpGEiPJGaaS4JTT_cEhP0RnsJf1tY';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxzZWl4dmRsc2JpZXRuYWxiaGhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2MDM0NjMsImV4cCI6MjA4NjE3OTQ2M30.0Iboawe4PRx_CdBN1NphRt3D5ZhPGiE_7wiV2l-VvQg';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 console.log('[scoreboard] Supabase client initialized:', !!supabase);
