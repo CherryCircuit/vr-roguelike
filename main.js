@@ -36,7 +36,6 @@ import {
   updateAllButtonHovers, clearHoverableButtons, spawnVampireHealIndicator,
   // [Instruction 1] Alt weapon HUD functions
   initAltWeaponIndicators, updateAltWeaponIndicators, createAltWeaponStar,
-  addAltWeaponStar, getAltWeaponStars, removeAltWeaponStar, getAltWeaponStarHit,
   showAltWeaponAcquired, updateAltWeaponAcquired, showStarTooltip, hideStarTooltip
 } from './hud.js';
 import {
@@ -259,7 +258,7 @@ function init() {
       const randomWeaponId = weaponIds[Math.floor(Math.random() * weaponIds.length)];
       const star = createAltWeaponStar(position, randomWeaponId, ALT_WEAPON_DEFS);
       if (star) {
-        addAltWeaponStar(star);
+// addAltWeaponStar(star); // TODO: Re-enable when function is implemented
         console.log(`[alt-weapon] Dropped ${randomWeaponId} star at enemy death location`);
       }
     }
