@@ -28,7 +28,7 @@
     }
 
     #info h1 {
-      font-size: 1.1em;
+      font-size: 2.2em;
       color: #00ffff;
       text-shadow: 0 0 10px #00ffff, 0 0 30px #00ffff, 0 0 60px #0066ff;
       letter-spacing: 0.15em;
@@ -36,7 +36,7 @@
 
     #info p {
       margin-top: 8px;
-      font-size: 0.5em;
+      font-size: 1em;
       color: #ff00ff;
       text-shadow: 0 0 8px #ff00ff;
       opacity: 0.8;
@@ -44,7 +44,7 @@
 
     /* ── WebXR Fallback ── */
     #no-vr {
-      display: none !important; /* Hidden for desktop testing */
+      display: none;
       position: absolute;
       top: 50%;
       left: 50%;
@@ -69,7 +69,7 @@
       line-height: 1.6;
     }
 
-    /* ── Scanline Overlay (CRT effect on webpage only) ── */
+    /* ── Scanline Overlay (CRT effect on webpage only) 
     #scanlines {
       position: fixed;
       top: 0;
@@ -86,11 +86,10 @@
       pointer-events: none;
       z-index: 50;
     }
-
+	── */
+	
     /* ── Style the VR button (Three.js injects it) ── */
     #VRButton {
-      display: none !important; /* Hidden for desktop testing */
-    }
       font-family: 'Courier New', monospace !important;
       letter-spacing: 0.1em !important;
     }
@@ -103,7 +102,7 @@
     <h1>SYNTHWAVE VR BLASTER</h1>
     <p>Put on your VR headset and press ENTER VR</p>
     <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Pull triggers to shoot</p>
-    <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">ver. 0.024 • Feb 28, 2026</p>
+    <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">ver. 0.023</p>
   </div>
 
   <!-- Fallback if WebXR is not available -->
@@ -113,8 +112,9 @@
     <p>Please use a WebXR-compatible browser such as Meta Quest Browser or Chrome on a VR-capable device.</p>
   </div>
 
-  <!-- CRT scanline overlay (hidden in VR — obscures view) -->
+  <!-- CRT scanline overlay (hidden in VR — obscures view) 
   <div id="scanlines"></div>
+  -->
 
   <!-- Error overlay (always visible in web view if errors occur) -->
   <div id="error-overlay" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#ff0000;color:#ffffff;padding:30px;z-index:9999;max-width:90%;text-align:center;border:4px solid #ffffff;font-family:'Courier New',monospace;">
@@ -129,18 +129,16 @@
     <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;background:#220044;color:#fff;border:1px solid #ff00ff;"></label>
     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
-    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Show Console</label>
-    <button id="clear-scores" style="display:block;margin-top:8px;background:#440022;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;font-size:12px;width:100%;">🗑 Clear Scores</button>
-    <button id="copy-log" style="display:block;margin-top:12px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;font-size:12px;width:100%;">📋 Copy Log</button>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
   </div>
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
-
 
   <!-- Console log output panel (only visible when enabled) -->
   <div id="console-panel" style="display:none;position:fixed;bottom:80px;left:20px;width:500px;max-height:300px;overflow-y:auto;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #ff00ff;padding:12px;font-size:12px;font-family:monospace;">
     <div style="color:#ff00ff;margin-bottom:4px;">CONSOLE OUTPUT</div>
     <div id="console-logs" style="color:#00ffff;word-break:break-all;"></div>
   </div>
+
   <!-- WebXR Polyfill (loaded before Three.js) -->
   <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
   <script>
@@ -170,55 +168,101 @@
       const toggle = document.getElementById('debug-toggle');
       const consolePanel = document.getElementById('console-panel');
       const consoleLogs = document.getElementById('console-logs');
-      
       if (params.get('debug') === '1') panel.style.display = 'block';
       toggle.addEventListener('click', function(e) { e.preventDefault(); panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
-      
       document.getElementById('debug-jump').addEventListener('click', function() {
         const level = parseInt(document.getElementById('debug-level').value, 10) || 1;
         window.debugJumpToLevel = Math.max(1, Math.min(20, level));
       });
-      
       document.getElementById('debug-perf-monitor').addEventListener('change', function() {
         window.debugPerfMonitor = this.checked;
       });
-      
       document.getElementById('debug-console').addEventListener('change', function() {
         consolePanel.style.display = this.checked ? 'block' : 'none';
       });
-      
-      document.getElementById('copy-log').addEventListener('click', function(e) {
-        e.stopPropagation();
-        const logs = consoleLogs.textContent;
-        navigator.clipboard.writeText(logs).then(() => {
-          const btn = document.getElementById('copy-log');
-          const original = btn.textContent;
-          btn.textContent = '✅ Copied!';
-          setTimeout(() => btn.textContent = original, 2000);
-        }).catch(err => console.error('Failed to copy logs:', err));
+      consolePanel.addEventListener('click', function() {
+        consolePanel.style.display = 'none';
       });
-      
-      // Capture console logs for the panel
       const originalLog = console.log;
       const originalError = console.error;
       const originalWarn = console.warn;
+      const originalInfo = console.info;
+      const originalDebug = console.debug;
       
-      function addLog(type, args) {
-        const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-        const line = document.createElement('div');
-        line.style.color = type === 'error' ? '#ff4444' : type === 'warn' ? '#ffaa00' : '#00ffff';
-        line.textContent = msg;
-        consoleLogs.appendChild(line);
-        consoleLogs.scrollTop = consoleLogs.scrollHeight;
-        // Keep only last 100 lines
-        while (consoleLogs.children.length > 100) {
-          consoleLogs.removeChild(consoleLogs.firstChild);
+      console.log = function() {
+        originalLog.apply(console, arguments);
+        if (document.getElementById('debug-console').checked) {
+          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
+          const div = document.createElement('div');
+          div.style.color = '#00ffff';
+          div.textContent = `[LOG] ${message}`;
+          consoleLogs.appendChild(div);
+          consoleLogs.scrollTop = consoleLogs.scrollHeight;
+          if (consoleLogs.children.length > 100) {
+            consoleLogs.removeChild(consoleLogs.firstChild);
+          }
         }
-      }
+      };
       
-      console.log = function(...args) { originalLog.apply(console, args); addLog('log', args); };
-      console.error = function(...args) { originalError.apply(console, args); addLog('error', args); };
-      console.warn = function(...args) { originalWarn.apply(console, args); addLog('warn', args); };
+      console.error = function() {
+        originalError.apply(console, arguments);
+        if (document.getElementById('debug-console').checked) {
+          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
+          const div = document.createElement('div');
+          div.style.color = '#ff4444';
+          div.textContent = `[ERROR] ${message}`;
+          consoleLogs.appendChild(div);
+          consoleLogs.scrollTop = consoleLogs.scrollHeight;
+          if (consoleLogs.children.length > 100) {
+            consoleLogs.removeChild(consoleLogs.firstChild);
+          }
+        }
+      };
+      
+      console.warn = function() {
+        originalWarn.apply(console, arguments);
+        if (document.getElementById('debug-console').checked) {
+          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
+          const div = document.createElement('div');
+          div.style.color = '#ffff44';
+          div.textContent = `[WARN] ${message}`;
+          consoleLogs.appendChild(div);
+          consoleLogs.scrollTop = consoleLogs.scrollHeight;
+          if (consoleLogs.children.length > 100) {
+            consoleLogs.removeChild(consoleLogs.firstChild);
+          }
+        }
+      };
+      
+      console.info = function() {
+        originalInfo.apply(console, arguments);
+        if (document.getElementById('debug-console').checked) {
+          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
+          const div = document.createElement('div');
+          div.style.color = '#44ffff';
+          div.textContent = `[INFO] ${message}`;
+          consoleLogs.appendChild(div);
+          consoleLogs.scrollTop = consoleLogs.scrollHeight;
+          if (consoleLogs.children.length > 100) {
+            consoleLogs.removeChild(consoleLogs.firstChild);
+          }
+        }
+      };
+      
+      console.debug = function() {
+        originalDebug.apply(console, arguments);
+        if (document.getElementById('debug-console').checked) {
+          const message = Array.from(arguments).map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' ');
+          const div = document.createElement('div');
+          div.style.color = '#888888';
+          div.textContent = `[DEBUG] ${message}`;
+          consoleLogs.appendChild(div);
+          consoleLogs.scrollTop = consoleLogs.scrollHeight;
+          if (consoleLogs.children.length > 100) {
+            consoleLogs.removeChild(consoleLogs.firstChild);
+          }
+        }
+      };
 
       // Global error handler - catches ALL uncaught errors
       window.showWebError = function(message, stack = '') {
@@ -236,8 +280,6 @@
       });
 
       window.addEventListener('unhandledrejection', function(e) {
-        // Ignore pointer lock errors (normal when user presses ESC)
-        if (e.reason && (e.reason.toString().includes('lock') || e.reason.toString().includes('SecurityError'))) return;
         window.showWebError('Unhandled Promise Rejection: ' + e.reason, e.reason?.stack || '');
       });
     })();

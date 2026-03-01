@@ -4,7 +4,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { State, getComboMultiplier } from './game.js';
+import { State } from './game.js';
 
 // ── Module state ───────────────────────────────────────────
 let sceneRef, cameraRef;
@@ -18,7 +18,6 @@ const gameOverGroup = new THREE.Group();
 const nameEntryGroup = new THREE.Group();
 const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
-const readyGroup = new THREE.Group();
 
 // HUD element references
 let heartsSprite = null;
@@ -27,6 +26,9 @@ let levelSprite = null;
 let scoreSprite = null;
 let comboSprite = null;
 let fpsSprite = null;
+
+// [Instruction 1] Alt weapon cooldown indicators (per hand)
+let altWeaponIndicators = { left: null, right: null };
 
 // Damage numbers
 const damageNumbers = [];
@@ -39,18 +41,18 @@ let upgradeChoices = [];
 let hitFlash = null;
 let hitFlashOpacity = 0;
 
-// Boss health bar (camera-attached, 3 segments for phases)
+// Boss health bar (world-space, floats above boss head)
+// [Power Outage Update] #4: Changed from camera-attached 3 segments
 let bossHealthGroup = null;
-let bossHealthBars = []; // 3 segments
+let bossHealthFillBar = null; // Single continuous fill bar
+let bossHealthBars = []; // Kept for backwards compatibility (now empty)
 
 // Title blink
 let titleBlinkSprite = null;
 
 // Title scoreboard button
 let titleScoreboardBtn = null;
-
-// Title diagnostics button
-let titleDiagBtn = null;
+let titleScoreboardBtnData = null;
 
 // Name entry state
 let nameEntryName = '';
@@ -76,157 +78,211 @@ let countrySelectScrollOffset = 0;
 let continentTabs = [];
 let countryItems = [];
 
-// ── TEXTURE CACHING SYSTEM ────────────────────────────────────────────
+// ── Button Hover System ───────────────────────────────────────
+const hoverableButtons = [];
+let lastHoveredButton = null;
+let hoverSoundCooldown = 0;
+const HOVER_SCALE_MULT = 1.15;
+const HOVER_LERP_SPEED = 8.0;
 
-// Cache for HUD element textures to avoid recreation every frame
-const hudTextureCache = {};
-
-/**
- * Create or get a cached texture for the given text and color.
- * Returns the texture and aspect ratio.
- */
-function getCachedTextTexture(text, fontSize, color, shadow, glow, glowColor, maxWidth) {
-  const cacheKey = `${text}:${fontSize}:${color}:${shadow}:${glow}:${glowColor}:${maxWidth}`;
-  
-  if (hudTextureCache[cacheKey]) {
-    return hudTextureCache[cacheKey];
-  }
-
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-
-  // Measure text to size canvas
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  const textWidth = maxWidth || Math.ceil(ctx.measureText(text).width);
-  const lineHeight = fontSize * 1.3;
-  const textHeight = lineHeight; // Single line
-
-  canvas.width = Math.ceil(textWidth) + 40;
-  canvas.height = Math.ceil(textHeight) + 40;
-
-  // Re-set after resize
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  // Clear canvas with transparency
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Optional glow
-  if (glow) {
-    ctx.shadowColor = glowColor || color;
-    ctx.shadowBlur = 15;
-  }
-
-  // Drop shadow
-  if (shadow) {
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillText(text, canvas.width / 2 + 2, canvas.height / 2 + 2);
-  }
-
-  // Main text
-  ctx.fillStyle = color;
-  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-
-  // Cache the texture
-  hudTextureCache[cacheKey] = { texture, aspect: canvas.width / canvas.height };
-
-  return hudTextureCache[cacheKey];
+export function registerHoverableButton(buttonData) {
+  hoverableButtons.push(buttonData);
 }
 
-/**
- * Create or get a cached texture for the hearts display.
- */
-function getCachedHeartsTexture(health, maxHealth, scaleMultiplier) {
-  const cacheKey = `hearts:${health}:${maxHealth}:${scaleMultiplier}`;
-  
-  if (hudTextureCache[cacheKey]) {
-    return hudTextureCache[cacheKey];
-  }
-
-  const heartCount = maxHealth / 2;
-  const pixSize = 8;
-  const heartW = 7 * pixSize;
-  const heartH = 6 * pixSize;
-  const gap = 6;
-  const canvasWidth = heartCount * (heartW + gap) + gap;
-  const canvasHeight = heartH + 10;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
-  const ctx = canvas.getContext('2d');
-
-  for (let i = 0; i < heartCount; i++) {
-    const hpForThisHeart = health - i * 2;
-    let state;
-    if (hpForThisHeart >= 2) state = 'full';
-    else if (hpForThisHeart === 1) state = 'half';
-    else state = 'empty';
-
-    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-
-  const aspect = canvasWidth / canvasHeight;
-  hudTextureCache[cacheKey] = { texture, aspect };
-
-  return hudTextureCache[cacheKey];
+export function clearHoverableButtons() {
+  hoverableButtons.length = 0;
+  lastHoveredButton = null;
 }
 
-/**
- * Clear the texture cache periodically to prevent memory buildup.
- * Called once per second or when needed.
- */
-function clearHudCache() {
-  Object.keys(hudTextureCache).forEach(key => {
-    if (hudTextureCache[key]) {
-      if (hudTextureCache[key].texture) {
-        hudTextureCache[key].texture.dispose();
+export function updateAllButtonHovers(raycaster, now, dt, playHoverSound, playClickSound) {
+  if (hoverSoundCooldown > 0) hoverSoundCooldown -= dt * 1000;
+  
+  // Find hit
+  let hitButton = null;
+  const meshes = hoverableButtons.map(b => b.mesh).filter(Boolean);
+  const hits = raycaster.intersectObjects(meshes, false);
+  
+  if (hits.length > 0) {
+    hitButton = hoverableButtons.find(b => b.mesh === hits[0].object);
+  }
+  
+  // Update all buttons
+  hoverableButtons.forEach(btn => {
+    const isHovered = btn === hitButton;
+    const targetScale = isHovered ? HOVER_SCALE_MULT : 1.0;
+    
+    // Ease-out lerp (deceleration)
+    if (btn.currentScale === undefined) btn.currentScale = 1.0;
+    const lerpFactor = 1 - Math.exp(-HOVER_LERP_SPEED * dt);
+    btn.currentScale += (targetScale - btn.currentScale) * lerpFactor;
+    
+    // Apply scale to group
+    if (btn.group) {
+      btn.group.scale.setScalar(btn.currentScale);
+    }
+    
+    // Color change on hover
+    if (btn.baseColor !== undefined && btn.mat) {
+      if (isHovered) {
+        const brightColor = new THREE.Color(btn.baseColor).multiplyScalar(1.3);
+        btn.mat.color.copy(brightColor);
+      } else {
+        btn.mat.color.setHex(btn.baseColor);
       }
     }
-    delete hudTextureCache[key];
+    
+    // Highlight border (thin white line, slightly offset)
+    if (btn.highlightBorder) {
+      btn.highlightBorder.visible = isHovered;
+      if (isHovered) {
+        btn.highlightBorder.material.opacity = 0.5 + Math.sin(now * 0.005) * 0.3;
+      }
+    }
   });
+  
+  // Hover enter sound
+  if (hitButton && hitButton !== lastHoveredButton && hoverSoundCooldown <= 0) {
+    if (playHoverSound) playHoverSound();
+    hoverSoundCooldown = 100;
+  }
+  
+  lastHoveredButton = hitButton;
+  
+  return hitButton;
+}
+
+// Helper to create highlight border for a button (thicker border)
+function createHighlightBorder(geo, gap = 0.025) {
+  const scale = 1 + gap * 2;
+  const highlightGeo = new THREE.EdgesGeometry(
+    new THREE.PlaneGeometry(
+      geo.parameters.width * scale + 0.05,
+      geo.parameters.height * scale + 0.05
+    )
+  );
+  const highlightMat = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0,
+  });
+  return new THREE.LineSegments(highlightGeo, highlightMat);
 }
 
 // ── Canvas text utility ────────────────────────────────────
-function makeTextTexture(text, opts = {}) {
-  return getCachedTextTexture(
-    text,
-    opts.fontSize || 64,
-    opts.color || '#00ffff',
-    opts.shadow,
-    opts.glow,
-    opts.glowColor,
-    opts.maxWidth
-  );
+function makeTextTexture(text, opts = {}, existingObj = null) {
+  let canvas = existingObj ? existingObj.canvas : document.createElement('canvas');
+  let ctx = existingObj ? existingObj.ctx : canvas.getContext('2d');
+
+  const fontSize = opts.fontSize || 64;
+  const font = `bold ${fontSize}px Arial, sans-serif`;
+  const maxWidth = opts.maxWidth || null;
+
+  ctx.font = font;
+
+  // Word wrapping if maxWidth is specified
+  let lines = [text];
+  if (maxWidth) {
+    lines = [];
+    const words = text.split(' ');
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+
+      if (metrics.width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+  }
+
+  // Measure text to size canvas
+  const textWidth = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
+  const lineHeight = fontSize * 1.3;
+  const textHeight = lines.length * lineHeight;
+
+  const neededWidth = Math.ceil(textWidth) + 40;
+  const neededHeight = Math.ceil(textHeight);
+
+  if (canvas.width !== neededWidth || canvas.height !== neededHeight) {
+    canvas.width = neededWidth;
+    canvas.height = neededHeight;
+  } else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear if size didn't change
+  }
+
+  // Re-set after resize
+  ctx.font = font;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Optional glow
+  if (opts.glow) {
+    ctx.shadowColor = opts.glowColor || opts.color || '#00ffff';
+    ctx.shadowBlur = opts.glowSize || 15;
+  } else {
+    ctx.shadowBlur = 0;
+  }
+
+  // Drop shadow
+  if (opts.shadow) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    lines.forEach((line, i) => {
+      const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+      ctx.fillText(line, canvas.width / 2 + 2, y + 2);
+    });
+  }
+
+  // Main text
+  ctx.fillStyle = opts.color || '#00ffff';
+  lines.forEach((line, i) => {
+    const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+    ctx.fillText(line, canvas.width / 2, y);
+  });
+
+  let texture;
+  if (existingObj && existingObj.texture) {
+    texture = existingObj.texture;
+    texture.image = canvas;
+    texture.needsUpdate = true;
+  } else {
+    texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+  }
+
+  return { texture, aspect: canvas.width / canvas.height, canvas, ctx };
 }
 
 function makeSprite(text, opts = {}) {
-  const { texture, aspect } = makeTextTexture(text, opts);
+  // Initial creation - no existing object
+  const { texture, aspect, canvas, ctx } = makeTextTexture(text, opts);
 
   // Use PlaneGeometry instead of Sprite to prevent billboarding
   const scale = opts.scale || 0.3;
   const width = aspect * scale;
   const height = scale;
 
-  const geometry = new THREE.PlaneGeometry(width, height);
+  const geometry = new THREE.PlaneGeometry(1, 1); // Unit quad
   const mat = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
-    opacity: opts.opacity !== undefined ? opts.opacity : 1,
-    depthTest: opts.depthTest !== undefined ? opts.depthTest : false,
+    opacity: opts.opacity ?? 1,
+    depthTest: opts.depthTest ?? false,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
 
   const mesh = new THREE.Mesh(geometry, mat);
-  mesh.renderOrder = opts.renderOrder !== undefined ? opts.renderOrder : 999;
+  mesh.scale.set(width, height, 1);
+  mesh.renderOrder = opts.renderOrder ?? 999;
+
+  // Store rendering context for reuse
+  mesh.userData.renderContext = { canvas, ctx, texture };
+
   return mesh;
 }
 
@@ -259,6 +315,49 @@ function drawHeart(ctx, x, y, pixSize, state) {
   });
 }
 
+function makeHeartsTexture(health, maxHealth, existingObj = null) {
+  const heartCount = maxHealth / 2;
+  const pixSize = 8;
+  const heartW = 7 * pixSize;
+  const heartH = 6 * pixSize;
+  const gap = 6;
+
+  const width = heartCount * (heartW + gap) + gap;
+  const height = heartH + 10;
+
+  let canvas = existingObj ? existingObj.canvas : document.createElement('canvas');
+  let ctx = existingObj ? existingObj.ctx : canvas.getContext('2d');
+
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  } else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  for (let i = 0; i < heartCount; i++) {
+    const hpForThisHeart = health - i * 2;
+    let state;
+    if (hpForThisHeart >= 2) state = 'full';
+    else if (hpForThisHeart === 1) state = 'half';
+    else state = 'empty';
+
+    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
+  }
+
+  let texture;
+  if (existingObj && existingObj.texture) {
+    texture = existingObj.texture;
+    texture.image = canvas;
+    texture.needsUpdate = true;
+  } else {
+    texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+  }
+
+  return { texture, aspect: canvas.width / canvas.height, canvas, ctx };
+}
+
 // ── Public API ─────────────────────────────────────────────
 
 export function initHUD(camera, scene) {
@@ -267,9 +366,7 @@ export function initHUD(camera, scene) {
 
   // ── Title Screen (world-space, fixed position) ──
   createTitleScreen();
-  titleGroup.position.set(0, 1.6, -3.5);
-  titleGroup.rotation.set(0, 0, 0);
-  titleGroup.visible = true;
+  titleGroup.position.set(0, 1.6, -6);
   scene.add(titleGroup);
 
   // ── VR HUD (stationary on floor, Space Pirate Trainer style) ──
@@ -278,12 +375,35 @@ export function initHUD(camera, scene) {
   hudGroup.rotation.x = -Math.PI / 2;  // Rotate to face up (floor plane)
   scene.add(hudGroup);
 
-  // ── UI Groups (initially hidden) ──
-  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup].forEach(g => {
-    g.visible = false;
-    g.rotation.set(0, 0, 0);
-    scene.add(g);
-  });
+  // ── Level transition text (world-space) ──
+  levelTextGroup.visible = false;
+  levelTextGroup.rotation.set(0, 0, 0);  // Lock rotation
+  scene.add(levelTextGroup);
+
+  // ── Upgrade selection (world-space) ──
+  upgradeGroup.visible = false;
+  upgradeGroup.rotation.set(0, 0, 0);  // Lock rotation
+  scene.add(upgradeGroup);
+
+  // ── Game over / Victory (world-space) ──
+  gameOverGroup.visible = false;
+  gameOverGroup.rotation.set(0, 0, 0);
+  scene.add(gameOverGroup);
+
+  // ── Name entry (world-space) ──
+  nameEntryGroup.visible = false;
+  nameEntryGroup.rotation.set(0, 0, 0);
+  scene.add(nameEntryGroup);
+
+  // ── Scoreboard (world-space) ──
+  scoreboardGroup.visible = false;
+  scoreboardGroup.rotation.set(0, 0, 0);
+  scene.add(scoreboardGroup);
+
+  // ── Country select (world-space) ──
+  countrySelectGroup.visible = false;
+  countrySelectGroup.rotation.set(0, 0, 0);
+  scene.add(countrySelectGroup);
 
   // ── Hit flash (red sphere around camera) ──
   hitFlash = new THREE.Mesh(
@@ -301,58 +421,95 @@ export function initHUD(camera, scene) {
   camera.add(hitFlash);
 
   // ── FPS Counter (top left, attached to camera, more visible in VR) ──
-  fpsSprite = makeSprite('FPS: 0', { fontSize: 36, color: '#00ff00', shadow: true, scale: 0.15 });
-  fpsSprite.position.set(-0.15, 0.12, -0.5);  // Moved closer to center
+  fpsSprite = makeSprite('FPS: 0', { fontSize: 36, color: '#00ff00', shadow: true, scale: 0.2 });
+  fpsSprite.position.set(-0.35, 0.2, -0.5);  // Top left of view, more centered
   fpsSprite.renderOrder = 1001;
+  // Discard transparent pixels so the plane doesn't render as a dark box in VR
+  fpsSprite.material.alphaTest = 0.05;
   fpsSprite.material.depthTest = false;  // Always render on top
   camera.add(fpsSprite);
 
-  // ── Boss health bar (top center, camera-attached, 3 segments) ──
+  // [Power Outage Update] #4: Boss health bar - now world-space, floats above boss head
+  // Single continuous bar instead of 3 segments
   bossHealthGroup = new THREE.Group();
-  bossHealthGroup.position.set(0, 0.3, -0.6);
   bossHealthGroup.visible = false;
-  const barWidth = 0.25;
-  const barHeight = 0.03;
-  const gap = 0.01;
-  for (let i = 0; i < 3; i++) {
-    const geo = new THREE.PlaneGeometry(barWidth, barHeight);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff0044, side: THREE.DoubleSide, depthTest: false });
-    const bar = new THREE.Mesh(geo, mat);
-    bar.position.x = (i - 1) * (barWidth + gap);
-    bar.renderOrder = 1000;
-    bossHealthGroup.add(bar);
-    bossHealthBars.push(bar);
-  }
-  camera.add(bossHealthGroup);
-
-  // ── Start cache clear timer (every 60 seconds) ──
-  setInterval(clearHudCache, 60000);
+  
+  // Background bar (dark)
+  const bossBarWidth = 1.5;
+  const bossBarHeight = 0.08;
+  const bgBarGeo = new THREE.PlaneGeometry(bossBarWidth, bossBarHeight);
+  const bgBarMat = new THREE.MeshBasicMaterial({ 
+    color: 0x224422, 
+    side: THREE.DoubleSide, 
+    depthTest: false,
+    transparent: true,
+    opacity: 0.8
+  });
+  const bgBar = new THREE.Mesh(bgBarGeo, bgBarMat);
+  bgBar.name = 'bossHealthBg';
+  bossHealthGroup.add(bgBar);
+  
+  // Fill bar (foreground, scales with HP)
+  const fillBarGeo = new THREE.PlaneGeometry(bossBarWidth, bossBarHeight);
+  const fillBarMat = new THREE.MeshBasicMaterial({ 
+    color: 0x00ff44, 
+    side: THREE.DoubleSide, 
+    depthTest: false 
+  });
+  bossHealthFillBar = new THREE.Mesh(fillBarGeo, fillBarMat);
+  bossHealthFillBar.name = 'bossHealthFill';
+  bossHealthFillBar.position.z = 0.01;
+  bossHealthGroup.add(bossHealthFillBar);
+  
+  scene.add(bossHealthGroup);
 }
 
+// [Power Outage Update] #4: Updated for world-space bar above boss
 export function showBossHealthBar(hp, maxHp, phases = 3) {
   if (!bossHealthGroup) return;
   bossHealthGroup.visible = true;
-  updateBossHealthBar(hp, maxHp, phases);
+  // Store for positioning in update
+  bossHealthGroup.userData.maxHp = maxHp;
+  bossHealthGroup.userData.phases = phases;
 }
 
 export function hideBossHealthBar() {
   if (bossHealthGroup) bossHealthGroup.visible = false;
 }
 
-export function updateBossHealthBar(hp, maxHp, phases = 3) {
-  if (!bossHealthGroup || !bossHealthGroup.visible || phases < 1) return;
-  const segmentHp = maxHp / phases;
-  for (let i = 0; i < 3; i++) {
-    const bar = bossHealthBars[i];
-    if (!bar) continue;
-    if (i >= phases) {
-      bar.scale.x = 0;
-      continue;
+// [Power Outage Update] #4: Updated - single continuous bar, color transitions
+export function updateBossHealthBar(hp, maxHp, phases = 3, bossMesh = null) {
+  if (!bossHealthGroup || !bossHealthGroup.visible) return;
+  
+  const t = Math.max(0, Math.min(1, hp / maxHp)); // 0..1
+  const barWidth = 1.5;
+  
+  // Scale fill bar
+  if (bossHealthFillBar) {
+    bossHealthFillBar.scale.x = Math.max(0.001, t);
+    // Position so it drains from right to left
+    bossHealthFillBar.position.x = -(1 - t) * barWidth / 2;
+    
+    // Color transition: green → yellow → red → dark red
+    const color = new THREE.Color();
+    if (t > 0.5) {
+      color.setHex(0x00ff44).lerp(new THREE.Color(0xffff00), (1 - (t - 0.5) * 2));
+    } else if (t > 0.25) {
+      color.setHex(0xffff00).lerp(new THREE.Color(0xff2200), (1 - (t - 0.25) * 4));
+    } else {
+      color.setHex(0xff2200).lerp(new THREE.Color(0x880000), (1 - t * 4));
     }
-    const segStart = i * segmentHp;
-    const segEnd = (i + 1) * segmentHp;
-    const segFill = Math.max(0, Math.min(1, (hp - segStart) / (segEnd - segStart)));
-    bar.scale.x = segFill;
+    bossHealthFillBar.material.color.copy(color);
+  }
+  
+  // Position above boss if mesh provided
+  if (bossMesh) {
+    bossHealthGroup.position.copy(bossMesh.position);
+    bossHealthGroup.position.y += 1.2;
+    // Billboard: always face camera
+    if (cameraRef) {
+      bossHealthGroup.lookAt(cameraRef.position);
+    }
   }
 }
 
@@ -404,48 +561,38 @@ function createTitleScreen() {
   btnGroup.add(btnMesh);
   const btnBorderGeo = new THREE.EdgesGeometry(btnGeo);
   btnGroup.add(new THREE.LineSegments(btnBorderGeo, new THREE.LineBasicMaterial({ color: 0xffff00 })));
+  
+  // Highlight border for hover
+  const btnHighlightBorder = createHighlightBorder(btnGeo, 0.02);
+  btnHighlightBorder.position.z = 0.02;
+  btnHighlightBorder.visible = false;
+  btnGroup.add(btnHighlightBorder);
+  
   const btnText = makeSprite('SCOREBOARD', {
     fontSize: 36,
     color: '#ffff00',
     glow: true,
     glowColor: '#ffff00',
-    scale: 0.20,
+    scale: 0.25,
   });
   btnText.position.set(0, 0, 0.01);
   btnGroup.add(btnText);
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
-
-  // Diagnostics button
-  const diagBtnGroup = new THREE.Group();
-  diagBtnGroup.position.set(1.5, -0.6, 0);
-  const diagBtnGeo = new THREE.PlaneGeometry(1.2, 0.3);
-  const diagBtnMat = new THREE.MeshBasicMaterial({
-    color: 0x001133,
-    transparent: true,
-    opacity: 0.85,
-    side: THREE.DoubleSide,
-  });
-  const diagBtnMesh = new THREE.Mesh(diagBtnGeo, diagBtnMat);
-  diagBtnMesh.userData.isTitleDiagBtn = true;
-  diagBtnGroup.add(diagBtnMesh);
-  const diagBtnBorderGeo = new THREE.EdgesGeometry(diagBtnGeo);
-  diagBtnGroup.add(new THREE.LineSegments(diagBtnBorderGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
-  const diagBtnText = makeSprite('DIAGNOSTICS', {
-    fontSize: 36,
-    color: '#00ff88',
-    glow: true,
-    glowColor: '#00ff88',
-    scale: 0.20,
-  });
-  diagBtnText.position.set(0, 0, 0.01);
-  diagBtnGroup.add(diagBtnText);
-  titleGroup.add(diagBtnGroup);
-  titleDiagBtn = diagBtnMesh;
+  
+  // Register title scoreboard button as hoverable
+  titleScoreboardBtnData = {
+    mesh: btnMesh,
+    group: btnGroup,
+    mat: btnMat,
+    baseColor: 0x110033,
+    currentScale: 1.0,
+    highlightBorder: btnHighlightBorder,
+  };
 
   // Version number
-  const versionDate = 'FEB 10 2026   12:10PM PT';
-  const versionNum = 'v0.044';
+  const versionDate = 'FEB 11 2026   12:00AM PT';
+  const versionNum = 'v0.045';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 32,
     color: '#888888',
@@ -453,22 +600,17 @@ function createTitleScreen() {
   });
   versionSprite.position.set(0, -1.0, 0);
   titleGroup.add(versionSprite);
-
-  // Debug mode indicator
-  const isDebugMode = typeof window !== 'undefined' && window.debugPerfMonitor;
-  const debugText = isDebugMode ? 'DEBUG MODE: ON' : 'DEBUG MODE: OFF';
-  const debugSprite = makeSprite(debugText, {
-    fontSize: 24,
-    color: isDebugMode ? '#00ff00' : '#666666',
-    scale: 0.18,
-  });
-  debugSprite.position.set(2.5, -0.85, 0);
-  titleGroup.add(debugSprite);
 }
 
 export function showTitle() {
   titleGroup.visible = true;
   hudGroup.visible = false;
+  
+  // Register title scoreboard button as hoverable
+  clearHoverableButtons();
+  if (titleScoreboardBtnData) {
+    registerHoverableButton(titleScoreboardBtnData);
+  }
 }
 
 export function hideTitle() {
@@ -491,7 +633,9 @@ function createHUDElements() {
   // Increased by 200% (3x) for better visibility
   // Lives (hearts) - left side on floor
   // Use PlaneGeometry (not Sprite) to prevent billboarding/rotation
-  const heartsGeo = new THREE.PlaneGeometry(1.2, 0.24);
+  // Lives (hearts) - left side on floor
+  // Use PlaneGeometry (not Sprite) to prevent billboarding/rotation
+  const heartsGeo = new THREE.PlaneGeometry(1, 1); // Unit quad
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
   heartsSprite.position.set(-1.5, 0, 0);  // Spread out horizontally
@@ -529,49 +673,52 @@ export function hideHUD() {
 }
 
 function updateSpriteText(sprite, text, opts = {}) {
-  // Use cached texture
-  const { texture, aspect } = getCachedTextTexture(
-    text,
-    opts.fontSize || 40,
-    opts.color || '#ffffff',
-    opts.shadow,
-    opts.glow,
-    opts.glowColor,
-    opts.maxWidth
-  );
-  
-  if (sprite.material.map) sprite.material.map.dispose();
-  sprite.material.map = texture;
-  sprite.material.needsUpdate = true;
+  // Reuse existing render context if available
+  const existingObj = sprite.userData.renderContext || null;
 
-  // Update geometry to match aspect ratio (prevents stretching)
+  const { texture, aspect, canvas, ctx } = makeTextTexture(text, {
+    fontSize: opts.fontSize || 40,
+    color: opts.color || '#ffffff',
+    shadow: true,
+    glow: opts.glow,
+    glowColor: opts.glowColor,
+  }, existingObj);
+
+  if (!sprite.material.map) {
+    sprite.material.map = texture;
+  }
+  // Store context back if it was newly created
+  if (!existingObj) {
+    sprite.userData.renderContext = { canvas, ctx, texture };
+  }
+
+  // Update scale to match aspect ratio (prevents stretching)
   const scale = opts.scale || 0.3;
-  sprite.geometry.dispose();
-  sprite.geometry = new THREE.PlaneGeometry(aspect * scale, scale);
+  sprite.scale.set(aspect * scale, scale, 1);
 }
 
 export function updateHUD(gameState) {
   if (!hudGroup.visible) return;
 
-  // Hearts - use cached texture
-  const cfg = gameState._levelConfig;
-  const killTarget = cfg ? cfg.killTarget : 0;
-  
-  // Use scale based on level to prevent overwhelming UI at high levels
-  const level = gameState.level;
-  const scaleMultiplier = Math.min(3.0, 1.0 + level * 0.08);  // Cap at 3x
-  
-  const { texture: ht, aspect: ha } = getCachedHeartsTexture(gameState.health, gameState.maxHealth, scaleMultiplier);
-  if (heartsSprite.material.map) heartsSprite.material.map.dispose();
-  heartsSprite.material.map = ht;
-  heartsSprite.material.needsUpdate = true;
-  
-  // Update geometry to match aspect ratio (200% larger: height 0.48)
-  heartsSprite.geometry.dispose();
-  heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
+  // Hearts - proper aspect ratio with correct scale
+  const existingObj = heartsSprite.userData.renderContext || null;
+  const { texture: ht, aspect: ha, canvas, ctx } = makeHeartsTexture(gameState.health, gameState.maxHealth, existingObj);
+
+  if (!heartsSprite.material.map) {
+    heartsSprite.material.map = ht;
+  }
+  if (!existingObj) {
+    heartsSprite.userData.renderContext = { canvas, ctx, texture: ht };
+  }
+
+  // Update scale (200% larger: height 0.48)
+  heartsSprite.scale.set(ha * 0.48, 0.48, 1);
 
   // Kill counter - 200% larger
-  updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.30 });
+  const cfg = gameState._levelConfig;
+  if (cfg) {
+    updateSpriteText(killCountSprite, `${gameState.kills} / ${cfg.killTarget}`, { color: '#ffffff', scale: 0.30 });
+  }
 
   // Level - 200% larger
   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.30 });
@@ -580,11 +727,10 @@ export function updateHUD(gameState) {
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.26 });
 
   // Combo - 200% larger with descriptive label
-  const combo = getComboMultiplier();
+  const combo = gameState._combo || 1;
   if (combo > 1) {
     comboSprite.visible = true;
-    const pulse = 1.0 + Math.sin(performance.now() * 0.01) * 0.1;
-    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 * pulse });
+    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 });
   } else {
     comboSprite.visible = false;
   }
@@ -623,14 +769,21 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
 
+  // Clear hoverable buttons for fresh registration
+  clearHoverableButtons();
+
   // Fixed world position in front of spawn
   upgradeGroup.position.set(0, 1.6, -4);
 
-  // "Choose an upgrade for [HAND]" header - reduced size significantly
-  const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
-  const header = makeSprite(`CHOOSE UPGRADE: ${handName}`, { fontSize: 48, color: '#ffffff', glow: true, scale: 0.4 });
-  header.position.set(0, 1.4, 0);
+  // "Choose an upgrade for [HAND]" header - separated into two lines, centered
+  const header = makeSprite('CHOOSE UPGRADE:', { fontSize: 48, color: '#ffffff', glow: true, scale: 0.4 });
+  header.position.set(0, 1.6, 0);
   upgradeGroup.add(header);
+
+  const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
+  const handSprite = makeSprite(handName, { fontSize: 48, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.4 });
+  handSprite.position.set(0, 1.15, 0);
+  upgradeGroup.add(handSprite);
 
   // Cooldown text
   const cooldownSprite = makeSprite('WAIT...', { fontSize: 36, color: '#ffff00', scale: 0.3 });
@@ -639,11 +792,12 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.add(cooldownSprite);
 
   // Four cards in an arc (3 upgrades + 1 skip option)
+  // [Power Outage Update] #5: Wider card spacing for 15% wider cards
   const positions = [
-    new THREE.Vector3(-2, 0, 0),
+    new THREE.Vector3(-2.1, 0, 0),
     new THREE.Vector3(-0.7, 0, 0),
     new THREE.Vector3(0.7, 0, 0),
-    new THREE.Vector3(2, 0, 0),
+    new THREE.Vector3(2.1, 0, 0),
   ];
 
   upgrades.forEach((upg, i) => {
@@ -664,7 +818,8 @@ function createUpgradeCard(upgrade, position) {
   group.userData.upgradeId = upgrade.id;
 
   // Card background plane
-  const cardGeo = new THREE.PlaneGeometry(0.9, 1.1);
+  // [Power Outage Update] #5: Widened by 15% (0.9 * 1.15 = 1.035)
+  const cardGeo = new THREE.PlaneGeometry(1.035, 1.1);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -681,6 +836,12 @@ function createUpgradeCard(upgrade, position) {
   const borderGeo = new THREE.EdgesGeometry(cardGeo);
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
+
+  // Highlight border for hover
+  const highlightBorder = createHighlightBorder(cardGeo, 0.02);
+  highlightBorder.position.z = 0.02;
+  highlightBorder.visible = false;
+  group.add(highlightBorder);
 
   // Name text - smaller to prevent overlap
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
@@ -724,8 +885,31 @@ function createUpgradeCard(upgrade, position) {
     new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff', wireframe: true }),
   );
   iconMesh.position.set(0, -0.35, 0.05);
+
+  // NEW WEAPON badge for side-grades
+  if (upgrade.sideGrade) {
+    const badge = makeSprite("⚡ NEW WEAPON ⚡", {
+      fontSize: 18,
+      color: '#ffdd00',
+      glow: true,
+      glowColor: '#ffdd00',
+      scale: 0.12
+    });
+    badge.position.set(0, 0.52, 0.01);
+    group.add(badge);
+  }
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
+
+  // Register as hoverable
+  registerHoverableButton({
+    mesh: card,
+    group: group,
+    mat: cardMat,
+    baseColor: 0x110033,
+    currentScale: 1.0,
+    highlightBorder: highlightBorder,
+  });
 
   return group;
 }
@@ -735,8 +919,9 @@ function createSkipCard(position) {
   group.position.copy(position);
   group.userData.upgradeId = 'SKIP';  // Special ID for skip
 
-  // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades)
-  const cardGeo = new THREE.PlaneGeometry(0.7, 0.9);
+  // [Power Outage Update] #5: Widened by 15% to match upgrade cards
+  // Smaller card (0.7×0.9 scaled by 1.15 ≈ 0.805)
+  const cardGeo = new THREE.PlaneGeometry(0.805, 0.9);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x220044,
     transparent: true,
@@ -752,6 +937,12 @@ function createSkipCard(position) {
   const borderGeo = new THREE.EdgesGeometry(cardGeo);
   const borderMat = new THREE.LineBasicMaterial({ color: '#00ff88' });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
+
+  // Highlight border for hover
+  const highlightBorder = createHighlightBorder(cardGeo, 0.02);
+  highlightBorder.position.z = 0.02;
+  highlightBorder.visible = false;
+  group.add(highlightBorder);
 
   // "SKIP" text
   const nameSprite = makeSprite('SKIP', {
@@ -785,6 +976,16 @@ function createSkipCard(position) {
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
 
+  // Register as hoverable
+  registerHoverableButton({
+    mesh: card,
+    group: group,
+    mat: cardMat,
+    baseColor: 0x220044,
+    currentScale: 1.0,
+    highlightBorder: highlightBorder,
+  });
+
   return group;
 }
 
@@ -811,18 +1012,13 @@ export function updateUpgradeCards(now, cooldownRemaining) {
       cd.visible = true;
       // Update the cooldown sprite text
       if (cd.material && cd.material.map) cd.material.map.dispose();
-      const { texture, aspect } = getCachedTextTexture(
+      const { texture } = makeTextTexture(
         `WAIT ${Math.ceil(cooldownRemaining)}...`,
-        40,
-        '#ffff00',
-        false,
-        false,
-        null,
-        null
+        { fontSize: 40, color: '#ffff00' }
       );
       cd.material.map = texture;
       cd.material.needsUpdate = true;
-      cd.scale.set(aspect * 0.4, 0.4, 1);
+      cd.scale.set(0.4, 0.4, 1);
     } else {
       cd.visible = false;
     }
@@ -850,6 +1046,44 @@ export function getUpgradeCardHit(raycaster) {
     }
   }
   return null;
+}
+
+// ── Controller Hand Highlights for Upgrade Selection ───────
+
+export function showUpgradeHandHighlight(hand, controllers) {
+  controllers.forEach((ctrl, i) => {
+    const isHand = (i === 0 && hand === 'left') || (i === 1 && hand === 'right');
+    const existing = ctrl.getObjectByName('upgradeHighlight');
+    if (existing) ctrl.remove(existing);
+
+    if (isHand) {
+      const group = new THREE.Group();
+      group.name = 'upgradeHighlight';
+
+      const geo = new THREE.OctahedronGeometry(0.1, 0);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.6 });
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
+
+      const glow = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.2 }));
+      glow.scale.set(1.4, 1.4, 1.4);
+      group.add(glow);
+
+      group.position.set(0, 0.05, 0);
+      ctrl.add(group);
+    }
+  });
+}
+
+export function hideUpgradeHandHighlights(controllers) {
+  controllers.forEach(ctrl => {
+    const existing = ctrl.getObjectByName('upgradeHighlight');
+    if (existing) ctrl.remove(existing);
+  });
+}
+
+export function updateUpgradeHandHighlights(now) {
+  // This is handled via normal scene graph if attached to controller
 }
 
 // ── Game Over / Victory ────────────────────────────────────
@@ -909,6 +1143,100 @@ export function hideGameOver() {
   gameOverGroup.visible = false;
 }
 
+// ── Boss Alert (Power Outage Update) #3 ─────────────────────────────────
+
+let bossAlertGroup = null;
+
+export function showBossAlert() {
+  if (!bossAlertGroup) {
+    bossAlertGroup = new THREE.Group();
+    
+    // Line 1: "⚠ ALERT! ALERT! ⚠" in red, large, with glow
+    const alertSprite = makeSprite('⚠ ALERT! ALERT! ⚠', {
+      fontSize: 64, color: '#ff0044', glow: true, glowColor: '#ff0000', glowSize: 25, scale: 0.7,
+    });
+    alertSprite.position.set(0, 0.3, 0);
+    alertSprite.name = 'alertLine1';
+    bossAlertGroup.add(alertSprite);
+
+    // Line 2: "INCOMING BOSS!" in yellow, pulsing
+    const incomingSprite = makeSprite('INCOMING BOSS!', {
+      fontSize: 56, color: '#ffff00', glow: true, glowColor: '#ffff00', glowSize: 20, scale: 0.6,
+    });
+    incomingSprite.position.set(0, -0.3, 0);
+    incomingSprite.name = 'alertLine2';
+    bossAlertGroup.add(incomingSprite);
+  }
+  
+  // Position at midfield, eye level
+  bossAlertGroup.position.set(0, 2.0, -4);
+  bossAlertGroup.visible = true;
+  sceneRef.add(bossAlertGroup);
+}
+
+export function hideBossAlert() {
+  if (bossAlertGroup) {
+    bossAlertGroup.visible = false;
+  }
+}
+
+export function updateBossAlert(now) {
+  if (!bossAlertGroup || !bossAlertGroup.visible) return;
+  
+  // Pulse the "INCOMING BOSS!" text
+  const line2 = bossAlertGroup.getObjectByName('alertLine2');
+  if (line2) {
+    line2.material.opacity = 0.6 + Math.sin(now * 0.008) * 0.4;
+  }
+}
+
+// ── Kills Remaining Message (Power Outage Update) #8 ─────────────────────
+
+let killsRemainingGroup = null;
+
+export function showKillsRemainingMessage(count) {
+  if (killsRemainingGroup) {
+    sceneRef.remove(killsRemainingGroup);
+  }
+  
+  killsRemainingGroup = new THREE.Group();
+  
+  const text = `${count} KILLS REMAINING`;
+  const sprite = makeSprite(text, {
+    fontSize: 52, color: '#ffff00', glow: true, glowColor: '#ffff00', glowSize: 15, scale: 0.6,
+  });
+  sprite.position.set(0, 0, 0);
+  killsRemainingGroup.add(sprite);
+  
+  // Position at midfield
+  killsRemainingGroup.position.set(0, 2.0, -5);
+  killsRemainingGroup.userData.createdAt = performance.now();
+  killsRemainingGroup.userData.lifetime = 2000; // 2 seconds
+  killsRemainingGroup.visible = true;
+  
+  sceneRef.add(killsRemainingGroup);
+}
+
+export function updateKillsRemainingMessage(now) {
+  if (!killsRemainingGroup || !killsRemainingGroup.visible) return;
+  
+  const age = now - killsRemainingGroup.userData.createdAt;
+  if (age > killsRemainingGroup.userData.lifetime) {
+    killsRemainingGroup.visible = false;
+    sceneRef.remove(killsRemainingGroup);
+    killsRemainingGroup = null;
+  } else {
+    // Fade out in last 0.5s
+    const fadeStart = killsRemainingGroup.userData.lifetime - 500;
+    if (age > fadeStart) {
+      const opacity = 1 - (age - fadeStart) / 500;
+      killsRemainingGroup.children.forEach(child => {
+        if (child.material) child.material.opacity = opacity;
+      });
+    }
+  }
+}
+
 // ── Hit Flash ──────────────────────────────────────────────
 
 export function triggerHitFlash() {
@@ -927,13 +1255,17 @@ export function updateHitFlash(dt) {
 
 // ── Damage Numbers ─────────────────────────────────────────
 
-export function spawnDamageNumber(position, damage, color) {
+// [Power Outage Update] #14: Modified to accept isCrit parameter
+export function spawnDamageNumber(position, damage, color, isCrit = false) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 128;
   canvas.height = 64;
 
-  const fontSize = Math.min(48, 28 + damage / 6);
+  // [Power Outage Update] #14: 1.5x size for crits (reduced from 2x by 25%)
+  const fontSize = isCrit
+    ? Math.min(48, 28 + damage / 6) * 1.5
+    : Math.min(48, 28 + damage / 6);
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -942,16 +1274,18 @@ export function spawnDamageNumber(position, damage, color) {
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   ctx.fillText(Math.round(damage).toString(), 66, 34);
 
-  // Main text
-  ctx.fillStyle = color || '#ffffff';
+  // [Power Outage Update] #14: Use crit color override
+  const displayColor = isCrit ? '#ffff00' : (color || '#ffffff');
+  ctx.fillStyle = displayColor;
   ctx.fillText(Math.round(damage).toString(), 64, 32);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
 
-  // Use PlaneGeometry instead of Sprite to prevent billboarding
-  // Increased scale significantly for better visibility (+30% from before)
-  const scale = (0.25 + Math.min(damage / 100, 0.15)) * 1.3;
+  // [Power Outage Update] #14: 1.5x mesh scale for crits (reduced from 2x by 25%)
+  const scale = isCrit
+    ? (0.25 + Math.min(damage / 100, 0.15)) * 1.5
+    : (0.25 + Math.min(damage / 100, 0.15));
   const width = scale * 2;
   const height = scale;
 
@@ -983,12 +1317,91 @@ export function spawnDamageNumber(position, damage, color) {
   sceneRef.add(mesh);
   damageNumbers.push(mesh);
 
+  // [Power Outage Update] #14: Spawn "CRIT!" label for critical hits
+  if (isCrit) {
+    spawnCritLabel(position);
+  }
+
   // Cap total to prevent perf issues
   while (damageNumbers.length > 20) {
     const old = damageNumbers.shift();
     sceneRef.remove(old);
     old.material.map.dispose();
     old.material.dispose();
+  }
+}
+
+// [Power Outage Update] #14: New helper for crit label
+function spawnCritLabel(position) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 128;
+  canvas.height = 48;
+
+  ctx.font = 'bold 36px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillText('CRIT!', 66, 26);
+
+  // Orange/red crit text
+  ctx.fillStyle = '#ff4400';
+  ctx.fillText('CRIT!', 64, 24);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  const scale = 0.3;
+  const width = scale * 2;
+  const height = scale;
+
+  const geometry = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.9,
+    depthTest: false,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geometry, mat);
+  // Position slightly above the damage number
+  mesh.position.copy(position);
+  mesh.position.x += (Math.random() - 0.5) * 0.2;
+  mesh.position.y += 0.4 + Math.random() * 0.2;
+  mesh.position.z += (Math.random() - 0.5) * 0.2;
+
+  mesh.renderOrder = 998;
+
+  mesh.userData.velocity = new THREE.Vector3(
+    (Math.random() - 0.5) * 0.3,
+    0.6 + Math.random() * 0.3,
+    (Math.random() - 0.5) * 0.3,
+  );
+  mesh.userData.lifetime = 600;
+  mesh.userData.createdAt = performance.now();
+
+  sceneRef.add(mesh);
+  damageNumbers.push(mesh);
+}
+
+export function updateDamageNumbers(dt, now) {
+  for (let i = damageNumbers.length - 1; i >= 0; i--) {
+    const s = damageNumbers[i];
+    const age = now - s.userData.createdAt;
+
+    if (age > s.userData.lifetime) {
+      sceneRef.remove(s);
+      s.material.map.dispose();
+      s.material.dispose();
+      damageNumbers.splice(i, 1);
+    } else {
+      s.position.addScaledVector(s.userData.velocity, dt);
+      s.userData.velocity.y -= dt * 1.5;  // gravity
+      // No fade - keep full opacity for performance
+    }
   }
 }
 
@@ -1033,27 +1446,17 @@ export function spawnOuchBubble(position, text = 'OUCH!') {
   mesh.renderOrder = 999;
   mesh.userData.createdAt = performance.now();
   mesh.userData.lifetime = 800;
-  mesh.userData.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.5, 1.5, (Math.random() - 0.5) * 0.5);
 
   sceneRef.add(mesh);
-  damageNumbers.push(mesh);
-}
 
-export function updateDamageNumbers(dt, now) {
-  for (let i = damageNumbers.length - 1; i >= 0; i--) {
-    const s = damageNumbers[i];
-    const age = now - s.userData.createdAt;
+  const ouchBubbles = damageNumbers;
+  ouchBubbles.push(mesh);
 
-    if (age > s.userData.lifetime) {
-      sceneRef.remove(s);
-      s.material.map.dispose();
-      s.material.dispose();
-      damageNumbers.splice(i, 1);
-    } else {
-      s.position.addScaledVector(s.userData.velocity, dt);
-      s.userData.velocity.y -= dt * 1.5;  // gravity
-      // No fade - keep full opacity for performance
-    }
+  while (ouchBubbles.length > 5) {
+    const old = ouchBubbles.shift();
+    sceneRef.remove(old);
+    old.material.map.dispose();
+    old.material.dispose();
   }
 }
 
@@ -1135,6 +1538,74 @@ export function updateComboPopups(dt, now) {
   }
 }
 
+// ── Vampire Heal Indicator ─────────────────────────────────────
+export function spawnVampireHealIndicator(position) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 96;
+  canvas.height = 48;
+
+  // Draw "+" symbol
+  ctx.fillStyle = '#00ff00';
+  ctx.font = 'bold 32px Arial';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('+', 8, 24);
+
+  // Draw half pixel heart (left side only, same design as HUD hearts)
+  const pixSize = 4;
+  const heartOffsetX = 40;
+  const heartOffsetY = 12;
+  
+  ctx.fillStyle = '#ff0044';
+  HEART_PIXELS.forEach((row, py) => {
+    row.forEach((px_on, px) => {
+      if (!px_on) return;
+      // Only draw left half (px < 4)
+      if (px < 4) {
+        ctx.fillRect(heartOffsetX + px * pixSize, heartOffsetY + py * pixSize, pixSize, pixSize);
+      }
+    });
+  });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  const scale = 0.4; // Doubled from 0.2 for 2x size
+  const width = scale * 2;
+  const height = scale;
+
+  const geometry = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 1,
+    depthTest: false,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geometry, mat);
+  mesh.position.copy(position);
+  mesh.position.y += 0.3;
+  mesh.position.x += (Math.random() - 0.5) * 0.2;
+
+  mesh.renderOrder = 997;
+  mesh.userData.velocity = new THREE.Vector3(0, 0.8, 0);
+  mesh.userData.lifetime = 800;
+  mesh.userData.createdAt = performance.now();
+
+  sceneRef.add(mesh);
+  damageNumbers.push(mesh);
+
+  // Cap total
+  while (damageNumbers.length > 25) {
+    const old = damageNumbers.shift();
+    sceneRef.remove(old);
+    old.material.map.dispose();
+    old.material.dispose();
+  }
+}
+
 export function checkComboIncrease(currentCombo, cameraPos, playSoundFn) {
   if (currentCombo > lastComboValue && currentCombo > 1) {
     spawnComboPopup(currentCombo, cameraPos);
@@ -1184,7 +1655,12 @@ export function updateFPS(now, opts = {}) {
     const ftColor = avgFrameMs > 33 ? '#ff0000' : avgFrameMs > 20 ? '#ffff00' : '#00ff00';
     const color = perfMonitor ? ftColor : fpsColor;
 
-    const { texture, aspect } = getCachedTextTexture(text, perfMonitor ? 24 : 32, color, true, false, null, perfMonitor ? 300 : null);
+    const { texture, aspect } = makeTextTexture(text, {
+      fontSize: perfMonitor ? 24 : 32,
+      color,
+      shadow: true,
+      maxWidth: perfMonitor ? 300 : null,
+    });
     if (fpsSprite.material.map) fpsSprite.material.map.dispose();
     fpsSprite.material.map = texture;
     fpsSprite.material.needsUpdate = true;
@@ -1204,185 +1680,14 @@ function hideAll() {
   nameEntryGroup.visible = false;
   scoreboardGroup.visible = false;
   countrySelectGroup.visible = false;
-  readyGroup.visible = false;
-  // Floor HUD shouldn't necessarily disappear during everything
-  // Specifically don't hide it if we want it visible during upgrades
 }
 
 // ── Title Scoreboard Button Hit ─────────────────────────────
 
 export function getTitleButtonHit(raycaster) {
-  if (!titleGroup.visible) return null;
-
-  // Check diagnostics button
-  if (titleDiagBtn) {
-    const diagHits = raycaster.intersectObject(titleDiagBtn, false);
-    if (diagHits.length > 0) return 'diagnostics';
-  }
-
-  // Check scoreboard button
-  if (titleScoreboardBtn) {
-    const hits = raycaster.intersectObject(titleScoreboardBtn, false);
-    if (hits.length > 0) return 'scoreboard';
-  }
-
-  return null;
-}
-
-// ── Run Diagnostics ──────────────────────────────────────
-export function runDiagnostics() {
-  const results = [];
-  let allPassed = true;
-
-  // Check scene
-  if (!sceneRef) {
-    results.push('❌ Scene reference is missing');
-    allPassed = false;
-  } else if (sceneRef.children.length === 0) {
-    results.push('❌ Scene is empty (no objects)');
-    allPassed = false;
-  } else {
-    results.push(`✅ Scene has ${sceneRef.children.length} objects`);
-  }
-
-  // Check camera
-  if (!cameraRef) {
-    results.push('❌ Camera reference is missing');
-    allPassed = false;
-  } else {
-    results.push(`✅ Camera at (${cameraRef.position.x.toFixed(1)}, ${cameraRef.position.y.toFixed(1)}, ${cameraRef.position.z.toFixed(1)})`);
-  }
-
-  // Check groups visibility
-  if (!titleGroup.visible) {
-    results.push('⚠️ Title group is not visible (expected)');
-  } else {
-    results.push('✅ Title group is visible');
-  }
-
-  // Check UI groups are in scene
-  const groupsToCheck = [titleGroup, hudGroup, levelTextGroup, upgradeGroup, gameOverGroup];
-  groupsToCheck.forEach((g, i) => {
-    if (g) {
-      if (!sceneRef.children.includes(g)) {
-        results.push(`❌ Group ${i} is not in scene`);
-        allPassed = false;
-      } else {
-        results.push(`✅ Group ${i} is in scene`);
-      }
-    }
-  });
-
-  // Show results in console
-  console.log('=== DIAGNOSTICS RESULTS ===');
-  results.forEach(r => console.log(r));
-  console.log('===========================');
-
-  // Also show on the web page
-  if (typeof window !== 'undefined' && window.showWebError) {
-    const status = allPassed ? 'ALL DIAGNOSTICS PASSED' : 'SOME DIAGNOSTICS FAILED';
-    window.showWebError(status, results.join('\n'));
-  }
-
-  return allPassed;
-}
-
-export function getDebugJumpHit(raycaster) {
-  return getReadyScreenHit(raycaster);
-}
-
-export function showDebugJumpScreen(targetLevel) {
-  hideAll();
-  while (readyGroup.children.length) readyGroup.remove(readyGroup.children[0]);
-  readyGroup.position.set(0, 1.6, -4);
-  readyGroup.visible = true;
-
-  const header = makeSprite(`DEBUG JUMP`, {
-    fontSize: 70, color: '#ff00ff', glow: true, scale: 0.6,
-  });
-  header.position.set(0, 0.8, 0);
-  readyGroup.add(header);
-
-  const levelTxt = makeSprite(`LEVEL ${targetLevel}`, {
-    fontSize: 50, color: '#ffffff', scale: 0.5,
-  });
-  levelTxt.position.set(0, 0.4, 0);
-  readyGroup.add(levelTxt);
-
-  const btnGeo = new THREE.PlaneGeometry(1, 0.4);
-  const btnMat = new THREE.MeshBasicMaterial({ color: 0x330033, transparent: true, opacity: 0.8 });
-  const btn = new THREE.Mesh(btnGeo, btnMat);
-  btn.userData.readyAction = 'start';
-  btn.position.set(0, -0.2, 0);
-  readyGroup.add(btn);
-
-  readyGroup.add(new THREE.LineSegments(
-    new THREE.EdgesGeometry(btnGeo),
-    new THREE.LineBasicMaterial({ color: 0xff00ff })
-  ));
-
-  const startTxt = makeSprite('START', { fontSize: 40, color: '#ff00ff', scale: 0.3 });
-  startTxt.position.set(0, -0.2, 0.01);
-  readyGroup.add(startTxt);
-}
-
-// ── Ready Screen ──────────────────────────────────────────
-export function showReadyScreen(level, playerPos) {
-  hideAll();
-  while (readyGroup.children.length) readyGroup.remove(readyGroup.children[0]);
-
-  // Position in front of the player
-  if (playerPos) {
-    readyGroup.position.copy(playerPos);
-    readyGroup.position.y = 1.6;
-    readyGroup.position.z -= 4;
-  } else {
-    readyGroup.position.set(0, 1.6, -4);
-  }
-  readyGroup.visible = true;
-
-  const header = makeSprite(`READY?`, {
-    fontSize: 70, color: '#ffff00', glow: true, scale: 0.6,
-  });
-  header.position.set(0, 0.8, 0);
-  readyGroup.add(header);
-
-  const subheader = makeSprite('SHOOT TO START', {
-    fontSize: 40, color: '#00ffff', scale: 0.4,
-  });
-  subheader.position.set(0, 0.4, 0);
-  readyGroup.add(subheader);
-
-  // START target
-  const btnGeo = new THREE.PlaneGeometry(1, 0.4);
-  const btnMat = new THREE.MeshBasicMaterial({ color: 0x003300, transparent: true, opacity: 0.8 });
-  const btn = new THREE.Mesh(btnGeo, btnMat);
-  btn.userData.readyAction = 'start';
-  btn.position.set(0, -0.2, 0);
-  readyGroup.add(btn);
-
-  readyGroup.add(new THREE.LineSegments(
-    new THREE.EdgesGeometry(btnGeo),
-    new THREE.LineBasicMaterial({ color: 0x00ff00 })
-  ));
-
-  const startTxt = makeSprite('START', { fontSize: 40, color: '#00ff00', scale: 0.3 });
-  startTxt.position.set(0, -0.2, 0.01);
-  readyGroup.add(startTxt);
-}
-
-export function hideReadyScreen() {
-  readyGroup.visible = false;
-}
-
-export function getReadyScreenHit(raycaster) {
-  if (!readyGroup.visible) return null;
-  const actionMeshes = [];
-  readyGroup.traverse(c => {
-    if (c.userData && c.userData.readyAction) actionMeshes.push(c);
-  });
-  const hits = raycaster.intersectObjects(actionMeshes, false);
-  if (hits.length > 0) return hits[0].object.userData.readyAction;
+  if (!titleScoreboardBtn || !titleGroup.visible) return null;
+  const hits = raycaster.intersectObject(titleScoreboardBtn, false);
+  if (hits.length > 0) return 'scoreboard';
   return null;
 }
 
@@ -1606,9 +1911,13 @@ export function updateKeyboardHover(raycaster) {
 
 // ── Scoreboard Screen ───────────────────────────────────────
 
-export function showScoreboard(scores, headerText) {
+// [Power Outage Update] #13: Accept optional country info for header split
+export function showScoreboard(scores, headerText, opts = null) {
   hideAll();
   while (scoreboardGroup.children.length) scoreboardGroup.remove(scoreboardGroup.children[0]);
+
+  // Clear hoverable buttons for fresh registration
+  clearHoverableButtons();
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
@@ -1616,12 +1925,34 @@ export function showScoreboard(scores, headerText) {
   scoreboardGroup.position.set(0, 1.6, -5);
   scoreboardGroup.visible = true;
 
-  // Header
-  const header = makeSprite(scoreboardHeader, {
-    fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
-  });
-  header.position.set(0, 1.8, 0);
-  scoreboardGroup.add(header);
+  // [Power Outage Update] #13: Split header into two lines with flag for country leaderboards
+  if (opts && opts.countryCode && opts.countryName) {
+    // Get flag emoji from country code
+    const flag = String.fromCodePoint(
+      ...[...opts.countryCode.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
+    );
+    
+    // Line 1: Flag + country name in cyan
+    const countrySprite = makeSprite(`${flag} ${opts.countryName}`, {
+      fontSize: 52, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.55,
+    });
+    countrySprite.position.set(0, 2.0, 0);
+    scoreboardGroup.add(countrySprite);
+    
+    // Line 2: "LEADERBOARD" in white
+    const lbSprite = makeSprite('LEADERBOARD', {
+      fontSize: 42, color: '#ffffff', glow: true, glowColor: '#ffffff', scale: 0.45,
+    });
+    lbSprite.position.set(0, 1.55, 0);
+    scoreboardGroup.add(lbSprite);
+  } else {
+    // Default: single header
+    const header = makeSprite(scoreboardHeader, {
+      fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
+    });
+    header.position.set(0, 1.8, 0);
+    scoreboardGroup.add(header);
+  }
 
   // Score list canvas
   renderScoreboardCanvas();
@@ -1629,6 +1960,7 @@ export function showScoreboard(scores, headerText) {
   scoreboardGroup.add(scoreboardMesh);
 
   // Buttons on right side
+  // [Power Outage Update] #10, #11: Wider buttons, moved right, back button moved down
   const btnDefs = [
     { label: 'COUNTRY', y: 1.2, action: 'country' },
     { label: 'CONTINENT', y: 0.85, action: 'continent' },
@@ -1638,9 +1970,9 @@ export function showScoreboard(scores, headerText) {
 
   for (const def of btnDefs) {
     const btnGroup = new THREE.Group();
-    btnGroup.position.set(1.2, def.y, 0);
+    btnGroup.position.set(1.5, def.y, 0); // [Power Outage Update] #10: Moved right from 1.2 to 1.5
 
-    const btnGeo = new THREE.PlaneGeometry(0.5, 0.25);
+    const btnGeo = new THREE.PlaneGeometry(0.7, 0.25); // [Power Outage Update] #10: Wider from 0.5 to 0.7
     const btnMat = new THREE.MeshBasicMaterial({
       color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
     });
@@ -1653,16 +1985,33 @@ export function showScoreboard(scores, headerText) {
       new THREE.LineBasicMaterial({ color: 0x888888 })
     ));
 
+    // Highlight border for hover
+    const highlightBorder = createHighlightBorder(btnGeo, 0.02);
+    highlightBorder.position.z = 0.02;
+    highlightBorder.visible = false;
+    btnGroup.add(highlightBorder);
+
     const txt = makeSprite(def.label, { fontSize: 22, color: '#ffffff', scale: 0.12 });
     txt.position.set(0, 0, 0.01);
     btnGroup.add(txt);
 
     scoreboardGroup.add(btnGroup);
+    
+    // Register as hoverable
+    registerHoverableButton({
+      mesh: btnMesh,
+      group: btnGroup,
+      mat: btnMat,
+      baseColor: 0x111133,
+      currentScale: 1.0,
+      highlightBorder: highlightBorder,
+    });
   }
 
   // BACK button bottom center
+  // [Power Outage Update] #11: Moved down from -0.7 to -0.95 to avoid overlap
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -0.7, 0);
+  backGroup.position.set(0, -0.95, 0);
   const backGeo = new THREE.PlaneGeometry(0.6, 0.25);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -1670,14 +2019,30 @@ export function showScoreboard(scores, headerText) {
   const backMesh = new THREE.Mesh(backGeo, backMat);
   backMesh.userData.scoreboardAction = 'back';
   backGroup.add(backMesh);
+  
+  const backHighlightBorder = createHighlightBorder(backGeo, 0.02);
+  backHighlightBorder.position.z = 0.02;
+  backHighlightBorder.visible = false;
+  backGroup.add(backHighlightBorder);
+  
   backGroup.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(backGeo),
     new THREE.LineBasicMaterial({ color: 0xff4444 })
   ));
-  const backTxt = makeSprite('BACK', { fontSize: 24, color: '#ff4444', scale: 0.12 });
+  const backTxt = makeSprite('BACK', { fontSize: 28, color: '#ff4444', scale: 0.15 });
   backTxt.position.set(0, 0, 0.01);
   backGroup.add(backTxt);
   scoreboardGroup.add(backGroup);
+  
+  // Register back button as hoverable
+  registerHoverableButton({
+    mesh: backMesh,
+    group: backGroup,
+    mat: backMat,
+    baseColor: 0x330000,
+    currentScale: 1.0,
+    highlightBorder: backHighlightBorder,
+  });
 }
 
 function renderScoreboardCanvas() {
@@ -1698,12 +2063,12 @@ function renderScoreboardCanvas() {
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, w - 2, h - 2);
 
-  const rowHeight = 30; // Reduced from 42
+  const rowHeight = 42;
   const maxVisible = Math.floor(h / rowHeight);
   const startIdx = scoreboardScrollOffset;
   const endIdx = Math.min(startIdx + maxVisible, scoreboardScores.length);
 
-  ctx.font = 'bold 18px Arial, sans-serif'; // Reduced from 24
+  ctx.font = 'bold 24px Arial, sans-serif';
   ctx.textBaseline = 'middle';
 
   for (let i = startIdx; i < endIdx; i++) {
@@ -1743,9 +2108,9 @@ function renderScoreboardCanvas() {
           ...[...score.country.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
         );
         ctx.textAlign = 'left';
-        ctx.font = '16px Arial, sans-serif';
+        ctx.font = '22px Arial, sans-serif';
         ctx.fillText(flag, 640, y);
-        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.font = 'bold 24px Arial, sans-serif';
       } catch (e) { /* skip flag */ }
     }
 
@@ -1834,8 +2199,11 @@ export function updateScoreboardScroll(delta) {
 
 export function showCountrySelect(countries, continents, initialContinent) {
   hideAll();
-
   while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
+  
+  // Clear hoverable buttons for fresh registration
+  clearHoverableButtons();
+  
   continentTabs = [];
   countryItems = [];
   countrySelectContinent = initialContinent || 'North America';
@@ -1871,6 +2239,12 @@ export function showCountrySelect(countries, continents, initialContinent) {
     tabMesh.userData.continentTab = continent;
     tabGroup.add(tabMesh);
 
+    // Highlight border for hover
+    const tabHighlightBorder = createHighlightBorder(tabGeo, 0.015);
+    tabHighlightBorder.position.z = 0.02;
+    tabHighlightBorder.visible = false;
+    tabGroup.add(tabHighlightBorder);
+
     tabGroup.add(new THREE.LineSegments(
       new THREE.EdgesGeometry(tabGeo),
       new THREE.LineBasicMaterial({ color: isActive ? 0x00ffff : 0x444466 })
@@ -1886,6 +2260,17 @@ export function showCountrySelect(countries, continents, initialContinent) {
 
     continentTabs.push({ group: tabGroup, mesh: tabMesh, continent });
     countrySelectGroup.add(tabGroup);
+    
+    // Register tab as hoverable
+    registerHoverableButton({
+      mesh: tabMesh,
+      group: tabGroup,
+      mat: tabMat,
+      baseColor: isActive ? 0x003344 : 0x111133,
+      currentScale: 1.0,
+      highlightBorder: tabHighlightBorder,
+    });
+    
     tabX += tabWidth + tabGap;
   }
 
@@ -1894,7 +2279,7 @@ export function showCountrySelect(countries, continents, initialContinent) {
 
   // BACK button
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -0.9, 0); // Moved down from -0.8
+  backGroup.position.set(0, -0.8, 0);
   const backGeo = new THREE.PlaneGeometry(0.6, 0.25);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -1902,6 +2287,12 @@ export function showCountrySelect(countries, continents, initialContinent) {
   const backMesh = new THREE.Mesh(backGeo, backMat);
   backMesh.userData.countryAction = 'back';
   backGroup.add(backMesh);
+  
+  const backHighlightBorder = createHighlightBorder(backGeo, 0.02);
+  backHighlightBorder.position.z = 0.02;
+  backHighlightBorder.visible = false;
+  backGroup.add(backHighlightBorder);
+  
   backGroup.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(backGeo),
     new THREE.LineBasicMaterial({ color: 0xff4444 })
@@ -1910,6 +2301,16 @@ export function showCountrySelect(countries, continents, initialContinent) {
   backTxt.position.set(0, 0, 0.01);
   backGroup.add(backTxt);
   countrySelectGroup.add(backGroup);
+  
+  // Register back button as hoverable
+  registerHoverableButton({
+    mesh: backMesh,
+    group: backGroup,
+    mat: backMat,
+    baseColor: 0x330000,
+    currentScale: 1.0,
+    highlightBorder: backHighlightBorder,
+  });
 }
 
 function renderCountryList(countries) {
@@ -1922,13 +2323,36 @@ function renderCountryList(countries) {
   const itemGap = 0.04;
   const startY = 0.85;
 
+  // [Power Outage Update] #12: Multi-column layout for long lists
+  const MAX_ROWS_PER_COLUMN = 5;
+  const useColumns = filtered.length > MAX_ROWS_PER_COLUMN;
+  const colWidth = 0.85;
+  const colGap = 0.1;
+  const cols = useColumns ? Math.ceil(filtered.length / MAX_ROWS_PER_COLUMN) : 1;
+  const totalWidth = cols * colWidth + (cols - 1) * colGap;
+  const startX = -totalWidth / 2 + colWidth / 2;
+
   for (let i = 0; i < filtered.length; i++) {
     const country = filtered[i];
     const itemGroup = new THREE.Group();
-    const y = startY - i * (itemHeight + itemGap);
-    itemGroup.position.set(0, y, 0);
+    
+    // Calculate position based on column layout
+    let x, y;
+    if (useColumns) {
+      const col = Math.floor(i / MAX_ROWS_PER_COLUMN);
+      const row = i % MAX_ROWS_PER_COLUMN;
+      x = startX + col * (colWidth + colGap);
+      y = startY - row * (itemHeight + itemGap);
+    } else {
+      x = 0;
+      y = startY - i * (itemHeight + itemGap);
+    }
+    
+    itemGroup.position.set(x, y, 0);
 
-    const itemGeo = new THREE.PlaneGeometry(1.8, itemHeight);
+    // [Power Outage Update] #12: Narrower width for multi-column layout
+    const itemWidth = useColumns ? colWidth : 1.8;
+    const itemGeo = new THREE.PlaneGeometry(itemWidth, itemHeight);
     const itemMat = new THREE.MeshBasicMaterial({
       color: 0x111133, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
     });
@@ -1936,6 +2360,12 @@ function renderCountryList(countries) {
     itemMesh.userData.countryCode = country.code;
     itemMesh.userData.countryAction = 'select';
     itemGroup.add(itemMesh);
+
+    // Highlight border for hover
+    const itemHighlightBorder = createHighlightBorder(itemGeo, 0.015);
+    itemHighlightBorder.position.z = 0.02;
+    itemHighlightBorder.visible = false;
+    itemGroup.add(itemHighlightBorder);
 
     itemGroup.add(new THREE.LineSegments(
       new THREE.EdgesGeometry(itemGeo),
@@ -1950,6 +2380,16 @@ function renderCountryList(countries) {
 
     countryItems.push({ group: itemGroup, mesh: itemMesh, code: country.code });
     countrySelectGroup.add(itemGroup);
+    
+    // Register country item as hoverable
+    registerHoverableButton({
+      mesh: itemMesh,
+      group: itemGroup,
+      mat: itemMat,
+      baseColor: 0x111133,
+      currentScale: 1.0,
+      highlightBorder: itemHighlightBorder,
+    });
   }
 }
 
@@ -1997,126 +2437,420 @@ export function getCountrySelectHit(raycaster, countries) {
   return null;
 }
 
+// ── [Instruction 1] Alt Weapon Cooldown Indicators ─────────────────────────
+
 /**
- * Unified hover effect for all HUD buttons and upgrade cards.
- * Accepts an array of raycasters (one per controller).
- * Returns true if a NEW hover occurred (to trigger sound).
+ * Create circular cooldown indicators attached to the camera.
+ * Shows fill progress that empties as cooldown progresses, fills when ready.
+ * Position: bottom corners of view (left hand = bottom left, right hand = bottom right)
  */
-export function updateHUDHover(raycasters) {
-  const hoverables = [];
+export function initAltWeaponIndicators(camera) {
+  const indicatorSize = 0.12;
+  const positions = {
+    left: new THREE.Vector3(-0.38, -0.25, -0.6),   // Bottom left of view
+    right: new THREE.Vector3(0.38, -0.25, -0.6),   // Bottom right of view
+  };
 
-  // 1. Title Scoreboard & Diagnostics
-  if (titleGroup.visible) {
-    if (titleScoreboardBtn) hoverables.push(titleScoreboardBtn);
-    if (titleDiagBtn) hoverables.push(titleDiagBtn);
-  }
-
-  // 2. Upgrade Cards
-  if (upgradeGroup.visible) {
-    upgradeCards.forEach(card => {
-      const mesh = card.children.find(c => c.userData.isUpgradeCard);
-      if (mesh) hoverables.push(mesh);
+  ['left', 'right'].forEach(hand => {
+    const group = new THREE.Group();
+    group.name = `altWeaponIndicator_${hand}`;
+    
+    // Background ring (dark, full circle)
+    const bgRingGeo = new THREE.RingGeometry(indicatorSize * 0.7, indicatorSize, 32);
+    const bgRingMat = new THREE.MeshBasicMaterial({
+      color: 0x222233,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.6,
+      depthTest: false,
     });
-  }
-
-  // 3. Scoreboard / Regional
-  if (scoreboardGroup.visible) {
-    scoreboardGroup.traverse(c => {
-      if (c.userData && c.userData.scoreboardAction) hoverables.push(c);
+    const bgRing = new THREE.Mesh(bgRingGeo, bgRingMat);
+    bgRing.name = 'bgRing';
+    group.add(bgRing);
+    
+    // Progress ring (fills as cooldown decreases)
+    // Using a separate ring that scales from 0 to 1
+    const progressRingGeo = new THREE.RingGeometry(indicatorSize * 0.7, indicatorSize, 32, 1, 0, Math.PI * 2);
+    const progressRingMat = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.8,
+      depthTest: false,
     });
-  }
-
-  // 4. Country Select
-  if (countrySelectGroup.visible) {
-    countrySelectGroup.traverse(c => {
-      // Continent tabs, country grid items, or the BACK button
-      if (c.userData && (c.userData.continentTab || c.userData.countryCode || c.userData.countryAction)) {
-        hoverables.push(c);
-      }
+    const progressRing = new THREE.Mesh(progressRingGeo, progressRingMat);
+    progressRing.name = 'progressRing';
+    progressRing.userData.indicatorSize = indicatorSize;
+    group.add(progressRing);
+    
+    // Inner glow (brightens when ready)
+    const innerGlowGeo = new THREE.CircleGeometry(indicatorSize * 0.65, 32);
+    const innerGlowMat = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
     });
-  }
-
-  // 5. Ready Screen
-  if (readyGroup.visible) {
-    readyGroup.traverse(c => {
-      if (c.userData && c.userData.readyAction) hoverables.push(c);
+    const innerGlow = new THREE.Mesh(innerGlowGeo, innerGlowMat);
+    innerGlow.name = 'innerGlow';
+    group.add(innerGlow);
+    
+    // Weapon name label (hidden by default)
+    const labelSprite = makeSprite('', {
+      fontSize: 20, color: '#ffffff', scale: 0.08,
     });
-  }
-
-  if (hoverables.length === 0) return false;
-
-  // Find ALL hovered objects from ALL raycasters
-  const hoveredObjs = new Set();
-  raycasters.forEach(rc => {
-    const hits = rc.intersectObjects(hoverables, false);
-    if (hits.length > 0) hoveredObjs.add(hits[0].object);
-  });
-
-  let newHover = false;
-
-  // We need to keep track of ALL hoverables to reset those NOT hovered
-  // Traverse and reset or set scale
-  hoverables.forEach(obj => {
-    let target = obj;
-    // For many of our UI elements, the 'active area' is a Mesh inside a Group. 
-    // We want to scale the Group for the best visual effect.
-    if (obj.parent && obj.parent.type === 'Group') {
-      target = obj.parent;
-    }
-
-    if (hoveredObjs.has(obj)) {
-      if (!obj.userData._isActuallyHovered) {
-        obj.userData._isActuallyHovered = true;
-        newHover = true;
-      }
-      target.scale.set(1.1, 1.1, 1.1);
-    } else {
-      if (obj.userData._isActuallyHovered) {
-        obj.userData._isActuallyHovered = false;
-        target.scale.set(1.0, 1.0, 1.0);
-      }
-    }
-  });
-
-  return newHover;
-}
-
-/** Highlights the controller currently selected for upgrade */
-export function showUpgradeHandHighlight(hand, controllers) {
-  controllers.forEach((ctrl, i) => {
-    const isHand = (i === 0 && hand === 'left') || (i === 1 && hand === 'right');
-    const existing = ctrl.getObjectByName('upgradeHighlight');
-    if (existing) ctrl.remove(existing);
-
-    if (isHand) {
-      const group = new THREE.Group();
-      group.name = 'upgradeHighlight';
-
-      const geo = new THREE.OctahedronGeometry(0.1, 0);
-      const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.6 });
-      const mesh = new THREE.Mesh(geo, mat);
-      group.add(mesh);
-
-      const glow = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.2 }));
-      glow.scale.set(1.4, 1.4, 1.4);
-      group.add(glow);
-
-      group.position.set(0, 0.05, 0);
-      ctrl.add(group);
-    }
+    labelSprite.name = 'weaponLabel';
+    labelSprite.position.set(0, -indicatorSize * 1.5, 0);
+    labelSprite.visible = false;
+    group.add(labelSprite);
+    
+    group.position.copy(positions[hand]);
+    group.visible = false; // Hidden until player has an alt weapon
+    
+    camera.add(group);
+    altWeaponIndicators[hand] = group;
   });
 }
 
-export function hideUpgradeHandHighlights(controllers) {
-  controllers.forEach(ctrl => {
-    const existing = ctrl.getObjectByName('upgradeHighlight');
-    if (existing) ctrl.remove(existing);
+/**
+ * Update alt weapon cooldown indicators.
+ * @param {Object} altWeapons - { left: weaponId|null, right: weaponId|null }
+ * @param {Object} altCooldowns - { left: secondsRemaining, right: secondsRemaining }
+ * @param {Object} altReadySoundPlayed - { left: bool, right: bool } - tracks if "ready" sound played
+ * @param {Object} weaponDefs - ALT_WEAPON_DEFS from upgrades.js
+ * @returns {Object} which hands just became ready (to trigger sound) { left: bool, right: bool }
+ */
+export function updateAltWeaponIndicators(altWeapons, altCooldowns, altReadySoundPlayed, weaponDefs, now) {
+  const readyStatus = { left: false, right: false };
+  
+  ['left', 'right'].forEach(hand => {
+    const group = altWeaponIndicators[hand];
+    if (!group) return;
+    
+    const weaponId = altWeapons[hand];
+    const cooldown = altCooldowns[hand] || 0;
+    
+    // Hide if no weapon for this hand
+    if (!weaponId) {
+      group.visible = false;
+      return;
+    }
+    
+    group.visible = true;
+    
+    const def = weaponDefs[weaponId] || {};
+    const maxCooldown = (def.cooldown || 10000) / 1000; // Convert ms to seconds
+    const weaponColor = def.color ? parseInt(def.color.replace('#', ''), 16) : 0x00ffff;
+    
+    // Calculate progress: 0 = just fired (empty), 1 = ready (full)
+    const progress = Math.max(0, Math.min(1, 1 - (cooldown / maxCooldown)));
+    const isReady = cooldown <= 0;
+    
+    // Update progress ring
+    const progressRing = group.getObjectByName('progressRing');
+    if (progressRing) {
+      // Scale the progress ring based on cooldown
+      // When progress = 0 (just fired), ring is small
+      // When progress = 1 (ready), ring is full size
+      const baseSize = progressRing.userData.indicatorSize;
+      const innerRadius = baseSize * 0.7;
+      const outerRadius = innerRadius + (baseSize - innerRadius) * progress;
+      
+      // Recreate geometry with new outer radius for "fill" effect
+      progressRing.geometry.dispose();
+      progressRing.geometry = new THREE.RingGeometry(innerRadius, outerRadius, 32);
+      
+      // Color: dim when cooling down, bright when ready
+      progressRing.material.color.setHex(isReady ? weaponColor : 0x666688);
+      progressRing.material.opacity = isReady ? 1.0 : 0.6;
+    }
+    
+    // Update inner glow (pulses when ready)
+    const innerGlow = group.getObjectByName('innerGlow');
+    if (innerGlow) {
+      if (isReady) {
+        // Pulse glow when ready
+        const pulse = 0.3 + Math.sin(now * 0.006) * 0.2;
+        innerGlow.material.opacity = pulse;
+        innerGlow.material.color.setHex(weaponColor);
+      } else {
+        innerGlow.material.opacity = 0;
+      }
+    }
+    
+    // Update weapon label
+    const label = group.getObjectByName('weaponLabel');
+    if (label) {
+      if (def.name) {
+        label.visible = true;
+        // Update text if changed
+        const labelText = def.name.toUpperCase();
+        if (label.userData.lastText !== labelText) {
+          const { texture, aspect } = makeTextTexture(labelText, {
+            fontSize: 18, color: isReady ? '#ffffff' : '#888888',
+          });
+          if (label.material.map) label.material.map.dispose();
+          label.material.map = texture;
+          label.scale.set(aspect * 0.08, 0.08, 1);
+          label.userData.lastText = labelText;
+        }
+      } else {
+        label.visible = false;
+      }
+    }
+    
+    // Check if just became ready (for sound trigger)
+    if (isReady && !altReadySoundPlayed[hand]) {
+      readyStatus[hand] = true;
+    }
   });
+  
+  return readyStatus;
 }
 
-/** Updates the spinning animation of the highlight */
-export function updateUpgradeHandHighlights(now) {
-  [readyGroup, upgradeGroup].forEach(g => {
-    // This is handled via normal scene graph if attached to controller
+/**
+ * Show the "Acquired New Alternate Weapon" message.
+ * Creates a floating popup near the center of the screen.
+ */
+let altWeaponAcquiredGroup = null;
+
+export function showAltWeaponAcquired(weaponName, weaponColor) {
+  // Remove existing if present
+  if (altWeaponAcquiredGroup) {
+    sceneRef.remove(altWeaponAcquiredGroup);
+  }
+  
+  altWeaponAcquiredGroup = new THREE.Group();
+  
+  // Line 1: "ACQUIRED NEW"
+  const line1 = makeSprite('ACQUIRED NEW', {
+    fontSize: 36, color: '#00ffff', glow: true, glowColor: '#00ffff', glowSize: 10, scale: 0.4,
   });
+  line1.position.set(0, 0.2, 0);
+  altWeaponAcquiredGroup.add(line1);
+  
+  // Line 2: "ALTERNATE WEAPON:"
+  const line2 = makeSprite('ALTERNATE WEAPON:', {
+    fontSize: 32, color: '#ffffff', scale: 0.35,
+  });
+  line2.position.set(0, 0, 0);
+  altWeaponAcquiredGroup.add(line2);
+  
+  // Line 3: Weapon name (in weapon color)
+  const line3 = makeSprite(weaponName.toUpperCase(), {
+    fontSize: 48, color: weaponColor || '#ff00ff', glow: true, glowColor: weaponColor || '#ff00ff', glowSize: 15, scale: 0.5,
+  });
+  line3.position.set(0, -0.3, 0);
+  altWeaponAcquiredGroup.add(line3);
+  
+  // Position in front of player
+  altWeaponAcquiredGroup.position.set(0, 1.6, -3);
+  altWeaponAcquiredGroup.userData.createdAt = performance.now();
+  altWeaponAcquiredGroup.userData.lifetime = 3000; // 3 seconds
+  altWeaponAcquiredGroup.visible = true;
+  
+  sceneRef.add(altWeaponAcquiredGroup);
+}
+
+export function updateAltWeaponAcquired(now) {
+  if (!altWeaponAcquiredGroup || !altWeaponAcquiredGroup.visible) return;
+  
+  const age = now - altWeaponAcquiredGroup.userData.createdAt;
+  if (age > altWeaponAcquiredGroup.userData.lifetime) {
+    altWeaponAcquiredGroup.visible = false;
+    sceneRef.remove(altWeaponAcquiredGroup);
+    altWeaponAcquiredGroup = null;
+  } else {
+    // Fade out in last 0.5s
+    const fadeStart = altWeaponAcquiredGroup.userData.lifetime - 500;
+    if (age > fadeStart) {
+      const opacity = 1 - (age - fadeStart) / 500;
+      altWeaponAcquiredGroup.children.forEach(child => {
+        if (child.material) child.material.opacity = opacity;
+      });
+    }
+  }
+}
+
+/**
+ * Create a spinning 3D star pickup for alt weapon drops.
+ * These are rare drops from enemies that give the player alt weapons.
+ */
+export function createAltWeaponStar(position, weaponId, weaponDefs) {
+  const def = weaponDefs[weaponId];
+  if (!def) return null;
+  
+  const color = def.color ? parseInt(def.color.replace('#', ''), 16) : 0x00ffff;
+  
+  // Create star geometry (3D octahedron style)
+  const group = new THREE.Group();
+  
+  // Core star shape (double pyramid / octahedron)
+  const coreGeo = new THREE.OctahedronGeometry(0.15, 0);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: color,
+    wireframe: false,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  group.add(core);
+  
+  // Wireframe outer glow
+  const wireGeo = new THREE.OctahedronGeometry(0.2, 0);
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: color,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.5,
+  });
+  const wire = new THREE.Mesh(wireGeo, wireMat);
+  group.add(wire);
+  
+  // Point light glow effect (additive sphere)
+  const glowGeo = new THREE.SphereGeometry(0.25, 8, 8);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: color,
+    transparent: true,
+    opacity: 0.2,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  group.add(glow);
+  
+  // Position and metadata
+  group.position.copy(position);
+  group.userData = {
+    isAltWeaponStar: true,
+    weaponId: weaponId,
+    weaponName: def.name,
+    weaponColor: def.color,
+    createdAt: performance.now(),
+    lifetime: 15000, // 15 seconds before disappearing
+    bobOffset: Math.random() * Math.PI * 2,
+  };
+  
+  return group;
+}
+
+/**
+ * Update all alt weapon stars (spinning, bobbing animation).
+ * Called from main.js render loop.
+ */
+const altWeaponStars = [];
+
+export function updateAltWeaponStars(dt, now) {
+  for (let i = altWeaponStars.length - 1; i >= 0; i--) {
+    const star = altWeaponStars[i];
+    const age = now - star.userData.createdAt;
+    
+    // Remove expired stars
+    if (age > star.userData.lifetime) {
+      sceneRef.remove(star);
+      altWeaponStars.splice(i, 1);
+      continue;
+    }
+    
+    // Spin animation
+    star.rotation.y += dt * 2;
+    star.rotation.x += dt * 0.5;
+    
+    // Bob up and down
+    const bob = Math.sin(now * 0.003 + star.userData.bobOffset) * 0.1;
+    star.position.y = star.userData.baseY + bob;
+    
+    // Pulse glow
+    const pulse = 0.3 + Math.sin(now * 0.005) * 0.1;
+    star.children.forEach(child => {
+      if (child.material && child.material.opacity !== undefined && child !== star.children[0]) {
+        child.material.opacity = pulse + 0.2;
+      }
+    });
+    
+    // Fade out in last 3 seconds
+    const fadeStart = star.userData.lifetime - 3000;
+    if (age > fadeStart) {
+      const fadeOpacity = 1 - (age - fadeStart) / 3000;
+      star.children.forEach(child => {
+        if (child.material) {
+          child.material.opacity *= fadeOpacity;
+        }
+      });
+    }
+  }
+}
+
+export function addAltWeaponStar(star) {
+  if (!star) return;
+  star.userData.baseY = star.position.y;
+  sceneRef.add(star);
+  altWeaponStars.push(star);
+}
+
+export function getAltWeaponStars() {
+  return altWeaponStars;
+}
+
+export function removeAltWeaponStar(star) {
+  const idx = altWeaponStars.indexOf(star);
+  if (idx >= 0) {
+    altWeaponStars.splice(idx, 1);
+    sceneRef.remove(star);
+  }
+}
+
+/**
+ * Check if a raycaster hits an alt weapon star.
+ * Returns the star or null.
+ */
+export function getAltWeaponStarHit(raycaster) {
+  const starMeshes = altWeaponStars.map(s => s.children[0]).filter(Boolean);
+  const hits = raycaster.intersectObjects(starMeshes, false);
+  if (hits.length > 0) {
+    // Find the parent star group
+    return altWeaponStars.find(s => s.children.includes(hits[0].object)) || null;
+  }
+  return null;
+}
+
+/**
+ * Show weapon name tooltip when hovering over a star.
+ */
+let starTooltipGroup = null;
+
+export function showStarTooltip(star, playerPos) {
+  if (!star) return;
+  
+  if (!starTooltipGroup) {
+    starTooltipGroup = new THREE.Group();
+    sceneRef.add(starTooltipGroup);
+  }
+  
+  // Clear old children
+  while (starTooltipGroup.children.length) {
+    starTooltipGroup.remove(starTooltipGroup.children[0]);
+  }
+  
+  // Create tooltip text
+  const name = star.userData.weaponName || 'Unknown Weapon';
+  const color = star.userData.weaponColor || '#00ffff';
+  
+  const tooltip = makeSprite(name.toUpperCase(), {
+    fontSize: 28, color: color, glow: true, glowColor: color, glowSize: 8, scale: 0.25,
+  });
+  tooltip.position.set(0, 0, 0);
+  starTooltipGroup.add(tooltip);
+  
+  // Position above the star
+  starTooltipGroup.position.copy(star.position);
+  starTooltipGroup.position.y += 0.4;
+  starTooltipGroup.visible = true;
+}
+
+export function hideStarTooltip() {
+  if (starTooltipGroup) {
+    starTooltipGroup.visible = false;
+  }
 }
