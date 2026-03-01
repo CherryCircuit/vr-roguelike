@@ -36,11 +36,17 @@ export function getBossTier(level) {
 }
 
 // Pool of bosses per tier (randomly picked for that level)
+// Each tier has all 5 boss types with unique behaviors:
+// - spawner: spawns minions
+// - turret: rapid fire projectiles
+// - shielded: damage reduction
+// - dodger: teleports around
+// - charger: charges at player
 const BOSS_POOLS = {
-  1: ['chrono_wraith'], // Tier 1 (Level 5)
-  2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'], // Tier 2 (Level 10)
-  3: ['chrono_wraith'], // Tier 3 (Level 15)
-  4: ['chrono_wraith'], // Tier 4 (Level 20)
+  1: ['grave_voxel', 'iron_sentry', 'core_guardian', 'chrono_wraith', 'siege_ram'], // Tier 1 (Level 5)
+  2: ['grave_voxel2', 'iron_sentry2', 'core_guardian2', 'chrono_wraith2', 'siege_ram2'], // Tier 2 (Level 10)
+  3: ['grave_voxel3', 'iron_sentry3', 'core_guardian3', 'chrono_wraith3', 'siege_ram3'], // Tier 3 (Level 15)
+  4: ['grave_voxel4', 'iron_sentry4', 'core_guardian4', 'chrono_wraith4', 'siege_ram4'], // Tier 4 (Level 20)
 };
 
 export function getRandomBossIdForLevel(level) {
