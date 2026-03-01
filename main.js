@@ -41,7 +41,8 @@ import {
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
   showLevelIntro, updateLevelIntro, hideLevelIntro,
-  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive, updateHUDHover
+  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive, updateHUDHover,
+  showReadyScreen, hideReadyScreen, getReadyScreenHit
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -420,6 +421,7 @@ function createAurora() {
     opacity: 0.9,
     side: THREE.BackSide,
     depthWrite: false,
+    blending: THREE.AdditiveBlending,
   });
   const mesh1 = new THREE.Mesh(geo1, mat1);
   mesh1.position.set(0, 8, 0);
@@ -448,6 +450,7 @@ function createAurora() {
     opacity: 0.7,
     side: THREE.BackSide,
     depthWrite: false,
+    blending: THREE.AdditiveBlending,
   });
   const mesh2 = new THREE.Mesh(geo2, mat2);
   mesh2.position.set(0, 9, 0);
