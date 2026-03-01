@@ -602,7 +602,7 @@ function createUpgradeCard(upgrade, position) {
   group.userData.upgradeId = upgrade.id;
 
   // Card background plane
-  const cardGeo = new THREE.PlaneGeometry(0.9, 1.1);
+  const cardGeo = new THREE.PlaneGeometry(1.2, 1.5);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -674,7 +674,7 @@ function createSkipCard(position) {
   group.userData.upgradeId = 'SKIP';  // Special ID for skip
 
   // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades)
-  const cardGeo = new THREE.PlaneGeometry(0.7, 0.9);
+  const cardGeo = new THREE.PlaneGeometry(1.0, 1.3);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x220044,
     transparent: true,
