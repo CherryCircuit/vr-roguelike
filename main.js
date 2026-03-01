@@ -1469,6 +1469,7 @@ function updateLightningBeam(controller, index, stats, dt) {
             game.killsWithoutHit++;
             addScore(destroyData.scoreValue);
             const cfg = game._levelConfig;
+              updateHUD(game);
             if (cfg && game.kills >= cfg.killTarget) completeLevel();
           }
         }
@@ -1777,7 +1778,8 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
         game.totalKills++;
         addScore(boss.scoreValue);
               updateHUD(game);
-completeLevel();      }
+              completeLevel();
+            }
     }
   }
 
@@ -1965,7 +1967,8 @@ function disposeProjectile(proj) {
       // Check level complete
       if (cfg && game.kills >= cfg.killTarget) {
               updateHUD(game);
-completeLevel();      }
+              completeLevel();
+            }
     }
   }
 }
@@ -2007,7 +2010,8 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
     game.killsWithoutHit++;
     addScore(boss.scoreValue);
               updateHUD(game);
-completeLevel();  }
+              completeLevel();
+            }
 }
 
 function handleAOE(center, radius, damage, controllerIndex) {
@@ -2532,7 +2536,7 @@ function render(timestamp) {
             const cfg = game._levelConfig;
             if (cfg && game.kills >= cfg.killTarget) {
               updateHUD(game);
-completeLevel();            }
+              completeLevel();
           }
         }
       }
