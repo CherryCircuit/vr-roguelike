@@ -353,13 +353,13 @@ export function createStars(scene) {
   const positions = new Float32Array(starCount * 3);
 
   for (let i = 0; i < starCount; i++) {
-    // Stars in a dome above
+    // Stars in a dome high above
     const theta = Math.random() * Math.PI * 2;
-    const phi = Math.random() * Math.PI * 0.4; // Upper hemisphere only
+    const phi = Math.random() * Math.PI * 0.25; // Upper hemisphere only (smaller angle = higher)
     const r = 100;
 
     positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = r * Math.cos(phi) + 20; // Lift up
+    positions[i * 3 + 1] = r * Math.cos(phi) + 60; // Lift up much higher
     positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
   }
 
