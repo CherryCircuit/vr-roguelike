@@ -31,13 +31,8 @@ import {
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   // [Power Outage Update] #3, #8: New HUD functions
-  showBossAlert, hideBossAlert, updateBossAlert, showKillsRemainingMessage, updateKillsRemainingMessage,
   // Button hover system
-  updateAllButtonHovers, clearHoverableButtons, spawnVampireHealIndicator,
-  // [Instruction 1] Alt weapon HUD functions
-  initAltWeaponIndicators, updateAltWeaponIndicators, createAltWeaponStar,
-  showAltWeaponAcquired, updateAltWeaponAcquired, showStarTooltip, hideStarTooltip
-} from './hud.js';
+  // [Instruction 1] Alt weapon HUD functions} from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
   isNameClean, COUNTRIES, CONTINENTS,
@@ -247,8 +242,7 @@ function init() {
   initEnemies(scene);
   initHUD(camera, scene);
   
-  // [Instruction 1] Initialize alt weapon HUD indicators
-  initAltWeaponIndicators(camera);
+  // [Instruction 1] Initialize alt weapon HUD indicators(camera);
   
   // [Instruction 1] Set callback for alt weapon star drops (3% chance on enemy death)
   setOnEnemyDestroyedCallback((position) => {
@@ -256,7 +250,7 @@ function init() {
     if (Math.random() < 0.03) {
       const weaponIds = Object.keys(ALT_WEAPON_DEFS);
       const randomWeaponId = weaponIds[Math.floor(Math.random() * weaponIds.length)];
-      const star = createAltWeaponStar(position, randomWeaponId, ALT_WEAPON_DEFS);
+      const star =(position, randomWeaponId, ALT_WEAPON_DEFS);
       if (star) {
 // addAltWeaponStar(star); // TODO: Re-enable when function is implemented
         console.log(`[alt-weapon] Dropped ${randomWeaponId} star at enemy death location`);
@@ -334,8 +328,8 @@ function createEnvironment() {
     transparent: true,
     side: THREE.BackSide,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
+    blending: THREE.AdditiveBlending
+});
   const horizonRing = new THREE.Mesh(horizonGeo, horizonMat);
   horizonRing.position.set(0, horizonHeight / 2 - 0.5, 0);
   horizonRing.renderOrder = -2;
@@ -349,8 +343,8 @@ function createEnvironment() {
     opacity: 0.5,
     side: THREE.BackSide,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
+    blending: THREE.AdditiveBlending
+});
   const horizonInnerRing = new THREE.Mesh(horizonInnerGeo, horizonInnerMat);
   horizonInnerRing.position.set(0, 0.25, 0);
   horizonInnerRing.renderOrder = -2;
@@ -429,8 +423,8 @@ function createSun() {
     map: sunTexture,
     transparent: true,
     side: THREE.DoubleSide,
-    depthWrite: false,
-  });
+    depthWrite: false
+});
   // Position so the lower ~40% of the sun dips below the horizon
   const sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), sunMat);
   sunMesh.position.set(0, 12, -89);
@@ -445,8 +439,8 @@ function createSun() {
     transparent: true,
     opacity: 0.35,
     blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
+    depthWrite: false
+});
   const glow = new THREE.Mesh(new THREE.CircleGeometry(24, 32), glowMat);
   glow.position.set(0, 12, -89.5);
   glow.renderOrder = -11;
@@ -517,8 +511,8 @@ function createOminousHorizon() {
     transparent: true,
     opacity: 0,
     side: THREE.DoubleSide,
-    depthWrite: false,
-  });
+    depthWrite: false
+});
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(0, 28, -95);
   mesh.renderOrder = -12;
@@ -563,8 +557,8 @@ function createAtmosphere() {
     transparent: true,
     opacity: 0.8,
     side: THREE.BackSide,  // Visible from inside
-    depthWrite: false,
-  });
+    depthWrite: false
+});
   const cylinder = new THREE.Mesh(cylGeo, cylMat);
   cylinder.position.set(0, height / 2 - 2, 0);  // Base near ground level
   cylinder.renderOrder = -13;
@@ -1291,8 +1285,7 @@ function advanceLevelAfterUpgrade() {
       // Start boss music immediately at alert screen
       const bossCategory = `boss${game.level}`;
       playMusic(bossCategory);
-      playBossAlertSound();
-      showBossAlert();
+      playBossAlertSound();();
       console.log(`[game] Boss alert for level ${game.level} - boss music started`);
     } else {
       game.state = State.PLAYING;
@@ -1596,8 +1589,8 @@ function updateChargeVisuals(controller, index, progress) {
       transparent: true,
       opacity: 0.1,
       blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
+      depthWrite: false
+});
     const glowSphere = new THREE.Mesh(glowGeo, glowMat);
     glowSphere.position.set(0, 0, -0.1);  // In front of controller
     controller.add(glowSphere);
@@ -1613,8 +1606,8 @@ function updateChargeVisuals(controller, index, progress) {
         transparent: true,
         opacity: 0.5,
         blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
+        depthWrite: false
+});
       const particle = new THREE.Mesh(particleGeo, particleMat);
       particle.userData.orbitAngle = (i / particleCount) * Math.PI * 2;
       particle.userData.orbitRadius = 0.08;
@@ -1942,8 +1935,7 @@ function disposeProjectile(proj) {
         game.health = Math.min(game.maxHealth, game.health + 1);
         console.log('[vampiric] Healed 1 HP');
         // Play heal sound and show visual indicator
-        playVampireHealSound();
-        spawnVampireHealIndicator(destroyData.position);
+        playVampireHealSound();(destroyData.position);
       }
 
       // [Power Outage Update] #8: Show "5 KILLS REMAINING" message
@@ -1951,8 +1943,7 @@ function disposeProjectile(proj) {
       if (cfg) {
         const remaining = cfg.killTarget - game.kills;
         if (remaining === 5 && !game._shownKillsRemaining) {
-          game._shownKillsRemaining = true;
-          showKillsRemainingMessage(5);
+          game._shownKillsRemaining = true;(5);
         }
       }
 
@@ -2331,8 +2322,7 @@ function render(timestamp) {
       ctrl.getWorldPosition(origin);
       ctrl.getWorldQuaternion(quat);
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-      const rc = new THREE.Raycaster(origin, dir, 0, 10);
-      updateAllButtonHovers(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
+      const rc = new THREE.Raycaster(origin, dir, 0, 10);(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
       break; // Only need one controller for hover
     }
     
@@ -2581,8 +2571,7 @@ completeLevel();            }
           playUpgradeSound();
           
           // Show acquisition notification
-          const def = ALT_WEAPON_DEFS[weaponId];
-          showAltWeaponAcquired(def ? def.name : weaponId, hand);
+          const def = ALT_WEAPON_DEFS[weaponId];(def ? def.name : weaponId, hand);
           
           console.log(`[alt-weapon] Collected ${weaponId} for ${hand} hand`);
           break;
@@ -2653,8 +2642,7 @@ completeLevel();            }
 
   // [Power Outage Update] #3: Boss alert sequence
   else if (st === State.BOSS_ALERT) {
-    game.stateTimer -= rawDt;
-    updateBossAlert(now);
+    game.stateTimer -= rawDt;(now);
     
     // Play alert sound periodically
     if (game.stateTimer > 1.0 && game.stateTimer < 2.5 && !game._alertSound2) {
@@ -2663,8 +2651,7 @@ completeLevel();            }
     }
     
     // After 3s: transition to PLAYING, spawn boss (music already started)
-    if (game.stateTimer <= 0) {
-      hideBossAlert();
+    if (game.stateTimer <= 0) {();
       game._alertSound2 = false;
       game.state = State.PLAYING;
       showHUD();
@@ -2700,8 +2687,7 @@ completeLevel();            }
       ctrl.getWorldPosition(origin);
       ctrl.getWorldQuaternion(quat);
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-      const rc = new THREE.Raycaster(origin, dir, 0, 10);
-      updateAllButtonHovers(rc, now, dt, playButtonHoverSound, playButtonClickSound);
+      const rc = new THREE.Raycaster(origin, dir, 0, 10);(rc, now, dt, playButtonHoverSound, playButtonClickSound);
       break;
     }
   }
@@ -2723,8 +2709,7 @@ completeLevel();            }
       ctrl.getWorldQuaternion(quat);
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
       const rc = new THREE.Raycaster(origin, dir, 0, 10);
-      updateKeyboardHover(rc);
-      updateAllButtonHovers(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
+      updateKeyboardHover(rc);(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
       break;  // Only need one controller for hover
     }
   }
@@ -2739,8 +2724,7 @@ completeLevel();            }
       ctrl.getWorldPosition(origin);
       ctrl.getWorldQuaternion(quat);
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-      const rc = new THREE.Raycaster(origin, dir, 0, 10);
-      updateAllButtonHovers(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
+      const rc = new THREE.Raycaster(origin, dir, 0, 10);(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
       break;
     }
   }
@@ -2755,8 +2739,7 @@ completeLevel();            }
       ctrl.getWorldPosition(origin);
       ctrl.getWorldQuaternion(quat);
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-      const rc = new THREE.Raycaster(origin, dir, 0, 10);
-      updateAllButtonHovers(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
+      const rc = new THREE.Raycaster(origin, dir, 0, 10);(rc, now, rawDt, playButtonHoverSound, playButtonClickSound);
       break;
     }
   }
@@ -2848,13 +2831,11 @@ completeLevel();            }
   updateDamageNumbers(dt, now);
   updateComboPopups(dt, now);
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
-  // [Power Outage Update] #3, #8: Update boss alert and kills remaining message
-  updateBossAlert(now);
-  updateKillsRemainingMessage(now);
+  // [Power Outage Update] #3, #8: Update boss alert and kills remaining message(now);(now);
   updateFPS(now, {
     perfMonitor: typeof window !== 'undefined' && window.debugPerfMonitor,
-    frameTimeMs: rawDt * 1000,
-  });
+    frameTimeMs: rawDt * 1000
+});
 
   // Music visualizer (DISABLED - causing FPS drops)
   // if (now % 3 < 1) {
