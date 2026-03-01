@@ -24,9 +24,9 @@ export function playShoothSound() {
   const t = ctx.currentTime;
 
   // Randomize everything: base frequency, pitch sweep, waveform, duration
-  const baseFreqs = [600, 700, 800, 900, 1000, 1100];
+  const baseFreqs = [700, 800, 900];
   const baseFreq = baseFreqs[Math.floor(Math.random() * baseFreqs.length)];
-  const pitch = 0.85 + Math.random() * 0.3; // 0.85 to 1.15
+  const pitch = 0.85 + Math.random() * 0.3;
   const duration = 0.06 + Math.random() * 0.08;  // 60-140ms
   const waveforms = ['square', 'sawtooth', 'triangle'];
 
@@ -65,106 +65,6 @@ export function playShoothSound() {
     gain2.connect(ctx.destination);
     osc2.start(t);
     osc2.stop(t + duration);
-  }
-}
-
-// ── Double Shot sound ──────────────────────────────────────
-export function playDoubleShotSound() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Two quick pulses
-  for (let i = 0; i < 2; i++) {
-    const start = t + i * 0.05;
-    const duration = 0.06;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(800 + i * 200, start);
-    osc.frequency.exponentialRampToValueAtTime(100, start + duration);
-    gain.gain.setValueAtTime(0.1, start);
-    gain.gain.exponentialRampToValueAtTime(0.01, start + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(start);
-    osc.stop(start + duration);
-  }
-}
-
-// ── Charge Up Logic ────────────────────────────────────────
-let chargeOsc = null;
-let chargeGain = null;
-
-export function updateChargeUpSound(active, progress) {
-  const ctx = getAudioContext();
-  if (active) {
-    if (!chargeOsc) {
-      chargeOsc = ctx.createOscillator();
-      chargeGain = ctx.createGain();
-      chargeOsc.type = 'sawtooth';
-      chargeGain.gain.setValueAtTime(0, ctx.currentTime);
-      chargeOsc.connect(chargeGain);
-      chargeGain.connect(ctx.destination);
-      chargeOsc.start();
-    }
-    // Frequency rises from 100Hz to 600Hz based on charge
-    const freq = 100 + progress * 500;
-    chargeOsc.frequency.setTargetAtTime(freq, ctx.currentTime, 0.1);
-    const volume = 0.02 + progress * 0.08;
-    chargeGain.gain.setTargetAtTime(volume, ctx.currentTime, 0.1);
-  } else {
-    if (chargeOsc) {
-      chargeGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-      chargeOsc.stop(ctx.currentTime + 0.1);
-      chargeOsc = null;
-      chargeGain = null;
-    }
-  }
-}
-
-export function playChargeFireSound(damage) {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Smash Bros "Clink" logic for high damage
-  if (damage >= 450) {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(2000, t);
-    osc.frequency.exponentialRampToValueAtTime(500, t + 0.15);
-    gain.gain.setValueAtTime(0.3, t);
-    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.15);
-
-    // Add low boom
-    const boom = ctx.createOscillator();
-    const boomGain = ctx.createGain();
-    boom.type = 'sine';
-    boom.frequency.setValueAtTime(80, t);
-    boom.frequency.exponentialRampToValueAtTime(20, t + 0.4);
-    boomGain.gain.setValueAtTime(0.5, t);
-    boomGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
-    boom.connect(boomGain);
-    boomGain.connect(ctx.destination);
-    boom.start(t);
-    boom.stop(t + 0.4);
-  } else {
-    // Normal medium beam sound
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(400, t);
-    osc.frequency.exponentialRampToValueAtTime(50, t + 0.2);
-    gain.gain.setValueAtTime(0.2, t);
-    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.2);
   }
 }
 
@@ -371,484 +271,6 @@ export function playProximityAlert(pan, intensity) {
   osc.stop(ctx.currentTime + 0.1);
 }
 
-// ── Basic enemy spawn ──────────────────────────────────────
-export function playBasicEnemySpawn() {
-  const ctx = getAudioContext();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(400, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1);
-
-  gain.gain.setValueAtTime(0.15, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start();
-  osc.stop(ctx.currentTime + 0.1);
-}
-
-// ── Tank enemy spawn ───────────────────────────────────────
-export function playTankEnemySpawn() {
-  const ctx = getAudioContext();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(100, ctx.currentTime);
-  osc.frequency.linearRampToValueAtTime(50, ctx.currentTime + 0.3);
-
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(200, ctx.currentTime);
-
-  gain.gain.setValueAtTime(0.2, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-
-  osc.connect(filter);
-  filter.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start();
-  osc.stop(ctx.currentTime + 0.3);
-}
-
-// ── Boss spawn/alert ───────────────────────────────────────
-export function playBossSpawn() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Create a deep, menacing drone
-  [40, 60, 80].forEach((freq, i) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = i === 1 ? 'sawtooth' : 'sine';
-    osc.frequency.setValueAtTime(freq, t);
-    osc.frequency.exponentialRampToValueAtTime(freq * 0.5, t + 1.5);
-
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.1, t + 0.1);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 1.5);
-  });
-}
-
-// ── Boss teleport disappear ─────────────────────────────────
-export function playBossTeleportDisappear() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Dematerialization sound - reverse of reappear
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(200, t);
-  osc.frequency.exponentialRampToValueAtTime(800, t + 0.2);
-
-  gain.gain.setValueAtTime(0.2, t);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(t);
-  osc.stop(t + 0.2);
-}
-
-// ── Boss teleport reappear ─────────────────────────────────
-export function playBossTeleportReappear() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Sudden materialization sound
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(800, t);
-  osc.frequency.exponentialRampToValueAtTime(200, t + 0.2);
-
-  gain.gain.setValueAtTime(0.2, t);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(t);
-  osc.stop(t + 0.2);
-}
-
-// ── Boss stunned ─────────────────────────────────────────────
-export function playBossStunned() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Confusion/shatter sound
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(400, t);
-  osc.frequency.linearRampToValueAtTime(100, t + 0.3);
-
-  gain.gain.setValueAtTime(0.15, t);
-  gain.gain.linearRampToValueAtTime(0, t + 0.3);
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(t);
-  osc.stop(t + 0.3);
-}
-
-// ── Boss explosion ─────────────────────────────────────────
-export function playBossExplosion() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Big explosion with layered sounds
-  // Low boom
-  const boom = ctx.createOscillator();
-  const boomGain = ctx.createGain();
-  boom.type = 'sine';
-  boom.frequency.setValueAtTime(60, t);
-  boom.frequency.exponentialRampToValueAtTime(20, t + 0.6);
-
-  boomGain.gain.setValueAtTime(0.4, t);
-  boomGain.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
-
-  boom.connect(boomGain);
-  boomGain.connect(ctx.destination);
-  boom.start(t);
-  boom.stop(t + 0.6);
-
-  // Crunchy noise
-  const noise = ctx.createBufferSource();
-  noise.buffer = getExplosionBuffer();
-  noise.playbackRate.value = 0.5 + Math.random() * 0.5;
-
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(2000, t);
-  filter.frequency.exponentialRampToValueAtTime(100, t + 0.5);
-
-  const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.3, t);
-  noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
-
-  noise.connect(filter);
-  filter.connect(noiseGain);
-  noiseGain.connect(ctx.destination);
-  noise.start(t);
-  noise.stop(t + 0.5);
-}
-
-// ── Boss death ─────────────────────────────────────────────
-export function playBossDeath() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Epic death sound - descending then rising
-  // Descending scream
-  const scream = ctx.createOscillator();
-  const screamGain = ctx.createGain();
-  scream.type = 'sawtooth';
-  scream.frequency.setValueAtTime(600, t);
-  scream.frequency.exponentialRampToValueAtTime(80, t + 1.2);
-
-  screamGain.gain.setValueAtTime(0.25, t);
-  screamGain.gain.linearRampToValueAtTime(0, t + 1.2);
-
-  scream.connect(screamGain);
-  screamGain.connect(ctx.destination);
-  scream.start(t);
-  scream.stop(t + 1.2);
-
-  // Big finale explosion
-  setTimeout(() => {
-    playBossExplosion();
-  }, 800);
-}
-
-// ── Boss attack sound ───────────────────────────────────────
-export function playBossAttackSound(type, duration) {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  switch (type) {
-    case 'projectile':
-      // Warning ping before attack
-      const ping = ctx.createOscillator();
-      const pingGain = ctx.createGain();
-      ping.type = 'sine';
-      ping.frequency.setValueAtTime(1200, t);
-      ping.frequency.exponentialRampToValueAtTime(600, t + 0.15);
-
-      pingGain.gain.setValueAtTime(0.15, t);
-      pingGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
-
-      ping.connect(pingGain);
-      pingGain.connect(ctx.destination);
-      ping.start(t);
-      ping.stop(t + 0.15);
-      break;
-
-    case 'charge':
-      // Charging up sound
-      const charge = ctx.createOscillator();
-      const chargeGain = ctx.createGain();
-      charge.type = 'sawtooth';
-      charge.frequency.setValueAtTime(200, t);
-      charge.frequency.linearRampToValueAtTime(800, t + duration);
-
-      chargeGain.gain.setValueAtTime(0.1, t);
-      chargeGain.gain.linearRampToValueAtTime(0, t + duration);
-
-      charge.connect(chargeGain);
-      chargeGain.connect(ctx.destination);
-      charge.start(t);
-      charge.stop(t + duration);
-      break;
-
-    case 'minion':
-      // Spawn alert
-      const spawn = ctx.createOscillator();
-      const spawnGain = ctx.createGain();
-      spawn.type = 'square';
-      spawn.frequency.setValueAtTime(500, t);
-      spawn.frequency.setValueAtTime(700, t + 0.1);
-
-      spawnGain.gain.setValueAtTime(0.12, t);
-      spawnGain.gain.linearRampToValueAtTime(0, t + 0.2);
-
-      spawn.connect(spawnGain);
-      spawnGain.connect(ctx.destination);
-      spawn.start(t);
-      spawn.stop(t + 0.2);
-      break;
-
-    case 'teleport':
-      // Teleport warning
-      const tele = ctx.createOscillator();
-      const teleGain = ctx.createGain();
-      tele.type = 'sine';
-      tele.frequency.setValueAtTime(400, t);
-      tele.frequency.exponentialRampToValueAtTime(100, t + 0.4);
-
-      teleGain.gain.setValueAtTime(0.15, t);
-      teleGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
-
-      tele.connect(teleGain);
-      teleGain.connect(ctx.destination);
-      tele.start(t);
-      tele.stop(t + 0.4);
-      break;
-
-    case 'melee':
-      // Melee swing warning
-      const melee = ctx.createOscillator();
-      const meleeGain = ctx.createGain();
-      melee.type = 'triangle';
-      melee.frequency.setValueAtTime(300, t);
-      melee.frequency.linearRampToValueAtTime(600, t + 0.3);
-
-      meleeGain.gain.setValueAtTime(0.12, t);
-      meleeGain.gain.linearRampToValueAtTime(0, t + 0.3);
-
-      melee.connect(meleeGain);
-      meleeGain.connect(ctx.destination);
-      melee.start(t);
-      melee.stop(t + 0.3);
-      break;
-
-    case 'shadow_bullet':
-      // Shadow bullet whisper (Theodore)
-      const shadow = ctx.createOscillator();
-      const shadowGain = ctx.createGain();
-      shadow.type = 'triangle';
-      shadow.frequency.setValueAtTime(800, t);
-      shadow.frequency.exponentialRampToValueAtTime(200, t + 0.25);
-
-      shadowGain.gain.setValueAtTime(0.1, t);
-      shadowGain.gain.exponentialRampToValueAtTime(0.01, t + 0.25);
-
-      const shadowFilter = ctx.createBiquadFilter();
-      shadowFilter.type = 'lowpass';
-      shadowFilter.frequency.setValueAtTime(1500, t);
-      shadowFilter.frequency.exponentialRampToValueAtTime(200, t + 0.25);
-
-      shadow.connect(shadowFilter);
-      shadowFilter.connect(shadowGain);
-      shadowGain.connect(ctx.destination);
-      shadow.start(t);
-      shadow.stop(t + 0.25);
-      break;
-
-    case 'shield':
-      // Shield activation (Commander)
-      const shield = ctx.createOscillator();
-      const shieldGain = ctx.createGain();
-      shield.type = 'sine';
-      shield.frequency.setValueAtTime(600, t);
-      shield.frequency.linearRampToValueAtTime(900, t + 0.2);
-      shield.frequency.linearRampToValueAtTime(700, t + 0.4);
-
-      shieldGain.gain.setValueAtTime(0, t);
-      shieldGain.gain.linearRampToValueAtTime(0.12, t + 0.1);
-      shieldGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
-
-      shield.connect(shieldGain);
-      shieldGain.connect(ctx.destination);
-      shield.start(t);
-      shield.stop(t + 0.4);
-      break;
-
-    case 'performance':
-      // Diva performance crescendo (Madame Coda)
-      const perf = ctx.createOscillator();
-      const perfGain = ctx.createGain();
-      perf.type = 'triangle';
-      perf.frequency.setValueAtTime(400, t);
-      perf.frequency.exponentialRampToValueAtTime(1200, t + 0.8);
-
-      perfGain.gain.setValueAtTime(0, t);
-      perfGain.gain.linearRampToValueAtTime(0.15, t + 0.6);
-      perfGain.gain.exponentialRampToValueAtTime(0.01, t + 0.8);
-
-      perf.connect(perfGain);
-      perfGain.connect(ctx.destination);
-      perf.start(t);
-      perf.stop(t + 0.8);
-      break;
-
-    case 'glitch':
-      // Glitch swap (Twin Glitch)
-      const glitch = ctx.createOscillator();
-      const glitchGain = ctx.createGain();
-      glitch.type = 'square';
-      glitch.frequency.setValueAtTime(1000, t);
-      glitch.frequency.setValueAtTime(500, t + 0.05);
-      glitch.frequency.setValueAtTime(1000, t + 0.1);
-      glitch.frequency.setValueAtTime(500, t + 0.15);
-
-      glitchGain.gain.setValueAtTime(0.1, t);
-      glitchGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
-
-      const glitchFilter = ctx.createBiquadFilter();
-      glitchFilter.type = 'highpass';
-      glitchFilter.frequency.setValueAtTime(2000, t);
-
-      glitch.connect(glitchFilter);
-      glitchFilter.connect(glitchGain);
-      glitchGain.connect(ctx.destination);
-      glitch.start(t);
-      glitch.stop(t + 0.15);
-      break;
-
-    case 'horn_shard':
-      // Horn shard fire (Neon Minotaur)
-      const horn = ctx.createOscillator();
-      const hornGain = ctx.createGain();
-      horn.type = 'sawtooth';
-      horn.frequency.setValueAtTime(600, t);
-      horn.frequency.exponentialRampToValueAtTime(150, t + 0.15);
-
-      hornGain.gain.setValueAtTime(0.12, t);
-      hornGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
-
-      horn.connect(hornGain);
-      hornGain.connect(ctx.destination);
-      horn.start(t);
-      horn.stop(t + 0.15);
-      break;
-  }
-}
-
-// ── Menu / UI Interaction ──────────────────────────────────
-export function playMenuClick() {
-  const ctx = getAudioContext();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(1200, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(1800, ctx.currentTime + 0.04);
-
-  gain.gain.setValueAtTime(0.1, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04);
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start();
-  osc.stop(ctx.currentTime + 0.04);
-}
-
-export function playMenuHoverSound() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(440, t);
-  gain.gain.setValueAtTime(0.05, t);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.03);
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(t);
-  osc.stop(t + 0.03);
-}
-
-// ── Error / Rejection sound ────────────────────────────────
-export function playErrorSound() {
-  const ctx = getAudioContext();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(120, ctx.currentTime);
-  osc.frequency.setValueAtTime(100, ctx.currentTime + 0.1);
-
-  gain.gain.setValueAtTime(0.15, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start();
-  osc.stop(ctx.currentTime + 0.2);
-}
-
-// ── Buckshot fire (heavy mechanical thud) ──────────────────
-export function playBuckshotSound() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Low heavy thump
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(150, t);
-  osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
-  gain.gain.setValueAtTime(0.3, t);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(t);
-  osc.stop(t + 0.15);
-
-  // Metallic "clack"
-  const osc2 = ctx.createOscillator();
-  const gain2 = ctx.createGain();
-  osc2.type = 'square';
-  osc2.frequency.setValueAtTime(800, t);
-  osc2.frequency.exponentialRampToValueAtTime(200, t + 0.05);
-  gain2.gain.setValueAtTime(0.08, t);
-  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
-  osc2.connect(gain2);
-  gain2.connect(ctx.destination);
-  osc2.start(t);
-  osc2.stop(t + 0.05);
-}
-
 // ── Upgrade selected ───────────────────────────────────────
 export function playUpgradeSound() {
   const ctx = getAudioContext();
@@ -912,49 +334,180 @@ export function playSlowMoReverseSound() {
   osc.stop(t + 0.5);
 }
 
-// ── Kills remaining alert sound ────────────────────────────────
-// Based on sfxr parameters:
-// wave_type: 0 (sine), p_env_attack: 0, p_env_sustain: 0.0558,
-// p_env_punch: 0, p_env_decay: 0.4149, p_base_freq: 0.2083,
-// p_freq_ramp: 0.2424, sound_vol: 0.25
-export function playKillsAlertSound() {
+// ── Basic enemy spawn ──────────────────────────────────────
+export function playBasicEnemySpawn() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(400, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1);
+
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.1);
+}
+
+// ── Tank enemy spawn ───────────────────────────────────────
+export function playTankEnemySpawn() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(100, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(50, ctx.currentTime + 0.3);
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(200, ctx.currentTime);
+
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.3);
+}
+
+// ── Boss spawn/alert ───────────────────────────────────────
+export function playBossSpawn() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  [40, 60, 80].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 1 ? 'sawtooth' : 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.5, t + 1.5);
+
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.1, t + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 1.5);
+  });
+}
+
+// [Power Outage Update] #3: Boss alert klaxon sound (3 beeps over ~2 seconds)
+export function playBossAlertSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Three urgent beeps
+  for (let i = 0; i < 3; i++) {
+    const beepTime = t + i * 0.7;
+    
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(800, beepTime);
+    osc.frequency.setValueAtTime(1000, beepTime + 0.1);
+    osc.frequency.setValueAtTime(800, beepTime + 0.2);
+
+    gain.gain.setValueAtTime(0.25, beepTime);
+    gain.gain.setValueAtTime(0.25, beepTime + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.01, beepTime + 0.35);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(beepTime);
+    osc.stop(beepTime + 0.4);
+  }
+}
+
+// ── Menu / UI Interaction ──────────────────────────────────
+export function playMenuClick() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(1200, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(1800, ctx.currentTime + 0.04);
+
+  gain.gain.setValueAtTime(0.1, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.04);
+}
+
+export function playMenuHoverSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(440, t);
+  gain.gain.setValueAtTime(0.05, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.03);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.03);
+}
+
+// ── Error / Rejection sound ────────────────────────────────
+export function playErrorSound() {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(120, ctx.currentTime);
+  osc.frequency.setValueAtTime(100, ctx.currentTime + 0.1);
+
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.2);
+}
+
+// ── Buckshot fire (heavy mechanical thud) ──────────────────
+export function playBuckshotSound() {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-
-  // Wave type: 0 = sine
-  osc.type = 'sine';
-
-  // Base frequency: p_base_freq 0.2083 maps to ~208Hz
-  const baseFreq = 208;
-  osc.frequency.setValueAtTime(baseFreq, t);
-
-  // Frequency ramp: p_freq_ramp 0.2424 means upward sweep
-  // Sweep from 208Hz up over duration
-  const duration = 0.0558 + 0.4149; // sustain + decay
-  osc.frequency.linearRampToValueAtTime(baseFreq * 2.5, t + duration);
-
-  // Envelope: no attack, sustain, no punch, decay
-  const sustain = 0.0558;
-  const decay = 0.4149;
-  const volume = 0.25;
-
-  // No attack (immediate)
-  gain.gain.setValueAtTime(volume, t);
-
-  // Hold sustain
-  gain.gain.setValueAtTime(volume, t + sustain);
-
-  // Decay (fade to silence)
-  gain.gain.exponentialRampToValueAtTime(0.001, t + sustain + decay);
-
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(150, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+  gain.gain.setValueAtTime(0.3, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
   osc.connect(gain);
   gain.connect(ctx.destination);
-
   osc.start(t);
-  osc.stop(t + sustain + decay);
+  osc.stop(t + 0.15);
+
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'square';
+  osc2.frequency.setValueAtTime(800, t);
+  osc2.frequency.exponentialRampToValueAtTime(200, t + 0.05);
+  gain2.gain.setValueAtTime(0.08, t);
+  gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.start(t);
+  osc2.stop(t + 0.05);
 }
 
 // ── Lightning beam continuous sound (MP3 loop) ─────────────
@@ -997,22 +550,59 @@ let currentMusic = null;
 let musicVolume = 0.3;
 let currentPlaylist = [];
 let currentTrackIndex = 0;
-let musicAnalyser = null;
-let musicSource = null;
+let currentMusicCategory = null;  // Track what's currently playing to avoid restarts
+// let musicAnalyser = null;  // Music visualizer - commented out
+// let musicSource = null;  // Music visualizer - commented out
 
 const musicTracks = {
   menu: ['mnt/project/music/00_Main_Menu.mp3'],
-  levels1to5: [
+  levels1to4: [
     'mnt/project/music/0101_Levels_1-4.mp3',
     'mnt/project/music/0102_Levels_1-4.mp3',
     'mnt/project/music/0103_Levels_1-4.mp3',
     'mnt/project/music/0104_Levels_1-4.mp3'
   ],
-  levels6to10: [
+  levels6to9: [
     'mnt/project/music/0201_Levels_6-9.mp3',
     'mnt/project/music/0202_Levels_6-9.mp3',
     'mnt/project/music/0203_Levels_6-9.mp3',
     'mnt/project/music/0204_Levels_6-9.mp3'
+  ],
+  levels11to14: [
+    'mnt/project/music/0301_Levels_11-14.mp3',
+    'mnt/project/music/0302_Levels_11-14.mp3',
+    'mnt/project/music/0303_Levels_11-14.mp3',
+    'mnt/project/music/0304_Levels_11-14.mp3'
+  ],
+  levels16to19: [
+    'mnt/project/music/0401_Levels_16-19.mp3',
+    'mnt/project/music/0402_Levels_16-19.mp3',
+    'mnt/project/music/0403_Levels_16-19.mp3',
+    'mnt/project/music/0404_Levels_16-19.mp3'
+  ],
+  boss5: [
+    'mnt/project/music/B101_Level_05_Boss.mp3',
+    'mnt/project/music/B102_Level_05_Boss.mp3',
+    'mnt/project/music/B103_Level_05_Boss.mp3',
+    'mnt/project/music/B104_Level_05_Boss.mp3'
+  ],
+  boss10: [
+    'mnt/project/music/B201_Level_10_Boss.mp3',
+    'mnt/project/music/B202_Level_10_Boss.mp3',
+    'mnt/project/music/B203_Level_10_Boss.mp3',
+    'mnt/project/music/B204_Level_10_Boss.mp3'
+  ],
+  boss15: [
+    'mnt/project/music/B301_Level_15_Boss.mp3',
+    'mnt/project/music/B302_Level_15_Boss.mp3',
+    'mnt/project/music/B303_Level_15_Boss.mp3',
+    'mnt/project/music/B304_Level_15_Boss.mp3'
+  ],
+  boss20: [
+    'mnt/project/music/B401_Level_20_Boss.mp3',
+    'mnt/project/music/B402_Level_20_Boss.mp3',
+    'mnt/project/music/B403_Level_20_Boss.mp3',
+    'mnt/project/music/B404_Level_20_Boss.mp3'
   ]
 };
 
@@ -1041,23 +631,22 @@ function playNextTrack() {
   const track = currentPlaylist[currentTrackIndex];
   console.log(`[music] Playing track ${currentTrackIndex + 1}/${currentPlaylist.length}: ${track}`);
 
-  const ctx = getAudioContext();
-
-  // Create analyser if it doesn't exist
-  if (!musicAnalyser) {
-    musicAnalyser = ctx.createAnalyser();
-    musicAnalyser.fftSize = 64;  // Small for performance (32 frequency bins)
-    musicAnalyser.smoothingTimeConstant = 0.8;
-    musicAnalyser.connect(ctx.destination);
-  }
+  // Music visualizer code - commented out
+  // const ctx = getAudioContext();
+  // if (!musicAnalyser) {
+  //   musicAnalyser = ctx.createAnalyser();
+  //   musicAnalyser.fftSize = 64;
+  //   musicAnalyser.smoothingTimeConstant = 0.8;
+  //   musicAnalyser.connect(ctx.destination);
+  // }
 
   currentMusic = new Audio(track);
   currentMusic.volume = musicVolume;
-  currentMusic.loop = false;  // Don't loop individual tracks
+  currentMusic.loop = false;
 
-  // Connect audio through analyser for visualization
-  musicSource = ctx.createMediaElementSource(currentMusic);
-  musicSource.connect(musicAnalyser);
+  // Connect audio through analyser for visualization - commented out
+  // musicSource = ctx.createMediaElementSource(currentMusic);
+  // musicSource.connect(musicAnalyser);
 
   // Auto-advance to next track when current ends
   currentMusic.addEventListener('ended', () => {
@@ -1078,15 +667,21 @@ function playNextTrack() {
   });
 }
 
-// Get audio frequency data for visualization
-export function getMusicFrequencyData() {
-  if (!musicAnalyser) return null;
-  const dataArray = new Uint8Array(musicAnalyser.frequencyBinCount);
-  musicAnalyser.getByteFrequencyData(dataArray);
-  return dataArray;
-}
+// Get audio frequency data for visualization - commented out
+// export function getMusicFrequencyData() {
+//   if (!musicAnalyser) return null;
+//   const dataArray = new Uint8Array(musicAnalyser.frequencyBinCount);
+//   musicAnalyser.getByteFrequencyData(dataArray);
+//   return dataArray;
+// }
 
 export function playMusic(category) {
+  // If same category is already playing, don't restart
+  if (currentMusicCategory === category && currentMusic && !currentMusic.paused) {
+    console.log(`[music] Category "${category}" already playing, skipping restart`);
+    return;
+  }
+
   // Stop current music
   if (currentMusic) {
     currentMusic.pause();
@@ -1097,6 +692,9 @@ export function playMusic(category) {
   // Get tracks for category (fresh copy)
   const tracks = musicTracks[category] ? [...musicTracks[category]] : [];
   if (!tracks || tracks.length === 0) return;
+
+  // Track the current category
+  currentMusicCategory = category;
 
   // Create randomized playlist
   currentPlaylist = shuffleArray(tracks);
@@ -1112,6 +710,12 @@ export function stopMusic() {
     currentMusic.currentTime = 0;
     currentMusic = null;
   }
+  currentMusicCategory = null;  // Clear category tracking
+}
+
+// Get the currently playing music category (for checking what's playing)
+export function getCurrentMusicCategory() {
+  return currentMusicCategory;
 }
 
 export function setMusicVolume(vol) {
@@ -1119,4 +723,511 @@ export function setMusicVolume(vol) {
   if (currentMusic) {
     currentMusic.volume = musicVolume;
   }
+}
+
+// [Power Outage Update] #6: Big explosion sound for level complete finale
+export function playBigExplosionSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const noise = ctx.createBufferSource();
+  noise.buffer = getExplosionBuffer();
+  noise.playbackRate.value = 0.2 + Math.random() * 0.3; // Lower, deeper
+
+  const duration = 0.8 + Math.random() * 0.4; // Longer duration
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(1500, t);
+  filter.frequency.exponentialRampToValueAtTime(30, t + duration);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.35, t); // Louder
+  gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  noise.start(t);
+  noise.stop(t + duration);
+
+  // Add deep boom
+  const osc = ctx.createOscillator();
+  const oscGain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(60 + Math.random() * 30, t);
+  osc.frequency.exponentialRampToValueAtTime(20, t + duration);
+  oscGain.gain.setValueAtTime(0.2, t);
+  oscGain.gain.exponentialRampToValueAtTime(0.01, t + duration * 0.9);
+  osc.connect(oscGain);
+  oscGain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + duration);
+}
+
+// ── Epic Boss Death Sound (much more dramatic than regular explosion) ────────
+export function playBossDeathSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  
+  // Multiple layered explosions for epic feel
+  const durations = [2.5, 1.8, 1.2, 0.8];
+  
+  durations.forEach((duration, layer) => {
+    const noise = ctx.createBufferSource();
+    noise.buffer = getExplosionBuffer();
+    noise.playbackRate.value = 0.15 + layer * 0.1 + Math.random() * 0.1;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = layer % 2 === 0 ? 'lowpass' : 'bandpass';
+    filter.frequency.setValueAtTime(2000 - layer * 300, t + layer * 0.1);
+    filter.frequency.exponentialRampToValueAtTime(20, t + layer * 0.1 + duration);
+    filter.Q.setValueAtTime(2 + layer, t);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t + layer * 0.1);
+    gain.gain.linearRampToValueAtTime(0.4 - layer * 0.05, t + layer * 0.1 + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + layer * 0.1 + duration);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    noise.start(t + layer * 0.1);
+    noise.stop(t + layer * 0.1 + duration);
+  });
+
+  // Deep rumbling bass (multiple oscillators)
+  [25, 35, 50].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(15, t + 3);
+    oscGain.gain.setValueAtTime(0, t);
+    oscGain.gain.linearRampToValueAtTime(0.25 - i * 0.05, t + 0.1);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, t + 3);
+    osc.connect(oscGain);
+    oscGain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 3);
+  });
+
+  // High-pitched shriek for dramatic effect
+  const shriekOsc = ctx.createOscillator();
+  const shriekGain = ctx.createGain();
+  shriekOsc.type = 'sawtooth';
+  shriekOsc.frequency.setValueAtTime(800, t + 0.3);
+  shriekOsc.frequency.exponentialRampToValueAtTime(100, t + 1.5);
+  shriekGain.gain.setValueAtTime(0, t + 0.3);
+  shriekGain.gain.linearRampToValueAtTime(0.15, t + 0.4);
+  shriekGain.gain.exponentialRampToValueAtTime(0.01, t + 1.5);
+  shriekOsc.connect(shriekGain);
+  shriekGain.connect(ctx.destination);
+  shriekOsc.start(t + 0.3);
+  shriekOsc.stop(t + 1.5);
+
+  console.log('[audio] Epic boss death sound played');
+}
+
+// [Power Outage Update] #15: Game over sound effect
+let gameOverAudio = null;
+
+export function playGameOverSound() {
+  if (gameOverAudio) {
+    gameOverAudio.pause();
+    gameOverAudio.currentTime = 0;
+  }
+  gameOverAudio = new Audio('mnt/project/music/XX_Game_Over.mp3');
+  gameOverAudio.volume = 0.5;
+  gameOverAudio.play().catch(() => {});
+}
+
+// ── Button Hover Sound (sfxr params) ─────────────────────────
+let lastHoverSoundTime = 0;
+export function playButtonHoverSound() {
+  const now = performance.now();
+  
+  // I commented this out. I want it to play fast if they hover fast. I don't care.
+  //
+  // if (now - lastHoverSoundTime < 100) return; // Debounce: max 1 per 100ms
+  // lastHoverSoundTime = now;
+
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Based on sfxr params: wave_type 3 (noise), quick attack/decay
+  const bufferSize = ctx.sampleRate * 0.1;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  noise.playbackRate.value = 0.8;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.setValueAtTime(800, t);
+  filter.frequency.exponentialRampToValueAtTime(2000, t + 0.05);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.08, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.1);
+}
+
+// ── Button Click Sound (sfxr params) ───────────────────────────
+export function playButtonClickSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Based on sfxr params: wave_type 2 (square), arp mod
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'square';
+  
+  // Arpeggio-like frequency sweep
+  osc.frequency.setValueAtTime(600, t);
+  osc.frequency.setValueAtTime(800, t + 0.03);
+  osc.frequency.setValueAtTime(500, t + 0.08);
+  osc.frequency.exponentialRampToValueAtTime(200, t + 0.2);
+
+  gain.gain.setValueAtTime(0.1, t);
+  gain.gain.setValueAtTime(0.08, t + 0.1);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.25);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.25);
+
+  // Layer with noise for punch
+  const noise = ctx.createBufferSource();
+  const bufferSize = ctx.sampleRate * 0.05;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+  noise.buffer = buffer;
+  
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.04, t);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+  
+  noise.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.05);
+}
+
+// ── Low Health Alert Sound (wav file) ───────────────────────
+let lowHealthAudio = null;
+export function playLowHealthAlertSound() {
+  if (lowHealthAudio) {
+    lowHealthAudio.pause();
+    lowHealthAudio.currentTime = 0;
+  }
+  lowHealthAudio = new Audio('mnt/project/soundfx/lowhealth.mp3');
+  lowHealthAudio.volume = 0.5;
+  lowHealthAudio.play().catch(() => {});
+}
+
+// ── Vampire Heal Sound (wav file) ───────────────────────────
+let vampireHealAudio = null;
+export function playVampireHealSound() {
+  if (vampireHealAudio) {
+    vampireHealAudio.pause();
+    vampireHealAudio.currentTime = 0;
+  }
+  vampireHealAudio = new Audio('mnt/project/soundfx/vampiric.mp3');
+  vampireHealAudio.volume = 0.4;
+  vampireHealAudio.play().catch(() => {});
+}
+
+// ── Buckshot Sound (wav file) ───────────────────────────
+let buckshotAudio = null;
+export function playBuckshotSoundNew() {
+  if (buckshotAudio) {
+    buckshotAudio.pause();
+    buckshotAudio.currentTime = 0;
+  }
+  buckshotAudio = new Audio('mnt/project/soundfx/buckshot_01.mp3'); //But I want this to be random between "buckshot_01.mp3" and "buckshot_02.mp3"
+  buckshotAudio.volume = 0.5;
+  buckshotAudio.play().catch(() => {});
+}
+
+// ── [Instruction 1] Alt Weapon Ready Sound ───────────────────────────
+export function playAltWeaponReadySound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Pleasant "ready" chime - two ascending tones
+  const frequencies = [600, 900];
+  frequencies.forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t + i * 0.1);
+    
+    gain.gain.setValueAtTime(0, t + i * 0.1);
+    gain.gain.linearRampToValueAtTime(0.15, t + i * 0.1 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + i * 0.1 + 0.2);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t + i * 0.1);
+    osc.stop(t + i * 0.1 + 0.25);
+  });
+}
+
+// ── Charge Shot Sounds (Mega Man style) ───────────────────────────────
+
+// Charge sound oscillators and gain nodes (per hand: 0=left, 1=right)
+const chargeOscillators = [null, null];
+const chargeGains = [null, null];
+const chargeLfoOscillators = [null, null];
+const chargeLfoGains = [null, null];
+let chargeAudioCtx = null;
+
+/**
+ * Start the Mega Man-style charging sound.
+ * Creates a pulsing tone that rises in pitch and intensity.
+ * @param {number} handIndex - 0 for left, 1 for right
+ */
+export function startChargeSound(handIndex = 0) {
+  const ctx = getAudioContext();
+  if (!chargeAudioCtx) chargeAudioCtx = ctx;
+  
+  // Stop any existing charge sound for this hand
+  stopChargeSound(handIndex);
+  
+  const t = ctx.currentTime;
+  
+  // Main oscillator - starts low, rises as charge increases
+  const mainOsc = ctx.createOscillator();
+  mainOsc.type = 'sawtooth';
+  mainOsc.frequency.setValueAtTime(80, t);  // Start at 80Hz (low hum)
+  
+  // Gain for main oscillator
+  const mainGain = ctx.createGain();
+  mainGain.gain.setValueAtTime(0.05, t);  // Start quiet
+  
+  // LFO for pulsing effect (classic Mega Man "wub wub wub")
+  const lfoOsc = ctx.createOscillator();
+  lfoOsc.type = 'sine';
+  lfoOsc.frequency.setValueAtTime(4, t);  // 4 pulses per second initially
+  
+  // LFO gain (modulation depth)
+  const lfoGain = ctx.createGain();
+  lfoGain.gain.setValueAtTime(0.03, t);  // Subtle initial pulse
+  
+  // Filter to shape the sound
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(300, t);
+  filter.Q.setValueAtTime(5, t);
+  
+  // Connect: LFO modulates main oscillator frequency
+  lfoOsc.connect(lfoGain);
+  lfoGain.connect(mainOsc.frequency);
+  
+  // Main oscillator path
+  mainOsc.connect(filter);
+  filter.connect(mainGain);
+  mainGain.connect(ctx.destination);
+  
+  // Start oscillators
+  mainOsc.start(t);
+  lfoOsc.start(t);
+  
+  // Store references
+  chargeOscillators[handIndex] = mainOsc;
+  chargeGains[handIndex] = mainGain;
+  chargeLfoOscillators[handIndex] = lfoOsc;
+  chargeLfoGains[handIndex] = lfoGain;
+  
+  // Store additional nodes for updating
+  mainOsc.userData = { filter, lfoOsc, startTime: t };
+}
+
+/**
+ * Update the charge sound based on charge progress (0-1).
+ * Pitch rises, pulse rate increases, volume grows.
+ * @param {number} handIndex - 0 for left, 1 for right
+ * @param {number} progress - Charge progress from 0 to 1
+ */
+export function updateChargeSound(handIndex = 0, progress = 0) {
+  const ctx = chargeAudioCtx || getAudioContext();
+  const osc = chargeOscillators[handIndex];
+  const gain = chargeGains[handIndex];
+  const lfoOsc = chargeLfoOscillators[handIndex];
+  const lfoGain = chargeLfoGains[handIndex];
+  
+  if (!osc || !gain || !lfoOsc || !lfoGain) return;
+  
+  const t = ctx.currentTime;
+  
+  // Frequency ramps from 80Hz to 400Hz based on charge
+  const targetFreq = 80 + progress * 320;
+  osc.frequency.linearRampToValueAtTime(targetFreq, t + 0.05);
+  
+  // Volume increases with charge (0.05 to 0.25)
+  const targetVolume = 0.05 + progress * 0.20;
+  gain.gain.linearRampToValueAtTime(targetVolume, t + 0.05);
+  
+  // LFO pulse rate increases (4Hz to 15Hz as charge builds)
+  const targetLfoRate = 4 + progress * 11;
+  lfoOsc.frequency.linearRampToValueAtTime(targetLfoRate, t + 0.05);
+  
+  // LFO modulation depth increases
+  const targetLfoDepth = 0.03 + progress * 0.12;
+  lfoGain.gain.linearRampToValueAtTime(targetLfoDepth, t + 0.05);
+  
+  // Filter opens up for brighter sound at high charge
+  if (osc.userData.filter) {
+    const targetFilterFreq = 300 + progress * 2000;
+    osc.userData.filter.frequency.linearRampToValueAtTime(targetFilterFreq, t + 0.05);
+  }
+}
+
+/**
+ * Stop the charge sound (when shot is fired or cancelled).
+ * @param {number} handIndex - 0 for left, 1 for right
+ */
+export function stopChargeSound(handIndex = 0) {
+  const ctx = chargeAudioCtx || getAudioContext();
+  const t = ctx.currentTime;
+  
+  const osc = chargeOscillators[handIndex];
+  const lfoOsc = chargeLfoOscillators[handIndex];
+  
+  if (osc) {
+    try {
+      osc.stop(t + 0.05);
+    } catch (e) {
+      // Already stopped
+    }
+    chargeOscillators[handIndex] = null;
+  }
+  
+  if (lfoOsc) {
+    try {
+      lfoOsc.stop(t + 0.05);
+    } catch (e) {
+      // Already stopped
+    }
+    chargeLfoOscillators[handIndex] = null;
+  }
+  
+  chargeGains[handIndex] = null;
+  chargeLfoGains[handIndex] = null;
+}
+
+/**
+ * Play the fully charged "ready" sound (high-pitched sustained tone).
+ * @param {number} handIndex - 0 for left, 1 for right
+ */
+export function playChargeReadySound(handIndex = 0) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  
+  // High-pitched "ready" beep
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(880, t);
+  osc.frequency.setValueAtTime(1100, t + 0.05);
+  osc.frequency.setValueAtTime(1320, t + 0.1);
+  
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.setValueAtTime(0.15, t + 0.15);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  osc.start(t);
+  osc.stop(t + 0.3);
+}
+
+/**
+ * Play the charge shot release sound (powerful blast).
+ * @param {number} progress - Charge progress (affects sound intensity)
+ */
+export function playChargeFireSound(progress = 0) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  
+  // Base intensity scales with charge
+  const intensity = 0.5 + progress * 0.5;
+  
+  // Main blast oscillator
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(200 + progress * 300, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.3);
+  
+  gain.gain.setValueAtTime(0.3 * intensity, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.3);
+  
+  // Add noise burst for impact
+  const bufferSize = ctx.sampleRate * 0.15;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  noise.playbackRate.value = 0.8 + progress * 0.4;
+  
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.2 * intensity, t);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+  
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(2000 + progress * 3000, t);
+  
+  noise.connect(filter);
+  filter.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.15);
+}
+
+// ── Music Fade Out ─────────────────────────────────────────────
+export function fadeOutMusic(durationSec = 2.0) {
+  if (!currentMusic) return;
+  
+  const startVol = currentMusic.volume;
+  const startTime = performance.now();
+  const durationMs = durationSec * 1000;
+
+  function fadeStep() {
+    if (!currentMusic) return;
+    const elapsed = performance.now() - startTime;
+    const t = Math.min(1, elapsed / durationMs);
+    currentMusic.volume = startVol * (1 - t);
+    
+    if (t < 1) {
+      requestAnimationFrame(fadeStep);
+    } else {
+      stopMusic();
+    }
+  }
+  
+  fadeStep();
 }
