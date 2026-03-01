@@ -1769,8 +1769,8 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
         game.kills++;
         game.totalKills++;
         addScore(boss.scoreValue);
-        completeLevel();
-      }
+              updateHUD(game);
+completeLevel();      }
     }
   }
 
@@ -1959,8 +1959,8 @@ function disposeProjectile(proj) {
 
       // Check level complete
       if (cfg && game.kills >= cfg.killTarget) {
-        completeLevel();
-      }
+              updateHUD(game);
+completeLevel();      }
     }
   }
 }
@@ -2001,8 +2001,8 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
     game.totalKills++;
     game.killsWithoutHit++;
     addScore(boss.scoreValue);
-    completeLevel();
-  }
+              updateHUD(game);
+completeLevel();  }
 }
 
 function handleAOE(center, radius, damage, controllerIndex) {
@@ -2527,8 +2527,8 @@ function render(timestamp) {
 
             const cfg = game._levelConfig;
             if (cfg && game.kills >= cfg.killTarget) {
-              completeLevel();
-            }
+              updateHUD(game);
+completeLevel();            }
           }
         }
       }
