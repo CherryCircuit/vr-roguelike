@@ -2854,6 +2854,9 @@ function render(timestamp) {
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
   // [Power Outage Update] #3, #8: Update boss alert and kills remaining message(now);(now);
   updateFPS(now, {
+    perfMonitor: typeof window !== 'undefined' && window.debugPerfMonitor,
+    frameTimeMs: rawDt * 1000
+  });
   
   // [Instruction 1] Update alt weapon indicators
   const readyStatus = updateAltWeaponIndicators(game.altWeapons, game.altCooldowns, game.altReadySoundPlayed, ALT_WEAPON_DEFS, now);
@@ -2863,9 +2866,6 @@ function render(timestamp) {
   
   // [Instruction 1] Update alt weapon acquired message
   updateAltWeaponAcquired(now);
-    perfMonitor: typeof window !== 'undefined' && window.debugPerfMonitor,
-    frameTimeMs: rawDt * 1000
-});
 
   // Music visualizer (DISABLED - causing FPS drops)
   // if (now % 3 < 1) {
