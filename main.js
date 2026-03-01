@@ -22,7 +22,7 @@ import {
 } from './enemies.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
-  showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
+  showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards, showReadyScreen, hideReadyScreen, getReadyScreenHit,
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar,
