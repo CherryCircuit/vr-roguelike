@@ -2884,7 +2884,8 @@ export function destroyEnemy(index) {
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
 
-  for (let i = 0; i < 5; i++) {
+  // PERFORMANCE: Reduced from 5 to 3 particles per death
+    for (let i = 0; i < 3; i++) {
     const sprite = getExplosionSprite();
     if (!sprite) break;
 
@@ -2970,5 +2971,292 @@ export function getFastEnemies() {
 
 export function getSwarmEnemies() {
   return activeEnemies.filter(e => e.type === 'swarm');
+}
 
+// [Full implementation would continue with all the original enemy spawning and updating logic]
+
+// ── REMAINING EXPORTS (from original file) ───────────────────
+
+/**
+ * Spawn a single enemy of the given type at `position`.
+ */
+export function spawnEnemy(type, position, levelConfig) {
+  const def = ENEMY_DEFS[type];
+  if (!def) return;
+
+  if (!sharedMaterials[type]) {
+    sharedMaterials[type] = new THREE.MeshBasicMaterial({
+      color: def.color,
+      transparent: true,
+      opacity: 0.7,
+    });
+  }
+  const material = sharedMaterials[type].clone();
+
+  const group = new THREE.Group();
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+
+  for (let d = 0; d < def.depth; d++) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (def.pattern[r][c]) {
+          const cube = new THREE.Mesh(geo, material);
+          cube.position.set(
+            (c - cx) * def.voxelSize,
+            (cy - r) * def.voxelSize,
+            d * def.voxelSize,
+          );
+          group.add(cube);
+        }
+      }
+    }
+  }
+
+  group.position.copy(position);
+  group.userData.isEnemy = true;
+
+  // Tank: one random voxel is weak point
+  if (type === 'tank') {
+    const voxels = group.children.filter(c => !c.userData.isEnemyHitbox);
+    if (voxels.length > 0) {
+      const weak = voxels[Math.floor(Math.random() * voxels.length)];
+      weak.userData.weakPoint = true;
+    }
+  }
+
+  const hitboxGeo = new THREE.SphereGeometry(def.hitboxRadius, 8, 8);
+  const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+  const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+  hitbox.userData.isEnemyHitbox = true;
+  group.add(hitbox);
+
+  const enemy = {
+    mesh: group,
+    material,
+    type,
+    hp: Math.round(def.baseHp * levelConfig.hpMultiplier),
+    maxHp: Math.round(def.baseHp * levelConfig.hpMultiplier),
+    speed: def.baseSpeed * levelConfig.speedMultiplier,
+    baseColor: new THREE.Color(def.color),
+    scoreValue: def.scoreValue,
+    hitboxRadius: def.hitboxRadius,
+    alertTimer: 0,
+    statusEffects: {
+      fire: { stacks: 0, remaining: 0, tickTimer: 0 },
+      shock: { stacks: 0, remaining: 0, tickTimer: 0 },
+      freeze: { stacks: 0, remaining: 0, tickTimer: 0 },
+    },
+  };
+
+  activeEnemies.push(enemy);
+  sceneRef.add(group);
+  return enemy;
+}
+
+export function updateEnemies(dt, now, playerPos) {
+  const collisions = [];
+
+  for (let i = activeEnemies.length - 1; i >= 0; i--) {
+    const e = activeEnemies[i];
+
+    _dir.copy(playerPos).sub(e.mesh.position);
+    const dist = _dir.length();
+    if (dist > 0.01) _dir.divideScalar(dist);
+
+    let speedMod = 1;
+    const se = e.statusEffects;
+    if (se.shock.stacks > 0) speedMod *= Math.max(0.4, 1 - se.shock.stacks * 0.2);
+    if (se.freeze.stacks > 0) speedMod *= Math.max(0.05, 1 - se.freeze.stacks * 0.4);
+
+    e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
+
+    _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
+    e.mesh.lookAt(_look);
+
+    if (dist < 0.9) {
+      collisions.push(i);
+      continue;
+    }
+
+    updateStatusEffects(e, dt);
+
+    const dmgRatio = 1 - e.hp / e.maxHp;
+    e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
+  }
+
+  return collisions;
+}
+
+const _redColor = new THREE.Color(0xff0000);
+
+function updateStatusEffects(e, dt) {
+  const se = e.statusEffects;
+
+  if (se.fire.remaining > 0) {
+    se.fire.remaining -= dt;
+    se.fire.tickTimer -= dt;
+    if (se.fire.tickTimer <= 0) {
+      se.fire.tickTimer = 0.5;
+      const fireDmg = Math.round(15 * se.fire.stacks);
+      e.hp -= fireDmg;
+      if (e.hp <= 0) e.hp = 0;
+      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+        window.spawnEffectParticle(e.mesh.position, 0xff4400);
+      }
+    }
+    if (se.fire.remaining <= 0) { se.fire.stacks = 0; se.fire.tickTimer = 0; }
+  }
+
+  if (se.shock.remaining > 0) {
+    se.shock.remaining -= dt;
+    se.shock.tickTimer -= dt;
+    if (se.shock.tickTimer <= 0) {
+      se.shock.tickTimer = 0.5;
+      const shockDmg = Math.round(8 * se.shock.stacks);
+      e.hp -= shockDmg;
+      if (e.hp <= 0) e.hp = 0;
+      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+        window.spawnEffectParticle(e.mesh.position, 0xffff44);
+      }
+    }
+    if (se.shock.remaining <= 0) { se.shock.stacks = 0; se.shock.tickTimer = 0; }
+  }
+
+  if (se.freeze.remaining > 0) {
+    se.freeze.remaining -= dt;
+    se.freeze.tickTimer -= dt;
+    if (se.freeze.tickTimer <= 0) {
+      se.freeze.tickTimer = 0.5;
+      const freezeDmg = Math.round(2 * se.freeze.stacks);
+      e.hp -= freezeDmg;
+      if (e.hp <= 0) e.hp = 0;
+      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+        window.spawnEffectParticle(e.mesh.position, 0x00ffff);
+      }
+    }
+    if (se.freeze.remaining <= 0) { se.freeze.stacks = 0; se.freeze.tickTimer = 0; }
+  }
+}
+
+export function applyEffects(enemyIndex, effects) {
+  const e = activeEnemies[enemyIndex];
+  if (!e) return;
+
+  effects.forEach(({ type, stacks }) => {
+    const se = e.statusEffects[type];
+    if (!se) return;
+    se.stacks = Math.max(se.stacks, stacks);
+    se.remaining = 2 + stacks * 0.5;
+  });
+}
+
+export function hitEnemy(index, damage) {
+  const e = activeEnemies[index];
+  if (!e) return { killed: false };
+
+  e.hp -= damage;
+  if (e.hp <= 0) {
+    return { killed: true, enemy: e, overkill: -e.hp };
+  }
+  return { killed: false, enemy: e };
+}
+
+export function destroyEnemy(index) {
+  const e = activeEnemies[index];
+  if (!e) return null;
+
+  const pos = e.mesh.position.clone();
+  const color = e.baseColor.clone();
+
+  // PERFORMANCE: Reduced from 5 to 3 particles per death
+    for (let i = 0; i < 3; i++) {
+    const sprite = getExplosionSprite();
+    if (!sprite) break;
+
+    sprite.material.opacity = 1;
+    sprite.material.map = Math.random() > 0.5 ? explosionTexturePink : explosionTextureCyan;
+    sprite.position.copy(pos);
+    sprite.visible = true;
+
+    sprite.userData.velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5,
+    );
+    sprite.userData.createdAt = performance.now();
+    sprite.userData.lifetime = 300 + Math.random() * 200;
+
+    explosionParts.push(sprite);
+  }
+
+  sceneRef.remove(e.mesh);
+  e.material.dispose();
+  activeEnemies.splice(index, 1);
+
+  return { position: pos, scoreValue: e.scoreValue, baseColor: color };
+}
+
+export function clearAllEnemies() {
+  for (let i = activeEnemies.length - 1; i >= 0; i--) {
+    sceneRef.remove(activeEnemies[i].mesh);
+    activeEnemies[i].material.dispose();
+  }
+  activeEnemies.length = 0;
+}
+
+export function updateExplosions(dt, now) {
+  for (let i = explosionParts.length - 1; i >= 0; i--) {
+    const p = explosionParts[i];
+    const age = now - p.userData.createdAt;
+
+    if (age > p.userData.lifetime) {
+      p.visible = false;
+      explosionParts.splice(i, 1);
+    } else {
+      p.position.addScaledVector(p.userData.velocity, dt);
+      p.userData.velocity.multiplyScalar(1 - 3 * dt);
+      p.material.opacity = 1 - age / p.userData.lifetime;
+    }
+  }
+}
+
+export function getEnemyCount() {
+  return activeEnemies.length;
+}
+
+export function getEnemies() {
+  return activeEnemies;
+}
+
+export function getSpawnPosition(airSpawns, verticalAngle = 0) {
+  const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
+  const distance = 14.4 + Math.random() * 5.6;
+
+  const x = Math.sin(angle) * distance;
+  const z = -Math.cos(angle) * distance;
+  let y = 1.5;
+
+  if (airSpawns) {
+    y = 0.5 + Math.random() * 2.5;
+  }
+
+  if (verticalAngle > 0) {
+    const vertRad = verticalAngle * Math.PI / 180;
+    const baseY = y;
+    y = baseY + Math.sin(vertRad) * distance * Math.random();
+  }
+
+  return new THREE.Vector3(x, y, z);
+}
+
+export function getFastEnemies() {
+  return activeEnemies.filter(e => e.type === 'fast');
+}
+
+export function getSwarmEnemies() {
+  return activeEnemies.filter(e => e.type === 'swarm');
 }
