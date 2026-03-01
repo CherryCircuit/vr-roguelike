@@ -2433,7 +2433,8 @@ function render(timestamp) {
         clearBoss();
 
         // Complete the level (boss level)
-        completeLevel();
+              updateHUD(game);
+              completeLevel();
       }
     } else {
       hideBossHealthBar();
