@@ -1023,6 +1023,7 @@ class DJBoss extends Boss {
     if (newPhase >= 3) {
       this.beatRate = 0.4;
       this.fanSpawnRate = 2.0;
+
     }
   }
 }
@@ -1342,6 +1343,7 @@ class MonkBoss extends Boss {
     this.auraPulse = 0;
 
     // Create sun nodes
+
     this.createSunNodes();
   }
 
@@ -1492,6 +1494,7 @@ class MonkBoss extends Boss {
       this.nodeOrbitSpeed = 2.0;
       this.meditationDuration = 2.0;
     }
+
   }
 }
 
@@ -1580,6 +1583,7 @@ const BOSS_DEFS = {
 
   dr_aster: {
     name: 'Dr. Aster',
+
     pattern: [
       [0, 1, 0],
       [1, 1, 1],
@@ -1696,6 +1700,7 @@ const BOSS_DEFS = {
 
   neon_minotaur: {
     name: 'Neon Minotaur',
+
     pattern: [
       [0, 0, 1, 0, 0],
       [0, 1, 1, 1, 0],
@@ -1813,6 +1818,7 @@ const BOSS_DEFS = {
     hitboxRadius: 1.3,
     projectileRate: 2.0
   }
+
 };
 
 // ── OUTLAW BOSS (Theodore "Shady" Breakenridge) ───────────
@@ -3063,6 +3069,7 @@ export function spawnBoss(bossId, levelConfig, camera) {
       break;
     case 'starfighter':
       boss = new StarfighterBoss(def, levelConfig, sceneRef, telegraphingSystem);
+
       break;
     case 'scientist':
       boss = new ScientistBoss(def, levelConfig, sceneRef, telegraphingSystem);
@@ -3103,6 +3110,7 @@ export function spawnBoss(bossId, levelConfig, camera) {
     default:
       boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
+
   }
 
   // Show boss health bar
@@ -3239,14 +3247,13 @@ export function updateBossMinions(dt, playerPos) {
 
 // ── PROJECTILES (for compatibility) ───────────────────────────
 const bossProjectiles = [];
-export function spawnBossProjectile(fromPos, targetPos) {
+export function spawnBossProjectile(fromPos, targetPos, speed = 4.0, damage = 1) {
   const geo = getGeo(0.12);
   const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, emissive: 0xff0000 });
   const proj = new THREE.Mesh(geo, mat);
   proj.position.copy(fromPos);
 
   const dir = new THREE.Vector3().copy(targetPos).sub(fromPos).normalize();
-  const speed = 4.0;
 
   sceneRef.add(proj);
   bossProjectiles.push({
@@ -3254,6 +3261,7 @@ export function spawnBossProjectile(fromPos, targetPos) {
     velocity: dir.multiplyScalar(speed),
     createdAt: performance.now(),
     lifetime: 5000,
+    damage: damage,
   });
 }
 
