@@ -1,10 +1,10 @@
 // ============================================================
 //  ENEMY SYSTEM
 //  Voxel enemies: spawning, movement, damage, death explosions.
-//  BOSS FRAMEWORK: Phase transitions, telegraphing, weak points.
 // ============================================================
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ── Voxel patterns (simplified for performance) ───────────
 const PATTERNS = {
@@ -42,6 +42,15 @@ const ENEMY_DEFS = {
 let sceneRef = null;
 const activeEnemies = [];
 const explosionParts = [];
+
+// ── Mesh cache (avoid per-frame array allocation in getEnemyMeshes) ──
+let _cachedEnemyMeshes = [];
+let _enemyMeshesDirty = true;
+
+function rebuildMeshCache() {
+  _cachedEnemyMeshes = activeEnemies.map(e => e.mesh);
+  _enemyMeshesDirty = false;
+}
 
 // Shared cube geometry (reused across all voxel cubes)
 const sharedGeos = {};
@@ -100,15 +109,7 @@ function getExplosionSprite() {
 const _dir = new THREE.Vector3();
 const _look = new THREE.Vector3();
 
-// ── TELEGRAPHING SYSTEM ──────────────────────────────────────
-// Telegraphing system for boss attacks: visual/audio warnings
-class TelegraphingSystem {
-  constructor(scene, camera) {
-    this.scene = scene;
-    this.camera = camera;
-    this.activeEffects = [];
-    this.maxEffects = 10; // Performance limit
-  }
+// ── Public API ─────────────────────────────────────────────
 
   // Start a telegraphing effect (visual warning)
   // type: 'projectile', 'charge', 'minion', 'melee', 'teleport'
@@ -323,599 +324,384 @@ class TelegraphingSystem {
       this.activeEffects.splice(index, 1);
       this.playSound(type, effect.duration);
     }
+
+export function initEnemies(scene) {
+  sceneRef = scene;
+  if (!explosionPoolReady) {
+    initExplosionPool();
+    // Add all pool sprites to scene (hidden by default)
+    explosionPool.forEach(s => scene.add(s));
   }
 }
 
-// ── BOSS BASE CLASS ─────────────────────────────────────────
-class Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    this.def = def;
-    this.levelConfig = levelConfig;
-    this.sceneRef = sceneRef;
-    this.telegraphing = telegraphing;
+/**
+ * Spawn a single enemy of the given type at `position`.
+ * `levelConfig` from game.js provides HP/speed multipliers.
+ */
+export function spawnEnemy(type, position, levelConfig) {
+  const def = ENEMY_DEFS[type];
+  if (!def) return;
 
-    // HP and phases
-    this.maxHp = Math.round(def.baseHp * levelConfig.hpMultiplier);
-    this.hp = this.maxHp;
-    this.phase = 1;
-    this.phases = def.phases || 3;
-
-    // Stats
-    this.scoreValue = def.scoreValue;
-    this.baseColor = new THREE.Color(def.color);
-
-    // Mesh
-    this.mesh = this.buildMesh(def);
-    this.mesh.position.set(0, 1.5, -12);
-    this.mesh.userData.isBoss = true;
-    this.sceneRef.add(this.mesh);
-
-    // Behavior state
-    this.state = 'idle';
-    this.stateTimer = 0;
-    this.stateStartTime = 0;
-
-    // Weak points
-    this.weakPoints = [];
-    if (def.weakPoints !== false) {
-      this.createWeakPoints();
-    } else {
-      // Skip automatic weak point creation for bosses with custom weak points
-      // Subclasses will add their own weak points
-    }
-
-    // Minion spawning
-    this.minionSpawnTimer = 0;
-    this.minionSpawnRate = def.minionSpawnRate || 0;
-
-    // Projectiles
-    this.projectileTimer = 0;
-    this.projectileRate = def.projectileRate || 0;
-
-    // Telegraphing cooldown
-    this.telegraphCooldown = 0;
-  }
-
-  buildMesh(def) {
-    const group = new THREE.Group();
-    const geo = getGeo(def.voxelSize);
-    const mat = new THREE.MeshBasicMaterial({
+  // Clone shared material (clone is cheap, shares shader program)
+  if (!sharedMaterials[type]) {
+    sharedMaterials[type] = new THREE.MeshBasicMaterial({
       color: def.color,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.7,
     });
-    const rows = def.pattern.length;
-    const cols = def.pattern[0].length;
-    const cx = (cols - 1) / 2;
-    const cy = (rows - 1) / 2;
+  }
+  const material = sharedMaterials[type].clone();
 
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (def.pattern[r][c]) {
-          const cube = new THREE.Mesh(geo, mat.clone());
-          cube.position.set(
-            (c - cx) * def.voxelSize,
-            (cy - r) * def.voxelSize,
-            0
-          );
-          cube.userData.isBossBody = true;
-          group.add(cube);
+  const group = new THREE.Group();
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+  const isTank = type === 'tank';
+
+  // For non-tank enemies, merge voxel geometries into a single mesh
+  // This reduces draw calls from ~10-20 per enemy down to 1
+  if (!isTank) {
+    const geometries = [];
+    for (let d = 0; d < def.depth; d++) {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (def.pattern[r][c]) {
+            const g = geo.clone();
+            g.translate(
+              (c - cx) * def.voxelSize,
+              (cy - r) * def.voxelSize,
+              d * def.voxelSize,
+            );
+            geometries.push(g);
+          }
         }
       }
     }
-
-    // Add hitbox
-    const hitboxGeo = new THREE.SphereGeometry(def.hitboxRadius || 0.5, 8, 8);
-    const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
-    hitbox.userData.isBossHitbox = true;
-    group.add(hitbox);
-
-    return group;
+    if (geometries.length > 0) {
+      const mergedGeo = mergeGeometries(geometries);
+      if (mergedGeo) {
+        const mergedMesh = new THREE.Mesh(mergedGeo, material);
+        mergedMesh.userData.isMergedGeometry = true;
+        group.add(mergedMesh);
+      }
+      // Dispose cloned geometries (the merged one is a new copy)
+      geometries.forEach(g => g.dispose());
+    }
+  } else {
+    // Tank: keep individual voxels for weak-point targeting
+    for (let d = 0; d < def.depth; d++) {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (def.pattern[r][c]) {
+            const cube = new THREE.Mesh(geo, material);
+            cube.position.set(
+              (c - cx) * def.voxelSize,
+              (cy - r) * def.voxelSize,
+              d * def.voxelSize,
+            );
+            group.add(cube);
+          }
+        }
+      }
+    }
   }
 
-  createWeakPoints() {
-    // Select random voxels as weak points (double damage)
-    const voxels = this.mesh.children.filter(c => c.userData.isBossBody);
-    const weakPointCount = Math.min(voxels.length, Math.floor(voxels.length / 5)); // Up to 20%
+  group.position.copy(position);
+  group.userData.isEnemy = true;
 
-    for (let i = 0; i < weakPointCount; i++) {
-      const idx = Math.floor(Math.random() * voxels.length);
-      const weak = voxels[idx];
+  // Tank: one random voxel is weak point (double damage)
+  if (isTank) {
+    const voxels = group.children.filter(c => !c.userData.isEnemyHitbox);
+    if (voxels.length > 0) {
+      const weak = voxels[Math.floor(Math.random() * voxels.length)];
       weak.userData.weakPoint = true;
-      // Make weak point visually distinct: lighter color + higher opacity
-      const weakMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff,  // White - very obvious in VR
-        transparent: true,
-        opacity: 0.95,   // Higher opacity for visibility
-      });
-      weak.material = weakMaterial;
-      this.weakPoints.push(weak);
     }
   }
 
-  takeDamage(amount, hitInfo = {}) {
-    let isWeakPointHit = false;
+  // Add invisible sphere hitbox for better hit detection
+  const hitboxGeo = new THREE.SphereGeometry(def.hitboxRadius, 8, 8);
+  const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+  const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+  hitbox.userData.isEnemyHitbox = true;
+  group.add(hitbox);
 
-    // Check if weak point was hit
-    if (hitInfo.isWeakPoint) {
-      amount *= 2;
-      isWeakPointHit = true;
-    }
+  const enemy = {
+    mesh: group,
+    material,
+    type,
+    hp: Math.round(def.baseHp * levelConfig.hpMultiplier),
+    maxHp: Math.round(def.baseHp * levelConfig.hpMultiplier),
+    speed: def.baseSpeed * levelConfig.speedMultiplier,
+    baseColor: new THREE.Color(def.color),
+    scoreValue: def.scoreValue,
+    hitboxRadius: def.hitboxRadius,
+    alertTimer: 0,
+    statusEffects: {
+      fire: { stacks: 0, remaining: 0, tickTimer: 0 },
+      shock: { stacks: 0, remaining: 0, tickTimer: 0 },
+      freeze: { stacks: 0, remaining: 0, tickTimer: 0 },
+    },
+  };
 
-    this.hp -= amount;
-    if (this.hp <= 0) this.hp = 0;
+  activeEnemies.push(enemy);
+  _enemyMeshesDirty = true;  // Invalidate cache
+  sceneRef.add(group);
+  return enemy;
+}
 
-    // Update color based on damage
-    const damageRatio = 1 - this.hp / this.maxHp;
-    this.mesh.traverse(c => {
-      if (c.isMesh && c.material && !c.userData.isBossBody) {
-        c.material.color.copy(this.baseColor).lerp(new THREE.Color(0xff0000), damageRatio);
-      }
-    });
+/**
+ * Move enemies, check collisions, apply DoT.
+ * Returns array of enemy indices that reached the player.
+ */
+export function updateEnemies(dt, now, playerPos) {
+  const collisions = [];
 
-    // Phase transitions (66%, 33%)
-    const prevPhase = this.phase;
-    const phaseThreshold2 = this.maxHp * (2 / 3);
-    const phaseThreshold1 = this.maxHp * (1 / 3);
+  for (let i = activeEnemies.length - 1; i >= 0; i--) {
+    const e = activeEnemies[i];
 
-    if (this.phases >= 3 && this.hp > 0) {
-      if (this.hp <= phaseThreshold1) {
-        this.phase = 3;
-      } else if (this.hp <= phaseThreshold2) {
-        this.phase = 2;
-      }
-    }
-
-    return {
-      killed: this.hp <= 0,
-      phaseChanged: this.phase !== prevPhase,
-      isWeakPointHit
-    };
-  }
-
-  spawnMinion(position, playerPos, type = 'basic') {
-    // Spawn a boss minion (simplified for now)
-    // Would integrate with existing minion spawning system
-    console.log(`[Boss] Spawning minion: ${type}`);
-    if (typeof spawnBossMinion === 'function') {
-      spawnBossMinion(position.clone(), playerPos, type);
-    }
-  }
-
-  fireProjectile(targetPos) {
-    // Base projectile firing
-    if (typeof spawnBossProjectile === 'function') {
-      spawnBossProjectile(this.mesh.position.clone(), targetPos);
-    }
-  }
-
-  update(dt, now, playerPos) {
-    // Update cooldowns
-    if (this.telegraphCooldown > 0) {
-      this.telegraphCooldown -= dt;
-    }
-
-    // Behavior-specific updates
-    if (this.minionSpawnRate > 0) {
-      this.minionSpawnTimer -= dt;
-      if (this.minionSpawnTimer <= 0) {
-        this.minionSpawnTimer = this.minionSpawnRate;
-        this.onMinionSpawn(playerPos);
-      }
-    }
-
-    if (this.projectileRate > 0) {
-      this.projectileTimer -= dt;
-      if (this.projectileTimer <= 0) {
-        this.projectileTimer = this.projectileRate;
-        this.onProjectileFire(playerPos);
-      }
-    }
-
-    // Update state machine
-    this.updateBehavior(dt, now, playerPos);
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    // Default behavior: just move toward player
-    _dir.copy(playerPos).sub(this.mesh.position);
+    // ── Movement toward player ──
+    _dir.copy(playerPos).sub(e.mesh.position);
     const dist = _dir.length();
-    if (dist > 0.01) _dir.divideScalar(dist);
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
-    this.mesh.position.addScaledVector(_dir, 0.3 * dt);
-  }
+    if (dist > 0.01) _dir.divideScalar(dist); // normalize
 
-  onMinionSpawn(playerPos) {
-    // Override in subclasses
-  }
+    let speedMod = 1;
+    const se = e.statusEffects;
+    if (se.shock.stacks > 0) speedMod *= Math.max(0.4, 1 - se.shock.stacks * 0.2);
+    if (se.freeze.stacks > 0) speedMod *= Math.max(0.05, 1 - se.freeze.stacks * 0.4);
 
-  onProjectileFire(playerPos) {
-    // Override in subclasses
-  }
+    e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
 
-  transitionToPhase(newPhase) {
-    if (newPhase > this.phase && newPhase <= this.phases) {
-      this.phase = newPhase;
-      this.onPhaseChange(newPhase);
-    }
-  }
+    // Face player (horizontal only)
+    _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
+    e.mesh.lookAt(_look);
 
-  onPhaseChange(newPhase) {
-    // Called when boss transitions to a new phase
-    console.log(`[Boss] ${this.def.name} transitioning to Phase ${newPhase}`);
-
-    // Play phase change effect
-    if (this.telegraphing) {
-      this.telegraphing.start('teleport', 1.0, 0x00ffff);
-    }
-  }
-
-  showTelegraph(type, duration, color, position = null, direction = null) {
-    if (this.telegraphCooldown <= 0 && this.telegraphing) {
-      this.telegraphing.start(type, duration, color, position, direction);
-      this.telegraphCooldown = 0.5; // Cooldown between telegraphs
-      this.telegraphing.playSound(type, duration);
-      return true;
-    }
-    return false;
-  }
-
-  getBoss() {
-    return { mesh: this.mesh, hp: this.hp, maxHp: this.maxHp, phase: this.phase };
-  }
-
-  destroy() {
-    this.sceneRef.remove(this.mesh);
-    this.mesh.traverse(c => {
-      if (c.geometry) c.geometry.dispose();
-      if (c.material) c.material.dispose();
+    // Apply visual tints for status effects
+    e.mesh.traverse(c => {
+      if (c.isMesh && c.material) {
+        const baseColor = e.baseColor.clone();
+        if (se.fire.stacks > 0) {
+          c.material.color.setHex(0xff4400);
+        } else if (se.freeze.stacks > 0) {
+          c.material.color.setHex(0x44aaff);
+        } else if (se.shock.stacks > 0) {
+          c.material.color.setHex(0xffff44);
+        } else {
+          const dmgRatio = 1 - e.hp / e.maxHp;
+          c.material.color.copy(baseColor).lerp(_redColor, dmgRatio);
+        }
+      }
     });
+
+    // ── Collision with player ──
+    if (dist < 0.9) {
+      collisions.push(i);
+      continue;
+    }
+
+    // ── Status effect ticking ──
+    updateStatusEffects(e, dt);
+
+    // ── Colour: lerp from base → red based on damage ──
+    const dmgRatio = 1 - e.hp / e.maxHp;
+    e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
+  }
+
+  return collisions;
+}
+
+const _redColor = new THREE.Color(0xff0000);
+
+function updateStatusEffects(e, dt) {
+  const se = e.statusEffects;
+
+  // Fire DoT (Large)
+  if (se.fire.remaining > 0) {
+    se.fire.remaining -= dt;
+    se.fire.tickTimer -= dt;
+    if (se.fire.tickTimer <= 0) {
+      se.fire.tickTimer = 0.5;
+      const fireDmg = Math.round(15 * se.fire.stacks);
+      e.hp -= fireDmg;
+      if (e.hp <= 0) e.hp = 0;
+      e._lastDoT = { type: 'fire', damage: fireDmg };
+      // Spawn fire particles - commented out as window.spawnEffectParticle doesn't exist
+      // if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+      //   window.spawnEffectParticle(e.mesh.position, 0xff4400);
+      // }
+    }
+    if (se.fire.remaining <= 0) { se.fire.stacks = 0; se.fire.tickTimer = 0; }
+  }
+
+  // Shock DoT (Medium)
+  if (se.shock.remaining > 0) {
+    se.shock.remaining -= dt;
+    se.shock.tickTimer -= dt;
+    if (se.shock.tickTimer <= 0) {
+      se.shock.tickTimer = 0.5;
+      const shockDmg = Math.round(8 * se.shock.stacks);
+      e.hp -= shockDmg;
+      if (e.hp <= 0) e.hp = 0;
+      e._lastDoT = { type: 'shock', damage: shockDmg };
+      // Spawn shock particles - commented out as window.spawnEffectParticle doesn't exist
+      // if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+      //   window.spawnEffectParticle(e.mesh.position, 0xffff44);
+      // }
+    }
+    if (se.shock.remaining <= 0) { se.shock.stacks = 0; se.shock.tickTimer = 0; }
+  }
+
+  // Freeze DoT (Small)
+  if (se.freeze.remaining > 0) {
+    se.freeze.remaining -= dt;
+    se.freeze.tickTimer -= dt;
+    if (se.freeze.tickTimer <= 0) {
+      se.freeze.tickTimer = 0.5;
+      const freezeDmg = Math.round(2 * se.freeze.stacks);
+      e.hp -= freezeDmg;
+      if (e.hp <= 0) e.hp = 0;
+      e._lastDoT = { type: 'freeze', damage: freezeDmg };
+      // Spawn freeze particles - commented out as window.spawnEffectParticle doesn't exist
+      // if (typeof window !== 'undefined' && window.spawnEffectParticle) {
+      //   window.spawnEffectParticle(e.mesh.position, 0x00ffff);
+      // }
+    }
+    if (se.freeze.remaining <= 0) { se.freeze.stacks = 0; se.freeze.tickTimer = 0; }
   }
 }
 
-// ── TELEPORTING BOSS (DODGER) ───────────────────────────────
-class DodgerBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
+/**
+ * Apply status effects to an enemy.
+ */
+export function applyEffects(enemyIndex, effects) {
+  const e = activeEnemies[enemyIndex];
+  if (!e) return;
 
-    // Dodger-specific state
-    this.state = 'hidden';
-    this.teleportTimer = 0;
-    this.chargeTimer = 0;
-    this.chargeActive = false;
-    this.stunTimer = 0;
-    this.hasFirstAppeared = false;
-    this.firstAppearanceFront = true;
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-
-    // Initialize state machine if not set
-    if (this.state === 'idle') {
-      this.state = 'hidden';
-    }
-
-    // Update state machine
-    this.updateDodgerState(dt, now, playerPos, dirToPlayer);
-
-    // Always face player when visible
-    if (this.state !== 'hidden' && this.state !== 'hiding') {
-      this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
-
-      // Visual effects based on state
-      this.updateVisualEffects(now);
-    }
-  }
-
-  updateDodgerState(dt, now, playerPos, dirToPlayer) {
-    switch (this.state) {
-      case 'hidden':
-        this.teleportTimer -= dt;
-        if (this.teleportTimer <= 0) {
-          this.state = 'appearing';
-          this.showTelegraph('teleport', 0.5, 0xff00ff);
-
-          // Determine teleport angle based on health
-          const healthRatio = this.hp / this.maxHp;
-          let maxAngleDeg;
-          if (healthRatio > 0.66) {
-            maxAngleDeg = 50;
-          } else if (healthRatio > 0.33) {
-            maxAngleDeg = 80;
-          } else {
-            maxAngleDeg = 120;
-          }
-
-          // First appearance: always directly in front
-          let angle;
-          if (!this.hasFirstAppeared || this.firstAppearanceFront) {
-            angle = 0;
-            this.firstAppearanceFront = false;
-          } else {
-            const halfAngleRad = (maxAngleDeg * Math.PI / 180) / 2;
-            angle = (Math.random() - 0.5) * 2 * halfAngleRad;
-          }
-
-          // Calculate position
-          const distance = 8 + Math.random() * 4;
-          this.mesh.position.set(
-            Math.sin(angle) * distance,
-            1.5,
-            -Math.cos(angle) * distance
-          );
-
-          // Return true for reappear sound
-          if (typeof window !== 'undefined' && window.playBossTeleportReappear) {
-            window.playBossTeleportReappear();
-          }
-
-          this.hasFirstAppeared = true;
-          this.state = 'charging';
-          this.chargeTimer = 1.5;
-        }
-        return;
-
-      case 'appearing':
-        this.state = 'charging';
-        this.chargeTimer = 1.5;
-        return;
-
-      case 'charging':
-        this.chargeTimer -= dt;
-        if (this.chargeTimer <= 0 && !this.chargeHasExploded) {
-          this.chargeHasExploded = true;
-
-          const distToPlayer = this.mesh.position.distanceTo(playerPos);
-          if (distToPlayer < 3) {
-            // Player hit!
-            this.state = 'hidden';
-            this.teleportTimer = 3;
-
-            if (typeof window !== 'undefined' && window.playBossExplosion) {
-              window.playBossExplosion();
-            }
-
-            // Return explosion damage
-            this.lastExplosionHitPlayer = true;
-          } else {
-            // Missed
-            this.state = 'normal';
-            this.hideTimer = 4 + Math.random() * 2;
-
-            if (typeof window !== 'undefined' && window.playBossExplosion) {
-              window.playBossExplosion();
-            }
-          }
-        }
-        return;
-
-      case 'stunned':
-        this.stunTimer -= dt;
-        if (this.stunTimer <= 0) {
-          this.state = 'hidden';
-          this.teleportTimer = 2;
-        }
-        return;
-
-      case 'normal':
-        this.hideTimer -= dt;
-
-        // Move erratically
-        this.dodgeTimer = (this.dodgeTimer || 0) - dt;
-        if (this.dodgeTimer <= 0) {
-          this.dodgeTimer = 0.4 / this.phase;
-          const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
-          const randomDir = Math.random() < 0.5 ? 1 : -1;
-          this.dodgeDir = perp.multiplyScalar(randomDir);
-        }
-
-        const approachSpeed = 0.2 + this.phase * 0.1;
-        const dodgeSpeed = 1.0 + this.phase * 0.4;
-        this.mesh.position.addScaledVector(dirToPlayer, approachSpeed * dt);
-        if (this.dodgeDir) {
-          this.mesh.position.addScaledVector(this.dodgeDir, dodgeSpeed * dt);
-        }
-
-        if (this.hideTimer <= 0) {
-          this.state = 'hiding';
-        }
-        return;
-
-      case 'hiding':
-        this.state = 'hidden';
-        this.teleportTimer = 1.5 + Math.random() * 1.5;
-        return;
-    }
-  }
-
-  updateVisualEffects(now) {
-    // Charging: pulsing effect
-    if (this.state === 'charging') {
-      const pulse = 1 + Math.sin(now * 0.01) * 0.1;
-      this.mesh.scale.set(pulse, pulse, pulse);
-    } else {
-      this.mesh.scale.set(1, 1, 1);
-    }
-
-    // Stunned: shake effect
-    if (this.state === 'stunned') {
-      this.mesh.position.x += (Math.random() - 0.5) * 0.05;
-      this.mesh.position.y += (Math.random() - 0.5) * 0.05;
-    }
-
-    // Hidden: invisible
-    if (this.state === 'hidden') {
-      this.mesh.visible = false;
-    } else {
-      this.mesh.visible = true;
-    }
-  }
-
-  takeDamage(amount, hitInfo = {}) {
-    const result = super.takeDamage(amount, hitInfo);
-
-    // DODGER: stun when hit during charge
-    if (result.phaseChanged && hitInfo.isBody) {
-      this.state = 'stunned';
-      this.stunTimer = 2;
-
-      if (typeof window !== 'undefined' && window.playBossStunned) {
-        window.playBossStunned();
-      }
-    }
-
-    return result;
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Update dodger parameters based on phase
-    this.dodgeTimer = 0.4 / newPhase;
-  }
+  effects.forEach(({ type, stacks }) => {
+    const se = e.statusEffects[type];
+    if (!se) return;
+    se.stacks = Math.max(se.stacks, stacks);
+    se.remaining = 2 + stacks * 0.5;
+  });
 }
 
-// ── HUNTER BOSS (Redmond "Hunter" Breakenridge) ─────────────
-class HunterBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
+/**
+ * Deal damage to an enemy. Returns { killed, enemy, overkill }.
+ */
+export function hitEnemy(index, damage) {
+  const e = activeEnemies[index];
+  if (!e) return { killed: false };
 
-    // Hunter-specific state
-    this.droneOrbitAngle = 0;
-    this.droneOrbitRadius = 1.5;
-    this.rifleFireTimer = 0;
-    this.droneFireTimer = 0;
-    this.rifleFireRate = def.rifleFireRate || 2.5;
-    this.droneFireRate = def.droneFireRate || 1.5;
-    this.movingPattern = 'strafe';
-    this.patternTimer = 0;
-    this.strafeDir = 1;
-
-    // Create drone mesh
-    this.createDrone();
+  e.hp -= damage;
+  if (e.hp <= 0) {
+    return { killed: true, enemy: e, overkill: -e.hp };
   }
+  return { killed: false, enemy: e };
+}
 
-  createDrone() {
-    const droneGroup = new THREE.Group();
-    const geo = getGeo(0.15);
-    const droneMat = new THREE.MeshBasicMaterial({
-      color: 0xff6600,
-      transparent: true,
-      opacity: 0.95
-    });
+// [Instruction 1] Alt weapon star drop callback - set by main.js
+let onEnemyDestroyedCallback = null;
 
-    // Drone body (2x2 pattern)
-    for (let r = 0; r < 2; r++) {
-      for (let c = 0; c < 2; c++) {
-        const cube = new THREE.Mesh(geo, droneMat.clone());
-        cube.position.set(c * 0.15, r * 0.15, 0);
-        droneGroup.add(cube);
-      }
-    }
+/**
+ * Set callback to be called when an enemy is destroyed.
+ * Used for alt weapon star drops (3% chance).
+ */
+export function setOnEnemyDestroyedCallback(callback) {
+  onEnemyDestroyedCallback = callback;
+}
 
-    // Drone is weak point
-    droneGroup.userData.isWeakPoint = true;
-    droneGroup.userData.isBossDrone = true;
+/**
+ * Destroy enemy at `index` — remove from scene, spawn explosion.
+ */
+export function destroyEnemy(index) {
+  const e = activeEnemies[index];
+  if (!e) return null;
 
-    this.droneMesh = droneGroup;
-    this.mesh.add(droneMesh);
-    this.weakPoints.push(droneMesh);
-  }
+  const pos = e.mesh.position.clone();
+  const color = e.baseColor.clone();
 
-  updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+  // Pooled explosion particles (no allocation per death)
+  const particleCount = 5;
+  for (let i = 0; i < particleCount; i++) {
+    const sprite = getExplosionSprite();
+    if (!sprite) break;  // Pool exhausted
 
-    // Update drone orbit
-    this.droneOrbitAngle += (2 + this.phase) * dt;
-    this.droneMesh.position.set(
-      Math.cos(this.droneOrbitAngle) * this.droneOrbitRadius,
-      Math.sin(this.droneOrbitAngle * 2) * 0.3,
-      Math.sin(this.droneOrbitAngle) * this.droneOrbitRadius
+    sprite.material.opacity = 1;
+    sprite.material.map = Math.random() > 0.5 ? explosionTexturePink : explosionTextureCyan;
+    sprite.position.copy(pos);
+    sprite.visible = true;
+
+    sprite.userData.velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5,
     );
+    sprite.userData.createdAt = performance.now();
+    sprite.userData.lifetime = 300 + Math.random() * 200;
 
-    // Rifle fire (from boss)
-    this.rifleFireTimer -= dt;
-    if (this.rifleFireTimer <= 0) {
-      this.rifleFireTimer = this.rifleFireRate / this.phase;
-      if (this.telegraphing) {
-        this.showTelegraph('projectile', 0.4, 0xff6600, this.mesh.position.clone(), dirToPlayer);
-      }
-      setTimeout(() => this.fireProjectile(playerPos), 400);
-    }
-
-    // Drone fire (from drone position)
-    this.droneFireTimer -= dt;
-    if (this.droneFireTimer <= 0 && this.droneFireTimer > -dt) {
-      this.droneFireTimer = this.droneFireRate / this.phase;
-      const droneWorldPos = this.droneMesh.getWorldPosition(new THREE.Vector3());
-      const droneDir = playerPos.clone().sub(droneWorldPos).normalize();
-      if (this.telegraphing) {
-        this.showTelegraph('projectile', 0.3, 0xffaa00, droneWorldPos, droneDir);
-      }
-      setTimeout(() => {
-        if (typeof spawnBossProjectile === 'function') {
-          spawnBossProjectile(droneWorldPos, playerPos);
-        }
-      }, 300);
-    }
-
-    // Movement pattern
-    this.patternTimer -= dt;
-    if (this.patternTimer <= 0) {
-      this.patternTimer = 2 + Math.random() * 2;
-      this.movingPattern = Math.random() < 0.5 ? 'strafe' : 'approach';
-      this.strafeDir = Math.random() < 0.5 ? 1 : -1;
-    }
-
-    // Execute movement
-    if (this.movingPattern === 'strafe') {
-      const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
-      this.mesh.position.addScaledVector(perp, (1.5 + this.phase * 0.3) * this.strafeDir * dt);
-    } else {
-      this.mesh.position.addScaledVector(dirToPlayer, (0.5 + this.phase * 0.2) * dt);
-    }
-
-    // Keep distance
-    const dist = this.mesh.position.distanceTo(playerPos);
-    if (dist < 6) {
-      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 1 * dt);
-    } else if (dist > 12) {
-      this.mesh.position.addScaledVector(dirToPlayer, 1 * dt);
-    }
-
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    explosionParts.push(sprite);
   }
 
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: faster drone orbit
-    if (newPhase >= 2) {
-      this.droneOrbitRadius = 2.0;
+  // Remove enemy mesh from scene
+  sceneRef.remove(e.mesh);
+  // Dispose merged geometry if present
+  e.mesh.traverse(c => {
+    if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
+      c.geometry.dispose();
     }
-    // Phase 3+: add second drone orbit
-    if (newPhase >= 3) {
-      this.rifleFireRate = 2.0;
-      this.droneFireRate = 1.0;
+  });
+  // Dispose material
+  e.material.dispose();
+  activeEnemies.splice(index, 1);
+  _enemyMeshesDirty = true;  // Invalidate cache
+
+  return { position: pos, scoreValue: e.scoreValue, baseColor: color };
+}
+
+/**
+ * Remove all enemies (for level transitions).
+ */
+export function clearAllEnemies() {
+  for (let i = activeEnemies.length - 1; i >= 0; i--) {
+    sceneRef.remove(activeEnemies[i].mesh);
+    // Dispose merged geometry
+    activeEnemies[i].mesh.traverse(c => {
+      if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
+        c.geometry.dispose();
+      }
+    });
+    activeEnemies[i].material.dispose();
+  }
+  activeEnemies.length = 0;
+  _enemyMeshesDirty = true;  // Invalidate cache
+}
+
+/**
+ * Animate and clean up explosion particles.
+ */
+export function updateExplosions(dt, now) {
+  for (let i = explosionParts.length - 1; i >= 0; i--) {
+    const p = explosionParts[i];
+    const age = now - p.userData.createdAt;
+
+    if (age > p.userData.lifetime) {
+      // Return to pool (hide, don't destroy)
+      p.visible = false;
+      explosionParts.splice(i, 1);
+    } else {
+      p.position.addScaledVector(p.userData.velocity, dt);
+      p.userData.velocity.multiplyScalar(1 - 3 * dt);
+      p.material.opacity = 1 - age / p.userData.lifetime;
     }
   }
 }
 
-// ── DJ BOSS (DJ Drax) ─────────────────────────────────────
-class DJBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // DJ-specific state
-    this.beatTimer = 0;
-    this.beatRate = def.beatRate || 0.6;
-    this.fanSpawnTimer = 0;
-    this.fanSpawnRate = def.fanSpawnRate || 4.0;
-    this.speakerPulsePhase = 0;
-    this.speakers = [];
-
-    // Create speaker stacks
-    this.createSpeakers();
+/** Return all enemy mesh groups (for raycasting). Optionally include boss mesh. */
+export function getEnemyMeshes(includeBoss = false) {
+  // Use cached array to avoid per-frame allocation
+  if (_enemyMeshesDirty) {
+    rebuildMeshCache();
   }
 
   createSpeakers() {
@@ -1025,172 +811,28 @@ class DJBoss extends Boss {
       this.fanSpawnRate = 2.0;
 
     }
+    return list;
   }
+  return _cachedEnemyMeshes;
 }
 
-// ── STARFIGHTER BOSS (Captain Kestrel) ─────────────────────
-class StarfighterBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // Starfighter-specific state
-    this.cannonFireTimer = 0;
-    this.cannonFireRate = def.cannonFireRate || 2.0;
-    this.missileTimer = 0;
-    this.missileRate = def.missileRate || 5.0;
-    this.attackPattern = 0;
-    this.patternTimer = 0;
-    this.strafing = false;
-    this.strafeDir = 1;
-
-    // Add wings
-    this.createWings();
+/** Find which enemy a raycasted mesh belongs to. */
+export function getEnemyByMesh(mesh) {
+  let obj = mesh;
+  while (obj) {
+    if (obj.userData.isShield) return { boss: activeBoss, isShield: true };
+    if (obj.userData.isBoss) return { boss: activeBoss, isBody: true };
+    if (obj.userData.isEnemy) {
+      const idx = activeEnemies.findIndex(e => e.mesh === obj);
+      return idx >= 0 ? { index: idx, enemy: activeEnemies[idx] } : null;
+    }
+    obj = obj.parent;
   }
-
-  createWings() {
-    const wingGeo = getGeo(0.25);
-    const wingMat = new THREE.MeshBasicMaterial({
-      color: 0x00aaff,
-      transparent: true,
-      opacity: 0.9
-    });
-
-    // Left wing
-    const leftWing = new THREE.Group();
-    for (let i = 0; i < 3; i++) {
-      const cube = new THREE.Mesh(wingGeo, wingMat.clone());
-      cube.position.set(-0.4 - i * 0.25, 0, i * 0.1);
-      leftWing.add(cube);
-    }
-    this.mesh.add(leftWing);
-
-    // Right wing
-    const rightWing = new THREE.Group();
-    for (let i = 0; i < 3; i++) {
-      const cube = new THREE.Mesh(wingGeo, wingMat.clone());
-      cube.position.set(0.4 + i * 0.25, 0, i * 0.1);
-      rightWing.add(cube);
-    }
-    this.mesh.add(rightWing);
-
-    // Cockpit (weak point)
-    const cockpitGeo = getGeo(0.2);
-    const cockpitMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.95
-    });
-    const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
-    cockpit.position.set(0, 0, 0.5);
-    cockpit.userData.isWeakPoint = true;
-    cockpit.userData.isBossCockpit = true;
-    this.mesh.add(cockpit);
-    this.weakPoints.push(cockpit);
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-
-    // Pattern management
-    this.patternTimer -= dt;
-    if (this.patternTimer <= 0) {
-      this.patternTimer = 3 + Math.random() * 2;
-      this.attackPattern = (this.attackPattern + 1) % 3;
-      this.strafing = Math.random() < 0.5;
-      this.strafeDir = Math.random() < 0.5 ? 1 : -1;
-    }
-
-    // Twin cannons
-    this.cannonFireTimer -= dt;
-    if (this.cannonFireTimer <= 0) {
-      this.cannonFireTimer = this.cannonFireRate / this.phase;
-
-      if (this.attackPattern === 0 || this.attackPattern === 1) {
-        // Spread shot
-        const leftOffset = new THREE.Vector3(-0.3, 0, 0);
-        const rightOffset = new THREE.Vector3(0.3, 0, 0);
-        leftOffset.applyQuaternion(this.mesh.quaternion);
-        rightOffset.applyQuaternion(this.mesh.quaternion);
-
-        if (this.telegraphing) {
-          this.showTelegraph('projectile', 0.3, 0x00aaff, this.mesh.position.clone().add(leftOffset), dirToPlayer);
-        }
-        setTimeout(() => {
-          if (typeof spawnBossProjectile === 'function') {
-            spawnBossProjectile(this.mesh.position.clone().add(leftOffset), playerPos);
-          }
-        }, 300);
-
-        setTimeout(() => {
-          if (typeof spawnBossProjectile === 'function') {
-            spawnBossProjectile(this.mesh.position.clone().add(rightOffset), playerPos);
-          }
-        }, 350);
-      }
-    }
-
-    // Missiles
-    this.missileTimer -= dt;
-    if (this.missileTimer <= 0) {
-      this.missileTimer = this.missileRate / this.phase;
-
-      if (this.attackPattern === 1 || this.attackPattern === 2) {
-        if (this.telegraphing) {
-          this.showTelegraph('projectile', 0.8, 0xff0000, this.mesh.position.clone(), dirToPlayer);
-        }
-        setTimeout(() => {
-          // Spawn 3 missiles in a spread
-          for (let i = -1; i <= 1; i++) {
-            const offset = new THREE.Vector3(i * 0.5, 0, 0);
-            offset.applyQuaternion(this.mesh.quaternion);
-            if (typeof spawnBossProjectile === 'function') {
-              spawnBossProjectile(this.mesh.position.clone().add(offset), playerPos);
-            }
-          }
-        }, 800);
-      }
-    }
-
-    // Movement
-    if (this.strafing) {
-      const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
-      this.mesh.position.addScaledVector(perp, (2.0 + this.phase * 0.4) * this.strafeDir * dt);
-    } else {
-      this.mesh.position.addScaledVector(dirToPlayer, (0.6 + this.phase * 0.2) * dt);
-    }
-
-    const dist = this.mesh.position.distanceTo(playerPos);
-    if (dist < 7) {
-      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 1.5 * dt);
-    } else if (dist > 14) {
-      this.mesh.position.addScaledVector(dirToPlayer, 1 * dt);
-    }
-
-    // Banking animation
-    this.mesh.rotation.z = Math.sin(now * 0.003) * 0.2 * this.strafeDir;
-
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: faster fire rate
-    if (newPhase >= 2) {
-      this.cannonFireRate = 1.5;
-      this.missileRate = 4.0;
-    }
-    // Phase 3+: even faster
-    if (newPhase >= 3) {
-      this.cannonFireRate = 1.0;
-      this.missileRate = 3.0;
-    }
-  }
+  return null;
 }
 
-// ── SCIENTIST BOSS (Dr. Aster) ──────────────────────────────
-class ScientistBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
+// ── BOSS SYSTEM ───────────────────────────────────────────
+let activeBoss = null;
 
     // Scientist-specific state
     this.compilerActive = true;
@@ -1508,57 +1150,26 @@ const BOSS_SKULL_PATTERN = [
 ];
 
 const BOSS_DEFS = {
-  // Teleporting boss (Level 5)
-  chrono_wraith: {
-    pattern: [[1, 1, 1, 1]],
-    voxelSize: 0.45,
-    baseHp: 850,
-    phases: 3,
-    color: 0x00ff88,
-    scoreValue: 100,
-    behavior: 'dodger',
-    hitboxRadius: 0.45
-  },
+  // Tier 1 — Balanced HP (Shielded -30%)
+  grave_voxel: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 1000, phases: 3, color: 0xcccccc, scoreValue: 100, behavior: 'spawner' },
+  iron_sentry: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 900, phases: 3, color: 0x8B4513, scoreValue: 100, behavior: 'turret' },
+  core_guardian: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 560, phases: 3, color: 0xaa00ff, scoreValue: 100, behavior: 'shielded' },
+  chrono_wraith: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 850, phases: 3, color: 0x00ff88, scoreValue: 100, behavior: 'dodger' },
+  siege_ram: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 950, phases: 3, color: 0x666666, scoreValue: 100, behavior: 'charger' },
 
-  // Level 10 bosses (Tier 2 - HARDER)
-  hunter_breakenridge: {
-    name: 'Redmond "Hunter" Breakenridge',
-    pattern: [
-      [0, 0, 1, 0, 0],
-      [0, 1, 1, 1, 0],
-      [1, 1, 1, 1, 1],
-      [0, 1, 1, 1, 0],
-      [0, 0, 1, 0, 0],
-    ],
-    voxelSize: 0.35,
-    baseHp: 1200,
-    phases: 3,
-    color: 0xff6600,
-    scoreValue: 200,
-    behavior: 'hunter',
-    hitboxRadius: 0.6,
-    rifleFireRate: 2.5,
-    droneFireRate: 1.5,
-    weakPoints: false  // Custom weak points (drone)
-  },
+  // Tier 2
+  grave_voxel2: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 1500, phases: 3, color: 0xbbbbbb, scoreValue: 150, behavior: 'spawner' },
+  iron_sentry2: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 1350, phases: 3, color: 0x7a3a10, scoreValue: 150, behavior: 'turret' },
+  core_guardian2: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 840, phases: 3, color: 0x9900ee, scoreValue: 150, behavior: 'shielded' },
+  chrono_wraith2: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 1275, phases: 3, color: 0x00ee77, scoreValue: 150, behavior: 'dodger' },
+  siege_ram2: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 1425, phases: 3, color: 0x555555, scoreValue: 150, behavior: 'charger' },
 
-  dj_drax: {
-    name: 'DJ Drax',
-    pattern: [
-      [1, 1, 1],
-      [1, 1, 1],
-    ],
-    voxelSize: 0.3,
-    baseHp: 1300,
-    phases: 3,
-    color: 0x8800ff,
-    scoreValue: 200,
-    behavior: 'dj',
-    hitboxRadius: 0.7,
-    beatRate: 0.6,
-    fanSpawnRate: 4.0,
-    weakPoints: false  // Custom weak points (speakers)
-  },
+  // Tier 3
+  grave_voxel3: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 2200, phases: 3, color: 0xaaaaaa, scoreValue: 200, behavior: 'spawner' },
+  iron_sentry3: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 2000, phases: 3, color: 0x6b300d, scoreValue: 200, behavior: 'turret' },
+  core_guardian3: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 1260, phases: 3, color: 0x8800dd, scoreValue: 200, behavior: 'shielded' },
+  chrono_wraith3: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 1900, phases: 3, color: 0x00dd66, scoreValue: 200, behavior: 'dodger' },
+  siege_ram3: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 2100, phases: 3, color: 0x444444, scoreValue: 200, behavior: 'charger' },
 
   captain_kestrel: {
     name: 'Captain Kestrel',
@@ -3036,24 +2647,17 @@ export function initEnemies(scene) {
     // Camera reference will be passed when camera is initialized
     telegraphingSystem = new TelegraphingSystem(scene, null);
   }
+  group.userData.isBoss = true;
+  return group;
 }
 
-export function getTelegraphingSystem() {
-  return telegraphingSystem;
-}
-
-export function setCameraRef(camera) {
-  if (telegraphingSystem) {
-    telegraphingSystem.camera = camera;
-  }
-}
-
-/**
- * Spawn a boss of the given type
- */
-export function spawnBoss(bossId, levelConfig, camera) {
+export function spawnBoss(bossId, levelConfig) {
   const def = BOSS_DEFS[bossId];
   if (!def || !sceneRef) return null;
+  const mesh = buildBossMesh(def, bossId);
+  const maxHp = Math.round(def.baseHp * levelConfig.hpMultiplier);
+  mesh.position.set(0, 1.5, -12);
+  sceneRef.add(mesh);
 
   // Create appropriate boss class based on behavior
   let boss;
@@ -3113,13 +2717,22 @@ export function spawnBoss(bossId, levelConfig, camera) {
 
   }
 
-  // Show boss health bar
-  if (typeof showBossHealthBar === 'function') {
-    showBossHealthBar(boss.hp, boss.maxHp, boss.phases);
-  }
+  return activeBoss;
+}
 
-  activeBoss = boss;
-  return boss;
+function createBossShields(boss) {
+  const shieldCount = 3;  // 3 orbiting shields
+  const geo = getGeo(0.3);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xff00aa, transparent: true, opacity: 0.7 });
+
+  for (let i = 0; i < shieldCount; i++) {
+    const shield = new THREE.Mesh(geo, mat.clone());
+    shield.userData.isShield = true;
+    shield.userData.shieldIndex = i;
+    sceneRef.add(shield);
+    boss.shields.push(shield);
+  }
+  boss.shieldsActive = true;
 }
 
 export function getBoss() {
@@ -3129,62 +2742,176 @@ export function getBoss() {
 export function hitBoss(damage, hitInfo = {}) {
   if (!activeBoss) return { killed: false, shieldReflected: false };
 
-  const result = activeBoss.takeDamage(damage, hitInfo);
-
-  if (result.killed) {
-    // Boss defeated
-    if (typeof window !== 'undefined' && window.playBossDeath) {
-      window.playBossDeath();
-    }
-
-    // Spawn boss death explosion
-    if (typeof spawnEffectParticle === 'function') {
-      for (let i = 0; i < 20; i++) {
-        spawnEffectParticle(activeBoss.mesh.position, activeBoss.def.color);
-      }
-    }
-
-    // Clean up
-    activeBoss.destroy();
-    activeBoss = null;
-
-    if (typeof hideBossHealthBar === 'function') {
-      hideBossHealthBar();
-    }
-  } else {
-    // Update health bar
-    if (typeof updateBossHealthBar === 'function') {
-      updateBossHealthBar(activeBoss.hp, activeBoss.maxHp, activeBoss.phases);
+  // Core Guardian logic: only take damage via shields. Direct body hits reflect.
+  if (activeBoss.behavior === 'shielded' && activeBoss.shieldsActive) {
+    if (hitInfo.isShield) {
+      // Taking damage via orbiting bits
+    } else if (hitInfo.isBody) {
+      return { killed: false, shieldReflected: true, phaseChanged: false };
+    } else {
+      // Indirect damage (fire/AOE)? Allow but maybe reduced?
+      // Let's allow AOE to tick damage normally or it becomes frustrating.
     }
   }
 
-  return result;
+  activeBoss.hp -= damage;
+  if (activeBoss.hp <= 0) activeBoss.hp = 0;
+
+  // DODGER behavior: Teleport on hit (chance increases with phase)
+  if (activeBoss.behavior === 'dodger' && Math.random() < 0.2 + activeBoss.phase * 0.1) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 6 + Math.random() * 4;
+    activeBoss.mesh.position.set(
+      Math.cos(angle) * dist,
+      1.5,
+      Math.sin(angle) * dist
+    );
+  }
+
+  const prevPhase = activeBoss.phase;
+  const phaseThreshold2 = activeBoss.maxHp * (2 / 3);
+  const phaseThreshold1 = activeBoss.maxHp * (1 / 3);
+  if (activeBoss.phases >= 3 && activeBoss.hp > 0) {
+    if (activeBoss.hp <= phaseThreshold1) activeBoss.phase = 3;
+    else if (activeBoss.hp <= phaseThreshold2) activeBoss.phase = 2;
+  }
+  return { killed: activeBoss.hp <= 0, shieldReflected: false, phaseChanged: activeBoss.phase !== prevPhase };
 }
 
 export function updateBoss(dt, now, playerPos) {
   if (!activeBoss) return;
-  activeBoss.update(dt, now, playerPos);
-}
+  const b = activeBoss;
 
-export function clearBoss() {
-  if (activeBoss) {
-    activeBoss.destroy();
-    activeBoss = null;
+  _dir.copy(playerPos).sub(b.mesh.position);
+  const dist = _dir.length();
+  if (dist > 0.01) _dir.divideScalar(dist);
 
-    if (typeof hideBossHealthBar === 'function') {
-      hideBossHealthBar();
+  // Always look at player
+  _look.set(playerPos.x, b.mesh.position.y, playerPos.z);
+  b.mesh.lookAt(_look);
+
+  // === BEHAVIOR-SPECIFIC LOGIC ===
+
+  if (b.behavior === 'spawner') {
+    // SPAWNER: Moves toward player, spawns minions
+    const speed = 0.25 + (b.phase - 1) * 0.1;
+    b.mesh.position.addScaledVector(_dir, speed * dt);
+
+    b.spawnMinionTimer -= dt;
+    if (b.spawnMinionTimer <= 0) {
+      const spawnRate = 2.5 - b.phase * 0.6;
+      b.spawnMinionTimer = spawnRate;
+
+      // Spawn multiple minions, potentially 'fast' ones in higher tiers
+      const spawnCount = b.phase === 3 ? 3 : b.phase === 2 ? 2 : 1;
+      for (let i = 0; i < spawnCount; i++) {
+        const minionType = (b.id.includes('2') || b.id.includes('3') || b.id.includes('4')) && b.phase === 3 ? 'fast' : 'basic';
+        spawnBossMinion(b.mesh.position.clone(), playerPos, minionType);
+      }
     }
+  }
+
+  else if (b.behavior === 'turret') {
+    // TURRET: Stationary, shoots projectiles
+    b.shootTimer -= dt;
+    if (b.shootTimer <= 0) {
+      const shootRate = 1.8 - b.phase * 0.4;
+      b.shootTimer = shootRate;
+
+      // Phase 1: 1 shot, Phase 2: 3 shots fan, Phase 3: 5 shots spray
+      if (b.phase === 1) {
+        spawnBossProjectile(b.mesh.position.clone(), playerPos);
+      } else if (b.phase === 2) {
+        // 3 shot fan
+        for (let i = -1; i <= 1; i++) {
+          const offset = new THREE.Vector3(i * 2, 0, 0).applyQuaternion(b.mesh.quaternion);
+          spawnBossProjectile(b.mesh.position.clone(), playerPos.clone().add(offset));
+        }
+      } else {
+        // 5 shot spray
+        for (let i = -2; i <= 2; i++) {
+          const offset = new THREE.Vector3(i * 1.5, (Math.random() - 0.5) * 2, 0).applyQuaternion(b.mesh.quaternion);
+          spawnBossProjectile(b.mesh.position.clone(), playerPos.clone().add(offset));
+        }
+      }
+    }
+  }
+
+  else if (b.behavior === 'dodger') {
+    // DODGER: Moves erratically, hard to hit
+    b.dodgeTimer -= dt;
+    if (b.dodgeTimer <= 0) {
+      b.dodgeTimer = 0.6 / b.phase;
+      const perp = new THREE.Vector3(-_dir.z, 0, _dir.x).normalize();
+      const randomDir = Math.random() < 0.5 ? 1 : -1;
+      b.dodgeDir.copy(perp).multiplyScalar(randomDir);
+    }
+
+    const approachSpeed = 0.15 + b.phase * 0.08;
+    const dodgeSpeed = 0.8 + b.phase * 0.3;
+    b.mesh.position.addScaledVector(_dir, approachSpeed * dt);
+    b.mesh.position.addScaledVector(b.dodgeDir, dodgeSpeed * dt);
+  }
+
+  else if (b.behavior === 'charger') {
+    // CHARGER: Bursts toward player
+    b.chargeTimer -= dt;
+
+    if (b.chargeActive) {
+      const chargeSpeed = 3.5 + b.phase * 0.8;
+      b.mesh.position.addScaledVector(_dir, chargeSpeed * dt);
+
+      if (b.chargeTimer <= 0) {
+        b.chargeActive = false;
+        b.chargeTimer = 1.6 - b.phase * 0.3;
+      }
+    } else {
+      if (b.chargeTimer <= 0) {
+        b.chargeActive = true;
+        b.chargeTimer = 0.45 + Math.random() * 0.25;
+      }
+    }
+  }
+
+  else if (b.behavior === 'shielded') {
+    // SHIELDED: Orbiting shields reflect damage
+    const speed = 0.2 + b.phase * 0.05;
+    b.mesh.position.addScaledVector(_dir, speed * dt);
+
+    b.shieldAngle += dt * (2.0 + b.phase * 0.5);
+    const radius = 1.4 + Math.sin(now * 0.002) * 0.3;
+
+    b.shieldsActive = b.phase < 3;
+
+    b.shields.forEach((shield, i) => {
+      const angle = b.shieldAngle + (i * Math.PI * 2 / b.shields.length);
+      shield.position.set(
+        b.mesh.position.x + Math.cos(angle) * radius,
+        b.mesh.position.y + Math.sin(now * 0.003 + i) * 0.5,
+        b.mesh.position.z + Math.sin(angle) * radius
+      );
+      shield.visible = b.shieldsActive;
+      if (shield.material) {
+        shield.material.color.setHSL(0.8, 1, 0.5 + Math.sin(now * 0.01) * 0.2);
+      }
+    });
+  }
+
+  // Default fallback (shouldn't hit, but just in case)
+  else {
+    const speed = 0.4 + (b.phase - 1) * 0.2;
+    b.mesh.position.addScaledVector(_dir, speed * dt);
   }
 }
 
-// ── TELEPORTING BOSS SPECIFIC (for compatibility) ───────────
 const bossMinions = [];
-export function spawnBossMinion(fromPos, playerPos, type = 'basic') {
+function spawnBossMinion(fromPos, playerPos, type = 'basic') {
   const group = new THREE.Group();
   const def = ENEMY_DEFS[type] || ENEMY_DEFS.basic;
   const geo = getGeo(def.voxelSize);
   const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.8 });
 
+  // Create a small 2x2 voxel minion
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 2; c++) {
       const cube = new THREE.Mesh(geo, mat.clone());
@@ -3195,6 +2922,8 @@ export function spawnBossMinion(fromPos, playerPos, type = 'basic') {
 
   group.position.copy(fromPos);
   group.userData.isBossMinion = true;
+  group.userData.slideAngle = 0;
+  group.userData.slideTimer = 0;
   sceneRef.add(group);
   bossMinions.push({ mesh: group, hp: def.baseHp, maxHp: def.baseHp, speed: def.baseSpeed });
 }
@@ -3245,7 +2974,7 @@ export function updateBossMinions(dt, playerPos) {
   }
 }
 
-// ── PROJECTILES (for compatibility) ───────────────────────────
+// ── Boss Projectiles (for turret/shooter bosses) ───────────
 const bossProjectiles = [];
 export function spawnBossProjectile(fromPos, targetPos, speed = 4.0, damage = 1) {
   const geo = getGeo(0.12);
@@ -3280,7 +3009,9 @@ export function updateBossProjectiles(dt, now, playerPos) {
 
     proj.mesh.position.addScaledVector(proj.velocity, dt);
 
+    // Check collision with player
     if (proj.mesh.position.distanceTo(playerPos) < 0.5) {
+      // Return damage flag (main.js will handle damage)
       proj.hitPlayer = true;
     }
   }
@@ -3290,21 +3021,12 @@ export function getBossProjectiles() {
   return bossProjectiles;
 }
 
-// ── TELEGRAPHING UPDATE (for main.js) ────────────────────────
-export function updateTelegraphing(dt, now) {
-  if (telegraphingSystem) {
-    telegraphingSystem.update(dt, now);
-  }
-}
+export function clearBoss() {
+  if (!activeBoss) return;
 
-// ── GET ENEMY MESHES (for raycasting) ─────────────────────────
-export function getEnemyMeshes(includeBoss = false) {
-  const list = activeEnemies.map(e => e.mesh);
-  if (includeBoss && activeBoss) {
-    list.push(activeBoss.mesh);
-  }
-  return list;
-}
+  // Clean up boss mesh
+  sceneRef.remove(activeBoss.mesh);
+  activeBoss.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
 
 export function getEnemyByMesh(mesh) {
   let obj = mesh;
@@ -3337,256 +3059,41 @@ export function spawnEnemy(type, position, levelConfig) {
       opacity: 0.7,
     });
   }
-  const material = sharedMaterials[type].clone();
 
-  const group = new THREE.Group();
-  const geo = getGeo(def.voxelSize);
-  const rows = def.pattern.length;
-  const cols = def.pattern[0].length;
-  const cx = (cols - 1) / 2;
-  const cy = (rows - 1) / 2;
+  activeBoss = null;
 
-  for (let d = 0; d < def.depth; d++) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (def.pattern[r][c]) {
-          const cube = new THREE.Mesh(geo, material);
-          cube.position.set(
-            (c - cx) * def.voxelSize,
-            (cy - r) * def.voxelSize,
-            d * def.voxelSize,
-          );
-          group.add(cube);
-        }
-      }
-    }
-  }
-
-  group.position.copy(position);
-  group.userData.isEnemy = true;
-
-  // Tank: one random voxel is weak point
-  if (type === 'tank') {
-    const voxels = group.children.filter(c => !c.userData.isEnemyHitbox);
-    if (voxels.length > 0) {
-      const weak = voxels[Math.floor(Math.random() * voxels.length)];
-      weak.userData.weakPoint = true;
-      // Make weak point visually distinct: lighter color + higher opacity
-      const weakMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff,  // White - very obvious in VR
-        transparent: true,
-        opacity: 0.95,   // Higher opacity for visibility
-      });
-      weak.material = weakMaterial;
-    }
-  }
-
-  const hitboxGeo = new THREE.SphereGeometry(def.hitboxRadius, 8, 8);
-  const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-  const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
-  hitbox.userData.isEnemyHitbox = true;
-  group.add(hitbox);
-
-  const enemy = {
-    mesh: group,
-    material,
-    type,
-    hp: Math.round(def.baseHp * levelConfig.hpMultiplier),
-    maxHp: Math.round(def.baseHp * levelConfig.hpMultiplier),
-    speed: def.baseSpeed * levelConfig.speedMultiplier,
-    baseColor: new THREE.Color(def.color),
-    scoreValue: def.scoreValue,
-    hitboxRadius: def.hitboxRadius,
-    alertTimer: 0,
-    statusEffects: {
-      fire: { stacks: 0, remaining: 0, tickTimer: 0 },
-      shock: { stacks: 0, remaining: 0, tickTimer: 0 },
-      freeze: { stacks: 0, remaining: 0, tickTimer: 0 },
-    },
-  };
-
-  activeEnemies.push(enemy);
-  sceneRef.add(group);
-  return enemy;
-}
-
-export function updateEnemies(dt, now, playerPos) {
-  const collisions = [];
-
-  for (let i = activeEnemies.length - 1; i >= 0; i--) {
-    const e = activeEnemies[i];
-
-    _dir.copy(playerPos).sub(e.mesh.position);
-    const dist = _dir.length();
-    if (dist > 0.01) _dir.divideScalar(dist);
-
-    let speedMod = 1;
-    const se = e.statusEffects;
-    if (se.shock.stacks > 0) speedMod *= Math.max(0.4, 1 - se.shock.stacks * 0.2);
-    if (se.freeze.stacks > 0) speedMod *= Math.max(0.05, 1 - se.freeze.stacks * 0.4);
-
-    e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
-
-    _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
-    e.mesh.lookAt(_look);
-
-    if (dist < 0.9) {
-      collisions.push(i);
-      continue;
-    }
-
-    updateStatusEffects(e, dt);
-
-    const dmgRatio = 1 - e.hp / e.maxHp;
-    e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
-  }
-
-  return collisions;
-}
-
-const _redColor = new THREE.Color(0xff0000);
-
-function updateStatusEffects(e, dt) {
-  const se = e.statusEffects;
-
-  if (se.fire.remaining > 0) {
-    se.fire.remaining -= dt;
-    se.fire.tickTimer -= dt;
-    if (se.fire.tickTimer <= 0) {
-      se.fire.tickTimer = 0.5;
-      const fireDmg = Math.round(15 * se.fire.stacks);
-      e.hp -= fireDmg;
-      if (e.hp <= 0) e.hp = 0;
-      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
-        window.spawnEffectParticle(e.mesh.position, 0xff4400);
-      }
-    }
-    if (se.fire.remaining <= 0) { se.fire.stacks = 0; se.fire.tickTimer = 0; }
-  }
-
-  if (se.shock.remaining > 0) {
-    se.shock.remaining -= dt;
-    se.shock.tickTimer -= dt;
-    if (se.shock.tickTimer <= 0) {
-      se.shock.tickTimer = 0.5;
-      const shockDmg = Math.round(8 * se.shock.stacks);
-      e.hp -= shockDmg;
-      if (e.hp <= 0) e.hp = 0;
-      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
-        window.spawnEffectParticle(e.mesh.position, 0xffff44);
-      }
-    }
-    if (se.shock.remaining <= 0) { se.shock.stacks = 0; se.shock.tickTimer = 0; }
-  }
-
-  if (se.freeze.remaining > 0) {
-    se.freeze.remaining -= dt;
-    se.freeze.tickTimer -= dt;
-    if (se.freeze.tickTimer <= 0) {
-      se.freeze.tickTimer = 0.5;
-      const freezeDmg = Math.round(2 * se.freeze.stacks);
-      e.hp -= freezeDmg;
-      if (e.hp <= 0) e.hp = 0;
-      if (typeof window !== 'undefined' && window.spawnEffectParticle) {
-        window.spawnEffectParticle(e.mesh.position, 0x00ffff);
-      }
-    }
-    if (se.freeze.remaining <= 0) { se.freeze.stacks = 0; se.freeze.tickTimer = 0; }
-  }
-}
-
-export function applyEffects(enemyIndex, effects) {
-  const e = activeEnemies[enemyIndex];
-  if (!e) return;
-
-  effects.forEach(({ type, stacks }) => {
-    const se = e.statusEffects[type];
-    if (!se) return;
-    se.stacks = Math.max(se.stacks, stacks);
-    se.remaining = 2 + stacks * 0.5;
+  // Clean up minions
+  bossMinions.forEach(m => {
+    sceneRef.remove(m.mesh);
+    m.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
   });
+  bossMinions.length = 0;
+
+  // Clean up projectiles
+  bossProjectiles.forEach(p => {
+    sceneRef.remove(p.mesh);
+    p.mesh.geometry.dispose();
+    p.mesh.material.dispose();
+  });
+  bossProjectiles.length = 0;
 }
 
-export function hitEnemy(index, damage) {
-  const e = activeEnemies[index];
-  if (!e) return { killed: false };
-
-  e.hp -= damage;
-  if (e.hp <= 0) {
-    return { killed: true, enemy: e, overkill: -e.hp };
-  }
-  return { killed: false, enemy: e };
-}
-
-export function destroyEnemy(index) {
-  const e = activeEnemies[index];
-  if (!e) return null;
-
-  const pos = e.mesh.position.clone();
-  const color = e.baseColor.clone();
-
-  for (let i = 0; i < 5; i++) {
-    const sprite = getExplosionSprite();
-    if (!sprite) break;
-
-    sprite.material.opacity = 1;
-    sprite.material.map = Math.random() > 0.5 ? explosionTexturePink : explosionTextureCyan;
-    sprite.position.copy(pos);
-    sprite.visible = true;
-
-    sprite.userData.velocity = new THREE.Vector3(
-      (Math.random() - 0.5) * 5,
-      (Math.random() - 0.5) * 5,
-      (Math.random() - 0.5) * 5,
-    );
-    sprite.userData.createdAt = performance.now();
-    sprite.userData.lifetime = 300 + Math.random() * 200;
-
-    explosionParts.push(sprite);
-  }
-
-  sceneRef.remove(e.mesh);
-  e.material.dispose();
-  activeEnemies.splice(index, 1);
-
-  return { position: pos, scoreValue: e.scoreValue, baseColor: color };
-}
-
-export function clearAllEnemies() {
-  for (let i = activeEnemies.length - 1; i >= 0; i--) {
-    sceneRef.remove(activeEnemies[i].mesh);
-    activeEnemies[i].material.dispose();
-  }
-  activeEnemies.length = 0;
-}
-
-export function updateExplosions(dt, now) {
-  for (let i = explosionParts.length - 1; i >= 0; i--) {
-    const p = explosionParts[i];
-    const age = now - p.userData.createdAt;
-
-    if (age > p.userData.lifetime) {
-      p.visible = false;
-      explosionParts.splice(i, 1);
-    } else {
-      p.position.addScaledVector(p.userData.velocity, dt);
-      p.userData.velocity.multiplyScalar(1 - 3 * dt);
-      p.material.opacity = 1 - age / p.userData.lifetime;
-    }
-  }
-}
-
+/** Get number of active enemies. */
 export function getEnemyCount() {
   return activeEnemies.length;
 }
 
+/** Get active enemies array (read-only intent). */
 export function getEnemies() {
   return activeEnemies;
 }
 
+/**
+ * Get a random spawn position in a 100° cone in front of the player.
+ */
 export function getSpawnPosition(airSpawns, verticalAngle = 0) {
   const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
-  const distance = 14.4 + Math.random() * 5.6;
+  const distance = 14.4 + Math.random() * 5.6;  // 20% shorter (was 18-25, now 14.4-20)
 
   const x = Math.sin(angle) * distance;
   const z = -Math.cos(angle) * distance;
@@ -3596,6 +3103,7 @@ export function getSpawnPosition(airSpawns, verticalAngle = 0) {
     y = 0.5 + Math.random() * 2.5;
   }
 
+  // Apply vertical angle for difficulty progression
   if (verticalAngle > 0) {
     const vertRad = verticalAngle * Math.PI / 180;
     const baseY = y;
@@ -3605,10 +3113,12 @@ export function getSpawnPosition(airSpawns, verticalAngle = 0) {
   return new THREE.Vector3(x, y, z);
 }
 
+/** Get all fast enemies (for proximity alerts) */
 export function getFastEnemies() {
   return activeEnemies.filter(e => e.type === 'fast');
 }
 
+/** Get all swarm enemies (for proximity alerts) */
 export function getSwarmEnemies() {
   return activeEnemies.filter(e => e.type === 'swarm');
 
