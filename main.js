@@ -32,6 +32,11 @@ import {
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   // [Power Outage Update] #3, #8: New HUD functions
   // Button hover system
+  // [Instruction 1] Alt weapon HUD functions
+  initAltWeaponIndicators, updateAltWeaponIndicators, createAltWeaponStar,
+  addAltWeaponStar, getAltWeaponStars, removeAltWeaponStar, getAltWeaponStarHit,
+  showAltWeaponAcquired, updateAltWeaponAcquired, showStarTooltip, hideStarTooltip,
+  updateAltWeaponStars
   } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -242,7 +247,12 @@ function init() {
   initEnemies(scene);
   initHUD(camera, scene);
   
-  // [Instruction 1] Initialize alt weapon HUD indicators(camera);
+  // [Instruction 1] Initialize alt weapon HUD indicators
+  initAltWeaponIndicators(camera);
+  
+  // [Instruction 1] Initialize desktop controls for keyboard/mouse input
+  initDesktopControls(scene, camera, renderer);
+  
   
   // [Instruction 1] Set callback for alt weapon star drops (3% chance on enemy death)
   setOnEnemyDestroyedCallback((position) => {
@@ -250,9 +260,9 @@ function init() {
     if (Math.random() < 0.03) {
       const weaponIds = Object.keys(ALT_WEAPON_DEFS);
       const randomWeaponId = weaponIds[Math.floor(Math.random() * weaponIds.length)];
-      const star =(position, randomWeaponId, ALT_WEAPON_DEFS);
+      const star = createAltWeaponStar(position, randomWeaponId, ALT_WEAPON_DEFS);
       if (star) {
-// addAltWeaponStar(star); // TODO: Re-enable when function is implemented
+        addAltWeaponStar(star);
         console.log(`[alt-weapon] Dropped ${randomWeaponId} star at enemy death location`);
       }
     }
@@ -2571,7 +2581,7 @@ completeLevel();            }
           playUpgradeSound();
           
           // Show acquisition notification
-          const def = ALT_WEAPON_DEFS[weaponId];(def ? def.name : weaponId, hand);
+          const def = ALT_WEAPON_DEFS[weaponId];showAltWeaponAcquired(def ? def.name : weaponId, def ? def.color : #00ffff);
           
           console.log(`[alt-weapon] Collected ${weaponId} for ${hand} hand`);
           break;
@@ -2833,6 +2843,15 @@ completeLevel();            }
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
   // [Power Outage Update] #3, #8: Update boss alert and kills remaining message(now);(now);
   updateFPS(now, {
+  
+  // [Instruction 1] Update alt weapon indicators
+  const readyStatus = updateAltWeaponIndicators(game.altWeapons, game.altCooldowns, game.altReadySoundPlayed, ALT_WEAPON_DEFS, now);
+  
+  // [Instruction 1] Update alt weapon stars (animation and expiration)
+  updateAltWeaponStars(dt, now);
+  
+  // [Instruction 1] Update alt weapon acquired message
+  updateAltWeaponAcquired(now);
     perfMonitor: typeof window !== 'undefined' && window.debugPerfMonitor,
     frameTimeMs: rawDt * 1000
 });
