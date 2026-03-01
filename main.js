@@ -946,7 +946,7 @@ function handleDesktopUpgradeSelectClick() {
 
   const hit = getUpgradeCardHit(raycaster);
   if (hit && hit !== null) {
-    selectUpgradeAt(hit);
+    selectUpgradeAndAdvance(hit.upgrade, hit.hand);
   }
 }
 
