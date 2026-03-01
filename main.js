@@ -1221,6 +1221,11 @@ function showUpgradeScreen() {
   game.state = State.UPGRADE_SELECT;
   hideLevelComplete();
 
+  // Release pointer lock so mouse can be used for clicking cards
+  if (document.exitPointerLock) {
+    document.exitPointerLock();
+  }
+
   // Show HUD during level-up (health hearts and score)
   showHUD();
 
@@ -1260,7 +1265,14 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     console.log('[game] Skipped upgrade, health restored to full');
     playUpgradeSound();
     hideUpgradeCards();
-    advanceLevelAfterUpgrade();
+    
+  // Re-acquire pointer lock after upgrade selection
+  if (isDesktopEnabled() && document.body.requestPointerLock) {
+    document.body.requestPointerLock().catch(() => {
+      console.log('[game] Failed to re-acquire pointer lock');
+    });
+  }
+  advanceLevelAfterUpgrade();
     return;
   }
 
@@ -1285,7 +1297,14 @@ function selectUpgradeAndAdvance(upgrade, hand) {
       upgradeSelectionCooldown = 1.5;
     } else {
       hideUpgradeCards();
-      advanceLevelAfterUpgrade();
+      
+  // Re-acquire pointer lock after upgrade selection
+  if (isDesktopEnabled() && document.body.requestPointerLock) {
+    document.body.requestPointerLock().catch(() => {
+      console.log('[game] Failed to re-acquire pointer lock');
+    });
+  }
+  advanceLevelAfterUpgrade();
     }
     return;
   }
@@ -1293,6 +1312,14 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   addUpgrade(upgrade.id, hand);
   playUpgradeSound();
   hideUpgradeCards();
+  
+  // Re-acquire pointer lock after upgrade selection
+  if (isDesktopEnabled() && document.body.requestPointerLock) {
+    document.body.requestPointerLock().catch(() => {
+      console.log('[game] Failed to re-acquire pointer lock');
+    });
+  }
+  
   advanceLevelAfterUpgrade();
 }
 
@@ -1482,6 +1509,7 @@ function updateLightningBeam(controller, index, stats, dt) {
             // Check level complete
             const cfg = game._levelConfig;
             if (cfg && game.kills >= cfg.killTarget) {
+              updateHUD(game);
               completeLevel();
             }
           }
@@ -1812,6 +1840,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       // Check level complete
       const cfg = game._levelConfig;
       if (cfg && game.kills >= cfg.killTarget) {
+        updateHUD(game);
         completeLevel();
       }
     }
@@ -2492,6 +2521,7 @@ function render(timestamp) {
 
             const cfg = game._levelConfig;
             if (cfg && game.kills >= cfg.killTarget) {
+              updateHUD(game);
               completeLevel();
             }
           }
