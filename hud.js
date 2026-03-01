@@ -4,7 +4,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { State, game, getComboMultiplier } from './game.js';
+import { State, getComboMultiplier } from './game.js';
 
 // ── Module state ───────────────────────────────────────────
 let sceneRef, cameraRef;
@@ -59,19 +59,6 @@ let nameEntrySlots = [];
 let keyboardKeys = [];
 let hoveredKey = null;
 
-// Level intro state
-let levelIntroActive = false;
-let levelIntroStartTime = 0;
-let levelIntroStage = 'level'; // 'level', 'level_fading', 'start', 'start_fading', 'done'
-let levelIntroLevelText = null;
-let levelIntroStartText = null;
-
-// Kills remaining alert state
-let killsAlertActive = false;
-let killsAlertStartTime = 0;
-let killsAlertDisplayTime = 0;
-let killsAlertMesh = null;
-
 // Scoreboard state
 let scoreboardCanvas = null;
 let scoreboardTexture = null;
@@ -89,84 +76,135 @@ let countrySelectScrollOffset = 0;
 let continentTabs = [];
 let countryItems = [];
 
-// ── Canvas text utility ────────────────────────────────────
-function makeTextTexture(text, opts = {}) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  const fontSize = opts.fontSize || 64;
-  const font = `bold ${fontSize}px Arial, sans-serif`;
-  const maxWidth = opts.maxWidth || null;
+// ── TEXTURE CACHING SYSTEM ────────────────────────────────────────────
 
-  ctx.font = font;
+// Cache for HUD element textures to avoid recreation every frame
+const hudTextureCache = {};
 
-  // Word wrapping if maxWidth is specified
-  let lines = [text];
-  if (maxWidth) {
-    lines = [];
-    const words = text.split(' ');
-    let currentLine = '';
-
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const metrics = ctx.measureText(testLine);
-
-      if (metrics.width > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-    if (currentLine) lines.push(currentLine);
+/**
+ * Create or get a cached texture for the given text and color.
+ * Returns the texture and aspect ratio.
+ */
+function getCachedTextTexture(text, fontSize, color, shadow, glow, glowColor, maxWidth) {
+  const cacheKey = `${text}:${fontSize}:${color}:${shadow}:${glow}:${glowColor}:${maxWidth}`;
+  
+  if (hudTextureCache[cacheKey]) {
+    return hudTextureCache[cacheKey];
   }
 
-  // Measure text to size canvas
-  const textWidth = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
-  const lineHeight = fontSize * 1.3;
-  const textHeight = lines.length * lineHeight;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
 
-  // Add proper padding for glow effects (glowSize needs at least glowSize+5 pixels on each side)
-  const padding = opts.glow ? (opts.glowSize || 15) + 10 : 40;
-  canvas.width = Math.ceil(textWidth) + padding * 2;
-  canvas.height = Math.ceil(textHeight) + padding * 2;
+  // Measure text to size canvas
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  const textWidth = maxWidth || Math.ceil(ctx.measureText(text).width);
+  const lineHeight = fontSize * 1.3;
+  const textHeight = lineHeight; // Single line
+
+  canvas.width = Math.ceil(textWidth) + 40;
+  canvas.height = Math.ceil(textHeight) + 40;
 
   // Re-set after resize
-  ctx.font = font;
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Adjust drawing position for new padding
-  const offsetX = padding;
-  const offsetY = padding;
-
-  // Clear canvas with transparency (prevent black background)
+  // Clear canvas with transparency
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Optional glow
-  if (opts.glow) {
-    ctx.shadowColor = opts.glowColor || opts.color || '#00ffff';
-    ctx.shadowBlur = opts.glowSize || 15;
+  if (glow) {
+    ctx.shadowColor = glowColor || color;
+    ctx.shadowBlur = 15;
   }
 
   // Drop shadow
-  if (opts.shadow) {
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    lines.forEach((line, i) => {
-      const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
-      ctx.fillText(line, canvas.width / 2 + 2, y + 2 + offsetY);
-    });
+  if (shadow) {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillText(text, canvas.width / 2 + 2, canvas.height / 2 + 2);
   }
 
   // Main text
-  ctx.fillStyle = opts.color || '#00ffff';
-  lines.forEach((line, i) => {
-    const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
-    ctx.fillText(line, canvas.width / 2, y + offsetY);
-  });
+  ctx.fillStyle = color;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
-  return { texture, aspect: canvas.width / canvas.height };
+
+  // Cache the texture
+  hudTextureCache[cacheKey] = { texture, aspect: canvas.width / canvas.height };
+
+  return hudTextureCache[cacheKey];
+}
+
+/**
+ * Create or get a cached texture for the hearts display.
+ */
+function getCachedHeartsTexture(health, maxHealth, scaleMultiplier) {
+  const cacheKey = `hearts:${health}:${maxHealth}:${scaleMultiplier}`;
+  
+  if (hudTextureCache[cacheKey]) {
+    return hudTextureCache[cacheKey];
+  }
+
+  const heartCount = maxHealth / 2;
+  const pixSize = 8;
+  const heartW = 7 * pixSize;
+  const heartH = 6 * pixSize;
+  const gap = 6;
+  const canvasWidth = heartCount * (heartW + gap) + gap;
+  const canvasHeight = heartH + 10;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  const ctx = canvas.getContext('2d');
+
+  for (let i = 0; i < heartCount; i++) {
+    const hpForThisHeart = health - i * 2;
+    let state;
+    if (hpForThisHeart >= 2) state = 'full';
+    else if (hpForThisHeart === 1) state = 'half';
+    else state = 'empty';
+
+    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  const aspect = canvasWidth / canvasHeight;
+  hudTextureCache[cacheKey] = { texture, aspect };
+
+  return hudTextureCache[cacheKey];
+}
+
+/**
+ * Clear the texture cache periodically to prevent memory buildup.
+ * Called once per second or when needed.
+ */
+function clearHudCache() {
+  Object.keys(hudTextureCache).forEach(key => {
+    if (hudTextureCache[key]) {
+      if (hudTextureCache[key].texture) {
+        hudTextureCache[key].texture.dispose();
+      }
+    }
+    delete hudTextureCache[key];
+  });
+}
+
+// ── Canvas text utility ────────────────────────────────────
+function makeTextTexture(text, opts = {}) {
+  return getCachedTextTexture(
+    text,
+    opts.fontSize || 64,
+    opts.color || '#00ffff',
+    opts.shadow,
+    opts.glow,
+    opts.glowColor,
+    opts.maxWidth
+  );
 }
 
 function makeSprite(text, opts = {}) {
@@ -219,32 +257,6 @@ function drawHeart(ctx, x, y, pixSize, state) {
       ctx.fillRect(x + px * pixSize, y + py * pixSize, pixSize, pixSize);
     });
   });
-}
-
-function makeHeartsTexture(health, maxHealth) {
-  const heartCount = maxHealth / 2;
-  const pixSize = 8;
-  const heartW = 7 * pixSize;
-  const heartH = 6 * pixSize;
-  const gap = 6;
-  const canvas = document.createElement('canvas');
-  canvas.width = heartCount * (heartW + gap) + gap;
-  canvas.height = heartH + 10;
-  const ctx = canvas.getContext('2d');
-
-  for (let i = 0; i < heartCount; i++) {
-    const hpForThisHeart = health - i * 2;
-    let state;
-    if (hpForThisHeart >= 2) state = 'full';
-    else if (hpForThisHeart === 1) state = 'half';
-    else state = 'empty';
-
-    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  return { texture, aspect: canvas.width / canvas.height };
 }
 
 // ── Public API ─────────────────────────────────────────────
@@ -312,6 +324,9 @@ export function initHUD(camera, scene) {
     bossHealthBars.push(bar);
   }
   camera.add(bossHealthGroup);
+
+  // ── Start cache clear timer (every 60 seconds) ──
+  setInterval(clearHudCache, 60000);
 }
 
 export function showBossHealthBar(hp, maxHp, phases = 3) {
@@ -346,30 +361,30 @@ export function updateBossHealthBar(hp, maxHp, phases = 3) {
 function createTitleScreen() {
   // Big title: SPACEOMICIDE
   const titleSprite = makeSprite('SPACEOMICIDE', {
-    fontSize: 70,
+    fontSize: 140,
     color: '#00ffff',
-    glow: true, glowColor: '#0088ff', glowSize: 15,
-    scale: 0.9,
+    glow: true, glowColor: '#0088ff', glowSize: 30,
+    scale: 1.8,
   });
   titleSprite.position.set(0, 1.6, 0);
   titleGroup.add(titleSprite);
 
   // Subtitle
   const subSprite = makeSprite('VR ROGUELIKE BLASTER', {
-    fontSize: 24,
+    fontSize: 48,
     color: '#ff00ff',
-    glow: true, glowColor: '#ff00ff', glowSize: 5,
-    scale: 0.3,
+    glow: true, glowColor: '#ff00ff', glowSize: 10,
+    scale: 0.6,
   });
   subSprite.position.set(0, 0.8, 0);
   titleGroup.add(subSprite);
 
   // Blinking "Press Trigger to Begin"
   titleBlinkSprite = makeSprite('PRESS TRIGGER TO BEGIN', {
-    fontSize: 26,
+    fontSize: 52,
     color: '#ffffff',
     glow: true, glowColor: '#ffffff',
-    scale: 0.25,
+    scale: 0.5,
   });
   titleBlinkSprite.position.set(0, 0, 0);
   titleGroup.add(titleBlinkSprite);
@@ -377,7 +392,7 @@ function createTitleScreen() {
   // Scoreboard button
   const btnGroup = new THREE.Group();
   btnGroup.position.set(0, -0.6, 0);
-  const btnGeo = new THREE.PlaneGeometry(1.35, 0.3);
+  const btnGeo = new THREE.PlaneGeometry(1.2, 0.3);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -390,28 +405,65 @@ function createTitleScreen() {
   const btnBorderGeo = new THREE.EdgesGeometry(btnGeo);
   btnGroup.add(new THREE.LineSegments(btnBorderGeo, new THREE.LineBasicMaterial({ color: 0xffff00 })));
   const btnText = makeSprite('SCOREBOARD', {
-    fontSize: 32,
+    fontSize: 36,
     color: '#ffff00',
     glow: true,
     glowColor: '#ffff00',
-    scale: 0.16,
+    scale: 0.20,
   });
   btnText.position.set(0, 0, 0.01);
   btnGroup.add(btnText);
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
 
-// Version number
-  const versionDate = 'FEB 28 2026';
-  const versionNum = 'v0.024';
+  // Diagnostics button
+  const diagBtnGroup = new THREE.Group();
+  diagBtnGroup.position.set(1.5, -0.6, 0);
+  const diagBtnGeo = new THREE.PlaneGeometry(1.2, 0.3);
+  const diagBtnMat = new THREE.MeshBasicMaterial({
+    color: 0x001133,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+  });
+  const diagBtnMesh = new THREE.Mesh(diagBtnGeo, diagBtnMat);
+  diagBtnMesh.userData.isTitleDiagBtn = true;
+  diagBtnGroup.add(diagBtnMesh);
+  const diagBtnBorderGeo = new THREE.EdgesGeometry(diagBtnGeo);
+  diagBtnGroup.add(new THREE.LineSegments(diagBtnBorderGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
+  const diagBtnText = makeSprite('DIAGNOSTICS', {
+    fontSize: 36,
+    color: '#00ff88',
+    glow: true,
+    glowColor: '#00ff88',
+    scale: 0.20,
+  });
+  diagBtnText.position.set(0, 0, 0.01);
+  diagBtnGroup.add(diagBtnText);
+  titleGroup.add(diagBtnGroup);
+  titleDiagBtn = diagBtnMesh;
+
+  // Version number
+  const versionDate = 'FEB 10 2026   12:10PM PT';
+  const versionNum = 'v0.044';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
-    fontSize: 16,
+    fontSize: 32,
     color: '#888888',
-    scale: 0.14,
+    scale: 0.28,
   });
   versionSprite.position.set(0, -1.0, 0);
   titleGroup.add(versionSprite);
 
+  // Debug mode indicator
+  const isDebugMode = typeof window !== 'undefined' && window.debugPerfMonitor;
+  const debugText = isDebugMode ? 'DEBUG MODE: ON' : 'DEBUG MODE: OFF';
+  const debugSprite = makeSprite(debugText, {
+    fontSize: 24,
+    color: isDebugMode ? '#00ff00' : '#666666',
+    scale: 0.18,
+  });
+  debugSprite.position.set(2.5, -0.85, 0);
+  titleGroup.add(debugSprite);
 }
 
 export function showTitle() {
@@ -477,16 +529,18 @@ export function hideHUD() {
 }
 
 function updateSpriteText(sprite, text, opts = {}) {
-  // Dispose old texture
+  // Use cached texture
+  const { texture, aspect } = getCachedTextTexture(
+    text,
+    opts.fontSize || 40,
+    opts.color || '#ffffff',
+    opts.shadow,
+    opts.glow,
+    opts.glowColor,
+    opts.maxWidth
+  );
+  
   if (sprite.material.map) sprite.material.map.dispose();
-
-  const { texture, aspect } = makeTextTexture(text, {
-    fontSize: opts.fontSize || 40,
-    color: opts.color || '#ffffff',
-    shadow: true,
-    glow: opts.glow,
-    glowColor: opts.glowColor,
-  });
   sprite.material.map = texture;
   sprite.material.needsUpdate = true;
 
@@ -499,18 +553,24 @@ function updateSpriteText(sprite, text, opts = {}) {
 export function updateHUD(gameState) {
   if (!hudGroup.visible) return;
 
-  // Hearts - proper aspect ratio with correct scale
-  const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth);
+  // Hearts - use cached texture
+  const cfg = gameState._levelConfig;
+  const killTarget = cfg ? cfg.killTarget : 0;
+  
+  // Use scale based on level to prevent overwhelming UI at high levels
+  const level = gameState.level;
+  const scaleMultiplier = Math.min(3.0, 1.0 + level * 0.08);  // Cap at 3x
+  
+  const { texture: ht, aspect: ha } = getCachedHeartsTexture(gameState.health, gameState.maxHealth, scaleMultiplier);
   if (heartsSprite.material.map) heartsSprite.material.map.dispose();
   heartsSprite.material.map = ht;
   heartsSprite.material.needsUpdate = true;
+  
   // Update geometry to match aspect ratio (200% larger: height 0.48)
   heartsSprite.geometry.dispose();
   heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
 
   // Kill counter - 200% larger
-  const cfg = gameState._levelConfig;
-  const killTarget = cfg ? cfg.killTarget : 0;
   updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.30 });
 
   // Level - 200% larger
@@ -545,10 +605,8 @@ export function showLevelComplete(level, playerPos) {
   s2.position.set(0, 0.2, 0);
   levelTextGroup.add(s2);
 
-  // Position in front of player (VR-friendly)
-  levelTextGroup.position.copy(playerPos);
-  levelTextGroup.position.y += 1.6; // Eye level
-  levelTextGroup.position.z -= 3; // 3 feet in front of player
+  // Fixed world position in front of spawn
+  levelTextGroup.position.set(0, 1.6, -5);
   levelTextGroup.visible = true;
 }
 
@@ -565,10 +623,8 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
 
-  // Position in front of player (VR-friendly)
-  upgradeGroup.position.copy(playerPos);
-  upgradeGroup.position.y += 1.6; // Eye level
-  upgradeGroup.position.z -= 4; // 4 feet in front of player
+  // Fixed world position in front of spawn
+  upgradeGroup.position.set(0, 1.6, -4);
 
   // "Choose an upgrade for [HAND]" header - reduced size significantly
   const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
@@ -608,7 +664,7 @@ function createUpgradeCard(upgrade, position) {
   group.userData.upgradeId = upgrade.id;
 
   // Card background plane
-  const cardGeo = new THREE.PlaneGeometry(1.2, 1.5);
+  const cardGeo = new THREE.PlaneGeometry(0.9, 1.1);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -626,39 +682,39 @@ function createUpgradeCard(upgrade, position) {
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
-  // Name text - increased proportionally to card size
+  // Name text - smaller to prevent overlap
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
-    fontSize: 36,
+    fontSize: 28,
     color: upgrade.color || '#00ffff',
     glow: true,
     glowColor: upgrade.color,
     scale: 0.19,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.40, 0.01);
+  nameSprite.position.set(0, 0.35, 0.01);
   group.add(nameSprite);
 
-  // Description text - increased proportionally with proper maxWidth
+  // Description text - standard size with padding (well inside box)
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 26,
+    fontSize: 20,
     color: '#cccccc',
     scale: 0.15,
     depthTest: true,
-    maxWidth: 280,
+    maxWidth: 180,
   });
-  descSprite.position.set(0, -0.02, 0.01);
+  descSprite.position.set(0, -0.05, 0.01);
   group.add(descSprite);
 
   // Side-grade note (different color) when present
   if (upgrade.sideGradeNote) {
     const noteSprite = makeSprite(upgrade.sideGradeNote, {
-      fontSize: 22,
+      fontSize: 16,
       color: '#ffdd00',
-      scale: 0.14,
+      scale: 0.12,
       depthTest: true,
-      maxWidth: 280,
+      maxWidth: 200,
     });
-    noteSprite.position.set(0, -0.28, 0.01);
+    noteSprite.position.set(0, -0.22, 0.01);
     group.add(noteSprite);
   }
 
@@ -680,7 +736,7 @@ function createSkipCard(position) {
   group.userData.upgradeId = 'SKIP';  // Special ID for skip
 
   // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades)
-  const cardGeo = new THREE.PlaneGeometry(1.0, 1.3);
+  const cardGeo = new THREE.PlaneGeometry(0.7, 0.9);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x220044,
     transparent: true,
@@ -697,27 +753,27 @@ function createSkipCard(position) {
   const borderMat = new THREE.LineBasicMaterial({ color: '#00ff88' });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
-  // "SKIP" text - increased proportionally
+  // "SKIP" text
   const nameSprite = makeSprite('SKIP', {
-    fontSize: 40,
+    fontSize: 28,
     color: '#00ff88',
     glow: true,
     glowColor: '#00ff88',
     scale: 0.2,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.30, 0.01);
+  nameSprite.position.set(0, 0.25, 0.01);
   group.add(nameSprite);
 
   // Description
   const descSprite = makeSprite('Full health', {
-    fontSize: 26,
+    fontSize: 18,
     color: '#88ffaa',
-    scale: 0.14,
+    scale: 0.12,
     depthTest: true,
-    maxWidth: 220,
+    maxWidth: 120,
   });
-  descSprite.position.set(0, 0.02, 0.01);
+  descSprite.position.set(0, -0.02, 0.01);
   group.add(descSprite);
 
   // Heart icon
@@ -755,9 +811,14 @@ export function updateUpgradeCards(now, cooldownRemaining) {
       cd.visible = true;
       // Update the cooldown sprite text
       if (cd.material && cd.material.map) cd.material.map.dispose();
-      const { texture, aspect } = makeTextTexture(
+      const { texture, aspect } = getCachedTextTexture(
         `WAIT ${Math.ceil(cooldownRemaining)}...`,
-        { fontSize: 40, color: '#ffff00' }
+        40,
+        '#ffff00',
+        false,
+        false,
+        null,
+        null
       );
       cd.material.map = texture;
       cd.material.needsUpdate = true;
@@ -810,10 +871,8 @@ export function showGameOver(score, playerPos) {
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
-  // Position in front of player (VR-friendly)
-  gameOverGroup.position.copy(playerPos);
-  gameOverGroup.position.y += 1.6; // Eye level
-  gameOverGroup.position.z -= 5; // 5 feet in front of player
+  // Fixed world position in front of spawn
+  gameOverGroup.position.set(0, 1.6, -5);
   gameOverGroup.visible = true;
 }
 
@@ -834,10 +893,8 @@ export function showVictory(score, playerPos) {
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
-  // Position in front of player (VR-friendly)
-  gameOverGroup.position.copy(playerPos);
-  gameOverGroup.position.y += 1.6; // Eye level
-  gameOverGroup.position.z -= 5; // 5 feet in front of player
+  // Fixed world position in front of spawn
+  gameOverGroup.position.set(0, 1.6, -5);
   gameOverGroup.visible = true;
 }
 
@@ -1127,12 +1184,7 @@ export function updateFPS(now, opts = {}) {
     const ftColor = avgFrameMs > 33 ? '#ff0000' : avgFrameMs > 20 ? '#ffff00' : '#00ff00';
     const color = perfMonitor ? ftColor : fpsColor;
 
-    const { texture, aspect } = makeTextTexture(text, {
-      fontSize: perfMonitor ? 24 : 32,
-      color,
-      shadow: true,
-      maxWidth: perfMonitor ? 300 : null,
-    });
+    const { texture, aspect } = getCachedTextTexture(text, perfMonitor ? 24 : 32, color, true, false, null, perfMonitor ? 300 : null);
     if (fpsSprite.material.map) fpsSprite.material.map.dispose();
     fpsSprite.material.map = texture;
     fpsSprite.material.needsUpdate = true;
@@ -1323,160 +1375,6 @@ export function hideReadyScreen() {
   readyGroup.visible = false;
 }
 
-// ── Level Intro Screen ───────────────────────────────────────
-
-export function showLevelIntro(level) {
-  hideAll();
-  levelIntroActive = true;
-  levelIntroStartTime = performance.now();
-  levelIntroStage = 'level';
-
-  // Position in front of spawn
-  levelTextGroup.position.set(0, 1.6, -4);
-  levelTextGroup.visible = true;
-
-  // "LEVEL" text
-  const levelHeader = makeSprite('LEVEL', {
-    fontSize: 80, color: '#ff00ff', glow: true, glowColor: '#ff00ff', scale: 0.7,
-  });
-  levelHeader.position.set(0, 0.5, 0);
-  levelTextGroup.add(levelHeader);
-  levelIntroLevelText = levelHeader;
-
-  // Level number
-  const levelNum = makeSprite(`${level}`, {
-    fontSize: 120, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 1.0,
-  });
-  levelNum.position.set(0, -0.2, 0);
-  levelTextGroup.add(levelNum);
-}
-
-export function updateLevelIntro(now) {
-  if (!levelIntroActive) return;
-
-  const elapsed = now - levelIntroStartTime;
-  const LEVEL_FADE_DURATION = 500; // 0.5 seconds
-  const START_DISPLAY_DURATION = 1000; // 1 second
-
-  if (levelIntroStage === 'level') {
-    // Show "LEVEL X" for 0.5 seconds
-    if (elapsed >= LEVEL_FADE_DURATION) {
-      levelIntroStage = 'level_fading';
-      levelIntroStartTime = now;
-    }
-  } else if (levelIntroStage === 'level_fading') {
-    // Fade out "LEVEL X" over 0.5 seconds
-    const progress = Math.min(elapsed / LEVEL_FADE_DURATION, 1);
-
-    if (levelIntroLevelText) {
-      levelTextGroup.traverse(child => {
-        if (child.material) {
-          child.material.opacity = 1 - progress;
-        }
-      });
-    }
-
-    if (progress >= 1) {
-      // Clear and show "START!"
-      while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
-
-      const startText = makeSprite('START!', {
-        fontSize: 100, color: '#00ff00', glow: true, glowColor: '#00ff00', scale: 0.9,
-      });
-      startText.position.set(0, 0, 0);
-      levelTextGroup.add(startText);
-      levelIntroStartText = startText;
-
-      levelIntroStage = 'start';
-      levelIntroStartTime = now;
-    }
-  } else if (levelIntroStage === 'start') {
-    // Show "START!" for 1 second
-    if (elapsed >= START_DISPLAY_DURATION) {
-      levelIntroStage = 'start_fading';
-      levelIntroStartTime = now;
-    }
-  } else if (levelIntroStage === 'start_fading') {
-    // Fade out "START!" over 0.5 seconds
-    const progress = Math.min(elapsed / LEVEL_FADE_DURATION, 1);
-
-    if (levelIntroStartText) {
-      levelIntroStartText.material.opacity = 1 - progress;
-    }
-
-    if (progress >= 1) {
-      levelIntroStage = 'done';
-      levelIntroActive = false;
-      levelTextGroup.visible = false;
-      return true; // Signal that intro is complete
-    }
-  }
-
-  return false; // Still in progress
-}
-
-export function hideLevelIntro() {
-  levelIntroActive = false;
-  levelTextGroup.visible = false;
-}
-
-// ── Kills Remaining Alert ─────────────────────────────────
-
-export function showKillsRemainingAlert(remaining) {
-  if (killsAlertActive) return; // Already showing an alert
-
-  killsAlertActive = true;
-  killsAlertStartTime = performance.now();
-  killsAlertDisplayTime = 2000; // Display for 2 seconds
-
-  // Position further from player (better depth)
-  // Place at midfield distance but offset forward
-  levelTextGroup.position.set(0, 1.6, -3); // -3 instead of -4 for better depth
-  levelTextGroup.visible = true;
-
-  // Clear any existing content
-  while (levelTextGroup.children.length) {
-    levelTextGroup.remove(levelTextGroup.children[0]);
-  }
-
-  const alertText = makeSprite(`${remaining} KILLS REMAINING`, {
-    fontSize: 60,
-    color: '#ff8800',
-    glow: true,
-    glowColor: '#ff8800',
-    scale: 0.5,
-  });
-  alertText.position.set(0, 0, 0);
-  levelTextGroup.add(alertText);
-  killsAlertMesh = alertText;
-}
-
-export function updateKillsAlert(now) {
-  if (!killsAlertActive) return false;
-
-  const elapsed = now - killsAlertStartTime;
-
-  // Hide after display time
-  if (elapsed >= killsAlertDisplayTime) {
-    hideKillsAlert();
-    return false; // Alert is no longer visible
-  }
-
-  return true; // Still visible
-}
-
-export function hideKillsAlert() {
-  killsAlertActive = false;
-  levelTextGroup.visible = false;
-  if (killsAlertMesh) {
-    killsAlertMesh = null;
-  }
-}
-
-export function isKillsAlertActive() {
-  return killsAlertActive;
-}
-
 export function getReadyScreenHit(raycaster) {
   if (!readyGroup.visible) return null;
   const actionMeshes = [];
@@ -1490,7 +1388,7 @@ export function getReadyScreenHit(raycaster) {
 
 // ── Name Entry Screen ───────────────────────────────────────
 
-export function showNameEntry(score, level, storedName, playerPos) {
+export function showNameEntry(score, level, storedName) {
   hideAll();
   while (nameEntryGroup.children.length) nameEntryGroup.remove(nameEntryGroup.children[0]);
   nameEntrySlots = [];
@@ -1499,14 +1397,7 @@ export function showNameEntry(score, level, storedName, playerPos) {
   nameEntryName = storedName || '';
   nameEntryCursor = nameEntryName.length;
 
-  // Position in front of player (VR-friendly)
-  if (playerPos) {
-    nameEntryGroup.position.copy(playerPos);
-    nameEntryGroup.position.y += 1.6; // Eye level
-    nameEntryGroup.position.z -= 4; // 4 feet in front of player
-  } else {
-    nameEntryGroup.position.set(0, 1.6, -4); // Fallback
-  }
+  nameEntryGroup.position.set(0, 1.6, -4);
   nameEntryGroup.visible = true;
 
   // Header
@@ -1715,21 +1606,14 @@ export function updateKeyboardHover(raycaster) {
 
 // ── Scoreboard Screen ───────────────────────────────────────
 
-export function showScoreboard(scores, headerText, playerPos) {
+export function showScoreboard(scores, headerText) {
   hideAll();
   while (scoreboardGroup.children.length) scoreboardGroup.remove(scoreboardGroup.children[0]);
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
   scoreboardHeader = headerText || 'GLOBAL LEADERBOARD';
-  // Position in front of player (VR-friendly)
-  if (playerPos) {
-    scoreboardGroup.position.copy(playerPos);
-    scoreboardGroup.position.y += 1.6; // Eye level
-    scoreboardGroup.position.z -= 5; // 5 feet in front of player
-  } else {
-    scoreboardGroup.position.set(0, 1.6, -5); // Fallback
-  }
+  scoreboardGroup.position.set(0, 1.6, -5);
   scoreboardGroup.visible = true;
 
   // Header
@@ -1948,22 +1832,16 @@ export function updateScoreboardScroll(delta) {
 
 // ── Country Select Screen ───────────────────────────────────
 
-export function showCountrySelect(countries, continents, initialContinent, playerPos) {
+export function showCountrySelect(countries, continents, initialContinent) {
   hideAll();
+
   while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
   continentTabs = [];
   countryItems = [];
   countrySelectContinent = initialContinent || 'North America';
   countrySelectScrollOffset = 0;
 
-  // Position in front of player (VR-friendly)
-  if (playerPos) {
-    countrySelectGroup.position.copy(playerPos);
-    countrySelectGroup.position.y += 1.6; // Eye level
-    countrySelectGroup.position.z -= 4; // 4 feet in front of player
-  } else {
-    countrySelectGroup.position.set(0, 1.6, -4); // Fallback
-  }
+  countrySelectGroup.position.set(0, 1.6, -4);
   countrySelectGroup.visible = true;
 
   // Header
