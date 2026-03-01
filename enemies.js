@@ -6,6 +6,14 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
+// [Visual Overhaul] Import VFX system for voxel explosions
+let spawnVoxelExplosion = null;
+
+// Function to set VFX reference (called from main.js after initialization)
+export function setVFXReference(vfxFunc) {
+  spawnVoxelExplosion = vfxFunc;
+}
+
 // ── Voxel patterns (simplified for performance) ───────────
 const PATTERNS = {
   basic: [
@@ -406,6 +414,12 @@ export function destroyEnemy(index) {
 
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
+
+  // [Visual Overhaul] Spawn voxel explosions with physics
+  if (spawnVoxelExplosion) {
+    const voxelCount = e.type === 'tank' ? 10 : e.type === 'basic' ? 6 : 4;
+    spawnVoxelExplosion(pos, color.getHex(), voxelCount);
+  }
 
   // Pooled explosion particles (no allocation per death)
   const particleCount = 5;

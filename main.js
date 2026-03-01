@@ -21,6 +21,22 @@ import {
   // [Instruction 1] Alt weapon star drop callback
   setOnEnemyDestroyedCallback
 } from './enemies.js';
+
+// [Visual Overhaul] Import new environment, VFX, weapon models, and scenery systems
+import {
+  createScrollingGrid, updateScrollingGrid, createMountainRing, createSun, updateSunGlow,
+  regenerateSunTexture, createStars, createAtmosphere, createFloor, getEnvironmentRefs
+} from './environment.js';
+import {
+  initVFX, spawnVoxelExplosion, spawnShockwave, updateVFX
+} from './vfx.js';
+import {
+  createWeaponModel, updateControllerWeapon
+} from './weapon-models.js';
+import {
+  THEMES, getThemeForLevel, applyTheme, initAmbientParticles, updateAmbientParticles
+} from './scenery.js';
+
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards, showReadyScreen, hideReadyScreen, getReadyScreenHit,
@@ -81,6 +97,11 @@ let scene, camera, renderer;
 const controllers = [];
 const controllerTriggerPressed = [false, false];
 const projectiles = [];
+
+// [Visual Overhaul] Theme and environment references
+let currentTheme = null;
+let envRefs = null;
+
 let lastTime = 0;
 
 // [Instruction 1] Alt weapon projectile tracking arrays
@@ -250,6 +271,11 @@ function init() {
 
   // Init subsystems
   initEnemies(scene);
+
+  // [Visual Overhaul] Set VFX reference for voxel explosions
+  const { spawnVoxelExplosion: spawnVoxelExplosionRef } = require('./vfx.js');
+  setVFXReference(spawnVoxelExplosionRef);
+
   initHUD(camera, scene);
   
   // [Instruction 1] Initialize alt weapon HUD indicators
@@ -1132,11 +1158,37 @@ function startGame() {
   game._levelConfig = getLevelConfig();
   showHUD();
 
+  // [Visual Overhaul] Apply synthwave theme for level 1
+  currentTheme = getThemeForLevel(1);
+  if (envRefs) {
+    applyTheme(currentTheme, { scene, ...envRefs });
+  }
+
+  // [Visual Overhaul] Initialize weapon models on controllers
+  controllers.forEach((ctrl, i) => {
+    if (ctrl) {
+      const hand = i === 0 ? 'left' : 'right';
+      const primaryWeapon = getPrimaryWeaponForHand(hand);
+      updateControllerWeapon(ctrl, primaryWeapon);
+    }
+  });
+
   // Hide blaster displays during gameplay
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
 
   // Start level music
   playMusic('levels1to4');
+}
+
+// [Visual Overhaul] Helper to get primary weapon for a hand
+function getPrimaryWeaponForHand(hand) {
+  const upgrades = game.upgrades[hand];
+  // Priority: buckshot > lightning > charge_shot > rapid_fire > blaster
+  if (upgrades.buckshot > 0) return 'buckshot';
+  if (upgrades.lightning > 0) return 'lightning';
+  if (upgrades.charge_shot > 0) return 'charge_shot';
+  if (upgrades.rapid_fire > 0) return 'rapid_fire';
+  return 'blaster';
 }
 
 function completeLevel() {
@@ -1272,9 +1324,17 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   }
 
   addUpgrade(upgrade.id, hand);
+
+  // [Visual Overhaul] Update weapon model if this is a weapon upgrade
+  const controllerIndex = hand === 'left' ? 0 : 1;
+  if (controllers[controllerIndex]) {
+    const primaryWeapon = getPrimaryWeaponForHand(hand);
+    updateControllerWeapon(controllers[controllerIndex], primaryWeapon);
+  }
+
   playUpgradeSound();
   hideUpgradeCards();
-  
+
   // [Instruction 1] Alternate hands for next upgrade
   game.nextUpgradeHand = hand === 'left' ? 'right' : 'left';
   
@@ -1287,6 +1347,12 @@ function advanceLevelAfterUpgrade() {
 
   // [Power Outage Update] #9: Reset kills remaining flag for new level
   game._shownKillsRemaining = false;
+
+  // [Visual Overhaul] Apply theme for new level
+  currentTheme = getThemeForLevel(game.level);
+  if (envRefs) {
+    applyTheme(currentTheme, { scene, ...envRefs });
+  }
 
   if (game.level > 20) {
     endGame(true); // victory
@@ -2389,6 +2455,31 @@ function render(timestamp) {
       } else {
         // Trigger released - clean up charge state
         if (chargeShotStartTime[i] !== null) {
+          const controller = controllers[i];
+          const hand = i === 0 ? 'left' : 'right';
+          const stats = getWeaponStats(game.upgrades[hand]);
+
+          // Fire charged shot if it's a charge weapon
+          if (stats.chargeShot) {
+            const chargeTimeSec = (now - chargeShotStartTime[i]) / 1000;
+            const progress = chargeTimeToProgress(chargeTimeSec);
+
+            controller.getWorldPosition(_tempVec);
+            controller.getWorldQuaternion(_tempQuat);
+            _tempDir.set(0, 0, -1).applyQuaternion(_tempQuat);
+
+            // Spawn shockwave visual
+            spawnShockwave(_tempVec.clone(), _tempDir.clone(), progress);
+
+            // Fire projectile(s) with increased damage based on charge
+            const count = stats.projectileCount;
+            for (let j = 0; j < count; j++) {
+              spawnProjectile(_tempVec.clone(), _tempDir.clone(), i, stats);
+            }
+
+            playChargeFireSound(i);
+          }
+
           stopChargeSound(i);
           hideChargeVisuals(i);
           controllers[i].userData.chargeReadySoundPlayed = false;
@@ -2848,6 +2939,14 @@ function render(timestamp) {
   // ── Universal updates ──
   updateProjectiles(dt);
   updateExplosions(dt, now);
+
+  // [Visual Overhaul] Update VFX, ambient particles, sun glow, and scrolling grid
+  updateVFX(dt);
+  if (currentTheme && envRefs) {
+    updateAmbientParticles(dt, currentTheme, camera.position);
+  }
+  updateSunGlow(now);
+  updateScrollingGrid(dt, st === State.PLAYING);
   updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
   updateComboPopups(dt, now);
