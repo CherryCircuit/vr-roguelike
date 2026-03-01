@@ -1285,7 +1285,7 @@ function advanceLevelAfterUpgrade() {
       // Start boss music immediately at alert screen
       const bossCategory = `boss${game.level}`;
       playMusic(bossCategory);
-      playBossAlertSound();();
+      playBossAlertSound();
       console.log(`[game] Boss alert for level ${game.level} - boss music started`);
     } else {
       game.state = State.PLAYING;
