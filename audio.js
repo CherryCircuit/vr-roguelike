@@ -765,16 +765,29 @@ export function playMenuClick() {
 export function playMenuHoverSound() {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(440, t);
-  gain.gain.setValueAtTime(0.05, t);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.03);
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(t);
-  osc.stop(t + 0.03);
+
+  // Pleasant two-tone chime (soft bell-like sound)
+  // First tone: higher, quick fade
+  const osc1 = ctx.createOscillator();
+  const gain1 = ctx.createGain();
+  osc1.type = 'sine';
+  osc1.frequency.setValueAtTime(523.25, t);  // C5
+  gain1.gain.setValueAtTime(0.03, t);
+  gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+  osc1.connect(gain1);
+  gain1.connect(ctx.destination);
+  osc1.start(t);
+  osc1.stop(t + 0.08);
+
+  // Second tone: slightly lower, slightly longer
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(659.25, t + 0.02);  // E5 (starts 20ms later)
+  gain2.gain.setValueAtTime(0.025, t + 0.02);
+  gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+  osc2.connect(gain2);
+}
 }
 
 // ── Error / Rejection sound ────────────────────────────────
