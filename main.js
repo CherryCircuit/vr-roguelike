@@ -1682,6 +1682,15 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
         game.kills++;
         game.totalKills++;
         addScore(boss.scoreValue);
+
+        // Check for kills remaining alert
+        if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+          const cfg = game._levelConfig;
+          const remaining = cfg ? cfg.killTarget - game.kills : 0;
+          showKillsRemainingAlert(remaining);
+          playKillsAlertSound();
+          killsAlertShownThisLevel = true;
+        }
         completeLevel();
       }
     }
@@ -1837,6 +1846,16 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
         console.log('[vampiric] Healed 1 HP');
       }
 
+      // Check for kills remaining alert
+      if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+        const cfg = game._levelConfig;
+        const remaining = cfg ? cfg.killTarget - game.kills : 0;
+        showKillsRemainingAlert(remaining);
+        playKillsAlertSound();
+        killsAlertShownThisLevel = true;
+      }
+
+
       // Check level complete
       const cfg = game._levelConfig;
       if (cfg && game.kills >= cfg.killTarget) {
@@ -1883,6 +1902,14 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
     game.totalKills++;
     game.killsWithoutHit++;
     addScore(boss.scoreValue);
+        // Check for kills remaining alert
+        if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+          const cfg = game._levelConfig;
+          const remaining = cfg ? cfg.killTarget - game.kills : 0;
+          showKillsRemainingAlert(remaining);
+          playKillsAlertSound();
+          killsAlertShownThisLevel = true;
+        }
     completeLevel();
   }
 }
@@ -2520,6 +2547,15 @@ function render(timestamp) {
             addScore(destroyData.scoreValue);
 
             const cfg = game._levelConfig;
+
+            // Check for kills remaining alert
+            if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+              const cfg = game._levelConfig;
+              const remaining = cfg ? cfg.killTarget - game.kills : 0;
+              showKillsRemainingAlert(remaining);
+              playKillsAlertSound();
+              killsAlertShownThisLevel = true;
+            }
             if (cfg && game.kills >= cfg.killTarget) {
               updateHUD(game);
               completeLevel();
