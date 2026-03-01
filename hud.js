@@ -1416,16 +1416,21 @@ export function hideLevelIntro() {
 
 // ── Kills Remaining Alert ─────────────────────────────────
 
-export function showKillsRemainingAlert(remaining) {
+export function showKillsRemainingAlert(remaining, playerPos) {
   if (killsAlertActive) return; // Already showing an alert
 
   killsAlertActive = true;
   killsAlertStartTime = performance.now();
   killsAlertDisplayTime = 2000; // Display for 2 seconds
 
-  // Position further from player (better depth)
-  // Place at midfield distance but offset forward
-  levelTextGroup.position.set(0, 1.6, -3); // -3 instead of -4 for better depth
+  // Position in front of player (VR-friendly)
+  if (playerPos) {
+    levelTextGroup.position.copy(playerPos);
+    levelTextGroup.position.y += 1.6; // Eye level
+    levelTextGroup.position.z -= 3; // 3 feet in front of player
+  } else {
+    levelTextGroup.position.set(0, 1.6, -3); // Fallback
+  }
   levelTextGroup.visible = true;
 
   // Clear any existing content
