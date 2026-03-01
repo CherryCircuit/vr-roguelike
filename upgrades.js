@@ -130,7 +130,8 @@ export const UPGRADE_POOL = [
   { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: Faster ramp-up, higher max', color: '#88ff88', requiresWeapon: 'plasma' },
   
   // Seeker Burst specific
-  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff', requiresWeapon: 'seeker' },
+];
+  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff', requiresWeapon: 'seeker' }
 /** RARE upgrades offered after Level 5 boss */
 export const RARE_UPGRADE_POOL = [
   { id: 'add_heart', name: 'ADD 1 HEART', desc: 'Max health +1', color: '#ff4488', tier: 'rare', level: 5 },
