@@ -32,7 +32,7 @@ import {
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   // [Power Outage Update] #3, #8: New HUD functions
   // Button hover system
-  // [Instruction 1] Alt weapon HUD functions} from './hud.js';
+  } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
   isNameClean, COUNTRIES, CONTINENTS,
