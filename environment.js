@@ -101,61 +101,96 @@ export function regenerateGridTexture(colorStr) {
 // ── Wireframe Valley Mountains (Synthwave Style) ───────────────
 export function createMountainRing(scene) {
   // Create TWO mountain walls - left and right sides
-  // These frame a tunnel/path leading toward the sun
+  // These frame a tunnel/path leading toward the sun AND behind the player
   
   const mountainMeshes = [];
   const wireframeMeshes = [];
   
-  // Create mountains on LEFT side
-  createMountainWall(scene, -50, -1, mountainMeshes, wireframeMeshes);
+  // Create mountains on LEFT side (from far behind to far in front)
+  createMountainWall(scene, -45, -1, mountainMeshes, wireframeMeshes);
   
   // Create mountains on RIGHT side  
-  createMountainWall(scene, 50, 1, mountainMeshes, wireframeMeshes);
+  createMountainWall(scene, 45, 1, mountainMeshes, wireframeMeshes);
   
   mountainRefs = { fillMesh: mountainMeshes, wireframe: wireframeMeshes };
   return mountainRefs;
 }
 
 function createMountainWall(scene, xOffset, direction, mountainMeshes, wireframeMeshes) {
-  // Create multiple mountain peaks in a row
-  const NUM_PEAKS = 8;
-  const PEAK_SPACING = 25;
+  // Create continuous mountain range from far behind to far in front
+  const NUM_MOUNTAINS = 20;  // More mountains for longer range
+  const SPACING = 20;
   
-  for (let i = 0; i < NUM_PEAKS; i++) {
-    const zPos = -30 - (i * PEAK_SPACING);
-    const height = 15 + Math.random() * 20;
-    const width = 20 + Math.random() * 15;
+  for (let i = 0; i < NUM_MOUNTAINS; i++) {
+    const zPos = 180 - (i * SPACING);  // From +180 (behind) to -200 (far front)
     
-    createMountainPeak(scene, xOffset, zPos, height, width, direction, mountainMeshes, wireframeMeshes);
+    // Varied heights and widths for natural look
+    const heightVariation = Math.sin(i * 0.7) * 10 + Math.sin(i * 1.3) * 5;
+    const height = 12 + Math.random() * 15 + heightVariation;
+    
+    const widthVariation = Math.sin(i * 0.5 + 2) * 8;
+    const width = 18 + Math.random() * 12 + widthVariation;
+    
+    // Some mountains have multiple peaks
+    const hasMultiPeak = Math.random() > 0.6;
+    
+    createMountainMesh(scene, xOffset, zPos, height, width, direction, hasMultiPeak, mountainMeshes, wireframeMeshes);
   }
 }
 
-function createMountainPeak(scene, x, z, height, width, direction, mountainMeshes, wireframeMeshes) {
-  // Create low-poly angular mountain peak
+function createMountainMesh(scene, x, z, height, width, direction, hasMultiPeak, mountainMeshes, wireframeMeshes) {
   const positions = [];
   const indices = [];
   
-  // Base vertices (4 corners)
   const hw = width / 2;
   
-  // Peak vertex (top)
-  positions.push(0, height, 0);  // 0 - peak
-  
-  // Base vertices
-  positions.push(-hw, 0, -hw * 0.8);  // 1 - back left
-  positions.push(hw, 0, -hw * 0.8);   // 2 - back right
-  positions.push(hw, 0, hw * 0.8);    // 3 - front right
-  positions.push(-hw, 0, hw * 0.8);   // 4 - front left
-  
-  // Side peak for more angular look
-  positions.push(hw * 0.3 * direction, height * 0.6, 0);  // 5 - side peak
-  
-  // Front faces (2 triangles each)
-  indices.push(0, 4, 3);  // front
-  indices.push(0, 3, 2);  // right front
-  indices.push(0, 2, 5);  // right side
-  indices.push(0, 5, 1);  // back right
-  indices.push(0, 1, 4);  // left
+  if (hasMultiPeak) {
+    // Double or triple peak mountain
+    const peakCount = Math.random() > 0.5 ? 3 : 2;
+    const peakSpacing = width / (peakCount + 1);
+    
+    // Base vertices
+    const baseIdx = 0;
+    positions.push(-hw, 0, -hw * 0.6);  // 0 - back left
+    positions.push(hw, 0, -hw * 0.6);   // 1 - back right
+    positions.push(hw, 0, hw * 0.6);    // 2 - front right
+    positions.push(-hw, 0, hw * 0.6);   // 3 - front left
+    
+    // Add peaks
+    for (let p = 0; p < peakCount; p++) {
+      const peakX = -hw + (p + 1) * peakSpacing;
+      const peakHeight = height * (0.6 + Math.random() * 0.4);
+      positions.push(peakX, peakHeight, 0);  // Peak vertex
+    }
+    
+    // Create faces connecting peaks
+    // Front face (first peak to front edge)
+    indices.push(0, 4, 3);
+    
+    // Between peaks
+    for (let p = 0; p < peakCount - 1; p++) {
+      indices.push(4 + p, 4 + p + 1, 0);  // Top ridge
+      if (p === 0) indices.push(4 + p, 0, 1);  // Side
+    }
+    
+    // Back face
+    indices.push(peakCount + 3, 1, 2);
+    indices.push(peakCount + 3, 2, 3);
+    
+  } else {
+    // Single peak mountain
+    positions.push(0, height, 0);  // 0 - peak
+    positions.push(-hw, 0, -hw * 0.7);  // 1 - back left
+    positions.push(hw, 0, -hw * 0.7);   // 2 - back right
+    positions.push(hw, 0, hw * 0.7);    // 3 - front right
+    positions.push(-hw, 0, hw * 0.7);   // 4 - front left
+    
+    // Angular faces
+    indices.push(0, 4, 3);  // front
+    indices.push(0, 3, 2);  // right front
+    indices.push(0, 2, 1);  // back
+    indices.push(0, 1, 4);  // left
+  }
   
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -173,14 +208,15 @@ function createMountainPeak(scene, x, z, height, width, direction, mountainMeshe
   scene.add(fillMesh);
   mountainMeshes.push(fillMesh);
   
-  // Neon magenta wireframe
+  // Thick neon magenta wireframe (using LineSegments with wider lines)
   const edges = new THREE.EdgesGeometry(geometry, 1);
   const wireMat = new THREE.LineBasicMaterial({
     color: 0xff00ff,
     transparent: true,
-    opacity: 0.9,
+    opacity: 1.0,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
+    linewidth: 3,  // Thicker lines (note: may not work on all platforms)
   });
   const wireframe = new THREE.LineSegments(edges, wireMat);
   wireframe.position.set(x, 0, z);
