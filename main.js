@@ -1132,8 +1132,6 @@ function onTriggerRelease(index) {
   }
 
   // Satisfying charge beam release - big, dramatic sound
-  explosionVisuals.push(beamInner);
-  explosionVisuals.push(beamOuter);
 
   playChargeFireSound(damage);
 }
