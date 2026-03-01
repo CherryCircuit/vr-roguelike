@@ -438,6 +438,27 @@ export function playBossSpawn() {
   });
 }
 
+// ── Boss teleport disappear ─────────────────────────────────
+export function playBossTeleportDisappear() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Dematerialization sound - reverse of reappear
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(200, t);
+  osc.frequency.exponentialRampToValueAtTime(800, t + 0.2);
+
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.2);
+}
+
 // ── Boss teleport reappear ─────────────────────────────────
 export function playBossTeleportReappear() {
   const ctx = getAudioContext();
