@@ -41,8 +41,7 @@ import {
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
   showLevelIntro, updateLevelIntro, hideLevelIntro,
-  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive, updateHUDHover,
-  showReadyScreen, hideReadyScreen, getReadyScreenHit
+  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, isKillsAlertActive, updateHUDHover
 } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -154,10 +153,10 @@ init();
 function init() {
   console.log('[SPACEOMICIDE] Initialising...');
 
-  // Scene — use very dark teal background for Adreno GPU "Fast clear" optimization on Quest
+  // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000818);
-  scene.fog = new THREE.FogExp2(0x000818, 0.012);
+  scene.background = new THREE.Color(0x000000);
+  scene.fog = new THREE.FogExp2(0x000000, 0.012);
 
   // Camera
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -406,9 +405,9 @@ function createAurora() {
   const ctx1 = canvas1.getContext('2d');
   const grad1 = ctx1.createLinearGradient(0, 0, 0, h);
   grad1.addColorStop(0, 'rgba(0,40,60,0)');
-  grad1.addColorStop(0.3, 'rgba(0,255,220,0.7)');
-  grad1.addColorStop(0.5, 'rgba(100,255,220,0.8)');
-  grad1.addColorStop(0.7, 'rgba(0,200,255,0.6)');
+  grad1.addColorStop(0.3, 'rgba(0,255,220,0.4)');
+  grad1.addColorStop(0.5, 'rgba(100,255,220,0.6)');
+  grad1.addColorStop(0.7, 'rgba(0,200,255,0.3)');
   grad1.addColorStop(1, 'rgba(0,40,80,0)');
   ctx1.fillStyle = grad1;
   ctx1.fillRect(0, 0, w, h);
@@ -421,7 +420,6 @@ function createAurora() {
     opacity: 0.9,
     side: THREE.BackSide,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
   });
   const mesh1 = new THREE.Mesh(geo1, mat1);
   mesh1.position.set(0, 8, 0);
@@ -435,9 +433,9 @@ function createAurora() {
   const ctx2 = canvas2.getContext('2d');
   const grad2 = ctx2.createLinearGradient(0, 0, 0, h);
   grad2.addColorStop(0, 'rgba(0,60,40,0)');
-  grad2.addColorStop(0.4, 'rgba(50,255,180,0.6)');
-  grad2.addColorStop(0.6, 'rgba(100,255,220,0.75)');
-  grad2.addColorStop(0.8, 'rgba(0,220,200,0.5)');
+  grad2.addColorStop(0.4, 'rgba(50,255,180,0.35)');
+  grad2.addColorStop(0.6, 'rgba(100,255,220,0.5)');
+  grad2.addColorStop(0.8, 'rgba(0,220,200,0.25)');
   grad2.addColorStop(1, 'rgba(0,60,80,0)');
   ctx2.fillStyle = grad2;
   ctx2.fillRect(0, 0, w, h);
@@ -450,7 +448,6 @@ function createAurora() {
     opacity: 0.7,
     side: THREE.BackSide,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
   });
   const mesh2 = new THREE.Mesh(geo2, mat2);
   mesh2.position.set(0, 9, 0);
@@ -829,9 +826,9 @@ function handleDesktopTitleClick() {
     scoreboardFromGameOver = false;
     game.state = State.SCOREBOARD;
     hideTitle();
-    showScoreboard([], 'LOADING...'), camera.position);
+    showScoreboard([], 'LOADING...');
     fetchTopScores().then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
+      showScoreboard(scores, 'GLOBAL LEADERBOARD');
     });
     return;
   }
@@ -847,10 +844,10 @@ function handleDesktopGameOverClick() {
 
   if (!getStoredCountry()) {
     game.state = State.COUNTRY_SELECT;
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America'), camera.position);
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
   } else {
     game.state = State.NAME_ENTRY;
-    showNameEntry(game.finalScore, game.finalLevel, getStoredName(), camera.position);
+    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
   }
 }
 
@@ -867,9 +864,9 @@ function handleDesktopNameEntryClick() {
         hideNameEntry();
         submitScore(name).then(() => {
           game.state = State.SCOREBOARD;
-          showScoreboard([], 'LOADING...'), camera.position);
+          showScoreboard([], 'LOADING...');
           fetchTopScores().then(scores => {
-            showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
+            showScoreboard(scores, 'GLOBAL LEADERBOARD');
           });
         });
       } else {
@@ -896,9 +893,9 @@ function handleDesktopScoreboardClick() {
       showTitle();
     } else {
       game.state = State.SCOREBOARD;
-      showScoreboard([], 'LOADING...'), camera.position);
+      showScoreboard([], 'LOADING...');
       fetchTopScores().then(scores => {
-        showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
+        showScoreboard(scores, 'GLOBAL LEADERBOARD');
       });
     }
   } else if (hit === 'region') {
@@ -909,9 +906,9 @@ function handleDesktopScoreboardClick() {
         playMenuClick();
         hideScoreboard();
         game.state = State.REGIONAL_SCORES;
-        showScoreboard([], 'LOADING...'), camera.position);
+        showScoreboard([], 'LOADING...');
         fetchScoresByContinent(continent.id).then(scores => {
-          showScoreboard(scores, `${continent.name.toUpperCase()} LEADERBOARD`), camera.position);
+          showScoreboard(scores, `${continent.name.toUpperCase()} LEADERBOARD`);
         });
       }
     }
@@ -928,14 +925,14 @@ function handleDesktopCountrySelectClick() {
     playMenuClick();
     hideCountrySelect();
     game.state = State.NAME_ENTRY;
-    showNameEntry(game.finalScore, game.finalLevel, getStoredName(), camera.position);
+    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
   } else if (hit === 'back') {
     playMenuClick();
     hideCountrySelect();
     game.state = State.SCOREBOARD;
-    showScoreboard([], 'LOADING...'), camera.position);
+    showScoreboard([], 'LOADING...');
     fetchTopScores().then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
+      showScoreboard(scores, 'GLOBAL LEADERBOARD');
     });
   }
 }
@@ -970,9 +967,9 @@ function handleTitleTrigger(controller) {
     scoreboardFromGameOver = false;
     game.state = State.SCOREBOARD;
     hideTitle();
-    showScoreboard([], 'LOADING...'), camera.position);
+    showScoreboard([], 'LOADING...');
     fetchTopScores().then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
+      showScoreboard(scores, 'GLOBAL LEADERBOARD');
     });
     return;
   }
@@ -990,10 +987,10 @@ function handleGameOverTrigger(controller) {
   // If no stored country, go to country select first
   if (!getStoredCountry()) {
     game.state = State.COUNTRY_SELECT;
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America'), camera.position);
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
   } else {
     game.state = State.NAME_ENTRY;
-    showNameEntry(game.finalScore, game.finalLevel, getStoredName(), camera.position);
+    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
   }
 }
 
@@ -1017,7 +1014,7 @@ function handleNameEntryTrigger(controller) {
 
     // Submit score and show scoreboard
     game.state = State.SCOREBOARD;
-    showScoreboard([], 'SUBMITTING...'), camera.position);
+    showScoreboard([], 'SUBMITTING...');
     const country = getStoredCountry() || '';
     submitScore(name, game.finalScore, game.finalLevel, country).then(() => {
       // Small artificial delay to ensure DB indexing is finished for consistent read-after-write
@@ -1025,10 +1022,10 @@ function handleNameEntryTrigger(controller) {
     }).then(() => {
       return fetchTopScores();
     }).then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
+      showScoreboard(scores, 'GLOBAL LEADERBOARD');
     }).catch(err => {
       console.error('[scoreboard] Detailed error in submission flow:', err);
-      showScoreboard([], 'ERROR SUBMITTING SCORE'), camera.position);
+      showScoreboard([], 'ERROR SUBMITTING SCORE');
     });
   }
 }
@@ -1053,7 +1050,7 @@ function handleScoreboardTrigger(controller) {
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
     hideScoreboard();
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America'), camera.position);
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
     return;
   }
   if (action === 'continent') {
@@ -1061,7 +1058,7 @@ function handleScoreboardTrigger(controller) {
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
     hideScoreboard();
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America'), camera.position);
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
     return;
   }
 }
@@ -1082,13 +1079,13 @@ function handleCountrySelectTrigger(controller) {
     if (scoreboardFromGameOver) {
       // Back to name entry
       game.state = State.NAME_ENTRY;
-      showNameEntry(game.finalScore, game.finalLevel, getStoredName(), camera.position);
+      showNameEntry(game.finalScore, game.finalLevel, getStoredName());
     } else {
       // Back to scoreboard
       game.state = State.SCOREBOARD;
-      showScoreboard([], 'LOADING...'), camera.position);
+      showScoreboard([], 'LOADING...');
       fetchTopScores().then(scores => {
-        showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
+        showScoreboard(scores, 'GLOBAL LEADERBOARD');
       });
     }
     return;
@@ -1102,15 +1099,15 @@ function handleCountrySelectTrigger(controller) {
     if (scoreboardFromGameOver) {
       // After setting country during game-over flow, go to name entry
       game.state = State.NAME_ENTRY;
-      showNameEntry(game.finalScore, game.finalLevel, getStoredName(), camera.position);
+      showNameEntry(game.finalScore, game.finalLevel, getStoredName());
     } else {
       // Filtering scoreboard by country
       game.state = State.REGIONAL_SCORES;
       const country = COUNTRIES.find(c => c.code === result.code);
       const label = country ? country.name : result.code;
-      showScoreboard([], 'LOADING...'), camera.position);
+      showScoreboard([], 'LOADING...');
       fetchScoresByCountry(result.code).then(scores => {
-        showScoreboard(scores, `${label.toUpperCase()} LEADERBOARD`), camera.position);
+        showScoreboard(scores, `${label.toUpperCase()} LEADERBOARD`);
       });
     }
   }
@@ -1134,7 +1131,9 @@ function onTriggerRelease(index) {
     stopLightningSound();
   }
 
+  // Satisfying charge beam release - big, dramatic sound
 
+  playChargeFireSound(damage);
 }
 
 // ============================================================
@@ -1221,11 +1220,6 @@ function showUpgradeScreen() {
   game.state = State.UPGRADE_SELECT;
   hideLevelComplete();
 
-  // Release pointer lock so mouse can be used for clicking cards
-  if (document.exitPointerLock) {
-    document.exitPointerLock();
-  }
-
   // Show HUD during level-up (health hearts and score)
   showHUD();
 
@@ -1265,14 +1259,7 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     console.log('[game] Skipped upgrade, health restored to full');
     playUpgradeSound();
     hideUpgradeCards();
-    
-  // Re-acquire pointer lock after upgrade selection
-  if (isDesktopEnabled() && document.body.requestPointerLock) {
-    document.body.requestPointerLock().catch(() => {
-      console.log('[game] Failed to re-acquire pointer lock');
-    });
-  }
-  advanceLevelAfterUpgrade();
+    advanceLevelAfterUpgrade();
     return;
   }
 
@@ -1297,14 +1284,7 @@ function selectUpgradeAndAdvance(upgrade, hand) {
       upgradeSelectionCooldown = 1.5;
     } else {
       hideUpgradeCards();
-      
-  // Re-acquire pointer lock after upgrade selection
-  if (isDesktopEnabled() && document.body.requestPointerLock) {
-    document.body.requestPointerLock().catch(() => {
-      console.log('[game] Failed to re-acquire pointer lock');
-    });
-  }
-  advanceLevelAfterUpgrade();
+      advanceLevelAfterUpgrade();
     }
     return;
   }
@@ -1312,14 +1292,6 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   addUpgrade(upgrade.id, hand);
   playUpgradeSound();
   hideUpgradeCards();
-  
-  // Re-acquire pointer lock after upgrade selection
-  if (isDesktopEnabled() && document.body.requestPointerLock) {
-    document.body.requestPointerLock().catch(() => {
-      console.log('[game] Failed to re-acquire pointer lock');
-    });
-  }
-  
   advanceLevelAfterUpgrade();
 }
 
@@ -1501,7 +1473,7 @@ function updateLightningBeam(controller, index, stats, dt) {
             if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
               const cfg = game._levelConfig;
               const remaining = cfg ? cfg.killTarget - game.kills : 0;
-              showKillsRemainingAlert(remaining, camera.position);
+              showKillsRemainingAlert(remaining);
               playKillsAlertSound();
               killsAlertShownThisLevel = true;
             }
@@ -1509,7 +1481,6 @@ function updateLightningBeam(controller, index, stats, dt) {
             // Check level complete
             const cfg = game._levelConfig;
             if (cfg && game.kills >= cfg.killTarget) {
-              updateHUD(game);
               completeLevel();
             }
           }
@@ -1639,6 +1610,8 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
 
   scene.add(beamInner);
   scene.add(beamOuter);
+  explosionVisuals.push(beamInner);
+  explosionVisuals.push(beamOuter);
 
   const controllerIndex = index;
   const hand = index === 0 ? 'left' : 'right';
@@ -1840,7 +1813,6 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       // Check level complete
       const cfg = game._levelConfig;
       if (cfg && game.kills >= cfg.killTarget) {
-        updateHUD(game);
         completeLevel();
       }
     }
@@ -2230,24 +2202,6 @@ function render(timestamp) {
   }
 
 
-  // ── HUD hover detection (works with both controllers in all states) ──
-  const HUD_RAYCASTERS = [];
-  for (let i = 0; i < 2; i++) {
-    const origin = new THREE.Vector3();
-    const quat = new THREE.Quaternion();
-    controllers[i].getWorldPosition(origin);
-    controllers[i].getWorldQuaternion(quat);
-    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-    const raycaster = new THREE.Raycaster(origin, direction, 0, 20);
-    HUD_RAYCASTERS.push(raycaster);
-  }
-
-  if (updateHUDHover(HUD_RAYCASTERS)) {
-    playMenuHoverSound();
-  }
-
-
-
   // ── Title screen ──
   if (st === State.TITLE) {
     updateTitle(now);
@@ -2292,6 +2246,21 @@ function render(timestamp) {
     // Update kills remaining alert
     updateKillsAlert(now);
 
+    // HUD hover detection for both controllers
+    const HUD_RAYCASTERS = [];
+    for (let i = 0; i < 2; i++) {
+      const origin = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      controllers[i].getWorldPosition(origin);
+      controllers[i].getWorldQuaternion(quat);
+      const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+      const raycaster = new THREE.Raycaster(origin, direction, 0, 20);
+      HUD_RAYCASTERS.push(raycaster);
+    }
+
+    if (updateHUDHover(HUD_RAYCASTERS)) {
+      playMenuHoverSound();
+    }
 
     spawnEnemyWave(dt);
 
@@ -2524,7 +2493,6 @@ function render(timestamp) {
 
             const cfg = game._levelConfig;
             if (cfg && game.kills >= cfg.killTarget) {
-              updateHUD(game);
               completeLevel();
             }
           }
