@@ -4,7 +4,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { State, getComboMultiplier, game } from './game.js';
+import { State, game, getComboMultiplier } from './game.js';
 
 // ── Module state ───────────────────────────────────────────
 let sceneRef, cameraRef;
@@ -19,7 +19,6 @@ const nameEntryGroup = new THREE.Group();
 const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
 const readyGroup = new THREE.Group();
-const debugMenuGroup = new THREE.Group();  // DEBUG menu
 
 // HUD element references
 let heartsSprite = null;
@@ -28,9 +27,6 @@ let levelSprite = null;
 let scoreSprite = null;
 let comboSprite = null;
 let fpsSprite = null;
-
-// Debug menu state
-let debugToggleItems = [];
 
 // Damage numbers
 const damageNumbers = [];
@@ -63,19 +59,29 @@ let nameEntrySlots = [];
 let keyboardKeys = [];
 let hoveredKey = null;
 
+// Level intro state
+let levelIntroActive = false;
+let levelIntroStartTime = 0;
+let levelIntroStage = 'level'; // 'level', 'level_fading', 'start', 'start_fading', 'done'
+let levelIntroLevelText = null;
+let levelIntroStartText = null;
+
+// Kills remaining alert state
+let killsAlertActive = false;
+let killsAlertStartTime = 0;
+let killsAlertDisplayTime = 0;
+let killsAlertMesh = null;
+
 // Scoreboard state
 let scoreboardCanvas = null;
-let scoreboardCtx = null;  // PERFORMANCE: Reuse canvas context
 let scoreboardTexture = null;
 let scoreboardMesh = null;
 let scoreboardScrollOffset = 0;
 let scoreboardScores = [];
 let scoreboardHeader = '';
-let scoreboardNeedsRender = false;  // PERFORMANCE: Only render when data changes
 
 // Country select state
 let countryListCanvas = null;
-let countryListCtx = null;  // PERFORMANCE: Reuse canvas context
 let countryListTexture = null;
 let countryListMesh = null;
 let countrySelectContinent = 'North America';
@@ -83,138 +89,84 @@ let countrySelectScrollOffset = 0;
 let continentTabs = [];
 let countryItems = [];
 
-// PERFORMANCE: Cached country sprites to avoid recreating textures
-const countrySpriteCache = new Map();
-
-// ── TEXTURE CACHING SYSTEM ────────────────────────────────────────────
-
-// Cache for HUD element textures to avoid recreation every frame
-const hudTextureCache = {};
-
-/**
- * Create or get a cached texture for the given text and color.
- * Returns the texture and aspect ratio.
- */
-function getCachedTextTexture(text, fontSize, color, shadow, glow, glowColor, maxWidth) {
-  const cacheKey = `${text}:${fontSize}:${color}:${shadow}:${glow}:${glowColor}:${maxWidth}`;
-  
-  if (hudTextureCache[cacheKey]) {
-    return hudTextureCache[cacheKey];
-  }
-
+// ── Canvas text utility ────────────────────────────────────
+function makeTextTexture(text, opts = {}) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
+  const fontSize = opts.fontSize || 64;
+  const font = `bold ${fontSize}px Arial, sans-serif`;
+  const maxWidth = opts.maxWidth || null;
+
+  ctx.font = font;
+
+  // Word wrapping if maxWidth is specified
+  let lines = [text];
+  if (maxWidth) {
+    lines = [];
+    const words = text.split(' ');
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+
+      if (metrics.width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+  }
 
   // Measure text to size canvas
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  const textWidth = maxWidth || Math.ceil(ctx.measureText(text).width);
+  const textWidth = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
   const lineHeight = fontSize * 1.3;
-  const textHeight = lineHeight; // Single line
+  const textHeight = lines.length * lineHeight;
 
-  canvas.width = Math.ceil(textWidth) + 40;
-  canvas.height = Math.ceil(textHeight) + 40;
+  // Add proper padding for glow effects (glowSize needs at least glowSize+5 pixels on each side)
+  const padding = opts.glow ? (opts.glowSize || 15) + 10 : 40;
+  canvas.width = Math.ceil(textWidth) + padding * 2;
+  canvas.height = Math.ceil(textHeight) + padding * 2;
 
   // Re-set after resize
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.font = font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Clear canvas with transparency
+  // Adjust drawing position for new padding
+  const offsetX = padding;
+  const offsetY = padding;
+
+  // Clear canvas with transparency (prevent black background)
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Optional glow
-  if (glow) {
-    ctx.shadowColor = glowColor || color;
-    ctx.shadowBlur = 15;
+  if (opts.glow) {
+    ctx.shadowColor = opts.glowColor || opts.color || '#00ffff';
+    ctx.shadowBlur = opts.glowSize || 15;
   }
 
   // Drop shadow
-  if (shadow) {
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillText(text, canvas.width / 2 + 2, canvas.height / 2 + 2);
+  if (opts.shadow) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    lines.forEach((line, i) => {
+      const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+      ctx.fillText(line, canvas.width / 2 + 2, y + 2 + offsetY);
+    });
   }
 
   // Main text
-  ctx.fillStyle = color;
-  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-
-  // Cache the texture
-  hudTextureCache[cacheKey] = { texture, aspect: canvas.width / canvas.height };
-
-  return hudTextureCache[cacheKey];
-}
-
-/**
- * Create or get a cached texture for the hearts display.
- */
-function getCachedHeartsTexture(health, maxHealth, scaleMultiplier) {
-  const cacheKey = `hearts:${health}:${maxHealth}:${scaleMultiplier}`;
-  
-  if (hudTextureCache[cacheKey]) {
-    return hudTextureCache[cacheKey];
-  }
-
-  const heartCount = maxHealth / 2;
-  const pixSize = 8;
-  const heartW = 7 * pixSize;
-  const heartH = 6 * pixSize;
-  const gap = 6;
-  const canvasWidth = heartCount * (heartW + gap) + gap;
-  const canvasHeight = heartH + 10;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
-  const ctx = canvas.getContext('2d');
-
-  for (let i = 0; i < heartCount; i++) {
-    const hpForThisHeart = health - i * 2;
-    let state;
-    if (hpForThisHeart >= 2) state = 'full';
-    else if (hpForThisHeart === 1) state = 'half';
-    else state = 'empty';
-
-    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-
-  const aspect = canvasWidth / canvasHeight;
-  hudTextureCache[cacheKey] = { texture, aspect };
-
-  return hudTextureCache[cacheKey];
-}
-
-/**
- * Clear the texture cache periodically to prevent memory buildup.
- * Called once per second or when needed.
- */
-function clearHudCache() {
-  Object.keys(hudTextureCache).forEach(key => {
-    if (hudTextureCache[key]) {
-      if (hudTextureCache[key].texture) {
-        hudTextureCache[key].texture.dispose();
-      }
-    }
-    delete hudTextureCache[key];
+  ctx.fillStyle = opts.color || '#00ffff';
+  lines.forEach((line, i) => {
+    const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+    ctx.fillText(line, canvas.width / 2, y + offsetY);
   });
-}
 
-// ── Canvas text utility ────────────────────────────────────
-function makeTextTexture(text, opts = {}) {
-  return getCachedTextTexture(
-    text,
-    opts.fontSize || 64,
-    opts.color || '#00ffff',
-    opts.shadow,
-    opts.glow,
-    opts.glowColor,
-    opts.maxWidth
-  );
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  return { texture, aspect: canvas.width / canvas.height };
 }
 
 function makeSprite(text, opts = {}) {
@@ -269,6 +221,32 @@ function drawHeart(ctx, x, y, pixSize, state) {
   });
 }
 
+function makeHeartsTexture(health, maxHealth) {
+  const heartCount = maxHealth / 2;
+  const pixSize = 8;
+  const heartW = 7 * pixSize;
+  const heartH = 6 * pixSize;
+  const gap = 6;
+  const canvas = document.createElement('canvas');
+  canvas.width = heartCount * (heartW + gap) + gap;
+  canvas.height = heartH + 10;
+  const ctx = canvas.getContext('2d');
+
+  for (let i = 0; i < heartCount; i++) {
+    const hpForThisHeart = health - i * 2;
+    let state;
+    if (hpForThisHeart >= 2) state = 'full';
+    else if (hpForThisHeart === 1) state = 'half';
+    else state = 'empty';
+
+    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  return { texture, aspect: canvas.width / canvas.height };
+}
+
 // ── Public API ─────────────────────────────────────────────
 
 export function initHUD(camera, scene) {
@@ -289,7 +267,7 @@ export function initHUD(camera, scene) {
   scene.add(hudGroup);
 
   // ── UI Groups (initially hidden) ──
-  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup, debugMenuGroup].forEach(g => {
+  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup].forEach(g => {
     g.visible = false;
     g.rotation.set(0, 0, 0);
     scene.add(g);
@@ -334,9 +312,6 @@ export function initHUD(camera, scene) {
     bossHealthBars.push(bar);
   }
   camera.add(bossHealthGroup);
-
-  // ── Start cache clear timer (every 60 seconds) ──
-  setInterval(clearHudCache, 60000);
 }
 
 export function showBossHealthBar(hp, maxHp, phases = 3) {
@@ -371,30 +346,30 @@ export function updateBossHealthBar(hp, maxHp, phases = 3) {
 function createTitleScreen() {
   // Big title: SPACEOMICIDE
   const titleSprite = makeSprite('SPACEOMICIDE', {
-    fontSize: 140,
+    fontSize: 70,
     color: '#00ffff',
-    glow: true, glowColor: '#0088ff', glowSize: 30,
-    scale: 1.8,
+    glow: true, glowColor: '#0088ff', glowSize: 15,
+    scale: 0.9,
   });
   titleSprite.position.set(0, 1.6, 0);
   titleGroup.add(titleSprite);
 
   // Subtitle
   const subSprite = makeSprite('VR ROGUELIKE BLASTER', {
-    fontSize: 48,
+    fontSize: 24,
     color: '#ff00ff',
-    glow: true, glowColor: '#ff00ff', glowSize: 10,
-    scale: 0.6,
+    glow: true, glowColor: '#ff00ff', glowSize: 5,
+    scale: 0.3,
   });
   subSprite.position.set(0, 0.8, 0);
   titleGroup.add(subSprite);
 
   // Blinking "Press Trigger to Begin"
   titleBlinkSprite = makeSprite('PRESS TRIGGER TO BEGIN', {
-    fontSize: 52,
+    fontSize: 26,
     color: '#ffffff',
     glow: true, glowColor: '#ffffff',
-    scale: 0.5,
+    scale: 0.25,
   });
   titleBlinkSprite.position.set(0, 0, 0);
   titleGroup.add(titleBlinkSprite);
@@ -402,7 +377,7 @@ function createTitleScreen() {
   // Scoreboard button
   const btnGroup = new THREE.Group();
   btnGroup.position.set(0, -0.6, 0);
-  const btnGeo = new THREE.PlaneGeometry(1.2, 0.3);
+  const btnGeo = new THREE.PlaneGeometry(1.35, 0.3);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -415,66 +390,28 @@ function createTitleScreen() {
   const btnBorderGeo = new THREE.EdgesGeometry(btnGeo);
   btnGroup.add(new THREE.LineSegments(btnBorderGeo, new THREE.LineBasicMaterial({ color: 0xffff00 })));
   const btnText = makeSprite('SCOREBOARD', {
-    fontSize: 36,
+    fontSize: 32,
     color: '#ffff00',
     glow: true,
     glowColor: '#ffff00',
-    scale: 0.20,
+    scale: 0.16,
   });
   btnText.position.set(0, 0, 0.01);
   btnGroup.add(btnText);
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
 
-  // Diagnostics button
-  const diagBtnGroup = new THREE.Group();
-  diagBtnGroup.position.set(1.5, -0.6, 0);
-  const diagBtnGeo = new THREE.PlaneGeometry(1.2, 0.3);
-  const diagBtnMat = new THREE.MeshBasicMaterial({
-    color: 0x001133,
-    transparent: true,
-    opacity: 0.85,
-    side: THREE.DoubleSide,
-  });
-  const diagBtnMesh = new THREE.Mesh(diagBtnGeo, diagBtnMat);
-  diagBtnMesh.userData.isTitleDiagBtn = true;
-  diagBtnGroup.add(diagBtnMesh);
-  const diagBtnBorderGeo = new THREE.EdgesGeometry(diagBtnGeo);
-  diagBtnGroup.add(new THREE.LineSegments(diagBtnBorderGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
-  const diagBtnText = makeSprite('DIAGNOSTICS', {
-    fontSize: 36,
-    color: '#00ff88',
-    glow: true,
-    glowColor: '#00ff88',
-    scale: 0.20,
-  });
-  diagBtnText.position.set(0, 0, 0.01);
-  diagBtnGroup.add(diagBtnText);
-  titleGroup.add(diagBtnGroup);
-  titleDiagBtn = diagBtnMesh;
-
-  // Version number
-  const versionDate = 'FEB 10 2026   12:10PM PT';
-  const versionNum = 'v0.044';
+// Version number
+  const versionDate = 'FEB 28 2026';
+  const versionNum = 'v0.024';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
-    fontSize: 32,
+    fontSize: 16,
     color: '#888888',
-    scale: 0.28,
+    scale: 0.14,
   });
   versionSprite.position.set(0, -1.0, 0);
   titleGroup.add(versionSprite);
 
-  // Debug mode indicator (uses game state)
-  const isPerfMonitor = game.debugPerfMonitor;
-  const debugText = isPerfMonitor ? 'PERF: ON' : 'PERF: OFF';
-  const debugSprite = makeSprite(debugText, {
-    fontSize: 24,
-    color: isPerfMonitor ? '#00ff00' : '#666666',
-    scale: 0.15,
-  });
-  debugSprite.position.set(2.5, -0.85, 0);
-  debugSprite.name = 'debugIndicator';
-  titleGroup.add(debugSprite);
 }
 
 export function showTitle() {
@@ -540,18 +477,16 @@ export function hideHUD() {
 }
 
 function updateSpriteText(sprite, text, opts = {}) {
-  // Use cached texture
-  const { texture, aspect } = getCachedTextTexture(
-    text,
-    opts.fontSize || 40,
-    opts.color || '#ffffff',
-    opts.shadow,
-    opts.glow,
-    opts.glowColor,
-    opts.maxWidth
-  );
-  
+  // Dispose old texture
   if (sprite.material.map) sprite.material.map.dispose();
+
+  const { texture, aspect } = makeTextTexture(text, {
+    fontSize: opts.fontSize || 40,
+    color: opts.color || '#ffffff',
+    shadow: true,
+    glow: opts.glow,
+    glowColor: opts.glowColor,
+  });
   sprite.material.map = texture;
   sprite.material.needsUpdate = true;
 
@@ -564,24 +499,18 @@ function updateSpriteText(sprite, text, opts = {}) {
 export function updateHUD(gameState) {
   if (!hudGroup.visible) return;
 
-  // Hearts - use cached texture
-  const cfg = gameState._levelConfig;
-  const killTarget = cfg ? cfg.killTarget : 0;
-  
-  // Use scale based on level to prevent overwhelming UI at high levels
-  const level = gameState.level;
-  const scaleMultiplier = Math.min(3.0, 1.0 + level * 0.08);  // Cap at 3x
-  
-  const { texture: ht, aspect: ha } = getCachedHeartsTexture(gameState.health, gameState.maxHealth, scaleMultiplier);
+  // Hearts - proper aspect ratio with correct scale
+  const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth);
   if (heartsSprite.material.map) heartsSprite.material.map.dispose();
   heartsSprite.material.map = ht;
   heartsSprite.material.needsUpdate = true;
-  
   // Update geometry to match aspect ratio (200% larger: height 0.48)
   heartsSprite.geometry.dispose();
   heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
 
   // Kill counter - 200% larger
+  const cfg = gameState._levelConfig;
+  const killTarget = cfg ? cfg.killTarget : 0;
   updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.30 });
 
   // Level - 200% larger
@@ -616,8 +545,10 @@ export function showLevelComplete(level, playerPos) {
   s2.position.set(0, 0.2, 0);
   levelTextGroup.add(s2);
 
-  // Fixed world position in front of spawn
-  levelTextGroup.position.set(0, 1.6, -5);
+  // Position in front of player (VR-friendly)
+  levelTextGroup.position.copy(playerPos);
+  levelTextGroup.position.y += 1.6; // Eye level
+  levelTextGroup.position.z -= 3; // 3 feet in front of player
   levelTextGroup.visible = true;
 }
 
@@ -634,8 +565,10 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
 
-  // Fixed world position in front of spawn
-  upgradeGroup.position.set(0, 1.6, -4);
+  // Position in front of player (VR-friendly)
+  upgradeGroup.position.copy(playerPos);
+  upgradeGroup.position.y += 1.6; // Eye level
+  upgradeGroup.position.z -= 4; // 4 feet in front of player
 
   // "Choose an upgrade for [HAND]" header - reduced size significantly
   const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
@@ -675,7 +608,7 @@ function createUpgradeCard(upgrade, position) {
   group.userData.upgradeId = upgrade.id;
 
   // Card background plane
-  const cardGeo = new THREE.PlaneGeometry(0.9, 1.1);
+  const cardGeo = new THREE.PlaneGeometry(1.2, 1.5);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -693,39 +626,39 @@ function createUpgradeCard(upgrade, position) {
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
-  // Name text - smaller to prevent overlap
+  // Name text - increased proportionally to card size
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
-    fontSize: 28,
+    fontSize: 36,
     color: upgrade.color || '#00ffff',
     glow: true,
     glowColor: upgrade.color,
     scale: 0.19,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.35, 0.01);
+  nameSprite.position.set(0, 0.40, 0.01);
   group.add(nameSprite);
 
-  // Description text - standard size with padding (well inside box)
+  // Description text - increased proportionally with proper maxWidth
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 20,
+    fontSize: 26,
     color: '#cccccc',
     scale: 0.15,
     depthTest: true,
-    maxWidth: 180,
+    maxWidth: 280,
   });
-  descSprite.position.set(0, -0.05, 0.01);
+  descSprite.position.set(0, -0.02, 0.01);
   group.add(descSprite);
 
   // Side-grade note (different color) when present
   if (upgrade.sideGradeNote) {
     const noteSprite = makeSprite(upgrade.sideGradeNote, {
-      fontSize: 16,
+      fontSize: 22,
       color: '#ffdd00',
-      scale: 0.12,
+      scale: 0.14,
       depthTest: true,
-      maxWidth: 200,
+      maxWidth: 280,
     });
-    noteSprite.position.set(0, -0.22, 0.01);
+    noteSprite.position.set(0, -0.28, 0.01);
     group.add(noteSprite);
   }
 
@@ -747,7 +680,7 @@ function createSkipCard(position) {
   group.userData.upgradeId = 'SKIP';  // Special ID for skip
 
   // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades)
-  const cardGeo = new THREE.PlaneGeometry(0.7, 0.9);
+  const cardGeo = new THREE.PlaneGeometry(1.0, 1.3);
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x220044,
     transparent: true,
@@ -764,27 +697,27 @@ function createSkipCard(position) {
   const borderMat = new THREE.LineBasicMaterial({ color: '#00ff88' });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
-  // "SKIP" text
+  // "SKIP" text - increased proportionally
   const nameSprite = makeSprite('SKIP', {
-    fontSize: 28,
+    fontSize: 40,
     color: '#00ff88',
     glow: true,
     glowColor: '#00ff88',
     scale: 0.2,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.25, 0.01);
+  nameSprite.position.set(0, 0.30, 0.01);
   group.add(nameSprite);
 
   // Description
   const descSprite = makeSprite('Full health', {
-    fontSize: 18,
+    fontSize: 26,
     color: '#88ffaa',
-    scale: 0.12,
+    scale: 0.14,
     depthTest: true,
-    maxWidth: 120,
+    maxWidth: 220,
   });
-  descSprite.position.set(0, -0.02, 0.01);
+  descSprite.position.set(0, 0.02, 0.01);
   group.add(descSprite);
 
   // Heart icon
@@ -822,14 +755,9 @@ export function updateUpgradeCards(now, cooldownRemaining) {
       cd.visible = true;
       // Update the cooldown sprite text
       if (cd.material && cd.material.map) cd.material.map.dispose();
-      const { texture, aspect } = getCachedTextTexture(
+      const { texture, aspect } = makeTextTexture(
         `WAIT ${Math.ceil(cooldownRemaining)}...`,
-        40,
-        '#ffff00',
-        false,
-        false,
-        null,
-        null
+        { fontSize: 40, color: '#ffff00' }
       );
       cd.material.map = texture;
       cd.material.needsUpdate = true;
@@ -882,8 +810,10 @@ export function showGameOver(score, playerPos) {
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
-  // Fixed world position in front of spawn
-  gameOverGroup.position.set(0, 1.6, -5);
+  // Position in front of player (VR-friendly)
+  gameOverGroup.position.copy(playerPos);
+  gameOverGroup.position.y += 1.6; // Eye level
+  gameOverGroup.position.z -= 5; // 5 feet in front of player
   gameOverGroup.visible = true;
 }
 
@@ -904,8 +834,10 @@ export function showVictory(score, playerPos) {
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
-  // Fixed world position in front of spawn
-  gameOverGroup.position.set(0, 1.6, -5);
+  // Position in front of player (VR-friendly)
+  gameOverGroup.position.copy(playerPos);
+  gameOverGroup.position.y += 1.6; // Eye level
+  gameOverGroup.position.z -= 5; // 5 feet in front of player
   gameOverGroup.visible = true;
 }
 
@@ -1162,16 +1094,8 @@ let lastFpsUpdate = 0;
 export function updateFPS(now, opts = {}) {
   if (!fpsSprite) return;
 
-  // Use game state for settings (supports VR toggle via debug menu)
-  const showFPS = game.debugShowFPS;
-  const perfMonitor = game.debugPerfMonitor || opts.perfMonitor;
+  const perfMonitor = opts.perfMonitor || (typeof window !== 'undefined' && window.debugPerfMonitor);
   const frameTimeMs = opts.frameTimeMs;
-
-  // Hide FPS if disabled
-  if (!showFPS) {
-    fpsSprite.visible = false;
-    return;
-  }
 
   // Track frame times
   fpsFrames.push(now);
@@ -1203,7 +1127,12 @@ export function updateFPS(now, opts = {}) {
     const ftColor = avgFrameMs > 33 ? '#ff0000' : avgFrameMs > 20 ? '#ffff00' : '#00ff00';
     const color = perfMonitor ? ftColor : fpsColor;
 
-    const { texture, aspect } = getCachedTextTexture(text, perfMonitor ? 24 : 32, color, true, false, null, perfMonitor ? 300 : null);
+    const { texture, aspect } = makeTextTexture(text, {
+      fontSize: perfMonitor ? 24 : 32,
+      color,
+      shadow: true,
+      maxWidth: perfMonitor ? 300 : null,
+    });
     if (fpsSprite.material.map) fpsSprite.material.map.dispose();
     fpsSprite.material.map = texture;
     fpsSprite.material.needsUpdate = true;
@@ -1224,7 +1153,6 @@ function hideAll() {
   scoreboardGroup.visible = false;
   countrySelectGroup.visible = false;
   readyGroup.visible = false;
-  debugMenuGroup.visible = false;  // Hide debug menu
   // Floor HUD shouldn't necessarily disappear during everything
   // Specifically don't hide it if we want it visible during upgrades
 }
@@ -1234,10 +1162,10 @@ function hideAll() {
 export function getTitleButtonHit(raycaster) {
   if (!titleGroup.visible) return null;
 
-  // Check diagnostics/debug button
+  // Check diagnostics button
   if (titleDiagBtn) {
     const diagHits = raycaster.intersectObject(titleDiagBtn, false);
-    if (diagHits.length > 0) return 'debug_menu';
+    if (diagHits.length > 0) return 'diagnostics';
   }
 
   // Check scoreboard button
@@ -1247,22 +1175,6 @@ export function getTitleButtonHit(raycaster) {
   }
 
   return null;
-}
-
-/**
- * Update the title screen debug indicator when settings change
- */
-export function updateTitleDebugIndicator() {
-  const indicator = titleGroup.getObjectByName('debugIndicator');
-  if (indicator) {
-    const isPerfMonitor = game.debugPerfMonitor;
-    const debugText = isPerfMonitor ? 'PERF: ON' : 'PERF: OFF';
-    const { texture, aspect } = getCachedTextTexture(debugText, 24, isPerfMonitor ? '#00ff00' : '#666666', false, false, null, null);
-    if (indicator.material.map) indicator.material.map.dispose();
-    indicator.material.map = texture;
-    indicator.material.needsUpdate = true;
-    indicator.scale.set(aspect * 0.15, 0.15, 1);
-  }
 }
 
 // ── Run Diagnostics ──────────────────────────────────────
@@ -1321,190 +1233,6 @@ export function runDiagnostics() {
   }
 
   return allPassed;
-}
-
-// ── Debug Menu Screen ──────────────────────────────────────
-
-/**
- * Show the debug menu with toggle options for FPS monitor settings
- */
-export function showDebugMenu() {
-  hideAll();
-  while (debugMenuGroup.children.length) debugMenuGroup.remove(debugMenuGroup.children[0]);
-  debugToggleItems = [];
-  
-  debugMenuGroup.position.set(0, 1.6, -4);
-  debugMenuGroup.visible = true;
-
-  // Header
-  const header = makeSprite('DEBUG MENU', {
-    fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
-  });
-  header.position.set(0, 1.4, 0);
-  debugMenuGroup.add(header);
-
-  // Toggle options
-  const options = [
-    { 
-      id: 'fps', 
-      label: 'FPS COUNTER', 
-      getState: () => game.debugShowFPS,
-      toggle: () => { game.debugShowFPS = !game.debugShowFPS; }
-    },
-    { 
-      id: 'perf', 
-      label: 'PERF MONITOR', 
-      getState: () => game.debugPerfMonitor,
-      toggle: () => { game.debugPerfMonitor = !game.debugPerfMonitor; }
-    },
-  ];
-
-  const startY = 0.8;
-  const itemHeight = 0.35;
-  const itemWidth = 1.8;
-
-  options.forEach((opt, i) => {
-    const y = startY - i * itemHeight;
-    const isOn = opt.getState();
-
-    // Background
-    const itemGroup = new THREE.Group();
-    itemGroup.position.set(0, y, 0);
-
-    const bgGeo = new THREE.PlaneGeometry(itemWidth, 0.28);
-    const bgMat = new THREE.MeshBasicMaterial({
-      color: isOn ? 0x003322 : 0x221133,
-      transparent: true,
-      opacity: 0.9,
-      side: THREE.DoubleSide,
-    });
-    const bgMesh = new THREE.Mesh(bgGeo, bgMat);
-    bgMesh.userData.debugToggle = opt.id;
-    itemGroup.add(bgMesh);
-
-    // Border
-    itemGroup.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(bgGeo),
-      new THREE.LineBasicMaterial({ color: isOn ? 0x00ff88 : 0x888888 })
-    ));
-
-    // Label
-    const label = makeSprite(opt.label, {
-      fontSize: 28, color: '#ffffff', scale: 0.18,
-    });
-    label.position.set(-0.3, 0, 0.01);
-    itemGroup.add(label);
-
-    // Status indicator (ON/OFF)
-    const statusText = isOn ? 'ON' : 'OFF';
-    const statusColor = isOn ? '#00ff88' : '#ff4444';
-    const status = makeSprite(statusText, {
-      fontSize: 28, color: statusColor, glow: isOn, glowColor: statusColor, scale: 0.15,
-    });
-    status.position.set(0.6, 0, 0.01);
-    status.userData.isStatusLabel = true;
-    itemGroup.add(status);
-
-    debugMenuGroup.add(itemGroup);
-    debugToggleItems.push({ group: itemGroup, mesh: bgMesh, option: opt });
-  });
-
-  // Instructions
-  const instructions = makeSprite('CLICK TO TOGGLE', {
-    fontSize: 24, color: '#888888', scale: 0.15,
-  });
-  instructions.position.set(0, -0.3, 0);
-  debugMenuGroup.add(instructions);
-
-  // BACK button
-  const backGroup = new THREE.Group();
-  backGroup.position.set(0, -0.7, 0);
-  const backGeo = new THREE.PlaneGeometry(0.8, 0.28);
-  const backMat = new THREE.MeshBasicMaterial({
-    color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
-  });
-  const backMesh = new THREE.Mesh(backGeo, backMat);
-  backMesh.userData.debugAction = 'back';
-  backGroup.add(backMesh);
-  backGroup.add(new THREE.LineSegments(
-    new THREE.EdgesGeometry(backGeo),
-    new THREE.LineBasicMaterial({ color: 0xff4444 })
-  ));
-  const backTxt = makeSprite('BACK', { fontSize: 28, color: '#ff4444', scale: 0.15 });
-  backTxt.position.set(0, 0, 0.01);
-  backGroup.add(backTxt);
-  debugMenuGroup.add(backGroup);
-
-  sceneRef.add(debugMenuGroup);
-}
-
-export function hideDebugMenu() {
-  debugMenuGroup.visible = false;
-  if (sceneRef && debugMenuGroup.parent === sceneRef) {
-    sceneRef.remove(debugMenuGroup);
-  }
-}
-
-/**
- * Handle raycast hits on debug menu
- */
-export function getDebugMenuHit(raycaster) {
-  if (!debugMenuGroup.visible) return null;
-
-  // Check toggle items
-  const toggleMeshes = debugToggleItems.map(t => t.mesh);
-  let hits = raycaster.intersectObjects(toggleMeshes, false);
-  if (hits.length > 0) {
-    const toggleId = hits[0].object.userData.debugToggle;
-    const item = debugToggleItems.find(t => t.option.id === toggleId);
-    if (item) {
-      // Toggle the state
-      item.option.toggle();
-      
-      // Save settings
-      if (typeof window !== 'undefined') {
-        // Import and call saveDebugSettings from game.js
-        import('./game.js').then(module => {
-          if (module.saveDebugSettings) module.saveDebugSettings();
-        });
-      }
-      
-      // Update visuals
-      const isOn = item.option.getState();
-      item.mesh.material.color.setHex(isOn ? 0x003322 : 0x221133);
-      
-      // Update border
-      const border = item.group.children.find(c => c.type === 'LineSegments');
-      if (border) {
-        border.material.color.setHex(isOn ? 0x00ff88 : 0x888888);
-      }
-      
-      // Update status label
-      const statusLabel = item.group.children.find(c => c.userData && c.userData.isStatusLabel);
-      if (statusLabel) {
-        const statusText = isOn ? 'ON' : 'OFF';
-        const statusColor = isOn ? '#00ff88' : '#ff4444';
-        const { texture, aspect } = getCachedTextTexture(statusText, 28, statusColor, false, isOn, statusColor, null);
-        if (statusLabel.material.map) statusLabel.material.map.dispose();
-        statusLabel.material.map = texture;
-        statusLabel.material.needsUpdate = true;
-        statusLabel.scale.set(aspect * 0.15, 0.15, 1);
-      }
-    }
-    return null;  // Don't change state, just toggle
-  }
-
-  // Check back button
-  const actionMeshes = [];
-  debugMenuGroup.traverse(c => {
-    if (c.userData && c.userData.debugAction) actionMeshes.push(c);
-  });
-  hits = raycaster.intersectObjects(actionMeshes, false);
-  if (hits.length > 0) {
-    return { action: hits[0].object.userData.debugAction };
-  }
-
-  return null;
 }
 
 export function getDebugJumpHit(raycaster) {
@@ -1595,6 +1323,160 @@ export function hideReadyScreen() {
   readyGroup.visible = false;
 }
 
+// ── Level Intro Screen ───────────────────────────────────────
+
+export function showLevelIntro(level) {
+  hideAll();
+  levelIntroActive = true;
+  levelIntroStartTime = performance.now();
+  levelIntroStage = 'level';
+
+  // Position in front of spawn
+  levelTextGroup.position.set(0, 1.6, -4);
+  levelTextGroup.visible = true;
+
+  // "LEVEL" text
+  const levelHeader = makeSprite('LEVEL', {
+    fontSize: 80, color: '#ff00ff', glow: true, glowColor: '#ff00ff', scale: 0.7,
+  });
+  levelHeader.position.set(0, 0.5, 0);
+  levelTextGroup.add(levelHeader);
+  levelIntroLevelText = levelHeader;
+
+  // Level number
+  const levelNum = makeSprite(`${level}`, {
+    fontSize: 120, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 1.0,
+  });
+  levelNum.position.set(0, -0.2, 0);
+  levelTextGroup.add(levelNum);
+}
+
+export function updateLevelIntro(now) {
+  if (!levelIntroActive) return;
+
+  const elapsed = now - levelIntroStartTime;
+  const LEVEL_FADE_DURATION = 500; // 0.5 seconds
+  const START_DISPLAY_DURATION = 1000; // 1 second
+
+  if (levelIntroStage === 'level') {
+    // Show "LEVEL X" for 0.5 seconds
+    if (elapsed >= LEVEL_FADE_DURATION) {
+      levelIntroStage = 'level_fading';
+      levelIntroStartTime = now;
+    }
+  } else if (levelIntroStage === 'level_fading') {
+    // Fade out "LEVEL X" over 0.5 seconds
+    const progress = Math.min(elapsed / LEVEL_FADE_DURATION, 1);
+
+    if (levelIntroLevelText) {
+      levelTextGroup.traverse(child => {
+        if (child.material) {
+          child.material.opacity = 1 - progress;
+        }
+      });
+    }
+
+    if (progress >= 1) {
+      // Clear and show "START!"
+      while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
+
+      const startText = makeSprite('START!', {
+        fontSize: 100, color: '#00ff00', glow: true, glowColor: '#00ff00', scale: 0.9,
+      });
+      startText.position.set(0, 0, 0);
+      levelTextGroup.add(startText);
+      levelIntroStartText = startText;
+
+      levelIntroStage = 'start';
+      levelIntroStartTime = now;
+    }
+  } else if (levelIntroStage === 'start') {
+    // Show "START!" for 1 second
+    if (elapsed >= START_DISPLAY_DURATION) {
+      levelIntroStage = 'start_fading';
+      levelIntroStartTime = now;
+    }
+  } else if (levelIntroStage === 'start_fading') {
+    // Fade out "START!" over 0.5 seconds
+    const progress = Math.min(elapsed / LEVEL_FADE_DURATION, 1);
+
+    if (levelIntroStartText) {
+      levelIntroStartText.material.opacity = 1 - progress;
+    }
+
+    if (progress >= 1) {
+      levelIntroStage = 'done';
+      levelIntroActive = false;
+      levelTextGroup.visible = false;
+      return true; // Signal that intro is complete
+    }
+  }
+
+  return false; // Still in progress
+}
+
+export function hideLevelIntro() {
+  levelIntroActive = false;
+  levelTextGroup.visible = false;
+}
+
+// ── Kills Remaining Alert ─────────────────────────────────
+
+export function showKillsRemainingAlert(remaining) {
+  if (killsAlertActive) return; // Already showing an alert
+
+  killsAlertActive = true;
+  killsAlertStartTime = performance.now();
+  killsAlertDisplayTime = 2000; // Display for 2 seconds
+
+  // Position further from player (better depth)
+  // Place at midfield distance but offset forward
+  levelTextGroup.position.set(0, 1.6, -3); // -3 instead of -4 for better depth
+  levelTextGroup.visible = true;
+
+  // Clear any existing content
+  while (levelTextGroup.children.length) {
+    levelTextGroup.remove(levelTextGroup.children[0]);
+  }
+
+  const alertText = makeSprite(`${remaining} KILLS REMAINING`, {
+    fontSize: 60,
+    color: '#ff8800',
+    glow: true,
+    glowColor: '#ff8800',
+    scale: 0.5,
+  });
+  alertText.position.set(0, 0, 0);
+  levelTextGroup.add(alertText);
+  killsAlertMesh = alertText;
+}
+
+export function updateKillsAlert(now) {
+  if (!killsAlertActive) return false;
+
+  const elapsed = now - killsAlertStartTime;
+
+  // Hide after display time
+  if (elapsed >= killsAlertDisplayTime) {
+    hideKillsAlert();
+    return false; // Alert is no longer visible
+  }
+
+  return true; // Still visible
+}
+
+export function hideKillsAlert() {
+  killsAlertActive = false;
+  levelTextGroup.visible = false;
+  if (killsAlertMesh) {
+    killsAlertMesh = null;
+  }
+}
+
+export function isKillsAlertActive() {
+  return killsAlertActive;
+}
+
 export function getReadyScreenHit(raycaster) {
   if (!readyGroup.visible) return null;
   const actionMeshes = [];
@@ -1608,7 +1490,7 @@ export function getReadyScreenHit(raycaster) {
 
 // ── Name Entry Screen ───────────────────────────────────────
 
-export function showNameEntry(score, level, storedName) {
+export function showNameEntry(score, level, storedName, playerPos) {
   hideAll();
   while (nameEntryGroup.children.length) nameEntryGroup.remove(nameEntryGroup.children[0]);
   nameEntrySlots = [];
@@ -1617,7 +1499,14 @@ export function showNameEntry(score, level, storedName) {
   nameEntryName = storedName || '';
   nameEntryCursor = nameEntryName.length;
 
-  nameEntryGroup.position.set(0, 1.6, -4);
+  // Position in front of player (VR-friendly)
+  if (playerPos) {
+    nameEntryGroup.position.copy(playerPos);
+    nameEntryGroup.position.y += 1.6; // Eye level
+    nameEntryGroup.position.z -= 4; // 4 feet in front of player
+  } else {
+    nameEntryGroup.position.set(0, 1.6, -4); // Fallback
+  }
   nameEntryGroup.visible = true;
 
   // Header
@@ -1826,14 +1715,21 @@ export function updateKeyboardHover(raycaster) {
 
 // ── Scoreboard Screen ───────────────────────────────────────
 
-export function showScoreboard(scores, headerText) {
+export function showScoreboard(scores, headerText, playerPos) {
   hideAll();
   while (scoreboardGroup.children.length) scoreboardGroup.remove(scoreboardGroup.children[0]);
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
   scoreboardHeader = headerText || 'GLOBAL LEADERBOARD';
-  scoreboardGroup.position.set(0, 1.6, -5);
+  // Position in front of player (VR-friendly)
+  if (playerPos) {
+    scoreboardGroup.position.copy(playerPos);
+    scoreboardGroup.position.y += 1.6; // Eye level
+    scoreboardGroup.position.z -= 5; // 5 feet in front of player
+  } else {
+    scoreboardGroup.position.set(0, 1.6, -5); // Fallback
+  }
   scoreboardGroup.visible = true;
 
   // Header
@@ -1901,19 +1797,12 @@ export function showScoreboard(scores, headerText) {
 }
 
 function renderScoreboardCanvas() {
-  // PERFORMANCE: Reuse canvas instead of recreating every frame
+  const canvas = document.createElement('canvas');
   const w = 800;
   const h = 1000;
-  
-  if (!scoreboardCanvas) {
-    scoreboardCanvas = document.createElement('canvas');
-    scoreboardCanvas.width = w;
-    scoreboardCanvas.height = h;
-    scoreboardCtx = scoreboardCanvas.getContext('2d');
-  }
-  
-  const canvas = scoreboardCanvas;
-  const ctx = scoreboardCtx;
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, w, h);
 
   // Background
@@ -2000,13 +1889,9 @@ function renderScoreboardCanvas() {
     ctx.fillText(`${startIdx + 1}-${endIdx} of ${scoreboardScores.length}`, w / 2, h - 15);
   }
 
-  // PERFORMANCE: Only create texture once, then just update it
-  if (!scoreboardTexture) {
-    scoreboardTexture = new THREE.CanvasTexture(canvas);
-    scoreboardTexture.minFilter = THREE.LinearFilter;
-  } else {
-    scoreboardTexture.needsUpdate = true;
-  }
+  if (scoreboardTexture) scoreboardTexture.dispose();
+  scoreboardTexture = new THREE.CanvasTexture(canvas);
+  scoreboardTexture.minFilter = THREE.LinearFilter;
 
   if (!scoreboardMesh) {
     const geo = new THREE.PlaneGeometry(1.8, 2.2);
@@ -2023,22 +1908,6 @@ function renderScoreboardCanvas() {
 
 export function hideScoreboard() {
   scoreboardGroup.visible = false;
-  
-  // PERFORMANCE: Clean up scoreboard resources
-  while (scoreboardGroup.children.length) {
-    const child = scoreboardGroup.children[0];
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) {
-      if (child.material.map && child.material.map !== scoreboardTexture) {
-        child.material.map.dispose();
-      }
-      child.material.dispose();
-    }
-    scoreboardGroup.remove(child);
-  }
-  
-  // Reset mesh reference (keep canvas and texture for reuse)
-  scoreboardMesh = null;
 }
 
 export function getScoreboardHit(raycaster) {
@@ -2079,29 +1948,22 @@ export function updateScoreboardScroll(delta) {
 
 // ── Country Select Screen ───────────────────────────────────
 
-export function showCountrySelect(countries, continents, initialContinent) {
+export function showCountrySelect(countries, continents, initialContinent, playerPos) {
   hideAll();
-
-  // PERFORMANCE: Clean up old resources before recreating
-  while (countrySelectGroup.children.length) {
-    const child = countrySelectGroup.children[0];
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) {
-      if (child.material.map) child.material.map.dispose();
-      child.material.dispose();
-    }
-    countrySelectGroup.remove(child);
-  }
-  
+  while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
   continentTabs = [];
   countryItems = [];
   countrySelectContinent = initialContinent || 'North America';
   countrySelectScrollOffset = 0;
-  
-  // Reset canvas mesh reference
-  countryListMesh = null;
 
-  countrySelectGroup.position.set(0, 1.6, -4);
+  // Position in front of player (VR-friendly)
+  if (playerPos) {
+    countrySelectGroup.position.copy(playerPos);
+    countrySelectGroup.position.y += 1.6; // Eye level
+    countrySelectGroup.position.z -= 4; // 4 feet in front of player
+  } else {
+    countrySelectGroup.position.set(0, 1.6, -4); // Fallback
+  }
   countrySelectGroup.visible = true;
 
   // Header
@@ -2152,36 +2014,6 @@ export function showCountrySelect(countries, continents, initialContinent) {
   // Country list
   renderCountryList(countries);
 
-  // Scroll buttons on right side (only if there are more countries than visible)
-  const btnDefs = [
-    { label: 'UP', y: 0.5, action: 'scroll_up' },
-    { label: 'DOWN', y: -0.3, action: 'scroll_down' },
-  ];
-
-  for (const def of btnDefs) {
-    const btnGroup = new THREE.Group();
-    btnGroup.position.set(1.2, def.y, 0);
-
-    const btnGeo = new THREE.PlaneGeometry(0.4, 0.25);
-    const btnMat = new THREE.MeshBasicMaterial({
-      color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
-    });
-    const btnMesh = new THREE.Mesh(btnGeo, btnMat);
-    btnMesh.userData.countryAction = def.action;
-    btnGroup.add(btnMesh);
-
-    btnGroup.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(btnGeo),
-      new THREE.LineBasicMaterial({ color: 0x888888 })
-    ));
-
-    const txt = makeSprite(def.label, { fontSize: 20, color: '#ffffff', scale: 0.1 });
-    txt.position.set(0, 0, 0.01);
-    btnGroup.add(txt);
-
-    countrySelectGroup.add(btnGroup);
-  }
-
   // BACK button
   const backGroup = new THREE.Group();
   backGroup.position.set(0, -0.9, 0); // Moved down from -0.8
@@ -2202,220 +2034,63 @@ export function showCountrySelect(countries, continents, initialContinent) {
   countrySelectGroup.add(backGroup);
 }
 
-// PERFORMANCE: Render country list to a single canvas (like scoreboard)
-// This avoids creating 50+ individual 3D objects which kills performance
-function renderCountryList(countries, scrollOffset = 0) {
+function renderCountryList(countries) {
   // Remove old country item meshes
-  countryItems.forEach(item => {
-    if (item.group) {
-      countrySelectGroup.remove(item.group);
-    }
-    if (item.mesh) {
-      countrySelectGroup.remove(item.mesh);
-      if (item.mesh.geometry) item.mesh.geometry.dispose();
-      if (item.mesh.material) item.mesh.material.dispose();
-    }
-  });
+  countryItems.forEach(item => countrySelectGroup.remove(item.group));
   countryItems = [];
-  
-  // Remove old canvas mesh if exists
-  if (countryListMesh) {
-    countrySelectGroup.remove(countryListMesh);
-    if (countryListMesh.geometry) countryListMesh.geometry.dispose();
-    if (countryListMesh.material) countryListMesh.material.dispose();
-    countryListMesh = null;
-  }
 
   const filtered = countries.filter(c => c.continent === countrySelectContinent);
-  
-  // Clamp scroll offset
-  const maxVisible = 12;
-  const maxScroll = Math.max(0, filtered.length - maxVisible);
-  scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
-  
-  // PERFORMANCE: Use single canvas for all countries
-  const w = 600;
-  const rowHeight = 32;
-  const visibleCount = Math.min(filtered.length - scrollOffset, maxVisible);
-  const h = visibleCount * rowHeight + 20;
-  
-  if (!countryListCanvas) {
-    countryListCanvas = document.createElement('canvas');
-    countryListCtx = countryListCanvas.getContext('2d');
-  }
-  
-  countryListCanvas.width = w;
-  countryListCanvas.height = h;
-  const ctx = countryListCtx;
-  ctx.clearRect(0, 0, w, h);
-
-  // Background
-  ctx.fillStyle = 'rgba(10, 0, 30, 0.9)';
-  ctx.fillRect(0, 0, w, h);
-
-  // Border
-  ctx.strokeStyle = '#444488';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, w - 2, h - 2);
-
-  ctx.font = 'bold 22px Arial, sans-serif';
-  ctx.textBaseline = 'middle';
-
-  for (let i = 0; i < visibleCount; i++) {
-    const country = filtered[scrollOffset + i];
-    const y = i * rowHeight + rowHeight / 2 + 10;
-
-    // Row background
-    ctx.fillStyle = 'rgba(17, 17, 51, 0.85)';
-    ctx.fillRect(5, i * rowHeight + 5, w - 10, rowHeight - 4);
-
-    // Country flag and name
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'left';
-    ctx.fillText(`${country.flag}  ${country.name}`, 20, y);
-
-    // Divider line
-    if (i < visibleCount - 1) {
-      ctx.strokeStyle = 'rgba(68, 68, 102, 0.5)';
-      ctx.beginPath();
-      ctx.moveTo(10, (i + 1) * rowHeight + 5);
-      ctx.lineTo(w - 10, (i + 1) * rowHeight + 5);
-      ctx.stroke();
-    }
-  }
-  
-  // Scroll indicator
-  if (filtered.length > maxVisible) {
-    ctx.fillStyle = '#444488';
-    ctx.textAlign = 'center';
-    ctx.font = '16px Arial, sans-serif';
-    ctx.fillText(`${scrollOffset + 1}-${scrollOffset + visibleCount} of ${filtered.length}`, w / 2, h - 10);
-  }
-
-  // Create or update texture
-  if (!countryListTexture) {
-    countryListTexture = new THREE.CanvasTexture(countryListCanvas);
-    countryListTexture.minFilter = THREE.LinearFilter;
-  } else {
-    countryListTexture.needsUpdate = true;
-  }
-
-  // Create mesh for the canvas
-  const aspect = w / h;
-  const meshHeight = 1.8;
-  const meshWidth = meshHeight * aspect;
-  const geo = new THREE.PlaneGeometry(meshWidth, meshHeight);
-  const mat = new THREE.MeshBasicMaterial({
-    map: countryListTexture,
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthTest: false,
-  });
-  countryListMesh = new THREE.Mesh(geo, mat);
-  countryListMesh.position.set(0, 0.1, 0);
-  countryListMesh.renderOrder = 999;
-  countrySelectGroup.add(countryListMesh);
-
-  // Create invisible hitboxes for each visible country (much cheaper than full 3D objects)
+  const itemHeight = 0.22;
+  const itemGap = 0.04;
   const startY = 0.85;
-  const itemHeight = meshHeight / visibleCount;
-  const topY = startY - itemHeight / 2;
-  
-  for (let i = 0; i < visibleCount; i++) {
-    const country = filtered[scrollOffset + i];
-    const y = topY - i * itemHeight;
-    
-    // Create a simple invisible hitbox
-    const hitboxGeo = new THREE.PlaneGeometry(meshWidth * 0.95, itemHeight * 0.9);
-    const hitboxMat = new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
+
+  for (let i = 0; i < filtered.length; i++) {
+    const country = filtered[i];
+    const itemGroup = new THREE.Group();
+    const y = startY - i * (itemHeight + itemGap);
+    itemGroup.position.set(0, y, 0);
+
+    const itemGeo = new THREE.PlaneGeometry(1.8, itemHeight);
+    const itemMat = new THREE.MeshBasicMaterial({
+      color: 0x111133, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
     });
-    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
-    hitbox.position.set(0, y, 0.01);
-    hitbox.userData.countryCode = country.code;
-    hitbox.userData.countryAction = 'select';
-    countrySelectGroup.add(hitbox);
-    countryItems.push({ mesh: hitbox, code: country.code });
+    const itemMesh = new THREE.Mesh(itemGeo, itemMat);
+    itemMesh.userData.countryCode = country.code;
+    itemMesh.userData.countryAction = 'select';
+    itemGroup.add(itemMesh);
+
+    itemGroup.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(itemGeo),
+      new THREE.LineBasicMaterial({ color: 0x444466 })
+    ));
+
+    const label = makeSprite(`${country.flag}  ${country.name}`, {
+      fontSize: 28, color: '#ffffff', scale: 0.15,
+    });
+    label.position.set(0, 0, 0.01);
+    itemGroup.add(label);
+
+    countryItems.push({ group: itemGroup, mesh: itemMesh, code: country.code });
+    countrySelectGroup.add(itemGroup);
   }
-  
-  // Store filtered countries and scroll info
-  countrySelectGroup.userData.filteredCountries = filtered;
-  countrySelectGroup.userData.scrollOffset = scrollOffset;
-  countrySelectGroup.userData.maxVisible = maxVisible;
-  countrySelectScrollOffset = scrollOffset;
 }
 
 export function hideCountrySelect() {
   countrySelectGroup.visible = false;
-  
-  // PERFORMANCE: Clean up country list resources
-  countryItems.forEach(item => {
-    if (item.group) {
-      countrySelectGroup.remove(item.group);
-    }
-    if (item.mesh) {
-      countrySelectGroup.remove(item.mesh);
-      if (item.mesh.geometry) item.mesh.geometry.dispose();
-      if (item.mesh.material) item.mesh.material.dispose();
-    }
-  });
-  countryItems = [];
-  
-  // Clean up canvas mesh
-  if (countryListMesh) {
-    countrySelectGroup.remove(countryListMesh);
-    if (countryListMesh.geometry) countryListMesh.geometry.dispose();
-    if (countryListMesh.material) countryListMesh.material.dispose();
-    countryListMesh = null;
-  }
 }
 
 export function getCountrySelectHit(raycaster, countries) {
   if (!countrySelectGroup.visible) return null;
 
-  // Check scroll and action buttons first
-  const actionMeshes = [];
-  countrySelectGroup.traverse(c => {
-    if (c.userData && c.userData.countryAction) actionMeshes.push(c);
-  });
-  let hits = raycaster.intersectObjects(actionMeshes, false);
-  if (hits.length > 0) {
-    const action = hits[0].object.userData.countryAction;
-    
-    // Handle scroll actions
-    if (action === 'scroll_up') {
-      const newOffset = Math.max(0, countrySelectScrollOffset - 4);
-      if (newOffset !== countrySelectScrollOffset) {
-        renderCountryList(countries, newOffset);
-      }
-      return null;
-    }
-    if (action === 'scroll_down') {
-      const filtered = countries.filter(c => c.continent === countrySelectContinent);
-      const maxScroll = Math.max(0, filtered.length - 12);
-      const newOffset = Math.min(maxScroll, countrySelectScrollOffset + 4);
-      if (newOffset !== countrySelectScrollOffset) {
-        renderCountryList(countries, newOffset);
-      }
-      return null;
-    }
-    
-    return { action };
-  }
-
   // Check continent tabs
   const tabMeshes = continentTabs.map(t => t.mesh);
-  hits = raycaster.intersectObjects(tabMeshes, false);
+  let hits = raycaster.intersectObjects(tabMeshes, false);
   if (hits.length > 0) {
     const continent = hits[0].object.userData.continentTab;
     if (continent !== countrySelectContinent) {
       countrySelectContinent = continent;
-      // Reset scroll when changing continent
-      countrySelectScrollOffset = 0;
       // Refresh tabs and list
-      renderCountryList(countries, 0);
+      renderCountryList(countries);
       // Update tab visuals
       continentTabs.forEach(tab => {
         const isActive = tab.continent === countrySelectContinent;
@@ -2426,12 +2101,20 @@ export function getCountrySelectHit(raycaster, countries) {
   }
 
   // Check country items
-  const itemMeshes = countryItems.map(i => i.mesh).filter(Boolean);
+  const itemMeshes = countryItems.map(i => i.mesh);
   hits = raycaster.intersectObjects(itemMeshes, false);
   if (hits.length > 0) {
     const code = hits[0].object.userData.countryCode;
     return { action: 'select', code };
   }
+
+  // Check back button
+  const actionMeshes = [];
+  countrySelectGroup.traverse(c => {
+    if (c.userData && c.userData.countryAction === 'back') actionMeshes.push(c);
+  });
+  hits = raycaster.intersectObjects(actionMeshes, false);
+  if (hits.length > 0) return { action: 'back' };
 
   return null;
 }
