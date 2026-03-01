@@ -273,8 +273,7 @@ function init() {
   initEnemies(scene);
 
   // [Visual Overhaul] Set VFX reference for voxel explosions
-  const { spawnVoxelExplosion: spawnVoxelExplosionRef } = require('./vfx.js');
-  setVFXReference(spawnVoxelExplosionRef);
+  setVFXReference(spawnVoxelExplosion);
 
   initHUD(camera, scene);
   
