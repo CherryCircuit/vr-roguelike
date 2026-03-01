@@ -125,13 +125,19 @@ function makeTextTexture(text, opts = {}) {
   const lineHeight = fontSize * 1.3;
   const textHeight = lines.length * lineHeight;
 
-  canvas.width = Math.ceil(textWidth) + 40;
-  canvas.height = Math.ceil(textHeight);
+  // Add proper padding for glow effects (glowSize needs at least glowSize+5 pixels on each side)
+  const padding = opts.glow ? (opts.glowSize || 15) + 10 : 40;
+  canvas.width = Math.ceil(textWidth) + padding * 2;
+  canvas.height = Math.ceil(textHeight) + padding * 2;
 
   // Re-set after resize
   ctx.font = font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+
+  // Adjust drawing position for new padding
+  const offsetX = padding;
+  const offsetY = padding;
 
   // Clear canvas with transparency (prevent black background)
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -147,7 +153,7 @@ function makeTextTexture(text, opts = {}) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     lines.forEach((line, i) => {
       const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
-      ctx.fillText(line, canvas.width / 2 + 2, y + 2);
+      ctx.fillText(line, canvas.width / 2 + 2, y + 2 + offsetY);
     });
   }
 
@@ -155,7 +161,7 @@ function makeTextTexture(text, opts = {}) {
   ctx.fillStyle = opts.color || '#00ffff';
   lines.forEach((line, i) => {
     const y = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
-    ctx.fillText(line, canvas.width / 2, y);
+    ctx.fillText(line, canvas.width / 2, y + offsetY);
   });
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -620,39 +626,39 @@ function createUpgradeCard(upgrade, position) {
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
-  // Name text - smaller to prevent overlap
+  // Name text - increased proportionally to card size
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
-    fontSize: 21,
+    fontSize: 36,
     color: upgrade.color || '#00ffff',
     glow: true,
     glowColor: upgrade.color,
     scale: 0.19,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.35, 0.01);
+  nameSprite.position.set(0, 0.40, 0.01);
   group.add(nameSprite);
 
-  // Description text - standard size with padding (well inside box)
+  // Description text - increased proportionally with proper maxWidth
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 16,
+    fontSize: 26,
     color: '#cccccc',
     scale: 0.15,
     depthTest: true,
-    maxWidth: 200,
+    maxWidth: 280,
   });
-  descSprite.position.set(0, -0.05, 0.01);
+  descSprite.position.set(0, -0.02, 0.01);
   group.add(descSprite);
 
   // Side-grade note (different color) when present
   if (upgrade.sideGradeNote) {
     const noteSprite = makeSprite(upgrade.sideGradeNote, {
-      fontSize: 16,
+      fontSize: 22,
       color: '#ffdd00',
-      scale: 0.12,
+      scale: 0.14,
       depthTest: true,
-      maxWidth: 200,
+      maxWidth: 280,
     });
-    noteSprite.position.set(0, -0.22, 0.01);
+    noteSprite.position.set(0, -0.28, 0.01);
     group.add(noteSprite);
   }
 
@@ -691,27 +697,27 @@ function createSkipCard(position) {
   const borderMat = new THREE.LineBasicMaterial({ color: '#00ff88' });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
 
-  // "SKIP" text
+  // "SKIP" text - increased proportionally
   const nameSprite = makeSprite('SKIP', {
-    fontSize: 28,
+    fontSize: 40,
     color: '#00ff88',
     glow: true,
     glowColor: '#00ff88',
     scale: 0.2,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.25, 0.01);
+  nameSprite.position.set(0, 0.30, 0.01);
   group.add(nameSprite);
 
   // Description
   const descSprite = makeSprite('Full health', {
-    fontSize: 18,
+    fontSize: 26,
     color: '#88ffaa',
-    scale: 0.12,
+    scale: 0.14,
     depthTest: true,
-    maxWidth: 120,
+    maxWidth: 220,
   });
-  descSprite.position.set(0, -0.02, 0.01);
+  descSprite.position.set(0, 0.02, 0.01);
   group.add(descSprite);
 
   // Heart icon
