@@ -2201,6 +2201,24 @@ function render(timestamp) {
   }
 
 
+  // ── HUD hover detection (works with both controllers in all states) ──
+  const HUD_RAYCASTERS = [];
+  for (let i = 0; i < 2; i++) {
+    const origin = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    controllers[i].getWorldPosition(origin);
+    controllers[i].getWorldQuaternion(quat);
+    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+    const raycaster = new THREE.Raycaster(origin, direction, 0, 20);
+    HUD_RAYCASTERS.push(raycaster);
+  }
+
+  if (updateHUDHover(HUD_RAYCASTERS)) {
+    playMenuHoverSound();
+  }
+
+
+
   // ── Title screen ──
   if (st === State.TITLE) {
     updateTitle(now);
@@ -2245,21 +2263,6 @@ function render(timestamp) {
     // Update kills remaining alert
     updateKillsAlert(now);
 
-    // HUD hover detection for both controllers
-    const HUD_RAYCASTERS = [];
-    for (let i = 0; i < 2; i++) {
-      const origin = new THREE.Vector3();
-      const quat = new THREE.Quaternion();
-      controllers[i].getWorldPosition(origin);
-      controllers[i].getWorldQuaternion(quat);
-      const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-      const raycaster = new THREE.Raycaster(origin, direction, 0, 20);
-      HUD_RAYCASTERS.push(raycaster);
-    }
-
-    if (updateHUDHover(HUD_RAYCASTERS)) {
-      playMenuHoverSound();
-    }
 
     spawnEnemyWave(dt);
 
