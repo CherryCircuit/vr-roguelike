@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import Stats from 'three/addons/libs/stats.module.js';
 
+import { initDesktopControls, enable, disable, isEnabled, update as updateDesktopControls, getPosition, getShootDirection, getAimRaycaster, getVirtualController } from './desktop-controls.js';
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats, ALT_WEAPON_DEFS, fireRocket, spawnHelperBot, activateShield, createGravityWell, fireIonMortar, spawnHologram } from './upgrades.js';
 import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound, playBossDeathSound, resumeAudioContext, startChargeSound, updateChargeSound, stopChargeSound, playChargeReadySound, playChargeFireSound } from './audio.js';
@@ -36,7 +37,7 @@ import {
   initAltWeaponIndicators, updateAltWeaponIndicators, createAltWeaponStar,
   addAltWeaponStar, getAltWeaponStars, removeAltWeaponStar, getAltWeaponStarHit,
   showAltWeaponAcquired, updateAltWeaponAcquired, showStarTooltip, hideStarTooltip,
-  updateAltWeaponStars
+  updateAltWeaponStars,
   } from './hud.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -236,6 +237,10 @@ function init() {
         document.getElementById('no-vr').style.display = 'block';
         console.warn('[init] immersive-vr not supported');
       }
+
+  // Initialize desktop controls for non-VR play
+  initDesktopControls(scene, camera, renderer);
+  console.log('[init] Desktop controls initialized');
     });
   }
 
