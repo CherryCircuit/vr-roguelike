@@ -131,10 +131,19 @@ export function applyTheme(theme, refs) {
     gridData.material.opacity = theme.gridOpacity;
   }
 
-  if (mountainRefs) {
-    mountainRefs.fillMat.color.setHex(theme.mountainFill);
-    mountainRefs.wireMat.color.setHex(theme.mountainWire);
-    mountainRefs.wireMat.opacity = theme.mountainWireOpacity;
+  if (mountainRefs && mountainRefs.fillMesh) {
+    // Update all mountain meshes (arrays)
+    if (Array.isArray(mountainRefs.fillMesh)) {
+      mountainRefs.fillMesh.forEach(mesh => {
+        mesh.material.color.setHex(theme.mountainFill);
+      });
+    }
+    if (Array.isArray(mountainRefs.wireframe)) {
+      mountainRefs.wireframe.forEach(wire => {
+        wire.material.color.setHex(theme.mountainWire);
+        wire.material.opacity = theme.mountainWireOpacity;
+      });
+    }
   }
 
   if (sunMesh) {

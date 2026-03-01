@@ -118,23 +118,38 @@ export function createMountainRing(scene) {
 
 function createMountainWall(scene, xOffset, direction, mountainMeshes, wireframeMeshes) {
   // Create continuous mountain range from far behind to far in front
-  const NUM_MOUNTAINS = 20;  // More mountains for longer range
-  const SPACING = 20;
+  const NUM_MOUNTAINS = 24;  // More mountains for longer range
+  const SPACING = 18;
   
   for (let i = 0; i < NUM_MOUNTAINS; i++) {
-    const zPos = 180 - (i * SPACING);  // From +180 (behind) to -200 (far front)
+    const zPos = 220 - (i * SPACING);  // From +220 (far behind) to -200 (far front)
     
-    // Varied heights and widths for natural look
-    const heightVariation = Math.sin(i * 0.7) * 10 + Math.sin(i * 1.3) * 5;
-    const height = 12 + Math.random() * 15 + heightVariation;
+    // Varied heights - NO SMALL PEAKS, minimum 20 units
+    const heightVariation = Math.sin(i * 0.7) * 12 + Math.sin(i * 1.3) * 6;
+    const height = 20 + Math.random() * 18 + heightVariation;  // Min 20, max 44
     
-    const widthVariation = Math.sin(i * 0.5 + 2) * 8;
-    const width = 18 + Math.random() * 12 + widthVariation;
+    const widthVariation = Math.sin(i * 0.5 + 2) * 10;
+    const width = 22 + Math.random() * 15 + widthVariation;
     
-    // Some mountains have multiple peaks
-    const hasMultiPeak = Math.random() > 0.6;
+    // MOST mountains have multiple peaks (70%)
+    const hasMultiPeak = Math.random() > 0.3;
     
     createMountainMesh(scene, xOffset, zPos, height, width, direction, hasMultiPeak, mountainMeshes, wireframeMeshes);
+  }
+  
+  // Add a SEMICIRCLE of mountains BEHIND the player to block the horizon
+  const BACK_MOUNTAINS = 12;
+  for (let i = 0; i < BACK_MOUNTAINS; i++) {
+    const angle = (i / BACK_MOUNTAINS) * Math.PI;  // 0 to 180 degrees (semicircle)
+    const radius = 70;
+    const x = Math.cos(angle) * radius * direction;
+    const z = Math.sin(angle) * radius + 150;  // Behind the player
+    
+    const height = 25 + Math.random() * 15;  // Tall mountains
+    const width = 25 + Math.random() * 10;
+    const hasMultiPeak = Math.random() > 0.2;  // 80% multi-peak
+    
+    createMountainMesh(scene, x, z, height, width, direction, hasMultiPeak, mountainMeshes, wireframeMeshes);
   }
 }
 
@@ -403,9 +418,9 @@ export function createStars(scene) {
 
   const starsMat = new THREE.PointsMaterial({
     color: 0xffffff,
-    size: 0.15,
+    size: 0.5,  // Larger size for better visibility
     transparent: true,
-    opacity: 0.6,
+    opacity: 0.8,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
