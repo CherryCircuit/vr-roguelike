@@ -121,6 +121,7 @@
     <h2 style="margin:0 0 20px 0;font-size:32px;">GAME ERROR</h2>
     <p id="error-message" style="font-size:20px;margin:0;word-wrap:break-word;"></p>
     <p id="error-stack" style="font-size:14px;margin:20px 0 0 0;white-space:pre-wrap;opacity:0.8;"></p>
+    <button id="copy-log-btn" style="margin-top:20px;padding:10px 20px;background:#ffffff;color:#ff0000;border:none;font-size:16px;font-weight:bold;cursor:pointer;font-family:'Courier New',monospace;">📋 COPY LOG</button>
   </div>
 
   <!-- Debug menu (show with ?debug=1 or click DEBUG) -->
@@ -273,6 +274,19 @@
         stackEl.textContent = stack || 'No stack trace available';
         overlay.style.display = 'block';
         console.error('[GAME ERROR]', message, stack);
+        
+        // Setup COPY LOG button
+        const copyBtn = document.getElementById('copy-log-btn');
+        copyBtn.onclick = function() {
+          const fullLog = '[GAME ERROR] ' + message + '\n' + stack;
+          navigator.clipboard.writeText(fullLog).then(() => {
+            copyBtn.textContent = '✅ COPIED!';
+            setTimeout(() => { copyBtn.textContent = '📋 COPY LOG'; }, 2000);
+          }).catch(err => {
+            copyBtn.textContent = '❌ FAILED';
+            console.error('Copy failed:', err);
+          });
+        };
       };
 
       window.addEventListener('error', function(e) {

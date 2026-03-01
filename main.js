@@ -188,6 +188,21 @@ let timeScale = 1.0;
 // let cameraShakeIntensity = 0;
 // const originalCameraPos = new THREE.Vector3();
 
+// ── Projectile cleanup helper ───────────────────────────────
+function disposeProjectile(proj) {
+  if (proj.children && proj.children.length > 0) {
+    for (const child of proj.children) {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    }
+    scene.remove(proj);
+  } else {
+    if (proj.geometry) proj.geometry.dispose();
+    if (proj.material) proj.material.dispose();
+    scene.remove(proj);
+  }
+}
+
 // ── Bootstrap ──────────────────────────────────────────────
 init();
 
@@ -1669,18 +1684,6 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       game.totalKills++;
       game.killsWithoutHit++;
 
-function disposeProjectile(proj) {
-  if (proj.children && proj.children.length > 0) {
-    for (const child of proj.children) {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    }
-  } else {
-    if (proj.geometry) proj.geometry.dispose();
-    if (proj.material) proj.material.dispose();
-  }
-  disposeProjectile(proj);
-}
       addScore(destroyData.scoreValue);
 
       // Track kills for hand stats
