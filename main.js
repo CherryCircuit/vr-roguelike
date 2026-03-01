@@ -2651,7 +2651,7 @@ completeLevel();            }
     }
     
     // After 3s: transition to PLAYING, spawn boss (music already started)
-    if (game.stateTimer <= 0) {();
+    if (game.stateTimer <= 0) {
       game._alertSound2 = false;
       game.state = State.PLAYING;
       showHUD();
