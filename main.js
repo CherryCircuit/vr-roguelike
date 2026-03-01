@@ -1501,7 +1501,7 @@ function updateLightningBeam(controller, index, stats, dt) {
             if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
               const cfg = game._levelConfig;
               const remaining = cfg ? cfg.killTarget - game.kills : 0;
-              showKillsRemainingAlert(remaining);
+              showKillsRemainingAlert(remaining, camera.position);
               playKillsAlertSound();
               killsAlertShownThisLevel = true;
             }
