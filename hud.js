@@ -539,8 +539,10 @@ export function showLevelComplete(level, playerPos) {
   s2.position.set(0, 0.2, 0);
   levelTextGroup.add(s2);
 
-  // Fixed world position in front of spawn
-  levelTextGroup.position.set(0, 1.6, -5);
+  // Position in front of player (VR-friendly)
+  levelTextGroup.position.copy(playerPos);
+  levelTextGroup.position.y += 1.6; // Eye level
+  levelTextGroup.position.z -= 3; // 3 feet in front of player
   levelTextGroup.visible = true;
 }
 
@@ -557,8 +559,10 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
 
-  // Fixed world position in front of spawn
-  upgradeGroup.position.set(0, 1.6, -4);
+  // Position in front of player (VR-friendly)
+  upgradeGroup.position.copy(playerPos);
+  upgradeGroup.position.y += 1.6; // Eye level
+  upgradeGroup.position.z -= 4; // 4 feet in front of player
 
   // "Choose an upgrade for [HAND]" header - reduced size significantly
   const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
@@ -800,8 +804,10 @@ export function showGameOver(score, playerPos) {
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
-  // Fixed world position in front of spawn
-  gameOverGroup.position.set(0, 1.6, -5);
+  // Position in front of player (VR-friendly)
+  gameOverGroup.position.copy(playerPos);
+  gameOverGroup.position.y += 1.6; // Eye level
+  gameOverGroup.position.z -= 5; // 5 feet in front of player
   gameOverGroup.visible = true;
 }
 
@@ -822,8 +828,10 @@ export function showVictory(score, playerPos) {
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
-  // Fixed world position in front of spawn
-  gameOverGroup.position.set(0, 1.6, -5);
+  // Position in front of player (VR-friendly)
+  gameOverGroup.position.copy(playerPos);
+  gameOverGroup.position.y += 1.6; // Eye level
+  gameOverGroup.position.z -= 5; // 5 feet in front of player
   gameOverGroup.visible = true;
 }
 
@@ -1476,7 +1484,7 @@ export function getReadyScreenHit(raycaster) {
 
 // ── Name Entry Screen ───────────────────────────────────────
 
-export function showNameEntry(score, level, storedName) {
+export function showNameEntry(score, level, storedName, playerPos) {
   hideAll();
   while (nameEntryGroup.children.length) nameEntryGroup.remove(nameEntryGroup.children[0]);
   nameEntrySlots = [];
@@ -1485,7 +1493,14 @@ export function showNameEntry(score, level, storedName) {
   nameEntryName = storedName || '';
   nameEntryCursor = nameEntryName.length;
 
-  nameEntryGroup.position.set(0, 1.6, -4);
+  // Position in front of player (VR-friendly)
+  if (playerPos) {
+    nameEntryGroup.position.copy(playerPos);
+    nameEntryGroup.position.y += 1.6; // Eye level
+    nameEntryGroup.position.z -= 4; // 4 feet in front of player
+  } else {
+    nameEntryGroup.position.set(0, 1.6, -4); // Fallback
+  }
   nameEntryGroup.visible = true;
 
   // Header
@@ -1694,14 +1709,21 @@ export function updateKeyboardHover(raycaster) {
 
 // ── Scoreboard Screen ───────────────────────────────────────
 
-export function showScoreboard(scores, headerText) {
+export function showScoreboard(scores, headerText, playerPos) {
   hideAll();
   while (scoreboardGroup.children.length) scoreboardGroup.remove(scoreboardGroup.children[0]);
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
   scoreboardHeader = headerText || 'GLOBAL LEADERBOARD';
-  scoreboardGroup.position.set(0, 1.6, -5);
+  // Position in front of player (VR-friendly)
+  if (playerPos) {
+    scoreboardGroup.position.copy(playerPos);
+    scoreboardGroup.position.y += 1.6; // Eye level
+    scoreboardGroup.position.z -= 5; // 5 feet in front of player
+  } else {
+    scoreboardGroup.position.set(0, 1.6, -5); // Fallback
+  }
   scoreboardGroup.visible = true;
 
   // Header
@@ -1920,7 +1942,7 @@ export function updateScoreboardScroll(delta) {
 
 // ── Country Select Screen ───────────────────────────────────
 
-export function showCountrySelect(countries, continents, initialContinent) {
+export function showCountrySelect(countries, continents, initialContinent, playerPos) {
   hideAll();
   while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
   continentTabs = [];
@@ -1928,7 +1950,14 @@ export function showCountrySelect(countries, continents, initialContinent) {
   countrySelectContinent = initialContinent || 'North America';
   countrySelectScrollOffset = 0;
 
-  countrySelectGroup.position.set(0, 1.6, -4);
+  // Position in front of player (VR-friendly)
+  if (playerPos) {
+    countrySelectGroup.position.copy(playerPos);
+    countrySelectGroup.position.y += 1.6; // Eye level
+    countrySelectGroup.position.z -= 4; // 4 feet in front of player
+  } else {
+    countrySelectGroup.position.set(0, 1.6, -4); // Fallback
+  }
   countrySelectGroup.visible = true;
 
   // Header

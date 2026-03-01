@@ -826,9 +826,9 @@ function handleDesktopTitleClick() {
     scoreboardFromGameOver = false;
     game.state = State.SCOREBOARD;
     hideTitle();
-    showScoreboard([], 'LOADING...');
+    showScoreboard([], 'LOADING...'), camera.position);
     fetchTopScores().then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
     });
     return;
   }
@@ -844,10 +844,10 @@ function handleDesktopGameOverClick() {
 
   if (!getStoredCountry()) {
     game.state = State.COUNTRY_SELECT;
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America'), camera.position);
   } else {
     game.state = State.NAME_ENTRY;
-    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+    showNameEntry(game.finalScore, game.finalLevel, getStoredName(), camera.position);
   }
 }
 
@@ -864,9 +864,9 @@ function handleDesktopNameEntryClick() {
         hideNameEntry();
         submitScore(name).then(() => {
           game.state = State.SCOREBOARD;
-          showScoreboard([], 'LOADING...');
+          showScoreboard([], 'LOADING...'), camera.position);
           fetchTopScores().then(scores => {
-            showScoreboard(scores, 'GLOBAL LEADERBOARD');
+            showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
           });
         });
       } else {
@@ -893,9 +893,9 @@ function handleDesktopScoreboardClick() {
       showTitle();
     } else {
       game.state = State.SCOREBOARD;
-      showScoreboard([], 'LOADING...');
+      showScoreboard([], 'LOADING...'), camera.position);
       fetchTopScores().then(scores => {
-        showScoreboard(scores, 'GLOBAL LEADERBOARD');
+        showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
       });
     }
   } else if (hit === 'region') {
@@ -906,9 +906,9 @@ function handleDesktopScoreboardClick() {
         playMenuClick();
         hideScoreboard();
         game.state = State.REGIONAL_SCORES;
-        showScoreboard([], 'LOADING...');
+        showScoreboard([], 'LOADING...'), camera.position);
         fetchScoresByContinent(continent.id).then(scores => {
-          showScoreboard(scores, `${continent.name.toUpperCase()} LEADERBOARD`);
+          showScoreboard(scores, `${continent.name.toUpperCase()} LEADERBOARD`), camera.position);
         });
       }
     }
@@ -925,14 +925,14 @@ function handleDesktopCountrySelectClick() {
     playMenuClick();
     hideCountrySelect();
     game.state = State.NAME_ENTRY;
-    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+    showNameEntry(game.finalScore, game.finalLevel, getStoredName(), camera.position);
   } else if (hit === 'back') {
     playMenuClick();
     hideCountrySelect();
     game.state = State.SCOREBOARD;
-    showScoreboard([], 'LOADING...');
+    showScoreboard([], 'LOADING...'), camera.position);
     fetchTopScores().then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
     });
   }
 }
@@ -967,9 +967,9 @@ function handleTitleTrigger(controller) {
     scoreboardFromGameOver = false;
     game.state = State.SCOREBOARD;
     hideTitle();
-    showScoreboard([], 'LOADING...');
+    showScoreboard([], 'LOADING...'), camera.position);
     fetchTopScores().then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
     });
     return;
   }
@@ -987,10 +987,10 @@ function handleGameOverTrigger(controller) {
   // If no stored country, go to country select first
   if (!getStoredCountry()) {
     game.state = State.COUNTRY_SELECT;
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America'), camera.position);
   } else {
     game.state = State.NAME_ENTRY;
-    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+    showNameEntry(game.finalScore, game.finalLevel, getStoredName(), camera.position);
   }
 }
 
@@ -1014,7 +1014,7 @@ function handleNameEntryTrigger(controller) {
 
     // Submit score and show scoreboard
     game.state = State.SCOREBOARD;
-    showScoreboard([], 'SUBMITTING...');
+    showScoreboard([], 'SUBMITTING...'), camera.position);
     const country = getStoredCountry() || '';
     submitScore(name, game.finalScore, game.finalLevel, country).then(() => {
       // Small artificial delay to ensure DB indexing is finished for consistent read-after-write
@@ -1022,10 +1022,10 @@ function handleNameEntryTrigger(controller) {
     }).then(() => {
       return fetchTopScores();
     }).then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
     }).catch(err => {
       console.error('[scoreboard] Detailed error in submission flow:', err);
-      showScoreboard([], 'ERROR SUBMITTING SCORE');
+      showScoreboard([], 'ERROR SUBMITTING SCORE'), camera.position);
     });
   }
 }
@@ -1050,7 +1050,7 @@ function handleScoreboardTrigger(controller) {
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
     hideScoreboard();
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America'), camera.position);
     return;
   }
   if (action === 'continent') {
@@ -1058,7 +1058,7 @@ function handleScoreboardTrigger(controller) {
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
     hideScoreboard();
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America'), camera.position);
     return;
   }
 }
@@ -1079,13 +1079,13 @@ function handleCountrySelectTrigger(controller) {
     if (scoreboardFromGameOver) {
       // Back to name entry
       game.state = State.NAME_ENTRY;
-      showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+      showNameEntry(game.finalScore, game.finalLevel, getStoredName(), camera.position);
     } else {
       // Back to scoreboard
       game.state = State.SCOREBOARD;
-      showScoreboard([], 'LOADING...');
+      showScoreboard([], 'LOADING...'), camera.position);
       fetchTopScores().then(scores => {
-        showScoreboard(scores, 'GLOBAL LEADERBOARD');
+        showScoreboard(scores, 'GLOBAL LEADERBOARD'), camera.position);
       });
     }
     return;
@@ -1099,15 +1099,15 @@ function handleCountrySelectTrigger(controller) {
     if (scoreboardFromGameOver) {
       // After setting country during game-over flow, go to name entry
       game.state = State.NAME_ENTRY;
-      showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+      showNameEntry(game.finalScore, game.finalLevel, getStoredName(), camera.position);
     } else {
       // Filtering scoreboard by country
       game.state = State.REGIONAL_SCORES;
       const country = COUNTRIES.find(c => c.code === result.code);
       const label = country ? country.name : result.code;
-      showScoreboard([], 'LOADING...');
+      showScoreboard([], 'LOADING...'), camera.position);
       fetchScoresByCountry(result.code).then(scores => {
-        showScoreboard(scores, `${label.toUpperCase()} LEADERBOARD`);
+        showScoreboard(scores, `${label.toUpperCase()} LEADERBOARD`), camera.position);
       });
     }
   }
