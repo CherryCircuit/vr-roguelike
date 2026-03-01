@@ -145,7 +145,7 @@ export function createMountainRing(scene) {
 
   // Solid dark fill
   const fillMat = new THREE.MeshBasicMaterial({
-    color: 0x0a0020,
+    color: 0x000000,  // Pure black for synthwave aesthetic
     side: THREE.DoubleSide
   });
   const fillMesh = new THREE.Mesh(geometry, fillMat);
@@ -155,9 +155,9 @@ export function createMountainRing(scene) {
   // Glowing cyan wireframe
   const edges = new THREE.EdgesGeometry(geometry, 15);
   const wireMat = new THREE.LineBasicMaterial({
-    color: 0x00ffff,
+    color: 0xff00ff,  // Neon magenta/purple for synthwave aesthetic
     transparent: true,
-    opacity: 0.6,
+    opacity: 0.8,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
