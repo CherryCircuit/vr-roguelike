@@ -541,33 +541,314 @@ const BOSS_SKULL_PATTERN = [
 ];
 
 const BOSS_DEFS = {
-  // Tier 1 — Balanced HP (Shielded -30%)
-  grave_voxel: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 1000, phases: 3, color: 0xcccccc, scoreValue: 100, behavior: 'spawner' },
-  iron_sentry: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 900, phases: 3, color: 0x8B4513, scoreValue: 100, behavior: 'turret' },
-  core_guardian: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 560, phases: 3, color: 0xaa00ff, scoreValue: 100, behavior: 'shielded' },
-  chrono_wraith: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 850, phases: 3, color: 0x00ff88, scoreValue: 100, behavior: 'dodger' },
-  siege_ram: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 950, phases: 3, color: 0x666666, scoreValue: 100, behavior: 'charger' },
+  // Teleporting boss (Level 5)
+  chrono_wraith: {
+    pattern: [[1, 1, 1, 1]],
+    voxelSize: 0.45,
+    baseHp: 850,
+    phases: 3,
+    color: 0x00ff88,
+    scoreValue: 100,
+    behavior: 'dodger',
+    hitboxRadius: 0.45
+  },
 
-  // Tier 2
-  grave_voxel2: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 1500, phases: 3, color: 0xbbbbbb, scoreValue: 150, behavior: 'spawner' },
-  iron_sentry2: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 1350, phases: 3, color: 0x7a3a10, scoreValue: 150, behavior: 'turret' },
-  core_guardian2: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 840, phases: 3, color: 0x9900ee, scoreValue: 150, behavior: 'shielded' },
-  chrono_wraith2: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 1275, phases: 3, color: 0x00ee77, scoreValue: 150, behavior: 'dodger' },
-  siege_ram2: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 1425, phases: 3, color: 0x555555, scoreValue: 150, behavior: 'charger' },
+  // Level 10 bosses (Tier 2 - HARDER)
+  hunter_breakenridge: {
+    name: 'Redmond "Hunter" Breakenridge',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.35,
+    baseHp: 1200,
+    phases: 3,
+    color: 0xff6600,
+    scoreValue: 200,
+    behavior: 'hunter',
+    hitboxRadius: 0.6,
+    rifleFireRate: 2.5,
+    droneFireRate: 1.5,
+    weakPoints: false  // Custom weak points (drone)
+  },
 
-  // Tier 3
-  grave_voxel3: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 2200, phases: 3, color: 0xaaaaaa, scoreValue: 200, behavior: 'spawner' },
-  iron_sentry3: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 2000, phases: 3, color: 0x6b300d, scoreValue: 200, behavior: 'turret' },
-  core_guardian3: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 1260, phases: 3, color: 0x8800dd, scoreValue: 200, behavior: 'shielded' },
-  chrono_wraith3: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 1900, phases: 3, color: 0x00dd66, scoreValue: 200, behavior: 'dodger' },
-  siege_ram3: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 2100, phases: 3, color: 0x444444, scoreValue: 200, behavior: 'charger' },
+  dj_drax: {
+    name: 'DJ Drax',
+    pattern: [
+      [1, 1, 1],
+      [1, 1, 1],
+    ],
+    voxelSize: 0.3,
+    baseHp: 1300,
+    phases: 3,
+    color: 0x8800ff,
+    scoreValue: 200,
+    behavior: 'dj',
+    hitboxRadius: 0.7,
+    beatRate: 0.6,
+    fanSpawnRate: 4.0,
+    weakPoints: false  // Custom weak points (speakers)
+  },
 
-  // Tier 4
-  grave_voxel4: { pattern: BOSS_SKULL_PATTERN, voxelSize: 0.52, baseHp: 3200, phases: 3, color: 0x999999, scoreValue: 400, behavior: 'spawner' },
-  iron_sentry4: { pattern: [[1, 1, 1], [1, 1, 1], [0, 1, 0]], voxelSize: 0.48, baseHp: 2900, phases: 3, color: 0x59260a, scoreValue: 400, behavior: 'turret' },
-  core_guardian4: { pattern: [[1, 1], [1, 1]], voxelSize: 0.65, baseHp: 1820, phases: 3, color: 0x7700cc, scoreValue: 400, behavior: 'shielded' },
-  chrono_wraith4: { pattern: [[1, 1, 1, 1]], voxelSize: 0.45, baseHp: 2700, phases: 3, color: 0x00cc55, scoreValue: 400, behavior: 'dodger' },
-  siege_ram4: { pattern: [[1, 1, 1], [1, 1, 1]], voxelSize: 0.55, baseHp: 3000, phases: 3, color: 0x333333, scoreValue: 400, behavior: 'charger' },
+  captain_kestrel: {
+    name: 'Captain Kestrel',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.3,
+    baseHp: 1150,
+    phases: 3,
+    color: 0x00aaff,
+    scoreValue: 200,
+    behavior: 'starfighter',
+    hitboxRadius: 0.65,
+    cannonFireRate: 2.0,
+    missileRate: 5.0,
+    weakPoints: false  // Custom weak points (cockpit)
+  },
+
+  dr_aster: {
+    name: 'Dr. Aster',
+    pattern: [
+      [0, 1, 0],
+      [1, 1, 1],
+      [0, 1, 0],
+    ],
+    voxelSize: 0.35,
+    baseHp: 1100,
+    phases: 3,
+    color: 0xff00ff,
+    scoreValue: 200,
+    behavior: 'scientist',
+    hitboxRadius: 0.55,
+    minionSpawnRate: 5.0,
+    weakPoints: false  // Custom weak points (compiler)
+  },
+
+  sunflare_seraph: {
+    name: 'Sunflare Seraph',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.3,
+    baseHp: 1250,
+    phases: 3,
+    color: 0xffdd00,
+    scoreValue: 200,
+    behavior: 'monk',
+    hitboxRadius: 0.7,
+    meditationDuration: 3.0,
+    weakPoints: false  // Custom weak points (sun nodes)
+  }
+
+  // Level 15 bosses (Tier 3 - TOUGH)
+  theodore_breakenridge: {
+    name: 'Theodore "Shady" Breakenridge',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.4,
+    baseHp: 1800,
+    phases: 3,
+    color: 0x8800ff,
+    scoreValue: 400,
+    behavior: 'outlaw',
+    hitboxRadius: 0.7,
+    vanishDuration: 2.0,
+    shadowBulletRate: 0.8,
+    weakPoints: true
+  },
+
+  commander_halcyon: {
+    name: 'Commander Halcyon',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.38,
+    baseHp: 1750,
+    phases: 3,
+    color: 0x00aaff,
+    scoreValue: 400,
+    behavior: 'commander',
+    hitboxRadius: 0.75,
+    laserRate: 1.5,
+    weakPoints: false
+  },
+
+  madame_coda: {
+    name: 'Madame Coda',
+    pattern: [
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+    ],
+    voxelSize: 0.32,
+    baseHp: 1700,
+    phases: 3,
+    color: 0xff00ff,
+    scoreValue: 400,
+    behavior: 'diva',
+    hitboxRadius: 0.7,
+    beamRate: 1.2,
+    performanceDuration: 3.0,
+    weakPoints: false
+  },
+
+  twin_glitch: {
+    name: 'Twin Glitch Units',
+    pattern: [
+      [1, 1],
+      [1, 1],
+    ],
+    voxelSize: 0.25,
+    baseHp: 1600,
+    phases: 3,
+    color: 0x00ffff,
+    scoreValue: 400,
+    behavior: 'twin_glitch',
+    hitboxRadius: 1.2,
+    vulnerabilitySwapRate: 4.0,
+    weakPoints: false
+  },
+
+  neon_minotaur: {
+    name: 'Neon Minotaur',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.42,
+    baseHp: 1900,
+    phases: 3,
+    color: 0xff0088,
+    scoreValue: 400,
+    behavior: 'minotaur',
+    hitboxRadius: 0.8,
+    chargeDuration: 2.5,
+    slamRate: 5.0,
+    shardRate: 0.6,
+    weakPoints: true
+  },
+
+  // Level 20 Final Bosses (Tier 4 - VERY TOUGH)
+  walter_breakenridge: {
+    name: 'Walter "Pa" Breakenridge',
+    pattern: [
+      [0, 0, 1, 1, 1, 0, 0],
+      [0, 1, 1, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 1, 1, 0],
+      [0, 0, 1, 1, 1, 0, 0],
+    ],
+    voxelSize: 0.5,
+    baseHp: 1800,
+    phases: 4,
+    color: 0x88ff00,
+    scoreValue: 500,
+    behavior: 'walter',
+    hitboxRadius: 1.2,
+    minionSpawnRate: 4.0,
+    projectileRate: 2.5
+  },
+
+  kernel_monolith: {
+    name: 'KERNEL',
+    pattern: [
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+    ],
+    voxelSize: 0.55,
+    baseHp: 2000,
+    phases: 3,
+    color: 0xff8800,
+    scoreValue: 500,
+    behavior: 'kernel',
+    hitboxRadius: 1.0,
+    projectileRate: 1.8
+  },
+
+  synth_kraken: {
+    name: 'Synth Kraken',
+    pattern: [
+      [0, 0, 1, 1, 0, 0],
+      [0, 1, 1, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 1, 0],
+    ],
+    voxelSize: 0.48,
+    baseHp: 1900,
+    phases: 4,
+    color: 0x00ffff,
+    scoreValue: 500,
+    behavior: 'kraken',
+    hitboxRadius: 1.1,
+    minionSpawnRate: 5.0,
+    projectileRate: 3.0
+  },
+
+  afterimage_seraphim: {
+    name: 'Afterimage Seraphim',
+    pattern: [
+      [1, 0, 0, 0, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [0, 1, 0, 1, 0],
+      [0, 1, 0, 1, 0],
+    ],
+    voxelSize: 0.45,
+    baseHp: 1700,
+    phases: 3,
+    color: 0xffff88,
+    scoreValue: 500,
+    behavior: 'seraphim',
+    hitboxRadius: 0.9,
+    minionSpawnRate: 6.0
+  },
+
+  sun_eater_train: {
+    name: 'Sun-Eater Train',
+    pattern: [
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+    ],
+    voxelSize: 0.6,
+    baseHp: 2200,
+    phases: 5,
+    color: 0xffaa00,
+    scoreValue: 500,
+    behavior: 'train',
+    hitboxRadius: 1.3,
+    projectileRate: 2.0
+  }
 };
 
 function buildBossMesh(def, id) {

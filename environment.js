@@ -66,7 +66,8 @@ export function createScrollingGrid(scene) {
 
 export function updateScrollingGrid(dt, isPlaying) {
   if (!gridData || !isPlaying) return;
-  gridData.texture.offset.y += dt * 0.5; // Tune speed here
+  // Grid animation disabled for performance
+    // // Grid animation disabled for performance // Tune speed here
 }
 
 export function regenerateGridTexture(colorStr) {

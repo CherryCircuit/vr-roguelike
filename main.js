@@ -860,7 +860,7 @@ function startGame() {
     if (ctrl) {
       const hand = i === 0 ? 'left' : 'right';
       const primaryWeapon = getPrimaryWeaponForHand(hand);
-      updateControllerWeapon(ctrl, primaryWeapon);
+      // Weapon model update removed;
     }
   });
 
@@ -1020,7 +1020,7 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   const controllerIndex = hand === 'left' ? 0 : 1;
   if (controllers[controllerIndex]) {
     const primaryWeapon = getPrimaryWeaponForHand(hand);
-    updateControllerWeapon(controllers[controllerIndex], primaryWeapon);
+    // Weapon model update removed;
   }
 
   playUpgradeSound();

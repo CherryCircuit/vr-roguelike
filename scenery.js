@@ -212,7 +212,7 @@ export function initAmbientParticles(scene) {
 
   const mat = new THREE.PointsMaterial({
     color: 0xffffff,
-    size: 0.15,
+    size: 0.05,  // Smaller particles to avoid confusion with enemies
     transparent: true,
     opacity: 0.6,
     blending: THREE.AdditiveBlending,
