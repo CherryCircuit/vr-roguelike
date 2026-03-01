@@ -121,7 +121,6 @@
     <h2 style="margin:0 0 20px 0;font-size:32px;">GAME ERROR</h2>
     <p id="error-message" style="font-size:20px;margin:0;word-wrap:break-word;"></p>
     <p id="error-stack" style="font-size:14px;margin:20px 0 0 0;white-space:pre-wrap;opacity:0.8;"></p>
-    <button id="copy-log-btn" style="margin-top:20px;padding:10px 20px;background:#ffffff;color:#ff0000;border:none;font-size:16px;font-weight:bold;cursor:pointer;font-family:'Courier New',monospace;">📋 COPY LOG</button>
   </div>
 
   <!-- Debug menu (show with ?debug=1 or click DEBUG) -->
@@ -129,6 +128,7 @@
     <div style="color:#00ffff;margin-bottom:8px;">DEBUG</div>
     <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;background:#220044;color:#fff;border:1px solid #ff00ff;"></label>
     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
+    <button id="copy-log-btn" style="margin-left:8px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;">📋 COPY LOG</button>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
   </div>
@@ -180,6 +180,16 @@
       });
       document.getElementById('debug-console').addEventListener('change', function() {
         consolePanel.style.display = this.checked ? 'block' : 'none';
+      });
+      document.getElementById('copy-log-btn').addEventListener('click', function() {
+        const logs = document.getElementById('console-logs').textContent;
+        navigator.clipboard.writeText(logs).then(() => {
+          const btn = document.getElementById('copy-log-btn');
+          btn.textContent = '✅ COPIED!';
+          setTimeout(() => { btn.textContent = '📋 COPY LOG'; }, 2000);
+        }).catch(err => {
+          console.error('Copy failed:', err);
+        });
       });
       consolePanel.addEventListener('click', function() {
         consolePanel.style.display = 'none';
