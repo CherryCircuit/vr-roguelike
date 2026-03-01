@@ -1131,11 +1131,7 @@ function onTriggerRelease(index) {
     stopLightningSound();
   }
 
-  // Satisfying charge beam release - big, dramatic sound
-  explosionVisuals.push(beamInner);
-  explosionVisuals.push(beamOuter);
 
-  playChargeFireSound(damage);
 }
 
 // ============================================================
@@ -1612,8 +1608,6 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
 
   scene.add(beamInner);
   scene.add(beamOuter);
-  explosionVisuals.push(beamInner);
-  explosionVisuals.push(beamOuter);
 
   const controllerIndex = index;
   const hand = index === 0 ? 'left' : 'right';
