@@ -98,75 +98,95 @@ export function regenerateGridTexture(colorStr) {
   gridData.texture.needsUpdate = true;
 }
 
-// ── Wireframe Mountain Ring (Valley Effect) ───────────────
+// ── Wireframe Valley Mountains (Synthwave Style) ───────────────
 export function createMountainRing(scene) {
-  const RING_RADIUS = 80;
-  const RING_SEGMENTS = 64;   // Around the circle
-  const HEIGHT_ROWS = 5;      // Vertical resolution
-  const MAX_HEIGHT = 25;
-  const MIN_HEIGHT = 8;
+  // Create TWO mountain walls - left and right sides
+  // These frame a tunnel/path leading toward the sun
+  
+  const mountainMeshes = [];
+  const wireframeMeshes = [];
+  
+  // Create mountains on LEFT side
+  createMountainWall(scene, -50, -1, mountainMeshes, wireframeMeshes);
+  
+  // Create mountains on RIGHT side  
+  createMountainWall(scene, 50, 1, mountainMeshes, wireframeMeshes);
+  
+  mountainRefs = { fillMesh: mountainMeshes, wireframe: wireframeMeshes };
+  return mountainRefs;
+}
 
+function createMountainWall(scene, xOffset, direction, mountainMeshes, wireframeMeshes) {
+  // Create multiple mountain peaks in a row
+  const NUM_PEAKS = 8;
+  const PEAK_SPACING = 25;
+  
+  for (let i = 0; i < NUM_PEAKS; i++) {
+    const zPos = -30 - (i * PEAK_SPACING);
+    const height = 15 + Math.random() * 20;
+    const width = 20 + Math.random() * 15;
+    
+    createMountainPeak(scene, xOffset, zPos, height, width, direction, mountainMeshes, wireframeMeshes);
+  }
+}
+
+function createMountainPeak(scene, x, z, height, width, direction, mountainMeshes, wireframeMeshes) {
+  // Create low-poly angular mountain peak
   const positions = [];
   const indices = [];
-
-  // Generate vertices with layered sine waves for organic peaks
-  for (let row = 0; row <= HEIGHT_ROWS; row++) {
-    const y = row / HEIGHT_ROWS;
-    for (let seg = 0; seg <= RING_SEGMENTS; seg++) {
-      const angle = (seg / RING_SEGMENTS) * Math.PI * 2;
-      const x = Math.cos(angle) * RING_RADIUS;
-      const z = Math.sin(angle) * RING_RADIUS;
-
-      let height = 0;
-      if (row > 0) {
-        // Layered sine waves for organic peaks
-        const noise1 = Math.sin(angle * 3.7 + 1.2) * 0.4;
-        const noise2 = Math.sin(angle * 7.3 + 4.5) * 0.2;
-        const noise3 = Math.sin(angle * 13.1 + 2.8) * 0.1;
-        const peakFactor = Math.sin(y * Math.PI); // Peak in middle rows
-        height = (MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * (noise1 + noise2 + noise3 + 0.7)) * peakFactor;
-      }
-      positions.push(x, height, z);
-    }
-  }
-
-  // Triangle indices
-  for (let row = 0; row < HEIGHT_ROWS; row++) {
-    for (let seg = 0; seg < RING_SEGMENTS; seg++) {
-      const a = row * (RING_SEGMENTS + 1) + seg;
-      const b = a + RING_SEGMENTS + 1;
-      indices.push(a, b, a + 1, b, b + 1, a + 1);
-    }
-  }
-
+  
+  // Base vertices (4 corners)
+  const hw = width / 2;
+  
+  // Peak vertex (top)
+  positions.push(0, height, 0);  // 0 - peak
+  
+  // Base vertices
+  positions.push(-hw, 0, -hw * 0.8);  // 1 - back left
+  positions.push(hw, 0, -hw * 0.8);   // 2 - back right
+  positions.push(hw, 0, hw * 0.8);    // 3 - front right
+  positions.push(-hw, 0, hw * 0.8);   // 4 - front left
+  
+  // Side peak for more angular look
+  positions.push(hw * 0.3 * direction, height * 0.6, 0);  // 5 - side peak
+  
+  // Front faces (2 triangles each)
+  indices.push(0, 4, 3);  // front
+  indices.push(0, 3, 2);  // right front
+  indices.push(0, 2, 5);  // right side
+  indices.push(0, 5, 1);  // back right
+  indices.push(0, 1, 4);  // left
+  
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
-
-  // Solid dark fill
+  geometry.computeVertexNormals();
+  
+  // Black fill
   const fillMat = new THREE.MeshBasicMaterial({
-    color: 0x000000,  // Pure black for synthwave aesthetic
+    color: 0x000000,
     side: THREE.DoubleSide
   });
   const fillMesh = new THREE.Mesh(geometry, fillMat);
+  fillMesh.position.set(x, 0, z);
   fillMesh.renderOrder = -5;
   scene.add(fillMesh);
-
-  // Glowing cyan wireframe
-  const edges = new THREE.EdgesGeometry(geometry, 15);
+  mountainMeshes.push(fillMesh);
+  
+  // Neon magenta wireframe
+  const edges = new THREE.EdgesGeometry(geometry, 1);
   const wireMat = new THREE.LineBasicMaterial({
-    color: 0xff00ff,  // Neon magenta/purple for synthwave aesthetic
+    color: 0xff00ff,
     transparent: true,
-    opacity: 0.8,
+    opacity: 0.9,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
   const wireframe = new THREE.LineSegments(edges, wireMat);
+  wireframe.position.set(x, 0, z);
   wireframe.renderOrder = -4;
   scene.add(wireframe);
-
-  mountainRefs = { fillMesh, wireframe, fillMat, wireMat };
-  return mountainRefs;
+  wireframeMeshes.push(wireframe);
 }
 
 // ── Sun with Enhanced Glow ─────────────────────────────────
