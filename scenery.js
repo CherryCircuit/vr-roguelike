@@ -98,7 +98,7 @@ export function getThemeForLevel(level) {
 
 // ── Apply Theme ───────────────────────────────────────────
 export function applyTheme(theme, refs) {
-  const { scene, gridData, mountainRefs, sunRefs, starsRefs } = refs;
+  const { scene, gridData, mountainRefs, sunMesh, sunGlow } = refs;
 
   if (scene) {
     scene.background.setHex(theme.skyColor);
@@ -107,8 +107,27 @@ export function applyTheme(theme, refs) {
   }
 
   if (gridData) {
-    const { regenerateGridTexture } = require('./environment.js');
-    regenerateGridTexture(theme.gridColor);
+    // Manually update the grid texture (can't use require() in ES6 modules)
+    const canvas = gridData.texture.image;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 256, 256);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.strokeStyle = theme.gridColor;
+    ctx.lineWidth = 2;
+    const cellSize = 256 / 16;
+    for (let i = 0; i <= 16; i++) {
+      const pos = i * cellSize;
+      ctx.beginPath();
+      ctx.moveTo(pos, 0);
+      ctx.lineTo(pos, 256);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, pos);
+      ctx.lineTo(256, pos);
+      ctx.stroke();
+    }
+    gridData.texture.needsUpdate = true;
     gridData.material.opacity = theme.gridOpacity;
   }
 
@@ -118,14 +137,48 @@ export function applyTheme(theme, refs) {
     mountainRefs.wireMat.opacity = theme.mountainWireOpacity;
   }
 
-  if (sunRefs) {
-    const { regenerateSunTexture } = require('./environment.js');
-    regenerateSunTexture(sunRefs.sunMesh, theme.sunColors);
-    sunRefs.glowMesh.material.color.setHex(theme.sunGlowColor);
+  if (sunMesh) {
+    // Regenerate sun texture with new colors
+    const canvas = sunMesh.material.map.image;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 512, 512);
+    const grad = ctx.createLinearGradient(256, 30, 256, 482);
+    theme.sunColors.forEach((c, i) => grad.addColorStop(i / (theme.sunColors.length - 1), c));
+    ctx.beginPath();
+    ctx.arc(256, 256, 248, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.shadowColor = theme.sunColors[0];
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(256, 256, 248, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Cut bands
+    ctx.globalCompositeOperation = 'destination-out';
+    const bandDefs = [
+      { y: 0.90, h: 0.065 },
+      { y: 0.82, h: 0.050 },
+      { y: 0.75, h: 0.038 },
+      { y: 0.69, h: 0.028 },
+      { y: 0.64, h: 0.020 },
+      { y: 0.60, h: 0.013 },
+      { y: 0.57, h: 0.008 },
+      { y: 0.54, h: 0.004 },
+    ];
+    for (const b of bandDefs) {
+      const cy = b.y * 512;
+      const ch = b.h * 512;
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, cy - ch / 2, 512, ch);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    sunMesh.material.map.needsUpdate = true;
   }
 
-  if (starsRefs) {
-    starsRefs.starsMat.color.setHex(theme.starColor);
+  if (sunGlow) {
+    sunGlow.material.color.setHex(theme.sunGlowColor);
   }
 
   console.log(`[scenery] Applied theme: ${Object.keys(THEMES).find(k => THEMES[k] === theme)}`);
