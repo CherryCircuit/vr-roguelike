@@ -2591,7 +2591,8 @@ function render(timestamp) {
           playUpgradeSound();
           
           // Show acquisition notification
-          const def = ALT_WEAPON_DEFS[weaponId];showAltWeaponAcquired(def ? def.name : weaponId, def ? def.color : #00ffff);
+          const def = ALT_WEAPON_DEFS[weaponId];
+          showAltWeaponAcquired(def ? def.name : weaponId, def ? def.color : '#00ffff');
           
           console.log(`[alt-weapon] Collected ${weaponId} for ${hand} hand`);
           break;
