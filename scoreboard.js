@@ -11,6 +11,47 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 console.log('[scoreboard] Supabase client initialized:', !!supabase);
 
+// ── Configuration Validation ─────────────────────────────────────
+function validateConfiguration() {
+  const issues = [];
+
+  if (!SUPABASE_URL || !SUPABASE_URL.includes('supabase.co')) {
+    issues.push('SUPABASE_URL appears invalid or is placeholder');
+  }
+
+  if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.length < 50) {
+    issues.push('SUPABASE_ANON_KEY appears invalid or empty');
+  }
+
+  if (issues.length > 0) {
+    console.error('[scoreboard] ════════════════════════════════════════════════════════════╗');
+    console.error('[scoreboard] ║ CONFIGURATION ISSUES DETECTED                             ║');
+    console.error('[scoreboard] ╚═══════════════════════════════════════════════════════════╝');
+    console.error('[scoreboard] ');
+    issues.forEach((issue, i) => {
+      console.error(`[scoreboard]   ${i + 1}. ${issue}`);
+    });
+    console.error('[scoreboard] ');
+    console.error('[scoreboard] 📖 REQUIRED SETUP STEPS:');
+    console.error('[scoreboard]   1. Create a Supabase project at https://supabase.com');
+    console.error('[scoreboard]   2. Create the "scores" table (see SUPABASE_SETUP.md)');
+    console.error('[scoreboard]   3. Configure RLS policies (see SUPABASE_SETUP.md)');
+    console.error('[scoreboard]   4. Update SUPABASE_URL and ANON_KEY in scoreboard.js');
+    console.error('[scoreboard] ');
+    console.error('[scoreboard] 🧪 QUICK TEST:');
+    console.error('[scoreboard]   Run: window.testSupabaseConnection() in browser console');
+    console.error('[scoreboard] ');
+    return false;
+  }
+
+  console.log('[scoreboard] Configuration validated successfully');
+  return true;
+}
+
+// Validate configuration at module load
+validateConfiguration();
+
+
 // ── Score CRUD ──────────────────────────────────────────────
 
 export async function submitScore(name, score, levelReached, country) {
@@ -21,7 +62,36 @@ export async function submitScore(name, score, levelReached, country) {
     .select();
 
   if (error) {
-    console.error('[scoreboard] Submit error:', error.message, error.details, error.hint);
+    console.error('[scoreboard] ════════════════════════════════════════════════════════════╗');
+    console.error('[scoreboard] ║ SCORE SUBMISSION FAILED                                         ║');
+    console.error('[scoreboard] ╚═══════════════════════════════════════════════════════════╝');
+    console.error('[scoreboard] ');
+    console.error(`[scoreboard] Error: ${error.message}`);
+    if (error.code) {
+      console.error(`[scoreboard] Error Code: ${error.code}`);
+    }
+    console.error('[scoreboard] ');
+    
+    // Provide helpful guidance based on error type
+    if (error.message.includes('does not exist') || error.message.includes('relation')) {
+      console.error('[scoreboard] 📌 TABLE NOT FOUND');
+      console.error('[scoreboard] FIX: Run SQL from SUPABASE_SETUP.md to create "scores" table');
+    } else if (error.message.includes('permission denied') || error.code === '42501') {
+      console.error('[scoreboard] 📌 PERMISSION DENIED');
+      console.error('[scoreboard] FIX: Configure RLS policies (see SUPABASE_SETUP.md)');
+    } else if (error.code === 'PGRST116' || error.code === '08006' || error.code === '08001') {
+      console.error('[scoreboard] 📌 CONNECTION FAILED');
+      console.error('[scoreboard] FIX: Check SUPABASE_URL is correct and project exists');
+    } else if (error.code === 'PGRST202') {
+      console.error('[scoreboard] 📌 AUTH FAILED');
+      console.error('[scoreboard] FIX: Check SUPABASE_ANON_KEY is correct');
+    }
+    
+    console.error('[scoreboard] ');
+    console.error('[scoreboard] 🧪 TROUBLESHOOTING:');
+    console.error('[scoreboard]   Run: window.testSupabaseConnection() in browser console');
+    console.error('[scoreboard]   See: SUPABASE_SETUP.md for detailed setup instructions');
+    console.error('[scoreboard] ');
     return null;
   }
   console.log('[scoreboard] Submit successful:', data);
@@ -37,7 +107,36 @@ export async function fetchTopScores(limit = 100) {
     .limit(limit);
 
   if (error) {
-    console.error('[scoreboard] Fetch error:', error.message, error.details, error.hint);
+    console.error('[scoreboard] ════════════════════════════════════════════════════════════╗');
+    console.error('[scoreboard] ║ SCORE FETCH FAILED                                             ║');
+    console.error('[scoreboard] ╚═══════════════════════════════════════════════════════════╝');
+    console.error('[scoreboard] ');
+    console.error(`[scoreboard] Error: ${error.message}`);
+    if (error.code) {
+      console.error(`[scoreboard] Error Code: ${error.code}`);
+    }
+    console.error('[scoreboard] ');
+    
+    // Provide helpful guidance
+    if (error.message.includes('does not exist') || error.message.includes('relation')) {
+      console.error('[scoreboard] 📌 TABLE NOT FOUND');
+      console.error('[scoreboard] FIX: Run SQL from SUPABASE_SETUP.md to create "scores" table');
+    } else if (error.message.includes('permission denied') || error.code === '42501') {
+      console.error('[scoreboard] 📌 PERMISSION DENIED');
+      console.error('[scoreboard] FIX: Configure RLS policies (see SUPABASE_SETUP.md)');
+    } else if (error.code === 'PGRST116' || error.code === '08006' || error.code === '08001') {
+      console.error('[scoreboard] 📌 CONNECTION FAILED');
+      console.error('[scoreboard] FIX: Check SUPABASE_URL is correct and project exists');
+    } else if (error.code === 'PGRST202') {
+      console.error('[scoreboard] 📌 AUTH FAILED');
+      console.error('[scoreboard] FIX: Check SUPABASE_ANON_KEY is correct');
+    }
+    
+    console.error('[scoreboard] ');
+    console.error('[scoreboard] 🧪 TROUBLESHOOTING:');
+    console.error('[scoreboard]   Run: window.testSupabaseConnection() in browser console');
+    console.error('[scoreboard]   See: SUPABASE_SETUP.md for detailed setup instructions');
+    console.error('[scoreboard] ');
     return [];
   }
   console.log(`[scoreboard] Fetch successful: ${data ? data.length : 0} scores found`);
