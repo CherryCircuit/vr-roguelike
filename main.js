@@ -153,10 +153,10 @@ init();
 function init() {
   console.log('[SPACEOMICIDE] Initialising...');
 
-  // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
+  // Scene — use very dark teal background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.012);
+  scene.background = new THREE.Color(0x000818);
+  scene.fog = new THREE.FogExp2(0x000818, 0.012);
 
   // Camera
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -405,9 +405,9 @@ function createAurora() {
   const ctx1 = canvas1.getContext('2d');
   const grad1 = ctx1.createLinearGradient(0, 0, 0, h);
   grad1.addColorStop(0, 'rgba(0,40,60,0)');
-  grad1.addColorStop(0.3, 'rgba(0,255,220,0.4)');
-  grad1.addColorStop(0.5, 'rgba(100,255,220,0.6)');
-  grad1.addColorStop(0.7, 'rgba(0,200,255,0.3)');
+  grad1.addColorStop(0.3, 'rgba(0,255,220,0.7)');
+  grad1.addColorStop(0.5, 'rgba(100,255,220,0.8)');
+  grad1.addColorStop(0.7, 'rgba(0,200,255,0.6)');
   grad1.addColorStop(1, 'rgba(0,40,80,0)');
   ctx1.fillStyle = grad1;
   ctx1.fillRect(0, 0, w, h);
@@ -433,9 +433,9 @@ function createAurora() {
   const ctx2 = canvas2.getContext('2d');
   const grad2 = ctx2.createLinearGradient(0, 0, 0, h);
   grad2.addColorStop(0, 'rgba(0,60,40,0)');
-  grad2.addColorStop(0.4, 'rgba(50,255,180,0.35)');
-  grad2.addColorStop(0.6, 'rgba(100,255,220,0.5)');
-  grad2.addColorStop(0.8, 'rgba(0,220,200,0.25)');
+  grad2.addColorStop(0.4, 'rgba(50,255,180,0.6)');
+  grad2.addColorStop(0.6, 'rgba(100,255,220,0.75)');
+  grad2.addColorStop(0.8, 'rgba(0,220,200,0.5)');
   grad2.addColorStop(1, 'rgba(0,60,80,0)');
   ctx2.fillStyle = grad2;
   ctx2.fillRect(0, 0, w, h);
