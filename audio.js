@@ -604,6 +604,70 @@ export function playUpgradeSound() {
   osc.stop(ctx.currentTime + 0.15);
 }
 
+// ── Kill Chain Sound (increases with multiplier) ───────────
+export function playComboSound(multiplier) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Different sound profiles based on multiplier level
+  if (multiplier >= 5) {
+    // x5+: Epic fanfare - triumphant chord
+    [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.08, t);
+      gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t + i * 0.05);
+      osc.stop(t + 0.5);
+    });
+  } else if (multiplier >= 4) {
+    // x4: Triumphant chime - ascending arpeggio
+    [440, 554.37, 659.25, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.12, t);
+      gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t + i * 0.06);
+      osc.stop(t + 0.3);
+    });
+  } else if (multiplier >= 3) {
+    // x3: Exciting ding - bright bell
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, t);
+    osc.frequency.setValueAtTime(1108.73, t + 0.05);
+    osc.frequency.setValueAtTime(1318.51, t + 0.1);
+    gain.gain.setValueAtTime(0.15, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.25);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.25);
+  } else {
+    // x2: Satisfying pop
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(600, t);
+    osc.frequency.exponentialRampToValueAtTime(1200, t + 0.08);
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.15);
+  }
+}
+
 // ── Bullet-time slow-down ──────────────────────────────────
 export function playSlowMoSound() {
   const ctx = getAudioContext();

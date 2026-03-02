@@ -106,7 +106,21 @@ export const game = {
   finalScore: 0,
   finalLevel: 0,
   accuracyStreak: 0,
-  
+
+  // Kill chain system (separate from accuracy streaks)
+  comboCount: 0,
+  comboTimer: 0,
+  comboMultiplier: 1,
+  lastKillTime: 0,
+  comboResetTime: 3000, // 3 seconds
+
+  // Slow-mo death camera
+  slowmoActive: false,
+  slowmoIntensity: 0.25, // 0.25x speed
+  slowmoDuration: 1500, // 1.5 seconds
+  slowmoTimer: 0,
+  timeScale: 1.0,
+
   // DEBUG: Performance monitoring settings
   debugPerfMonitor: false,  // Extended FPS stats (frame time, memory)
   debugShowFPS: true,  // Always show FPS counter in VR
@@ -149,10 +163,21 @@ export function resetGame() {
     finalLevel: 0,
     accuracyStreak: 0,
 
+    // Reset kill chain system
+    comboCount: 0,
+    comboTimer: 0,
+    comboMultiplier: 1,
+    lastKillTime: 0,
+
+    // Reset slow-mo death camera
+    slowmoActive: false,
+    slowmoTimer: 0,
+    timeScale: 1.0,
+
     // Reset level config to prevent stale data
     _levelConfig: null,
     _combo: 1,
-    
+
     // Restore debug settings
     ...preservedDebug,
   });
