@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import Stats from 'three/addons/libs/stats.module.js';
 
-import { initDesktopControls, enable, disable, isEnabled, update as updateDesktopControls, getPosition, getShootDirection, getAimRaycaster, getVirtualController } from './desktop-controls.js';
+import { initDesktopControls, enable, disable, isEnabled, update as updateDesktopControls, getPosition, getShootDirection, getAimRaycaster, getVirtualController, getWeaponState } from './desktop-controls.js';
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, LEVELS } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getRandomUpgradeExcluding, getUpgradeDef, getWeaponStats, ALT_WEAPON_DEFS, fireRocket, spawnHelperBot, activateShield, createGravityWell, fireIonMortar, spawnHologram } from './upgrades.js';
 import { playShoothSound, playHitSound, playExplosionSound, playDamageSound, playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound, playProximityAlert, playSwarmProximityAlert, playUpgradeSound, playSlowMoSound, playSlowMoReverseSound, startLightningSound, stopLightningSound, playMusic, stopMusic, playBossAlertSound, playBigExplosionSound, playGameOverSound, playButtonHoverSound, playButtonClickSound, playLowHealthAlertSound, playVampireHealSound, playBuckshotSoundNew, fadeOutMusic, playAltWeaponReadySound, playBossDeathSound, resumeAudioContext, startChargeSound, updateChargeSound, stopChargeSound, playChargeReadySound, playChargeFireSound } from './audio.js';
@@ -2046,6 +2046,11 @@ function render(timestamp) {
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
+  // Update desktop controls (keyboard/mouse movement)
+  if (isEnabled()) {
+    updateDesktopControls(rawDt);
+  }
+
   // Apply bullet-time slow-mo and ramp-out (use raw dt)
   if (slowMoRampOut) {
     slowMoRampOutTimer -= rawDt;
@@ -2100,6 +2105,18 @@ function render(timestamp) {
   // ── Playing ──
   else if (st === State.PLAYING) {
     spawnEnemyWave(dt);
+
+    // Desktop mode shooting (keyboard/mouse)
+    if (isEnabled()) {
+      const desktopWeaponState = getWeaponState();
+      if (desktopWeaponState && desktopWeaponState.triggerPressed) {
+        const virtualCtrl = getVirtualController('both');
+        if (virtualCtrl) {
+          // Shoot with left hand (primary)
+          shootWeapon(virtualCtrl, 0);
+        }
+      }
+    }
 
     // Full-auto shooting / Lightning beams / Charge shot visuals
     for (let i = 0; i < 2; i++) {
