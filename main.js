@@ -13,7 +13,7 @@ import {
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
   playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound,
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
-  playSlowMoSound, playSlowMoReverseSound,
+  playSlowMoSound, playSlowMoReverseSound, playComboSound,
   startLightningSound, stopLightningSound,
   playMusic, stopMusic, getMusicFrequencyData
 } from './audio.js';
@@ -30,7 +30,7 @@ import {
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar,
-  updateComboPopups, checkComboIncrease,
+  updateComboPopups, checkComboIncrease, spawnKillChainPopup, updateKillChainPopups,
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
@@ -1468,8 +1468,48 @@ function updateLightningBeam(controller, index, stats, dt) {
             game.killsWithoutHit++;
             addScore(destroyData.scoreValue);
 
-            // Check level complete
+            // KILL CHAIN SYSTEM
+            const now = performance.now();
+
+            // Check combo timeout
+            if (now - game.lastKillTime > game.comboResetTime) {
+              game.comboCount = 0;
+              game.comboMultiplier = 1;
+            }
+
+            // Increment combo
+            game.comboCount++;
+            game.lastKillTime = now;
+
+            // Calculate multiplier based on streak
+            if (game.comboCount >= 5) {
+              game.comboMultiplier = 5;
+            } else if (game.comboCount >= 4) {
+              game.comboMultiplier = 4;
+            } else if (game.comboCount >= 3) {
+              game.comboMultiplier = 3;
+            } else if (game.comboCount >= 2) {
+              game.comboMultiplier = 2;
+            }
+
+            // Show combo popup and play sound if multiplier >= 2
+            if (game.comboMultiplier >= 2) {
+              spawnKillChainPopup(game.comboMultiplier, camera.position);
+              playComboSound(game.comboMultiplier);
+              console.log(`[kill-chain] ${game.comboMultiplier}x combo (${game.comboCount} kills, lightning)`);
+            }
+
+            // Check for slow-mo death (last enemy of wave)
             const cfg = game._levelConfig;
+            if (cfg && !cfg.isBoss) {
+              const enemiesRemaining = getEnemyCount();
+              if (enemiesRemaining === 0 && game.kills < cfg.killTarget) {
+                // Last enemy killed but not level complete yet - trigger slow-mo
+                triggerSlowmoDeathSequence();
+              }
+            }
+
+            // Check level complete
             if (cfg && game.kills >= cfg.killTarget) {
               completeLevel();
             }
@@ -1688,6 +1728,19 @@ function spawnProjectile(origin, direction, controllerIndex, stats) {
   }
 }
 
+// ============================================================
+//  SLOW-MO DEATH CAMERA
+// ============================================================
+function triggerSlowmoDeathSequence() {
+  game.slowmoActive = true;
+  game.slowmoTimer = performance.now() + game.slowmoDuration;
+  console.log('[slow-mo] Death sequence triggered!');
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
 function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExploding = false, hitWeakPoint = false) {
   // Calculate damage
   let damage = stats.damage;
@@ -1755,6 +1808,47 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       game.killsWithoutHit++;
       addScore(destroyData.scoreValue);
 
+      // KILL CHAIN SYSTEM
+      const now = performance.now();
+
+      // Check combo timeout
+      if (now - game.lastKillTime > game.comboResetTime) {
+        game.comboCount = 0;
+        game.comboMultiplier = 1;
+      }
+
+      // Increment combo
+      game.comboCount++;
+      game.lastKillTime = now;
+
+      // Calculate multiplier based on streak
+      if (game.comboCount >= 5) {
+        game.comboMultiplier = 5;
+      } else if (game.comboCount >= 4) {
+        game.comboMultiplier = 4;
+      } else if (game.comboCount >= 3) {
+        game.comboMultiplier = 3;
+      } else if (game.comboCount >= 2) {
+        game.comboMultiplier = 2;
+      }
+
+      // Show combo popup and play sound if multiplier >= 2
+      if (game.comboMultiplier >= 2) {
+        spawnKillChainPopup(game.comboMultiplier, camera.position);
+        playComboSound(game.comboMultiplier);
+        console.log(`[kill-chain] ${game.comboMultiplier}x combo (${game.comboCount} kills)`);
+      }
+
+      // Check for slow-mo death (last enemy of wave)
+      const cfg = game._levelConfig;
+      if (cfg && !cfg.isBoss) {
+        const enemiesRemaining = getEnemyCount();
+        if (enemiesRemaining === 0 && game.kills < cfg.killTarget) {
+          // Last enemy killed but not level complete yet - trigger slow-mo
+          triggerSlowmoDeathSequence();
+        }
+      }
+
       // Track kills for hand stats
       if (controllerIndex !== undefined) {
         const hand = controllerIndex === 0 ? 'left' : 'right';
@@ -1768,7 +1862,6 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       }
 
       // Check level complete
-      const cfg = game._levelConfig;
       if (cfg && game.kills >= cfg.killTarget) {
         completeLevel();
       }
@@ -2124,7 +2217,7 @@ function render(timestamp) {
                 `Explosions: ${explosionVisuals.length}`);
   }
 
-  // Apply bullet-time slow-mo and ramp-out (use raw dt)
+  // Apply bullet-time slow-mo, ramp-out, and death sequence (use raw dt)
   if (slowMoRampOut) {
     slowMoRampOutTimer -= rawDt;
     if (slowMoRampOutTimer <= 0) {
@@ -2132,6 +2225,17 @@ function render(timestamp) {
       timeScale = 1.0;
     } else {
       timeScale = 0.2 + (1 - slowMoRampOutTimer / SLOW_MO_RAMP_OUT_DURATION) * 0.8;
+    }
+  } else if (game.slowmoActive) {
+    // Death sequence slow-mo
+    const remaining = game.slowmoTimer - now;
+    if (remaining <= 0) {
+      // Time's up - rapid ramp back
+      game.slowmoActive = false;
+      game.timeScale = 1.0;
+      console.log('[slow-mo] Death sequence ended');
+    } else {
+      game.timeScale = game.slowmoIntensity;
     }
   } else if (slowMoActive) {
     slowMoDuration -= rawDt;
@@ -2145,9 +2249,13 @@ function render(timestamp) {
     }
   } else {
     timeScale = 1.0;
+    game.timeScale = 1.0;
   }
 
-  const dt = rawDt * timeScale;  // Scaled time for game logic
+  // Use game.timeScale if death sequence is active, otherwise use bullet-time timeScale
+  const effectiveTimeScale = game.slowmoActive ? game.timeScale : timeScale;
+
+  const dt = rawDt * effectiveTimeScale;  // Scaled time for game logic
 
   const st = game.state;
 
@@ -2347,7 +2455,47 @@ function render(timestamp) {
             game.killsWithoutHit++;
             addScore(destroyData.scoreValue);
 
+            // KILL CHAIN SYSTEM (same as handleHit)
+            const now = performance.now();
+
+            // Check combo timeout
+            if (now - game.lastKillTime > game.comboResetTime) {
+              game.comboCount = 0;
+              game.comboMultiplier = 1;
+            }
+
+            // Increment combo
+            game.comboCount++;
+            game.lastKillTime = now;
+
+            // Calculate multiplier based on streak
+            if (game.comboCount >= 5) {
+              game.comboMultiplier = 5;
+            } else if (game.comboCount >= 4) {
+              game.comboMultiplier = 4;
+            } else if (game.comboCount >= 3) {
+              game.comboMultiplier = 3;
+            } else if (game.comboCount >= 2) {
+              game.comboMultiplier = 2;
+            }
+
+            // Show combo popup and play sound if multiplier >= 2
+            if (game.comboMultiplier >= 2) {
+              spawnKillChainPopup(game.comboMultiplier, camera.position);
+              playComboSound(game.comboMultiplier);
+              console.log(`[kill-chain] ${game.comboMultiplier}x combo (${game.comboCount} kills, DoT)`);
+            }
+
+            // Check for slow-mo death (last enemy of wave)
             const cfg = game._levelConfig;
+            if (cfg && !cfg.isBoss) {
+              const enemiesRemaining = getEnemyCount();
+              if (enemiesRemaining === 0 && game.kills < cfg.killTarget) {
+                // Last enemy killed but not level complete yet - trigger slow-mo
+                triggerSlowmoDeathSequence();
+              }
+            }
+
             if (cfg && game.kills >= cfg.killTarget) {
               completeLevel();
             }
@@ -2486,6 +2634,7 @@ function render(timestamp) {
   updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
   updateComboPopups(dt, now);
+  updateKillChainPopups(dt, now);  // Kill chain popups
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
   updateFPS(now, {
     perfMonitor: (typeof window !== 'undefined' && window.debugPerfMonitor) || game.debugPerfMonitor,

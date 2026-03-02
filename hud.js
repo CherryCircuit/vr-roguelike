@@ -1092,6 +1092,110 @@ export function checkComboIncrease(currentCombo, cameraPos, playSoundFn) {
   lastComboValue = currentCombo;
 }
 
+// ── Kill Chain Popups (separate from accuracy combo) ────────
+const killChainPopups = [];
+
+export function spawnKillChainPopup(multiplier, cameraPos) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 256;
+
+  const text = `${multiplier}X`;
+  const fontSize = 140;
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Glow effect
+  ctx.shadowColor = multiplier >= 5 ? '#ff0088' : multiplier >= 3 ? '#ffaa00' : '#00ffff';
+  ctx.shadowBlur = 30;
+
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.9)';
+  ctx.fillText(text, 258, 130);
+
+  // Main text - color based on multiplier level
+  let color = '#00ffff'; // Cyan for x2
+  if (multiplier >= 5) color = '#ff0088'; // Magenta for x5+
+  else if (multiplier >= 4) color = '#ff00ff'; // Purple for x4
+  else if (multiplier >= 3) color = '#ffaa00'; // Orange for x3
+
+  ctx.fillStyle = color;
+  ctx.fillText(text, 256, 128);
+
+  // Add "KILL CHAIN!" subtitle
+  ctx.font = 'bold 36px Arial, sans-serif';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('KILL CHAIN!', 256, 200);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.premultiplyAlpha = false;
+
+  // Large, dramatic display
+  const scale = 1.2;
+  const width = scale * 2;
+  const height = scale;
+
+  const geometry = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+
+  const mesh = new THREE.Mesh(geometry, mat);
+
+  // Position above crosshair (center of view, slightly up)
+  mesh.position.copy(cameraPos);
+  mesh.position.y += 0.2;
+  mesh.position.z -= 2;
+
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.lifetime = 1500;  // 1.5 seconds
+  mesh.userData.initialScale = 0.5;  // Start small
+  mesh.userData.targetScale = 1.0;   // Scale up
+  mesh.userData.velocity = new THREE.Vector3(0, 0.2, 0);  // Float upward slowly
+  mesh.renderOrder = 999;
+
+  sceneRef.add(mesh);
+  killChainPopups.push(mesh);
+}
+
+export function updateKillChainPopups(dt, now) {
+  for (let i = killChainPopups.length - 1; i >= 0; i--) {
+    const popup = killChainPopups[i];
+    const age = now - popup.userData.createdAt;
+
+    if (age > popup.userData.lifetime) {
+      sceneRef.remove(popup);
+      popup.material.map.dispose();
+      popup.material.dispose();
+      popup.geometry.dispose();
+      killChainPopups.splice(i, 1);
+    } else {
+      // Animate scale: grow from 0.5 to 1.0 in first 200ms
+      const ageMs = age;
+      if (ageMs < 200) {
+        const t = ageMs / 200;
+        const scale = popup.userData.initialScale + (popup.userData.targetScale - popup.userData.initialScale) * t;
+        popup.scale.setScalar(scale);
+      }
+
+      popup.position.addScaledVector(popup.userData.velocity, dt);
+
+      // Fade out in last 0.5s
+      const fadeStart = popup.userData.lifetime - 500;
+      if (age > fadeStart) {
+        popup.material.opacity = 1 - (age - fadeStart) / 500;
+      }
+    }
+  }
+}
+
 // ── FPS Counter & Performance Monitor ───────────────────────
 let fpsFrames = [];
 let fpsFrameTimes = [];
