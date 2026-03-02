@@ -129,6 +129,10 @@ let cameraShake = 0;
 let cameraShakeIntensity = 0;
 const originalCameraPos = new THREE.Vector3();
 
+// Screen shake system
+let screenShakeIntensity = 0;
+let screenShakeTime = 0;
+
 // ── Bootstrap ──────────────────────────────────────────────
 init();
 
@@ -1258,6 +1262,13 @@ function endGame(victory) {
 //  SHOOTING & COMBAT
 // ============================================================
 
+// Screen shake trigger function
+function triggerScreenShake(intensity, duration) {
+  screenShakeIntensity = intensity;
+  screenShakeTime = performance.now() + duration;
+  console.log(`[Shake] Intensity: ${intensity}, Duration: ${duration}ms`);
+}
+
 // PERFORMANCE: Initialize projectile pool for reuse
 function initProjectilePool() {
   // Pre-create pooled projectile meshes (both types: laser and buckshot)
@@ -1578,6 +1589,10 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
         cameraShake = 0.3;
         cameraShakeIntensity = 0.03;
         originalCameraPos.copy(camera.position);
+
+        // Light screen shake on player damage
+        triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
+
         floorFlashing = true;
         floorFlashTimer = 0.5;
         if (dead) endGame(false);
@@ -1685,6 +1700,22 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
     damage *= (stats.critMultiplier || 2);
   }
 
+  // Impact freeze for critical hits or weak points
+  const isCritical = damage > 30 || hitWeakPoint;
+  if (isCritical) {
+    // Freeze frame briefly (0.1s visual pause)
+    const freezeDuration = 100; // 0.1 seconds
+
+    // Small camera jolt
+    camera.position.x += (Math.random() - 0.5) * 0.05;
+    camera.position.y += (Math.random() - 0.5) * 0.05;
+
+    // White flash overlay using existing hit flash system
+    triggerHitFlash();
+
+    console.log(`[Impact] CRITICAL HIT! Damage: ${Math.round(damage)}, Freeze: ${freezeDuration}ms`);
+  }
+
   // Fire debuff increases damage taken
   if (enemy.statusEffects.fire.stacks > 0) {
     damage *= stats.fireWeakenMult;
@@ -1760,6 +1791,10 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
     cameraShake = 0.3;
     cameraShakeIntensity = 0.03;
     originalCameraPos.copy(camera.position);
+
+    // Light screen shake on player damage
+    triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
+
     floorFlashing = true;
     floorFlashTimer = 0.5;
     console.log('[boss] Shield reflected damage!');
@@ -1805,6 +1840,9 @@ function handleAOE(center, radius, damage, controllerIndex) {
 
 /** Spawn a short-lived visible explosion (expanding sphere) at center. */
 function spawnExplosionVisual(center, radius) {
+  // Bigger shake for explosions
+  triggerScreenShake(0.3, 300); // 0.3 shake for 300ms
+
   // PERFORMANCE: Cap explosion visuals to prevent accumulation
   const MAX_EXPLOSION_VISUALS = 15;
   if (explosionVisuals.length >= MAX_EXPLOSION_VISUALS) {
@@ -2230,6 +2268,9 @@ function render(timestamp) {
       cameraShakeIntensity = 0.05;  // shake magnitude
       originalCameraPos.copy(camera.position);
 
+      // Light screen shake on player damage
+      triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
+
       // Trigger floor flash
       floorFlashing = true;
       floorFlashTimer = 0.5;
@@ -2251,6 +2292,10 @@ function render(timestamp) {
       cameraShake = 0.6;
       cameraShakeIntensity = 0.06;
       originalCameraPos.copy(camera.position);
+
+      // Bigger shake for boss collision
+      triggerScreenShake(0.3, 300); // 0.3 shake for 300ms
+
       floorFlashing = true;
       floorFlashTimer = 0.5;
       slowMoActive = false;
@@ -2276,6 +2321,10 @@ function render(timestamp) {
         cameraShake = 0.4;
         cameraShakeIntensity = 0.04;
         originalCameraPos.copy(camera.position);
+
+        // Light screen shake on projectile damage
+        triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
+
         floorFlashing = true;
         floorFlashTimer = 0.5;
         if (dead) endGame(false);
@@ -2380,6 +2429,22 @@ function render(timestamp) {
       camera.position.x += (Math.random() - 0.5) * shake;
       camera.position.y += (Math.random() - 0.5) * shake;
       camera.position.z += (Math.random() - 0.5) * shake;
+    }
+  }
+
+  // ── Screen shake system ──
+  if (screenShakeTime > performance.now()) {
+    const elapsed = performance.now() - screenShakeTime;
+    screenShakeIntensity *= Math.pow(0.9, elapsed / 16); // Decay over 16ms per frame at 60fps
+    if (screenShakeIntensity < 0.001) {
+      screenShakeIntensity = 0;
+    }
+
+    // Apply shake to camera
+    if (screenShakeIntensity > 0) {
+      camera.position.x += (Math.random() - 0.5) * screenShakeIntensity;
+      camera.position.y += (Math.random() - 0.5) * screenShakeIntensity;
+      camera.position.z += (Math.random() - 0.5) * screenShakeIntensity;
     }
   }
 
