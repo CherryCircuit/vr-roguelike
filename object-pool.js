@@ -278,6 +278,205 @@ export class ExplosionPool extends ObjectPool {
 // Singleton pools (will be initialized by main.js)
 export let projectilePool = null;
 export let explosionPool = null;
+export let deathParticlePool = null;
+export let muzzleFlashPool = null;
+export let explosionFragmentPool = null;
+
+/**
+ * Specialized pool for death particles (reusable voxel chunks)
+ */
+export class DeathParticlePool extends ObjectPool {
+  constructor(scene, initialSize = 100) {
+    const sharedGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+    super(
+      () => {
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const mesh = new THREE.Mesh(sharedGeo, mat);
+        mesh.userData = {
+          velocity: new THREE.Vector3(),
+          angularVel: new THREE.Vector3(),
+          grounded: false,
+          groundTimer: 0,
+        };
+        return mesh;
+      },
+      (mesh, position, color) => {
+        mesh.position.copy(position);
+        mesh.position.x += (Math.random() - 0.5) * 0.5;
+        mesh.position.y += (Math.random() - 0.5) * 0.5;
+        mesh.position.z += (Math.random() - 0.5) * 0.5;
+        mesh.material.color.setHex(color);
+        mesh.scale.setScalar(1);
+        mesh.userData.velocity.set(
+          (Math.random() - 0.5) * 6,
+          Math.random() * 4 + 2,
+          (Math.random() - 0.5) * 6,
+        );
+        mesh.userData.angularVel.set(
+          (Math.random() - 0.5) * 10,
+          (Math.random() - 0.5) * 10,
+          (Math.random() - 0.5) * 10,
+        );
+        mesh.userData.grounded = false;
+        mesh.userData.groundTimer = 0;
+        mesh.visible = true;
+      },
+      initialSize
+    );
+    this.scene = scene;
+    this.sharedGeo = sharedGeo;
+  }
+
+  spawn(position, color) {
+    const mesh = this.acquire(position, color);
+    this.scene.add(mesh);
+    return mesh;
+  }
+
+  despawn(mesh) {
+    this.scene.remove(mesh);
+    mesh.visible = false;
+    this.release(mesh);
+  }
+}
+
+/**
+ * Specialized pool for muzzle flashes (weapon firing effects)
+ */
+export class MuzzleFlashPool extends ObjectPool {
+  constructor(scene, initialSize = 20) {
+    super(
+      () => {
+        const geo = new THREE.SphereGeometry(0.08, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xffff00,
+          transparent: true,
+          opacity: 0.9,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.userData = { createdAt: 0, duration: 80 };
+        return mesh;
+      },
+      (mesh, position, color = 0xffff00) => {
+        mesh.position.copy(position);
+        mesh.material.color.setHex(color);
+        mesh.scale.setScalar(1);
+        mesh.userData.createdAt = performance.now();
+        mesh.visible = true;
+      },
+      initialSize
+    );
+    this.scene = scene;
+  }
+
+  spawn(position, color) {
+    const mesh = this.acquire(position, color);
+    this.scene.add(mesh);
+    return mesh;
+  }
+
+  despawn(mesh) {
+    this.scene.remove(mesh);
+    mesh.visible = false;
+    this.release(mesh);
+  }
+
+  update(now) {
+    const toRemove = [];
+    this.active.forEach(mesh => {
+      const age = now - mesh.userData.createdAt;
+      if (age > mesh.userData.duration) {
+        toRemove.push(mesh);
+      } else {
+        const t = age / mesh.userData.duration;
+        mesh.material.opacity = 0.9 * (1 - t);
+        mesh.scale.setScalar(1 + t * 0.5);
+      }
+    });
+    toRemove.forEach(mesh => this.despawn(mesh));
+  }
+}
+
+/**
+ * Specialized pool for explosion fragments (larger chunks)
+ */
+export class ExplosionFragmentPool extends ObjectPool {
+  constructor(scene, initialSize = 40) {
+    const sharedGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+    super(
+      () => {
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xff8800,
+          transparent: true,
+          opacity: 0.8,
+        });
+        const mesh = new THREE.Mesh(sharedGeo, mat);
+        mesh.userData = {
+          velocity: new THREE.Vector3(),
+          createdAt: 0,
+          duration: 500,
+        };
+        return mesh;
+      },
+      (mesh, center, color = 0xff8800) => {
+        mesh.position.copy(center);
+        mesh.material.color.setHex(color);
+        mesh.material.opacity = 0.8;
+        mesh.userData.velocity.set(
+          (Math.random() - 0.5) * 8,
+          Math.random() * 5 + 2,
+          (Math.random() - 0.5) * 8,
+        );
+        mesh.userData.createdAt = performance.now();
+        mesh.visible = true;
+      },
+      initialSize
+    );
+    this.scene = scene;
+    this.sharedGeo = sharedGeo;
+  }
+
+  spawn(center, color) {
+    const mesh = this.acquire(center, color);
+    this.scene.add(mesh);
+    return mesh;
+  }
+
+  despawn(mesh) {
+    this.scene.remove(mesh);
+    mesh.visible = false;
+    this.release(mesh);
+  }
+
+  update(now, dt) {
+    const gravity = -9.8;
+    const toRemove = [];
+    this.active.forEach(mesh => {
+      const age = now - mesh.userData.createdAt;
+      if (age > mesh.userData.duration) {
+        toRemove.push(mesh);
+      } else {
+        mesh.userData.velocity.y += gravity * dt;
+        mesh.position.addScaledVector(mesh.userData.velocity, dt);
+        mesh.rotation.x += dt * 5;
+        mesh.rotation.z += dt * 3;
+        
+        if (mesh.position.y < 0) {
+          mesh.position.y = 0;
+          mesh.userData.velocity.y *= -0.3;
+          mesh.userData.velocity.x *= 0.8;
+          mesh.userData.velocity.z *= 0.8;
+        }
+        
+        const t = age / mesh.userData.duration;
+        mesh.material.opacity = 0.8 * (1 - t);
+      }
+    });
+    toRemove.forEach(mesh => this.despawn(mesh));
+  }
+}
 
 /**
  * Initialize all object pools
@@ -285,10 +484,16 @@ export let explosionPool = null;
 export function initPools(scene) {
   projectilePool = new ProjectilePool(scene, 100);
   explosionPool = new ExplosionPool(scene, 30);
+  deathParticlePool = new DeathParticlePool(scene, 100);
+  muzzleFlashPool = new MuzzleFlashPool(scene, 20);
+  explosionFragmentPool = new ExplosionFragmentPool(scene, 40);
 
   console.log('[ObjectPool] Initialized pools');
   console.log('  Projectiles: 100 pre-allocated');
   console.log('  Explosions: 30 pre-allocated');
+  console.log('  Death particles: 100 pre-allocated');
+  console.log('  Muzzle flashes: 20 pre-allocated');
+  console.log('  Explosion fragments: 40 pre-allocated');
 }
 
 /**
@@ -306,5 +511,19 @@ export function getPoolCounts() {
   return {
     projectiles: projectilePool ? projectilePool.stats.active : 0,
     explosions: explosionPool ? explosionPool.stats.active : 0,
+    deathParticles: deathParticlePool ? deathParticlePool.stats.active : 0,
+    muzzleFlashes: muzzleFlashPool ? muzzleFlashPool.stats.active : 0,
+    explosionFragments: explosionFragmentPool ? explosionFragmentPool.stats.active : 0,
   };
+}
+
+/**
+ * Log all pool statistics
+ */
+export function logAllPoolStats() {
+  if (projectilePool) projectilePool.logStats('Projectiles');
+  if (explosionPool) explosionPool.logStats('Explosions');
+  if (deathParticlePool) deathParticlePool.logStats('DeathParticles');
+  if (muzzleFlashPool) muzzleFlashPool.logStats('MuzzleFlashes');
+  if (explosionFragmentPool) explosionFragmentPool.logStats('ExplosionFragments');
 }

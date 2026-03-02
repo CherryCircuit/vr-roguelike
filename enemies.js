@@ -41,9 +41,9 @@ function parsePattern(strings) {
 // ── Enemy type stats ───────────────────────────────────────
 const ENEMY_DEFS = {
   basic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.29, baseHp: 30, baseSpeed: 1.5, color: 0x00ff88, depth: 1, scoreValue: 10, hitboxRadius: 0.6 },
-  fast: { pattern: parsePattern(PATTERNS.fast), voxelSize: 0.24, baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.48 },
-  tank: { pattern: parsePattern(PATTERNS.tank), voxelSize: 0.36, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.84 },
-  swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.19, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.36 },
+  fast: { pattern: parsePattern(PATTERNS.fast), voxelSize: 0.24, baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.48, telegraphType: 'flash' },
+  tank: { pattern: parsePattern(PATTERNS.tank), voxelSize: 0.36, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.84, telegraphType: 'scale' },
+  swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.19, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.36, telegraphType: 'twitch' },
 };
 
 // ── Module state ───────────────────────────────────────────
@@ -214,8 +214,8 @@ export function spawnEnemy(type, position, levelConfig) {
     }
   }
 
-  // Add invisible sphere hitbox for better hit detection
-  const hitboxGeo = new THREE.SphereGeometry(def.hitboxRadius, 8, 8);
+  // Add invisible box hitbox for better hit detection (cheaper than sphere)
+  const hitboxGeo = new THREE.BoxGeometry(def.hitboxRadius * 2, def.hitboxRadius * 2, def.hitboxRadius * 2);
   const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
   const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
   hitbox.userData.isEnemyHitbox = true;
@@ -232,6 +232,10 @@ export function spawnEnemy(type, position, levelConfig) {
     scoreValue: def.scoreValue,
     hitboxRadius: def.hitboxRadius,
     alertTimer: 0,
+    telegraphTimer: 0,
+    telegraphActive: false,
+    telegraphType: def.telegraphType || null,
+    lastAttackTime: 0,
     statusEffects: {
       fire: { stacks: 0, remaining: 0, tickTimer: 0 },
       shock: { stacks: 0, remaining: 0, tickTimer: 0 },
