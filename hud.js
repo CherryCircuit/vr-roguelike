@@ -1554,6 +1554,17 @@ export function getDebugJumpHit(raycaster) {
   return getReadyScreenHit(raycaster);
 }
 
+export function getReadyScreenHit(raycaster) {
+  if (!readyGroup.visible) return null;
+  const actionMeshes = [];
+  readyGroup.traverse(c => {
+    if (c.userData && c.userData.readyAction) actionMeshes.push(c);
+  });
+  const hits = raycaster.intersectObjects(actionMeshes, false);
+  if (hits.length > 0) return hits[0].object.userData.readyAction;
+  return null;
+}
+
 export function showDebugJumpScreen(targetLevel) {
   hideAll();
   while (readyGroup.children.length) readyGroup.remove(readyGroup.children[0]);
