@@ -19,6 +19,7 @@ const nameEntryGroup = new THREE.Group();
 const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
 const readyGroup = new THREE.Group();
+const debugMenuGroup = new THREE.Group();  // DEBUG menu
 
 // HUD element references
 let heartsSprite = null;
@@ -27,6 +28,9 @@ let levelSprite = null;
 let scoreSprite = null;
 let comboSprite = null;
 let fpsSprite = null;
+
+// Debug menu state
+let debugToggleItems = [];
 
 // Damage numbers
 const damageNumbers = [];
@@ -268,7 +272,7 @@ export function initHUD(camera, scene) {
   scene.add(hudGroup);
 
   // ── UI Groups (initially hidden) ──
-  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup].forEach(g => {
+  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup, debugMenuGroup].forEach(g => {
     g.visible = false;
     g.rotation.set(0, 0, 0);
     scene.add(g);
@@ -1263,6 +1267,7 @@ function hideAll() {
   scoreboardGroup.visible = false;
   countrySelectGroup.visible = false;
   readyGroup.visible = false;
+  debugMenuGroup.visible = false;  // Hide debug menu
   // Floor HUD shouldn't necessarily disappear during everything
   // Specifically don't hide it if we want it visible during upgrades
 }
@@ -1343,6 +1348,206 @@ export function runDiagnostics() {
   }
 
   return allPassed;
+}
+
+/**
+ * Update the title screen debug indicator when settings change
+ */
+export function updateTitleDebugIndicator() {
+  const indicator = titleGroup.getObjectByName('debugIndicator');
+  if (indicator) {
+    const isPerfMonitor = game.debugPerfMonitor;
+    const debugText = isPerfMonitor ? 'PERF: ON' : 'PERF: OFF';
+    const { texture, aspect } = makeTextTexture(debugText, { fontSize: 24, color: isPerfMonitor ? '#00ff00' : '#666666' });
+    if (indicator.material.map) indicator.material.map.dispose();
+    indicator.material.map = texture;
+    indicator.material.needsUpdate = true;
+    indicator.scale.set(aspect * 0.15, 0.15, 1);
+  }
+}
+
+// ── Debug Menu Screen ──────────────────────────────────────
+
+/**
+ * Show the debug menu with toggle options for FPS monitor settings
+ */
+export function showDebugMenu() {
+  hideAll();
+  while (debugMenuGroup.children.length) debugMenuGroup.remove(debugMenuGroup.children[0]);
+  debugToggleItems = [];
+  
+  debugMenuGroup.position.set(0, 1.6, -4);
+  debugMenuGroup.visible = true;
+
+  // Header
+  const header = makeSprite('DEBUG MENU', {
+    fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
+  });
+  header.position.set(0, 1.4, 0);
+  debugMenuGroup.add(header);
+
+  // Toggle options
+  const options = [
+    { 
+      id: 'fps', 
+      label: 'FPS COUNTER', 
+      getState: () => game.debugShowFPS,
+      toggle: () => { game.debugShowFPS = !game.debugShowFPS; }
+    },
+    { 
+      id: 'perf', 
+      label: 'PERF MONITOR', 
+      getState: () => game.debugPerfMonitor,
+      toggle: () => { game.debugPerfMonitor = !game.debugPerfMonitor; }
+    },
+  ];
+
+  const startY = 0.8;
+  const itemHeight = 0.35;
+  const itemWidth = 1.8;
+
+  options.forEach((opt, i) => {
+    const y = startY - i * itemHeight;
+    const isOn = opt.getState();
+
+    // Background
+    const itemGroup = new THREE.Group();
+    itemGroup.position.set(0, y, 0);
+
+    const bgGeo = new THREE.PlaneGeometry(itemWidth, 0.28);
+    const bgMat = new THREE.MeshBasicMaterial({
+      color: isOn ? 0x003322 : 0x221133,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+    });
+    const bgMesh = new THREE.Mesh(bgGeo, bgMat);
+    bgMesh.userData.debugToggle = opt.id;
+    itemGroup.add(bgMesh);
+
+    // Border
+    itemGroup.add(new THREE.LineSegments(
+      new THREE.EdgesGeometry(bgGeo),
+      new THREE.LineBasicMaterial({ color: isOn ? 0x00ff88 : 0x888888 })
+    ));
+
+    // Label
+    const label = makeSprite(opt.label, {
+      fontSize: 28, color: '#ffffff', scale: 0.18,
+    });
+    label.position.set(-0.3, 0, 0.01);
+    itemGroup.add(label);
+
+    // Status indicator (ON/OFF)
+    const statusText = isOn ? 'ON' : 'OFF';
+    const statusColor = isOn ? '#00ff88' : '#ff4444';
+    const status = makeSprite(statusText, {
+      fontSize: 28, color: statusColor, glow: isOn, glowColor: statusColor, scale: 0.15,
+    });
+    status.position.set(0.6, 0, 0.01);
+    status.userData.isStatusLabel = true;
+    itemGroup.add(status);
+
+    debugMenuGroup.add(itemGroup);
+    debugToggleItems.push({ group: itemGroup, mesh: bgMesh, option: opt });
+  });
+
+  // Instructions
+  const instructions = makeSprite('CLICK TO TOGGLE', {
+    fontSize: 24, color: '#888888', scale: 0.15,
+  });
+  instructions.position.set(0, -0.3, 0);
+  debugMenuGroup.add(instructions);
+
+  // BACK button
+  const backGroup = new THREE.Group();
+  backGroup.position.set(0, -0.7, 0);
+  const backGeo = new THREE.PlaneGeometry(0.8, 0.28);
+  const backMat = new THREE.MeshBasicMaterial({
+    color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
+  });
+  const backMesh = new THREE.Mesh(backGeo, backMat);
+  backMesh.userData.debugAction = 'back';
+  backGroup.add(backMesh);
+  backGroup.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(backGeo),
+    new THREE.LineBasicMaterial({ color: 0xff4444 })
+  ));
+  const backTxt = makeSprite('BACK', { fontSize: 28, color: '#ff4444', scale: 0.15 });
+  backTxt.position.set(0, 0, 0.01);
+  backGroup.add(backTxt);
+  debugMenuGroup.add(backGroup);
+
+  sceneRef.add(debugMenuGroup);
+}
+
+export function hideDebugMenu() {
+  debugMenuGroup.visible = false;
+  if (sceneRef && debugMenuGroup.parent === sceneRef) {
+    sceneRef.remove(debugMenuGroup);
+  }
+}
+
+/**
+ * Handle raycast hits on debug menu
+ */
+export function getDebugMenuHit(raycaster) {
+  if (!debugMenuGroup.visible) return null;
+
+  // Check toggle items
+  const toggleMeshes = debugToggleItems.map(t => t.mesh);
+  let hits = raycaster.intersectObjects(toggleMeshes, false);
+  if (hits.length > 0) {
+    const toggleId = hits[0].object.userData.debugToggle;
+    const item = debugToggleItems.find(t => t.option.id === toggleId);
+    if (item) {
+      // Toggle the state
+      item.option.toggle();
+      
+      // Save settings
+      if (typeof window !== 'undefined') {
+        // Import and call saveDebugSettings from game.js
+        import('./game.js').then(module => {
+          if (module.saveDebugSettings) module.saveDebugSettings();
+        });
+      }
+      
+      // Update visuals
+      const isOn = item.option.getState();
+      item.mesh.material.color.setHex(isOn ? 0x003322 : 0x221133);
+      
+      // Update border
+      const border = item.group.children.find(c => c.type === 'LineSegments');
+      if (border) {
+        border.material.color.setHex(isOn ? 0x00ff88 : 0x888888);
+      }
+      
+      // Update status label
+      const statusLabel = item.group.children.find(c => c.userData && c.userData.isStatusLabel);
+      if (statusLabel) {
+        const statusText = isOn ? 'ON' : 'OFF';
+        const statusColor = isOn ? '#00ff88' : '#ff4444';
+        const { texture, aspect } = makeTextTexture(statusText, { fontSize: 28, color: statusColor, glow: isOn, glowColor: statusColor });
+        if (statusLabel.material.map) statusLabel.material.map.dispose();
+        statusLabel.material.map = texture;
+        statusLabel.material.needsUpdate = true;
+        statusLabel.scale.set(aspect * 0.15, 0.15, 1);
+      }
+    }
+    return null;  // Don't change state, just toggle
+  }
+
+  // Check back button
+  const actionMeshes = [];
+  debugMenuGroup.traverse(c => {
+    if (c.userData && c.userData.debugAction) actionMeshes.push(c);
+  });
+  hits = raycaster.intersectObjects(actionMeshes, false);
+  if (hits.length > 0) {
+    return { action: hits[0].object.userData.debugAction };
+  }
+
+  return null;
 }
 
 export function getDebugJumpHit(raycaster) {
