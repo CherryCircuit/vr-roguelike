@@ -166,6 +166,7 @@ function makeTextTexture(text, opts = {}) {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
+  texture.premultiplyAlpha = false;
   return { texture, aspect: canvas.width / canvas.height };
 }
 
@@ -244,9 +245,9 @@ function makeHeartsTexture(health, maxHealth) {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
+  texture.premultiplyAlpha = false;
   return { texture, aspect: canvas.width / canvas.height };
 }
-
 // ── Public API ─────────────────────────────────────────────
 
 export function initHUD(camera, scene) {
@@ -273,19 +274,21 @@ export function initHUD(camera, scene) {
     scene.add(g);
   });
 
-  // ── Hit flash (red sphere around camera) ──
+  // ── Hit flash (red plane in front of camera) ──
   hitFlash = new THREE.Mesh(
-    new THREE.SphereGeometry(0.4, 16, 16),
+    new THREE.PlaneGeometry(2, 2),
     new THREE.MeshBasicMaterial({
       color: 0xff0000,
       transparent: true,
       opacity: 0,
-      side: THREE.BackSide,
+      depthTest: false,
       depthWrite: false,
+      side: THREE.DoubleSide,
     }),
   );
-  hitFlash.renderOrder = 1000;
+  hitFlash.renderOrder = 999;
   hitFlash.visible = false;
+  hitFlash.position.set(0, 0, -0.5);
   camera.add(hitFlash);
 
   // ── FPS Counter (top left, attached to camera, more visible in VR) ──
@@ -891,6 +894,7 @@ export function spawnDamageNumber(position, damage, color) {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
+  texture.premultiplyAlpha = false;
 
   // Use PlaneGeometry instead of Sprite to prevent billboarding
   // Increased scale significantly for better visibility (+30% from before)
@@ -966,6 +970,7 @@ export function spawnOuchBubble(position, text = 'OUCH!') {
   ctx.fillText(text, 128, 64);
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.premultiplyAlpha = false;
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(1.5, 0.75),
     new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, side: THREE.DoubleSide })
@@ -1026,6 +1031,7 @@ export function spawnComboPopup(combo, cameraPos) {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
+  texture.premultiplyAlpha = false;
 
   // Large, prominent display
   const scale = 0.8;
@@ -1891,6 +1897,7 @@ function renderScoreboardCanvas() {
 
   if (scoreboardTexture) scoreboardTexture.dispose();
   scoreboardTexture = new THREE.CanvasTexture(canvas);
+  scoreboardTexture.premultiplyAlpha = false;
   scoreboardTexture.minFilter = THREE.LinearFilter;
 
   if (!scoreboardMesh) {
