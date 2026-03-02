@@ -151,7 +151,7 @@ function init() {
   camera.position.set(0, 1.6, 0);
 
   // Renderer — optimized for Quest performance
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));  // Cap pixel ratio for perf
   renderer.xr.enabled = true;
