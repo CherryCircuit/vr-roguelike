@@ -654,7 +654,7 @@ const BOSS_DEFS = {
     hitboxRadius: 0.7,
     meditationDuration: 3.0,
     weakPoints: false  // Custom weak points (sun nodes)
-  }
+  },
 
   // Level 15 bosses (Tier 3 - TOUGH)
   theodore_breakenridge: {
