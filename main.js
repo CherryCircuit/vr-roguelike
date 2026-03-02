@@ -37,6 +37,12 @@ import {
   showDebugJumpScreen, getDebugJumpHit,
   showDebugMenu, hideDebugMenu, getDebugMenuHit, updateTitleDebugIndicator
 } from './hud.js';
+
+import {
+  initDesktopControls, updateDesktopControls, getWeaponState,
+  getPosition, getAimRaycaster, getVirtualController,
+  isLocked
+} from './desktop-controls.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
   isNameClean, COUNTRIES, CONTINENTS,
@@ -186,6 +192,12 @@ function init() {
   // Init subsystems
   initEnemies(scene);
   initHUD(camera, scene);
+
+  // PERFORMANCE: Initialize projectile pool
+  initProjectilePool();
+
+  // Desktop controls for non-VR playtesting
+  initDesktopControls(scene, camera, renderer);
 
   // PERFORMANCE: Initialize projectile pool
   initProjectilePool();
@@ -2337,6 +2349,8 @@ function render(timestamp) {
       }
     }
 
+    // Update desktop controls (WASD + mouse) if in desktop mode
+    const desktopUpdates = updateDesktopControls(dt);
     const collisions = updateEnemies(dt, now, playerPos);
 
     // Boss update and health bar
