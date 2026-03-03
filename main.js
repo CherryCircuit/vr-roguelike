@@ -2311,12 +2311,12 @@ function updateProjectiles(dt) {
         handleHit(result.index, result.enemy, proj.userData.stats, hits[0].point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint);
 
         // Ricochet effect
-        if (proj.userData.stats.ricochetBounces > 0) {
+        if (proj.userData.stats?.ricochetBounces > 0) {
           handleRicochet(hits[0].point, proj.userData.stats, 0, proj.userData.controllerIndex);
         }
 
         // Remove projectile if not piercing - return to pool
-        if (!proj.userData.stats.piercing) {
+        if (!proj.userData.stats?.piercing) {
           if (proj.userData.isPooled) {
             returnProjectileToPool(proj);
           } else {
