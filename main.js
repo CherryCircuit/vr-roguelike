@@ -28,7 +28,7 @@ import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
-  hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, updateDamageNumbers, updateFPS,
+  hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar,
   updateComboPopups, checkComboIncrease, spawnKillChainPopup, updateKillChainPopups,
   getTitleButtonHit, showNameEntry, hideNameEntry, getKeyboardHit, updateKeyboardHover, getNameEntryName,
@@ -1343,6 +1343,10 @@ function startGame() {
 
 function completeLevel() {
   console.log(`[game] Level ${game.level} complete`);
+  
+  // Update HUD one final time to show correct kill count
+  updateHUD(game);
+  
   game.state = State.LEVEL_COMPLETE;
   clearAllEnemies();
 
@@ -2029,6 +2033,12 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
 
   // Spawn damage number
   spawnDamageNumber(hitPoint, damage, '#ffffff');
+  
+  // CRIT indicator for critical hits
+  if (isCritical) {
+    spawnCritIndicator(hitPoint);
+  }
+  
   playHitSound();
 
   // Apply status effects
@@ -2907,21 +2917,9 @@ function render(timestamp) {
     }
   }
 
-  // ── Screen shake system ──
-  if (screenShakeTime > performance.now()) {
-    const elapsed = performance.now() - screenShakeTime;
-    screenShakeIntensity *= Math.pow(0.9, elapsed / 16); // Decay over 16ms per frame at 60fps
-    if (screenShakeIntensity < 0.001) {
-      screenShakeIntensity = 0;
-    }
-
-    // Apply shake to camera
-    if (screenShakeIntensity > 0) {
-      camera.position.x += (Math.random() - 0.5) * screenShakeIntensity;
-      camera.position.y += (Math.random() - 0.5) * screenShakeIntensity;
-      camera.position.z += (Math.random() - 0.5) * screenShakeIntensity;
-    }
-  }
+  // ── Screen shake removed - using floor flash instead ──
+  // Screen shake was causing camera position issues
+  // Floor flash provides better damage feedback
 
   // ── Floor damage flash ──
   if (floorFlashing && floorMaterial) {
@@ -2937,13 +2935,9 @@ function render(timestamp) {
     }
   }
 
-  // ── Environment: sun and ominous horizon scale with level ──
-  const envLevel = game.state === State.PLAYING ? game.level : 1;
-  if (sunMeshRef && sunGlowRef) {
-    const sunScale = 1 + (envLevel - 1) * 0.04;
-    sunMeshRef.scale.setScalar(sunScale);
-    sunGlowRef.scale.setScalar(sunScale);
-  }
+  // ── Environment: sun stays constant size (removed level scaling) ──
+  // Sun scaling removed - was old progression system
+  // Biomes will handle environment changes instead
   if (ominousRef) {
     if (envLevel >= 10) {
       const t = Math.min(1, (envLevel - 10) / 6); // 0 at 10, 1 at 16
