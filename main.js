@@ -2259,7 +2259,13 @@ function updateProjectiles(dt) {
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const proj = projectiles[i];
-    
+
+    // Skip undefined projectiles (safety check)
+    if (!proj) {
+      projectiles.splice(i, 1);
+      continue;
+    }
+
     // Skip projectiles with missing data (safety check)
     if (!proj.userData || !proj.userData.stats) {
       if (proj.userData?.isPooled) {
