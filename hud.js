@@ -573,7 +573,13 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.userData.hand = hand;
 
   // Position in front of player (VR-friendly)
-  upgradeGroup.position.copy(playerPos);
+  // Add null check for playerPos
+  if (playerPos && typeof playerPos.x === 'number') {
+    upgradeGroup.position.copy(playerPos);
+  } else {
+    console.warn('[hud] showUpgradeCards received invalid playerPos, using default');
+    upgradeGroup.position.set(0, 1.6, -4);
+  }
   upgradeGroup.position.y += 1.6; // Eye level
   upgradeGroup.position.z -= 4; // 4 feet in front of player
 
@@ -611,7 +617,13 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
 
 function createUpgradeCard(upgrade, position) {
   const group = new THREE.Group();
-  group.position.copy(position);
+  // Add null check for position - provide default if undefined
+  if (position && typeof position.x === 'number') {
+    group.position.copy(position);
+  } else {
+    console.warn('[hud] createUpgradeCard received invalid position, using default');
+    group.position.set(0, 0, 0);
+  }
   group.userData.upgradeId = upgrade.id;
 
   // Card background plane
@@ -683,7 +695,13 @@ function createUpgradeCard(upgrade, position) {
 
 function createSkipCard(position) {
   const group = new THREE.Group();
-  group.position.copy(position);
+  // Add null check for position - provide default if undefined
+  if (position && typeof position.x === 'number') {
+    group.position.copy(position);
+  } else {
+    console.warn('[hud] createSkipCard received invalid position, using default');
+    group.position.set(0, 0, 0);
+  }
   group.userData.upgradeId = 'SKIP';  // Special ID for skip
 
   // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades)
