@@ -35,7 +35,7 @@ import {
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
-  showDebugMenu, hideDebugMenu, getDebugMenuHit, getReadyScreenHit, updateTitleDebugIndicator
+  showDebugMenu, hideDebugMenu, getDebugMenuHit, getReadyScreenHit, showReadyScreen, updateTitleDebugIndicator
 } from './hud.js';
 
 import {
@@ -1332,6 +1332,7 @@ function startGame() {
   game.level = 1;
   game._levelConfig = getLevelConfig();
   showHUD();
+  showReadyScreen(game.level, camera.position);
 
   // Hide blaster displays during gameplay
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
