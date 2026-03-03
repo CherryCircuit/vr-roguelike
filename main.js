@@ -2296,7 +2296,7 @@ function updateProjectiles(dt) {
       const result = getEnemyByMesh(hits[0].object);
       if (result && result.boss) {
         handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex);
-        if (!proj.userData.stats.piercing) {
+        if (!proj.userData.stats?.piercing) {
           if (proj.userData.isPooled) {
             returnProjectileToPool(proj);
           } else {
@@ -2327,10 +2327,10 @@ function updateProjectiles(dt) {
       } else {
         const minionResult = getBossMinionByMesh(hits[0].object);
         if (minionResult) {
-          const mResult = hitBossMinion(minionResult.index, proj.userData.stats.damage);
-          spawnDamageNumber(hits[0].point, proj.userData.stats.damage, '#ff8800');
+          const mResult = hitBossMinion(minionResult.index, proj.userData.stats?.damage);
+          spawnDamageNumber(hits[0].point, proj.userData.stats?.damage, '#ff8800');
           if (mResult.killed) playExplosionSound();
-          if (!proj.userData.stats.piercing) {
+          if (!proj.userData.stats?.piercing) {
             if (proj.userData.isPooled) {
               returnProjectileToPool(proj);
             } else {
