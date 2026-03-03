@@ -241,8 +241,8 @@ export function getVirtualController(hand = 'both') {
   if (!enabled || !cameraRef) return null;
 
   return {
-    getWorldPosition: () => cameraRef.position.clone(),
-    getWorldQuaternion: () => cameraRef.quaternion.clone(),
+    getWorldPosition: (target) => { target.copy(cameraRef.position); return target; },
+    getWorldQuaternion: (target) => { target.copy(cameraRef.quaternion); return target; },
     userData: { handedness: hand }
   };
 }
