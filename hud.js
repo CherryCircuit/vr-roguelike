@@ -409,8 +409,8 @@ function createTitleScreen() {
   titleScoreboardBtn = btnMesh;
 
 // Version number
-  const versionDate = 'FEB 28 2026';
-  const versionNum = 'v0.024';
+  const versionDate = 'MAR 03 2026';
+  const versionNum = 'v0.025';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 16,
     color: '#888888',
@@ -2192,12 +2192,12 @@ function renderScoreboardCanvas() {
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, w - 2, h - 2);
 
-  const rowHeight = 30; // Reduced from 42
+  const rowHeight = 60; // Doubled from 30 for VR readability
   const maxVisible = Math.floor(h / rowHeight);
   const startIdx = scoreboardScrollOffset;
   const endIdx = Math.min(startIdx + maxVisible, scoreboardScores.length);
 
-  ctx.font = 'bold 18px Arial, sans-serif'; // Reduced from 24
+  ctx.font = 'bold 36px Arial, sans-serif'; // Doubled from 18px for VR readability
   ctx.textBaseline = 'middle';
 
   for (let i = startIdx; i < endIdx; i++) {
@@ -2237,9 +2237,9 @@ function renderScoreboardCanvas() {
           ...[...score.country.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
         );
         ctx.textAlign = 'left';
-        ctx.font = '16px Arial, sans-serif';
+        ctx.font = '32px Arial, sans-serif'; // Doubled from 16px for VR readability
         ctx.fillText(flag, 640, y);
-        ctx.font = 'bold 18px Arial, sans-serif';
+        ctx.font = 'bold 36px Arial, sans-serif';
       } catch (e) { /* skip flag */ }
     }
 
@@ -2255,7 +2255,7 @@ function renderScoreboardCanvas() {
   if (scoreboardScores.length === 0) {
     ctx.fillStyle = '#666666';
     ctx.textAlign = 'center';
-    ctx.font = 'bold 32px Arial, sans-serif';
+    ctx.font = 'bold 64px Arial, sans-serif'; // Doubled from 32px for VR readability
     ctx.fillText('NO SCORES YET', w / 2, h / 2);
   }
 
@@ -2263,7 +2263,7 @@ function renderScoreboardCanvas() {
   if (scoreboardScores.length > maxVisible) {
     ctx.fillStyle = '#444488';
     ctx.textAlign = 'center';
-    ctx.font = '18px Arial, sans-serif';
+    ctx.font = '36px Arial, sans-serif'; // Doubled from 18px for VR readability
     ctx.fillText(`${startIdx + 1}-${endIdx} of ${scoreboardScores.length}`, w / 2, h - 15);
   }
 
