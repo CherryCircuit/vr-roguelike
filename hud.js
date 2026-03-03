@@ -1010,6 +1010,50 @@ export function spawnOuchBubble(position, text = 'OUCH!') {
   damageNumbers.push(mesh);
 }
 
+// ── CRIT Indicator ─────────────────────────────────────────
+
+export function spawnCritIndicator(position) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 128;
+  canvas.height = 64;
+
+  ctx.font = 'bold 36px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Glow effect
+  ctx.shadowColor = '#ffff00';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = '#ffff00';
+  ctx.fillText('CRIT!', 64, 32);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  const geometry = new THREE.PlaneGeometry(0.4, 0.2);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 1,
+    depthTest: false,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geometry, mat);
+  mesh.position.copy(position);
+  mesh.position.y += 0.5; // Above the damage number
+  mesh.position.x += (Math.random() - 0.5) * 0.2;
+
+  mesh.renderOrder = 999;
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.lifetime = 1000; // 1 second
+  mesh.userData.velocity = new THREE.Vector3(0, 2, 0); // Float up faster
+
+  sceneRef.add(mesh);
+  damageNumbers.push(mesh);
+}
+
 export function updateDamageNumbers(dt, now) {
   for (let i = damageNumbers.length - 1; i >= 0; i--) {
     const s = damageNumbers[i];

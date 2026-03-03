@@ -331,8 +331,8 @@ function onMouseMove(e) {
   // Yaw (horizontal rotation)
   player.rotation.y -= movementX * mouseSensitivity;
 
-  // Pitch (vertical rotation) - clamped to prevent looking straight up/down
-  player.rotation.x -= movementY * mouseSensitivity;
+  // Pitch (vertical rotation) - INVERTED Y-AXIS (pull down = look up)
+  player.rotation.x += movementY * mouseSensitivity;
   player.rotation.x = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, player.rotation.x));
 
   // Apply to camera
@@ -404,10 +404,12 @@ function handleFireInput() {
 // ── HUD Helpers ────────────────────────────────────────────
 
 let desktopHUDElement = null;
+let crosshairElement = null;
 
 function showDesktopHUD() {
   if (desktopHUDElement) {
     desktopHUDElement.style.display = 'block';
+    if (crosshairElement) crosshairElement.style.display = 'block';
     return;
   }
 
@@ -438,11 +440,38 @@ function showDesktopHUD() {
   `;
 
   document.body.appendChild(desktopHUDElement);
+
+  // Create crosshair element
+  crosshairElement = document.createElement('div');
+  crosshairElement.id = 'desktop-crosshair';
+  crosshairElement.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 24px;
+    height: 24px;
+    pointer-events: none;
+    z-index: 999;
+  `;
+  crosshairElement.innerHTML = `
+    <svg width="24" height="24" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+      <line x1="12" y1="4" x2="12" y2="8" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+      <line x1="12" y1="16" x2="12" y2="20" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+      <line x1="4" y1="12" x2="8" y2="12" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+      <line x1="16" y1="12" x2="20" y2="12" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+    </svg>
+  `;
+  document.body.appendChild(crosshairElement);
 }
 
 function hideDesktopHUD() {
   if (desktopHUDElement) {
     desktopHUDElement.style.display = 'none';
+  }
+  if (crosshairElement) {
+    crosshairElement.style.display = 'none';
   }
 }
 
