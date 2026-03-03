@@ -595,15 +595,16 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   cooldownSprite.name = 'cooldown';
   upgradeGroup.add(cooldownSprite);
 
-  // Four cards in an arc (3 upgrades + 1 skip option)
+  // Four cards evenly spaced (3 upgrades + 1 skip option)
   const positions = [
-    new THREE.Vector3(-2, 0, 0),
-    new THREE.Vector3(-0.7, 0, 0),
-    new THREE.Vector3(0.7, 0, 0),
-    new THREE.Vector3(2, 0, 0),
+    new THREE.Vector3(-2.25, 0, 0),
+    new THREE.Vector3(-0.75, 0, 0),
+    new THREE.Vector3(0.75, 0, 0),
+    new THREE.Vector3(2.25, 0, 0),
   ];
 
-  upgrades.forEach((upg, i) => {
+  // Limit to first 3 upgrades only
+  upgrades.slice(0, 3).forEach((upg, i) => {
     const card = createUpgradeCard(upg, positions[i]);
     upgradeGroup.add(card);
     upgradeCards.push(card);
@@ -657,9 +658,9 @@ function createUpgradeCard(upgrade, position) {
   nameSprite.position.set(0, 0.40, 0.01);
   group.add(nameSprite);
 
-  // Description text - increased proportionally with proper maxWidth
+  // Description text - increased by 200% (26 → 52)
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 26,
+    fontSize: 52,
     color: '#cccccc',
     scale: 0.15,
     depthTest: true,
