@@ -39,15 +39,19 @@ import {
 } from './hud.js';
 
 import {
-  initDesktopControls, updateDesktopControls, getWeaponState,
+  initDesktopControls, update as updateDesktopControls, getWeaponState,
   getPosition, getAimRaycaster, getVirtualController,
-  isLocked
+  isLocked, isEnabled as isDesktopEnabled
 } from './desktop-controls.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
+
+// Expose game state to window for debugging/testing
+window.State = State;
+window.game = game;
 
 // ── Constants ──────────────────────────────────────────────
 const NEON_PINK = 0xff00ff;
@@ -570,6 +574,13 @@ function setupControllers() {
     scene.add(controller);
     controllers.push(controller);
   }
+
+  // Desktop click handler for non-VR playtesting
+  document.addEventListener('mousedown', (e) => {
+    if (isDesktopEnabled() && e.button === 0) {
+      handleDesktopClick();
+    }
+  });
 }
 
 function createControllerVisual(index) {
@@ -772,6 +783,219 @@ function handleTitleTrigger(controller) {
   }
   playMenuClick();
   startGame();
+}
+
+// ── Desktop Controls Handlers ───────────────────────────────
+
+function handleDesktopClick() {
+  if (!isDesktopEnabled()) return;
+
+  const st = game.state;
+
+  if (st === State.TITLE) {
+    handleDesktopTitleClick();
+  } else if (st === State.UPGRADE_SELECT) {
+    handleDesktopUpgradeSelectClick();
+  } else if (st === State.GAME_OVER || st === State.VICTORY) {
+    if (gameOverCooldown <= 0) {
+      handleDesktopGameOverClick();
+    }
+  } else if (st === State.NAME_ENTRY) {
+    handleDesktopNameEntryClick();
+  } else if (st === State.SCOREBOARD || st === State.REGIONAL_SCORES) {
+    handleDesktopScoreboardClick();
+  } else if (st === State.COUNTRY_SELECT) {
+    handleDesktopCountrySelectClick();
+  } else if (st === State.READY_SCREEN) {
+    handleDesktopReadyScreenClick();
+  } else if (st === State.DEBUG_MENU) {
+    handleDesktopDebugMenuClick();
+  }
+}
+
+function handleDesktopTitleClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) {
+    // No raycaster - just start the game
+    playMenuClick();
+    startGame();
+    return;
+  }
+
+  const btnHit = getTitleButtonHit(raycaster);
+  if (btnHit === 'scoreboard') {
+    playMenuClick();
+    scoreboardFromGameOver = false;
+    game.state = State.SCOREBOARD;
+    hideTitle();
+    showScoreboard([], 'LOADING...');
+    fetchTopScores().then(scores => {
+      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+    });
+    return;
+  }
+  if (btnHit === 'debug_menu') {
+    playMenuClick();
+    game.state = State.DEBUG_MENU;
+    hideTitle();
+    showDebugMenu();
+    return;
+  }
+  playMenuClick();
+  startGame();
+}
+
+function handleDesktopGameOverClick() {
+  game.finalScore = game.score;
+  game.finalLevel = game.level;
+  scoreboardFromGameOver = true;
+  hideGameOver();
+
+  if (!getStoredCountry()) {
+    game.state = State.COUNTRY_SELECT;
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+  } else {
+    game.state = State.NAME_ENTRY;
+    showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+  }
+}
+
+function handleDesktopNameEntryClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const result = getKeyboardHit(raycaster);
+  if (result && result.action === 'submit') {
+    const name = result.name.trim();
+    if (!isNameClean(name)) {
+      console.log('[scoreboard] Name rejected by profanity filter');
+      return;
+    }
+    setStoredName(name);
+    hideNameEntry();
+
+    // Submit score and show scoreboard
+    game.state = State.SCOREBOARD;
+    showScoreboard([], 'SUBMITTING...');
+    const country = getStoredCountry() || '';
+    submitScore(name, game.finalScore, game.finalLevel, country).then(() => {
+      return new Promise(resolve => setTimeout(resolve, 500));
+    }).then(() => {
+      return fetchTopScores();
+    }).then(scores => {
+      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+    }).catch(err => {
+      console.error('[scoreboard] Detailed error in submission flow:', err);
+      showScoreboard([], 'ERROR SUBMITTING SCORE');
+    });
+  }
+}
+
+function handleDesktopScoreboardClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const action = getScoreboardHit(raycaster);
+  if (action === 'back') {
+    playMenuClick();
+    hideScoreboard();
+    resetGame();
+    showTitle();
+    return;
+  }
+  if (action === 'country') {
+    scoreboardFromGameOver = false;
+    game.state = State.COUNTRY_SELECT;
+    hideScoreboard();
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+    return;
+  }
+  if (action === 'continent') {
+    scoreboardFromGameOver = false;
+    game.state = State.COUNTRY_SELECT;
+    hideScoreboard();
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+    return;
+  }
+}
+
+function handleDesktopCountrySelectClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const result = getCountrySelectHit(raycaster, COUNTRIES);
+  if (!result) return;
+
+  if (result.action === 'back') {
+    playMenuClick();
+    hideCountrySelect();
+    if (scoreboardFromGameOver) {
+      game.state = State.NAME_ENTRY;
+      showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+    } else {
+      game.state = State.SCOREBOARD;
+      showScoreboard([], 'LOADING...');
+      fetchTopScores().then(scores => {
+        showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      });
+    }
+    return;
+  }
+
+  if (result.action === 'select') {
+    playMenuClick();
+    setStoredCountry(result.code);
+    hideCountrySelect();
+
+    if (scoreboardFromGameOver) {
+      game.state = State.NAME_ENTRY;
+      showNameEntry(game.finalScore, game.finalLevel, getStoredName());
+    } else {
+      game.state = State.REGIONAL_SCORES;
+      const country = COUNTRIES.find(c => c.code === result.code);
+      const label = country ? country.name : result.code;
+      showScoreboard([], 'LOADING...');
+      fetchScoresByCountry(result.code).then(scores => {
+        showScoreboard(scores, `${label.toUpperCase()} LEADERBOARD`);
+      });
+    }
+  }
+}
+
+function handleDesktopUpgradeSelectClick() {
+  if (upgradeSelectionCooldown > 0) return;
+
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const result = getUpgradeCardHit(raycaster);
+  if (result) {
+    selectUpgradeAndAdvance(result.upgrade, result.hand);
+  }
+}
+
+function handleDesktopReadyScreenClick() {
+  playMenuClick();
+  hideHUD();
+  game.state = State.PLAYING;
+  game.spawnTimer = 1.0;
+  showHUD();
+}
+
+function handleDesktopDebugMenuClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const result = getDebugMenuHit(raycaster);
+  if (result && result.action === 'back') {
+    playMenuClick();
+    saveDebugSettings();
+    hideDebugMenu();
+    resetGame();
+    showTitle();
+    updateTitleDebugIndicator();
+    return;
+  }
 }
 
 function handleGameOverTrigger(controller) {
@@ -1096,6 +1320,13 @@ function handleDebugMenuTrigger(controller) {
 function startGame() {
   console.log('[game] Starting new game');
   hideTitle();
+  
+  // Hide HTML overlays for desktop mode
+  const noVr = document.getElementById('no-vr');
+  const info = document.getElementById('info');
+  if (noVr) noVr.style.display = 'none';
+  if (info) info.style.display = 'none';
+  
   resetGame();
   game.state = State.READY_SCREEN;
   game.level = 1;
@@ -2028,6 +2259,18 @@ function updateProjectiles(dt) {
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const proj = projectiles[i];
+    
+    // Skip projectiles with missing data (safety check)
+    if (!proj.userData || !proj.userData.stats) {
+      if (proj.userData?.isPooled) {
+        returnProjectileToPool(proj);
+      } else {
+        scene.remove(proj);
+      }
+      projectiles.splice(i, 1);
+      continue;
+    }
+    
     const age = now - proj.userData.createdAt;
 
     // Remove expired projectiles - return to pool
@@ -2288,7 +2531,7 @@ function render(timestamp) {
     blasterDisplays.forEach(d => { if (d) d.visible = false; });  // Hidden during gameplay
     spawnEnemyWave(dt);
 
-    // Full-auto shooting / Lightning beams
+    // Full-auto shooting / Lightning beams (VR controllers)
     for (let i = 0; i < 2; i++) {
       if (controllerTriggerPressed[i]) {
         const hand = i === 0 ? 'left' : 'right';
@@ -2307,6 +2550,69 @@ function render(timestamp) {
         if (lightningBeams[i]) {
           scene.remove(lightningBeams[i]);
           lightningBeams[i] = null;
+        }
+      }
+    }
+
+    // Desktop controls firing (keyboard/mouse)
+    if (isDesktopEnabled()) {
+      const desktopWeapon = getWeaponState();
+      
+      if (desktopWeapon.triggerPressed) {
+        // Handle fire mode: left, right, or both
+        if (desktopWeapon.fireMode === 'left' || desktopWeapon.fireMode === 'both') {
+          const virtualController = getVirtualController('left');
+          if (virtualController) {
+            const stats = getWeaponStats(game.mainWeapon.left, game.upgrades.left);
+            if (stats.chargeShot) {
+              if (chargeShotStartTime[0] === null) chargeShotStartTime[0] = now;
+            } else if (stats.lightning) {
+              updateLightningBeam(virtualController, 0, stats, dt);
+            } else {
+              fireMainWeapon(virtualController, 0);
+            }
+          }
+        }
+
+        if (desktopWeapon.fireMode === 'right' || desktopWeapon.fireMode === 'both') {
+          const virtualController = getVirtualController('right');
+          if (virtualController) {
+            const stats = getWeaponStats(game.mainWeapon.right, game.upgrades.right);
+            if (stats.chargeShot) {
+              if (chargeShotStartTime[1] === null) chargeShotStartTime[1] = now;
+            } else if (stats.lightning) {
+              updateLightningBeam(virtualController, 1, stats, dt);
+            } else {
+              fireMainWeapon(virtualController, 1);
+            }
+          }
+        }
+      } else {
+        // Release charge shots when not pressing fire
+        if (chargeShotStartTime[0] !== null) {
+          // Fire the charge shot on release
+          const virtualController = getVirtualController('left');
+          if (virtualController) {
+            fireMainWeapon(virtualController, 0);
+          }
+          chargeShotStartTime[0] = null;
+        }
+        if (chargeShotStartTime[1] !== null) {
+          // Fire the charge shot on release
+          const virtualController = getVirtualController('right');
+          if (virtualController) {
+            fireMainWeapon(virtualController, 1);
+          }
+          chargeShotStartTime[1] = null;
+        }
+        // Clear lightning beams
+        if (lightningBeams[0]) {
+          scene.remove(lightningBeams[0]);
+          lightningBeams[0] = null;
+        }
+        if (lightningBeams[1]) {
+          scene.remove(lightningBeams[1]);
+          lightningBeams[1] = null;
         }
       }
     }

@@ -1803,17 +1803,6 @@ export function isKillsAlertActive() {
   return killsAlertActive;
 }
 
-export function getReadyScreenHit(raycaster) {
-  if (!readyGroup.visible) return null;
-  const actionMeshes = [];
-  readyGroup.traverse(c => {
-    if (c.userData && c.userData.readyAction) actionMeshes.push(c);
-  });
-  const hits = raycaster.intersectObjects(actionMeshes, false);
-  if (hits.length > 0) return hits[0].object.userData.readyAction;
-  return null;
-}
-
 // ── Name Entry Screen ───────────────────────────────────────
 
 export function showNameEntry(score, level, storedName, playerPos) {
