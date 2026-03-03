@@ -35,7 +35,7 @@ import {
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
-  showDebugMenu, hideDebugMenu, getDebugMenuHit, updateTitleDebugIndicator
+  showDebugMenu, hideDebugMenu, getDebugMenuHit, getReadyScreenHit, updateTitleDebugIndicator
 } from './hud.js';
 
 import {
