@@ -1288,7 +1288,7 @@ function handleReadyScreenTrigger(controller) {
     hideHUD();
 
     // Actually start playing
-    game.state = State.READY_SCREEN;
+    game.state = State.PLAYING;
     showHUD();
 
     // Stagger setup
