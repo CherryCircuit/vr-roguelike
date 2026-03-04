@@ -134,6 +134,38 @@ export const THEMES = {
     particles: { type: 'corruption', color: 0xaa00ff, count: 40, speed: 0.8 },
   },
 
+  // The Stack: Brutalist industrial megastructure
+  the_stack: {
+    skyColor: 0x333333,
+    fogColor: 0x444444,
+    fogDensity: 0.01,
+    gridColor: '#ffaa00',
+    gridOpacity: 0.7,
+    mountainFill: 0x222222,
+    mountainWire: 0x888888,
+    mountainWireOpacity: 0.6,
+    sunColors: ['#ffffff', '#dddddd', '#bbbbbb'],
+    sunGlowColor: 0xcccccc,
+    starColor: 0xffffff,
+    particles: { type: 'debris', color: 0x888888, count: 35, speed: 0.25 },
+  },
+
+  // Digital Rain (Hard) - Matrix-style biome
+  digital_rain: {
+    skyColor: 0x000000,
+    fogColor: 0x001100,
+    fogDensity: 0.008,
+    gridColor: '#00ff00',
+    gridOpacity: 0.5,
+    mountainFill: 0x000500,
+    mountainWire: 0x00ff00,
+    mountainWireOpacity: 0.4,
+    sunColors: ['#00ff00', '#00cc00', '#009900'],
+    sunGlowColor: 0x00ff00,
+    starColor: 0x00ff00,
+    particles: { type: 'code_rain', color: 0x00ff00, count: 50, speed: 3.0 },
+  },
+
   // Boss levels (5, 10, 15, 20): Red Alert
   boss: {
     skyColor: 0x0a0000,
@@ -148,6 +180,22 @@ export const THEMES = {
     sunGlowColor: 0xff0000,
     starColor: 0xff2222,
     particles: { type: 'danger', color: 0xff0000, count: 60, speed: 1.0 },
+  },
+
+  // Kaleidoscope: Infinite mirror maze (Very Hard)
+  kaleidoscope: {
+    skyColor: 0x000000,
+    fogColor: 0x111111,
+    fogDensity: 0.015,
+    gridColor: '#ffffff',
+    gridOpacity: 0.9,
+    mountainFill: 0x000000,
+    mountainWire: 0xffffff,
+    mountainWireOpacity: 0.95,
+    sunColors: ['#ff00ff', '#00ffff', '#ffff00'],
+    sunGlowColor: 0xffffff,
+    starColor: 0xffffff,
+    particles: { type: 'prism', color: 0xffffff, count: 50, speed: 0.6 },
   },
 };
 
@@ -300,7 +348,16 @@ export function updateAmbientParticles(dt, theme, playerPos) {
   }
 
   ambientParticles.visible = true;
-  ambientParticles.material.color.setHex(theme.particles.color);
+  
+  // Kaleidoscope: Color-shifting particles
+  if (theme.particles.type === 'prism') {
+    const now = performance.now();
+    const hue = (now * 0.0001) % 1.0;
+    const color = new THREE.Color().setHSL(hue, 1.0, 0.5);
+    ambientParticles.material.color = color;
+  } else {
+    ambientParticles.material.color.setHex(theme.particles.color);
+  }
 
   const positions = ambientGeo.attributes.position.array;
   const speed = theme.particles.speed;
@@ -353,6 +410,28 @@ export function updateAmbientParticles(dt, theme, playerPos) {
         else if (direction === 2) positions[i3 + 2] += electronSpeed;
         else positions[i3 + 2] -= electronSpeed;
         break;
+
+      case 'code_rain':
+        // Matrix-style falling code rain
+        positions[i3 + 1] -= speed * dt; // Fall downward
+        positions[i3] += Math.sin(now * 0.0008 + i * 0.5) * 0.02; // Slight horizontal drift
+        break;
+
+      case 'debris':
+        // Industrial dust/debris drifting through The Stack
+        positions[i3] += Math.sin(now * 0.0001 + i * 0.5) * 0.015;
+        positions[i3 + 1] += Math.cos(now * 0.0002 + i) * 0.008 - 0.01; // slow descent
+        positions[i3 + 2] += Math.cos(now * 0.00015 + i * 0.3) * 0.012;
+        break;
+
+      case 'prism':
+        // Kaleidoscope: Color-shifting reflection particles
+        const prismAngle = now * 0.0004 + (i / AMBIENT_POOL) * Math.PI * 6;
+        positions[i3] += Math.cos(prismAngle) * speed * dt;
+        positions[i3 + 1] += Math.sin(now * 0.0005 + i) * 0.02;
+        positions[i3 + 2] += Math.sin(prismAngle) * speed * dt;
+        // Color shifts handled in material update
+        break;
     }
 
     // Reset out-of-range particles
@@ -365,7 +444,9 @@ export function updateAmbientParticles(dt, theme, playerPos) {
       dx * dx + dz * dz > 900
     ) {
       positions[i3] = playerPos.x + (Math.random() - 0.5) * 40;
-      positions[i3 + 1] = theme.particles.type === 'snow' ? 15 : (theme.particles.type === 'electrons' ? 1 : Math.random() * 2);
+      positions[i3 + 1] = theme.particles.type === 'snow' ? 15 : 
+                          (theme.particles.type === 'code_rain' ? 20 : 
+                          (theme.particles.type === 'electrons' ? 1 : Math.random() * 2));
       positions[i3 + 2] = playerPos.z + (Math.random() - 0.5) * 40;
     }
   }
