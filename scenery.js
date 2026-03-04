@@ -229,6 +229,22 @@ export const THEMES = {
     starColor: 0xffffff,
     particles: { type: 'crystal', color: 0xaa88ff, count: 35, speed: 0.15 },
   },
+
+  // Neon Rainforest: Cyberpunk jungle with bioluminescence
+  neon_rainforest: {
+    skyColor: 0x001a0d,
+    fogColor: 0x002211,
+    fogDensity: 0.014,
+    gridColor: '#00ff88',
+    gridOpacity: 0.65,
+    mountainFill: 0x001a0d,
+    mountainWire: 0x00ff88,
+    mountainWireOpacity: 0.6,
+    sunColors: ['#00ffff', '#00ff88', '#88ff00'],
+    sunGlowColor: 0x00ff88,
+    starColor: 0x88ffaa,
+    particles: { type: 'pollen', color: 0xffff00, count: 45, speed: 0.2 },
+  },
 };
 
 // ── Get Theme for Level ───────────────────────────────────
