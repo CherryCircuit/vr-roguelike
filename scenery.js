@@ -86,7 +86,23 @@ export const THEMES = {
     particles: { type: 'embers', color: 0xff4400, count: 30, speed: 0.5 },
   },
 
-  // Levels 11-14: Frozen Digital
+  // Levels 10-14: Circuit Board (Medium-Hard) - Micro-scale PCB theme
+  circuit_board: {
+    skyColor: 0x003300,
+    fogColor: 0x004400,
+    fogDensity: 0.015,
+    gridColor: '#ffcc00',
+    gridOpacity: 0.8,
+    mountainFill: 0x002200,
+    mountainWire: 0xffcc00,
+    mountainWireOpacity: 0.6,
+    sunColors: ['#ff0000', '#cc0000', '#990000'],
+    sunGlowColor: 0xff0000,
+    starColor: 0xff6600,
+    particles: { type: 'electrons', color: 0x00ffff, count: 40, speed: 2.0 },
+  },
+
+  // Levels 15-19: Frozen Digital
   frozen: {
     skyColor: 0x000a15,
     fogColor: 0x001122,
@@ -140,7 +156,7 @@ export function getThemeForLevel(level) {
   if (level % 5 === 0) return THEMES.boss;
   if (level <= 5) return THEMES.sunrise_highway;
   if (level <= 9) return THEMES.synthwave;
-  if (level <= 14) return THEMES.hellscape;
+  if (level <= 14) return THEMES.circuit_board;
   if (level <= 19) return THEMES.frozen;
   return THEMES.corruption;
 }
@@ -327,6 +343,16 @@ export function updateAmbientParticles(dt, theme, playerPos) {
         positions[i3] += Math.cos(a) * speed * dt * 0.5;
         positions[i3 + 2] += Math.sin(a) * speed * dt * 0.5;
         break;
+
+      case 'electrons':
+        // Fast-moving electrons along circuit traces
+        const direction = i % 4; // 0: +x, 1: -x, 2: +z, 3: -z
+        const electronSpeed = speed * dt;
+        if (direction === 0) positions[i3] += electronSpeed;
+        else if (direction === 1) positions[i3] -= electronSpeed;
+        else if (direction === 2) positions[i3 + 2] += electronSpeed;
+        else positions[i3 + 2] -= electronSpeed;
+        break;
     }
 
     // Reset out-of-range particles
@@ -339,7 +365,7 @@ export function updateAmbientParticles(dt, theme, playerPos) {
       dx * dx + dz * dz > 900
     ) {
       positions[i3] = playerPos.x + (Math.random() - 0.5) * 40;
-      positions[i3 + 1] = theme.particles.type === 'snow' ? 15 : Math.random() * 2;
+      positions[i3 + 1] = theme.particles.type === 'snow' ? 15 : (theme.particles.type === 'electrons' ? 1 : Math.random() * 2);
       positions[i3 + 2] = playerPos.z + (Math.random() - 0.5) * 40;
     }
   }
