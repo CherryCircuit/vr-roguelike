@@ -411,7 +411,7 @@ function createTitleScreen() {
 
 // Version number
   const versionDate = 'MAR 03 2026';
-  const versionNum = 'v0.030';
+  const versionNum = 'v0.031';
   const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
     fontSize: 16,
     color: '#888888',

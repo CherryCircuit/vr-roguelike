@@ -45,6 +45,101 @@ const ENEMY_DEFS = {
   fast: { pattern: parsePattern(PATTERNS.fast), voxelSize: 0.24, baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.48, telegraphType: 'flash' },
   tank: { pattern: parsePattern(PATTERNS.tank), voxelSize: 0.36, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.84, telegraphType: 'scale' },
   swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.19, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.36, telegraphType: 'twitch' },
+
+  // ── New enemy types (v2.0) ─────────────────────────────────
+  spiral_swimmer: { pattern: [[1]], voxelSize: 0.18, baseHp: 8, baseSpeed: 2.2, color: 0x00ffcc, depth: 1, scoreValue: 8, hitboxRadius: 0.3, telegraphType: 'twitch', isTrain: true, trainLength: 10 },
+  geometry_shifter: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.28, baseHp: 45, baseSpeed: 1.3, color: 0xff6600, depth: 1, scoreValue: 20, hitboxRadius: 0.55, telegraphType: 'scale', shapeShift: true },
+  pulse_bomber: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.32, baseHp: 55, baseSpeed: 0.6, color: 0x8800ff, depth: 1, scoreValue: 22, hitboxRadius: 0.7, telegraphType: 'glow', isRanged: true },
+  clone_mimic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.26, baseHp: 35, baseSpeed: 1.8, color: 0xff00aa, depth: 1, scoreValue: 18, hitboxRadius: 0.5, telegraphType: 'flash', isMimic: true },
+  spider_walker: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.22, baseHp: 25, baseSpeed: 2.8, color: 0xff4400, depth: 1, scoreValue: 12, hitboxRadius: 0.4, telegraphType: 'twitch', isSpider: true },
+
+  // ── Part 2: Advanced enemies (v3.0) ─────────────────────────
+  mirror_knight: {
+    pattern: parsePattern([
+      '111',
+      '1.1',
+      '111',
+    ]),
+    voxelSize: 0.3,
+    baseHp: 65,
+    baseSpeed: 1.4,
+    color: 0xcccccc,
+    depth: 1,
+    scoreValue: 28,
+    hitboxRadius: 0.65,
+    telegraphType: 'flash',
+    isMirror: true,
+    damageReflection: 0.3,
+  },
+  portal_mantis: {
+    pattern: parsePattern([
+      '1.1',
+      '111',
+      '.1.',
+    ]),
+    voxelSize: 0.25,
+    baseHp: 40,
+    baseSpeed: 2.0,
+    color: 0x00ffaa,
+    depth: 1,
+    scoreValue: 24,
+    hitboxRadius: 0.5,
+    telegraphType: 'twitch',
+    isPortal: true,
+    portalCooldown: 4.0,
+  },
+  blackhole_totem: {
+    pattern: parsePattern([
+      '.1.',
+      '111',
+      '.1.',
+    ]),
+    voxelSize: 0.35,
+    baseHp: 20,
+    baseSpeed: 0,
+    color: 0x220033,
+    depth: 1,
+    scoreValue: 15,
+    hitboxRadius: 0.6,
+    telegraphType: 'glow',
+    isBlackhole: true,
+    gravityRadius: 5.0,
+    gravityStrength: 2.5,
+    deathExplosionDamage: 50,
+  },
+  conductor: {
+    pattern: parsePattern([
+      '1.1',
+      '.1.',
+      '1.1',
+    ]),
+    voxelSize: 0.28,
+    baseHp: 50,
+    baseSpeed: 1.2,
+    color: 0xffcc00,
+    depth: 1,
+    scoreValue: 30,
+    hitboxRadius: 0.55,
+    telegraphType: 'scale',
+    isConductor: true,
+    linkRadius: 4.0,
+    linkSpeedBonus: 0.4,
+    linkDamageReduction: 0.3,
+  },
+  phase_wraith: {
+    pattern: parsePattern(PATTERNS.fast),
+    voxelSize: 0.22,
+    baseHp: 30,
+    baseSpeed: 2.5,
+    color: 0x8844ff,
+    depth: 1,
+    scoreValue: 22,
+    hitboxRadius: 0.4,
+    telegraphType: 'flash',
+    isPhase: true,
+    phaseCycleTime: 2.0,
+    invisibleDamageBonus: 2.0,
+  },
 };
 
 // ── Module state ───────────────────────────────────────────
@@ -73,6 +168,626 @@ function getGeo(size) {
 
 // Shared materials per enemy type (avoid creating new material per spawn)
 const sharedMaterials = {};
+
+// Player movement history for Clone Mimics (stores last 3 seconds of positions)
+const playerMovementHistory = [];
+const MOVEMENT_HISTORY_DURATION = 3000; // 3 seconds in ms
+
+// Baby spiders spawned from Spider Walker deaths
+const babySpiders = [];
+
+// Pulse Bomber projectiles (sonic rings)
+const pulseBomberRings = [];
+
+/**
+ * Record player position for Clone Mimic tracking.
+ * Call this from main game loop.
+ */
+export function recordPlayerPosition(pos, now) {
+  playerMovementHistory.push({ pos: pos.clone(), time: now });
+  // Remove entries older than MOVEMENT_HISTORY_DURATION
+  while (playerMovementHistory.length > 0 && now - playerMovementHistory[0].time > MOVEMENT_HISTORY_DURATION) {
+    playerMovementHistory.shift();
+  }
+}
+
+/**
+ * Spawn a train-style enemy (Spiral Swimmer).
+ * Creates a chain of connected voxels that move in a spiral pattern.
+ */
+function spawnTrainEnemy(type, position, levelConfig) {
+  const def = ENEMY_DEFS[type];
+  const trainLength = def.trainLength || 8;
+
+  // Create the lead "scout" voxel
+  const group = new THREE.Group();
+  const geo = getGeo(def.voxelSize);
+  const material = new THREE.MeshBasicMaterial({
+    color: def.color,
+    transparent: true,
+    opacity: 0.8,
+  });
+
+  // Scout (leader) voxel - marked as weak point
+  const scout = new THREE.Mesh(geo, material.clone());
+  scout.position.set(0, 0, 0);
+  scout.userData.isScout = true;
+  scout.userData.weakPoint = true;
+  group.add(scout);
+
+  // Create trailing voxels
+  const trailingVoxels = [];
+  for (let i = 1; i < trainLength; i++) {
+    const voxel = new THREE.Mesh(geo, material.clone());
+    voxel.position.set(0, 0, -i * def.voxelSize * 1.5);
+    voxel.userData.trainIndex = i;
+    group.add(voxel);
+    trailingVoxels.push(voxel);
+  }
+
+  group.position.copy(position);
+  group.userData.isEnemy = true;
+
+  // Add hitbox
+  const hitboxGeo = new THREE.BoxGeometry(def.hitboxRadius * 2, def.hitboxRadius * 2, trainLength * def.voxelSize * 1.5);
+  const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+  const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+  hitbox.userData.isEnemyHitbox = true;
+  hitbox.position.z = -(trainLength * def.voxelSize * 0.75);
+  group.add(hitbox);
+
+  const enemy = {
+    mesh: group,
+    material,
+    type,
+    hp: Math.round(def.baseHp * levelConfig.hpMultiplier),
+    maxHp: Math.round(def.baseHp * levelConfig.hpMultiplier),
+    speed: def.baseSpeed * levelConfig.speedMultiplier,
+    baseColor: new THREE.Color(def.color),
+    scoreValue: def.scoreValue,
+    hitboxRadius: def.hitboxRadius,
+    alertTimer: 0,
+    telegraphTimer: 0,
+    telegraphActive: false,
+    telegraphType: def.telegraphType || null,
+    lastAttackTime: 0,
+    statusEffects: {
+      fire: { stacks: 0, remaining: 0, tickTimer: 0 },
+      shock: { stacks: 0, remaining: 0, tickTimer: 0 },
+      freeze: { stacks: 0, remaining: 0, tickTimer: 0 },
+    },
+    // Train-specific state
+    isTrain: true,
+    trainLength,
+    trailingVoxels,
+    spiralAngle: 0,
+    spiralRadius: 0.8,
+    scattered: false,
+    scatterTimer: 0,
+  };
+
+  activeEnemies.push(enemy);
+  _enemyMeshesDirty = true;
+  sceneRef.add(group);
+  return enemy;
+}
+
+/**
+ * Spawn a sonic ring projectile from Pulse Bomber.
+ */
+function spawnSonicRing(position, targetPos) {
+  const ringGeo = new THREE.TorusGeometry(0.3, 0.08, 8, 16);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0x8800ff,
+    transparent: true,
+    opacity: 0.8,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.copy(position);
+
+  const dir = targetPos.clone().sub(position).normalize();
+  ring.lookAt(targetPos);
+  ring.userData.velocity = dir.multiplyScalar(2.5);
+  ring.userData.createdAt = performance.now();
+  ring.userData.lifetime = 3000;
+  ring.userData.radius = 0.3;
+  ring.userData.damage = 15;
+
+  sceneRef.add(ring);
+  pulseBomberRings.push(ring);
+}
+
+/**
+ * Update sonic rings (expand and travel).
+ */
+export function updatePulseBomberRings(dt, now, playerPos) {
+  for (let i = pulseBomberRings.length - 1; i >= 0; i--) {
+    const ring = pulseBomberRings[i];
+    const age = now - ring.userData.createdAt;
+
+    if (age > ring.userData.lifetime) {
+      sceneRef.remove(ring);
+      ring.geometry.dispose();
+      ring.material.dispose();
+      pulseBomberRings.splice(i, 1);
+      continue;
+    }
+
+    // Expand the ring
+    ring.userData.radius += dt * 0.5;
+    ring.scale.setScalar(ring.userData.radius / 0.3);
+
+    // Move toward target
+    ring.position.addScaledVector(ring.userData.velocity, dt);
+
+    // Check collision with player
+    if (ring.position.distanceTo(playerPos) < ring.userData.radius + 0.3) {
+      ring.hitPlayer = true;
+    }
+
+    // Fade out
+    ring.material.opacity = 0.8 * (1 - age / ring.userData.lifetime);
+  }
+}
+
+/**
+ * Check if player was hit by any sonic rings.
+ */
+export function getPulseBomberRingHits() {
+  return pulseBomberRings.filter(r => r.hitPlayer);
+}
+
+/**
+ * Clear hit flags on pulse bomber rings.
+ */
+export function clearPulseBomberRingHits() {
+  pulseBomberRings.forEach(r => r.hitPlayer = false);
+}
+
+/**
+ * Spawn baby spiders from Spider Walker death.
+ */
+function spawnBabySpiders(position, count = 3) {
+  for (let i = 0; i < count; i++) {
+    const geo = getGeo(0.12);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff6644,
+      transparent: true,
+      opacity: 0.7,
+    });
+    const spider = new THREE.Mesh(geo, mat);
+    spider.position.copy(position);
+    spider.position.x += (Math.random() - 0.5) * 0.5;
+    spider.position.z += (Math.random() - 0.5) * 0.5;
+    spider.position.y = 0.3;
+
+    sceneRef.add(spider);
+    babySpiders.push({
+      mesh: spider,
+      hp: 5,
+      maxHp: 5,
+      speed: 4.0,
+      lifetime: 5000,
+      createdAt: performance.now(),
+    });
+  }
+}
+
+// ── Part 2: Advanced enemy helper functions ─────────────────
+const shieldShards = [];
+
+/**
+ * Spawn shield shards for Mirror Knight death effect.
+ */
+function spawnShieldShards(position, count = 3) {
+  for (let i = 0; i < count; i++) {
+    const geo = getGeo(0.25);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xcccccc,
+      transparent: true,
+      opacity: 0.8,
+    });
+    const shard = new THREE.Mesh(geo, mat);
+    shard.position.copy(position);
+    shard.position.x += (Math.random() - 0.5) * 1.5;
+    shard.position.z += (Math.random() - 0.5) * 1.5;
+    shard.position.y = 0.3;
+
+    sceneRef.add(shard);
+    shieldShards.push({
+      mesh: shard,
+      damage: 15,
+      lifetime: 8000, // 8 seconds
+      createdAt: performance.now(),
+    });
+  }
+}
+
+/**
+ * Update shield shards (ground hazards).
+ */
+export function updateShieldShards(dt, now, playerPos) {
+  const collisions = [];
+
+  for (let i = shieldShards.length - 1; i >= 0; i--) {
+    const shard = shieldShards[i];
+    const age = now - shard.createdAt;
+
+    if (age > shard.lifetime) {
+      sceneRef.remove(shard.mesh);
+      shard.mesh.geometry.dispose();
+      shard.mesh.material.dispose();
+      shieldShards.splice(i, 1);
+      continue;
+    }
+
+    // Fade out near end of lifetime
+    const fadeStart = shard.lifetime * 0.7;
+    if (age > fadeStart) {
+      const fadeProgress = (age - fadeStart) / (shard.lifetime - fadeStart);
+      shard.mesh.material.opacity = 0.8 * (1 - fadeProgress);
+    }
+
+    // Check collision with player
+    const dist = shard.mesh.position.distanceTo(playerPos);
+    if (dist < 0.6) {
+      collisions.push({ shard, index: i });
+    }
+  }
+
+  return collisions;
+}
+
+const phaseEchoes = [];
+
+/**
+ * Spawn phase echo for Phase Wraith death effect.
+ */
+function spawnPhaseEcho(position) {
+  const geo = getGeo(0.22);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x8844ff,
+    transparent: true,
+    opacity: 0.6,
+  });
+  const echo = new THREE.Mesh(geo, mat);
+  echo.position.copy(position);
+
+  sceneRef.add(echo);
+  phaseEchoes.push({
+    mesh: echo,
+    lifetime: 5000, // 5 seconds
+    createdAt: performance.now(),
+    position: position.clone(),
+  });
+}
+
+/**
+ * Update phase echoes (distraction ghosts).
+ */
+export function updatePhaseEchoes(dt, now) {
+  for (let i = phaseEchoes.length - 1; i >= 0; i--) {
+    const echo = phaseEchoes[i];
+    const age = now - echo.createdAt;
+
+    if (age > echo.lifetime) {
+      sceneRef.remove(echo.mesh);
+      echo.mesh.geometry.dispose();
+      echo.mesh.material.dispose();
+      phaseEchoes.splice(i, 1);
+      continue;
+    }
+
+    // Float around randomly
+    const wobble = Math.sin(age * 0.003) * 0.5;
+    echo.mesh.position.y = echo.position.y + wobble;
+    echo.mesh.rotation.y += dt * 2;
+
+    // Fade out near end
+    const fadeStart = echo.lifetime * 0.7;
+    if (age > fadeStart) {
+      const fadeProgress = (age - fadeStart) / (echo.lifetime - fadeStart);
+      echo.mesh.material.opacity = 0.6 * (1 - fadeProgress);
+    }
+  }
+}
+
+/**
+ * Damage nearby enemies (for Black Hole Totem death).
+ */
+function damageNearbyEnemies(position, damage, radius) {
+  for (let i = 0; i < activeEnemies.length; i++) {
+    const enemy = activeEnemies[i];
+    const dist = enemy.mesh.position.distanceTo(position);
+    if (dist <= radius) {
+      enemy.hp -= damage;
+      if (enemy.hp <= 0) enemy.hp = 0;
+    }
+  }
+}
+
+/**
+ * Spawn electric arc effect (for Conductor chain overload).
+ */
+function spawnElectricArc(fromPos, toPos) {
+  // Create a simple line for the electric arc
+  const points = [];
+  const segments = 10;
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const point = fromPos.clone().lerp(toPos, t);
+    // Add some randomness for electric effect
+    if (i > 0 && i < segments) {
+      point.x += (Math.random() - 0.5) * 0.3;
+      point.y += (Math.random() - 0.5) * 0.3;
+      point.z += (Math.random() - 0.5) * 0.3;
+    }
+    points.push(point);
+  }
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({
+    color: 0xffcc00,
+    transparent: true,
+    opacity: 1.0,
+  });
+  const arc = new THREE.Line(geometry, material);
+
+  sceneRef.add(arc);
+
+  // Store for cleanup
+  electricArcs.push({
+    mesh: arc,
+    createdAt: performance.now(),
+    lifetime: 200, // 0.2 seconds
+  });
+}
+
+const electricArcs = [];
+
+/**
+ * Update electric arcs (fade out).
+ */
+export function updateElectricArcs(dt, now) {
+  for (let i = electricArcs.length - 1; i >= 0; i--) {
+    const arc = electricArcs[i];
+    const age = now - arc.createdAt;
+
+    if (age > arc.lifetime) {
+      sceneRef.remove(arc.mesh);
+      arc.mesh.geometry.dispose();
+      arc.mesh.material.dispose();
+      electricArcs.splice(i, 1);
+      continue;
+    }
+
+    // Fade out
+    const progress = age / arc.lifetime;
+    arc.mesh.material.opacity = 1 - progress;
+  }
+}
+
+/**
+ * Update baby spiders.
+ */
+export function updateBabySpiders(dt, now, playerPos) {
+  const collisions = [];
+
+  for (let i = babySpiders.length - 1; i >= 0; i--) {
+    const spider = babySpiders[i];
+    const age = now - spider.createdAt;
+
+    if (age > spider.lifetime) {
+      sceneRef.remove(spider.mesh);
+      spider.mesh.geometry.dispose();
+      spider.mesh.material.dispose();
+      babySpiders.splice(i, 1);
+      continue;
+    }
+
+    // Chase player
+    const dir = playerPos.clone().sub(spider.mesh.position);
+    const dist = dir.length();
+    if (dist > 0.1) {
+      dir.normalize();
+      spider.mesh.position.addScaledVector(dir, spider.speed * dt);
+    }
+
+    // Collision with player
+    if (dist < 0.5) {
+      collisions.push({ spider, index: i });
+    }
+  }
+
+  return collisions;
+}
+
+/**
+ * Get baby spider meshes for raycasting.
+ */
+export function getBabySpiderMeshes() {
+  return babySpiders.map(s => s.mesh);
+}
+
+/**
+ * Hit a baby spider.
+ */
+export function hitBabySpider(index, damage) {
+  const spider = babySpiders[index];
+  if (!spider) return { killed: false };
+
+  spider.hp -= damage;
+  if (spider.hp <= 0) {
+    sceneRef.remove(spider.mesh);
+    spider.mesh.geometry.dispose();
+    spider.mesh.material.dispose();
+    babySpiders.splice(index, 1);
+    return { killed: true };
+  }
+  return { killed: false };
+}
+
+/**
+ * Spawn Geometry Shifter split (2 smaller versions).
+ */
+function spawnGeometryShifterSplit(position, hp, scale) {
+  const offsets = [
+    new THREE.Vector3(-0.5, 0, -0.5),
+    new THREE.Vector3(0.5, 0, 0.5),
+  ];
+
+  offsets.forEach(offset => {
+    const spawnPos = position.clone().add(offset);
+    const geo = getGeo(0.2);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff88ff,
+      transparent: true,
+      opacity: 0.7,
+    });
+
+    const group = new THREE.Group();
+    // Simple 2x2 pattern for split
+    const pattern = [[1, 1], [1, 1]];
+    pattern.forEach((row, r) => {
+      row.forEach((cell, c) => {
+        if (cell) {
+          const cube = new THREE.Mesh(geo, mat.clone());
+          cube.position.set((c - 0.5) * 0.2, (0.5 - r) * 0.2, 0);
+          group.add(cube);
+        }
+      });
+    });
+
+    group.position.copy(spawnPos);
+    group.scale.setScalar(scale);
+    group.userData.isEnemy = true;
+
+    // Add hitbox
+    const hitboxGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+    const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    hitbox.userData.isEnemyHitbox = true;
+    group.add(hitbox);
+
+    const enemy = {
+      mesh: group,
+      material: mat,
+      type: 'geometry_shifter_split',
+      hp: Math.round(hp),
+      maxHp: Math.round(hp),
+      speed: 1.5,
+      baseColor: new THREE.Color(0xff88ff),
+      scoreValue: 8,
+      hitboxRadius: 0.3,
+      alertTimer: 0,
+      telegraphTimer: 0,
+      telegraphActive: false,
+      telegraphType: 'scale',
+      lastAttackTime: 0,
+      statusEffects: {
+        fire: { stacks: 0, remaining: 0, tickTimer: 0 },
+        shock: { stacks: 0, remaining: 0, tickTimer: 0 },
+        freeze: { stacks: 0, remaining: 0, tickTimer: 0 },
+      },
+      shapeShift: false, // Splits don't shift
+      currentShape: 'tetrahedron',
+      shapeTimer: 0,
+      isRanged: false,
+      coreExposed: false,
+      coreTimer: 0,
+      fireTimer: 0,
+      isMimic: false,
+      mimicDelay: 1000,
+      mimicHistoryIndex: 0,
+      isSpider: false,
+      spiderState: 'roaming',
+      latchTimer: 0,
+      latchDamageTimer: 0,
+      wallNormal: new THREE.Vector3(0, 1, 0),
+    };
+
+    activeEnemies.push(enemy);
+    _enemyMeshesDirty = true;
+    sceneRef.add(group);
+  });
+}
+
+/**
+ * Spawn Clone Mimic split (2 smaller versions).
+ */
+function spawnCloneMimicSplit(position) {
+  const offsets = [
+    new THREE.Vector3(-0.4, 0, 0),
+    new THREE.Vector3(0.4, 0, 0),
+  ];
+
+  offsets.forEach(offset => {
+    const spawnPos = position.clone().add(offset);
+    const geo = getGeo(0.2);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff00aa,
+      transparent: true,
+      opacity: 0.5,
+    });
+
+    const group = new THREE.Group();
+    // Simple pattern
+    const cube = new THREE.Mesh(geo, mat.clone());
+    group.add(cube);
+
+    group.position.copy(spawnPos);
+    group.scale.setScalar(0.7);
+    group.userData.isEnemy = true;
+
+    // Add hitbox
+    const hitboxGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    hitbox.userData.isEnemyHitbox = true;
+    group.add(hitbox);
+
+    const enemy = {
+      mesh: group,
+      material: mat,
+      type: 'clone_mimic_split',
+      hp: 15,
+      maxHp: 15,
+      speed: 2.0,
+      baseColor: new THREE.Color(0xff00aa),
+      scoreValue: 6,
+      hitboxRadius: 0.25,
+      alertTimer: 0,
+      telegraphTimer: 0,
+      telegraphActive: false,
+      telegraphType: 'flash',
+      lastAttackTime: 0,
+      statusEffects: {
+        fire: { stacks: 0, remaining: 0, tickTimer: 0 },
+        shock: { stacks: 0, remaining: 0, tickTimer: 0 },
+        freeze: { stacks: 0, remaining: 0, tickTimer: 0 },
+      },
+      shapeShift: false,
+      currentShape: 'cube',
+      shapeTimer: 0,
+      isRanged: false,
+      coreExposed: false,
+      coreTimer: 0,
+      fireTimer: 0,
+      isMimic: true, // Splits still mimic
+      mimicDelay: 1500, // Longer delay for splits
+      mimicHistoryIndex: 0,
+      isSpider: false,
+      spiderState: 'roaming',
+      latchTimer: 0,
+      latchDamageTimer: 0,
+      wallNormal: new THREE.Vector3(0, 1, 0),
+    };
+
+    activeEnemies.push(enemy);
+    _enemyMeshesDirty = true;
+    sceneRef.add(group);
+  });
+}
 
 // Pre-built explosion sprite pool (avoid creating canvas/texture per particle)
 const EXPLOSION_POOL_SIZE = 60;
@@ -245,6 +960,11 @@ export function spawnEnemy(type, position, levelConfig) {
   const def = ENEMY_DEFS[type];
   if (!def) return;
 
+  // Handle special enemy types
+  if (def.isTrain) {
+    return spawnTrainEnemy(type, position, levelConfig);
+  }
+
   // Clone shared material (clone is cheap, shares shader program)
   if (!sharedMaterials[type]) {
     sharedMaterials[type] = new THREE.MeshBasicMaterial({
@@ -350,6 +1070,52 @@ export function spawnEnemy(type, position, levelConfig) {
       shock: { stacks: 0, remaining: 0, tickTimer: 0 },
       freeze: { stacks: 0, remaining: 0, tickTimer: 0 },
     },
+    // Special enemy states
+    shapeShift: def.shapeShift || false,
+    currentShape: 'cube',
+    shapeTimer: 0,
+    isRanged: def.isRanged || false,
+    coreExposed: false,
+    coreTimer: 0,
+    fireTimer: 0,
+    isMimic: def.isMimic || false,
+    mimicDelay: 1000, // 1 second delay
+    mimicHistoryIndex: 0,
+    isSpider: def.isSpider || false,
+    spiderState: 'roaming', // 'roaming', 'latched'
+    latchTimer: 0,
+    latchDamageTimer: 0,
+    wallNormal: new THREE.Vector3(0, 1, 0),
+
+    // ── Part 2: Advanced enemy states ───────────────────────
+    isMirror: def.isMirror || false,
+    mirrorLastPlayerDir: new THREE.Vector3(),
+    mirrorConfused: false,
+    mirrorConfuseTimer: 0,
+    mirrorStillTimer: 0,
+
+    isPortal: def.isPortal || false,
+    portalCooldown: def.portalCooldown || 4.0,
+    portalTimer: 0,
+    portalDisoriented: false,
+    portalDisorientTimer: 0,
+
+    isBlackhole: def.isBlackhole || false,
+    gravityRadius: def.gravityRadius || 5.0,
+    gravityStrength: def.gravityStrength || 2.5,
+    deathExplosionDamage: def.deathExplosionDamage || 50,
+
+    isConductor: def.isConductor || false,
+    linkRadius: def.linkRadius || 4.0,
+    linkSpeedBonus: def.linkSpeedBonus || 0.4,
+    linkDamageReduction: def.linkDamageReduction || 0.3,
+    linkedEnemies: [],
+
+    isPhase: def.isPhase || false,
+    phaseCycleTime: def.phaseCycleTime || 2.0,
+    phaseTimer: 0,
+    isInvisible: false,
+    invisibleDamageBonus: def.invisibleDamageBonus || 2.0,
   };
 
   activeEnemies.push(enemy);
@@ -383,6 +1149,339 @@ export function updateEnemies(dt, now, playerPos) {
     speedMod *= stasisSlow;
 
     e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
+
+    // ── Special Enemy AI Behaviors ──
+    // Spiral Swimmer: corkscrew movement
+    if (e.isTrain && !e.scattered) {
+      e.spiralAngle += dt * 4; // Spiral speed
+      const spiralOffset = Math.sin(e.spiralAngle) * e.spiralRadius;
+      e.mesh.position.x += Math.cos(e.spiralAngle) * 0.3 * dt;
+      e.mesh.position.y += spiralOffset * 0.1 * dt;
+      // Keep within bounds
+      e.mesh.position.y = Math.max(0.5, Math.min(3.5, e.mesh.position.y));
+
+      // Animate trailing voxels to follow in spiral
+      if (e.trailingVoxels) {
+        e.trailingVoxels.forEach((voxel, idx) => {
+          const phase = e.spiralAngle - (idx + 1) * 0.4;
+          voxel.position.x = Math.sin(phase) * e.spiralRadius * 0.5;
+          voxel.position.y = Math.cos(phase) * e.spiralRadius * 0.3;
+        });
+      }
+    }
+
+    // Scattered train: random movement
+    if (e.isTrain && e.scattered) {
+      e.scatterTimer -= dt;
+      if (e.scatterTimer <= 0) {
+        e.scattered = false;
+      }
+      // Random jitter
+      e.mesh.position.x += (Math.random() - 0.5) * 2 * dt;
+      e.mesh.position.z += (Math.random() - 0.5) * 2 * dt;
+    }
+
+    // Geometry Shifter: shape-changing
+    if (e.shapeShift) {
+      e.shapeTimer += dt;
+      if (e.shapeTimer >= 2.0) {
+        e.shapeTimer = 0;
+        // Cycle through shapes
+        const shapes = ['cube', 'pyramid', 'sphere', 'tetrahedron'];
+        const currentIdx = shapes.indexOf(e.currentShape);
+        e.currentShape = shapes[(currentIdx + 1) % shapes.length];
+
+        // Visual scale change based on shape
+        const scaleMod = e.currentShape === 'sphere' ? 1.2 : e.currentShape === 'pyramid' ? 0.9 : 1.0;
+        e.mesh.scale.setScalar(scaleMod);
+
+        // Color change based on shape
+        const shapeColors = { cube: 0xff0000, pyramid: 0xff8800, sphere: 0xffff00, tetrahedron: 0xff88ff };
+        e.mesh.traverse(c => {
+          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+            c.material.color.setHex(shapeColors[e.currentShape] || e.baseColor.getHex());
+          }
+        });
+      }
+    }
+
+    // Pulse Bomber: ranged attacks
+    if (e.isRanged) {
+      e.fireTimer += dt;
+      e.coreTimer += dt;
+
+      // Fire sonic rings every 2.5 seconds
+      if (e.fireTimer >= 2.5 && dist > 3) {
+        e.fireTimer = 0;
+        e.coreExposed = true;
+        e.coreTimer = 0;
+
+        // Spawn sonic ring
+        spawnSonicRing(e.mesh.position.clone(), playerPos);
+      }
+
+      // Core exposure window (1.5s)
+      if (e.coreExposed && e.coreTimer > 1.5) {
+        e.coreExposed = false;
+      }
+
+      // Telegraph glow before firing
+      if (e.fireTimer >= 2.0 && !e.coreExposed) {
+        e.mesh.traverse(c => {
+          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+            c.material.emissive = new THREE.Color(0xffffff);
+            c.material.emissiveIntensity = (e.fireTimer - 2.0) / 0.5;
+          }
+        });
+      }
+
+      // Keep distance from player
+      if (dist < 4) {
+        e.mesh.position.addScaledVector(_dir, -e.speed * 0.5 * dt);
+      }
+    }
+
+    // Clone Mimic: copy player movement with delay
+    if (e.isMimic && playerMovementHistory.length > 0) {
+      const targetTime = now - e.mimicDelay;
+      // Find the position from 1 second ago
+      let targetPos = null;
+      for (let j = playerMovementHistory.length - 1; j >= 0; j--) {
+        if (playerMovementHistory[j].time <= targetTime) {
+          targetPos = playerMovementHistory[j].pos;
+          break;
+        }
+      }
+
+      if (targetPos) {
+        const mimicDir = targetPos.clone().sub(e.mesh.position);
+        const mimicDist = mimicDir.length();
+        if (mimicDist > 0.1) {
+          mimicDir.normalize();
+          e.mesh.position.addScaledVector(mimicDir, e.speed * speedMod * dt);
+        }
+      }
+
+      // Glitchy visual effect
+      e.mesh.traverse(c => {
+        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+          c.material.opacity = 0.5 + Math.sin(now * 0.01) * 0.2;
+        }
+      });
+    }
+
+    // Spider Walker: wall/ceiling movement and latching
+    if (e.isSpider) {
+      if (e.spiderState === 'roaming') {
+        // Randomly switch between floor, walls, ceiling
+        if (Math.random() < 0.01) {
+          const surfaces = ['floor', 'wall', 'ceiling'];
+          const surface = surfaces[Math.floor(Math.random() * surfaces.length)];
+
+          if (surface === 'ceiling') {
+            e.mesh.position.y = 3.5;
+            e.wallNormal.set(0, -1, 0);
+          } else if (surface === 'wall') {
+            e.mesh.position.y = 1.5 + Math.random();
+            e.wallNormal.set(Math.random() > 0.5 ? 1 : -1, 0, 0);
+          } else {
+            e.mesh.position.y = 0.5;
+            e.wallNormal.set(0, 1, 0);
+          }
+        }
+
+        // Leap attack when close
+        if (dist < 3 && dist > 1 && Math.random() < 0.02) {
+          e.spiderState = 'leaping';
+          e.latchTimer = 0;
+        }
+      } else if (e.spiderState === 'leaping') {
+        // Quick dash toward player
+        e.mesh.position.addScaledVector(_dir, e.speed * 3 * dt);
+
+        if (dist < 0.8) {
+          e.spiderState = 'latched';
+          e.latchTimer = 0;
+          e.latchDamageTimer = 0;
+        }
+
+        e.latchTimer += dt;
+        if (e.latchTimer > 1) {
+          e.spiderState = 'roaming';
+        }
+      } else if (e.spiderState === 'latched') {
+        // Stay on player, drain health
+        e.mesh.position.copy(playerPos);
+        e.mesh.position.y += 0.5;
+
+        // Latch damage handled in game.js via collision
+        e.latchTimer += dt;
+
+        // Auto-detach after 3 seconds
+        if (e.latchTimer > 3) {
+          e.spiderState = 'roaming';
+          e.mesh.position.y = 0.5;
+        }
+      }
+    }
+
+    // ── Part 2: Advanced enemy AI ───────────────────────────
+    // Mirror Knight: mirrors player's left/right movements (opposite)
+    if (e.isMirror) {
+      // Check if player is standing still (confuses the knight)
+      const playerVel = playerPos.clone().sub(e.mirrorLastPlayerDir);
+      e.mirrorLastPlayerDir.copy(playerPos);
+      if (playerVel.length() < 0.01) {
+        e.mirrorStillTimer += dt;
+        if (e.mirrorStillTimer > 2.0) {
+          e.mirrorConfused = true;
+          e.mirrorConfuseTimer = 1.5;
+        }
+      } else {
+        e.mirrorStillTimer = 0;
+      }
+
+      // Confused state: move randomly
+      if (e.mirrorConfused) {
+        e.mirrorConfuseTimer -= dt;
+        if (e.mirrorConfuseTimer <= 0) {
+          e.mirrorConfused = false;
+        } else {
+          // Random movement while confused
+          const randDir = new THREE.Vector3(
+            Math.sin(now * 0.01 + i),
+            0,
+            Math.cos(now * 0.01 + i)
+          ).normalize();
+          e.mesh.position.addScaledVector(randDir, e.speed * speedMod * dt * 0.5);
+        }
+      } else {
+        // Mirror player's horizontal movement (opposite direction)
+        const mirrorDir = _dir.clone();
+        mirrorDir.x *= -1; // Opposite horizontal movement
+        e.mesh.position.addScaledVector(mirrorDir, e.speed * speedMod * dt);
+      }
+
+      // Shield visual effect
+      e.mesh.traverse(c => {
+        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+          const reflectGlow = Math.sin(now * 0.003) * 0.2 + 0.5;
+          c.material.opacity = reflectGlow;
+        }
+      });
+    }
+
+    // Portal Mantis: opens portals and exits near player
+    if (e.isPortal) {
+      e.portalTimer += dt;
+      e.portalDisorientTimer = Math.max(0, e.portalDisorientTimer - dt);
+
+      if (e.portalDisoriented) {
+        // Disoriented after exiting portal: move slower
+        speedMod *= 0.3;
+        // Visual glitch effect
+        e.mesh.traverse(c => {
+          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+            c.material.opacity = 0.3 + Math.random() * 0.4;
+          }
+        });
+        if (e.portalDisorientTimer <= 0) {
+          e.portalDisoriented = false;
+        }
+      } else if (e.portalTimer >= e.portalCooldown && dist > 3.0) {
+        // Open portal and teleport near player
+        const angle = Math.random() * Math.PI * 2;
+        const teleportDist = 2.5 + Math.random() * 1.5;
+        e.mesh.position.set(
+          playerPos.x + Math.cos(angle) * teleportDist,
+          e.mesh.position.y,
+          playerPos.z + Math.sin(angle) * teleportDist
+        );
+        e.portalTimer = 0;
+        e.portalDisoriented = true;
+        e.portalDisorientTimer = 0.5;
+      }
+
+      // Portal glow effect when ready to teleport
+      if (e.portalTimer >= e.portalCooldown * 0.7) {
+        e.mesh.traverse(c => {
+          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+            c.material.emissive = new THREE.Color(0x00ffaa);
+            c.material.emissiveIntensity = 0.5;
+          }
+        });
+      }
+    }
+
+    // Black Hole Totem: stationary, creates gravity field
+    if (e.isBlackhole) {
+      // Stationary - no movement
+
+      // Visual effect: dark swirling vortex
+      e.mesh.traverse(c => {
+        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+          const pulse = 0.3 + Math.sin(now * 0.005) * 0.2;
+          c.material.opacity = pulse;
+          c.material.emissive = new THREE.Color(0x220033);
+          c.material.emissiveIntensity = 0.5;
+        }
+      });
+
+      // Rotation effect
+      e.mesh.rotation.y += dt * 2;
+    }
+
+    // Conductor: links to nearby enemies
+    if (e.isConductor) {
+      // Find nearby enemies to link (every frame)
+      e.linkedEnemies = [];
+      const levelConfig = { speedMultiplier: 1 }; // Default, will be overridden
+
+      for (let j = 0; j < activeEnemies.length; j++) {
+        if (i === j) continue;
+        const other = activeEnemies[j];
+        const linkDist = e.mesh.position.distanceTo(other.mesh.position);
+        if (linkDist <= e.linkRadius && !other.isConductor) {
+          e.linkedEnemies.push(j);
+          // Buff linked enemies: speed bonus
+          const baseDef = ENEMY_DEFS[other.type];
+          if (baseDef) {
+            other.speed = baseDef.baseSpeed * (1 + e.linkSpeedBonus);
+          }
+        }
+      }
+
+      // Visual tether effect (electric arc)
+      e.mesh.traverse(c => {
+        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+          c.material.emissive = new THREE.Color(0xffcc00);
+          c.material.emissiveIntensity = e.linkedEnemies.length > 0 ? 0.6 : 0.2;
+        }
+      });
+    }
+
+    // Phase Wraith: blinks in/out of visibility
+    if (e.isPhase) {
+      e.phaseTimer += dt;
+      const cycleProgress = (e.phaseTimer % e.phaseCycleTime) / e.phaseCycleTime;
+
+      // First half: visible, second half: invisible
+      e.isInvisible = cycleProgress > 0.5;
+
+      // Visual effect
+      e.mesh.traverse(c => {
+        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+          c.material.opacity = e.isInvisible ? 0.15 : 0.85;
+          if (e.isInvisible) {
+            c.material.emissive = new THREE.Color(0x8844ff);
+            c.material.emissiveIntensity = 0.3;
+          } else {
+            c.material.emissive = new THREE.Color(0x000000);
+            c.material.emissiveIntensity = 0;
+          }
+        }
+      });
+    }
 
     // Face player (horizontal only)
     _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
@@ -512,11 +1611,32 @@ export function applyEffects(enemyIndex, effects) {
 /**
  * Deal damage to an enemy. Returns { killed, enemy, overkill }.
  */
-export function hitEnemy(index, damage) {
+export function hitEnemy(index, damage, hitInfo = {}) {
   const e = activeEnemies[index];
   if (!e) return { killed: false };
 
-  e.hp -= damage;
+  // Special damage modifiers
+  let actualDamage = damage;
+
+  // Pulse Bomber: 3x damage when core exposed
+  if (e.isRanged && e.coreExposed) {
+    actualDamage *= 3;
+  }
+
+  // Tank: check for weak point
+  if (e.type === 'tank' && hitInfo.weakPoint) {
+    actualDamage *= 2;
+  }
+
+  // Spiral Swimmer: scatter school if scout killed
+  if (e.isTrain && hitInfo.weakPoint) {
+    e.scattered = true;
+    e.scatterTimer = 3.0; // 3 seconds of chaos
+    // Give bonus damage to scout
+    actualDamage *= 1.5;
+  }
+
+  e.hp -= actualDamage;
   if (e.hp <= 0) {
     return { killed: true, enemy: e, overkill: -e.hp };
   }
@@ -537,17 +1657,77 @@ export function setOnEnemyDestroyedCallback(callback) {
 /**
  * Destroy enemy at `index` — remove from scene, spawn explosion.
  */
-export function destroyEnemy(index) {
+export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   const e = activeEnemies[index];
   if (!e) return null;
 
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
 
-  // [Visual Overhaul] Spawn voxel explosions with physics
+  // ── Special death effects for new enemies ──
+  // Geometry Shifter: split into 2 smaller when in tetrahedron form
+  if (e.shapeShift && e.currentShape === 'tetrahedron') {
+    spawnGeometryShifterSplit(pos, e.hp * 0.3, 0.7);
+  }
+
+  // Clone Mimic: split into 2 smaller unless killed fast (overkill)
+  if (e.isMimic && !isOverkill) {
+    spawnCloneMimicSplit(pos);
+  }
+
+  // Spider Walker: drop baby spiders
+  if (e.isSpider) {
+    spawnBabySpiders(pos, 3);
+  }
+
+  // Spiral Swimmer: if scout was killed, scatter is already handled
+  // but we give bonus score for killing the scout
+  if (e.isTrain && e.mesh.children[0]?.userData?.weakPoint) {
+    // Scout kill bonus
+    e.scoreValue += 5;
+  }
+
+  // ── Part 2: Advanced enemy death effects ───────────────────
+  // Mirror Knight: Shield shatters into 3 ground hazards
+  if (e.isMirror) {
+    spawnShieldShards(pos, 3);
+  }
+
+  // Portal Mantis: No special death effect (normal death)
+  // Phase Wraith: Creates "phase echo" ghost (5s distraction)
+  if (e.isPhase) {
+    spawnPhaseEcho(pos);
+  }
+
+  // Black Hole Totem: Damages nearby enemies on death
+  if (e.isBlackhole) {
+    damageNearbyEnemies(pos, e.deathExplosionDamage, 5.0);
+  }
+
+  // Conductor: Chain overload - kills all linked enemies
+  if (e.isConductor && e.linkedEnemies.length > 0) {
+    // Kill all linked enemies (chain reaction)
+    e.linkedEnemies.forEach(linkedIdx => {
+      if (activeEnemies[linkedIdx]) {
+        // Deal massive damage to linked enemy
+        activeEnemies[linkedIdx].hp = 0;
+        // Visual feedback: electric arc
+        spawnElectricArc(pos, activeEnemies[linkedIdx].mesh.position.clone());
+      }
+    });
+  }
+
+  // [Physics Death System] Spawn voxel explosions with physics
   if (spawnVoxelExplosion) {
-    const voxelCount = e.type === 'tank' ? 10 : e.type === 'basic' ? 6 : 4;
-    spawnVoxelExplosion(pos, color.getHex(), voxelCount);
+    let voxelCount = e.type === 'tank' ? 10 : e.type === 'basic' ? 6 : 4;
+    // New enemy voxel counts
+    if (e.isTrain) voxelCount = e.trainLength || 8;
+    if (e.shapeShift) voxelCount = 8;
+    if (e.isRanged) voxelCount = 6;
+    if (e.isMimic) voxelCount = 5;
+    if (e.isSpider) voxelCount = 4;
+
+    spawnVoxelExplosion(pos, color.getHex(), voxelCount, e.type, isCritical, isOverkill);
   }
 
   // Pooled explosion particles (no allocation per death)

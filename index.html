@@ -102,7 +102,34 @@
     <h1>SYNTHWAVE VR BLASTER</h1>
     <p>Put on your VR headset and press ENTER VR</p>
     <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Pull triggers to shoot</p>
-    <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">ver. 2026/03/03/22:35 - Added Kaleidoscope biome: Infinite mirror maze with color-shifting prism particles</p>
+    
+    <!-- Seed Deck Settings -->
+    <div id="seed-controls" style="margin-top: 20px; padding: 15px; background: rgba(0, 0, 0, 0.3); border: 1px solid #ff00ff; border-radius: 5px;">
+      <div style="color: #00ffff; font-size: 0.9em; margin-bottom: 10px;">🎲 SEED DECK SETTINGS</div>
+      
+      <div style="margin-bottom: 8px;">
+        <label style="color: #ff00ff; font-size: 0.8em;">Seed:</label>
+        <input type="text" id="seed-input" placeholder="Leave empty for random" 
+               style="margin-left: 8px; background: #220044; color: #fff; border: 1px solid #ff00ff; padding: 4px 8px; font-family: 'Courier New', monospace; width: 150px;">
+        <button id="daily-seed-btn" style="margin-left: 8px; background: #220044; color: #00ffff; border: 1px solid #00ffff; cursor: pointer; padding: 4px 8px; font-family: 'Courier New', monospace; font-size: 0.75em;">DAILY</button>
+        <button id="weekly-seed-btn" style="margin-left: 4px; background: #220044; color: #00ffff; border: 1px solid #00ffff; cursor: pointer; padding: 4px 8px; font-family: 'Courier New', monospace; font-size: 0.75em;">WEEKLY</button>
+      </div>
+      
+      <div style="margin-bottom: 8px;">
+        <label style="color: #ff00ff; font-size: 0.8em;">Difficulty:</label>
+        <select id="seed-tier" style="margin-left: 8px; background: #220044; color: #fff; border: 1px solid #ff00ff; padding: 4px; font-family: 'Courier New', monospace;">
+          <option value="chill">Chill (Easy)</option>
+          <option value="standard" selected>Standard (Normal)</option>
+          <option value="challenge">Challenge (Hard)</option>
+        </select>
+      </div>
+      
+      <div style="font-size: 0.7em; opacity: 0.6; color: #88ff88;">
+        Same seed = same run. Daily/weekly seeds for leaderboards!
+      </div>
+    </div>
+    
+    <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">ver. 2026/03/03/23:40 - Added Spiral Swimmers, Pulse Bombers, Spider Walkers</p>
   </div>
 
   <!-- Fallback if WebXR is not available -->
@@ -180,6 +207,56 @@
       });
       document.getElementById('debug-console').addEventListener('change', function() {
         consolePanel.style.display = this.checked ? 'block' : 'none';
+      });
+      
+      // Seed Deck Controls
+      const seedInput = document.getElementById('seed-input');
+      const seedTier = document.getElementById('seed-tier');
+      const dailySeedBtn = document.getElementById('daily-seed-btn');
+      const weeklySeedBtn = document.getElementById('weekly-seed-btn');
+      
+      // Expose seed configuration globally for main.js
+      window.gameSeed = null;
+      window.gameSeedTier = 'standard';
+      
+      // Handle seed input changes
+      seedInput.addEventListener('change', function() {
+        const value = this.value.trim();
+        if (value) {
+          // Convert string to number seed hash
+          let hash = 0;
+          for (let i = 0; i < value.length; i++) {
+            const char = value.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+          }
+          window.gameSeed = Math.abs(hash);
+        } else {
+          window.gameSeed = null;
+        }
+        console.log('[seed] User seed set:', window.gameSeed);
+      });
+      
+      // Handle tier selection
+      seedTier.addEventListener('change', function() {
+        window.gameSeedTier = this.value;
+        console.log('[seed] Tier set:', window.gameSeedTier);
+      });
+      
+      // Daily seed button
+      dailySeedBtn.addEventListener('click', function() {
+        const dailySeed = Math.floor(Date.now() / 86400000);
+        window.gameSeed = dailySeed;
+        seedInput.value = 'DAILY';
+        console.log('[seed] Daily seed:', dailySeed);
+      });
+      
+      // Weekly seed button
+      weeklySeedBtn.addEventListener('click', function() {
+        const weeklySeed = Math.floor(Date.now() / 604800000);
+        window.gameSeed = weeklySeed;
+        seedInput.value = 'WEEKLY';
+        console.log('[seed] Weekly seed:', weeklySeed);
       });
       document.getElementById('copy-log-btn').addEventListener('click', function() {
         const logs = document.getElementById('console-logs').textContent;
