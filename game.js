@@ -36,9 +36,9 @@ export function getBossTier(level) {
 // Pool of bosses per tier (randomly picked for that level)
 const BOSS_POOLS = {
   1: ['chrono_wraith'],
-  2: ['chrono_wraith'],
-  3: ['chrono_wraith'],
-  4: ['chrono_wraith'],
+  2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'],
+  3: ['theodore_breakenridge', 'commander_halcyon', 'madame_coda', 'twin_glitch', 'neon_minotaur'],
+  4: ['walter_breakenridge', 'kernel_monolith', 'synth_kraken', 'afterimage_seraphim', 'sun_eater_train'],
 };
 
 export function getRandomBossIdForLevel(level) {
