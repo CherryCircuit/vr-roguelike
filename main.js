@@ -76,9 +76,14 @@ let frameCount = 0;  // For staggering updates
 
 // ALT weapon state
 const activeShields = [];  // { mesh, hand, expiresAt }
-const activeLaserMines = [];  // { mesh, armedAt, isArmed, position, triggered, laserMesh }
+const activeLaserMines = [];  // { mesh, armedAt, isArmed, position, triggered, laserMesh, autoDetonateAt }
 const activeStasisFields = [];  // { mesh, position, radius, expiresAt, slowFactor }
 const activePlasmaOrbs = [];  // { mesh, velocity, damage, aoeRadius, expiresAt, detonatable }
+
+// Laser mine passive tracking
+let playerLastPosition = new THREE.Vector3();
+let playerStillnessStartTime = null;
+let laserMineSpawnCooldown = 0;
 
 // PERFORMANCE: Hard cap on active projectiles to prevent accumulation
 const MAX_PROJECTILES = 50;
@@ -159,6 +164,10 @@ const activeBlackHoles = [];
 const activeMines = [];
 const MAX_BLACK_HOLES = 2;
 const MAX_MINES = 5;
+
+// Tether harpoon system
+const activeTethers = [];
+const MAX_TETHERS = 2;
 
 // ── Bootstrap ──────────────────────────────────────────────
 init();
@@ -1276,6 +1285,10 @@ function fireAltWeapon(controller, index) {
       fireBlackHole(origin, direction, hand, altWeapon);
       break;
 
+    case 'tether_harpoon':
+      fireTetherHarpoon(origin, direction, hand, altWeapon);
+      break;
+
     default:
       console.warn(`Unknown ALT weapon type: ${altWeaponId}`);
       return;
@@ -1284,6 +1297,388 @@ function fireAltWeapon(controller, index) {
   // Set cooldown
   game.altCooldowns[hand] = now + altWeapon.cooldown;
   playShoothSound();  // Placeholder sound
+}
+
+// ============================================================
+//  SHIELD ALT WEAPON
+// ============================================================
+function fireShield(controller, index, hand, altWeapon) {
+  // Get player camera position (shield surrounds player)
+  const playerPos = camera.position.clone();
+  
+  // Create blue translucent sphere around player
+  const shieldGeo = new THREE.SphereGeometry(1.2, 24, 24);
+  const shieldMat = new THREE.MeshBasicMaterial({
+    color: 0x4488ff,
+    transparent: true,
+    opacity: 0.4,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+  shieldMesh.position.copy(playerPos);
+  shieldMesh.renderOrder = 500;
+  scene.add(shieldMesh);
+  
+  // Track active shield
+  const shieldData = {
+    mesh: shieldMesh,
+    hand: hand,
+    expiresAt: performance.now() + altWeapon.duration,
+    position: playerPos.clone(),
+    radius: 1.2,
+  };
+  activeShields.push(shieldData);
+  
+  console.log(`[Shield] Activated for ${altWeapon.duration / 1000}s at ${hand} hand`);
+  playShoothSound();
+}
+
+function updateShields(now) {
+  for (let i = activeShields.length - 1; i >= 0; i--) {
+    const shield = activeShields[i];
+    
+    // Check if expired
+    if (now >= shield.expiresAt) {
+      scene.remove(shield.mesh);
+      shield.mesh.geometry.dispose();
+      shield.mesh.material.dispose();
+      activeShields.splice(i, 1);
+      console.log('[Shield] Expired');
+      continue;
+    }
+    
+    // Make shield follow player
+    const playerPos = camera.position.clone();
+    shield.mesh.position.copy(playerPos);
+    shield.position.copy(playerPos);
+    
+    // Fade out effect in last 0.5s
+    const remaining = shield.expiresAt - now;
+    if (remaining < 500) {
+      shield.mesh.material.opacity = 0.4 * (remaining / 500);
+    }
+    
+    // Pulse effect
+    const pulse = 1 + Math.sin(now * 0.01) * 0.05;
+    shield.mesh.scale.setScalar(pulse);
+  }
+}
+
+function checkShieldBlock(projectilePos) {
+  for (const shield of activeShields) {
+    const dist = projectilePos.distanceTo(shield.position);
+    if (dist < 0.8) {
+      return true;  // Blocked
+    }
+  }
+  return false;
+}
+
+// ============================================================
+//  LASER MINE ALT WEAPON (PASSIVE)
+// ============================================================
+
+/**
+ * Spawn laser mines around player when standing still for 2+ seconds
+ * This is called from the update loop, not from trigger press
+ */
+function spawnLaserMinesPassively(playerPos, now, dt) {
+  // Check if player has laser mine equipped in either hand
+  const leftAlt = game.altWeapon.left;
+  const rightAlt = game.altWeapon.right;
+
+  const hasLeftLaserMine = leftAlt === 'laser_mine';
+  const hasRightLaserMine = rightAlt === 'laser_mine';
+
+  if (!hasLeftLaserMine && !hasRightLaserMine) {
+    playerStillnessStartTime = null;
+    return;
+  }
+
+  // Track cooldown
+  if (laserMineSpawnCooldown > 0) {
+    laserMineSpawnCooldown -= dt * 1000;
+    return;
+  }
+
+  // Check if player is standing still (within 0.3m movement threshold)
+  const moveDistance = playerPos.distanceTo(playerLastPosition);
+  const STILLNESS_THRESHOLD = 0.3;
+
+  if (moveDistance < STILLNESS_THRESHOLD) {
+    // Player is standing still
+    if (!playerStillnessStartTime) {
+      playerStillnessStartTime = now;
+    } else {
+      const stillnessDuration = now - playerStillnessStartTime;
+      const altWeapon = getAltWeapon('laser_mine');
+      const requiredTime = altWeapon.stillnessTime || 2000;
+
+      if (stillnessDuration >= requiredTime) {
+        // Spawn mines around player
+        const mineCount = altWeapon.mineCount || 3;
+        const mineRadius = 1.5; // Distance from player
+
+        for (let i = 0; i < mineCount; i++) {
+          const angle = (i / mineCount) * Math.PI * 2;
+          const minePos = new THREE.Vector3(
+            playerPos.x + Math.cos(angle) * mineRadius,
+            0.1,
+            playerPos.z + Math.sin(angle) * mineRadius
+          );
+
+          // Determine which hand this mine belongs to
+          const hand = hasLeftLaserMine ? 'left' : 'right';
+
+          // Spawn the mine
+          spawnSingleLaserMine(minePos, hand, altWeapon);
+        }
+
+        // Set cooldown and reset stillness tracking
+        laserMineSpawnCooldown = 5000; // 5 second cooldown between spawns
+        playerStillnessStartTime = null;
+
+        console.log(`[Laser Mine] Spawned ${mineCount} passive mines around player`);
+      }
+    }
+  } else {
+    // Player moved - reset stillness tracking
+    playerStillnessStartTime = null;
+  }
+
+  // Update last position
+  playerLastPosition.copy(playerPos);
+}
+
+/**
+ * Spawn a single laser mine at a position
+ */
+function spawnSingleLaserMine(position, hand, altWeapon) {
+  // Check max active mines for this hand
+  const handMines = activeLaserMines.filter(m => m.hand === hand);
+  if (handMines.length >= (altWeapon.maxActive || 5)) {
+    // Remove oldest mine
+    const oldest = handMines[0];
+    if (oldest.mesh) {
+      scene.remove(oldest.mesh);
+      oldest.mesh.geometry.dispose();
+      oldest.mesh.material.dispose();
+    }
+    if (oldest.glowMesh) {
+      scene.remove(oldest.glowMesh);
+      oldest.glowMesh.geometry.dispose();
+      oldest.glowMesh.material.dispose();
+    }
+    if (oldest.laserMesh) {
+      scene.remove(oldest.laserMesh);
+      oldest.laserMesh.geometry.dispose();
+      oldest.laserMesh.material.dispose();
+    }
+    const idx = activeLaserMines.indexOf(oldest);
+    if (idx >= 0) activeLaserMines.splice(idx, 1);
+  }
+
+  // Create purple icosahedron mine
+  const mineGeo = new THREE.IcosahedronGeometry(0.12, 0);
+  const mineMat = new THREE.MeshBasicMaterial({
+    color: 0xaa00ff,  // Purple
+    transparent: true,
+    opacity: 0.9,
+  });
+  const mineMesh = new THREE.Mesh(mineGeo, mineMat);
+  mineMesh.position.copy(position);
+  mineMesh.renderOrder = 400;
+  scene.add(mineMesh);
+
+  // Add outer glow sphere
+  const glowGeo = new THREE.SphereGeometry(0.2, 12, 12);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xaa00ff,
+    transparent: true,
+    opacity: 0.3,
+    side: THREE.BackSide,
+  });
+  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  glowMesh.position.copy(position);
+  glowMesh.renderOrder = 399;
+  scene.add(glowMesh);
+
+  const now = performance.now();
+
+  // Track active mine
+  const mineData = {
+    mesh: mineMesh,
+    glowMesh: glowMesh,
+    hand: hand,
+    position: position.clone(),
+    placedAt: now,
+    armedAt: now + (altWeapon.armTime || 1000),
+    autoDetonateAt: now + (altWeapon.autoDetonateTime || 4000),
+    isArmed: false,
+    triggered: false,
+    triggeredAt: null,
+    laserMesh: null,
+    damage: altWeapon.damage || 50,
+    triggerRadius: altWeapon.triggerRadius || 3,
+    pulsePhase: Math.random() * Math.PI * 2,
+  };
+  activeLaserMines.push(mineData);
+}
+
+// Legacy function - no longer triggered by squeeze, kept for compatibility
+function fireLaserMine(controller, index, hand, altWeapon) {
+  // Laser mines are now passive - no trigger-based firing
+  console.log('[Laser Mine] Passive weapon - use spawnLaserMinesPassively()');
+}
+
+function updateLaserMines(now, dt) {
+  const enemies = getEnemies();
+
+  for (let i = activeLaserMines.length - 1; i >= 0; i--) {
+    const mine = activeLaserMines[i];
+
+    // Pulsing glow effect
+    if (mine.glowMesh) {
+      mine.pulsePhase += dt * 3;
+      const pulse = 0.2 + Math.sin(mine.pulsePhase) * 0.15;
+      mine.glowMesh.material.opacity = pulse;
+      const scale = 1 + Math.sin(mine.pulsePhase) * 0.1;
+      mine.glowMesh.scale.setScalar(scale);
+    }
+
+    // Rotate mine
+    if (mine.mesh) {
+      mine.mesh.rotation.x += dt * 0.5;
+      mine.mesh.rotation.y += dt * 0.7;
+    }
+
+    // Not armed yet
+    if (now < mine.armedAt) {
+      // Flashing effect while arming
+      const flash = Math.sin(now * 0.02) > 0 ? 0.9 : 0.4;
+      mine.mesh.material.opacity = flash;
+      continue;
+    }
+
+    // Just armed
+    if (!mine.isArmed) {
+      mine.isArmed = true;
+      mine.mesh.material.opacity = 1.0;
+      mine.mesh.material.color.setHex(0xcc44ff);  // Brighter purple when armed
+      console.log('[Laser Mine] Armed');
+    }
+
+    // Check for auto-detonation
+    if (now >= mine.autoDetonateAt && !mine.triggered) {
+      triggerLaserMine(mine, null, enemies);
+      continue;
+    }
+
+    // Already triggered - skip
+    if (mine.triggered) continue;
+
+    // Check for enemy proximity
+    let nearestEnemy = null;
+    let nearestDist = mine.triggerRadius;
+
+    for (const e of enemies) {
+      const dist = e.mesh.position.distanceTo(mine.position);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestEnemy = e;
+      }
+    }
+
+    // Trigger mine if enemy in range
+    if (nearestEnemy) {
+      triggerLaserMine(mine, nearestEnemy, enemies);
+    }
+  }
+
+  // Clean up triggered mines after laser duration
+  for (let i = activeLaserMines.length - 1; i >= 0; i--) {
+    const mine = activeLaserMines[i];
+    if (mine.triggered && mine.triggeredAt && now - mine.triggeredAt > 500) {
+      // Remove laser visual after 500ms
+      if (mine.laserMesh) {
+        scene.remove(mine.laserMesh);
+        mine.laserMesh.geometry.dispose();
+        mine.laserMesh.material.dispose();
+        mine.laserMesh = null;
+      }
+      // Remove mine visuals
+      if (mine.mesh) {
+        scene.remove(mine.mesh);
+        mine.mesh.geometry.dispose();
+        mine.mesh.material.dispose();
+      }
+      if (mine.glowMesh) {
+        scene.remove(mine.glowMesh);
+        mine.glowMesh.geometry.dispose();
+        mine.glowMesh.material.dispose();
+      }
+      activeLaserMines.splice(i, 1);
+      console.log('[Laser Mine] Cleaned up');
+    }
+  }
+}
+
+function triggerLaserMine(mine, nearestEnemy, allEnemies) {
+  mine.triggered = true;
+  mine.triggeredAt = performance.now();
+  
+  // Create laser beam from mine to nearest enemy
+  const start = mine.position.clone();
+  start.y = 0.5;  // Mine height
+  const end = nearestEnemy.mesh.position.clone();
+  
+  // Create laser line
+  const points = [start, end];
+  const laserGeo = new THREE.BufferGeometry().setFromPoints(points);
+  const laserMat = new THREE.LineBasicMaterial({
+    color: 0xff0000,
+    transparent: true,
+    opacity: 0.9,
+    linewidth: 3,
+  });
+  const laserMesh = new THREE.Line(laserGeo, laserMat);
+  laserMesh.renderOrder = 600;
+  scene.add(laserMesh);
+  mine.laserMesh = laserMesh;
+  
+  // Damage all enemies in line (simplified: check distance to line)
+  const lineDir = new THREE.Vector3().subVectors(end, start).normalize();
+  const lineLength = start.distanceTo(end);
+  
+  for (const e of allEnemies) {
+    const toEnemy = new THREE.Vector3().subVectors(e.mesh.position, start);
+    const projection = toEnemy.dot(lineDir);
+    
+    // Check if enemy is along the laser line
+    if (projection >= 0 && projection <= lineLength) {
+      const closestPoint = start.clone().addScaledVector(lineDir, projection);
+      const distToLine = e.mesh.position.distanceTo(closestPoint);
+      
+      // Within 0.5m of laser line takes damage
+      if (distToLine < 0.5) {
+        const enemyIndex = allEnemies.indexOf(e);
+        if (enemyIndex >= 0) {
+          hitEnemy(enemyIndex, mine.damage);
+          spawnDamageNumber(e.mesh.position, mine.damage, '#ff0000');
+          console.log(`[Laser Mine] Hit enemy for ${mine.damage} damage`);
+        }
+      }
+    }
+  }
+  
+  // Explosion sound
+  playExplosionSound();
+  
+  // Visual feedback on mine
+  mine.mesh.material.color.setHex(0xffffff);
+  mine.mesh.scale.setScalar(2);
 }
 
 // ============================================================
@@ -1810,6 +2205,245 @@ function checkProjectileHitsMine(proj) {
     }
   }
   return false;
+}
+
+// ============================================================
+//  TETHER HARPOON IMPLEMENTATION
+// ============================================================
+
+function fireTetherHarpoon(origin, direction, hand, altWeapon) {
+  // Raycast to find enemy within range
+  const raycaster = new THREE.Raycaster(origin, direction, 0, altWeapon.range);
+  const enemyMeshes = getEnemyMeshes(true);
+  const hits = raycaster.intersectObjects(enemyMeshes, true);
+
+  if (hits.length === 0) {
+    console.log('[Tether Harpoon] No target in range');
+    return;  // No target
+  }
+
+  // Find the enemy from the hit mesh
+  const result = getEnemyByMesh(hits[0].object);
+  if (!result || result.index === undefined) {
+    console.log('[Tether Harpoon] Hit but no enemy found');
+    return;
+  }
+
+  const enemy = result.enemy;
+  const enemyIndex = result.index;
+
+  // Check if this enemy is already tethered
+  const alreadyTethered = activeTethers.some(t => t.enemyIndex === enemyIndex);
+  if (alreadyTethered) {
+    console.log('[Tether Harpoon] Enemy already tethered');
+    return;
+  }
+
+  // Limit active tethers
+  if (activeTethers.length >= MAX_TETHERS) {
+    const oldest = activeTethers.shift();
+    destroyTether(oldest);
+  }
+
+  console.log(`[Tether Harpoon] Connected to enemy ${enemyIndex}!`);
+
+  // Create green energy rope visual
+  const tetherGroup = new THREE.Group();
+
+  // Main tether line
+  const tetherGeo = new THREE.BufferGeometry();
+  const positions = new Float32Array(6);  // 2 points * 3 coords
+  tetherGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const tetherMat = new THREE.LineBasicMaterial({
+    color: 0x00ff88,
+    transparent: true,
+    opacity: 0.9,
+    linewidth: 2,
+  });
+  const tetherLine = new THREE.Line(tetherGeo, tetherMat);
+  tetherGroup.add(tetherLine);
+
+  // Glow effect
+  const glowGeo = new THREE.BufferGeometry();
+  glowGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const glowMat = new THREE.LineBasicMaterial({
+    color: 0x00ff88,
+    transparent: true,
+    opacity: 0.3,
+    linewidth: 4,
+  });
+  const glowLine = new THREE.Line(glowGeo, glowMat);
+  tetherGroup.add(glowLine);
+
+  // Energy particles along tether
+  const particleCount = 10;
+  const particles = [];
+  for (let i = 0; i < particleCount; i++) {
+    const particleGeo = new THREE.SphereGeometry(0.03, 4, 4);
+    const particleMat = new THREE.MeshBasicMaterial({
+      color: 0x00ffaa,
+      transparent: true,
+      opacity: 0.7,
+    });
+    const particle = new THREE.Mesh(particleGeo, particleMat);
+    particle.userData.offset = i / particleCount;
+    particle.userData.speed = 1 + Math.random();
+    tetherGroup.add(particle);
+    particles.push(particle);
+  }
+
+  scene.add(tetherGroup);
+
+  // Create tether data
+  const tether = {
+    mesh: tetherGroup,
+    line: tetherLine,
+    glowLine,
+    particles,
+    lineGeo: tetherGeo,
+    glowGeo,
+    hand,
+    enemyIndex,
+    enemy,
+    createdAt: performance.now(),
+    duration: altWeapon.tetherDuration || 8000,
+    damage: altWeapon.damage || 25,
+    yankForce: altWeapon.yankForce || 12,
+    lastCollisionTime: 0,
+    yankActive: false,
+    yankStartTime: 0,
+  };
+
+  activeTethers.push(tether);
+  playShoothSound();
+}
+
+function updateTethers(dt, now, playerPos) {
+  const enemies = getEnemies();
+
+  for (let i = activeTethers.length - 1; i >= 0; i--) {
+    const tether = activeTethers[i];
+    const age = now - tether.createdAt;
+
+    // Check if expired
+    if (age >= tether.duration) {
+      destroyTether(tether);
+      activeTethers.splice(i, 1);
+      continue;
+    }
+
+    // Check if enemy still exists
+    const enemy = enemies[tether.enemyIndex];
+    if (!enemy) {
+      destroyTether(tether);
+      activeTethers.splice(i, 1);
+      continue;
+    }
+
+    // Update tether line positions
+    const start = playerPos.clone();
+    start.y = Math.max(0.5, start.y);  // Clamp to reasonable height
+    const end = enemy.mesh.position.clone();
+
+    // Update main line
+    const positions = tether.lineGeo.attributes.position.array;
+    positions[0] = start.x;
+    positions[1] = start.y;
+    positions[2] = start.z;
+    positions[3] = end.x;
+    positions[4] = end.y;
+    positions[5] = end.z;
+    tether.lineGeo.attributes.position.needsUpdate = true;
+
+    // Update glow line
+    const glowPositions = tether.glowGeo.attributes.position.array;
+    glowPositions[0] = start.x;
+    glowPositions[1] = start.y;
+    glowPositions[2] = start.z;
+    glowPositions[3] = end.x;
+    glowPositions[4] = end.y;
+    glowPositions[5] = end.z;
+    tether.glowGeo.attributes.position.needsUpdate = true;
+
+    // Animate particles along tether
+    const tetherLength = start.distanceTo(end);
+    const direction = new THREE.Vector3().subVectors(end, start).normalize();
+
+    tether.particles.forEach(p => {
+      const t = ((now * 0.001 * p.userData.speed + p.userData.offset) % 1);
+      const pos = start.clone().addScaledVector(direction, t * tetherLength);
+      p.position.copy(pos);
+      p.material.opacity = 0.7 * Math.sin(t * Math.PI);  // Fade at ends
+    });
+
+    // Calculate tether tension (stretch factor)
+    const restLength = 3.0;  // Comfortable tether length
+    const stretch = Math.max(0, tetherLength - restLength);
+
+    // Yank mechanic: pull enemy toward player when stretched
+    if (stretch > 0) {
+      const pullStrength = Math.min(1, stretch / 5) * tether.yankForce * dt;
+      const toPlayer = new THREE.Vector3().subVectors(start, end).normalize();
+      enemy.mesh.position.addScaledVector(toPlayer, pullStrength);
+    }
+
+    // Collision damage: check if tethered enemy hits other enemies
+    const collisionCooldown = 500;  // 500ms between collision damage
+    if (now - tether.lastCollisionTime > collisionCooldown) {
+      for (let j = 0; j < enemies.length; j++) {
+        if (j === tether.enemyIndex) continue;
+
+        const otherEnemy = enemies[j];
+        const dist = enemy.mesh.position.distanceTo(otherEnemy.mesh.position);
+
+        if (dist < 1.0) {  // Collision radius
+          // Apply collision damage to both enemies
+          hitEnemy(tether.enemyIndex, tether.damage);
+          hitEnemy(j, tether.damage * 0.5);  // Half damage to other enemy
+
+          spawnDamageNumber(enemy.mesh.position, tether.damage, '#00ff88');
+          spawnDamageNumber(otherEnemy.mesh.position, tether.damage * 0.5, '#00ff88');
+
+          playHitSound();
+          tether.lastCollisionTime = now;
+
+          // Check if killed
+          if (enemy.hp <= 0) {
+            const destroyData = destroyEnemy(tether.enemyIndex);
+            if (destroyData) {
+              game.kills++;
+              game.totalKills++;
+              addScore(destroyData.scoreValue);
+              updateHUD(game);
+            }
+            destroyTether(tether);
+            activeTethers.splice(i, 1);
+            break;
+          }
+
+          // Visual feedback
+          spawnExplosionVisual(enemy.mesh.position, 0.5);
+        }
+      }
+    }
+
+    // Pulse opacity based on age (fade out near end)
+    const fadeStart = tether.duration * 0.8;
+    if (age > fadeStart) {
+      const fadeProgress = (age - fadeStart) / (tether.duration - fadeStart);
+      tether.line.material.opacity = 0.9 * (1 - fadeProgress);
+      tether.glowLine.material.opacity = 0.3 * (1 - fadeProgress);
+    }
+  }
+}
+
+function destroyTether(tether) {
+  scene.remove(tether.mesh);
+  tether.mesh.children.forEach(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  });
+  console.log('[Tether Harpoon] Tether destroyed');
 }
 
 // ============================================================
@@ -3545,12 +4179,19 @@ function render(timestamp) {
     // Fast enemy proximity alerts
     updateFastEnemyAlerts(dt, camera.position);
 
+    // Update enemies
+    const playerPos = camera.position.clone();
+
     // Update decoys and black holes
     updateDecoys(dt, now, playerPos);
     updateMinesAndBlackHoles(dt, now, playerPos);
+    updateTethers(dt, now, playerPos);
 
-    // Update enemies
-    const playerPos = camera.position.clone();
+    // Laser mine passive spawning (when player stands still)
+    spawnLaserMinesPassively(playerPos, now, dt);
+
+    // Update laser mines
+    updateLaserMines(now, dt);
 
     // If in slow-mo, check whether all enemies in trigger range are gone → ramp out over 0.5s + reverse sound
     if (slowMoActive && !slowMoRampOut) {
@@ -3866,6 +4507,7 @@ function render(timestamp) {
 
   // ── Universal updates ──
   updateProjectiles(dt);
+  updateShields(now);
   updateStasisFields(now, dt);
   updatePlasmaOrbs(now, dt);
   updateExplosions(dt, now);
