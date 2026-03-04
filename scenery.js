@@ -38,7 +38,23 @@ export const THEMES = {
     particles: { type: 'sparkle', color: 0xffaaee, count: 30, speed: 0.15 },
   },
 
-  // Levels 6-9: Classic Synthwave
+  // Levels 6-9: Ocean Floor (Easy-Medium)
+  ocean_floor: {
+    skyColor: 0x001133,
+    fogColor: 0x002244,
+    fogDensity: 0.012,
+    gridColor: '#00ffaa',
+    gridOpacity: 0.6,
+    mountainFill: 0x001133,
+    mountainWire: 0x00ffaa,
+    mountainWireOpacity: 0.5,
+    sunColors: ['#00aaff', '#0088cc', '#006699'],
+    sunGlowColor: 0x00aaff,
+    starColor: 0x88ddff,
+    particles: { type: 'bubbles', color: 0x88ffdd, count: 30, speed: 0.4 },
+  },
+
+  // Levels 6-9: Classic Synthwave (backup)
   synthwave: {
     skyColor: 0x000000,
     fogColor: 0x000000,
