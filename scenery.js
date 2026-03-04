@@ -6,7 +6,23 @@ import * as THREE from 'three';
 
 // ── Theme Definitions ─────────────────────────────────────
 export const THEMES = {
-  // Levels 1-4: Classic Synthwave (default)
+  // Levels 1-5: Sunrise Highway (Easy)
+  sunrise_highway: {
+    skyColor: 0xff8866,
+    fogColor: 0xffaa88,
+    fogDensity: 0.008,
+    gridColor: '#ffffff',
+    gridOpacity: 0.9,
+    mountainFill: 0x442266,
+    mountainWire: 0x8866aa,
+    mountainWireOpacity: 0.7,
+    sunColors: ['#ffddaa', '#ffaa77', '#ff8855', '#ff6644', '#ff4422'],
+    sunGlowColor: 0xffaa66,
+    starColor: 0xffffff,
+    particles: { type: 'dust', color: 0xffddaa, count: 20, speed: 0.2 },
+  },
+
+  // Levels 6-9: Classic Synthwave
   synthwave: {
     skyColor: 0x000000,
     fogColor: 0x000000,
@@ -90,9 +106,10 @@ export const THEMES = {
 // ── Get Theme for Level ───────────────────────────────────
 export function getThemeForLevel(level) {
   if (level % 5 === 0) return THEMES.boss;
-  if (level <= 4) return THEMES.synthwave;
-  if (level <= 9) return THEMES.hellscape;
-  if (level <= 14) return THEMES.frozen;
+  if (level <= 5) return THEMES.sunrise_highway;
+  if (level <= 9) return THEMES.synthwave;
+  if (level <= 14) return THEMES.hellscape;
+  if (level <= 19) return THEMES.frozen;
   return THEMES.corruption;
 }
 
