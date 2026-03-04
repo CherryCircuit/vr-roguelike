@@ -37,8 +37,15 @@ export function initSeedDeck(seed, tier = 'standard') {
 function getEnemyTypes(level) {
   const types = ['basic'];
   if (level >= 3) types.push('fast');
-  if (level >= 6) types.push('tank');
-  if (level >= 8) types.push('swarm');
+  if (level >= 5) types.push('spiral_swimmer');
+  if (level >= 6) types.push('tank', 'swarm');
+  if (level >= 7) types.push('geometry_shifter');
+  if (level >= 9) types.push('clone_mimic');
+  if (level >= 10) types.push('spider_walker', 'pulse_bomber');
+  if (level >= 12) types.push('mirror_knight');
+  if (level >= 14) types.push('portal_mantis');
+  if (level >= 15) types.push('blackhole_totem', 'conductor');
+  if (level >= 17) types.push('phase_wraith');
   return types;
 }
 
