@@ -22,7 +22,7 @@ import {
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
-  updateBossProjectiles, getBossProjectiles
+  updateBossProjectiles, getBossProjectiles, updateStatusBubbles
 } from './enemies.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
@@ -2954,6 +2954,7 @@ function render(timestamp) {
   updateExplosions(dt, now);
   updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
+  updateStatusBubbles(dt, now);
   updateComboPopups(dt, now);
   updateKillChainPopups(dt, now);  // Kill chain popups
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time

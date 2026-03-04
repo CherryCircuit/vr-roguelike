@@ -117,6 +117,114 @@ function getExplosionSprite() {
 const _dir = new THREE.Vector3();
 const _look = new THREE.Vector3();
 
+// Status effect bubbles array (similar to damage numbers)
+const statusBubbles = [];
+
+/**
+ * Spawn a speech bubble indicating a status effect was applied.
+ */
+function spawnStatusEffectBubble(position, effectType, stacks) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 128;
+
+  // Determine color and text based on effect type
+  let bgColor, textColor, text;
+  switch (effectType) {
+    case 'fire':
+      bgColor = '#ff4400';
+      textColor = '#ffffff';
+      text = stacks > 1 ? `FIRE x${stacks}!` : 'FIRE!';
+      break;
+    case 'shock':
+      bgColor = '#ffff44';
+      textColor = '#000000';
+      text = stacks > 1 ? `SHOCK x${stacks}!` : 'SHOCK!';
+      break;
+    case 'freeze':
+      bgColor = '#44aaff';
+      textColor = '#ffffff';
+      text = stacks > 1 ? `CHILL x${stacks}!` : 'CHILL!';
+      break;
+    default:
+      bgColor = '#888888';
+      textColor = '#ffffff';
+      text = 'EFFECT!';
+  }
+
+  // Background bubble
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 6;
+
+  // Flashy comic bubble shape
+  ctx.beginPath();
+  ctx.moveTo(40, 60);
+  ctx.lineTo(20, 20); ctx.lineTo(80, 40);
+  ctx.lineTo(128, 10); ctx.lineTo(176, 40);
+  ctx.lineTo(236, 20); ctx.lineTo(216, 60);
+  ctx.lineTo(236, 100); ctx.lineTo(176, 80);
+  ctx.lineTo(128, 110); ctx.lineTo(80, 80);
+  ctx.lineTo(20, 100); ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.font = 'bold 36px "Comic Sans MS", cursive, sans-serif';
+  if (text.length > 8) ctx.font = 'bold 24px "Comic Sans MS", cursive, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = textColor;
+  ctx.fillText(text, 128, 64);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.premultiplyAlpha = false;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.5, 0.75),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, side: THREE.DoubleSide })
+  );
+  mesh.position.copy(position);
+  mesh.position.y += 1.2;
+  mesh.position.z += 0.5;
+  mesh.renderOrder = 997;
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.lifetime = 800;
+  mesh.userData.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.5, 1.5, (Math.random() - 0.5) * 0.5);
+
+  sceneRef.add(mesh);
+  statusBubbles.push(mesh);
+
+  // Cap total to prevent perf issues
+  while (statusBubbles.length > 20) {
+    const old = statusBubbles.shift();
+    sceneRef.remove(old);
+    old.material.map.dispose();
+    old.material.dispose();
+  }
+}
+
+/**
+ * Update status effect bubbles (animate and remove expired).
+ */
+export function updateStatusBubbles(dt, now) {
+  for (let i = statusBubbles.length - 1; i >= 0; i--) {
+    const b = statusBubbles[i];
+    const age = now - b.userData.createdAt;
+
+    if (age > b.userData.lifetime) {
+      sceneRef.remove(b);
+      b.material.map.dispose();
+      b.material.dispose();
+      statusBubbles.splice(i, 1);
+    } else {
+      b.position.addScaledVector(b.userData.velocity, dt);
+      b.userData.velocity.y -= 3 * dt;
+      const progress = age / b.userData.lifetime;
+      b.material.opacity = 1 - progress;
+    }
+  }
+}
+
 // ── Public API ─────────────────────────────────────────────
 
 export function initEnemies(scene) {
@@ -350,16 +458,14 @@ function updateStatusEffects(e, dt) {
     if (se.shock.remaining <= 0) { se.shock.stacks = 0; se.shock.tickTimer = 0; }
   }
 
-  // Freeze DoT (Small)
+  // Freeze DoT (NO damage - CHILL only slows)
   if (se.freeze.remaining > 0) {
     se.freeze.remaining -= dt;
     se.freeze.tickTimer -= dt;
     if (se.freeze.tickTimer <= 0) {
       se.freeze.tickTimer = 0.5;
-      const freezeDmg = Math.round(2 * se.freeze.stacks);
-      e.hp -= freezeDmg;
-      if (e.hp <= 0) e.hp = 0;
-      e._lastDoT = { type: 'freeze', damage: freezeDmg };
+      // CHILL: NO damage, just slows
+      e._lastDoT = { type: 'freeze', damage: 0 };
       // Spawn freeze particles - commented out as window.spawnEffectParticle doesn't exist
       // if (typeof window !== 'undefined' && window.spawnEffectParticle) {
       //   window.spawnEffectParticle(e.mesh.position, 0x00ffff);
@@ -379,8 +485,22 @@ export function applyEffects(enemyIndex, effects) {
   effects.forEach(({ type, stacks }) => {
     const se = e.statusEffects[type];
     if (!se) return;
+
+    // Check if this is a new application (was 0, now > 0)
+    const wasInactive = se.stacks === 0;
     se.stacks = Math.max(se.stacks, stacks);
-    se.remaining = 2 + stacks * 0.5;
+
+    // CHILL (freeze) lasts longer than other effects
+    if (type === 'freeze') {
+      se.remaining = 4 + stacks * 0.8; // Longer duration: 4s base + 0.8s per stack
+    } else {
+      se.remaining = 2 + stacks * 0.5; // Standard duration: 2s base + 0.5s per stack
+    }
+
+    // Spawn speech bubble when effect is first applied
+    if (wasInactive) {
+      spawnStatusEffectBubble(e.mesh.position, type, se.stacks);
+    }
   });
 }
 
