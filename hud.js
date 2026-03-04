@@ -454,18 +454,18 @@ function createHUDElements() {
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
-  // Score - right side on floor
-  scoreSprite = makeSprite('0', { fontSize: 60, color: '#ffff00', shadow: true, scale: 2.4 });  // 0.8 * 3
+  // Score - right side on floor (increased 50% for VR readability)
+  scoreSprite = makeSprite('0', { fontSize: 90, color: '#ffff00', shadow: true, scale: 3.6 });
   scoreSprite.position.set(1.5, 0, 0);
   hudGroup.add(scoreSprite);
 
-  // Kill counter — center on floor
-  killCountSprite = makeSprite('0/0', { fontSize: 50, color: '#ffffff', shadow: true, scale: 2.1 });  // 0.7 * 3
+  // Kill counter — center on floor (increased 50% for VR readability)
+  killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 3.15 });
   killCountSprite.position.set(0, 0, 0);
   hudGroup.add(killCountSprite);
 
-  // Level indicator — above kill counter
-  levelSprite = makeSprite('LEVEL 1', { fontSize: 48, color: '#00ffff', glow: true, scale: 1.95 });  // 0.65 * 3
+  // Level indicator — above kill counter (increased 50% for VR readability)
+  levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 2.925 });
   levelSprite.position.set(0, 0.45, 0);  // Moved up proportionally
   hudGroup.add(levelSprite);
 
@@ -524,16 +524,16 @@ export function updateHUD(gameState) {
   heartsSprite.geometry.dispose();
   heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
 
-  // Kill counter - 200% larger
+  // Kill counter - increased 50% for VR readability
   const cfg = gameState._levelConfig;
   const killTarget = cfg ? cfg.killTarget : 0;
-  updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.30 });
+  updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.45 });
 
-  // Level - 200% larger
-  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.30 });
+  // Level - increased 50% for VR readability
+  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.45 });
 
-  // Score - 200% larger
-  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.26 });
+  // Score - increased 50% for VR readability
+  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.39 });
 
   // Combo - 200% larger with descriptive label
   const combo = getComboMultiplier();
