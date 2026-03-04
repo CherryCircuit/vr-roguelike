@@ -1716,6 +1716,9 @@ function updateLightningBeam(controller, index, stats, dt) {
             game.killsWithoutHit++;
             addScore(destroyData.scoreValue);
 
+            // Update HUD immediately to show correct kill count before level complete check
+            updateHUD(game);
+
             // KILL CHAIN SYSTEM
             const now = performance.now();
 
@@ -1896,6 +1899,10 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
         game.kills++;
         game.totalKills++;
         addScore(boss.scoreValue);
+
+        // Update HUD immediately to show correct kill count before level complete
+        updateHUD(game);
+
         completeLevel();
       }
     }
@@ -2062,6 +2069,9 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       game.killsWithoutHit++;
       addScore(destroyData.scoreValue);
 
+      // Update HUD immediately to show correct kill count before level complete check
+      updateHUD(game);
+
       // KILL CHAIN SYSTEM
       const now = performance.now();
 
@@ -2163,6 +2173,10 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
     game.totalKills++;
     game.killsWithoutHit++;
     addScore(boss.scoreValue);
+
+    // Update HUD immediately to show correct kill count before level complete
+    updateHUD(game);
+
     completeLevel();
   }
 }
@@ -2791,6 +2805,9 @@ function render(timestamp) {
             game.totalKills++;
             game.killsWithoutHit++;
             addScore(destroyData.scoreValue);
+
+            // Update HUD immediately to show correct kill count before level complete check
+            updateHUD(game);
 
             // KILL CHAIN SYSTEM (same as handleHit)
             const now = performance.now();
