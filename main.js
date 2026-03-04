@@ -176,6 +176,10 @@ const MAX_TETHERS = 2;
 const activeNaniteSwarms = [];
 const MAX_NANITE_SWARMS = 2;
 
+// Reflector drone system
+const activeReflectorDrones = [];
+const MAX_REFLECTOR_DRONES = 2;
+
 // ── Bootstrap ──────────────────────────────────────────────
 init();
 
@@ -1302,6 +1306,10 @@ function fireAltWeapon(controller, index) {
 
     case 'phase_dash':
       firePhaseDash(controller, index, hand, altWeapon, origin, direction);
+      break;
+
+    case 'reflector_drone':
+      fireReflectorDrone(origin, hand, altWeapon);
       break;
 
     default:
@@ -2934,6 +2942,329 @@ function updatePhaseDashAfterimages(now, dt) {
 }
 
 // ============================================================
+//  REFLECTOR DRONE IMPLEMENTATION
+// ============================================================
+
+/**
+ * Fire Reflector Drone - spawns orbiting drone that reflects enemy projectiles
+ * Overcharge: player can shoot the drone for 100% reflect but drone takes damage
+ */
+function fireReflectorDrone(origin, hand, altWeapon) {
+  // Limit active drones
+  if (activeReflectorDrones.length >= MAX_REFLECTOR_DRONES) {
+    // Check if there's already an active drone from this hand - remove it
+    const existingIndex = activeReflectorDrones.findIndex(d => d.hand === hand);
+    if (existingIndex >= 0) {
+      const drone = activeReflectorDrones[existingIndex];
+      destroyReflectorDrone(drone);
+      activeReflectorDrones.splice(existingIndex, 1);
+      console.log('[Reflector Drone] Recalled early from', hand, 'hand');
+    } else {
+      // Remove oldest drone
+      const oldest = activeReflectorDrones.shift();
+      destroyReflectorDrone(oldest);
+    }
+  }
+
+  console.log(`[ALT] Reflector Drone deployed from ${hand} hand`);
+
+  // Create hexagonal drone
+  const droneGroup = new THREE.Group();
+
+  // Hexagon body
+  const hexShape = new THREE.Shape();
+  const hexRadius = 0.2;
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(angle) * hexRadius;
+    const y = Math.sin(angle) * hexRadius;
+    if (i === 0) hexShape.moveTo(x, y);
+    else hexShape.lineTo(x, y);
+  }
+  hexShape.closePath();
+
+  const hexGeo = new THREE.ShapeGeometry(hexShape);
+  const hexMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffcc,
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide,
+  });
+  const hexMesh = new THREE.Mesh(hexGeo, hexMat);
+  hexMesh.rotation.x = Math.PI / 2;  // Lay flat
+  droneGroup.add(hexMesh);
+
+  // Inner glow core
+  const coreGeo = new THREE.SphereGeometry(0.08, 8, 8);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffcc,
+    transparent: true,
+    opacity: 0.8,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  droneGroup.add(core);
+
+  // Shimmering shield effect (semi-transparent sphere)
+  const shieldGeo = new THREE.SphereGeometry(0.4, 16, 16);
+  const shieldMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffcc,
+    transparent: true,
+    opacity: 0.2,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const shield = new THREE.Mesh(shieldGeo, shieldMat);
+  droneGroup.add(shield);
+
+  // Orbiting particles
+  const particleCount = 12;
+  const particles = [];
+  for (let i = 0; i < particleCount; i++) {
+    const particleGeo = new THREE.SphereGeometry(0.02, 4, 4);
+    const particleMat = new THREE.MeshBasicMaterial({
+      color: 0x00ffaa,
+      transparent: true,
+      opacity: 0.7,
+    });
+    const particle = new THREE.Mesh(particleGeo, particleMat);
+    particle.userData.orbitAngle = (i / particleCount) * Math.PI * 2;
+    particle.userData.orbitRadius = 0.25;
+    droneGroup.add(particle);
+    particles.push(particle);
+  }
+
+  // Position at player location
+  const playerPos = camera.position.clone();
+  droneGroup.position.copy(playerPos);
+  droneGroup.position.y = 1.2;  // Chest height
+
+  scene.add(droneGroup);
+
+  // Drone data
+  const drone = {
+    mesh: droneGroup,
+    hexMesh,
+    hexMat,
+    coreMat,
+    shieldMat,
+    particles,
+    hand,
+    createdAt: performance.now(),
+    expiresAt: performance.now() + (altWeapon.duration || 15000),
+    duration: altWeapon.duration || 15000,
+    reflectChance: altWeapon.reflectChance || 0.5,
+    overchargeReflect: altWeapon.overchargeReflect || 1.0,
+    health: altWeapon.droneHealth || 50,
+    maxHealth: altWeapon.droneHealth || 50,
+    orbitRadius: altWeapon.orbitRadius || 2.0,
+    orbitSpeed: altWeapon.orbitSpeed || 1.5,
+    orbitAngle: 0,
+    overcharged: false,
+    lastReflectTime: 0,
+  };
+
+  activeReflectorDrones.push(drone);
+  playShoothSound();
+}
+
+/**
+ * Update Reflector Drones - orbit player, check for projectile reflection
+ */
+function updateReflectorDrones(now, dt, playerPos) {
+  for (let i = activeReflectorDrones.length - 1; i >= 0; i--) {
+    const drone = activeReflectorDrones[i];
+    const age = now - drone.createdAt;
+
+    // Check if expired
+    if (age >= drone.duration || drone.health <= 0) {
+      if (drone.health <= 0) {
+        console.log('[Reflector Drone] Destroyed!');
+        spawnExplosionVisual(drone.mesh.position, 0.5);
+        playExplosionSound();
+      }
+      destroyReflectorDrone(drone);
+      activeReflectorDrones.splice(i, 1);
+      continue;
+    }
+
+    // Orbit around player
+    drone.orbitAngle += drone.orbitSpeed * dt;
+    const orbitX = Math.cos(drone.orbitAngle) * drone.orbitRadius;
+    const orbitZ = Math.sin(drone.orbitAngle) * drone.orbitRadius;
+
+    drone.mesh.position.x = playerPos.x + orbitX;
+    drone.mesh.position.z = playerPos.z + orbitZ;
+    drone.mesh.position.y = 1.2 + Math.sin(age * 0.002) * 0.1;  // Gentle bob
+
+    // Rotate drone
+    drone.mesh.rotation.y = -drone.orbitAngle + Math.PI / 2;
+
+    // Animate orbiting particles
+    drone.particles.forEach((p, idx) => {
+      p.userData.orbitAngle += dt * 3;
+      const radius = p.userData.orbitRadius;
+      p.position.x = Math.cos(p.userData.orbitAngle) * radius;
+      p.position.z = Math.sin(p.userData.orbitAngle) * radius;
+      p.position.y = Math.sin(age * 0.005 + idx) * 0.05;
+    });
+
+    // Pulse shield effect
+    const shieldPulse = 0.15 + Math.sin(age * 0.008) * 0.05;
+    drone.shieldMat.opacity = shieldPulse;
+
+    // Change color based on overcharge state
+    if (drone.overcharged) {
+      drone.hexMat.color.setHex(0xff6600);  // Orange when overcharged
+      drone.shieldMat.color.setHex(0xff6600);
+      drone.coreMat.color.setHex(0xff6600);
+    } else {
+      drone.hexMat.color.setHex(0x00ffcc);  // Cyan-green normally
+      drone.shieldMat.color.setHex(0x00ffcc);
+      drone.coreMat.color.setHex(0x00ffcc);
+    }
+
+    // Fade out near end of duration
+    const fadeStart = drone.duration * 0.85;
+    if (age > fadeStart) {
+      const fadeProgress = (age - fadeStart) / (drone.duration - fadeStart);
+      drone.hexMat.opacity = 0.9 * (1 - fadeProgress);
+      drone.coreMat.opacity = 0.8 * (1 - fadeProgress);
+      drone.shieldMat.opacity = Math.min(drone.shieldMat.opacity, 0.2 * (1 - fadeProgress));
+    }
+  }
+}
+
+/**
+ * Check if enemy projectile should be reflected by a drone
+ * @returns {boolean} true if projectile was reflected
+ */
+function checkReflectorDroneReflection(projPos, isBossProjectile = false) {
+  for (const drone of activeReflectorDrones) {
+    const dist = projPos.distanceTo(drone.mesh.position);
+    if (dist < 0.5) {  // Within drone shield radius
+      // Determine reflect chance
+      const reflectChance = drone.overcharged ? drone.overchargeReflect : drone.reflectChance;
+
+      if (Math.random() < reflectChance) {
+        // Reflect the projectile!
+        console.log(`[Reflector Drone] Reflected projectile! (${drone.overcharged ? '100%' : '50%'} chance)`);
+        spawnExplosionVisual(projPos, 0.3);
+        playHitSound();
+        drone.lastReflectTime = performance.now();
+
+        return true;  // Projectile reflected
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Check if player projectile hits a drone (overcharge mechanic)
+ * @returns {boolean} true if drone was hit
+ */
+function checkPlayerProjectileHitsDrone(projPos, projControllerIndex) {
+  for (let i = 0; i < activeReflectorDrones.length; i++) {
+    const drone = activeReflectorDrones[i];
+
+    // Don't let the same hand that spawned the drone hit it
+    const droneHand = drone.hand;
+    const projHand = projControllerIndex === 0 ? 'left' : 'right';
+    if (droneHand === projHand) continue;
+
+    const dist = projPos.distanceTo(drone.mesh.position);
+    if (dist < 0.3) {  // Hit drone
+      // Overcharge the drone (100% reflect but takes damage)
+      drone.overcharged = true;
+      drone.health -= 10;  // 10 damage per shot
+
+      console.log(`[Reflector Drone] Overcharged! Health: ${drone.health}/${drone.maxHealth}`);
+
+      // Visual feedback
+      drone.hexMat.color.setHex(0xff6600);  // Flash orange
+      drone.shieldMat.color.setHex(0xff6600);
+      spawnDamageNumber(drone.mesh.position, 10, '#ff6600');
+      playHitSound();
+
+      // Spawn reflected projectile back at nearest enemy
+      spawnReflectedProjectile(drone.mesh.position.clone());
+
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Spawn a reflected projectile from drone position
+ */
+function spawnReflectedProjectile(origin) {
+  // Find nearest enemy
+  const enemies = getEnemies();
+  let nearestEnemy = null;
+  let nearestDist = 20;
+
+  enemies.forEach(e => {
+    const dist = e.mesh.position.distanceTo(origin);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearestEnemy = e;
+    }
+  });
+
+  // Also check boss
+  const boss = getBoss();
+  if (boss) {
+    const dist = boss.mesh.position.distanceTo(origin);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearestEnemy = boss;
+    }
+  }
+
+  if (!nearestEnemy) {
+    // No target, just shoot forward
+    return;
+  }
+
+  // Create reflected projectile
+  const direction = new THREE.Vector3()
+    .subVectors(nearestEnemy.mesh ? nearestEnemy.mesh.position : nearestEnemy.position, origin)
+    .normalize();
+
+  const reflectedGeo = new THREE.SphereGeometry(0.05, 8, 8);
+  const reflectedMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffcc,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const reflectedProj = new THREE.Mesh(reflectedGeo, reflectedMat);
+  reflectedProj.position.copy(origin);
+  reflectedProj.userData.velocity = direction.clone().multiplyScalar(30);
+  reflectedProj.userData.createdAt = performance.now();
+  reflectedProj.userData.lifetime = 2000;
+  reflectedProj.userData.damage = 20;
+  reflectedProj.userData.isReflected = true;
+  scene.add(reflectedProj);
+  projectiles.push(reflectedProj);
+
+  console.log('[Reflector Drone] Spawned reflected projectile');
+}
+
+/**
+ * Destroy a reflector drone
+ */
+function destroyReflectorDrone(drone) {
+  scene.remove(drone.mesh);
+  drone.mesh.children.forEach(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  });
+  console.log('[Reflector Drone] Destroyed');
+}
+
+// ============================================================
 //  STASIS FIELD
 // ============================================================
 function fireStasisField(origin, direction, hand, altWeapon) {
@@ -4337,6 +4668,17 @@ function updateProjectiles(dt) {
       continue;
     }
 
+    // Check collision with reflector drones (overcharge mechanic)
+    if (proj.userData.controllerIndex !== undefined && checkPlayerProjectileHitsDrone(proj.position, proj.userData.controllerIndex)) {
+      if (proj.userData.isPooled) {
+        returnProjectileToPool(proj);
+      } else {
+        scene.remove(proj);
+      }
+      projectiles.splice(i, 1);
+      continue;
+    }
+
     // Check collision with enemies
     raycaster.set(proj.position, proj.userData.velocity.clone().normalize());
     const hits = raycaster.intersectObjects(enemies, true);
@@ -4694,6 +5036,7 @@ function render(timestamp) {
     updateTethers(dt, now, playerPos);
     updateNaniteSwarms(now, dt, playerPos);
     updatePhaseDashAfterimages(now, dt);
+    updateReflectorDrones(now, dt, playerPos);
 
     // Laser mine passive spawning (when player stands still)
     spawnLaserMinesPassively(playerPos, now, dt);
@@ -4816,6 +5159,16 @@ function render(timestamp) {
     for (let i = bossProjs.length - 1; i >= 0; i--) {
       const proj = bossProjs[i];
       if (proj.hitPlayer) {
+        // Check if reflector drone can reflect this projectile
+        if (checkReflectorDroneReflection(proj.mesh.position, true)) {
+          // Projectile was reflected - remove it without damaging player
+          scene.remove(proj.mesh);
+          proj.mesh.geometry.dispose();
+          proj.mesh.material.dispose();
+          bossProjs.splice(i, 1);
+          continue;
+        }
+
         scene.remove(proj.mesh);
         proj.mesh.geometry.dispose();
         proj.mesh.material.dispose();

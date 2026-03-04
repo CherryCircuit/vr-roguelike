@@ -296,6 +296,21 @@ export const ALT_WEAPONS = {
     afterimageDamage: 40,
     afterimageDelay: 1000,  // 1 second
   },
+
+  reflector_drone: {
+    id: 'reflector_drone',
+    name: 'Reflector Drone',
+    desc: 'Orbiting drone reflects 50% of projectiles, overcharge for 100%',
+    color: '#00ffcc',  // Cyan-green
+    type: 'alt',
+    cooldown: 20000,  // 20 seconds
+    duration: 15000,   // 15 seconds
+    reflectChance: 0.5,  // 50% reflect
+    overchargeReflect: 1.0,  // 100% reflect when overcharged
+    droneHealth: 50,
+    orbitRadius: 2.0,  // Distance from player
+    orbitSpeed: 1.5,  // Radians per second
+  },
 };
 
 // ── UPGRADE SYSTEM ───────────────────────────────────────────
