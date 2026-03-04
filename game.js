@@ -241,8 +241,10 @@ export function getLevelConfig() {
 }
 
 export function addScore(points) {
-  const combo = getComboMultiplier();
-  game.score += Math.floor(points * combo);
+  // Apply BOTH kill chain multiplier AND accuracy multiplier
+  const killChainMult = game.comboMultiplier || 1;
+  const accuracyMult = getComboMultiplier();
+  game.score += Math.floor(points * killChainMult * accuracyMult);
 }
 
 export function getComboMultiplier() {
