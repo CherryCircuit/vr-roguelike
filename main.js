@@ -1296,6 +1296,10 @@ function fireAltWeapon(controller, index) {
       fireTetherHarpoon(origin, direction, hand, altWeapon);
       break;
 
+    case 'nanite_swarm':
+      fireNaniteSwarm(origin, hand, altWeapon);
+      break;
+
     case 'phase_dash':
       firePhaseDash(controller, index, hand, altWeapon, origin, direction);
       break;
@@ -2219,6 +2223,278 @@ function checkProjectileHitsMine(proj) {
 }
 
 // ============================================================
+//  NANITE SWARM IMPLEMENTATION
+// ============================================================
+
+function fireNaniteSwarm(origin, hand, altWeapon) {
+  // Limit active swarms
+  if (activeNaniteSwarms.length >= MAX_NANITE_SWARMS) {
+    // Check if there's already an active swarm from this hand - recall it
+    const existingIndex = activeNaniteSwarms.findIndex(s => s.hand === hand);
+    if (existingIndex >= 0) {
+      // Recall early - remove existing swarm
+      const swarm = activeNaniteSwarms[existingIndex];
+      destroyNaniteSwarm(swarm);
+      activeNaniteSwarms.splice(existingIndex, 1);
+      console.log('[Nanite Swarm] Recalled early from', hand, 'hand');
+    } else {
+      // Remove oldest swarm
+      const oldest = activeNaniteSwarms.shift();
+      destroyNaniteSwarm(oldest);
+    }
+  }
+
+  console.log(`[ALT] Nanite Swarm deployed from ${hand} hand`);
+
+  // Create golden shimmering cloud at player position
+  const swarmGroup = new THREE.Group();
+
+  // Core sphere - golden glow
+  const coreGeo = new THREE.SphereGeometry(0.2, 12, 12);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0xffd700,  // Gold
+    transparent: true,
+    opacity: 0.4,
+    blending: THREE.AdditiveBlending,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  swarmGroup.add(core);
+
+  // Outer glow sphere
+  const glowGeo = new THREE.SphereGeometry(altWeapon.radius || 3.0, 24, 24);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xffaa00,
+    transparent: true,
+    opacity: 0.15,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  swarmGroup.add(glow);
+
+  // Glitter particles - golden sparkles
+  const particleCount = 80;
+  const particles = [];
+  for (let i = 0; i < particleCount; i++) {
+    const particleGeo = new THREE.SphereGeometry(0.03, 4, 4);
+    const particleMat = new THREE.MeshBasicMaterial({
+      color: 0xffff00,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending,
+    });
+    const particle = new THREE.Mesh(particleGeo, particleMat);
+
+    // Random position within sphere
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = (altWeapon.radius || 3.0) * Math.pow(Math.random(), 0.5);
+    particle.position.x = r * Math.sin(phi) * Math.cos(theta);
+    particle.position.y = r * Math.sin(phi) * Math.sin(theta);
+    particle.position.z = r * Math.cos(phi);
+
+    swarmGroup.add(particle);
+    particles.push({
+      mesh: particle,
+      angle: Math.random() * Math.PI * 2,
+      speed: 0.3 + Math.random() * 0.5,
+      radius: r,
+      phi,
+      theta,
+      verticalSpeed: (Math.random() - 0.5) * 0.5,
+    });
+  }
+
+  // Position at player location (use camera position for desktop, controller for VR)
+  const playerPos = camera.position.clone();
+  swarmGroup.position.copy(playerPos);
+  swarmGroup.position.y = 1.0; // Hip height
+
+  // Swarm data
+  const swarm = {
+    mesh: swarmGroup,
+    coreMat,
+    glowMat,
+    particles,
+    hand,
+    createdAt: performance.now(),
+    expiresAt: performance.now() + (altWeapon.duration || 10000),
+    duration: altWeapon.duration || 10000,
+    dotDamage: altWeapon.dotDamage || 5,
+    radius: altWeapon.radius || 3.0,
+    position: swarmGroup.position.clone(),
+    affectedEnemies: new Set(),
+    lastDotTick: performance.now(),
+  };
+
+  scene.add(swarmGroup);
+  activeNaniteSwarms.push(swarm);
+
+  playShoothSound();
+}
+
+function updateNaniteSwarms(now, dt, playerPos) {
+  for (let i = activeNaniteSwarms.length - 1; i >= 0; i--) {
+    const swarm = activeNaniteSwarms[i];
+    const age = now - swarm.createdAt;
+
+    // Check if expired
+    if (age >= swarm.duration) {
+      destroyNaniteSwarm(swarm);
+      activeNaniteSwarms.splice(i, 1);
+      console.log('[Nanite Swarm] Expired');
+      continue;
+    }
+
+    // Animate particles - swirling glitter effect
+    swarm.particles.forEach(p => {
+      // Update angle for rotation
+      p.angle += p.speed * dt;
+      p.phi += p.verticalSpeed * dt * 0.1;
+
+      // Calculate new position
+      p.mesh.position.x = p.radius * Math.sin(p.phi) * Math.cos(p.angle);
+      p.mesh.position.y = p.radius * Math.sin(p.phi) * Math.sin(p.angle);
+      p.mesh.position.z = p.radius * Math.cos(p.phi);
+
+      // Twinkle effect - random opacity
+      p.mesh.material.opacity = 0.3 + Math.sin(now * 0.01 + p.angle) * 0.5;
+    });
+
+    // Pulse the core
+    const pulse = 1 + Math.sin(age * 0.003) * 0.1;
+    swarm.mesh.children[0].scale.setScalar(pulse); // Core pulse
+
+    // Pulsing glow opacity
+    const glowPulse = 0.15 + Math.sin(age * 0.005) * 0.05;
+    swarm.glowMat.opacity = glowPulse;
+
+    // Apply DoT to enemies in cloud every second
+    const enemies = getEnemies();
+    const dotInterval = 1000; // 1 second between DoT ticks
+
+    if (now - swarm.lastDotTick >= dotInterval) {
+      swarm.lastDotTick = now;
+
+      enemies.forEach((e, index) => {
+        const dist = e.mesh.position.distanceTo(swarm.position);
+        if (dist < swarm.radius) {
+          // Apply DoT damage
+          const result = hitEnemy(index, swarm.dotDamage);
+          spawnDamageNumber(e.mesh.position, swarm.dotDamage, '#ffd700');
+          playHitSound();
+
+          // Mark enemy as revealed - add sparkle effect
+          if (!e._naniteRevealed) {
+            e._naniteRevealed = true;
+            // Add visible outline through walls
+            if (e.mesh.material) {
+              e.mesh.material.emissive = new THREE.Color(0xffd700);
+              e.mesh.material.emissiveIntensity = 0.5;
+            }
+          }
+
+          // Track affected enemy
+          if (!swarm.affectedEnemies.has(index)) {
+            swarm.affectedEnemies.add(index);
+          }
+
+          // Check if killed by DoT
+          if (result.killed) {
+            const destroyData = destroyEnemy(index);
+            if (destroyData) {
+              game.kills++;
+              game.totalKills++;
+              addScore(destroyData.scoreValue);
+              updateHUD(game);
+
+              // Combo system
+              const nowMs = performance.now();
+              if (nowMs - game.lastKillTime > game.comboResetTime) {
+                game.comboCount = 0;
+                game.comboMultiplier = 1;
+              }
+              game.comboCount++;
+              game.lastKillTime = nowMs;
+
+              if (game.comboCount >= 2) {
+                game.comboMultiplier = Math.min(5, game.comboCount);
+                if (game.comboMultiplier >= 2) {
+                  spawnKillChainPopup(game.comboMultiplier, camera.position);
+                  playComboSound(game.comboMultiplier);
+                }
+              }
+
+              const cfg = game._levelConfig;
+              if (cfg && game.kills >= cfg.killTarget) {
+                completeLevel();
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Reveal enemies in range - show them through walls
+    enemies.forEach((e, index) => {
+      const dist = e.mesh.position.distanceTo(swarm.position);
+      if (dist < swarm.radius) {
+        e._naniteRevealed = true;
+        if (e.mesh.material && !e.mesh._originalOpacity) {
+          e.mesh._originalOpacity = e.mesh.material.opacity;
+        }
+        if (e.mesh.material) {
+          e.mesh.material.emissive = new THREE.Color(0xffd700);
+          e.mesh.material.emissiveIntensity = 0.5;
+        }
+      }
+    });
+  }
+}
+
+function destroyNaniteSwarm(swarm) {
+  console.log('[Nanite Swarm] Destroyed');
+
+  // Clear reveal effect from enemies
+  const enemies = getEnemies();
+  enemies.forEach(e => {
+    if (e._naniteRevealed) {
+      e._naniteRevealed = false;
+      if (e.mesh.material) {
+        e.mesh.material.emissive = new THREE.Color(0x000000);
+        e.mesh.material.emissiveIntensity = 0;
+      }
+    }
+  });
+
+  // Remove mesh
+  scene.remove(swarm.mesh);
+  swarm.mesh.children.forEach(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  });
+}
+
+// Check if projectile passes through nanite swarm and add damage
+function checkProjectileNaniteInteraction(proj) {
+  for (const swarm of activeNaniteSwarms) {
+    const dist = proj.position.distanceTo(swarm.position);
+    if (dist < swarm.radius && !proj.userData.naniteInfused) {
+      // Projectile carries nanites - mark it
+      proj.userData.naniteInfused = true;
+      proj.userData.naniteSwarm = swarm;
+      // Visual: change projectile color slightly golden
+      if (proj.children && proj.children[0]) {
+        proj.children[0].material.color.setHex(0xffcc00);
+      }
+      break;
+    }
+  }
+
+  return proj.userData.naniteInfused;
+}
+
+// ============================================================
 //  TETHER HARPOON IMPLEMENTATION
 // ============================================================
 
@@ -2455,6 +2731,206 @@ function destroyTether(tether) {
     if (child.material) child.material.dispose();
   });
   console.log('[Tether Harpoon] Tether destroyed');
+}
+
+// ============================================================
+//  PHASE DASH
+// ============================================================
+
+/**
+ * Fire Phase Dash - instant teleport in movement direction
+ * Leaves explosive afterimage that detonates after 1 second
+ * Damages enemies in dash path
+ */
+function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
+  console.log(`[Phase Dash] Teleporting ${hand} hand`);
+
+  const dashDistance = altWeapon.dashDistance || 5;
+  const afterimageDamage = altWeapon.afterimageDamage || 40;
+  const afterimageDelay = altWeapon.afterimageDelay || 1000;
+
+  // Get player position (camera position)
+  const playerPos = camera.position.clone();
+  const oldPosition = playerPos.clone();
+
+  // Calculate teleport destination
+  // Dash in movement direction (controller aim direction)
+  const destination = playerPos.clone().addScaledVector(direction, dashDistance);
+
+  // Clamp destination to ground level
+  destination.y = Math.max(0.5, destination.y);
+
+  // Teleport player
+  camera.position.copy(destination);
+  console.log(`[Phase Dash] Teleported from (${oldPosition.x.toFixed(2)}, ${oldPosition.y.toFixed(2)}, ${oldPosition.z.toFixed(2)}) to (${destination.x.toFixed(2)}, ${destination.y.toFixed(2)}, ${destination.z.toFixed(2)})`);
+
+  // Create blue ghostly afterimage at old position
+  const afterimageGroup = new THREE.Group();
+
+  // Main afterimage shell (semi-transparent sphere)
+  const shellGeo = new THREE.SphereGeometry(0.4, 16, 16);
+  const shellMat = new THREE.MeshBasicMaterial({
+    color: 0x4488ff,  // Blue
+    transparent: true,
+    opacity: 0.6,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const shell = new THREE.Mesh(shellGeo, shellMat);
+  afterimageGroup.add(shell);
+
+  // Pixel dissolution effect (small cubes)
+  const pixelCount = 20;
+  const pixels = [];
+  for (let i = 0; i < pixelCount; i++) {
+    const pixelGeo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+    const pixelMat = new THREE.MeshBasicMaterial({
+      color: 0x88ccff,
+      transparent: true,
+      opacity: 0.7,
+    });
+    const pixel = new THREE.Mesh(pixelGeo, pixelMat);
+
+    // Random position around the shell
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 0.4 + Math.random() * 0.2;
+    pixel.position.x = r * Math.sin(phi) * Math.cos(theta);
+    pixel.position.y = r * Math.sin(phi) * Math.sin(theta);
+    pixel.position.z = r * Math.cos(phi);
+
+    afterimageGroup.add(pixel);
+    pixels.push({
+      mesh: pixel,
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2
+      ),
+    });
+  }
+
+  afterimageGroup.position.copy(oldPosition);
+  afterimageGroup.position.y = Math.max(0.5, oldPosition.y);
+
+  scene.add(afterimageGroup);
+
+  // Add to active afterimages
+  const afterimageData = {
+    mesh: afterimageGroup,
+    shell,
+    pixels,
+    position: oldPosition.clone(),
+    damage: afterimageDamage,
+    aoeRadius: 2.0,
+    createdAt: performance.now(),
+    expiresAt: performance.now() + afterimageDelay,
+    hand,
+  };
+  activePhaseDashAfterimages.push(afterimageData);
+
+  // Check for enemies in dash path and damage them
+  const enemies = getEnemies();
+  const dashEndPos = destination.clone();
+  const dashDir = new THREE.Vector3().subVectors(dashEndPos, oldPosition).normalize();
+  const dashLength = oldPosition.distanceTo(dashEndPos);
+
+  enemies.forEach((e, enemyIndex) => {
+    const enemyPos = e.mesh.position;
+
+    // Check if enemy is along the dash path
+    const toEnemy = new THREE.Vector3().subVectors(enemyPos, oldPosition);
+    const projection = toEnemy.dot(dashDir);
+
+    if (projection >= 0 && projection <= dashLength) {
+      const closestPoint = oldPosition.clone().addScaledVector(dashDir, projection);
+      const distToLine = enemyPos.distanceTo(closestPoint);
+
+      // Damage enemies within 1.5m of dash line
+      if (distToLine < 1.5) {
+        const dashDamage = Math.round(afterimageDamage * 0.5);  // Half damage during dash
+        const result = hitEnemy(enemyIndex, dashDamage);
+        spawnDamageNumber(enemyPos, dashDamage, '#4488ff');
+        console.log(`[Phase Dash] Hit enemy for ${dashDamage} damage`);
+
+        if (result.killed) {
+          const destroyData = destroyEnemy(enemyIndex);
+          if (destroyData) {
+            game.kills++;
+            game.totalKills++;
+            addScore(destroyData.scoreValue);
+            updateHUD(game);
+          }
+        }
+      }
+    }
+  });
+
+  playShoothSound();
+  triggerScreenShake(0.2, 200);
+}
+
+/**
+ * Update Phase Dash afterimages
+ * Handles pixel dissolution and detonation
+ */
+function updatePhaseDashAfterimages(now, dt) {
+  for (let i = activePhaseDashAfterimages.length - 1; i >= 0; i--) {
+    const afterimage = activePhaseDashAfterimages[i];
+    const age = now - afterimage.createdAt;
+
+    // Update pixel dissolution effect
+    afterimage.pixels.forEach(pixel => {
+      // Move pixels outward
+      pixel.mesh.position.addScaledVector(pixel.velocity, dt);
+
+      // Fade out pixels over time
+      const fadeProgress = age / afterimage.expiresAt;
+      pixel.mesh.material.opacity = 0.7 * (1 - fadeProgress);
+      pixel.mesh.scale.setScalar(1 - fadeProgress);
+    });
+
+    // Check if afterimage should detonate
+    if (age >= afterimage.expiresAt) {
+      // Detonate - AOE damage
+      const enemies = getEnemies();
+      enemies.forEach((e, enemyIndex) => {
+        const dist = e.mesh.position.distanceTo(afterimage.position);
+        if (dist < afterimage.aoeRadius) {
+          const damageMultiplier = 1 - (dist / afterimage.aoeRadius);
+          const damage = Math.round(afterimage.damage * damageMultiplier);
+          const result = hitEnemy(enemyIndex, damage);
+          spawnDamageNumber(e.mesh.position, damage, '#88ccff');
+          console.log(`[Phase Dash] Afterimage exploded for ${damage} damage`);
+
+          if (result.killed) {
+            const destroyData = destroyEnemy(enemyIndex);
+            if (destroyData) {
+              game.kills++;
+              game.totalKills++;
+              addScore(destroyData.scoreValue);
+              updateHUD(game);
+            }
+          }
+        }
+      });
+
+      // Visual explosion
+      spawnExplosionVisual(afterimage.position, afterimage.aoeRadius);
+      playExplosionSound();
+      triggerScreenShake(0.3, 300);
+
+      // Clean up afterimage
+      scene.remove(afterimage.mesh);
+      afterimage.mesh.children.forEach(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+      });
+      activePhaseDashAfterimages.splice(i, 1);
+      console.log('[Phase Dash] Afterimage detonated');
+    }
+  }
 }
 
 // ============================================================
@@ -3847,6 +4323,9 @@ function updateProjectiles(dt) {
     const moveDistance = proj.userData.velocity.length() * adjustedDt;
     proj.position.addScaledVector(proj.userData.velocity, adjustedDt);
 
+    // Check if projectile passes through nanite swarm and gains nanite damage
+    checkProjectileNaniteInteraction(proj);
+
     // Check collision with plasma orbs (player can shoot orbs to detonate early)
     if (checkPlasmaOrbDetonation(proj)) {
       if (proj.userData.isPooled) {
@@ -3878,7 +4357,23 @@ function updateProjectiles(dt) {
         proj.userData.hitEnemies.add(result.index);
         const hitObj = hits[0].object;
         const hitWeakPoint = hitObj.userData && hitObj.userData.weakPoint === true;
-        handleHit(result.index, result.enemy, proj.userData.stats, hits[0].point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint);
+
+        // Check if projectile is nanite-infused (passed through nanite swarm)
+        const naniteDamage = proj.userData.naniteInfused ? 5 : 0;
+
+        // Apply nanite damage and reveal enemy
+        if (naniteDamage > 0) {
+          const enemy = result.enemy;
+          if (!enemy._naniteRevealed) {
+            enemy._naniteRevealed = true;
+            if (enemy.mesh.material) {
+              enemy.mesh.material.emissive = new THREE.Color(0xffd700);
+              enemy.mesh.material.emissiveIntensity = 0.5;
+            }
+          }
+        }
+
+        handleHit(result.index, result.enemy, { ...proj.userData.stats, damage: proj.userData.stats.damage + naniteDamage }, hits[0].point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint);
 
         // Ricochet effect
         if (proj.userData.stats?.ricochetBounces > 0) {
@@ -4197,6 +4692,8 @@ function render(timestamp) {
     updateDecoys(dt, now, playerPos);
     updateMinesAndBlackHoles(dt, now, playerPos);
     updateTethers(dt, now, playerPos);
+    updateNaniteSwarms(now, dt, playerPos);
+    updatePhaseDashAfterimages(now, dt);
 
     // Laser mine passive spawning (when player stands still)
     spawnLaserMinesPassively(playerPos, now, dt);
