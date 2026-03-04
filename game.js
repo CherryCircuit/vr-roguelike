@@ -3,6 +3,8 @@
 //  Central game data — imported by all other modules.
 // ============================================================
 
+import { SeedDeck } from './seed.js';
+
 export const State = {
   TITLE: 'title',
   PLAYING: 'playing',
@@ -17,6 +19,19 @@ export const State = {
   READY_SCREEN: 'ready_screen',
   DEBUG_MENU: 'debug_menu',
 };
+
+// ── Seed Deck System ─────────────────────────────────────────
+let seedDeck = null;
+
+export function getSeedDeck() {
+  return seedDeck;
+}
+
+export function initSeedDeck(seed, tier = 'standard') {
+  seedDeck = new SeedDeck(seed, tier);
+  console.log(`[seed] Initialized seed deck: ${seed} (tier: ${tier})`);
+  return seedDeck;
+}
 
 // ── Enemy types available per level ────────────────────────
 function getEnemyTypes(level) {
@@ -84,6 +99,10 @@ export const game = {
   score: 0,
   nukes: 3,
   
+  // NEW: Seed Deck system
+  seed: null,
+  seedTier: 'standard',
+  
   // NEW: Weapon system
   mainWeapon: { left: 'standard_blaster', right: 'standard_blaster' },  // MAIN weapon per hand
   altWeapon: { left: null, right: null },  // ALT weapon per hand (unlocked via upgrades)
@@ -128,10 +147,15 @@ export const game = {
 
 // ── Helpers ────────────────────────────────────────────────
 export function resetGame() {
-  // Preserve debug settings across resets
+  // Preserve debug settings and seed info across resets
   const preservedDebug = {
     debugPerfMonitor: game.debugPerfMonitor,
     debugShowFPS: game.debugShowFPS,
+  };
+  
+  const preservedSeed = {
+    seed: game.seed,
+    seedTier: game.seedTier,
   };
   
   Object.assign(game, {
@@ -180,7 +204,15 @@ export function resetGame() {
 
     // Restore debug settings
     ...preservedDebug,
+    
+    // Restore seed info
+    ...preservedSeed,
   });
+  
+  // Reinitialize seed deck if seed was set
+  if (preservedSeed.seed !== null) {
+    initSeedDeck(preservedSeed.seed, preservedSeed.seedTier);
+  }
 }
 
 // ── Debug Settings Helpers ──────────────────────────────────
@@ -301,4 +333,58 @@ export function needsMainWeaponChoice() {
   // After level 1 completion, before level 2 starts
   // If neither hand has locked a main weapon yet
   return game.level === 1 && !game.mainWeaponLocked.left && !game.mainWeaponLocked.right;
+}
+
+// ── Seed Deck Helpers ───────────────────────────────────────
+
+/**
+ * Start a new game with a specific seed and tier
+ */
+export function startGameWithSeed(seed, tier = 'standard') {
+  game.seed = seed;
+  game.seedTier = tier;
+  initSeedDeck(seed, tier);
+  resetGame();
+  game.state = State.READY_SCREEN;
+  console.log(`[seed] Starting game with seed: ${seed}, tier: ${tier}`);
+}
+
+/**
+ * Get current biome from seed deck (based on level)
+ */
+export function getBiomeForLevel(level) {
+  const deck = getSeedDeck();
+  if (!deck) {
+    // Fallback to default theme system if no seed deck
+    return null;
+  }
+  
+  // Draw a biome from the deck based on level
+  // We want deterministic biome per level, so we draw but don't actually remove
+  // Instead, we use the level to index into the shuffled deck
+  const biomeIndex = (level - 1) % deck.deck.biomes.length;
+  return deck.deck.biomes[biomeIndex];
+}
+
+/**
+ * Get available enemies for current level from seed deck
+ */
+export function getEnemiesForLevel(level) {
+  const deck = getSeedDeck();
+  if (!deck) {
+    // Fallback to default enemy system
+    const types = ['basic'];
+    if (level >= 3) types.push('fast');
+    if (level >= 6) types.push('tank');
+    if (level >= 8) types.push('swarm');
+    return types;
+  }
+  
+  // Determine enemy pool based on level
+  const poolSize = Math.min(
+    deck.deck.enemies.length,
+    1 + Math.floor(level / 2)  // More enemy types at higher levels
+  );
+  
+  return deck.deck.enemies.slice(0, poolSize);
 }

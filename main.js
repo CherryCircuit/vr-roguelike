@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings } from './game.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
@@ -94,6 +94,12 @@ const MAX_PROJECTILES = 50;
 // PERFORMANCE: Projectile pool for reuse (avoid creating geometry per shot)
 const projectilePool = [];
 const PROJECTILE_POOL_SIZE = 60;
+
+// PHYSICS DEATH SYSTEM: Voxel pool for death explosions
+const voxelPool = [];
+const activeVoxels = [];
+const VOXEL_POOL_SIZE = 200;
+const MAX_ACTIVE_VOXELS = 200;
 
 // Weapon firing cooldowns (per controller)
 const weaponCooldowns = [0, 0];
@@ -236,6 +242,15 @@ function init() {
 
   // PERFORMANCE: Initialize projectile pool
   initProjectilePool();
+  
+  // PHYSICS DEATH SYSTEM: Initialize voxel pool
+  initVoxelPool();
+  
+  // Set voxel explosion reference for enemies.js
+  import('./enemies.js').then(module => {
+    module.setVFXReference(spawnVoxelExplosion);
+    console.log('[physics-death] Voxel explosion reference set');
+  });
 
   // Set up stasis field reference for shared access
   setActiveStasisFields(activeStasisFields);
@@ -3658,7 +3673,20 @@ function startGame() {
   if (noVr) noVr.style.display = 'none';
   if (info) info.style.display = 'none';
   
-  resetGame();
+  // Check for seed configuration from HTML inputs
+  const seed = window.gameSeed !== undefined ? window.gameSeed : null;
+  const tier = window.gameSeedTier || 'standard';
+  
+  if (seed !== null) {
+    // Start game with seed
+    console.log(`[seed] Using seed: ${seed}, tier: ${tier}`);
+    startGameWithSeed(seed, tier);
+  } else {
+    // Start game without seed (random)
+    console.log('[seed] No seed set, using random seed');
+    resetGame();
+  }
+  
   game.state = State.READY_SCREEN;
   game.level = 1;
   game._levelConfig = getLevelConfig();
@@ -3926,6 +3954,237 @@ function returnProjectileToPool(proj) {
   proj.userData.lifetime = undefined;
   proj.userData.createdAt = undefined;
   proj.userData.hitEnemies = null;
+}
+
+// ============================================================
+//  PHYSICS DEATH SYSTEM - Voxel Pool
+// ============================================================
+
+/**
+ * Initialize voxel pool for physics-based death explosions
+ */
+function initVoxelPool() {
+  const voxelGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+  
+  for (let i = 0; i < VOXEL_POOL_SIZE; i++) {
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 1.0,
+    });
+    const voxel = new THREE.Mesh(voxelGeo, material);
+    voxel.visible = false;
+    voxel.userData.isPooledVoxel = true;
+    scene.add(voxel);
+    voxelPool.push(voxel);
+  }
+  
+  console.log(`[physics-death] Voxel pool initialized: ${voxelPool.length} voxels`);
+}
+
+/**
+ * Get a voxel from the pool or return null if exhausted
+ */
+function getPooledVoxel() {
+  for (const voxel of voxelPool) {
+    if (!voxel.visible) {
+      return voxel;
+    }
+  }
+  return null; // Pool exhausted
+}
+
+/**
+ * Return voxel to pool
+ */
+function returnVoxelToPool(voxel) {
+  voxel.visible = false;
+  voxel.userData.velocity = null;
+  voxel.userData.createdAt = undefined;
+  voxel.userData.lifetime = undefined;
+  voxel.userData.isGold = undefined;
+}
+
+/**
+ * Spawn voxel explosion at position with physics
+ * @param {THREE.Vector3} position - Center of explosion
+ * @param {number} color - Hex color of voxels
+ * @param {number} voxelCount - Number of voxels to spawn
+ * @param {string} enemyType - Type of enemy for death pattern
+ * @param {boolean} isCritical - Whether this was a critical kill (gold particles)
+ * @param {boolean} isOverkill - Whether this was an overkill (double voxels)
+ */
+function spawnVoxelExplosion(position, color, voxelCount, enemyType = 'basic', isCritical = false, isOverkill = false) {
+  // Performance safeguard: cap active voxels
+  if (activeVoxels.length >= MAX_ACTIVE_VOXELS) {
+    console.log(`[physics-death] Voxel cap reached (${activeVoxels.length}/${MAX_ACTIVE_VOXELS})`);
+    return;
+  }
+  
+  // Double voxels for overkill
+  if (isOverkill) {
+    voxelCount *= 2;
+  }
+  
+  // Cap at 20 voxels per enemy to prevent spam
+  voxelCount = Math.min(voxelCount, 20);
+  
+  // Calculate available space in pool
+  const availableVoxels = MAX_ACTIVE_VOXELS - activeVoxels.length;
+  voxelCount = Math.min(voxelCount, availableVoxels);
+  
+  console.log(`[physics-death] Spawning ${voxelCount} voxels for ${enemyType} (critical: ${isCritical}, overkill: ${isOverkill})`);
+  
+  // Enemy-specific death patterns
+  const pattern = getDeathPattern(enemyType);
+  
+  for (let i = 0; i < voxelCount; i++) {
+    const voxel = getPooledVoxel();
+    if (!voxel) break; // Pool exhausted
+    
+    // Set position (slightly randomized around center)
+    voxel.position.copy(position);
+    voxel.position.x += (Math.random() - 0.5) * 0.3;
+    voxel.position.y += (Math.random() - 0.5) * 0.3;
+    voxel.position.z += (Math.random() - 0.5) * 0.3;
+    
+    // Set color (gold for critical kills, enemy color otherwise)
+    const voxelColor = isCritical ? 0xffd700 : color;
+    voxel.material.color.setHex(voxelColor);
+    voxel.material.opacity = 1.0;
+    
+    // Calculate velocity based on pattern
+    const velocity = pattern.calculateVelocity(i, voxelCount);
+    
+    // Initialize voxel physics data
+    voxel.userData.velocity = velocity;
+    voxel.userData.createdAt = performance.now();
+    voxel.userData.lifetime = 2000 + Math.random() * 1000; // 2-3 seconds
+    voxel.userData.isGold = isCritical;
+    voxel.visible = true;
+    
+    activeVoxels.push(voxel);
+  }
+  
+  // Screen shake for critical kills
+  if (isCritical) {
+    triggerScreenShake(0.3, 200);
+  }
+  
+  // LOUDER explosion for overkill
+  if (isOverkill) {
+    playExplosionSound();
+    playExplosionSound(); // Double sound
+  }
+}
+
+/**
+ * Get death pattern for enemy type
+ */
+function getDeathPattern(enemyType) {
+  const patterns = {
+    basic: {
+      calculateVelocity: (i, total) => {
+        return new THREE.Vector3(
+          (Math.random() - 0.5) * 6,
+          Math.random() * 4 + 2,
+          (Math.random() - 0.5) * 6
+        );
+      }
+    },
+    tank: {
+      calculateVelocity: (i, total) => {
+        // Slow, heavy chunks
+        return new THREE.Vector3(
+          (Math.random() - 0.5) * 2,
+          Math.random() * 2 + 1,
+          (Math.random() - 0.5) * 2
+        );
+      }
+    },
+    fast: {
+      calculateVelocity: (i, total) => {
+        // Rapid explosion trail
+        return new THREE.Vector3(
+          (Math.random() - 0.5) * 10,
+          Math.random() * 6 + 3,
+          (Math.random() - 0.5) * 10
+        );
+      }
+    },
+    swarm: {
+      calculateVelocity: (i, total) => {
+        // Tiny scatter
+        return new THREE.Vector3(
+          (Math.random() - 0.5) * 8,
+          Math.random() * 5 + 2,
+          (Math.random() - 0.5) * 8
+        );
+      }
+    },
+    boss: {
+      calculateVelocity: (i, total) => {
+        // Massive burst + shockwave
+        const angle = (i / total) * Math.PI * 2;
+        const speed = 8 + Math.random() * 4;
+        return new THREE.Vector3(
+          Math.cos(angle) * speed,
+          Math.random() * 8 + 4,
+          Math.sin(angle) * speed
+        );
+      }
+    }
+  };
+  
+  return patterns[enemyType] || patterns.basic;
+}
+
+/**
+ * Update voxel physics (gravity, bounce, fade)
+ */
+function updateVoxelPhysics(dt, now) {
+  const gravity = -9.8;
+  const bounceCoefficient = 0.3;
+  const floorY = 0;
+  
+  for (let i = activeVoxels.length - 1; i >= 0; i--) {
+    const voxel = activeVoxels[i];
+    const age = now - voxel.userData.createdAt;
+    
+    // Remove expired voxels
+    if (age > voxel.userData.lifetime) {
+      returnVoxelToPool(voxel);
+      activeVoxels.splice(i, 1);
+      continue;
+    }
+    
+    // Apply gravity
+    voxel.userData.velocity.y += gravity * dt;
+    
+    // Update position
+    voxel.position.addScaledVector(voxel.userData.velocity, dt);
+    
+    // Floor collision with bounce
+    if (voxel.position.y <= floorY) {
+      voxel.position.y = floorY;
+      voxel.userData.velocity.y *= -bounceCoefficient;
+      
+      // Apply friction on bounce
+      voxel.userData.velocity.x *= 0.8;
+      voxel.userData.velocity.z *= 0.8;
+    }
+    
+    // Fade out in last 0.5 seconds
+    const fadeStart = voxel.userData.lifetime - 500;
+    if (age > fadeStart) {
+      const fadeProgress = (age - fadeStart) / 500;
+      voxel.material.opacity = 1 - fadeProgress;
+    }
+    
+    // Rotate voxels for visual effect
+    voxel.rotation.x += dt * 2;
+    voxel.rotation.y += dt * 3;
+  }
 }
 
 // ============================================================
@@ -4393,7 +4652,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
   // If killed
   if (result.killed) {
     playExplosionSound();
-    const destroyData = destroyEnemy(enemyIndex);
+    const destroyData = destroyEnemy(enemyIndex, isCritical, result.overkill > 0);
     if (destroyData) {
       game.kills++;
       game.totalKills++;
@@ -5368,6 +5627,7 @@ function render(timestamp) {
 
   // ── Universal updates ──
   updateProjectiles(dt);
+  updateVoxelPhysics(dt, now);  // PHYSICS DEATH SYSTEM
   updateShields(now);
   updateStasisFields(now, dt);
   updatePlasmaOrbs(now, dt);
