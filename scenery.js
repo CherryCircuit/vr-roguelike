@@ -22,6 +22,22 @@ export const THEMES = {
     particles: { type: 'dust', color: 0xffddaa, count: 20, speed: 0.2 },
   },
 
+  // Vapor Sunset (Easy) - Classic vaporwave beach
+  vapor_sunset: {
+    skyColor: 0xff77aa,
+    fogColor: 0xff99bb,
+    fogDensity: 0.006,
+    gridColor: '#00ffff',
+    gridOpacity: 0.7,
+    mountainFill: 0x220033,
+    mountainWire: 0x660066,
+    mountainWireOpacity: 0.5,
+    sunColors: ['#ff88cc', '#ff66aa', '#ff4488', '#cc2266', '#aa0044'],
+    sunGlowColor: 0xff66aa,
+    starColor: 0xffffaa,
+    particles: { type: 'sparkle', color: 0xffaaee, count: 30, speed: 0.15 },
+  },
+
   // Levels 6-9: Classic Synthwave
   synthwave: {
     skyColor: 0x000000,
@@ -262,6 +278,13 @@ export function updateAmbientParticles(dt, theme, playerPos) {
     const i3 = i * 3;
 
     switch (theme.particles.type) {
+      case 'dust':
+        // Floating dust particles in sunrise light
+        positions[i3 + 1] += Math.sin(now * 0.0002 + i) * 0.005;
+        positions[i3] += Math.cos(now * 0.0001 + i) * 0.01;
+        positions[i3 + 2] += Math.sin(now * 0.00015 + i) * 0.008;
+        break;
+
       case 'embers':
         // Rising embers
         positions[i3 + 1] += speed * dt;
@@ -272,6 +295,13 @@ export function updateAmbientParticles(dt, theme, playerPos) {
         // Falling snow
         positions[i3 + 1] -= speed * dt;
         positions[i3] += Math.sin(now * 0.0005 + i) * 0.02;
+        break;
+
+      case 'sparkle':
+        // Twinkling sparkles for vapor sunset
+        positions[i3 + 1] += Math.sin(now * 0.0003 + i) * 0.008;
+        positions[i3] += Math.cos(now * 0.0002 + i) * 0.015;
+        positions[i3 + 2] += Math.sin(now * 0.00025 + i) * 0.012;
         break;
 
       case 'corruption':
