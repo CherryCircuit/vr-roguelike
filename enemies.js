@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { getStasisSlowFactor } from './stasis.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
@@ -376,6 +377,10 @@ export function updateEnemies(dt, now, playerPos) {
     const se = e.statusEffects;
     if (se.shock.stacks > 0) speedMod *= Math.max(0.4, 1 - se.shock.stacks * 0.2);
     if (se.freeze.stacks > 0) speedMod *= Math.max(0.05, 1 - se.freeze.stacks * 0.4);
+
+    // Apply stasis field slow effect
+    const stasisSlow = getStasisSlowFactor(e.mesh.position);
+    speedMod *= stasisSlow;
 
     e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
 

@@ -132,8 +132,21 @@ export const ALT_WEAPONS = {
     desc: 'Blocks enemy projectiles',
     color: '#4488ff',
     type: 'alt',
-    cooldown: 3000,  // 3 seconds
-    duration: 2000,  // 2 seconds
+    cooldown: 15000,  // 15 seconds
+    duration: 3000,   // 3 seconds
+  },
+
+  laser_mine: {
+    id: 'laser_mine',
+    name: 'Laser Mine',
+    desc: 'Proximity laser trap',
+    color: '#ff0000',
+    type: 'alt',
+    cooldown: 12000,  // 12 seconds
+    damage: 50,
+    armTime: 1000,    // 1 second to arm
+    triggerRadius: 5, // Proximity trigger distance
+    maxActive: 3,
   },
   
   grenade: {
@@ -190,6 +203,58 @@ export const ALT_WEAPONS = {
     type: 'alt',
     cooldown: 5000,  // 5 seconds
     range: 10,
+  },
+
+  stasis_field: {
+    id: 'stasis_field',
+    name: 'Stasis Field',
+    desc: 'Slow-mo bubble for 5 seconds',
+    color: '#4488ff',
+    type: 'alt',
+    cooldown: 20000,  // 20 seconds
+    duration: 5000,   // 5 seconds
+    radius: 3.0,
+    slowFactor: 0.2,  // 20% speed (80% slower)
+  },
+
+  plasma_orb: {
+    id: 'plasma_orb',
+    name: 'Plasma Orb',
+    desc: 'Homing orb, 75 damage',
+    color: '#aa44ff',
+    type: 'alt',
+    cooldown: 10000,  // 10 seconds
+    damage: 75,
+    speed: 5,
+    homingRange: 15,
+    aoeRadius: 2.0,
+    detonateOnHit: true,
+  },
+
+  decoy: {
+    id: 'decoy',
+    name: 'Decoy Hologram',
+    desc: 'Spawns a holographic copy that attracts enemies',
+    color: '#00ffaa',
+    type: 'alt',
+    cooldown: 15000,  // 15 seconds
+    duration: 8000,  // 8 seconds
+    explosionDamage: 30,  // Base explosion damage when destroyed
+    explosionDamagePerTarget: 15,  // Extra damage per enemy targeting it
+  },
+
+  black_hole: {
+    id: 'black_hole',
+    name: 'Singularity Mine',
+    desc: 'Throwable mine that creates a brief black hole',
+    color: '#8800ff',
+    type: 'alt',
+    cooldown: 18000,  // 18 seconds
+    duration: 2000,  // 2 seconds
+    damage: 40,  // Damage to enemies sucked in
+    pullRadius: 5,  // Radius of gravitational pull
+    stunDuration: 1000,  // 1 second stun after release
+    triggerRadius: 2,  // Proximity trigger radius
   },
 };
 
