@@ -27,6 +27,7 @@ let killCountSprite = null;
 let levelSprite = null;
 let scoreSprite = null;
 let comboSprite = null;
+let comboCooldownSprite = null;
 let fpsSprite = null;
 
 // Debug menu state
@@ -473,6 +474,14 @@ function createHUDElements() {
   comboSprite.position.set(1.5, -0.45, 0);  // Moved down proportionally
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
+
+  // Combo cooldown timer bar (shows time until multiplier resets)
+  const cooldownGeo = new THREE.PlaneGeometry(0.4, 0.03);
+  const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
+  comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
+  comboCooldownSprite.position.set(1.5, -0.6, 0);  // Below combo text
+  comboCooldownSprite.visible = false;
+  hudGroup.add(comboCooldownSprite);
 }
 
 export function showHUD() {
@@ -528,12 +537,29 @@ export function updateHUD(gameState) {
 
   // Combo - 200% larger with descriptive label
   const combo = getComboMultiplier();
-  if (combo > 1) {
+  const killChainMult = game.comboMultiplier || 1;
+  if (killChainMult > 1) {
     comboSprite.visible = true;
+    comboCooldownSprite.visible = true;
     const pulse = 1.0 + Math.sin(performance.now() * 0.01) * 0.1;
-    updateSpriteText(comboSprite, `${combo}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 * pulse });
+    updateSpriteText(comboSprite, `${killChainMult}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 * pulse });
+
+    // Update cooldown bar
+    const timeSinceLastKill = performance.now() - game.lastKillTime;
+    const remainingRatio = Math.max(0, 1 - timeSinceLastKill / game.comboResetTime);
+    comboCooldownSprite.scale.x = remainingRatio;  // Shrink bar as time passes
+
+    // Color changes as it gets closer to expiring
+    if (remainingRatio > 0.5) {
+      comboCooldownSprite.material.color.setHex(0xff8800);  // Orange
+    } else if (remainingRatio > 0.25) {
+      comboCooldownSprite.material.color.setHex(0xffaa00);  // Yellow-orange
+    } else {
+      comboCooldownSprite.material.color.setHex(0xff4444);  // Red (about to expire)
+    }
   } else {
     comboSprite.visible = false;
+    comboCooldownSprite.visible = false;
   }
 }
 
@@ -1216,10 +1242,10 @@ export function spawnKillChainPopup(multiplier, cameraPos) {
 
   const mesh = new THREE.Mesh(geometry, mat);
 
-  // Position above crosshair (center of view, slightly up)
+  // Position above crosshair, further away towards sun (-89)
   mesh.position.copy(cameraPos);
   mesh.position.y += 0.2;
-  mesh.position.z -= 2;
+  mesh.position.z -= 6;  // Moved further towards sun (was 2, now 6)
 
   mesh.userData.createdAt = performance.now();
   mesh.userData.lifetime = 1500;  // 1.5 seconds
