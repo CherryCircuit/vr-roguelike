@@ -272,6 +272,30 @@ export const ALT_WEAPONS = {
     tetherDuration: 8000,  // 8 seconds max tether duration
     yankForce: 12,  // Force applied when yanking
   },
+
+  nanite_swarm: {
+    id: 'nanite_swarm',
+    name: 'Nanite Swarm',
+    desc: 'Release cloud of nanobots - DoT + reveal enemies, bullets carry nanites',
+    color: '#ffd700',  // Gold
+    type: 'alt',
+    cooldown: 15000,  // 15 seconds
+    duration: 10000,   // 10 seconds
+    dotDamage: 5,      // 5 damage/sec
+    radius: 3.0,       // 3m cloud radius
+  },
+
+  phase_dash: {
+    id: 'phase_dash',
+    name: 'Phase Dash',
+    desc: 'Instant teleport, leaves explosive afterimage',
+    color: '#4488ff',  // Blue
+    type: 'alt',
+    cooldown: 8000,  // 8 seconds
+    dashDistance: 5,  // 5 meters
+    afterimageDamage: 40,
+    afterimageDelay: 1000,  // 1 second
+  },
 };
 
 // ── UPGRADE SYSTEM ───────────────────────────────────────────

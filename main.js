@@ -80,6 +80,9 @@ const activeLaserMines = [];  // { mesh, armedAt, isArmed, position, triggered, 
 const activeStasisFields = [];  // { mesh, position, radius, expiresAt, slowFactor }
 const activePlasmaOrbs = [];  // { mesh, velocity, damage, aoeRadius, expiresAt, detonatable }
 
+// Phase Dash afterimages
+const activePhaseDashAfterimages = [];  // { mesh, position, expiresAt, damage, aoeRadius }
+
 // Laser mine passive tracking
 let playerLastPosition = new THREE.Vector3();
 let playerStillnessStartTime = null;
@@ -168,6 +171,10 @@ const MAX_MINES = 5;
 // Tether harpoon system
 const activeTethers = [];
 const MAX_TETHERS = 2;
+
+// Nanite swarm system
+const activeNaniteSwarms = [];
+const MAX_NANITE_SWARMS = 2;
 
 // ── Bootstrap ──────────────────────────────────────────────
 init();
@@ -1287,6 +1294,10 @@ function fireAltWeapon(controller, index) {
 
     case 'tether_harpoon':
       fireTetherHarpoon(origin, direction, hand, altWeapon);
+      break;
+
+    case 'phase_dash':
+      firePhaseDash(controller, index, hand, altWeapon, origin, direction);
       break;
 
     default:
