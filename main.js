@@ -24,6 +24,7 @@ import {
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles
 } from './enemies.js';
+import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
@@ -72,6 +73,12 @@ const controllerTriggerPressed = [false, false];
 const projectiles = [];
 let lastTime = 0;
 let frameCount = 0;  // For staggering updates
+
+// ALT weapon state
+const activeShields = [];  // { mesh, hand, expiresAt }
+const activeLaserMines = [];  // { mesh, armedAt, isArmed, position, triggered, laserMesh }
+const activeStasisFields = [];  // { mesh, position, radius, expiresAt, slowFactor }
+const activePlasmaOrbs = [];  // { mesh, velocity, damage, aoeRadius, expiresAt, detonatable }
 
 // PERFORMANCE: Hard cap on active projectiles to prevent accumulation
 const MAX_PROJECTILES = 50;
@@ -143,6 +150,16 @@ const originalCameraPos = new THREE.Vector3();
 let screenShakeIntensity = 0;
 let screenShakeTime = 0;
 
+// Decoy system
+const activeDecoys = [];
+const MAX_DECOYS = 3;
+
+// Black hole system
+const activeBlackHoles = [];
+const activeMines = [];
+const MAX_BLACK_HOLES = 2;
+const MAX_MINES = 5;
+
 // ── Bootstrap ──────────────────────────────────────────────
 init();
 
@@ -199,6 +216,9 @@ function init() {
 
   // PERFORMANCE: Initialize projectile pool
   initProjectilePool();
+
+  // Set up stasis field reference for shared access
+  setActiveStasisFields(activeStasisFields);
 
   // Desktop controls for non-VR playtesting
   initDesktopControls(scene, camera, renderer);
@@ -1208,8 +1228,11 @@ function fireAltWeapon(controller, index) {
   
   switch (altWeaponId) {
     case 'shield':
-      // TODO: Implement shield
-      console.log('[ALT] Shield activated (not implemented yet)');
+      fireShield(controller, index, hand, altWeapon);
+      break;
+
+    case 'laser_mine':
+      fireLaserMine(controller, index, hand, altWeapon);
       break;
       
     case 'grenade':
@@ -1236,7 +1259,23 @@ function fireAltWeapon(controller, index) {
       // TODO: Implement teleport
       console.log('[ALT] Teleport (not implemented yet)');
       break;
-      
+
+    case 'stasis_field':
+      fireStasisField(origin, direction, hand, altWeapon);
+      break;
+
+    case 'plasma_orb':
+      firePlasmaOrb(origin, direction, hand, altWeapon);
+      break;
+
+    case 'decoy':
+      fireDecoy(origin, hand, altWeapon);
+      break;
+
+    case 'black_hole':
+      fireBlackHole(origin, direction, hand, altWeapon);
+      break;
+
     default:
       console.warn(`Unknown ALT weapon type: ${altWeaponId}`);
       return;
@@ -1245,6 +1284,846 @@ function fireAltWeapon(controller, index) {
   // Set cooldown
   game.altCooldowns[hand] = now + altWeapon.cooldown;
   playShoothSound();  // Placeholder sound
+}
+
+// ============================================================
+//  DECOY HOLOGRAM IMPLEMENTATION
+// ============================================================
+
+function fireDecoy(origin, hand, altWeapon) {
+  // Limit active decoys
+  if (activeDecoys.length >= MAX_DECOYS) {
+    // Remove oldest decoy
+    const oldest = activeDecoys.shift();
+    destroyDecoy(oldest, false);
+  }
+
+  console.log(`[ALT] Decoy deployed at ${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}`);
+
+  // Create holographic copy of player (simple sphere for now)
+  const decoyGroup = new THREE.Group();
+
+  // Body - glitchy semi-transparent sphere
+  const bodyGeo = new THREE.SphereGeometry(0.4, 12, 12);
+  const bodyMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffaa,
+    transparent: true,
+    opacity: 0.6,
+    wireframe: true,
+  });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  decoyGroup.add(body);
+
+  // Static overlay - glitchy particles
+  const staticGeo = new THREE.BufferGeometry();
+  const staticCount = 50;
+  const staticPositions = new Float32Array(staticCount * 3);
+  for (let i = 0; i < staticCount; i++) {
+    staticPositions[i * 3] = (Math.random() - 0.5) * 0.8;
+    staticPositions[i * 3 + 1] = (Math.random() - 0.5) * 0.8;
+    staticPositions[i * 3 + 2] = (Math.random() - 0.5) * 0.8;
+  }
+  staticGeo.setAttribute('position', new THREE.BufferAttribute(staticPositions, 3));
+  const staticMat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.05,
+    transparent: true,
+    opacity: 0.8,
+  });
+  const staticParticles = new THREE.Points(staticGeo, staticMat);
+  decoyGroup.add(staticParticles);
+
+  // Outer glow
+  const glowGeo = new THREE.SphereGeometry(0.6, 12, 12);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffaa,
+    transparent: true,
+    opacity: 0.2,
+    side: THREE.BackSide,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  decoyGroup.add(glow);
+
+  decoyGroup.position.copy(origin);
+  decoyGroup.position.y = Math.max(0.5, origin.y);  // Ensure above ground
+
+  // Decoy state
+  const decoy = {
+    mesh: decoyGroup,
+    bodyMat,
+    staticParticles,
+    glowMat,
+    createdAt: performance.now(),
+    duration: altWeapon.duration || 8000,
+    position: decoyGroup.position.clone(),
+    targetingEnemies: new Set(),
+    hand,
+    explosionDamage: altWeapon.explosionDamage || 30,
+    explosionDamagePerTarget: altWeapon.explosionDamagePerTarget || 15,
+  };
+
+  scene.add(decoyGroup);
+  activeDecoys.push(decoy);
+
+  playShoothSound();
+}
+
+function updateDecoys(dt, now, playerPos) {
+  for (let i = activeDecoys.length - 1; i >= 0; i--) {
+    const decoy = activeDecoys[i];
+    const age = now - decoy.createdAt;
+
+    // Check if expired
+    if (age >= decoy.duration) {
+      destroyDecoy(decoy, true);
+      activeDecoys.splice(i, 1);
+      continue;
+    }
+
+    // Glitch effect - random position jitter
+    const glitchIntensity = 0.02;
+    decoy.mesh.position.x = decoy.position.x + (Math.random() - 0.5) * glitchIntensity;
+    decoy.mesh.position.y = decoy.position.y + (Math.random() - 0.5) * glitchIntensity;
+    decoy.mesh.position.z = decoy.position.z + (Math.random() - 0.5) * glitchIntensity;
+
+    // Flicker opacity
+    const flicker = 0.4 + Math.random() * 0.4;
+    decoy.bodyMat.opacity = flicker;
+    decoy.glowMat.opacity = flicker * 0.3;
+
+    // Update static particles
+    const positions = decoy.staticParticles.geometry.attributes.position.array;
+    for (let j = 0; j < positions.length; j += 3) {
+      positions[j] = (Math.random() - 0.5) * 0.8;
+      positions[j + 1] = (Math.random() - 0.5) * 0.8;
+      positions[j + 2] = (Math.random() - 0.5) * 0.8;
+    }
+    decoy.staticParticles.geometry.attributes.position.needsUpdate = true;
+
+    // Attract enemies - find enemies targeting this decoy
+    decoy.targetingEnemies.clear();
+    const enemies = getEnemies();
+    enemies.forEach((e, idx) => {
+      const distToDecoy = e.mesh.position.distanceTo(decoy.position);
+      const distToPlayer = e.mesh.position.distanceTo(playerPos);
+
+      // Enemy targets decoy if it's closer than player (with some leeway)
+      if (distToDecoy < distToPlayer * 1.2 && distToDecoy < 15) {
+        decoy.targetingEnemies.add(idx);
+
+        // Redirect enemy toward decoy
+        const toDecoy = new THREE.Vector3().subVectors(decoy.position, e.mesh.position).normalize();
+        e.targetPosition = decoy.position.clone();
+      }
+    });
+
+    // Check if decoy is "destroyed" by nearby enemies
+    const tooCloseEnemies = enemies.filter(e => e.mesh.position.distanceTo(decoy.position) < 0.8);
+    if (tooCloseEnemies.length > 0) {
+      destroyDecoy(decoy, true);
+      activeDecoys.splice(i, 1);
+    }
+  }
+}
+
+function destroyDecoy(decoy, explode) {
+  if (explode) {
+    // Calculate explosion damage based on enemies targeting it
+    const targetCount = decoy.targetingEnemies.size;
+    const totalDamage = decoy.explosionDamage + (targetCount * decoy.explosionDamagePerTarget);
+
+    console.log(`[Decoy] Destroyed! Targets: ${targetCount}, Total damage: ${totalDamage}`);
+
+    // Damage nearby enemies
+    const enemies = getEnemies();
+    enemies.forEach((e, idx) => {
+      const dist = e.mesh.position.distanceTo(decoy.position);
+      if (dist < 3) {
+        const damageMultiplier = 1 - (dist / 3);  // More damage closer to decoy
+        const damage = Math.round(totalDamage * damageMultiplier);
+        const result = hitEnemy(idx, damage);
+        spawnDamageNumber(e.mesh.position, damage, '#00ffaa');
+        playExplosionSound();
+
+        if (result.killed) {
+          const destroyData = destroyEnemy(idx);
+          if (destroyData) {
+            game.kills++;
+            game.totalKills++;
+            addScore(destroyData.scoreValue);
+            updateHUD(game);
+          }
+        }
+      }
+    });
+
+    // Visual explosion
+    spawnExplosionVisual(decoy.position, 2);
+    triggerScreenShake(0.2, 200);
+  }
+
+  // Clean up mesh
+  scene.remove(decoy.mesh);
+  decoy.mesh.children.forEach(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  });
+}
+
+// ============================================================
+//  BLACK HOLE (SINGULARITY MINE) IMPLEMENTATION
+// ============================================================
+
+function fireBlackHole(origin, direction, hand, altWeapon) {
+  // Limit active mines
+  if (activeMines.length >= MAX_MINES) {
+    // Remove oldest mine
+    const oldest = activeMines.shift();
+    scene.remove(oldest.mesh);
+    oldest.mesh.geometry.dispose();
+    oldest.mesh.material.dispose();
+  }
+
+  console.log(`[ALT] Black hole mine thrown from ${hand} hand`);
+
+  // Create mine projectile
+  const mineGeo = new THREE.SphereGeometry(0.15, 8, 8);
+  const mineMat = new THREE.MeshBasicMaterial({
+    color: 0x8800ff,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const mine = new THREE.Mesh(mineGeo, mineMat);
+
+  // Add glow
+  const glowGeo = new THREE.SphereGeometry(0.25, 8, 8);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x8800ff,
+    transparent: true,
+    opacity: 0.3,
+    side: THREE.BackSide,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mine.add(glow);
+
+  mine.position.copy(origin);
+
+  const mineData = {
+    mesh: mine,
+    glowMat,
+    velocity: direction.clone().multiplyScalar(8),  // Toss speed
+    createdAt: performance.now(),
+    hand,
+    armed: false,
+    armTime: 1000,  // 1 second to arm
+    triggerRadius: altWeapon.triggerRadius || 2,
+    blackHoleDuration: altWeapon.duration || 2000,
+    damage: altWeapon.damage || 40,
+    pullRadius: altWeapon.pullRadius || 5,
+    stunDuration: altWeapon.stunDuration || 1000,
+  };
+
+  scene.add(mine);
+  activeMines.push(mineData);
+
+  playShoothSound();
+}
+
+function updateMinesAndBlackHoles(dt, now, playerPos) {
+  // Update mines (projectiles that haven't triggered yet)
+  for (let i = activeMines.length - 1; i >= 0; i--) {
+    const mine = activeMines[i];
+    const age = now - mine.createdAt;
+
+    // Move mine (with gravity)
+    mine.velocity.y -= 9.8 * dt;  // Gravity
+    mine.mesh.position.addScaledVector(mine.velocity, dt);
+
+    // Ground collision
+    if (mine.mesh.position.y < 0.15) {
+      mine.mesh.position.y = 0.15;
+      mine.velocity.set(0, 0, 0);
+    }
+
+    // Check if armed
+    if (!mine.armed && age >= mine.armTime) {
+      mine.armed = true;
+      mine.mesh.material.color.setHex(0xff00ff);  // Change color when armed
+      console.log('[Mine] Armed!');
+    }
+
+    // Check for proximity trigger (if armed)
+    if (mine.armed) {
+      const enemies = getEnemies();
+      for (const e of enemies) {
+        const dist = e.mesh.position.distanceTo(mine.mesh.position);
+        if (dist < mine.triggerRadius) {
+          // Trigger black hole!
+          triggerBlackHole(mine, i);
+          break;
+        }
+      }
+    }
+
+    // Pulse glow
+    const pulse = 0.3 + Math.sin(age * 0.01) * 0.15;
+    mine.glowMat.opacity = pulse;
+  }
+
+  // Update active black holes
+  for (let i = activeBlackHoles.length - 1; i >= 0; i--) {
+    const bh = activeBlackHoles[i];
+    const age = now - bh.createdAt;
+
+    // Check if expired
+    if (age >= bh.duration) {
+      destroyBlackHole(bh);
+      activeBlackHoles.splice(i, 1);
+      continue;
+    }
+
+    // Progress through duration
+    const progress = age / bh.duration;
+
+    // Pull enemies toward center
+    const enemies = getEnemies();
+    const affectedEnemies = [];
+
+    enemies.forEach((e, idx) => {
+      const dist = e.mesh.position.distanceTo(bh.position);
+      if (dist < bh.pullRadius) {
+        affectedEnemies.push({ index: idx, enemy: e, dist });
+
+        // Pull strength increases toward center, fades at end
+        const pullStrength = (1 - dist / bh.pullRadius) * (1 - progress * 0.5) * 8;
+        const toCenter = new THREE.Vector3().subVectors(bh.position, e.mesh.position).normalize();
+        e.mesh.position.addScaledVector(toCenter, pullStrength * dt);
+
+        // Record that this enemy was affected (for stun)
+        if (!bh.affectedEnemies.has(idx)) {
+          bh.affectedEnemies.add(idx);
+        }
+      }
+    });
+
+    // Visual rotation and pulse
+    bh.mesh.rotation.y += dt * 3;
+    bh.mesh.rotation.z += dt * 2;
+
+    // Inner vortex rotation
+    if (bh.innerRing) {
+      bh.innerRing.rotation.z -= dt * 5;
+    }
+
+    // Particle spiral effect
+    const particlePositions = bh.particles.geometry.attributes.position.array;
+    for (let j = 0; j < particlePositions.length; j += 3) {
+      const angle = Math.atan2(particlePositions[j + 2], particlePositions[j]);
+      const radius = Math.sqrt(particlePositions[j] ** 2 + particlePositions[j + 2] ** 2);
+      const newAngle = angle + dt * 3;
+      const newRadius = Math.max(0.3, radius - dt * 0.5);  // Spiral inward
+
+      particlePositions[j] = Math.cos(newAngle) * newRadius;
+      particlePositions[j + 2] = Math.sin(newAngle) * newRadius;
+      particlePositions[j + 1] += (Math.random() - 0.5) * dt * 2;
+    }
+    bh.particles.geometry.attributes.position.needsUpdate = true;
+
+    // Apply damage when black hole ends
+    if (progress >= 0.9 && !bh.damageApplied) {
+      bh.damageApplied = true;
+
+      affectedEnemies.forEach(({ index, enemy, dist }) => {
+        const damageMultiplier = 1 - (dist / bh.pullRadius);
+        const damage = Math.round(bh.damage * damageMultiplier);
+        const result = hitEnemy(index, damage);
+        spawnDamageNumber(enemy.mesh.position, damage, '#8800ff');
+        playHitSound();
+
+        if (result.killed) {
+          const destroyData = destroyEnemy(index);
+          if (destroyData) {
+            game.kills++;
+            game.totalKills++;
+            addScore(destroyData.scoreValue);
+            updateHUD(game);
+          }
+        }
+      });
+    }
+  }
+}
+
+function triggerBlackHole(mine, mineIndex) {
+  console.log('[Black Hole] Triggered!');
+
+  // Remove mine
+  scene.remove(mine.mesh);
+  mine.mesh.geometry.dispose();
+  mine.mesh.material.dispose();
+  activeMines.splice(mineIndex, 1);
+
+  // Limit active black holes
+  if (activeBlackHoles.length >= MAX_BLACK_HOLES) {
+    const oldest = activeBlackHoles.shift();
+    destroyBlackHole(oldest);
+  }
+
+  // Create black hole visual
+  const bhGroup = new THREE.Group();
+
+  // Core - dark sphere
+  const coreGeo = new THREE.SphereGeometry(0.3, 16, 16);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0x110022,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  bhGroup.add(core);
+
+  // Outer ring - purple vortex
+  const ringGeo = new THREE.RingGeometry(0.4, 1.5, 32);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0x8800ff,
+    transparent: true,
+    opacity: 0.6,
+    side: THREE.DoubleSide,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI / 2;
+  bhGroup.add(ring);
+
+  // Inner spinning ring
+  const innerRingGeo = new THREE.RingGeometry(0.3, 0.5, 16);
+  const innerRingMat = new THREE.MeshBasicMaterial({
+    color: 0xaa44ff,
+    transparent: true,
+    opacity: 0.8,
+    side: THREE.DoubleSide,
+  });
+  const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
+  innerRing.rotation.x = Math.PI / 2;
+  bhGroup.add(innerRing);
+
+  // Particle spiral
+  const particleCount = 100;
+  const particleGeo = new THREE.BufferGeometry();
+  const particlePositions = new Float32Array(particleCount * 3);
+  for (let j = 0; j < particleCount; j++) {
+    const angle = (j / particleCount) * Math.PI * 6;  // 3 spirals
+    const radius = 0.3 + (j / particleCount) * 1.2;
+    particlePositions[j * 3] = Math.cos(angle) * radius;
+    particlePositions[j * 3 + 1] = (Math.random() - 0.5) * 0.5;
+    particlePositions[j * 3 + 2] = Math.sin(angle) * radius;
+  }
+  particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+  const particleMat = new THREE.PointsMaterial({
+    color: 0xcc88ff,
+    size: 0.08,
+    transparent: true,
+    opacity: 0.8,
+  });
+  const particles = new THREE.Points(particleGeo, particleMat);
+  bhGroup.add(particles);
+
+  // Event horizon glow
+  const glowGeo = new THREE.SphereGeometry(1.8, 16, 16);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x4400aa,
+    transparent: true,
+    opacity: 0.3,
+    side: THREE.BackSide,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  bhGroup.add(glow);
+
+  bhGroup.position.copy(mine.mesh.position);
+  bhGroup.position.y = 0.5;
+
+  const blackHole = {
+    mesh: bhGroup,
+    innerRing,
+    particles,
+    glowMat,
+    ringMat,
+    position: bhGroup.position.clone(),
+    createdAt: performance.now(),
+    duration: mine.blackHoleDuration,
+    damage: mine.damage,
+    pullRadius: mine.pullRadius,
+    stunDuration: mine.stunDuration,
+    affectedEnemies: new Set(),
+    damageApplied: false,
+  };
+
+  scene.add(bhGroup);
+  activeBlackHoles.push(blackHole);
+
+  playExplosionSound();
+  triggerScreenShake(0.4, 300);
+}
+
+function destroyBlackHole(bh) {
+  console.log('[Black Hole] Collapsed!');
+
+  // Apply stun to affected enemies
+  const enemies = getEnemies();
+  bh.affectedEnemies.forEach(idx => {
+    if (enemies[idx]) {
+      // Apply stun effect
+      if (!enemies[idx].statusEffects) {
+        enemies[idx].statusEffects = { stun: { stacks: 0, timer: 0 } };
+      }
+      if (!enemies[idx].statusEffects.stun) {
+        enemies[idx].statusEffects.stun = { stacks: 0, timer: 0 };
+      }
+      enemies[idx].statusEffects.stun.stacks += 1;
+      enemies[idx].statusEffects.stun.timer = Math.max(
+        enemies[idx].statusEffects.stun.timer,
+        bh.stunDuration
+      );
+    }
+  });
+
+  // Visual collapse
+  spawnExplosionVisual(bh.position, 1.5);
+
+  // Clean up mesh
+  scene.remove(bh.mesh);
+  bh.mesh.children.forEach(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  });
+}
+
+// Check if projectile hits a mine (for triggering black holes by shooting)
+function checkProjectileHitsMine(proj) {
+  for (let i = activeMines.length - 1; i >= 0; i--) {
+    const mine = activeMines[i];
+    if (!mine.armed) continue;
+
+    const dist = proj.position.distanceTo(mine.mesh.position);
+    if (dist < 0.3) {
+      triggerBlackHole(mine, i);
+      return true;
+    }
+  }
+  return false;
+}
+
+// ============================================================
+//  STASIS FIELD
+// ============================================================
+function fireStasisField(origin, direction, hand, altWeapon) {
+  // Create stasis field at target location
+  const targetPosition = origin.clone().addScaledVector(direction, 8); // 8 units forward
+
+  // Create visual sphere (blue translucent)
+  const radius = altWeapon.radius || 3.0;
+  const geometry = new THREE.SphereGeometry(radius, 24, 24);
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x4488ff,
+    transparent: true,
+    opacity: 0.3,
+    side: THREE.BackSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.copy(targetPosition);
+  scene.add(mesh);
+
+  // Create particle effect (blue particles swirling)
+  const particleCount = 30;
+  const particles = [];
+  for (let i = 0; i < particleCount; i++) {
+    const particleGeo = new THREE.SphereGeometry(0.05, 4, 4);
+    const particleMat = new THREE.MeshBasicMaterial({
+      color: 0x88ccff,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
+    });
+    const particle = new THREE.Mesh(particleGeo, particleMat);
+
+    // Random position on sphere surface
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = radius * 0.9 + Math.random() * 0.2;
+    particle.position.x = r * Math.sin(phi) * Math.cos(theta);
+    particle.position.y = r * Math.sin(phi) * Math.sin(theta);
+    particle.position.z = r * Math.cos(phi);
+
+    mesh.add(particle);
+    particles.push({
+      mesh: particle,
+      angle: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 0.5,
+      heightOffset: Math.random() * Math.PI * 2,
+    });
+  }
+
+  // Add to active stasis fields
+  const expiresAt = performance.now() + (altWeapon.duration || 5000);
+  activeStasisFields.push({
+    mesh,
+    position: targetPosition,
+    radius,
+    expiresAt,
+    slowFactor: altWeapon.slowFactor || 0.2,
+    particles,
+  });
+
+  console.log(`[Stasis Field] Created at (${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)}) for ${altWeapon.duration / 1000}s`);
+}
+
+function updateStasisFields(now, dt) {
+  for (let i = activeStasisFields.length - 1; i >= 0; i--) {
+    const field = activeStasisFields[i];
+
+    // Remove expired fields
+    if (now > field.expiresAt) {
+      scene.remove(field.mesh);
+      field.mesh.geometry.dispose();
+      field.mesh.material.dispose();
+      activeStasisFields.splice(i, 1);
+      continue;
+    }
+
+    // Animate particles (swirling effect)
+    field.particles.forEach(p => {
+      p.angle += p.speed * dt;
+      p.mesh.position.x = field.radius * Math.sin(p.angle) * Math.cos(p.heightOffset);
+      p.mesh.position.z = field.radius * Math.sin(p.angle) * Math.sin(p.heightOffset);
+      p.mesh.position.y = field.radius * Math.cos(p.angle);
+    });
+
+    // Pulsing opacity
+    const age = now - (field.expiresAt - (field.slowFactor ? 5000 : 5000));
+    const pulse = Math.sin(age * 0.005) * 0.1 + 0.3;
+    field.mesh.material.opacity = pulse;
+  }
+}
+
+// ============================================================
+//  PLASMA ORB
+// ============================================================
+function firePlasmaOrb(origin, direction, hand, altWeapon) {
+  // Create plasma orb
+  const geometry = new THREE.SphereGeometry(0.15, 16, 16);
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xaa44ff,
+    transparent: true,
+    opacity: 0.8,
+    blending: THREE.AdditiveBlending,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.copy(origin);
+  scene.add(mesh);
+
+  // Add glow trail (smaller trailing spheres)
+  const trailLength = 8;
+  const trailParticles = [];
+  for (let i = 0; i < trailLength; i++) {
+    const trailGeo = new THREE.SphereGeometry(0.08, 8, 8);
+    const trailMat = new THREE.MeshBasicMaterial({
+      color: 0xcc66ff,
+      transparent: true,
+      opacity: 0.5 - (i * 0.05),
+      blending: THREE.AdditiveBlending,
+    });
+    const trail = new THREE.Mesh(trailGeo, trailMat);
+    trail.position.copy(origin);
+    trail.visible = false;
+    scene.add(trail);
+    trailParticles.push({ mesh: trail, age: 0 });
+  }
+
+  // Calculate velocity
+  const speed = altWeapon.speed || 5;
+  const velocity = direction.clone().multiplyScalar(speed);
+
+  // Add to active plasma orbs
+  const expiresAt = performance.now() + 10000; // 10 second lifetime
+  activePlasmaOrbs.push({
+    mesh,
+    velocity,
+    damage: altWeapon.damage || 75,
+    aoeRadius: altWeapon.aoeRadius || 2.0,
+    homingRange: altWeapon.homingRange || 15,
+    expiresAt,
+    detonatable: altWeapon.detonateOnHit !== false,
+    trailParticles,
+    lastTrailUpdate: performance.now(),
+  });
+
+  console.log(`[Plasma Orb] Fired from ${hand} hand, damage: ${altWeapon.damage}`);
+}
+
+function updatePlasmaOrbs(now, dt) {
+  for (let i = activePlasmaOrbs.length - 1; i >= 0; i--) {
+    const orb = activePlasmaOrbs[i];
+
+    // Remove expired orbs
+    if (now > orb.expiresAt) {
+      // Remove trail particles
+      orb.trailParticles.forEach(t => {
+        scene.remove(t.mesh);
+        t.mesh.geometry.dispose();
+        t.mesh.material.dispose();
+      });
+      scene.remove(orb.mesh);
+      orb.mesh.geometry.dispose();
+      orb.mesh.material.dispose();
+      activePlasmaOrbs.splice(i, 1);
+      continue;
+    }
+
+    // Find nearest enemy for homing
+    const enemies = getEnemies();
+    let nearestEnemy = null;
+    let nearestDist = orb.homingRange;
+
+    enemies.forEach(e => {
+      const dist = e.mesh.position.distanceTo(orb.mesh.position);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestEnemy = e;
+      }
+    });
+
+    // Homing behavior: steer towards nearest enemy
+    if (nearestEnemy) {
+      const toEnemy = new THREE.Vector3()
+        .subVectors(nearestEnemy.mesh.position, orb.mesh.position)
+        .normalize();
+      const homingStrength = 3.0; // Steering force
+      orb.velocity.lerp(toEnemy.multiplyScalar(orb.velocity.length()), homingStrength * dt);
+    }
+
+    // Move orb
+    orb.mesh.position.addScaledVector(orb.velocity, dt);
+
+    // Update trail particles
+    if (now - orb.lastTrailUpdate > 50) { // Update every 50ms
+      orb.lastTrailUpdate = now;
+
+      // Shift trail particles
+      for (let j = orb.trailParticles.length - 1; j > 0; j--) {
+        orb.trailParticles[j].mesh.position.copy(orb.trailParticles[j - 1].mesh.position);
+        orb.trailParticles[j].mesh.visible = true;
+        orb.trailParticles[j].age = orb.trailParticles[j - 1].age + dt;
+      }
+
+      // First particle follows orb
+      orb.trailParticles[0].mesh.position.copy(orb.mesh.position);
+      orb.trailParticles[0].mesh.visible = true;
+      orb.trailParticles[0].age = 0;
+
+      // Fade out trail particles based on age
+      orb.trailParticles.forEach(t => {
+        const maxAge = 0.5; // Trail particles last 0.5 seconds
+        const opacity = Math.max(0, 0.5 * (1 - t.age / maxAge));
+        t.mesh.material.opacity = opacity;
+        if (t.age >= maxAge) t.mesh.visible = false;
+      });
+    }
+
+    // Check collision with enemies
+    enemies.forEach((e, index) => {
+      const dist = orb.mesh.position.distanceTo(e.mesh.position);
+      if (dist < 0.3) { // Collision radius
+        // Detonate orb
+        detonatePlasmaOrb(orb, index);
+        return; // Exit loop after detonation
+      }
+    });
+
+    // Check if orb can be shot by player (detonate early)
+    // This is handled in projectile collision detection
+  }
+}
+
+function detonatePlasmaOrb(orb, enemyIndex) {
+  // Apply damage to enemy
+  if (enemyIndex !== undefined) {
+    const result = hitEnemy(enemyIndex, orb.damage);
+    spawnDamageNumber(orb.mesh.position, orb.damage, '#aa44ff');
+
+    if (result.killed) {
+      playExplosionSound();
+      const destroyData = destroyEnemy(enemyIndex);
+      if (destroyData) {
+        game.kills++;
+        game.totalKills++;
+        game.killsWithoutHit++;
+        addScore(destroyData.scoreValue);
+
+        // Update HUD
+        updateHUD(game);
+
+        // Check level complete
+        const cfg = game._levelConfig;
+        if (cfg && game.kills >= cfg.killTarget) {
+          completeLevel();
+        }
+      }
+    }
+  }
+
+  // AOE damage to nearby enemies
+  if (orb.aoeRadius > 0) {
+    const enemies = getEnemies();
+    enemies.forEach((e, i) => {
+      if (i === enemyIndex) return; // Skip the enemy we already hit
+      const dist = e.mesh.position.distanceTo(orb.mesh.position);
+      if (dist < orb.aoeRadius) {
+        const aoeDamage = orb.damage * 0.5 * (1 - dist / orb.aoeRadius);
+        hitEnemy(i, aoeDamage);
+        spawnDamageNumber(e.mesh.position, aoeDamage, '#aa44ff');
+      }
+    });
+  }
+
+  // Visual explosion
+  spawnExplosionVisual(orb.mesh.position, orb.aoeRadius || 2.0);
+
+  // Remove orb and trail
+  orb.trailParticles.forEach(t => {
+    scene.remove(t.mesh);
+    t.mesh.geometry.dispose();
+    t.mesh.material.dispose();
+  });
+  scene.remove(orb.mesh);
+  orb.mesh.geometry.dispose();
+  orb.mesh.material.dispose();
+
+  // Remove from active array
+  const index = activePlasmaOrbs.indexOf(orb);
+  if (index !== -1) {
+    activePlasmaOrbs.splice(index, 1);
+  }
+
+  console.log('[Plasma Orb] Detonated!');
+}
+
+// Check if player projectiles can detonate plasma orbs
+function checkPlasmaOrbDetonation(proj) {
+  for (let i = activePlasmaOrbs.length - 1; i >= 0; i--) {
+    const orb = activePlasmaOrbs[i];
+    if (!orb.detonatable) continue;
+
+    const dist = proj.position.distanceTo(orb.mesh.position);
+    if (dist < 0.5) { // Player projectile hit orb
+      // Detonate orb with smaller AOE (early detonation)
+      orb.aoeRadius *= 0.6; // 60% of normal radius
+      detonatePlasmaOrb(orb, undefined);
+      console.log('[Plasma Orb] Detonated early by player shot!');
+      return true;
+    }
+  }
+  return false;
 }
 
 // ============================================================
@@ -2315,9 +3194,24 @@ function updateProjectiles(dt) {
       continue;
     }
 
-    // Move projectile
-    const moveDistance = proj.userData.velocity.length() * dt;
-    proj.position.addScaledVector(proj.userData.velocity, dt);
+    // Check if projectile is inside a stasis field
+    const slowFactor = getStasisSlowFactor(proj.position);
+    const adjustedDt = dt * slowFactor;
+
+    // Move projectile (apply stasis slow effect)
+    const moveDistance = proj.userData.velocity.length() * adjustedDt;
+    proj.position.addScaledVector(proj.userData.velocity, adjustedDt);
+
+    // Check collision with plasma orbs (player can shoot orbs to detonate early)
+    if (checkPlasmaOrbDetonation(proj)) {
+      if (proj.userData.isPooled) {
+        returnProjectileToPool(proj);
+      } else {
+        scene.remove(proj);
+      }
+      projectiles.splice(i, 1);
+      continue;
+    }
 
     // Check collision with enemies
     raycaster.set(proj.position, proj.userData.velocity.clone().normalize());
@@ -2651,6 +3545,10 @@ function render(timestamp) {
     // Fast enemy proximity alerts
     updateFastEnemyAlerts(dt, camera.position);
 
+    // Update decoys and black holes
+    updateDecoys(dt, now, playerPos);
+    updateMinesAndBlackHoles(dt, now, playerPos);
+
     // Update enemies
     const playerPos = camera.position.clone();
 
@@ -2968,6 +3866,8 @@ function render(timestamp) {
 
   // ── Universal updates ──
   updateProjectiles(dt);
+  updateStasisFields(now, dt);
+  updatePlasmaOrbs(now, dt);
   updateExplosions(dt, now);
   updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
