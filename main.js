@@ -1271,28 +1271,23 @@ function fireAltWeapon(controller, index) {
       break;
       
     case 'grenade':
-      // TODO: Implement grenade
-      console.log('[ALT] Grenade thrown (not implemented yet)');
+      fireGrenade(origin, direction, hand, altWeapon);
       break;
-      
+
     case 'mine':
-      // TODO: Implement mine
-      console.log('[ALT] Mine placed (not implemented yet)');
+      fireProximityMine(origin, hand, altWeapon);
       break;
-      
+
     case 'drone':
-      // TODO: Implement drone
-      console.log('[ALT] Drone deployed (not implemented yet)');
+      fireAttackDrone(origin, hand, altWeapon);
       break;
-      
+
     case 'emp':
-      // TODO: Implement EMP
-      console.log('[ALT] EMP activated (not implemented yet)');
+      fireEMP(origin, hand, altWeapon);
       break;
-      
+
     case 'teleport':
-      // TODO: Implement teleport
-      console.log('[ALT] Teleport (not implemented yet)');
+      fireTeleport(origin, direction, hand, altWeapon);
       break;
 
     case 'stasis_field':
@@ -3594,6 +3589,667 @@ function checkPlasmaOrbDetonation(proj) {
 }
 
 // ============================================================
+//  GRENADE - Throwable explosive
+// ============================================================
+
+const activeGrenades = [];
+const MAX_GRENADES = 5;
+
+function fireGrenade(origin, direction, hand, altWeapon) {
+  // Limit active grenades
+  if (activeGrenades.length >= MAX_GRENADES) {
+    const oldest = activeGrenades.shift();
+    destroyGrenade(oldest);
+  }
+
+  console.log(`[Grenade] Thrown from ${hand} hand`);
+
+  // Create grenade mesh (small red sphere)
+  const grenadeGeo = new THREE.SphereGeometry(0.1, 8, 8);
+  const grenadeMat = new THREE.MeshBasicMaterial({
+    color: 0xff4444,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const grenade = new THREE.Mesh(grenadeGeo, grenadeMat);
+
+  // Add glow
+  const glowGeo = new THREE.SphereGeometry(0.15, 8, 8);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xff4444,
+    transparent: true,
+    opacity: 0.3,
+    side: THREE.BackSide,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  grenade.add(glow);
+
+  grenade.position.copy(origin);
+
+  const grenadeData = {
+    mesh: grenade,
+    glowMat,
+    velocity: direction.clone().multiplyScalar(12), // Toss speed
+    createdAt: performance.now(),
+    hand,
+    damage: altWeapon.damage || 40,
+    aoeRadius: altWeapon.aoeRadius || 2.0,
+    fuseTime: 2000, // 2 second fuse
+    bounceCount: 0,
+  };
+
+  scene.add(grenade);
+  activeGrenades.push(grenadeData);
+  playShoothSound();
+}
+
+function updateGrenades(dt, now) {
+  for (let i = activeGrenades.length - 1; i >= 0; i--) {
+    const grenade = activeGrenades[i];
+    const age = now - grenade.createdAt;
+
+    // Apply gravity
+    grenade.velocity.y -= 9.8 * dt;
+
+    // Move grenade
+    grenade.mesh.position.addScaledVector(grenade.velocity, dt);
+
+    // Ground collision with bounce
+    if (grenade.mesh.position.y < 0.1) {
+      grenade.mesh.position.y = 0.1;
+      grenade.velocity.y *= -0.4; // Bounce
+      grenade.velocity.x *= 0.7; // Friction
+      grenade.velocity.z *= 0.7;
+      grenade.bounceCount++;
+    }
+
+    // Pulse glow effect
+    const pulse = 0.3 + Math.sin(age * 0.02) * 0.15;
+    grenade.glowMat.opacity = pulse;
+
+    // Check fuse timer
+    if (age >= grenade.fuseTime) {
+      detonateGrenade(grenade, i);
+    }
+  }
+}
+
+function detonateGrenade(grenade, index) {
+  console.log('[Grenade] Detonated!');
+
+  // AOE damage to enemies
+  const enemies = getEnemies();
+  enemies.forEach((e, i) => {
+    const dist = e.mesh.position.distanceTo(grenade.mesh.position);
+    if (dist < grenade.aoeRadius) {
+      const damageMultiplier = 1 - (dist / grenade.aoeRadius);
+      const damage = Math.round(grenade.damage * damageMultiplier);
+      const result = hitEnemy(i, damage);
+      spawnDamageNumber(e.mesh.position, damage, '#ff4444');
+
+      if (result.killed) {
+        const destroyData = destroyEnemy(i);
+        if (destroyData) {
+          game.kills++;
+          game.totalKills++;
+          addScore(destroyData.scoreValue);
+          updateHUD(game);
+
+          const cfg = game._levelConfig;
+          if (cfg && game.kills >= cfg.killTarget) {
+            completeLevel();
+          }
+        }
+      }
+    }
+  });
+
+  // Visual explosion
+  spawnExplosionVisual(grenade.mesh.position, grenade.aoeRadius);
+  playExplosionSound();
+  triggerScreenShake(0.3, 300);
+
+  // Remove grenade
+  destroyGrenade(grenade);
+  activeGrenades.splice(index, 1);
+}
+
+function destroyGrenade(grenade) {
+  scene.remove(grenade.mesh);
+  grenade.mesh.geometry.dispose();
+  grenade.mesh.material.dispose();
+}
+
+// ============================================================
+//  PROXIMITY MINE - Placeable explosive trap
+// ============================================================
+
+const activeProximityMines = [];
+const MAX_PROXIMITY_MINES = 3;
+
+function fireProximityMine(origin, hand, altWeapon) {
+  // Limit active mines per hand
+  const handMines = activeProximityMines.filter(m => m.hand === hand);
+  if (handMines.length >= (altWeapon.maxActive || 3)) {
+    // Remove oldest mine from this hand
+    const oldest = handMines[0];
+    destroyProximityMine(oldest);
+    const idx = activeProximityMines.indexOf(oldest);
+    if (idx >= 0) activeProximityMines.splice(idx, 1);
+  }
+
+  console.log(`[Mine] Placed from ${hand} hand`);
+
+  // Create mine mesh (orange icosahedron)
+  const mineGeo = new THREE.IcosahedronGeometry(0.12, 0);
+  const mineMat = new THREE.MeshBasicMaterial({
+    color: 0xffaa00,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const mine = new THREE.Mesh(mineGeo, mineMat);
+
+  // Add glow
+  const glowGeo = new THREE.SphereGeometry(0.2, 8, 8);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xffaa00,
+    transparent: true,
+    opacity: 0.3,
+    side: THREE.BackSide,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mine.add(glow);
+
+  // Place at ground level
+  mine.position.copy(origin);
+  mine.position.y = 0.15;
+
+  const mineData = {
+    mesh: mine,
+    glowMat,
+    hand,
+    position: mine.position.clone(),
+    placedAt: performance.now(),
+    armedAt: performance.now() + 1000, // 1 second arm time
+    damage: altWeapon.damage || 60,
+    aoeRadius: altWeapon.aoeRadius || 2.5,
+    triggerRadius: 2.0,
+    isArmed: false,
+    pulsePhase: Math.random() * Math.PI * 2,
+  };
+
+  scene.add(mine);
+  activeProximityMines.push(mineData);
+  playShoothSound();
+}
+
+function updateProximityMines(now, dt) {
+  const enemies = getEnemies();
+
+  for (let i = activeProximityMines.length - 1; i >= 0; i--) {
+    const mine = activeProximityMines[i];
+    const age = now - mine.placedAt;
+
+    // Pulsing glow effect
+    mine.pulsePhase += dt * 3;
+    const pulse = 0.2 + Math.sin(mine.pulsePhase) * 0.15;
+    mine.glowMat.opacity = pulse;
+
+    // Rotate mine
+    mine.mesh.rotation.x += dt * 0.5;
+    mine.mesh.rotation.y += dt * 0.7;
+
+    // Check if armed
+    if (!mine.isArmed && now >= mine.armedAt) {
+      mine.isArmed = true;
+      mine.mesh.material.color.setHex(0xffcc00); // Brighter when armed
+      console.log('[Mine] Armed!');
+    }
+
+    // Not armed yet - skip proximity check
+    if (!mine.isArmed) continue;
+
+    // Check for enemy proximity
+    for (const e of enemies) {
+      const dist = e.mesh.position.distanceTo(mine.position);
+      if (dist < mine.triggerRadius) {
+        detonateProximityMine(mine, i);
+        break;
+      }
+    }
+  }
+}
+
+function detonateProximityMine(mine, index) {
+  console.log('[Mine] Detonated!');
+
+  // AOE damage to enemies
+  const enemies = getEnemies();
+  enemies.forEach((e, i) => {
+    const dist = e.mesh.position.distanceTo(mine.position);
+    if (dist < mine.aoeRadius) {
+      const damageMultiplier = 1 - (dist / mine.aoeRadius);
+      const damage = Math.round(mine.damage * damageMultiplier);
+      const result = hitEnemy(i, damage);
+      spawnDamageNumber(e.mesh.position, damage, '#ffaa00');
+
+      if (result.killed) {
+        const destroyData = destroyEnemy(i);
+        if (destroyData) {
+          game.kills++;
+          game.totalKills++;
+          addScore(destroyData.scoreValue);
+          updateHUD(game);
+
+          const cfg = game._levelConfig;
+          if (cfg && game.kills >= cfg.killTarget) {
+            completeLevel();
+          }
+        }
+      }
+    }
+  });
+
+  // Visual explosion
+  spawnExplosionVisual(mine.position, mine.aoeRadius);
+  playExplosionSound();
+  triggerScreenShake(0.4, 350);
+
+  // Remove mine
+  destroyProximityMine(mine);
+  activeProximityMines.splice(index, 1);
+}
+
+function destroyProximityMine(mine) {
+  scene.remove(mine.mesh);
+  mine.mesh.geometry.dispose();
+  mine.mesh.material.dispose();
+}
+
+// ============================================================
+//  ATTACK DRONE - Orbiting auto-targeting helper
+// ============================================================
+
+const activeAttackDrones = [];
+const MAX_ATTACK_DRONES = 2;
+
+function fireAttackDrone(origin, hand, altWeapon) {
+  // Limit active drones
+  const handDrones = activeAttackDrones.filter(d => d.hand === hand);
+  if (handDrones.length >= MAX_ATTACK_DRONES) {
+    const oldest = handDrones[0];
+    destroyAttackDrone(oldest);
+    const idx = activeAttackDrones.indexOf(oldest);
+    if (idx >= 0) activeAttackDrones.splice(idx, 1);
+  }
+
+  console.log(`[Drone] Deployed from ${hand} hand`);
+
+  // Create drone mesh (green hexagon)
+  const droneGroup = new THREE.Group();
+
+  // Hexagon body
+  const hexShape = new THREE.Shape();
+  const hexRadius = 0.15;
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(angle) * hexRadius;
+    const y = Math.sin(angle) * hexRadius;
+    if (i === 0) hexShape.moveTo(x, y);
+    else hexShape.lineTo(x, y);
+  }
+  hexShape.closePath();
+
+  const hexGeo = new THREE.ShapeGeometry(hexShape);
+  const hexMat = new THREE.MeshBasicMaterial({
+    color: 0x88ff88,
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide,
+  });
+  const hex = new THREE.Mesh(hexGeo, hexMat);
+  hex.rotation.x = Math.PI / 2;
+  droneGroup.add(hex);
+
+  // Core glow
+  const coreGeo = new THREE.SphereGeometry(0.06, 8, 8);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0x88ff88,
+    transparent: true,
+    opacity: 0.8,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  droneGroup.add(core);
+
+  // Outer glow
+  const glowGeo = new THREE.SphereGeometry(0.25, 12, 12);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x88ff88,
+    transparent: true,
+    opacity: 0.2,
+    side: THREE.BackSide,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  droneGroup.add(glow);
+
+  // Position at player location
+  const playerPos = camera.position.clone();
+  droneGroup.position.copy(playerPos);
+  droneGroup.position.y = 1.2;
+
+  scene.add(droneGroup);
+
+  const droneData = {
+    mesh: droneGroup,
+    coreMat,
+    glowMat,
+    hand,
+    createdAt: performance.now(),
+    expiresAt: performance.now() + (altWeapon.duration || 10000),
+    damage: altWeapon.damage || 8,
+    fireInterval: altWeapon.fireInterval || 200,
+    lastFireTime: 0,
+    orbitAngle: Math.random() * Math.PI * 2,
+    orbitRadius: 2.0,
+    orbitSpeed: 1.5,
+  };
+
+  activeAttackDrones.push(droneData);
+  playShoothSound();
+}
+
+function updateAttackDrones(now, dt, playerPos) {
+  for (let i = activeAttackDrones.length - 1; i >= 0; i--) {
+    const drone = activeAttackDrones[i];
+    const age = now - drone.createdAt;
+
+    // Check if expired
+    if (now >= drone.expiresAt) {
+      destroyAttackDrone(drone);
+      activeAttackDrones.splice(i, 1);
+      console.log('[Drone] Expired');
+      continue;
+    }
+
+    // Orbit around player
+    drone.orbitAngle += drone.orbitSpeed * dt;
+    const orbitX = Math.cos(drone.orbitAngle) * drone.orbitRadius;
+    const orbitZ = Math.sin(drone.orbitAngle) * drone.orbitRadius;
+
+    drone.mesh.position.x = playerPos.x + orbitX;
+    drone.mesh.position.z = playerPos.z + orbitZ;
+    drone.mesh.position.y = 1.2 + Math.sin(age * 0.002) * 0.1;
+
+    // Rotate drone
+    drone.mesh.rotation.y = -drone.orbitAngle + Math.PI / 2;
+
+    // Pulse glow
+    const pulse = 0.15 + Math.sin(age * 0.008) * 0.05;
+    drone.glowMat.opacity = pulse;
+
+    // Fire at nearest enemy
+    if (now - drone.lastFireTime >= drone.fireInterval) {
+      const enemies = getEnemies();
+      let nearestEnemy = null;
+      let nearestDist = 15;
+
+      enemies.forEach(e => {
+        const dist = e.mesh.position.distanceTo(drone.mesh.position);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestEnemy = e;
+        }
+      });
+
+      if (nearestEnemy) {
+        // Fire projectile at enemy
+        const direction = new THREE.Vector3()
+          .subVectors(nearestEnemy.mesh.position, drone.mesh.position)
+          .normalize();
+
+        // Create small projectile
+        const projGeo = new THREE.SphereGeometry(0.04, 6, 6);
+        const projMat = new THREE.MeshBasicMaterial({
+          color: 0x88ff88,
+          transparent: true,
+          opacity: 0.8,
+        });
+        const proj = new THREE.Mesh(projGeo, projMat);
+        proj.position.copy(drone.mesh.position);
+        proj.userData.velocity = direction.clone().multiplyScalar(25);
+        proj.userData.createdAt = now;
+        proj.userData.lifetime = 1500;
+        proj.userData.damage = drone.damage;
+        proj.userData.isDroneProjectile = true;
+        scene.add(proj);
+        projectiles.push(proj);
+
+        drone.lastFireTime = now;
+      }
+    }
+
+    // Fade out near end
+    const fadeStart = (drone.expiresAt - drone.createdAt) * 0.85;
+    if (age > fadeStart) {
+      const fadeProgress = (age - fadeStart) / ((drone.expiresAt - drone.createdAt) - fadeStart);
+      drone.coreMat.opacity = 0.8 * (1 - fadeProgress);
+      drone.glowMat.opacity = Math.min(drone.glowMat.opacity, 0.2 * (1 - fadeProgress));
+    }
+  }
+}
+
+function destroyAttackDrone(drone) {
+  scene.remove(drone.mesh);
+  drone.mesh.children.forEach(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  });
+}
+
+// ============================================================
+//  EMP - Area effect that stuns/shocks enemies
+// ============================================================
+
+function fireEMP(origin, hand, altWeapon) {
+  console.log(`[EMP] Activated from ${hand} hand`);
+
+  const range = altWeapon.range || 5;
+  const duration = altWeapon.duration || 3000;
+  const playerPos = camera.position.clone();
+
+  // Create expanding ring effect
+  const ringGeo = new THREE.RingGeometry(0.1, range, 32);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffff,
+    transparent: true,
+    opacity: 0.6,
+    side: THREE.DoubleSide,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.copy(playerPos);
+  ring.position.y = 1.0;
+  ring.rotation.x = Math.PI / 2;
+  scene.add(ring);
+
+  // Track for animation
+  const empData = {
+    ring,
+    ringMat,
+    createdAt: performance.now(),
+    expiresAt: performance.now() + 500, // Quick burst
+    range,
+    duration,
+    damageApplied: false,
+  };
+
+  // Damage and stun enemies in range
+  const enemies = getEnemies();
+  enemies.forEach((e, i) => {
+    const dist = e.mesh.position.distanceTo(playerPos);
+    if (dist < range) {
+      // Apply shock/stun effect
+      if (!e.statusEffects) {
+        e.statusEffects = { shock: { stacks: 0, timer: 0 } };
+      }
+      if (!e.statusEffects.shock) {
+        e.statusEffects.shock = { stacks: 0, timer: 0 };
+      }
+      e.statusEffects.shock.stacks += 3;
+      e.statusEffects.shock.timer = Math.max(e.statusEffects.shock.timer, duration);
+
+      // Small damage
+      const empDamage = 10;
+      const result = hitEnemy(i, empDamage);
+      spawnDamageNumber(e.mesh.position, empDamage, '#00ffff');
+
+      if (result.killed) {
+        const destroyData = destroyEnemy(i);
+        if (destroyData) {
+          game.kills++;
+          game.totalKills++;
+          addScore(destroyData.scoreValue);
+          updateHUD(game);
+
+          const cfg = game._levelConfig;
+          if (cfg && game.kills >= cfg.killTarget) {
+            completeLevel();
+          }
+        }
+      }
+    }
+  });
+
+  // Also affect boss if present
+  const boss = getBoss();
+  if (boss) {
+    const dist = boss.mesh.position.distanceTo(playerPos);
+    if (dist < range) {
+      hitBoss(15);
+      spawnDamageNumber(boss.mesh.position, 15, '#00ffff');
+    }
+  }
+
+  // Add to active visuals for animation
+  activeEMPVisuals.push(empData);
+
+  playShoothSound();
+  triggerScreenShake(0.3, 300);
+}
+
+const activeEMPVisuals = [];
+
+function updateEMPVisuals(now, dt) {
+  for (let i = activeEMPVisuals.length - 1; i >= 0; i--) {
+    const emp = activeEMPVisuals[i];
+    const age = now - emp.createdAt;
+
+    // Fade out ring
+    const progress = age / 500;
+    emp.ringMat.opacity = 0.6 * (1 - progress);
+
+    // Scale ring outward
+    emp.ring.scale.setScalar(1 + progress * 2);
+
+    // Remove when done
+    if (age >= 500) {
+      scene.remove(emp.ring);
+      emp.ring.geometry.dispose();
+      emp.ring.material.dispose();
+      activeEMPVisuals.splice(i, 1);
+    }
+  }
+}
+
+// ============================================================
+//  TELEPORT - Instant movement to target location
+// ============================================================
+
+function fireTeleport(origin, direction, hand, altWeapon) {
+  console.log(`[Teleport] Activated from ${hand} hand`);
+
+  const range = altWeapon.range || 10;
+  const playerPos = camera.position.clone();
+
+  // Calculate teleport destination
+  const destination = playerPos.clone().addScaledVector(direction, range);
+
+  // Clamp destination to ground level
+  destination.y = Math.max(0.5, destination.y);
+
+  // Create visual effect at start position
+  const startEffectGeo = new THREE.SphereGeometry(0.5, 16, 16);
+  const startEffectMat = new THREE.MeshBasicMaterial({
+    color: 0xaa00ff,
+    transparent: true,
+    opacity: 0.5,
+    blending: THREE.AdditiveBlending,
+  });
+  const startEffect = new THREE.Mesh(startEffectGeo, startEffectMat);
+  startEffect.position.copy(playerPos);
+  scene.add(startEffect);
+
+  // Teleport player
+  camera.position.copy(destination);
+  console.log(`[Teleport] Moved from (${playerPos.x.toFixed(2)}, ${playerPos.y.toFixed(2)}, ${playerPos.z.toFixed(2)}) to (${destination.x.toFixed(2)}, ${destination.y.toFixed(2)}, ${destination.z.toFixed(2)})`);
+
+  // Create visual effect at end position
+  const endEffectGeo = new THREE.SphereGeometry(0.5, 16, 16);
+  const endEffectMat = new THREE.MeshBasicMaterial({
+    color: 0xaa00ff,
+    transparent: true,
+    opacity: 0.5,
+    blending: THREE.AdditiveBlending,
+  });
+  const endEffect = new THREE.Mesh(endEffectGeo, endEffectMat);
+  endEffect.position.copy(destination);
+  scene.add(endEffect);
+
+  // Track effects for fade-out
+  const teleportData = {
+    startEffect,
+    startEffectMat,
+    endEffect,
+    endEffectMat,
+    createdAt: performance.now(),
+    duration: 300,
+  };
+
+  activeTeleportEffects.push(teleportData);
+  playShoothSound();
+  triggerScreenShake(0.2, 200);
+}
+
+const activeTeleportEffects = [];
+
+function updateTeleportEffects(now, dt) {
+  for (let i = activeTeleportEffects.length - 1; i >= 0; i--) {
+    const effect = activeTeleportEffects[i];
+    const age = now - effect.createdAt;
+
+    // Fade out both effects
+    const progress = age / effect.duration;
+    const opacity = 0.5 * (1 - progress);
+    effect.startEffectMat.opacity = opacity;
+    effect.endEffectMat.opacity = opacity;
+
+    // Scale up effects
+    effect.startEffect.scale.setScalar(1 + progress);
+    effect.endEffect.scale.setScalar(1 + progress);
+
+    // Remove when done
+    if (age >= effect.duration) {
+      scene.remove(effect.startEffect);
+      scene.remove(effect.endEffect);
+      effect.startEffect.geometry.dispose();
+      effect.startEffect.material.dispose();
+      effect.endEffect.geometry.dispose();
+      effect.endEffect.material.dispose();
+      activeTeleportEffects.splice(i, 1);
+    }
+  }
+}
+
+// ============================================================
 //  GAME STATE TRANSITIONS
 // ============================================================
 function debugJumpToLevel(targetLevel) {
@@ -5638,6 +6294,13 @@ function render(timestamp) {
   updateComboPopups(dt, now);
   updateKillChainPopups(dt, now);  // Kill chain popups
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
+
+  // ── New ALT weapon updates ──
+  updateGrenades(dt, now);
+  updateProximityMines(now, dt);
+  updateAttackDrones(now, dt, camera.position);
+  updateEMPVisuals(now, dt);
+  updateTeleportEffects(now, dt);
   updateFPS(now, {
     perfMonitor: (typeof window !== 'undefined' && window.debugPerfMonitor) || game.debugPerfMonitor,
     frameTimeMs: rawDt * 1000,
