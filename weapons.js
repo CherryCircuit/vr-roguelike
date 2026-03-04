@@ -139,14 +139,17 @@ export const ALT_WEAPONS = {
   laser_mine: {
     id: 'laser_mine',
     name: 'Laser Mine',
-    desc: 'Proximity laser trap',
-    color: '#ff0000',
+    desc: 'Passive proximity mine - spawns when still',
+    color: '#aa00ff',  // Purple
     type: 'alt',
-    cooldown: 12000,  // 12 seconds
+    cooldown: 0,       // No cooldown - passive activation
     damage: 50,
-    armTime: 1000,    // 1 second to arm
-    triggerRadius: 5, // Proximity trigger distance
-    maxActive: 3,
+    armTime: 1000,     // 1 second to arm
+    triggerRadius: 3,  // Proximity trigger distance
+    autoDetonateTime: 4000,  // 4 seconds auto-detonate
+    maxActive: 5,      // Max mines per hand
+    stillnessTime: 2000,  // 2 seconds of standing still to activate
+    mineCount: 3,      // Number of mines spawned (scales with level)
   },
   
   grenade: {
@@ -255,6 +258,19 @@ export const ALT_WEAPONS = {
     pullRadius: 5,  // Radius of gravitational pull
     stunDuration: 1000,  // 1 second stun after release
     triggerRadius: 2,  // Proximity trigger radius
+  },
+
+  tether_harpoon: {
+    id: 'tether_harpoon',
+    name: 'Tether Harpoon',
+    desc: 'Fires tether connecting you to enemy, yank or use as wrecking ball',
+    color: '#00ff88',
+    type: 'alt',
+    cooldown: 12000,  // 12 seconds
+    damage: 25,  // Damage on collision
+    range: 15,  // 15m range
+    tetherDuration: 8000,  // 8 seconds max tether duration
+    yankForce: 12,  // Force applied when yanking
   },
 };
 
