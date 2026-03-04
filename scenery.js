@@ -197,6 +197,38 @@ export const THEMES = {
     starColor: 0xffffff,
     particles: { type: 'prism', color: 0xffffff, count: 50, speed: 0.6 },
   },
+
+  // Retro Arcade: Inside an 80s arcade with neon marquees and carpet patterns
+  retro_arcade: {
+    skyColor: 0x110022,
+    fogColor: 0x220033,
+    fogDensity: 0.012,
+    gridColor: '#ff00ff',
+    gridOpacity: 0.75,
+    mountainFill: 0x110022,
+    mountainWire: 0xff00ff,
+    mountainWireOpacity: 0.7,
+    sunColors: ['#ff00ff', '#00ffff', '#ff0088'],
+    sunGlowColor: 0xff00ff,
+    starColor: 0xff88ff,
+    particles: { type: 'pixels', color: 0xff00ff, count: 40, speed: 0.4 },
+  },
+
+  // Void Garden: Space garden with floating platforms and crystalline plants
+  void_garden: {
+    skyColor: 0x000005,
+    fogColor: 0x000011,
+    fogDensity: 0.008,
+    gridColor: '#aaaaff',
+    gridOpacity: 0.5,
+    mountainFill: 0x000008,
+    mountainWire: 0xaaaaff,
+    mountainWireOpacity: 0.4,
+    sunColors: ['#ffd700', '#daa520', '#b8860b'],
+    sunGlowColor: 0xffd700,
+    starColor: 0xffffff,
+    particles: { type: 'crystal', color: 0xaa88ff, count: 35, speed: 0.15 },
+  },
 };
 
 // ── Get Theme for Level ───────────────────────────────────
@@ -432,6 +464,21 @@ export function updateAmbientParticles(dt, theme, playerPos) {
         positions[i3 + 2] += Math.sin(prismAngle) * speed * dt;
         // Color shifts handled in material update
         break;
+
+      case 'crystal':
+        // Void Garden: Floating crystalline particles drifting in void
+        const crystalAngle = now * 0.0002 + (i / AMBIENT_POOL) * Math.PI * 4;
+        positions[i3] += Math.cos(crystalAngle) * speed * dt * 0.5;
+        positions[i3 + 1] += Math.sin(now * 0.0003 + i) * 0.01;
+        positions[i3 + 2] += Math.sin(crystalAngle) * speed * dt * 0.5;
+        break;
+
+      case 'pixels':
+        // Retro Arcade: Floating neon pixel sparks
+        positions[i3] += Math.sin(now * 0.0003 + i * 0.7) * 0.02;
+        positions[i3 + 1] += Math.cos(now * 0.0004 + i) * 0.015;
+        positions[i3 + 2] += Math.cos(now * 0.00025 + i * 0.5) * 0.018;
+        break;
     }
 
     // Reset out-of-range particles
@@ -446,7 +493,8 @@ export function updateAmbientParticles(dt, theme, playerPos) {
       positions[i3] = playerPos.x + (Math.random() - 0.5) * 40;
       positions[i3 + 1] = theme.particles.type === 'snow' ? 15 : 
                           (theme.particles.type === 'code_rain' ? 20 : 
-                          (theme.particles.type === 'electrons' ? 1 : Math.random() * 2));
+                          (theme.particles.type === 'electrons' ? 1 : 
+                          (theme.particles.type === 'crystal' ? Math.random() * 8 + 1 : Math.random() * 2)));
       positions[i3 + 2] = playerPos.z + (Math.random() - 0.5) * 40;
     }
   }
