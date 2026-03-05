@@ -15,7 +15,7 @@ import {
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound, playComboSound,
   startLightningSound, stopLightningSound,
-  playMusic, stopMusic, getMusicFrequencyData
+  playMusic, playBossMusic, stopMusic, fadeOutMusic, getMusicFrequencyData
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -49,6 +49,7 @@ import {
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
+import { getThemeForLevel } from './scenery.js';
 
 // Expose game state to window for debugging/testing
 window.State = State;
@@ -131,10 +132,21 @@ const mountainBasePeaks = [];
 let sunMeshRef = null;
 let sunGlowRef = null;
 let ominousRef = null;
+let gridHelper = null;
+let starsRef = null;
+let horizonRingRef = null;
+let horizonInnerRingRef = null;
+let auroraRef = null;
+let atmosphereRef = null;
+let currentTheme = null;
+let environmentFade = 0;
+let environmentFadeState = null;
+const environmentFadeTargets = [];
+let levelFadeReady = false;
 
 // Floor damage flash
 let floorMaterial = null;
-const FLOOR_BASE_COLOR = new THREE.Color(0x220044);
+let floorBaseColor = new THREE.Color(0x220044);
 let floorFlashTimer = 0;
 let floorFlashing = false;
 
@@ -234,6 +246,8 @@ function init() {
 
   // Build world
   createEnvironment();
+  applyThemeForLevel(1);
+  applyEnvironmentFade(0);
   setupControllers();
 
   // Init subsystems
@@ -282,18 +296,20 @@ function init() {
 // ============================================================
 function createEnvironment() {
   // Grid floor - reduced size to cut ugly distant static
-  const grid = new THREE.GridHelper(120, 48, NEON_PINK, 0xff0088);
-  if (Array.isArray(grid.material)) {
-    grid.material.forEach(m => { m.transparent = true; m.opacity = 0.85; });
+  gridHelper = new THREE.GridHelper(120, 48, NEON_PINK, 0xff0088);
+  if (Array.isArray(gridHelper.material)) {
+    gridHelper.material.forEach(m => { m.transparent = true; m.opacity = 0.85; registerFadeMaterial(m); });
   } else {
-    grid.material.transparent = true;
-    grid.material.opacity = 0.85;
+    gridHelper.material.transparent = true;
+    gridHelper.material.opacity = 0.85;
+    registerFadeMaterial(gridHelper.material);
   }
-  scene.add(grid);
+  scene.add(gridHelper);
 
   const floorGeo = new THREE.PlaneGeometry(200, 200);
-  const floorMat = new THREE.MeshBasicMaterial({ color: 0x220044 });
+  const floorMat = new THREE.MeshBasicMaterial({ color: floorBaseColor });
   floorMaterial = floorMat;  // Store reference for damage flash
+  registerFadeMaterial(floorMaterial);
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
@@ -327,10 +343,11 @@ function createEnvironment() {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
-  const horizonRing = new THREE.Mesh(horizonGeo, horizonMat);
-  horizonRing.position.set(0, horizonHeight / 2 - 0.5, 0);
-  horizonRing.renderOrder = -2;
-  scene.add(horizonRing);
+  horizonRingRef = new THREE.Mesh(horizonGeo, horizonMat);
+  horizonRingRef.position.set(0, horizonHeight / 2 - 0.5, 0);
+  horizonRingRef.renderOrder = -2;
+  scene.add(horizonRingRef);
+  registerFadeMaterial(horizonRingRef.material);
 
   // Second brighter, shorter glow layer for intensity at ground level
   const horizonInnerGeo = new THREE.CylinderGeometry(horizonRadius - 0.5, horizonRadius - 0.5, 1.5, horizonSegments, 1, true);
@@ -342,10 +359,11 @@ function createEnvironment() {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
-  const horizonInnerRing = new THREE.Mesh(horizonInnerGeo, horizonInnerMat);
-  horizonInnerRing.position.set(0, 0.25, 0);
-  horizonInnerRing.renderOrder = -2;
-  scene.add(horizonInnerRing);
+  horizonInnerRingRef = new THREE.Mesh(horizonInnerGeo, horizonInnerMat);
+  horizonInnerRingRef.position.set(0, 0.25, 0);
+  horizonInnerRingRef.renderOrder = -2;
+  scene.add(horizonInnerRingRef);
+  registerFadeMaterial(horizonInnerRingRef.material);
 
   createSun();
   createMountains();
@@ -354,6 +372,138 @@ function createEnvironment() {
   // NOTE: Lights removed — all materials are MeshBasicMaterial (unlit)
   // so lights have zero visual effect but cost GPU overhead.
   // If PBR materials are added later, re-add lights here.
+}
+
+function registerFadeMaterial(material) {
+  if (!material) return;
+  const baseOpacity = material.opacity !== undefined ? material.opacity : 1;
+  material.transparent = true;
+  material.__fadeBase = baseOpacity;
+  environmentFadeTargets.push(material);
+}
+
+function applyEnvironmentFade(fade) {
+  environmentFade = Math.max(0, Math.min(1, fade));
+  const mixColor = new THREE.Color(0x000000);
+
+  if (scene && currentTheme) {
+    const bg = new THREE.Color(currentTheme.skyColor).lerp(mixColor, environmentFade);
+    const fog = new THREE.Color(currentTheme.fogColor).lerp(mixColor, environmentFade);
+    scene.background.copy(bg);
+    scene.fog.color.copy(fog);
+  }
+
+  environmentFadeTargets.forEach((material) => {
+    const base = material.__fadeBase ?? 1;
+    material.opacity = base * (1 - environmentFade);
+  });
+}
+
+function updateSunTexture(colors) {
+  if (!sunMeshRef || !sunMeshRef.material || !sunMeshRef.material.map) return;
+
+  const canvas = sunMeshRef.material.map.image;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 512, 512);
+
+  const grad = ctx.createLinearGradient(256, 30, 256, 482);
+  colors.forEach((c, i) => grad.addColorStop(i / (colors.length - 1), c));
+
+  ctx.beginPath();
+  ctx.arc(256, 256, 248, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.shadowColor = colors[0];
+  ctx.shadowBlur = 20;
+  ctx.beginPath();
+  ctx.arc(256, 256, 248, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.globalCompositeOperation = 'destination-out';
+  const bandDefs = [
+    { y: 0.90, h: 0.065 },
+    { y: 0.82, h: 0.050 },
+    { y: 0.75, h: 0.038 },
+    { y: 0.69, h: 0.028 },
+    { y: 0.64, h: 0.020 },
+    { y: 0.60, h: 0.013 },
+    { y: 0.57, h: 0.008 },
+    { y: 0.54, h: 0.004 },
+  ];
+  for (const b of bandDefs) {
+    const cy = b.y * 512;
+    const ch = b.h * 512;
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, cy - ch / 2, 512, ch);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  sunMeshRef.material.map.needsUpdate = true;
+}
+
+function applyThemeForLevel(level) {
+  const theme = getThemeForLevel(level);
+  if (!theme || !scene) return;
+
+  currentTheme = theme;
+
+  if (gridHelper) {
+    const updateGridMat = (mat) => {
+      mat.color.setHex(theme.gridColor);
+      mat.opacity = theme.gridOpacity;
+      mat.__fadeBase = theme.gridOpacity;
+      mat.transparent = true;
+    };
+
+    if (Array.isArray(gridHelper.material)) {
+      gridHelper.material.forEach(updateGridMat);
+    } else {
+      updateGridMat(gridHelper.material);
+    }
+  }
+
+  if (floorMaterial) {
+    floorBaseColor.setHex(theme.mountainFill);
+    floorMaterial.color.copy(floorBaseColor);
+    floorMaterial.__fadeBase = 1;
+  }
+
+  mountainLines.forEach((layer) => {
+    if (layer.fillMesh && layer.fillMesh.material) {
+      layer.fillMesh.material.color.setHex(theme.mountainFill);
+      layer.fillMesh.material.__fadeBase = 1;
+    }
+    if (layer.line && layer.line.material) {
+      layer.line.material.color.setHex(theme.mountainWire);
+      layer.line.material.opacity = theme.mountainWireOpacity;
+      layer.line.material.__fadeBase = theme.mountainWireOpacity;
+      layer.line.material.transparent = true;
+    }
+  });
+
+  updateSunTexture(theme.sunColors);
+
+  if (sunGlowRef && sunGlowRef.material) {
+    sunGlowRef.material.color.setHex(theme.sunGlowColor);
+  }
+
+  if (starsRef && starsRef.material) {
+    starsRef.material.color.setHex(theme.starColor);
+  }
+
+  applyEnvironmentFade(environmentFade);
+}
+
+function startEnvironmentFade(direction, duration, onComplete) {
+  environmentFadeState = {
+    direction,
+    duration,
+    timer: duration,
+    onComplete,
+  };
 }
 
 function createSun() {
@@ -424,6 +574,7 @@ function createSun() {
   sunMesh.renderOrder = -10;
   scene.add(sunMesh);
   sunMeshRef = sunMesh;
+  registerFadeMaterial(sunMeshRef.material);
 
   // Outer glow behind sun (additive for bloom effect)
   const glowMat = new THREE.MeshBasicMaterial({
@@ -439,6 +590,7 @@ function createSun() {
   glow.renderOrder = -11;
   scene.add(glow);
   sunGlowRef = glow;
+  registerFadeMaterial(sunGlowRef.material);
 
   createOminousHorizon();
   createAurora();
@@ -476,6 +628,8 @@ function createAurora() {
   mesh.position.set(0, 15, 0);
   mesh.renderOrder = -21;
   scene.add(mesh);
+  auroraRef = mesh;
+  registerFadeMaterial(auroraRef.material);
 }
 
 /** Dark ominous shape over the horizon; appears from level 10, large by level 16 */
@@ -493,6 +647,7 @@ function createOminousHorizon() {
   mesh.renderOrder = -12;
   scene.add(mesh);
   ominousRef = mesh;
+  registerFadeMaterial(ominousRef.material);
 }
 
 function createAtmosphere() {
@@ -538,6 +693,8 @@ function createAtmosphere() {
   cylinder.position.set(0, height / 2 - 2, 0);  // Base near ground level
   cylinder.renderOrder = -13;
   scene.add(cylinder);
+  atmosphereRef = cylinder;
+  registerFadeMaterial(atmosphereRef.material);
 }
 
 function createMountains() {
@@ -559,6 +716,7 @@ function createMountains() {
     fillMesh.position.set(0, 0, z);
     fillMesh.renderOrder = -5;  // Draw after foreground, before sun
     scene.add(fillMesh);
+    registerFadeMaterial(fillMesh.material);
 
     const edgePoints = [new THREE.Vector3(-100, 0, z)];
     peaks.forEach(([x, y]) => edgePoints.push(new THREE.Vector3(x, y, z)));
@@ -566,6 +724,7 @@ function createMountains() {
     const geometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
     const edgeLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.8 }));
     scene.add(edgeLine);
+    registerFadeMaterial(edgeLine.material);
 
     // Store for animation
     mountainLines[layerIndex] = { line: edgeLine, geometry, z, fillMesh, shape };
@@ -600,6 +759,8 @@ function createStars() {
   const stars = new THREE.Points(geo, mat);
   stars.renderOrder = -20;  // Draw last (furthest background)
   scene.add(stars);
+  starsRef = stars;
+  registerFadeMaterial(starsRef.material);
 }
 
 // ============================================================
@@ -4346,6 +4507,8 @@ function startGame() {
   game.state = State.READY_SCREEN;
   game.level = 1;
   game._levelConfig = getLevelConfig();
+  applyThemeForLevel(1);
+  applyEnvironmentFade(0);
   showHUD();
   showReadyScreen(game.level, camera.position);
 
@@ -4371,7 +4534,16 @@ function completeLevel() {
   stopLightningSound();
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
   game.stateTimer = 2.0; // cooldown before upgrade screen
+  levelFadeReady = false;
+  startEnvironmentFade('out', 0.8, () => {
+    levelFadeReady = true;
+    applyEnvironmentFade(1);
+  });
   showLevelComplete(game.level, camera.position);
+
+  if (!game.justBossKill && [4, 9, 14, 19].includes(game.level)) {
+    fadeOutMusic(1200);
+  }
 }
 
 // PERFORMANCE: Clear all active projectiles and return them to pool
@@ -4484,6 +4656,9 @@ function advanceLevelAfterUpgrade() {
   } else {
     game.state = State.READY_SCREEN;
     game._levelConfig = getLevelConfig();
+    applyThemeForLevel(game.level);
+    applyEnvironmentFade(1);
+    startEnvironmentFade('in', 0.8);
     showHUD();
 
     // Hide blaster displays during gameplay
@@ -4491,6 +4666,10 @@ function advanceLevelAfterUpgrade() {
 
     if (game.level === 6) {
       playMusic('levels6to10');
+    } else if (game.level === 11) {
+      playMusic('levels11to14');
+    } else if (game.level === 16) {
+      playMusic('levels16to19');
     }
   }
 }
@@ -5699,6 +5878,7 @@ function spawnEnemyWave(dt) {
       if (bossId) {
         spawnBoss(bossId, cfg);
         playBossSpawn();
+        playBossMusic(getBossTier(game.level));
       }
     }
     return;
@@ -6009,6 +6189,7 @@ function render(timestamp) {
         if (typeof window !== 'undefined' && window.playBossDeath) {
           window.playBossDeath();
         }
+        stopMusic();
 
         // Clean up boss
         clearBoss();
@@ -6185,7 +6366,7 @@ function render(timestamp) {
   // ── Level complete (cooldown before upgrade screen) ──
   else if (st === State.LEVEL_COMPLETE) {
     game.stateTimer -= dt;
-    if (game.stateTimer <= 0) {
+    if (game.stateTimer <= 0 && levelFadeReady) {
       showUpgradeScreen();
     }
   }
@@ -6235,6 +6416,22 @@ function render(timestamp) {
   // ── Country Select ──
   // (interaction handled in trigger handler)
 
+  // ── Environment fade transitions ──
+  if (environmentFadeState) {
+    environmentFadeState.timer -= rawDt;
+    const progress = 1 - Math.max(0, environmentFadeState.timer) / environmentFadeState.duration;
+    const fadeValue = environmentFadeState.direction === 'out' ? progress : 1 - progress;
+    applyEnvironmentFade(fadeValue);
+
+    if (environmentFadeState.timer <= 0) {
+      const onComplete = environmentFadeState.onComplete;
+      const finalFade = environmentFadeState.direction === 'out' ? 1 : 0;
+      environmentFadeState = null;
+      applyEnvironmentFade(finalFade);
+      if (onComplete) onComplete();
+    }
+  }
+
   // ── Camera shake on damage ──
   if (cameraShake > 0) {
     cameraShake -= rawDt;
@@ -6258,12 +6455,12 @@ function render(timestamp) {
     floorFlashTimer -= rawDt;
     if (floorFlashTimer <= 0) {
       floorFlashing = false;
-      floorMaterial.color.copy(FLOOR_BASE_COLOR);
+      floorMaterial.color.copy(floorBaseColor);
     } else {
       // Lerp from red/white back to base color
       const t = floorFlashTimer / 0.5;  // 0.5s flash duration
       const flashColor = new THREE.Color(0xff2222);  // Bright red
-      floorMaterial.color.lerpColors(FLOOR_BASE_COLOR, flashColor, t);
+      floorMaterial.color.lerpColors(floorBaseColor, flashColor, t);
     }
   }
 

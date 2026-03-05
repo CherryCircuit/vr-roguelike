@@ -775,6 +775,7 @@ let currentPlaylist = [];
 let currentTrackIndex = 0;
 let musicAnalyser = null;
 let musicSource = null;
+let musicFadeToken = 0;
 
 const musicTracks = {
   menu: ['mnt/project/music/00_Main_Menu.mp3'],
@@ -789,6 +790,46 @@ const musicTracks = {
     'mnt/project/music/0202_Levels_6-9.mp3',
     'mnt/project/music/0203_Levels_6-9.mp3',
     'mnt/project/music/0204_Levels_6-9.mp3'
+  ],
+  levels11to14: [
+    'mnt/project/music/0301_Levels_11-14.mp3',
+    'mnt/project/music/0302_Levels_11-14.mp3',
+    'mnt/project/music/0303_Levels_11-14.mp3',
+    'mnt/project/music/0304_Levels_11-14.mp3',
+    'mnt/project/music/0305_Levels_11-14.mp3'
+  ],
+  levels16to19: [
+    'mnt/project/music/0401_Levels_16-19.mp3',
+    'mnt/project/music/0402_Levels_16-19.mp3',
+    'mnt/project/music/0403_Levels_16-19.mp3',
+    'mnt/project/music/0404_Levels_16-19.mp3'
+  ]
+};
+
+const bossTracks = {
+  1: [
+    'mnt/project/music/B101_Level_05_Boss.mp3',
+    'mnt/project/music/B102_Level_05_Boss.mp3',
+    'mnt/project/music/B103_Level_05_Boss.mp3',
+    'mnt/project/music/B104_Level_05_Boss.mp3'
+  ],
+  2: [
+    'mnt/project/music/B201_Level_10_Boss.mp3',
+    'mnt/project/music/B202_Level_10_Boss.mp3',
+    'mnt/project/music/B203_Level_10_Boss.mp3',
+    'mnt/project/music/B204_Level_10_Boss.mp3'
+  ],
+  3: [
+    'mnt/project/music/B301_Level_15_Boss.mp3',
+    'mnt/project/music/B302_Level_15_Boss.mp3',
+    'mnt/project/music/B303_Level_15_Boss.mp3',
+    'mnt/project/music/B304_Level_15_Boss.mp3'
+  ],
+  4: [
+    'mnt/project/music/B401_Level_20_Boss.mp3',
+    'mnt/project/music/B402_Level_20_Boss.mp3',
+    'mnt/project/music/B403_Level_20_Boss.mp3',
+    'mnt/project/music/B404_Level_20_Boss.mp3'
   ]
 };
 
@@ -862,13 +903,17 @@ export function getMusicFrequencyData() {
   return dataArray;
 }
 
-export function playMusic(category) {
-  // Stop current music
+function stopCurrentMusic() {
   if (currentMusic) {
     currentMusic.pause();
     currentMusic.currentTime = 0;
     currentMusic = null;
   }
+}
+
+export function playMusic(category) {
+  stopCurrentMusic();
+  musicFadeToken += 1;
 
   // Get tracks for category (fresh copy)
   const tracks = musicTracks[category] ? [...musicTracks[category]] : [];
@@ -882,12 +927,49 @@ export function playMusic(category) {
   playNextTrack();
 }
 
+export function playBossMusic(tier) {
+  stopCurrentMusic();
+  musicFadeToken += 1;
+
+  const tracks = bossTracks[tier] ? [...bossTracks[tier]] : [];
+  if (!tracks || tracks.length === 0) return;
+
+  const track = tracks[Math.floor(Math.random() * tracks.length)];
+  currentPlaylist = [track];
+  currentTrackIndex = 0;
+
+  console.log(`[music] Starting boss track (tier ${tier}): ${track}`);
+  playNextTrack();
+}
+
 export function stopMusic() {
-  if (currentMusic) {
-    currentMusic.pause();
-    currentMusic.currentTime = 0;
-    currentMusic = null;
-  }
+  musicFadeToken += 1;
+  stopCurrentMusic();
+}
+
+export function fadeOutMusic(durationMs = 1200) {
+  if (!currentMusic) return;
+
+  const token = ++musicFadeToken;
+  const startVolume = currentMusic.volume;
+  const startTime = performance.now();
+
+  const step = () => {
+    if (token !== musicFadeToken) return;
+    if (!currentMusic) return;
+
+    const elapsed = performance.now() - startTime;
+    const t = Math.min(1, elapsed / durationMs);
+    currentMusic.volume = startVolume * (1 - t);
+
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else {
+      stopCurrentMusic();
+    }
+  };
+
+  requestAnimationFrame(step);
 }
 
 export function setMusicVolume(vol) {
