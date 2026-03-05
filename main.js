@@ -49,7 +49,7 @@ import {
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
-import { getThemeForLevel } from './scenery.js';
+import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js';
 
 // Expose game state to window for debugging/testing
 window.State = State;
@@ -139,6 +139,9 @@ let horizonInnerRingRef = null;
 let auroraRef = null;
 let atmosphereRef = null;
 let currentTheme = null;
+let biomePropsGroup = null;
+let biomePropsBiome = null;
+const biomePropFloaters = [];
 let environmentFade = 0;
 let environmentFadeState = null;
 const environmentFadeTargets = [];
@@ -368,6 +371,7 @@ function createEnvironment() {
   createSun();
   createMountains();
   createStars();
+  initAmbientParticles(scene);
 
   // NOTE: Lights removed — all materials are MeshBasicMaterial (unlit)
   // so lights have zero visual effect but cost GPU overhead.
@@ -380,6 +384,249 @@ function registerFadeMaterial(material) {
   material.transparent = true;
   material.__fadeBase = baseOpacity;
   environmentFadeTargets.push(material);
+}
+
+// ── Biome Props ───────────────────────────────────────────
+function clearBiomeProps() {
+  if (!biomePropsGroup) return;
+  scene.remove(biomePropsGroup);
+  biomePropsGroup.traverse((child) => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  });
+  biomePropsGroup = null;
+  biomePropsBiome = null;
+  biomePropFloaters.length = 0;
+}
+
+function updateBiomeProps(now, dt) {
+  if (!biomePropsGroup) return;
+  biomePropFloaters.forEach((floater) => {
+    const { mesh, baseY, amp, speed, phase, rotateSpeed } = floater;
+    mesh.position.y = baseY + Math.sin(now * speed + phase) * amp;
+    mesh.rotation.y += rotateSpeed * dt;
+  });
+}
+
+function rebuildBiomeProps(biomeId, theme) {
+  if (!scene || !theme || !biomeId) return;
+  if (biomePropsGroup && biomePropsBiome === biomeId) return;
+
+  clearBiomeProps();
+
+  biomePropsGroup = new THREE.Group();
+  biomePropsGroup.name = `biome-props-${biomeId}`;
+  scene.add(biomePropsGroup);
+  biomePropsBiome = biomeId;
+
+  const primary = new THREE.Color(theme.mountainWire);
+  const secondary = new THREE.Color(theme.gridColor);
+  const accent = new THREE.Color(theme.sunGlowColor);
+
+  const makeMat = (color, options = {}) => {
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: options.opacity ?? 0.75,
+      blending: options.blending ?? THREE.AdditiveBlending,
+      depthWrite: false,
+      wireframe: options.wireframe ?? false,
+    });
+    registerFadeMaterial(mat);
+    return mat;
+  };
+
+  const addFloatingPlatform = (mesh, baseY, amp, speed, rotateSpeed) => {
+    biomePropFloaters.push({
+      mesh,
+      baseY,
+      amp,
+      speed,
+      phase: Math.random() * Math.PI * 2,
+      rotateSpeed,
+    });
+  };
+
+  const addSidePillars = ({
+    count,
+    radiusTop,
+    radiusBottom,
+    height,
+    xOffset,
+    zStart,
+    zStep,
+    material,
+    segments = 10,
+    tilt = 0,
+  }) => {
+    const geo = new THREE.CylinderGeometry(radiusTop, radiusBottom, 1, segments, 1);
+    for (let i = 0; i < count; i++) {
+      const z = zStart + i * zStep;
+      [-1, 1].forEach((side) => {
+        const pillar = new THREE.Mesh(geo, material);
+        pillar.scale.set(1, height, 1);
+        pillar.position.set(side * xOffset, height * 0.5, z);
+        pillar.rotation.z = tilt * side;
+        biomePropsGroup.add(pillar);
+      });
+    }
+  };
+
+  const addArches = ({
+    count,
+    radius,
+    tube,
+    y,
+    zStart,
+    zStep,
+    material,
+    tilt = 0,
+  }) => {
+    const geo = new THREE.TorusGeometry(1, tube, 10, 32, Math.PI);
+    for (let i = 0; i < count; i++) {
+      const z = zStart + i * zStep;
+      const arch = new THREE.Mesh(geo, material);
+      arch.scale.set(radius, radius, radius);
+      arch.position.set(0, y, z);
+      arch.rotation.x = Math.PI;
+      arch.rotation.z = tilt * (i % 2 === 0 ? 1 : -1);
+      biomePropsGroup.add(arch);
+    }
+  };
+
+  const addRectArches = ({
+    count,
+    width,
+    height,
+    depth,
+    thickness,
+    y,
+    zStart,
+    zStep,
+    material,
+  }) => {
+    const legGeo = new THREE.BoxGeometry(thickness, height, depth);
+    const topGeo = new THREE.BoxGeometry(width + thickness * 2, thickness, depth);
+    for (let i = 0; i < count; i++) {
+      const z = zStart + i * zStep;
+      const left = new THREE.Mesh(legGeo, material);
+      const right = new THREE.Mesh(legGeo, material);
+      const top = new THREE.Mesh(topGeo, material);
+      left.position.set(-width * 0.5, y + height * 0.5, z);
+      right.position.set(width * 0.5, y + height * 0.5, z);
+      top.position.set(0, y + height + thickness * 0.5, z);
+      biomePropsGroup.add(left, right, top);
+    }
+  };
+
+  const addPlatforms = ({
+    count,
+    size,
+    thickness,
+    y,
+    zStart,
+    zStep,
+    xSpread,
+    material,
+    platformType = 'box',
+  }) => {
+    const geo = platformType === 'disc'
+      ? new THREE.CylinderGeometry(1, 1, thickness, 10, 1)
+      : platformType === 'hex'
+      ? new THREE.CylinderGeometry(1, 1, thickness, 6, 1)
+      : new THREE.BoxGeometry(1, thickness, 1);
+
+    for (let i = 0; i < count; i++) {
+      const z = zStart + i * zStep;
+      const x = (Math.random() - 0.5) * xSpread;
+      const platform = new THREE.Mesh(geo, material);
+      platform.scale.set(size, 1, size);
+      platform.position.set(x, y, z);
+      platform.rotation.y = Math.random() * Math.PI * 2;
+      biomePropsGroup.add(platform);
+      addFloatingPlatform(platform, y, 0.35 + Math.random() * 0.25, 0.001 + Math.random() * 0.0015, 0.15 + Math.random() * 0.25);
+    }
+  };
+
+  switch (biomeId) {
+    case 'hellscape': {
+      const pillarMat = makeMat(primary, { opacity: 0.8 });
+      addSidePillars({
+        count: 4,
+        radiusTop: 0.4,
+        radiusBottom: 1.1,
+        height: 11,
+        xOffset: 14,
+        zStart: -18,
+        zStep: -22,
+        material: pillarMat,
+        tilt: 0.1,
+      });
+      addArches({ count: 1, radius: 7, tube: 0.18, y: 7.5, zStart: -50, zStep: -30, material: makeMat(accent, { opacity: 0.5 }) });
+      addPlatforms({ count: 2, size: 5.5, thickness: 0.35, y: 4.2, zStart: -20, zStep: -28, xSpread: 10, material: makeMat(accent, { opacity: 0.65 }), platformType: 'box' });
+      break;
+    }
+    case 'ocean_floor': {
+      addSidePillars({ count: 5, radiusTop: 0.35, radiusBottom: 0.5, height: 12, xOffset: 13, zStart: -16, zStep: -18, material: makeMat(primary, { opacity: 0.7 }) });
+      addArches({ count: 2, radius: 8, tube: 0.14, y: 6.5, zStart: -40, zStep: -30, material: makeMat(secondary, { opacity: 0.6 }) });
+      addPlatforms({ count: 3, size: 4.5, thickness: 0.25, y: 3.6, zStart: -22, zStep: -24, xSpread: 12, material: makeMat(accent, { opacity: 0.5 }), platformType: 'disc' });
+      break;
+    }
+    case 'circuit_board': {
+      addSidePillars({ count: 5, radiusTop: 0.6, radiusBottom: 0.6, height: 8, xOffset: 13, zStart: -12, zStep: -16, material: makeMat(primary, { opacity: 0.75 }), segments: 4 });
+      addRectArches({ count: 2, width: 10, height: 4.5, depth: 1, thickness: 0.4, y: 1.2, zStart: -30, zStep: -28, material: makeMat(secondary, { opacity: 0.6 }) });
+      addPlatforms({ count: 3, size: 6, thickness: 0.2, y: 3.2, zStart: -20, zStep: -24, xSpread: 10, material: makeMat(accent, { opacity: 0.65 }) });
+      break;
+    }
+    case 'frozen': {
+      addSidePillars({ count: 4, radiusTop: 0.5, radiusBottom: 0.7, height: 10, xOffset: 14, zStart: -18, zStep: -22, material: makeMat(primary, { opacity: 0.7 }), segments: 6 });
+      addArches({ count: 2, radius: 7, tube: 0.12, y: 6, zStart: -38, zStep: -30, material: makeMat(secondary, { opacity: 0.5 }) });
+      addPlatforms({ count: 3, size: 4.8, thickness: 0.25, y: 3.8, zStart: -20, zStep: -24, xSpread: 11, material: makeMat(accent, { opacity: 0.55 }), platformType: 'hex' });
+      break;
+    }
+    case 'corruption': {
+      addSidePillars({ count: 4, radiusTop: 0.35, radiusBottom: 0.8, height: 11, xOffset: 13.5, zStart: -18, zStep: -22, material: makeMat(primary, { opacity: 0.8 }), tilt: 0.15 });
+      addArches({ count: 2, radius: 6.5, tube: 0.16, y: 6.5, zStart: -36, zStep: -26, material: makeMat(secondary, { opacity: 0.6 }), tilt: 0.2 });
+      addPlatforms({ count: 2, size: 5.2, thickness: 0.3, y: 4.1, zStart: -22, zStep: -28, xSpread: 9, material: makeMat(accent, { opacity: 0.6 }) });
+      break;
+    }
+    case 'digital_rain': {
+      addSidePillars({ count: 6, radiusTop: 0.25, radiusBottom: 0.35, height: 13, xOffset: 12.5, zStart: -14, zStep: -16, material: makeMat(primary, { opacity: 0.6 }) });
+      addArches({ count: 1, radius: 6.5, tube: 0.1, y: 6.5, zStart: -32, zStep: -30, material: makeMat(secondary, { opacity: 0.45 }) });
+      addPlatforms({ count: 2, size: 4.2, thickness: 0.2, y: 3.4, zStart: -18, zStep: -24, xSpread: 9, material: makeMat(accent, { opacity: 0.5 }) });
+      break;
+    }
+    case 'retro_arcade': {
+      addSidePillars({ count: 4, radiusTop: 0.6, radiusBottom: 0.6, height: 9, xOffset: 13, zStart: -16, zStep: -18, material: makeMat(primary, { opacity: 0.7 }) });
+      addArches({ count: 3, radius: 7, tube: 0.2, y: 6.5, zStart: -34, zStep: -22, material: makeMat(secondary, { opacity: 0.6 }) });
+      addPlatforms({ count: 4, size: 4.5, thickness: 0.25, y: 3.6, zStart: -20, zStep: -18, xSpread: 12, material: makeMat(accent, { opacity: 0.6 }) });
+      break;
+    }
+    case 'void_garden': {
+      addSidePillars({ count: 3, radiusTop: 0.45, radiusBottom: 0.65, height: 8.5, xOffset: 12.5, zStart: -20, zStep: -24, material: makeMat(primary, { opacity: 0.65 }) });
+      addArches({ count: 2, radius: 8, tube: 0.14, y: 7, zStart: -42, zStep: -26, material: makeMat(secondary, { opacity: 0.55 }) });
+      addPlatforms({ count: 5, size: 5.2, thickness: 0.25, y: 4.6, zStart: -18, zStep: -18, xSpread: 13, material: makeMat(accent, { opacity: 0.6 }), platformType: 'hex' });
+      break;
+    }
+    case 'neon_rainforest': {
+      addSidePillars({ count: 6, radiusTop: 0.35, radiusBottom: 0.6, height: 12, xOffset: 13.5, zStart: -14, zStep: -16, material: makeMat(primary, { opacity: 0.7 }) });
+      addArches({ count: 2, radius: 7.5, tube: 0.12, y: 6, zStart: -36, zStep: -26, material: makeMat(secondary, { opacity: 0.5 }) });
+      addPlatforms({ count: 3, size: 4.6, thickness: 0.25, y: 3.6, zStart: -20, zStep: -22, xSpread: 12, material: makeMat(accent, { opacity: 0.55 }) });
+      break;
+    }
+    case 'the_stack': {
+      addSidePillars({ count: 4, radiusTop: 0.9, radiusBottom: 1.1, height: 9, xOffset: 14, zStart: -16, zStep: -20, material: makeMat(primary, { opacity: 0.65 }), segments: 4 });
+      addRectArches({ count: 2, width: 9, height: 3.5, depth: 1.2, thickness: 0.6, y: 1.1, zStart: -32, zStep: -28, material: makeMat(secondary, { opacity: 0.5 }) });
+      addPlatforms({ count: 3, size: 5.5, thickness: 0.3, y: 3.2, zStart: -20, zStep: -24, xSpread: 10, material: makeMat(accent, { opacity: 0.55 }) });
+      break;
+    }
+    default: {
+      addSidePillars({ count: 4, radiusTop: 0.55, radiusBottom: 0.75, height: 9.5, xOffset: 13, zStart: -16, zStep: -20, material: makeMat(primary, { opacity: 0.7 }) });
+      addArches({ count: 2, radius: 7, tube: 0.16, y: 6.5, zStart: -36, zStep: -26, material: makeMat(secondary, { opacity: 0.55 }) });
+      addPlatforms({ count: 3, size: 4.8, thickness: 0.25, y: 3.8, zStart: -20, zStep: -22, xSpread: 11, material: makeMat(accent, { opacity: 0.6 }) });
+      break;
+    }
+  }
 }
 
 function applyEnvironmentFade(fade) {
@@ -449,6 +696,7 @@ function applyThemeForLevel(level) {
   if (!theme || !scene) return;
 
   currentTheme = theme;
+  rebuildBiomeProps(getBiomeForLevel(level), theme);
 
   if (gridHelper) {
     const updateGridMat = (mat) => {
@@ -6057,6 +6305,11 @@ function render(timestamp) {
   const effectiveTimeScale = game.slowmoActive ? game.timeScale : timeScale;
 
   const dt = rawDt * effectiveTimeScale;  // Scaled time for game logic
+
+  if (currentTheme) {
+    updateAmbientParticles(rawDt, currentTheme, camera.position);
+  }
+  updateBiomeProps(now, rawDt);
 
   const st = game.state;
 
