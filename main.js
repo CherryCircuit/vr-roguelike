@@ -36,7 +36,7 @@ import {
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
-  showDebugMenu, hideDebugMenu, getDebugMenuHit, getReadyScreenHit, showReadyScreen, updateTitleDebugIndicator
+  showDebugMenu, hideDebugMenu, getDebugMenuHit, getReadyScreenHit, showReadyScreen, hideReadyScreen, updateTitleDebugIndicator
 } from './hud.js';
 
 import {
@@ -4654,12 +4654,16 @@ function advanceLevelAfterUpgrade() {
   if (game.level > 20) {
     endGame(true); // victory
   } else {
-    game.state = State.READY_SCREEN;
+    game.state = State.PLAYING;
     game._levelConfig = getLevelConfig();
     applyThemeForLevel(game.level);
     applyEnvironmentFade(1);
     startEnvironmentFade('in', 0.8);
+    hideReadyScreen();
     showHUD();
+
+    // Stagger setup
+    game.spawnTimer = 1.0;
 
     // Hide blaster displays during gameplay
     blasterDisplays.forEach(d => { if (d) d.visible = false; });
