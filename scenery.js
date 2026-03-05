@@ -105,7 +105,7 @@ export const THEMES = {
     sunColors: ['#ff0000', '#ff4400', '#ff0000', '#880000', '#440000'],
     sunGlowColor: 0xff2200,
     starColor: 0xff4444,
-    particles: { type: 'embers', color: 0xff4400, count: 30, speed: 0.5 },
+    particles: { type: 'embers', color: 0xff4400, count: 30, speed: 0.5, size: 0.12 },
   },
 
   // Levels 10-14: Circuit Board (Medium-Hard) - Micro-scale PCB theme
@@ -441,6 +441,7 @@ export function initAmbientParticles(scene) {
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setDrawRange(0, AMBIENT_POOL);
 
   const mat = new THREE.PointsMaterial({
     color: 0xffffff,
@@ -467,6 +468,14 @@ export function updateAmbientParticles(dt, theme, playerPos) {
   }
 
   ambientParticles.visible = true;
+
+  const maxCount = Math.min(theme.particles.count || AMBIENT_POOL, AMBIENT_POOL);
+  ambientGeo.setDrawRange(0, maxCount);
+
+  const particleSize = theme.particles.size || 0.05;
+  if (ambientParticles.material.size !== particleSize) {
+    ambientParticles.material.size = particleSize;
+  }
   
   // Kaleidoscope: Color-shifting particles
   if (theme.particles.type === 'prism') {
@@ -482,7 +491,7 @@ export function updateAmbientParticles(dt, theme, playerPos) {
   const speed = theme.particles.speed;
   const now = performance.now();
 
-  for (let i = 0; i < AMBIENT_POOL; i++) {
+  for (let i = 0; i < maxCount; i++) {
     const i3 = i * 3;
 
     switch (theme.particles.type) {
