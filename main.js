@@ -6271,8 +6271,8 @@ function render(timestamp) {
   // Sun scaling removed - was old progression system
   // Biomes will handle environment changes instead
   if (ominousRef) {
-    if (envLevel >= 10) {
-      const t = Math.min(1, (envLevel - 10) / 6); // 0 at 10, 1 at 16
+    if (game.level >= 10) {
+      const t = Math.min(1, (game.level - 10) / 6); // 0 at 10, 1 at 16
       ominousRef.visible = true;
       ominousRef.material.opacity = 0.25 + t * 0.6;
       ominousRef.scale.setScalar(0.5 + t * 1.2);

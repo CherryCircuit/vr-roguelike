@@ -41,22 +41,34 @@ async function testGame() {
 
   // Handle country select if it appears (game checks on start)
   if (state === 'country_select' || state === 'name_entry') {
-    console.log('   Country/name select appeared, setting via localStorage and reloading...');
-    await page.evaluate(() => {
-      localStorage.setItem('playerCountry', 'US');
-      localStorage.setItem('playerName', 'TestPlayer');
-    });
-    await page.reload({ waitUntil: 'networkidle2' });
-    await new Promise(r => setTimeout(r, 2000));
+    console.log('   Country select appeared, clicking on US option...');
     
-    // Click to start again after reload
-    await page.mouse.click(640, 400);
+    // Wait for country options to render
+    await new Promise(r => setTimeout(r, 1000));
+    
+    // Click on US (typically first or near top) - try multiple positions
+    await page.mouse.click(640, 300);  // Try clicking US option
     await new Promise(r => setTimeout(r, 500));
-    await page.mouse.click(640, 400);
-    await new Promise(r => setTimeout(r, 1500));
+    
+    // Also try setting via localStorage as backup (using correct keys)
+    await page.evaluate(() => {
+      localStorage.setItem('spaceomicide_country', 'US');
+      localStorage.setItem('spaceomicide_name', 'TestPlayer');
+    });
     
     state = await page.evaluate(() => window.game?.state);
-    console.log('   State after reload:', state);
+    console.log('   State after country click:', state);
+    
+    // If still on country select, reload with localStorage set
+    if (state === 'country_select') {
+      console.log('   Reloading with localStorage set...');
+      await page.reload({ waitUntil: 'networkidle2' });
+      await new Promise(r => setTimeout(r, 2000));
+      await page.mouse.click(640, 400);
+      await new Promise(r => setTimeout(r, 1000));
+      state = await page.evaluate(() => window.game?.state);
+      console.log('   State after reload:', state);
+    }
   }
 
   if (state !== 'playing') {
