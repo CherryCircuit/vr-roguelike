@@ -5133,9 +5133,19 @@ export function getEnemyMeshes(includeBoss = false) {
 export function getEnemyByMesh(mesh) {
   let obj = mesh;
   while (obj) {
-    if (obj.userData.isBoss) {
+    // Check for regular enemy first (check userData.isEnemy flag)
+    if (obj.userData.isEnemy) {
+      const idx = activeEnemies.findIndex(e => e.mesh === obj);
+      if (idx >= 0) {
+        return { index: idx, enemy: activeEnemies[idx] };
+      }
+    }
+
+    // Then check for boss
+    if (obj.userData.isBoss || obj.userData.isBossHitbox) {
       return { boss: activeBoss, isBody: true };
     }
+
     obj = obj.parent;
   }
   return null;
