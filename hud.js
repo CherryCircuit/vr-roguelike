@@ -684,13 +684,13 @@ function createUpgradeCard(upgrade, position) {
   nameSprite.position.set(0, 0.40, 0.01);
   group.add(nameSprite);
 
-  // Description text - increased by 200% (26 → 52)
+  // Description text - larger while keeping within card bounds
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 52,
+    fontSize: 60,
     color: '#cccccc',
-    scale: 0.15,
+    scale: 0.2,
     depthTest: true,
-    maxWidth: 280,
+    maxWidth: 240,
   });
   descSprite.position.set(0, -0.02, 0.01);
   group.add(descSprite);
@@ -2138,14 +2138,14 @@ export function showScoreboard(scores, headerText, playerPos) {
 
   // Header
   const header = makeSprite(scoreboardHeader, {
-    fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
+    fontSize: 72, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.7,
   });
-  header.position.set(0, 1.8, 0);
+  header.position.set(0, 1.9, 0);
   scoreboardGroup.add(header);
 
   // Score list canvas
   renderScoreboardCanvas();
-  scoreboardMesh.position.set(0, 0.5, 0);
+  scoreboardMesh.position.set(0, 0.6, 0);
   scoreboardGroup.add(scoreboardMesh);
 
   // Buttons on right side
@@ -2173,7 +2173,7 @@ export function showScoreboard(scores, headerText, playerPos) {
       new THREE.LineBasicMaterial({ color: 0x888888 })
     ));
 
-    const txt = makeSprite(def.label, { fontSize: 22, color: '#ffffff', scale: 0.12 });
+    const txt = makeSprite(def.label, { fontSize: 28, color: '#ccffff', scale: 0.14 });
     txt.position.set(0, 0, 0.01);
     btnGroup.add(txt);
 
@@ -2182,7 +2182,7 @@ export function showScoreboard(scores, headerText, playerPos) {
 
   // BACK button bottom center
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -0.7, 0);
+  backGroup.position.set(0, -0.95, 0);
   const backGeo = new THREE.PlaneGeometry(0.6, 0.25);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -2194,7 +2194,7 @@ export function showScoreboard(scores, headerText, playerPos) {
     new THREE.EdgesGeometry(backGeo),
     new THREE.LineBasicMaterial({ color: 0xff4444 })
   ));
-  const backTxt = makeSprite('BACK', { fontSize: 24, color: '#ff4444', scale: 0.12 });
+  const backTxt = makeSprite('BACK', { fontSize: 30, color: '#ff6666', scale: 0.14 });
   backTxt.position.set(0, 0, 0.01);
   backGroup.add(backTxt);
   scoreboardGroup.add(backGroup);
@@ -2210,20 +2210,20 @@ function renderScoreboardCanvas() {
   ctx.clearRect(0, 0, w, h);
 
   // Background
-  ctx.fillStyle = 'rgba(10, 0, 30, 0.9)';
+  ctx.fillStyle = 'rgba(0, 20, 40, 0.9)';
   ctx.fillRect(0, 0, w, h);
 
   // Border
-  ctx.strokeStyle = '#444488';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#00ffff';
+  ctx.lineWidth = 3;
   ctx.strokeRect(1, 1, w - 2, h - 2);
 
-  const rowHeight = 60; // Doubled from 30 for VR readability
+  const rowHeight = 70; // Increased for better readability
   const maxVisible = Math.floor(h / rowHeight);
   const startIdx = scoreboardScrollOffset;
   const endIdx = Math.min(startIdx + maxVisible, scoreboardScores.length);
 
-  ctx.font = 'bold 36px Arial, sans-serif'; // Doubled from 18px for VR readability
+  ctx.font = 'bold 42px Arial, sans-serif'; // Larger for VR readability
   ctx.textBaseline = 'middle';
 
   for (let i = startIdx; i < endIdx; i++) {
@@ -2235,23 +2235,23 @@ function renderScoreboardCanvas() {
     if (rank === 1) ctx.fillStyle = '#ffdd00';
     else if (rank === 2) ctx.fillStyle = '#cccccc';
     else if (rank === 3) ctx.fillStyle = '#cc8844';
-    else ctx.fillStyle = '#888888';
+    else ctx.fillStyle = '#66ffff';
 
     ctx.textAlign = 'left';
     ctx.fillText(`#${rank}`, 15, y);
 
     // Name
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#ccffff';
     ctx.fillText(score.name || 'ANONYMOUS', 90, y);
 
     // Score
-    ctx.fillStyle = '#ffff00';
+    ctx.fillStyle = '#00ffff';
     ctx.textAlign = 'right';
     const scoreVal = score.score !== undefined && score.score !== null ? score.score.toLocaleString() : '0';
     ctx.fillText(scoreVal, 520, y);
 
     // Level
-    ctx.fillStyle = '#00ffff';
+    ctx.fillStyle = '#66ffff';
     ctx.textAlign = 'right';
     const levelVal = score.level_reached !== undefined && score.level_reached !== null ? `L${score.level_reached}` : 'L?';
     ctx.fillText(levelVal, 600, y);
@@ -2263,14 +2263,14 @@ function renderScoreboardCanvas() {
           ...[...score.country.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
         );
         ctx.textAlign = 'left';
-        ctx.font = '32px Arial, sans-serif'; // Doubled from 16px for VR readability
+        ctx.font = '38px Arial, sans-serif';
         ctx.fillText(flag, 640, y);
-        ctx.font = 'bold 36px Arial, sans-serif';
+        ctx.font = 'bold 42px Arial, sans-serif';
       } catch (e) { /* skip flag */ }
     }
 
     // Divider line
-    ctx.strokeStyle = 'rgba(100, 100, 200, 0.2)';
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.25)';
     ctx.beginPath();
     ctx.moveTo(10, (i - startIdx + 1) * rowHeight + 4);
     ctx.lineTo(w - 10, (i - startIdx + 1) * rowHeight + 4);
@@ -2279,17 +2279,17 @@ function renderScoreboardCanvas() {
 
   // "Loading" or "No scores" message
   if (scoreboardScores.length === 0) {
-    ctx.fillStyle = '#666666';
+    ctx.fillStyle = '#66ffff';
     ctx.textAlign = 'center';
-    ctx.font = 'bold 64px Arial, sans-serif'; // Doubled from 32px for VR readability
+    ctx.font = 'bold 72px Arial, sans-serif';
     ctx.fillText('NO SCORES YET', w / 2, h / 2);
   }
 
   // Scroll indicator
   if (scoreboardScores.length > maxVisible) {
-    ctx.fillStyle = '#444488';
+    ctx.fillStyle = '#00ffff';
     ctx.textAlign = 'center';
-    ctx.font = '36px Arial, sans-serif'; // Doubled from 18px for VR readability
+    ctx.font = '40px Arial, sans-serif';
     ctx.fillText(`${startIdx + 1}-${endIdx} of ${scoreboardScores.length}`, w / 2, h - 15);
   }
 
