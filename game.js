@@ -58,11 +58,11 @@ export function getBossTier(level) {
 // Pool of bosses per tier (randomly picked for that level)
 const BOSS_POOLS = {
   // Level 5: Easy bosses
-  1: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'],
+  1: ['chrono_wraith'],
   // Level 10: Medium bosses
-  2: ['theodore_breakenridge', 'commander_halcyon', 'madame_coda', 'twin_glitch', 'neon_minotaur'],
+  2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'],
   // Level 15: Hard bosses
-  3: ['walter_breakenridge', 'kernel_monolith', 'synth_kraken', 'afterimage_seraphim', 'sun_eater_train'],
+  3: ['theodore_breakenridge', 'commander_halcyon', 'madame_coda', 'twin_glitch', 'neon_minotaur'],
   // Level 20: Final bosses
   4: ['walter_breakenridge', 'kernel_monolith', 'synth_kraken', 'afterimage_seraphim', 'sun_eater_train'],
 };
