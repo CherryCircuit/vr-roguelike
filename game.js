@@ -3,7 +3,7 @@
 //  Central game data — imported by all other modules.
 // ============================================================
 
-import { SeedDeck } from './seed.js';
+import { SeedDeck, getBiomePool } from './seed.js';
 
 export const State = {
   TITLE: 'title',
@@ -109,6 +109,7 @@ export const game = {
   // NEW: Seed Deck system
   seed: null,
   seedTier: 'standard',
+  biomeChunks: {},
   
   // NEW: Weapon system
   mainWeapon: { left: 'standard_blaster', right: 'standard_blaster' },  // MAIN weapon per hand
@@ -180,6 +181,9 @@ export function resetGame() {
     altCooldowns: { left: 0, right: 0 },
     upgrades: { left: {}, right: {} },
     mainWeaponLocked: { left: false, right: false },
+
+    // Biome chunk assignments
+    biomeChunks: {},
 
     stateTimer: 0,
     spawnTimer: 0,
@@ -360,17 +364,39 @@ export function startGameWithSeed(seed, tier = 'standard') {
  * Get current biome from seed deck (based on level)
  */
 export function getBiomeForLevel(level) {
-  const deck = getSeedDeck();
-  if (!deck) {
-    // Fallback to default theme system if no seed deck
-    return null;
+  if (level <= 5) {
+    return 'synthwave';
   }
-  
-  // Draw a biome from the deck based on level
-  // We want deterministic biome per level, so we draw but don't actually remove
-  // Instead, we use the level to index into the shuffled deck
-  const biomeIndex = (level - 1) % deck.deck.biomes.length;
-  return deck.deck.biomes[biomeIndex];
+
+  const chunkIndex = Math.floor((level - 6) / 5); // 0: 6-10, 1: 11-15, 2: 16-20
+
+  if (!game.biomeChunks) {
+    game.biomeChunks = {};
+  }
+
+  if (game.biomeChunks[chunkIndex]) {
+    return game.biomeChunks[chunkIndex];
+  }
+
+  const deck = getSeedDeck();
+  let biomeId = null;
+
+  if (deck && deck.deck && deck.deck.biomes.length > 0) {
+    const biomePool = deck.deck.biomes;
+    const biomeIndex = chunkIndex % biomePool.length;
+    biomeId = biomePool[biomeIndex];
+  } else {
+    const biomePool = getBiomePool();
+    biomeId = biomePool[Math.floor(Math.random() * biomePool.length)];
+  }
+
+  game.biomeChunks[chunkIndex] = biomeId;
+
+  const chunkStart = 6 + chunkIndex * 5;
+  const chunkEnd = chunkStart + 4;
+  console.log(`[biome] Assigned biome "${biomeId}" to levels ${chunkStart}-${chunkEnd}`);
+
+  return biomeId;
 }
 
 /**

@@ -39,6 +39,28 @@ class SeededRandom {
   }
 }
 
+// ── Biome Pool ───────────────────────────────────────────
+export const BIOME_POOL = [
+  'sunrise_highway',
+  'vapor_sunset',
+  'ocean_floor',
+  'synthwave',
+  'hellscape',
+  'circuit_board',
+  'frozen',
+  'corruption',
+  'the_stack',
+  'digital_rain',
+  'retro_arcade',
+  'void_garden',
+  'neon_rainforest',
+  'kaleidoscope',
+];
+
+export function getBiomePool() {
+  return [...BIOME_POOL];
+}
+
 // ── Seed Deck - Main class for run variety ───────────────
 class SeedDeck {
   constructor(seed, tier = 'standard') {
@@ -105,22 +127,7 @@ class SeedDeck {
 
   // Get all available biomes
   getAllBiomes() {
-    return [
-      'sunrise_highway',
-      'vapor_sunset',
-      'ocean_floor',
-      'synthwave',
-      'hellscape',
-      'circuit_board',
-      'frozen',
-      'corruption',
-      'the_stack',
-      'digital_rain',
-      'retro_arcade',
-      'void_garden',
-      'neon_rainforest',
-      'kaleidoscope',
-    ];
+    return getBiomePool();
   }
 
   // Get all available enemies
