@@ -3,6 +3,7 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { getBiomeForLevel } from './game.js';
 
 // ── Theme Definitions ─────────────────────────────────────
 export const THEMES = {
@@ -249,12 +250,12 @@ export const THEMES = {
 
 // ── Get Theme for Level ───────────────────────────────────
 export function getThemeForLevel(level) {
-  if (level % 5 === 0) return THEMES.boss;
-  if (level <= 5) return THEMES.sunrise_highway;
-  if (level <= 9) return THEMES.synthwave;
-  if (level <= 14) return THEMES.circuit_board;
-  if (level <= 19) return THEMES.frozen;
-  return THEMES.corruption;
+  const biomeId = getBiomeForLevel(level);
+  if (biomeId && THEMES[biomeId]) {
+    return THEMES[biomeId];
+  }
+
+  return THEMES.synthwave;
 }
 
 // ── Apply Theme ───────────────────────────────────────────
