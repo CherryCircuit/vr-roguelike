@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed } from './game.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, getComboMultiplier, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
@@ -463,35 +463,58 @@ function applyThemeForLevel(level) {
     } else {
       updateGridMat(gridHelper.material);
     }
+
+    const gridScale = theme.gridScale !== undefined ? theme.gridScale : 1;
+    gridHelper.scale.set(gridScale, 1, gridScale);
   }
 
   if (floorMaterial) {
-    floorBaseColor.setHex(theme.mountainFill);
+    const floorColor = theme.floorColor !== undefined ? theme.floorColor : theme.mountainFill;
+    floorBaseColor.setHex(floorColor);
     floorMaterial.color.copy(floorBaseColor);
     floorMaterial.__fadeBase = 1;
   }
 
+  const mountainScale = theme.mountainScale !== undefined ? theme.mountainScale : 1;
   mountainLines.forEach((layer) => {
     if (layer.fillMesh && layer.fillMesh.material) {
       layer.fillMesh.material.color.setHex(theme.mountainFill);
       layer.fillMesh.material.__fadeBase = 1;
+      layer.fillMesh.scale.set(1, mountainScale, 1);
     }
     if (layer.line && layer.line.material) {
       layer.line.material.color.setHex(theme.mountainWire);
       layer.line.material.opacity = theme.mountainWireOpacity;
       layer.line.material.__fadeBase = theme.mountainWireOpacity;
       layer.line.material.transparent = true;
+      layer.line.scale.set(1, mountainScale, 1);
     }
   });
 
   updateSunTexture(theme.sunColors);
 
+  const sunScale = theme.sunScale !== undefined ? theme.sunScale : 1;
+  if (sunMeshRef) sunMeshRef.scale.set(sunScale, sunScale, sunScale);
+  if (sunGlowRef) sunGlowRef.scale.set(sunScale, sunScale, sunScale);
+
   if (sunGlowRef && sunGlowRef.material) {
     sunGlowRef.material.color.setHex(theme.sunGlowColor);
   }
 
+  if (horizonRingRef && horizonRingRef.material) {
+    const horizonColor = theme.horizonColor !== undefined ? theme.horizonColor : theme.sunGlowColor;
+    horizonRingRef.material.color.setHex(horizonColor);
+  }
+
+  if (horizonInnerRingRef && horizonInnerRingRef.material) {
+    const horizonInnerColor = theme.horizonInnerColor !== undefined ? theme.horizonInnerColor : theme.gridColor;
+    horizonInnerRingRef.material.color.setHex(horizonInnerColor);
+  }
+
   if (starsRef && starsRef.material) {
     starsRef.material.color.setHex(theme.starColor);
+    const starSize = theme.starSize !== undefined ? theme.starSize : 0.5;
+    starsRef.material.size = starSize;
   }
 
   applyEnvironmentFade(environmentFade);
@@ -4519,6 +4542,13 @@ function startGame() {
   playMusic('levels1to5');
 }
 
+function shouldFadeForBiomeTransition(level) {
+  if (level >= 20) return false;
+  const currentBiome = getBiomeForLevel(level);
+  const nextBiome = getBiomeForLevel(level + 1);
+  return currentBiome !== nextBiome;
+}
+
 function completeLevel() {
   console.log(`[game] Level ${game.level} complete`);
   
@@ -4535,10 +4565,15 @@ function completeLevel() {
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
   game.stateTimer = 2.0; // cooldown before upgrade screen
   levelFadeReady = false;
-  startEnvironmentFade('out', 0.8, () => {
+  const shouldFade = shouldFadeForBiomeTransition(game.level);
+  if (shouldFade) {
+    startEnvironmentFade('out', 0.8, () => {
+      levelFadeReady = true;
+      applyEnvironmentFade(1);
+    });
+  } else {
     levelFadeReady = true;
-    applyEnvironmentFade(1);
-  });
+  }
   showLevelComplete(game.level, camera.position);
 
   if (!game.justBossKill && [4, 9, 14, 19].includes(game.level)) {
@@ -4657,8 +4692,13 @@ function advanceLevelAfterUpgrade() {
     game.state = State.PLAYING;
     game._levelConfig = getLevelConfig();
     applyThemeForLevel(game.level);
-    applyEnvironmentFade(1);
-    startEnvironmentFade('in', 0.8);
+    const shouldFade = shouldFadeForBiomeTransition(game.level - 1);
+    if (shouldFade) {
+      applyEnvironmentFade(1);
+      startEnvironmentFade('in', 0.8);
+    } else {
+      applyEnvironmentFade(0);
+    }
     hideReadyScreen();
     showHUD();
 
