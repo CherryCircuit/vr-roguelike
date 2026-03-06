@@ -147,6 +147,60 @@ let sceneRef = null;
 const activeEnemies = [];
 const explosionParts = [];
 
+// Player forward direction for front-arc constraints
+const _playerForwardRef = new THREE.Vector3(0, 0, -1);
+const _frontDir = new THREE.Vector3();
+const _frontRight = new THREE.Vector3();
+const _frontFlat = new THREE.Vector3();
+const _frontUp = new THREE.Vector3(0, 1, 0);
+
+export function setPlayerForward(forward) {
+  if (forward) {
+    _playerForwardRef.copy(forward);
+    if (_playerForwardRef.lengthSq() < 0.0001) {
+      _playerForwardRef.set(0, 0, -1);
+    }
+  }
+}
+
+function clampPositionToFrontArc(position, playerPos, minDist = 3, maxDist = 20, arcDeg = 120) {
+  _frontDir.copy(_playerForwardRef);
+  _frontDir.y = 0;
+  if (_frontDir.lengthSq() < 0.0001) {
+    _frontDir.set(0, 0, -1);
+  }
+  _frontDir.normalize();
+
+  _frontFlat.copy(position).sub(playerPos);
+  _frontFlat.y = 0;
+  const dist = _frontFlat.length();
+  const clampedDist = Math.min(maxDist, Math.max(minDist, dist || minDist));
+
+  if (dist > 0.0001) {
+    _frontFlat.divideScalar(dist);
+  } else {
+    _frontFlat.copy(_frontDir);
+  }
+
+  const halfRad = (arcDeg * Math.PI / 180) / 2;
+  const cosLimit = Math.cos(halfRad);
+  const sinLimit = Math.sin(halfRad);
+  const dot = _frontFlat.dot(_frontDir);
+
+  if (dot < cosLimit) {
+    _frontRight.crossVectors(_frontUp, _frontDir).normalize();
+    const sign = Math.sign(_frontFlat.dot(_frontRight)) || 1;
+    _frontFlat.copy(_frontDir)
+      .multiplyScalar(cosLimit)
+      .addScaledVector(_frontRight, sign * sinLimit)
+      .normalize();
+  }
+
+  position.x = playerPos.x + _frontFlat.x * clampedDist;
+  position.z = playerPos.z + _frontFlat.z * clampedDist;
+  return position;
+}
+
 // ── Mesh cache (avoid per-frame array allocation in getEnemyMeshes) ──
 let _cachedEnemyMeshes = [];
 let _enemyMeshesDirty = true;
@@ -1402,6 +1456,7 @@ export function updateEnemies(dt, now, playerPos) {
           e.mesh.position.y,
           playerPos.z + Math.sin(angle) * teleportDist
         );
+        clampPositionToFrontArc(e.mesh.position, playerPos, 2.5, 12, 120);
         e.portalTimer = 0;
         e.portalDisoriented = true;
         e.portalDisorientTimer = 0.5;
@@ -2086,6 +2141,11 @@ class Boss {
 
     // Telegraphing cooldown
     this.telegraphCooldown = 0;
+
+    // Front-arc constraints
+    this.frontArc = def.frontArc || 120;
+    this.minDistance = def.minDistance || 6;
+    this.maxDistance = def.maxDistance || 18;
   }
 
   buildMesh(def) {
@@ -2227,6 +2287,9 @@ class Boss {
 
     // Update state machine
     this.updateBehavior(dt, now, playerPos);
+
+    // Keep boss in front arc and out of contact range
+    this.constrainToFrontArc(playerPos);
   }
 
   updateBehavior(dt, now, playerPos) {
@@ -2275,6 +2338,10 @@ class Boss {
 
   getBoss() {
     return { mesh: this.mesh, hp: this.hp, maxHp: this.maxHp, phase: this.phase };
+  }
+
+  constrainToFrontArc(playerPos) {
+    clampPositionToFrontArc(this.mesh.position, playerPos, this.minDistance, this.maxDistance, this.frontArc);
   }
 
   destroy() {
@@ -2434,6 +2501,24 @@ class HoloPhantomBoss extends Boss {
     }, 400);
   }
 
+  onProjectileFire(playerPos) {
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.35, 0x00ffff);
+    }
+
+    setTimeout(() => {
+      const spread = 0.4;
+      const leftTarget = playerPos.clone();
+      leftTarget.x -= spread;
+      const rightTarget = playerPos.clone();
+      rightTarget.x += spread;
+      if (typeof spawnBossProjectile === 'function') {
+        spawnBossProjectile(this.mesh.position.clone(), leftTarget);
+        spawnBossProjectile(this.mesh.position.clone(), rightTarget);
+      }
+    }, 200);
+  }
+
   onPhaseChange(newPhase) {
     super.onPhaseChange(newPhase);
     if (newPhase >= 2) {
@@ -2522,6 +2607,28 @@ class PulseEmitterBoss extends Boss {
     }, this.shieldDuration * 1000);
   }
 
+  onProjectileFire(playerPos) {
+    if (this.shieldActive) return;
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.4, 0xff0088);
+    }
+
+    setTimeout(() => {
+      const shots = 5;
+      for (let i = 0; i < shots; i++) {
+        const angle = (i / shots) * Math.PI * 2;
+        const target = new THREE.Vector3(
+          playerPos.x + Math.cos(angle) * 3,
+          playerPos.y,
+          playerPos.z + Math.sin(angle) * 3
+        );
+        if (typeof spawnBossProjectile === 'function') {
+          spawnBossProjectile(this.mesh.position.clone(), target);
+        }
+      }
+    }, 200);
+  }
+
   onPhaseChange(newPhase) {
     super.onPhaseChange(newPhase);
     if (newPhase >= 2) {
@@ -2571,6 +2678,22 @@ class RustSerpentBoss extends Boss {
     if (typeof window !== 'undefined' && window.createToxicPool) {
       window.createToxicPool(this.mesh.position.clone(), 2.5, 5 + this.phase * 3);
     }
+  }
+
+  onProjectileFire(playerPos) {
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.35, 0xcc4400);
+    }
+
+    setTimeout(() => {
+      const spread = 0.6;
+      const target = playerPos.clone();
+      target.x += (Math.random() - 0.5) * spread;
+      target.z += (Math.random() - 0.5) * spread;
+      if (typeof spawnBossProjectile === 'function') {
+        spawnBossProjectile(this.mesh.position.clone(), target);
+      }
+    }, 200);
   }
 
   onPhaseChange(newPhase) {
@@ -2632,15 +2755,15 @@ class StaticWispBoss extends Boss {
 
   fireElectricBolt(playerPos) {
     if (this.telegraphing) {
-      this.showTelegraph('projectile', 0.3, 0xffff00);
+      this.showTelegraph('projectile', 0.5, 0xffff00);
     }
-    
-    // Fire lightning bolt
+
+    // Fire lightning bolt (rebalanced: 2-4 damage instead of 15-31 insta-kill)
     setTimeout(() => {
       if (typeof window !== 'undefined' && window.fireBossLightning) {
-        window.fireBossLightning(this.mesh.position.clone(), playerPos.clone(), 15 + this.phase * 8);
+        window.fireBossLightning(this.mesh.position.clone(), playerPos.clone(), 1 + this.phase);
       }
-    }, 200);
+    }, 300);
   }
 
   teleport(playerPos) {
@@ -2660,6 +2783,22 @@ class StaticWispBoss extends Boss {
       );
       this.mesh.visible = true;
     }, 300);
+  }
+
+  onProjectileFire(playerPos) {
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.35, 0xffff00);
+    }
+
+    setTimeout(() => {
+      const spread = 0.5;
+      const target = playerPos.clone();
+      target.x += (Math.random() - 0.5) * spread;
+      target.z += (Math.random() - 0.5) * spread;
+      if (typeof spawnBossProjectile === 'function') {
+        spawnBossProjectile(this.mesh.position.clone(), target);
+      }
+    }, 200);
   }
 
   onPhaseChange(newPhase) {
@@ -4939,6 +5078,8 @@ const BOSS_DEFS = {
     hitboxRadius: 0.65,
     slamRate: 3.0,
     minionRate: 6.0,
+    contactDamage: 1,
+    contactCooldown: 1200,
     weakPoints: true
   },
 
@@ -4959,6 +5100,7 @@ const BOSS_DEFS = {
     hitboxRadius: 0.55,
     decoyRate: 4.0,
     teleportRate: 2.5,
+    projectileRate: 2.4,
     weakPoints: false
   },
 
@@ -4978,6 +5120,9 @@ const BOSS_DEFS = {
     hitboxRadius: 0.6,
     pulseRate: 2.0,
     shieldDuration: 3.0,
+    projectileRate: 2.8,
+    contactDamage: 1,
+    contactCooldown: 1000,
     weakPoints: true
   },
 
@@ -4999,6 +5144,7 @@ const BOSS_DEFS = {
     hitboxRadius: 0.9,
     slitherSpeed: 1.8,
     toxicRate: 1.5,
+    projectileRate: 2.2,
     weakPoints: true
   },
 
@@ -5020,6 +5166,7 @@ const BOSS_DEFS = {
     hitboxRadius: 0.55,
     electricRate: 1.2,
     teleportRate: 3.0,
+    projectileRate: 2.0,
     weakPoints: false
   },
 
@@ -5560,6 +5707,7 @@ export function updateBossMinions(dt, playerPos) {
     m.mesh.rotation.y = m.mesh.userData.slideAngle || 0;
     _dir.copy(playerPos).sub(m.mesh.position).normalize();
     m.mesh.position.addScaledVector(_dir, (m.speed || 0.6) * dt);
+    clampPositionToFrontArc(m.mesh.position, playerPos, 2.0, 18, 120);
   }
 }
 

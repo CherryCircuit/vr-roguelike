@@ -4,7 +4,8 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { State, game, getComboMultiplier } from './game.js';
+import { State, game } from './game.js';
+import { playMenuHoverSound } from './audio.js';
 
 // ── Module state ───────────────────────────────────────────
 let sceneRef, cameraRef;
@@ -57,11 +58,15 @@ let titleScoreboardBtn = null;
 // Title diagnostics button
 let titleDiagBtn = null;
 
+// Ready screen countdown
+let readyCountdownSprite = null;
+
 // Name entry state
 let nameEntryName = '';
 let nameEntryCursor = 0;
 let nameEntrySlots = [];
 let keyboardKeys = [];
+let nameEntryActionMeshes = [];
 let hoveredKey = null;
 
 // Level intro state
@@ -409,17 +414,6 @@ function createTitleScreen() {
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
 
-// Version number
-  const versionDate = 'MAR 03 2026';
-  const versionNum = 'v0.031';
-  const versionSprite = makeSprite(`${versionNum}\nLAST UPDATED: ${versionDate}`, {
-    fontSize: 16,
-    color: '#888888',
-    scale: 0.14,
-  });
-  versionSprite.position.set(0, -1.0, 0);
-  titleGroup.add(versionSprite);
-
 }
 
 export function showTitle() {
@@ -454,32 +448,37 @@ function createHUDElements() {
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
-  // Score - right side on floor (increased 50% for VR readability)
+  // SCORE - center on floor with title above
   scoreSprite = makeSprite('0', { fontSize: 90, color: '#ffff00', shadow: true, scale: 3.6 });
-  scoreSprite.position.set(1.5, 0, 0);
+  scoreSprite.position.set(0, 0, 0);
   hudGroup.add(scoreSprite);
 
-  // Kill counter — center on floor (increased 50% for VR readability)
+  // SCORE title - above score in yellow same style as level
+  const scoreTitle = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 2.925 });
+  scoreTitle.position.set(0, 0.45, 0);
+  hudGroup.add(scoreTitle);
+
+  // Kill counter — right side on floor
   killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 3.15 });
-  killCountSprite.position.set(0, 0, 0);
+  killCountSprite.position.set(1.5, 0, 0);
   hudGroup.add(killCountSprite);
 
-  // Level indicator — above kill counter (increased 50% for VR readability)
+  // Level indicator — above kill counter on right
   levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 2.925 });
-  levelSprite.position.set(0, 0.45, 0);  // Moved up proportionally
+  levelSprite.position.set(1.5, 0.45, 0);
   hudGroup.add(levelSprite);
 
-  // Combo multiplier — near score
-  comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 1.8 });  // 0.6 * 3
-  comboSprite.position.set(1.5, -0.45, 0);  // Moved down proportionally
+  // Accuracy bonus — below score on left side
+  comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 1.8 });
+  comboSprite.position.set(-1.5, -0.45, 0);
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 
-  // Combo cooldown timer bar (shows time until multiplier resets)
+  // Accuracy bonus meter bar
   const cooldownGeo = new THREE.PlaneGeometry(0.4, 0.03);
   const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
-  comboCooldownSprite.position.set(1.5, -0.6, 0);  // Below combo text
+  comboCooldownSprite.position.set(-1.5, -0.6, 0);  // Below bonus text
   comboCooldownSprite.visible = false;
   hudGroup.add(comboCooldownSprite);
 }
@@ -535,27 +534,26 @@ export function updateHUD(gameState) {
   // Score - increased 50% for VR readability
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.39 });
 
-  // Combo - 200% larger with descriptive label
-  const combo = getComboMultiplier();
-  const killChainMult = game.comboMultiplier || 1;
-  if (killChainMult > 1) {
+  // Accuracy bonus - 200% larger with descriptive label
+  const accuracyBonus = game.accuracyBonus || 0;
+  if (accuracyBonus > 0) {
     comboSprite.visible = true;
     comboCooldownSprite.visible = true;
     const pulse = 1.0 + Math.sin(performance.now() * 0.01) * 0.1;
-    updateSpriteText(comboSprite, `${killChainMult}X SCORE MULTIPLIER`, { color: '#ff8800', scale: 0.18 * pulse });
+    const accuracyMult = (game.accuracyMultiplier || 1).toFixed(1);
+    updateSpriteText(comboSprite, `${accuracyMult}X ACCURACY BONUS`, { color: '#ff8800', scale: 0.18 * pulse });
 
-    // Update cooldown bar
-    const timeSinceLastKill = performance.now() - game.lastKillTime;
-    const remainingRatio = Math.max(0, 1 - timeSinceLastKill / game.comboResetTime);
-    comboCooldownSprite.scale.x = remainingRatio;  // Shrink bar as time passes
+    // Update bonus meter
+    const remainingRatio = Math.max(0, Math.min(1, accuracyBonus / 100));
+    comboCooldownSprite.scale.x = remainingRatio;
 
-    // Color changes as it gets closer to expiring
-    if (remainingRatio > 0.5) {
+    // Color changes as bonus grows
+    if (remainingRatio > 0.66) {
       comboCooldownSprite.material.color.setHex(0xff8800);  // Orange
-    } else if (remainingRatio > 0.25) {
+    } else if (remainingRatio > 0.33) {
       comboCooldownSprite.material.color.setHex(0xffaa00);  // Yellow-orange
     } else {
-      comboCooldownSprite.material.color.setHex(0xff4444);  // Red (about to expire)
+      comboCooldownSprite.material.color.setHex(0xff4444);  // Red (low bonus)
     }
   } else {
     comboSprite.visible = false;
@@ -1475,19 +1473,32 @@ export function showDebugMenu() {
   header.position.set(0, 1.4, 0);
   debugMenuGroup.add(header);
 
-  // Toggle options
+  const biomeLabel = game.debugBiomeOverride
+    ? game.debugBiomeOverride.replace(/_/g, ' ').toUpperCase()
+    : 'AUTO';
+
+  // Toggle and action options
   const options = [
-    { 
-      id: 'fps', 
-      label: 'FPS COUNTER', 
+    {
+      id: 'fps',
+      type: 'toggle',
+      label: 'FPS COUNTER',
       getState: () => game.debugShowFPS,
       toggle: () => { game.debugShowFPS = !game.debugShowFPS; }
     },
-    { 
-      id: 'perf', 
-      label: 'PERF MONITOR', 
+    {
+      id: 'perf',
+      type: 'toggle',
+      label: 'PERF MONITOR',
       getState: () => game.debugPerfMonitor,
       toggle: () => { game.debugPerfMonitor = !game.debugPerfMonitor; }
+    },
+    {
+      id: 'biome',
+      type: 'action',
+      label: 'BIOME',
+      action: 'biome_next',
+      getStatus: () => biomeLabel,
     },
   ];
 
@@ -1497,7 +1508,8 @@ export function showDebugMenu() {
 
   options.forEach((opt, i) => {
     const y = startY - i * itemHeight;
-    const isOn = opt.getState();
+    const isToggle = opt.type === 'toggle';
+    const isOn = isToggle ? opt.getState() : true;
 
     // Background
     const itemGroup = new THREE.Group();
@@ -1505,19 +1517,23 @@ export function showDebugMenu() {
 
     const bgGeo = new THREE.PlaneGeometry(itemWidth, 0.28);
     const bgMat = new THREE.MeshBasicMaterial({
-      color: isOn ? 0x003322 : 0x221133,
+      color: isToggle ? (isOn ? 0x003322 : 0x221133) : 0x112233,
       transparent: true,
       opacity: 0.9,
       side: THREE.DoubleSide,
     });
     const bgMesh = new THREE.Mesh(bgGeo, bgMat);
-    bgMesh.userData.debugToggle = opt.id;
+    if (isToggle) {
+      bgMesh.userData.debugToggle = opt.id;
+    } else {
+      bgMesh.userData.debugAction = opt.action;
+    }
     itemGroup.add(bgMesh);
 
     // Border
     itemGroup.add(new THREE.LineSegments(
       new THREE.EdgesGeometry(bgGeo),
-      new THREE.LineBasicMaterial({ color: isOn ? 0x00ff88 : 0x888888 })
+      new THREE.LineBasicMaterial({ color: isToggle ? (isOn ? 0x00ff88 : 0x888888) : 0x00ffff })
     ));
 
     // Label
@@ -1527,22 +1543,24 @@ export function showDebugMenu() {
     label.position.set(-0.3, 0, 0.01);
     itemGroup.add(label);
 
-    // Status indicator (ON/OFF)
-    const statusText = isOn ? 'ON' : 'OFF';
-    const statusColor = isOn ? '#00ff88' : '#ff4444';
+    // Status indicator (ON/OFF or current biome)
+    const statusText = isToggle ? (isOn ? 'ON' : 'OFF') : opt.getStatus();
+    const statusColor = isToggle ? (isOn ? '#00ff88' : '#ff4444') : '#00ffff';
     const status = makeSprite(statusText, {
-      fontSize: 28, color: statusColor, glow: isOn, glowColor: statusColor, scale: 0.15,
+      fontSize: 28, color: statusColor, glow: isToggle ? isOn : true, glowColor: statusColor, scale: 0.15,
     });
     status.position.set(0.6, 0, 0.01);
     status.userData.isStatusLabel = true;
     itemGroup.add(status);
 
     debugMenuGroup.add(itemGroup);
-    debugToggleItems.push({ group: itemGroup, mesh: bgMesh, option: opt });
+    if (isToggle) {
+      debugToggleItems.push({ group: itemGroup, mesh: bgMesh, option: opt });
+    }
   });
 
   // Instructions
-  const instructions = makeSprite('CLICK TO TOGGLE', {
+  const instructions = makeSprite('CLICK TO TOGGLE OR CYCLE', {
     fontSize: 24, color: '#888888', scale: 0.15,
   });
   instructions.position.set(0, -0.3, 0);
@@ -1710,32 +1728,41 @@ export function showReadyScreen(level, playerPos) {
   header.position.set(0, 0.8, 0);
   readyGroup.add(header);
 
-  const subheader = makeSprite('SHOOT TO START', {
+  const instruction = makeSprite('SHOOT TO BEGIN', {
     fontSize: 40, color: '#00ffff', scale: 0.4,
   });
-  subheader.position.set(0, 0.4, 0);
-  readyGroup.add(subheader);
+  instruction.position.set(0, 0.4, 0);
+  readyGroup.add(instruction);
 
-  // START target
-  const btnGeo = new THREE.PlaneGeometry(1, 0.4);
-  const btnMat = new THREE.MeshBasicMaterial({ color: 0x003300, transparent: true, opacity: 0.8 });
-  const btn = new THREE.Mesh(btnGeo, btnMat);
-  btn.userData.readyAction = 'start';
-  btn.position.set(0, -0.2, 0);
-  readyGroup.add(btn);
-
-  readyGroup.add(new THREE.LineSegments(
-    new THREE.EdgesGeometry(btnGeo),
-    new THREE.LineBasicMaterial({ color: 0x00ff00 })
-  ));
-
-  const startTxt = makeSprite('START', { fontSize: 40, color: '#00ff00', scale: 0.3 });
-  startTxt.position.set(0, -0.2, 0.01);
-  readyGroup.add(startTxt);
+  readyCountdownSprite = makeSprite('3', {
+    fontSize: 120, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.7,
+  });
+  readyCountdownSprite.position.set(0, -0.05, 0.01);
+  readyCountdownSprite.visible = false;
+  readyGroup.add(readyCountdownSprite);
 }
 
 export function hideReadyScreen() {
   readyGroup.visible = false;
+}
+
+export function updateReadyCountdownText(text) {
+  if (!readyCountdownSprite) return;
+  if (!text) {
+    readyCountdownSprite.visible = false;
+    return;
+  }
+
+  readyCountdownSprite.visible = true;
+  const isGo = text === 'GO';
+  const color = isGo ? '#00ff88' : '#ffffff';
+  updateSpriteText(readyCountdownSprite, text, {
+    fontSize: 120,
+    color,
+    glow: true,
+    glowColor: color,
+    scale: 0.7,
+  });
 }
 
 // ── Level Intro Screen ───────────────────────────────────────
@@ -1845,8 +1872,11 @@ export function showKillsRemainingAlert(remaining) {
   killsAlertDisplayTime = 2000; // Display for 2 seconds
 
   // Position further from player (better depth)
-  // Place at midfield distance but offset forward
-  levelTextGroup.position.set(0, 1.6, -3); // -3 instead of -4 for better depth
+  // Place at midfield distance with a small random offset (~20px)
+  const jitter = 0.2;
+  const jitterX = (Math.random() - 0.5) * jitter * 2;
+  const jitterY = (Math.random() - 0.5) * jitter * 2;
+  levelTextGroup.position.set(jitterX, 1.6 + jitterY, -4.5);
   levelTextGroup.visible = true;
 
   // Clear any existing content
@@ -1894,11 +1924,12 @@ export function isKillsAlertActive() {
 
 // ── Name Entry Screen ───────────────────────────────────────
 
-export function showNameEntry(score, level, storedName, playerPos) {
+export function showNameEntry(score, level, storedName, countryLabel, playerPos) {
   hideAll();
   while (nameEntryGroup.children.length) nameEntryGroup.remove(nameEntryGroup.children[0]);
   nameEntrySlots = [];
   keyboardKeys = [];
+  nameEntryActionMeshes = [];
   hoveredKey = null;
   nameEntryName = storedName || '';
   nameEntryCursor = nameEntryName.length;
@@ -1926,6 +1957,35 @@ export function showNameEntry(score, level, storedName, playerPos) {
   });
   scoreText.position.set(0, 1.05, 0);
   nameEntryGroup.add(scoreText);
+
+  // Country display
+  const countryText = makeSprite(countryLabel || 'COUNTRY: NOT SET', {
+    fontSize: 36, color: '#66ffff', scale: 0.36,
+  });
+  countryText.position.set(0, 0.92, 0);
+  nameEntryGroup.add(countryText);
+
+  // Change country button
+  const changeGroup = new THREE.Group();
+  changeGroup.position.set(0, 0.2, 0);
+  const changeGeo = new THREE.PlaneGeometry(0.9, 0.26);
+  const changeMat = new THREE.MeshBasicMaterial({
+    color: 0x112244, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
+  });
+  const changeMesh = new THREE.Mesh(changeGeo, changeMat);
+  changeMesh.userData.nameEntryAction = 'country';
+  changeGroup.add(changeMesh);
+  changeGroup.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(changeGeo),
+    new THREE.LineBasicMaterial({ color: 0x66ccff })
+  ));
+  const changeText = makeSprite('CHANGE COUNTRY', {
+    fontSize: 44, color: '#ccffff', scale: 0.16,
+  });
+  changeText.position.set(0, 0, 0.01);
+  changeGroup.add(changeText);
+  nameEntryGroup.add(changeGroup);
+  nameEntryActionMeshes.push(changeMesh);
 
   // 6 character slot boxes
   const slotWidth = 0.18;
@@ -1972,7 +2032,7 @@ export function showNameEntry(score, level, storedName, playerPos) {
     ['SPACE', 'OK'],
   ];
 
-  const keySize = 0.14;
+  const keySize = 0.245; // Increased by 75% from 0.14
   const keyGap = 0.03;
   let rowY = 0.45;
 
@@ -2033,8 +2093,15 @@ export function getNameEntryName() {
   return nameEntryName;
 }
 
-export function getKeyboardHit(raycaster) {
+export function getNameEntryHit(raycaster) {
   if (!nameEntryGroup.visible) return null;
+  if (nameEntryActionMeshes.length > 0) {
+    const actionHits = raycaster.intersectObjects(nameEntryActionMeshes, false);
+    if (actionHits.length > 0) {
+      const action = actionHits[0].object.userData.nameEntryAction;
+      if (action) return { action };
+    }
+  }
   const meshes = keyboardKeys.map(k => k.mesh);
   const hits = raycaster.intersectObjects(meshes, false);
   if (hits.length > 0) {
@@ -2103,6 +2170,8 @@ export function updateKeyboardHover(raycaster) {
   // Reset previous hover
   if (hoveredKey) {
     hoveredKey.mat.color.setHex(hoveredKey.baseColor);
+    hoveredKey.group.scale.set(1.0, 1.0, 1.0);
+    hoveredKey.group.rotation.z = 0;
     hoveredKey = null;
   }
 
@@ -2113,6 +2182,11 @@ export function updateKeyboardHover(raycaster) {
     if (hit) {
       hoveredKey = hit;
       hit.mat.color.setHex(0x004455);
+      // Enhanced hover animation: scale + slight rotation
+      hit.group.scale.set(1.15, 1.15, 1.15);
+      hit.group.rotation.z = 0.05;
+      // Play hover sound
+      playMenuHoverSound();
     }
   }
 }
@@ -2444,18 +2518,45 @@ function renderCountryList(countries) {
   countryItems.forEach(item => countrySelectGroup.remove(item.group));
   countryItems = [];
 
-  const filtered = countries.filter(c => c.continent === countrySelectContinent);
+  const filtered = countries
+    .filter(c => c.continent === countrySelectContinent)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Required continent layouts:
+  // Europe: 4 columns of 5 (20 total)
+  // Asia: 3 columns of 5/5/4 (14 total)
+  let columnRowCounts = [filtered.length];
+  if (countrySelectContinent === 'Europe') {
+    columnRowCounts = [5, 5, 5, 5];
+  } else if (countrySelectContinent === 'Asia') {
+    columnRowCounts = [5, 5, 4];
+  }
+
+  const positioned = [];
+  let idx = 0;
+  for (let col = 0; col < columnRowCounts.length; col++) {
+    const rows = columnRowCounts[col];
+    for (let row = 0; row < rows && idx < filtered.length; row++) {
+      positioned.push({ country: filtered[idx], col, row });
+      idx += 1;
+    }
+  }
+
   const itemHeight = 0.22;
   const itemGap = 0.04;
+  const colGap = 0.1;
   const startY = 0.85;
+  const colWidth = (columnRowCounts.length > 1) ? 0.9 : 1.8;
+  const totalWidth = (columnRowCounts.length * colWidth) + ((columnRowCounts.length - 1) * colGap);
+  const startX = -totalWidth / 2 + colWidth / 2;
 
-  for (let i = 0; i < filtered.length; i++) {
-    const country = filtered[i];
+  positioned.forEach(({ country, col, row }) => {
     const itemGroup = new THREE.Group();
-    const y = startY - i * (itemHeight + itemGap);
-    itemGroup.position.set(0, y, 0);
+    const x = startX + col * (colWidth + colGap);
+    const y = startY - row * (itemHeight + itemGap);
+    itemGroup.position.set(x, y, 0);
 
-    const itemGeo = new THREE.PlaneGeometry(1.8, itemHeight);
+    const itemGeo = new THREE.PlaneGeometry(colWidth, itemHeight);
     const itemMat = new THREE.MeshBasicMaterial({
       color: 0x111133, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
     });
@@ -2469,15 +2570,16 @@ function renderCountryList(countries) {
       new THREE.LineBasicMaterial({ color: 0x444466 })
     ));
 
+    // +125% readability bump for country text, centered on each button
     const label = makeSprite(`${country.flag}  ${country.name}`, {
-      fontSize: 28, color: '#ffffff', scale: 0.15,
+      fontSize: 35, color: '#ffffff', scale: 0.1875,
     });
     label.position.set(0, 0, 0.01);
     itemGroup.add(label);
 
     countryItems.push({ group: itemGroup, mesh: itemMesh, code: country.code });
     countrySelectGroup.add(itemGroup);
-  }
+  });
 }
 
 export function hideCountrySelect() {
@@ -2582,7 +2684,7 @@ export function updateHUDHover(raycasters) {
   let newHover = false;
 
   // We need to keep track of ALL hoverables to reset those NOT hovered
-  // Traverse and reset or set scale
+  // Traverse and reset or set scale/rotation
   hoverables.forEach(obj => {
     let target = obj;
     // For many of our UI elements, the 'active area' is a Mesh inside a Group. 
@@ -2596,14 +2698,31 @@ export function updateHUDHover(raycasters) {
         obj.userData._isActuallyHovered = true;
         newHover = true;
       }
-      target.scale.set(1.1, 1.1, 1.1);
+      // Enhanced hover animation: scale + slight rotation + brightness
+      target.scale.set(1.15, 1.15, 1.15);
+      target.rotation.z = 0.05; // Slight tilt
+      // Boost brightness if material exists
+      if (obj.material && obj.material.color) {
+        obj.userData._originalColor = obj.userData._originalColor || obj.material.color.getHex();
+        obj.material.color.setHex(0xffffff); // Brighten
+      }
     } else {
       if (obj.userData._isActuallyHovered) {
         obj.userData._isActuallyHovered = false;
         target.scale.set(1.0, 1.0, 1.0);
+        target.rotation.z = 0;
+        // Restore original color
+        if (obj.material && obj.material.color && obj.userData._originalColor) {
+          obj.material.color.setHex(obj.userData._originalColor);
+        }
       }
     }
   });
+
+  // Play hover sound on new hover
+  if (newHover) {
+    playMenuHoverSound();
+  }
 
   return newHover;
 }
@@ -2611,7 +2730,8 @@ export function updateHUDHover(raycasters) {
 /** Highlights the controller currently selected for upgrade */
 export function showUpgradeHandHighlight(hand, controllers) {
   controllers.forEach((ctrl, i) => {
-    const isHand = (i === 0 && hand === 'left') || (i === 1 && hand === 'right');
+    const ctrlHand = ctrl.userData && ctrl.userData.handedness;
+    const isHand = ctrlHand ? ctrlHand === hand : ((i === 0 && hand === 'left') || (i === 1 && hand === 'right'));
     const existing = ctrl.getObjectByName('upgradeHighlight');
     if (existing) ctrl.remove(existing);
 

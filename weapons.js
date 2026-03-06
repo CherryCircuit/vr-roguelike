@@ -368,6 +368,14 @@ export const SPECIAL_UPGRADE_POOL = [
 
 // ── HELPER FUNCTIONS ─────────────────────────────────────────
 
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
 /**
  * Get a random MAIN weapon (for level 1-2 guaranteed upgrade)
  */
@@ -419,7 +427,7 @@ export function getRandomUpgrades(count, mainWeaponId = null, excludeIds = []) {
   }
   
   const filtered = pool.filter(u => !excludeSet.has(u.id));
-  const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+  const shuffled = shuffleArray([...filtered]);
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }
 
@@ -434,7 +442,7 @@ export function getRandomSpecialUpgrades(count, mainWeaponId = null) {
     // For now, all special upgrades are universal
   }
   
-  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  const shuffled = shuffleArray([...pool]);
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }
 
@@ -530,6 +538,7 @@ export function getWeaponStats(mainWeaponId, upgrades) {
     lightning: base.lightning || false,
     lightningRange: base.lightningRange || 0,
     lightningTickInterval: base.lightningTickInterval || 0.2,
+    lightningDamage: Math.round(damage),
   };
 }
 

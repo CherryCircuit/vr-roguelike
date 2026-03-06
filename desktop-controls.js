@@ -429,7 +429,6 @@ function showDesktopHUD() {
   `;
 
   desktopHUDElement.innerHTML = `
-    <div style="margin-bottom: 8px;"><strong>DESKTOP MODE</strong></div>
     <div>WASD: Move</div>
     <div>Mouse: Look & Aim</div>
     <div>Click/Space: Fire</div>

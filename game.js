@@ -136,14 +136,12 @@ export const game = {
 
   finalScore: 0,
   finalLevel: 0,
-  accuracyStreak: 0,
 
-  // Kill chain system (separate from accuracy streaks)
-  comboCount: 0,
-  comboTimer: 0,
-  comboMultiplier: 1,
-  lastKillTime: 0,
-  comboResetTime: 3000, // 3 seconds
+  // Accuracy Bonus system (replaces kill chain)
+  accuracyBonus: 0,  // 0-100 meter
+  accuracyMultiplier: 1,  // 1x-5x based on accuracy bonus
+  lastHitTime: 0,
+  missPenaltyMultiplier: 0.5,  // Lose ~50% on miss
 
   // Slow-mo death camera
   slowmoActive: false,
@@ -155,6 +153,7 @@ export const game = {
   // DEBUG: Performance monitoring settings
   debugPerfMonitor: false,  // Extended FPS stats (frame time, memory)
   debugShowFPS: true,  // Always show FPS counter in VR
+  debugBiomeOverride: null,  // Force a specific biome for previews
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -163,6 +162,7 @@ export function resetGame() {
   const preservedDebug = {
     debugPerfMonitor: game.debugPerfMonitor,
     debugShowFPS: game.debugShowFPS,
+    debugBiomeOverride: game.debugBiomeOverride,
   };
   
   const preservedSeed = {
@@ -200,7 +200,11 @@ export function resetGame() {
     nextUpgradeHand: 'left',
     finalScore: 0,
     finalLevel: 0,
-    accuracyStreak: 0,
+
+    // Accuracy Bonus reset
+    accuracyBonus: 0,
+    accuracyMultiplier: 1,
+    lastHitTime: 0,
 
     // Reset kill chain system
     comboCount: 0,
@@ -242,6 +246,7 @@ export function loadDebugSettings() {
       const settings = JSON.parse(stored);
       game.debugPerfMonitor = settings.debugPerfMonitor ?? false;
       game.debugShowFPS = settings.debugShowFPS ?? true;
+      game.debugBiomeOverride = settings.debugBiomeOverride ?? null;
       console.log('[debug] Loaded settings:', settings);
     }
   } catch (e) {
@@ -257,6 +262,7 @@ export function saveDebugSettings() {
     const settings = {
       debugPerfMonitor: game.debugPerfMonitor,
       debugShowFPS: game.debugShowFPS,
+      debugBiomeOverride: game.debugBiomeOverride,
     };
     localStorage.setItem('spaceomicide_debug', JSON.stringify(settings));
     console.log('[debug] Saved settings:', settings);
@@ -288,14 +294,32 @@ export function getLevelConfig() {
 }
 
 export function addScore(points) {
-  // Apply BOTH kill chain multiplier AND accuracy multiplier
-  const killChainMult = game.comboMultiplier || 1;
-  const accuracyMult = getComboMultiplier();
-  game.score += Math.floor(points * killChainMult * accuracyMult);
+  const accuracyMult = game.accuracyMultiplier || 1;
+  game.score += Math.floor(points * accuracyMult);
 }
 
-export function getComboMultiplier() {
-  return Math.min(5, 1 + Math.floor(game.accuracyStreak / 10));
+export function getAccuracyMultiplier() {
+  return game.accuracyMultiplier || 1;
+}
+
+function updateAccuracyMultiplier() {
+  game.accuracyMultiplier = 1 + (game.accuracyBonus / 100) * 4;
+}
+
+export function registerAccuracyHit() {
+  const bonusGain = 8;
+  game.accuracyBonus = Math.min(100, game.accuracyBonus + bonusGain);
+  game.lastHitTime = performance.now();
+  updateAccuracyMultiplier();
+}
+
+export function registerAccuracyMiss() {
+  if (game.accuracyBonus <= 0) return;
+  const baseDecay = game.missPenaltyMultiplier ?? 0.5;
+  const extraDecay = (game.accuracyBonus / 100) * 0.2;
+  const decayFactor = Math.max(0.25, baseDecay - extraDecay);
+  game.accuracyBonus = Math.max(0, Math.round(game.accuracyBonus * decayFactor));
+  updateAccuracyMultiplier();
 }
 
 export function damagePlayer(amount) {
@@ -368,6 +392,10 @@ export function startGameWithSeed(seed, tier = 'standard') {
  * Get current biome from seed deck (based on level)
  */
 export function getBiomeForLevel(level) {
+  if (game.debugBiomeOverride) {
+    return game.debugBiomeOverride;
+  }
+
   if (level <= 5) {
     return 'synthwave';
   }

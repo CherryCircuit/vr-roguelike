@@ -733,6 +733,60 @@ export function playKillsAlertSound() {
   osc.stop(t + 0.47);
 }
 
+// ── Low health warning loop (gentle pulse) ────────────────────
+let lowHealthOsc = null;
+let lowHealthGain = null;
+let lowHealthLfo = null;
+let lowHealthLfoGain = null;
+
+export function startLowHealthWarningSound() {
+  if (lowHealthOsc) return;
+
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  lowHealthOsc = ctx.createOscillator();
+  lowHealthGain = ctx.createGain();
+  lowHealthLfo = ctx.createOscillator();
+  lowHealthLfoGain = ctx.createGain();
+
+  lowHealthOsc.type = 'triangle';
+  lowHealthOsc.frequency.setValueAtTime(220, t);
+
+  lowHealthLfo.type = 'sine';
+  lowHealthLfo.frequency.setValueAtTime(1.2, t);
+
+  lowHealthGain.gain.setValueAtTime(0.03, t);
+  lowHealthLfoGain.gain.setValueAtTime(0.02, t);
+
+  lowHealthLfo.connect(lowHealthLfoGain);
+  lowHealthLfoGain.connect(lowHealthGain.gain);
+
+  lowHealthOsc.connect(lowHealthGain);
+  lowHealthGain.connect(ctx.destination);
+
+  lowHealthOsc.start(t);
+  lowHealthLfo.start(t);
+}
+
+export function stopLowHealthWarningSound() {
+  if (!lowHealthOsc) return;
+
+  const ctx = getAudioContext();
+  const stopTime = ctx.currentTime + 0.12;
+
+  lowHealthGain.gain.cancelScheduledValues(ctx.currentTime);
+  lowHealthGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+
+  lowHealthOsc.stop(stopTime);
+  lowHealthLfo.stop(stopTime);
+
+  lowHealthOsc = null;
+  lowHealthGain = null;
+  lowHealthLfo = null;
+  lowHealthLfoGain = null;
+}
+
 // ── Lightning beam continuous sound (MP3 loop) ─────────────
 let lightningAudio = null;
 let lightningVolumeTimeout = null;
