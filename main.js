@@ -5964,6 +5964,26 @@ function updateExplosionVisuals(dt, now) {
       const t = age / m.userData.duration;
       if (m.userData.isChargeBeam) {
         m.material.opacity = (0.4 + 0.4) * (1 - t);
+      } else if (m.userData.isToxicPool) {
+        // Toxic pool - check for player damage over time
+        m.material.opacity = 0.6 * (1 - t * 0.5);
+        
+        // Deal damage every 0.5 seconds
+        if (now - m.userData.lastDamageTime > 500) {
+          const playerPos = camera.position;
+          const dist = new THREE.Vector2(
+            playerPos.x - m.position.x,
+            playerPos.z - m.position.z
+          ).length();
+          
+          if (dist < m.userData.radius && typeof damagePlayer === 'function') {
+            damagePlayer(m.userData.damage);
+          }
+          m.userData.lastDamageTime = now;
+        }
+      } else if (m.userData.isBossShield) {
+        // Boss shield - pulsing effect
+        m.material.opacity = 0.3 + Math.sin(now * 0.01) * 0.1;
       } else {
         const scale = 1 + t * 2.5;
         m.scale.setScalar(scale);
@@ -5971,6 +5991,184 @@ function updateExplosionVisuals(dt, now) {
       }
     }
   }
+}
+
+// ============================================================
+//  BOSS ATTACK HELPER FUNCTIONS
+// ============================================================
+
+// Create shockwave for Scrap Golem
+if (typeof window !== 'undefined') {
+  window.createBossShockwave = function(position, radius, damage) {
+    // Visual shockwave ring
+    const ringGeo = new THREE.RingGeometry(0.5, radius, 32);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x886644,
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.copy(position);
+    ring.rotation.x = -Math.PI / 2;
+    ring.userData.createdAt = performance.now();
+    ring.userData.duration = 1000;
+    ring.userData.radius = radius;
+    scene.add(ring);
+    explosionVisuals.push(ring);
+    
+    // Spawn debris projectiles that can be shot down
+    const debrisCount = 5 + Math.floor(damage / 10);
+    for (let i = 0; i < debrisCount; i++) {
+      const angle = (i / debrisCount) * Math.PI * 2;
+      const debrisGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+      const debrisMat = new THREE.MeshBasicMaterial({
+        color: 0x886644,
+        transparent: true,
+        opacity: 0.9
+      });
+      const debris = new THREE.Mesh(debrisGeo, debrisMat);
+      debris.position.copy(position);
+      debris.position.y += 0.5;
+      
+      const direction = new THREE.Vector3(
+        Math.cos(angle),
+        0.3,
+        Math.sin(angle)
+      ).normalize();
+      
+      debris.userData.direction = direction;
+      debris.userData.speed = 8;
+      debris.userData.damage = Math.floor(damage / debrisCount);
+      debris.userData.isBossProjectile = true;
+      debris.userData.createdAt = performance.now();
+      debris.userData.duration = 1500;
+      scene.add(debris);
+      projectiles.push(debris);
+    }
+  };
+
+  // Create explosion for Holo Phantom decoys
+  window.createExplosionAt = function(position, radius, damage) {
+    spawnExplosionVisual(position, radius);
+    
+    // Check if player is in range
+    const playerPos = camera.position;
+    const dist = playerPos.distanceTo(position);
+    if (dist < radius) {
+      if (typeof damagePlayer === 'function') {
+        damagePlayer(damage);
+      }
+    }
+  };
+  
+  // Create shootable decoy for Holo Phantom
+  window.createHoloDecoy = function(position, explosionDamage, explosionRadius) {
+    const decoyGeo = new THREE.SphereGeometry(0.4, 8, 8);
+    const decoyMat = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.7
+    });
+    const decoy = new THREE.Mesh(decoyGeo, decoyMat);
+    decoy.position.copy(position);
+    decoy.userData.isBossProjectile = true;
+    decoy.userData.isDecoy = true;
+    decoy.userData.explosionDamage = explosionDamage;
+    decoy.userData.explosionRadius = explosionRadius;
+    decoy.userData.createdAt = performance.now();
+    decoy.userData.duration = 2500;
+    scene.add(decoy);
+    projectiles.push(decoy);
+  };
+
+  // Fire pulse wave for Pulse Emitter
+  window.fireBossPulse = function(fromPos, targetPos, damage) {
+    const direction = targetPos.clone().sub(fromPos).normalize();
+    const pulseGeo = new THREE.SphereGeometry(0.3, 8, 8);
+    const pulseMat = new THREE.MeshBasicMaterial({
+      color: 0xff0088,
+      transparent: true,
+      opacity: 0.9
+    });
+    const pulse = new THREE.Mesh(pulseGeo, pulseMat);
+    pulse.position.copy(fromPos);
+    pulse.userData.direction = direction;
+    pulse.userData.speed = 15;
+    pulse.userData.damage = damage;
+    pulse.userData.isBossProjectile = true;
+    pulse.userData.createdAt = performance.now();
+    pulse.userData.duration = 3000;
+    scene.add(pulse);
+    projectiles.push(pulse);
+  };
+
+  // Create shield for Pulse Emitter
+  window.createBossShield = function(position, radius) {
+    const shieldGeo = new THREE.SphereGeometry(radius, 16, 16);
+    const shieldMat = new THREE.MeshBasicMaterial({
+      color: 0xff0088,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide
+    });
+    const shield = new THREE.Mesh(shieldGeo, shieldMat);
+    shield.position.copy(position);
+    shield.userData.isBossShield = true;
+    shield.userData.isBossProjectile = true; // Can be shot down
+    shield.userData.createdAt = performance.now();
+    shield.userData.duration = 3000;
+    scene.add(shield);
+    explosionVisuals.push(shield);
+  };
+
+  // Create toxic pool for Rust Serpent
+  window.createToxicPool = function(position, radius, damage) {
+    const poolGeo = new THREE.CircleGeometry(radius, 32);
+    const poolMat = new THREE.MeshBasicMaterial({
+      color: 0xcc4400,
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide
+    });
+    const pool = new THREE.Mesh(poolGeo, poolMat);
+    pool.position.copy(position);
+    pool.position.y = 0.1;
+    pool.rotation.x = -Math.PI / 2;
+    pool.userData.isToxicPool = true;
+    pool.userData.isBossProjectile = true; // Can be shot
+    pool.userData.damage = damage;
+    pool.userData.createdAt = performance.now();
+    pool.userData.duration = 5000;
+    pool.userData.lastDamageTime = 0;
+    scene.add(pool);
+    explosionVisuals.push(pool);
+  };
+
+  // Fire lightning bolt for Static Wisp
+  window.fireBossLightning = function(fromPos, targetPos, damage) {
+    // Create visual lightning bolt
+    createLightningBolt(fromPos, targetPos);
+    
+    // Also create a projectile that can be shot down
+    const direction = targetPos.clone().sub(fromPos).normalize();
+    const lightningGeo = new THREE.SphereGeometry(0.25, 6, 6);
+    const lightningMat = new THREE.MeshBasicMaterial({
+      color: 0xffff00,
+      transparent: true,
+      opacity: 0.95
+    });
+    const lightning = new THREE.Mesh(lightningGeo, lightningMat);
+    lightning.position.copy(fromPos);
+    lightning.userData.direction = direction;
+    lightning.userData.speed = 20;
+    lightning.userData.damage = damage;
+    lightning.userData.isBossProjectile = true;
+    lightning.userData.createdAt = performance.now();
+    lightning.userData.duration = 2000;
+    scene.add(lightning);
+    projectiles.push(lightning);
+  };
 }
 
 function handleRicochet(fromPoint, stats, bounceCount, controllerIndex) {
@@ -6010,6 +6208,35 @@ function updateProjectiles(dt) {
 
     // Skip projectiles with missing data (safety check)
     if (!proj.userData || !proj.userData.stats) {
+      // Check if this is a boss projectile
+      if (proj.userData && proj.userData.damage && proj.userData.direction) {
+        // Boss projectile - move it
+        const age = now - proj.userData.createdAt;
+        if (age > proj.userData.duration) {
+          scene.remove(proj);
+          projectiles.splice(i, 1);
+          continue;
+        }
+        
+        // Move boss projectile
+        proj.position.addScaledVector(proj.userData.direction, proj.userData.speed * dt);
+        
+        // Check collision with player
+        const playerPos = camera.position;
+        const dist = proj.position.distanceTo(playerPos);
+        if (dist < 1.0) {
+          // Hit player
+          if (typeof damagePlayer === 'function') {
+            damagePlayer(proj.userData.damage);
+          }
+          scene.remove(proj);
+          projectiles.splice(i, 1);
+          continue;
+        }
+        
+        continue;
+      }
+      
       if (proj.userData?.isPooled) {
         returnProjectileToPool(proj);
       } else {
@@ -6130,6 +6357,71 @@ function updateProjectiles(dt) {
               scene.remove(proj);
             }
             projectiles.splice(i, 1);
+          }
+        }
+      }
+    }
+    
+    // Check collision with boss projectiles (player can shoot them down)
+    if (proj.userData.stats) { // Only player projectiles
+      for (let j = i - 1; j >= 0; j--) {
+        const bossProj = projectiles[j];
+        if (!bossProj || !bossProj.userData) continue;
+        
+        // Check if this is a boss projectile
+        if (bossProj.userData.isBossProjectile || bossProj.userData.damage) {
+          const dist = proj.position.distanceTo(bossProj.position);
+          if (dist < 0.5) { // Collision radius
+            // Destroy boss projectile
+            spawnExplosionVisual(bossProj.position.clone(), 0.5);
+            
+            // If it's a decoy, explode it
+            if (bossProj.userData.isDecoy && typeof window !== 'undefined' && window.createExplosionAt) {
+              window.createExplosionAt(bossProj.position.clone(), bossProj.userData.explosionRadius, bossProj.userData.explosionDamage);
+            }
+            
+            scene.remove(bossProj);
+            projectiles.splice(j, 1);
+            
+            // Destroy player projectile (unless piercing)
+            if (!proj.userData.stats?.piercing) {
+              if (proj.userData.isPooled) {
+                returnProjectileToPool(proj);
+              } else {
+                scene.remove(proj);
+              }
+              projectiles.splice(i, 1);
+            }
+            
+            break; // Only hit one boss projectile
+          }
+        }
+      }
+      
+      // Also check collision with explosionVisuals (toxic pools, etc.)
+      if (proj.userData.stats && projectiles[i]) { // Make sure projectile still exists
+        for (let k = explosionVisuals.length - 1; k >= 0; k--) {
+          const visual = explosionVisuals[k];
+          if (visual.userData.isBossProjectile) {
+            const dist = proj.position.distanceTo(visual.position);
+            if (dist < 1.0) { // Larger radius for area effects
+              // Destroy the visual
+              spawnExplosionVisual(visual.position.clone(), 0.3);
+              scene.remove(visual);
+              explosionVisuals.splice(k, 1);
+              
+              // Destroy player projectile (unless piercing)
+              if (!proj.userData.stats?.piercing) {
+                if (proj.userData.isPooled) {
+                  returnProjectileToPool(proj);
+                } else {
+                  scene.remove(proj);
+                }
+                projectiles.splice(i, 1);
+              }
+              
+              break;
+            }
           }
         }
       }

@@ -57,8 +57,8 @@ export function getBossTier(level) {
 
 // Pool of bosses per tier (randomly picked for that level)
 const BOSS_POOLS = {
-  // Level 5: Easy bosses
-  1: ['chrono_wraith'],
+  // Level 5: 5 new Tier 1 bosses
+  1: ['scrap_golem', 'holo_phantom', 'pulse_emitter', 'rust_serpent', 'static_wisp'],
   // Level 10: Medium bosses
   2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'],
   // Level 15: Hard bosses

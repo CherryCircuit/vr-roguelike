@@ -2286,6 +2286,395 @@ class Boss {
   }
 }
 
+// ── SCRAP GOLEM BOSS ───────────────────────────────────────
+class ScrapGolemBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    
+    this.slamTimer = 0;
+    this.slamRate = def.slamRate || 3.0;
+    this.minionTimer = 0;
+    this.minionRate = def.minionRate || 6.0;
+    this.state = 'moving';
+    this.chargeDir = new THREE.Vector3();
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    
+    // Slow movement toward player
+    this.mesh.position.addScaledVector(dirToPlayer, 0.8 * dt);
+    this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+    
+    // Ground slam attack
+    this.slamTimer += dt;
+    if (this.slamTimer >= this.slamRate) {
+      this.slamTimer = 0;
+      this.performSlam(playerPos);
+    }
+    
+    // Spawn scrap minions
+    this.minionTimer += dt;
+    if (this.minionTimer >= this.minionRate) {
+      this.minionTimer = 0;
+      this.spawnScrapMinion();
+    }
+  }
+
+  performSlam(playerPos) {
+    // Telegraph the slam
+    if (this.telegraphing) {
+      this.showTelegraph('charge', 0.8, 0x886644);
+    }
+    
+    // Create shockwave after delay
+    setTimeout(() => {
+      if (typeof window !== 'undefined' && window.createBossShockwave) {
+        window.createBossShockwave(this.mesh.position.clone(), 5, 15 + this.phase * 5);
+      }
+    }, 600);
+  }
+
+  spawnScrapMinion() {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 3;
+    const pos = this.mesh.position.clone();
+    pos.x += Math.cos(angle) * dist;
+    pos.z += Math.sin(angle) * dist;
+    pos.y = 1;
+    
+    // Use spawnBossMinion from enemies.js
+    if (typeof spawnBossMinion === 'function') {
+      spawnBossMinion(pos, this.mesh.position, 'basic');
+    }
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    // Phase 2: faster attacks
+    if (newPhase >= 2) {
+      this.slamRate = 2.5;
+      this.minionRate = 5.0;
+    }
+    // Phase 3: even faster
+    if (newPhase >= 3) {
+      this.slamRate = 2.0;
+      this.minionRate = 4.0;
+    }
+  }
+}
+
+// ── HOLO PHANTOM BOSS ───────────────────────────────────────
+class HoloPhantomBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    
+    this.decoyTimer = 0;
+    this.decoyRate = def.decoyRate || 4.0;
+    this.teleportTimer = 0;
+    this.teleportRate = def.teleportRate || 2.5;
+    this.state = 'visible';
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    
+    // Fast erratic movement
+    if (this.state === 'visible') {
+      this.mesh.position.addScaledVector(dirToPlayer, 2.0 * dt);
+      this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+      
+      // Create decoys
+      this.decoyTimer += dt;
+      if (this.decoyTimer >= this.decoyRate) {
+        this.decoyTimer = 0;
+        this.createDecoy();
+      }
+      
+      // Teleport
+      this.teleportTimer += dt;
+      if (this.teleportTimer >= this.teleportRate) {
+        this.teleportTimer = 0;
+        this.teleport(playerPos);
+      }
+    }
+  }
+
+  createDecoy() {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 3 + Math.random() * 3;
+    const decoyPos = this.mesh.position.clone();
+    decoyPos.x += Math.cos(angle) * dist;
+    decoyPos.z += Math.sin(angle) * dist;
+    
+    // Use new shootable decoy system
+    if (typeof window !== 'undefined' && window.createHoloDecoy) {
+      window.createHoloDecoy(decoyPos, 10 + this.phase * 5, 2);
+    }
+  }
+
+  teleport(playerPos) {
+    if (this.telegraphing) {
+      this.showTelegraph('teleport', 0.4, 0x00ffff);
+    }
+    
+    this.state = 'teleporting';
+    this.mesh.visible = false;
+    
+    setTimeout(() => {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 6 + Math.random() * 4;
+      this.mesh.position.set(
+        playerPos.x + Math.cos(angle) * dist,
+        1.5,
+        playerPos.z + Math.sin(angle) * dist
+      );
+      this.mesh.visible = true;
+      this.state = 'visible';
+    }, 400);
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    if (newPhase >= 2) {
+      this.decoyRate = 3.0;
+      this.teleportRate = 2.0;
+    }
+    if (newPhase >= 3) {
+      this.decoyRate = 2.5;
+      this.teleportRate = 1.5;
+    }
+  }
+}
+
+// ── PULSE EMITTER BOSS ───────────────────────────────────────
+class PulseEmitterBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    
+    this.pulseTimer = 0;
+    this.pulseRate = def.pulseRate || 2.0;
+    this.shieldActive = false;
+    this.shieldTimer = 0;
+    this.shieldDuration = def.shieldDuration || 3.0;
+    this.state = 'pulsing';
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    
+    // Moderate movement
+    this.mesh.position.addScaledVector(dirToPlayer, 1.2 * dt);
+    this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+    
+    // Pulse attacks
+    this.pulseTimer += dt;
+    if (this.pulseTimer >= this.pulseRate && !this.shieldActive) {
+      this.pulseTimer = 0;
+      this.firePulse(playerPos);
+    }
+    
+    // Shield phase
+    this.shieldTimer += dt;
+    if (this.shieldTimer >= this.shieldDuration * 2) {
+      this.shieldTimer = 0;
+      this.activateShield();
+    }
+  }
+
+  firePulse(playerPos) {
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.5, 0xff0088);
+    }
+    
+    // Fire pulse wave
+    setTimeout(() => {
+      if (typeof window !== 'undefined' && window.fireBossPulse) {
+        window.fireBossPulse(this.mesh.position.clone(), playerPos.clone(), 20 + this.phase * 10);
+      }
+    }, 400);
+  }
+
+  activateShield() {
+    this.shieldActive = true;
+    
+    // Safely set emissiveIntensity on all child meshes with materials
+    this.mesh.traverse(c => {
+      if (c.isMesh && c.material) {
+        c.material.emissiveIntensity = 0.8;
+      }
+    });
+    
+    // Create visual shield
+    if (typeof window !== 'undefined' && window.createBossShield) {
+      window.createBossShield(this.mesh.position.clone(), 2);
+    }
+    
+    setTimeout(() => {
+      this.shieldActive = false;
+      
+      // Safely reset emissiveIntensity on all child meshes with materials
+      this.mesh.traverse(c => {
+        if (c.isMesh && c.material) {
+          c.material.emissiveIntensity = 0.3;
+        }
+      });
+    }, this.shieldDuration * 1000);
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    if (newPhase >= 2) {
+      this.pulseRate = 1.5;
+      this.shieldDuration = 4.0;
+    }
+    if (newPhase >= 3) {
+      this.pulseRate = 1.2;
+      this.shieldDuration = 5.0;
+    }
+  }
+}
+
+// ── RUST SERPENT BOSS ───────────────────────────────────────
+class RustSerpentBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    
+    this.slitherAngle = 0;
+    this.slitherSpeed = def.slitherSpeed || 1.8;
+    this.toxicTimer = 0;
+    this.toxicRate = def.toxicRate || 1.5;
+    this.trailPositions = [];
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    
+    // Slithering movement
+    this.slitherAngle += dt * this.slitherSpeed * 2;
+    const slitherOffset = Math.sin(this.slitherAngle) * 0.3;
+    const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
+    
+    this.mesh.position.addScaledVector(dirToPlayer, this.slitherSpeed * dt);
+    this.mesh.position.addScaledVector(perp, slitherOffset * dt);
+    this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+    
+    // Leave toxic trail
+    this.toxicTimer += dt;
+    if (this.toxicTimer >= this.toxicRate) {
+      this.toxicTimer = 0;
+      this.dropToxicPool();
+    }
+  }
+
+  dropToxicPool() {
+    if (typeof window !== 'undefined' && window.createToxicPool) {
+      window.createToxicPool(this.mesh.position.clone(), 2.5, 5 + this.phase * 3);
+    }
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    if (newPhase >= 2) {
+      this.slitherSpeed = 2.2;
+      this.toxicRate = 1.2;
+    }
+    if (newPhase >= 3) {
+      this.slitherSpeed = 2.6;
+      this.toxicRate = 0.9;
+    }
+  }
+}
+
+// ── STATIC WISP BOSS ───────────────────────────────────────
+class StaticWispBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    
+    this.electricTimer = 0;
+    this.electricRate = def.electricRate || 1.2;
+    this.teleportTimer = 0;
+    this.teleportRate = def.teleportRate || 3.0;
+    this.state = 'active';
+    this.zigzagTimer = 0;
+    this.zigzagDir = new THREE.Vector3();
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    
+    // Fast zigzag movement
+    this.zigzagTimer += dt;
+    if (this.zigzagTimer >= 0.3) {
+      this.zigzagTimer = 0;
+      const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
+      this.zigzagDir = perp.multiplyScalar(Math.random() < 0.5 ? 1 : -1);
+    }
+    
+    this.mesh.position.addScaledVector(dirToPlayer, 2.5 * dt);
+    this.mesh.position.addScaledVector(this.zigzagDir, 1.5 * dt);
+    this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+    
+    // Electric attacks
+    this.electricTimer += dt;
+    if (this.electricTimer >= this.electricRate) {
+      this.electricTimer = 0;
+      this.fireElectricBolt(playerPos);
+    }
+    
+    // Teleport
+    this.teleportTimer += dt;
+    if (this.teleportTimer >= this.teleportRate) {
+      this.teleportTimer = 0;
+      this.teleport(playerPos);
+    }
+  }
+
+  fireElectricBolt(playerPos) {
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.3, 0xffff00);
+    }
+    
+    // Fire lightning bolt
+    setTimeout(() => {
+      if (typeof window !== 'undefined' && window.fireBossLightning) {
+        window.fireBossLightning(this.mesh.position.clone(), playerPos.clone(), 15 + this.phase * 8);
+      }
+    }, 200);
+  }
+
+  teleport(playerPos) {
+    if (this.telegraphing) {
+      this.showTelegraph('teleport', 0.3, 0xffff00);
+    }
+    
+    this.mesh.visible = false;
+    
+    setTimeout(() => {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 5 + Math.random() * 5;
+      this.mesh.position.set(
+        playerPos.x + Math.cos(angle) * dist,
+        1.5,
+        playerPos.z + Math.sin(angle) * dist
+      );
+      this.mesh.visible = true;
+    }, 300);
+  }
+
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    if (newPhase >= 2) {
+      this.electricRate = 0.9;
+      this.teleportRate = 2.5;
+    }
+    if (newPhase >= 3) {
+      this.electricRate = 0.7;
+      this.teleportRate = 2.0;
+    }
+  }
+}
+
 // ── TELEPORTING BOSS (DODGER) ───────────────────────────────
 class DodgerBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
@@ -4532,15 +4921,106 @@ const BOSS_SKULL_PATTERN = [
 
 const BOSS_DEFS = {
   // Teleporting boss (Level 5)
-  chrono_wraith: {
-    pattern: [[1, 1, 1, 1]],
-    voxelSize: 0.45,
-    baseHp: 850,
+  // Level 5 bosses (Tier 1 - INTRO)
+  scrap_golem: {
+    name: 'Scrap Golem',
+    pattern: [
+      [0, 1, 1, 0],
+      [1, 1, 1, 1],
+      [1, 1, 1, 1],
+      [0, 1, 1, 0],
+    ],
+    voxelSize: 0.4,
+    baseHp: 1100,
     phases: 3,
-    color: 0x00ff88,
+    color: 0x886644,
     scoreValue: 100,
-    behavior: 'dodger',
-    hitboxRadius: 0.45
+    behavior: 'golem',
+    hitboxRadius: 0.65,
+    slamRate: 3.0,
+    minionRate: 6.0,
+    weakPoints: true
+  },
+
+  holo_phantom: {
+    name: 'Holo Phantom',
+    pattern: [
+      [0, 1, 0],
+      [1, 1, 1],
+      [1, 1, 1],
+      [0, 1, 0],
+    ],
+    voxelSize: 0.35,
+    baseHp: 750,
+    phases: 3,
+    color: 0x00ffff,
+    scoreValue: 100,
+    behavior: 'phantom',
+    hitboxRadius: 0.55,
+    decoyRate: 4.0,
+    teleportRate: 2.5,
+    weakPoints: false
+  },
+
+  pulse_emitter: {
+    name: 'Pulse Emitter',
+    pattern: [
+      [1, 1, 1],
+      [1, 0, 1],
+      [1, 1, 1],
+    ],
+    voxelSize: 0.38,
+    baseHp: 900,
+    phases: 3,
+    color: 0xff0088,
+    scoreValue: 100,
+    behavior: 'emitter',
+    hitboxRadius: 0.6,
+    pulseRate: 2.0,
+    shieldDuration: 3.0,
+    weakPoints: true
+  },
+
+  rust_serpent: {
+    name: 'Rust Serpent',
+    pattern: [
+      [1, 0, 0, 0, 0],
+      [1, 1, 0, 0, 0],
+      [0, 1, 1, 0, 0],
+      [0, 0, 1, 1, 0],
+      [0, 0, 0, 1, 1],
+    ],
+    voxelSize: 0.32,
+    baseHp: 800,
+    phases: 3,
+    color: 0xcc4400,
+    scoreValue: 100,
+    behavior: 'serpent',
+    hitboxRadius: 0.9,
+    slitherSpeed: 1.8,
+    toxicRate: 1.5,
+    weakPoints: true
+  },
+
+  static_wisp: {
+    name: 'Static Wisp',
+    pattern: [
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0],
+      [1, 1, 0, 1, 1],
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+    ],
+    voxelSize: 0.3,
+    baseHp: 700,
+    phases: 3,
+    color: 0xffff00,
+    scoreValue: 100,
+    behavior: 'wisp',
+    hitboxRadius: 0.55,
+    electricRate: 1.2,
+    teleportRate: 3.0,
+    weakPoints: false
   },
 
   // Level 10 bosses (Tier 2 - HARDER)
@@ -4843,7 +5323,7 @@ const BOSS_DEFS = {
 
 // ── BOSS POOL MANAGEMENT ─────────────────────────────────────
 const BOSS_POOLS = {
-  1: ['chrono_wraith'], // Tier 1 (Level 5) - only teleporting boss
+  1: ['scrap_golem', 'holo_phantom', 'pulse_emitter', 'rust_serpent', 'static_wisp'], // Tier 1 (Level 5) - 5 new bosses
   2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'], // Tier 2 (Level 10) - harder bosses
   3: ['theodore_breakenridge', 'commander_halcyon', 'madame_coda', 'twin_glitch', 'neon_minotaur'], // Tier 3 (Level 15) - TOUGH bosses
   4: ['walter_breakenridge', 'kernel_monolith', 'synth_kraken', 'afterimage_seraphim', 'sun_eater_train'], // Tier 4 (Level 20) - final bosses
@@ -4878,6 +5358,23 @@ export function spawnBoss(bossId, levelConfig, camera) {
     case 'dodger':
       boss = new DodgerBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
+    // Level 5 bosses (Tier 1)
+    case 'golem':
+      boss = new ScrapGolemBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'phantom':
+      boss = new HoloPhantomBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'emitter':
+      boss = new PulseEmitterBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'serpent':
+      boss = new RustSerpentBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'wisp':
+      boss = new StaticWispBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    // Level 10 bosses
     case 'hunter':
       boss = new HunterBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
