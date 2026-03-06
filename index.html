@@ -93,6 +93,56 @@
       font-family: 'Courier New', monospace !important;
       letter-spacing: 0.1em !important;
     }
+
+    /* ── Button hover animation (HTML UI buttons) ── */
+    button, .btn, #VRButton {
+      font-family: sans-serif;
+      font-weight: bold;
+      text-transform: uppercase;
+      text-decoration: none;
+      border-radius: 15px;
+      transition: all .2s;
+      position: relative;
+      z-index: 0;
+    }
+
+    button:hover, .btn:hover, #VRButton:hover {
+      transform: scale(1.1);
+    }
+
+    button::after, .btn::after, #VRButton::after {
+      content: "";
+      display: inline-block;
+      height: 100%;
+      width: 100%;
+      border-radius: 15px;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: -1;
+      transition: all .3s;
+      border: 1px solid currentColor;
+    }
+
+    button:hover::after, .btn:hover::after, #VRButton:hover::after {
+      transform: scaleX(1.8) scaleY(2);
+      opacity: 0;
+    }
+
+    .btn-grow {
+      border: 1px solid currentColor;
+      color: #fff;
+    }
+
+    .btn-animate, .btn-animated {
+      animation: moveInBottom 5s ease-out;
+      animation-fill-mode: backwards;
+    }
+
+    @keyframes moveInBottom {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
   </style>
 </head>
 <body>
@@ -104,7 +154,7 @@
     <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Pull triggers to shoot</p>
     
     <!-- Seed Deck Settings -->
-    <div id="seed-controls" style="margin-top: 20px; padding: 15px; background: rgba(0, 0, 0, 0.3); border: 1px solid #ff00ff; border-radius: 5px;">
+    <div id="seed-controls" style="display:none;margin-top: 20px; padding: 15px; background: rgba(0, 0, 0, 0.3); border: 1px solid #ff00ff; border-radius: 5px;">
       <div style="color: #00ffff; font-size: 0.9em; margin-bottom: 10px;">🎲 SEED DECK SETTINGS</div>
       
       <div style="margin-bottom: 8px;">
@@ -129,7 +179,7 @@
       </div>
     </div>
     
-    <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">ver. 2026/03/04/20:46 - Boss port fix, biome props</p>
+    <p style="font-size: 0.7em; opacity: 0.4; margin-top: 12px;">ver. 2026/03/06/11:20 - Debug biome cycle, click block</p>
   </div>
 
   <!-- Fallback if WebXR is not available -->
@@ -157,6 +207,8 @@
     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-seed-controls"> Seed deck settings</label>
+    <button id="debug-next-biome" style="margin-top:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Next biome</button>
     <button id="copy-log-btn" style="margin-top:8px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;">📋 COPY LOG</button>
   </div>
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
@@ -208,12 +260,31 @@
       document.getElementById('debug-console').addEventListener('change', function() {
         consolePanel.style.display = this.checked ? 'block' : 'none';
       });
+
+      const debugNextBiomeBtn = document.getElementById('debug-next-biome');
+      if (debugNextBiomeBtn) {
+        debugNextBiomeBtn.addEventListener('click', function() {
+          if (window.debugCycleBiomeWithFade) {
+            window.debugCycleBiomeWithFade();
+          }
+        });
+      }
       
       // Seed Deck Controls
       const seedInput = document.getElementById('seed-input');
       const seedTier = document.getElementById('seed-tier');
       const dailySeedBtn = document.getElementById('daily-seed-btn');
       const weeklySeedBtn = document.getElementById('weekly-seed-btn');
+      const seedControls = document.getElementById('seed-controls');
+      const debugSeedToggle = document.getElementById('debug-seed-controls');
+
+      if (seedControls && debugSeedToggle) {
+        seedControls.style.display = 'none';
+        debugSeedToggle.checked = false;
+        debugSeedToggle.addEventListener('change', function() {
+          seedControls.style.display = this.checked ? 'block' : 'none';
+        });
+      }
       
       // Expose seed configuration globally for main.js
       window.gameSeed = null;

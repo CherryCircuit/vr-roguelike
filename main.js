@@ -1124,9 +1124,11 @@ function setupControllers() {
 
   // Desktop click handler for non-VR playtesting
   document.addEventListener('mousedown', (e) => {
-    if (isDesktopEnabled() && e.button === 0) {
-      handleDesktopClick();
+    if (!isDesktopEnabled() || e.button !== 0) return;
+    if (e.target && e.target.closest && (e.target.closest('#debug-panel') || e.target.closest('#debug-toggle'))) {
+      return;
     }
+    handleDesktopClick();
   });
 }
 
@@ -1566,9 +1568,7 @@ function handleDesktopDebugMenuClick() {
   }
   if (result && result.action === 'biome_next') {
     playMenuClick();
-    cycleDebugBiome();
-    applyThemeForLevel(game.level);
-    showDebugMenu();
+    cycleDebugBiomeWithFade();
   }
 }
 
@@ -4810,6 +4810,18 @@ function cycleDebugBiome() {
   console.log('[debug] Biome override set to', next || 'auto');
   return next;
 }
+
+function cycleDebugBiomeWithFade() {
+  if (environmentFadeState) return;
+  startEnvironmentFade('out', 250, () => {
+    cycleDebugBiome();
+    applyThemeForLevel(game.level);
+    startEnvironmentFade('in', 250);
+    showDebugMenu();
+  });
+}
+
+window.debugCycleBiomeWithFade = cycleDebugBiomeWithFade;
 
 function resetReadyCountdown() {
   readyCountdownActive = false;

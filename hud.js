@@ -2698,23 +2698,12 @@ export function updateHUDHover(raycasters) {
         obj.userData._isActuallyHovered = true;
         newHover = true;
       }
-      // Enhanced hover animation: scale + slight rotation + brightness
-      target.scale.set(1.15, 1.15, 1.15);
-      target.rotation.z = 0.05; // Slight tilt
-      // Boost brightness if material exists
-      if (obj.material && obj.material.color) {
-        obj.userData._originalColor = obj.userData._originalColor || obj.material.color.getHex();
-        obj.material.color.setHex(0xffffff); // Brighten
-      }
+      // Hover animation: scale up
+      target.scale.set(1.1, 1.1, 1.1);
     } else {
       if (obj.userData._isActuallyHovered) {
         obj.userData._isActuallyHovered = false;
         target.scale.set(1.0, 1.0, 1.0);
-        target.rotation.z = 0;
-        // Restore original color
-        if (obj.material && obj.material.color && obj.userData._originalColor) {
-          obj.material.color.setHex(obj.userData._originalColor);
-        }
       }
     }
   });
