@@ -11,8 +11,7 @@ let rendererRef = null;
 
 // Movement state
 const keys = {
-  w: false, a: false, s: false, d: false,
-  shift: false, space: false
+  space: false
 };
 
 // Mouse state
@@ -185,30 +184,11 @@ export function isLocked() {
 export function update(dt) {
   if (!enabled || !cameraRef) return;
 
-  const moveSpeed = 5.0; // units per second
-  const mouseSensitivity = 0.002;
-
-  // Process keyboard input
-  player.velocity.set(0, 0, 0);
+  // No desktop movement, only aiming and firing
   player.isMoving = false;
 
-  if (keys.w) player.velocity.z -= 1;
-  if (keys.s) player.velocity.z += 1;
-  if (keys.a) player.velocity.x -= 1;
-  if (keys.d) player.velocity.x += 1;
-
-  // Normalize diagonal movement
-  if (player.velocity.length() > 0) {
-    player.velocity.normalize();
-    player.isMoving = true;
-  }
-
-  // Apply movement
-  const speed = keys.shift ? moveSpeed * 1.5 : moveSpeed;
-  player.position.addScaledVector(player.velocity, speed * dt);
-
-  // Update camera position
-  cameraRef.position.copy(player.position);
+  // Keep player position synced to camera
+  player.position.copy(cameraRef.position);
 
   // Mouse look is handled by pointerlockchange event
   // Camera rotation is applied to player.rotation
@@ -283,13 +263,6 @@ function onKeyDown(e) {
 
   const key = e.key.toLowerCase();
 
-  // Movement
-  if (key === 'w' || key === 'arrowup') keys.w = true;
-  if (key === 's' || key === 'arrowdown') keys.s = true;
-  if (key === 'a' || key === 'arrowleft') keys.a = true;
-  if (key === 'd' || key === 'arrowright') keys.d = true;
-  if (key === 'shift') keys.shift = true;
-
   // Fire
   if (key === ' ') {
     keys.space = true;
@@ -312,11 +285,6 @@ function onKeyDown(e) {
 function onKeyUp(e) {
   const key = e.key.toLowerCase();
 
-  if (key === 'w' || key === 'arrowup') keys.w = false;
-  if (key === 's' || key === 'arrowdown') keys.s = false;
-  if (key === 'a' || key === 'arrowleft') keys.a = false;
-  if (key === 'd' || key === 'arrowright') keys.d = false;
-  if (key === 'shift') keys.shift = false;
   if (key === ' ') keys.space = false;
 }
 
@@ -403,42 +371,13 @@ function handleFireInput() {
 
 // ── HUD Helpers ────────────────────────────────────────────
 
-let desktopHUDElement = null;
 let crosshairElement = null;
 
 function showDesktopHUD() {
-  if (desktopHUDElement) {
-    desktopHUDElement.style.display = 'block';
-    if (crosshairElement) crosshairElement.style.display = 'block';
+  if (crosshairElement) {
+    crosshairElement.style.display = 'block';
     return;
   }
-
-  // Create HUD element
-  desktopHUDElement = document.createElement('div');
-  desktopHUDElement.id = 'desktop-controls-hud';
-  desktopHUDElement.style.cssText = `
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    color: #00ffff;
-    font-family: 'Courier New', monospace;
-    font-size: 14px;
-    text-shadow: 0 0 10px #00ffff;
-    pointer-events: none;
-    z-index: 1000;
-  `;
-
-  desktopHUDElement.innerHTML = `
-    <div>WASD: Move</div>
-    <div>Mouse: Look & Aim</div>
-    <div>Click/Space: Fire</div>
-    <div>1/2/3: Weapon</div>
-    <div>Scroll: Cycle Weapon</div>
-    <div>ESC: Menu</div>
-    <div style="margin-top: 8px; opacity: 0.7;">Click to enable mouse look</div>
-  `;
-
-  document.body.appendChild(desktopHUDElement);
 
   // Create crosshair element
   crosshairElement = document.createElement('div');
@@ -466,9 +405,6 @@ function showDesktopHUD() {
 }
 
 function hideDesktopHUD() {
-  if (desktopHUDElement) {
-    desktopHUDElement.style.display = 'none';
-  }
   if (crosshairElement) {
     crosshairElement.style.display = 'none';
   }
