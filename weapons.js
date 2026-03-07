@@ -100,6 +100,7 @@ export const MAIN_WEAPONS = {
       spreadAngle: 0.0262,  // 1.5 degrees
       damageRampUp: true,  // Damage increases with consecutive hits
       damageRampUpMax: 2.0,  // Max 2x damage after ramp-up
+      projectileSpeed: 55,
     },
   },
   
@@ -469,6 +470,7 @@ export function getWeaponStats(mainWeaponId, upgrades) {
   let critChance = Math.min(base.critChance + (u.critical || 0) * 0.15 + (u.super_crit || 0) * 0.25, 0.9);
   let piercing = base.piercing || (u.piercing || 0) > 0 || (u.overcharge || 0) > 0;
   let aoeRadius = base.aoeRadius;
+  const projectileSpeed = base.projectileSpeed;
   
   if ((u.big_boom || 0) > 0 || (u.mega_boom || 0) > 0) {
     aoeRadius = Math.max(aoeRadius, 0.5 + ((u.big_boom || 0) + (u.mega_boom || 0) * 1.5) * 0.3);
@@ -530,6 +532,7 @@ export function getWeaponStats(mainWeaponId, upgrades) {
     critMultiplier,
     piercing,
     aoeRadius,
+    projectileSpeed,
     spreadAngle: base.spreadAngle || 0,
     vampiricInterval,
     fireWeakenMult,
