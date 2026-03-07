@@ -294,10 +294,12 @@ function init() {
   // Desktop controls will auto-enable if VR isn't available
   if (!navigator.xr) {
     console.warn('[init] WebXR not supported - desktop mode will be enabled');
+    vrButton.style.display = 'none';
   } else {
     navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
       if (!supported) {
         console.warn('[init] immersive-vr not supported - desktop mode will be enabled');
+        vrButton.style.display = 'none';
       }
     });
   }
@@ -4833,6 +4835,7 @@ function resetReadyCountdown() {
 function beginGameplayFromReady() {
   readyCountdownActive = false;
   updateReadyCountdownText(null);
+  hideReadyScreen();
   hideHUD();
 
   // Actually start playing
@@ -4930,6 +4933,7 @@ function startGame() {
   applyThemeForLevel(1);
   applyEnvironmentFade(0);
   showHUD();
+  updateHUD(game);
   showReadyScreen(game.level, camera.position);
   resetReadyCountdown();
 

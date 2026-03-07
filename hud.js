@@ -27,6 +27,7 @@ let heartsSprite = null;
 let killCountSprite = null;
 let levelSprite = null;
 let scoreSprite = null;
+let scoreTitleSprite = null;
 let comboSprite = null;
 let comboCooldownSprite = null;
 let fpsSprite = null;
@@ -89,6 +90,9 @@ let scoreboardMesh = null;
 let scoreboardScrollOffset = 0;
 let scoreboardScores = [];
 let scoreboardHeader = '';
+let scoreboardPage = 0;
+let scoreboardSpinnerTimer = null;
+const SCOREBOARD_PAGE_SIZE = 10;
 
 // Country select state
 let countryListCanvas = null;
@@ -454,9 +458,9 @@ function createHUDElements() {
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
-  const scoreTitle = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 2.925 });
-  scoreTitle.position.set(0, 0.45, 0);
-  hudGroup.add(scoreTitle);
+  scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
+  scoreTitleSprite.position.set(0, 0.45, 0);
+  hudGroup.add(scoreTitleSprite);
 
   // Kill counter — right side on floor
   killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 3.15 });
@@ -672,25 +676,25 @@ function createUpgradeCard(upgrade, position) {
 
   // Name text - increased proportionally to card size
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
-    fontSize: 36,
+    fontSize: 45,
     color: upgrade.color || '#00ffff',
     glow: true,
     glowColor: upgrade.color,
-    scale: 0.19,
+    scale: 0.24,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.40, 0.01);
+  nameSprite.position.set(0, 0.55, 0.01);
   group.add(nameSprite);
 
-  // Description text - larger while keeping within card bounds
+  // Description text - 200% larger
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 60,
+    fontSize: 90,
     color: '#cccccc',
-    scale: 0.2,
+    scale: 0.4,
     depthTest: true,
-    maxWidth: 240,
+    maxWidth: 260,
   });
-  descSprite.position.set(0, -0.02, 0.01);
+  descSprite.position.set(0, -0.05, 0.01);
   group.add(descSprite);
 
   // Side-grade note (different color) when present
@@ -1946,28 +1950,28 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
 
   // Header
   const header = makeSprite('ENTER YOUR NAME', {
-    fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
+    fontSize: 56, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.55,
   });
-  header.position.set(0, 1.4, 0);
+  header.position.set(0, 1.45, 0);
   nameEntryGroup.add(header);
 
   // Score display
   const scoreText = makeSprite(`SCORE: ${score}  LEVEL: ${level}`, {
-    fontSize: 40, color: '#ffff00', scale: 0.4,
+    fontSize: 36, color: '#ffff00', scale: 0.36,
   });
-  scoreText.position.set(0, 1.05, 0);
+  scoreText.position.set(0, 1.1, 0);
   nameEntryGroup.add(scoreText);
 
   // Country display
   const countryText = makeSprite(countryLabel || 'COUNTRY: NOT SET', {
-    fontSize: 36, color: '#66ffff', scale: 0.36,
+    fontSize: 32, color: '#66ffff', scale: 0.32,
   });
-  countryText.position.set(0, 0.92, 0);
+  countryText.position.set(0, 0.95, 0);
   nameEntryGroup.add(countryText);
 
   // Change country button
   const changeGroup = new THREE.Group();
-  changeGroup.position.set(0, 0.2, 0);
+  changeGroup.position.set(0, 0.05, 0);
   const changeGeo = new THREE.PlaneGeometry(0.9, 0.26);
   const changeMat = new THREE.MeshBasicMaterial({
     color: 0x112244, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -2032,9 +2036,9 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
     ['SPACE', 'OK'],
   ];
 
-  const keySize = 0.245; // Increased by 75% from 0.14
+  const keySize = 0.27; // Slightly larger keys to fit bigger letters
   const keyGap = 0.03;
-  let rowY = 0.45;
+  let rowY = 0.25;
 
   for (const row of rows) {
     const rowWidth = row.reduce((sum, key) => {
@@ -2071,7 +2075,7 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
       const label = key === 'SPACE' ? '___' : key;
       const textColor = key === 'OK' ? '#00ff00' : (key === 'DEL' ? '#ff4444' : '#ccccff');
       const keyLabel = makeSprite(label, {
-        fontSize: 54, color: textColor, scale: 0.11,
+        fontSize: 60, color: textColor, scale: 0.165,
       });
       keyLabel.position.set(0, 0, 0.01);
       keyGroup.add(keyLabel);
@@ -2199,7 +2203,12 @@ export function showScoreboard(scores, headerText, playerPos) {
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
+  scoreboardPage = 0;
   scoreboardHeader = headerText || 'GLOBAL LEADERBOARD';
+  if (scoreboardSpinnerTimer) {
+    clearInterval(scoreboardSpinnerTimer);
+    scoreboardSpinnerTimer = null;
+  }
   // Position in front of player (VR-friendly)
   if (playerPos) {
     scoreboardGroup.position.copy(playerPos);
@@ -2226,8 +2235,8 @@ export function showScoreboard(scores, headerText, playerPos) {
   const btnDefs = [
     { label: 'COUNTRY', y: 1.2, action: 'country' },
     { label: 'CONTINENT', y: 0.85, action: 'continent' },
-    { label: 'SCROLL UP', y: 0.1, action: 'scroll_up' },
-    { label: 'SCROLL DOWN', y: -0.25, action: 'scroll_down' },
+    { label: '⬅️ PREV PAGE', y: 0.1, action: 'page_prev' },
+    { label: 'NEXT PAGE ➡️', y: -0.25, action: 'page_next' },
   ];
 
   for (const def of btnDefs) {
@@ -2292,17 +2301,34 @@ function renderScoreboardCanvas() {
   ctx.lineWidth = 3;
   ctx.strokeRect(1, 1, w - 2, h - 2);
 
-  const rowHeight = 80; // Increased for better readability
-  const maxVisible = Math.floor(h / rowHeight);
-  const startIdx = scoreboardScrollOffset;
+  const rowHeight = 74;
+  const maxVisible = SCOREBOARD_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(scoreboardScores.length / maxVisible));
+  scoreboardPage = Math.max(0, Math.min(totalPages - 1, scoreboardPage));
+  const startIdx = scoreboardPage * maxVisible;
   const endIdx = Math.min(startIdx + maxVisible, scoreboardScores.length);
 
-  ctx.font = 'bold 48px Arial, sans-serif'; // Larger for VR readability
+  ctx.font = 'bold 44px "Courier New", monospace';
   ctx.textBaseline = 'middle';
+
+  // Header row
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.fillText('#', 20, 60);
+  ctx.fillText('NAME', 110, 60);
+  ctx.textAlign = 'right';
+  ctx.fillText('SCORE', 560, 60);
+  ctx.fillText('LVL', 660, 60);
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.beginPath();
+  ctx.moveTo(12, 90);
+  ctx.lineTo(w - 12, 90);
+  ctx.stroke();
 
   for (let i = startIdx; i < endIdx; i++) {
     const score = scoreboardScores[i];
-    const y = (i - startIdx) * rowHeight + rowHeight / 2 + 4;
+    const y = (i - startIdx) * rowHeight + rowHeight / 2 + 120;
     const rank = i + 1;
 
     // Rank color
@@ -2312,59 +2338,56 @@ function renderScoreboardCanvas() {
     else ctx.fillStyle = '#66ffff';
 
     ctx.textAlign = 'left';
-    ctx.fillText(`#${rank}`, 15, y);
+    const rankLabel = String(rank).padStart(2, '0');
+    ctx.fillText(rankLabel, 20, y);
 
     // Name
     ctx.fillStyle = '#ccffff';
-    ctx.fillText(score.name || 'ANONYMOUS', 110, y);
+    ctx.fillText((score.name || 'ANON').toUpperCase(), 110, y);
 
     // Score
-    ctx.fillStyle = '#00ffff';
+    ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'right';
     const scoreVal = score.score !== undefined && score.score !== null ? score.score.toLocaleString() : '0';
-    ctx.fillText(scoreVal, 540, y);
+    ctx.fillText(scoreVal, 560, y);
 
     // Level
     ctx.fillStyle = '#66ffff';
     ctx.textAlign = 'right';
-    const levelVal = score.level_reached !== undefined && score.level_reached !== null ? `L${score.level_reached}` : 'L?';
-    ctx.fillText(levelVal, 640, y);
-
-    // Country flag (if available)
-    if (score.country) {
-      try {
-        const flag = String.fromCodePoint(
-          ...[...score.country.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
-        );
-        ctx.textAlign = 'left';
-        ctx.font = '42px Arial, sans-serif';
-        ctx.fillText(flag, 680, y);
-        ctx.font = 'bold 48px Arial, sans-serif';
-      } catch (e) { /* skip flag */ }
-    }
+    const levelVal = score.level_reached !== undefined && score.level_reached !== null ? `L${String(score.level_reached).padStart(2, '0')}` : 'L?';
+    ctx.fillText(levelVal, 660, y);
 
     // Divider line
     ctx.strokeStyle = 'rgba(0, 255, 255, 0.25)';
     ctx.beginPath();
-    ctx.moveTo(10, (i - startIdx + 1) * rowHeight + 4);
-    ctx.lineTo(w - 10, (i - startIdx + 1) * rowHeight + 4);
+    ctx.moveTo(12, y + rowHeight / 2);
+    ctx.lineTo(w - 12, y + rowHeight / 2);
     ctx.stroke();
   }
 
-  // "Loading" or "No scores" message
+  // Loading spinner when empty
   if (scoreboardScores.length === 0) {
-    ctx.fillStyle = '#66ffff';
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 80px Arial, sans-serif';
-    ctx.fillText('NO SCORES YET', w / 2, h / 2);
+    const cx = w / 2;
+    const cy = h / 2;
+    const radius = 60;
+    const t = performance.now() * 0.005;
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#00ffff';
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, t, t + Math.PI * 0.7);
+    ctx.stroke();
   }
 
-  // Scroll indicator
-  if (scoreboardScores.length > maxVisible) {
-    ctx.fillStyle = '#00ffff';
+  // Page indicator
+  if (scoreboardScores.length > 0) {
+    ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
-    ctx.font = '44px Arial, sans-serif';
-    ctx.fillText(`${startIdx + 1}-${endIdx} of ${scoreboardScores.length}`, w / 2, h - 20);
+    ctx.font = 'bold 38px "Courier New", monospace';
+    ctx.fillText(`PAGE ${scoreboardPage + 1} OF ${totalPages}`, w / 2, h - 20);
   }
 
   if (scoreboardTexture) scoreboardTexture.dispose();
@@ -2383,10 +2406,26 @@ function renderScoreboardCanvas() {
     scoreboardMesh.material.map = scoreboardTexture;
     scoreboardMesh.material.needsUpdate = true;
   }
+
+  if (scoreboardScores.length === 0 && !scoreboardSpinnerTimer) {
+    scoreboardSpinnerTimer = setInterval(() => {
+      if (!scoreboardGroup.visible || scoreboardScores.length > 0) {
+        clearInterval(scoreboardSpinnerTimer);
+        scoreboardSpinnerTimer = null;
+        return;
+      }
+      renderScoreboardCanvas();
+    }, 200);
+  }
+
 }
 
 export function hideScoreboard() {
   scoreboardGroup.visible = false;
+  if (scoreboardSpinnerTimer) {
+    clearInterval(scoreboardSpinnerTimer);
+    scoreboardSpinnerTimer = null;
+  }
 }
 
 export function getScoreboardHit(raycaster) {
@@ -2398,16 +2437,14 @@ export function getScoreboardHit(raycaster) {
   const hits = raycaster.intersectObjects(actionMeshes, false);
   if (hits.length > 0) {
     const action = hits[0].object.userData.scoreboardAction;
-    if (action === 'scroll_up') {
-      scoreboardScrollOffset = Math.max(0, scoreboardScrollOffset - 10);
+    if (action === 'page_prev') {
+      scoreboardPage = Math.max(0, scoreboardPage - 1);
       renderScoreboardCanvas();
       return null;
     }
-    if (action === 'scroll_down') {
-      scoreboardScrollOffset = Math.min(
-        Math.max(0, scoreboardScores.length - 20),
-        scoreboardScrollOffset + 10
-      );
+    if (action === 'page_next') {
+      const totalPages = Math.max(1, Math.ceil(scoreboardScores.length / SCOREBOARD_PAGE_SIZE));
+      scoreboardPage = Math.min(totalPages - 1, scoreboardPage + 1);
       renderScoreboardCanvas();
       return null;
     }
@@ -2418,10 +2455,8 @@ export function getScoreboardHit(raycaster) {
 
 export function updateScoreboardScroll(delta) {
   if (!scoreboardGroup.visible) return;
-  scoreboardScrollOffset = Math.max(0, Math.min(
-    Math.max(0, scoreboardScores.length - 20),
-    scoreboardScrollOffset + delta
-  ));
+  const totalPages = Math.max(1, Math.ceil(scoreboardScores.length / SCOREBOARD_PAGE_SIZE));
+  scoreboardPage = Math.max(0, Math.min(totalPages - 1, scoreboardPage + delta));
   renderScoreboardCanvas();
 }
 
@@ -2698,12 +2733,23 @@ export function updateHUDHover(raycasters) {
         obj.userData._isActuallyHovered = true;
         newHover = true;
       }
-      // Hover animation: scale up
-      target.scale.set(1.1, 1.1, 1.1);
+      // Hover animation: scale up with pulse (CSS-like)
+      const baseScale = target.userData._baseScale || target.scale.clone();
+      target.userData._baseScale = baseScale;
+      const pulse = 1.1 + Math.sin(performance.now() * 0.02) * 0.05;
+      target.scale.set(baseScale.x * pulse, baseScale.y * pulse, baseScale.z * pulse);
+      if (obj.material && obj.material.opacity !== undefined) {
+        obj.userData._baseOpacity = obj.userData._baseOpacity ?? obj.material.opacity;
+        obj.material.opacity = Math.min(1, obj.userData._baseOpacity + 0.08);
+      }
     } else {
       if (obj.userData._isActuallyHovered) {
         obj.userData._isActuallyHovered = false;
-        target.scale.set(1.0, 1.0, 1.0);
+        const baseScale = target.userData._baseScale || new THREE.Vector3(1, 1, 1);
+        target.scale.set(baseScale.x, baseScale.y, baseScale.z);
+        if (obj.material && obj.material.opacity !== undefined && obj.userData._baseOpacity !== undefined) {
+          obj.material.opacity = obj.userData._baseOpacity;
+        }
       }
     }
   });
