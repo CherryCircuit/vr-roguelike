@@ -92,9 +92,13 @@ export function enable() {
     document.body.webkitRequestPointerLock;
 
   if (document.body.requestPointerLock) {
-    document.body.requestPointerLock().catch(() => {
-      console.log('[desktop-controls] Click to enable mouse look');
-    });
+    const req = document.body.requestPointerLock();
+    if (req && req.catch) {
+      req.catch((err) => {
+        if (err && err.name === 'SecurityError') return;
+        console.log('[desktop-controls] Click to enable mouse look');
+      });
+    }
   }
 
   // Show desktop mode indicator
@@ -245,14 +249,22 @@ function setupEventListeners() {
   document.addEventListener('pointerlockerror', onPointerLockError);
 
   // Click to request pointer lock
-  document.addEventListener('click', () => {
-    if (enabled && !mouse.locked) {
-      document.body.requestPointerLock = document.body.requestPointerLock ||
-        document.body.mozRequestPointerLock ||
-        document.body.webkitRequestPointerLock;
+  document.addEventListener('click', (e) => {
+    if (!enabled || mouse.locked) return;
+    if (e && e.target && e.target.closest && (e.target.closest('#debug-panel') || e.target.closest('#debug-toggle'))) {
+      return;
+    }
+    document.body.requestPointerLock = document.body.requestPointerLock ||
+      document.body.mozRequestPointerLock ||
+      document.body.webkitRequestPointerLock;
 
-      if (document.body.requestPointerLock) {
-        document.body.requestPointerLock();
+    if (document.body.requestPointerLock) {
+      const req = document.body.requestPointerLock();
+      if (req && req.catch) {
+        req.catch((err) => {
+          if (err && err.name === 'SecurityError') return;
+          console.log('[desktop-controls] Click to enable mouse look');
+        });
       }
     }
   });
