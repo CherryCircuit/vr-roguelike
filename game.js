@@ -396,39 +396,10 @@ export function getBiomeForLevel(level) {
     return game.debugBiomeOverride;
   }
 
-  if (level <= 5) {
-    return 'synthwave';
-  }
-
-  const chunkIndex = Math.floor((level - 6) / 5); // 0: 6-10, 1: 11-15, 2: 16-20
-
-  if (!game.biomeChunks) {
-    game.biomeChunks = {};
-  }
-
-  if (game.biomeChunks[chunkIndex]) {
-    return game.biomeChunks[chunkIndex];
-  }
-
-  const deck = getSeedDeck();
-  let biomeId = null;
-
-  if (deck && deck.deck && deck.deck.biomes.length > 0) {
-    const biomePool = deck.deck.biomes;
-    const biomeIndex = chunkIndex % biomePool.length;
-    biomeId = biomePool[biomeIndex];
-  } else {
-    const biomePool = getBiomePool();
-    biomeId = biomePool[Math.floor(Math.random() * biomePool.length)];
-  }
-
-  game.biomeChunks[chunkIndex] = biomeId;
-
-  const chunkStart = 6 + chunkIndex * 5;
-  const chunkEnd = chunkStart + 4;
-  console.log(`[biome] Assigned biome "${biomeId}" to levels ${chunkStart}-${chunkEnd}`);
-
-  return biomeId;
+  if (level <= 5) return 'synthwave_valley';
+  if (level <= 10) return 'desert_night';
+  if (level <= 15) return 'alien_planet';
+  return 'hellscape_lava';
 }
 
 /**
