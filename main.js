@@ -4851,7 +4851,10 @@ function cycleDebugBiomeWithFade() {
   });
 }
 
-window.debugCycleBiomeWithFade = cycleDebugBiomeWithFade;
+window.debugCycleBiomeWithFade = () => {
+  console.log('[debug] Next biome requested');
+  cycleDebugBiomeWithFade();
+};
 
 function resetReadyCountdown() {
   readyCountdownActive = false;
@@ -5838,7 +5841,19 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId) {
 
   // Reset and activate pooled projectile
   mesh.position.copy(origin);
-  mesh.userData.velocity = direction.clone().multiplyScalar(isBuckshot ? 20 : 40);
+  let shotDirection = direction.clone();
+  if (isBuckshot) {
+    const minSpread = THREE.MathUtils.degToRad(0.5);
+    const maxSpread = THREE.MathUtils.degToRad(2.5);
+    const angle = minSpread + Math.random() * (maxSpread - minSpread);
+    let axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+    if (axis.lengthSq() < 0.0001) axis.set(0, 1, 0);
+    axis.cross(shotDirection);
+    if (axis.lengthSq() < 0.0001) axis.set(1, 0, 0);
+    axis.normalize();
+    shotDirection.applyAxisAngle(axis, angle);
+  }
+  mesh.userData.velocity = shotDirection.clone().multiplyScalar(isBuckshot ? 20 : 40);
   mesh.userData.stats = stats;
   mesh.userData.controllerIndex = controllerIndex;
   mesh.userData.isExploding = isExploding;

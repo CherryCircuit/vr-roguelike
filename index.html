@@ -448,7 +448,8 @@
       };
 
       window.addEventListener('error', function(e) {
-        window.showWebError(e.message, e.error?.stack || e.stack || '');
+        const where = `${e.filename || 'unknown'}:${e.lineno || 0}:${e.colno || 0}`;
+        window.showWebError(`${e.message} @ ${where}`, e.error?.stack || e.stack || '');
       });
 
       window.addEventListener('unhandledrejection', function(e) {
