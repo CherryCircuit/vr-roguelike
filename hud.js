@@ -102,6 +102,7 @@ let countrySelectContinent = 'North America';
 let countrySelectScrollOffset = 0;
 let continentTabs = [];
 let countryItems = [];
+let countrySelectMode = 'country';
 
 // ── Canvas text utility ────────────────────────────────────
 function makeTextTexture(text, opts = {}) {
@@ -686,13 +687,13 @@ function createUpgradeCard(upgrade, position) {
   nameSprite.position.set(0, 0.55, 0.01);
   group.add(nameSprite);
 
-  // Description text - 200% larger
+  // Description text - standard size
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 90,
+    fontSize: 60,
     color: '#cccccc',
-    scale: 0.4,
+    scale: 0.28,
     depthTest: true,
-    maxWidth: 260,
+    maxWidth: 280,
   });
   descSprite.position.set(0, -0.05, 0.01);
   group.add(descSprite);
@@ -753,25 +754,25 @@ function createSkipCard(position) {
 
   // "SKIP" text - increased proportionally
   const nameSprite = makeSprite('SKIP', {
-    fontSize: 40,
+    fontSize: 45,
     color: '#00ff88',
     glow: true,
     glowColor: '#00ff88',
-    scale: 0.2,
+    scale: 0.24,
     depthTest: true,
   });
   nameSprite.position.set(0, 0.30, 0.01);
   group.add(nameSprite);
 
   // Description
-  const descSprite = makeSprite('Full health', {
-    fontSize: 26,
+  const descSprite = makeSprite('Skip upgrades and gain full health.', {
+    fontSize: 60,
     color: '#88ffaa',
-    scale: 0.14,
+    scale: 0.28,
     depthTest: true,
-    maxWidth: 220,
+    maxWidth: 280,
   });
-  descSprite.position.set(0, 0.02, 0.01);
+  descSprite.position.set(0, -0.02, 0.01);
   group.add(descSprite);
 
   // Heart icon
@@ -2197,6 +2198,23 @@ export function updateKeyboardHover(raycaster) {
 
 // ── Scoreboard Screen ───────────────────────────────────────
 
+function getScoreboardHeader(headerText) {
+  if (!headerText) return { main: '🌎 GLOBAL' };
+  if (headerText.startsWith('COUNTRY:')) {
+    return { main: headerText.replace('COUNTRY:', '').trim() };
+  }
+  if (headerText.startsWith('CONTINENT:')) {
+    return { main: headerText.replace('CONTINENT:', '').trim() };
+  }
+  if (headerText.startsWith('GLOBAL')) {
+    return { main: '🌎 GLOBAL' };
+  }
+  if (headerText.startsWith('LOADING')) {
+    return { main: 'LOADING' };
+  }
+  return { main: headerText };
+}
+
 export function showScoreboard(scores, headerText, playerPos) {
   hideAll();
   while (scoreboardGroup.children.length) scoreboardGroup.remove(scoreboardGroup.children[0]);
@@ -2220,15 +2238,25 @@ export function showScoreboard(scores, headerText, playerPos) {
   scoreboardGroup.visible = true;
 
   // Header
-  const header = makeSprite(scoreboardHeader, {
-    fontSize: 84, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.8,
+  // Header (two-line)
+  const headerInfo = getScoreboardHeader(scoreboardHeader);
+  const mainHeader = makeSprite(headerInfo.main, {
+    fontSize: 72, color: '#ffffff', glow: true, glowColor: '#ffffff', scale: 0.75,
   });
-  header.position.set(0, 2.05, 0);
-  scoreboardGroup.add(header);
+  mainHeader.position.set(0, 2.15, 0);
+  scoreboardGroup.add(mainHeader);
+
+  if (headerInfo.main !== 'LOADING') {
+    const subHeader = makeSprite('LEADERBOARD', {
+      fontSize: 52, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
+    });
+    subHeader.position.set(0, 1.85, 0);
+    scoreboardGroup.add(subHeader);
+  }
 
   // Score list canvas
   renderScoreboardCanvas();
-  scoreboardMesh.position.set(0, 0.55, 0);
+  scoreboardMesh.position.set(0, 0.45, 0);
   scoreboardGroup.add(scoreboardMesh);
 
   // Buttons on right side
@@ -2285,8 +2313,8 @@ export function showScoreboard(scores, headerText, playerPos) {
 
 function renderScoreboardCanvas() {
   const canvas = document.createElement('canvas');
-  const w = 800;
-  const h = 1000;
+  const w = 900;
+  const h = 1120;
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
@@ -2317,8 +2345,8 @@ function renderScoreboardCanvas() {
   ctx.fillText('#', 20, 60);
   ctx.fillText('NAME', 110, 60);
   ctx.textAlign = 'right';
-  ctx.fillText('SCORE', 560, 60);
-  ctx.fillText('LVL', 660, 60);
+  ctx.fillText('SCORE', 640, 60);
+  ctx.fillText('LVL', 740, 60);
 
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
   ctx.beginPath();
@@ -2345,17 +2373,30 @@ function renderScoreboardCanvas() {
     ctx.fillStyle = '#ccffff';
     ctx.fillText((score.name || 'ANON').toUpperCase(), 110, y);
 
+    // Flag
+    if (score.country) {
+      try {
+        const flag = String.fromCodePoint(
+          ...[...score.country.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
+        );
+        ctx.font = '40px "Courier New", monospace';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(flag, 500, y);
+        ctx.font = 'bold 44px "Courier New", monospace';
+      } catch (e) { /* skip flag */ }
+    }
+
     // Score
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'right';
     const scoreVal = score.score !== undefined && score.score !== null ? score.score.toLocaleString() : '0';
-    ctx.fillText(scoreVal, 560, y);
+    ctx.fillText(scoreVal, 640, y);
 
     // Level
     ctx.fillStyle = '#66ffff';
     ctx.textAlign = 'right';
     const levelVal = score.level_reached !== undefined && score.level_reached !== null ? `L${String(score.level_reached).padStart(2, '0')}` : 'L?';
-    ctx.fillText(levelVal, 660, y);
+    ctx.fillText(levelVal, 740, y);
 
     // Divider line
     ctx.strokeStyle = 'rgba(0, 255, 255, 0.25)';
@@ -2396,7 +2437,7 @@ function renderScoreboardCanvas() {
   scoreboardTexture.minFilter = THREE.LinearFilter;
 
   if (!scoreboardMesh) {
-    const geo = new THREE.PlaneGeometry(1.8, 2.2);
+    const geo = new THREE.PlaneGeometry(2.1, 2.6);
     const mat = new THREE.MeshBasicMaterial({
       map: scoreboardTexture, transparent: true, side: THREE.DoubleSide, depthTest: false,
     });
@@ -2462,13 +2503,14 @@ export function updateScoreboardScroll(delta) {
 
 // ── Country Select Screen ───────────────────────────────────
 
-export function showCountrySelect(countries, continents, initialContinent, playerPos) {
+export function showCountrySelect(countries, continents, initialContinent, playerPos, mode = 'country') {
   hideAll();
   while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
   continentTabs = [];
   countryItems = [];
   countrySelectContinent = initialContinent || 'North America';
   countrySelectScrollOffset = 0;
+  countrySelectMode = mode;
 
   // Position in front of player (VR-friendly)
   if (playerPos) {
@@ -2481,7 +2523,8 @@ export function showCountrySelect(countries, continents, initialContinent, playe
   countrySelectGroup.visible = true;
 
   // Header
-  const header = makeSprite('SELECT YOUR COUNTRY', {
+  const headerText = mode === 'continent' ? 'SELECT CONTINENT' : 'SELECT YOUR COUNTRY';
+  const header = makeSprite(headerText, {
     fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
   });
   header.position.set(0, 1.6, 0);
@@ -2498,7 +2541,7 @@ export function showCountrySelect(countries, continents, initialContinent, playe
     tabGroup.position.set(tabX, 1.2, 0);
 
     const isActive = continent === countrySelectContinent;
-    const tabGeo = new THREE.PlaneGeometry(tabWidth, 0.2);
+    const tabGeo = new THREE.PlaneGeometry(tabWidth, 0.28);
     const tabMat = new THREE.MeshBasicMaterial({
       color: isActive ? 0x003344 : 0x111133,
       transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -2515,7 +2558,7 @@ export function showCountrySelect(countries, continents, initialContinent, playe
     // Short label
     const shortName = continent.length > 8 ? continent.slice(0, 7) + '.' : continent;
     const tabLabel = makeSprite(shortName, {
-      fontSize: 18, color: isActive ? '#00ffff' : '#888888', scale: 0.1,
+      fontSize: 42, color: isActive ? '#00ffff' : '#888888', scale: 0.225,
     });
     tabLabel.position.set(0, 0, 0.01);
     tabGroup.add(tabLabel);
@@ -2526,7 +2569,9 @@ export function showCountrySelect(countries, continents, initialContinent, playe
   }
 
   // Country list
-  renderCountryList(countries);
+  if (mode !== 'continent') {
+    renderCountryList(countries);
+  }
 
   // BACK button
   const backGroup = new THREE.Group();
@@ -2577,7 +2622,7 @@ function renderCountryList(countries) {
     }
   }
 
-  const itemHeight = 0.22;
+  const itemHeight = 0.26;
   const itemGap = 0.04;
   const colGap = 0.1;
   const startY = 0.85;
@@ -2607,7 +2652,7 @@ function renderCountryList(countries) {
 
     // +125% readability bump for country text, centered on each button
     const label = makeSprite(`${country.flag}  ${country.name}`, {
-      fontSize: 35, color: '#ffffff', scale: 0.1875,
+      fontSize: 42, color: '#ffffff', scale: 0.225,
     });
     label.position.set(0, 0, 0.01);
     itemGroup.add(label);
@@ -2629,6 +2674,9 @@ export function getCountrySelectHit(raycaster, countries) {
   let hits = raycaster.intersectObjects(tabMeshes, false);
   if (hits.length > 0) {
     const continent = hits[0].object.userData.continentTab;
+    if (countrySelectMode === 'continent') {
+      return { action: 'select_continent', continent };
+    }
     if (continent !== countrySelectContinent) {
       countrySelectContinent = continent;
       // Refresh tabs and list
@@ -2643,11 +2691,13 @@ export function getCountrySelectHit(raycaster, countries) {
   }
 
   // Check country items
-  const itemMeshes = countryItems.map(i => i.mesh);
-  hits = raycaster.intersectObjects(itemMeshes, false);
-  if (hits.length > 0) {
-    const code = hits[0].object.userData.countryCode;
-    return { action: 'select', code };
+  if (countrySelectMode !== 'continent') {
+    const itemMeshes = countryItems.map(i => i.mesh);
+    hits = raycaster.intersectObjects(itemMeshes, false);
+    if (hits.length > 0) {
+      const code = hits[0].object.userData.countryCode;
+      return { action: 'select', code };
+    }
   }
 
   // Check back button
@@ -2733,20 +2783,26 @@ export function updateHUDHover(raycasters) {
         obj.userData._isActuallyHovered = true;
         newHover = true;
       }
-      // Hover animation: scale up with pulse (CSS-like)
+      // Hover animation: scale up with subtle glow highlight
       const baseScale = target.userData._baseScale || target.scale.clone();
       target.userData._baseScale = baseScale;
-      const pulse = 1.1 + Math.sin(performance.now() * 0.02) * 0.05;
-      target.scale.set(baseScale.x * pulse, baseScale.y * pulse, baseScale.z * pulse);
+      target.scale.set(baseScale.x * 1.1, baseScale.y * 1.1, baseScale.z * 1.1);
+      if (obj.material && obj.material.color) {
+        obj.userData._baseColor = obj.userData._baseColor || obj.material.color.getHex();
+        obj.material.color.setHex(0x66ffff);
+      }
       if (obj.material && obj.material.opacity !== undefined) {
         obj.userData._baseOpacity = obj.userData._baseOpacity ?? obj.material.opacity;
-        obj.material.opacity = Math.min(1, obj.userData._baseOpacity + 0.08);
+        obj.material.opacity = Math.min(1, obj.userData._baseOpacity + 0.05);
       }
     } else {
       if (obj.userData._isActuallyHovered) {
         obj.userData._isActuallyHovered = false;
         const baseScale = target.userData._baseScale || new THREE.Vector3(1, 1, 1);
         target.scale.set(baseScale.x, baseScale.y, baseScale.z);
+        if (obj.material && obj.material.color && obj.userData._baseColor !== undefined) {
+          obj.material.color.setHex(obj.userData._baseColor);
+        }
         if (obj.material && obj.material.opacity !== undefined && obj.userData._baseOpacity !== undefined) {
           obj.material.opacity = obj.userData._baseOpacity;
         }
