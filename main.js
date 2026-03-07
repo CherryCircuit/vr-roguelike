@@ -165,6 +165,8 @@ let currentTheme = null;
 let biomePropsGroup = null;
 let biomePropsBiome = null;
 const biomePropFloaters = [];
+let biomeSceneGroup = null;
+let biomeSceneBiome = null;
 let environmentFade = 0;
 let environmentFadeState = null;
 const environmentFadeTargets = [];
@@ -456,8 +458,28 @@ function clearBiomeProps() {
   biomePropFloaters.length = 0;
 }
 
+function clearBiomeScene() {
+  if (!biomeSceneGroup) return;
+  scene.remove(biomeSceneGroup);
+  biomeSceneGroup.traverse((child) => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+      else child.material.dispose();
+    }
+  });
+  biomeSceneGroup = null;
+  biomeSceneBiome = null;
+}
+
 function updateBiomeProps(now, dt) {
-  if (!biomePropsGroup) return;
+  if (!biomePropsGroup && !biomeSceneGroup) return;
+  if (biomePropsGroup && biomePropsGroup.userData && typeof biomePropsGroup.userData.update === 'function') {
+    biomePropsGroup.userData.update(now, dt);
+  }
+  if (biomeSceneGroup && biomeSceneGroup.userData && typeof biomeSceneGroup.userData.update === 'function') {
+    biomeSceneGroup.userData.update(now, dt);
+  }
   biomePropFloaters.forEach((floater) => {
     const { mesh, baseY, amp, speed, phase, rotateSpeed } = floater;
     mesh.position.y = baseY + Math.sin(now * speed + phase) * amp;
@@ -470,6 +492,10 @@ function rebuildBiomeProps(biomeId, theme) {
   if (biomePropsGroup && biomePropsBiome === biomeId) return;
 
   clearBiomeProps();
+
+  if (theme.hideBaseEnv) {
+    return;
+  }
 
   biomePropsGroup = new THREE.Group();
   biomePropsGroup.name = `biome-props-${biomeId}`;
@@ -753,6 +779,15 @@ function applyThemeForLevel(level) {
   if (!theme || !scene) return;
 
   currentTheme = theme;
+
+  const hideBaseEnv = !!theme.hideBaseEnv;
+  if (gridHelper) gridHelper.visible = !hideBaseEnv;
+  if (horizonRingRef) horizonRingRef.visible = !hideBaseEnv;
+  if (horizonInnerRingRef) horizonInnerRingRef.visible = !hideBaseEnv;
+  if (sunMeshRef) sunMeshRef.visible = !hideBaseEnv;
+  if (sunGlowRef) sunGlowRef.visible = !hideBaseEnv;
+  if (starsRef) starsRef.visible = theme.keepStars ? true : !hideBaseEnv;
+
   rebuildBiomeProps(getBiomeForLevel(level), theme);
 
   if (gridHelper) {
@@ -777,7 +812,8 @@ function applyThemeForLevel(level) {
     const floorColor = theme.floorColor !== undefined ? theme.floorColor : theme.mountainFill;
     floorBaseColor.setHex(floorColor);
     floorMaterial.color.copy(floorBaseColor);
-    floorMaterial.__fadeBase = 1;
+    floorMaterial.opacity = theme.hideBaseEnv ? 0 : 1;
+    floorMaterial.__fadeBase = floorMaterial.opacity;
   }
 
   const mountainScale = theme.mountainScale !== undefined ? theme.mountainScale : 1;
@@ -821,6 +857,12 @@ function applyThemeForLevel(level) {
     const starSize = theme.starSize !== undefined ? theme.starSize : 0.5;
     starsRef.material.size = starSize;
   }
+
+  if (theme.starCount || theme.starHeight || theme.starSpread) {
+    rebuildStars(theme);
+  }
+
+  rebuildBiomeScene(getBiomeForLevel(level), theme);
 
   applyEnvironmentFade(environmentFade);
 }
@@ -1071,21 +1113,52 @@ function generatePeaks(count, minH, maxH) {
 }
 
 function createStars() {
-  // Reduced from 1500 to 800 — still looks great, fewer draw calls
-  const count = 800;
+  const theme = currentTheme || {};
+  const count = theme.starCount || 800;
+  const spread = theme.starSpread || 300;
+  const height = theme.starHeight || 80;
+  const base = theme.starBase || 10;
   const positions = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     const i3 = i * 3;
-    positions[i3] = (Math.random() - 0.5) * 300;
-    positions[i3 + 1] = Math.random() * 80 + 10;
-    positions[i3 + 2] = (Math.random() - 0.5) * 300;
+    positions[i3] = (Math.random() - 0.5) * spread;
+    positions[i3 + 1] = Math.random() * height + base;
+    positions[i3 + 2] = (Math.random() - 0.5) * spread;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  // Opaque stars (no transparency = cheaper to render, no sorting needed)
   const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
   const stars = new THREE.Points(geo, mat);
-  stars.renderOrder = -20;  // Draw last (furthest background)
+  stars.renderOrder = -20;
+  scene.add(stars);
+  starsRef = stars;
+  registerFadeMaterial(starsRef.material);
+}
+
+function rebuildStars(theme) {
+  if (!scene) return;
+  if (starsRef) {
+    scene.remove(starsRef);
+    if (starsRef.geometry) starsRef.geometry.dispose();
+    if (starsRef.material) starsRef.material.dispose();
+    starsRef = null;
+  }
+  const count = theme.starCount || 800;
+  const spread = theme.starSpread || 300;
+  const height = theme.starHeight || 80;
+  const base = theme.starBase || 10;
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const i3 = i * 3;
+    positions[i3] = (Math.random() - 0.5) * spread;
+    positions[i3 + 1] = Math.random() * height + base;
+    positions[i3 + 2] = (Math.random() - 0.5) * spread;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({ color: theme.starColor || 0xffffff, size: theme.starSize || 0.5 });
+  const stars = new THREE.Points(geo, mat);
+  stars.renderOrder = -20;
   scene.add(stars);
   starsRef = stars;
   registerFadeMaterial(starsRef.material);
@@ -7364,4 +7437,395 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ── Custom biome scenes (new HTML-extracted biomes) ─────────
+function rebuildBiomeScene(biomeId, theme) {
+  if (!scene || !theme || !theme.customScene) {
+    clearBiomeScene();
+    return;
+  }
+  if (biomeSceneGroup && biomeSceneBiome === biomeId) return;
+
+  clearBiomeScene();
+
+  biomeSceneGroup = new THREE.Group();
+  biomeSceneGroup.name = `biome-scene-${biomeId}`;
+  scene.add(biomeSceneGroup);
+  biomeSceneBiome = biomeId;
+
+  if (theme.customScene === 'synthwave_valley') {
+    buildSynthwaveValleyScene(biomeSceneGroup);
+  } else if (theme.customScene === 'desert_night') {
+    buildDesertNightScene(biomeSceneGroup);
+  } else if (theme.customScene === 'alien_planet') {
+    buildAlienPlanetScene(biomeSceneGroup);
+  } else if (theme.customScene === 'hellscape_lava') {
+    buildHellscapeLavaScene(biomeSceneGroup);
+  }
+}
+
+function buildSynthwaveValleyScene(group) {
+  // Lower brightness compared to HTML version
+  const brightness = 0.55;
+
+  // Sky dome (no stars, we use global starfield)
+  const skyGeo = new THREE.SphereGeometry(2800, 32, 24);
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: {
+      topColor: { value: new THREE.Color(0x2a004a) },
+      midColor: { value: new THREE.Color(0x5c1b8f) },
+      horizonColor: { value: new THREE.Color(0xaa2b7e) },
+      glowColor: { value: new THREE.Color(0xff8fd6) },
+    },
+    vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*viewMatrix*worldPosition; }`,
+    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ vec3 dir=normalize(vWorldPosition); float h=clamp(dir.y*0.5+0.5,0.0,1.0); vec3 col=mix(midColor, topColor, smoothstep(0.55,1.0,h)); col=mix(horizonColor, col, smoothstep(0.0,0.58,h)); float horizonBand=exp(-pow(abs(h-0.48)*10.0,2.0)); col+=glowColor*horizonBand*0.18; gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    depthWrite: false,
+  });
+  const sky = new THREE.Mesh(skyGeo, skyMat);
+  group.add(sky);
+  registerFadeMaterial(skyMat);
+
+  // Terrain
+  const terrainUniforms = {
+    uTime: { value: 0 },
+    uGridColor: { value: new THREE.Color(0xff2ed1) },
+    uBaseColor: { value: new THREE.Color(0x05000d) },
+    uFogColor: { value: new THREE.Color(0x2a004a) },
+    uRepeatZ: { value: 2000.0 },
+    uOffsetZ: { value: 0.0 },
+  };
+  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);
+  terrainGeo.rotateX(-Math.PI / 2);
+  const terrainMat = new THREE.ShaderMaterial({
+    uniforms: terrainUniforms,
+    side: THREE.DoubleSide,
+    vertexShader: `uniform float uOffsetZ; uniform float uRepeatZ; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; float tiledZ=mod(pos.z+uOffsetZ+uRepeatZ*0.5, uRepeatZ)-uRepeatZ*0.5; pos.z=tiledZ; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; gl_Position=projectionMatrix*viewMatrix*world; }`,
+    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.30); vec3 base=uBaseColor; vec3 col=mix(base, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.12; float fogAmount=1.0-exp(-0.0008*0.0008*gl_FragCoord.z*gl_FragCoord.z); col=mix(col,uFogColor, clamp(fogAmount*0.55,0.0,1.0)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+  });
+  const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+  terrain.position.z = -700;
+  group.add(terrain);
+  registerFadeMaterial(terrainMat);
+
+  // Mountains
+  const makeLayer = (color, opacity, scaleY, z, y) => {
+    const points = [];
+    const width = 2000;
+    const step = 80;
+    for (let x = -width / 2; x <= width / 2; x += step) {
+      const n1 = Math.sin(x * 0.012 + z * 0.003) * 0.5 + 0.5;
+      const n2 = Math.sin(x * 0.043 - z * 0.001) * 0.5 + 0.5;
+      const spike = Math.pow(n1, 2.8) * 0.7 + Math.pow(n2, 5.0) * 0.5;
+      points.push(new THREE.Vector2(x, spike * scaleY));
+    }
+    points.unshift(new THREE.Vector2(-width / 2, -120));
+    points.push(new THREE.Vector2(width / 2, -120));
+    const shape = new THREE.Shape(points);
+    const geo = new THREE.ShapeGeometry(shape);
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(0, y, z);
+    group.add(mesh);
+    registerFadeMaterial(mat);
+  };
+  makeLayer(0x5f1da8, 0.18, 80, -850, -10);
+  makeLayer(0x7b2cbf, 0.22, 120, -700, -8);
+  makeLayer(0x4a126e, 0.3, 150, -560, -5);
+
+  // Sun + glow
+  const sunGroup = new THREE.Group();
+  sunGroup.position.set(0, 30, -760);
+  group.add(sunGroup);
+
+  const makeRadial = (inner, outer) => {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(256,256,0,256,256,256);
+    g.addColorStop(0.0, inner);
+    g.addColorStop(0.35, inner);
+    g.addColorStop(0.6, outer);
+    g.addColorStop(1.0, 'rgba(255,102,204,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
+    return new THREE.CanvasTexture(c);
+  };
+  const sunGlowTex = makeRadial('rgba(255,160,230,0.18)', 'rgba(255,102,204,0.0)');
+  const sunCoreTex = makeRadial('rgba(255,255,255,0.85)', 'rgba(255,180,230,0.65)');
+  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xff66cc, transparent: true, opacity: 0.7, depthWrite: false }));
+  sunGlow.scale.set(300, 300, 1);
+  sunGroup.add(sunGlow);
+  const sunCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }));
+  sunCore.scale.set(160, 160, 1);
+  sunGroup.add(sunCore);
+
+  // Horizon glow
+  const horizonGlowGeo = new THREE.PlaneGeometry(900, 70);
+  const horizonGlowMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { c1: { value: new THREE.Color(0xfff2bc) }, c2: { value: new THREE.Color(0xff72d5) } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.4,vUv.y)*(1.0-smoothstep(0.6,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.5,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*2.0); gl_FragColor=vec4(col, alpha*side*0.45); }`,
+  });
+  const horizonGlow = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
+  horizonGlow.position.set(0, 8, -745);
+  group.add(horizonGlow);
+  registerFadeMaterial(horizonGlowMat);
+
+  // Animate terrain flow
+  let travel = 0;
+  group.userData.update = (now, dt) => {
+    travel += dt * 55.0;
+    terrainUniforms.uTime.value = now * 0.001;
+    terrainUniforms.uOffsetZ.value = travel;
+  };
+
+  // Rotate so player faces sun
+  group.rotation.y = 0;
+}
+
+function buildDesertNightScene(group) {
+  const sceneColor = 0x06080c;
+  // Ground
+  const geometry = new THREE.PlaneGeometry(140, 140, 70, 70);
+  geometry.rotateX(-Math.PI / 2);
+  const positions = geometry.attributes.position;
+  const colors = [];
+  const flatRadius = 12.0;
+  const mountainStart = 18.0;
+  for (let i = 0; i < positions.count; i++) {
+    const x = positions.getX(i);
+    const z = positions.getZ(i);
+    const dist = Math.sqrt(x * x + z * z);
+    let heightFactor = Math.min(Math.max((dist - flatRadius) / (mountainStart - flatRadius), 0), 1);
+    heightFactor = heightFactor * heightFactor * (3 - 2 * heightFactor);
+    let height = 0;
+    height += Math.sin(x * 0.08 + 0.5) * Math.cos(z * 0.06) * 4.0;
+    height += Math.sin(x * 0.04 + 2) * Math.sin(z * 0.05 + 1) * 3.0;
+    height += Math.sin(x * 0.15 + z * 0.1) * 1.5;
+    height += Math.cos(z * 0.12 - x * 0.08) * 1.0;
+    height += Math.sin(x * 0.3) * Math.cos(z * 0.25) * 0.5;
+    if (dist > mountainStart) {
+      height += Math.sin(x * 0.4 + z * 0.3) * 2.0;
+      height += Math.cos(x * 0.2 - z * 0.5) * 2.5;
+    }
+    const finalHeight = height * heightFactor;
+    positions.setY(i, finalHeight);
+    const heightNorm = (finalHeight + 5) / 15;
+    const baseColor = new THREE.Color(0x2a241b);
+    const highlightColor = new THREE.Color(0x585144);
+    const moonTint = new THREE.Color(0x404a5a);
+    let color = baseColor.clone().lerp(highlightColor, Math.max(0, Math.min(1, heightNorm)));
+    color.lerp(moonTint, heightNorm * 0.2);
+    colors.push(color.r, color.g, color.b);
+  }
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const terrain = new THREE.Mesh(geometry, material);
+  group.add(terrain);
+  registerFadeMaterial(material);
+
+  // Moon
+  const moonGroup = new THREE.Group();
+  const moonGeometry = new THREE.IcosahedronGeometry(8, 2);
+  const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xfffef8 });
+  const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+  moonGroup.add(moon);
+  const innerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(9.5, 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 }));
+  const outerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 2), new THREE.MeshBasicMaterial({ color: 0xd4e5f7, transparent: true, opacity: 0.12 }));
+  const farGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(18, 2), new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.06 }));
+  moonGroup.add(innerGlow, outerGlow, farGlow);
+  moonGroup.position.set(-45, 35, -60);
+  group.add(moonGroup);
+
+  group.rotation.y = 0; // face toward moon
+}
+
+function buildAlienPlanetScene(group) {
+  // Ground
+  const groundGeo = new THREE.PlaneGeometry(300, 300, 20, 20);
+  const groundPositions = groundGeo.attributes.position;
+  for (let i = 0; i < groundPositions.count; i++) {
+    const x = groundPositions.getX(i);
+    const y = groundPositions.getY(i);
+    groundPositions.setZ(i, Math.sin(x * 0.05) * Math.cos(y * 0.05) * 0.5);
+  }
+  groundGeo.computeVertexNormals();
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0510, roughness: 1, metalness: 0, flatShading: true });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.5;
+  group.add(ground);
+
+  // Moon and glow
+  const moonGeo = new THREE.IcosahedronGeometry(24, 1);
+  const moonMat = new THREE.MeshBasicMaterial({ color: 0xddaaff, transparent: true, opacity: 0.95 });
+  const moon = new THREE.Mesh(moonGeo, moonMat);
+  moon.position.set(60, 80, -40);
+  group.add(moon);
+  const moonGlowGeo = new THREE.IcosahedronGeometry(36, 1);
+  const moonGlowMat = new THREE.MeshBasicMaterial({ color: 0xaa66ff, transparent: true, opacity: 0.15, side: THREE.BackSide });
+  const moonGlow = new THREE.Mesh(moonGlowGeo, moonGlowMat);
+  moonGlow.position.copy(moon.position);
+  group.add(moonGlow);
+
+  // River
+  const riverPoints = [];
+  for (let i = 0; i < 60; i++) {
+    const t = i / 59;
+    const x = Math.sin(t * Math.PI * 2.5) * 12 + Math.sin(t * Math.PI * 5) * 4;
+    const z = t * 120 - 60;
+    riverPoints.push(new THREE.Vector3(x, 0.1, z));
+  }
+  const riverCurve = new THREE.CatmullRomCurve3(riverPoints);
+  const riverGeo = new THREE.TubeGeometry(riverCurve, 120, 2, 6, false);
+  const riverMat = new THREE.MeshBasicMaterial({ color: 0x00ff66, transparent: true, opacity: 0.85 });
+  const river = new THREE.Mesh(riverGeo, riverMat);
+  group.add(river);
+  const glowGeo = new THREE.TubeGeometry(riverCurve, 120, 5, 6, false);
+  const riverGlowMat = new THREE.MeshBasicMaterial({ color: 0x00ff44, transparent: true, opacity: 0.08, side: THREE.BackSide });
+  const riverGlow = new THREE.Mesh(glowGeo, riverGlowMat);
+  group.add(riverGlow);
+
+  // Instanced city
+  const cityShaderMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uMoonDir: { value: new THREE.Vector3(60, 80, -40).normalize() },
+      uMoonColor: { value: new THREE.Color(0xcc88ff) },
+      uBaseColor: { value: new THREE.Color(0x0a0a15) }
+    },
+    vertexShader: `varying vec2 vUv; varying vec3 vNormal; varying vec3 vWorldPos; void main(){ vUv=uv; vNormal=normalize(normalMatrix*normal); vec4 worldPos=modelMatrix*instanceMatrix*vec4(position,1.0); vWorldPos=worldPos.xyz; gl_Position=projectionMatrix*viewMatrix*worldPos; }`,
+    fragmentShader: `uniform float uTime; uniform vec3 uMoonDir; uniform vec3 uMoonColor; uniform vec3 uBaseColor; varying vec2 vUv; varying vec3 vNormal; float rand(vec2 co){ return fract(sin(dot(co, vec2(12.9898,78.233)))*43758.5453);} void main(){ float moonLight=max(dot(vNormal,uMoonDir),0.0); vec3 finalColor=uBaseColor*(0.2+moonLight*0.8)*uMoonColor; vec2 uv=vUv; float numWindowsX=6.0; float numWindowsY=15.0; vec2 grid=floor(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); vec2 gridUv=fract(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); float windowMask=step(0.15,gridUv.x)*step(gridUv.x,0.85)*step(0.1,gridUv.y)*step(gridUv.y,0.9); float r=rand(grid); float isLit=step(0.5,r); if(windowMask>0.5 && isLit>0.5){ vec3 windowColor=mix(vec3(0.0,1.0,0.5), vec3(0.5,0.0,1.0), rand(grid*0.5)); float flicker=0.9+0.1*sin(uTime*2.0+rand(grid)*10.0); finalColor=windowColor*flicker*1.5; } gl_FragColor=vec4(finalColor,1.0); }`
+  });
+  const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  const cylinderGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
+  const coneGeo = new THREE.ConeGeometry(0.5, 1, 4);
+  const dummy = new THREE.Object3D();
+
+  const generateCityLayer = (geometry, count, minDist, maxDist, minHeight, maxHeight) => {
+    const mesh = new THREE.InstancedMesh(geometry, cityShaderMat, count);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = minDist + Math.random() * (maxDist - minDist);
+      const height = minHeight + Math.random() * (maxHeight - minHeight);
+      const width = 0.5 + Math.random() * 1.5;
+      dummy.position.set(Math.cos(angle) * dist, height / 2, Math.sin(angle) * dist);
+      dummy.scale.set(width, height, width);
+      dummy.rotation.y = Math.random() * Math.PI;
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    return mesh;
+  };
+  group.add(generateCityLayer(boxGeo, 100, 55, 85, 30, 60));
+  group.add(generateCityLayer(cylinderGeo, 80, 65, 95, 40, 80));
+  group.add(generateCityLayer(coneGeo, 60, 70, 100, 50, 100));
+  const megaGeo = new THREE.CylinderGeometry(1, 1.5, 1, 5);
+  const megaMesh = new THREE.InstancedMesh(megaGeo, cityShaderMat, 10);
+  for (let i = 0; i < 10; i++) {
+    const angle = (i / 10) * Math.PI * 2;
+    const dist = 60 + Math.random() * 10;
+    const h = 110 + Math.random() * 20;
+    dummy.position.set(Math.cos(angle) * dist, h / 2, Math.sin(angle) * dist);
+    dummy.scale.set(5, h, 5);
+    dummy.updateMatrix();
+    megaMesh.setMatrixAt(i, dummy.matrix);
+  }
+  group.add(megaMesh);
+
+  group.userData.update = (now, dt) => {
+    cityShaderMat.uniforms.uTime.value = now * 0.001;
+  };
+
+  group.rotation.y = 0.2; // aim player slightly toward river flow
+}
+
+function buildHellscapeLavaScene(group) {
+  const valleyWidth = 35.0;
+  const geometry = new THREE.PlaneGeometry(300, 300, 200, 200);
+  geometry.rotateX(-Math.PI / 2);
+  const positions = geometry.attributes.position;
+  for (let i = 0; i < positions.count; i++) {
+    const x = positions.getX(i);
+    const z = positions.getZ(i);
+    const riverX = Math.sin(z * 0.03) * 15.0;
+    const distToRiver = Math.abs(x - riverX);
+    const riverWidth = 5.0;
+    const distFromCenter = Math.abs(x);
+    let height = 0;
+    const valleyFloorHeight = 2.0;
+    if (distFromCenter > valleyWidth) {
+      const mountainFactor = (distFromCenter - valleyWidth) / 15.0;
+      let mHeight = 0;
+      mHeight += Math.abs(Math.sin(x * 0.05) * Math.cos(z * 0.04)) * 15.0;
+      mHeight += Math.abs(Math.sin(z * 0.08 + 1.0)) * 10.0;
+      mHeight += Math.abs(Math.cos(x * 0.12 - z * 0.08)) * 6.0;
+      mHeight += (Math.random() * 3.0);
+      height = valleyFloorHeight + mHeight * Math.min(mountainFactor, 1.0);
+    } else {
+      height = valleyFloorHeight;
+      height += (Math.sin(x * 0.5) * Math.cos(z * 0.5)) * 0.3;
+      if (distToRiver < riverWidth) {
+        height = -1.0;
+      } else if (distToRiver < riverWidth + 3.0) {
+        height = Math.min(height, valleyFloorHeight - (riverWidth + 3.0 - distToRiver) * 0.5);
+      }
+    }
+    positions.setY(i, height);
+  }
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x110505,
+    roughness: 0.9,
+    metalness: 0.1,
+    flatShading: true,
+    onBeforeCompile: (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\nvarying vec3 vPosition; varying float vElevation; uniform float uTime;`);
+      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\nvPosition = position; vElevation = position.y;`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vPosition; varying float vElevation; uniform float uTime;`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <emissive_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { } else { float distToLava = vElevation - lavaThreshold; float glowReflection = smoothstep(5.0, 0.0, distToLava); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; totalEmissiveRadiance = vec3(0.6, 0.1, 0.0) * glowReflection * pulse; } #include <emissive_fragment>`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.3, 0.0); vec3 lavaColorBright = vec3(1.0, 0.8, 0.2); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.6 + 0.4 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor, 1.0); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
+      material.userData.shader = shader;
+    }
+  });
+
+  const terrain = new THREE.Mesh(geometry, material);
+  terrain.receiveShadow = true;
+  group.add(terrain);
+
+  // Moons
+  const createMoon = (size, color, glowColor) => {
+    const mGroup = new THREE.Group();
+    const moonGeo = new THREE.IcosahedronGeometry(size, 2);
+    const moonMat = new THREE.MeshBasicMaterial({ color });
+    mGroup.add(new THREE.Mesh(moonGeo, moonMat));
+    const glowGeo = new THREE.IcosahedronGeometry(size * 1.2, 2);
+    const glowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.3 });
+    mGroup.add(new THREE.Mesh(glowGeo, glowMat));
+    const farGlowGeo = new THREE.IcosahedronGeometry(size * 1.5, 2);
+    const farGlowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.1 });
+    mGroup.add(new THREE.Mesh(farGlowGeo, farGlowMat));
+    return mGroup;
+  };
+  const moon1 = createMoon(10.5, 0xaa1111, 0xff2200);
+  moon1.position.set(20, 25, -100);
+  group.add(moon1);
+  const moon2 = createMoon(7.5, 0x880000, 0xaa0000);
+  moon2.position.set(-40, 20, -90);
+  group.add(moon2);
+  const moon3 = createMoon(5.4, 0x550000, 0x770000);
+  moon3.position.set(-20, 35, -95);
+  group.add(moon3);
+
+  group.userData.update = (now, dt) => {
+    if (material.userData.shader) material.userData.shader.uniforms.uTime.value = now * 0.001;
+  };
+
+  group.rotation.y = 0; // face moons
 }
