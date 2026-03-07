@@ -151,8 +151,8 @@ function makeTextTexture(text, opts = {}) {
   ctx.textBaseline = 'middle';
 
   // Adjust drawing position for new padding
-  const offsetX = padding;
-  const offsetY = padding;
+  const offsetX = 0;
+  const offsetY = 0;
 
   // Clear canvas with transparency (prevent black background)
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -475,15 +475,15 @@ function createHUDElements() {
 
   // Accuracy bonus — below score on left side
   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 1.8 });
-  comboSprite.position.set(-1.5, -0.45, 0);
+  comboSprite.position.set(0, -0.85, 0);
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 
   // Accuracy bonus meter bar
-  const cooldownGeo = new THREE.PlaneGeometry(0.4, 0.03);
+  const cooldownGeo = new THREE.PlaneGeometry(0.5, 0.03);
   const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
-  comboCooldownSprite.position.set(-1.5, -0.6, 0);  // Below bonus text
+  comboCooldownSprite.position.set(0, -1.0, 0);  // Below bonus text
   comboCooldownSprite.visible = false;
   hudGroup.add(comboCooldownSprite);
 }
@@ -544,9 +544,8 @@ export function updateHUD(gameState) {
   if (accuracyBonus > 0) {
     comboSprite.visible = true;
     comboCooldownSprite.visible = true;
-    const pulse = 1.0 + Math.sin(performance.now() * 0.01) * 0.1;
     const accuracyMult = (game.accuracyMultiplier || 1).toFixed(1);
-    updateSpriteText(comboSprite, `${accuracyMult}X ACCURACY BONUS`, { color: '#ff8800', scale: 0.18 * pulse });
+    updateSpriteText(comboSprite, `${accuracyMult}X ACCURACY BONUS`, { color: '#ff8800', scale: 0.18 });
 
     // Update bonus meter
     const remainingRatio = Math.max(0, Math.min(1, accuracyBonus / 100));
@@ -572,14 +571,9 @@ export function showLevelComplete(level, playerPos) {
   // Clear old
   while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
 
-  // Reduced by 25% (scale 1.0 → 0.75, 0.7 → 0.525)
   const s1 = makeSprite('LEVEL COMPLETE!', { fontSize: 80, color: '#00ffff', glow: true, glowSize: 20, scale: 0.75 });
-  s1.position.set(0, 0.9, 0);
+  s1.position.set(0, 0.55, 0);
   levelTextGroup.add(s1);
-
-  const s2 = makeSprite(`LEVEL ${level + 1}`, { fontSize: 60, color: '#ff00ff', glow: true, scale: 0.525 });
-  s2.position.set(0, 0.2, 0);
-  levelTextGroup.add(s2);
 
   // Position in front of player (VR-friendly)
   levelTextGroup.position.copy(playerPos);
@@ -609,13 +603,13 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
     console.warn('[hud] showUpgradeCards received invalid playerPos, using default');
     upgradeGroup.position.set(0, 1.6, -4);
   }
-  upgradeGroup.position.y += 1.6; // Eye level
+  upgradeGroup.position.y += 1.2; // Eye level
   upgradeGroup.position.z -= 4; // 4 feet in front of player
 
-  // "Choose an upgrade for [HAND]" header - reduced size significantly
+  // "Choose an upgrade for [HAND]" header
   const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
   const header = makeSprite(`CHOOSE UPGRADE: ${handName}`, { fontSize: 48, color: '#ffffff', glow: true, scale: 0.4 });
-  header.position.set(0, 1.4, 0);
+  header.position.set(0, 1.05, 0);
   upgradeGroup.add(header);
 
   // Cooldown text
@@ -624,6 +618,12 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   cooldownSprite.name = 'cooldown';
   upgradeGroup.add(cooldownSprite);
 
+  // Shuffle upgrades so cards are random each time
+  const shuffledUpgrades = [...upgrades];
+  for (let i = shuffledUpgrades.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledUpgrades[i], shuffledUpgrades[j]] = [shuffledUpgrades[j], shuffledUpgrades[i]];
+  }
   // Four cards evenly spaced (3 upgrades + 1 skip option)
   const positions = [
     new THREE.Vector3(-2.25, 0, 0),
@@ -633,7 +633,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   ];
 
   // Limit to first 3 upgrades only
-  upgrades.slice(0, 3).forEach((upg, i) => {
+  shuffledUpgrades.slice(0, 3).forEach((upg, i) => {
     const card = createUpgradeCard(upg, positions[i]);
     upgradeGroup.add(card);
     upgradeCards.push(card);
@@ -693,7 +693,7 @@ function createUpgradeCard(upgrade, position) {
     color: '#cccccc',
     scale: 0.28,
     depthTest: true,
-    maxWidth: 280,
+    maxWidth: 300,
   });
   descSprite.position.set(0, -0.05, 0.01);
   group.add(descSprite);
@@ -770,7 +770,7 @@ function createSkipCard(position) {
     color: '#88ffaa',
     scale: 0.28,
     depthTest: true,
-    maxWidth: 280,
+    maxWidth: 300,
   });
   descSprite.position.set(0, -0.02, 0.01);
   group.add(descSprite);
@@ -1972,7 +1972,7 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
 
   // Change country button
   const changeGroup = new THREE.Group();
-  changeGroup.position.set(0, 0.05, 0);
+  changeGroup.position.set(0, 0.6, 0);
   const changeGeo = new THREE.PlaneGeometry(0.9, 0.26);
   const changeMat = new THREE.MeshBasicMaterial({
     color: 0x112244, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -1993,7 +1993,7 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
   nameEntryActionMeshes.push(changeMesh);
 
   // 6 character slot boxes
-  const slotWidth = 0.18;
+  const slotWidth = 0.22;
   const slotGap = 0.04;
   const totalWidth = 6 * slotWidth + 5 * slotGap;
   const startX = -totalWidth / 2 + slotWidth / 2;
@@ -2003,7 +2003,7 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
     const x = startX + i * (slotWidth + slotGap);
     slotGroup.position.set(x, 0.75, 0);
 
-    const boxGeo = new THREE.PlaneGeometry(slotWidth, 0.22);
+    const boxGeo = new THREE.PlaneGeometry(slotWidth, 0.28);
     const boxMat = new THREE.MeshBasicMaterial({
       color: i === nameEntryCursor ? 0x003344 : 0x110022,
       transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -2018,7 +2018,7 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
     const char = nameEntryName[i] || '';
     if (char) {
       const charSprite = makeSprite(char, {
-        fontSize: 48, color: '#ffffff', scale: 0.18,
+        fontSize: 64, color: '#ffffff', scale: 0.22,
       });
       charSprite.position.set(0, 0, 0.01);
       charSprite.userData.isSlotChar = true;
@@ -2037,9 +2037,9 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
     ['SPACE', 'OK'],
   ];
 
-  const keySize = 0.27; // Slightly larger keys to fit bigger letters
+  const keySize = 0.26;
   const keyGap = 0.03;
-  let rowY = 0.25;
+  let rowY = 0.1;
 
   for (const row of rows) {
     const rowWidth = row.reduce((sum, key) => {
@@ -2160,7 +2160,7 @@ function refreshNameSlots() {
     const char = nameEntryName[i] || '';
     if (char) {
       const charSprite = makeSprite(char, {
-        fontSize: 48, color: '#ffffff', scale: 0.18,
+        fontSize: 64, color: '#ffffff', scale: 0.22,
       });
       charSprite.position.set(0, 0, 0.01);
       charSprite.userData.isSlotChar = true;
@@ -2241,16 +2241,16 @@ export function showScoreboard(scores, headerText, playerPos) {
   // Header (two-line)
   const headerInfo = getScoreboardHeader(scoreboardHeader);
   const mainHeader = makeSprite(headerInfo.main, {
-    fontSize: 72, color: '#ffffff', glow: true, glowColor: '#ffffff', scale: 0.75,
+    fontSize: 60, color: '#ffffff', glow: true, glowColor: '#ffffff', scale: 0.65,
   });
-  mainHeader.position.set(0, 2.15, 0);
+  mainHeader.position.set(0, 2.25, 0);
   scoreboardGroup.add(mainHeader);
 
   if (headerInfo.main !== 'LOADING') {
     const subHeader = makeSprite('LEADERBOARD', {
-      fontSize: 52, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
+      fontSize: 44, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.5,
     });
-    subHeader.position.set(0, 1.85, 0);
+    subHeader.position.set(0, 1.95, 0);
     scoreboardGroup.add(subHeader);
   }
 
@@ -2269,7 +2269,7 @@ export function showScoreboard(scores, headerText, playerPos) {
 
   for (const def of btnDefs) {
     const btnGroup = new THREE.Group();
-    btnGroup.position.set(1.3, def.y, 0);
+    btnGroup.position.set(1.55, def.y, 0);
 
     const btnGeo = new THREE.PlaneGeometry(0.65, 0.3);
     const btnMat = new THREE.MeshBasicMaterial({
@@ -2314,7 +2314,7 @@ export function showScoreboard(scores, headerText, playerPos) {
 function renderScoreboardCanvas() {
   const canvas = document.createElement('canvas');
   const w = 900;
-  const h = 1120;
+  const h = 1080;
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
@@ -2369,10 +2369,6 @@ function renderScoreboardCanvas() {
     const rankLabel = String(rank).padStart(2, '0');
     ctx.fillText(rankLabel, 20, y);
 
-    // Name
-    ctx.fillStyle = '#ccffff';
-    ctx.fillText((score.name || 'ANON').toUpperCase(), 110, y);
-
     // Flag
     if (score.country) {
       try {
@@ -2381,22 +2377,26 @@ function renderScoreboardCanvas() {
         );
         ctx.font = '40px "Courier New", monospace';
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(flag, 500, y);
+        ctx.fillText(flag, 95, y);
         ctx.font = 'bold 44px "Courier New", monospace';
       } catch (e) { /* skip flag */ }
     }
+
+    // Name
+    ctx.fillStyle = '#ccffff';
+    ctx.fillText((score.name || 'ANON').toUpperCase(), 140, y);
 
     // Score
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'right';
     const scoreVal = score.score !== undefined && score.score !== null ? score.score.toLocaleString() : '0';
-    ctx.fillText(scoreVal, 640, y);
+    ctx.fillText(scoreVal, 670, y);
 
     // Level
     ctx.fillStyle = '#66ffff';
     ctx.textAlign = 'right';
     const levelVal = score.level_reached !== undefined && score.level_reached !== null ? `L${String(score.level_reached).padStart(2, '0')}` : 'L?';
-    ctx.fillText(levelVal, 740, y);
+    ctx.fillText(levelVal, 770, y);
 
     // Divider line
     ctx.strokeStyle = 'rgba(0, 255, 255, 0.25)';
@@ -2437,7 +2437,7 @@ function renderScoreboardCanvas() {
   scoreboardTexture.minFilter = THREE.LinearFilter;
 
   if (!scoreboardMesh) {
-    const geo = new THREE.PlaneGeometry(2.1, 2.6);
+    const geo = new THREE.PlaneGeometry(2.05, 2.45);
     const mat = new THREE.MeshBasicMaterial({
       map: scoreboardTexture, transparent: true, side: THREE.DoubleSide, depthTest: false,
     });
@@ -2716,6 +2716,22 @@ export function getCountrySelectHit(raycaster, countries) {
  * Accepts an array of raycasters (one per controller).
  * Returns true if a NEW hover occurred (to trigger sound).
  */
+function getHoverGlowTexture() {
+  if (getHoverGlowTexture._tex) return getHoverGlowTexture._tex;
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(64, 64, 10, 64, 64, 60);
+  grad.addColorStop(0, 'rgba(0,255,255,0.5)');
+  grad.addColorStop(1, 'rgba(0,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(canvas);
+  getHoverGlowTexture._tex = tex;
+  return tex;
+}
+
 export function updateHUDHover(raycasters) {
   const hoverables = [];
 
@@ -2757,6 +2773,12 @@ export function updateHUDHover(raycasters) {
     });
   }
 
+  // 6. Name Entry (keyboard keys and actions)
+  if (nameEntryGroup.visible) {
+    keyboardKeys.forEach(k => { if (k.mesh) hoverables.push(k.mesh); });
+    nameEntryActionMeshes.forEach(m => { if (m) hoverables.push(m); });
+  }
+
   if (hoverables.length === 0) return false;
 
   // Find ALL hovered objects from ALL raycasters
@@ -2783,29 +2805,49 @@ export function updateHUDHover(raycasters) {
         obj.userData._isActuallyHovered = true;
         newHover = true;
       }
-      // Hover animation: scale up with subtle glow highlight
+      // Hover animation: scale with easing + outer glow
       const baseScale = target.userData._baseScale || target.scale.clone();
       target.userData._baseScale = baseScale;
-      target.scale.set(baseScale.x * 1.1, baseScale.y * 1.1, baseScale.z * 1.1);
-      if (obj.material && obj.material.color) {
-        obj.userData._baseColor = obj.userData._baseColor || obj.material.color.getHex();
-        obj.material.color.setHex(0x66ffff);
+      const currentScale = target.userData._hoverScale ?? 1;
+      const desiredScale = 1.08;
+      const nextScale = currentScale + (desiredScale - currentScale) * 0.2;
+      target.userData._hoverScale = nextScale;
+      target.scale.set(baseScale.x * nextScale, baseScale.y * nextScale, baseScale.z * nextScale);
+
+      // Glow mesh
+      if (!obj.userData._hoverGlow && obj.geometry) {
+        const glowGeo = obj.geometry.clone();
+        const glowMat = new THREE.MeshBasicMaterial({
+          map: getHoverGlowTexture(),
+          transparent: true,
+          opacity: 0,
+          depthTest: false,
+        });
+        const glow = new THREE.Mesh(glowGeo, glowMat);
+        glow.renderOrder = 998;
+        glow.scale.set(1.2, 1.2, 1.2);
+        glow.position.set(0, 0, -0.01);
+        obj.add(glow);
+        obj.userData._hoverGlow = glow;
       }
-      if (obj.material && obj.material.opacity !== undefined) {
-        obj.userData._baseOpacity = obj.userData._baseOpacity ?? obj.material.opacity;
-        obj.material.opacity = Math.min(1, obj.userData._baseOpacity + 0.05);
+      if (obj.userData._hoverGlow) {
+        const glow = obj.userData._hoverGlow;
+        const current = glow.material.opacity || 0;
+        glow.material.opacity = current + (0.35 - current) * 0.2;
       }
     } else {
       if (obj.userData._isActuallyHovered) {
         obj.userData._isActuallyHovered = false;
-        const baseScale = target.userData._baseScale || new THREE.Vector3(1, 1, 1);
-        target.scale.set(baseScale.x, baseScale.y, baseScale.z);
-        if (obj.material && obj.material.color && obj.userData._baseColor !== undefined) {
-          obj.material.color.setHex(obj.userData._baseColor);
-        }
-        if (obj.material && obj.material.opacity !== undefined && obj.userData._baseOpacity !== undefined) {
-          obj.material.opacity = obj.userData._baseOpacity;
-        }
+      }
+      const baseScale = target.userData._baseScale || new THREE.Vector3(1, 1, 1);
+      const currentScale = target.userData._hoverScale ?? 1;
+      const nextScale = currentScale + (1 - currentScale) * 0.2;
+      target.userData._hoverScale = nextScale;
+      target.scale.set(baseScale.x * nextScale, baseScale.y * nextScale, baseScale.z * nextScale);
+      if (obj.userData._hoverGlow) {
+        const glow = obj.userData._hoverGlow;
+        const current = glow.material.opacity || 0;
+        glow.material.opacity = current + (0 - current) * 0.2;
       }
     }
   });
