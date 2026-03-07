@@ -5724,6 +5724,7 @@ export function spawnBossProjectile(fromPos, targetPos) {
   const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, emissive: 0xff0000 });
   const proj = new THREE.Mesh(geo, mat);
   proj.position.copy(fromPos);
+  proj.userData.isBossProjectile = true;
 
   const dir = new THREE.Vector3().copy(targetPos).sub(fromPos).normalize();
   const speed = 4.0;

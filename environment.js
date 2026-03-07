@@ -481,7 +481,7 @@ export function createFloor(scene) {
   const floorMat = new THREE.MeshBasicMaterial({ color: 0x220044 });
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -0.01;
+  floor.position.y = 0.05;
   scene.add(floor);
   return { floor, floorMat };
 }

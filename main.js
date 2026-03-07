@@ -167,6 +167,8 @@ let biomePropsBiome = null;
 const biomePropFloaters = [];
 let biomeSceneGroup = null;
 let biomeSceneBiome = null;
+
+
 let environmentFade = 0;
 let environmentFadeState = null;
 const environmentFadeTargets = [];
@@ -195,8 +197,11 @@ let slowMoDuration = 0;
 let slowMoSoundPlayed = false;
 let slowMoRampOut = false;       // Ramp timeScale back to 1 over 0.5s when nearby enemies cleared
 let slowMoRampOutTimer = 0;
-const SLOW_MO_TRIGGER_DIST = 1.5;  // Only trigger when enemies are too close
+const SLOW_MO_TRIGGER_DIST = 1.2;  // Only trigger when enemies are too close
 const SLOW_MO_RAMP_OUT_DURATION = 0.5;
+const SLOW_MO_DURATION = 1.4;
+const SLOW_MO_COOLDOWN = 4.0;
+let slowMoCooldown = 0;
 let timeScale = 1.0;
 let slowMoTriggerEnemyIds = new Set();
 
@@ -371,6 +376,7 @@ function createEnvironment() {
   const floorGeo = new THREE.PlaneGeometry(200, 200);
   const floorMat = new THREE.MeshBasicMaterial({ color: floorBaseColor });
   floorMaterial = floorMat;  // Store reference for damage flash
+  floorMaterial.userData.floorHeight = -0.01;
   registerFadeMaterial(floorMaterial);
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
@@ -5926,7 +5932,8 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId) {
     axis.normalize();
     shotDirection.applyAxisAngle(axis, angle);
   }
-  mesh.userData.velocity = shotDirection.clone().multiplyScalar(isBuckshot ? 20 : 40);
+  const projectileSpeed = stats.projectileSpeed || (isBuckshot ? 20 : 40);
+  mesh.userData.velocity = shotDirection.clone().multiplyScalar(projectileSpeed);
   mesh.userData.stats = stats;
   mesh.userData.controllerIndex = controllerIndex;
   mesh.userData.isExploding = isExploding;
@@ -6608,6 +6615,35 @@ function updateProjectiles(dt) {
     
     // Check collision with boss projectiles (player can shoot them down)
     if (proj.userData.stats) { // Only player projectiles
+      const bossProjs = getBossProjectiles();
+      if (bossProjs.length > 0) {
+        for (let j = bossProjs.length - 1; j >= 0; j--) {
+          const bossProj = bossProjs[j];
+          if (!bossProj || !bossProj.mesh) continue;
+          const dist = proj.position.distanceTo(bossProj.mesh.position);
+          if (dist < 0.5) {
+            spawnExplosionVisual(bossProj.mesh.position.clone(), 0.5);
+            markProjectileHit(proj);
+            scene.remove(bossProj.mesh);
+            if (bossProj.mesh.geometry) bossProj.mesh.geometry.dispose();
+            if (bossProj.mesh.material) bossProj.mesh.material.dispose();
+            bossProjs.splice(j, 1);
+
+            if (!proj.userData.stats?.piercing) {
+              markProjectileHit(proj);
+              resolveProjectileAccuracy(proj);
+              if (proj.userData.isPooled) {
+                returnProjectileToPool(proj);
+              } else {
+                scene.remove(proj);
+              }
+              projectiles.splice(i, 1);
+            }
+            break;
+          }
+        }
+      }
+
       for (let j = i - 1; j >= 0; j--) {
         const bossProj = projectiles[j];
         if (!bossProj || !bossProj.userData) continue;
@@ -6807,6 +6843,10 @@ function render(timestamp) {
                 `Explosions: ${explosionVisuals.length}`);
   }
 
+  if (slowMoCooldown > 0) {
+    slowMoCooldown = Math.max(0, slowMoCooldown - rawDt);
+  }
+
   // Apply bullet-time slow-mo, ramp-out, and death sequence (use raw dt)
   if (slowMoRampOut) {
     slowMoRampOutTimer -= rawDt;
@@ -7003,12 +7043,13 @@ function render(timestamp) {
     }
 
     // Check for danger-close bullet-time trigger (ONLY when enemies are too close)
-    if (!slowMoActive && !slowMoRampOut) {
+    if (!slowMoActive && !slowMoRampOut && slowMoCooldown <= 0) {
       const enemies = getEnemies();
       const closeEnemies = enemies.filter(e => e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST);
       if (closeEnemies.length > 0) {
         slowMoActive = true;
-        slowMoDuration = 2.5;
+        slowMoDuration = SLOW_MO_DURATION;
+        slowMoCooldown = SLOW_MO_COOLDOWN;
         slowMoTriggerEnemyIds = new Set(closeEnemies.map(e => e.mesh.uuid));
         console.log('[bullet-time] ACTIVATED — enemy too close!');
       }
@@ -7440,6 +7481,7 @@ function onWindowResize() {
 }
 
 // ── Custom biome scenes (new HTML-extracted biomes) ─────────
+
 function rebuildBiomeScene(biomeId, theme) {
   if (!scene || !theme || !theme.customScene) {
     clearBiomeScene();
@@ -7466,6 +7508,8 @@ function rebuildBiomeScene(biomeId, theme) {
 }
 
 function buildSynthwaveValleyScene(group) {
+  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+  const floorY = floorHeight;
   // Lower brightness compared to HTML version
   const brightness = 0.55;
 
@@ -7505,7 +7549,7 @@ function buildSynthwaveValleyScene(group) {
     fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.30); vec3 base=uBaseColor; vec3 col=mix(base, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.12; float fogAmount=1.0-exp(-0.0008*0.0008*gl_FragCoord.z*gl_FragCoord.z); col=mix(col,uFogColor, clamp(fogAmount*0.55,0.0,1.0)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
-  terrain.position.z = -700;
+  terrain.position.set(0, floorY, -700);
   group.add(terrain);
   registerFadeMaterial(terrainMat);
 
@@ -7580,6 +7624,8 @@ function buildSynthwaveValleyScene(group) {
     travel += dt * 55.0;
     terrainUniforms.uTime.value = now * 0.001;
     terrainUniforms.uOffsetZ.value = travel;
+    const pulse = 1 + Math.sin(now * 0.0015) * 0.03;
+    sunGroup.scale.set(pulse, pulse, 1);
   };
 
   // Rotate so player faces sun
@@ -7587,6 +7633,8 @@ function buildSynthwaveValleyScene(group) {
 }
 
 function buildDesertNightScene(group) {
+  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+  const floorY = floorHeight;
   const sceneColor = 0x06080c;
   // Ground
   const geometry = new THREE.PlaneGeometry(140, 140, 70, 70);
@@ -7625,6 +7673,7 @@ function buildDesertNightScene(group) {
   geometry.computeVertexNormals();
   const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const terrain = new THREE.Mesh(geometry, material);
+  terrain.position.y = floorY;
   group.add(terrain);
   registerFadeMaterial(material);
 
@@ -7645,6 +7694,8 @@ function buildDesertNightScene(group) {
 }
 
 function buildAlienPlanetScene(group) {
+  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+  const floorY = floorHeight;
   // Ground
   const groundGeo = new THREE.PlaneGeometry(300, 300, 20, 20);
   const groundPositions = groundGeo.attributes.position;
@@ -7657,7 +7708,7 @@ function buildAlienPlanetScene(group) {
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0510, roughness: 1, metalness: 0, flatShading: true });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.5;
+  ground.position.y = floorY;
   group.add(ground);
 
   // Moon and glow
@@ -7745,6 +7796,8 @@ function buildAlienPlanetScene(group) {
 }
 
 function buildHellscapeLavaScene(group) {
+  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+  const floorY = floorHeight;
   const valleyWidth = 35.0;
   const geometry = new THREE.PlaneGeometry(300, 300, 200, 200);
   geometry.rotateX(-Math.PI / 2);
@@ -7797,6 +7850,7 @@ function buildHellscapeLavaScene(group) {
 
   const terrain = new THREE.Mesh(geometry, material);
   terrain.receiveShadow = true;
+  terrain.position.y = floorY;
   group.add(terrain);
 
   // Moons
