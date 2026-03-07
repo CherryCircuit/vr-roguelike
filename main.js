@@ -294,12 +294,12 @@ function init() {
   // Desktop controls will auto-enable if VR isn't available
   if (!navigator.xr) {
     console.warn('[init] WebXR not supported - desktop mode will be enabled');
-    vrButton.style.display = 'none';
+    if (vrButton && vrButton.parentNode) vrButton.parentNode.removeChild(vrButton);
   } else {
     navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
       if (!supported) {
         console.warn('[init] immersive-vr not supported - desktop mode will be enabled');
-        vrButton.style.display = 'none';
+        if (vrButton && vrButton.parentNode) vrButton.parentNode.removeChild(vrButton);
       }
     });
   }
@@ -1336,7 +1336,7 @@ function handleTitleTrigger(controller) {
     hideTitle();
     showScoreboard([], 'LOADING...');
     fetchTopScores().then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      showScoreboard(scores, 'GLOBAL');
     });
     return;
   }
@@ -1396,7 +1396,7 @@ function handleDesktopTitleClick() {
     hideTitle();
     showScoreboard([], 'LOADING...');
     fetchTopScores().then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      showScoreboard(scores, 'GLOBAL');
     });
     return;
   }
@@ -1457,7 +1457,7 @@ function handleDesktopNameEntryClick() {
     }).then(() => {
       return fetchTopScores();
     }).then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      showScoreboard(scores, 'GLOBAL');
     }).catch(err => {
       console.error('[scoreboard] Detailed error in submission flow:', err);
       showScoreboard([], 'ERROR SUBMITTING SCORE');
@@ -1488,7 +1488,7 @@ function handleDesktopScoreboardClick() {
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
     hideScoreboard();
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America', null, 'continent');
     return;
   }
 }
@@ -1510,7 +1510,7 @@ function handleDesktopCountrySelectClick() {
       game.state = State.SCOREBOARD;
       showScoreboard([], 'LOADING...');
       fetchTopScores().then(scores => {
-        showScoreboard(scores, 'GLOBAL LEADERBOARD');
+        showScoreboard(scores, 'GLOBAL');
       });
     }
     return;
@@ -1530,7 +1530,19 @@ function handleDesktopCountrySelectClick() {
       const label = country ? country.name : result.code;
       showScoreboard([], 'LOADING...');
       fetchScoresByCountry(result.code).then(scores => {
-        showScoreboard(scores, `${label.toUpperCase()} LEADERBOARD`);
+        showScoreboard(scores, `COUNTRY:${country.flag} ${label.toUpperCase()}`);
+      });
+    }
+  }
+
+  if (result.action === 'select_continent') {
+    playMenuClick();
+    hideCountrySelect();
+    if (!scoreboardFromGameOver) {
+      game.state = State.REGIONAL_SCORES;
+      showScoreboard([], 'LOADING...');
+      fetchScoresByContinent(result.continent).then(scores => {
+        showScoreboard(scores, `CONTINENT:🌎 ${result.continent.toUpperCase()}`);
       });
     }
   }
@@ -1627,7 +1639,7 @@ function handleNameEntryTrigger(controller) {
     }).then(() => {
       return fetchTopScores();
     }).then(scores => {
-      showScoreboard(scores, 'GLOBAL LEADERBOARD');
+      showScoreboard(scores, 'GLOBAL');
     }).catch(err => {
       console.error('[scoreboard] Detailed error in submission flow:', err);
       showScoreboard([], 'ERROR SUBMITTING SCORE');
@@ -1659,11 +1671,11 @@ function handleScoreboardTrigger(controller) {
     return;
   }
   if (action === 'continent') {
-    // Show continent picker — reuse country select but select a continent
+    // Show continent picker
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
     hideScoreboard();
-    showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+    showCountrySelect(COUNTRIES, CONTINENTS, 'North America', null, 'continent');
     return;
   }
 }
@@ -1690,7 +1702,7 @@ function handleCountrySelectTrigger(controller) {
       game.state = State.SCOREBOARD;
       showScoreboard([], 'LOADING...');
       fetchTopScores().then(scores => {
-        showScoreboard(scores, 'GLOBAL LEADERBOARD');
+        showScoreboard(scores, 'GLOBAL');
       });
     }
     return;
@@ -1712,7 +1724,19 @@ function handleCountrySelectTrigger(controller) {
       const label = country ? country.name : result.code;
       showScoreboard([], 'LOADING...');
       fetchScoresByCountry(result.code).then(scores => {
-        showScoreboard(scores, `${label.toUpperCase()} LEADERBOARD`);
+        showScoreboard(scores, `COUNTRY:${country.flag} ${label.toUpperCase()}`);
+      });
+    }
+  }
+
+  if (result.action === 'select_continent') {
+    playMenuClick();
+    hideCountrySelect();
+    if (!scoreboardFromGameOver) {
+      game.state = State.REGIONAL_SCORES;
+      showScoreboard([], 'LOADING...');
+      fetchScoresByContinent(result.continent).then(scores => {
+        showScoreboard(scores, `CONTINENT:🌎 ${result.continent.toUpperCase()}`);
       });
     }
   }
@@ -4815,6 +4839,10 @@ function cycleDebugBiome() {
 
 function cycleDebugBiomeWithFade() {
   if (environmentFadeState) return;
+  if (!game.level || game.level < 1) {
+    game.level = 1;
+    game._levelConfig = getLevelConfig();
+  }
   startEnvironmentFade('out', 250, () => {
     cycleDebugBiome();
     applyThemeForLevel(game.level);
