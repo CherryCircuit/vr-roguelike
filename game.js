@@ -3,7 +3,7 @@
 //  Central game data — imported by all other modules.
 // ============================================================
 
-import { SeedDeck, getBiomePool } from './seed.js';
+import { SeedDeck, getBiomePool } from './seed.js?v=20260307-1506';
 
 export const State = {
   TITLE: 'title',

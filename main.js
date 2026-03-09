@@ -6,8 +6,8 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel } from './game.js?v=20260308-2337';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js?v=20260308-2337';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
@@ -17,15 +17,15 @@ import {
   startLightningSound, stopLightningSound,
   startLowHealthWarningSound, stopLowHealthWarningSound,
   playMusic, playBossMusic, stopMusic, fadeOutMusic, getMusicFrequencyData
-} from './audio.js';
+} from './audio.js?v=20260308-2337';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward
-} from './enemies.js';
-import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
+} from './enemies.js?v=20260308-2337';
+import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js?v=20260308-2337';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
@@ -38,20 +38,20 @@ import {
   showDebugJumpScreen, getDebugJumpHit,
   showDebugMenu, hideDebugMenu, getDebugMenuHit, showReadyScreen, hideReadyScreen, updateReadyCountdownText, updateTitleDebugIndicator,
   updateHUDHover
-} from './hud.js';
+} from './hud.js?v=20260308-2337';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
   getPosition, getAimRaycaster, getVirtualController,
   isLocked, isEnabled as isDesktopEnabled
-} from './desktop-controls.js';
+} from './desktop-controls.js?v=20260308-2337';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
-} from './scoreboard.js';
-import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js';
-import { getBiomePool } from './seed.js';
+} from './scoreboard.js?v=20260308-2337';
+import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js?v=20260308-2337';
+import { getBiomePool } from './seed.js?v=20260308-2337';
 
 // Expose game state to window for debugging/testing
 window.State = State;
@@ -371,6 +371,7 @@ function createEnvironment() {
     gridHelper.material.opacity = 0.85;
     registerFadeMaterial(gridHelper.material);
   }
+  gridHelper.frustumCulled = false;
   scene.add(gridHelper);
 
   const floorGeo = new THREE.PlaneGeometry(200, 200);
@@ -381,6 +382,7 @@ function createEnvironment() {
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
+  floor.frustumCulled = false;
   scene.add(floor);
 
   // Horizon glow ring — a cylinder ring at the grid edge, visible from inside
@@ -5605,6 +5607,7 @@ function fireMainWeapon(controller, index) {
   // Fire projectile(s)
   const count = stats.projectileCount;
   const shotId = startAccuracyShot(count);
+  const isBuckshot = stats.spreadAngle > 0;
 
   // Calculate perpendicular offset axis for parallel multi-shot
   const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
@@ -5613,14 +5616,14 @@ function fireMainWeapon(controller, index) {
   for (let i = 0; i < count; i++) {
     let spawnOrigin = origin.clone();
 
-    if (count > 1) {
+    if (count > 1 && !isBuckshot) {
       // Position shots side-by-side with small gap, all parallel
       // Spread evenly around center: for 2 shots [-0.5, 0.5], for 3 [-1, 0, 1], etc.
       const offsetIndex = i - (count - 1) / 2;
       spawnOrigin.addScaledVector(rightAxis, offsetIndex * gap);
     }
 
-    spawnProjectile(spawnOrigin, direction.clone(), index, stats, shotId);
+    spawnProjectile(spawnOrigin, direction, index, stats, shotId);
   }
 
   console.log(`[MAIN weapon] ${hand} hand fired ${count} projectile(s) from ${mainWeaponId}`);
@@ -7550,6 +7553,7 @@ function buildSynthwaveValleyScene(group) {
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
   terrain.position.set(0, floorY, -700);
+  terrain.frustumCulled = false;
   group.add(terrain);
   registerFadeMaterial(terrainMat);
 
@@ -7621,7 +7625,7 @@ function buildSynthwaveValleyScene(group) {
   // Animate terrain flow
   let travel = 0;
   group.userData.update = (now, dt) => {
-    travel += dt * 55.0;
+    travel = (travel + dt * 55.0) % terrainUniforms.uRepeatZ.value;
     terrainUniforms.uTime.value = now * 0.001;
     terrainUniforms.uOffsetZ.value = travel;
     const pulse = 1 + Math.sin(now * 0.0015) * 0.03;
@@ -7674,6 +7678,7 @@ function buildDesertNightScene(group) {
   const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const terrain = new THREE.Mesh(geometry, material);
   terrain.position.y = floorY;
+  terrain.frustumCulled = false;
   group.add(terrain);
   registerFadeMaterial(material);
 
@@ -7709,6 +7714,7 @@ function buildAlienPlanetScene(group) {
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = floorY;
+  ground.frustumCulled = false;
   group.add(ground);
 
   // Moon and glow
