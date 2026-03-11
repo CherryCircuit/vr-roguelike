@@ -383,6 +383,10 @@ function createEnvironment() {
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
   floor.frustumCulled = false;
+  // Ensure floor is always visible by setting a large bounding sphere
+  floor.geometry.computeBoundingSphere();
+  floor.geometry.boundingSphere.radius = 150;
+  floor.geometry.boundingSphere.center.set(0, 0, 0);
   scene.add(floor);
 
   // Horizon glow ring — a cylinder ring at the grid edge, visible from inside
@@ -7548,6 +7552,11 @@ function buildSynthwaveValleyScene(group) {
   const terrainMat = new THREE.ShaderMaterial({
     uniforms: terrainUniforms,
     side: THREE.DoubleSide,
+    depthWrite: true,
+    depthTest: true,
+    polygonOffset: true,
+    polygonOffsetFactor: 2.0,
+    polygonOffsetUnits: 8.0,
     vertexShader: `uniform float uOffsetZ; uniform float uRepeatZ; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; float tiledZ=mod(pos.z+uOffsetZ+uRepeatZ*0.5, uRepeatZ)-uRepeatZ*0.5; pos.z=tiledZ; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; gl_Position=projectionMatrix*viewMatrix*world; }`,
     fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.30); vec3 base=uBaseColor; vec3 col=mix(base, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.12; float fogAmount=1.0-exp(-0.0008*0.0008*gl_FragCoord.z*gl_FragCoord.z); col=mix(col,uFogColor, clamp(fogAmount*0.55,0.0,1.0)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
@@ -7557,7 +7566,7 @@ function buildSynthwaveValleyScene(group) {
   group.add(terrain);
   registerFadeMaterial(terrainMat);
 
-  // Mountains
+  // Mountains with polygonOffset to prevent Z-fighting
   const makeLayer = (color, opacity, scaleY, z, y) => {
     const points = [];
     const width = 2000;
@@ -7572,7 +7581,16 @@ function buildSynthwaveValleyScene(group) {
     points.push(new THREE.Vector2(width / 2, -120));
     const shape = new THREE.Shape(points);
     const geo = new THREE.ShapeGeometry(shape);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    const mat = new THREE.MeshBasicMaterial({ 
+      color, 
+      transparent: true, 
+      opacity, 
+      depthWrite: false,
+      depthTest: true,
+      polygonOffset: true,
+      polygonOffsetFactor: 1.0,
+      polygonOffsetUnits: 2.0,
+    });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(0, y, z);
     group.add(mesh);
