@@ -7517,8 +7517,10 @@ function rebuildBiomeScene(biomeId, theme) {
 function buildSynthwaveValleyScene(group) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
-  // Lower brightness compared to HTML version
-  const brightness = 0.55;
+  // Fix for synthwave valley lighting regression: the extracted scene lost the
+  // original standalone scene's punch after we removed postprocessing, so raise
+  // the local material brightness without affecting other biomes.
+  const brightness = 0.82;
 
   // Sky dome (no stars, we use global starfield)
   const skyGeo = new THREE.SphereGeometry(2800, 32, 24);
@@ -7526,26 +7528,26 @@ function buildSynthwaveValleyScene(group) {
     side: THREE.BackSide,
     uniforms: {
       topColor: { value: new THREE.Color(0x2a004a) },
-      midColor: { value: new THREE.Color(0x5c1b8f) },
-      horizonColor: { value: new THREE.Color(0xaa2b7e) },
-      glowColor: { value: new THREE.Color(0xff8fd6) },
+      midColor: { value: new THREE.Color(0x7b2cbf) },
+      horizonColor: { value: new THREE.Color(0xd93ea2) },
+      glowColor: { value: new THREE.Color(0xffb2df) },
     },
-    vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*viewMatrix*worldPosition; }`,
-    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ vec3 dir=normalize(vWorldPosition); float h=clamp(dir.y*0.5+0.5,0.0,1.0); vec3 col=mix(midColor, topColor, smoothstep(0.55,1.0,h)); col=mix(horizonColor, col, smoothstep(0.0,0.58,h)); float horizonBand=exp(-pow(abs(h-0.48)*10.0,2.0)); col+=glowColor*horizonBand*0.18; gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
+    // stable in stereo rendering and does not rely on manual clip-space math.
+    vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ vec3 dir=normalize(vWorldPosition); float h=clamp(dir.y*0.5+0.5,0.0,1.0); vec3 col=mix(midColor, topColor, smoothstep(0.55,1.0,h)); col=mix(horizonColor, col, smoothstep(0.0,0.62,h)); float horizonBand=exp(-pow(abs(h-0.48)*9.0,2.0)); col+=glowColor*horizonBand*0.32; gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
     depthWrite: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
+  sky.frustumCulled = false;
   group.add(sky);
   registerFadeMaterial(skyMat);
 
   // Terrain
   const terrainUniforms = {
-    uTime: { value: 0 },
     uGridColor: { value: new THREE.Color(0xff2ed1) },
-    uBaseColor: { value: new THREE.Color(0x05000d) },
+    uBaseColor: { value: new THREE.Color(0x0a0020) },
     uFogColor: { value: new THREE.Color(0x2a004a) },
-    uRepeatZ: { value: 2000.0 },
-    uOffsetZ: { value: 0.0 },
   };
   const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);
   terrainGeo.rotateX(-Math.PI / 2);
@@ -7557,8 +7559,10 @@ function buildSynthwaveValleyScene(group) {
     polygonOffset: true,
     polygonOffsetFactor: 2.0,
     polygonOffsetUnits: 8.0,
-    vertexShader: `uniform float uOffsetZ; uniform float uRepeatZ; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; float tiledZ=mod(pos.z+uOffsetZ+uRepeatZ*0.5, uRepeatZ)-uRepeatZ*0.5; pos.z=tiledZ; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; gl_Position=projectionMatrix*viewMatrix*world; }`,
-    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.30); vec3 base=uBaseColor; vec3 col=mix(base, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.12; float fogAmount=1.0-exp(-0.0008*0.0008*gl_FragCoord.z*gl_FragCoord.z); col=mix(col,uFogColor, clamp(fogAmount*0.55,0.0,1.0)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    // Fix for synthwave floor popping in VR: keep the terrain static and use the
+    // built-in modelViewMatrix projection instead of manual projection math.
+    vertexShader: `varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vec4 mvPosition=modelViewMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; vFogDistance=length(mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }`,
+    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
   terrain.position.set(0, floorY, -700);
@@ -7593,6 +7597,7 @@ function buildSynthwaveValleyScene(group) {
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(0, y, z);
+    mesh.frustumCulled = false;
     group.add(mesh);
     registerFadeMaterial(mat);
   };
@@ -7617,13 +7622,15 @@ function buildSynthwaveValleyScene(group) {
     ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
     return new THREE.CanvasTexture(c);
   };
-  const sunGlowTex = makeRadial('rgba(255,160,230,0.18)', 'rgba(255,102,204,0.0)');
-  const sunCoreTex = makeRadial('rgba(255,255,255,0.85)', 'rgba(255,180,230,0.65)');
-  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xff66cc, transparent: true, opacity: 0.7, depthWrite: false }));
-  sunGlow.scale.set(300, 300, 1);
+  const sunGlowTex = makeRadial('rgba(255,190,235,0.34)', 'rgba(255,102,204,0.0)');
+  const sunCoreTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(255,196,232,0.84)');
+  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xff7fd4, transparent: true, opacity: 0.92, depthWrite: false }));
+  sunGlow.scale.set(340, 340, 1);
+  sunGlow.frustumCulled = false;
   sunGroup.add(sunGlow);
-  const sunCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }));
-  sunCore.scale.set(160, 160, 1);
+  const sunCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false }));
+  sunCore.scale.set(185, 185, 1);
+  sunCore.frustumCulled = false;
   sunGroup.add(sunCore);
 
   // Horizon glow
@@ -7631,24 +7638,20 @@ function buildSynthwaveValleyScene(group) {
   const horizonGlowMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    uniforms: { c1: { value: new THREE.Color(0xfff2bc) }, c2: { value: new THREE.Color(0xff72d5) } },
+    uniforms: { c1: { value: new THREE.Color(0xfff6c8) }, c2: { value: new THREE.Color(0xff86da) } },
     vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
-    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.4,vUv.y)*(1.0-smoothstep(0.6,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.5,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*2.0); gl_FragColor=vec4(col, alpha*side*0.45); }`,
+    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.42,vUv.y)*(1.0-smoothstep(0.58,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.5,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*2.0); gl_FragColor=vec4(col, alpha*side*0.62); }`,
   });
   const horizonGlow = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
   horizonGlow.position.set(0, 8, -745);
+  horizonGlow.frustumCulled = false;
   group.add(horizonGlow);
   registerFadeMaterial(horizonGlowMat);
 
-  // Animate terrain flow
-  let travel = 0;
-  group.userData.update = (now, dt) => {
-    travel = (travel + dt * 55.0) % terrainUniforms.uRepeatZ.value;
-    terrainUniforms.uTime.value = now * 0.001;
-    terrainUniforms.uOffsetZ.value = travel;
-    const pulse = 1 + Math.sin(now * 0.0015) * 0.03;
-    sunGroup.scale.set(pulse, pulse, 1);
-  };
+  // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
+  // The standalone HTML used perpetual scrolling and pulsing, but the game
+  // version should behave like a stable biome backdrop.
+  group.userData.update = null;
 
   // Rotate so player faces sun
   group.rotation.y = 0;
