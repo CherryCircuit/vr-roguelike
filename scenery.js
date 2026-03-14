@@ -102,6 +102,10 @@ export const THEMES = {
     sunGlowColor: 0xff6600,
     starColor: 0xffffff,
     particles: null,
+    // Aurora for dark synthwave nights
+    aurora: {
+      colors: ['rgba(0,0,40,0)', 'rgba(0,255,255,0.2)', 'rgba(255,0,255,0.35)', 'rgba(0,200,255,0.3)', 'rgba(100,0,150,0.15)', 'rgba(0,0,60,0)'],
+    },
   },
 
   // Levels 6-9: Neon Hellscape
@@ -169,6 +173,10 @@ export const THEMES = {
     secondaryParticles: { type: 'ice_crystal', color: 0xaaddff, count: 20, speed: 0.1, size: 0.18 },
     ambientMotion: { type: 'drift', intensity: 0.1, speed: 0.5 },
     lightIntensity: 1.2, // Brighter ice
+    // Aurora for frozen nights - cyan/blue
+    aurora: {
+      colors: ['rgba(0,20,40,0)', 'rgba(100,200,255,0.2)', 'rgba(150,220,255,0.35)', 'rgba(50,150,255,0.3)', 'rgba(0,100,200,0.15)', 'rgba(0,30,60,0)'],
+    },
   },
 
   // Levels 16-19: Void Corruption
@@ -185,6 +193,10 @@ export const THEMES = {
     sunGlowColor: 0xaa00ff,
     starColor: 0xcc88ff,
     particles: { type: 'corruption', color: 0xaa00ff, count: 40, speed: 0.8 },
+    // Aurora for corruption void - purple/magenta
+    aurora: {
+      colors: ['rgba(20,0,20,0)', 'rgba(170,0,255,0.2)', 'rgba(255,0,255,0.35)', 'rgba(150,0,200,0.3)', 'rgba(80,0,100,0.15)', 'rgba(30,0,30,0)'],
+    },
   },
 
   // The Stack: Brutalist industrial megastructure
@@ -239,6 +251,10 @@ export const THEMES = {
     secondaryParticles: { type: 'glitch_burst', color: 0x00ff00, count: 15, speed: 5.0, size: 0.25 },
     ambientMotion: { type: 'glitch', intensity: 0.5, speed: 10.0 },
     lightFlicker: { intensity: 0.3, speed: 8.0 },
+    // Aurora for digital void - green matrix
+    aurora: {
+      colors: ['rgba(0,20,0,0)', 'rgba(0,255,0,0.2)', 'rgba(100,255,50,0.35)', 'rgba(0,200,0,0.3)', 'rgba(0,100,0,0.15)', 'rgba(0,30,0,0)'],
+    },
   },
 
   // Boss levels (5, 10, 15, 20): Red Alert
@@ -255,6 +271,10 @@ export const THEMES = {
     sunGlowColor: 0xff0000,
     starColor: 0xff2222,
     particles: { type: 'danger', color: 0xff0000, count: 60, speed: 1.0 },
+    // Aurora for boss battles - red/crimson danger
+    aurora: {
+      colors: ['rgba(20,0,0,0)', 'rgba(255,0,0,0.25)', 'rgba(255,50,0,0.4)', 'rgba(200,0,0,0.35)', 'rgba(100,0,0,0.15)', 'rgba(30,0,0,0)'],
+    },
   },
 
   // Kaleidoscope: Infinite mirror maze (Very Hard)

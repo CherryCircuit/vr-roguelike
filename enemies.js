@@ -3295,10 +3295,14 @@ class SkullBoss extends Boss {
   updateHeadColor() {
     const damageRatio = 1 - this.hp / this.maxHp;
     const baseColor = new THREE.Color(0xffffff);
-    const damagedColor = new THREE.Color(0x660000); // Dark red
+    // More dramatic darkening: progress from white -> pink -> red -> dark red -> almost black
+    const damagedColor = new THREE.Color(0x330000); // Very dark red (almost black)
+    
+    // Exponential darkening for more dramatic effect
+    const enhancedRatio = Math.pow(damageRatio, 0.7); // Darker faster
     
     this.skullVoxels.forEach(voxel => {
-      voxel.material.color.copy(baseColor).lerp(damagedColor, damageRatio);
+      voxel.material.color.copy(baseColor).lerp(damagedColor, enhancedRatio);
     });
   }
   
@@ -3313,6 +3317,18 @@ class SkullBoss extends Boss {
     this.hands.forEach(hand => {
       if (hand.alive) {
         hand.setShootRate((this.def.handShootRate || 1.5) / speedMultiplier);
+      }
+    });
+    
+    // Increase remaining hands' max HP (they get tougher as fewer remain)
+    const hpIncreaseMultiplier = 1.25; // Each destroyed hand buffs remaining by 25%
+    this.hands.forEach(hand => {
+      if (hand.alive) {
+        const oldMax = hand.maxHp;
+        hand.maxHp = Math.round(hand.maxHp * hpIncreaseMultiplier);
+        // Also heal them a bit
+        hand.hp = Math.min(hand.hp + 30, hand.maxHp);
+        console.log(`[SkullBoss] Hand ${hand.handIndex} HP increased: ${oldMax} -> ${hand.maxHp}, now at ${hand.hp}/${hand.maxHp}`);
       }
     });
     
