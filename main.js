@@ -13,7 +13,7 @@ import {
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
   playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound,
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
-  playSlowMoSound, playSlowMoReverseSound,
+  playSlowMoSound, playSlowMoReverseSound, playComboSound,
   startLightningSound, stopLightningSound,
   startLowHealthWarningSound, stopLowHealthWarningSound,
   playMusic, playBossMusic, stopMusic, fadeOutMusic, getMusicFrequencyData
@@ -26,6 +26,7 @@ import {
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward
 } from './enemies.js?v=20260308-2337';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js?v=20260308-2337';
+import { initVFX, updateVFX } from './vfx.js?v=20260308-2337';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
@@ -37,7 +38,9 @@ import {
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
   showDebugMenu, hideDebugMenu, getDebugMenuHit, showReadyScreen, hideReadyScreen, updateReadyCountdownText, updateTitleDebugIndicator,
-  updateHUDHover
+  updateHUDHover,
+  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert,
+  spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation
 } from './hud.js?v=20260308-2337';
 
 import {
@@ -205,6 +208,10 @@ let slowMoCooldown = 0;
 let timeScale = 1.0;
 let slowMoTriggerEnemyIds = new Set();
 
+// Kills remaining alert state
+let killsAlertShownThisLevel = false;
+let killsAlertTriggerKill = null;
+
 // Accuracy bonus shot tracking
 let accuracyShotId = 0;
 const accuracyShots = new Map();
@@ -320,6 +327,7 @@ function init() {
   // Init subsystems
   initEnemies(scene);
   initHUD(camera, scene);
+  initVFX(scene);
 
   // PERFORMANCE: Initialize projectile pool
   initProjectilePool();
@@ -375,7 +383,13 @@ function createEnvironment() {
   scene.add(gridHelper);
 
   const floorGeo = new THREE.PlaneGeometry(200, 200);
-  const floorMat = new THREE.MeshBasicMaterial({ color: floorBaseColor });
+  const floorMat = new THREE.MeshBasicMaterial({
+    color: floorBaseColor,
+    depthWrite: false,  // Prevent depth buffer conflicts with grid and biome terrains
+    polygonOffset: true,  // Prevent z-fighting with GridHelper at y=0
+    polygonOffsetFactor: 1.0,
+    polygonOffsetUnits: 4.0,
+  });
   floorMaterial = floorMat;  // Store reference for damage flash
   floorMaterial.userData.floorHeight = -0.01;
   registerFadeMaterial(floorMaterial);
@@ -383,6 +397,7 @@ function createEnvironment() {
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
   floor.frustumCulled = false;
+  floor.renderOrder = -1;  // Render before other transparent objects
   // Ensure floor is always visible by setting a large bounding sphere
   floor.geometry.computeBoundingSphere();
   floor.geometry.boundingSphere.radius = 150;
@@ -901,21 +916,23 @@ function createSun() {
 
   // Draw sun circle — only bottom half visible (sits on horizon)
   // Upper half: warm yellow/orange. Lower half: deep orange/red with bands.
+  // #1 FIX: DRAMATICALLY increased brightness for maximum visibility
   const sunGrad = ctx.createLinearGradient(256, 30, 256, 482);
-  sunGrad.addColorStop(0, '#ffdd33');    // Bright warm yellow at top
-  sunGrad.addColorStop(0.3, '#ffaa00');
-  sunGrad.addColorStop(0.5, '#ff6600');
-  sunGrad.addColorStop(0.7, '#ff3300');
-  sunGrad.addColorStop(1.0, '#cc1100');  // Deep red at bottom
+  sunGrad.addColorStop(0, '#ffffff');    // Pure white-yellow at top (maximum brightness)
+  sunGrad.addColorStop(0.15, '#ffff99'); // Bright yellow
+  sunGrad.addColorStop(0.3, '#ffdd66');  // Bright orange-yellow
+  sunGrad.addColorStop(0.5, '#ffaa33');  // Bright orange
+  sunGrad.addColorStop(0.7, '#ff7700');  // Bright red-orange
+  sunGrad.addColorStop(1.0, '#ff4400');  // Bright red at bottom
 
   ctx.beginPath();
   ctx.arc(256, 256, 248, 0, Math.PI * 2);
   ctx.fillStyle = sunGrad;
   ctx.fill();
 
-  // Slight outer glow baked into the texture (soft edge)
-  ctx.shadowColor = '#ff8800';
-  ctx.shadowBlur = 20;
+  // #1 FIX: MUCH stronger outer glow baked into the texture for visibility
+  ctx.shadowColor = '#ffff00';  // Pure yellow glow (brightest)
+  ctx.shadowBlur = 50;          // Much larger glow radius
   ctx.beginPath();
   ctx.arc(256, 256, 248, 0, Math.PI * 2);
   ctx.fillStyle = sunGrad;
@@ -958,16 +975,16 @@ function createSun() {
   sunMeshRef = sunMesh;
   registerFadeMaterial(sunMeshRef.material);
 
-  // Outer glow behind sun (additive for bloom effect)
+  // #1 FIX: Outer glow behind sun (additive for bloom effect) - DRAMATICALLY increased brightness
   const glowMat = new THREE.MeshBasicMaterial({
-    color: SUN_GLOW,
+    color: 0xffff00,        // Pure yellow glow (brightest possible)
     side: THREE.DoubleSide,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.8,           // Much higher opacity for visibility
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
-  const glow = new THREE.Mesh(new THREE.CircleGeometry(24, 32), glowMat);
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(35, 32), glowMat);  // Much larger radius: 35 (was 28)
   glow.position.set(0, 12, -89.5);
   glow.renderOrder = -11;
   scene.add(glow);
@@ -1014,6 +1031,18 @@ function createAurora() {
   registerFadeMaterial(auroraRef.material);
 }
 
+/** Update aurora animation - subtle color shifting and movement */
+function updateAurora(dt, now) {
+  if (!auroraRef || !auroraRef.material || !auroraRef.material.map) return;
+  
+  // Slow rotation for aurora drift effect
+  auroraRef.rotation.y += dt * 0.02;
+  
+  // Subtle opacity pulsing
+  const pulse = 0.7 + Math.sin(now * 0.0003) * 0.2;
+  auroraRef.material.opacity = pulse;
+}
+
 /** Dark ominous shape over the horizon; appears from level 10, large by level 16 */
 function createOminousHorizon() {
   const geo = new THREE.PlaneGeometry(80, 50);
@@ -1035,9 +1064,10 @@ function createOminousHorizon() {
 function createAtmosphere() {
   // 360-degree atmosphere gradient cylinder around the player
   // Creates the illusion of being on a round planet with warm horizon glow
+  // #2 FIX: Increased height for taller gradient reach into the sky
   const segments = 48;
   const radius = 92;  // Just behind mountains
-  const height = 30;
+  const height = 45;  // Increased from 30 to 45 for taller gradient
 
   // Create a canvas for the gradient texture
   // Use full-opacity colors and control alpha separately in the gradient
@@ -1046,16 +1076,16 @@ function createAtmosphere() {
   canvas.height = 256;
   const ctx = canvas.getContext('2d');
 
-  // Paint the gradient: warm colors at base, fading to transparent at top
+  // #2 FIX: DRAMATICALLY brighter and taller gradient for maximum visibility
   // Note: CSS rgba() alpha is 0.0-1.0
   const grad = ctx.createLinearGradient(0, 256, 0, 0);  // bottom to top
-  grad.addColorStop(0, 'rgba(255, 80, 20, 1.0)');    // Full intensity warm orange at base
-  grad.addColorStop(0.08, 'rgba(255, 60, 30, 0.85)');   // Still strong
-  grad.addColorStop(0.2, 'rgba(220, 50, 40, 0.55)');   // Red-orange
-  grad.addColorStop(0.4, 'rgba(160, 30, 60, 0.3)');    // Darker red
-  grad.addColorStop(0.6, 'rgba(100, 15, 50, 0.12)');   // Deep purple-red
-  grad.addColorStop(0.8, 'rgba(50, 5, 40, 0.04)');     // Nearly gone
-  grad.addColorStop(1.0, 'rgba(20, 0, 20, 0.0)');      // Fully transparent
+  grad.addColorStop(0, 'rgba(255, 180, 80, 1.0)');       // Much brighter orange at base
+  grad.addColorStop(0.1, 'rgba(255, 140, 70, 0.95)');    // Brighter and more opaque
+  grad.addColorStop(0.25, 'rgba(255, 100, 80, 0.75)');   // Brighter red-orange
+  grad.addColorStop(0.45, 'rgba(255, 70, 90, 0.55)');    // Brighter and more visible
+  grad.addColorStop(0.65, 'rgba(220, 50, 80, 0.35)');    // More visible purple-red
+  grad.addColorStop(0.85, 'rgba(180, 30, 70, 0.15)');    // More visible
+  grad.addColorStop(1.0, 'rgba(120, 15, 60, 0.0)');      // Fade to transparent
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 4, 256);
 
@@ -1067,12 +1097,12 @@ function createAtmosphere() {
   const cylMat = new THREE.MeshBasicMaterial({
     map: atmTexture,
     transparent: true,
-    opacity: 0.8,
+    opacity: 1.0,  // #2 FIX: Increased from 0.8 to 1.0 for better visibility
     side: THREE.BackSide,  // Visible from inside
     depthWrite: false,
   });
   const cylinder = new THREE.Mesh(cylGeo, cylMat);
-  cylinder.position.set(0, height / 2 - 2, 0);  // Base near ground level
+  cylinder.position.set(0, height / 2 - 2, 0);  // Base near ground level (adjusted for new height)
   cylinder.renderOrder = -13;
   scene.add(cylinder);
   atmosphereRef = cylinder;
@@ -4901,18 +4931,25 @@ function debugJumpToLevel(targetLevel) {
 }
 
 function cycleDebugBiome() {
-  const pool = getBiomePool();
+  // #9 FIX: Cycle through specific biomes: SYNTHWAVE > DESERT > ALIEN PLANET > HELLSCAPE > SYNTHWAVE
+  const debugBiomeCycle = ['synthwave_valley', 'desert_night', 'alien_planet', 'hellscape_lava'];
   const current = game.debugBiomeOverride;
   let next = null;
 
   if (!current) {
-    next = pool[0] || null;
+    // Start with first biome in cycle
+    next = debugBiomeCycle[0];
   } else {
-    const index = pool.indexOf(current);
-    if (index === -1 || index === pool.length - 1) {
-      next = null;
+    const index = debugBiomeCycle.indexOf(current);
+    if (index === -1) {
+      // If current biome is not in cycle, start from beginning
+      next = debugBiomeCycle[0];
+    } else if (index === debugBiomeCycle.length - 1) {
+      // Wrap around to first biome
+      next = debugBiomeCycle[0];
     } else {
-      next = pool[index + 1];
+      // Move to next biome in cycle
+      next = debugBiomeCycle[index + 1];
     }
   }
 
@@ -5226,6 +5263,17 @@ function advanceLevelAfterUpgrade() {
     // Hide blaster displays during gameplay
     blasterDisplays.forEach(d => { if (d) d.visible = false; });
 
+    // Setup kills remaining alert
+    killsAlertShownThisLevel = false;
+    const cfg = game._levelConfig;
+    if (cfg && !cfg.isBoss) {
+      const threshold = game.level >= 11 ? 10 : 5;
+      killsAlertTriggerKill = cfg.killTarget - threshold;
+      if (killsAlertTriggerKill <= 0) killsAlertTriggerKill = null;
+    } else {
+      killsAlertTriggerKill = null;
+    }
+
     if (game.level === 6) {
       playMusic('levels6to10');
     } else if (game.level === 11) {
@@ -5251,7 +5299,7 @@ function endGame(victory) {
   hideBossHealthBar();
   gameOverCooldown = 2.0;  // 2 second cooldown before restart allowed
 
-  // Stop music
+  // Stop music and play game over track
   stopMusic();
   stopLightningSound();
 
@@ -5259,6 +5307,8 @@ function endGame(victory) {
     showVictory(game.score, camera.position);
   } else {
     showGameOver(game.score, camera.position);
+    // Play game over music
+    playMusic('gameOver');
   }
 }
 
@@ -6054,6 +6104,36 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       // Update HUD immediately to show correct kill count before level complete check
       updateHUD(game);
 
+      // KILL CHAIN SYSTEM
+      const now = performance.now();
+
+      // Check combo timeout
+      if (now - game.lastKillTime > game.comboResetTime) {
+        game.comboCount = 0;
+        game.comboMultiplier = 1;
+      }
+
+      // Increment combo
+      game.comboCount++;
+      game.lastKillTime = now;
+
+      // Calculate multiplier based on streak
+      if (game.comboCount >= 5) {
+        game.comboMultiplier = 5;
+      } else if (game.comboCount >= 4) {
+        game.comboMultiplier = 4;
+      } else if (game.comboCount >= 3) {
+        game.comboMultiplier = 3;
+      } else if (game.comboCount >= 2) {
+        game.comboMultiplier = 2;
+      }
+
+      // Show combo popup and play sound if multiplier >= 2
+      if (game.comboMultiplier >= 2) {
+        spawnKillChainPopup(game.comboMultiplier, camera.position);
+        playComboSound(game.comboMultiplier);
+        console.log(`[kill-chain] ${game.comboMultiplier}x combo (${game.comboCount} kills)`);
+      }
 
       // Check for slow-mo death (last enemy of wave)
       const cfg = game._levelConfig;
@@ -7212,6 +7292,33 @@ function render(timestamp) {
             // KILL CHAIN SYSTEM (same as handleHit)
             const now = performance.now();
 
+            // Check combo timeout
+            if (now - game.lastKillTime > game.comboResetTime) {
+              game.comboCount = 0;
+              game.comboMultiplier = 1;
+            }
+
+            // Increment combo
+            game.comboCount++;
+            game.lastKillTime = now;
+
+            // Calculate multiplier based on streak
+            if (game.comboCount >= 5) {
+              game.comboMultiplier = 5;
+            } else if (game.comboCount >= 4) {
+              game.comboMultiplier = 4;
+            } else if (game.comboCount >= 3) {
+              game.comboMultiplier = 3;
+            } else if (game.comboCount >= 2) {
+              game.comboMultiplier = 2;
+            }
+
+            // Show combo popup and play sound if multiplier >= 2
+            if (game.comboMultiplier >= 2) {
+              spawnKillChainPopup(game.comboMultiplier, camera.position);
+              playComboSound(game.comboMultiplier);
+              console.log(`[kill-chain] ${game.comboMultiplier}x combo (${game.comboCount} kills, DoT)`);
+            }
 
             // Check for slow-mo death (last enemy of wave)
             const cfg = game._levelConfig;
@@ -7398,6 +7505,10 @@ function render(timestamp) {
   // ── Environment: sun stays constant size (removed level scaling) ──
   // Sun scaling removed - was old progression system
   // Biomes will handle environment changes instead
+  
+  // Update aurora borealis animation
+  updateAurora(rawDt, now);
+  
   if (ominousRef) {
     if (game.level >= 10) {
       const t = Math.min(1, (game.level - 10) / 6); // 0 at 10, 1 at 16
@@ -7416,6 +7527,7 @@ function render(timestamp) {
   updateStasisFields(now, dt);
   updatePlasmaOrbs(now, dt);
   updateExplosions(dt, now);
+  updateVFX(dt);
   updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
   updateStatusBubbles(dt, now);

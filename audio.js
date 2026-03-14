@@ -464,12 +464,13 @@ export function playMenuHoverSound() {
   const gain = ctx.createGain();
   osc.type = 'sine';
   osc.frequency.setValueAtTime(440, t);
-  gain.gain.setValueAtTime(0.05, t);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.03);
+  // #4: Increased volume from 0.05 to 0.12 for better audibility
+  gain.gain.setValueAtTime(0.12, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.04);
   osc.connect(gain);
   gain.connect(ctx.destination);
   osc.start(t);
-  osc.stop(t + 0.03);
+  osc.stop(t + 0.04);
 }
 
 // ── Error / Rejection sound ────────────────────────────────
@@ -833,6 +834,7 @@ let musicFadeToken = 0;
 
 const musicTracks = {
   menu: ['mnt/project/music/00_Main_Menu.mp3'],
+  gameOver: ['mnt/project/music/XX_Game_Over.mp3'],
   levels1to5: [
     'mnt/project/music/0101_Levels_1-4.mp3',
     'mnt/project/music/0102_Levels_1-4.mp3',
