@@ -5390,42 +5390,64 @@ function advanceLevelAfterUpgrade() {
   if (game.level > 20) {
     endGame(true); // victory
   } else {
-    game.state = State.PLAYING;
     game._levelConfig = getLevelConfig();
     applyThemeForLevel(game.level);
     const shouldFade = shouldFadeForBiomeTransition(game.level - 1);
-    if (shouldFade) {
+    
+    // After boss kill with biome transition, show ready screen with countdown
+    if (game.justBossKill && shouldFade) {
+      console.log('[game] Boss killed with biome transition, showing ready screen');
+      game.state = State.READY_SCREEN;
       applyEnvironmentFade(1);
+      
+      // Show ready screen with countdown
+      showReadyScreen(game.level, camera.position);
+      resetReadyCountdown();
+      
+      // Start environment fade in
       startEnvironmentFade('in', 0.8);
+      
+      // Hide blaster displays during ready screen
+      blasterDisplays.forEach(d => { if (d) d.visible = false; });
+      
+      game.justBossKill = false;
     } else {
-      applyEnvironmentFade(0);
-    }
-    hideReadyScreen();
-    showHUD();
+      game.state = State.PLAYING;
+      if (shouldFade) {
+        applyEnvironmentFade(1);
+        startEnvironmentFade('in', 0.8);
+      } else {
+        applyEnvironmentFade(0);
+      }
+      hideReadyScreen();
+      showHUD();
 
-    // Stagger setup
-    game.spawnTimer = 1.0;
+      // Stagger setup
+      game.spawnTimer = 1.0;
 
-    // Hide blaster displays during gameplay
-    blasterDisplays.forEach(d => { if (d) d.visible = false; });
+      // Hide blaster displays during gameplay
+      blasterDisplays.forEach(d => { if (d) d.visible = false; });
 
-    // Setup kills remaining alert
-    killsAlertShownThisLevel = false;
-    const cfg = game._levelConfig;
-    if (cfg && !cfg.isBoss) {
-      const threshold = game.level >= 11 ? 10 : 5;
-      killsAlertTriggerKill = cfg.killTarget - threshold;
-      if (killsAlertTriggerKill <= 0) killsAlertTriggerKill = null;
-    } else {
-      killsAlertTriggerKill = null;
-    }
+      // Setup kills remaining alert
+      killsAlertShownThisLevel = false;
+      const cfg = game._levelConfig;
+      if (cfg && !cfg.isBoss) {
+        const threshold = game.level >= 11 ? 10 : 5;
+        killsAlertTriggerKill = cfg.killTarget - threshold;
+        if (killsAlertTriggerKill <= 0) killsAlertTriggerKill = null;
+      } else {
+        killsAlertTriggerKill = null;
+      }
 
-    if (game.level === 6) {
-      playMusic('levels6to10');
-    } else if (game.level === 11) {
-      playMusic('levels11to14');
-    } else if (game.level === 16) {
-      playMusic('levels16to19');
+      if (game.level === 6) {
+        playMusic('levels6to10');
+      } else if (game.level === 11) {
+        playMusic('levels11to14');
+      } else if (game.level === 16) {
+        playMusic('levels16to19');
+      }
+      
+      game.justBossKill = false;
     }
   }
 }
@@ -5738,7 +5760,7 @@ function getDeathPattern(enemyType) {
 function updateVoxelPhysics(dt, now) {
   const gravity = -9.8;
   const bounceCoefficient = 0.3;
-  const floorY = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+  const floorY = 0;  // Fixed: use 0 for reliable floor collision (was -0.01 from floorMaterial)
   
   for (let i = activeVoxels.length - 1; i >= 0; i--) {
     const voxel = activeVoxels[i];
