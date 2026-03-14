@@ -198,17 +198,14 @@ let pendingUpgrades = [];
 // Game over cooldown
 let gameOverCooldown = 0;
 
-// Bullet-time slow-mo
+// Bullet-time slow-mo (restored from commit 5bb0b69)
 let slowMoActive = false;
 let slowMoDuration = 0;
 let slowMoSoundPlayed = false;
 let slowMoRampOut = false;       // Ramp timeScale back to 1 over 0.5s when nearby enemies cleared
 let slowMoRampOutTimer = 0;
-const SLOW_MO_TRIGGER_DIST = 1.0;  // Tight radius = ~0.5-0.75s reaction time
+const SLOW_MO_TRIGGER_DIST = 2.0;  // Distance to trigger slow-mo
 const SLOW_MO_RAMP_OUT_DURATION = 0.5;
-const SLOW_MO_FACTOR = 0.25;       // Time scale when slow-mo active
-const SLOW_MO_LERP_IN = 8.0;       // Fast lerp in for quick response
-const SLOW_MO_LERP_OUT = 2.0;      // Slow lerp out for smooth ramp
 let timeScale = 1.0;
 
 // Kills remaining alert state
@@ -7307,53 +7304,91 @@ function render(timestamp) {
     // Update laser mines
     updateLaserMines(now, dt);
 
-    // Proximity-based slow-mo with smooth lerping
-    let hasCloseEnemy = false;
-    const allEnemies = getEnemies();
-    for (const e of allEnemies) {
-      const dist = e.mesh.position.distanceTo(playerPos);
-      if (dist < SLOW_MO_TRIGGER_DIST) {
-        hasCloseEnemy = true;
-        break;
+    // Apply bullet-time slow-mo and ramp-out (timer-based from commit 5bb0b69)
+    if (slowMoRampOut) {
+      slowMoRampOutTimer -= rawDt;
+      if (slowMoRampOutTimer <= 0) {
+        slowMoRampOut = false;
+        timeScale = 1.0;
+      } else {
+        timeScale = 0.2 + (1 - slowMoRampOutTimer / SLOW_MO_RAMP_OUT_DURATION) * 0.8;
+      }
+    } else if (slowMoActive) {
+      slowMoDuration -= rawDt;
+      if (slowMoDuration <= 0) {
+        slowMoActive = false;
+        slowMoSoundPlayed = false;
+        timeScale = 1.0;
+        console.log('[bullet-time] ENDED');
+      } else {
+        timeScale = 0.2;
+      }
+    } else {
+      timeScale = 1.0;
+    }
+
+    // If in slow-mo, check whether all enemies in trigger range are gone → ramp out
+    if (slowMoActive && !slowMoRampOut) {
+      const enemiesForRamp = getEnemies();
+      const anyNear = enemiesForRamp.some(e => e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST);
+      // Boss check
+      const boss = getBoss();
+      if (boss && boss.mesh) {
+        const bossDist = boss.mesh.position.distanceTo(playerPos);
+        if (bossDist < SLOW_MO_TRIGGER_DIST * 2.0) {
+          // Boss nearby, don't ramp out
+        } else if (!anyNear) {
+          slowMoActive = false;
+          slowMoSoundPlayed = false;
+          slowMoRampOut = true;
+          slowMoRampOutTimer = SLOW_MO_RAMP_OUT_DURATION;
+          playSlowMoReverseSound();
+          console.log('[bullet-time] RAMP OUT — enemies cleared');
+        }
+      } else if (!anyNear) {
+        slowMoActive = false;
+        slowMoSoundPlayed = false;
+        slowMoRampOut = true;
+        slowMoRampOutTimer = SLOW_MO_RAMP_OUT_DURATION;
+        playSlowMoReverseSound();
+        console.log('[bullet-time] RAMP OUT — enemies cleared');
       }
     }
 
-    // Boss also triggers slow-mo at 2x radius
-    const boss = getBoss();
-    if (boss && boss.mesh) {
-      const bossDist = boss.mesh.position.distanceTo(playerPos);
-      if (bossDist < SLOW_MO_TRIGGER_DIST * 2.0) {
-        hasCloseEnemy = true;
+    // Check for near-miss bullet-time trigger
+    if (!slowMoActive && !slowMoRampOut) {
+      const enemies = getEnemies();
+      for (const e of enemies) {
+        const dist = e.mesh.position.distanceTo(playerPos);
+        if (dist < SLOW_MO_TRIGGER_DIST) {
+          slowMoActive = true;
+          slowMoDuration = 2.5;
+          console.log('[bullet-time] ACTIVATED!');
+          break;
+        }
+      }
+      // Boss trigger at 2x radius
+      const bossForTrigger = getBoss();
+      if (!slowMoActive && bossForTrigger && bossForTrigger.mesh) {
+        const bossDist = bossForTrigger.mesh.position.distanceTo(playerPos);
+        if (bossDist < SLOW_MO_TRIGGER_DIST * 2.0) {
+          slowMoActive = true;
+          slowMoDuration = 2.5;
+          console.log('[bullet-time] ACTIVATED by boss!');
+        }
+      }
+      if (slowMoActive && !slowMoSoundPlayed) {
+        playSlowMoSound();
+        slowMoSoundPlayed = true;
       }
     }
-
-    // Smooth lerp time scale
-    if (window._timeScale === undefined) window._timeScale = 1.0;
-    if (window._wasCloseEnemy === undefined) window._wasCloseEnemy = false;
-
-    const targetScale = hasCloseEnemy ? SLOW_MO_FACTOR : 1.0;
-    const lerpSpeed = hasCloseEnemy ? SLOW_MO_LERP_IN : SLOW_MO_LERP_OUT;
-    const deltaLerp = Math.min(1, lerpSpeed * rawDt);
-    window._timeScale += (targetScale - window._timeScale) * deltaLerp;
-
-    // Sound triggers on state change
-    if (hasCloseEnemy && !window._wasCloseEnemy) {
-      playSlowMoSound();
-      console.log('[bullet-time] ACTIVATED!');
-    } else if (!hasCloseEnemy && window._wasCloseEnemy) {
-      playSlowMoReverseSound();
-      console.log('[bullet-time] RAMP OUT — enemies cleared');
-    }
-    window._wasCloseEnemy = hasCloseEnemy;
-
-    // Update timeScale for game loop
-    timeScale = window._timeScale;
 
     // Update desktop controls (WASD + mouse) if in desktop mode
     const desktopUpdates = updateDesktopControls(dt);
     const collisions = updateEnemies(dt, now, playerPos);
 
-    // Boss update and health bar (reuse boss variable from slow-mo check above)
+    // Boss update and health bar
+    const boss = getBoss();
     if (boss) {
       updateBoss(dt, now, playerPos);
       updateBossMinions(dt, playerPos);
