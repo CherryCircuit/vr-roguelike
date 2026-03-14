@@ -204,7 +204,7 @@ let slowMoDuration = 0;
 let slowMoSoundPlayed = false;
 let slowMoRampOut = false;       // Ramp timeScale back to 1 over 0.5s when nearby enemies cleared
 let slowMoRampOutTimer = 0;
-const SLOW_MO_TRIGGER_DIST = 2.0;  // Distance to trigger slow-mo
+const SLOW_MO_TRIGGER_DIST = 1.5;  // Tighter trigger radius
 const SLOW_MO_RAMP_OUT_DURATION = 0.5;
 let timeScale = 1.0;
 
@@ -7362,7 +7362,7 @@ function render(timestamp) {
         const dist = e.mesh.position.distanceTo(playerPos);
         if (dist < SLOW_MO_TRIGGER_DIST) {
           slowMoActive = true;
-          slowMoDuration = 2.5;
+          slowMoDuration = 0.75;  // Short duration - ramp out handles the rest
           console.log('[bullet-time] ACTIVATED!');
           break;
         }
@@ -7373,7 +7373,8 @@ function render(timestamp) {
         const bossDist = bossForTrigger.mesh.position.distanceTo(playerPos);
         if (bossDist < SLOW_MO_TRIGGER_DIST * 2.0) {
           slowMoActive = true;
-          slowMoDuration = 2.5;
+          slowMoDuration = 0.75;  // Short duration
+          slowMoSoundPlayed = false;
           console.log('[bullet-time] ACTIVATED by boss!');
         }
       }
