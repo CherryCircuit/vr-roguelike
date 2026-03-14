@@ -203,7 +203,7 @@ let slowMoDuration = 0;
 let slowMoSoundPlayed = false;
 let slowMoRampOut = false;       // Ramp timeScale back to 1 over 0.5s when nearby enemies cleared
 let slowMoRampOutTimer = 0;
-const SLOW_MO_TRIGGER_DIST = 3.5;  // Larger radius = more reaction time
+const SLOW_MO_TRIGGER_DIST = 1.2;  // Tight radius = ~0.5-0.75s reaction time for fast enemies
 const SLOW_MO_RAMP_OUT_DURATION = 0.5;
 const SLOW_MO_FACTOR = 0.25;       // Time scale when slow-mo active
 const SLOW_MO_LERP_IN = 8.0;       // Fast lerp in for quick response
@@ -5579,7 +5579,7 @@ function returnProjectileToPool(proj) {
  * Initialize voxel pool for physics-based death explosions
  */
 function initVoxelPool() {
-  const voxelGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+  const voxelGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);  // Larger voxels for visibility
   
   for (let i = 0; i < VOXEL_POOL_SIZE; i++) {
     const material = new THREE.MeshBasicMaterial({
@@ -7685,17 +7685,39 @@ function render(timestamp) {
   }
 
   // ── Floor damage flash (primary VR hit indicator) ──
-  if (floorFlashing && floorMaterial) {
+  if (floorFlashing) {
     floorFlashTimer -= rawDt;
     if (floorFlashTimer <= 0) {
       floorFlashing = false;
-      floorMaterial.color.copy(floorBaseColor);
+      if (floorMaterial) floorMaterial.color.copy(floorBaseColor);
+      // Reset grid colors
+      if (gridHelper && gridHelper.visible) {
+        const resetGridMat = (m) => { m.color.setHex(NEON_PINK); };
+        if (Array.isArray(gridHelper.material)) {
+          gridHelper.material.forEach(resetGridMat);
+        } else {
+          resetGridMat(gridHelper.material);
+        }
+      }
     } else {
       // Lerp from bright red back to base color over 1 second
       const t = floorFlashTimer / 1.0;  // 1s flash duration
-      // Pure red for maximum visibility across all biomes
       const flashColor = new THREE.Color(0xff0000);
-      floorMaterial.color.lerpColors(floorBaseColor, flashColor, t);
+      if (floorMaterial) {
+        floorMaterial.color.lerpColors(floorBaseColor, flashColor, t);
+      }
+      // Flash grid to red
+      if (gridHelper && gridHelper.visible) {
+        const flashGridMat = (m) => {
+          const baseColor = new THREE.Color(NEON_PINK);
+          m.color.lerpColors(baseColor, flashColor, t);
+        };
+        if (Array.isArray(gridHelper.material)) {
+          gridHelper.material.forEach(flashGridMat);
+        } else {
+          flashGridMat(gridHelper.material);
+        }
+      }
     }
   }
 
@@ -7968,16 +7990,19 @@ function buildSynthwaveValleyScene(group) {
   const sunOuterGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
   sunOuterGlow.scale.set(700, 700, 1);
   sunOuterGlow.frustumCulled = false;
+  sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
   // Main bright glow
   const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
   sunGlow.scale.set(550, 550, 1);
   sunGlow.frustumCulled = false;
+  sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
-  // White-hot core
+  // White-hot core - should be visible as a distinct circle
   const sunCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
-  sunCore.scale.set(300, 300, 1);
+  sunCore.scale.set(200, 200, 1);  // Smaller core for distinct circle
   sunCore.frustumCulled = false;
+  sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
 
   // Horizon glow - EXTREMELY bright to match the massive sun and illuminate the scene
