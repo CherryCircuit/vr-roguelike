@@ -513,7 +513,7 @@ export function updateTitle(now) {
 
 // ── VR HUD (hearts, kill counter, level, score) ────────────
 
-// Create holographic scan line texture
+// Create holographic scan line texture - subtle floor projection effect
 function createHoloScanLineTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
@@ -523,19 +523,19 @@ function createHoloScanLineTexture() {
   // Transparent background
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Draw horizontal scan lines with gaps
-  ctx.fillStyle = 'rgba(0, 255, 255, 0.15)';
-  const lineSpacing = 4;
+  // Draw very subtle horizontal scan lines with gaps
+  ctx.fillStyle = 'rgba(0, 255, 255, 0.06)';  // Much more subtle
+  const lineSpacing = 8;  // Wider spacing
   for (let y = 0; y < canvas.height; y += lineSpacing) {
     ctx.fillRect(0, y, canvas.width, 1);
   }
 
-  // Add some random noise/dots for texture
-  ctx.fillStyle = 'rgba(0, 255, 255, 0.08)';
-  for (let i = 0; i < 200; i++) {
+  // Minimal noise for authentic hologram look
+  ctx.fillStyle = 'rgba(0, 255, 255, 0.03)';
+  for (let i = 0; i < 50; i++) {  // Fewer dots
     const x = Math.random() * canvas.width;
     const y = Math.random() * canvas.height;
-    ctx.fillRect(x, y, 2, 2);
+    ctx.fillRect(x, y, 1, 1);  // Smaller dots
   }
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -620,69 +620,27 @@ function createHUDElements() {
   // Floor-based HUD layout (Space Pirate Trainer style)
   // Increased by 200% (3x) for better visibility
 
-  // HOLOGRAPHIC BASE - subtle gradient background instead of black box
-  const holoBgGeo = new THREE.PlaneGeometry(4.8, 2.0);
-  const holoBgCanvas = document.createElement('canvas');
-  holoBgCanvas.width = 512;
-  holoBgCanvas.height = 256;
-  const holoBgCtx = holoBgCanvas.getContext('2d');
+  // HOLOGRAPHIC BASE - removed, no background box
+  // HUD elements themselves will have holographic glow effects
 
-  // Create gradient - cyan edges fading to transparent center
-  const gradient = holoBgCtx.createRadialGradient(256, 128, 50, 256, 128, 300);
-  gradient.addColorStop(0, 'rgba(0, 40, 60, 0.05)');
-  gradient.addColorStop(0.5, 'rgba(0, 60, 80, 0.15)');
-  gradient.addColorStop(1, 'rgba(0, 100, 120, 0.25)');
-  holoBgCtx.fillStyle = gradient;
-  holoBgCtx.fillRect(0, 0, 512, 256);
-
-  // Add subtle grid pattern
-  holoBgCtx.strokeStyle = 'rgba(0, 255, 255, 0.08)';
-  holoBgCtx.lineWidth = 1;
-  for (let x = 0; x < 512; x += 32) {
-    holoBgCtx.beginPath();
-    holoBgCtx.moveTo(x, 0);
-    holoBgCtx.lineTo(x, 256);
-    holoBgCtx.stroke();
-  }
-  for (let y = 0; y < 256; y += 32) {
-    holoBgCtx.beginPath();
-    holoBgCtx.moveTo(0, y);
-    holoBgCtx.lineTo(512, y);
-    holoBgCtx.stroke();
-  }
-
-  const holoBgTexture = new THREE.CanvasTexture(holoBgCanvas);
-  const holoBgMat = new THREE.MeshBasicMaterial({
-    map: holoBgTexture,
-    transparent: true,
-    opacity: 0.6,
-    depthTest: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const holoBgMesh = new THREE.Mesh(holoBgGeo, holoBgMat);
-  holoBgMesh.position.set(0, -0.002, 0.3);
-  holoBgMesh.renderOrder = 998;
-  hudGroup.add(holoBgMesh);
-
-  // HOLOGRAPHIC SCAN LINES OVERLAY
+  // HOLOGRAPHIC SCAN LINES OVERLAY - very subtle, minimal idle effect
   const scanLineGeo = new THREE.PlaneGeometry(4.8, 2.0);
   const scanLineTexture = createHoloScanLineTexture();
   const scanLineMat = new THREE.MeshBasicMaterial({
     map: scanLineTexture,
     transparent: true,
-    opacity: 0.4,
+    opacity: 0.08,  // Very subtle idle effect
     depthTest: true,
     depthWrite: false,
     side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
   });
   holoScanLineMesh = new THREE.Mesh(scanLineGeo, scanLineMat);
-  holoScanLineMesh.position.set(0, -0.001, 0.3);
+  holoScanLineMesh.position.set(0, -0.001, 0);
   holoScanLineMesh.renderOrder = 998;
   hudGroup.add(holoScanLineMesh);
 
-  // GLITCH OVERLAY (initially invisible)
+  // GLITCH OVERLAY (initially invisible, only shows on player hit)
   const glitchGeo = new THREE.PlaneGeometry(4.8, 2.0);
   const glitchMat = new THREE.MeshBasicMaterial({
     transparent: true,
@@ -693,7 +651,7 @@ function createHUDElements() {
     blending: THREE.AdditiveBlending,
   });
   holoGlitchMesh = new THREE.Mesh(glitchGeo, glitchMat);
-  holoGlitchMesh.position.set(0, 0.001, 0.3);
+  holoGlitchMesh.position.set(0, 0.001, 0);
   holoGlitchMesh.renderOrder = 1000;
   hudGroup.add(holoGlitchMesh);
 
@@ -814,13 +772,12 @@ export function updateHUD(gameState) {
     holoScanLineMesh.material.map.offset.y = holographicState.scanLineOffset;
   }
 
-  // Update flicker phase (subtle opacity variation for authenticity)
+  // Update flicker phase (minimal idle flicker)
   holographicState.flickerPhase = now * 0.015;
-  const flickerAmount = 0.05 * Math.sin(holographicState.flickerPhase) +
-                         0.02 * Math.sin(holographicState.flickerPhase * 2.3) +
-                         0.01 * Math.sin(holographicState.flickerPhase * 5.7);
+  const flickerAmount = 0.02 * Math.sin(holographicState.flickerPhase) +
+                         0.01 * Math.sin(holographicState.flickerPhase * 2.3);
   if (holoScanLineMesh) {
-    holoScanLineMesh.material.opacity = 0.4 + flickerAmount;
+    holoScanLineMesh.material.opacity = 0.08 + flickerAmount;  // Very subtle idle flicker
   }
 
   // Decay glitch effect
@@ -1626,10 +1583,11 @@ export function spawnKillChainPopup(multiplier, cameraPos) {
   texture.minFilter = THREE.LinearFilter;
   texture.premultiplyAlpha = false;
 
-  // Large, dramatic display
-  const scale = 1.2;
-  const width = scale * 2;
-  const height = scale;
+  // Scale size based on multiplier: 2X smallest, 5X largest
+  // Linear interpolation: 2X=0.8, 3X=1.0, 4X=1.2, 5X=1.4
+  const sizeScale = 0.6 + (multiplier - 2) * 0.3;
+  const width = sizeScale * 2;
+  const height = sizeScale;
 
   const geometry = new THREE.PlaneGeometry(width, height);
   const mat = new THREE.MeshBasicMaterial({
@@ -1641,14 +1599,21 @@ export function spawnKillChainPopup(multiplier, cameraPos) {
 
   const mesh = new THREE.Mesh(geometry, mat);
 
-  // Position above crosshair, further away towards sun (-89)
+  // Position higher up (was y += 0.2, now y += 1.0)
+  // Add random offset ±0.5 units for variety
+  const randomOffsetX = (Math.random() - 0.5) * 1.0;  // ±0.5
+  const randomOffsetY = (Math.random() - 0.5) * 1.0;  // ±0.5
   mesh.position.copy(cameraPos);
-  mesh.position.y += 0.2;
+  mesh.position.y += 1.0 + randomOffsetY;  // Higher position + random
+  mesh.position.x += randomOffsetX;
   mesh.position.z -= 6;
 
-  // Quick deterioration: 800ms total lifetime (was 1500ms)
+  // Lifetime varies by multiplier: 2X fastest shrink (shortest window), 5X slowest (longest)
+  // Linear: 2X=600ms, 3X=800ms, 4X=1000ms, 5X=1200ms
+  const lifetime = 600 + (multiplier - 2) * 200;
+
   mesh.userData.createdAt = performance.now();
-  mesh.userData.lifetime = 800;  // Quick - 0.8 seconds
+  mesh.userData.lifetime = lifetime;
   mesh.userData.initialScale = 0.3;  // Start smaller for pop-in effect
   mesh.userData.targetScale = 1.0;
   mesh.userData.maxScale = 1.0;
@@ -1912,6 +1877,7 @@ export function updateTitleDebugIndicator() {
  * Show the debug menu with toggle options for FPS monitor settings
  */
 export function showDebugMenu() {
+  console.log('[debug] showDebugMenu called, debugBiomeOverride=', game.debugBiomeOverride);
   hideAll();
   while (debugMenuGroup.children.length) debugMenuGroup.remove(debugMenuGroup.children[0]);
   debugToggleItems = [];
@@ -2097,13 +2063,19 @@ export function getDebugMenuHit(raycaster) {
     return null;  // Don't change state, just toggle
   }
 
-  // Check back button
+  // Check action buttons (like NEXT BIOME)
   const actionMeshes = [];
   debugMenuGroup.traverse(c => {
-    if (c.userData && c.userData.debugAction) actionMeshes.push(c);
+    if (c.userData && c.userData.debugAction) {
+      console.log('[debug-hud] Found action mesh:', c.userData.debugAction);
+      actionMeshes.push(c);
+    }
   });
+  console.log('[debug-hud] Total action meshes:', actionMeshes.length);
   hits = raycaster.intersectObjects(actionMeshes, false);
+  console.log('[debug-hud] Action hits:', hits.length);
   if (hits.length > 0) {
+    console.log('[debug-hud] Hit action:', hits[0].object.userData.debugAction);
     return { action: hits[0].object.userData.debugAction };
   }
 
@@ -2420,20 +2392,21 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
 
   // Change country button - moved below name boxes, positioned to the right
   const changeGroup = new THREE.Group();
-  changeGroup.position.set(0.55, 0.35, 0);  // Below name boxes, right side
+  changeGroup.position.set(0.55, 0.52, 0);  // Moved up to create gap from keyboard
   const changeGeo = new THREE.PlaneGeometry(0.75, 0.22);  // Reduced padding to avoid keyboard overlap
   const changeMat = new THREE.MeshBasicMaterial({
-    color: 0x112244, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
+    color: 0x332200, transparent: true, opacity: 0.9, side: THREE.DoubleSide,  // Yellow-tinted background
   });
   const changeMesh = new THREE.Mesh(changeGeo, changeMat);
   changeMesh.userData.nameEntryAction = 'country';
+  changeMesh.userData.borderColor = 0xffff00;  // Yellow border for hover glow
   changeGroup.add(changeMesh);
   changeGroup.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(changeGeo),
-    new THREE.LineBasicMaterial({ color: 0x66ccff })
+    new THREE.LineBasicMaterial({ color: 0xffff00 })  // Yellow border
   ));
   const changeText = makeSprite('CHANGE COUNTRY', {
-    fontSize: 44, color: '#ccffff', scale: 0.16,
+    fontSize: 44, color: '#ffff00', scale: 0.16,  // Yellow text
   });
   changeText.position.set(0, 0, 0.01);
   changeGroup.add(changeText);
@@ -3281,6 +3254,10 @@ export function updateHUDHover(raycasters) {
         else if (obj.userData.keyValue === 'DEL') {
           glowColor = '255,68,68'; // Red (#ff4444)
         }
+        // Check for keyboard keys (cyan glow)
+        else if (obj.userData.isKeyboardKey) {
+          glowColor = '0,255,255'; // Cyan (#00ffff)
+        }
 
         const glowGeo = obj.geometry.clone();
         const glowMat = new THREE.MeshBasicMaterial({
@@ -3292,7 +3269,9 @@ export function updateHUDHover(raycasters) {
         const glow = new THREE.Mesh(glowGeo, glowMat);
         glow.renderOrder = 998;
         glow.scale.set(1.3, 1.3, 1.3);  // Larger glow
-        glow.position.set(0, 0, -0.01);
+        // Position glow in front for keyboard keys, behind for others
+        const glowZ = obj.userData.isKeyboardKey ? 0.02 : -0.01;
+        glow.position.set(0, 0, glowZ);
         obj.add(glow);
         obj.userData._hoverGlow = glow;
       }
