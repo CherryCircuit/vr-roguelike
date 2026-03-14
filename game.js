@@ -141,7 +141,7 @@ export const game = {
   accuracyBonus: 0,  // 0-100 meter
   accuracyMultiplier: 1,  // 1x-5x based on accuracy bonus
   lastHitTime: 0,
-  missPenaltyMultiplier: 0.5,  // Lose ~50% on miss
+  missPenaltyMultiplier: 0.7,  // Lose ~70% on miss (was 0.5 - faster deterioration)
 
   // Slow-mo death camera
   slowmoActive: false,
@@ -316,9 +316,10 @@ export function registerAccuracyHit() {
 
 export function registerAccuracyMiss() {
   if (game.accuracyBonus <= 0) return;
-  const baseDecay = game.missPenaltyMultiplier ?? 0.5;
-  const extraDecay = (game.accuracyBonus / 100) * 0.2;
-  const decayFactor = Math.max(0.25, baseDecay - extraDecay);
+  // Quick deterioration: lose 70% on miss, plus extra decay at higher bonuses
+  const baseDecay = game.missPenaltyMultiplier ?? 0.7;
+  const extraDecay = (game.accuracyBonus / 100) * 0.3;  // Higher bonus = more decay
+  const decayFactor = Math.max(0.15, baseDecay - extraDecay);  // Floor at 15% retained
   game.accuracyBonus = Math.max(0, Math.round(game.accuracyBonus * decayFactor));
   updateAccuracyMultiplier();
 }

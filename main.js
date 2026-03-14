@@ -16,7 +16,8 @@ import {
   playSlowMoSound, playSlowMoReverseSound, playComboSound,
   startLightningSound, stopLightningSound,
   startLowHealthWarningSound, stopLowHealthWarningSound,
-  playMusic, playBossMusic, stopMusic, fadeOutMusic, getMusicFrequencyData
+  playMusic, playBossMusic, stopMusic, fadeOutMusic, getMusicFrequencyData,
+  playKillsAlertSound, playTingSound
 } from './audio.js?v=20260308-2337';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -40,7 +41,7 @@ import {
   showDebugMenu, hideDebugMenu, getDebugMenuHit, showReadyScreen, hideReadyScreen, updateReadyCountdownText, updateTitleDebugIndicator,
   updateHUDHover,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert,
-  spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation
+  spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups
 } from './hud.js?v=20260308-2337';
 
 import {
@@ -163,6 +164,8 @@ let starsRef = null;
 let horizonRingRef = null;
 let horizonInnerRingRef = null;
 let auroraRef = null;
+let auroraCanvas = null;
+let auroraCtx = null;
 let atmosphereRef = null;
 let currentTheme = null;
 let biomePropsGroup = null;
@@ -200,13 +203,9 @@ let slowMoDuration = 0;
 let slowMoSoundPlayed = false;
 let slowMoRampOut = false;       // Ramp timeScale back to 1 over 0.5s when nearby enemies cleared
 let slowMoRampOutTimer = 0;
-const SLOW_MO_TRIGGER_DIST = 1.2;  // Only trigger when enemies are too close
+const SLOW_MO_TRIGGER_DIST = 2.0;
 const SLOW_MO_RAMP_OUT_DURATION = 0.5;
-const SLOW_MO_DURATION = 1.4;
-const SLOW_MO_COOLDOWN = 4.0;
-let slowMoCooldown = 0;
 let timeScale = 1.0;
-let slowMoTriggerEnemyIds = new Set();
 
 // Kills remaining alert state
 let killsAlertShownThisLevel = false;
@@ -222,11 +221,29 @@ function startAccuracyShot(pelletCount) {
   return shotId;
 }
 
+// Track previous accuracy multiplier for popup triggers
+let prevAccuracyMultiplier = 1;
+
 function markAccuracyHit(shotId) {
   const shot = accuracyShots.get(shotId);
   if (!shot || shot.hit) return;
   shot.hit = true;
+
+  // Store previous multiplier before hit
+  const oldMultiplier = game.accuracyMultiplier || 1;
   registerAccuracyHit();
+  const newMultiplier = game.accuracyMultiplier || 1;
+
+  // Spawn accuracy popup if multiplier increased to a new integer threshold (2x, 3x, 4x, 5x)
+  const oldThreshold = Math.floor(oldMultiplier);
+  const newThreshold = Math.floor(newMultiplier);
+  if (newThreshold > oldThreshold && newThreshold >= 2) {
+    spawnKillChainPopup(newThreshold, camera.position);
+    playComboSound(newThreshold);
+    console.log(`[accuracy] ${newThreshold}x accuracy bonus!`);
+  }
+
+  prevAccuracyMultiplier = newMultiplier;
 }
 
 function resolveAccuracyPellet(shotId) {
@@ -235,7 +252,11 @@ function resolveAccuracyPellet(shotId) {
   shot.remaining -= 1;
   if (shot.remaining <= 0) {
     accuracyShots.delete(shotId);
-    if (!shot.hit) registerAccuracyMiss();
+    if (!shot.hit) {
+      registerAccuracyMiss();
+      // Trigger hurt effect: red flash, shake, faster popup shrink
+      triggerAccuracyHurt();
+    }
   }
 }
 
@@ -1001,19 +1022,25 @@ function createSun() {
 function createAurora() {
   const w = 32;
   const h = 64;
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, 'rgba(0,40,60,0)');
-  grad.addColorStop(0.3, 'rgba(0,200,180,0.08)');
-  grad.addColorStop(0.5, 'rgba(0,255,200,0.12)');
-  grad.addColorStop(0.7, 'rgba(0,180,220,0.06)');
-  grad.addColorStop(1, 'rgba(0,40,80,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, w, h);
-  const tex = new THREE.CanvasTexture(canvas);
+  auroraCanvas = document.createElement('canvas');
+  auroraCanvas.width = w;
+  auroraCanvas.height = h;
+  auroraCtx = auroraCanvas.getContext('2d');
+
+  // Default colors (will be updated by updateAuroraColors)
+  const defaultColors = [
+    'rgba(0,40,60,0)',
+    'rgba(0,200,180,0.08)',
+    'rgba(0,255,200,0.12)',
+    'rgba(0,180,220,0.06)',
+    'rgba(0,40,80,0)',
+  ];
+  const grad = auroraCtx.createLinearGradient(0, 0, 0, h);
+  defaultColors.forEach((c, i) => grad.addColorStop(i / (defaultColors.length - 1), c));
+  auroraCtx.fillStyle = grad;
+  auroraCtx.fillRect(0, 0, w, h);
+
+  const tex = new THREE.CanvasTexture(auroraCanvas);
   tex.wrapS = THREE.RepeatWrapping;
   const geo = new THREE.CylinderGeometry(95, 95, 25, 32, 1, true);
   const mat = new THREE.MeshBasicMaterial({
@@ -1029,6 +1056,28 @@ function createAurora() {
   scene.add(mesh);
   auroraRef = mesh;
   registerFadeMaterial(auroraRef.material);
+}
+
+/** Update aurora colors based on current biome theme */
+function updateAuroraColors(theme) {
+  if (!auroraCtx || !auroraRef || !auroraRef.material || !auroraRef.material.map) return;
+
+  const colors = (theme && theme.aurora && theme.aurora.colors) || [
+    'rgba(0,40,60,0)',
+    'rgba(0,200,180,0.08)',
+    'rgba(0,255,200,0.12)',
+    'rgba(0,180,220,0.06)',
+    'rgba(0,40,80,0)',
+  ];
+
+  const h = auroraCanvas.height;
+  auroraCtx.clearRect(0, 0, auroraCanvas.width, h);
+  const grad = auroraCtx.createLinearGradient(0, 0, 0, h);
+  colors.forEach((c, i) => grad.addColorStop(i / (colors.length - 1), c));
+  auroraCtx.fillStyle = grad;
+  auroraCtx.fillRect(0, 0, auroraCanvas.width, h);
+
+  auroraRef.material.map.needsUpdate = true;
 }
 
 /** Update aurora animation - subtle color shifting and movement */
@@ -3094,6 +3143,13 @@ function updateNaniteSwarms(now, dt, playerPos) {
               addScore(destroyData.scoreValue);
               updateHUD(game);
 
+              // Check for kills remaining alert
+              if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+                const remaining = cfg ? cfg.killTarget - game.kills : 0;
+                showKillsRemainingAlert(remaining);
+                playKillsAlertSound();
+                killsAlertShownThisLevel = true;
+              }
 
               const cfg = game._levelConfig;
               if (cfg && game.kills >= cfg.killTarget) {
@@ -4347,6 +4403,14 @@ function detonateGrenade(grenade, index) {
           addScore(destroyData.scoreValue);
           updateHUD(game);
 
+          // Check for kills remaining alert
+          if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+            const remaining = cfg ? cfg.killTarget - game.kills : 0;
+            showKillsRemainingAlert(remaining);
+            playKillsAlertSound();
+            killsAlertShownThisLevel = true;
+          }
+
           const cfg = game._levelConfig;
           if (cfg && game.kills >= cfg.killTarget) {
             completeLevel();
@@ -4492,6 +4556,14 @@ function detonateProximityMine(mine, index) {
           game.totalKills++;
           addScore(destroyData.scoreValue);
           updateHUD(game);
+
+          // Check for kills remaining alert
+          if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+            const remaining = cfg ? cfg.killTarget - game.kills : 0;
+            showKillsRemainingAlert(remaining);
+            playKillsAlertSound();
+            killsAlertShownThisLevel = true;
+          }
 
           const cfg = game._levelConfig;
           if (cfg && game.kills >= cfg.killTarget) {
@@ -4762,6 +4834,14 @@ function fireEMP(origin, hand, altWeapon) {
           addScore(destroyData.scoreValue);
           updateHUD(game);
 
+          // Check for kills remaining alert
+          if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+            const remaining = cfg ? cfg.killTarget - game.kills : 0;
+            showKillsRemainingAlert(remaining);
+            playKillsAlertSound();
+            killsAlertShownThisLevel = true;
+          }
+
           const cfg = game._levelConfig;
           if (cfg && game.kills >= cfg.killTarget) {
             completeLevel();
@@ -4965,10 +5045,11 @@ function cycleDebugBiomeWithFade() {
     game.level = 1;
     game._levelConfig = getLevelConfig();
   }
-  startEnvironmentFade('out', 250, () => {
+  // Fade durations are in SECONDS (0.3s = 300ms fade)
+  startEnvironmentFade('out', 0.3, () => {
     cycleDebugBiome();
     applyThemeForLevel(game.level);
-    startEnvironmentFade('in', 250);
+    startEnvironmentFade('in', 0.3);
     showDebugMenu();
   });
 }
@@ -5106,6 +5187,9 @@ function shouldFadeForBiomeTransition(level) {
 
 function completeLevel() {
   console.log(`[game] Level ${game.level} complete`);
+  
+  // Hide kills remaining alert if showing
+  hideKillsAlert();
   
   // Update HUD one final time to show correct kill count
   updateHUD(game);
@@ -5307,8 +5391,8 @@ function endGame(victory) {
     showVictory(game.score, camera.position);
   } else {
     showGameOver(game.score, camera.position);
-    // Play game over music
-    playMusic('gameOver');
+    // Play game over music (no loop - play once)
+    playMusic('gameOver', false);
   }
 }
 
@@ -5411,7 +5495,7 @@ function returnProjectileToPool(proj) {
  * Initialize voxel pool for physics-based death explosions
  */
 function initVoxelPool() {
-  const voxelGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+  const voxelGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
   
   for (let i = 0; i < VOXEL_POOL_SIZE; i++) {
     const material = new THREE.MeshBasicMaterial({
@@ -5592,7 +5676,7 @@ function getDeathPattern(enemyType) {
 function updateVoxelPhysics(dt, now) {
   const gravity = -9.8;
   const bounceCoefficient = 0.3;
-  const floorY = 0;
+  const floorY = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   
   for (let i = activeVoxels.length - 1; i >= 0; i--) {
     const voxel = activeVoxels[i];
@@ -5744,7 +5828,16 @@ function updateLightningBeam(controller, index, stats, dt) {
       chainTargets.forEach(({ index: enemyIndex, enemy }) => {
         const result = hitEnemy(enemyIndex, stats.lightningDamage);
         if (!accuracyHitRegistered) {
+          // Track multiplier increase for accuracy popup
+          const oldMultiplier = game.accuracyMultiplier || 1;
           registerAccuracyHit();
+          const newMultiplier = game.accuracyMultiplier || 1;
+          const oldThreshold = Math.floor(oldMultiplier);
+          const newThreshold = Math.floor(newMultiplier);
+          if (newThreshold > oldThreshold && newThreshold >= 2) {
+            spawnKillChainPopup(newThreshold, camera.position);
+            playComboSound(newThreshold);
+          }
           accuracyHitRegistered = true;
         }
         spawnDamageNumber(enemy.mesh.position, stats.lightningDamage, '#ffff44');
@@ -5763,6 +5856,13 @@ function updateLightningBeam(controller, index, stats, dt) {
             // Update HUD immediately to show correct kill count before level complete check
             updateHUD(game);
 
+            // Check for kills remaining alert
+            if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+              const remaining = cfg ? cfg.killTarget - game.kills : 0;
+              showKillsRemainingAlert(remaining);
+              playKillsAlertSound();
+              killsAlertShownThisLevel = true;
+            }
 
             // Check for slow-mo death (last enemy of wave)
             const cfg = game._levelConfig;
@@ -5900,7 +6000,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
         triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
 
         floorFlashing = true;
-        floorFlashTimer = 0.5;
+        floorFlashTimer = 0.4;
         if (dead) endGame(false);
         return;
       }
@@ -5917,6 +6017,15 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
 
         // Update HUD immediately to show correct kill count before level complete
         updateHUD(game);
+
+        // Check for kills remaining alert (for non-boss levels that might call this)
+        if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+          const cfg = game._levelConfig;
+          const remaining = cfg ? cfg.killTarget - game.kills : 0;
+          showKillsRemainingAlert(remaining);
+          playKillsAlertSound();
+          killsAlertShownThisLevel = true;
+        }
 
         completeLevel();
       }
@@ -6113,11 +6222,11 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
         game.comboMultiplier = 1;
       }
 
-      // Increment combo
+      // Increment combo (for internal tracking, but popups are now accuracy-based)
       game.comboCount++;
       game.lastKillTime = now;
 
-      // Calculate multiplier based on streak
+      // Calculate multiplier based on streak (for internal use)
       if (game.comboCount >= 5) {
         game.comboMultiplier = 5;
       } else if (game.comboCount >= 4) {
@@ -6128,12 +6237,8 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
         game.comboMultiplier = 2;
       }
 
-      // Show combo popup and play sound if multiplier >= 2
-      if (game.comboMultiplier >= 2) {
-        spawnKillChainPopup(game.comboMultiplier, camera.position);
-        playComboSound(game.comboMultiplier);
-        console.log(`[kill-chain] ${game.comboMultiplier}x combo (${game.comboCount} kills)`);
-      }
+      // NOTE: Popups are now accuracy-based, not kill-chain based
+      // Accuracy popups are triggered in markAccuracyHit() when multiplier increases
 
       // Check for slow-mo death (last enemy of wave)
       const cfg = game._levelConfig;
@@ -6157,6 +6262,14 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
         console.log('[vampiric] Healed 1 HP');
       }
 
+      // Check for kills remaining alert
+      if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+        const remaining = cfg ? cfg.killTarget - game.kills : 0;
+        showKillsRemainingAlert(remaining);
+        playKillsAlertSound();
+        killsAlertShownThisLevel = true;
+      }
+
       // Check level complete
       if (cfg && game.kills >= cfg.killTarget) {
         completeLevel();
@@ -6165,10 +6278,10 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
   }
 }
 
-function handleBossHit(boss, stats, hitPoint, controllerIndex) {
+function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
   let damage = stats.damage;
   if (stats.critChance > 0 && Math.random() < stats.critChance) damage *= (stats.critMultiplier || 2);
-  const result = hitBoss(damage);
+  const result = hitBoss(damage, { handIndex });
 
   // Shield reflection: damage player instead of boss
   if (result.shieldReflected) {
@@ -6185,9 +6298,17 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
     triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
 
     floorFlashing = true;
-    floorFlashTimer = 0.5;
+    floorFlashTimer = 0.4;
     console.log('[boss] Shield reflected damage!');
     if (dead) endGame(false);
+    return;
+  }
+
+  // Immune hit (e.g., skull boss head before hands destroyed)
+  if (result.immune) {
+    spawnDamageNumber(hitPoint, 0, '#aaaaaa');  // Show 0 damage in gray
+    playTingSound();  // Metallic ping sound
+    console.log('[boss] Hit was immune!');
     return;
   }
 
@@ -6208,6 +6329,15 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex) {
 
     // Update HUD immediately to show correct kill count before level complete
     updateHUD(game);
+
+    // Check for kills remaining alert (for non-boss levels that might call this)
+    if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+      const cfg = game._levelConfig;
+      const remaining = cfg ? cfg.killTarget - game.kills : 0;
+      showKillsRemainingAlert(remaining);
+      playKillsAlertSound();
+      killsAlertShownThisLevel = true;
+    }
 
     completeLevel();
   }
@@ -6632,7 +6762,7 @@ function updateProjectiles(dt) {
       const result = getEnemyByMesh(hits[0].object);
       if (result && result.boss) {
         markProjectileHit(proj);
-        handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex);
+        handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex, result.handIndex);
         if (!proj.userData.stats?.piercing) {
           resolveProjectileAccuracy(proj);
           if (proj.userData.isPooled) {
@@ -6930,10 +7060,6 @@ function render(timestamp) {
                 `Explosions: ${explosionVisuals.length}`);
   }
 
-  if (slowMoCooldown > 0) {
-    slowMoCooldown = Math.max(0, slowMoCooldown - rawDt);
-  }
-
   // Apply bullet-time slow-mo, ramp-out, and death sequence (use raw dt)
   if (slowMoRampOut) {
     slowMoRampOutTimer -= rawDt;
@@ -6960,7 +7086,6 @@ function render(timestamp) {
       slowMoActive = false;
       slowMoSoundPlayed = false;
       timeScale = 1.0;
-      slowMoTriggerEnemyIds.clear();
       console.log('[bullet-time] ENDED');
     } else {
       timeScale = 0.2;
@@ -6994,6 +7119,9 @@ function render(timestamp) {
 
   // ── Playing ──
   else if (st === State.PLAYING) {
+    // Update kills remaining alert (auto-hide after timeout)
+    updateKillsAlert(now);
+
     // SAFEGUARD: Ensure blaster displays are visible during gameplay
     // Prevents text/billboard elements from disappearing
     blasterDisplays.forEach(d => { if (d) d.visible = false; });  // Hidden during gameplay
@@ -7113,32 +7241,31 @@ function render(timestamp) {
     // Update laser mines
     updateLaserMines(now, dt);
 
-    // If in slow-mo, check whether the triggering enemies are dead → ramp out over 0.5s + reverse sound
+    // If in slow-mo, check whether all enemies in trigger range are gone → ramp out over 0.5s + reverse sound
     if (slowMoActive && !slowMoRampOut) {
       const enemiesForRamp = getEnemies();
-      const aliveIds = new Set(enemiesForRamp.map(e => e.mesh.uuid));
-      const anyAlive = [...slowMoTriggerEnemyIds].some(id => aliveIds.has(id));
-      if (!anyAlive) {
+      const anyNear = enemiesForRamp.some(e => e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST);
+      if (!anyNear) {
         slowMoActive = false;
         slowMoSoundPlayed = false;
         slowMoRampOut = true;
         slowMoRampOutTimer = SLOW_MO_RAMP_OUT_DURATION;
-        slowMoTriggerEnemyIds.clear();
         playSlowMoReverseSound();
-        console.log('[bullet-time] RAMP OUT — enemies dead');
+        console.log('[bullet-time] RAMP OUT — enemies cleared');
       }
     }
 
-    // Check for danger-close bullet-time trigger (ONLY when enemies are too close)
-    if (!slowMoActive && !slowMoRampOut && slowMoCooldown <= 0) {
+    // Check for near-miss bullet-time trigger
+    if (!slowMoActive && !slowMoRampOut) {
       const enemies = getEnemies();
-      const closeEnemies = enemies.filter(e => e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST);
-      if (closeEnemies.length > 0) {
-        slowMoActive = true;
-        slowMoDuration = SLOW_MO_DURATION;
-        slowMoCooldown = SLOW_MO_COOLDOWN;
-        slowMoTriggerEnemyIds = new Set(closeEnemies.map(e => e.mesh.uuid));
-        console.log('[bullet-time] ACTIVATED — enemy too close!');
+      for (const e of enemies) {
+        const dist = e.mesh.position.distanceTo(playerPos);
+        if (dist < SLOW_MO_TRIGGER_DIST) {
+          slowMoActive = true;
+          slowMoDuration = 2.5;
+          console.log('[bullet-time] ACTIVATED!');
+          break;
+        }
       }
       if (slowMoActive && !slowMoSoundPlayed) {
         playSlowMoSound();
@@ -7193,12 +7320,11 @@ function render(timestamp) {
 
       // Trigger floor flash
       floorFlashing = true;
-      floorFlashTimer = 0.5;
+      floorFlashTimer = 0.4;
 
       slowMoActive = false;
       slowMoRampOut = false;
       timeScale = 1.0;
-      slowMoTriggerEnemyIds.clear();
       console.log(`[damage] Player hit! Health: ${game.health}`);
       if (dead) {
         endGame(false);
@@ -7224,11 +7350,10 @@ function render(timestamp) {
         triggerScreenShake(0.3, 300); // 0.3 shake for 300ms
 
         floorFlashing = true;
-        floorFlashTimer = 0.5;
+        floorFlashTimer = 0.4;
         slowMoActive = false;
         slowMoRampOut = false;
         timeScale = 1.0;
-        slowMoTriggerEnemyIds.clear();
         if (dead) endGame(false);
       }
     }
@@ -7265,7 +7390,7 @@ function render(timestamp) {
         triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
 
         floorFlashing = true;
-        floorFlashTimer = 0.5;
+        floorFlashTimer = 0.4;
         if (dead) endGame(false);
       }
     }
@@ -7302,7 +7427,7 @@ function render(timestamp) {
             game.comboCount++;
             game.lastKillTime = now;
 
-            // Calculate multiplier based on streak
+            // Calculate multiplier based on streak (for internal use)
             if (game.comboCount >= 5) {
               game.comboMultiplier = 5;
             } else if (game.comboCount >= 4) {
@@ -7313,11 +7438,15 @@ function render(timestamp) {
               game.comboMultiplier = 2;
             }
 
-            // Show combo popup and play sound if multiplier >= 2
-            if (game.comboMultiplier >= 2) {
-              spawnKillChainPopup(game.comboMultiplier, camera.position);
-              playComboSound(game.comboMultiplier);
-              console.log(`[kill-chain] ${game.comboMultiplier}x combo (${game.comboCount} kills, DoT)`);
+            // NOTE: Popups are now accuracy-based, not kill-chain based
+            // Accuracy popups are triggered in markAccuracyHit() when multiplier increases
+
+            // Check for kills remaining alert
+            if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+              const remaining = cfg ? cfg.killTarget - game.kills : 0;
+              showKillsRemainingAlert(remaining);
+              playKillsAlertSound();
+              killsAlertShownThisLevel = true;
             }
 
             // Check for slow-mo death (last enemy of wave)
@@ -7479,16 +7608,17 @@ function render(timestamp) {
     }
   }
 
-  // ── Floor damage flash ──
+  // ── Floor damage flash (secondary VR hit indicator) ──
   if (floorFlashing && floorMaterial) {
     floorFlashTimer -= rawDt;
     if (floorFlashTimer <= 0) {
       floorFlashing = false;
       floorMaterial.color.copy(floorBaseColor);
     } else {
-      // Lerp from red/white back to base color
-      const t = floorFlashTimer / 0.5;  // 0.5s flash duration
-      const flashColor = new THREE.Color(0xff2222);  // Bright red
+      // Lerp from bright red/white back to base color
+      const t = floorFlashTimer / 0.4;  // 0.4s flash duration (slightly faster)
+      // Bright red-orange for visibility across all biomes
+      const flashColor = new THREE.Color(0xff3300);
       floorMaterial.color.lerpColors(floorBaseColor, flashColor, t);
     }
   }
@@ -7531,6 +7661,16 @@ function render(timestamp) {
   updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
   updateStatusBubbles(dt, now);
+  // Update accuracy popups with fade-complete callback to reset bonus
+  updateKillChainPopups(dt, now, (multiplier) => {
+    // When popup fully fades, reset accuracy bonus if no new popup appeared
+    // This creates the "quick deterioration" feel - bonus only lasts while popup is visible
+    if (game.accuracyMultiplier <= multiplier) {
+      // Only reset if we haven't built up a higher multiplier
+      game.accuracyBonus = 0;
+      game.accuracyMultiplier = 1;
+    }
+  });
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
 
   // ── New ALT weapon updates ──
@@ -7609,6 +7749,9 @@ function rebuildBiomeScene(biomeId, theme) {
   if (biomeSceneGroup && biomeSceneBiome === biomeId) return;
 
   clearBiomeScene();
+
+  // Update aurora colors for new biome
+  updateAuroraColors(theme);
 
   biomeSceneGroup = new THREE.Group();
   biomeSceneGroup.name = `biome-scene-${biomeId}`;
@@ -7734,25 +7877,26 @@ function buildSynthwaveValleyScene(group) {
     ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
     return new THREE.CanvasTexture(c);
   };
-  const sunGlowTex = makeRadial('rgba(255,190,235,0.34)', 'rgba(255,102,204,0.0)');
-  const sunCoreTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(255,196,232,0.84)');
-  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xff7fd4, transparent: true, opacity: 0.92, depthWrite: false }));
-  sunGlow.scale.set(340, 340, 1);
+  // DRAMATICALLY increased sun brightness - was too dim and darkening the area
+  const sunGlowTex = makeRadial('rgba(255,230,245,0.95)', 'rgba(255,150,220,0.5)');
+  const sunCoreTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(255,220,240,0.98)');
+  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  sunGlow.scale.set(480, 480, 1);
   sunGlow.frustumCulled = false;
   sunGroup.add(sunGlow);
   const sunCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false }));
-  sunCore.scale.set(185, 185, 1);
+  sunCore.scale.set(220, 220, 1);
   sunCore.frustumCulled = false;
   sunGroup.add(sunCore);
 
-  // Horizon glow
-  const horizonGlowGeo = new THREE.PlaneGeometry(900, 70);
+  // Horizon glow - increased brightness to match brighter sun
+  const horizonGlowGeo = new THREE.PlaneGeometry(1200, 100);
   const horizonGlowMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    uniforms: { c1: { value: new THREE.Color(0xfff6c8) }, c2: { value: new THREE.Color(0xff86da) } },
+    uniforms: { c1: { value: new THREE.Color(0xffffff) }, c2: { value: new THREE.Color(0xffaadd) } },
     vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
-    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.42,vUv.y)*(1.0-smoothstep(0.58,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.5,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*2.0); gl_FragColor=vec4(col, alpha*side*0.62); }`,
+    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.42,vUv.y)*(1.0-smoothstep(0.58,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.5,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*2.0); gl_FragColor=vec4(col, alpha*side*0.85); }`,
   });
   const horizonGlow = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
   horizonGlow.position.set(0, 8, -745);
