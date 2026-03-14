@@ -2908,12 +2908,12 @@ class SkullHand {
       this.group.lookAt(playerPos.x, worldPos.y, playerPos.z);
     }
     
-    // Update color based on damage
+    // Update color based on damage - darken toward dark red
     const damageRatio = 1 - this.hp / this.maxHp;
     this.group.traverse(c => {
       if (c.isMesh && c.material && c.userData.isHandBody) {
         const baseColor = new THREE.Color(0xffffff);
-        const damagedColor = new THREE.Color(0xff0000);
+        const damagedColor = new THREE.Color(0x660000); // Dark red
         c.material.color.copy(baseColor).lerp(damagedColor, damageRatio);
       }
     });
@@ -3281,7 +3281,7 @@ class SkullBoss extends Boss {
   updateHeadColor() {
     const damageRatio = 1 - this.hp / this.maxHp;
     const baseColor = new THREE.Color(0xffffff);
-    const damagedColor = new THREE.Color(0xff0000);
+    const damagedColor = new THREE.Color(0x660000); // Dark red
     
     this.skullVoxels.forEach(voxel => {
       voxel.material.color.copy(baseColor).lerp(damagedColor, damageRatio);

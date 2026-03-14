@@ -393,6 +393,10 @@ export const THEMES = {
     hideBaseEnv: true,
     keepStars: true,
     customScene: 'synthwave_valley',
+    // Aurora borealis colors: cyan/magenta/purple
+    aurora: {
+      colors: ['rgba(0,255,255,0)', 'rgba(0,255,200,0.1)', 'rgba(200,0,255,0.15)', 'rgba(255,0,200,0.12)', 'rgba(100,0,180,0.06)', 'rgba(0,100,150,0)'],
+    },
   },
 
   desert_night: {
@@ -422,6 +426,10 @@ export const THEMES = {
     hideBaseEnv: true,
     keepStars: true,
     customScene: 'desert_night',
+    // Aurora borealis colors: warm orange/red
+    aurora: {
+      colors: ['rgba(60,20,0,0)', 'rgba(255,100,0,0.1)', 'rgba(255,150,50,0.15)', 'rgba(255,80,30,0.12)', 'rgba(200,50,20,0.06)', 'rgba(80,20,10,0)'],
+    },
   },
 
   alien_planet: {
@@ -451,6 +459,10 @@ export const THEMES = {
     hideBaseEnv: true,
     keepStars: true,
     customScene: 'alien_planet',
+    // Aurora borealis colors: green/teal
+    aurora: {
+      colors: ['rgba(0,40,30,0)', 'rgba(0,255,150,0.1)', 'rgba(0,200,180,0.15)', 'rgba(50,220,150,0.12)', 'rgba(0,150,120,0.06)', 'rgba(0,60,50,0)'],
+    },
   },
 
   hellscape_lava: {
@@ -480,6 +492,10 @@ export const THEMES = {
     hideBaseEnv: true,
     keepStars: true,
     customScene: 'hellscape_lava',
+    // Aurora borealis colors: red/orange
+    aurora: {
+      colors: ['rgba(40,0,0,0)', 'rgba(255,50,0,0.1)', 'rgba(255,100,0,0.15)', 'rgba(255,30,0,0.12)', 'rgba(180,20,0,0.06)', 'rgba(60,10,0,0)'],
+    },
   },
 };
 

@@ -226,6 +226,19 @@ let heartAnimationState = {
   shakeX: 0,        // Horizontal shake offset
 };
 
+// Holographic HUD effect state
+let holographicState = {
+  glitchIntensity: 0,      // 0-1, triggered on player hit
+  glitchStartTime: 0,
+  scanLineOffset: 0,       // Animated scan line position
+  flickerPhase: 0,         // Subtle flicker animation
+  colorShift: 0,           // Color distortion during glitch
+};
+
+// Holographic overlay mesh (scan lines)
+let holoScanLineMesh = null;
+let holoGlitchMesh = null;
+
 function drawHeart(ctx, x, y, pixSize, state, animState = {}) {
   // state: 'full', 'half', 'empty'
   // animState: { glowIntensity, hitFlash, isHealthGain }
@@ -348,21 +361,23 @@ export function initHUD(camera, scene) {
   });
 
   // ── Hit flash (red plane in front of camera) ──
-  // #11 FIX: Increased size to cover entire view for environment damage flash effect
+  // VR damage indicator: bright red flash that covers entire view
+  // Critical for VR since camera shake doesn't work well
   hitFlash = new THREE.Mesh(
-    new THREE.PlaneGeometry(4, 4),  // Larger size to cover entire view (was 2, 2)
+    new THREE.PlaneGeometry(6, 6),  // Large enough to cover entire VR FOV
     new THREE.MeshBasicMaterial({
-      color: 0xff0000,
+      color: 0xff2200,  // Bright red-orange for visibility across all biomes
       transparent: true,
       opacity: 0,
       depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,  // Makes flash visible even on bright backgrounds
     }),
   );
   hitFlash.renderOrder = 999;
   hitFlash.visible = false;
-  hitFlash.position.set(0, 0, -0.3);  // Closer to camera for better coverage (was -0.5)
+  hitFlash.position.set(0, 0, -0.25);  // Very close to camera for full coverage
   camera.add(hitFlash);
 
   // ── FPS Counter (top left, attached to camera, more visible in VR) ──
@@ -463,6 +478,7 @@ function createTitleScreen() {
   });
   const btnMesh = new THREE.Mesh(btnGeo, btnMat);
   btnMesh.userData.isTitleScoreboardBtn = true;
+  btnMesh.userData.borderColor = 0xffff00;  // Yellow border for hover glow
   btnGroup.add(btnMesh);
   const btnBorderGeo = new THREE.EdgesGeometry(btnGeo);
   btnGroup.add(new THREE.LineSegments(btnBorderGeo, new THREE.LineBasicMaterial({ color: 0xffff00 })));
@@ -497,27 +513,189 @@ export function updateTitle(now) {
 
 // ── VR HUD (hearts, kill counter, level, score) ────────────
 
+// Create holographic scan line texture
+function createHoloScanLineTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+
+  // Transparent background
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw horizontal scan lines with gaps
+  ctx.fillStyle = 'rgba(0, 255, 255, 0.15)';
+  const lineSpacing = 4;
+  for (let y = 0; y < canvas.height; y += lineSpacing) {
+    ctx.fillRect(0, y, canvas.width, 1);
+  }
+
+  // Add some random noise/dots for texture
+  ctx.fillStyle = 'rgba(0, 255, 255, 0.08)';
+  for (let i = 0; i < 200; i++) {
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * canvas.height;
+    ctx.fillRect(x, y, 2, 2);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.minFilter = THREE.LinearFilter;
+  return texture;
+}
+
+// Create glitch overlay texture with dramatic color separation
+function createGlitchTexture(intensity) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (intensity > 0) {
+    // Heavy horizontal glitch bars with RGB separation
+    const barCount = Math.floor(intensity * 20);
+    for (let i = 0; i < barCount; i++) {
+      const y = Math.random() * canvas.height;
+      const h = Math.random() * 30 + 3;
+      const offset = (Math.random() - 0.5) * intensity * 80;
+
+      // Red channel offset
+      ctx.fillStyle = `rgba(255, 0, 50, ${0.4 * intensity})`;
+      ctx.fillRect(offset - 15, y, canvas.width + 30, h);
+
+      // Cyan channel offset (opposite direction)
+      ctx.fillStyle = `rgba(0, 255, 255, ${0.4 * intensity})`;
+      ctx.fillRect(15 - offset, y, canvas.width + 30, h);
+
+      // White center for digital corruption look
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.2 * intensity})`;
+      ctx.fillRect(0, y, canvas.width, h / 2);
+    }
+
+    // Random noise blocks (digital artifacts)
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.3 * intensity})`;
+    for (let i = 0; i < 80 * intensity; i++) {
+      const x = Math.random() * canvas.width;
+      const y = Math.random() * canvas.height;
+      const w = Math.random() * 50 + 5;
+      const h = Math.random() * 8 + 2;
+      ctx.fillRect(x, y, w, h);
+    }
+
+    // Vertical tear lines
+    ctx.strokeStyle = `rgba(0, 255, 255, ${0.5 * intensity})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 5 * intensity; i++) {
+      const x = Math.random() * canvas.width;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + (Math.random() - 0.5) * 20, canvas.height);
+      ctx.stroke();
+    }
+
+    // Random colored blocks
+    const colors = ['#ff0066', '#00ffff', '#ffff00', '#ff00ff'];
+    for (let i = 0; i < 15 * intensity; i++) {
+      ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+      ctx.globalAlpha = 0.3 * intensity;
+      const x = Math.random() * canvas.width;
+      const y = Math.random() * canvas.height;
+      ctx.fillRect(x, y, Math.random() * 40, Math.random() * 10);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  return texture;
+}
+
 function createHUDElements() {
   hudGroup.visible = false;
   hudGroup.renderOrder = 999;
 
   // Floor-based HUD layout (Space Pirate Trainer style)
   // Increased by 200% (3x) for better visibility
-  
-  // #22: Floor HUD Background - low opacity black box for better visibility
-  const hudBgGeo = new THREE.PlaneGeometry(4.5, 1.8);
-  const hudBgMat = new THREE.MeshBasicMaterial({
-    color: 0x000000,
+
+  // HOLOGRAPHIC BASE - subtle gradient background instead of black box
+  const holoBgGeo = new THREE.PlaneGeometry(4.8, 2.0);
+  const holoBgCanvas = document.createElement('canvas');
+  holoBgCanvas.width = 512;
+  holoBgCanvas.height = 256;
+  const holoBgCtx = holoBgCanvas.getContext('2d');
+
+  // Create gradient - cyan edges fading to transparent center
+  const gradient = holoBgCtx.createRadialGradient(256, 128, 50, 256, 128, 300);
+  gradient.addColorStop(0, 'rgba(0, 40, 60, 0.05)');
+  gradient.addColorStop(0.5, 'rgba(0, 60, 80, 0.15)');
+  gradient.addColorStop(1, 'rgba(0, 100, 120, 0.25)');
+  holoBgCtx.fillStyle = gradient;
+  holoBgCtx.fillRect(0, 0, 512, 256);
+
+  // Add subtle grid pattern
+  holoBgCtx.strokeStyle = 'rgba(0, 255, 255, 0.08)';
+  holoBgCtx.lineWidth = 1;
+  for (let x = 0; x < 512; x += 32) {
+    holoBgCtx.beginPath();
+    holoBgCtx.moveTo(x, 0);
+    holoBgCtx.lineTo(x, 256);
+    holoBgCtx.stroke();
+  }
+  for (let y = 0; y < 256; y += 32) {
+    holoBgCtx.beginPath();
+    holoBgCtx.moveTo(0, y);
+    holoBgCtx.lineTo(512, y);
+    holoBgCtx.stroke();
+  }
+
+  const holoBgTexture = new THREE.CanvasTexture(holoBgCanvas);
+  const holoBgMat = new THREE.MeshBasicMaterial({
+    map: holoBgTexture,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.6,
     depthTest: true,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
-  const hudBgMesh = new THREE.Mesh(hudBgGeo, hudBgMat);
-  hudBgMesh.position.set(0, -0.001, 0.3);  // Slightly below elements, centered
-  hudBgMesh.renderOrder = 998;
-  hudGroup.add(hudBgMesh);
+  const holoBgMesh = new THREE.Mesh(holoBgGeo, holoBgMat);
+  holoBgMesh.position.set(0, -0.002, 0.3);
+  holoBgMesh.renderOrder = 998;
+  hudGroup.add(holoBgMesh);
+
+  // HOLOGRAPHIC SCAN LINES OVERLAY
+  const scanLineGeo = new THREE.PlaneGeometry(4.8, 2.0);
+  const scanLineTexture = createHoloScanLineTexture();
+  const scanLineMat = new THREE.MeshBasicMaterial({
+    map: scanLineTexture,
+    transparent: true,
+    opacity: 0.4,
+    depthTest: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+  });
+  holoScanLineMesh = new THREE.Mesh(scanLineGeo, scanLineMat);
+  holoScanLineMesh.position.set(0, -0.001, 0.3);
+  holoScanLineMesh.renderOrder = 998;
+  hudGroup.add(holoScanLineMesh);
+
+  // GLITCH OVERLAY (initially invisible)
+  const glitchGeo = new THREE.PlaneGeometry(4.8, 2.0);
+  const glitchMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+  });
+  holoGlitchMesh = new THREE.Mesh(glitchGeo, glitchMat);
+  holoGlitchMesh.position.set(0, 0.001, 0.3);
+  holoGlitchMesh.renderOrder = 1000;
+  hudGroup.add(holoGlitchMesh);
 
   // Lives (hearts) - left side on floor
   // #19: Hearts aligned with TOP of SCORE and LEVEL X titles
@@ -577,6 +755,13 @@ export function triggerHeartHitAnimation() {
   heartAnimationState.shakeX = 0;
 }
 
+// Holographic glitch effect trigger
+export function triggerHoloGlitch() {
+  holographicState.glitchIntensity = 1.0;
+  holographicState.glitchStartTime = performance.now();
+  holographicState.colorShift = 1.0;
+}
+
 export function triggerHealthGainAnimation() {
   heartAnimationState.healthGain = 1.0;
 }
@@ -607,7 +792,7 @@ export function updateHUD(gameState) {
   // #23: Update heart animation state
   const now = performance.now();
   heartAnimationState.glowPhase = now * 0.003;  // Slow glow pulse
-  
+
   // Decay hit flash
   if (heartAnimationState.hitFlash > 0) {
     heartAnimationState.hitFlash -= 0.05;
@@ -615,11 +800,81 @@ export function updateHUD(gameState) {
     // Shake effect
     heartAnimationState.shakeX = (Math.random() - 0.5) * 4 * heartAnimationState.hitFlash;
   }
-  
+
   // Decay health gain flash
   if (heartAnimationState.healthGain > 0) {
     heartAnimationState.healthGain -= 0.03;
     if (heartAnimationState.healthGain < 0) heartAnimationState.healthGain = 0;
+  }
+
+  // === HOLOGRAPHIC EFFECTS ===
+  // Update scan line animation (moving downward)
+  holographicState.scanLineOffset = (now * 0.0005) % 1;
+  if (holoScanLineMesh && holoScanLineMesh.material.map) {
+    holoScanLineMesh.material.map.offset.y = holographicState.scanLineOffset;
+  }
+
+  // Update flicker phase (subtle opacity variation for authenticity)
+  holographicState.flickerPhase = now * 0.015;
+  const flickerAmount = 0.05 * Math.sin(holographicState.flickerPhase) +
+                         0.02 * Math.sin(holographicState.flickerPhase * 2.3) +
+                         0.01 * Math.sin(holographicState.flickerPhase * 5.7);
+  if (holoScanLineMesh) {
+    holoScanLineMesh.material.opacity = 0.4 + flickerAmount;
+  }
+
+  // Decay glitch effect
+  if (holographicState.glitchIntensity > 0) {
+    const glitchAge = now - holographicState.glitchStartTime;
+    const glitchDuration = 600; // 600ms glitch duration for noticeable effect
+    if (glitchAge > glitchDuration) {
+      holographicState.glitchIntensity = 0;
+      holographicState.colorShift = 0;
+    } else {
+      // Exponential decay with random spikes for chaotic look
+      holographicState.glitchIntensity = Math.max(0, 1 - (glitchAge / glitchDuration));
+      // Random re-spikes during decay for more dramatic effect
+      if (Math.random() < 0.15) {
+        holographicState.glitchIntensity = Math.min(1, holographicState.glitchIntensity + 0.4);
+      }
+    }
+
+    // Update glitch overlay
+    if (holoGlitchMesh) {
+      if (holographicState.glitchIntensity > 0.05) {
+        const glitchTexture = createGlitchTexture(holographicState.glitchIntensity);
+        if (holoGlitchMesh.material.map) holoGlitchMesh.material.map.dispose();
+        holoGlitchMesh.material.map = glitchTexture;
+        holoGlitchMesh.material.opacity = holographicState.glitchIntensity * 0.9;
+        holoGlitchMesh.material.needsUpdate = true;
+
+        // Shake the entire HUD group during glitch
+        const shakeX = (Math.random() - 0.5) * 0.08 * holographicState.glitchIntensity;
+        const shakeZ = (Math.random() - 0.5) * 0.05 * holographicState.glitchIntensity;
+        hudGroup.position.x = shakeX;
+        hudGroup.position.z = -3 + shakeZ;
+
+        // Also shake the scan lines for extra effect
+        if (holoScanLineMesh) {
+          holoScanLineMesh.position.x = shakeX * 0.5;
+        }
+      } else {
+        holoGlitchMesh.material.opacity = 0;
+        // Reset HUD position
+        hudGroup.position.x = 0;
+        hudGroup.position.z = -3;
+        if (holoScanLineMesh) {
+          holoScanLineMesh.position.x = 0;
+        }
+      }
+    }
+  } else {
+    // Ensure HUD position is reset
+    hudGroup.position.x = 0;
+    hudGroup.position.z = -3;
+    if (holoScanLineMesh) {
+      holoScanLineMesh.position.x = 0;
+    }
   }
 
   // Hearts - proper aspect ratio with correct scale and animation
@@ -777,6 +1032,9 @@ function createUpgradeCard(upgrade, position) {
   const borderGeo = new THREE.EdgesGeometry(cardGeo);
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
+  
+  // Store border color on card for hover glow matching
+  card.userData.borderColor = borderColor;
 
   // Name text - increased proportionally to card size
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
@@ -854,6 +1112,9 @@ function createSkipCard(position) {
   const borderGeo = new THREE.EdgesGeometry(cardGeo);
   const borderMat = new THREE.LineBasicMaterial({ color: '#00ff88' });
   group.add(new THREE.LineSegments(borderGeo, borderMat));
+  
+  // Store border color on card for hover glow matching (green for skip)
+  card.userData.borderColor = 0x00ff88;
 
   // "SKIP" text - increased proportionally
   const nameSprite = makeSprite('SKIP', {
@@ -1012,16 +1273,25 @@ export function hideGameOver() {
 
 // ── Hit Flash ──────────────────────────────────────────────
 
-// #11 FIX: Increased initial opacity for more dramatic damage flash
+// VR damage indicator: bright environment flash when player takes damage
+// This is the PRIMARY hit indicator in VR (camera shake doesn't work well)
+// Must be very visible across all biomes (Synthwave, Desert, Alien Planet, Hellscape)
 export function triggerHitFlash() {
-  hitFlashOpacity = 0.7;  // Increased from 0.5 for more visible environment flash
+  // High initial opacity for maximum visibility
+  // Additive blending makes this visible even on bright/colored backgrounds
+  hitFlashOpacity = 0.9;
+
+  // Also trigger holographic glitch effect on HUD
+  triggerHoloGlitch();
 }
 
 export function updateHitFlash(dt) {
   if (hitFlashOpacity > 0) {
     hitFlash.visible = true;
     hitFlash.material.opacity = hitFlashOpacity;
-    hitFlashOpacity -= dt * 2;
+    // Quick fade but not instant - 0.5s total duration
+    // Fast enough to not linger, slow enough to be seen
+    hitFlashOpacity -= dt * 1.8;
   } else {
     hitFlash.visible = false;
   }
@@ -1292,8 +1562,30 @@ export function checkComboIncrease(currentCombo, cameraPos, playSoundFn) {
   lastComboValue = currentCombo;
 }
 
-// ── Kill Chain Popups (separate from accuracy combo) ────────
+// ── Kill Chain Popups (accuracy-based with quick deterioration) ────────
 const killChainPopups = [];
+
+// Hurt effect state for miss penalty
+let accuracyHurtState = {
+  active: false,
+  startTime: 0,
+  intensity: 0,
+  shrinkMultiplier: 1,  // Extra shrink speed when hurt
+};
+
+/**
+ * Trigger hurt effect when player misses a shot
+ * Adds red flash, shake, and faster shrink/fade of popups
+ */
+export function triggerAccuracyHurt() {
+  accuracyHurtState.active = true;
+  accuracyHurtState.startTime = performance.now();
+  accuracyHurtState.intensity = 1.0;
+  accuracyHurtState.shrinkMultiplier = 3.0;  // 3x faster shrink when hurt
+
+  // Also trigger the hit flash for red screen effect
+  triggerHitFlash();
+}
 
 export function spawnKillChainPopup(multiplier, cameraPos) {
   const canvas = document.createElement('canvas');
@@ -1324,11 +1616,11 @@ export function spawnKillChainPopup(multiplier, cameraPos) {
   ctx.fillStyle = color;
   ctx.fillText(text, 256, 128);
 
-  // Add "KILL CHAIN!" subtitle
+  // Add "ACCURACY!" subtitle instead of "KILL CHAIN!"
   ctx.font = 'bold 36px Arial, sans-serif';
   ctx.shadowBlur = 10;
   ctx.fillStyle = '#ffffff';
-  ctx.fillText('KILL CHAIN!', 256, 200);
+  ctx.fillText('ACCURACY!', 256, 200);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
@@ -1352,46 +1644,98 @@ export function spawnKillChainPopup(multiplier, cameraPos) {
   // Position above crosshair, further away towards sun (-89)
   mesh.position.copy(cameraPos);
   mesh.position.y += 0.2;
-  mesh.position.z -= 6;  // Moved further towards sun (was 2, now 6)
+  mesh.position.z -= 6;
 
+  // Quick deterioration: 800ms total lifetime (was 1500ms)
   mesh.userData.createdAt = performance.now();
-  mesh.userData.lifetime = 1500;  // 1.5 seconds
-  mesh.userData.initialScale = 0.5;  // Start small
-  mesh.userData.targetScale = 1.0;   // Scale up
-  mesh.userData.velocity = new THREE.Vector3(0, 0.2, 0);  // Float upward slowly
+  mesh.userData.lifetime = 800;  // Quick - 0.8 seconds
+  mesh.userData.initialScale = 0.3;  // Start smaller for pop-in effect
+  mesh.userData.targetScale = 1.0;
+  mesh.userData.maxScale = 1.0;
+  mesh.userData.velocity = new THREE.Vector3(0, 0.15, 0);  // Float upward slowly
+  mesh.userData.fadeProgress = 0;
+  mesh.userData.shrinkProgress = 0;
+  mesh.userData.multiplier = multiplier;  // Store for callback
   mesh.renderOrder = 999;
 
   sceneRef.add(mesh);
   killChainPopups.push(mesh);
 }
 
-export function updateKillChainPopups(dt, now) {
+export function updateKillChainPopups(dt, now, onFadeComplete) {
+  // Update hurt effect decay
+  if (accuracyHurtState.active) {
+    const hurtAge = now - accuracyHurtState.startTime;
+    const hurtDecayTime = 500;  // Hurt effect lasts 0.5s
+    if (hurtAge > hurtDecayTime) {
+      accuracyHurtState.active = false;
+      accuracyHurtState.intensity = 0;
+      accuracyHurtState.shrinkMultiplier = 1;
+    } else {
+      accuracyHurtState.intensity = 1 - (hurtAge / hurtDecayTime);
+      accuracyHurtState.shrinkMultiplier = 1 + (2 * accuracyHurtState.intensity);  // 1x to 3x
+    }
+  }
+
   for (let i = killChainPopups.length - 1; i >= 0; i--) {
     const popup = killChainPopups[i];
     const age = now - popup.userData.createdAt;
+    const lifetime = popup.userData.lifetime;
+    const shrinkMultiplier = accuracyHurtState.shrinkMultiplier;
 
-    if (age > popup.userData.lifetime) {
+    if (age > lifetime) {
+      // Popup has fully faded - remove it
       sceneRef.remove(popup);
       popup.material.map.dispose();
       popup.material.dispose();
       popup.geometry.dispose();
       killChainPopups.splice(i, 1);
+
+      // Callback to reset accuracy bonus when popup fades completely
+      if (onFadeComplete && typeof onFadeComplete === 'function') {
+        onFadeComplete(popup.userData.multiplier);
+      }
     } else {
-      // Animate scale: grow from 0.5 to 1.0 in first 200ms
+      // Animation phases:
+      // 0-150ms: Pop in (scale from 0.3 to 1.0)
+      // 150-400ms: Hold at full size
+      // 400-800ms: Fade out AND shrink (quick deterioration)
+
       const ageMs = age;
-      if (ageMs < 200) {
-        const t = ageMs / 200;
-        const scale = popup.userData.initialScale + (popup.userData.targetScale - popup.userData.initialScale) * t;
+      const popInDuration = 150;
+      const holdDuration = 250;
+      const fadeOutDuration = 400;
+      const fadeOutStart = popInDuration + holdDuration;
+
+      if (ageMs < popInDuration) {
+        // Pop in animation
+        const t = ageMs / popInDuration;
+        const easeOut = 1 - Math.pow(1 - t, 3);  // Ease out cubic
+        const scale = popup.userData.initialScale + (popup.userData.targetScale - popup.userData.initialScale) * easeOut;
         popup.scale.setScalar(scale);
+      } else if (ageMs < fadeOutStart) {
+        // Hold at full size
+        popup.scale.setScalar(popup.userData.targetScale);
+      } else {
+        // Fade out AND shrink simultaneously
+        const fadeProgress = (ageMs - fadeOutStart) / fadeOutDuration;
+
+        // Apply hurt multiplier for faster shrink
+        const adjustedFadeProgress = Math.min(1, fadeProgress * shrinkMultiplier);
+
+        // Opacity fade (respects hurt speed)
+        popup.material.opacity = 1 - adjustedFadeProgress;
+
+        // Scale shrink (respects hurt speed)
+        const shrinkScale = popup.userData.targetScale * (1 - adjustedFadeProgress * 0.7);
+        popup.scale.setScalar(Math.max(0.1, shrinkScale));
+
+        // Store fade progress for potential callbacks
+        popup.userData.fadeProgress = adjustedFadeProgress;
       }
 
+      // Float upward
       popup.position.addScaledVector(popup.userData.velocity, dt);
-
-      // Fade out in last 0.5s
-      const fadeStart = popup.userData.lifetime - 500;
-      if (age > fadeStart) {
-        popup.material.opacity = 1 - (age - fadeStart) / 500;
-      }
     }
   }
 }
@@ -2077,7 +2421,7 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
   // Change country button - moved below name boxes, positioned to the right
   const changeGroup = new THREE.Group();
   changeGroup.position.set(0.55, 0.35, 0);  // Below name boxes, right side
-  const changeGeo = new THREE.PlaneGeometry(0.9, 0.26);
+  const changeGeo = new THREE.PlaneGeometry(0.75, 0.22);  // Reduced padding to avoid keyboard overlap
   const changeMat = new THREE.MeshBasicMaterial({
     color: 0x112244, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
   });
@@ -2274,70 +2618,11 @@ function refreshNameSlots() {
 }
 
 export function updateKeyboardHover(raycaster) {
-  if (!nameEntryGroup.visible) return;
-
-  // Reset previous hover
-  if (hoveredKey) {
-    hoveredKey.mat.color.setHex(hoveredKey.baseColor);
-    // #12: Smooth fade-out animation matching other buttons
-    const currentScale = hoveredKey.group.userData._hoverScale ?? 1;
-    const nextScale = currentScale + (1 - currentScale) * 0.15;
-    hoveredKey.group.userData._hoverScale = nextScale;
-    hoveredKey.group.scale.set(nextScale, nextScale, nextScale);
-    hoveredKey.group.rotation.z *= 0.85;
-    
-    // Fade out glow
-    if (hoveredKey.group.userData._hoverGlow) {
-      const glow = hoveredKey.group.userData._hoverGlow;
-      glow.material.opacity *= 0.85;
-    }
-    hoveredKey = null;
-  }
-
-  const meshes = keyboardKeys.map(k => k.mesh);
-  const hits = raycaster.intersectObjects(meshes, false);
-  if (hits.length > 0) {
-    const hit = keyboardKeys.find(k => k.mesh === hits[0].object);
-    if (hit) {
-      hoveredKey = hit;
-      hit.mat.color.setHex(0x004455);
-      
-      // #12: Enhanced hover animation matching other buttons (glow + scale)
-      const currentScale = hit.group.userData._hoverScale ?? 1;
-      const desiredScale = 1.15;
-      const nextScale = currentScale + (desiredScale - currentScale) * 0.2;
-      hit.group.userData._hoverScale = nextScale;
-      hit.group.scale.set(nextScale, nextScale, nextScale);
-      hit.group.rotation.z = 0.05;
-      
-      // #12: Add glow effect matching other buttons
-      if (!hit.group.userData._hoverGlow) {
-        const glowGeo = hit.mesh.geometry.clone();
-        const glowMat = new THREE.MeshBasicMaterial({
-          map: getHoverGlowTexture(),
-          transparent: true,
-          opacity: 0,
-          depthTest: false,
-        });
-        const glow = new THREE.Mesh(glowGeo, glowMat);
-        glow.renderOrder = 998;
-        glow.scale.set(1.3, 1.3, 1.3);
-        glow.position.set(0, 0, -0.01);
-        hit.group.add(glow);
-        hit.group.userData._hoverGlow = glow;
-      }
-      
-      // Fade in glow
-      if (hit.group.userData._hoverGlow) {
-        const glow = hit.group.userData._hoverGlow;
-        const current = glow.material.opacity || 0;
-        glow.material.opacity = current + (0.65 - current) * 0.15;
-      }
-      
-      // Play hover sound
-      playMenuHoverSound();
-    }
-  }
+  // NOTE: Visual hover effects (glow, scale, sound) are now handled uniformly
+  // by updateHUDHover() for ALL buttons including keyboard keys and Change Country.
+  // This function is kept for backward compatibility but no longer does visual effects.
+  // The keyboard keys and nameEntryActionMeshes are already included in updateHUDHover's
+  // hoverables list, so they get the same hover treatment as all other buttons.
 }
 
 // ── Scoreboard Screen ───────────────────────────────────────
@@ -2968,8 +3253,16 @@ export function updateHUDHover(raycasters) {
         // Determine glow color based on button type
         let glowColor = '0,255,255'; // Default cyan
 
+        // Check for upgrade cards - use border color for glow
+        if (obj.userData.isUpgradeCard && obj.userData.borderColor !== undefined) {
+          const bc = obj.userData.borderColor;
+          const r = (bc >> 16) & 255;
+          const g = (bc >> 8) & 255;
+          const b = bc & 255;
+          glowColor = `${r},${g},${b}`;
+        }
         // Check for BACK buttons (red glow)
-        if (obj.userData.scoreboardAction === 'back' ||
+        else if (obj.userData.scoreboardAction === 'back' ||
             obj.userData.countryAction === 'back' ||
             obj.userData.debugAction === 'back') {
           glowColor = '255,68,68'; // Red (#ff4444)

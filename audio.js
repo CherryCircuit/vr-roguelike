@@ -605,6 +605,39 @@ export function playUpgradeSound() {
   osc.stop(ctx.currentTime + 0.15);
 }
 
+// ── Ting Sound (metallic ping for immune hits) ───────────
+export function playTingSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // High-pitched metallic ping - like hitting a metal shield
+  const osc = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  // Main tone - high pitched sine
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(1200, t);
+  osc.frequency.exponentialRampToValueAtTime(800, t + 0.1);
+
+  // Harmonic - adds metallic character
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(2400, t);
+  osc2.frequency.exponentialRampToValueAtTime(1600, t + 0.08);
+
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+
+  osc.connect(gain);
+  osc2.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc2.start(t);
+  osc.stop(t + 0.15);
+  osc2.stop(t + 0.15);
+}
+
 // ── Kill Chain Sound (increases with multiplier) ───────────
 export function playComboSound(multiplier) {
   const ctx = getAudioContext();
@@ -828,6 +861,7 @@ let currentMusic = null;
 let musicVolume = 0.3;
 let currentPlaylist = [];
 let currentTrackIndex = 0;
+let loopPlaylist = true;  // Controls whether playlist loops (false for game over)
 let musicAnalyser = null;
 let musicSource = null;
 let musicFadeToken = 0;
@@ -932,8 +966,9 @@ function playNextTrack() {
   musicSource = ctx.createMediaElementSource(currentMusic);
   musicSource.connect(musicAnalyser);
 
-  // Auto-advance to next track when current ends
+  // Auto-advance to next track when current ends (only if playlist looping is enabled)
   currentMusic.addEventListener('ended', () => {
+    if (!loopPlaylist) return;  // Don't loop for single-play tracks like game over
     currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
     playNextTrack();
   });
@@ -967,9 +1002,10 @@ function stopCurrentMusic() {
   }
 }
 
-export function playMusic(category) {
+export function playMusic(category, loop = true) {
   stopCurrentMusic();
   musicFadeToken += 1;
+  loopPlaylist = loop;  // Store loop preference
 
   // Get tracks for category (fresh copy)
   const tracks = musicTracks[category] ? [...musicTracks[category]] : [];
@@ -979,7 +1015,7 @@ export function playMusic(category) {
   currentPlaylist = shuffleArray(tracks);
   currentTrackIndex = 0;
 
-  console.log(`[music] Starting playlist for ${category} with ${currentPlaylist.length} tracks`);
+  console.log(`[music] Starting playlist for ${category} with ${currentPlaylist.length} tracks (loop: ${loop})`);
   playNextTrack();
 }
 
