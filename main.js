@@ -7352,8 +7352,7 @@ function render(timestamp) {
     const desktopUpdates = updateDesktopControls(dt);
     const collisions = updateEnemies(dt, now, playerPos);
 
-    // Boss update and health bar
-    const boss = getBoss();
+    // Boss update and health bar (reuse boss variable from slow-mo check above)
     if (boss) {
       updateBoss(dt, now, playerPos);
       updateBossMinions(dt, playerPos);
