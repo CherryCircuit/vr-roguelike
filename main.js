@@ -7605,7 +7605,8 @@ function render(timestamp) {
 
   // ── Unified UI hover detection for all menu states ──
   if (st === State.TITLE || st === State.UPGRADE_SELECT || st === State.SCOREBOARD || 
-      st === State.REGIONAL_SCORES || st === State.COUNTRY_SELECT || st === State.READY_SCREEN) {
+      st === State.REGIONAL_SCORES || st === State.COUNTRY_SELECT || st === State.READY_SCREEN ||
+      st === State.NAME_ENTRY) {
     // Collect all raycasters from controllers
     const raycasters = [];
     for (let i = 0; i < controllers.length; i++) {

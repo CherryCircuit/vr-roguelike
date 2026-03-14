@@ -2383,30 +2383,31 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
   scoreText.position.set(0, 1.1, 0);
   nameEntryGroup.add(scoreText);
 
-  // Country display - moved below name boxes, positioned to the left of button
+  // Country display - centered between name boxes and keyboard
   const countryText = makeSprite(countryLabel || 'COUNTRY: NOT SET', {
     fontSize: 32, color: '#66ffff', scale: 0.32,
   });
-  countryText.position.set(-0.5, 0.35, 0);  // Below name boxes, left side
+  countryText.position.set(-0.45, 0.42, 0);  // Centered vertically, left side
   nameEntryGroup.add(countryText);
 
-  // Change country button - positioned to the right of keyboard area
+  // Change country button - centered between name boxes and keyboard, right side
   const changeGroup = new THREE.Group();
-  changeGroup.position.set(0.55, 0.0, 0);  // Aligned with keyboard center
-  const changeGeo = new THREE.PlaneGeometry(0.75, 0.22);  // Reduced padding to avoid keyboard overlap
+  changeGroup.position.set(0.45, 0.42, 0);  // Centered vertically with country text
+  const changeGeo = new THREE.PlaneGeometry(0.7, 0.2);
   const changeMat = new THREE.MeshBasicMaterial({
-    color: 0x332200, transparent: true, opacity: 0.9, side: THREE.DoubleSide,  // Yellow-tinted background
+    color: 0x332200, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
   });
   const changeMesh = new THREE.Mesh(changeGeo, changeMat);
   changeMesh.userData.nameEntryAction = 'country';
-  changeMesh.userData.borderColor = 0xffff00;  // Yellow border for hover glow
+  changeMesh.userData.borderColor = 0xffff00;
+  changeMesh.userData.isUIButton = true;  // Mark for hover system
   changeGroup.add(changeMesh);
   changeGroup.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(changeGeo),
-    new THREE.LineBasicMaterial({ color: 0xffff00 })  // Yellow border
+    new THREE.LineBasicMaterial({ color: 0xffff00 })
   ));
   const changeText = makeSprite('CHANGE COUNTRY', {
-    fontSize: 44, color: '#ffff00', scale: 0.16,  // Yellow text
+    fontSize: 44, color: '#ffff00', scale: 0.16,
   });
   changeText.position.set(0, 0, 0.01);
   changeGroup.add(changeText);
