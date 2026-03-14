@@ -147,6 +147,10 @@ let sceneRef = null;
 const activeEnemies = [];
 const explosionParts = [];
 
+// Enemy death physics bits
+const enemyDebris = [];
+const MAX_ENEMY_DEBRIS = 50;  // Cap for performance
+
 // Player forward direction for front-arc constraints
 const _playerForwardRef = new THREE.Vector3(0, 0, -1);
 const _frontDir = new THREE.Vector3();
@@ -2820,6 +2824,525 @@ class StaticWispBoss extends Boss {
   }
 }
 
+// ── SKULL HAND (Child of Skull Boss) ───────────────────────────
+class SkullHand {
+  constructor(parentBoss, handIndex, offsetPos, sceneRef) {
+    this.parentBoss = parentBoss;
+    this.handIndex = handIndex;
+    this.offsetPos = offsetPos.clone();
+    this.sceneRef = sceneRef;
+    
+    this.maxHp = parentBoss.def.handHp || 150;
+    this.hp = this.maxHp;
+    this.alive = true;
+    
+    this.shootTimer = 0;
+    this.shootRate = parentBoss.def.handShootRate || 1.5;
+    
+    this.buildMesh();
+  }
+  
+  buildMesh() {
+    // Voxel hand - skeletal hand shape
+    this.group = new THREE.Group();
+    const geo = getGeo(0.18);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.9
+    });
+    
+    // Palm (center)
+    const palm = new THREE.Mesh(geo, mat.clone());
+    palm.userData.isHandBody = true;
+    palm.userData.handIndex = this.handIndex;
+    this.group.add(palm);
+    
+    // Fingers (4 fingers + thumb)
+    const fingerPositions = [
+      [-0.2, 0.3, 0],   // Index
+      [0, 0.35, 0],     // Middle
+      [0.2, 0.3, 0],    // Ring
+      [0.35, 0.15, 0],  // Pinky
+      [-0.3, -0.1, 0],  // Thumb
+    ];
+    
+    fingerPositions.forEach(pos => {
+      const finger = new THREE.Mesh(geo, mat.clone());
+      finger.position.set(pos[0], pos[1], pos[2]);
+      finger.userData.isHandBody = true;
+      finger.userData.handIndex = this.handIndex;
+      this.group.add(finger);
+    });
+    
+    // Hitbox
+    const hitboxGeo = new THREE.SphereGeometry(0.5, 8, 8);
+    const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    hitbox.userData.isHandHitbox = true;
+    hitbox.userData.handIndex = this.handIndex;
+    hitbox.userData.skullHand = this;
+    this.group.add(hitbox);
+    
+    this.group.userData.isSkullHand = true;
+    this.group.userData.handIndex = this.handIndex;
+    this.group.userData.skullHand = this;
+    
+    // Add to boss mesh for proper raycasting
+    this.parentBoss.mesh.add(this.group);
+  }
+  
+  update(dt, now, playerPos, bossPos) {
+    if (!this.alive) return;
+    
+    // Position is relative to boss (local coordinates)
+    this.group.position.copy(this.offsetPos);
+    
+    // Bobbing animation
+    this.group.position.y += Math.sin(now * 0.003 + this.handIndex) * 0.15;
+    
+    // Rotate to face player (world direction)
+    const worldPos = this.group.getWorldPosition(new THREE.Vector3());
+    const lookDir = playerPos.clone().sub(worldPos);
+    if (lookDir.length() > 0.1) {
+      this.group.lookAt(playerPos.x, worldPos.y, playerPos.z);
+    }
+    
+    // Update color based on damage
+    const damageRatio = 1 - this.hp / this.maxHp;
+    this.group.traverse(c => {
+      if (c.isMesh && c.material && c.userData.isHandBody) {
+        const baseColor = new THREE.Color(0xffffff);
+        const damagedColor = new THREE.Color(0xff0000);
+        c.material.color.copy(baseColor).lerp(damagedColor, damageRatio);
+      }
+    });
+  }
+  
+  takeDamage(amount) {
+    if (!this.alive) return { killed: false };
+    
+    this.hp -= amount;
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.alive = false;
+      this.destroy();
+      return { killed: true };
+    }
+    return { killed: false };
+  }
+  
+  destroy() {
+    // Explosion effect at world position
+    if (spawnVoxelExplosion) {
+      const worldPos = this.group.getWorldPosition(new THREE.Vector3());
+      spawnVoxelExplosion(worldPos, 0xffffff, 12);
+    }
+    
+    // Remove from parent (boss mesh)
+    if (this.group.parent) {
+      this.group.parent.remove(this.group);
+    }
+    this.group.traverse(c => {
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) c.material.dispose();
+    });
+  }
+  
+  shouldShoot(now) {
+    if (!this.alive) return false;
+    
+    this.shootTimer += 0.016; // Approximate dt
+    if (this.shootTimer >= this.shootRate) {
+      this.shootTimer = 0;
+      return true;
+    }
+    return false;
+  }
+  
+  setShootRate(rate) {
+    this.shootRate = rate;
+  }
+  
+  getPosition() {
+    return this.group.getWorldPosition(new THREE.Vector3());
+  }
+}
+
+// ── SKULL BOSS (Level 5 Boss) ───────────────────────────────────
+class SkullBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+    
+    // Skull-specific state
+    this.hands = [];
+    this.handsAlive = 4;
+    this.headVulnerable = false;
+    this.eyeTimer = 0;
+    this.eyeShootRate = def.eyeShootRate || 0.8;
+    this.moveTimer = 0;
+    this.moveDirection = new THREE.Vector3();
+    this.moveSpeed = def.moveSpeed || 1.5;
+    
+    // Build custom skull mesh
+    this.buildSkullMesh();
+    
+    // Create 4 hands
+    this.createHands();
+    
+    // Head starts immune
+    this.setHeadImmune(true);
+  }
+  
+  buildSkullMesh() {
+    // Clear the default mesh children
+    while (this.mesh.children.length > 0) {
+      const child = this.mesh.children[0];
+      this.mesh.remove(child);
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    }
+    
+    const skullGroup = new THREE.Group();
+    const geo = getGeo(0.25);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.9
+    });
+    
+    // Skull top (dome)
+    const domePositions = [
+      // Top row (smaller)
+      [-0.25, 0.75, 0],
+      [0, 0.85, 0],
+      [0.25, 0.75, 0],
+      // Upper middle
+      [-0.5, 0.6, 0],
+      [-0.25, 0.65, 0],
+      [0, 0.7, 0],
+      [0.25, 0.65, 0],
+      [0.5, 0.6, 0],
+      // Middle (widest)
+      [-0.6, 0.35, 0],
+      [-0.35, 0.45, 0],
+      [-0.1, 0.5, 0],
+      [0.1, 0.5, 0],
+      [0.35, 0.45, 0],
+      [0.6, 0.35, 0],
+    ];
+    
+    domePositions.forEach(pos => {
+      const cube = new THREE.Mesh(geo, mat.clone());
+      cube.position.set(pos[0], pos[1], pos[2]);
+      cube.userData.isSkullBody = true;
+      skullGroup.add(cube);
+    });
+    
+    // Eye sockets (empty spaces, with red glowing eyes inside)
+    const eyeGeo = getGeo(0.15);
+    const eyeMat = new THREE.MeshBasicMaterial({
+      color: 0xff0000,
+      transparent: true,
+      opacity: 0.8
+    });
+    
+    const leftEye = new THREE.Mesh(eyeGeo, eyeMat.clone());
+    leftEye.position.set(-0.3, 0.2, 0.1);
+    leftEye.userData.isEye = true;
+    leftEye.userData.eyeIndex = 0;
+    skullGroup.add(leftEye);
+    this.leftEye = leftEye;
+    
+    const rightEye = new THREE.Mesh(eyeGeo, eyeMat.clone());
+    rightEye.position.set(0.3, 0.2, 0.1);
+    rightEye.userData.isEye = true;
+    rightEye.userData.eyeIndex = 1;
+    skullGroup.add(rightEye);
+    this.rightEye = rightEye;
+    
+    // Nose cavity (bridge)
+    const nosePositions = [
+      [0, 0.05, 0.05],
+      [0, -0.1, 0],
+    ];
+    nosePositions.forEach(pos => {
+      const cube = new THREE.Mesh(geo, mat.clone());
+      cube.position.set(pos[0], pos[1], pos[2]);
+      cube.userData.isSkullBody = true;
+      skullGroup.add(cube);
+    });
+    
+    // Jaw/teeth
+    const jawPositions = [
+      [-0.4, -0.25, 0],
+      [-0.2, -0.3, 0],
+      [0, -0.32, 0],
+      [0.2, -0.3, 0],
+      [0.4, -0.25, 0],
+      // Lower jaw
+      [-0.35, -0.45, 0],
+      [-0.15, -0.5, 0],
+      [0.05, -0.52, 0],
+      [0.25, -0.5, 0],
+      [0.45, -0.45, 0],
+    ];
+    jawPositions.forEach(pos => {
+      const cube = new THREE.Mesh(geo, mat.clone());
+      cube.position.set(pos[0], pos[1], pos[2]);
+      cube.userData.isSkullBody = true;
+      skullGroup.add(cube);
+    });
+    
+    // Cheekbones
+    const cheekPositions = [
+      [-0.7, 0.1, 0],
+      [0.7, 0.1, 0],
+      [-0.6, -0.05, 0],
+      [0.6, -0.05, 0],
+    ];
+    cheekPositions.forEach(pos => {
+      const cube = new THREE.Mesh(geo, mat.clone());
+      cube.position.set(pos[0], pos[1], pos[2]);
+      cube.userData.isSkullBody = true;
+      skullGroup.add(cube);
+    });
+    
+    // Store skull voxels for color updates
+    this.skullVoxels = skullGroup.children.filter(c => c.userData.isSkullBody);
+    
+    this.mesh.add(skullGroup);
+    this.skullGroup = skullGroup;
+    
+    // Add hitbox for head
+    const hitboxGeo = new THREE.SphereGeometry(1.0, 8, 8);
+    const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    hitbox.userData.isBossHitbox = true;
+    hitbox.userData.isSkullHead = true;
+    this.mesh.add(hitbox);
+  }
+  
+  createHands() {
+    // Create 4 hands positioned around the skull
+    const handOffsets = [
+      new THREE.Vector3(-2.5, 0.3, 0.5),   // Left top
+      new THREE.Vector3(-2.5, -0.5, 0.5),  // Left bottom
+      new THREE.Vector3(2.5, 0.3, 0.5),    // Right top
+      new THREE.Vector3(2.5, -0.5, 0.5),   // Right bottom
+    ];
+    
+    handOffsets.forEach((offset, idx) => {
+      const hand = new SkullHand(this, idx, offset, this.sceneRef);
+      this.hands.push(hand);
+    });
+  }
+  
+  setHeadImmune(immune) {
+    this.headVulnerable = !immune;
+    
+    // Visual feedback - dim eyes when immune
+    const eyeOpacity = immune ? 0.3 : 0.9;
+    const eyeColor = immune ? 0x888888 : 0xff0000;
+    
+    if (this.leftEye) {
+      this.leftEye.material.opacity = eyeOpacity;
+      this.leftEye.material.color.setHex(eyeColor);
+    }
+    if (this.rightEye) {
+      this.rightEye.material.opacity = eyeOpacity;
+      this.rightEye.material.color.setHex(eyeColor);
+    }
+  }
+  
+  updateBehavior(dt, now, playerPos) {
+    // Update hands
+    let aliveHands = 0;
+    this.hands.forEach(hand => {
+      if (hand.alive) {
+        aliveHands++;
+        hand.update(dt, now, playerPos, this.mesh.position);
+        
+        // Hand shooting (Phase 1)
+        if (!this.headVulnerable && hand.shouldShoot(now)) {
+          this.fireHandProjectile(hand, playerPos);
+        }
+      }
+    });
+    
+    this.handsAlive = aliveHands;
+    
+    // Phase transition: all hands destroyed
+    if (this.handsAlive === 0 && !this.headVulnerable) {
+      this.setHeadImmune(false);
+      this.phase = 2;
+      this.onPhaseChange(2);
+      this.playGrowlSound();
+    }
+    
+    // Phase 2: Head attacks and movement
+    if (this.headVulnerable) {
+      this.updatePhase2(dt, now, playerPos);
+    } else {
+      // Phase 1: Stay mid-field, hands do the work
+      this.constrainToMidfield(playerPos);
+    }
+    
+    // Update head color based on damage
+    this.updateHeadColor();
+    
+    // Face player
+    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+  }
+  
+  updatePhase2(dt, now, playerPos) {
+    // Eye shooting
+    this.eyeTimer += dt;
+    if (this.eyeTimer >= this.eyeShootRate) {
+      this.eyeTimer = 0;
+      this.fireEyeProjectiles(playerPos);
+    }
+    
+    // Erratic movement
+    this.moveTimer += dt;
+    if (this.moveTimer >= 2.0) {
+      this.moveTimer = 0;
+      // Random direction
+      const angle = Math.random() * Math.PI * 2;
+      this.moveDirection.set(Math.sin(angle), 0, Math.cos(angle));
+    }
+    
+    // Apply movement
+    this.mesh.position.addScaledVector(this.moveDirection, this.moveSpeed * dt);
+    
+    // Keep in bounds
+    this.constrainToMidfield(playerPos);
+  }
+  
+  constrainToMidfield(playerPos) {
+    // Stay in a fixed arena, mid-field from player
+    const dist = this.mesh.position.distanceTo(playerPos);
+    
+    // Stay between 6 and 12 units from player
+    if (dist < 6) {
+      const awayDir = this.mesh.position.clone().sub(playerPos).normalize();
+      this.mesh.position.addScaledVector(awayDir, (6 - dist));
+    } else if (dist > 14) {
+      const towardDir = playerPos.clone().sub(this.mesh.position).normalize();
+      this.mesh.position.addScaledVector(towardDir, (dist - 14));
+    }
+    
+    // Keep in play area bounds
+    const bound = 15;
+    this.mesh.position.x = Math.max(-bound, Math.min(bound, this.mesh.position.x));
+    this.mesh.position.z = Math.max(-bound, Math.min(bound, this.mesh.position.z));
+    this.mesh.position.y = 1.5;
+  }
+  
+  fireHandProjectile(hand, playerPos) {
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.25, 0xff0000, hand.getPosition());
+    }
+    
+    setTimeout(() => {
+      if (typeof spawnBossProjectile === 'function') {
+        spawnBossProjectile(hand.getPosition(), playerPos);
+      }
+    }, 150);
+  }
+  
+  fireEyeProjectiles(playerPos) {
+    // Fire from both eyes
+    const eyePositions = [
+      this.leftEye.getWorldPosition(new THREE.Vector3()),
+      this.rightEye.getWorldPosition(new THREE.Vector3()),
+    ];
+    
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.3, 0xff0000, this.mesh.position);
+    }
+    
+    setTimeout(() => {
+      eyePositions.forEach(eyePos => {
+        if (typeof spawnBossProjectile === 'function') {
+          spawnBossProjectile(eyePos, playerPos);
+        }
+      });
+    }, 200);
+  }
+  
+  playGrowlSound() {
+    // Use audio system if available
+    if (typeof window !== 'undefined' && window.playBossAttackSound) {
+      window.playBossAttackSound('charge', 0.8);
+    }
+  }
+  
+  updateHeadColor() {
+    const damageRatio = 1 - this.hp / this.maxHp;
+    const baseColor = new THREE.Color(0xffffff);
+    const damagedColor = new THREE.Color(0xff0000);
+    
+    this.skullVoxels.forEach(voxel => {
+      voxel.material.color.copy(baseColor).lerp(damagedColor, damageRatio);
+    });
+  }
+  
+  onHandDestroyed(handIndex) {
+    this.handsAlive--;
+    
+    // Play growl
+    this.playGrowlSound();
+    
+    // Speed up remaining hands
+    const speedMultiplier = 1 + (4 - this.handsAlive) * 0.3;
+    this.hands.forEach(hand => {
+      if (hand.alive) {
+        hand.setShootRate((this.def.handShootRate || 1.5) / speedMultiplier);
+      }
+    });
+    
+    // Visual telegraph
+    if (this.telegraphing) {
+      this.showTelegraph('teleport', 0.3, 0xff0000);
+    }
+  }
+  
+  takeDamage(amount, hitInfo = {}) {
+    // Check if hitting a hand
+    if (hitInfo.handIndex !== undefined) {
+      const hand = this.hands[hitInfo.handIndex];
+      if (hand && hand.alive) {
+        const result = hand.takeDamage(amount);
+        if (result.killed) {
+          this.onHandDestroyed(hitInfo.handIndex);
+        }
+        return { killed: false, handKilled: result.killed };
+      }
+      return { killed: false };
+    }
+    
+    // Head damage only in phase 2
+    if (!this.headVulnerable) {
+      // Head is immune
+      return { killed: false, immune: true };
+    }
+    
+    // Apply damage to head
+    return super.takeDamage(amount, hitInfo);
+  }
+  
+  onPhaseChange(newPhase) {
+    super.onPhaseChange(newPhase);
+    
+    if (newPhase === 2) {
+      // All hands destroyed, head now vulnerable
+      this.eyeShootRate = this.def.eyeShootRate || 0.8;
+      this.moveSpeed = this.def.moveSpeed || 1.5;
+    }
+  }
+}
+
 // ── TELEPORTING BOSS (DODGER) ───────────────────────────────
 class DodgerBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
@@ -5176,6 +5699,25 @@ const BOSS_DEFS = {
     weakPoints: false
   },
 
+  // ── SKULL BOSS (Level 5) ─────────────────────────────────────
+  skull_boss: {
+    name: 'Skull Boss',
+    // Custom voxel skull - not using pattern, built in class
+    pattern: [[1]], // Placeholder, actual skull built in SkullBoss class
+    voxelSize: 0.25,
+    baseHp: 1200,
+    phases: 2, // Phase 1: hands, Phase 2: head vulnerable
+    color: 0xffffff, // Starts white, darkens to red
+    scoreValue: 100,
+    behavior: 'skull',
+    hitboxRadius: 1.2,
+    handHp: 150, // HP per hand
+    handShootRate: 1.5, // Base shoot rate per hand
+    eyeShootRate: 0.8, // Phase 2 eye shoot rate
+    moveSpeed: 1.5, // Phase 2 movement speed
+    weakPoints: false // Custom weak points (hands first, then head)
+  },
+
   // Level 10 bosses (Tier 2 - HARDER)
   hunter_breakenridge: {
     name: 'Redmond "Hunter" Breakenridge',
@@ -5476,7 +6018,7 @@ const BOSS_DEFS = {
 
 // ── BOSS POOL MANAGEMENT ─────────────────────────────────────
 const BOSS_POOLS = {
-  1: ['scrap_golem', 'holo_phantom', 'pulse_emitter', 'rust_serpent', 'static_wisp'], // Tier 1 (Level 5) - 5 new bosses
+  1: ['skull_boss'], // Tier 1 (Level 5) - Skull Boss only
   2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'], // Tier 2 (Level 10) - harder bosses
   3: ['theodore_breakenridge', 'commander_halcyon', 'madame_coda', 'twin_glitch', 'neon_minotaur'], // Tier 3 (Level 15) - TOUGH bosses
   4: ['walter_breakenridge', 'kernel_monolith', 'synth_kraken', 'afterimage_seraphim', 'sun_eater_train'], // Tier 4 (Level 20) - final bosses
@@ -5526,6 +6068,9 @@ export function spawnBoss(bossId, levelConfig, camera) {
       break;
     case 'wisp':
       boss = new StaticWispBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'skull':
+      boss = new SkullBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
     // Level 10 bosses
     case 'hunter':
@@ -5791,6 +6336,15 @@ export function getEnemyByMesh(mesh) {
       if (idx >= 0) {
         return { index: idx, enemy: activeEnemies[idx] };
       }
+    }
+
+    // Check for SkullHand hit
+    if (obj.userData.isSkullHand || obj.userData.isHandHitbox) {
+      return { 
+        boss: activeBoss, 
+        isBody: true, 
+        handIndex: obj.userData.handIndex 
+      };
     }
 
     // Then check for boss

@@ -218,8 +218,22 @@ const HEART_PIXELS = [
   [0, 0, 0, 1, 0, 0, 0],
 ];
 
-function drawHeart(ctx, x, y, pixSize, state) {
+// #23: Heart animation state
+let heartAnimationState = {
+  glowPhase: 0,
+  hitFlash: 0,      // Timer for hit flash animation
+  healthGain: 0,    // Timer for health gain animation
+  shakeX: 0,        // Horizontal shake offset
+};
+
+function drawHeart(ctx, x, y, pixSize, state, animState = {}) {
   // state: 'full', 'half', 'empty'
+  // animState: { glowIntensity, hitFlash, isHealthGain }
+  
+  const glowIntensity = animState.glowIntensity || 0;
+  const hitFlash = animState.hitFlash || 0;
+  const isHealthGain = animState.isHealthGain || false;
+  
   HEART_PIXELS.forEach((row, py) => {
     row.forEach((px_on, px) => {
       if (!px_on) return;
@@ -230,14 +244,42 @@ function drawHeart(ctx, x, y, pixSize, state) {
         // Don't draw right side of half hearts (gone, not faded)
         return;
       } else {
-        ctx.fillStyle = '#ff0044';
+        // Base color
+        let r = 255, g = 0, b = 68;
+        
+        // #23: Health gain animation - turn green
+        if (isHealthGain) {
+          r = 0; g = 255; b = 100;
+        }
+        // #23: Hit flash animation - fade red
+        else if (hitFlash > 0) {
+          // Interpolate from bright red (#ff0000) back to pink (#ff0044)
+          const t = hitFlash; // 1.0 = bright red, 0.0 = normal
+          r = 255;
+          g = Math.floor(t * 50); // Add some red tint
+          b = Math.floor(68 + t * 100);
+        }
+        
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
       }
       ctx.fillRect(x + px * pixSize, y + py * pixSize, pixSize, pixSize);
     });
   });
+  
+  // #23: Draw glow effect around full hearts
+  if (state === 'full' && glowIntensity > 0) {
+    ctx.shadowColor = '#ff0044';
+    ctx.shadowBlur = 8 + glowIntensity * 10;
+    ctx.fillStyle = 'rgba(255, 0, 68, ' + (glowIntensity * 0.3) + ')';
+    // Draw a larger heart shape for glow
+    ctx.beginPath();
+    ctx.arc(x + 3.5 * pixSize, y + 2 * pixSize, 4 * pixSize, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
 }
 
-function makeHeartsTexture(health, maxHealth) {
+function makeHeartsTexture(health, maxHealth, animParams = {}) {
   const heartCount = maxHealth / 2;
   const pixSize = 8;
   const heartW = 7 * pixSize;
@@ -247,6 +289,12 @@ function makeHeartsTexture(health, maxHealth) {
   canvas.width = heartCount * (heartW + gap) + gap;
   canvas.height = heartH + 10;
   const ctx = canvas.getContext('2d');
+  
+  // #23: Animation parameters
+  const glowPhase = animParams.glowPhase || 0;
+  const hitFlash = animParams.hitFlash || 0;
+  const healthGain = animParams.healthGain || 0;
+  const shakeX = animParams.shakeX || 0;
 
   for (let i = 0; i < heartCount; i++) {
     const hpForThisHeart = health - i * 2;
@@ -254,8 +302,18 @@ function makeHeartsTexture(health, maxHealth) {
     if (hpForThisHeart >= 2) state = 'full';
     else if (hpForThisHeart === 1) state = 'half';
     else state = 'empty';
+    
+    // #23: Calculate animation state for this heart
+    const animState = {
+      glowIntensity: state === 'full' ? (0.5 + 0.5 * Math.sin(glowPhase + i * 0.5)) : 0,
+      hitFlash: hitFlash > 0 && i === Math.floor(health / 2) ? hitFlash : 0,
+      isHealthGain: healthGain > 0 && i === Math.floor((health - 2) / 2) && state === 'full'
+    };
 
-    drawHeart(ctx, gap + i * (heartW + gap), 5, pixSize, state);
+    // #23: Apply shake offset for hit animation
+    const offsetX = hitFlash > 0 ? shakeX : 0;
+    
+    drawHeart(ctx, gap + i * (heartW + gap) + offsetX, 5, pixSize, state, animState);
   }
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -271,7 +329,7 @@ export function initHUD(camera, scene) {
 
   // ── Title Screen (world-space, fixed position) ──
   createTitleScreen();
-  titleGroup.position.set(0, 1.6, -3.5);
+  titleGroup.position.set(0, 1.2, -3.5);  // Moved down for better centering
   titleGroup.rotation.set(0, 0, 0);
   titleGroup.visible = true;
   scene.add(titleGroup);
@@ -290,8 +348,9 @@ export function initHUD(camera, scene) {
   });
 
   // ── Hit flash (red plane in front of camera) ──
+  // #11 FIX: Increased size to cover entire view for environment damage flash effect
   hitFlash = new THREE.Mesh(
-    new THREE.PlaneGeometry(2, 2),
+    new THREE.PlaneGeometry(4, 4),  // Larger size to cover entire view (was 2, 2)
     new THREE.MeshBasicMaterial({
       color: 0xff0000,
       transparent: true,
@@ -303,7 +362,7 @@ export function initHUD(camera, scene) {
   );
   hitFlash.renderOrder = 999;
   hitFlash.visible = false;
-  hitFlash.position.set(0, 0, -0.5);
+  hitFlash.position.set(0, 0, -0.3);  // Closer to camera for better coverage (was -0.5)
   camera.add(hitFlash);
 
   // ── FPS Counter (top left, attached to camera, more visible in VR) ──
@@ -369,7 +428,7 @@ function createTitleScreen() {
     glow: true, glowColor: '#0088ff', glowSize: 15,
     scale: 0.9,
   });
-  titleSprite.position.set(0, 1.6, 0);
+  titleSprite.position.set(0, 0.9, 0);  // Moved down for better centering
   titleGroup.add(titleSprite);
 
   // Subtitle
@@ -379,7 +438,7 @@ function createTitleScreen() {
     glow: true, glowColor: '#ff00ff', glowSize: 5,
     scale: 0.3,
   });
-  subSprite.position.set(0, 0.8, 0);
+  subSprite.position.set(0, 0.4, 0);  // Moved down for better centering
   titleGroup.add(subSprite);
 
   // Blinking "Press Trigger to Begin"
@@ -389,12 +448,12 @@ function createTitleScreen() {
     glow: true, glowColor: '#ffffff',
     scale: 0.25,
   });
-  titleBlinkSprite.position.set(0, 0, 0);
+  titleBlinkSprite.position.set(0, -0.2, 0);  // Moved down for better centering
   titleGroup.add(titleBlinkSprite);
 
   // Scoreboard button
   const btnGroup = new THREE.Group();
-  btnGroup.position.set(0, -0.6, 0);
+  btnGroup.position.set(0, -0.8, 0);  // Moved down for better centering
   const btnGeo = new THREE.PlaneGeometry(1.35, 0.3);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
@@ -444,12 +503,28 @@ function createHUDElements() {
 
   // Floor-based HUD layout (Space Pirate Trainer style)
   // Increased by 200% (3x) for better visibility
+  
+  // #22: Floor HUD Background - low opacity black box for better visibility
+  const hudBgGeo = new THREE.PlaneGeometry(4.5, 1.8);
+  const hudBgMat = new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    transparent: true,
+    opacity: 0.35,
+    depthTest: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const hudBgMesh = new THREE.Mesh(hudBgGeo, hudBgMat);
+  hudBgMesh.position.set(0, -0.001, 0.3);  // Slightly below elements, centered
+  hudBgMesh.renderOrder = 998;
+  hudGroup.add(hudBgMesh);
+
   // Lives (hearts) - left side on floor
-  // Use PlaneGeometry (not Sprite) to prevent billboarding/rotation
+  // #19: Hearts aligned with TOP of SCORE and LEVEL X titles
   const heartsGeo = new THREE.PlaneGeometry(1.2, 0.24);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
-  heartsSprite.position.set(-1.5, 0, 0);  // Spread out horizontally
+  heartsSprite.position.set(-1.5, 0.45, 0);  // #19: Moved up to align with titles (was y=0)
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
@@ -460,7 +535,7 @@ function createHUDElements() {
 
   // SCORE title - above score in yellow same style as level
   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
-  scoreTitleSprite.position.set(0, 0.45, 0);
+  scoreTitleSprite.position.set(0, 0.45, 0);  // #19: Same Y as hearts
   hudGroup.add(scoreTitleSprite);
 
   // Kill counter — right side on floor
@@ -470,7 +545,7 @@ function createHUDElements() {
 
   // Level indicator — above kill counter on right
   levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 2.925 });
-  levelSprite.position.set(1.5, 0.45, 0);
+  levelSprite.position.set(1.5, 0.45, 0);  // #19: Same Y as hearts
   hudGroup.add(levelSprite);
 
   // Accuracy bonus — below score on left side
@@ -496,6 +571,16 @@ export function hideHUD() {
   hudGroup.visible = false;
 }
 
+// #23: Heart animation triggers
+export function triggerHeartHitAnimation() {
+  heartAnimationState.hitFlash = 1.0;
+  heartAnimationState.shakeX = 0;
+}
+
+export function triggerHealthGainAnimation() {
+  heartAnimationState.healthGain = 1.0;
+}
+
 function updateSpriteText(sprite, text, opts = {}) {
   // Dispose old texture
   if (sprite.material.map) sprite.material.map.dispose();
@@ -519,8 +604,26 @@ function updateSpriteText(sprite, text, opts = {}) {
 export function updateHUD(gameState) {
   if (!hudGroup.visible) return;
 
-  // Hearts - proper aspect ratio with correct scale
-  const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth);
+  // #23: Update heart animation state
+  const now = performance.now();
+  heartAnimationState.glowPhase = now * 0.003;  // Slow glow pulse
+  
+  // Decay hit flash
+  if (heartAnimationState.hitFlash > 0) {
+    heartAnimationState.hitFlash -= 0.05;
+    if (heartAnimationState.hitFlash < 0) heartAnimationState.hitFlash = 0;
+    // Shake effect
+    heartAnimationState.shakeX = (Math.random() - 0.5) * 4 * heartAnimationState.hitFlash;
+  }
+  
+  // Decay health gain flash
+  if (heartAnimationState.healthGain > 0) {
+    heartAnimationState.healthGain -= 0.03;
+    if (heartAnimationState.healthGain < 0) heartAnimationState.healthGain = 0;
+  }
+
+  // Hearts - proper aspect ratio with correct scale and animation
+  const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth, heartAnimationState);
   if (heartsSprite.material.map) heartsSprite.material.map.dispose();
   heartsSprite.material.map = ht;
   heartsSprite.material.needsUpdate = true;
@@ -572,12 +675,12 @@ export function showLevelComplete(level, playerPos) {
   while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
 
   const s1 = makeSprite('LEVEL COMPLETE!', { fontSize: 80, color: '#00ffff', glow: true, glowSize: 20, scale: 0.75 });
-  s1.position.set(0, 0.55, 0);
+  s1.position.set(0, 0.3, 0);  // Moved down for better centering
   levelTextGroup.add(s1);
 
   // Position in front of player (VR-friendly)
   levelTextGroup.position.copy(playerPos);
-  levelTextGroup.position.y += 1.6; // Eye level
+  levelTextGroup.position.y += 1.3; // Moved down for better centering
   levelTextGroup.position.z -= 3; // 3 feet in front of player
   levelTextGroup.visible = true;
 }
@@ -603,7 +706,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
     console.warn('[hud] showUpgradeCards received invalid playerPos, using default');
     upgradeGroup.position.set(0, 1.6, -4);
   }
-  upgradeGroup.position.y += 1.2; // Eye level
+  upgradeGroup.position.y += 0.9; // Moved down for better centering
   upgradeGroup.position.z -= 4; // 4 feet in front of player
 
   // "Choose an upgrade for [HAND]" header
@@ -687,15 +790,15 @@ function createUpgradeCard(upgrade, position) {
   nameSprite.position.set(0, 0.55, 0.01);
   group.add(nameSprite);
 
-  // Description text - standard size
+  // #18: Description text - static font size, width matches title boundary, moved up
   const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 60,
+    fontSize: 32,  // Static font size (was variable 60)
     color: '#cccccc',
-    scale: 0.28,
+    scale: 0.36,   // Adjusted scale for readability
     depthTest: true,
-    maxWidth: 300,
+    maxWidth: 280, // Width matches title text boundary
   });
-  descSprite.position.set(0, -0.05, 0.01);
+  descSprite.position.set(0, 0.15, 0.01);  // Moved up (was -0.05)
   group.add(descSprite);
 
   // Side-grade note (different color) when present
@@ -707,7 +810,7 @@ function createUpgradeCard(upgrade, position) {
       depthTest: true,
       maxWidth: 280,
     });
-    noteSprite.position.set(0, -0.28, 0.01);
+    noteSprite.position.set(0, -0.15, 0.01);  // Moved up (was -0.28)
     group.add(noteSprite);
   }
 
@@ -909,8 +1012,9 @@ export function hideGameOver() {
 
 // ── Hit Flash ──────────────────────────────────────────────
 
+// #11 FIX: Increased initial opacity for more dramatic damage flash
 export function triggerHitFlash() {
-  hitFlashOpacity = 0.5;
+  hitFlashOpacity = 0.7;  // Increased from 0.5 for more visible environment flash
 }
 
 export function updateHitFlash(dt) {
@@ -1963,16 +2067,16 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
   scoreText.position.set(0, 1.1, 0);
   nameEntryGroup.add(scoreText);
 
-  // Country display
+  // Country display - moved below name boxes, positioned to the left of button
   const countryText = makeSprite(countryLabel || 'COUNTRY: NOT SET', {
     fontSize: 32, color: '#66ffff', scale: 0.32,
   });
-  countryText.position.set(0, 0.95, 0);
+  countryText.position.set(-0.5, 0.35, 0);  // Below name boxes, left side
   nameEntryGroup.add(countryText);
 
-  // Change country button
+  // Change country button - moved below name boxes, positioned to the right
   const changeGroup = new THREE.Group();
-  changeGroup.position.set(0, 0.6, 0);
+  changeGroup.position.set(0.55, 0.35, 0);  // Below name boxes, right side
   const changeGeo = new THREE.PlaneGeometry(0.9, 0.26);
   const changeMat = new THREE.MeshBasicMaterial({
     color: 0x112244, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -2175,8 +2279,18 @@ export function updateKeyboardHover(raycaster) {
   // Reset previous hover
   if (hoveredKey) {
     hoveredKey.mat.color.setHex(hoveredKey.baseColor);
-    hoveredKey.group.scale.set(1.0, 1.0, 1.0);
-    hoveredKey.group.rotation.z = 0;
+    // #12: Smooth fade-out animation matching other buttons
+    const currentScale = hoveredKey.group.userData._hoverScale ?? 1;
+    const nextScale = currentScale + (1 - currentScale) * 0.15;
+    hoveredKey.group.userData._hoverScale = nextScale;
+    hoveredKey.group.scale.set(nextScale, nextScale, nextScale);
+    hoveredKey.group.rotation.z *= 0.85;
+    
+    // Fade out glow
+    if (hoveredKey.group.userData._hoverGlow) {
+      const glow = hoveredKey.group.userData._hoverGlow;
+      glow.material.opacity *= 0.85;
+    }
     hoveredKey = null;
   }
 
@@ -2187,9 +2301,39 @@ export function updateKeyboardHover(raycaster) {
     if (hit) {
       hoveredKey = hit;
       hit.mat.color.setHex(0x004455);
-      // Enhanced hover animation: scale + slight rotation
-      hit.group.scale.set(1.15, 1.15, 1.15);
+      
+      // #12: Enhanced hover animation matching other buttons (glow + scale)
+      const currentScale = hit.group.userData._hoverScale ?? 1;
+      const desiredScale = 1.15;
+      const nextScale = currentScale + (desiredScale - currentScale) * 0.2;
+      hit.group.userData._hoverScale = nextScale;
+      hit.group.scale.set(nextScale, nextScale, nextScale);
       hit.group.rotation.z = 0.05;
+      
+      // #12: Add glow effect matching other buttons
+      if (!hit.group.userData._hoverGlow) {
+        const glowGeo = hit.mesh.geometry.clone();
+        const glowMat = new THREE.MeshBasicMaterial({
+          map: getHoverGlowTexture(),
+          transparent: true,
+          opacity: 0,
+          depthTest: false,
+        });
+        const glow = new THREE.Mesh(glowGeo, glowMat);
+        glow.renderOrder = 998;
+        glow.scale.set(1.3, 1.3, 1.3);
+        glow.position.set(0, 0, -0.01);
+        hit.group.add(glow);
+        hit.group.userData._hoverGlow = glow;
+      }
+      
+      // Fade in glow
+      if (hit.group.userData._hoverGlow) {
+        const glow = hit.group.userData._hoverGlow;
+        const current = glow.material.opacity || 0;
+        glow.material.opacity = current + (0.65 - current) * 0.15;
+      }
+      
       // Play hover sound
       playMenuHoverSound();
     }
@@ -2293,8 +2437,8 @@ export function showScoreboard(scores, headerText, playerPos) {
 
   // BACK button bottom center
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -1.05, 0);
-  const backGeo = new THREE.PlaneGeometry(0.8, 0.32);
+  backGroup.position.set(0, -1.0, 0);  // #5: Aligned with Country screen
+  const backGeo = new THREE.PlaneGeometry(0.9, 0.35);  // #5: Same size as Country
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
   });
@@ -2305,7 +2449,7 @@ export function showScoreboard(scores, headerText, playerPos) {
     new THREE.EdgesGeometry(backGeo),
     new THREE.LineBasicMaterial({ color: 0xff4444 })
   ));
-  const backTxt = makeSprite('BACK', { fontSize: 60, color: '#ff6666', scale: 0.18 });
+  const backTxt = makeSprite('BACK', { fontSize: 52, color: '#ff6666', scale: 0.2 });
   backTxt.position.set(0, 0, 0.01);
   backGroup.add(backTxt);
   scoreboardGroup.add(backGroup);
@@ -2575,8 +2719,8 @@ export function showCountrySelect(countries, continents, initialContinent, playe
 
   // BACK button
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -0.9, 0); // Moved down from -0.8
-  const backGeo = new THREE.PlaneGeometry(0.6, 0.25);
+  backGroup.position.set(0, -1.0, 0);  // #5: Aligned with Scoreboard screen
+  const backGeo = new THREE.PlaneGeometry(0.9, 0.35);  // #5: Same size as Scoreboard
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
   });
@@ -2587,7 +2731,7 @@ export function showCountrySelect(countries, continents, initialContinent, playe
     new THREE.EdgesGeometry(backGeo),
     new THREE.LineBasicMaterial({ color: 0xff4444 })
   ));
-  const backTxt = makeSprite('BACK', { fontSize: 42, color: '#ff4444', scale: 0.15 });
+  const backTxt = makeSprite('BACK', { fontSize: 52, color: '#ff6666', scale: 0.2 });
   backTxt.position.set(0, 0, 0.01);
   backGroup.add(backTxt);
   countrySelectGroup.add(backGroup);
@@ -2716,19 +2860,24 @@ export function getCountrySelectHit(raycaster, countries) {
  * Accepts an array of raycasters (one per controller).
  * Returns true if a NEW hover occurred (to trigger sound).
  */
-function getHoverGlowTexture() {
-  if (getHoverGlowTexture._tex) return getHoverGlowTexture._tex;
+function getHoverGlowTexture(color = '0,255,255') {
+  // Cache textures by color
+  if (!getHoverGlowTexture._texCache) getHoverGlowTexture._texCache = {};
+  if (getHoverGlowTexture._texCache[color]) return getHoverGlowTexture._texCache[color];
+
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
-  const grad = ctx.createRadialGradient(64, 64, 10, 64, 64, 60);
-  grad.addColorStop(0, 'rgba(0,255,255,0.5)');
-  grad.addColorStop(1, 'rgba(0,255,255,0)');
+  // #3: Brighter glow effect with dynamic color
+  const grad = ctx.createRadialGradient(64, 64, 5, 64, 64, 60);
+  grad.addColorStop(0, `rgba(${color},0.9)`);  // Brighter center
+  grad.addColorStop(0.3, `rgba(${color},0.6)`); // Added mid-stop
+  grad.addColorStop(1, `rgba(${color},0)`);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 128, 128);
   const tex = new THREE.CanvasTexture(canvas);
-  getHoverGlowTexture._tex = tex;
+  getHoverGlowTexture._texCache[color] = tex;
   return tex;
 }
 
@@ -2814,18 +2963,42 @@ export function updateHUDHover(raycasters) {
       target.userData._hoverScale = nextScale;
       target.scale.set(baseScale.x * nextScale, baseScale.y * nextScale, baseScale.z * nextScale);
 
-      // Glow mesh
+      // #3: Enhanced glow mesh with dynamic color based on button type
       if (!obj.userData._hoverGlow && obj.geometry) {
+        // Determine glow color based on button type
+        let glowColor = '0,255,255'; // Default cyan
+
+        // Check for BACK buttons (red glow)
+        if (obj.userData.scoreboardAction === 'back' ||
+            obj.userData.countryAction === 'back' ||
+            obj.userData.debugAction === 'back') {
+          glowColor = '255,68,68'; // Red (#ff4444)
+        }
+        // Check for SCOREBOARD button (yellow glow)
+        else if (obj.userData.isTitleScoreboardBtn ||
+                 obj.userData.scoreboardAction === 'scoreboard') {
+          glowColor = '255,255,0'; // Yellow (#ffff00)
+        }
+        // Check for OK/submit buttons (green glow)
+        else if (obj.userData.keyValue === 'OK' ||
+                 obj.userData.nameEntryAction === 'submit') {
+          glowColor = '0,255,136'; // Green (#00ff88)
+        }
+        // Check for DELETE buttons (red glow)
+        else if (obj.userData.keyValue === 'DEL') {
+          glowColor = '255,68,68'; // Red (#ff4444)
+        }
+
         const glowGeo = obj.geometry.clone();
         const glowMat = new THREE.MeshBasicMaterial({
-          map: getHoverGlowTexture(),
+          map: getHoverGlowTexture(glowColor),
           transparent: true,
           opacity: 0,
           depthTest: false,
         });
         const glow = new THREE.Mesh(glowGeo, glowMat);
         glow.renderOrder = 998;
-        glow.scale.set(1.2, 1.2, 1.2);
+        glow.scale.set(1.3, 1.3, 1.3);  // Larger glow
         glow.position.set(0, 0, -0.01);
         obj.add(glow);
         obj.userData._hoverGlow = glow;
@@ -2833,7 +3006,8 @@ export function updateHUDHover(raycasters) {
       if (obj.userData._hoverGlow) {
         const glow = obj.userData._hoverGlow;
         const current = glow.material.opacity || 0;
-        glow.material.opacity = current + (0.35 - current) * 0.2;
+        // #3: Fade-in to brighter glow (0.65 instead of 0.35)
+        glow.material.opacity = current + (0.65 - current) * 0.15;  // Slower fade-in for smoothness
       }
     } else {
       if (obj.userData._isActuallyHovered) {
@@ -2847,7 +3021,8 @@ export function updateHUDHover(raycasters) {
       if (obj.userData._hoverGlow) {
         const glow = obj.userData._hoverGlow;
         const current = glow.material.opacity || 0;
-        glow.material.opacity = current + (0 - current) * 0.2;
+        // #3: Fade-out animation (slower for smoothness)
+        glow.material.opacity = current + (0 - current) * 0.12;
       }
     }
   });
