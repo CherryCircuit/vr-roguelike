@@ -393,9 +393,9 @@ export const THEMES = {
     hideBaseEnv: true,
     keepStars: true,
     customScene: 'synthwave_valley',
-    // Aurora borealis colors: cyan/magenta/purple
+    // Aurora borealis colors: cyan/magenta/purple - BRIGHTER
     aurora: {
-      colors: ['rgba(0,255,255,0)', 'rgba(0,255,200,0.1)', 'rgba(200,0,255,0.15)', 'rgba(255,0,200,0.12)', 'rgba(100,0,180,0.06)', 'rgba(0,100,150,0)'],
+      colors: ['rgba(0,255,255,0)', 'rgba(0,255,200,0.2)', 'rgba(200,0,255,0.35)', 'rgba(255,0,200,0.3)', 'rgba(100,0,180,0.15)', 'rgba(0,100,150,0)'],
     },
   },
 
@@ -426,9 +426,9 @@ export const THEMES = {
     hideBaseEnv: true,
     keepStars: true,
     customScene: 'desert_night',
-    // Aurora borealis colors: warm orange/red
+    // Aurora borealis colors: warm orange/red - BRIGHTER
     aurora: {
-      colors: ['rgba(60,20,0,0)', 'rgba(255,100,0,0.1)', 'rgba(255,150,50,0.15)', 'rgba(255,80,30,0.12)', 'rgba(200,50,20,0.06)', 'rgba(80,20,10,0)'],
+      colors: ['rgba(60,20,0,0)', 'rgba(255,100,0,0.2)', 'rgba(255,150,50,0.35)', 'rgba(255,80,30,0.3)', 'rgba(200,50,20,0.15)', 'rgba(80,20,10,0)'],
     },
   },
 
@@ -459,9 +459,9 @@ export const THEMES = {
     hideBaseEnv: true,
     keepStars: true,
     customScene: 'alien_planet',
-    // Aurora borealis colors: green/teal
+    // Aurora borealis colors: green/teal - BRIGHTER
     aurora: {
-      colors: ['rgba(0,40,30,0)', 'rgba(0,255,150,0.1)', 'rgba(0,200,180,0.15)', 'rgba(50,220,150,0.12)', 'rgba(0,150,120,0.06)', 'rgba(0,60,50,0)'],
+      colors: ['rgba(0,40,30,0)', 'rgba(0,255,150,0.2)', 'rgba(0,200,180,0.35)', 'rgba(50,220,150,0.3)', 'rgba(0,150,120,0.15)', 'rgba(0,60,50,0)'],
     },
   },
 
@@ -492,9 +492,9 @@ export const THEMES = {
     hideBaseEnv: true,
     keepStars: true,
     customScene: 'hellscape_lava',
-    // Aurora borealis colors: red/orange
+    // Aurora borealis colors: red/orange - BRIGHTER
     aurora: {
-      colors: ['rgba(40,0,0,0)', 'rgba(255,50,0,0.1)', 'rgba(255,100,0,0.15)', 'rgba(255,30,0,0.12)', 'rgba(180,20,0,0.06)', 'rgba(60,10,0,0)'],
+      colors: ['rgba(40,0,0,0)', 'rgba(255,50,0,0.2)', 'rgba(255,100,0,0.35)', 'rgba(255,30,0,0.3)', 'rgba(180,20,0,0.15)', 'rgba(60,10,0,0)'],
     },
   },
 };

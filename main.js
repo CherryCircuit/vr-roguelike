@@ -203,8 +203,11 @@ let slowMoDuration = 0;
 let slowMoSoundPlayed = false;
 let slowMoRampOut = false;       // Ramp timeScale back to 1 over 0.5s when nearby enemies cleared
 let slowMoRampOutTimer = 0;
-const SLOW_MO_TRIGGER_DIST = 2.0;
+const SLOW_MO_TRIGGER_DIST = 3.5;  // Larger radius = more reaction time
 const SLOW_MO_RAMP_OUT_DURATION = 0.5;
+const SLOW_MO_FACTOR = 0.25;       // Time scale when slow-mo active
+const SLOW_MO_LERP_IN = 8.0;       // Fast lerp in for quick response
+const SLOW_MO_LERP_OUT = 2.0;      // Slow lerp out for smooth ramp
 let timeScale = 1.0;
 
 // Kills remaining alert state
@@ -779,13 +782,17 @@ function applyEnvironmentFade(fade) {
 
 function updateSunTexture(colors) {
   if (!sunMeshRef || !sunMeshRef.material || !sunMeshRef.material.map) return;
+  if (!colors || colors.length < 2) return; // Need at least 2 colors for gradient
 
   const canvas = sunMeshRef.material.map.image;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, 512, 512);
 
   const grad = ctx.createLinearGradient(256, 30, 256, 482);
-  colors.forEach((c, i) => grad.addColorStop(i / (colors.length - 1), c));
+  colors.forEach((c, i) => {
+    const stop = i / (colors.length - 1);
+    if (isFinite(stop)) grad.addColorStop(stop, c);
+  });
 
   ctx.beginPath();
   ctx.arc(256, 256, 248, 0, Math.PI * 2);
@@ -824,6 +831,8 @@ function updateSunTexture(colors) {
 
 function applyThemeForLevel(level) {
   const theme = getThemeForLevel(level);
+  const biome = getBiomeForLevel(level);
+  console.log('[debug] applyThemeForLevel: level=', level, 'biome=', biome, 'theme=', theme?.name);
   if (!theme || !scene) return;
 
   currentTheme = theme;
@@ -911,6 +920,16 @@ function applyThemeForLevel(level) {
   }
 
   rebuildBiomeScene(getBiomeForLevel(level), theme);
+  
+  // Always update aurora colors for the current theme (not just customScene biomes)
+  updateAuroraColors(theme);
+  
+  // Make aurora visible for night/dark themes
+  if (auroraRef) {
+    const isDarkTheme = theme.hideBaseEnv || theme.skyColor === 0x000000 || 
+                        (theme.skyColor & 0xFFFFFF) < 0x222222;
+    auroraRef.visible = isDarkTheme || (theme.aurora !== undefined);
+  }
 
   applyEnvironmentFade(environmentFade);
 }
@@ -1027,12 +1046,13 @@ function createAurora() {
   auroraCanvas.height = h;
   auroraCtx = auroraCanvas.getContext('2d');
 
-  // Default colors (will be updated by updateAuroraColors)
+  // Default colors - much brighter and more visible
   const defaultColors = [
     'rgba(0,40,60,0)',
-    'rgba(0,200,180,0.08)',
-    'rgba(0,255,200,0.12)',
-    'rgba(0,180,220,0.06)',
+    'rgba(0,255,200,0.25)',
+    'rgba(100,255,220,0.4)',
+    'rgba(0,200,255,0.3)',
+    'rgba(0,100,150,0.15)',
     'rgba(0,40,80,0)',
   ];
   const grad = auroraCtx.createLinearGradient(0, 0, 0, h);
@@ -1042,16 +1062,18 @@ function createAurora() {
 
   const tex = new THREE.CanvasTexture(auroraCanvas);
   tex.wrapS = THREE.RepeatWrapping;
-  const geo = new THREE.CylinderGeometry(95, 95, 25, 32, 1, true);
+  // Taller cylinder for better visibility (height 45 instead of 25)
+  const geo = new THREE.CylinderGeometry(95, 95, 45, 32, 1, true);
   const mat = new THREE.MeshBasicMaterial({
     map: tex,
     transparent: true,
-    opacity: 0.9,
+    opacity: 1.0,
     side: THREE.BackSide,
     depthWrite: false,
+    blending: THREE.AdditiveBlending,
   });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(0, 15, 0);
+  mesh.position.set(0, 25, 0);  // Raised from y=15 to y=25
   mesh.renderOrder = -21;
   scene.add(mesh);
   auroraRef = mesh;
@@ -1062,13 +1084,33 @@ function createAurora() {
 function updateAuroraColors(theme) {
   if (!auroraCtx || !auroraRef || !auroraRef.material || !auroraRef.material.map) return;
 
-  const colors = (theme && theme.aurora && theme.aurora.colors) || [
-    'rgba(0,40,60,0)',
-    'rgba(0,200,180,0.08)',
-    'rgba(0,255,200,0.12)',
-    'rgba(0,180,220,0.06)',
-    'rgba(0,40,80,0)',
-  ];
+  // Use theme aurora colors if available, otherwise use bright defaults
+  // Boost opacity values to make aurora more visible
+  let colors = (theme && theme.aurora && theme.aurora.colors);
+  if (!colors) {
+    colors = [
+      'rgba(0,40,60,0)',
+      'rgba(0,255,200,0.25)',
+      'rgba(100,255,220,0.4)',
+      'rgba(0,200,255,0.3)',
+      'rgba(0,100,150,0.15)',
+      'rgba(0,40,80,0)',
+    ];
+  } else {
+    // Boost the alpha values in the theme colors for better visibility
+    colors = colors.map(c => {
+      // Parse rgba and boost alpha by 2.5x (capped at 0.5)
+      const match = c.match(/rgba?\((\d+),(\d+),(\d+),?([\d.]+)?\)/);
+      if (match) {
+        const r = match[1];
+        const g = match[2];
+        const b = match[3];
+        const a = match[4] ? Math.min(0.5, parseFloat(match[4]) * 2.5) : 1;
+        return `rgba(${r},${g},${b},${a.toFixed(2)})`;
+      }
+      return c;
+    });
+  }
 
   const h = auroraCanvas.height;
   auroraCtx.clearRect(0, 0, auroraCanvas.width, h);
@@ -1087,8 +1129,8 @@ function updateAurora(dt, now) {
   // Slow rotation for aurora drift effect
   auroraRef.rotation.y += dt * 0.02;
   
-  // Subtle opacity pulsing
-  const pulse = 0.7 + Math.sin(now * 0.0003) * 0.2;
+  // Subtle opacity pulsing - keep it visible (min 0.7, max 1.0)
+  const pulse = 0.85 + Math.sin(now * 0.0003) * 0.15;
   auroraRef.material.opacity = pulse;
 }
 
@@ -1731,10 +1773,15 @@ function handleDesktopReadyScreenClick() {
 }
 
 function handleDesktopDebugMenuClick() {
+  console.log('[debug] handleDesktopDebugMenuClick called');
   const raycaster = getAimRaycaster();
-  if (!raycaster) return;
+  if (!raycaster) {
+    console.log('[debug] No raycaster available');
+    return;
+  }
 
   const result = getDebugMenuHit(raycaster);
+  console.log('[debug] getDebugMenuHit result:', result);
   if (result && result.action === 'back') {
     playMenuClick();
     saveDebugSettings();
@@ -1745,6 +1792,7 @@ function handleDesktopDebugMenuClick() {
     return;
   }
   if (result && result.action === 'biome_next') {
+    console.log('[debug] biome_next action detected, calling cycleDebugBiomeWithFade');
     playMenuClick();
     cycleDebugBiomeWithFade();
   }
@@ -3144,6 +3192,7 @@ function updateNaniteSwarms(now, dt, playerPos) {
               updateHUD(game);
 
               // Check for kills remaining alert
+              const cfg = game._levelConfig;
               if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
                 const remaining = cfg ? cfg.killTarget - game.kills : 0;
                 showKillsRemainingAlert(remaining);
@@ -3151,7 +3200,6 @@ function updateNaniteSwarms(now, dt, playerPos) {
                 killsAlertShownThisLevel = true;
               }
 
-              const cfg = game._levelConfig;
               if (cfg && game.kills >= cfg.killTarget) {
                 completeLevel();
               }
@@ -4404,6 +4452,7 @@ function detonateGrenade(grenade, index) {
           updateHUD(game);
 
           // Check for kills remaining alert
+          const cfg = game._levelConfig;
           if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
             const remaining = cfg ? cfg.killTarget - game.kills : 0;
             showKillsRemainingAlert(remaining);
@@ -4411,7 +4460,6 @@ function detonateGrenade(grenade, index) {
             killsAlertShownThisLevel = true;
           }
 
-          const cfg = game._levelConfig;
           if (cfg && game.kills >= cfg.killTarget) {
             completeLevel();
           }
@@ -5016,20 +5064,27 @@ function cycleDebugBiome() {
   const current = game.debugBiomeOverride;
   let next = null;
 
+  console.log('[debug] cycleDebugBiome: current=', current);
+
   if (!current) {
     // Start with first biome in cycle
     next = debugBiomeCycle[0];
+    console.log('[debug] No current biome, starting with:', next);
   } else {
     const index = debugBiomeCycle.indexOf(current);
+    console.log('[debug] Current biome index:', index);
     if (index === -1) {
       // If current biome is not in cycle, start from beginning
       next = debugBiomeCycle[0];
+      console.log('[debug] Biome not in cycle, resetting to:', next);
     } else if (index === debugBiomeCycle.length - 1) {
       // Wrap around to first biome
       next = debugBiomeCycle[0];
+      console.log('[debug] End of cycle, wrapping to:', next);
     } else {
       // Move to next biome in cycle
       next = debugBiomeCycle[index + 1];
+      console.log('[debug] Moving to next biome:', next);
     }
   }
 
@@ -5040,15 +5095,24 @@ function cycleDebugBiome() {
 }
 
 function cycleDebugBiomeWithFade() {
-  if (environmentFadeState) return;
+  console.log('[debug] cycleDebugBiomeWithFade called, environmentFadeState:', environmentFadeState);
+  if (environmentFadeState) {
+    console.log('[debug] Fade already in progress, skipping');
+    return;
+  }
   if (!game.level || game.level < 1) {
+    console.log('[debug] Setting level to 1 for biome cycle');
     game.level = 1;
     game._levelConfig = getLevelConfig();
   }
   // Fade durations are in SECONDS (0.3s = 300ms fade)
+  console.log('[debug] Starting fade out...');
   startEnvironmentFade('out', 0.3, () => {
+    console.log('[debug] Fade out complete, cycling biome...');
     cycleDebugBiome();
+    console.log('[debug] Applying theme for level', game.level);
     applyThemeForLevel(game.level);
+    console.log('[debug] Starting fade in...');
     startEnvironmentFade('in', 0.3);
     showDebugMenu();
   });
@@ -5129,9 +5193,7 @@ function handleDebugMenuTrigger(controller) {
   }
   if (result && result.action === 'biome_next') {
     playMenuClick();
-    cycleDebugBiome();
-    applyThemeForLevel(game.level);
-    showDebugMenu();
+    cycleDebugBiomeWithFade();  // Use the fade version for VR too
     return;
   }
   // Toggle clicks are handled in getDebugMenuHit with visual updates
@@ -6000,7 +6062,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
         triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
 
         floorFlashing = true;
-        floorFlashTimer = 0.4;
+        floorFlashTimer = 1.0;
         if (dead) endGame(false);
         return;
       }
@@ -6298,7 +6360,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
     triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
 
     floorFlashing = true;
-    floorFlashTimer = 0.4;
+    floorFlashTimer = 1.0;
     console.log('[boss] Shield reflected damage!');
     if (dead) endGame(false);
     return;
@@ -7060,39 +7122,20 @@ function render(timestamp) {
                 `Explosions: ${explosionVisuals.length}`);
   }
 
-  // Apply bullet-time slow-mo, ramp-out, and death sequence (use raw dt)
-  if (slowMoRampOut) {
-    slowMoRampOutTimer -= rawDt;
-    if (slowMoRampOutTimer <= 0) {
-      slowMoRampOut = false;
-      timeScale = 1.0;
-    } else {
-      timeScale = 0.2 + (1 - slowMoRampOutTimer / SLOW_MO_RAMP_OUT_DURATION) * 0.8;
-    }
-  } else if (game.slowmoActive) {
-    // Death sequence slow-mo
+  // Apply bullet-time slow-mo via smooth lerp, and death sequence
+  if (game.slowmoActive) {
+    // Death sequence slow-mo (takes priority)
     const remaining = game.slowmoTimer - now;
     if (remaining <= 0) {
-      // Time's up - rapid ramp back
       game.slowmoActive = false;
       game.timeScale = 1.0;
       console.log('[slow-mo] Death sequence ended');
     } else {
       game.timeScale = game.slowmoIntensity;
     }
-  } else if (slowMoActive) {
-    slowMoDuration -= rawDt;
-    if (slowMoDuration <= 0) {
-      slowMoActive = false;
-      slowMoSoundPlayed = false;
-      timeScale = 1.0;
-      console.log('[bullet-time] ENDED');
-    } else {
-      timeScale = 0.2;
-    }
   } else {
-    timeScale = 1.0;
-    game.timeScale = 1.0;
+    // Use proximity-based time scale from smooth lerp
+    game.timeScale = window._timeScale || 1.0;
   }
 
   // Use game.timeScale if death sequence is active, otherwise use bullet-time timeScale
@@ -7241,37 +7284,47 @@ function render(timestamp) {
     // Update laser mines
     updateLaserMines(now, dt);
 
-    // If in slow-mo, check whether all enemies in trigger range are gone → ramp out over 0.5s + reverse sound
-    if (slowMoActive && !slowMoRampOut) {
-      const enemiesForRamp = getEnemies();
-      const anyNear = enemiesForRamp.some(e => e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST);
-      if (!anyNear) {
-        slowMoActive = false;
-        slowMoSoundPlayed = false;
-        slowMoRampOut = true;
-        slowMoRampOutTimer = SLOW_MO_RAMP_OUT_DURATION;
-        playSlowMoReverseSound();
-        console.log('[bullet-time] RAMP OUT — enemies cleared');
+    // Proximity-based slow-mo with smooth lerping
+    let hasCloseEnemy = false;
+    const allEnemies = getEnemies();
+    for (const e of allEnemies) {
+      const dist = e.mesh.position.distanceTo(playerPos);
+      if (dist < SLOW_MO_TRIGGER_DIST) {
+        hasCloseEnemy = true;
+        break;
       }
     }
 
-    // Check for near-miss bullet-time trigger
-    if (!slowMoActive && !slowMoRampOut) {
-      const enemies = getEnemies();
-      for (const e of enemies) {
-        const dist = e.mesh.position.distanceTo(playerPos);
-        if (dist < SLOW_MO_TRIGGER_DIST) {
-          slowMoActive = true;
-          slowMoDuration = 2.5;
-          console.log('[bullet-time] ACTIVATED!');
-          break;
-        }
-      }
-      if (slowMoActive && !slowMoSoundPlayed) {
-        playSlowMoSound();
-        slowMoSoundPlayed = true;
+    // Boss also triggers slow-mo at 2x radius
+    const boss = getBoss();
+    if (boss && boss.mesh) {
+      const bossDist = boss.mesh.position.distanceTo(playerPos);
+      if (bossDist < SLOW_MO_TRIGGER_DIST * 2.0) {
+        hasCloseEnemy = true;
       }
     }
+
+    // Smooth lerp time scale
+    if (window._timeScale === undefined) window._timeScale = 1.0;
+    if (window._wasCloseEnemy === undefined) window._wasCloseEnemy = false;
+
+    const targetScale = hasCloseEnemy ? SLOW_MO_FACTOR : 1.0;
+    const lerpSpeed = hasCloseEnemy ? SLOW_MO_LERP_IN : SLOW_MO_LERP_OUT;
+    const deltaLerp = Math.min(1, lerpSpeed * rawDt);
+    window._timeScale += (targetScale - window._timeScale) * deltaLerp;
+
+    // Sound triggers on state change
+    if (hasCloseEnemy && !window._wasCloseEnemy) {
+      playSlowMoSound();
+      console.log('[bullet-time] ACTIVATED!');
+    } else if (!hasCloseEnemy && window._wasCloseEnemy) {
+      playSlowMoReverseSound();
+      console.log('[bullet-time] RAMP OUT — enemies cleared');
+    }
+    window._wasCloseEnemy = hasCloseEnemy;
+
+    // Update timeScale for game loop
+    timeScale = window._timeScale;
 
     // Update desktop controls (WASD + mouse) if in desktop mode
     const desktopUpdates = updateDesktopControls(dt);
@@ -7320,10 +7373,11 @@ function render(timestamp) {
 
       // Trigger floor flash
       floorFlashing = true;
-      floorFlashTimer = 0.4;
+      floorFlashTimer = 1.0;
 
-      slowMoActive = false;
-      slowMoRampOut = false;
+      // Reset slow-mo state
+      window._timeScale = 1.0;
+      window._wasCloseEnemy = false;
       timeScale = 1.0;
       console.log(`[damage] Player hit! Health: ${game.health}`);
       if (dead) {
@@ -7350,9 +7404,10 @@ function render(timestamp) {
         triggerScreenShake(0.3, 300); // 0.3 shake for 300ms
 
         floorFlashing = true;
-        floorFlashTimer = 0.4;
-        slowMoActive = false;
-        slowMoRampOut = false;
+        floorFlashTimer = 1.0;
+        // Reset slow-mo state
+        window._timeScale = 1.0;
+        window._wasCloseEnemy = false;
         timeScale = 1.0;
         if (dead) endGame(false);
       }
@@ -7390,7 +7445,7 @@ function render(timestamp) {
         triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
 
         floorFlashing = true;
-        floorFlashTimer = 0.4;
+        floorFlashTimer = 1.0;
         if (dead) endGame(false);
       }
     }
@@ -7608,17 +7663,17 @@ function render(timestamp) {
     }
   }
 
-  // ── Floor damage flash (secondary VR hit indicator) ──
+  // ── Floor damage flash (primary VR hit indicator) ──
   if (floorFlashing && floorMaterial) {
     floorFlashTimer -= rawDt;
     if (floorFlashTimer <= 0) {
       floorFlashing = false;
       floorMaterial.color.copy(floorBaseColor);
     } else {
-      // Lerp from bright red/white back to base color
-      const t = floorFlashTimer / 0.4;  // 0.4s flash duration (slightly faster)
-      // Bright red-orange for visibility across all biomes
-      const flashColor = new THREE.Color(0xff3300);
+      // Lerp from bright red back to base color over 1 second
+      const t = floorFlashTimer / 1.0;  // 1s flash duration
+      // Pure red for maximum visibility across all biomes
+      const flashColor = new THREE.Color(0xff0000);
       floorMaterial.color.lerpColors(floorBaseColor, flashColor, t);
     }
   }
@@ -7742,12 +7797,18 @@ function onWindowResize() {
 // ── Custom biome scenes (new HTML-extracted biomes) ─────────
 
 function rebuildBiomeScene(biomeId, theme) {
+  console.log('[debug] rebuildBiomeScene: biomeId=', biomeId, 'customScene=', theme?.customScene);
   if (!scene || !theme || !theme.customScene) {
+    console.log('[debug] Clearing biome scene (no custom scene)');
     clearBiomeScene();
     return;
   }
-  if (biomeSceneGroup && biomeSceneBiome === biomeId) return;
+  if (biomeSceneGroup && biomeSceneBiome === biomeId) {
+    console.log('[debug] Biome scene already built for', biomeId, ', skipping');
+    return;
+  }
 
+  console.log('[debug] Building new biome scene for', biomeId);
   clearBiomeScene();
 
   // Update aurora colors for new biome
@@ -7877,29 +7938,38 @@ function buildSynthwaveValleyScene(group) {
     ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
     return new THREE.CanvasTexture(c);
   };
-  // DRAMATICALLY increased sun brightness - was too dim and darkening the area
-  const sunGlowTex = makeRadial('rgba(255,230,245,0.95)', 'rgba(255,150,220,0.5)');
-  const sunCoreTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(255,220,240,0.98)');
+  // EXTREMELY bright sun - white-hot core with massive glow to illuminate the scene
+  const sunGlowTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(255,200,230,0.85)');
+  const sunCoreTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(255,255,255,1.0)');
+  // Add a second brighter glow layer for maximum intensity
+  const sunOuterGlowTex = makeRadial('rgba(255,220,240,0.9)', 'rgba(255,150,200,0.3)');
+  // Outer massive glow - very large to illuminate scene
+  const sunOuterGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  sunOuterGlow.scale.set(700, 700, 1);
+  sunOuterGlow.frustumCulled = false;
+  sunGroup.add(sunOuterGlow);
+  // Main bright glow
   const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
-  sunGlow.scale.set(480, 480, 1);
+  sunGlow.scale.set(550, 550, 1);
   sunGlow.frustumCulled = false;
   sunGroup.add(sunGlow);
-  const sunCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false }));
-  sunCore.scale.set(220, 220, 1);
+  // White-hot core
+  const sunCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  sunCore.scale.set(300, 300, 1);
   sunCore.frustumCulled = false;
   sunGroup.add(sunCore);
 
-  // Horizon glow - increased brightness to match brighter sun
-  const horizonGlowGeo = new THREE.PlaneGeometry(1200, 100);
+  // Horizon glow - EXTREMELY bright to match the massive sun and illuminate the scene
+  const horizonGlowGeo = new THREE.PlaneGeometry(1400, 150);
   const horizonGlowMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    uniforms: { c1: { value: new THREE.Color(0xffffff) }, c2: { value: new THREE.Color(0xffaadd) } },
+    uniforms: { c1: { value: new THREE.Color(0xffffff) }, c2: { value: new THREE.Color(0xffccdd) } },
     vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
-    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.42,vUv.y)*(1.0-smoothstep(0.58,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.5,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*2.0); gl_FragColor=vec4(col, alpha*side*0.85); }`,
+    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.38,vUv.y)*(1.0-smoothstep(0.62,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.4,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*1.5); gl_FragColor=vec4(col, alpha*side*0.95); }`,
   });
   const horizonGlow = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
-  horizonGlow.position.set(0, 8, -745);
+  horizonGlow.position.set(0, 12, -745);
   horizonGlow.frustumCulled = false;
   group.add(horizonGlow);
   registerFadeMaterial(horizonGlowMat);

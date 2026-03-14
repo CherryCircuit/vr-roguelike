@@ -2832,9 +2832,17 @@ class SkullHand {
     this.offsetPos = offsetPos.clone();
     this.sceneRef = sceneRef;
     
-    this.maxHp = parentBoss.def.handHp || 150;
+    // HP scales based on how many hands remain - first hands easier, last hands harder
+    const aliveHands = parentBoss.hands.filter(h => h.alive).length;
+    const handsDestroyed = 4 - aliveHands;
+    const baseHp = parentBoss.def.handHp || 150;
+    // First hand: 100 HP, each destroyed hand adds 50% more HP to remaining hands
+    // Hand 1: 100, Hand 2: 150, Hand 3: 225, Hand 4: 337
+    const hpMultiplier = Math.pow(1.5, handsDestroyed);
+    this.maxHp = Math.round(baseHp * 0.67 * hpMultiplier); // Start at 67% of base, scale up
     this.hp = this.maxHp;
     this.alive = true;
+    console.log(`[SkullHand] Hand ${handIndex} created with ${this.hp}/${this.maxHp} HP (handsDestroyed: ${handsDestroyed})`);
     
     this.shootTimer = 0;
     this.shootRate = parentBoss.def.handShootRate || 1.5;
@@ -2922,7 +2930,13 @@ class SkullHand {
   takeDamage(amount) {
     if (!this.alive) return { killed: false };
     
-    this.hp -= amount;
+    // Damage reduction based on remaining hands - fewer hands = more tanky
+    const aliveHands = this.parentBoss.hands.filter(h => h.alive).length;
+    const damageReduction = 1 - (aliveHands - 1) * 0.15; // 4 hands: 85%, 3: 70%, 2: 55%, 1: 40% damage taken
+    const actualDamage = Math.round(amount * damageReduction);
+    console.log(`[SkullHand] Hand ${this.handIndex} takes ${actualDamage} damage (reduced from ${amount}, ${aliveHands} hands alive, ${(damageReduction * 100).toFixed(0)}% damage taken)`);
+    
+    this.hp -= actualDamage;
     if (this.hp <= 0) {
       this.hp = 0;
       this.alive = false;
