@@ -2390,9 +2390,9 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
   countryText.position.set(-0.5, 0.35, 0);  // Below name boxes, left side
   nameEntryGroup.add(countryText);
 
-  // Change country button - moved below name boxes, positioned to the right
+  // Change country button - positioned to the right of keyboard area
   const changeGroup = new THREE.Group();
-  changeGroup.position.set(0.55, 0.52, 0);  // Moved up to create gap from keyboard
+  changeGroup.position.set(0.55, 0.0, 0);  // Aligned with keyboard center
   const changeGeo = new THREE.PlaneGeometry(0.75, 0.22);  // Reduced padding to avoid keyboard overlap
   const changeMat = new THREE.MeshBasicMaterial({
     color: 0x332200, transparent: true, opacity: 0.9, side: THREE.DoubleSide,  // Yellow-tinted background
