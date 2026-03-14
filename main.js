@@ -41,7 +41,8 @@ import {
   showDebugMenu, hideDebugMenu, getDebugMenuHit, showReadyScreen, hideReadyScreen, updateReadyCountdownText, updateTitleDebugIndicator,
   updateHUDHover,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert,
-  spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups
+  spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
+  nameEntryGroup
 } from './hud.js?v=20260308-2337';
 
 import {
@@ -203,7 +204,7 @@ let slowMoDuration = 0;
 let slowMoSoundPlayed = false;
 let slowMoRampOut = false;       // Ramp timeScale back to 1 over 0.5s when nearby enemies cleared
 let slowMoRampOutTimer = 0;
-const SLOW_MO_TRIGGER_DIST = 1.2;  // Tight radius = ~0.5-0.75s reaction time for fast enemies
+const SLOW_MO_TRIGGER_DIST = 1.0;  // Tight radius = ~0.5-0.75s reaction time
 const SLOW_MO_RAMP_OUT_DURATION = 0.5;
 const SLOW_MO_FACTOR = 0.25;       // Time scale when slow-mo active
 const SLOW_MO_LERP_IN = 8.0;       // Fast lerp in for quick response
@@ -7621,6 +7622,11 @@ function render(timestamp) {
     if (isDesktopEnabled()) {
       const desktopRC = getAimRaycaster();
       if (desktopRC) raycasters.push(desktopRC);
+    }
+    // Add keyboard hover raycaster if name entry is visible
+    if (nameEntryGroup.visible) {
+      const keyboardRC = getAimRaycaster();
+      if (keyboardRC) raycasters.push(keyboardRC);
     }
     // Update hover effects
     if (raycasters.length > 0) {

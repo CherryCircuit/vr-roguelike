@@ -3347,3 +3347,6 @@ export function updateUpgradeHandHighlights(now) {
     // This is handled via normal scene graph if attached to controller
   });
 }
+
+// Export nameEntryGroup for use in other modules
+export { nameEntryGroup };
