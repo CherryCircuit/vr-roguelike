@@ -15,6 +15,23 @@ export function setVFXReference(vfxFunc) {
   spawnVoxelExplosion = vfxFunc;
 }
 
+function setMaterialEmissiveSafe(material, color, intensity = 1) {
+  if (!material) return;
+  if (Array.isArray(material)) {
+    material.forEach((m) => setMaterialEmissiveSafe(m, color, intensity));
+    return;
+  }
+
+  if (material.emissive && typeof material.emissive.copy === 'function') {
+    material.emissive.copy(color);
+    material.emissiveIntensity = intensity;
+    return;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(material, 'emissive')) delete material.emissive;
+  if (Object.prototype.hasOwnProperty.call(material, 'emissiveIntensity')) delete material.emissiveIntensity;
+}
+
 // ── Voxel patterns (simplified for performance) ───────────
 const PATTERNS = {
   basic: [
@@ -1296,8 +1313,7 @@ export function updateEnemies(dt, now, playerPos) {
       if (e.fireTimer >= 2.0 && !e.coreExposed) {
         e.mesh.traverse(c => {
           if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            c.material.emissive = new THREE.Color(0xffffff);
-            c.material.emissiveIntensity = (e.fireTimer - 2.0) / 0.5;
+            setMaterialEmissiveSafe(c.material, new THREE.Color(0xffffff), (e.fireTimer - 2.0) / 0.5);
           }
         });
       }
@@ -1474,8 +1490,7 @@ export function updateEnemies(dt, now, playerPos) {
       if (e.portalTimer >= e.portalCooldown * 0.7) {
         e.mesh.traverse(c => {
           if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            c.material.emissive = new THREE.Color(0x00ffaa);
-            c.material.emissiveIntensity = 0.5;
+            setMaterialEmissiveSafe(c.material, new THREE.Color(0x00ffaa), 0.5);
           }
         });
       }
@@ -1490,8 +1505,7 @@ export function updateEnemies(dt, now, playerPos) {
         if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
           const pulse = 0.3 + Math.sin(now * 0.005) * 0.2;
           c.material.opacity = pulse;
-          c.material.emissive = new THREE.Color(0x220033);
-          c.material.emissiveIntensity = 0.5;
+          setMaterialEmissiveSafe(c.material, new THREE.Color(0x220033), 0.5);
         }
       });
 
@@ -1522,8 +1536,7 @@ export function updateEnemies(dt, now, playerPos) {
       // Visual tether effect (electric arc)
       e.mesh.traverse(c => {
         if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          c.material.emissive = new THREE.Color(0xffcc00);
-          c.material.emissiveIntensity = e.linkedEnemies.length > 0 ? 0.6 : 0.2;
+          setMaterialEmissiveSafe(c.material, new THREE.Color(0xffcc00), e.linkedEnemies.length > 0 ? 0.6 : 0.2);
         }
       });
     }
@@ -1541,11 +1554,9 @@ export function updateEnemies(dt, now, playerPos) {
         if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
           c.material.opacity = e.isInvisible ? 0.15 : 0.85;
           if (e.isInvisible) {
-            c.material.emissive = new THREE.Color(0x8844ff);
-            c.material.emissiveIntensity = 0.3;
+            setMaterialEmissiveSafe(c.material, new THREE.Color(0x8844ff), 0.3);
           } else {
-            c.material.emissive = new THREE.Color(0x000000);
-            c.material.emissiveIntensity = 0;
+            setMaterialEmissiveSafe(c.material, new THREE.Color(0x000000), 0);
           }
         }
       });
@@ -2598,7 +2609,7 @@ class PulseEmitterBoss extends Boss {
     // Safely set emissiveIntensity on all child meshes with materials
     this.mesh.traverse(c => {
       if (c.isMesh && c.material) {
-        c.material.emissiveIntensity = 0.8;
+        setMaterialEmissiveSafe(c.material, new THREE.Color(0xffffff), 0.8);
       }
     });
     
@@ -2613,7 +2624,7 @@ class PulseEmitterBoss extends Boss {
       // Safely reset emissiveIntensity on all child meshes with materials
       this.mesh.traverse(c => {
         if (c.isMesh && c.material) {
-          c.material.emissiveIntensity = 0.3;
+          setMaterialEmissiveSafe(c.material, new THREE.Color(0xffffff), 0.3);
         }
       });
     }, this.shieldDuration * 1000);
@@ -4753,11 +4764,11 @@ class TrainBoss extends Boss {
             if (c.userData.car === this.activeCar) {
               c.userData.weakPoint = true;
               c.material.opacity = 1.0;
-              c.material.emissive = new THREE.Color(0xffaa00);
+              setMaterialEmissiveSafe(c.material, new THREE.Color(0xffaa00), c.material.emissiveIntensity ?? 1);
             } else {
               c.userData.weakPoint = false;
               c.material.opacity = 0.4;
-              c.material.emissive = new THREE.Color(0x000000);
+              setMaterialEmissiveSafe(c.material, new THREE.Color(0x000000), c.material.emissiveIntensity ?? 0);
             }
           }
         });
@@ -4768,7 +4779,7 @@ class TrainBoss extends Boss {
         if (c.userData && c.userData.isBossBody && c.userData.car) {
           c.userData.weakPoint = true;
           c.material.opacity = 1.0;
-          c.material.emissive = new THREE.Color(0xffaa00);
+          setMaterialEmissiveSafe(c.material, new THREE.Color(0xffaa00), c.material.emissiveIntensity ?? 1);
         }
       });
     }
