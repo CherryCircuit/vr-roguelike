@@ -17,7 +17,10 @@ import {
   startLightningSound, stopLightningSound,
   startLowHealthWarningSound, stopLowHealthWarningSound,
   playMusic, playBossMusic, stopMusic, fadeOutMusic, getMusicFrequencyData,
-  playKillsAlertSound, playTingSound
+  playKillsAlertSound, playTingSound,
+  // Charge cannon sounds
+  startChargeSound, updateChargeSound, stopChargeSound,
+  playChargeReadySound, playChargeFireSound
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -148,7 +151,13 @@ const lightningTimers = [0, 0];
 // Charge shot state (per controller): time when trigger was pressed (ms) or null
 const chargeShotStartTime = [null, null];
 const CHARGE_SHOT_MAX_TIME = 5.0;  // seconds
-const CHARGE_SHOT_MIN_FIRE = 0.6;  // seconds (below this, no fire or minimal)
+const CHARGE_SHOT_MIN_FIRE = 0.1;  // minimum charge time to fire (was 0.6)
+const CHARGE_SHOT_MIN_DAMAGE = 20;   // minimum damage at no charge
+const CHARGE_SHOT_MAX_DAMAGE = 1000; // maximum damage at full charge
+
+// Charge shot visual effects (per controller)
+const chargeGlowSpheres = [null, null];
+const chargeParticleSystems = [null, null];
 
 // Holographic blaster displays (per controller)
 const blasterDisplays = [null, null];
@@ -191,6 +200,9 @@ let floorFlashing = false;
 // Low health warning
 let lowHealthWarningActive = false;
 let lowHealthPulseTimer = 0;
+
+// Biome terrain materials for damage flash
+let biomeTerrainMaterials = [];  // Array of { type: 'shader'|'overlay', material }
 
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
@@ -586,6 +598,7 @@ function clearBiomeScene() {
   });
   biomeSceneGroup = null;
   biomeSceneBiome = null;
+  biomeTerrainMaterials = [];  // Clear terrain flash references
 }
 
 function updateBiomeProps(now, dt) {
@@ -2028,6 +2041,10 @@ function onTriggerRelease(index) {
       const chargeTimeSec = (performance.now() - chargeShotStartTime[index]) / 1000;
       fireChargeBeam(controllers[index], index, chargeTimeSec, stats);
     }
+    // Clean up charge sound and visuals
+    stopChargeSound(index);
+    hideChargeVisuals(index);
+    if (controllers[index]) controllers[index].userData.chargeReadySoundPlayed = false;
     chargeShotStartTime[index] = null;
   }
   // Stop lightning beam when trigger released
@@ -6081,6 +6098,35 @@ function createLightningBolt(start, end) {
   return new THREE.Line(geometry, material);
 }
 
+/**
+ * Get charge damage based on charge time (Mega Man style curve)
+ * @param {number} t - charge time in seconds
+ * @returns {number} damage value
+ */
+function chargeTimeToDamage(t) {
+  // Clamp to max time
+  const clampedT = Math.min(t, CHARGE_SHOT_MAX_TIME);
+
+  // Use exponential ease-out for fast initial ramp, slow approach to max
+  // Formula: min + (max - min) * (1 - e^(-k*t)) where k controls curve shape
+  // k = 2 gives: ~63% of remaining damage in first second, then slower approach
+  const k = 2.0;
+  const progress = 1 - Math.exp(-k * clampedT);
+
+  // Interpolate between min and max damage
+  return CHARGE_SHOT_MIN_DAMAGE + (CHARGE_SHOT_MAX_DAMAGE - CHARGE_SHOT_MIN_DAMAGE) * progress;
+}
+
+/**
+ * Get charge progress (0-1) for visual effects
+ * Uses the same curve as damage for consistent feedback
+ */
+function chargeTimeToProgress(t) {
+  const clampedT = Math.min(t, CHARGE_SHOT_MAX_TIME);
+  const k = 2.0;
+  return 1 - Math.exp(-k * clampedT);
+}
+
 /** Charge shot: scale 0.6s->0.2, 1.5s->0.3, 2.5s->0.4, 4s->0.6, 5s->1.0 */
 function chargeTimeToScale(t) {
   if (t >= CHARGE_SHOT_MAX_TIME) return 1;
@@ -6094,6 +6140,116 @@ function chargeTimeToScale(t) {
     }
   }
   return 1;
+}
+
+/**
+ * Create or update charge visual effects on controller
+ * - Glowing sphere that gets brighter with charge
+ * - Orbiting particles for Mega Man style charging
+ * @param {THREE.Controller} controller - The controller
+ * @param {number} index - Controller index (0=left, 1=right)
+ * @param {number} progress - Charge progress from 0 to 1
+ */
+function updateChargeVisuals(controller, index, progress) {
+  // Initialize glow sphere if needed
+  if (!chargeGlowSpheres[index]) {
+    // Main glow sphere at controller tip
+    const glowGeo = new THREE.SphereGeometry(0.05, 16, 16);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const glowSphere = new THREE.Mesh(glowGeo, glowMat);
+    glowSphere.position.set(0, 0, -0.1);  // In front of controller
+    controller.add(glowSphere);
+    chargeGlowSpheres[index] = glowSphere;
+
+    // Create orbiting particles (8 small spheres in a ring)
+    const particleGroup = new THREE.Group();
+    const particleCount = 8;
+    for (let i = 0; i < particleCount; i++) {
+      const particleGeo = new THREE.SphereGeometry(0.015, 8, 8);
+      const particleMat = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.5,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const particle = new THREE.Mesh(particleGeo, particleMat);
+      particle.userData.orbitAngle = (i / particleCount) * Math.PI * 2;
+      particle.userData.orbitRadius = 0.08;
+      particleGroup.add(particle);
+    }
+    particleGroup.position.set(0, 0, -0.1);
+    controller.add(particleGroup);
+    chargeParticleSystems[index] = particleGroup;
+  }
+
+  const glowSphere = chargeGlowSpheres[index];
+  const particleGroup = chargeParticleSystems[index];
+
+  if (!glowSphere || !particleGroup) return;
+
+  // Show the effects
+  glowSphere.visible = true;
+  particleGroup.visible = true;
+
+  // Update glow sphere: scale and color based on charge
+  // Scale from 0.05 to 0.15 radius
+  const scale = 1 + progress * 2;
+  glowSphere.scale.setScalar(scale);
+
+  // Color shifts from cyan (low) to white/pink (high)
+  const color = new THREE.Color().lerpColors(
+    new THREE.Color(0x00ffff),  // Cyan
+    new THREE.Color(0xffffff),  // White
+    progress
+  );
+  glowSphere.material.color.copy(color);
+
+  // Opacity increases with charge
+  glowSphere.material.opacity = 0.1 + progress * 0.6;
+
+  // Update orbiting particles
+  const time = performance.now() * 0.001;
+  const orbitSpeed = 2 + progress * 6;  // Faster orbit as charge increases
+  const orbitRadius = 0.08 + progress * 0.07;  // Wider orbit as charge increases
+
+  particleGroup.children.forEach((particle, i) => {
+    const baseAngle = particle.userData.orbitAngle;
+    const angle = baseAngle + time * orbitSpeed;
+
+    particle.position.x = Math.cos(angle) * orbitRadius;
+    particle.position.y = Math.sin(angle) * orbitRadius;
+    particle.position.z = Math.sin(angle * 0.5) * 0.02;  // Slight wobble
+
+    // Particle color matches glow
+    particle.material.color.copy(color);
+
+    // Particles get brighter as charge increases
+    particle.material.opacity = 0.3 + progress * 0.7;
+
+    // Particle size increases
+    const particleScale = 0.5 + progress * 1.5;
+    particle.scale.setScalar(particleScale);
+  });
+}
+
+/**
+ * Hide and clean up charge visual effects
+ * @param {number} index - Controller index (0=left, 1=right)
+ */
+function hideChargeVisuals(index) {
+  if (chargeGlowSpheres[index]) {
+    chargeGlowSpheres[index].visible = false;
+  }
+  if (chargeParticleSystems[index]) {
+    chargeParticleSystems[index].visible = false;
+  }
 }
 
 /** Distance from point to line segment (a to b) */
@@ -6110,11 +6266,17 @@ const _chargeBeamB = new THREE.Vector3();
 const _playerForward = new THREE.Vector3();
 
 function fireChargeBeam(controller, index, chargeTimeSec, stats) {
-  if (chargeTimeSec < 0.15) return; // minimum charge to fire
-  const scale = chargeTimeToScale(chargeTimeSec);
-  let damage = stats.damage * scale;
-  if (scale >= 1) damage = Math.max(300, damage);
-  const beamWidth = 0.2 + scale * 1.3;
+  if (chargeTimeSec < CHARGE_SHOT_MIN_FIRE) return; // minimum charge to fire
+
+  // Use Mega Man style damage curve
+  const damage = Math.round(chargeTimeToDamage(chargeTimeSec));
+  const progress = chargeTimeToProgress(chargeTimeSec);
+
+  // Play the charge fire sound with progress for intensity
+  playChargeFireSound(progress);
+
+  // Beam width scales with progress (0.2 at min, 1.5 at max)
+  const beamWidth = 0.2 + progress * 1.3;
   const range = 50;
 
   const origin = new THREE.Vector3();
@@ -6190,14 +6352,21 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
     }
   }
 
-  // Brief beam visual (cylinder)
+  // Brief beam visual (cylinder) - color shifts from cyan to white based on charge
   const beamGeo = new THREE.CylinderGeometry(beamWidth * 0.5, beamWidth * 0.5, range, 8);
+  // Color interpolates from cyan (low charge) to white (full charge)
+  const beamColor = new THREE.Color().lerpColors(
+    new THREE.Color(0x00ffff),  // Cyan at low charge
+    new THREE.Color(0xffffff),  // White at full charge
+    progress
+  );
   const beamMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+    color: beamColor,
     transparent: true,
-    opacity: 0.4 + scale * 0.4,
+    opacity: 0.4 + progress * 0.5,  // More opaque at higher charge
     side: THREE.DoubleSide,
     depthWrite: false,
+    blending: THREE.AdditiveBlending,  // Glow effect
   });
   const beamMesh = new THREE.Mesh(beamGeo, beamMat);
   beamMesh.position.copy(origin).addScaledVector(direction, range * 0.5);
@@ -6207,8 +6376,6 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   beamMesh.userData.isChargeBeam = true;
   scene.add(beamMesh);
   explosionVisuals.push(beamMesh);
-
-  playShoothSound();
 }
 
 function spawnProjectile(origin, direction, controllerIndex, stats, shotId) {
@@ -7267,7 +7434,7 @@ function render(timestamp) {
     blasterDisplays.forEach(d => { if (d) d.visible = false; });  // Hidden during gameplay
     spawnEnemyWave(dt);
 
-    // Full-auto shooting / Lightning beams (VR controllers)
+    // Full-auto shooting / Lightning beams / Charge shots (VR controllers)
     for (let i = 0; i < 2; i++) {
       if (controllerTriggerPressed[i]) {
         const hand = getHandForController(i);
@@ -7275,14 +7442,37 @@ function render(timestamp) {
         const stats = getWeaponStats(mainWeaponId, game.upgrades[hand]);
 
         if (stats.chargeShot) {
-          if (chargeShotStartTime[i] === null) chargeShotStartTime[i] = now;
+          if (chargeShotStartTime[i] === null) {
+            // Start charging
+            chargeShotStartTime[i] = now;
+            startChargeSound(i);
+            updateChargeVisuals(controllers[i], i, 0);  // Initialize visual at 0 charge
+          } else {
+            // Update charge progress
+            const chargeTimeSec = (now - chargeShotStartTime[i]) / 1000;
+            const progress = chargeTimeToProgress(chargeTimeSec);
+            updateChargeSound(i, progress);
+            updateChargeVisuals(controllers[i], i, progress);
+
+            // Play "ready" sound when fully charged (once)
+            if (progress >= 0.99 && !controllers[i].userData.chargeReadySoundPlayed) {
+              playChargeReadySound(i);
+              controllers[i].userData.chargeReadySoundPlayed = true;
+            }
+          }
         } else if (stats.lightning) {
           updateLightningBeam(controllers[i], i, stats, dt);
         } else {
           fireMainWeapon(controllers[i], i);
         }
       } else {
-        if (chargeShotStartTime[i] !== null) chargeShotStartTime[i] = null;
+        // Trigger released - clean up charge state
+        if (chargeShotStartTime[i] !== null) {
+          stopChargeSound(i);
+          hideChargeVisuals(i);
+          if (controllers[i]) controllers[i].userData.chargeReadySoundPlayed = false;
+        }
+        chargeShotStartTime[i] = null;
         if (lightningBeams[i]) {
           scene.remove(lightningBeams[i]);
           lightningBeams[i] = null;
@@ -7293,7 +7483,7 @@ function render(timestamp) {
     // Desktop controls firing (keyboard/mouse)
     if (isDesktopEnabled()) {
       const desktopWeapon = getWeaponState();
-      
+
       if (desktopWeapon.triggerPressed) {
         // Handle fire mode: left, right, or both
         if (desktopWeapon.fireMode === 'left' || desktopWeapon.fireMode === 'both') {
@@ -7301,7 +7491,24 @@ function render(timestamp) {
           if (virtualController) {
             const stats = getWeaponStats(game.mainWeapon.left, game.upgrades.left);
             if (stats.chargeShot) {
-              if (chargeShotStartTime[0] === null) chargeShotStartTime[0] = now;
+              if (chargeShotStartTime[0] === null) {
+                // Start charging
+                chargeShotStartTime[0] = now;
+                startChargeSound(0);
+                updateChargeVisuals(virtualController, 0, 0);
+              } else {
+                // Update charge progress
+                const chargeTimeSec = (now - chargeShotStartTime[0]) / 1000;
+                const progress = chargeTimeToProgress(chargeTimeSec);
+                updateChargeSound(0, progress);
+                updateChargeVisuals(virtualController, 0, progress);
+
+                // Play "ready" sound when fully charged (once)
+                if (progress >= 0.99 && !virtualController.userData.chargeReadySoundPlayed) {
+                  playChargeReadySound(0);
+                  virtualController.userData.chargeReadySoundPlayed = true;
+                }
+              }
             } else if (stats.lightning) {
               updateLightningBeam(virtualController, 0, stats, dt);
             } else {
@@ -7315,7 +7522,24 @@ function render(timestamp) {
           if (virtualController) {
             const stats = getWeaponStats(game.mainWeapon.right, game.upgrades.right);
             if (stats.chargeShot) {
-              if (chargeShotStartTime[1] === null) chargeShotStartTime[1] = now;
+              if (chargeShotStartTime[1] === null) {
+                // Start charging
+                chargeShotStartTime[1] = now;
+                startChargeSound(1);
+                updateChargeVisuals(virtualController, 1, 0);
+              } else {
+                // Update charge progress
+                const chargeTimeSec = (now - chargeShotStartTime[1]) / 1000;
+                const progress = chargeTimeToProgress(chargeTimeSec);
+                updateChargeSound(1, progress);
+                updateChargeVisuals(virtualController, 1, progress);
+
+                // Play "ready" sound when fully charged (once)
+                if (progress >= 0.99 && !virtualController.userData.chargeReadySoundPlayed) {
+                  playChargeReadySound(1);
+                  virtualController.userData.chargeReadySoundPlayed = true;
+                }
+              }
             } else if (stats.lightning) {
               updateLightningBeam(virtualController, 1, stats, dt);
             } else {
@@ -7328,17 +7552,27 @@ function render(timestamp) {
         if (chargeShotStartTime[0] !== null) {
           // Fire the charge shot on release
           const virtualController = getVirtualController('left');
-          if (virtualController) {
-            fireMainWeapon(virtualController, 0);
+          const stats = getWeaponStats(game.mainWeapon.left, game.upgrades.left);
+          if (virtualController && stats.chargeShot) {
+            const chargeTimeSec = (now - chargeShotStartTime[0]) / 1000;
+            fireChargeBeam(virtualController, 0, chargeTimeSec, stats);
           }
+          stopChargeSound(0);
+          hideChargeVisuals(0);
+          if (virtualController) virtualController.userData.chargeReadySoundPlayed = false;
           chargeShotStartTime[0] = null;
         }
         if (chargeShotStartTime[1] !== null) {
           // Fire the charge shot on release
           const virtualController = getVirtualController('right');
-          if (virtualController) {
-            fireMainWeapon(virtualController, 1);
+          const stats = getWeaponStats(game.mainWeapon.right, game.upgrades.right);
+          if (virtualController && stats.chargeShot) {
+            const chargeTimeSec = (now - chargeShotStartTime[1]) / 1000;
+            fireChargeBeam(virtualController, 1, chargeTimeSec, stats);
           }
+          stopChargeSound(1);
+          hideChargeVisuals(1);
+          if (virtualController) virtualController.userData.chargeReadySoundPlayed = false;
           chargeShotStartTime[1] = null;
         }
         // Clear lightning beams
@@ -7773,6 +8007,14 @@ function render(timestamp) {
     if (floorMaterial && !floorFlashing) {
       floorMaterial.color.copy(floorBaseColor);
     }
+    // Reset terrain flash
+    biomeTerrainMaterials.forEach(item => {
+      if (item.type === 'shader') {
+        item.material.uniforms.uFlashIntensity.value = 0;
+      } else {
+        item.material.opacity = 0;
+      }
+    });
   }
 
   // ── Floor damage flash (primary VR hit indicator) ──
@@ -7781,6 +8023,14 @@ function render(timestamp) {
     if (floorFlashTimer <= 0) {
       floorFlashing = false;
       if (floorMaterial) floorMaterial.color.copy(floorBaseColor);
+      // Reset terrain flash
+      biomeTerrainMaterials.forEach(item => {
+        if (item.type === 'shader') {
+          item.material.uniforms.uFlashIntensity.value = 0;
+        } else {
+          item.material.opacity = 0;
+        }
+      });
       // Reset grid colors
       if (gridHelper && gridHelper.visible) {
         const resetGridMat = (m) => { m.color.setHex(NEON_PINK); };
@@ -7793,10 +8043,19 @@ function render(timestamp) {
     } else {
       // Lerp from bright red back to base color over 1 second
       const t = floorFlashTimer / 1.0;  // 1s flash duration
+      const flashIntensity = t;  // 0 to 1, fading out
       const flashColor = new THREE.Color(0xff0000);
       if (floorMaterial) {
         floorMaterial.color.lerpColors(floorBaseColor, flashColor, t);
       }
+      // Flash terrain materials
+      biomeTerrainMaterials.forEach(item => {
+        if (item.type === 'shader') {
+          item.material.uniforms.uFlashIntensity.value = flashIntensity * 0.5;  // Max 50% red
+        } else {
+          item.material.opacity = flashIntensity * 0.4;  // Max 40% opacity
+        }
+      });
       // Flash grid to red
       if (gridHelper && gridHelper.visible) {
         const flashGridMat = (m) => {
@@ -7819,6 +8078,14 @@ function render(timestamp) {
     const intensity = 0.2 + pulse * 0.45;
     const warningColor = new THREE.Color(0xaa0000);
     floorMaterial.color.lerpColors(floorBaseColor, warningColor, intensity);
+    // Also pulse terrain
+    biomeTerrainMaterials.forEach(item => {
+      if (item.type === 'shader') {
+        item.material.uniforms.uFlashIntensity.value = intensity * 0.3;
+      } else {
+        item.material.opacity = intensity * 0.25;
+      }
+    });
   }
 
   // ── Environment: sun stays constant size (removed level scaling) ──
@@ -7999,6 +8266,7 @@ function buildSynthwaveValleyScene(group) {
     uGridColor: { value: new THREE.Color(0xff2ed1) },
     uBaseColor: { value: new THREE.Color(0x0a0020) },
     uFogColor: { value: new THREE.Color(0x2a004a) },
+    uFlashIntensity: { value: 0.0 },
   };
   const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);
   terrainGeo.rotateX(-Math.PI / 2);
@@ -8013,13 +8281,15 @@ function buildSynthwaveValleyScene(group) {
     // Fix for synthwave floor popping in VR: keep the terrain static and use the
     // built-in modelViewMatrix projection instead of manual projection math.
     vertexShader: `varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vec4 mvPosition=modelViewMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; vFogDistance=length(mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }`,
-    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
   terrain.position.set(0, floorY, -700);
   terrain.frustumCulled = false;
   group.add(terrain);
   registerFadeMaterial(terrainMat);
+  // Store terrain material for damage flash
+  biomeTerrainMaterials.push({ type: 'shader', material: terrainMat });
 
   // Mountains with polygonOffset to prevent Z-fighting
   const makeLayer = (color, opacity, scaleY, z, y) => {
@@ -8167,6 +8437,22 @@ function buildDesertNightScene(group) {
   group.add(terrain);
   registerFadeMaterial(material);
 
+  // Flash overlay plane for damage feedback
+  const flashGeo = new THREE.PlaneGeometry(300, 300);
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+  flashPlane.rotation.x = -Math.PI / 2;
+  flashPlane.position.y = floorY + 0.05;
+  flashPlane.frustumCulled = false;
+  group.add(flashPlane);
+  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
+
   // Moon
   const moonGroup = new THREE.Group();
   const moonGeometry = new THREE.IcosahedronGeometry(8, 2);
@@ -8201,6 +8487,22 @@ function buildAlienPlanetScene(group) {
   ground.position.y = floorY;
   ground.frustumCulled = false;
   group.add(ground);
+
+  // Flash overlay plane for damage feedback
+  const flashGeo = new THREE.PlaneGeometry(300, 300);
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+  flashPlane.rotation.x = -Math.PI / 2;
+  flashPlane.position.y = floorY + 0.05;
+  flashPlane.frustumCulled = false;
+  group.add(flashPlane);
+  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
   // Moon and glow
   const moonGeo = new THREE.IcosahedronGeometry(24, 1);
@@ -8343,6 +8645,22 @@ function buildHellscapeLavaScene(group) {
   terrain.receiveShadow = true;
   terrain.position.y = floorY;
   group.add(terrain);
+
+  // Flash overlay plane for damage feedback
+  const flashGeo = new THREE.PlaneGeometry(300, 300);
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+  flashPlane.rotation.x = -Math.PI / 2;
+  flashPlane.position.y = floorY + 0.05;
+  flashPlane.frustumCulled = false;
+  group.add(flashPlane);
+  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
   // Moons
   const createMoon = (size, color, glowColor) => {
