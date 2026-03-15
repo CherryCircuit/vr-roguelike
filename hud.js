@@ -4,8 +4,8 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { State, game } from './game.js?v=20260307-1506';
-import { playMenuHoverSound } from './audio.js?v=20260307-1506';
+import { State, game } from './game.js';
+import { playMenuHoverSound } from './audio.js';
 
 // ── Module state ───────────────────────────────────────────
 let sceneRef, cameraRef;

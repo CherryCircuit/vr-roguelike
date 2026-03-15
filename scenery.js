@@ -3,7 +3,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { getBiomeForLevel } from './game.js?v=20260307-1506';
+import { getBiomeForLevel } from './game.js';
 
 // ── Theme Definitions ─────────────────────────────────────
 export const THEMES = {
