@@ -204,7 +204,7 @@ let slowMoDuration = 0;
 let slowMoSoundPlayed = false;
 let slowMoRampOut = false;       // Ramp timeScale back to 1 over 0.5s when nearby enemies cleared
 let slowMoRampOutTimer = 0;
-const SLOW_MO_TRIGGER_DIST = 1.5;  // Tighter trigger radius
+const SLOW_MO_TRIGGER_DIST = 2.0;
 const SLOW_MO_RAMP_OUT_DURATION = 0.5;
 let timeScale = 1.0;
 
@@ -7327,25 +7327,11 @@ function render(timestamp) {
       timeScale = 1.0;
     }
 
-    // If in slow-mo, check whether all enemies in trigger range are gone → ramp out
+    // If in slow-mo, check whether all enemies in trigger range are gone → ramp out over 0.5s + reverse sound
     if (slowMoActive && !slowMoRampOut) {
       const enemiesForRamp = getEnemies();
       const anyNear = enemiesForRamp.some(e => e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST);
-      // Boss check
-      const boss = getBoss();
-      if (boss && boss.mesh) {
-        const bossDist = boss.mesh.position.distanceTo(playerPos);
-        if (bossDist < SLOW_MO_TRIGGER_DIST * 2.0) {
-          // Boss nearby, don't ramp out
-        } else if (!anyNear) {
-          slowMoActive = false;
-          slowMoSoundPlayed = false;
-          slowMoRampOut = true;
-          slowMoRampOutTimer = SLOW_MO_RAMP_OUT_DURATION;
-          playSlowMoReverseSound();
-          console.log('[bullet-time] RAMP OUT — enemies cleared');
-        }
-      } else if (!anyNear) {
+      if (!anyNear) {
         slowMoActive = false;
         slowMoSoundPlayed = false;
         slowMoRampOut = true;
@@ -7362,20 +7348,9 @@ function render(timestamp) {
         const dist = e.mesh.position.distanceTo(playerPos);
         if (dist < SLOW_MO_TRIGGER_DIST) {
           slowMoActive = true;
-          slowMoDuration = 0.75;  // Short duration - ramp out handles the rest
+          slowMoDuration = 2.5;
           console.log('[bullet-time] ACTIVATED!');
           break;
-        }
-      }
-      // Boss trigger at 2x radius
-      const bossForTrigger = getBoss();
-      if (!slowMoActive && bossForTrigger && bossForTrigger.mesh) {
-        const bossDist = bossForTrigger.mesh.position.distanceTo(playerPos);
-        if (bossDist < SLOW_MO_TRIGGER_DIST * 2.0) {
-          slowMoActive = true;
-          slowMoDuration = 0.75;  // Short duration
-          slowMoSoundPlayed = false;
-          console.log('[bullet-time] ACTIVATED by boss!');
         }
       }
       if (slowMoActive && !slowMoSoundPlayed) {
