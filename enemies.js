@@ -151,6 +151,10 @@ const explosionParts = [];
 const enemyDebris = [];
 const MAX_ENEMY_DEBRIS = 50;  // Cap for performance
 
+// Boss death debris (physics-based from commit 2abb1b5)
+const bossDebris = [];
+const MAX_DEBRIS = 100;  // Cap for performance
+
 // Player forward direction for front-arc constraints
 const _playerForwardRef = new THREE.Vector3(0, 0, -1);
 const _frontDir = new THREE.Vector3();
@@ -6221,6 +6225,140 @@ export function clearBoss() {
       hideBossHealthBar();
     }
   }
+}
+
+// ── BOSS DEBRIS PHYSICS (from commit 2abb1b5) ───────────────────────────
+export function spawnBossDebris(boss) {
+  if (!boss || !boss.mesh) return;
+
+  const voxels = boss.mesh.children.filter(c => c.userData.isBossBody);
+  const bossPos = boss.mesh.position.clone();
+  const bossColor = boss.def.color;
+
+  // Limit debris count for performance
+  const maxVoxels = Math.min(voxels.length, MAX_DEBRIS);
+  const step = Math.max(1, Math.floor(voxels.length / maxVoxels));
+
+  for (let i = 0; i < voxels.length; i += step) {
+    const voxel = voxels[i];
+    if (!voxel.isMesh) continue;
+
+    // Create debris piece
+    const geo = voxel.geometry.clone();
+    const mat = new THREE.MeshBasicMaterial({
+      color: voxel.material.color || bossColor,
+      transparent: true,
+      opacity: 0.9,
+    });
+
+    const debris = new THREE.Mesh(geo, mat);
+
+    // World position of voxel
+    const worldPos = new THREE.Vector3();
+    voxel.getWorldPosition(worldPos);
+    debris.position.copy(worldPos);
+
+    // Random initial rotation
+    debris.rotation.set(
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2
+    );
+
+    // Physics properties
+    debris.userData.velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 4,  // Random horizontal velocity
+      2 + Math.random() * 3,      // Upward velocity
+      (Math.random() - 0.5) * 4
+    );
+    debris.userData.angularVel = new THREE.Vector3(
+      (Math.random() - 0.5) * 8,
+      (Math.random() - 0.5) * 8,
+      (Math.random() - 0.5) * 8
+    );
+    debris.userData.bounces = 0;
+    debris.userData.maxBounces = 2;
+    debris.userData.lifetime = 3.0;  // 3 seconds before fade
+    debris.userData.age = 0;
+    debris.userData.onFloor = false;
+
+    sceneRef.add(debris);
+    bossDebris.push(debris);
+  }
+
+  console.log(`[boss] Spawned ${bossDebris.length} debris voxels`);
+}
+
+export function updateBossDebris(dt, now) {
+  const gravity = -9.8;
+  const floorY = 0.05;
+  const bounceDamping = 0.5;
+  const friction = 0.8;
+
+  for (let i = bossDebris.length - 1; i >= 0; i--) {
+    const debris = bossDebris[i];
+    debris.userData.age += dt;
+
+    // Age out old debris
+    if (debris.userData.age > debris.userData.lifetime) {
+      sceneRef.remove(debris);
+      debris.geometry.dispose();
+      debris.material.dispose();
+      bossDebris.splice(i, 1);
+      continue;
+    }
+
+    // Fade out in last second
+    const fadeStart = debris.userData.lifetime - 1.0;
+    if (debris.userData.age > fadeStart) {
+      debris.material.opacity = 0.9 * (1 - (debris.userData.age - fadeStart));
+    }
+
+    // Skip physics if on floor and settled
+    if (debris.userData.onFloor && debris.userData.bounces >= debris.userData.maxBounces) {
+      // Just fade, no more physics
+      continue;
+    }
+
+    // Apply gravity
+    debris.userData.velocity.y += gravity * dt;
+
+    // Update position
+    debris.position.x += debris.userData.velocity.x * dt;
+    debris.position.y += debris.userData.velocity.y * dt;
+    debris.position.z += debris.userData.velocity.z * dt;
+
+    // Update rotation
+    debris.rotation.x += debris.userData.angularVel.x * dt;
+    debris.rotation.y += debris.userData.angularVel.y * dt;
+    debris.rotation.z += debris.userData.angularVel.z * dt;
+
+    // Floor collision
+    if (debris.position.y < floorY) {
+      debris.position.y = floorY;
+      debris.userData.velocity.y = -debris.userData.velocity.y * bounceDamping;
+      debris.userData.velocity.x *= friction;
+      debris.userData.velocity.z *= friction;
+      debris.userData.angularVel.multiplyScalar(0.5);
+      debris.userData.bounces++;
+
+      // Mark as on floor after max bounces
+      if (debris.userData.bounces >= debris.userData.maxBounces) {
+        debris.userData.onFloor = true;
+        debris.userData.velocity.set(0, 0, 0);
+        debris.userData.angularVel.set(0, 0, 0);
+      }
+    }
+  }
+}
+
+export function clearBossDebris() {
+  for (const debris of bossDebris) {
+    sceneRef.remove(debris);
+    debris.geometry.dispose();
+    debris.material.dispose();
+  }
+  bossDebris.length = 0;
 }
 
 // ── TELEPORTING BOSS SPECIFIC (for compatibility) ───────────
