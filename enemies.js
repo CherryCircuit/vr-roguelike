@@ -1215,13 +1215,7 @@ export function updateEnemies(dt, now, playerPos) {
     const stasisSlow = getStasisSlowFactor(e.mesh.position);
     speedMod *= stasisSlow;
 
-    const nearSlowDist = 1.8;
-    const nearSlowSpeed = 0.8; // Cap speed when too close so all enemies slow equally
-    let effectiveSpeed = e.speed * speedMod;
-    if (dist < nearSlowDist) {
-      effectiveSpeed = Math.min(effectiveSpeed, nearSlowSpeed);
-    }
-    e.mesh.position.addScaledVector(_dir, effectiveSpeed * dt);
+    e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
 
     // ── Special Enemy AI Behaviors ──
     // Spiral Swimmer: corkscrew movement
