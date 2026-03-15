@@ -1786,6 +1786,7 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   }
 
   // [Physics Death System] Spawn voxel explosions with physics
+  console.log(`[enemy-death] destroyEnemy: spawnVoxelExplosion=${!!spawnVoxelExplosion}, type=${e.type}`);
   if (spawnVoxelExplosion) {
     let voxelCount = e.type === 'tank' ? 10 : e.type === 'basic' ? 6 : 4;
     // New enemy voxel counts
@@ -1795,7 +1796,10 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
     if (e.isMimic) voxelCount = 5;
     if (e.isSpider) voxelCount = 4;
 
+    console.log(`[enemy-death] Spawning ${voxelCount} voxels at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
     spawnVoxelExplosion(pos, color.getHex(), voxelCount, e.type, isCritical, isOverkill);
+  } else {
+    console.warn('[enemy-death] spawnVoxelExplosion is NULL!');
   }
 
   // Pooled explosion particles (no allocation per death)
