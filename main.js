@@ -25,7 +25,7 @@ import {
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward,
-  updateBossDebris, clearBossDebris, spawnBossDebris
+  updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference
 } from './enemies.js?v=20260308-2337';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js?v=20260308-2337';
 import { initVFX, updateVFX } from './vfx.js?v=20260308-2337';
@@ -358,11 +358,9 @@ function init() {
   // PHYSICS DEATH SYSTEM: Initialize voxel pool
   initVoxelPool();
   
-  // Set voxel explosion reference for enemies.js
-  import('./enemies.js').then(module => {
-    module.setVFXReference(spawnVoxelExplosion);
-    console.log('[physics-death] Voxel explosion reference set');
-  });
+  // Set voxel explosion reference for enemies.js (same module instance as import)
+  setVFXReference(spawnVoxelExplosion);
+  console.log('[physics-death] Voxel explosion reference set');
 
   // Set up stasis field reference for shared access
   setActiveStasisFields(activeStasisFields);
