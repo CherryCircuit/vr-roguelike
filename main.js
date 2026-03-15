@@ -368,6 +368,57 @@ function init() {
   // Desktop controls for non-VR playtesting
   initDesktopControls(scene, camera, renderer);
 
+  // Test helpers for automation
+  window.__test = window.__test || {};
+  window.__test.getEnemies = getEnemies;
+  window.__test.getEnemyCount = getEnemyCount;
+  window.__test.getCamera = () => camera;
+  window.__test.getRenderer = () => renderer;
+  // Test hook: deterministic single-shot at a chosen enemy for headless runs.
+  // Params: enemyIndex (number), options { distance, hp, snapToCamera }.
+  // Returns true if a projectile was fired.
+  window.__test.fireAtEnemy = (enemyIndex, options = {}) => {
+    const enemies = getEnemies();
+    const enemy = enemies && Number.isInteger(enemyIndex) ? enemies[enemyIndex] : null;
+    if (!enemy || !enemy.mesh || !camera) return false;
+
+    const distance = Number.isFinite(options.distance) ? options.distance : 6;
+    const snapToCamera = options.snapToCamera !== false;
+    if (snapToCamera) {
+      const forward = camera.getWorldDirection(new THREE.Vector3());
+      enemy.mesh.position.copy(camera.position).add(forward.multiplyScalar(distance));
+      enemy.mesh.updateMatrixWorld(true);
+    }
+
+    if (typeof enemy.hp === 'number') {
+      const targetHp = Number.isFinite(options.hp) ? options.hp : 1;
+      enemy.hp = Math.min(enemy.hp, targetHp);
+    }
+
+    const origin = camera.position.clone();
+    const target = enemy.mesh.position.clone();
+    const direction = target.clone().sub(origin);
+    if (direction.lengthSq() === 0) {
+      direction.set(0, 0, -1);
+    }
+    direction.normalize();
+
+    const quat = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 0, -1),
+      direction
+    );
+
+    const testController = {
+      getWorldPosition: (vec) => { vec.copy(origin); return vec; },
+      getWorldQuaternion: (vec) => { vec.copy(quat); return vec; },
+      userData: { handedness: 'left' }
+    };
+
+    weaponCooldowns[0] = 0;
+    fireMainWeapon(testController, 0);
+    return true;
+  };
+
   // PERFORMANCE: Initialize projectile pool
   initProjectilePool();
 
@@ -5233,6 +5284,8 @@ function startGame() {
     console.log('[seed] No seed set, using random seed');
     resetGame();
   }
+
+  resetAllSlowMoState();
   
   game.state = State.READY_SCREEN;
   game.level = 1;
@@ -5256,6 +5309,24 @@ function shouldFadeForBiomeTransition(level) {
   const currentBiome = getBiomeForLevel(level);
   const nextBiome = getBiomeForLevel(level + 1);
   return currentBiome !== nextBiome;
+}
+
+function resetAllSlowMoState() {
+  slowMoActive = false;
+  slowMoDuration = 0;
+  slowMoSoundPlayed = false;
+  slowMoRampOut = false;
+  slowMoRampOutTimer = 0;
+  timeScale = 1.0;
+
+  game.slowmoActive = false;
+  game.slowmoTimer = 0;
+  game.timeScale = 1.0;
+
+  if (typeof window !== 'undefined') {
+    window._timeScale = 1.0;
+    window._wasCloseEnemy = false;
+  }
 }
 
 function completeLevel() {
@@ -5465,6 +5536,7 @@ function advanceLevelAfterUpgrade() {
 
 function endGame(victory) {
   console.log(`[game] Game ${victory ? 'won' : 'over'} — score: ${game.score}`);
+  resetAllSlowMoState();
   game.state = victory ? State.VICTORY : State.GAME_OVER;
   game.finalScore = game.score;
   game.finalLevel = game.level;
@@ -5590,7 +5662,7 @@ function returnProjectileToPool(proj) {
  * Initialize voxel pool for physics-based death explosions
  */
 function initVoxelPool() {
-  const voxelGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);  // Larger voxels for visibility
+  const voxelGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);  // 40% smaller death voxels
   
   for (let i = 0; i < VOXEL_POOL_SIZE; i++) {
     const material = new THREE.MeshBasicMaterial({
@@ -5629,6 +5701,8 @@ function returnVoxelToPool(voxel) {
   voxel.userData.createdAt = undefined;
   voxel.userData.lifetime = undefined;
   voxel.userData.isGold = undefined;
+  voxel.material.opacity = 1.0;
+  voxel.scale.set(1, 1, 1);
 }
 
 /**
@@ -5674,9 +5748,8 @@ function spawnVoxelExplosion(position, color, voxelCount, enemyType = 'basic', i
     voxel.position.y += (Math.random() - 0.5) * 0.3;
     voxel.position.z += (Math.random() - 0.5) * 0.3;
     
-    // Set color (gold for critical kills, enemy color otherwise)
-    const voxelColor = isCritical ? 0xffd700 : color;
-    voxel.material.color.setHex(voxelColor);
+    // Keep death voxels matched to the enemy's original color.
+    voxel.material.color.setHex(color);
     voxel.material.opacity = 1.0;
     
     // Calculate velocity based on pattern
@@ -5959,16 +6032,6 @@ function updateLightningBeam(controller, index, stats, dt) {
               killsAlertShownThisLevel = true;
             }
 
-            // Check for slow-mo death (last enemy of wave)
-            const cfg = game._levelConfig;
-            if (cfg && !cfg.isBoss) {
-              const enemiesRemaining = getEnemyCount();
-              if (enemiesRemaining === 0 && game.kills < cfg.killTarget) {
-                // Last enemy killed but not level complete yet - trigger slow-mo
-                triggerSlowmoDeathSequence();
-              }
-            }
-
             // Check level complete
             if (cfg && game.kills >= cfg.killTarget) {
               completeLevel();
@@ -6232,7 +6295,7 @@ function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
-function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExploding = false, hitWeakPoint = false) {
+function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExploding = false, hitWeakPoint = false, hitInfo = {}) {
   // Calculate damage
   let damage = stats.damage;
 
@@ -6266,7 +6329,8 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
   }
 
   // Apply damage
-  const result = hitEnemy(enemyIndex, damage);
+  const resolvedHitInfo = { ...hitInfo, weakPoint: hitWeakPoint };
+  const result = hitEnemy(enemyIndex, damage, resolvedHitInfo);
 
   // Track damage for hand stats
   if (controllerIndex !== undefined) {
@@ -6335,15 +6399,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       // NOTE: Popups are now accuracy-based, not kill-chain based
       // Accuracy popups are triggered in markAccuracyHit() when multiplier increases
 
-      // Check for slow-mo death (last enemy of wave)
       const cfg = game._levelConfig;
-      if (cfg && !cfg.isBoss) {
-        const enemiesRemaining = getEnemyCount();
-        if (enemiesRemaining === 0 && game.kills < cfg.killTarget) {
-          // Last enemy killed but not level complete yet - trigger slow-mo
-          triggerSlowmoDeathSequence();
-        }
-      }
 
       // Track kills for hand stats
       if (controllerIndex !== undefined) {
@@ -6871,6 +6927,11 @@ function updateProjectiles(dt) {
         proj.userData.hitEnemies.add(result.index);
         const hitObj = hits[0].object;
         const hitWeakPoint = hitObj.userData && hitObj.userData.weakPoint === true;
+        const hitInfo = {
+          trainIndex: hitObj.userData?.trainIndex,
+          isScout: hitObj.userData?.isScout,
+          hitObject: hitObj,
+        };
 
         // Check if projectile is nanite-infused (passed through nanite swarm)
         const naniteDamage = proj.userData.naniteInfused ? 5 : 0;
@@ -6887,7 +6948,7 @@ function updateProjectiles(dt) {
         }
 
         markProjectileHit(proj);
-        handleHit(result.index, result.enemy, { ...proj.userData.stats, damage: proj.userData.stats.damage + naniteDamage }, hits[0].point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint);
+        handleHit(result.index, result.enemy, { ...proj.userData.stats, damage: proj.userData.stats.damage + naniteDamage }, hits[0].point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint, hitInfo);
 
         // Ricochet effect
         if (proj.userData.stats?.ricochetBounces > 0) {
@@ -7070,7 +7131,10 @@ function spawnEnemyWave(dt) {
 
     // Don't spawn if we already have enough enemies
     if (getEnemyCount() < 15) {
-      const types = cfg.enemyTypes;
+      let types = cfg.enemyTypes;
+      if (game.level === 19) {
+        types = ['swarm', 'tank'];
+      }
       const type = types[Math.floor(Math.random() * types.length)];
 
       // Calculate vertical spawn angle based on level
@@ -7079,7 +7143,8 @@ function spawnEnemyWave(dt) {
       else if (game.level >= 11) verticalAngle = 40;
       else if (game.level >= 6) verticalAngle = 20;
 
-      const pos = getSpawnPosition(cfg.airSpawns, verticalAngle);
+      const distanceRange = type === 'conductor' ? { min: 8, max: 13 } : null;
+      const pos = getSpawnPosition(cfg.airSpawns, verticalAngle, distanceRange);
       spawnEnemy(type, pos, cfg);
 
       // Alert on enemy spawn
@@ -7553,15 +7618,7 @@ function render(timestamp) {
               killsAlertShownThisLevel = true;
             }
 
-            // Check for slow-mo death (last enemy of wave)
             const cfg = game._levelConfig;
-            if (cfg && !cfg.isBoss) {
-              const enemiesRemaining = getEnemyCount();
-              if (enemiesRemaining === 0 && game.kills < cfg.killTarget) {
-                // Last enemy killed but not level complete yet - trigger slow-mo
-                triggerSlowmoDeathSequence();
-              }
-            }
 
             if (cfg && game.kills >= cfg.killTarget) {
               completeLevel();
