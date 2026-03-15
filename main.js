@@ -493,6 +493,23 @@ function registerFadeMaterial(material) {
   environmentFadeTargets.push(material);
 }
 
+function setMaterialEmissiveSafe(material, color, intensity = 1) {
+  if (!material) return;
+  if (Array.isArray(material)) {
+    material.forEach((m) => setMaterialEmissiveSafe(m, color, intensity));
+    return;
+  }
+
+  if (material.emissive && typeof material.emissive.copy === 'function') {
+    material.emissive.copy(color);
+    material.emissiveIntensity = intensity;
+    return;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(material, 'emissive')) delete material.emissive;
+  if (Object.prototype.hasOwnProperty.call(material, 'emissiveIntensity')) delete material.emissiveIntensity;
+}
+
 // ── Biome Props ───────────────────────────────────────────
 function clearBiomeProps() {
   if (!biomePropsGroup) return;
@@ -3169,8 +3186,7 @@ function updateNaniteSwarms(now, dt, playerPos) {
             e._naniteRevealed = true;
             // Add visible outline through walls
             if (e.mesh.material) {
-              e.mesh.material.emissive = new THREE.Color(0xffd700);
-              e.mesh.material.emissiveIntensity = 0.5;
+              setMaterialEmissiveSafe(e.mesh.material, new THREE.Color(0xffd700), 0.5);
             }
           }
 
@@ -3215,8 +3231,7 @@ function updateNaniteSwarms(now, dt, playerPos) {
           e.mesh._originalOpacity = e.mesh.material.opacity;
         }
         if (e.mesh.material) {
-          e.mesh.material.emissive = new THREE.Color(0xffd700);
-          e.mesh.material.emissiveIntensity = 0.5;
+          setMaterialEmissiveSafe(e.mesh.material, new THREE.Color(0xffd700), 0.5);
         }
       }
     });
@@ -3232,8 +3247,7 @@ function destroyNaniteSwarm(swarm) {
     if (e._naniteRevealed) {
       e._naniteRevealed = false;
       if (e.mesh.material) {
-        e.mesh.material.emissive = new THREE.Color(0x000000);
-        e.mesh.material.emissiveIntensity = 0;
+        setMaterialEmissiveSafe(e.mesh.material, new THREE.Color(0x000000), 0);
       }
     }
   });
@@ -6867,8 +6881,7 @@ function updateProjectiles(dt) {
           if (!enemy._naniteRevealed) {
             enemy._naniteRevealed = true;
             if (enemy.mesh.material) {
-              enemy.mesh.material.emissive = new THREE.Color(0xffd700);
-              enemy.mesh.material.emissiveIntensity = 0.5;
+              setMaterialEmissiveSafe(enemy.mesh.material, new THREE.Color(0xffd700), 0.5);
             }
           }
         }
