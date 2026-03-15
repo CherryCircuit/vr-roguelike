@@ -6,8 +6,8 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel } from './game.js?v=20260308-2337';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js?v=20260308-2337';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel } from './game.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
@@ -18,7 +18,7 @@ import {
   startLowHealthWarningSound, stopLowHealthWarningSound,
   playMusic, playBossMusic, stopMusic, fadeOutMusic, getMusicFrequencyData,
   playKillsAlertSound, playTingSound
-} from './audio.js?v=20260308-2337';
+} from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
@@ -26,9 +26,9 @@ import {
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward,
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference
-} from './enemies.js?v=20260308-2337';
-import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js?v=20260308-2337';
-import { initVFX, updateVFX } from './vfx.js?v=20260308-2337';
+} from './enemies.js';
+import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
+import { initVFX, updateVFX } from './vfx.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
@@ -44,20 +44,20 @@ import {
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
   nameEntryGroup
-} from './hud.js?v=20260308-2337';
+} from './hud.js';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
   getPosition, getAimRaycaster, getVirtualController,
   isLocked, isEnabled as isDesktopEnabled
-} from './desktop-controls.js?v=20260308-2337';
+} from './desktop-controls.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
-} from './scoreboard.js?v=20260308-2337';
-import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js?v=20260308-2337';
-import { getBiomePool } from './seed.js?v=20260308-2337';
+} from './scoreboard.js';
+import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js';
+import { getBiomePool } from './seed.js';
 
 // Expose game state to window for debugging/testing
 window.State = State;
