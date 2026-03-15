@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getStasisSlowFactor } from './stasis.js';
+import { playTingSound } from './audio.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
@@ -50,10 +51,101 @@ const PATTERNS = {
   swarm: [
     '1',
   ],
+  jelly: [
+    '1',
+    '1',
+    '1',
+    '1',
+    '1',
+  ],
+  // shifter: [
+  //   '111',
+  //   '..1',
+  //   '111',
+  // ],
+  // bomber: [
+  //   '111',
+  //   '1.1',
+  //   '1.1',
+  // ],
+  // mimic: [
+  //   '1..',
+  //   '.1.',
+  //   '..1',
+  // ],
+  // spider: [
+  //   '1.1',
+  //   '111',
+  //   '1.1',
+  // ],
+  // totem: [
+  //   '.1.',
+  //   '.1.',
+  //   '.1.',
+  // ],
+  wraith: [
+    '1',
+    '1',
+    '1',
+  ],
+  // colossus: [
+  //   '1111',
+  //   '1..1',
+  //   '1..1',
+  //   '1111',
+  // ],
 };
 
 function parsePattern(strings) {
   return strings.map(row => row.split('').map(c => (c === '1' ? 1 : 0)));
+}
+
+function buildJellyPattern(height) {
+  const rows = [];
+  for (let i = 0; i < height; i++) {
+    rows.push('1');
+  }
+  return parsePattern(rows);
+}
+
+function updateJellyHitbox(enemy) {
+  if (!enemy.hitbox || !enemy.voxelSize) return;
+  const height = Math.max(1, enemy.jellyHeight) * enemy.voxelSize * 1.05;
+  if (enemy.hitbox.geometry) enemy.hitbox.geometry.dispose();
+  enemy.hitbox.geometry = new THREE.BoxGeometry(enemy.hitboxRadius * 2, height, enemy.hitboxRadius * 2);
+}
+
+function shrinkJelly(enemy) {
+  if (!enemy.isJelly || enemy.jellyHeight <= 1) return false;
+
+  const voxels = enemy.mesh.children.filter(c => c.isMesh && !c.userData.isEnemyHitbox);
+  let topVoxel = null;
+  let maxY = -Infinity;
+  voxels.forEach(v => {
+    if (v.position.y > maxY) {
+      maxY = v.position.y;
+      topVoxel = v;
+    }
+  });
+
+  if (topVoxel) {
+    const worldPos = new THREE.Vector3();
+    topVoxel.getWorldPosition(worldPos);
+    enemy.mesh.remove(topVoxel);
+    if (topVoxel.geometry) topVoxel.geometry.dispose();
+    if (topVoxel.material) topVoxel.material.dispose();
+    if (spawnVoxelExplosion) {
+      spawnVoxelExplosion(worldPos, enemy.baseColor.getHex(), 1, enemy.type, false, false);
+    }
+  }
+
+  enemy.jellyHeight = Math.max(1, enemy.jellyHeight - 1);
+  const newMax = Math.max(1, Math.round(enemy.jellyBaseHp * (enemy.jellyHeight / enemy.jellyBaseHeight)));
+  enemy.maxHp = newMax;
+  enemy.hp = newMax;
+  enemy.speed = enemy.baseSpeed + (enemy.jellyBaseHeight - enemy.jellyHeight) * enemy.jellySpeedBoost;
+  updateJellyHitbox(enemy);
+  return true;
 }
 
 // ── Enemy type stats ───────────────────────────────────────
@@ -62,13 +154,27 @@ const ENEMY_DEFS = {
   fast: { pattern: parsePattern(PATTERNS.fast), voxelSize: 0.24, baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.48, telegraphType: 'flash' },
   tank: { pattern: parsePattern(PATTERNS.tank), voxelSize: 0.36, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.84, telegraphType: 'scale' },
   swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.19, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.36, telegraphType: 'twitch' },
+  jelly: {
+    pattern: parsePattern(PATTERNS.jelly),
+    voxelSize: 0.26,
+    baseHp: 60,
+    baseSpeed: 0.6,
+    color: 0x66ffcc,
+    depth: 1,
+    scoreValue: 20,
+    hitboxRadius: 0.35,
+    telegraphType: 'glow',
+    isJelly: true,
+    jellyBaseHeight: 5,
+    jellySpeedBoost: 0.28,
+  },
 
   // ── New enemy types (v2.0) ─────────────────────────────────
   spiral_swimmer: { pattern: [[1]], voxelSize: 0.18, baseHp: 8, baseSpeed: 2.2, color: 0x00ffcc, depth: 1, scoreValue: 8, hitboxRadius: 0.3, telegraphType: 'twitch', isTrain: true, trainLength: 10 },
-  geometry_shifter: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.28, baseHp: 45, baseSpeed: 1.3, color: 0xff6600, depth: 1, scoreValue: 20, hitboxRadius: 0.55, telegraphType: 'scale', shapeShift: true },
-  pulse_bomber: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.32, baseHp: 55, baseSpeed: 0.6, color: 0x8800ff, depth: 1, scoreValue: 22, hitboxRadius: 0.7, telegraphType: 'glow', isRanged: true },
-  clone_mimic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.26, baseHp: 35, baseSpeed: 1.8, color: 0xff00aa, depth: 1, scoreValue: 18, hitboxRadius: 0.5, telegraphType: 'flash', isMimic: true },
-  spider_walker: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.22, baseHp: 25, baseSpeed: 2.8, color: 0xff4400, depth: 1, scoreValue: 12, hitboxRadius: 0.4, telegraphType: 'twitch', isSpider: true },
+  // geometry_shifter: { pattern: parsePattern(PATTERNS.shifter), voxelSize: 0.28, baseHp: 45, baseSpeed: 1.3, color: 0xff6600, depth: 1, scoreValue: 20, hitboxRadius: 0.55, telegraphType: 'scale', shapeShift: true },
+  // pulse_bomber: { pattern: parsePattern(PATTERNS.bomber), voxelSize: 0.32, baseHp: 55, baseSpeed: 0.6, color: 0x8800ff, depth: 1, scoreValue: 22, hitboxRadius: 0.7, telegraphType: 'glow', isRanged: true },
+  // clone_mimic: { pattern: parsePattern(PATTERNS.mimic), voxelSize: 0.26, baseHp: 35, baseSpeed: 1.8, color: 0xff00aa, depth: 1, scoreValue: 18, hitboxRadius: 0.5, telegraphType: 'flash', isMimic: true },
+  // spider_walker: { pattern: parsePattern(PATTERNS.spider), voxelSize: 0.22, baseHp: 25, baseSpeed: 2.8, color: 0xff4400, depth: 1, scoreValue: 12, hitboxRadius: 0.4, telegraphType: 'twitch', isSpider: true },
 
   // ── Part 2: Advanced enemies (v3.0) ─────────────────────────
   mirror_knight: {
@@ -77,53 +183,50 @@ const ENEMY_DEFS = {
       '1.1',
       '111',
     ]),
-    voxelSize: 0.3,
-    baseHp: 65,
-    baseSpeed: 1.4,
-    color: 0xcccccc,
+    voxelSize: 0.32,
+    baseHp: 160,
+    baseSpeed: 1.0,
+    color: 0xd0d0d0,
     depth: 1,
-    scoreValue: 28,
-    hitboxRadius: 0.65,
+    scoreValue: 40,
+    hitboxRadius: 0.7,
     telegraphType: 'flash',
     isMirror: true,
-    damageReflection: 0.3,
+    mirrorSpeedBoost: 0.35,
+    mirrorImmuneDuration: 1.2,
   },
-  portal_mantis: {
-    pattern: parsePattern([
-      '1.1',
-      '111',
-      '.1.',
-    ]),
-    voxelSize: 0.25,
-    baseHp: 40,
-    baseSpeed: 2.0,
-    color: 0x00ffaa,
-    depth: 1,
-    scoreValue: 24,
-    hitboxRadius: 0.5,
-    telegraphType: 'twitch',
-    isPortal: true,
-    portalCooldown: 4.0,
-  },
-  blackhole_totem: {
-    pattern: parsePattern([
-      '.1.',
-      '111',
-      '.1.',
-    ]),
-    voxelSize: 0.35,
-    baseHp: 20,
-    baseSpeed: 0,
-    color: 0x220033,
-    depth: 1,
-    scoreValue: 15,
-    hitboxRadius: 0.6,
-    telegraphType: 'glow',
-    isBlackhole: true,
-    gravityRadius: 5.0,
-    gravityStrength: 2.5,
-    deathExplosionDamage: 50,
-  },
+  // portal_mantis: {
+  //   pattern: parsePattern([
+  //     '1.1',
+  //     '111',
+  //     '.1.',
+  //   ]),
+  //   voxelSize: 0.25,
+  //   baseHp: 40,
+  //   baseSpeed: 2.0,
+  //   color: 0x00ffaa,
+  //   depth: 1,
+  //   scoreValue: 24,
+  //   hitboxRadius: 0.5,
+  //   telegraphType: 'twitch',
+  //   isPortal: true,
+  //   portalCooldown: 4.0,
+  // },
+  // blackhole_totem: {
+  //   pattern: parsePattern(PATTERNS.totem),
+  //   voxelSize: 0.35,
+  //   baseHp: 20,
+  //   baseSpeed: 0,
+  //   color: 0x220033,
+  //   depth: 1,
+  //   scoreValue: 15,
+  //   hitboxRadius: 0.6,
+  //   telegraphType: 'glow',
+  //   isBlackhole: true,
+  //   gravityRadius: 5.0,
+  //   gravityStrength: 2.5,
+  //   deathExplosionDamage: 50,
+  // },
   conductor: {
     pattern: parsePattern([
       '1.1',
@@ -131,32 +234,49 @@ const ENEMY_DEFS = {
       '1.1',
     ]),
     voxelSize: 0.28,
-    baseHp: 50,
-    baseSpeed: 1.2,
-    color: 0xffcc00,
+    baseHp: 140,
+    baseSpeed: 0.5,
+    color: 0xff66cc,
     depth: 1,
-    scoreValue: 30,
-    hitboxRadius: 0.55,
-    telegraphType: 'scale',
+    scoreValue: 32,
+    hitboxRadius: 0.6,
+    telegraphType: 'glow',
     isConductor: true,
-    linkRadius: 4.0,
-    linkSpeedBonus: 0.4,
-    linkDamageReduction: 0.3,
+    linkRadius: 5.0,
+    linkSpeedBonus: 0.45,
+    linkDamageReduction: 0.35,
+    conductorHoldDistance: 6.5,
+    conductorArcCooldown: 0.25,
   },
   phase_wraith: {
-    pattern: parsePattern(PATTERNS.fast),
+    pattern: parsePattern(PATTERNS.wraith),
     voxelSize: 0.22,
-    baseHp: 30,
-    baseSpeed: 2.5,
+    baseHp: 130,
+    baseSpeed: 1.6,
     color: 0x8844ff,
     depth: 1,
-    scoreValue: 22,
-    hitboxRadius: 0.4,
+    scoreValue: 28,
+    hitboxRadius: 0.45,
     telegraphType: 'flash',
     isPhase: true,
-    phaseCycleTime: 2.0,
-    invisibleDamageBonus: 2.0,
+    phaseStunDuration: 0.35,
+    phaseVanishDelay: 0.5,
+    phaseReappearDelay: 1.2,
+    phaseSpawnCooldown: 6.0,
+    phasePreferredDistMin: 5.5,
+    phasePreferredDistMax: 9.5,
   },
+  // obsidian_colossus: {
+  //   pattern: parsePattern(PATTERNS.colossus),
+  //   voxelSize: 0.42,
+  //   baseHp: 260,
+  //   baseSpeed: 0.45,
+  //   color: 0x663300,
+  //   depth: 1,
+  //   scoreValue: 60,
+  //   hitboxRadius: 1.2,
+  //   telegraphType: 'scale',
+  // },
 };
 
 // ── Module state ───────────────────────────────────────────
@@ -325,6 +445,9 @@ function spawnTrainEnemy(type, position, levelConfig) {
     baseColor: new THREE.Color(def.color),
     scoreValue: def.scoreValue,
     hitboxRadius: def.hitboxRadius,
+    voxelSize: def.voxelSize,
+    baseSpeed: def.baseSpeed * levelConfig.speedMultiplier,
+    levelConfig,
     alertTimer: 0,
     telegraphTimer: 0,
     telegraphActive: false,
@@ -339,6 +462,7 @@ function spawnTrainEnemy(type, position, levelConfig) {
     isTrain: true,
     trainLength,
     trailingVoxels,
+    hitbox,
     spiralAngle: 0,
     spiralRadius: 0.8,
     scattered: false,
@@ -588,7 +712,7 @@ function damageNearbyEnemies(position, damage, radius) {
 /**
  * Spawn electric arc effect (for Conductor chain overload).
  */
-function spawnElectricArc(fromPos, toPos) {
+function spawnElectricArc(fromPos, toPos, color = 0xffcc00) {
   // Create a simple line for the electric arc
   const points = [];
   const segments = 10;
@@ -606,7 +730,7 @@ function spawnElectricArc(fromPos, toPos) {
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineBasicMaterial({
-    color: 0xffcc00,
+    color,
     transparent: true,
     opacity: 1.0,
   });
@@ -1043,6 +1167,7 @@ export function initEnemies(scene) {
 export function spawnEnemy(type, position, levelConfig) {
   const def = ENEMY_DEFS[type];
   if (!def) return;
+  if (type === 'mirror_knight' && activeEnemies.some(enemy => enemy.isMirror)) return;
 
   // Handle special enemy types
   if (def.isTrain) {
@@ -1069,7 +1194,7 @@ export function spawnEnemy(type, position, levelConfig) {
 
   // For non-tank enemies, merge voxel geometries into a single mesh
   // This reduces draw calls from ~10-20 per enemy down to 1
-  if (!isTank) {
+  if (!isTank && !def.isJelly) {
     const geometries = [];
     for (let d = 0; d < def.depth; d++) {
       for (let r = 0; r < rows; r++) {
@@ -1134,6 +1259,12 @@ export function spawnEnemy(type, position, levelConfig) {
   hitbox.userData.isEnemyHitbox = true;
   group.add(hitbox);
 
+  if (def.isJelly) {
+    if (hitbox.geometry) hitbox.geometry.dispose();
+    const jellyHeight = (def.jellyBaseHeight || def.pattern.length) * def.voxelSize * 1.05;
+    hitbox.geometry = new THREE.BoxGeometry(def.hitboxRadius * 2, jellyHeight, def.hitboxRadius * 2);
+  }
+
   const enemy = {
     mesh: group,
     material,
@@ -1144,6 +1275,10 @@ export function spawnEnemy(type, position, levelConfig) {
     baseColor: new THREE.Color(def.color),
     scoreValue: def.scoreValue,
     hitboxRadius: def.hitboxRadius,
+    voxelSize: def.voxelSize,
+    hitbox,
+    baseSpeed: def.baseSpeed * levelConfig.speedMultiplier,
+    levelConfig,
     alertTimer: 0,
     telegraphTimer: 0,
     telegraphActive: false,
@@ -1172,7 +1307,6 @@ export function spawnEnemy(type, position, levelConfig) {
     wallNormal: new THREE.Vector3(0, 1, 0),
 
     // ── Part 2: Advanced enemy states ───────────────────────
-    isMirror: def.isMirror || false,
     mirrorLastPlayerDir: new THREE.Vector3(),
     mirrorConfused: false,
     mirrorConfuseTimer: 0,
@@ -1189,17 +1323,44 @@ export function spawnEnemy(type, position, levelConfig) {
     gravityStrength: def.gravityStrength || 2.5,
     deathExplosionDamage: def.deathExplosionDamage || 50,
 
+    isJelly: def.isJelly || false,
+    jellyHeight: def.jellyBaseHeight || 0,
+    jellyBaseHeight: def.jellyBaseHeight || 0,
+    jellyBaseHp: Math.round(def.baseHp * levelConfig.hpMultiplier),
+    jellySpeedBoost: def.jellySpeedBoost || 0,
+
     isConductor: def.isConductor || false,
     linkRadius: def.linkRadius || 4.0,
     linkSpeedBonus: def.linkSpeedBonus || 0.4,
     linkDamageReduction: def.linkDamageReduction || 0.3,
+    conductorHoldDistance: def.conductorHoldDistance || 6.5,
+    conductorArcCooldown: def.conductorArcCooldown || 0.25,
+    conductorArcTimer: 0,
+    conductorStrafeDir: Math.random() < 0.5 ? -1 : 1,
+    conductorStrafeTimer: 0.6 + Math.random() * 0.6,
     linkedEnemies: [],
+    linkedByConductor: false,
+    linkedDamageReduction: 0,
+
+    isMirror: def.isMirror || false,
+    mirrorPhase: 1,
+    mirrorImmune: false,
+    mirrorImmuneTimer: 0,
+    mirrorSpeedBoost: def.mirrorSpeedBoost || 0.3,
+    mirrorImmuneDuration: def.mirrorImmuneDuration || 1.2,
 
     isPhase: def.isPhase || false,
-    phaseCycleTime: def.phaseCycleTime || 2.0,
-    phaseTimer: 0,
-    isInvisible: false,
-    invisibleDamageBonus: def.invisibleDamageBonus || 2.0,
+    phaseStunDuration: def.phaseStunDuration || 0.35,
+    phaseVanishDelay: def.phaseVanishDelay || 0.5,
+    phaseReappearDelay: def.phaseReappearDelay || 1.2,
+    phaseSpawnCooldown: def.phaseSpawnCooldown || 6.0,
+    phaseSpawnTimer: def.phaseSpawnCooldown ? def.phaseSpawnCooldown * 0.5 : 3.0,
+    phaseStunTimer: 0,
+    phaseVanishTimer: 0,
+    phaseReappearTimer: 0,
+    phaseHidden: false,
+    phasePreferredDistMin: def.phasePreferredDistMin || 5.5,
+    phasePreferredDistMax: def.phasePreferredDistMax || 9.5,
   };
 
   activeEnemies.push(enemy);
@@ -1214,6 +1375,19 @@ export function spawnEnemy(type, position, levelConfig) {
  */
 export function updateEnemies(dt, now, playerPos) {
   const collisions = [];
+
+  for (let i = 0; i < activeEnemies.length; i++) {
+    const e = activeEnemies[i];
+    if (e.baseSpeed !== undefined) {
+      if (e.isJelly) {
+        e.speed = e.baseSpeed + (e.jellyBaseHeight - e.jellyHeight) * e.jellySpeedBoost;
+      } else {
+        e.speed = e.baseSpeed;
+      }
+    }
+    e.linkedByConductor = false;
+    e.linkedDamageReduction = 0;
+  }
 
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const e = activeEnemies[i];
@@ -1232,7 +1406,9 @@ export function updateEnemies(dt, now, playerPos) {
     const stasisSlow = getStasisSlowFactor(e.mesh.position);
     speedMod *= stasisSlow;
 
-    e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
+    if (!e.isMirror && !e.isConductor && !e.isPhase) {
+      e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
+    }
 
     // ── Special Enemy AI Behaviors ──
     // Spiral Swimmer: corkscrew movement
@@ -1411,47 +1587,62 @@ export function updateEnemies(dt, now, playerPos) {
     // ── Part 2: Advanced enemy AI ───────────────────────────
     // Mirror Knight: mirrors player's left/right movements (opposite)
     if (e.isMirror) {
-      // Check if player is standing still (confuses the knight)
-      const playerVel = playerPos.clone().sub(e.mirrorLastPlayerDir);
-      e.mirrorLastPlayerDir.copy(playerPos);
-      if (playerVel.length() < 0.01) {
-        e.mirrorStillTimer += dt;
-        if (e.mirrorStillTimer > 2.0) {
-          e.mirrorConfused = true;
-          e.mirrorConfuseTimer = 1.5;
+      if (e.mirrorImmune) {
+        e.mirrorImmuneTimer -= dt;
+        if (e.mirrorImmuneTimer <= 0) {
+          e.mirrorImmune = false;
         }
+        e.mesh.traverse(c => {
+          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+            const pulse = 0.5 + Math.sin(now * 0.02) * 0.3;
+            c.material.opacity = pulse;
+            setMaterialEmissiveSafe(c.material, new THREE.Color(0xd0d0d0), 0.8);
+          }
+        });
       } else {
-        e.mirrorStillTimer = 0;
-      }
-
-      // Confused state: move randomly
-      if (e.mirrorConfused) {
-        e.mirrorConfuseTimer -= dt;
-        if (e.mirrorConfuseTimer <= 0) {
-          e.mirrorConfused = false;
+        // Check if player is standing still (confuses the knight)
+        const playerVel = playerPos.clone().sub(e.mirrorLastPlayerDir);
+        e.mirrorLastPlayerDir.copy(playerPos);
+        if (playerVel.length() < 0.01) {
+          e.mirrorStillTimer += dt;
+          if (e.mirrorStillTimer > 2.0) {
+            e.mirrorConfused = true;
+            e.mirrorConfuseTimer = 1.5;
+          }
         } else {
-          // Random movement while confused
-          const randDir = new THREE.Vector3(
-            Math.sin(now * 0.01 + i),
-            0,
-            Math.cos(now * 0.01 + i)
-          ).normalize();
-          e.mesh.position.addScaledVector(randDir, e.speed * speedMod * dt * 0.5);
+          e.mirrorStillTimer = 0;
         }
-      } else {
-        // Mirror player's horizontal movement (opposite direction)
-        const mirrorDir = _dir.clone();
-        mirrorDir.x *= -1; // Opposite horizontal movement
-        e.mesh.position.addScaledVector(mirrorDir, e.speed * speedMod * dt);
-      }
 
-      // Shield visual effect
-      e.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          const reflectGlow = Math.sin(now * 0.003) * 0.2 + 0.5;
-          c.material.opacity = reflectGlow;
+        const phaseSpeed = 1 + (e.mirrorPhase - 1) * e.mirrorSpeedBoost;
+
+        // Confused state: move randomly
+        if (e.mirrorConfused) {
+          e.mirrorConfuseTimer -= dt;
+          if (e.mirrorConfuseTimer <= 0) {
+            e.mirrorConfused = false;
+          } else {
+            const randDir = new THREE.Vector3(
+              Math.sin(now * 0.01 + i),
+              0,
+              Math.cos(now * 0.01 + i)
+            ).normalize();
+            e.mesh.position.addScaledVector(randDir, e.speed * speedMod * dt * 0.5 * phaseSpeed);
+          }
+        } else {
+          // Mirror player's horizontal movement (opposite direction)
+          const mirrorDir = _dir.clone();
+          mirrorDir.x *= -1; // Opposite horizontal movement
+          e.mesh.position.addScaledVector(mirrorDir, e.speed * speedMod * dt * phaseSpeed);
         }
-      });
+
+        // Shield visual effect
+        e.mesh.traverse(c => {
+          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+            const reflectGlow = Math.sin(now * 0.003) * 0.2 + 0.5;
+            c.material.opacity = reflectGlow;
+          }
+        });
+      }
     }
 
     // Portal Mantis: opens portals and exits near player
@@ -1515,51 +1706,125 @@ export function updateEnemies(dt, now, playerPos) {
 
     // Conductor: links to nearby enemies
     if (e.isConductor) {
-      // Find nearby enemies to link (every frame)
+      e.conductorStrafeTimer -= dt;
+      if (e.conductorStrafeTimer <= 0) {
+        e.conductorStrafeTimer = 0.6 + Math.random() * 0.6;
+        e.conductorStrafeDir *= -1;
+      }
+
+      const perp = new THREE.Vector3(-_dir.z, 0, _dir.x).normalize();
+      const holdDist = e.conductorHoldDistance || 6.5;
+
+      if (dist < holdDist * 0.85) {
+        e.mesh.position.addScaledVector(_dir, -e.speed * 0.6 * speedMod * dt);
+      } else if (dist > holdDist * 1.15) {
+        e.mesh.position.addScaledVector(_dir, e.speed * 0.35 * speedMod * dt);
+      }
+      e.mesh.position.addScaledVector(perp, e.speed * 0.6 * speedMod * e.conductorStrafeDir * dt);
+
       e.linkedEnemies = [];
-      const levelConfig = { speedMultiplier: 1 }; // Default, will be overridden
+      e.conductorArcTimer -= dt;
 
       for (let j = 0; j < activeEnemies.length; j++) {
         if (i === j) continue;
         const other = activeEnemies[j];
+        if (other.isConductor) continue;
         const linkDist = e.mesh.position.distanceTo(other.mesh.position);
-        if (linkDist <= e.linkRadius && !other.isConductor) {
+        if (linkDist <= e.linkRadius) {
           e.linkedEnemies.push(j);
-          // Buff linked enemies: speed bonus
-          const baseDef = ENEMY_DEFS[other.type];
-          if (baseDef) {
-            other.speed = baseDef.baseSpeed * (1 + e.linkSpeedBonus);
+          other.linkedByConductor = true;
+          other.linkedDamageReduction = Math.max(other.linkedDamageReduction, e.linkDamageReduction);
+          other.speed = other.baseSpeed * (1 + e.linkSpeedBonus);
+
+          if (e.conductorArcTimer <= 0) {
+            spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc);
           }
+
+          other.mesh.traverse(c => {
+            if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+              setMaterialEmissiveSafe(c.material, new THREE.Color(0xff66cc), 0.35);
+            }
+          });
         }
       }
 
-      // Visual tether effect (electric arc)
+      if (e.linkedEnemies.length > 0 && e.conductorArcTimer <= 0) {
+        e.conductorArcTimer = e.conductorArcCooldown;
+      }
+
       e.mesh.traverse(c => {
         if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          setMaterialEmissiveSafe(c.material, new THREE.Color(0xffcc00), e.linkedEnemies.length > 0 ? 0.6 : 0.2);
+          setMaterialEmissiveSafe(c.material, new THREE.Color(0xff66cc), e.linkedEnemies.length > 0 ? 0.7 : 0.3);
         }
       });
     }
 
-    // Phase Wraith: blinks in/out of visibility
+    // Phase Wraith: appears midfield, spawns swarm, blinks out when shot
     if (e.isPhase) {
-      e.phaseTimer += dt;
-      const cycleProgress = (e.phaseTimer % e.phaseCycleTime) / e.phaseCycleTime;
-
-      // First half: visible, second half: invisible
-      e.isInvisible = cycleProgress > 0.5;
-
-      // Visual effect
-      e.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          c.material.opacity = e.isInvisible ? 0.15 : 0.85;
-          if (e.isInvisible) {
-            setMaterialEmissiveSafe(c.material, new THREE.Color(0x8844ff), 0.3);
-          } else {
-            setMaterialEmissiveSafe(c.material, new THREE.Color(0x000000), 0);
+      if (e.phaseHidden) {
+        e.phaseReappearTimer -= dt;
+        if (e.phaseReappearTimer <= 0) {
+          e.phaseHidden = false;
+          e.phaseReappearTimer = 0;
+          const distTarget = e.phasePreferredDistMin + Math.random() * (e.phasePreferredDistMax - e.phasePreferredDistMin);
+          const angle = (Math.random() - 0.5) * Math.PI * 0.8;
+          const baseDir = _dir.lengthSq() > 0.0001 ? _dir.clone() : new THREE.Vector3(0, 0, -1);
+          const spawnDir = baseDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+          e.mesh.position.set(
+            playerPos.x + spawnDir.x * distTarget,
+            1.2 + Math.random() * 1.2,
+            playerPos.z + spawnDir.z * distTarget
+          );
+          clampPositionToFrontArc(e.mesh.position, playerPos, e.phasePreferredDistMin, e.phasePreferredDistMax, 120);
+          e.mesh.visible = true;
+          if (typeof window !== 'undefined' && window.playPhaseWraithAppear) {
+            window.playPhaseWraithAppear();
           }
         }
+      } else {
+        if (e.phaseStunTimer > 0) {
+          e.phaseStunTimer -= dt;
+        } else {
+          if (dist < e.phasePreferredDistMin) {
+            e.mesh.position.addScaledVector(_dir, -e.speed * 0.4 * speedMod * dt);
+          } else if (dist > e.phasePreferredDistMax) {
+            e.mesh.position.addScaledVector(_dir, e.speed * 0.4 * speedMod * dt);
+          }
+        }
+
+        if (e.phaseVanishTimer > 0) {
+          e.phaseVanishTimer -= dt;
+          if (e.phaseVanishTimer <= 0) {
+            e.phaseHidden = true;
+            e.phaseReappearTimer = e.phaseReappearDelay;
+            e.mesh.visible = false;
+          }
+        }
+
+        e.phaseSpawnTimer -= dt;
+        if (e.phaseSpawnTimer <= 0) {
+          e.phaseSpawnTimer = e.phaseSpawnCooldown;
+          const spawnPos = e.mesh.position.clone();
+          spawnPos.x += (Math.random() - 0.5) * 1.2;
+          spawnPos.z += (Math.random() - 0.5) * 1.2;
+          spawnEnemy('swarm', spawnPos, e.levelConfig);
+          if (typeof window !== 'undefined' && window.playPhaseWraithSpawn) {
+            window.playPhaseWraithSpawn();
+          }
+        }
+      }
+
+      e.mesh.traverse(c => {
+        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+          const targetOpacity = e.phaseHidden ? 0.05 : (e.phaseStunTimer > 0 ? 0.35 : 0.85);
+          c.material.opacity = targetOpacity;
+          setMaterialEmissiveSafe(c.material, new THREE.Color(0x8844ff), e.phaseHidden ? 0.2 : 0.5);
+        }
       });
+    }
+
+    if (e.isPhase && e.phaseHidden) {
+      continue;
     }
 
     // Face player (horizontal only)
@@ -1596,6 +1861,8 @@ export function updateEnemies(dt, now, playerPos) {
     const dmgRatio = 1 - e.hp / e.maxHp;
     e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
   }
+
+  updatePulseBomberRings(dt, now, playerPos);
 
   return collisions;
 }
@@ -1697,6 +1964,45 @@ export function hitEnemy(index, damage, hitInfo = {}) {
   // Special damage modifiers
   let actualDamage = damage;
 
+  if (e.isMirror && e.mirrorImmune) {
+    playTingSound();
+    return { killed: false, enemy: e, immune: true };
+  }
+
+  if (e.isPhase && e.phaseHidden) {
+    return { killed: false, enemy: e, immune: true };
+  }
+
+  // Train segment hits: pop the segment, keep the head alive
+  if (e.isTrain && hitInfo.trainIndex !== undefined && !hitInfo.isScout) {
+    const hitObject = hitInfo.hitObject && hitInfo.hitObject.userData?.trainIndex !== undefined
+      ? hitInfo.hitObject
+      : null;
+    const segment = hitObject || (e.trailingVoxels || []).find(v => v.userData.trainIndex === hitInfo.trainIndex);
+
+    if (segment) {
+      const segmentPos = new THREE.Vector3();
+      segment.getWorldPosition(segmentPos);
+      e.mesh.remove(segment);
+      if (segment.material) segment.material.dispose();
+      e.trailingVoxels = (e.trailingVoxels || []).filter(v => v !== segment);
+      e.trainLength = (e.trailingVoxels?.length || 0) + 1;
+
+      if (e.hitbox) {
+        if (e.hitbox.geometry) e.hitbox.geometry.dispose();
+        const length = e.trainLength * e.voxelSize * 1.5;
+        e.hitbox.geometry = new THREE.BoxGeometry(e.hitboxRadius * 2, e.hitboxRadius * 2, length);
+        e.hitbox.position.z = -(e.trainLength * e.voxelSize * 0.75);
+      }
+
+      if (spawnVoxelExplosion) {
+        spawnVoxelExplosion(segmentPos, e.baseColor.getHex(), 2, e.type, false, false);
+      }
+    }
+
+    return { killed: false, enemy: e, segmentDestroyed: true };
+  }
+
   // Pulse Bomber: 3x damage when core exposed
   if (e.isRanged && e.coreExposed) {
     actualDamage *= 3;
@@ -1715,10 +2021,42 @@ export function hitEnemy(index, damage, hitInfo = {}) {
     actualDamage *= 1.5;
   }
 
+  if (e.linkedByConductor && e.linkedDamageReduction > 0) {
+    actualDamage *= (1 - e.linkedDamageReduction);
+  }
+
   e.hp -= actualDamage;
   if (e.hp <= 0) {
+    if (e.isJelly && e.jellyHeight > 1) {
+      shrinkJelly(e);
+      return { killed: false, enemy: e, jellyShrunk: true };
+    }
     return { killed: true, enemy: e, overkill: -e.hp };
   }
+
+  if (e.isMirror && !e.mirrorImmune) {
+    const threshold2 = e.maxHp * (2 / 3);
+    const threshold1 = e.maxHp * (1 / 3);
+    if (e.mirrorPhase === 1 && e.hp <= threshold2) {
+      e.mirrorPhase = 2;
+      e.mirrorImmune = true;
+      e.mirrorImmuneTimer = e.mirrorImmuneDuration;
+      e.speed = e.baseSpeed + (e.mirrorPhase - 1) * e.mirrorSpeedBoost;
+      playTingSound();
+    } else if (e.mirrorPhase === 2 && e.hp <= threshold1) {
+      e.mirrorPhase = 3;
+      e.mirrorImmune = true;
+      e.mirrorImmuneTimer = e.mirrorImmuneDuration;
+      e.speed = e.baseSpeed + (e.mirrorPhase - 1) * e.mirrorSpeedBoost;
+      playTingSound();
+    }
+  }
+
+  if (e.isPhase && e.hp > 0 && !e.phaseHidden) {
+    e.phaseStunTimer = e.phaseStunDuration;
+    e.phaseVanishTimer = e.phaseVanishDelay;
+  }
+
   return { killed: false, enemy: e };
 }
 
@@ -1867,6 +2205,14 @@ export function clearAllEnemies() {
   }
   activeEnemies.length = 0;
   _enemyMeshesDirty = true;  // Invalidate cache
+
+  for (let i = pulseBomberRings.length - 1; i >= 0; i--) {
+    const ring = pulseBomberRings[i];
+    sceneRef.remove(ring);
+    ring.geometry.dispose();
+    ring.material.dispose();
+  }
+  pulseBomberRings.length = 0;
 }
 
 /**
@@ -6549,9 +6895,11 @@ export function getEnemies() {
 /**
  * Get a random spawn position in a 100° cone in front of the player.
  */
-export function getSpawnPosition(airSpawns, verticalAngle = 0) {
+export function getSpawnPosition(airSpawns, verticalAngle = 0, distanceRange = null) {
   const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
-  const distance = 14.4 + Math.random() * 5.6;  // 20% shorter (was 18-25, now 14.4-20)
+  const minDist = distanceRange?.min ?? 14.4;
+  const maxDist = distanceRange?.max ?? 20.0;
+  const distance = minDist + Math.random() * (maxDist - minDist);
 
   const x = Math.sin(angle) * distance;
   const z = -Math.cos(angle) * distance;
