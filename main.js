@@ -24,7 +24,8 @@ import {
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
-  updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward
+  updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward,
+  updateBossDebris, clearBossDebris, spawnBossDebris
 } from './enemies.js?v=20260308-2337';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js?v=20260308-2337';
 import { initVFX, updateVFX } from './vfx.js?v=20260308-2337';
@@ -7374,6 +7375,10 @@ function render(timestamp) {
       // Check if boss was killed
       if (boss.hp <= 0) {
         console.log(`[boss] Boss defeated!`);
+
+        // Spawn debris physics BEFORE clearing boss
+        spawnBossDebris(boss);
+
         if (typeof window !== 'undefined' && window.playBossDeath) {
           window.playBossDeath();
         }
@@ -7777,6 +7782,7 @@ function render(timestamp) {
   updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
   updateStatusBubbles(dt, now);
+  updateBossDebris(dt, now);  // Boss debris physics
   // Update accuracy popups with fade-complete callback to reset bonus
   updateKillChainPopups(dt, now, (multiplier) => {
     // When popup fully fades, reset accuracy bonus if no new popup appeared
