@@ -8289,7 +8289,7 @@ function buildSynthwaveValleyScene(group) {
     fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
-  terrain.position.set(0, floorY, -700);
+  terrain.position.set(0, floorY + 1.5, -700);
   terrain.frustumCulled = false;
   group.add(terrain);
   registerFadeMaterial(terrainMat);
@@ -8504,6 +8504,8 @@ function buildDesertNightScene(group) {
       const hArmGeo = new THREE.CylinderGeometry(0.08, 0.1, armLength, 5);
       const hArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
       const hArm = new THREE.Mesh(hArmGeo, hArmMat);
+      hArm.castShadow = true;
+      hArm.receiveShadow = true;
       hArm.rotation.z = Math.PI / 2;
       hArm.position.set(side * armLength / 2, armY, 0);
       cactusGroup.add(hArm);
@@ -8663,7 +8665,7 @@ function buildDesertNightScene(group) {
   group.rotation.y = 0; // face toward moon
 
   // Shift biome position so player moves backwards (negative Z) and left (negative X)
-  group.position.set(5, 0, 5);
+  group.position.set(-5, 0, -5);
 
   // === ANIMATION UPDATE ===
   group.userData.update = (now, dt) => {
@@ -8714,8 +8716,8 @@ function buildAlienPlanetScene(group) {
   ground.frustumCulled = false;
   group.add(ground);
 
-  // Flash overlay plane for damage feedback
-  const flashGeo = new THREE.PlaneGeometry(300, 300);
+  // Flash overlay plane for damage feedback (Issue 2: 320x320 for full floor coverage)
+  const flashGeo = new THREE.PlaneGeometry(320, 320);
   const flashMat = new THREE.MeshBasicMaterial({
     color: 0xff0000,
     transparent: true,
@@ -8725,7 +8727,7 @@ function buildAlienPlanetScene(group) {
   });
   const flashPlane = new THREE.Mesh(flashGeo, flashMat);
   flashPlane.rotation.x = -Math.PI / 2;
-  flashPlane.position.y = floorY + 0.05;
+  flashPlane.position.y = floorY + 0.1;
   flashPlane.frustumCulled = false;
   group.add(flashPlane);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
@@ -8786,9 +8788,11 @@ function buildAlienPlanetScene(group) {
   const river = new THREE.Mesh(riverGeo, riverMat);
   group.add(river);
   // River glow - reduced radius from 5 to 2.5 to avoid blocking view
+  // Issue 4: Moved down to y=-0.5 (below ground/in the river) to hide green transparent shape
   const glowGeo = new THREE.TubeGeometry(riverCurve, 120, 2.5, 6, false);
   const riverGlowMat = new THREE.MeshBasicMaterial({ color: 0x00ff44, transparent: true, opacity: 0.08, side: THREE.BackSide });
   const riverGlow = new THREE.Mesh(glowGeo, riverGlowMat);
+  riverGlow.position.y = -0.6; // Move down so the glow (which follows curve at y=0.1) ends up at y=-0.5
   riverGlow.frustumCulled = false;
   group.add(riverGlow);
 
@@ -8812,6 +8816,9 @@ function buildAlienPlanetScene(group) {
         height / 2,
         (Math.random() - 0.5) * 4 * scale
       );
+      // Issue 5: Enable shadows for mountains
+      peak.castShadow = true;
+      peak.receiveShadow = true;
       mountainGroup.add(peak);
     }
     mountainGroup.position.set(x, floorY, z);
@@ -8938,8 +8945,8 @@ function buildAlienPlanetScene(group) {
     return plantGroup;
   };
 
-  // Place 120 plants along river with random offsets
-  for (let i = 0; i < 120; i++) {
+  // Place 240 plants along river with random offsets (Issue 3: doubled from 120)
+  for (let i = 0; i < 240; i++) {
     const t = Math.random();
     const riverT = t * 59;
     const idx = Math.floor(riverT);
@@ -8957,16 +8964,25 @@ function buildAlienPlanetScene(group) {
 
     const plantType = Math.floor(Math.random() * 4);
     const plant = createAlienPlant(x, z, plantType);
+    // Issue 5: Enable shadows for flora
+    plant.castShadow = true;
+    plant.receiveShadow = true;
+    plant.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
     alienPlants.push(plant);
     group.add(plant);
   }
 
-  // Fireflies - 120 particles with gentle drift
+  // Fireflies - 240 particles with gentle drift (Issue 3: doubled from 120)
   const fireflyPositions = [];
   const fireflyVelocities = [];
   const fireflyGeo = new THREE.BufferGeometry();
 
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 240; i++) {
     const x = (Math.random() - 0.5) * 60;
     const y = 1 + Math.random() * 8;
     const z = (Math.random() - 0.5) * 60;
@@ -8990,11 +9006,11 @@ function buildAlienPlanetScene(group) {
   fireflies.frustumCulled = false; // Fix disappearing when looking up
   group.add(fireflies);
 
-  // River Sparkles - 40 particles along river
+  // River Sparkles - 80 particles along river (Issue 3: doubled from 40)
   const sparklePositions = [];
   const sparkleOffsets = [];
 
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 80; i++) {
     const t = Math.random();
     const riverT = t * 59;
     const idx = Math.floor(riverT);
@@ -9118,12 +9134,12 @@ function buildAlienPlanetScene(group) {
   };
 
   group.rotation.y = 0.2; // aim player slightly toward river flow
-  group.position.x = -8; // Move biome left so player moves right relative to biome
+  group.position.x = -15; // Move biome left so player moves right relative to biome (Issue 1: increased shift)
 }
 
 function buildHellscapeLavaScene(group) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
-  const floorY = floorHeight + 5.0;  // Raised terrain so player stands on riverbanks, not in river
+  const floorY = floorHeight;  // Player stands on riverbanks at correct height
   const valleyWidth = 35.0;
 
   // ========================================
@@ -9594,4 +9610,20 @@ function buildHellscapeLavaScene(group) {
   };
 
   group.rotation.y = 0; // face moons
+}
+
+
+      const idx = activeCount * 3;
+      geyserPos[idx] = p.x;
+      geyserPos[idx + 1] = p.y;
+      geyserPos[idx + 2] = p.z;
+      activeCount++;
+    }
+    geyserGeo.setDrawRange(0, activeCount);
+    geyserGeo.attributes.position.needsUpdate = true;
+  };
+
+  group.rotation.y = 0; // face moons
+}
+ons
 }
