@@ -6046,6 +6046,8 @@ function updateLightningBeam(controller, index, stats, dt) {
             // Update HUD immediately to show correct kill count before level complete check
             updateHUD(game);
 
+            const cfg = game._levelConfig;
+
             // Check for kills remaining alert
             if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
               const remaining = cfg ? cfg.killTarget - game.kills : 0;
