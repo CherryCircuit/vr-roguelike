@@ -8403,7 +8403,7 @@ function buildDesertNightScene(group) {
 
   // === LIGHTING (CRITICAL) ===
   // Pale moonlight
-  const moonLight = new THREE.DirectionalLight(0xd4e5f7, 1.8);
+  const moonLight = new THREE.DirectionalLight(0xd4e5f7, 2.34);
   moonLight.position.set(-30, 50, -30);
   group.add(moonLight);
 
@@ -8623,9 +8623,9 @@ function buildDesertNightScene(group) {
       uniform float uPixelRatio;
       varying float vAlpha;
       void main() {
-        vAlpha = 0.3 + 0.2 * sin(uTime + aPhase);
+        vAlpha = 0.5 + 0.3 * sin(uTime + aPhase);
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = 1.5 * uPixelRatio;
+        gl_PointSize = 4.0 * uPixelRatio;
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -8634,7 +8634,7 @@ function buildDesertNightScene(group) {
       void main() {
         float dist = length(gl_PointCoord - vec2(0.5));
         if (dist > 0.5) discard;
-        float alpha = (1.0 - smoothstep(0.0, 0.5, dist)) * vAlpha;
+        float alpha = (1.0 - smoothstep(0.0, 0.5, dist)) * vAlpha * 1.2;
         vec3 dustColor = vec3(0.8, 0.85, 0.9);
         gl_FragColor = vec4(dustColor, alpha);
       }
@@ -8661,6 +8661,9 @@ function buildDesertNightScene(group) {
   group.add(moonGroup);
 
   group.rotation.y = 0; // face toward moon
+
+  // Shift biome position so player moves backwards (negative Z) and left (negative X)
+  group.position.set(5, 0, 5);
 
   // === ANIMATION UPDATE ===
   group.userData.update = (now, dt) => {
@@ -8732,11 +8735,13 @@ function buildAlienPlanetScene(group) {
   const moonMat = new THREE.MeshBasicMaterial({ color: 0xddaaff, transparent: true, opacity: 0.95 });
   const moon = new THREE.Mesh(moonGeo, moonMat);
   moon.position.set(60, 80, -40);
+  moon.frustumCulled = false; // Fix disappearing when looking up
   group.add(moon);
   const moonGlowGeo = new THREE.IcosahedronGeometry(36, 1);
   const moonGlowMat = new THREE.MeshBasicMaterial({ color: 0xaa66ff, transparent: true, opacity: 0.15, side: THREE.BackSide });
   const moonGlow = new THREE.Mesh(moonGlowGeo, moonGlowMat);
   moonGlow.position.copy(moon.position);
+  moonGlow.frustumCulled = false; // Fix disappearing when looking up
   group.add(moonGlow);
 
   // Lighting - moonLight for ambient scene lighting
@@ -8780,9 +8785,11 @@ function buildAlienPlanetScene(group) {
   const riverMat = new THREE.MeshBasicMaterial({ color: 0x00ff66, transparent: true, opacity: 0.85 });
   const river = new THREE.Mesh(riverGeo, riverMat);
   group.add(river);
-  const glowGeo = new THREE.TubeGeometry(riverCurve, 120, 5, 6, false);
+  // River glow - reduced radius from 5 to 2.5 to avoid blocking view
+  const glowGeo = new THREE.TubeGeometry(riverCurve, 120, 2.5, 6, false);
   const riverGlowMat = new THREE.MeshBasicMaterial({ color: 0x00ff44, transparent: true, opacity: 0.08, side: THREE.BackSide });
   const riverGlow = new THREE.Mesh(glowGeo, riverGlowMat);
+  riverGlow.frustumCulled = false;
   group.add(riverGlow);
 
   // Mountains - 3 rings of procedural jagged mountains
@@ -8980,6 +8987,7 @@ function buildAlienPlanetScene(group) {
     sizeAttenuation: true
   });
   const fireflies = new THREE.Points(fireflyGeo, fireflyMat);
+  fireflies.frustumCulled = false; // Fix disappearing when looking up
   group.add(fireflies);
 
   // River Sparkles - 40 particles along river
@@ -9013,6 +9021,7 @@ function buildAlienPlanetScene(group) {
     sizeAttenuation: true
   });
   const sparkles = new THREE.Points(sparkleGeo, sparkleMat);
+  sparkles.frustumCulled = false; // Fix disappearing when looking up
   group.add(sparkles);
 
   // Instanced city - FAR on horizon (was too close at 55-100)
@@ -9037,7 +9046,7 @@ function buildAlienPlanetScene(group) {
       const angle = Math.random() * Math.PI * 2;
       const dist = minDist + Math.random() * (maxDist - minDist);
       const height = minHeight + Math.random() * (maxHeight - minHeight);
-      const width = 0.5 + Math.random() * 1.5;
+      const width = 1.5 + Math.random() * 4.5; // 3x thicker (was 0.5 + Math.random() * 1.5)
       dummy.position.set(Math.cos(angle) * dist, height / 2, Math.sin(angle) * dist);
       dummy.scale.set(width, height, width);
       dummy.rotation.y = Math.random() * Math.PI;
@@ -9109,11 +9118,12 @@ function buildAlienPlanetScene(group) {
   };
 
   group.rotation.y = 0.2; // aim player slightly toward river flow
+  group.position.x = -8; // Move biome left so player moves right relative to biome
 }
 
 function buildHellscapeLavaScene(group) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
-  const floorY = floorHeight;
+  const floorY = floorHeight + 5.0;  // Raised terrain so player stands on riverbanks, not in river
   const valleyWidth = 35.0;
 
   // ========================================
@@ -9189,7 +9199,7 @@ function buildHellscapeLavaScene(group) {
       shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\nvPosition = position; vElevation = position.y;`);
       shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       shader.fragmentShader = shader.fragmentShader.replace('#include <emissive_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { } else { float distToLava = vElevation - lavaThreshold; float glowReflection = smoothstep(5.0, 0.0, distToLava); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; totalEmissiveRadiance = vec3(0.6, 0.1, 0.0) * glowReflection * pulse; } #include <emissive_fragment>`);
-      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.3, 0.0); vec3 lavaColorBright = vec3(1.0, 0.8, 0.2); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.6 + 0.4 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor, 1.0); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.2, 0.0); vec3 lavaColorBright = vec3(1.0, 0.6, 0.1); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.7 + 0.3 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor, 0.9); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
       material.userData.shader = shader;
     }
   });
@@ -9197,6 +9207,7 @@ function buildHellscapeLavaScene(group) {
   const terrain = new THREE.Mesh(geometry, material);
   terrain.receiveShadow = true;
   terrain.position.y = floorY;
+  terrain.position.x = 10.0;  // Shift terrain RIGHT so player moves left relative to biome
   group.add(terrain);
 
   // Flash overlay plane for damage feedback
@@ -9397,9 +9408,9 @@ function buildHellscapeLavaScene(group) {
   const initSpark = (idx) => {
     const i3 = idx * 3;
     const z = (Math.random() - 0.5) * 100;
-    const riverX = Math.sin(z * 0.03) * 15.0;
+    const riverX = Math.sin(z * 0.03) * 15.0 + 10.0;  // Account for terrain X shift
     sparkPositions[i3] = riverX + (Math.random() - 0.5) * 4;
-    sparkPositions[i3 + 1] = -0.5 + Math.random() * 0.5;
+    sparkPositions[i3 + 1] = floorY - 0.5 + Math.random() * 0.5;  // Account for terrain Y offset
     sparkPositions[i3 + 2] = z;
     sparkVelocities[i3] = (Math.random() - 0.5) * 0.02;
     sparkVelocities[i3 + 1] = 0.03 + Math.random() * 0.05;
@@ -9437,9 +9448,9 @@ function buildHellscapeLavaScene(group) {
 
   const createGeyserBurst = (now) => {
     const particleCount = 100;
-    // Spawn from mountainsides (outside valleyWidth)
+    // Spawn from mountainsides (outside valleyWidth), accounting for terrain X shift
     const side = Math.random() > 0.5 ? 1 : -1;
-    const x = side * (valleyWidth + 5 + Math.random() * 20);
+    const x = side * (valleyWidth + 5 + Math.random() * 20) + 10.0;  // Account for terrain X shift
     const z = (Math.random() - 0.5) * 80;
     const baseY = floorY + 5;
 
@@ -9522,8 +9533,19 @@ function buildHellscapeLavaScene(group) {
     // Lava glow intensity pulse
     lavaGlow.intensity = 2.0 + Math.sin(time * 2) * 0.5;
 
-    // Update spark particles
+    // Update spark particles - continuously spawn from lava river
     const sparkPos = sparkGeo.attributes.position.array;
+
+    // Continuously spawn 3-5 new sparks each frame from random positions along the river
+    const sparksToSpawn = 3 + Math.floor(Math.random() * 3);
+    for (let s = 0; s < sparksToSpawn; s++) {
+      const randomIdx = Math.floor(Math.random() * sparkCount);
+      // Only respawn if lifetime is mostly elapsed or just starting fresh
+      if (sparkLifetimes[randomIdx] > sparkMaxLifetimes[randomIdx] * 0.8) {
+        initSpark(randomIdx);
+      }
+    }
+
     for (let i = 0; i < sparkCount; i++) {
       const i3 = i * 3;
       sparkLifetimes[i] += dt * 0.001;
