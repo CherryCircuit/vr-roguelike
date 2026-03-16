@@ -8400,6 +8400,21 @@ function buildDesertNightScene(group) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
   const sceneColor = 0x06080c;
+
+  // === LIGHTING (CRITICAL) ===
+  // Pale moonlight
+  const moonLight = new THREE.DirectionalLight(0xd4e5f7, 1.8);
+  moonLight.position.set(-30, 50, -30);
+  group.add(moonLight);
+
+  // Very dim ambient
+  const ambientLight = new THREE.AmbientLight(0x1a2035, 0.15);
+  group.add(ambientLight);
+
+  // Hemisphere light for sky/ground color
+  const hemiLight = new THREE.HemisphereLight(0x1a2035, 0x2d1f1a, 0.2);
+  group.add(hemiLight);
+
   // Ground
   const geometry = new THREE.PlaneGeometry(140, 140, 70, 70);
   geometry.rotateX(-Math.PI / 2);
@@ -8458,6 +8473,180 @@ function buildDesertNightScene(group) {
   group.add(flashPlane);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
+  // === CACTUSES (9 procedural) ===
+  const createCactus = (height) => {
+    const cactusGroup = new THREE.Group();
+    const bodyColor = 0x1a3d20;
+    const armColor = 0x2d5535;
+    const segments = 3 + Math.floor(Math.random() * 2); // 3-4 segments
+    let currentY = 0;
+    const segmentHeight = height / segments;
+
+    // Main body segments
+    for (let i = 0; i < segments; i++) {
+      const radius = 0.12 + (segments - i) * 0.03; // Taper upward
+      const segGeo = new THREE.CylinderGeometry(radius * 0.9, radius, segmentHeight, 5);
+      const segMat = new THREE.MeshLambertMaterial({ color: bodyColor, flatShading: true });
+      const segment = new THREE.Mesh(segGeo, segMat);
+      segment.position.y = currentY + segmentHeight / 2;
+      cactusGroup.add(segment);
+      currentY += segmentHeight;
+    }
+
+    // Random arms (0-2)
+    const numArms = Math.floor(Math.random() * 3);
+    for (let a = 0; a < numArms; a++) {
+      const armY = segmentHeight * (1 + Math.floor(Math.random() * (segments - 1)));
+      const side = Math.random() > 0.5 ? 1 : -1;
+      const armLength = 0.4 + Math.random() * 0.4;
+
+      // Horizontal part
+      const hArmGeo = new THREE.CylinderGeometry(0.08, 0.1, armLength, 5);
+      const hArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
+      const hArm = new THREE.Mesh(hArmGeo, hArmMat);
+      hArm.rotation.z = Math.PI / 2;
+      hArm.position.set(side * armLength / 2, armY, 0);
+      cactusGroup.add(hArm);
+
+      // Vertical part (upward)
+      const vArmHeight = 0.5 + Math.random() * 0.5;
+      const vArmGeo = new THREE.CylinderGeometry(0.06, 0.08, vArmHeight, 5);
+      const vArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
+      const vArm = new THREE.Mesh(vArmGeo, vArmMat);
+      vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
+      cactusGroup.add(vArm);
+    }
+
+    return cactusGroup;
+  };
+
+  const cactusPositions = [
+    { x: 6, z: 4, h: 2.5 },
+    { x: -4, z: 6, h: 3 },
+    { x: 8, z: -3, h: 2 },
+    { x: -7, z: -5, h: 2.8 },
+    { x: 3, z: -8, h: 1.8 },
+    { x: -10, z: 1, h: 2.2 },
+    { x: 0, z: 10, h: 2.3 },
+    { x: 5, z: 9, h: 1.9 },
+    { x: -5, z: -9, h: 2.4 },
+  ];
+
+  cactusPositions.forEach(pos => {
+    const cactus = createCactus(pos.h);
+    cactus.position.set(pos.x, floorY, pos.z);
+    cactus.rotation.y = Math.random() * Math.PI * 2;
+    group.add(cactus);
+  });
+
+  // === TWINKLING STARS (2000 particles) ===
+  const starCount = 2000;
+  const starPositions = new Float32Array(starCount * 3);
+  const starPhases = new Float32Array(starCount);
+
+  for (let i = 0; i < starCount; i++) {
+    // Hemisphere distribution
+    const theta = Math.random() * Math.PI * 2;
+    const radius = 80 + Math.random() * 40; // 80-120
+    const phi = Math.random() * Math.PI * 0.5; // Upper hemisphere
+
+    starPositions[i * 3] = Math.cos(theta) * Math.sin(phi) * radius;
+    starPositions[i * 3 + 1] = Math.cos(phi) * radius + 10; // Offset up
+    starPositions[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * radius;
+    starPhases[i] = Math.random() * Math.PI * 2;
+  }
+
+  const starGeometry = new THREE.BufferGeometry();
+  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  starGeometry.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
+
+  const starMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+    },
+    vertexShader: `
+      attribute float aPhase;
+      uniform float uTime;
+      uniform float uPixelRatio;
+      varying float vTwinkle;
+      void main() {
+        vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        float size = 2.0 * uPixelRatio * vTwinkle;
+        gl_PointSize = size * (200.0 / -mvPosition.z);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      varying float vTwinkle;
+      void main() {
+        float dist = length(gl_PointCoord - vec2(0.5));
+        if (dist > 0.5) discard;
+        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+        vec3 color = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.95, 0.9), vTwinkle);
+        gl_FragColor = vec4(color * (0.7 + vTwinkle * 0.3), alpha * vTwinkle);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  const stars = new THREE.Points(starGeometry, starMaterial);
+  group.add(stars);
+
+  // === DUST PARTICLES (600 particles) ===
+  const dustCount = 600;
+  const dustPositions = new Float32Array(dustCount * 3);
+  const dustPhases = new Float32Array(dustCount);
+
+  for (let i = 0; i < dustCount; i++) {
+    dustPositions[i * 3] = (Math.random() - 0.5) * 60;
+    dustPositions[i * 3 + 1] = Math.random() * 15 + floorY;
+    dustPositions[i * 3 + 2] = (Math.random() - 0.5) * 60;
+    dustPhases[i] = Math.random() * Math.PI * 2;
+  }
+
+  const dustGeometry = new THREE.BufferGeometry();
+  dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+  dustGeometry.setAttribute('aPhase', new THREE.BufferAttribute(dustPhases, 1));
+
+  const dustMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+    },
+    vertexShader: `
+      attribute float aPhase;
+      uniform float uTime;
+      uniform float uPixelRatio;
+      varying float vAlpha;
+      void main() {
+        vAlpha = 0.3 + 0.2 * sin(uTime + aPhase);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = 1.5 * uPixelRatio;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      varying float vAlpha;
+      void main() {
+        float dist = length(gl_PointCoord - vec2(0.5));
+        if (dist > 0.5) discard;
+        float alpha = (1.0 - smoothstep(0.0, 0.5, dist)) * vAlpha;
+        vec3 dustColor = vec3(0.8, 0.85, 0.9);
+        gl_FragColor = vec4(dustColor, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  const dust = new THREE.Points(dustGeometry, dustMaterial);
+  group.add(dust);
+
   // Moon
   const moonGroup = new THREE.Group();
   const moonGeometry = new THREE.IcosahedronGeometry(8, 2);
@@ -8472,11 +8661,40 @@ function buildDesertNightScene(group) {
   group.add(moonGroup);
 
   group.rotation.y = 0; // face toward moon
+
+  // === ANIMATION UPDATE ===
+  group.userData.update = (now, dt) => {
+    const time = now * 0.001;
+    // Update stars twinkle
+    starMaterial.uniforms.uTime.value = time;
+    // Update dust
+    dustMaterial.uniforms.uTime.value = time;
+
+    // Animate dust particle positions with floating motion
+    const dustPos = dustGeometry.attributes.position.array;
+    for (let i = 0; i < dustCount; i++) {
+      const idx = i * 3;
+      // Gentle wind drift
+      dustPos[idx] += 0.005 * dt;
+      dustPos[idx + 1] += Math.sin(time + dustPhases[i]) * 0.001 * dt;
+      dustPos[idx + 2] += Math.cos(time * 0.7 + dustPhases[i]) * 0.002 * dt;
+
+      // Wrap around boundaries
+      if (dustPos[idx] > 30) dustPos[idx] = -30;
+      if (dustPos[idx] < -30) dustPos[idx] = 30;
+      if (dustPos[idx + 1] > floorY + 15) dustPos[idx + 1] = floorY;
+      if (dustPos[idx + 1] < floorY) dustPos[idx + 1] = floorY + 15;
+      if (dustPos[idx + 2] > 30) dustPos[idx + 2] = -30;
+      if (dustPos[idx + 2] < -30) dustPos[idx + 2] = 30;
+    }
+    dustGeometry.attributes.position.needsUpdate = true;
+  };
 }
 
 function buildAlienPlanetScene(group) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
+
   // Ground
   const groundGeo = new THREE.PlaneGeometry(300, 300, 20, 20);
   const groundPositions = groundGeo.attributes.position;
@@ -8521,6 +8739,34 @@ function buildAlienPlanetScene(group) {
   moonGlow.position.copy(moon.position);
   group.add(moonGlow);
 
+  // Lighting - moonLight for ambient scene lighting
+  const moonLight = new THREE.DirectionalLight(0xcc88ff, 8.4);
+  moonLight.position.set(60, 80, -40);
+  moonLight.castShadow = true;
+  moonLight.shadow.mapSize.width = 1024;
+  moonLight.shadow.mapSize.height = 1024;
+  moonLight.shadow.camera.near = 10;
+  moonLight.shadow.camera.far = 200;
+  moonLight.shadow.camera.left = -50;
+  moonLight.shadow.camera.right = 50;
+  moonLight.shadow.camera.top = 50;
+  moonLight.shadow.camera.bottom = -50;
+  group.add(moonLight);
+
+  // Green light - moved HIGH (y: 35) to not block view
+  const greenLight = new THREE.PointLight(0x00ff66, 1.2, 80);
+  greenLight.position.set(0, 35, 0);
+  group.add(greenLight);
+
+  // Purple accent lights
+  const purpleLight1 = new THREE.PointLight(0x6622aa, 1.5, 50);
+  purpleLight1.position.set(-30, 20, -30);
+  group.add(purpleLight1);
+
+  const purpleLight2 = new THREE.PointLight(0x8833cc, 1.2, 45);
+  purpleLight2.position.set(25, 18, 35);
+  group.add(purpleLight2);
+
   // River
   const riverPoints = [];
   for (let i = 0; i < 60; i++) {
@@ -8539,7 +8785,237 @@ function buildAlienPlanetScene(group) {
   const riverGlow = new THREE.Mesh(glowGeo, riverGlowMat);
   group.add(riverGlow);
 
-  // Instanced city
+  // Mountains - 3 rings of procedural jagged mountains
+  const createMountain = (x, z, scale) => {
+    const peakCount = 1 + Math.floor(Math.random() * 3);
+    const mountainGroup = new THREE.Group();
+    for (let p = 0; p < peakCount; p++) {
+      const height = (12 + Math.random() * 18) * scale;
+      const radius = (2 + Math.random() * 3) * scale;
+      const peakGeo = new THREE.ConeGeometry(radius, height, 5 + Math.floor(Math.random() * 3));
+      const peakMat = new THREE.MeshStandardMaterial({
+        color: 0x1a1020,
+        roughness: 0.9,
+        metalness: 0.1,
+        flatShading: true
+      });
+      const peak = new THREE.Mesh(peakGeo, peakMat);
+      peak.position.set(
+        (Math.random() - 0.5) * 4 * scale,
+        height / 2,
+        (Math.random() - 0.5) * 4 * scale
+      );
+      mountainGroup.add(peak);
+    }
+    mountainGroup.position.set(x, floorY, z);
+    return mountainGroup;
+  };
+
+  for (let ring = 0; ring < 3; ring++) {
+    const count = 8 + ring * 6;
+    const radius = 45 + ring * 18;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+      const r = radius + (Math.random() - 0.5) * 8;
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+      group.add(createMountain(x, z, 0.8 + Math.random() * 0.4));
+    }
+  }
+
+  // Alien Plants - 4 types along river
+  const alienPlants = [];
+
+  const createAlienPlant = (x, z, type) => {
+    const plantGroup = new THREE.Group();
+
+    if (type === 0) {
+      // Glowing Spire - tall thin cone with glowing orb on top
+      const height = 3 + Math.random() * 5;
+      const spireGeo = new THREE.ConeGeometry(0.2, height, 6);
+      const spireMat = new THREE.MeshStandardMaterial({
+        color: 0x00aa33,
+        emissive: 0x00ff44,
+        emissiveIntensity: 0.6,
+        roughness: 0.5
+      });
+      const spire = new THREE.Mesh(spireGeo, spireMat);
+      spire.position.y = height / 2;
+      plantGroup.add(spire);
+
+      // Glowing orb on top
+      const orbGeo = new THREE.IcosahedronGeometry(0.3, 1);
+      const orbMat = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
+      const orb = new THREE.Mesh(orbGeo, orbMat);
+      orb.position.y = height + 0.2;
+      plantGroup.add(orb);
+
+    } else if (type === 1) {
+      // Crystal Cluster - 3 small angular cones
+      for (let c = 0; c < 3; c++) {
+        const height = 0.8 + Math.random() * 1.2;
+        const crystalGeo = new THREE.ConeGeometry(0.15, height, 3);
+        const crystalMat = new THREE.MeshStandardMaterial({
+          color: 0x00cc55,
+          emissive: 0x00ff66,
+          emissiveIntensity: 0.7,
+          roughness: 0.3
+        });
+        const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+        crystal.position.set(
+          (Math.random() - 0.5) * 0.4,
+          height / 2,
+          (Math.random() - 0.5) * 0.4
+        );
+        crystal.rotation.set(
+          (Math.random() - 0.5) * 0.4,
+          Math.random() * Math.PI,
+          (Math.random() - 0.5) * 0.4
+        );
+        plantGroup.add(crystal);
+      }
+
+    } else if (type === 2) {
+      // Mushroom - cylinder stem + hemisphere cap
+      const stemHeight = 0.5 + Math.random() * 0.5;
+      const stemGeo = new THREE.CylinderGeometry(0.1, 0.15, stemHeight, 8);
+      const stemMat = new THREE.MeshStandardMaterial({ color: 0x204020, roughness: 0.8 });
+      const stem = new THREE.Mesh(stemGeo, stemMat);
+      stem.position.y = stemHeight / 2;
+      plantGroup.add(stem);
+
+      const capGeo = new THREE.SphereGeometry(0.4, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+      const capMat = new THREE.MeshStandardMaterial({
+        color: 0x00aa44,
+        emissive: 0x00ff55,
+        emissiveIntensity: 0.5,
+        roughness: 0.6
+      });
+      const cap = new THREE.Mesh(capGeo, capMat);
+      cap.position.y = stemHeight;
+      plantGroup.add(cap);
+
+    } else {
+      // Fern - radiating fronds with triangular leaves
+      const frondCount = 5 + Math.floor(Math.random() * 5);
+      for (let f = 0; f < frondCount; f++) {
+        const angle = (f / frondCount) * Math.PI * 2;
+        const frondGroup = new THREE.Group();
+
+        for (let l = 0; l < 8; l++) {
+          const leafGeo = new THREE.ConeGeometry(0.08, 0.4, 3);
+          const leafMat = new THREE.MeshStandardMaterial({
+            color: 0x008833,
+            emissive: 0x00ff44,
+            emissiveIntensity: 0.3,
+            roughness: 0.7
+          });
+          const leaf = new THREE.Mesh(leafGeo, leafMat);
+          leaf.position.set(0.1 + l * 0.08, 0.1 + l * 0.05, 0);
+          leaf.rotation.z = -0.3;
+          frondGroup.add(leaf);
+        }
+
+        frondGroup.rotation.y = angle;
+        frondGroup.rotation.x = -0.2;
+        plantGroup.add(frondGroup);
+      }
+    }
+
+    plantGroup.position.set(x, floorY, z);
+    plantGroup.userData.baseRotationX = plantGroup.rotation.x;
+    plantGroup.userData.baseRotationZ = plantGroup.rotation.z;
+    plantGroup.userData.swayOffset = Math.random() * Math.PI * 2;
+    plantGroup.userData.swaySpeed = 0.5 + Math.random() * 0.5;
+
+    return plantGroup;
+  };
+
+  // Place 120 plants along river with random offsets
+  for (let i = 0; i < 120; i++) {
+    const t = Math.random();
+    const riverT = t * 59;
+    const idx = Math.floor(riverT);
+    const frac = riverT - idx;
+
+    const p1 = riverPoints[Math.min(idx, 59)];
+    const p2 = riverPoints[Math.min(idx + 1, 59)];
+
+    const x = p1.x + (p2.x - p1.x) * frac + (Math.random() - 0.5) * 8;
+    const z = p1.z + (p2.z - p1.z) * frac + (Math.random() - 0.5) * 8;
+
+    // Keep plants away from river center
+    const distToCenter = Math.abs(x - (p1.x + (p2.x - p1.x) * frac));
+    if (distToCenter < 3) continue;
+
+    const plantType = Math.floor(Math.random() * 4);
+    const plant = createAlienPlant(x, z, plantType);
+    alienPlants.push(plant);
+    group.add(plant);
+  }
+
+  // Fireflies - 120 particles with gentle drift
+  const fireflyPositions = [];
+  const fireflyVelocities = [];
+  const fireflyGeo = new THREE.BufferGeometry();
+
+  for (let i = 0; i < 120; i++) {
+    const x = (Math.random() - 0.5) * 60;
+    const y = 1 + Math.random() * 8;
+    const z = (Math.random() - 0.5) * 60;
+    fireflyPositions.push(x, y, z);
+    fireflyVelocities.push(
+      (Math.random() - 0.5) * 0.02,
+      (Math.random() - 0.5) * 0.01,
+      (Math.random() - 0.5) * 0.02
+    );
+  }
+
+  fireflyGeo.setAttribute('position', new THREE.Float32BufferAttribute(fireflyPositions, 3));
+  const fireflyMat = new THREE.PointsMaterial({
+    color: 0x44ff88,
+    size: 0.35,
+    transparent: true,
+    opacity: 0.9,
+    sizeAttenuation: true
+  });
+  const fireflies = new THREE.Points(fireflyGeo, fireflyMat);
+  group.add(fireflies);
+
+  // River Sparkles - 40 particles along river
+  const sparklePositions = [];
+  const sparkleOffsets = [];
+
+  for (let i = 0; i < 40; i++) {
+    const t = Math.random();
+    const riverT = t * 59;
+    const idx = Math.floor(riverT);
+    const frac = riverT - idx;
+
+    const p1 = riverPoints[Math.min(idx, 59)];
+    const p2 = riverPoints[Math.min(idx + 1, 59)];
+
+    const x = p1.x + (p2.x - p1.x) * frac + (Math.random() - 0.5) * 2;
+    const z = p1.z + (p2.z - p1.z) * frac + (Math.random() - 0.5) * 2;
+    const y = 0.3;
+
+    sparklePositions.push(x, y, z);
+    sparkleOffsets.push(Math.random() * Math.PI * 2);
+  }
+
+  const sparkleGeo = new THREE.BufferGeometry();
+  sparkleGeo.setAttribute('position', new THREE.Float32BufferAttribute(sparklePositions, 3));
+  const sparkleMat = new THREE.PointsMaterial({
+    color: 0x88ffaa,
+    size: 0.25,
+    transparent: true,
+    opacity: 0.8,
+    sizeAttenuation: true
+  });
+  const sparkles = new THREE.Points(sparkleGeo, sparkleMat);
+  group.add(sparkles);
+
+  // Instanced city - FAR on horizon (was too close at 55-100)
   const cityShaderMat = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
@@ -8570,14 +9046,18 @@ function buildAlienPlanetScene(group) {
     }
     return mesh;
   };
-  group.add(generateCityLayer(boxGeo, 100, 55, 85, 30, 60));
-  group.add(generateCityLayer(cylinderGeo, 80, 65, 95, 40, 80));
-  group.add(generateCityLayer(coneGeo, 60, 70, 100, 50, 100));
+
+  // Far background city on horizon (FIXED: was 55-100, now 120-220)
+  group.add(generateCityLayer(boxGeo, 100, 120, 150, 30, 60));
+  group.add(generateCityLayer(cylinderGeo, 80, 140, 180, 40, 80));
+  group.add(generateCityLayer(coneGeo, 60, 160, 200, 50, 100));
+
+  // Mega towers - far on horizon (FIXED: was 60-70, now 160-180)
   const megaGeo = new THREE.CylinderGeometry(1, 1.5, 1, 5);
   const megaMesh = new THREE.InstancedMesh(megaGeo, cityShaderMat, 10);
   for (let i = 0; i < 10; i++) {
     const angle = (i / 10) * Math.PI * 2;
-    const dist = 60 + Math.random() * 10;
+    const dist = 160 + Math.random() * 20;
     const h = 110 + Math.random() * 20;
     dummy.position.set(Math.cos(angle) * dist, h / 2, Math.sin(angle) * dist);
     dummy.scale.set(5, h, 5);
@@ -8586,8 +9066,46 @@ function buildAlienPlanetScene(group) {
   }
   group.add(megaMesh);
 
+  // Animation update
   group.userData.update = (now, dt) => {
-    cityShaderMat.uniforms.uTime.value = now * 0.001;
+    const time = now * 0.001;
+    cityShaderMat.uniforms.uTime.value = time;
+
+    // Animate green light pulse
+    greenLight.intensity = 1.2 + Math.sin(time * 2) * 0.3;
+
+    // Animate firefly drift
+    const ffPos = fireflyGeo.attributes.position.array;
+    for (let i = 0; i < 120; i++) {
+      const idx = i * 3;
+      ffPos[idx] += fireflyVelocities[idx];
+      ffPos[idx + 1] += fireflyVelocities[idx + 1];
+      ffPos[idx + 2] += fireflyVelocities[idx + 2];
+
+      // Wrap around boundaries
+      if (ffPos[idx] > 30) ffPos[idx] = -30;
+      if (ffPos[idx] < -30) ffPos[idx] = 30;
+      if (ffPos[idx + 1] > 10) ffPos[idx + 1] = 1;
+      if (ffPos[idx + 1] < 0.5) ffPos[idx + 1] = 9;
+      if (ffPos[idx + 2] > 30) ffPos[idx + 2] = -30;
+      if (ffPos[idx + 2] < -30) ffPos[idx + 2] = 30;
+    }
+    fireflyGeo.attributes.position.needsUpdate = true;
+
+    // Animate river sparkles
+    const spPos = sparkleGeo.attributes.position.array;
+    for (let i = 0; i < 40; i++) {
+      const idx = i * 3;
+      spPos[idx + 1] = 0.3 + Math.sin(time * 2 + sparkleOffsets[i]) * 0.2;
+    }
+    sparkleGeo.attributes.position.needsUpdate = true;
+
+    // Animate plant sway
+    for (const plant of alienPlants) {
+      const sway = Math.sin(time * plant.userData.swaySpeed + plant.userData.swayOffset) * 0.05;
+      plant.rotation.x = plant.userData.baseRotationX + sway;
+      plant.rotation.z = plant.userData.baseRotationZ + sway * 0.7;
+    }
   };
 
   group.rotation.y = 0.2; // aim player slightly toward river flow
@@ -8597,6 +9115,36 @@ function buildHellscapeLavaScene(group) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
   const valleyWidth = 35.0;
+
+  // ========================================
+  // 1. LIGHTING (CRITICAL)
+  // ========================================
+  // Red moonlight with shadows
+  const moonLight = new THREE.DirectionalLight(0xff3333, 2.5);
+  moonLight.position.set(20, 30, -100);
+  moonLight.castShadow = true;
+  moonLight.shadow.mapSize.width = 2048;
+  moonLight.shadow.mapSize.height = 2048;
+  moonLight.shadow.camera.near = 0.5;
+  moonLight.shadow.camera.far = 500;
+  moonLight.shadow.camera.left = -100;
+  moonLight.shadow.camera.right = 100;
+  moonLight.shadow.camera.top = 100;
+  moonLight.shadow.camera.bottom = -100;
+  group.add(moonLight);
+
+  // Very dim ambient
+  const ambientLight = new THREE.AmbientLight(0x220505, 0.1);
+  group.add(ambientLight);
+
+  // Lava glow point light (will animate)
+  const lavaGlow = new THREE.PointLight(0xff3300, 2.5, 60);
+  lavaGlow.position.set(0, 5, 0);
+  group.add(lavaGlow);
+
+  // ========================================
+  // TERRAIN (existing logic)
+  // ========================================
   const geometry = new THREE.PlaneGeometry(300, 300, 200, 200);
   geometry.rotateX(-Math.PI / 2);
   const positions = geometry.attributes.position;
@@ -8667,7 +9215,268 @@ function buildHellscapeLavaScene(group) {
   group.add(flashPlane);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
-  // Moons
+  // ========================================
+  // 2. JAGGED ROCKS (50 scattered)
+  // ========================================
+  const rockGeo = new THREE.TetrahedronGeometry(1, 0);
+  const rockMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1a1a,
+    roughness: 0.8,
+    metalness: 0.2,
+    flatShading: true
+  });
+
+  for (let i = 0; i < 50; i++) {
+    const rock = new THREE.Mesh(rockGeo, rockMat);
+    let x, z, riverX, distToRiver;
+    let attempts = 0;
+    do {
+      x = (Math.random() - 0.5) * 60;
+      z = (Math.random() - 0.5) * 100;
+      riverX = Math.sin(z * 0.03) * 15.0;
+      distToRiver = Math.abs(x - riverX);
+      attempts++;
+    } while (distToRiver < 8 && attempts < 20);
+
+    rock.position.set(x, floorY + 0.5, z);
+    // Scale: taller than wide (0.5-4.0)
+    const scaleY = 0.5 + Math.random() * 3.5;
+    const scaleX = 0.5 + Math.random() * 1.5;
+    rock.scale.set(scaleX, scaleY, scaleX);
+    rock.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI
+    );
+    rock.castShadow = true;
+    rock.receiveShadow = true;
+    group.add(rock);
+  }
+
+  // ========================================
+  // 3. DEAD TREES (25 procedural)
+  // ========================================
+  const treeMat = new THREE.MeshStandardMaterial({
+    color: 0x0a0a0a,
+    roughness: 0.9,
+    metalness: 0.1,
+    flatShading: true
+  });
+
+  const createBranch = (depth, maxDepth, length, radius) => {
+    const branchGroup = new THREE.Group();
+
+    // Main branch cylinder (5 sides)
+    const branchGeo = new THREE.CylinderGeometry(radius * 0.7, radius, length, 5);
+    const branch = new THREE.Mesh(branchGeo, treeMat);
+    branch.position.y = length / 2;
+    branch.castShadow = true;
+    branch.receiveShadow = true;
+    branchGroup.add(branch);
+
+    // Add child branches if not at max depth
+    if (depth < maxDepth) {
+      const numChildren = 2 + Math.floor(Math.random() * 2); // 2-3 children
+      for (let i = 0; i < numChildren; i++) {
+        const childBranch = createBranch(
+          depth + 1,
+          maxDepth,
+          length * 0.6,
+          radius * 0.6
+        );
+        childBranch.position.y = length;
+        childBranch.rotation.z = (Math.random() - 0.5) * 1.2;
+        childBranch.rotation.y = (i / numChildren) * Math.PI * 2 + Math.random() * 0.5;
+        branchGroup.add(childBranch);
+      }
+    }
+
+    return branchGroup;
+  };
+
+  for (let i = 0; i < 25; i++) {
+    let x, z, riverX, distToRiver;
+    let attempts = 0;
+    do {
+      x = (Math.random() - 0.5) * 60;
+      z = (Math.random() - 0.5) * 100;
+      riverX = Math.sin(z * 0.03) * 15.0;
+      distToRiver = Math.abs(x - riverX);
+      attempts++;
+    } while (distToRiver < 8 && attempts < 20);
+
+    const tree = createBranch(0, 3, 3 + Math.random() * 2, 0.2 + Math.random() * 0.1);
+    tree.position.set(x, floorY, z);
+    tree.rotation.y = Math.random() * Math.PI * 2;
+    const treeScale = 0.8 + Math.random() * 0.6;
+    tree.scale.setScalar(treeScale);
+    group.add(tree);
+  }
+
+  // ========================================
+  // 4. TWINKLING STARS (1500 particles with red tint)
+  // ========================================
+  const starCount = 1500;
+  const starPositions = new Float32Array(starCount * 3);
+  const starColors = new Float32Array(starCount * 3);
+  const starSizes = new Float32Array(starCount);
+  const starPhases = new Float32Array(starCount);
+
+  for (let i = 0; i < starCount; i++) {
+    const i3 = i * 3;
+    // Position in a dome
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI * 0.5; // Upper hemisphere
+    const r = 120 + Math.random() * 80;
+    starPositions[i3] = r * Math.sin(phi) * Math.cos(theta);
+    starPositions[i3 + 1] = r * Math.cos(phi) + 20;
+    starPositions[i3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+    // Red-tinted colors: mix between (0.6, 0.2, 0.2) and (1.0, 0.8, 0.8)
+    const colorMix = Math.random();
+    starColors[i3] = 0.6 + colorMix * 0.4;     // R
+    starColors[i3 + 1] = 0.2 + colorMix * 0.6; // G
+    starColors[i3 + 2] = 0.2 + colorMix * 0.6; // B
+
+    starSizes[i] = 0.5 + Math.random() * 1.5;
+    starPhases[i] = Math.random() * Math.PI * 2;
+  }
+
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  starGeo.setAttribute('aColor', new THREE.BufferAttribute(starColors, 3));
+  starGeo.setAttribute('aSize', new THREE.BufferAttribute(starSizes, 1));
+  starGeo.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
+
+  const starMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }
+    },
+    vertexShader: `
+      attribute vec3 aColor;
+      attribute float aSize;
+      attribute float aPhase;
+      varying vec3 vColor;
+      varying float vTwinkle;
+      uniform float uTime;
+      void main() {
+        vColor = aColor;
+        vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = aSize * (300.0 / -mvPosition.z) * vTwinkle;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      varying float vTwinkle;
+      void main() {
+        float dist = length(gl_PointCoord - vec2(0.5));
+        if (dist > 0.5) discard;
+        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+        gl_FragColor = vec4(vColor * vTwinkle, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  const stars = new THREE.Points(starGeo, starMat);
+  group.add(stars);
+
+  // ========================================
+  // 5. SPARK PARTICLES (200 rising from lava)
+  // ========================================
+  const sparkCount = 200;
+  const sparkPositions = new Float32Array(sparkCount * 3);
+  const sparkVelocities = new Float32Array(sparkCount * 3);
+  const sparkLifetimes = new Float32Array(sparkCount);
+  const sparkMaxLifetimes = new Float32Array(sparkCount);
+
+  const initSpark = (idx) => {
+    const i3 = idx * 3;
+    const z = (Math.random() - 0.5) * 100;
+    const riverX = Math.sin(z * 0.03) * 15.0;
+    sparkPositions[i3] = riverX + (Math.random() - 0.5) * 4;
+    sparkPositions[i3 + 1] = -0.5 + Math.random() * 0.5;
+    sparkPositions[i3 + 2] = z;
+    sparkVelocities[i3] = (Math.random() - 0.5) * 0.02;
+    sparkVelocities[i3 + 1] = 0.03 + Math.random() * 0.05;
+    sparkVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
+    sparkLifetimes[idx] = 0;
+    sparkMaxLifetimes[idx] = 2 + Math.random() * 3;
+  };
+
+  for (let i = 0; i < sparkCount; i++) {
+    initSpark(i);
+    sparkLifetimes[i] = Math.random() * sparkMaxLifetimes[i]; // Stagger initial lifetimes
+  }
+
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+
+  const sparkMat = new THREE.PointsMaterial({
+    color: 0xffaa00,
+    size: 0.3,
+    transparent: true,
+    opacity: 0.8,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+
+  const sparks = new THREE.Points(sparkGeo, sparkMat);
+  group.add(sparks);
+
+  // ========================================
+  // 6. FLAME GEYSERS (periodic eruptions)
+  // ========================================
+  const geyserParticles = [];
+  let lastGeyserTime = 0;
+  const geyserInterval = 5000; // 5 seconds
+
+  const createGeyserBurst = (now) => {
+    const particleCount = 100;
+    // Spawn from mountainsides (outside valleyWidth)
+    const side = Math.random() > 0.5 ? 1 : -1;
+    const x = side * (valleyWidth + 5 + Math.random() * 20);
+    const z = (Math.random() - 0.5) * 80;
+    const baseY = floorY + 5;
+
+    for (let i = 0; i < particleCount; i++) {
+      geyserParticles.push({
+        x: x + (Math.random() - 0.5) * 2,
+        y: baseY,
+        z: z + (Math.random() - 0.5) * 2,
+        vx: (Math.random() - 0.5) * 0.1,
+        vy: 0.8 + Math.random() * 0.5, // Strong upward velocity
+        vz: (Math.random() - 0.5) * 0.1,
+        life: 0,
+        maxLife: 1.5 + Math.random() * 1.5
+      });
+    }
+  };
+
+  const geyserGeo = new THREE.BufferGeometry();
+  const geyserPositions = new Float32Array(500 * 3); // Max 500 particles
+  geyserGeo.setAttribute('position', new THREE.BufferAttribute(geyserPositions, 3));
+  geyserGeo.setDrawRange(0, 0);
+
+  const geyserMat = new THREE.PointsMaterial({
+    color: 0xff6600,
+    size: 0.4,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+
+  const geyserPoints = new THREE.Points(geyserGeo, geyserMat);
+  group.add(geyserPoints);
+
+  // ========================================
+  // MOONS (existing)
+  // ========================================
   const createMoon = (size, color, glowColor) => {
     const mGroup = new THREE.Group();
     const moonGeo = new THREE.IcosahedronGeometry(size, 2);
@@ -8691,8 +9500,75 @@ function buildHellscapeLavaScene(group) {
   moon3.position.set(-20, 35, -95);
   group.add(moon3);
 
+  // ========================================
+  // ANIMATION UPDATE
+  // ========================================
   group.userData.update = (now, dt) => {
-    if (material.userData.shader) material.userData.shader.uniforms.uTime.value = now * 0.001;
+    const time = now * 0.001;
+
+    // Terrain shader
+    if (material.userData.shader) {
+      material.userData.shader.uniforms.uTime.value = time;
+    }
+
+    // Star twinkle
+    starMat.uniforms.uTime.value = time;
+
+    // Lava glow position animation (circle)
+    lavaGlow.position.x = Math.sin(time * 0.3) * 15;
+    lavaGlow.position.z = Math.cos(time * 0.3) * 20;
+    lavaGlow.position.y = 5 + Math.sin(time * 0.5) * 2;
+
+    // Lava glow intensity pulse
+    lavaGlow.intensity = 2.0 + Math.sin(time * 2) * 0.5;
+
+    // Update spark particles
+    const sparkPos = sparkGeo.attributes.position.array;
+    for (let i = 0; i < sparkCount; i++) {
+      const i3 = i * 3;
+      sparkLifetimes[i] += dt * 0.001;
+
+      if (sparkLifetimes[i] > sparkMaxLifetimes[i]) {
+        initSpark(i);
+      } else {
+        sparkPos[i3] += sparkVelocities[i3];
+        sparkPos[i3 + 1] += sparkVelocities[i3 + 1];
+        sparkPos[i3 + 2] += sparkVelocities[i3 + 2];
+      }
+    }
+    sparkGeo.attributes.position.needsUpdate = true;
+
+    // Geyser trigger and update
+    if (now - lastGeyserTime > geyserInterval) {
+      createGeyserBurst(now);
+      lastGeyserTime = now;
+    }
+
+    // Update geyser particles
+    const geyserPos = geyserGeo.attributes.position.array;
+    let activeCount = 0;
+    for (let i = geyserParticles.length - 1; i >= 0; i--) {
+      const p = geyserParticles[i];
+      p.life += dt * 0.001;
+
+      if (p.life > p.maxLife) {
+        geyserParticles.splice(i, 1);
+        continue;
+      }
+
+      p.x += p.vx;
+      p.y += p.vy;
+      p.z += p.vz;
+      p.vy -= 0.03; // Gravity
+
+      const idx = activeCount * 3;
+      geyserPos[idx] = p.x;
+      geyserPos[idx + 1] = p.y;
+      geyserPos[idx + 2] = p.z;
+      activeCount++;
+    }
+    geyserGeo.setDrawRange(0, activeCount);
+    geyserGeo.attributes.position.needsUpdate = true;
   };
 
   group.rotation.y = 0; // face moons
