@@ -742,12 +742,10 @@ export function updateHolographicGlitch(now) {
     holoScanLineMesh.material.map.offset.y = holographicState.scanLineOffset;
   }
 
-  // Update flicker phase (minimal idle flicker)
-  holographicState.flickerPhase = now * 0.015;
-  const flickerAmount = 0.02 * Math.sin(holographicState.flickerPhase) +
-                         0.01 * Math.sin(holographicState.flickerPhase * 2.3);
+  // REMOVED: Random idle flicker - HUD should ONLY glitch when player takes damage
+  // Keep scan lines stable when no damage
   if (holoScanLineMesh) {
-    holoScanLineMesh.material.opacity = 0.08 + flickerAmount;
+    holoScanLineMesh.material.opacity = 0.08;
   }
 
   // Decay glitch effect
@@ -2333,6 +2331,35 @@ export function showKillsRemainingAlert(remaining) {
   alertText.position.set(0, 0, 0);
   levelTextGroup.add(alertText);
   killsAlertMesh = alertText;
+}
+
+export function showBossAlert() {
+  // Position in front of player (VR-friendly)
+  levelTextGroup.position.set(0, 1.6, -4.5);
+  levelTextGroup.visible = true;
+
+  // Clear any existing content
+  while (levelTextGroup.children.length) {
+    levelTextGroup.remove(levelTextGroup.children[0]);
+  }
+
+  // Main alert text
+  const alertText = makeSprite('⚠ INCOMING BOSS ⚠', {
+    fontSize: 72,
+    color: '#ff0000',
+    glow: true,
+    glowColor: '#ff0000',
+    scale: 0.6,
+  });
+  alertText.position.set(0, 0, 0);
+  levelTextGroup.add(alertText);
+}
+
+export function hideBossAlert() {
+  levelTextGroup.visible = false;
+  while (levelTextGroup.children.length) {
+    levelTextGroup.remove(levelTextGroup.children[0]);
+  }
 }
 
 export function updateKillsAlert(now) {

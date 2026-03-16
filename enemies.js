@@ -771,6 +771,19 @@ export function updateElectricArcs(dt, now) {
 }
 
 /**
+ * Clear all electric arcs (for level transitions).
+ */
+export function clearAllElectricArcs() {
+  for (let i = electricArcs.length - 1; i >= 0; i--) {
+    const arc = electricArcs[i];
+    sceneRef.remove(arc.mesh);
+    arc.mesh.geometry.dispose();
+    arc.mesh.material.dispose();
+  }
+  electricArcs.length = 0;
+}
+
+/**
  * Update baby spiders.
  */
 export function updateBabySpiders(dt, now, playerPos) {
@@ -6559,6 +6572,8 @@ export function updateBoss(dt, now, playerPos) {
 }
 
 export function clearBoss() {
+  clearBossProjectiles();
+
   if (activeBoss) {
     activeBoss.destroy();
     activeBoss = null;
@@ -6774,6 +6789,23 @@ export function updateBossMinions(dt, playerPos) {
 
 // ── PROJECTILES (for compatibility) ───────────────────────────
 const bossProjectiles = [];
+
+function disposeBossProjectileMesh(mesh) {
+  if (!mesh) return;
+  sceneRef.remove(mesh);
+  mesh.traverse(c => {
+    if (c.geometry) c.geometry.dispose();
+    if (c.material) c.material.dispose();
+  });
+}
+
+export function clearBossProjectiles() {
+  for (let i = bossProjectiles.length - 1; i >= 0; i--) {
+    disposeBossProjectileMesh(bossProjectiles[i].mesh);
+  }
+  bossProjectiles.length = 0;
+}
+
 export function spawnBossProjectile(fromPos, targetPos) {
   const projGroup = new THREE.Group();
 
@@ -6798,16 +6830,21 @@ export function spawnBossProjectile(fromPos, targetPos) {
   projGroup.userData.glowPhase = Math.random() * Math.PI * 2;
 
   const dir = new THREE.Vector3().copy(targetPos).sub(fromPos).normalize();
-  const speed = 2.1;
+  const speed = 5.2;
 
   sceneRef.add(projGroup);
   bossProjectiles.push({
     mesh: projGroup,
     velocity: dir.multiplyScalar(speed),
     createdAt: performance.now(),
-    lifetime: 5000,
-    homingStrength: 2.8,
+    lifetime: 3600,
+    homingStrength: 8.0,
     wigglePhase: Math.random() * Math.PI * 2,
+    damage: 1,
+    explosionDamage: 1,
+    explosionRadius: 0.3,
+    hitRadius: 0.45,
+    wiggleAmplitude: 0.008,
   });
 }
 
@@ -6818,29 +6855,34 @@ export function updateBossProjectiles(dt, now, playerPos) {
 
     if (age > proj.lifetime) {
       if (typeof window !== 'undefined' && window.createExplosionAt) {
-        window.createExplosionAt(proj.mesh.position.clone(), 0.6, 10);
+        window.createExplosionAt(proj.mesh.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
       }
-      sceneRef.remove(proj.mesh);
-      proj.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+      disposeBossProjectileMesh(proj.mesh);
       bossProjectiles.splice(i, 1);
       continue;
     }
 
-    // Homing movement like a mini swarm enemy
     const slowFactor = getStasisSlowFactor(proj.mesh.position);
     const adjustedDt = dt * slowFactor;
+    const speed = proj.velocity.length();
     const toPlayer = new THREE.Vector3().subVectors(playerPos, proj.mesh.position).normalize();
-    const desiredVelocity = toPlayer.multiplyScalar(proj.velocity.length());
-    proj.velocity.lerp(desiredVelocity, (proj.homingStrength || 2.5) * adjustedDt);
+    const desiredVelocity = toPlayer.multiplyScalar(speed);
+    proj.velocity.lerp(desiredVelocity, Math.min(1, (proj.homingStrength || 2.5) * adjustedDt));
+    if (proj.velocity.lengthSq() > 0.0001) {
+      proj.velocity.setLength(speed);
+    }
 
-    proj.wigglePhase = (proj.wigglePhase || 0) + adjustedDt * 6.0;
-    const wiggleX = Math.sin(proj.wigglePhase) * 0.02;
-    const wiggleZ = Math.cos(proj.wigglePhase) * 0.02;
+    proj.wigglePhase = (proj.wigglePhase || 0) + adjustedDt * 7.0;
+    const forward = proj.velocity.clone().normalize();
+    const side = new THREE.Vector3(-forward.z, 0, forward.x);
+    if (side.lengthSq() < 0.0001) side.set(1, 0, 0);
+    side.normalize();
+    const wiggleOffset = Math.sin(proj.wigglePhase) * (proj.wiggleAmplitude || 0.008);
     const pulse = 0.75 + Math.sin(age * 0.015 + (proj.mesh.userData.glowPhase || 0)) * 0.25;
 
     proj.mesh.position.addScaledVector(proj.velocity, adjustedDt);
-    proj.mesh.position.x += wiggleX;
-    proj.mesh.position.z += wiggleZ;
+    proj.mesh.position.addScaledVector(side, wiggleOffset);
+    proj.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), forward);
     proj.mesh.children.forEach((child, index) => {
       if (!child.material) return;
       if (index === 0) {
@@ -6851,10 +6893,10 @@ export function updateBossProjectiles(dt, now, playerPos) {
       }
     });
 
-    if (proj.mesh.position.distanceTo(playerPos) < 0.5) {
+    if (proj.mesh.position.distanceTo(playerPos) < (proj.hitRadius || 0.45)) {
       proj.hitPlayer = true;
       if (typeof window !== 'undefined' && window.createExplosionAt) {
-        window.createExplosionAt(proj.mesh.position.clone(), 0.6, 10);
+        window.createExplosionAt(proj.mesh.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
       }
     }
   }

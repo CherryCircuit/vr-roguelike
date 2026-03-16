@@ -18,6 +18,7 @@ export const State = {
   REGIONAL_SCORES: 'regional_scores',
   READY_SCREEN: 'ready_screen',
   DEBUG_MENU: 'debug_menu',
+  BOSS_ALERT: 'boss_alert',
   BOSS_DEATH_CINEMATIC: 'boss_death_cinematic',
 };
 

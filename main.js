@@ -11,7 +11,7 @@ import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponSt
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
-  playBossSpawn, playMenuClick, playErrorSound, playBuckshotSound,
+  playBossSpawn, playBossAlertSound, playMenuClick, playErrorSound, playBuckshotSound,
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound, playComboSound,
   startLightningSound, stopLightningSound,
@@ -28,7 +28,7 @@ import {
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward,
-  updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference
+  updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs
 } from './enemies.js';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -44,7 +44,7 @@ import {
   showDebugJumpScreen, getDebugJumpHit,
   showDebugMenu, hideDebugMenu, getDebugMenuHit, showReadyScreen, hideReadyScreen, updateReadyCountdownText, updateTitleDebugIndicator,
   updateHUDHover,
-  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert,
+  showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, showBossAlert, hideBossAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
   updateHolographicGlitch, resetHoloGlitch,
   nameEntryGroup
@@ -5606,6 +5606,8 @@ function updateBossDeathCinematic(rawDt) {
 }
 
 function completeLevel() {
+  if (bossDeathCinematic.active) return;
+
   console.log(`[game] Level ${game.level} complete`);
   
   // Hide kills remaining alert if showing
@@ -5622,6 +5624,12 @@ function completeLevel() {
 
   // PERFORMANCE: Clear all projectiles on level complete
   clearAllProjectiles();
+
+  // Clear all lightning beams
+  clearAllLightningBeams();
+
+  // Clear all conductor electric arcs
+  clearAllElectricArcs();
 
   stopLightningSound();
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
@@ -5654,6 +5662,17 @@ function clearAllProjectiles() {
     }
   }
   projectiles.length = 0;
+}
+
+// Clear all lightning gun beams
+function clearAllLightningBeams() {
+  for (let i = 0; i < lightningBeams.length; i++) {
+    if (lightningBeams[i]) {
+      scene.remove(lightningBeams[i]);
+      lightningBeams[i] = null;
+    }
+  }
+  lightningTimers.fill(0);
 }
 
 function showUpgradeScreen() {
@@ -5755,8 +5774,24 @@ function advanceLevelAfterUpgrade() {
     applyThemeForLevel(game.level);
     const shouldFade = shouldFadeForBiomeTransition(game.level - 1);
     
+    // Check for boss level - enter BOSS_ALERT state
+    if (game._levelConfig.isBoss) {
+      game.state = State.BOSS_ALERT;
+      game.stateTimer = 3.0; // 3 second alert sequence
+      // Start boss music immediately at alert screen
+      const bossCategory = `boss${game.level}`;
+      playMusic(bossCategory);
+      playBossAlertSound();
+      showBossAlert();
+      console.log(`[game] Boss alert for level ${game.level} - boss music started`);
+      
+      // Hide blaster displays during alert
+      blasterDisplays.forEach(d => { if (d) d.visible = false; });
+      
+      game.justBossKill = false;
+    }
     // After boss kill with biome transition, show ready screen with countdown
-    if (game.justBossKill && shouldFade) {
+    else if (game.justBossKill && shouldFade) {
       console.log('[game] Boss killed with biome transition, showing ready screen');
       game.state = State.READY_SCREEN;
       applyEnvironmentFade(1);
@@ -5829,6 +5864,7 @@ function endGame(victory) {
   game.finalLevel = game.level;
   clearAllEnemies();
   clearBoss();
+  clearBossProjectiles();
 
   // PERFORMANCE: Clear all projectiles on game end
   clearAllProjectiles();
@@ -5971,6 +6007,8 @@ function returnProjectileToPool(proj) {
   proj.userData.hitEnemies = null;
   proj.userData.homingRange = undefined;
   proj.userData.homingStrength = undefined;
+  proj.userData.baseSpeed = undefined;
+  proj.userData.homingTarget = undefined;
   proj.userData.tailPhase = undefined;
   proj.userData.tailSpeed = undefined;
 }
@@ -5987,6 +6025,11 @@ function triggerHostileProjectileExplosion(position, radius = 0.35, damage = 0) 
   }
 }
 
+function spawnBossProjectileDestructionFX(position) {
+  spawnExplosionVisual(position.clone(), 0.22);
+  spawnVoxelExplosion(position.clone(), 0xff6688, 4, 'basic', false, false);
+}
+
 function updateSeekerProjectileVisual(proj, dt) {
   if (!proj || !proj.children || proj.children.length < 2) return;
   proj.userData.tailPhase = (proj.userData.tailPhase || Math.random() * Math.PI * 2) + dt * (proj.userData.tailSpeed || 18);
@@ -6000,6 +6043,34 @@ function updateSeekerProjectileVisual(proj, dt) {
   if (glow && glow.material) {
     glow.material.opacity = 0.18 + Math.sin(proj.userData.tailPhase * 1.5) * 0.08;
   }
+}
+
+function findSeekerTarget(proj) {
+  const homingRange = proj.userData.homingRange || 0;
+  if (homingRange <= 0) return null;
+
+  const candidates = [];
+  const enemies = getEnemies();
+  for (const enemy of enemies) {
+    if (enemy?.mesh) candidates.push(enemy.mesh);
+  }
+
+  const boss = getBoss();
+  if (boss?.mesh) {
+    candidates.push(boss.mesh);
+  }
+
+  let nearestTarget = null;
+  let nearestDist = homingRange;
+  for (const mesh of candidates) {
+    const dist = mesh.position.distanceTo(proj.position);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearestTarget = mesh;
+    }
+  }
+
+  return nearestTarget;
 }
 
 function updateHostileProjectileVisual(proj, now) {
@@ -6797,6 +6868,8 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   mesh.userData.hitConfirmed = false;
   mesh.userData.homingRange = stats.homing ? (stats.homingRange || 15) : 0;
   mesh.userData.homingStrength = stats.homing ? 6.5 : 0;
+  mesh.userData.baseSpeed = projectileSpeed;
+  mesh.userData.homingTarget = null;
   mesh.userData.tailPhase = stats.homing ? Math.random() * Math.PI * 2 : 0;
   mesh.userData.tailSpeed = stats.homing ? 16 + Math.random() * 5 : 0;
   mesh.visible = true;
@@ -7419,32 +7492,28 @@ function updateProjectiles(dt) {
 
     // Homing behavior (Seeker Burst)
     if (proj.userData.homingRange && proj.userData.homingRange > 0) {
-      let nearestTarget = null;
-      let nearestDist = proj.userData.homingRange;
-      const enemies = getEnemies();
-      for (const e of enemies) {
-        const dist = e.mesh.position.distanceTo(proj.position);
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearestTarget = e.mesh.position;
-        }
+      let targetMesh = proj.userData.homingTarget;
+      const targetStillValid = targetMesh && targetMesh.parent && targetMesh.position.distanceTo(proj.position) <= proj.userData.homingRange;
+      if (!targetStillValid) {
+        targetMesh = findSeekerTarget(proj);
+        proj.userData.homingTarget = targetMesh || null;
       }
-      const boss = getBoss();
-      if (boss) {
-        const dist = boss.mesh.position.distanceTo(proj.position);
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearestTarget = boss.mesh.position;
-        }
-      }
-      if (nearestTarget) {
+
+      const baseSpeed = proj.userData.baseSpeed || proj.userData.velocity.length();
+      if (targetMesh) {
         const desired = new THREE.Vector3()
-          .subVectors(nearestTarget, proj.position)
+          .subVectors(targetMesh.position, proj.position)
           .normalize()
-          .multiplyScalar(proj.userData.velocity.length());
+          .multiplyScalar(baseSpeed);
         const homingStrength = proj.userData.homingStrength || 3.5;
-        proj.userData.velocity.lerp(desired, homingStrength * adjustedDt);
+        proj.userData.velocity.lerp(desired, Math.min(1, homingStrength * adjustedDt));
+        if (proj.userData.velocity.lengthSq() > 0.0001) {
+          proj.userData.velocity.setLength(baseSpeed);
+        }
+      } else if (proj.userData.velocity.lengthSq() > 0.0001) {
+        proj.userData.velocity.setLength(baseSpeed);
       }
+
       if (proj.userData.velocity.lengthSq() > 0.0001) {
         proj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), proj.userData.velocity.clone().normalize());
       }
@@ -7573,7 +7642,7 @@ function updateProjectiles(dt) {
           if (!bossProj || !bossProj.mesh) continue;
           const dist = proj.position.distanceTo(bossProj.mesh.position);
           if (dist < 0.5) {
-            triggerHostileProjectileExplosion(bossProj.mesh.position.clone(), 0.35, 0);
+            spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
             markProjectileHit(proj);
             scene.remove(bossProj.mesh);
             disposeObject3D(bossProj.mesh);
@@ -7717,9 +7786,9 @@ function spawnEnemyWave(dt) {
 
       // Calculate vertical spawn angle based on level
       let verticalAngle = 0;
-      if (game.level >= 16) verticalAngle = 60;
-      else if (game.level >= 11) verticalAngle = 40;
-      else if (game.level >= 6) verticalAngle = 20;
+      if (game.level >= 16) verticalAngle = 30;
+      else if (game.level >= 11) verticalAngle = 20;
+      else if (game.level >= 6) verticalAngle = 10;
 
       const distanceRange = type === 'conductor' ? { min: 8, max: 13 } : null;
       const pos = getSpawnPosition(cfg.airSpawns, verticalAngle, distanceRange);
@@ -8212,7 +8281,7 @@ function render(timestamp) {
         disposeObject3D(proj.mesh);
         bossProjs.splice(i, 1);
 
-        const dead = damagePlayer(1);
+        const dead = damagePlayer(proj.damage || 1);
         triggerHitFlash();
         playDamageSound();
         cameraShake = 0.4;
@@ -8307,6 +8376,27 @@ function render(timestamp) {
   // ── Ready screen countdown ──
   else if (st === State.READY_SCREEN) {
     updateReadyCountdown(now);
+  }
+
+  // ── Boss alert sequence ──
+  else if (st === State.BOSS_ALERT) {
+    game.stateTimer -= rawDt;
+    
+    // Play alert sound periodically
+    if (game.stateTimer > 1.0 && game.stateTimer < 2.5 && !game._alertSound2) {
+      game._alertSound2 = true;
+      playBossAlertSound();
+    }
+    
+    // After 3s: transition to PLAYING, spawn boss (music already started)
+    if (game.stateTimer <= 0) {
+      game._alertSound2 = false;
+      hideBossAlert();
+      game.state = State.PLAYING;
+      showHUD();
+      // Boss music already started in advanceLevelAfterUpgrade
+      console.log(`[game] Boss fight starting at level ${game.level}`);
+    }
   }
 
   // ── Level complete (cooldown before upgrade screen) ──
@@ -8841,6 +8931,16 @@ function buildDesertNightScene(group) {
   moonLight.position.set(-30, 50, -30);
   group.add(moonLight);
 
+  // Point light for long moon-like shadows from cacti
+  const shadowLight = new THREE.PointLight(0xd4e5f7, 1.5, 100);
+  shadowLight.position.set(-45, 35, -60); // Same as moon position
+  shadowLight.castShadow = true;
+  shadowLight.shadow.mapSize.width = 1024;
+  shadowLight.shadow.mapSize.height = 1024;
+  shadowLight.shadow.camera.near = 10;
+  shadowLight.shadow.camera.far = 100;
+  group.add(shadowLight);
+
   // Very dim ambient
   const ambientLight = new THREE.AmbientLight(0x1a2035, 0.15);
   group.add(ambientLight);
@@ -8892,8 +8992,8 @@ function buildDesertNightScene(group) {
   group.add(terrain);
   registerFadeMaterial(material);
 
-  // Flash overlay plane for damage feedback
-  const flashGeo = new THREE.PlaneGeometry(300, 300);
+  // Flash overlay plane for damage feedback (entire sand floor turns red)
+  const flashGeo = new THREE.PlaneGeometry(140, 140);
   const flashMat = new THREE.MeshBasicMaterial({
     color: 0xff0000,
     transparent: true,
@@ -8903,7 +9003,7 @@ function buildDesertNightScene(group) {
   });
   const flashPlane = new THREE.Mesh(flashGeo, flashMat);
   flashPlane.rotation.x = -Math.PI / 2;
-  flashPlane.position.y = floorY + 0.05;
+  flashPlane.position.y = floorY + 0.02; // Very close to terrain surface
   flashPlane.frustumCulled = false;
   group.add(flashPlane);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
@@ -8958,20 +9058,8 @@ function buildDesertNightScene(group) {
       cactusGroup.add(vArm);
     }
 
-    // Fake shadow on sand (cheap blob shadow)
-    const shadowGeo = new THREE.CircleGeometry(0.6, 16);
-    const shadowMat = new THREE.MeshBasicMaterial({
-      color: 0x000000,
-      transparent: true,
-      opacity: 0.22,
-      depthWrite: false,
-    });
-    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = 0.03;
-    const shadowScale = 0.8 + height * 0.18;
-    shadow.scale.set(shadowScale, shadowScale, 1);
-    cactusGroup.add(shadow);
+    // REMOVED: Fake circle shadow - now using point light for realistic moon shadows
+    // Cacti will cast natural shadows from the shadowLight
 
     return cactusGroup;
   };
@@ -8984,7 +9072,7 @@ function buildDesertNightScene(group) {
     { x: 3, z: -8, h: 1.8 },
     { x: -10, z: 1, h: 2.2 },
     { x: 0, z: 10, h: 2.3 },
-    { x: 5, z: 9, h: 1.9 },
+    // Removed cactus at {x: 5, z: 9, h: 1.9} - player now spawns there
     { x: -5, z: -9, h: 2.4 },
   ];
 
@@ -9118,9 +9206,9 @@ function buildDesertNightScene(group) {
 
   group.rotation.y = 0; // face toward moon
 
-  // Shift biome position so player moves left (push desert right) and backwards
-  // This ensures cacti don't block the player's view
-  group.position.set(6, 0, -8);
+  // Shift biome position so player spawns where the removed cactus was (x:5, z:9)
+  // Player at origin (0,0,0) -> biome at (-5, 0, -9) puts player at cactus position
+  group.position.set(-5, 0, -9);
 
   // === ANIMATION UPDATE ===
   group.userData.update = (now, dt) => {
@@ -9153,7 +9241,7 @@ function buildDesertNightScene(group) {
 
 function buildAlienPlanetScene(group) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
-  const floorY = floorHeight;
+  const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
 
   // Ground
   const groundGeo = new THREE.PlaneGeometry(300, 300, 20, 20);
@@ -9250,7 +9338,7 @@ function buildAlienPlanetScene(group) {
     const mountainGroup = new THREE.Group();
     for (let p = 0; p < peakCount; p++) {
       const height = (12 + Math.random() * 18) * scale;
-      const radius = (2 + Math.random() * 3) * scale;
+      const radius = Math.max(2.5, (2 + Math.random() * 3) * scale); // Minimum radius of 2.5 for no skinny pyramids
       const peakGeo = new THREE.ConeGeometry(radius, height, 5 + Math.floor(Math.random() * 3));
       const peakMat = new THREE.MeshStandardMaterial({
         color: 0x1a1020,
@@ -9431,6 +9519,14 @@ function buildAlienPlanetScene(group) {
     const radius = 8 + Math.random() * 40;  // Increased spread radius from 35 to 40
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 8;
     const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 8;
+    
+    // Clearance zone: no tall plants within 10 units in front of player spawn (0, 0, -z)
+    const clearanceRadius = 10;
+    const distToFront = Math.sqrt(x * x + (z + 5) * (z + 5)); // Check distance to front of spawn
+    if (distToFront < clearanceRadius && z < 0) {
+      continue; // Skip this plant to keep front area clear
+    }
+    
     const plantType = Math.floor(Math.random() * 4);
     const plant = createAlienPlant(x, z, plantType);
     plant.castShadow = true;
@@ -9716,8 +9812,8 @@ function buildHellscapeLavaScene(group) {
   const terrain = new THREE.Mesh(geometry, material);
   terrain.receiveShadow = true;
   terrain.position.y = floorY;
-  terrain.position.x = 10.0;  // Shift terrain RIGHT so player moves left relative to biome
-  terrain.position.z = -3.0;  // Shift terrain forward so player sits on riverbank (not in ground)
+  terrain.position.x = 0.0;  // Player on valley floor (not shifted)
+  terrain.position.z = 0.0;  // Player on flat valley floor (not behind hill)
   group.add(terrain);
 
   // Flash overlay plane for damage feedback

@@ -622,6 +622,32 @@ export function playBossSpawn() {
   });
 }
 
+export function playBossAlertSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Three urgent beeps
+  for (let i = 0; i < 3; i++) {
+    const beepTime = t + i * 0.7;
+    
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(800, beepTime);
+    osc.frequency.setValueAtTime(1000, beepTime + 0.1);
+    osc.frequency.setValueAtTime(800, beepTime + 0.2);
+
+    gain.gain.setValueAtTime(0.25, beepTime);
+    gain.gain.setValueAtTime(0.25, beepTime + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.01, beepTime + 0.35);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(beepTime);
+    osc.stop(beepTime + 0.35);
+  }
+}
+
 // ── Menu / UI Interaction ──────────────────────────────────
 export function playMenuClick() {
   const ctx = getAudioContext();
