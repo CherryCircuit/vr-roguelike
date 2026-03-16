@@ -9611,17 +9611,3 @@ function buildHellscapeLavaScene(group) {
 
   group.rotation.y = 0; // face moons
 }
-
-
-      const idx = activeCount * 3;
-      geyserPos[idx] = p.x;
-      geyserPos[idx + 1] = p.y;
-      geyserPos[idx + 2] = p.z;
-      activeCount++;
-    }
-    geyserGeo.setDrawRange(0, activeCount);
-    geyserGeo.attributes.position.needsUpdate = true;
-  };
-
-  group.rotation.y = 0; // face moons
-}
