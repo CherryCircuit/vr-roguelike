@@ -542,6 +542,9 @@ export function getWeaponStats(mainWeaponId, upgrades) {
     lightningRange: base.lightningRange || 0,
     lightningTickInterval: base.lightningTickInterval || 0.2,
     lightningDamage: Math.round(damage),
+    chargeShot: base.chargeShot || false,
+    chargeTimeMax: base.chargeTimeMax || 5.0,
+    chargeDamageMultiplier: base.chargeDamageMultiplier || 3.0,
   };
 }
 
