@@ -5354,6 +5354,9 @@ function completeLevel() {
   
   // Update HUD one final time to show correct kill count
   updateHUD(game);
+
+  // Ensure level-end timing is not slowed by proximity slow-mo
+  resetAllSlowMoState();
   
   game.state = State.LEVEL_COMPLETE;
   clearAllEnemies();
