@@ -283,6 +283,23 @@ const originalCameraPos = new THREE.Vector3();
 let screenShakeIntensity = 0;
 let screenShakeTime = 0;
 
+// Boss death cinematic overlays
+const BOSS_DEATH_FREEZE = 0.18;
+const BOSS_DEATH_EXPLOSION_TIME = 0.9;
+const BOSS_DEATH_WHITE_FADE = 0.35;
+const BOSS_DEATH_BLACK_FADE = 0.55;
+const BOSS_DEATH_EXPLOSION_INTERVAL = 0.12;
+let bossDeathFreezeTimer = 0;
+let bossDeathWhiteOverlay = null;
+let bossDeathBlackOverlay = null;
+let bossDeathCinematic = {
+  active: false,
+  timer: 0,
+  explosionTimer: 0,
+  bossPos: new THREE.Vector3(),
+  wasFinalBoss: false,
+};
+
 // Decoy system
 const activeDecoys = [];
 const MAX_DECOYS = 3;
@@ -362,6 +379,7 @@ function init() {
   // Init subsystems
   initEnemies(scene);
   initHUD(camera, scene);
+  initBossDeathOverlays();
   initVFX(scene);
 
   // PERFORMANCE: Initialize projectile pool
@@ -5346,6 +5364,148 @@ function resetAllSlowMoState() {
   }
 }
 
+function initBossDeathOverlays() {
+  const geo = new THREE.PlaneGeometry(6, 6);
+  bossDeathWhiteOverlay = new THREE.Mesh(
+    geo,
+    new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  bossDeathWhiteOverlay.renderOrder = 1002;
+  bossDeathWhiteOverlay.visible = false;
+  bossDeathWhiteOverlay.position.set(0, 0, -0.26);
+  camera.add(bossDeathWhiteOverlay);
+
+  bossDeathBlackOverlay = new THREE.Mesh(
+    geo,
+    new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  bossDeathBlackOverlay.renderOrder = 1003;
+  bossDeathBlackOverlay.visible = false;
+  bossDeathBlackOverlay.position.set(0, 0, -0.25);
+  camera.add(bossDeathBlackOverlay);
+}
+
+function startBossDeathCinematic(boss) {
+  if (!boss || bossDeathCinematic.active) return;
+
+  resetAllSlowMoState();
+  bossDeathCinematic.active = true;
+  bossDeathCinematic.timer = 0;
+  bossDeathCinematic.explosionTimer = 0;
+  bossDeathCinematic.bossPos.copy(boss.mesh.position);
+  bossDeathCinematic.wasFinalBoss = game.level >= 20;
+  bossDeathFreezeTimer = BOSS_DEATH_FREEZE;
+
+  if (bossDeathWhiteOverlay) {
+    bossDeathWhiteOverlay.material.opacity = 0;
+    bossDeathWhiteOverlay.visible = false;
+  }
+  if (bossDeathBlackOverlay) {
+    bossDeathBlackOverlay.material.opacity = 0;
+    bossDeathBlackOverlay.visible = false;
+  }
+
+  spawnBossDebris(boss);
+  if (typeof window !== 'undefined' && window.playBossDeath) {
+    window.playBossDeath();
+  }
+  stopMusic();
+  playExplosionSound();
+  hideBossHealthBar();
+  clearBoss();
+
+  game.state = State.BOSS_DEATH_CINEMATIC;
+}
+
+function finishBossDeathCinematic() {
+  bossDeathCinematic.active = false;
+  bossDeathCinematic.timer = 0;
+  bossDeathCinematic.explosionTimer = 0;
+
+  if (bossDeathWhiteOverlay) {
+    bossDeathWhiteOverlay.material.opacity = 0;
+    bossDeathWhiteOverlay.visible = false;
+  }
+  if (bossDeathBlackOverlay) {
+    bossDeathBlackOverlay.material.opacity = 0;
+    bossDeathBlackOverlay.visible = false;
+  }
+
+  if (bossDeathCinematic.wasFinalBoss) {
+    bossDeathCinematic.wasFinalBoss = false;
+    endGame(true);
+    return;
+  }
+
+  bossDeathCinematic.wasFinalBoss = false;
+  completeLevel();
+}
+
+function updateBossDeathCinematic(rawDt) {
+  if (!bossDeathCinematic.active) return;
+
+  bossDeathCinematic.timer += rawDt;
+  const t = bossDeathCinematic.timer;
+  const explosionStart = BOSS_DEATH_FREEZE;
+  const explosionEnd = explosionStart + BOSS_DEATH_EXPLOSION_TIME;
+  const whiteStart = explosionEnd;
+  const whiteEnd = whiteStart + BOSS_DEATH_WHITE_FADE;
+  const blackEnd = whiteEnd + BOSS_DEATH_BLACK_FADE;
+
+  if (t >= explosionStart && t <= explosionEnd) {
+    bossDeathCinematic.explosionTimer -= rawDt;
+    if (bossDeathCinematic.explosionTimer <= 0) {
+      const offset = new THREE.Vector3(
+        (Math.random() - 0.5) * 1.8,
+        (Math.random() - 0.5) * 1.2,
+        (Math.random() - 0.5) * 1.8,
+      );
+      const explosionPos = bossDeathCinematic.bossPos.clone().add(offset);
+      spawnExplosionVisual(explosionPos, 0.7 + Math.random() * 0.8);
+      bossDeathCinematic.explosionTimer = BOSS_DEATH_EXPLOSION_INTERVAL;
+    }
+  }
+
+  let whiteOpacity = 0;
+  let blackOpacity = 0;
+  if (t >= whiteStart && t < whiteEnd) {
+    whiteOpacity = (t - whiteStart) / BOSS_DEATH_WHITE_FADE;
+  } else if (t >= whiteEnd && t < blackEnd) {
+    const progress = (t - whiteEnd) / BOSS_DEATH_BLACK_FADE;
+    whiteOpacity = 1 - progress;
+    blackOpacity = progress;
+  } else if (t >= blackEnd) {
+    blackOpacity = 1;
+  }
+
+  if (bossDeathWhiteOverlay) {
+    bossDeathWhiteOverlay.visible = whiteOpacity > 0;
+    bossDeathWhiteOverlay.material.opacity = Math.min(1, Math.max(0, whiteOpacity));
+  }
+  if (bossDeathBlackOverlay) {
+    bossDeathBlackOverlay.visible = blackOpacity > 0;
+    bossDeathBlackOverlay.material.opacity = Math.min(1, Math.max(0, blackOpacity));
+  }
+
+  if (t >= blackEnd) {
+    finishBossDeathCinematic();
+  }
+}
+
 function completeLevel() {
   console.log(`[game] Level ${game.level} complete`);
   
@@ -5438,7 +5598,6 @@ function showUpgradeScreen() {
   }
 
   showUpgradeCards(pendingUpgrades, camera.position, hand);
-  if (game.justBossKill) game.justBossKill = false;
   upgradeSelectionCooldown = 1.5; // prevent instant selection
 
   // Mark blaster displays for update
@@ -5505,6 +5664,14 @@ function advanceLevelAfterUpgrade() {
       // Show ready screen with countdown
       showReadyScreen(game.level, camera.position);
       resetReadyCountdown();
+
+      if (game.level === 6) {
+        playMusic('levels6to10');
+      } else if (game.level === 11) {
+        playMusic('levels11to14');
+      } else if (game.level === 16) {
+        playMusic('levels16to19');
+      }
       
       // Start environment fade in
       startEnvironmentFade('in', 0.8);
@@ -6161,6 +6328,8 @@ function chargeTimeToScale(t) {
  * @param {number} progress - Charge progress from 0 to 1
  */
 function updateChargeVisuals(controller, index, progress) {
+  if (!controller || typeof controller.add !== 'function') return;
+
   // Initialize glow sphere if needed
   if (!chargeGlowSpheres[index]) {
     // Main glow sphere at controller tip
@@ -7413,7 +7582,12 @@ function render(timestamp) {
   }
 
   // Use game.timeScale if death sequence is active, otherwise use bullet-time timeScale
-  const effectiveTimeScale = game.slowmoActive ? game.timeScale : timeScale;
+  let effectiveTimeScale = game.slowmoActive ? game.timeScale : timeScale;
+  if (bossDeathFreezeTimer > 0) {
+    bossDeathFreezeTimer -= rawDt;
+    if (bossDeathFreezeTimer < 0) bossDeathFreezeTimer = 0;
+    effectiveTimeScale = 0;
+  }
 
   const dt = rawDt * effectiveTimeScale;  // Scaled time for game logic
 
@@ -7695,20 +7869,7 @@ function render(timestamp) {
       // Check if boss was killed
       if (boss.hp <= 0) {
         console.log(`[boss] Boss defeated!`);
-
-        // Spawn debris physics BEFORE clearing boss
-        spawnBossDebris(boss);
-
-        if (typeof window !== 'undefined' && window.playBossDeath) {
-          window.playBossDeath();
-        }
-        stopMusic();
-
-        // Clean up boss
-        clearBoss();
-
-        // Complete the level (boss level)
-        completeLevel();
+        startBossDeathCinematic(boss);
       }
     } else {
       hideBossHealthBar();
@@ -7877,6 +8038,11 @@ function render(timestamp) {
     if (frameCount % 3 === 0) {
       updateHUD(game);
     }
+  }
+
+  // ── Boss death cinematic ──
+  else if (st === State.BOSS_DEATH_CINEMATIC) {
+    updateBossDeathCinematic(rawDt);
   }
 
   // ── Ready screen countdown ──
