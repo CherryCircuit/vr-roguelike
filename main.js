@@ -5917,6 +5917,11 @@ function fireMainWeapon(controller, index) {
     return;  // Lightning is continuous hold-to-fire
   }
 
+  // Charge shot mode - handled separately, fires on trigger release
+  if (stats.chargeShot) {
+    return;  // Charge shot fires on release, not on press
+  }
+
   // Check cooldown
   if (now - weaponCooldowns[index] < stats.fireInterval) return;
   weaponCooldowns[index] = now;
