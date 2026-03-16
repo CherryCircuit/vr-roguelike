@@ -7849,6 +7849,8 @@ function render(timestamp) {
             // NOTE: Popups are now accuracy-based, not kill-chain based
             // Accuracy popups are triggered in markAccuracyHit() when multiplier increases
 
+            const cfg = game._levelConfig;
+
             // Check for kills remaining alert
             if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
               const remaining = cfg ? cfg.killTarget - game.kills : 0;
@@ -7856,8 +7858,6 @@ function render(timestamp) {
               playKillsAlertSound();
               killsAlertShownThisLevel = true;
             }
-
-            const cfg = game._levelConfig;
 
             if (cfg && game.kills >= cfg.killTarget) {
               completeLevel();
