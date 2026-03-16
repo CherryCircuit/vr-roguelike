@@ -9625,5 +9625,3 @@ function buildHellscapeLavaScene(group) {
 
   group.rotation.y = 0; // face moons
 }
-ons
-}
