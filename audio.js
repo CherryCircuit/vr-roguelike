@@ -68,6 +68,52 @@ export function playShoothSound() {
   }
 }
 
+// ── Seeker Burst sound (distinct homing beam) ───────────────
+export function playSeekerBurstSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const lfo = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const lfoGain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'sawtooth';
+  osc2.type = 'triangle';
+  lfo.type = 'sine';
+
+  osc.frequency.setValueAtTime(380, t);
+  osc.frequency.exponentialRampToValueAtTime(1040, t + 0.15);
+  osc2.frequency.setValueAtTime(140, t);
+  osc2.frequency.exponentialRampToValueAtTime(220, t + 0.15);
+  lfo.frequency.setValueAtTime(18, t);
+
+  lfoGain.gain.setValueAtTime(28, t);
+  lfo.connect(lfoGain);
+  lfoGain.connect(osc.frequency);
+
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(1100, t);
+  filter.Q.setValueAtTime(8, t);
+
+  gain.gain.setValueAtTime(0.16, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+
+  osc.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc2.start(t);
+  lfo.start(t);
+  osc.stop(t + 0.18);
+  osc2.stop(t + 0.18);
+  lfo.stop(t + 0.18);
+}
+
 // ── Double Shot sound ──────────────────────────────────────
 export function playDoubleShotSound() {
   const ctx = getAudioContext();
@@ -883,7 +929,16 @@ export function playSlowMoReverseSound() {
 }
 
 // ── Kills remaining alert sound ────────────────────────────────
-export function playKillsAlertSound() {
+export function playKillsAlertSound(remaining = null) {
+  if (remaining === 5 || remaining === 10) {
+    const audio = new Audio(`mnt/project/music/${remaining}_kills_remaining.mp3`);
+    audio.volume = 0.5;
+    audio.play().catch(err => {
+      console.warn('[audio] Failed to play kills remaining clip:', err);
+    });
+    return;
+  }
+
   const ctx = getAudioContext();
   const t = ctx.currentTime;
   const osc = ctx.createOscillator();

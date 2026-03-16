@@ -6533,22 +6533,9 @@ export function hitBoss(damage, hitInfo = {}) {
   const result = activeBoss.takeDamage(damage, hitInfo);
 
   if (result.killed) {
-    // Boss defeated
-    if (typeof window !== 'undefined' && window.playBossDeath) {
-      window.playBossDeath();
-    }
-
-    // Spawn boss death explosion
-    if (typeof spawnEffectParticle === 'function') {
-      for (let i = 0; i < 20; i++) {
-        spawnEffectParticle(activeBoss.mesh.position, activeBoss.def.color);
-      }
-    }
-
-    // Clean up
-    activeBoss.destroy();
-    activeBoss = null;
-
+    // Let main.js own the cinematic timing and cleanup.
+    // If we destroy the boss here, the cinematic loses the live boss context
+    // and the level 5 transition can skip straight past the kill sequence.
     if (typeof hideBossHealthBar === 'function') {
       hideBossHealthBar();
     }
@@ -6788,21 +6775,39 @@ export function updateBossMinions(dt, playerPos) {
 // ── PROJECTILES (for compatibility) ───────────────────────────
 const bossProjectiles = [];
 export function spawnBossProjectile(fromPos, targetPos) {
-  const geo = getGeo(0.12);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, emissive: 0xff0000 });
-  const proj = new THREE.Mesh(geo, mat);
-  proj.position.copy(fromPos);
-  proj.userData.isBossProjectile = true;
+  const projGroup = new THREE.Group();
+
+  const coreGeo = getGeo(0.065);
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3355 });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  projGroup.add(core);
+
+  const glowGeo = getGeo(0.14);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xff88aa,
+    transparent: true,
+    opacity: 0.7,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  projGroup.add(glow);
+
+  projGroup.position.copy(fromPos);
+  projGroup.userData.isBossProjectile = true;
+  projGroup.userData.glowPhase = Math.random() * Math.PI * 2;
 
   const dir = new THREE.Vector3().copy(targetPos).sub(fromPos).normalize();
-  const speed = 4.0;
+  const speed = 2.1;
 
-  sceneRef.add(proj);
+  sceneRef.add(projGroup);
   bossProjectiles.push({
-    mesh: proj,
+    mesh: projGroup,
     velocity: dir.multiplyScalar(speed),
     createdAt: performance.now(),
     lifetime: 5000,
+    homingStrength: 2.8,
+    wigglePhase: Math.random() * Math.PI * 2,
   });
 }
 
@@ -6812,17 +6817,45 @@ export function updateBossProjectiles(dt, now, playerPos) {
     const age = now - proj.createdAt;
 
     if (age > proj.lifetime) {
+      if (typeof window !== 'undefined' && window.createExplosionAt) {
+        window.createExplosionAt(proj.mesh.position.clone(), 0.6, 10);
+      }
       sceneRef.remove(proj.mesh);
-      proj.mesh.geometry.dispose();
-      proj.mesh.material.dispose();
+      proj.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
       bossProjectiles.splice(i, 1);
       continue;
     }
 
-    proj.mesh.position.addScaledVector(proj.velocity, dt);
+    // Homing movement like a mini swarm enemy
+    const slowFactor = getStasisSlowFactor(proj.mesh.position);
+    const adjustedDt = dt * slowFactor;
+    const toPlayer = new THREE.Vector3().subVectors(playerPos, proj.mesh.position).normalize();
+    const desiredVelocity = toPlayer.multiplyScalar(proj.velocity.length());
+    proj.velocity.lerp(desiredVelocity, (proj.homingStrength || 2.5) * adjustedDt);
+
+    proj.wigglePhase = (proj.wigglePhase || 0) + adjustedDt * 6.0;
+    const wiggleX = Math.sin(proj.wigglePhase) * 0.02;
+    const wiggleZ = Math.cos(proj.wigglePhase) * 0.02;
+    const pulse = 0.75 + Math.sin(age * 0.015 + (proj.mesh.userData.glowPhase || 0)) * 0.25;
+
+    proj.mesh.position.addScaledVector(proj.velocity, adjustedDt);
+    proj.mesh.position.x += wiggleX;
+    proj.mesh.position.z += wiggleZ;
+    proj.mesh.children.forEach((child, index) => {
+      if (!child.material) return;
+      if (index === 0) {
+        child.scale.setScalar(0.9 + pulse * 0.12);
+      } else {
+        child.scale.setScalar(0.95 + pulse * 0.25);
+        child.material.opacity = 0.35 + pulse * 0.35;
+      }
+    });
 
     if (proj.mesh.position.distanceTo(playerPos) < 0.5) {
       proj.hitPlayer = true;
+      if (typeof window !== 'undefined' && window.createExplosionAt) {
+        window.createExplosionAt(proj.mesh.position.clone(), 0.6, 10);
+      }
     }
   }
 }

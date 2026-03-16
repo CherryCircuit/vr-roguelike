@@ -118,9 +118,10 @@ export const MAIN_WEAPONS = {
       critMultiplier: 2,
       piercing: false,
       aoeRadius: 0,
-      spreadAngle: 0.1745,  // 10 degrees
+      spreadAngle: 0,  // Parallel homing beams
       homing: true,  // Shots track enemies
       homingRange: 15,  // Tracking range
+      projectileSpeed: 32,
     },
   },
 };
@@ -504,6 +505,10 @@ export function getWeaponStats(mainWeaponId, upgrades) {
   if (mainWeaponId === 'laser_beam') {
     if (u.laser_overcharge) damage *= 1.2;
   }
+
+  if (mainWeaponId === 'seeker_burst') {
+    if (u.gimme_more) projectileCount += 2 * u.gimme_more;
+  }
   
   // Apply universal damage modifiers
   if (u.overcharge) damage *= 1.2;
@@ -534,6 +539,8 @@ export function getWeaponStats(mainWeaponId, upgrades) {
     aoeRadius,
     projectileSpeed,
     spreadAngle: base.spreadAngle || 0,
+    homing: base.homing || false,
+    homingRange: base.homingRange || 0,
     vampiricInterval,
     fireWeakenMult,
     effects,

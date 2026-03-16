@@ -39,8 +39,8 @@ function getEnemyTypes(level) {
   if (level === 19) return ['tank', 'swarm'];
   const types = ['basic'];
   if (level >= 3) types.push('fast');
-  if (level >= 6) types.push('tank');
-  if (level >= 8) types.push('swarm');
+  if (level >= 4) types.push('tank');
+  if (level >= 6) types.push('swarm');
   if (level >= 11) types.push('spiral_swimmer');
   if (level >= 13) types.push('jelly');
   if (level >= 14) types.push('conductor');

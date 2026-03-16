@@ -720,6 +720,86 @@ export function triggerHoloGlitch() {
   holographicState.colorShift = 1.0;
 }
 
+export function resetHoloGlitch() {
+  holographicState.glitchIntensity = 0;
+  holographicState.colorShift = 0;
+  if (holoGlitchMesh) {
+    holoGlitchMesh.material.opacity = 0;
+  }
+  if (hudGroup) {
+    hudGroup.position.x = 0;
+    hudGroup.position.z = -3;
+  }
+  if (holoScanLineMesh) {
+    holoScanLineMesh.position.x = 0;
+  }
+}
+
+export function updateHolographicGlitch(now) {
+  // Update scan line animation (moving downward)
+  holographicState.scanLineOffset = (now * 0.0005) % 1;
+  if (holoScanLineMesh && holoScanLineMesh.material.map) {
+    holoScanLineMesh.material.map.offset.y = holographicState.scanLineOffset;
+  }
+
+  // Update flicker phase (minimal idle flicker)
+  holographicState.flickerPhase = now * 0.015;
+  const flickerAmount = 0.02 * Math.sin(holographicState.flickerPhase) +
+                         0.01 * Math.sin(holographicState.flickerPhase * 2.3);
+  if (holoScanLineMesh) {
+    holoScanLineMesh.material.opacity = 0.08 + flickerAmount;
+  }
+
+  // Decay glitch effect
+  if (holographicState.glitchIntensity > 0) {
+    const glitchAge = now - holographicState.glitchStartTime;
+    const glitchDuration = 600; // 600ms glitch duration for noticeable effect
+    if (glitchAge > glitchDuration) {
+      holographicState.glitchIntensity = 0;
+      holographicState.colorShift = 0;
+    } else {
+      holographicState.glitchIntensity = Math.max(0, 1 - (glitchAge / glitchDuration));
+    }
+
+    // Update glitch overlay
+    if (holoGlitchMesh) {
+      if (holographicState.glitchIntensity > 0.05) {
+        const glitchTexture = createGlitchTexture(holographicState.glitchIntensity);
+        if (holoGlitchMesh.material.map) holoGlitchMesh.material.map.dispose();
+        holoGlitchMesh.material.map = glitchTexture;
+        holoGlitchMesh.material.opacity = holographicState.glitchIntensity * 0.9;
+        holoGlitchMesh.material.needsUpdate = true;
+
+        // Shake the entire HUD group during glitch
+        const shakeX = (Math.random() - 0.5) * 0.08 * holographicState.glitchIntensity;
+        const shakeZ = (Math.random() - 0.5) * 0.05 * holographicState.glitchIntensity;
+        hudGroup.position.x = shakeX;
+        hudGroup.position.z = -3 + shakeZ;
+
+        // Also shake the scan lines for extra effect
+        if (holoScanLineMesh) {
+          holoScanLineMesh.position.x = shakeX * 0.5;
+        }
+      } else {
+        holoGlitchMesh.material.opacity = 0;
+        // Reset HUD position
+        hudGroup.position.x = 0;
+        hudGroup.position.z = -3;
+        if (holoScanLineMesh) {
+          holoScanLineMesh.position.x = 0;
+        }
+      }
+    }
+  } else {
+    // Ensure HUD position is reset
+    hudGroup.position.x = 0;
+    hudGroup.position.z = -3;
+    if (holoScanLineMesh) {
+      holoScanLineMesh.position.x = 0;
+    }
+  }
+}
+
 export function triggerHealthGainAnimation() {
   heartAnimationState.healthGain = 1.0;
 }
@@ -766,73 +846,7 @@ export function updateHUD(gameState) {
   }
 
   // === HOLOGRAPHIC EFFECTS ===
-  // Update scan line animation (moving downward)
-  holographicState.scanLineOffset = (now * 0.0005) % 1;
-  if (holoScanLineMesh && holoScanLineMesh.material.map) {
-    holoScanLineMesh.material.map.offset.y = holographicState.scanLineOffset;
-  }
-
-  // Update flicker phase (minimal idle flicker)
-  holographicState.flickerPhase = now * 0.015;
-  const flickerAmount = 0.02 * Math.sin(holographicState.flickerPhase) +
-                         0.01 * Math.sin(holographicState.flickerPhase * 2.3);
-  if (holoScanLineMesh) {
-    holoScanLineMesh.material.opacity = 0.08 + flickerAmount;  // Very subtle idle flicker
-  }
-
-  // Decay glitch effect
-  if (holographicState.glitchIntensity > 0) {
-    const glitchAge = now - holographicState.glitchStartTime;
-    const glitchDuration = 600; // 600ms glitch duration for noticeable effect
-    if (glitchAge > glitchDuration) {
-      holographicState.glitchIntensity = 0;
-      holographicState.colorShift = 0;
-    } else {
-      // Exponential decay with random spikes for chaotic look
-      holographicState.glitchIntensity = Math.max(0, 1 - (glitchAge / glitchDuration));
-      // Random re-spikes during decay for more dramatic effect
-      if (Math.random() < 0.15) {
-        holographicState.glitchIntensity = Math.min(1, holographicState.glitchIntensity + 0.4);
-      }
-    }
-
-    // Update glitch overlay
-    if (holoGlitchMesh) {
-      if (holographicState.glitchIntensity > 0.05) {
-        const glitchTexture = createGlitchTexture(holographicState.glitchIntensity);
-        if (holoGlitchMesh.material.map) holoGlitchMesh.material.map.dispose();
-        holoGlitchMesh.material.map = glitchTexture;
-        holoGlitchMesh.material.opacity = holographicState.glitchIntensity * 0.9;
-        holoGlitchMesh.material.needsUpdate = true;
-
-        // Shake the entire HUD group during glitch
-        const shakeX = (Math.random() - 0.5) * 0.08 * holographicState.glitchIntensity;
-        const shakeZ = (Math.random() - 0.5) * 0.05 * holographicState.glitchIntensity;
-        hudGroup.position.x = shakeX;
-        hudGroup.position.z = -3 + shakeZ;
-
-        // Also shake the scan lines for extra effect
-        if (holoScanLineMesh) {
-          holoScanLineMesh.position.x = shakeX * 0.5;
-        }
-      } else {
-        holoGlitchMesh.material.opacity = 0;
-        // Reset HUD position
-        hudGroup.position.x = 0;
-        hudGroup.position.z = -3;
-        if (holoScanLineMesh) {
-          holoScanLineMesh.position.x = 0;
-        }
-      }
-    }
-  } else {
-    // Ensure HUD position is reset
-    hudGroup.position.x = 0;
-    hudGroup.position.z = -3;
-    if (holoScanLineMesh) {
-      holoScanLineMesh.position.x = 0;
-    }
-  }
+  updateHolographicGlitch(now);
 
   // Hearts - proper aspect ratio with correct scale and animation
   const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth, heartAnimationState);

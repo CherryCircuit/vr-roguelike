@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>v2026.03.16.1411</title>
+  <title>SPACEOMICIDE</title>
   <style>
     /* ── Base Reset & Synthwave Theme ── */
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -182,7 +182,7 @@
       </div>
     </div>
     
-    <p style="font-size: 1em; opacity: 0.6; margin-top: 12px;">v2026.03.16.1411</p>
+    <p id="version-text" style="font-size: 1em; opacity: 0.6; margin-top: 12px;">v2026.03.16.1550</p>
   </div>
 
   <!-- Fallback if WebXR is not available -->
@@ -243,9 +243,14 @@
   </script>
 
   <!-- Main game module -->
-  <script type="module" src="main.js?v=20260315-2154"></script>
+  <script type="module" src="main.js?v=20260316-1516"></script>
   <script>
     (function() {
+      const GAME_VERSION = 'v2026.03.16.1550';
+      document.title = GAME_VERSION;
+      const versionEl = document.getElementById('version-text');
+      if (versionEl) versionEl.textContent = GAME_VERSION;
+
       const params = new URLSearchParams(location.search);
       const panel = document.getElementById('debug-panel');
       const toggle = document.getElementById('debug-toggle');

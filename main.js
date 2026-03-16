@@ -17,7 +17,7 @@ import {
   startLightningSound, stopLightningSound,
   startLowHealthWarningSound, stopLowHealthWarningSound,
   playMusic, playBossMusic, stopMusic, fadeOutMusic, getMusicFrequencyData,
-  playKillsAlertSound, playTingSound,
+  playKillsAlertSound, playTingSound, playSeekerBurstSound,
   // Charge cannon sounds
   startChargeSound, updateChargeSound, stopChargeSound,
   playChargeReadySound, playChargeFireSound
@@ -46,6 +46,7 @@ import {
   updateHUDHover,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
+  updateHolographicGlitch, resetHoloGlitch,
   nameEntryGroup
 } from './hud.js';
 
@@ -619,6 +620,17 @@ function clearBiomeScene() {
   biomeTerrainMaterials = [];  // Clear terrain flash references
 }
 
+function disposeObject3D(obj) {
+  if (!obj) return;
+  obj.traverse((child) => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+      else child.material.dispose();
+    }
+  });
+}
+
 function updateBiomeProps(now, dt) {
   if (!biomePropsGroup && !biomeSceneGroup) return;
   if (biomePropsGroup && biomePropsGroup.userData && typeof biomePropsGroup.userData.update === 'function') {
@@ -626,6 +638,9 @@ function updateBiomeProps(now, dt) {
   }
   if (biomeSceneGroup && biomeSceneGroup.userData && typeof biomeSceneGroup.userData.update === 'function') {
     biomeSceneGroup.userData.update(now, dt);
+  }
+  if (starsRef && starsRef.userData && typeof starsRef.userData.update === 'function') {
+    starsRef.userData.update(now, dt);
   }
   biomePropFloaters.forEach((floater) => {
     const { mesh, baseY, amp, speed, phase, rotateSpeed } = floater;
@@ -1006,7 +1021,11 @@ function applyThemeForLevel(level) {
   }
 
   if (starsRef && starsRef.material) {
-    starsRef.material.color.setHex(theme.starColor);
+    if (starsRef.material.color) {
+      starsRef.material.color.setHex(theme.starColor);
+    } else if (starsRef.material.uniforms && starsRef.material.uniforms.uColor) {
+      starsRef.material.uniforms.uColor.value.setHex(theme.starColor);
+    }
     const starSize = theme.starSize !== undefined ? theme.starSize : 0.5;
     starsRef.material.size = starSize;
   }
@@ -1341,8 +1360,73 @@ function generatePeaks(count, minH, maxH) {
   return peaks;
 }
 
+function createSparklingStars(theme) {
+  const count = theme.starCount || 800;
+  const spread = theme.starSpread || 300;
+  const height = theme.starHeight || 80;
+  const base = theme.starBase || 10;
+  const positions = new Float32Array(count * 3);
+  const phases = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const i3 = i * 3;
+    positions[i3] = (Math.random() - 0.5) * spread;
+    positions[i3 + 1] = Math.random() * height + base;
+    positions[i3 + 2] = (Math.random() - 0.5) * spread;
+    phases[i] = Math.random() * Math.PI * 2;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  const tint = new THREE.Color(theme.starColor || 0xff66cc);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uColor: { value: tint },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+    },
+    vertexShader: `
+      attribute float aPhase;
+      uniform float uTime;
+      uniform float uPixelRatio;
+      varying float vTwinkle;
+      void main() {
+        vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        float size = (2.2 * uPixelRatio + vTwinkle) * (200.0 / -mvPosition.z);
+        gl_PointSize = size;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      varying float vTwinkle;
+      void main() {
+        float dist = length(gl_PointCoord - vec2(0.5));
+        if (dist > 0.5) discard;
+        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+        gl_FragColor = vec4(uColor * (0.7 + vTwinkle * 0.4), alpha * vTwinkle);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const stars = new THREE.Points(geo, mat);
+  stars.renderOrder = -20;
+  stars.userData.update = (now) => {
+    mat.uniforms.uTime.value = now * 0.001;
+  };
+  scene.add(stars);
+  starsRef = stars;
+  registerFadeMaterial(starsRef.material);
+}
+
 function createStars() {
   const theme = currentTheme || {};
+  if (theme.customScene === 'synthwave_valley') {
+    createSparklingStars(theme);
+    return;
+  }
   const count = theme.starCount || 800;
   const spread = theme.starSpread || 300;
   const height = theme.starHeight || 80;
@@ -1371,6 +1455,10 @@ function rebuildStars(theme) {
     if (starsRef.geometry) starsRef.geometry.dispose();
     if (starsRef.material) starsRef.material.dispose();
     starsRef = null;
+  }
+  if (theme.customScene === 'synthwave_valley') {
+    createSparklingStars(theme);
+    return;
   }
   const count = theme.starCount || 800;
   const spread = theme.starSpread || 300;
@@ -3295,7 +3383,7 @@ function updateNaniteSwarms(now, dt, playerPos) {
               if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
                 const remaining = cfg ? cfg.killTarget - game.kills : 0;
                 showKillsRemainingAlert(remaining);
-                playKillsAlertSound();
+                playKillsAlertSound(remaining);
                 killsAlertShownThisLevel = true;
               }
 
@@ -4553,7 +4641,7 @@ function detonateGrenade(grenade, index) {
           if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
             const remaining = cfg ? cfg.killTarget - game.kills : 0;
             showKillsRemainingAlert(remaining);
-            playKillsAlertSound();
+            playKillsAlertSound(remaining);
             killsAlertShownThisLevel = true;
           }
 
@@ -4702,15 +4790,15 @@ function detonateProximityMine(mine, index) {
           addScore(destroyData.scoreValue);
           updateHUD(game);
 
+          const cfg = game._levelConfig;
           // Check for kills remaining alert
           if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
             const remaining = cfg ? cfg.killTarget - game.kills : 0;
             showKillsRemainingAlert(remaining);
-            playKillsAlertSound();
+            playKillsAlertSound(remaining);
             killsAlertShownThisLevel = true;
           }
 
-          const cfg = game._levelConfig;
           if (cfg && game.kills >= cfg.killTarget) {
             completeLevel();
           }
@@ -4979,15 +5067,15 @@ function fireEMP(origin, hand, altWeapon) {
           addScore(destroyData.scoreValue);
           updateHUD(game);
 
+          const cfg = game._levelConfig;
           // Check for kills remaining alert
           if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
             const remaining = cfg ? cfg.killTarget - game.kills : 0;
             showKillsRemainingAlert(remaining);
-            playKillsAlertSound();
+            playKillsAlertSound(remaining);
             killsAlertShownThisLevel = true;
           }
 
-          const cfg = game._levelConfig;
           if (cfg && game.kills >= cfg.killTarget) {
             completeLevel();
           }
@@ -5332,6 +5420,17 @@ function startGame() {
   showReadyScreen(game.level, camera.position);
   resetReadyCountdown();
 
+  // Setup kills remaining alert for level 1
+  killsAlertShownThisLevel = false;
+  const cfg = game._levelConfig;
+  if (cfg && !cfg.isBoss) {
+    const threshold = game.level >= 11 ? 10 : 5;
+    killsAlertTriggerKill = cfg.killTarget - threshold;
+    if (killsAlertTriggerKill <= 0) killsAlertTriggerKill = null;
+  } else {
+    killsAlertTriggerKill = null;
+  }
+
   // Hide blaster displays during gameplay
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
 
@@ -5561,6 +5660,7 @@ function showUpgradeScreen() {
   console.log('[game] Showing upgrade selection');
   game.state = State.UPGRADE_SELECT;
   hideLevelComplete();
+  resetHoloGlitch();
 
   // Stop lightning sound during upgrade screen
   stopLightningSound();
@@ -5805,21 +5905,51 @@ function initProjectilePool() {
     projectilePool.push(mesh);
   }
 
+  // Add seeker burst beams to pool (sperm-like homing bolts)
+  for (let i = 0; i < 28; i++) {
+    const color = colors[i % 2];
+    const seekerGroup = new THREE.Group();
+
+    const headGeo = new THREE.SphereGeometry(0.06, 8, 8);
+    const headMat = new THREE.MeshBasicMaterial({ color });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.z = -0.2;
+    seekerGroup.add(head);
+
+    const tailGeo = new THREE.CylinderGeometry(0.012, 0.028, 0.5, 6);
+    const tailMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 });
+    const tail = new THREE.Mesh(tailGeo, tailMat);
+    tail.rotation.x = Math.PI / 2;
+    tail.position.z = 0.12;
+    seekerGroup.add(tail);
+
+    const glowGeo = new THREE.SphereGeometry(0.12, 8, 8);
+    const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.position.z = -0.2;
+    seekerGroup.add(glow);
+
+    seekerGroup.visible = false;
+    seekerGroup.userData.isPooled = true;
+    seekerGroup.userData.poolType = 'seeker';
+    scene.add(seekerGroup);
+    projectilePool.push(seekerGroup);
+  }
+
   console.log(`[performance] Projectile pool initialized: ${projectilePool.length} objects`);
 }
 
 // PERFORMANCE: Get a projectile from pool or return null if exhausted
-function getPooledProjectile(isBuckshot, color) {
-  const poolType = isBuckshot ? 'buckshot' : 'laser';
-
+function getPooledProjectile(poolType, color) {
   // Find inactive projectile of correct type
   for (const proj of projectilePool) {
     if (!proj.visible && proj.userData.poolType === poolType) {
-      // Update color for laser bolts
-      if (!isBuckshot && proj.children) {
+      if (proj.children) {
         proj.children.forEach(child => {
           if (child.material) child.material.color.setHex(color);
         });
+      } else if (proj.material) {
+        proj.material.color.setHex(color);
       }
       return proj;
     }
@@ -5839,6 +5969,56 @@ function returnProjectileToPool(proj) {
   proj.userData.lifetime = undefined;
   proj.userData.createdAt = undefined;
   proj.userData.hitEnemies = null;
+  proj.userData.homingRange = undefined;
+  proj.userData.homingStrength = undefined;
+  proj.userData.tailPhase = undefined;
+  proj.userData.tailSpeed = undefined;
+}
+
+function isHostileProjectile(proj) {
+  return !!(proj && proj.userData && (proj.userData.isBossProjectile || (proj.userData.damage && !proj.userData.stats)));
+}
+
+function triggerHostileProjectileExplosion(position, radius = 0.35, damage = 0) {
+  const blastPos = position.clone();
+  spawnExplosionVisual(blastPos, radius);
+  if (typeof window !== 'undefined' && typeof window.createExplosionAt === 'function' && damage > 0) {
+    window.createExplosionAt(blastPos, radius, damage);
+  }
+}
+
+function updateSeekerProjectileVisual(proj, dt) {
+  if (!proj || !proj.children || proj.children.length < 2) return;
+  proj.userData.tailPhase = (proj.userData.tailPhase || Math.random() * Math.PI * 2) + dt * (proj.userData.tailSpeed || 18);
+  const head = proj.children[0];
+  const tail = proj.children[1];
+  const glow = proj.children[2];
+  const sway = Math.sin(proj.userData.tailPhase) * 0.06;
+  tail.rotation.z = sway;
+  tail.scale.y = 0.85 + Math.sin(proj.userData.tailPhase * 1.7) * 0.12;
+  head.position.x = Math.sin(proj.userData.tailPhase * 0.5) * 0.01;
+  if (glow && glow.material) {
+    glow.material.opacity = 0.18 + Math.sin(proj.userData.tailPhase * 1.5) * 0.08;
+  }
+}
+
+function updateHostileProjectileVisual(proj, now) {
+  if (!proj) return;
+  const pulse = 0.75 + Math.sin(now * 0.012 + (proj.userData.glowPhase || 0)) * 0.25;
+  if (proj.material) {
+    proj.material.opacity = Math.min(1, 0.8 + pulse * 0.2);
+  }
+  if (proj.children) {
+    proj.children.forEach((child, index) => {
+      if (!child.material) return;
+      if (index === 0) {
+        child.scale.setScalar(0.9 + pulse * 0.15);
+      } else {
+        child.scale.setScalar(0.95 + pulse * 0.3);
+        child.material.opacity = Math.min(1, 0.25 + pulse * 0.4);
+      }
+    });
+  }
 }
 
 // ============================================================
@@ -6105,7 +6285,11 @@ function fireMainWeapon(controller, index) {
   // Fire projectile(s)
   const count = stats.projectileCount;
   const shotId = startAccuracyShot(count);
-  const isBuckshot = stats.spreadAngle > 0;
+  const isBuckshot = stats.spreadAngle > 0 && !stats.homing;
+
+  if (stats.homing) {
+    playSeekerBurstSound();
+  }
 
   // Calculate perpendicular offset axis for parallel multi-shot
   const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
@@ -6121,7 +6305,7 @@ function fireMainWeapon(controller, index) {
       spawnOrigin.addScaledVector(rightAxis, offsetIndex * gap);
     }
 
-    spawnProjectile(spawnOrigin, direction, index, stats, shotId);
+    spawnProjectile(spawnOrigin, direction, index, stats, shotId, { suppressSound: stats.homing });
   }
 
   console.log(`[MAIN weapon] ${hand} hand fired ${count} projectile(s) from ${mainWeaponId}`);
@@ -6222,7 +6406,7 @@ function updateLightningBeam(controller, index, stats, dt) {
             if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
               const remaining = cfg ? cfg.killTarget - game.kills : 0;
               showKillsRemainingAlert(remaining);
-              playKillsAlertSound();
+              playKillsAlertSound(remaining);
               killsAlertShownThisLevel = true;
             }
 
@@ -6508,8 +6692,6 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
       game.handStats[hand].totalDamage += damage;
       if (result.killed) {
         playExplosionSound();
-        clearBoss();
-        hideBossHealthBar();
         game.kills++;
         game.totalKills++;
         addScore(boss.scoreValue);
@@ -6522,11 +6704,11 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
           const cfg = game._levelConfig;
           const remaining = cfg ? cfg.killTarget - game.kills : 0;
           showKillsRemainingAlert(remaining);
-          playKillsAlertSound();
+          playKillsAlertSound(remaining);
           killsAlertShownThisLevel = true;
         }
 
-        completeLevel();
+        startBossDeathCinematic(boss);
       }
     }
   }
@@ -6557,7 +6739,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   explosionVisuals.push(beamMesh);
 }
 
-function spawnProjectile(origin, direction, controllerIndex, stats, shotId) {
+function spawnProjectile(origin, direction, controllerIndex, stats, shotId, options = {}) {
   // PERFORMANCE: Enforce hard cap on active projectiles
   if (projectiles.length >= MAX_PROJECTILES) {
     // Skip spawning - too many projectiles active
@@ -6568,7 +6750,8 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId) {
 
   const now = performance.now();
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
-  const isBuckshot = stats.spreadAngle > 0;
+  const isBuckshot = stats.spreadAngle > 0 && !stats.homing;
+  const poolType = stats.homing ? 'seeker' : (isBuckshot ? 'buckshot' : 'laser');
 
   // Big Boom: only one exploding shot per hand every 2.75s
   let isExploding = false;
@@ -6580,7 +6763,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId) {
   }
 
   // PERFORMANCE: Get projectile from pool instead of creating new
-  let mesh = getPooledProjectile(isBuckshot, color);
+  let mesh = getPooledProjectile(poolType, color);
 
   if (!mesh) {
     // Pool exhausted - skip this projectile (prevents unbounded growth)
@@ -6612,6 +6795,10 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId) {
   mesh.userData.hitEnemies = new Set();
   mesh.userData.shotId = shotId;
   mesh.userData.hitConfirmed = false;
+  mesh.userData.homingRange = stats.homing ? (stats.homingRange || 15) : 0;
+  mesh.userData.homingStrength = stats.homing ? 6.5 : 0;
+  mesh.userData.tailPhase = stats.homing ? Math.random() * Math.PI * 2 : 0;
+  mesh.userData.tailSpeed = stats.homing ? 16 + Math.random() * 5 : 0;
   mesh.visible = true;
 
   // Orient bolt along direction
@@ -6621,10 +6808,12 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId) {
 
   projectiles.push(mesh);
 
-  if (isBuckshot) {
-    playBuckshotSound();
-  } else {
-    playShoothSound();
+  if (!options.suppressSound) {
+    if (isBuckshot) {
+      playBuckshotSound();
+    } else {
+      playShoothSound();
+    }
   }
 }
 
@@ -6763,7 +6952,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
         const remaining = cfg ? cfg.killTarget - game.kills : 0;
         showKillsRemainingAlert(remaining);
-        playKillsAlertSound();
+        playKillsAlertSound(remaining);
         killsAlertShownThisLevel = true;
       }
 
@@ -6817,8 +7006,6 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
   playHitSound();
   if (result.killed) {
     playExplosionSound();
-    clearBoss();
-    hideBossHealthBar();
     game.kills++;
     game.totalKills++;
     game.killsWithoutHit++;
@@ -6832,11 +7019,11 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
       const cfg = game._levelConfig;
       const remaining = cfg ? cfg.killTarget - game.kills : 0;
       showKillsRemainingAlert(remaining);
-      playKillsAlertSound();
+      playKillsAlertSound(remaining);
       killsAlertShownThisLevel = true;
     }
 
-    completeLevel();
+    startBossDeathCinematic(boss);
   }
 }
 
@@ -7161,32 +7348,44 @@ function updateProjectiles(dt) {
 
     // Skip projectiles with missing data (safety check)
     if (!proj.userData || !proj.userData.stats) {
-      // Check if this is a boss projectile
+      // Check if this is a hostile projectile
       if (proj.userData && proj.userData.damage && proj.userData.direction) {
-        // Boss projectile - move it
         const age = now - proj.userData.createdAt;
         if (age > proj.userData.duration) {
+          triggerHostileProjectileExplosion(proj.position, 0.3, 0);
           scene.remove(proj);
           projectiles.splice(i, 1);
           continue;
         }
-        
-        // Move boss projectile
-        proj.position.addScaledVector(proj.userData.direction, proj.userData.speed * dt);
-        
-        // Check collision with player
+
+        const slowFactor = getStasisSlowFactor(proj.position);
+        const adjustedDt = dt * slowFactor;
         const playerPos = camera.position;
+
+        // Mini-swarm style steering and visual pop so hostile shots feel alive.
+        const desiredDir = new THREE.Vector3().subVectors(playerPos, proj.position).normalize();
+        const currentDir = proj.userData.direction.clone().normalize();
+        currentDir.lerp(desiredDir, Math.min(1, adjustedDt * 2.8));
+        proj.userData.direction.copy(currentDir.normalize());
+
+        const wigglePhase = (proj.userData.wigglePhase || Math.random() * Math.PI * 2) + adjustedDt * 8;
+        proj.userData.wigglePhase = wigglePhase;
+        const side = new THREE.Vector3(-proj.userData.direction.z, 0, proj.userData.direction.x).normalize();
+        proj.position.addScaledVector(side, Math.sin(wigglePhase) * 0.015);
+        proj.position.addScaledVector(proj.userData.direction, proj.userData.speed * adjustedDt);
+        updateHostileProjectileVisual(proj, now);
+
         const dist = proj.position.distanceTo(playerPos);
         if (dist < 1.0) {
-          // Hit player
           if (typeof damagePlayer === 'function') {
             damagePlayer(proj.userData.damage);
           }
+          triggerHostileProjectileExplosion(proj.position, 0.4, 0);
           scene.remove(proj);
           projectiles.splice(i, 1);
           continue;
         }
-        
+
         continue;
       }
       
@@ -7217,6 +7416,40 @@ function updateProjectiles(dt) {
     // Check if projectile is inside a stasis field
     const slowFactor = getStasisSlowFactor(proj.position);
     const adjustedDt = dt * slowFactor;
+
+    // Homing behavior (Seeker Burst)
+    if (proj.userData.homingRange && proj.userData.homingRange > 0) {
+      let nearestTarget = null;
+      let nearestDist = proj.userData.homingRange;
+      const enemies = getEnemies();
+      for (const e of enemies) {
+        const dist = e.mesh.position.distanceTo(proj.position);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestTarget = e.mesh.position;
+        }
+      }
+      const boss = getBoss();
+      if (boss) {
+        const dist = boss.mesh.position.distanceTo(proj.position);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestTarget = boss.mesh.position;
+        }
+      }
+      if (nearestTarget) {
+        const desired = new THREE.Vector3()
+          .subVectors(nearestTarget, proj.position)
+          .normalize()
+          .multiplyScalar(proj.userData.velocity.length());
+        const homingStrength = proj.userData.homingStrength || 3.5;
+        proj.userData.velocity.lerp(desired, homingStrength * adjustedDt);
+      }
+      if (proj.userData.velocity.lengthSq() > 0.0001) {
+        proj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), proj.userData.velocity.clone().normalize());
+      }
+      updateSeekerProjectileVisual(proj, adjustedDt);
+    }
 
     // Move projectile (apply stasis slow effect)
     const moveDistance = proj.userData.velocity.length() * adjustedDt;
@@ -7340,11 +7573,10 @@ function updateProjectiles(dt) {
           if (!bossProj || !bossProj.mesh) continue;
           const dist = proj.position.distanceTo(bossProj.mesh.position);
           if (dist < 0.5) {
-            spawnExplosionVisual(bossProj.mesh.position.clone(), 0.5);
+            triggerHostileProjectileExplosion(bossProj.mesh.position.clone(), 0.35, 0);
             markProjectileHit(proj);
             scene.remove(bossProj.mesh);
-            if (bossProj.mesh.geometry) bossProj.mesh.geometry.dispose();
-            if (bossProj.mesh.material) bossProj.mesh.material.dispose();
+            disposeObject3D(bossProj.mesh);
             bossProjs.splice(j, 1);
 
             if (!proj.userData.stats?.piercing) {
@@ -7370,8 +7602,8 @@ function updateProjectiles(dt) {
         if (bossProj.userData.isBossProjectile || bossProj.userData.damage) {
           const dist = proj.position.distanceTo(bossProj.position);
           if (dist < 0.5) { // Collision radius
-            // Destroy boss projectile
-            spawnExplosionVisual(bossProj.position.clone(), 0.5);
+            // Destroy hostile projectile with a small blast
+            triggerHostileProjectileExplosion(bossProj.position.clone(), 0.35, 0);
             markProjectileHit(proj);
             
             // If it's a decoy, explode it
@@ -7825,7 +8057,11 @@ function render(timestamp) {
     // If in slow-mo, check whether all enemies in trigger range are gone → ramp out over 0.5s + reverse sound
     if (slowMoActive && !slowMoRampOut) {
       const enemiesForRamp = getEnemies();
-      const anyNear = enemiesForRamp.some(e => e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST);
+      const bossProjsForRamp = getBossProjectiles();
+      const hostileShotsForRamp = projectiles.filter(isHostileProjectile);
+      const anyNear = enemiesForRamp.some(e => e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST) ||
+        bossProjsForRamp.some(p => p.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST) ||
+        hostileShotsForRamp.some(p => p.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST);
       if (!anyNear) {
         slowMoActive = false;
         slowMoSoundPlayed = false;
@@ -7846,6 +8082,30 @@ function render(timestamp) {
           slowMoDuration = 2.5;
           console.log('[bullet-time] ACTIVATED!');
           break;
+        }
+      }
+      if (!slowMoActive) {
+        const bossProjs = getBossProjectiles();
+        for (const proj of bossProjs) {
+          const dist = proj.mesh.position.distanceTo(playerPos);
+          if (dist < SLOW_MO_TRIGGER_DIST) {
+            slowMoActive = true;
+            slowMoDuration = 2.5;
+            console.log('[bullet-time] ACTIVATED!');
+            break;
+          }
+        }
+      }
+      if (!slowMoActive) {
+        for (const proj of projectiles) {
+          if (!isHostileProjectile(proj)) continue;
+          const dist = proj.position.distanceTo(playerPos);
+          if (dist < SLOW_MO_TRIGGER_DIST) {
+            slowMoActive = true;
+            slowMoDuration = 2.5;
+            console.log('[bullet-time] ACTIVATED!');
+            break;
+          }
         }
       }
       if (slowMoActive && !slowMoSoundPlayed) {
@@ -7942,15 +8202,14 @@ function render(timestamp) {
         if (checkReflectorDroneReflection(proj.mesh.position, true)) {
           // Projectile was reflected - remove it without damaging player
           scene.remove(proj.mesh);
-          proj.mesh.geometry.dispose();
-          proj.mesh.material.dispose();
+          disposeObject3D(proj.mesh);
           bossProjs.splice(i, 1);
           continue;
         }
 
+        triggerHostileProjectileExplosion(proj.mesh.position.clone(), 0.35, 0);
         scene.remove(proj.mesh);
-        proj.mesh.geometry.dispose();
-        proj.mesh.material.dispose();
+        disposeObject3D(proj.mesh);
         bossProjs.splice(i, 1);
 
         const dead = damagePlayer(1);
@@ -8021,7 +8280,7 @@ function render(timestamp) {
             if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
               const remaining = cfg ? cfg.killTarget - game.kills : 0;
               showKillsRemainingAlert(remaining);
-              playKillsAlertSound();
+              playKillsAlertSound(remaining);
               killsAlertShownThisLevel = true;
             }
 
@@ -8095,6 +8354,10 @@ function render(timestamp) {
       updateKeyboardHover(rc);
       break;  // Only need one controller for hover
     }
+  }
+
+  if (st !== State.PLAYING) {
+    updateHolographicGlitch(now);
   }
 
   // ── Unified UI hover detection for all menu states ──
@@ -8625,6 +8888,7 @@ function buildDesertNightScene(group) {
   const terrain = new THREE.Mesh(geometry, material);
   terrain.position.y = floorY;
   terrain.frustumCulled = false;
+  terrain.receiveShadow = true;  // Sand dunes receive cactus shadows
   group.add(terrain);
   registerFadeMaterial(material);
 
@@ -8660,6 +8924,8 @@ function buildDesertNightScene(group) {
       const segMat = new THREE.MeshLambertMaterial({ color: bodyColor, flatShading: true });
       const segment = new THREE.Mesh(segGeo, segMat);
       segment.position.y = currentY + segmentHeight / 2;
+      segment.castShadow = true;  // Cacti cast shadows
+      segment.receiveShadow = true;
       cactusGroup.add(segment);
       currentY += segmentHeight;
     }
@@ -8686,9 +8952,26 @@ function buildDesertNightScene(group) {
       const vArmGeo = new THREE.CylinderGeometry(0.06, 0.08, vArmHeight, 5);
       const vArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
       const vArm = new THREE.Mesh(vArmGeo, vArmMat);
+      vArm.castShadow = true;
+      vArm.receiveShadow = true;
       vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
       cactusGroup.add(vArm);
     }
+
+    // Fake shadow on sand (cheap blob shadow)
+    const shadowGeo = new THREE.CircleGeometry(0.6, 16);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+    });
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.03;
+    const shadowScale = 0.8 + height * 0.18;
+    shadow.scale.set(shadowScale, shadowScale, 1);
+    cactusGroup.add(shadow);
 
     return cactusGroup;
   };
@@ -8835,8 +9118,9 @@ function buildDesertNightScene(group) {
 
   group.rotation.y = 0; // face toward moon
 
-  // Shift biome position so player moves backwards (negative Z) and left (negative X)
-  group.position.set(-5, 0, -5);
+  // Shift biome position so player moves left (push desert right) and backwards
+  // This ensures cacti don't block the player's view
+  group.position.set(6, 0, -8);
 
   // === ANIMATION UPDATE ===
   group.userData.update = (now, dt) => {
@@ -8958,14 +9242,7 @@ function buildAlienPlanetScene(group) {
   const riverMat = new THREE.MeshBasicMaterial({ color: 0x00ff66, transparent: true, opacity: 0.85 });
   const river = new THREE.Mesh(riverGeo, riverMat);
   group.add(river);
-  // River glow - reduced radius from 5 to 2.5 to avoid blocking view
-  // Issue 4: Moved down to y=-0.5 (below ground/in the river) to hide green transparent shape
-  const glowGeo = new THREE.TubeGeometry(riverCurve, 120, 2.5, 6, false);
-  const riverGlowMat = new THREE.MeshBasicMaterial({ color: 0x00ff44, transparent: true, opacity: 0.08, side: THREE.BackSide });
-  const riverGlow = new THREE.Mesh(glowGeo, riverGlowMat);
-  riverGlow.position.y = -0.6; // Move down so the glow (which follows curve at y=0.1) ends up at y=-0.5
-  riverGlow.frustumCulled = false;
-  group.add(riverGlow);
+  // River glow removed to clear the green object above the river
 
   // Mountains - 3 rings of procedural jagged mountains
   const createMountain = (x, z, scale) => {
@@ -9148,6 +9425,50 @@ function buildAlienPlanetScene(group) {
     group.add(plant);
   }
 
+  // Extra flora spread around the player (increased for more coverage)
+  for (let i = 0; i < 120; i++) {  // Increased from 70 to 120
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 8 + Math.random() * 40;  // Increased spread radius from 35 to 40
+    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 8;
+    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 8;
+    const plantType = Math.floor(Math.random() * 4);
+    const plant = createAlienPlant(x, z, plantType);
+    plant.castShadow = true;
+    plant.receiveShadow = true;
+    plant.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    alienPlants.push(plant);
+    group.add(plant);
+  }
+
+  // Small fauna critters (increased for more life)
+  const critterGeo = new THREE.SphereGeometry(0.18, 8, 6);
+  const critterGlowGeo = new THREE.SphereGeometry(0.3, 8, 6);
+  for (let i = 0; i < 40; i++) {  // Increased from 24 to 40
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 6 + Math.random() * 35;  // Spread wider
+    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 4;
+    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 4;
+    const critterGroup = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, emissive: 0x00ff66, emissiveIntensity: 0.4 });
+    const body = new THREE.Mesh(critterGeo, bodyMat);
+    body.position.y = 0.2;
+    critterGroup.add(body);
+
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0x33ffaa, transparent: true, opacity: 0.3 });
+    const glow = new THREE.Mesh(critterGlowGeo, glowMat);
+    glow.position.y = 0.2;
+    critterGroup.add(glow);
+
+    critterGroup.position.set(x, floorY, z);
+    critterGroup.rotation.y = Math.random() * Math.PI * 2;
+    group.add(critterGroup);
+  }
+
   // Fireflies - 240 particles with gentle drift (Issue 3: doubled from 120)
   const fireflyPositions = [];
   const fireflyVelocities = [];
@@ -9168,7 +9489,7 @@ function buildAlienPlanetScene(group) {
   fireflyGeo.setAttribute('position', new THREE.Float32BufferAttribute(fireflyPositions, 3));
   const fireflyMat = new THREE.PointsMaterial({
     color: 0x44ff88,
-    size: 0.35,
+    size: 0.0875,  // Reduced from 0.175 (50% smaller)
     transparent: true,
     opacity: 0.9,
     sizeAttenuation: true
@@ -9306,6 +9627,7 @@ function buildAlienPlanetScene(group) {
 
   group.rotation.y = 0.2; // aim player slightly toward river flow
   group.position.x = -15; // Move biome left so player moves right relative to biome (Issue 1: increased shift)
+  group.position.z = 10; // Move biome forward so player sits further back from the action
 }
 
 function buildHellscapeLavaScene(group) {
@@ -9353,7 +9675,7 @@ function buildHellscapeLavaScene(group) {
     const riverWidth = 5.0;
     const distFromCenter = Math.abs(x);
     let height = 0;
-    const valleyFloorHeight = 2.0;
+    const valleyFloorHeight = 1.5;
     if (distFromCenter > valleyWidth) {
       const mountainFactor = (distFromCenter - valleyWidth) / 15.0;
       let mHeight = 0;
@@ -9386,7 +9708,7 @@ function buildHellscapeLavaScene(group) {
       shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\nvPosition = position; vElevation = position.y;`);
       shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       shader.fragmentShader = shader.fragmentShader.replace('#include <emissive_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { } else { float distToLava = vElevation - lavaThreshold; float glowReflection = smoothstep(5.0, 0.0, distToLava); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; totalEmissiveRadiance = vec3(0.6, 0.1, 0.0) * glowReflection * pulse; } #include <emissive_fragment>`);
-      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.2, 0.0); vec3 lavaColorBright = vec3(1.0, 0.6, 0.1); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.7 + 0.3 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor, 0.9); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.05, 0.05); vec3 lavaColorBright = vec3(1.0, 0.25, 0.2); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.7 + 0.3 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor, 0.9); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
       material.userData.shader = shader;
     }
   });
@@ -9395,6 +9717,7 @@ function buildHellscapeLavaScene(group) {
   terrain.receiveShadow = true;
   terrain.position.y = floorY;
   terrain.position.x = 10.0;  // Shift terrain RIGHT so player moves left relative to biome
+  terrain.position.z = -3.0;  // Shift terrain forward so player sits on riverbank (not in ground)
   group.add(terrain);
 
   // Flash overlay plane for damage feedback
@@ -9627,6 +9950,33 @@ function buildHellscapeLavaScene(group) {
   group.add(sparks);
 
   // ========================================
+  // 5b. ASH PARTICLES (dark floating)
+  // ========================================
+  const ashCount = 260;
+  const ashPositions = new Float32Array(ashCount * 3);
+  const ashVelocities = new Float32Array(ashCount * 3);
+  for (let i = 0; i < ashCount; i++) {
+    const i3 = i * 3;
+    ashPositions[i3] = (Math.random() - 0.5) * 80;
+    ashPositions[i3 + 1] = 1 + Math.random() * 10;
+    ashPositions[i3 + 2] = (Math.random() - 0.5) * 80;
+    ashVelocities[i3] = (Math.random() - 0.5) * 0.02;
+    ashVelocities[i3 + 1] = 0.01 + Math.random() * 0.015;
+    ashVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
+  }
+  const ashGeo = new THREE.BufferGeometry();
+  ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPositions, 3));
+  const ashMat = new THREE.PointsMaterial({
+    color: 0x2b2b2b,
+    size: 0.06,  // Smaller than alien particles (0.0875)
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false
+  });
+  const ash = new THREE.Points(ashGeo, ashMat);
+  group.add(ash);
+
+  // ========================================
   // 6. FLAME GEYSERS (periodic eruptions)
   // ========================================
   const geyserParticles = [];
@@ -9723,8 +10073,9 @@ function buildHellscapeLavaScene(group) {
     // Update spark particles - continuously spawn from lava river
     const sparkPos = sparkGeo.attributes.position.array;
 
-    // Continuously spawn 3-5 new sparks each frame from random positions along the river
-    const sparksToSpawn = 3 + Math.floor(Math.random() * 3);
+    // Continuously spawn 10-15 new sparks each frame from random positions along the river
+    // (increased spawn rate for more dynamic lava effect)
+    const sparksToSpawn = 10 + Math.floor(Math.random() * 6);  // Was 6 + Math.floor(Math.random() * 4)
     for (let s = 0; s < sparksToSpawn; s++) {
       const randomIdx = Math.floor(Math.random() * sparkCount);
       // Only respawn if lifetime is mostly elapsed or just starting fresh
@@ -9746,6 +10097,21 @@ function buildHellscapeLavaScene(group) {
       }
     }
     sparkGeo.attributes.position.needsUpdate = true;
+
+    // Ash drift
+    const ashPos = ashGeo.attributes.position.array;
+    for (let i = 0; i < ashCount; i++) {
+      const i3 = i * 3;
+      ashPos[i3] += ashVelocities[i3] * dt * 0.6;
+      ashPos[i3 + 1] += ashVelocities[i3 + 1] * dt * 0.6;
+      ashPos[i3 + 2] += ashVelocities[i3 + 2] * dt * 0.6;
+      if (ashPos[i3 + 1] > 12) ashPos[i3 + 1] = 1;
+      if (ashPos[i3] > 40) ashPos[i3] = -40;
+      if (ashPos[i3] < -40) ashPos[i3] = 40;
+      if (ashPos[i3 + 2] > 40) ashPos[i3 + 2] = -40;
+      if (ashPos[i3 + 2] < -40) ashPos[i3 + 2] = 40;
+    }
+    ashGeo.attributes.position.needsUpdate = true;
 
     // Geyser trigger and update
     if (now - lastGeyserTime > geyserInterval) {
