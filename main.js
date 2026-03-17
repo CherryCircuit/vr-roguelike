@@ -17,7 +17,7 @@ import {
   startLightningSound, stopLightningSound,
   startLowHealthWarningSound, stopLowHealthWarningSound,
   playMusic, playBossMusic, stopMusic, fadeOutMusic, getMusicFrequencyData,
-  playKillsAlertSound, playTingSound, playSeekerBurstSound,
+  playKillsAlertSound, playTingSound, playSeekerBurstSound, playHealSound,
   // Charge cannon sounds
   startChargeSound, updateChargeSound, stopChargeSound,
   playChargeReadySound, playChargeFireSound
@@ -167,7 +167,7 @@ const plasmaCarbineLastFireTime = [0, 0];
 // Seeker burst fire queue: pending shots for burst-fire weapons
 // Each entry: { origin, direction, controllerIndex, stats, shotId, fireTime }
 const seekerBurstQueue = [];
-const SEEKER_BURST_DELAY = 80; // 80ms between shots in burst ("pew-pew-pew")
+const SEEKER_BURST_DELAY = 45; // 45ms between shots in burst ("pew-pew-pew") - reduced from 80ms for faster burst
 
 // Charge shot visual effects (per controller)
 const chargeGlowSpheres = [null, null];
@@ -408,6 +408,13 @@ function init() {
   renderer.xr.addEventListener('sessionstart', () => {
     console.log('[vr] Session started - disabling foveation');
     renderer.xr.setFoveation(0);
+
+    // Ensure camera is at correct eye level when VR session starts
+    const MIN_EYE_LEVEL = 1.6;
+    if (camera.position.y < MIN_EYE_LEVEL) {
+      console.log('[vr] Adjusting camera Y from', camera.position.y, 'to', MIN_EYE_LEVEL);
+      camera.position.y = MIN_EYE_LEVEL;
+    }
   });
 
   // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
@@ -5964,6 +5971,7 @@ function updateBossDeathCinematic(rawDt) {
       );
       const explosionPos = bossDeathCinematic.bossPos.clone().add(offset);
       spawnExplosionVisual(explosionPos, 0.7 + Math.random() * 0.8);
+      playExplosionSound();  // Play explosion sound for each boss death explosion
       bossDeathCinematic.explosionTimer = BOSS_DEATH_EXPLOSION_INTERVAL;
     }
   }
@@ -6348,7 +6356,7 @@ function initProjectilePool() {
     const color = colors[i % 2];
     const seekerGroup = new THREE.Group();
 
-    const headGeo = new THREE.SphereGeometry(0.06, 8, 8);
+    const headGeo = new THREE.SphereGeometry(0.03, 8, 8);  // Reduced from 0.06 to 0.03 (50% smaller)
     const headMat = new THREE.MeshBasicMaterial({ color });
     const head = new THREE.Mesh(headGeo, headMat);
     head.position.z = -0.2;
@@ -6361,7 +6369,7 @@ function initProjectilePool() {
     tail.position.z = 0.12;
     seekerGroup.add(tail);
 
-    const glowGeo = new THREE.SphereGeometry(0.12, 8, 8);
+    const glowGeo = new THREE.SphereGeometry(0.06, 8, 8);  // Reduced from 0.12 to 0.06 (50% smaller to match head)
     const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending });
     const glow = new THREE.Mesh(glowGeo, glowMat);
     glow.position.z = -0.2;
@@ -7529,6 +7537,8 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       if (stats.vampiricInterval > 0 && game.totalKills % stats.vampiricInterval === 0) {
         game.health = Math.min(game.maxHealth, game.health + 1);
         console.log('[vampiric] Healed 1 HP');
+        triggerHealthGainAnimation();  // Show heart icon visual
+        playHealSound();  // Play healing sound
       }
 
       // Check for kills remaining alert
@@ -7630,6 +7640,9 @@ function handleAOE(center, radius, damage, controllerIndex) {
 
 /** Spawn a short-lived visible explosion (expanding sphere) at center. */
 function spawnExplosionVisual(center, radius) {
+  // Play explosion sound
+  playExplosionSound();
+
   // Bigger shake for explosions
   triggerScreenShake(0.3, 300); // 0.3 shake for 300ms
 
@@ -9116,6 +9129,16 @@ function render(timestamp) {
     }
   }
 
+  // ── VR camera height enforcement ──
+  // Ensure camera is always at correct eye level in VR mode
+  // This handles Quest re-center and VR re-entry cases
+  if (renderer.xr.isPresenting) {
+    const MIN_EYE_LEVEL = 1.6;
+    if (camera.position.y < MIN_EYE_LEVEL) {
+      camera.position.y = MIN_EYE_LEVEL;
+    }
+  }
+
   // ── Screen shake removed - using floor flash instead ──
   // Screen shake was causing camera position issues
   // Floor flash provides better damage feedback
@@ -9522,36 +9545,42 @@ function buildSynthwaveValleyScene(group) {
     ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
     return new THREE.CanvasTexture(c);
   };
-  // EXTREMELY bright sun - white-hot core with massive glow to illuminate the scene
-  const sunGlowTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(255,200,230,0.85)');
-  const sunCoreTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(255,255,255,1.0)');
+  // EXTREMELY bright sun - orange-yellow core with massive glow to illuminate the scene
+  const sunGlowTex = makeRadial('rgba(255,200,50,1.0)', 'rgba(255,150,30,0.85)');
+  const sunCoreTex = makeRadial('rgba(255,220,80,1.0)', 'rgba(255,200,50,1.0)');
   // Add a second brighter glow layer for maximum intensity
-  const sunOuterGlowTex = makeRadial('rgba(255,220,240,0.9)', 'rgba(255,150,200,0.3)');
+  const sunOuterGlowTex = makeRadial('rgba(255,230,100,0.9)', 'rgba(255,180,60,0.3)');
   // Outer massive glow - very large to illuminate scene
-  const sunOuterGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  const sunOuterGlowMat = new THREE.SpriteMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending });
+  const sunOuterGlow = new THREE.Sprite(sunOuterGlowMat);
   sunOuterGlow.scale.set(700, 700, 1);
   sunOuterGlow.frustumCulled = false;
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
+  registerFadeMaterial(sunOuterGlowMat);
   // Main bright glow
-  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  const sunGlowMat = new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xffcc00, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending });
+  const sunGlow = new THREE.Sprite(sunGlowMat);
   sunGlow.scale.set(550, 550, 1);
   sunGlow.frustumCulled = false;
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
-  // White-hot core - should be visible as a distinct circle
-  const sunCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  registerFadeMaterial(sunGlowMat);
+  // Orange-yellow core - should be visible as a distinct circle
+  const sunCoreMat = new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffdd00, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending });
+  const sunCore = new THREE.Sprite(sunCoreMat);
   sunCore.scale.set(200, 200, 1);  // Smaller core for distinct circle
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
+  registerFadeMaterial(sunCoreMat);
 
-  // Horizon glow - EXTREMELY bright to match the massive sun and illuminate the scene
+  // Horizon glow - EXTREMELY bright to match the orange-yellow sun and illuminate the scene
   const horizonGlowGeo = new THREE.PlaneGeometry(1400, 150);
   const horizonGlowMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    uniforms: { c1: { value: new THREE.Color(0xffffff) }, c2: { value: new THREE.Color(0xffccdd) } },
+    uniforms: { c1: { value: new THREE.Color(0xffcc00) }, c2: { value: new THREE.Color(0xffaa00) } },
     vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
     fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.38,vUv.y)*(1.0-smoothstep(0.62,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.4,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*1.5); gl_FragColor=vec4(col, alpha*side*0.95); }`,
   });
@@ -9790,7 +9819,9 @@ function buildDesertNightScene(group) {
   });
 
   const stars = new THREE.Points(starGeometry, starMaterial);
+  stars.frustumCulled = false; // Fix disappearing when looking up
   group.add(stars);
+  registerFadeMaterial(starMaterial);
 
   // === DUST PARTICLES (600 particles) ===
   const dustCount = 600;
@@ -9842,6 +9873,7 @@ function buildDesertNightScene(group) {
 
   const dust = new THREE.Points(dustGeometry, dustMaterial);
   group.add(dust);
+  registerFadeMaterial(dustMaterial);
 
   // Moon
   const moonGroup = new THREE.Group();
@@ -9849,10 +9881,17 @@ function buildDesertNightScene(group) {
   const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xfffef8 });
   const moon = new THREE.Mesh(moonGeometry, moonMaterial);
   moonGroup.add(moon);
-  const innerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(9.5, 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 }));
-  const outerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 2), new THREE.MeshBasicMaterial({ color: 0xd4e5f7, transparent: true, opacity: 0.12 }));
-  const farGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(18, 2), new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.06 }));
+  registerFadeMaterial(moonMaterial);
+  const innerGlowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 });
+  const innerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(9.5, 2), innerGlowMat);
+  const outerGlowMat = new THREE.MeshBasicMaterial({ color: 0xd4e5f7, transparent: true, opacity: 0.12 });
+  const outerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 2), outerGlowMat);
+  const farGlowMat = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.06 });
+  const farGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(18, 2), farGlowMat);
   moonGroup.add(innerGlow, outerGlow, farGlow);
+  registerFadeMaterial(innerGlowMat);
+  registerFadeMaterial(outerGlowMat);
+  registerFadeMaterial(farGlowMat);
   moonGroup.position.set(-45, 35, -60);
   group.add(moonGroup);
 

@@ -70,6 +70,7 @@ export function playShoothSound() {
 
 // ── Seeker Burst sound (distinct homing beam) ───────────────
 export function playSeekerBurstSound() {
+  // Burst sound: "p-p-p-pew" - quick sharp "p" sounds, ending with full "pew"
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
@@ -84,22 +85,24 @@ export function playSeekerBurstSound() {
   osc2.type = 'triangle';
   lfo.type = 'sine';
 
-  osc.frequency.setValueAtTime(380, t);
-  osc.frequency.exponentialRampToValueAtTime(1040, t + 0.15);
-  osc2.frequency.setValueAtTime(140, t);
-  osc2.frequency.exponentialRampToValueAtTime(220, t + 0.15);
-  lfo.frequency.setValueAtTime(18, t);
+  // Start low pitch for "p" sound, ramp up for "ew" at the end
+  osc.frequency.setValueAtTime(320, t);
+  osc.frequency.exponentialRampToValueAtTime(960, t + 0.12);  // Reduced duration for quicker burst
+  osc2.frequency.setValueAtTime(120, t);
+  osc2.frequency.exponentialRampToValueAtTime(200, t + 0.12);  // Reduced duration
+  lfo.frequency.setValueAtTime(25, t);  // Faster LFO for more aggressive "p-p-p"
 
-  lfoGain.gain.setValueAtTime(28, t);
+  lfoGain.gain.setValueAtTime(35, t);  // More pitch modulation for staccato feel
   lfo.connect(lfoGain);
   lfoGain.connect(osc.frequency);
 
   filter.type = 'bandpass';
-  filter.frequency.setValueAtTime(1100, t);
-  filter.Q.setValueAtTime(8, t);
+  filter.frequency.setValueAtTime(1300, t);  // Brighter filter for crisp "p" sounds
+  filter.Q.setValueAtTime(10, t);  // Higher Q for more resonant "p" attacks
 
-  gain.gain.setValueAtTime(0.16, t);
-  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  // Shorter overall duration for quick burst feel
+  gain.gain.setValueAtTime(0.18, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);  // Reduced from 0.18 to 0.14
 
   osc.connect(filter);
   osc2.connect(filter);
@@ -109,9 +112,9 @@ export function playSeekerBurstSound() {
   osc.start(t);
   osc2.start(t);
   lfo.start(t);
-  osc.stop(t + 0.18);
-  osc2.stop(t + 0.18);
-  lfo.stop(t + 0.18);
+  osc.stop(t + 0.14);
+  osc2.stop(t + 0.14);
+  lfo.stop(t + 0.14);
 }
 
 // ── Double Shot sound ──────────────────────────────────────
@@ -449,22 +452,117 @@ export function playExplosionSound() {
 
 // ── Player damage ──────────────────────────────────────────
 export function playDamageSound() {
+  // More impactful player hit sound: louder, harsher, with distinct impact
   const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Main impact oscillator
   const osc = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
   const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
 
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(150, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3);
+  osc.type = 'sawtooth';  // Harsher than triangle
+  osc2.type = 'square';  // Add grit
+  filter.type = 'lowpass';
 
-  gain.gain.setValueAtTime(0.25, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+  // Drop from high to low pitch - distinct impact
+  osc.frequency.setValueAtTime(300, t);
+  osc.frequency.exponentialRampToValueAtTime(60, t + 0.25);
+  osc2.frequency.setValueAtTime(250, t);
+  osc2.frequency.exponentialRampToValueAtTime(50, t + 0.25);
 
-  osc.connect(gain);
+  filter.frequency.setValueAtTime(800, t);
+  filter.Q.setValueAtTime(5, t);
+
+  // Louder initial impact with faster decay
+  gain.gain.setValueAtTime(0.35, t);  // Increased from 0.25
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+
+  osc.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gain);
   gain.connect(ctx.destination);
 
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.3);
+  osc.start(t);
+  osc2.start(t);
+  osc.stop(t + 0.25);
+  osc2.stop(t + 0.25);
+}
+
+// ── Enemy/Boss Projectile Fire Sound ─────────────────────────
+export function playEnemyProjectileSound() {
+  // Distinct sound when enemies/bosses fire projectiles
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'sine';
+  osc2.type = 'triangle';
+  filter.type = 'bandpass';
+
+  // Rising pitch - projectile launch feel
+  osc.frequency.setValueAtTime(600, t);
+  osc.frequency.exponentialRampToValueAtTime(900, t + 0.08);
+  osc2.frequency.setValueAtTime(400, t);
+  osc2.frequency.exponentialRampToValueAtTime(600, t + 0.08);
+
+  filter.frequency.setValueAtTime(1200, t);
+  filter.Q.setValueAtTime(6, t);
+
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+  osc.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc2.start(t);
+  osc.stop(t + 0.12);
+  osc2.stop(t + 0.12);
+}
+
+// ── Heal Sound (Vampiric/Health Pickup) ─────────────────────
+export function playHealSound() {
+  // Pleasant ascending chime when player gains health
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc2.type = 'triangle';
+
+  // Two-note ascending arpeggio: healing feel
+  osc.frequency.setValueAtTime(523, t);  // C5
+  osc.frequency.setValueAtTime(659, t + 0.08);  // E5
+  osc.frequency.setValueAtTime(784, t + 0.16);  // G5
+
+  osc2.frequency.setValueAtTime(659, t);  // E5 (harmony)
+  osc2.frequency.setValueAtTime(784, t + 0.08);  // G5
+  osc2.frequency.setValueAtTime(988, t + 0.16);  // B5
+
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.linearRampToValueAtTime(0.15, t + 0.08);
+  gain.gain.linearRampToValueAtTime(0.1, t + 0.16);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+
+  osc.connect(gain);
+  osc2.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc2.start(t);
+  osc.stop(t + 0.35);
+  osc2.stop(t + 0.35);
 }
 
 // ── Fast enemy spawn alert ─────────────────────────────────
