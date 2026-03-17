@@ -40,7 +40,7 @@ const moveSpeed = 8.0; // units per second
 const verticalSpeed = 5.0; // units per second for Q/E
 const friction = 10.0; // damping factor
 const acceleration = 30.0; // acceleration factor
-let debugMode = false; // debug movement enabled flag
+let debugMode = true; // debug movement enabled by default for positioning
 
 // Weapon state
 const weaponState = {
@@ -204,11 +204,13 @@ export function isLocked() {
  * Call from game loop.
  */
 export function update(dt) {
-  if (!enabled || !cameraRef) return;
+  // Only need camera reference for movement, not full gameplay enable
+  if (!cameraRef) return;
 
   player.isMoving = false;
 
-  if (debugMode) {
+  // Allow debug movement whenever desktop mode is available
+  if (debugMode || enabled) {
     // Calculate movement direction based on camera orientation
     const moveDir = new THREE.Vector3();
 
@@ -404,7 +406,7 @@ function onKeyDown(e) {
 function onKeyUp(e) {
   const key = e.key.toLowerCase();
 
-  // Movement keys
+  // Movement keys - always allow
   if (key === 'w') keys.w = false;
   if (key === 'a') keys.a = false;
   if (key === 's') keys.s = false;
