@@ -6646,9 +6646,9 @@ export function spawnBossDebris(boss) {
   console.log(`[boss] Spawned ${bossDebris.length} debris voxels`);
 }
 
-export function updateBossDebris(dt, now) {
+export function updateBossDebris(dt, now, biomeFloorY = 0.05) {
   const gravity = -9.8;
-  const floorY = 0.05;
+  const floorY = biomeFloorY;
   const bounceDamping = 0.5;
   const friction = 0.8;
 
