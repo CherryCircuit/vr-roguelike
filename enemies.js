@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getStasisSlowFactor } from './stasis.js';
-import { playTingSound } from './audio.js';
+import { playTingSound, playEnemyProjectileSound } from './audio.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
@@ -6855,6 +6855,9 @@ export function clearBossProjectiles() {
 }
 
 export function spawnBossProjectile(fromPos, targetPos) {
+  // Play sound when boss fires projectile
+  playEnemyProjectileSound();
+
   const projGroup = new THREE.Group();
 
   const coreGeo = getGeo(0.065);
