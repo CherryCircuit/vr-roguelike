@@ -24,7 +24,8 @@ const keys = {
 const mouse = {
   x: 0, y: 0,
   buttons: 0,
-  locked: false
+  locked: false,
+  isPressed: false  // Explicit press tracking (more reliable for trackpad)
 };
 
 // Desktop player state
@@ -309,7 +310,8 @@ export function getWeaponState() {
     leftFiring: weaponState.leftFiring,
     rightFiring: weaponState.rightFiring,
     fireMode: weaponState.fireMode,
-    triggerPressed: mouse.buttons > 0 || keys.space
+    // Use explicit isPressed flag (more reliable for trackpad) with fallbacks
+    triggerPressed: mouse.isPressed || mouse.buttons > 0 || keys.space
   };
 }
 
@@ -339,6 +341,27 @@ function setupEventListeners() {
   window.addEventListener('mousedown', onMouseDown);
   window.addEventListener('mouseup', onMouseUp);
   window.addEventListener('wheel', onMouseWheel);
+
+  // Prevent context menu from interrupting fire
+  window.addEventListener('contextmenu', (e) => {
+    if (enabled) e.preventDefault();
+  });
+
+  // Reset button state on focus loss (critical for trackpad)
+  window.addEventListener('blur', () => {
+    mouse.buttons = 0;
+    mouse.isPressed = false;
+    keys.space = false;
+  });
+
+  // Reset on visibility change (tab switch, minimize)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      mouse.buttons = 0;
+      mouse.isPressed = false;
+      keys.space = false;
+    }
+  });
 
   // Pointer lock events
   document.addEventListener('pointerlockchange', onPointerLockChange);
@@ -442,6 +465,7 @@ function onMouseDown(e) {
   if (!enabled) return;
 
   mouse.buttons = e.buttons;
+  mouse.isPressed = true;  // Track explicit press
 
   if (e.button === 0) { // Left click
     handleFireInput();
@@ -450,6 +474,7 @@ function onMouseDown(e) {
 
 function onMouseUp(e) {
   mouse.buttons = e.buttons;
+  mouse.isPressed = false;  // Clear on explicit release
 }
 
 function onMouseWheel(e) {
