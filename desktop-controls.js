@@ -11,7 +11,13 @@ let rendererRef = null;
 
 // Movement state
 const keys = {
-  space: false
+  space: false,
+  w: false,
+  a: false,
+  s: false,
+  d: false,
+  q: false,
+  e: false
 };
 
 // Mouse state
@@ -28,6 +34,13 @@ const player = {
   velocity: new THREE.Vector3(),
   isMoving: false
 };
+
+// Debug movement settings (for desktop no-clip mode)
+const moveSpeed = 8.0; // units per second
+const verticalSpeed = 5.0; // units per second for Q/E
+const friction = 10.0; // damping factor
+const acceleration = 30.0; // acceleration factor
+let debugMode = false; // debug movement enabled flag
 
 // Weapon state
 const weaponState = {
@@ -79,11 +92,13 @@ export function initDesktopControls(scene, camera, renderer) {
 export function enable() {
   if (enabled) return;
   enabled = true;
-  console.log('[desktop-controls] Enabled');
+  debugMode = true; // Enable debug movement in desktop mode
+  console.log('[desktop-controls] Enabled (debug mode)');
 
   // Sync player position with camera
   if (cameraRef) {
     player.position.copy(cameraRef.position);
+    player.rotation.copy(cameraRef.rotation);
   }
 
   // Request pointer lock for mouse look
@@ -101,8 +116,9 @@ export function enable() {
     }
   }
 
-  // Show desktop mode indicator
+  // Show desktop mode indicator and debug panel
   showDesktopHUD();
+  showDebugPositionPanel();
 }
 
 /**
@@ -112,6 +128,7 @@ export function enable() {
 export function disable() {
   if (!enabled) return;
   enabled = false;
+  debugMode = false;
   console.log('[desktop-controls] Disabled');
 
   // Exit pointer lock
@@ -124,6 +141,7 @@ export function disable() {
   }
 
   hideDesktopHUD();
+  hideDebugPositionPanel();
 }
 
 /**
@@ -188,14 +206,90 @@ export function isLocked() {
 export function update(dt) {
   if (!enabled || !cameraRef) return;
 
-  // No desktop movement, only aiming and firing
   player.isMoving = false;
 
-  // Keep player position synced to camera
-  player.position.copy(cameraRef.position);
+  if (debugMode) {
+    // Calculate movement direction based on camera orientation
+    const moveDir = new THREE.Vector3();
 
-  // Mouse look is handled by pointerlockchange event
-  // Camera rotation is applied to player.rotation
+    // Get forward and right vectors from camera orientation
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+
+    cameraRef.getWorldDirection(forward);
+    forward.y = 0; // Keep movement horizontal
+    forward.normalize();
+    right.crossVectors(forward, up).normalize();
+
+    // WASD movement
+    if (keys.w) {
+      moveDir.add(forward);
+      player.isMoving = true;
+    }
+    if (keys.s) {
+      moveDir.sub(forward);
+      player.isMoving = true;
+    }
+    if (keys.a) {
+      moveDir.sub(right);
+      player.isMoving = true;
+    }
+    if (keys.d) {
+      moveDir.add(right);
+      player.isMoving = true;
+    }
+
+    // Q/E vertical movement
+    if (keys.q) {
+      moveDir.y -= 1;
+      player.isMoving = true;
+    }
+    if (keys.e) {
+      moveDir.y += 1;
+      player.isMoving = true;
+    }
+
+    // Normalize horizontal movement if any
+    if (moveDir.lengthSq() > 0) {
+      const horizontal = new THREE.Vector3(moveDir.x, 0, moveDir.z);
+      if (horizontal.lengthSq() > 0) {
+        horizontal.normalize().multiplyScalar(moveSpeed);
+      }
+
+      // Apply vertical speed
+      if (moveDir.y !== 0) {
+        moveDir.y *= verticalSpeed;
+      } else {
+        moveDir.y = 0;
+      }
+
+      // Apply acceleration to velocity
+      const targetVelocity = new THREE.Vector3(horizontal.x, moveDir.y, horizontal.z);
+      player.velocity.lerp(targetVelocity, acceleration * dt);
+    } else {
+      // Apply friction when not moving
+      player.velocity.multiplyScalar(1 - friction * dt);
+    }
+
+    // Stop very small velocities
+    if (player.velocity.lengthSq() < 0.0001) {
+      player.velocity.set(0, 0, 0);
+      player.isMoving = false;
+    }
+
+    // Apply velocity to position
+    player.position.addScaledVector(player.velocity, dt);
+  } else {
+    // Non-debug mode: keep player position synced to camera
+    player.position.copy(cameraRef.position);
+  }
+
+  // Sync camera to player position
+  cameraRef.position.copy(player.position);
+
+  // Update debug position display
+  updateDebugPositionPanel();
 
   return {
     moved: player.isMoving,
@@ -275,10 +369,23 @@ function onKeyDown(e) {
 
   const key = e.key.toLowerCase();
 
+  // Movement keys
+  if (key === 'w') keys.w = true;
+  if (key === 'a') keys.a = true;
+  if (key === 's') keys.s = true;
+  if (key === 'd') keys.d = true;
+  if (key === 'q') keys.q = true;
+  if (key === 'e') keys.e = true;
+
   // Fire
   if (key === ' ') {
     keys.space = true;
     handleFireInput();
+  }
+
+  // Copy position (C key)
+  if (key === 'c') {
+    copyPositionToClipboard();
   }
 
   // Weapon switching (1-4)
@@ -296,6 +403,14 @@ function onKeyDown(e) {
 
 function onKeyUp(e) {
   const key = e.key.toLowerCase();
+
+  // Movement keys
+  if (key === 'w') keys.w = false;
+  if (key === 'a') keys.a = false;
+  if (key === 's') keys.s = false;
+  if (key === 'd') keys.d = false;
+  if (key === 'q') keys.q = false;
+  if (key === 'e') keys.e = false;
 
   if (key === ' ') keys.space = false;
 }
@@ -379,6 +494,141 @@ function handleFireInput() {
     weaponState.leftFiring = true;
     weaponState.rightFiring = true;
   }
+}
+
+// ── Debug Position Panel ────────────────────────────────────
+
+let debugPanelElement = null;
+
+function showDebugPositionPanel() {
+  if (debugPanelElement) {
+    debugPanelElement.style.display = 'block';
+    return;
+  }
+
+  // Create debug panel element
+  debugPanelElement = document.createElement('div');
+  debugPanelElement.id = 'debug-position-panel';
+  debugPanelElement.style.cssText = `
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.75);
+    border: 2px solid rgba(0, 255, 255, 0.5);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #00ffff;
+    z-index: 1000;
+    pointer-events: none;
+    min-width: 200px;
+    backdrop-filter: blur(4px);
+  `;
+  debugPanelElement.innerHTML = `
+    <div style="margin-bottom: 8px; font-weight: bold; color: #ffffff;">DEBUG POSITION</div>
+    <div id="debug-pos-x">X: 0.00</div>
+    <div id="debug-pos-y">Y: 0.00</div>
+    <div id="debug-pos-z">Z: 0.00</div>
+    <div style="margin-top: 8px; color: #ffffff;">Rotation (degrees):</div>
+    <div id="debug-rot-x">Pitch: 0.00</div>
+    <div id="debug-rot-y">Yaw: 0.00</div>
+    <div style="margin-top: 12px; font-size: 11px; color: #888888;">
+      WASD: Move | Q/E: Up/Down<br>
+      C: Copy to clipboard
+    </div>
+    <button id="debug-copy-btn" style="
+      margin-top: 10px;
+      padding: 6px 12px;
+      background: rgba(0, 255, 255, 0.2);
+      border: 1px solid rgba(0, 255, 255, 0.5);
+      color: #00ffff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      pointer-events: auto;
+    ">Copy Position</button>
+  `;
+  document.body.appendChild(debugPanelElement);
+
+  // Add click handler for copy button
+  const copyBtn = debugPanelElement.querySelector('#debug-copy-btn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copyPositionToClipboard();
+    });
+  }
+}
+
+function hideDebugPositionPanel() {
+  if (debugPanelElement) {
+    debugPanelElement.style.display = 'none';
+  }
+}
+
+function updateDebugPositionPanel() {
+  if (!debugPanelElement || debugPanelElement.style.display === 'none') return;
+
+  const posXEl = debugPanelElement.querySelector('#debug-pos-x');
+  const posYEl = debugPanelElement.querySelector('#debug-pos-y');
+  const posZEl = debugPanelElement.querySelector('#debug-pos-z');
+  const rotXEl = debugPanelElement.querySelector('#debug-rot-x');
+  const rotYEl = debugPanelElement.querySelector('#debug-rot-y');
+
+  if (posXEl) posXEl.textContent = `X: ${player.position.x.toFixed(2)}`;
+  if (posYEl) posYEl.textContent = `Y: ${player.position.y.toFixed(2)}`;
+  if (posZEl) posZEl.textContent = `Z: ${player.position.z.toFixed(2)}`;
+
+  // Convert rotation from radians to degrees
+  const pitchDeg = THREE.MathUtils.radToDeg(player.rotation.x);
+  const yawDeg = THREE.MathUtils.radToDeg(player.rotation.y);
+
+  if (rotXEl) rotXEl.textContent = `Pitch: ${pitchDeg.toFixed(2)}°`;
+  if (rotYEl) rotYEl.textContent = `Yaw: ${yawDeg.toFixed(2)}°`;
+}
+
+function copyPositionToClipboard() {
+  const pos = player.position;
+  const pitchDeg = THREE.MathUtils.radToDeg(player.rotation.x);
+  const yawDeg = THREE.MathUtils.radToDeg(player.rotation.y);
+
+  const text = `Position: (${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)})\nRotation: (pitch: ${pitchDeg.toFixed(2)}°, yaw: ${yawDeg.toFixed(2)}°)`;
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      console.log('[desktop-controls] Position copied to clipboard');
+      // Visual feedback
+      if (debugPanelElement) {
+        const copyBtn = debugPanelElement.querySelector('#debug-copy-btn');
+        if (copyBtn) {
+          const originalText = copyBtn.textContent;
+          copyBtn.textContent = 'Copied!';
+          copyBtn.style.background = 'rgba(0, 255, 136, 0.3)';
+          copyBtn.style.borderColor = 'rgba(0, 255, 136, 0.5)';
+          setTimeout(() => {
+            copyBtn.textContent = originalText;
+            copyBtn.style.background = 'rgba(0, 255, 255, 0.2)';
+            copyBtn.style.borderColor = 'rgba(0, 255, 255, 0.5)';
+          }, 1000);
+        }
+      }
+    }).catch((err) => {
+      console.error('[desktop-controls] Failed to copy to clipboard:', err);
+    });
+  } else {
+    console.warn('[desktop-controls] Clipboard API not available');
+  }
+}
+
+/**
+ * Get current position string formatted for biome spawn.
+ * Returns: "{ x: X, y: Y, z: Z }"
+ */
+export function getPositionString() {
+  const pos = player.position;
+  return `{ x: ${pos.x.toFixed(3)}, y: ${pos.y.toFixed(3)}, z: ${pos.z.toFixed(3)} }`;
 }
 
 // ── HUD Helpers ────────────────────────────────────────────

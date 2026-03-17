@@ -349,6 +349,9 @@ function init() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));  // Cap pixel ratio for perf
   renderer.xr.enabled = true;
+  // Enable shadows for biome scenes (desert moon shadows, etc.)
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   // No tone mapping — we use MeshBasicMaterial so ACES adds shader cost with no benefit
   renderer.toneMapping = THREE.NoToneMapping;
   document.body.appendChild(renderer.domElement);
@@ -6744,7 +6747,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
         spawnDamageNumber(boss.mesh.position.clone(), 0, '#ff00ff');
         playHitSound();
         const dead = damagePlayer(1);
-        triggerHitFlash();
+        triggerHitFlash(true);
         playDamageSound();
         cameraShake = 0.3;
         cameraShakeIntensity = 0.03;
@@ -7047,7 +7050,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
     spawnDamageNumber(hitPoint, 0, '#ff00ff');  // Show 0 damage in magenta
     playHitSound();
     const dead = damagePlayer(1);
-    triggerHitFlash();
+    triggerHitFlash(true);
     playDamageSound();
     cameraShake = 0.3;
     cameraShakeIntensity = 0.03;
@@ -7434,6 +7437,7 @@ function updateProjectiles(dt) {
         const slowFactor = getStasisSlowFactor(proj.position);
         const adjustedDt = dt * slowFactor;
         const playerPos = camera.position;
+        const prevPos = proj.position.clone();
 
         // Mini-swarm style steering and visual pop so hostile shots feel alive.
         const desiredDir = new THREE.Vector3().subVectors(playerPos, proj.position).normalize();
@@ -8208,7 +8212,7 @@ function render(timestamp) {
     collisions.forEach(index => {
       destroyEnemy(index);
       const dead = damagePlayer(1);
-      triggerHitFlash();
+      triggerHitFlash(true);
       playDamageSound();
 
       // Trigger camera shake
@@ -8242,7 +8246,7 @@ function render(timestamp) {
       if (!boss._lastContactHit || now - boss._lastContactHit >= contactCooldown) {
         boss._lastContactHit = now;
         const dead = damagePlayer(contactDamage);
-        triggerHitFlash();
+        triggerHitFlash(true);
         playDamageSound();
         cameraShake = 0.6;
         cameraShakeIntensity = 0.06;
@@ -8282,7 +8286,7 @@ function render(timestamp) {
         bossProjs.splice(i, 1);
 
         const dead = damagePlayer(proj.damage || 1);
-        triggerHitFlash();
+        triggerHitFlash(true);
         playDamageSound();
         cameraShake = 0.4;
         cameraShakeIntensity = 0.04;
@@ -9204,7 +9208,7 @@ function buildDesertNightScene(group) {
   moonGroup.position.set(-45, 35, -60);
   group.add(moonGroup);
 
-  group.rotation.y = 0; // face toward moon
+  group.rotation.y = -0.35; // Turn player left ~20 degrees to face away from tall dunes on right
 
   // Shift biome position so player spawns where the removed cactus was (x:5, z:9)
   // Player at origin (0,0,0) -> biome at (-5, 0, -9) puts player at cactus position
@@ -9317,7 +9321,7 @@ function buildAlienPlanetScene(group) {
   purpleLight2.position.set(25, 18, 35);
   group.add(purpleLight2);
 
-  // River
+  // River path used for plant placement (but no visible river mesh)
   const riverPoints = [];
   for (let i = 0; i < 60; i++) {
     const t = i / 59;
@@ -9325,12 +9329,7 @@ function buildAlienPlanetScene(group) {
     const z = t * 120 - 60;
     riverPoints.push(new THREE.Vector3(x, 0.1, z));
   }
-  const riverCurve = new THREE.CatmullRomCurve3(riverPoints);
-  const riverGeo = new THREE.TubeGeometry(riverCurve, 120, 2, 6, false);
-  const riverMat = new THREE.MeshBasicMaterial({ color: 0x00ff66, transparent: true, opacity: 0.85 });
-  const river = new THREE.Mesh(riverGeo, riverMat);
-  group.add(river);
-  // River glow removed to clear the green object above the river
+  // Green river-object REMOVED - was blocking view and looking out of place
 
   // Mountains - 3 rings of procedural jagged mountains
   const createMountain = (x, z, scale) => {
@@ -9498,6 +9497,13 @@ function buildAlienPlanetScene(group) {
     const distToCenter = Math.abs(x - (p1.x + (p2.x - p1.x) * frac));
     if (distToCenter < 3) continue;
 
+    // Clearance zone: no tall plants within 12 units directly in front of player spawn
+    const clearanceRadius = 12;
+    const distToPlayer = Math.sqrt(x * x + z * z);
+    if (distToPlayer < clearanceRadius && z < 5) {
+      continue; // Skip this plant to keep front area clear
+    }
+
     const plantType = Math.floor(Math.random() * 4);
     const plant = createAlienPlant(x, z, plantType);
     // Issue 5: Enable shadows for flora
@@ -9519,11 +9525,11 @@ function buildAlienPlanetScene(group) {
     const radius = 8 + Math.random() * 40;  // Increased spread radius from 35 to 40
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 8;
     const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 8;
-    
-    // Clearance zone: no tall plants within 10 units in front of player spawn (0, 0, -z)
-    const clearanceRadius = 10;
-    const distToFront = Math.sqrt(x * x + (z + 5) * (z + 5)); // Check distance to front of spawn
-    if (distToFront < clearanceRadius && z < 0) {
+
+    // Clearance zone: no tall plants within 12 units directly in front of player spawn
+    const clearanceRadius = 12;
+    const distToPlayer = Math.sqrt(x * x + z * z);
+    if (distToPlayer < clearanceRadius && z < 5) {
       continue; // Skip this plant to keep front area clear
     }
     
@@ -9594,39 +9600,7 @@ function buildAlienPlanetScene(group) {
   fireflies.frustumCulled = false; // Fix disappearing when looking up
   group.add(fireflies);
 
-  // River Sparkles - 80 particles along river (Issue 3: doubled from 40)
-  const sparklePositions = [];
-  const sparkleOffsets = [];
-
-  for (let i = 0; i < 80; i++) {
-    const t = Math.random();
-    const riverT = t * 59;
-    const idx = Math.floor(riverT);
-    const frac = riverT - idx;
-
-    const p1 = riverPoints[Math.min(idx, 59)];
-    const p2 = riverPoints[Math.min(idx + 1, 59)];
-
-    const x = p1.x + (p2.x - p1.x) * frac + (Math.random() - 0.5) * 2;
-    const z = p1.z + (p2.z - p1.z) * frac + (Math.random() - 0.5) * 2;
-    const y = 0.3;
-
-    sparklePositions.push(x, y, z);
-    sparkleOffsets.push(Math.random() * Math.PI * 2);
-  }
-
-  const sparkleGeo = new THREE.BufferGeometry();
-  sparkleGeo.setAttribute('position', new THREE.Float32BufferAttribute(sparklePositions, 3));
-  const sparkleMat = new THREE.PointsMaterial({
-    color: 0x88ffaa,
-    size: 0.25,
-    transparent: true,
-    opacity: 0.8,
-    sizeAttenuation: true
-  });
-  const sparkles = new THREE.Points(sparkleGeo, sparkleMat);
-  sparkles.frustumCulled = false; // Fix disappearing when looking up
-  group.add(sparkles);
+  // River sparkles removed along with river mesh
 
   // Instanced city - FAR on horizon (was too close at 55-100)
   const cityShaderMat = new THREE.ShaderMaterial({
@@ -9704,14 +9678,6 @@ function buildAlienPlanetScene(group) {
       if (ffPos[idx + 2] < -30) ffPos[idx + 2] = 30;
     }
     fireflyGeo.attributes.position.needsUpdate = true;
-
-    // Animate river sparkles
-    const spPos = sparkleGeo.attributes.position.array;
-    for (let i = 0; i < 40; i++) {
-      const idx = i * 3;
-      spPos[idx + 1] = 0.3 + Math.sin(time * 2 + sparkleOffsets[i]) * 0.2;
-    }
-    sparkleGeo.attributes.position.needsUpdate = true;
 
     // Animate plant sway
     for (const plant of alienPlants) {
@@ -9812,8 +9778,8 @@ function buildHellscapeLavaScene(group) {
   const terrain = new THREE.Mesh(geometry, material);
   terrain.receiveShadow = true;
   terrain.position.y = floorY;
-  terrain.position.x = 0.0;  // Player on valley floor (not shifted)
-  terrain.position.z = 0.0;  // Player on flat valley floor (not behind hill)
+  terrain.position.x = -10.0;  // Shift terrain left so player spawns on riverbank (not riverbed)
+  terrain.position.z = 0.0;  // Player on flat valley floor
   group.add(terrain);
 
   // Flash overlay plane for damage feedback
