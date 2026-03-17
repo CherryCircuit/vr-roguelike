@@ -155,6 +155,8 @@ export const game = {
   debugPerfMonitor: false,  // Extended FPS stats (frame time, memory)
   debugShowFPS: true,  // Always show FPS counter in VR
   debugBiomeOverride: null,  // Force a specific biome for previews
+  inDreamWorld: false,
+  dreamCompleted: false,
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -169,6 +171,10 @@ export function resetGame() {
   const preservedSeed = {
     seed: game.seed,
     seedTier: game.seedTier,
+  };
+
+  const preservedDream = {
+    dreamCompleted: game.dreamCompleted,
   };
   
   Object.assign(game, {
@@ -230,6 +236,15 @@ export function resetGame() {
     ...preservedSeed,
   });
   
+
+  // Restore dream state
+  game.inDreamWorld = false;
+  game.dreamCompleted = preservedDream.dreamCompleted;
+  if (game.dreamCompleted) {
+    addUpgrade('dream_fragment', 'left');
+    addUpgrade('dream_fragment', 'right');
+  }
+
   // Reinitialize seed deck if seed was set
   if (preservedSeed.seed !== null) {
     initSeedDeck(preservedSeed.seed, preservedSeed.seedTier);
@@ -270,6 +285,31 @@ export function saveDebugSettings() {
     console.log('[debug] Saved settings:', settings);
   } catch (e) {
     console.warn('[debug] Failed to save settings:', e);
+  }
+}
+
+export function loadDreamState() {
+  try {
+    const stored = localStorage.getItem('spaceomicide_dream');
+    if (stored) {
+      const data = JSON.parse(stored);
+      game.dreamCompleted = !!data.dreamCompleted;
+      console.log('[dream] Loaded state:', data);
+    }
+  } catch (e) {
+    console.warn('[dream] Failed to load state:', e);
+  }
+}
+
+export function saveDreamState() {
+  try {
+    const data = {
+      dreamCompleted: !!game.dreamCompleted,
+    };
+    localStorage.setItem('spaceomicide_dream', JSON.stringify(data));
+    console.log('[dream] Saved state:', data);
+  } catch (e) {
+    console.warn('[dream] Failed to save state:', e);
   }
 }
 
