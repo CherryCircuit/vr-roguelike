@@ -372,7 +372,7 @@ export const SPECIAL_UPGRADE_POOL = [
   { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#ff66ff', type: 'universal' },
   { id: 'super_crit', name: 'Super Crit', desc: '+25% chance for 3x damage', color: '#ffff88', type: 'universal' },
   { id: 'life_steal', name: 'Life Steal', desc: 'Heal 1 HP every 3 kills', color: '#ff0044', type: 'universal' },
-  { id: 'chain_lightning', name: 'Chain Lightning', desc: 'Lightning chains to +2 enemies', color: '#ffff00', type: 'universal' },
+  // Removed chain_lightning - redundant with 'its_electric' (weapon-specific for lightning_rod)
   { id: 'overcharge', name: 'Overcharge', desc: 'Piercing + 20% damage', color: '#00ffcc', type: 'universal' },
   { id: 'mega_boom', name: 'Mega Boom', desc: 'Bigger AOE, +50% explosion dmg', color: '#ffaa00', type: 'universal' },
 ];
@@ -449,8 +449,10 @@ export function getRandomSpecialUpgrades(count, mainWeaponId = null) {
   let pool = SPECIAL_UPGRADE_POOL;
   
   if (mainWeaponId) {
-    // Could filter special upgrades by weapon type too if needed
-    // For now, all special upgrades are universal
+    // Filter special upgrades by weapon compatibility
+    pool = pool.filter(u => 
+      u.type === 'universal' || (u.type === 'weapon_specific' && u.weapon === mainWeaponId)
+    );
   }
   
   const shuffled = shuffleArray([...pool]);
