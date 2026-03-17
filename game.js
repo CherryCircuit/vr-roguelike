@@ -263,7 +263,7 @@ export function loadDebugSettings() {
       const settings = JSON.parse(stored);
       game.debugPerfMonitor = settings.debugPerfMonitor ?? false;
       game.debugShowFPS = settings.debugShowFPS ?? true;
-      game.debugBiomeOverride = settings.debugBiomeOverride ?? null;
+      // NOTE: debugBiomeOverride is NOT loaded - it resets on page refresh
       console.log('[debug] Loaded settings:', settings);
     }
   } catch (e) {
@@ -279,7 +279,7 @@ export function saveDebugSettings() {
     const settings = {
       debugPerfMonitor: game.debugPerfMonitor,
       debugShowFPS: game.debugShowFPS,
-      debugBiomeOverride: game.debugBiomeOverride,
+      // NOTE: debugBiomeOverride is NOT saved - it resets on page refresh
     };
     localStorage.setItem('spaceomicide_debug', JSON.stringify(settings));
     console.log('[debug] Saved settings:', settings);
