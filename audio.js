@@ -1077,7 +1077,7 @@ export function stopLightningSound() {
 
 // ── Music System ───────────────────────────────────────────
 let currentMusic = null;
-let musicVolume = 0.3;
+let musicVolume = 0.33;  // Increased by 10% (was 0.3)
 let currentPlaylist = [];
 let currentTrackIndex = 0;
 let loopPlaylist = true;  // Controls whether playlist loops (false for game over)

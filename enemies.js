@@ -317,11 +317,11 @@ const explosionParts = [];
 
 // Enemy death physics bits
 const enemyDebris = [];
-const MAX_ENEMY_DEBRIS = 50;  // Cap for performance
+const MAX_ENEMY_DEBRIS = 25;  // Cap for performance (reduced from 50)
 
 // Boss death debris (physics-based from commit 2abb1b5)
 const bossDebris = [];
-const MAX_DEBRIS = 56;  // Cap for performance (reduced ~25% from 75)
+const MAX_DEBRIS = 25;  // Cap for performance (reduced from 56)
 
 // Player forward direction for front-arc constraints
 const _playerForwardRef = new THREE.Vector3(0, 0, -1);
@@ -2181,13 +2181,17 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   // [Physics Death System] Spawn voxel explosions with physics
   console.log(`[enemy-death] destroyEnemy: spawnVoxelExplosion=${!!spawnVoxelExplosion}, type=${e.type}`);
   if (spawnVoxelExplosion) {
-    let voxelCount = e.type === 'tank' ? 10 : e.type === 'basic' ? 6 : 4;
+    // Reduced voxel counts for performance (big: 5-6, small: 2-3)
+    let voxelCount = e.type === 'tank' ? 6 : e.type === 'basic' ? 4 : 3;
     // New enemy voxel counts
-    if (e.isTrain) voxelCount = e.trainLength || 8;
-    if (e.shapeShift) voxelCount = 8;
-    if (e.isRanged) voxelCount = 6;
-    if (e.isMimic) voxelCount = 5;
-    if (e.isSpider) voxelCount = 4;
+    if (e.isTrain) voxelCount = Math.min(e.trainLength || 5, 5); // Cap train voxels
+    if (e.shapeShift) voxelCount = 5;
+    if (e.isRanged) voxelCount = 5;
+    if (e.isMimic) voxelCount = 4;
+    if (e.isSpider) voxelCount = 3;
+    // Small enemies get fewer bits
+    if (e.type === 'swarm') voxelCount = 2;
+    if (e.type === 'fast') voxelCount = 3;
 
     console.log(`[enemy-death] Spawning ${voxelCount} voxels at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
     spawnVoxelExplosion(pos, color.getHex(), voxelCount, e.type, isCritical, isOverkill);
