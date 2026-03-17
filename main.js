@@ -8663,7 +8663,7 @@ function render(timestamp) {
   updateExplosionVisuals(now);
   updateDamageNumbers(dt, now);
   updateStatusBubbles(dt, now);
-  updateBossDebris(dt, now);  // Boss debris physics
+  updateBossDebris(dt, now, getBiomeFloorY());  // Boss debris physics with biome-aware floor
   // Update accuracy popups with fade-complete callback to reset bonus
   updateKillChainPopups(dt, now, (multiplier) => {
     // When popup fully fades, reset accuracy bonus if no new popup appeared
@@ -8782,6 +8782,17 @@ function rebuildBiomeScene(biomeId, theme) {
     buildAlienPlanetScene(biomeSceneGroup);
   } else if (theme.customScene === 'hellscape_lava') {
     buildHellscapeLavaScene(biomeSceneGroup);
+  }
+}
+
+// Get physics floor Y for current biome (matches visual floor HUD height)
+function getBiomeFloorY() {
+  switch (biomeSceneBiome) {
+    case 'synthwave_valley': return 0.10;
+    case 'desert_night': return -0.20;
+    case 'alien_planet': return -0.28;
+    case 'hellscape_lava': return -0.22;
+    default: return 0.05;
   }
 }
 
@@ -8939,9 +8950,8 @@ function buildSynthwaveValleyScene(group) {
   // version should behave like a stable biome backdrop.
   group.userData.update = null;
 
-  // Synthwave spawn position: player at x: 0, y: -6.172, z: 0
-  // Group position is negative of target spawn to place player at origin
-  group.position.set(0, 6.172, 0);
+  // Synthwave floor HUD height: group.position.y = 0.10
+  group.position.set(0, 0.10, 0);
 
   // Rotate so player faces sun
   group.rotation.y = 0;
@@ -9231,11 +9241,9 @@ function buildDesertNightScene(group) {
   moonGroup.position.set(-45, 35, -60);
   group.add(moonGroup);
 
-  group.rotation.y = 0.002; // yaw: -0.11°
-
-  // Desert spawn position: player at x: -6.226, y: 1.600, z: -2.325
-  // Group position is negative of target spawn to place player at origin
-  group.position.set(6.226, -1.600, 2.325);
+  // Desert floor HUD height: Y = -0.20, rotated 25 degrees (+0.436 rad)
+  group.rotation.y = 0.436; // yaw: 25 degrees
+  group.position.set(-7.12, -0.20, -9.82);
 
   // === ANIMATION UPDATE ===
   group.userData.update = (now, dt) => {
@@ -9712,9 +9720,8 @@ function buildAlienPlanetScene(group) {
 
   group.rotation.y = -0.062; // yaw: 3.55°
 
-  // Alien Planet spawn position: player at x: -6.628, y: 1.081, z: 13.926
-  // Group position is negative of target spawn to place player at origin
-  group.position.set(6.628, -1.081, -13.926);
+  // Alien floor HUD height: group.position.y = -0.28
+  group.position.set(6.628, -0.28, -13.926);
 }
 
 function buildHellscapeLavaScene(group) {
@@ -10233,8 +10240,7 @@ function buildHellscapeLavaScene(group) {
     geyserGeo.attributes.position.needsUpdate = true;
   };
 
-  // Hellscape spawn position: player at x: -26.599, y: 3.421, z: 0.486
-  // Group position is negative of target spawn to place player at origin
-  group.position.set(26.599, -3.421, -0.486);
+  // Hellscape floor HUD height: group.position.y = -0.22
+  group.position.set(26.599, -0.22, -0.486);
   group.rotation.y = 0.248; // yaw: 14.21°
 }
