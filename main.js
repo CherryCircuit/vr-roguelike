@@ -28,7 +28,8 @@ import {
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward,
-  updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs
+  updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
+  clearAllTelegraphs
 } from './enemies.js';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -162,6 +163,11 @@ const CHARGE_SHOT_MAX_DAMAGE = 1000; // maximum damage at full charge
 // Plasma carbine wind-up state (per controller): time when trigger was pressed (ms) or null
 const plasmaCarbineSpinStart = [null, null];
 const plasmaCarbineLastFireTime = [0, 0];
+
+// Seeker burst fire queue: pending shots for burst-fire weapons
+// Each entry: { origin, direction, controllerIndex, stats, shotId, fireTime }
+const seekerBurstQueue = [];
+const SEEKER_BURST_DELAY = 80; // 80ms between shots in burst ("pew-pew-pew")
 
 // Charge shot visual effects (per controller)
 const chargeGlowSpheres = [null, null];
@@ -1270,6 +1276,7 @@ function enterDreamWorldScene() {
   clearBoss();
   clearBossDebris();
   clearBossProjectiles();
+  clearAllTelegraphs();
   clearAllProjectiles();
 
   initDreamWorld(scene);
@@ -5906,6 +5913,7 @@ function startBossDeathCinematic(boss) {
   playExplosionSound();
   hideBossHealthBar();
   clearBoss();
+  clearAllTelegraphs();
 
   game.state = State.BOSS_DEATH_CINEMATIC;
   console.log('[boss-cinematic] State set to BOSS_DEATH_CINEMATIC');
@@ -5962,15 +5970,21 @@ function updateBossDeathCinematic(rawDt) {
 
   let whiteOpacity = 0;
   let blackOpacity = 0;
+  let envFade = 0;  // Environment fade synced with black overlay
   if (t >= whiteStart && t < whiteEnd) {
     whiteOpacity = (t - whiteStart) / BOSS_DEATH_WHITE_FADE;
   } else if (t >= whiteEnd && t < blackEnd) {
     const progress = (t - whiteEnd) / BOSS_DEATH_BLACK_FADE;
     whiteOpacity = 1 - progress;
     blackOpacity = progress;
+    envFade = progress;  // Fade environment with black overlay
   } else if (t >= blackEnd) {
     blackOpacity = 1;
+    envFade = 1;  // Full fade
   }
+
+  // Apply environment fade - ALL scene elements fade to black
+  applyEnvironmentFade(envFade);
 
   if (bossDeathWhiteOverlay) {
     bossDeathWhiteOverlay.visible = whiteOpacity > 0;
@@ -5990,16 +6004,16 @@ function completeLevel() {
   if (bossDeathCinematic.active) return;
 
   console.log(`[game] Level ${game.level} complete`);
-  
+
   // Hide kills remaining alert if showing
   hideKillsAlert();
-  
+
   // Update HUD one final time to show correct kill count
   updateHUD(game);
 
   // Ensure level-end timing is not slowed by proximity slow-mo
   resetAllSlowMoState();
-  
+
   game.state = State.LEVEL_COMPLETE;
   clearAllEnemies();
 
@@ -6011,6 +6025,9 @@ function completeLevel() {
 
   // Clear all conductor electric arcs
   clearAllElectricArcs();
+
+  // Clear all telegraph effects
+  clearAllTelegraphs();
 
   stopLightningSound();
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
@@ -6249,6 +6266,7 @@ function endGame(victory) {
   clearAllEnemies();
   clearBoss();
   clearBossProjectiles();
+  clearAllTelegraphs();
 
   // PERFORMANCE: Clear all projectiles on game end
   clearAllProjectiles();
@@ -6774,28 +6792,55 @@ function fireMainWeapon(controller, index) {
   const shotId = startAccuracyShot(count);
   const isBuckshot = stats.spreadAngle > 0 && !stats.homing;
 
-  if (stats.homing) {
-    playSeekerBurstSound();
-  }
-
-  // Calculate perpendicular offset axis for parallel multi-shot
+  // Calculate perpendicular offset axis for multi-shot
   const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+  const upAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
   const gap = 0.08; // Gap between parallel shots
 
-  for (let i = 0; i < count; i++) {
-    let spawnOrigin = origin.clone();
+  // BURST FIRE for seeker weapons: rapid succession with spread
+  if (stats.homing && count > 1) {
+    const now = performance.now();
+    for (let i = 0; i < count; i++) {
+      // Add random spread angle (like buckshot but for homing)
+      const spreadAngle = THREE.MathUtils.degToRad(3 + Math.random() * 5); // 3-8 degrees
+      const spreadDir = direction.clone();
+      
+      // Random spread direction
+      const spreadRight = (Math.random() - 0.5) * 2;
+      const spreadUp = (Math.random() - 0.5) * 2;
+      spreadDir.addScaledVector(rightAxis, spreadRight * Math.sin(spreadAngle));
+      spreadDir.addScaledVector(upAxis, spreadUp * Math.sin(spreadAngle));
+      spreadDir.normalize();
 
-    if (count > 1 && !isBuckshot) {
-      // Position shots side-by-side with small gap, all parallel
-      // Spread evenly around center: for 2 shots [-0.5, 0.5], for 3 [-1, 0, 1], etc.
-      const offsetIndex = i - (count - 1) / 2;
-      spawnOrigin.addScaledVector(rightAxis, offsetIndex * gap);
+      // Queue shot with delay for burst effect
+      seekerBurstQueue.push({
+        origin: origin.clone(),
+        direction: spreadDir,
+        controllerIndex: index,
+        stats: stats,
+        shotId: shotId,
+        fireTime: now + i * SEEKER_BURST_DELAY
+      });
     }
+    // Play initial burst sound
+    playSeekerBurstSound();
+    console.log(`[MAIN weapon] ${hand} hand queued ${count} seeker burst shot(s)`);
+  } else {
+    // Standard simultaneous fire for non-homing weapons
+    for (let i = 0; i < count; i++) {
+      let spawnOrigin = origin.clone();
 
-    spawnProjectile(spawnOrigin, direction, index, stats, shotId, { suppressSound: stats.homing });
+      if (count > 1 && !isBuckshot) {
+        // Position shots side-by-side with small gap, all parallel
+        // Spread evenly around center: for 2 shots [-0.5, 0.5], for 3 [-1, 0, 1], etc.
+        const offsetIndex = i - (count - 1) / 2;
+        spawnOrigin.addScaledVector(rightAxis, offsetIndex * gap);
+      }
+
+      spawnProjectile(spawnOrigin, direction, index, stats, shotId, { suppressSound: false });
+    }
+    console.log(`[MAIN weapon] ${hand} hand fired ${count} projectile(s) from ${mainWeaponId}`);
   }
-
-  console.log(`[MAIN weapon] ${hand} hand fired ${count} projectile(s) from ${mainWeaponId}`);
 }
 
 function updateLightningBeam(controller, index, stats, dt) {
@@ -7337,6 +7382,20 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
       playBuckshotSound();
     } else {
       playShoothSound();
+    }
+  }
+}
+
+// Process seeker burst queue - fires queued shots at their scheduled time
+function processSeekerBurstQueue(now) {
+  if (seekerBurstQueue.length === 0) return;
+  
+  // Process all shots that are ready to fire
+  for (let i = seekerBurstQueue.length - 1; i >= 0; i--) {
+    const shot = seekerBurstQueue[i];
+    if (now >= shot.fireTime) {
+      spawnProjectile(shot.origin, shot.direction, shot.controllerIndex, shot.stats, shot.shotId, { suppressSound: true });
+      seekerBurstQueue.splice(i, 1);
     }
   }
 }
@@ -8365,6 +8424,9 @@ function render(timestamp) {
     updateAmbientParticles(rawDt, currentTheme, camera.position);
   }
   updateBiomeProps(now, rawDt);
+  
+  // Process seeker burst queue (burst fire timing)
+  processSeekerBurstQueue(now);
 
   // Update desktop controls (WASD + mouse) in all states when enabled
   updateDesktopControls(dt);
@@ -8612,8 +8674,9 @@ function render(timestamp) {
     // Fast enemy proximity alerts
     updateFastEnemyAlerts(dt, camera.position);
 
-    // Update enemies
-    const playerPos = camera.position.clone();
+    // Update enemies - use adjusted camera position for VR mode
+    // This ensures enemies target the correct height (1.6m) regardless of VR camera Y
+    const playerPos = getAdjustedCameraPosition();
     camera.getWorldDirection(_playerForward);
     _playerForward.y = 0;
     if (_playerForward.lengthSq() < 0.0001) {
@@ -9310,6 +9373,26 @@ function rebuildBiomeScene(biomeId, theme) {
     buildAlienPlanetScene(biomeSceneGroup);
   } else if (theme.customScene === 'hellscape_lava') {
     buildHellscapeLavaScene(biomeSceneGroup);
+  }
+
+  // Register all biome scene materials for environment fade
+  // This ensures everything fades to black during boss death cinematic
+  if (biomeSceneGroup) {
+    biomeSceneGroup.traverse((child) => {
+      if (child.isMesh && child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => registerFadeMaterial(m));
+        } else {
+          registerFadeMaterial(child.material);
+        }
+      }
+      if (child.isPoints && child.material) {
+        registerFadeMaterial(child.material);
+      }
+      if (child.isLine && child.material) {
+        registerFadeMaterial(child.material);
+      }
+    });
   }
 }
 
@@ -10139,6 +10222,11 @@ function buildAlienPlanetScene(group) {
   const fireflyGeo = new THREE.BufferGeometry();
 
   for (let i = 0; i < 40; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 4 + Math.random() * 30;
+    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 3;
+    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 3;
+    const y = 0.5 + Math.random() * 3;  // Float above ground
 
     // AGGRESSIVE: Skip fireflies behind player (positive Z)
     if (z > 0) continue;

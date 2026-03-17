@@ -2293,6 +2293,14 @@ class TelegraphingSystem {
     this.maxEffects = 10; // Performance limit
   }
 
+  // Clear all active telegraph effects (for level transitions)
+  clearAll() {
+    for (const effect of this.activeEffects) {
+      this.removeEffect(effect);
+    }
+    this.activeEffects.length = 0;
+  }
+
   // Start a telegraphing effect (visual warning)
   // type: 'projectile', 'charge', 'minion', 'melee', 'teleport'
   // duration: how long the telegraph lasts
@@ -2329,16 +2337,15 @@ class TelegraphingSystem {
 
     switch (effect.type) {
       case 'projectile':
-        // Circle that expands outward
-        const projGeo = new THREE.RingGeometry(0.2, 0.3, 32);
+        // 3D sphere that expands outward
+        const projGeo = new THREE.SphereGeometry(0.25, 16, 16);
         const projMat = new THREE.MeshBasicMaterial({
           color: effect.color,
           transparent: true,
           opacity: 0.8,
-          side: THREE.DoubleSide
+          wireframe: false
         });
         effect.mesh = new THREE.Mesh(projGeo, projMat);
-        effect.mesh.rotation.x = -Math.PI / 2;
         if (position) {
           effect.mesh.position.copy(position);
         } else if (this.camera) {
@@ -2371,17 +2378,14 @@ class TelegraphingSystem {
         break;
 
       case 'minion':
-        // Expanding arc indicating spawn direction
-        const minionGeo = new THREE.RingGeometry(0.1, 0.5, 8);
+        // 3D sphere indicating spawn direction
+        const minionGeo = new THREE.SphereGeometry(0.3, 16, 16);
         const minionMat = new THREE.MeshBasicMaterial({
           color: effect.color,
           transparent: true,
-          opacity: 0.7,
-          side: THREE.DoubleSide
+          opacity: 0.7
         });
         effect.mesh = new THREE.Mesh(minionGeo, minionMat);
-        effect.mesh.rotation.x = -Math.PI / 2;
-        effect.mesh.rotation.z = Math.PI / 4;
         if (this.camera) {
           effect.mesh.position.set(
             this.camera.position.x,
@@ -2406,16 +2410,14 @@ class TelegraphingSystem {
         break;
 
       case 'melee':
-        // Large sweeping arc
-        const meleeGeo = new THREE.RingGeometry(0.2, 1.0, 32);
+        // Large 3D sphere indicating melee attack
+        const meleeGeo = new THREE.SphereGeometry(0.6, 16, 16);
         const meleeMat = new THREE.MeshBasicMaterial({
           color: effect.color,
           transparent: true,
-          opacity: 0.6,
-          side: THREE.DoubleSide
+          opacity: 0.6
         });
         effect.mesh = new THREE.Mesh(meleeGeo, meleeMat);
-        effect.mesh.rotation.x = -Math.PI / 2;
         break;
     }
   }
@@ -6621,6 +6623,12 @@ export function clearBoss() {
     if (typeof hideBossHealthBar === 'function') {
       hideBossHealthBar();
     }
+  }
+}
+
+export function clearAllTelegraphs() {
+  if (telegraphingSystem) {
+    telegraphingSystem.clearAll();
   }
 }
 
