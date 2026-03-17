@@ -9293,15 +9293,6 @@ function buildSynthwaveValleyScene(group) {
   // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
   // The standalone HTML used perpetual scrolling and pulsing, but the game
   // version should behave like a stable biome backdrop.
-  // Also hide the far city boxes in VR to avoid head-tracking quads.
-  let lastVRState = null;
-  group.userData.update = () => {
-    const inVR = !!(renderer && renderer.xr && renderer.xr.isPresenting);
-    if (inVR === lastVRState) return;
-    lastVRState = inVR;
-    cityMeshes.forEach((mesh) => { mesh.visible = !inVR; });
-  };
-  group.userData.update();
 
   // Synthwave floor HUD height: group.position.y = 0.10
   group.position.set(0, 0.10, 0);
