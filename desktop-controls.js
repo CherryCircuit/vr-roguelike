@@ -100,8 +100,9 @@ export function enable() {
   if (cameraRef) {
     player.position.copy(cameraRef.position);
     player.rotation.copy(cameraRef.rotation);
-    player.rotation.x = 0;
-    cameraRef.rotation.x = 0;
+    // Lock roll (horizon tilt) but allow pitch (look up/down)
+    player.rotation.z = 0;
+    cameraRef.rotation.z = 0;
   }
 
   // Request pointer lock for mouse look
@@ -453,16 +454,17 @@ function onMouseMove(e) {
   // Yaw (horizontal rotation)
   player.rotation.y -= movementX * mouseSensitivity;
 
-  // Pitch (vertical rotation) - DISABLED for VR biome fixes
-  // player.rotation.x += movementY * mouseSensitivity;
-  // player.rotation.x = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, player.rotation.x));
+  // Pitch (vertical rotation) - re-enabled, but lock roll to prevent horizon tilt
+  player.rotation.x -= movementY * mouseSensitivity;
+  player.rotation.x = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, player.rotation.x));
 
-  // Force pitch to zero
-  player.rotation.x = 0;
+  // Lock roll (horizon tilt) to zero
+  player.rotation.z = 0;
 
   // Apply to camera
   if (cameraRef) {
     cameraRef.rotation.copy(player.rotation);
+    cameraRef.rotation.z = 0; // Ensure camera roll stays locked
   }
 }
 
