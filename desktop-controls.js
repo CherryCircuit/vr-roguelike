@@ -33,7 +33,10 @@ const player = {
   position: new THREE.Vector3(0, 1.6, 0),
   rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
   velocity: new THREE.Vector3(),
-  isMoving: false
+  isMoving: false,
+  // Separate yaw/pitch tracking for clean FPS camera (no roll)
+  yaw: 0,
+  pitch: 0
 };
 
 // Debug movement settings (for desktop no-clip mode)
@@ -99,10 +102,12 @@ export function enable() {
   // Sync player position with camera
   if (cameraRef) {
     player.position.copy(cameraRef.position);
-    player.rotation.copy(cameraRef.rotation);
-    // Lock roll (horizon tilt) but allow pitch (look up/down)
-    player.rotation.z = 0;
-    cameraRef.rotation.z = 0;
+    // Extract yaw/pitch from camera rotation
+    player.yaw = cameraRef.rotation.y;
+    player.pitch = cameraRef.rotation.x;
+    // Rebuild rotation with zero roll
+    player.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+    cameraRef.rotation.copy(player.rotation);
   }
 
   // Request pointer lock for mouse look
@@ -294,6 +299,12 @@ export function update(dt) {
   // Sync camera to player position
   cameraRef.position.copy(player.position);
 
+  // Lock roll (horizon tilt) every frame - critical for FPS-style mouse look
+  if (cameraRef.rotation) {
+    cameraRef.rotation.z = 0;
+  }
+  player.rotation.z = 0;
+
   // Update debug position display
   updateDebugPositionPanel();
 
@@ -451,20 +462,19 @@ function onMouseMove(e) {
 
   const mouseSensitivity = 0.002;
 
-  // Yaw (horizontal rotation)
-  player.rotation.y -= movementX * mouseSensitivity;
+  // Update yaw (horizontal) and pitch (vertical) separately
+  player.yaw -= movementX * mouseSensitivity;
+  player.pitch -= movementY * mouseSensitivity;
 
-  // Pitch (vertical rotation) - re-enabled, but lock roll to prevent horizon tilt
-  player.rotation.x -= movementY * mouseSensitivity;
-  player.rotation.x = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, player.rotation.x));
+  // Clamp pitch to prevent flipping
+  player.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, player.pitch));
 
-  // Lock roll (horizon tilt) to zero
-  player.rotation.z = 0;
+  // Rebuild rotation from yaw/pitch (roll always 0)
+  player.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
 
   // Apply to camera
   if (cameraRef) {
     cameraRef.rotation.copy(player.rotation);
-    cameraRef.rotation.z = 0; // Ensure camera roll stays locked
   }
 }
 
@@ -616,8 +626,8 @@ function updateDebugPositionPanel() {
   if (posZEl) posZEl.textContent = `Z: ${player.position.z.toFixed(2)}`;
 
   // Convert rotation from radians to degrees
-  const pitchDeg = THREE.MathUtils.radToDeg(player.rotation.x);
-  const yawDeg = THREE.MathUtils.radToDeg(player.rotation.y);
+  const pitchDeg = THREE.MathUtils.radToDeg(player.pitch);
+  const yawDeg = THREE.MathUtils.radToDeg(player.yaw);
 
   if (rotXEl) rotXEl.textContent = `Pitch: ${pitchDeg.toFixed(2)}°`;
   if (rotYEl) rotYEl.textContent = `Yaw: ${yawDeg.toFixed(2)}°`;
@@ -625,8 +635,8 @@ function updateDebugPositionPanel() {
 
 function copyPositionToClipboard() {
   const pos = player.position;
-  const pitchDeg = THREE.MathUtils.radToDeg(player.rotation.x);
-  const yawDeg = THREE.MathUtils.radToDeg(player.rotation.y);
+  const pitchDeg = THREE.MathUtils.radToDeg(player.pitch);
+  const yawDeg = THREE.MathUtils.radToDeg(player.yaw);
 
   const text = `Position: (${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)})\nRotation: (pitch: ${pitchDeg.toFixed(2)}°, yaw: ${yawDeg.toFixed(2)}°)`;
 
