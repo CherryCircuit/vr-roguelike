@@ -135,8 +135,8 @@ const PROJECTILE_POOL_SIZE = 120;
 // PHYSICS DEATH SYSTEM: Voxel pool for death explosions
 const voxelPool = [];
 const activeVoxels = [];
-const VOXEL_POOL_SIZE = 200;
-const MAX_ACTIVE_VOXELS = 200;
+const VOXEL_POOL_SIZE = 50;
+const MAX_ACTIVE_VOXELS = 25;  // Cap for performance (reduced from 200)
 
 // Weapon firing cooldowns (per controller)
 const weaponCooldowns = [0, 0];
@@ -158,6 +158,10 @@ const CHARGE_SHOT_MAX_TIME = 5.0;  // seconds
 const CHARGE_SHOT_MIN_FIRE = 0.1;  // minimum charge time to fire (was 0.6)
 const CHARGE_SHOT_MIN_DAMAGE = 20;   // minimum damage at no charge
 const CHARGE_SHOT_MAX_DAMAGE = 1000; // maximum damage at full charge
+
+// Plasma carbine wind-up state (per controller): time when trigger was pressed (ms) or null
+const plasmaCarbineSpinStart = [null, null];
+const plasmaCarbineLastFireTime = [0, 0];
 
 // Charge shot visual effects (per controller)
 const chargeGlowSpheres = [null, null];
@@ -6139,7 +6143,10 @@ function advanceLevelAfterUpgrade() {
       console.log('[game] Boss killed with biome transition, showing ready screen');
       game.state = State.READY_SCREEN;
       applyEnvironmentFade(1);
-      
+
+      // CRITICAL: Apply new biome theme after boss kill
+      applyThemeForLevel(game.level);
+
       // Show ready screen with countdown
       showReadyScreen(game.level, camera.position);
       resetReadyCountdown();
@@ -6314,6 +6321,38 @@ function initProjectilePool() {
     seekerGroup.userData.poolType = 'seeker';
     scene.add(seekerGroup);
     projectilePool.push(seekerGroup);
+  }
+
+  // Add plasma carbine projectiles to pool (short cyan darts)
+  for (let i = 0; i < 30; i++) {
+    const plasmaColor = 0x00ffff;  // Cyan
+    const plasmaGroup = new THREE.Group();
+    
+    // Short dart-like bolt (0.5 length instead of 1.0)
+    const boltLength = 0.5;
+    const boltGeo = new THREE.CylinderGeometry(0.011, 0.011, boltLength, 6);  // 25% smaller radius
+    const bolt = new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ color: plasmaColor }));
+    bolt.rotation.x = Math.PI / 2;
+    bolt.position.z = -boltLength / 2;
+    plasmaGroup.add(bolt);
+
+    // Glow cylinder
+    const glowGeo = new THREE.CylinderGeometry(0.026, 0.026, boltLength, 6);  // 25% smaller glow
+    const glowBolt = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ 
+      color: plasmaColor, 
+      transparent: true, 
+      opacity: 0.25,
+      blending: THREE.AdditiveBlending 
+    }));
+    glowBolt.rotation.x = Math.PI / 2;
+    glowBolt.position.z = -boltLength / 2;
+    plasmaGroup.add(glowBolt);
+
+    plasmaGroup.visible = false;
+    plasmaGroup.userData.isPooled = true;
+    plasmaGroup.userData.poolType = 'plasma_carbine';
+    scene.add(plasmaGroup);
+    projectilePool.push(plasmaGroup);
   }
 
   console.log(`[performance] Projectile pool initialized: ${projectilePool.length} objects`);
@@ -6497,19 +6536,19 @@ function returnVoxelToPool(voxel) {
  * @param {boolean} isOverkill - Whether this was an overkill (double voxels)
  */
 function spawnVoxelExplosion(position, color, voxelCount, enemyType = 'basic', isCritical = false, isOverkill = false) {
-  // Performance safeguard: cap active voxels
-  if (activeVoxels.length >= MAX_ACTIVE_VOXELS) {
-    console.log(`[physics-death] Voxel cap reached (${activeVoxels.length}/${MAX_ACTIVE_VOXELS})`);
-    return;
-  }
-  
   // Double voxels for overkill
   if (isOverkill) {
     voxelCount *= 2;
   }
   
-  // Cap at 20 voxels per enemy to prevent spam
-  voxelCount = Math.min(voxelCount, 20);
+  // Cap at 10 voxels per enemy to prevent spam
+  voxelCount = Math.min(voxelCount, 10);
+  
+  // Make room by removing oldest voxels if at cap
+  while (activeVoxels.length >= MAX_ACTIVE_VOXELS && activeVoxels.length > 0) {
+    const oldest = activeVoxels.shift();
+    returnVoxelToPool(oldest);
+  }
   
   // Calculate available space in pool
   const availableVoxels = MAX_ACTIVE_VOXELS - activeVoxels.length;
@@ -7165,8 +7204,12 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
 
   const now = performance.now();
   const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
-  const isBuckshot = stats.spreadAngle > 0 && !stats.homing;
-  const poolType = stats.homing ? 'seeker' : (isBuckshot ? 'buckshot' : 'laser');
+  // Use spread threshold: only treat as buckshot if spread > 5 degrees (0.087 rad)
+  // This prevents plasma carbine (1.5 deg spread) from being treated as buckshot
+  const BUCKSHOT_SPREAD_THRESHOLD = 0.087; // ~5 degrees
+  const isBuckshot = (stats.spreadAngle || 0) > BUCKSHOT_SPREAD_THRESHOLD && !stats.homing;
+  const isPlasmaCarbine = stats.mainWeaponId === 'plasma_carbine';
+  const poolType = stats.homing ? 'seeker' : (isPlasmaCarbine ? 'plasma_carbine' : (isBuckshot ? 'buckshot' : 'laser'));
 
   // Big Boom: only one exploding shot per hand every 2.75s
   let isExploding = false;
@@ -8307,6 +8350,30 @@ function render(timestamp) {
           }
         } else if (stats.lightning) {
           updateLightningBeam(controllers[i], i, stats, dt);
+        } else if (stats.windUp) {
+          // Plasma carbine wind-up mechanic
+          if (plasmaCarbineSpinStart[i] === null) {
+            // Start spinning
+            plasmaCarbineSpinStart[i] = now;
+          } else {
+            const spinTime = now - plasmaCarbineSpinStart[i];
+            
+            // Check if spin-up time has elapsed
+            if (spinTime >= stats.windUpSpinTime) {
+              // Calculate ramp progress (0 to 1 over ramp time)
+              const rampProgress = Math.min(1, (spinTime - stats.windUpSpinTime) / stats.windUpRampTime);
+              
+              // Calculate current fire interval (interpolate from start to end)
+              const currentInterval = stats.windUpStartInterval - 
+                (stats.windUpStartInterval - stats.windUpEndInterval) * rampProgress;
+              
+              // Check if we can fire based on current interval
+              if (now - plasmaCarbineLastFireTime[i] >= currentInterval) {
+                fireMainWeapon(controllers[i], i);
+                plasmaCarbineLastFireTime[i] = now;
+              }
+            }
+          }
         } else {
           fireMainWeapon(controllers[i], i);
         }
@@ -8322,6 +8389,8 @@ function render(timestamp) {
           scene.remove(lightningBeams[i]);
           lightningBeams[i] = null;
         }
+        // Clean up plasma carbine spin state
+        plasmaCarbineSpinStart[i] = null;
       }
     }
 
@@ -8356,6 +8425,22 @@ function render(timestamp) {
               }
             } else if (stats.lightning) {
               updateLightningBeam(virtualController, 0, stats, dt);
+            } else if (stats.windUp) {
+              // Plasma carbine wind-up mechanic
+              if (plasmaCarbineSpinStart[0] === null) {
+                plasmaCarbineSpinStart[0] = now;
+              } else {
+                const spinTime = now - plasmaCarbineSpinStart[0];
+                if (spinTime >= stats.windUpSpinTime) {
+                  const rampProgress = Math.min(1, (spinTime - stats.windUpSpinTime) / stats.windUpRampTime);
+                  const currentInterval = stats.windUpStartInterval - 
+                    (stats.windUpStartInterval - stats.windUpEndInterval) * rampProgress;
+                  if (now - plasmaCarbineLastFireTime[0] >= currentInterval) {
+                    fireMainWeapon(virtualController, 0);
+                    plasmaCarbineLastFireTime[0] = now;
+                  }
+                }
+              }
             } else {
               fireMainWeapon(virtualController, 0);
             }
@@ -8387,6 +8472,22 @@ function render(timestamp) {
               }
             } else if (stats.lightning) {
               updateLightningBeam(virtualController, 1, stats, dt);
+            } else if (stats.windUp) {
+              // Plasma carbine wind-up mechanic
+              if (plasmaCarbineSpinStart[1] === null) {
+                plasmaCarbineSpinStart[1] = now;
+              } else {
+                const spinTime = now - plasmaCarbineSpinStart[1];
+                if (spinTime >= stats.windUpSpinTime) {
+                  const rampProgress = Math.min(1, (spinTime - stats.windUpSpinTime) / stats.windUpRampTime);
+                  const currentInterval = stats.windUpStartInterval - 
+                    (stats.windUpStartInterval - stats.windUpEndInterval) * rampProgress;
+                  if (now - plasmaCarbineLastFireTime[1] >= currentInterval) {
+                    fireMainWeapon(virtualController, 1);
+                    plasmaCarbineLastFireTime[1] = now;
+                  }
+                }
+              }
             } else {
               fireMainWeapon(virtualController, 1);
             }
@@ -8429,6 +8530,9 @@ function render(timestamp) {
           scene.remove(lightningBeams[1]);
           lightningBeams[1] = null;
         }
+        // Clear plasma carbine spin state
+        plasmaCarbineSpinStart[0] = null;
+        plasmaCarbineSpinStart[1] = null;
       }
     }
 
@@ -9001,7 +9105,7 @@ function render(timestamp) {
   updatePlasmaOrbs(now, dt);
   updateExplosions(dt, now);
   updateVFX(dt);
-  updateExplosionVisuals(now);
+  updateExplosionVisuals(dt, now);
   updateDamageNumbers(dt, now);
   updateStatusBubbles(dt, now);
   updateBossDebris(dt, now, getBiomeFloorY());  // Boss debris physics with biome-aware floor
@@ -9587,7 +9691,7 @@ function buildDesertNightScene(group) {
 
   // Desert floor HUD height: Y = -0.20, rotated 25 degrees (-0.436 rad)
   group.rotation.y = -0.436; // yaw: -25 degrees
-  group.position.set(-7.12, -0.20, -9.82);
+  group.position.set(-2.12, -0.20, -4.82);  // Moved 5 units +X and +Z
 
   // === ANIMATION UPDATE ===
   group.userData.update = (now, dt) => {
@@ -9872,6 +9976,9 @@ function buildAlienPlanetScene(group) {
     const distToCenter = Math.abs(x - (p1.x + (p2.x - p1.x) * frac));
     if (distToCenter < 3) continue;
 
+    // AGGRESSIVE: Skip plants behind player (positive Z)
+    if (z > 0) continue;
+
     // Clearance zone: no tall plants within 12 units directly in front of player spawn
     const clearanceRadius = 12;
     const distToPlayer = Math.sqrt(x * x + z * z);
@@ -9895,11 +10002,15 @@ function buildAlienPlanetScene(group) {
   }
 
   // Extra flora spread around the player (reduced for performance)
+  // AGGRESSIVE: Only spawn in front of player (negative Z, front 180-degree arc)
   for (let i = 0; i < 50; i++) {  // Reduced from 120 to 50
     const angle = Math.random() * Math.PI * 2;
     const radius = 8 + Math.random() * 40;  // Increased spread radius from 35 to 40
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 8;
     const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 8;
+
+    // AGGRESSIVE: Skip objects behind player (positive Z)
+    if (z > 0) continue;
 
     // Clearance zone: no tall plants within 12 units directly in front of player spawn
     const clearanceRadius = 12;
@@ -9907,7 +10018,7 @@ function buildAlienPlanetScene(group) {
     if (distToPlayer < clearanceRadius && z < 5) {
       continue; // Skip this plant to keep front area clear
     }
-    
+
     const plantType = Math.floor(Math.random() * 4);
     const plant = createAlienPlant(x, z, plantType);
     plant.castShadow = true;
@@ -9923,6 +10034,7 @@ function buildAlienPlanetScene(group) {
   }
 
   // Small fauna critters (reduced for performance)
+  // AGGRESSIVE: Only spawn in front of player (negative Z)
   const critterGeo = new THREE.SphereGeometry(0.18, 8, 6);
   const critterGlowGeo = new THREE.SphereGeometry(0.3, 8, 6);
   for (let i = 0; i < 20; i++) {  // Reduced from 40 to 20
@@ -9930,6 +10042,10 @@ function buildAlienPlanetScene(group) {
     const radius = 6 + Math.random() * 35;  // Spread wider
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 4;
     const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 4;
+
+    // AGGRESSIVE: Skip critters behind player (positive Z)
+    if (z > 0) continue;
+
     const critterGroup = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, emissive: 0x00ff66, emissiveIntensity: 0.4 });
     const body = new THREE.Mesh(critterGeo, bodyMat);
@@ -9947,6 +10063,7 @@ function buildAlienPlanetScene(group) {
   }
 
   // Fireflies - 80 particles with gentle drift (reduced for performance)
+  // AGGRESSIVE: Only spawn in front of player (negative Z)
   const fireflyPositions = [];
   const fireflyVelocities = [];
   const fireflyGeo = new THREE.BufferGeometry();
@@ -9955,6 +10072,10 @@ function buildAlienPlanetScene(group) {
     const x = (Math.random() - 0.5) * 60;
     const y = 1 + Math.random() * 8;
     const z = (Math.random() - 0.5) * 60;
+
+    // AGGRESSIVE: Skip fireflies behind player (positive Z)
+    if (z > 0) continue;
+
     fireflyPositions.push(x, y, z);
     fireflyVelocities.push(
       (Math.random() - 0.5) * 0.02,
@@ -10116,7 +10237,7 @@ function buildHellscapeLavaScene(group) {
     const riverWidth = 5.0;
     const distFromCenter = Math.abs(x);
     let height = 0;
-    const valleyFloorHeight = 1.5;
+    const valleyFloorHeight = 0.0;  // Fixed: was 1.5, causing camera to appear below ground
     if (distFromCenter > valleyWidth) {
       const mountainFactor = (distFromCenter - valleyWidth) / 15.0;
       let mHeight = 0;

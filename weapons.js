@@ -37,7 +37,7 @@ export const MAIN_WEAPONS = {
       critMultiplier: 2,
       piercing: false,
       aoeRadius: 0,
-      spreadAngle: 0.0873,  // 5 degrees
+      spreadAngle: 0.1396,  // 8 degrees (increased by 3 degrees, was 5)
     },
   },
   
@@ -86,12 +86,12 @@ export const MAIN_WEAPONS = {
   plasma_carbine: {
     id: 'plasma_carbine',
     name: 'Plasma Carbine',
-    desc: 'Fast shooting, ramps up damage, slight spread',
-    color: '#88ff88',
+    desc: 'Minigun-style wind-up, ramps to full auto',
+    color: '#00ffff',  // Cyan for minigun feel
     type: 'main',
     baseStats: {
       damage: 6,
-      fireInterval: 100,  // Fast
+      fireInterval: 80,  // 25% faster than before (was 100)
       projectileCount: 1,
       critChance: 0.08,
       critMultiplier: 2,
@@ -100,7 +100,17 @@ export const MAIN_WEAPONS = {
       spreadAngle: 0.0262,  // 1.5 degrees
       damageRampUp: true,  // Damage increases with consecutive hits
       damageRampUpMax: 2.0,  // Max 2x damage after ramp-up
-      projectileSpeed: 55,
+      projectileSpeed: 63.25,  // 15% faster (55 * 1.15)
+      // Wind-up mechanic (TF2 Heavy minigun style)
+      windUp: true,
+      windUpSpinTime: 600,  // 0.6 seconds before any firing
+      windUpRampTime: 3000,  // 3 seconds to reach max fire rate
+      windUpStartInterval: 300,  // Fire rate at start of ramp (slow)
+      windUpEndInterval: 80,  // Fire rate at end of ramp (fast, same as fireInterval)
+      // Projectile visuals
+      projectileColor: 0x00ffff,  // Cyan
+      projectileScale: 0.75,  // 25% smaller
+      projectileLength: 0.5,  // Short dart-like appearance
     },
   },
   
@@ -350,7 +360,7 @@ export const UPGRADE_POOL = [
   { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
   
   // Plasma Carbine specific upgrades
-  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: Faster ramp-up, higher max damage', color: '#88ff88', type: 'weapon_specific', weapon: 'plasma_carbine' },
+  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: 40% faster wind-up, higher max damage', color: '#00ffff', type: 'weapon_specific', weapon: 'plasma_carbine' },
   
   // Seeker Burst specific upgrades
   { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff', type: 'weapon_specific', weapon: 'seeker_burst' },
@@ -510,6 +520,26 @@ export function getWeaponStats(mainWeaponId, upgrades) {
     if (u.gimme_more) projectileCount += 2 * u.gimme_more;
   }
   
+  // Plasma carbine wind-up upgrades
+  let windUp = base.windUp || false;
+  let windUpSpinTime = base.windUpSpinTime || 0;
+  let windUpRampTime = base.windUpRampTime || 0;
+  let windUpStartInterval = base.windUpStartInterval || fireInterval;
+  let windUpEndInterval = base.windUpEndInterval || fireInterval;
+  let projectileColor = base.projectileColor;
+  let projectileScale = base.projectileScale || 1;
+  let projectileLength = base.projectileLength || 1;
+  
+  if (mainWeaponId === 'plasma_carbine') {
+    if (u.hold_together) {
+      // Faster wind-up: 40% faster spin-up and ramp
+      windUpSpinTime = Math.round(windUpSpinTime * 0.6);
+      windUpRampTime = Math.round(windUpRampTime * 0.6);
+      // Higher max damage (existing damageRampUpMax)
+      base.damageRampUpMax = (base.damageRampUpMax || 2.0) + 0.5 * u.hold_together;
+    }
+  }
+  
   // Apply universal damage modifiers
   if (u.overcharge) damage *= 1.2;
   
@@ -552,6 +582,18 @@ export function getWeaponStats(mainWeaponId, upgrades) {
     chargeShot: base.chargeShot || false,
     chargeTimeMax: base.chargeTimeMax || 5.0,
     chargeDamageMultiplier: base.chargeDamageMultiplier || 3.0,
+    damageRampUp: base.damageRampUp || false,
+    damageRampUpMax: base.damageRampUpMax || 1.0,
+    // Wind-up mechanic (plasma carbine)
+    windUp,
+    windUpSpinTime,
+    windUpRampTime,
+    windUpStartInterval,
+    windUpEndInterval,
+    // Projectile visuals
+    projectileColor,
+    projectileScale,
+    projectileLength,
   };
 }
 
