@@ -403,16 +403,16 @@ function init() {
   // Desktop controls for non-VR playtesting
   initDesktopControls(scene, camera, renderer);
 
-  // Floor HUD debug marker: small white box to visualize floor HUD plane position
-  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
-  const floorY = floorHeight - 0.3;  // Match floor HUD height from biome scenes
+  // Floor HUD debug marker: small white plane to visualize floor HUD position
+  // Create a small flat plane at player feet level, following camera
   floorHUDDebugMarker = new THREE.Mesh(
-    new THREE.BoxGeometry(0.2, 0.2, 0.2),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, side: THREE.DoubleSide })
+    new THREE.PlaneGeometry(0.3, 0.3),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
   );
-  floorHUDDebugMarker.position.set(0, floorY, 0);
+  floorHUDDebugMarker.rotation.x = -Math.PI / 2;  // Flat on ground
+  floorHUDDebugMarker.position.set(0, 0, 0);
   scene.add(floorHUDDebugMarker);
-  console.log('[debug] Floor HUD debug marker added at y=' + floorY);
+  console.log('[debug] Floor HUD debug marker added (white plane)');
 
   // Test helpers for automation
   window.__test = window.__test || {};
@@ -8696,10 +8696,10 @@ function render(timestamp) {
   const scanlinesEl = document.getElementById('scanlines');
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
-  // Update floor HUD debug marker position to follow player (X, Y, Z)
+  // Update floor HUD debug marker: small white plane at player feet
   if (floorHUDDebugMarker && camera) {
     floorHUDDebugMarker.position.x = camera.position.x;
-    floorHUDDebugMarker.position.y = camera.position.y;
+    floorHUDDebugMarker.position.y = camera.position.y - 1.6;  // Offset to feet level (player eye at 1.6)
     floorHUDDebugMarker.position.z = camera.position.z;
   }
 
@@ -8876,8 +8876,7 @@ function buildSynthwaveValleyScene(group) {
     registerFadeMaterial(mat);
   };
   makeLayer(0x5f1da8, 0.18, 80, -850, -10);
-  makeLayer(0x7b2cbf, 0.22, 120, -700, -8);
-  makeLayer(0x4a126e, 0.3, 150, -560, -5);
+  // Removed purple triangle layers at -700 and -560 (user requested)
 
   // Sun + glow
   const sunGroup = new THREE.Group();
