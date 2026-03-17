@@ -452,42 +452,71 @@ export function playExplosionSound() {
 
 // ── Player damage ──────────────────────────────────────────
 export function playDamageSound() {
-  // More impactful player hit sound: louder, harsher, with distinct impact
+  // Minecraft-style "OUCH" - sharp static crack with immediate impact
+  // Key: white noise burst + low thump, very short (0.1-0.15s)
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
-  // Main impact oscillator
-  const osc = ctx.createOscillator();
-  const osc2 = ctx.createOscillator();
-  const gain = ctx.createGain();
-  const filter = ctx.createBiquadFilter();
+  // 1. WHITE NOISE BURST - the "crack" sound (like Minecraft hit)
+  const noiseBufferSize = Math.floor(ctx.sampleRate * 0.12); // 120ms
+  const noiseBuffer = ctx.createBuffer(1, noiseBufferSize, ctx.sampleRate);
+  const noiseData = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < noiseBufferSize; i++) {
+    noiseData[i] = Math.random() * 2 - 1; // White noise
+  }
 
-  osc.type = 'sawtooth';  // Harsher than triangle
-  osc2.type = 'square';  // Add grit
-  filter.type = 'lowpass';
+  const noise = ctx.createBufferSource();
+  noise.buffer = noiseBuffer;
 
-  // Drop from high to low pitch - distinct impact
-  osc.frequency.setValueAtTime(300, t);
-  osc.frequency.exponentialRampToValueAtTime(60, t + 0.25);
-  osc2.frequency.setValueAtTime(250, t);
-  osc2.frequency.exponentialRampToValueAtTime(50, t + 0.25);
+  // Sharp bandpass filter for "crack" character
+  const noiseFilter = ctx.createBiquadFilter();
+  noiseFilter.type = 'bandpass';
+  noiseFilter.frequency.setValueAtTime(2000, t); // Mid-high crack
+  noiseFilter.Q.setValueAtTime(2, t);
 
-  filter.frequency.setValueAtTime(800, t);
-  filter.Q.setValueAtTime(5, t);
+  // Noise envelope: INSTANT attack, quick decay
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.5, t); // LOUD initial crack
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08); // Fast decay
 
-  // Louder initial impact with faster decay
-  gain.gain.setValueAtTime(0.35, t);  // Increased from 0.25
-  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+  noise.connect(noiseFilter);
+  noiseFilter.connect(noiseGain);
+  noiseGain.connect(ctx.destination);
 
-  osc.connect(filter);
-  osc2.connect(filter);
-  filter.connect(gain);
-  gain.connect(ctx.destination);
+  noise.start(t);
+  noise.stop(t + 0.12);
 
-  osc.start(t);
-  osc2.start(t);
-  osc.stop(t + 0.25);
-  osc2.stop(t + 0.25);
+  // 2. LOW THUMP - body impact feel
+  const thumpOsc = ctx.createOscillator();
+  thumpOsc.type = 'sine';
+  thumpOsc.frequency.setValueAtTime(150, t);
+  thumpOsc.frequency.exponentialRampToValueAtTime(40, t + 0.1); // Drop for "punch"
+
+  const thumpGain = ctx.createGain();
+  thumpGain.gain.setValueAtTime(0.4, t); // Strong initial thump
+  thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+
+  thumpOsc.connect(thumpGain);
+  thumpGain.connect(ctx.destination);
+
+  thumpOsc.start(t);
+  thumpOsc.stop(t + 0.1);
+
+  // 3. HIGH CRACK - add sharpness (like a whip crack)
+  const crackOsc = ctx.createOscillator();
+  crackOsc.type = 'square';
+  crackOsc.frequency.setValueAtTime(800, t);
+  crackOsc.frequency.exponentialRampToValueAtTime(100, t + 0.05); // Quick drop
+
+  const crackGain = ctx.createGain();
+  crackGain.gain.setValueAtTime(0.15, t);
+  crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+
+  crackOsc.connect(crackGain);
+  crackGain.connect(ctx.destination);
+
+  crackOsc.start(t);
+  crackOsc.stop(t + 0.05);
 }
 
 // ── Enemy/Boss Projectile Fire Sound ─────────────────────────

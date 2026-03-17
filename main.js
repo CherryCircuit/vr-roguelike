@@ -303,21 +303,11 @@ let cameraShake = 0;
 let cameraShakeIntensity = 0;
 const originalCameraPos = new THREE.Vector3();
 
-// Helper: Get adjusted camera position for VR mode
-// In VR mode, the camera Y position represents the user's actual eye height.
-// This can vary from person to person, so we adjust it to match the game's
-// expected eye level of 1.6m for consistent UI positioning and enemy targeting.
+// Helper: Get camera position for UI positioning and enemy targeting
+// With the XR reference space offset (set during session start), camera.position.y
+// already includes the height offset. This function just returns the current position.
 function getAdjustedCameraPosition() {
-  if (!renderer || !renderer.xr || !renderer.xr.isPresenting) {
-    return camera.position.clone();
-  }
-  // In VR mode, adjust camera Y to match game's expected eye level
-  const adjusted = camera.position.clone();
-  const vrCameraY = camera.position.y;
-  const expectedEyeLevel = 1.6;
-  // Raise the virtual camera Y to match where enemies are targeting
-  adjusted.y = Math.max(vrCameraY, expectedEyeLevel);
-  return adjusted;
+  return camera.position.clone();
 }
 
 // Screen shake system
@@ -409,11 +399,25 @@ function init() {
     console.log('[vr] Session started - disabling foveation');
     renderer.xr.setFoveation(0);
 
-    // Ensure camera is at correct eye level when VR session starts
-    const MIN_EYE_LEVEL = 1.6;
-    if (camera.position.y < MIN_EYE_LEVEL) {
-      console.log('[vr] Adjusting camera Y from', camera.position.y, 'to', MIN_EYE_LEVEL);
-      camera.position.y = MIN_EYE_LEVEL;
+    // Fix VR camera height by offsetting the XR reference space
+    // In WebXR, camera.position is controlled by the XR device and updated every frame.
+    // To raise the virtual camera, we need to offset the reference space origin.
+    const session = renderer.xr.getSession();
+    if (session) {
+      session.requestReferenceSpace('local-floor').then((refSpace) => {
+        // Create an offset that raises the virtual camera by 0.4m
+        // This makes the player appear taller in the virtual world
+        const CAMERA_HEIGHT_OFFSET = 0.4;  // meters to raise the virtual camera
+        const offsetTransform = new XRRigidTransform(
+          { x: 0, y: CAMERA_HEIGHT_OFFSET, z: 0 },
+          { x: 0, y: 0, z: 0, w: 1 }
+        );
+        const offsetRefSpace = refSpace.getOffsetReferenceSpace(offsetTransform);
+        renderer.xr.setReferenceSpace(offsetRefSpace);
+        console.log('[vr] Applied camera height offset of', CAMERA_HEIGHT_OFFSET, 'm');
+      }).catch((err) => {
+        console.warn('[vr] Failed to set reference space offset:', err);
+      });
     }
   });
 
@@ -9129,15 +9133,9 @@ function render(timestamp) {
     }
   }
 
-  // ── VR camera height enforcement ──
-  // Ensure camera is always at correct eye level in VR mode
-  // This handles Quest re-center and VR re-entry cases
-  if (renderer.xr.isPresenting) {
-    const MIN_EYE_LEVEL = 1.6;
-    if (camera.position.y < MIN_EYE_LEVEL) {
-      camera.position.y = MIN_EYE_LEVEL;
-    }
-  }
+  // ── VR camera height is handled by XR reference space offset ──
+  // The offset is applied once when the XR session starts (see sessionstart handler)
+  // No per-frame modification needed - the reference space handles it correctly
 
   // ── Screen shake removed - using floor flash instead ──
   // Screen shake was causing camera position issues
@@ -9487,7 +9485,7 @@ function buildSynthwaveValleyScene(group) {
     fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
-  terrain.position.set(0, floorY + 1.5, -700);
+  terrain.position.set(0, floorY + 1.5 + 8, -700);  // Moved up by 8 units (Task 4)
   terrain.frustumCulled = false;
   group.add(terrain);
   registerFadeMaterial(terrainMat);
@@ -9495,10 +9493,11 @@ function buildSynthwaveValleyScene(group) {
   biomeTerrainMaterials.push({ type: 'shader', material: terrainMat });
 
   // Mountains with polygonOffset to prevent Z-fighting
+  // Restored quality: reduced step from 80 to 40 for better mountain resolution
   const makeLayer = (color, opacity, scaleY, z, y) => {
     const points = [];
     const width = 2000;
-    const step = 80;
+    const step = 40;
     for (let x = -width / 2; x <= width / 2; x += step) {
       const n1 = Math.sin(x * 0.012 + z * 0.003) * 0.5 + 0.5;
       const n2 = Math.sin(x * 0.043 - z * 0.001) * 0.5 + 0.5;
@@ -9509,10 +9508,10 @@ function buildSynthwaveValleyScene(group) {
     points.push(new THREE.Vector2(width / 2, -120));
     const shape = new THREE.Shape(points);
     const geo = new THREE.ShapeGeometry(shape);
-    const mat = new THREE.MeshBasicMaterial({ 
-      color, 
-      transparent: true, 
-      opacity, 
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
       depthWrite: false,
       depthTest: true,
       polygonOffset: true,
@@ -9520,7 +9519,7 @@ function buildSynthwaveValleyScene(group) {
       polygonOffsetUnits: 2.0,
     });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0, y, z);
+    mesh.position.set(0, y + 8, z);  // Moved up by 8 units (Task 4)
     mesh.frustumCulled = false;
     group.add(mesh);
     registerFadeMaterial(mat);
@@ -9530,7 +9529,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Sun + glow
   const sunGroup = new THREE.Group();
-  sunGroup.position.set(0, 30, -760);
+  sunGroup.position.set(0, 30 + 8, -760);  // Moved up by 8 units (Task 4)
   group.add(sunGroup);
 
   const makeRadial = (inner, outer) => {
@@ -9550,25 +9549,25 @@ function buildSynthwaveValleyScene(group) {
   const sunCoreTex = makeRadial('rgba(255,220,80,1.0)', 'rgba(255,200,50,1.0)');
   // Add a second brighter glow layer for maximum intensity
   const sunOuterGlowTex = makeRadial('rgba(255,230,100,0.9)', 'rgba(255,180,60,0.3)');
-  // Outer massive glow - very large to illuminate scene
-  const sunOuterGlowMat = new THREE.SpriteMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending });
-  const sunOuterGlow = new THREE.Sprite(sunOuterGlowMat);
+  // Outer massive glow - very large to illuminate scene (FIX: converted Sprite to Mesh to disable billboarding)
+  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), sunOuterGlowMat);
   sunOuterGlow.scale.set(700, 700, 1);
   sunOuterGlow.frustumCulled = false;
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
   registerFadeMaterial(sunOuterGlowMat);
-  // Main bright glow
-  const sunGlowMat = new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xffcc00, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending });
-  const sunGlow = new THREE.Sprite(sunGlowMat);
+  // Main bright glow (FIX: converted Sprite to Mesh to disable billboarding)
+  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffcc00, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(550, 550), sunGlowMat);
   sunGlow.scale.set(550, 550, 1);
   sunGlow.frustumCulled = false;
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
   registerFadeMaterial(sunGlowMat);
-  // Orange-yellow core - should be visible as a distinct circle
-  const sunCoreMat = new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffdd00, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending });
-  const sunCore = new THREE.Sprite(sunCoreMat);
+  // Orange-yellow core - should be visible as a distinct circle (FIX: converted Sprite to Mesh to disable billboarding)
+  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunCoreTex, color: 0xffdd00, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), sunCoreMat);
   sunCore.scale.set(200, 200, 1);  // Smaller core for distinct circle
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
@@ -9585,7 +9584,7 @@ function buildSynthwaveValleyScene(group) {
     fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.38,vUv.y)*(1.0-smoothstep(0.62,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.4,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*1.5); gl_FragColor=vec4(col, alpha*side*0.95); }`,
   });
   const horizonGlow = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
-  horizonGlow.position.set(0, 12, -745);
+  horizonGlow.position.set(0, 12 + 8, -745);  // Moved up by 8 units (Task 4)
   horizonGlow.frustumCulled = false;
   group.add(horizonGlow);
   registerFadeMaterial(horizonGlowMat);
@@ -10254,15 +10253,15 @@ function buildAlienPlanetScene(group) {
     group.add(critterGroup);
   }
 
-  // Fireflies - 80 particles with gentle drift (reduced for performance)
+  // Fireflies - 60 particles with gentle drift (restored from 40 for visuals)
   // AGGRESSIVE: Only spawn in front of player (negative Z)
   const fireflyPositions = [];
   const fireflyVelocities = [];
   const fireflyGeo = new THREE.BufferGeometry();
 
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 60; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const radius = 4 + Math.random() * 30;
+    const radius = 4 + Math.random() * 35;
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 3;
     const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 3;
     const y = 0.5 + Math.random() * 3;  // Float above ground
@@ -10281,7 +10280,7 @@ function buildAlienPlanetScene(group) {
   fireflyGeo.setAttribute('position', new THREE.Float32BufferAttribute(fireflyPositions, 3));
   const fireflyMat = new THREE.PointsMaterial({
     color: 0x44ff88,
-    size: 0.0875,  // Reduced from 0.175 (50% smaller)
+    size: 0.12,  // Restored from 0.0875 for better visibility
     transparent: true,
     opacity: 0.9,
     sizeAttenuation: true
@@ -10346,37 +10345,46 @@ function buildAlienPlanetScene(group) {
   cityMeshes.push(megaMesh);
   group.add(megaMesh);
 
-  // Animation update
+  // Animation update - OPTIMIZED: stagger updates to reduce per-frame cost
+  let frameCounter = 0;
   group.userData.update = (now, dt) => {
+    frameCounter++;
     const time = now * 0.001;
+
+    // City shader: update every frame (cheap - just uniform)
     cityShaderMat.uniforms.uTime.value = time;
 
-    // Animate green light pulse
+    // Green light pulse: every frame (cheap - single value)
     greenLight.intensity = 1.2 + Math.sin(time * 2) * 0.3;
 
-    // Animate firefly drift
-    const ffPos = fireflyGeo.attributes.position.array;
-    for (let i = 0; i < 40; i++) {
-      const idx = i * 3;
-      ffPos[idx] += fireflyVelocities[idx];
-      ffPos[idx + 1] += fireflyVelocities[idx + 1];
-      ffPos[idx + 2] += fireflyVelocities[idx + 2];
+    // Firefly drift: every 3rd frame (expensive - 60 particle updates)
+    if (frameCounter % 3 === 0) {
+      const ffPos = fireflyGeo.attributes.position.array;
+      const ffDt = dt * 3; // Compensate for skipped frames
+      for (let i = 0; i < 60; i++) {
+        const idx = i * 3;
+        ffPos[idx] += fireflyVelocities[idx] * ffDt * 60;
+        ffPos[idx + 1] += fireflyVelocities[idx + 1] * ffDt * 60;
+        ffPos[idx + 2] += fireflyVelocities[idx + 2] * ffDt * 60;
 
-      // Wrap around boundaries
-      if (ffPos[idx] > 30) ffPos[idx] = -30;
-      if (ffPos[idx] < -30) ffPos[idx] = 30;
-      if (ffPos[idx + 1] > 10) ffPos[idx + 1] = 1;
-      if (ffPos[idx + 1] < 0.5) ffPos[idx + 1] = 9;
-      if (ffPos[idx + 2] > 30) ffPos[idx + 2] = -30;
-      if (ffPos[idx + 2] < -30) ffPos[idx + 2] = 30;
+        // Wrap around boundaries
+        if (ffPos[idx] > 30) ffPos[idx] = -30;
+        if (ffPos[idx] < -30) ffPos[idx] = 30;
+        if (ffPos[idx + 1] > 10) ffPos[idx + 1] = 1;
+        if (ffPos[idx + 1] < 0.5) ffPos[idx + 1] = 9;
+        if (ffPos[idx + 2] > 30) ffPos[idx + 2] = -30;
+        if (ffPos[idx + 2] < -30) ffPos[idx + 2] = 30;
+      }
+      fireflyGeo.attributes.position.needsUpdate = true;
     }
-    fireflyGeo.attributes.position.needsUpdate = true;
 
-    // Animate plant sway
-    for (const plant of alienPlants) {
-      const sway = Math.sin(time * plant.userData.swaySpeed + plant.userData.swayOffset) * 0.05;
-      plant.rotation.x = plant.userData.baseRotationX + sway;
-      plant.rotation.z = plant.userData.baseRotationZ + sway * 0.7;
+    // Plant sway: every 2nd frame (expensive - 100 object updates)
+    if (frameCounter % 2 === 0) {
+      for (const plant of alienPlants) {
+        const sway = Math.sin(time * plant.userData.swaySpeed + plant.userData.swayOffset) * 0.05;
+        plant.rotation.x = plant.userData.baseRotationX + sway;
+        plant.rotation.z = plant.userData.baseRotationZ + sway * 0.7;
+      }
     }
   };
 
