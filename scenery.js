@@ -1043,3 +1043,57 @@ export function updateAmbientParticles(dt, theme, playerPos) {
     secondaryGeo.attributes.position.needsUpdate = true;
   }
 }
+
+// ── Innkeeper NPC ─────────────────────────────────────────
+export function createInnkeeper() {
+  const group = new THREE.Group();
+  group.name = 'innkeeper';
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#000000';
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Simple pixel-like character
+  ctx.fillStyle = '#332211';
+  ctx.fillRect(48, 160, 32, 60);
+
+  ctx.fillStyle = '#aa8855';
+  ctx.fillRect(44, 120, 40, 40);
+
+  ctx.fillStyle = '#552200';
+  ctx.fillRect(52, 80, 24, 40);
+
+  ctx.fillStyle = '#ffeecc';
+  ctx.fillRect(54, 60, 20, 20);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(58, 66, 4, 4);
+  ctx.fillRect(66, 66, 4, 4);
+
+  ctx.fillStyle = '#ff88aa';
+  ctx.fillRect(60, 74, 8, 4);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+
+  const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(2.2, 4.4, 1);
+  sprite.position.y = 2.2;
+  group.add(sprite);
+
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.8, 1.0, 0.4, 8),
+    new THREE.MeshBasicMaterial({ color: 0x2a1a10 })
+  );
+  base.position.y = 0.2;
+  group.add(base);
+
+  group.userData.sprite = sprite;
+  return group;
+}

@@ -21,8 +21,14 @@ const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
 const readyGroup = new THREE.Group();
 const debugMenuGroup = new THREE.Group();  // DEBUG menu
+const floatingMessageGroup = new THREE.Group();
 
 // HUD element references
+let floatingMessageSprite = null;
+let floatingMessageHideAt = null;
+let floatingMessageText = null;
+let floatingMessageSticky = false;
+
 let heartsSprite = null;
 let killCountSprite = null;
 let levelSprite = null;
@@ -354,6 +360,10 @@ export function initHUD(camera, scene) {
   scene.add(hudGroup);
 
   // ── UI Groups (initially hidden) ──
+  floatingMessageGroup.visible = false;
+  floatingMessageGroup.position.set(0, 0.1, -0.8);
+  camera.add(floatingMessageGroup);
+
   [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup, debugMenuGroup].forEach(g => {
     g.visible = false;
     g.rotation.set(0, 0, 0);
@@ -2355,6 +2365,65 @@ export function showBossAlert() {
   });
   alertText.position.set(0, 0, 0);
   levelTextGroup.add(alertText);
+}
+
+export function showFloatingMessage(text, options = {}) {
+  if (!cameraRef) return;
+  if (!text) return;
+
+  const sameText = floatingMessageText === text && floatingMessageGroup.visible;
+  if (sameText) {
+    if (options.duration) floatingMessageHideAt = performance.now() + options.duration;
+    return;
+  }
+
+  floatingMessageText = text;
+  floatingMessageSticky = !!options.sticky;
+
+  while (floatingMessageGroup.children.length) {
+    floatingMessageGroup.remove(floatingMessageGroup.children[0]);
+  }
+
+  const sprite = makeSprite(text, {
+    fontSize: options.fontSize || 60,
+    color: options.color || '#ffffff',
+    glow: true,
+    glowColor: options.glowColor || options.color || '#ffffff',
+    scale: options.scale || 0.45,
+  });
+  sprite.position.set(0, 0, 0);
+  floatingMessageGroup.add(sprite);
+  floatingMessageSprite = sprite;
+
+  const offsetY = options.offsetY ?? 0.0;
+  const offsetZ = options.offsetZ ?? -0.8;
+  floatingMessageGroup.position.set(0, offsetY, offsetZ);
+  floatingMessageGroup.visible = true;
+
+  if (options.duration) {
+    floatingMessageHideAt = performance.now() + options.duration;
+  } else {
+    floatingMessageHideAt = null;
+  }
+}
+
+export function hideFloatingMessage() {
+  floatingMessageGroup.visible = false;
+  floatingMessageSprite = null;
+  floatingMessageText = null;
+  floatingMessageHideAt = null;
+  floatingMessageSticky = false;
+  while (floatingMessageGroup.children.length) {
+    floatingMessageGroup.remove(floatingMessageGroup.children[0]);
+  }
+}
+
+export function updateFloatingMessage(now) {
+  if (!floatingMessageGroup.visible) return;
+  if (floatingMessageSticky) return;
+  if (floatingMessageHideAt && now >= floatingMessageHideAt) {
+    hideFloatingMessage();
+  }
 }
 
 export function hideBossAlert() {

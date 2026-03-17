@@ -169,6 +169,37 @@ const ENEMY_DEFS = {
     jellySpeedBoost: 0.28,
   },
 
+  dream_slime: {
+    pattern: parsePattern([
+      '.1.',
+      '111',
+      '.1.',
+    ]),
+    voxelSize: 0.26,
+    baseHp: 22,
+    baseSpeed: 1.1,
+    color: 0x8855ff,
+    depth: 1,
+    scoreValue: 12,
+    hitboxRadius: 0.5,
+    telegraphType: 'glow',
+  },
+  dream_eye: {
+    pattern: parsePattern([
+      '111',
+      '1.1',
+      '111',
+    ]),
+    voxelSize: 0.45,
+    baseHp: 260,
+    baseSpeed: 0.6,
+    color: 0xaa66ff,
+    depth: 1,
+    scoreValue: 120,
+    hitboxRadius: 0.95,
+    telegraphType: 'glow',
+  },
+
   // ── New enemy types (v2.0) ─────────────────────────────────
   spiral_swimmer: { pattern: [[1]], voxelSize: 0.18, baseHp: 8, baseSpeed: 2.2, color: 0x00ffcc, depth: 1, scoreValue: 8, hitboxRadius: 0.3, telegraphType: 'twitch', isTrain: true, trainLength: 10 },
   // geometry_shifter: { pattern: parsePattern(PATTERNS.shifter), voxelSize: 0.28, baseHp: 45, baseSpeed: 1.3, color: 0xff6600, depth: 1, scoreValue: 20, hitboxRadius: 0.55, telegraphType: 'scale', shapeShift: true },

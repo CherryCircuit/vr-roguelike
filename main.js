@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel } from './game.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, loadDreamState, saveDreamState, startGameWithSeed, getBiomeForLevel } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
@@ -47,6 +47,7 @@ import {
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, showBossAlert, hideBossAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
   updateHolographicGlitch, resetHoloGlitch,
+  showFloatingMessage, hideFloatingMessage, updateFloatingMessage,
   nameEntryGroup
 } from './hud.js';
 
@@ -60,8 +61,9 @@ import {
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
-import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js';
+import { getThemeForLevel, initAmbientParticles, updateAmbientParticles, createInnkeeper } from './scenery.js';
 import { getBiomePool } from './seed.js';
+import { initDreamWorld, enterDreamWorld, exitDreamWorld, updateDreamWorld, handleDreamProjectileHit, getDreamFogSettings, getDreamSpawnPosition } from './dream-world.js';
 
 // Expose game state to window for debugging/testing
 window.State = State;
@@ -186,6 +188,15 @@ let biomePropsBiome = null;
 const biomePropFloaters = [];
 let biomeSceneGroup = null;
 let biomeSceneBiome = null;
+
+let dreamTriggerMesh = null;
+let dreamTransition = null;
+let dreamFadeOverlay = null;
+let dreamReturnPosition = new THREE.Vector3();
+let dreamOriginalEnv = null;
+let dreamTrail = null;
+let innkeeperRef = null;
+let innkeeperMessageVisible = false;
 
 
 let environmentFade = 0;
@@ -335,6 +346,7 @@ function init() {
 
   // Load debug settings from localStorage
   loadDebugSettings();
+  loadDreamState();
 
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
@@ -1050,6 +1062,7 @@ function applyThemeForLevel(level) {
   }
 
   rebuildBiomeScene(getBiomeForLevel(level), theme);
+  updateInnkeeperForLevel(level);
   
   // Always update aurora colors for the current theme (not just customScene biomes)
   updateAuroraColors(theme);
@@ -1062,6 +1075,313 @@ function applyThemeForLevel(level) {
   }
 
   applyEnvironmentFade(environmentFade);
+}
+
+function updateInnkeeperForLevel(level) {
+  if (!scene) return;
+  const shouldShow = level >= 1 && level <= 3;
+
+  if (shouldShow && !innkeeperRef) {
+    innkeeperRef = createInnkeeper();
+    innkeeperRef.position.set(6, 0, 6);
+    scene.add(innkeeperRef);
+  }
+
+  if (!shouldShow && innkeeperRef) {
+    scene.remove(innkeeperRef);
+    disposeObject3D(innkeeperRef);
+    innkeeperRef = null;
+    innkeeperMessageVisible = false;
+  }
+}
+
+function updateInnkeeperMessage(playerPos) {
+  if (!innkeeperRef || game.inDreamWorld || game.state !== State.PLAYING) {
+    if (innkeeperMessageVisible) {
+      hideFloatingMessage();
+      innkeeperMessageVisible = false;
+    }
+    return;
+  }
+
+  const dist = innkeeperRef.position.distanceTo(playerPos);
+  if (dist < 3.2) {
+    if (!innkeeperMessageVisible) {
+      showFloatingMessage("Welcome, traveler! Wish I had that 'plasma carbine' back in stock... strange dreams lately.", {
+        color: '#ffeecc',
+        fontSize: 44,
+        scale: 0.35,
+        sticky: true,
+        offsetY: -0.05,
+        offsetZ: -0.9,
+      });
+      innkeeperMessageVisible = true;
+    }
+  } else if (innkeeperMessageVisible) {
+    hideFloatingMessage();
+    innkeeperMessageVisible = false;
+  }
+}
+
+function initDreamFadeOverlay() {
+  dreamFadeOverlay = new THREE.Mesh(
+    new THREE.PlaneGeometry(6, 6),
+    new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  dreamFadeOverlay.renderOrder = 1003;
+  dreamFadeOverlay.visible = false;
+  dreamFadeOverlay.position.set(0, 0, -0.25);
+  camera.add(dreamFadeOverlay);
+}
+
+function createDreamTrigger() {
+  if (!scene || dreamTriggerMesh) return;
+  const core = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.6, 0),
+    new THREE.MeshBasicMaterial({ color: 0x88ccff })
+  );
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.9, 8, 8),
+    new THREE.MeshBasicMaterial({
+      color: 0xccf2ff,
+      transparent: true,
+      opacity: 0.4,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  );
+  const group = new THREE.Group();
+  group.add(core);
+  group.add(glow);
+  group.position.set(0, 8, 50);
+  group.userData.isDreamTrigger = true;
+  dreamTriggerMesh = group;
+  dreamTriggerMesh.visible = false;
+  scene.add(group);
+}
+
+function updateDreamTrigger(now) {
+  if (!dreamTriggerMesh) return;
+  if (game.inDreamWorld || game.state !== State.PLAYING) {
+    dreamTriggerMesh.visible = false;
+    return;
+  }
+  const bob = Math.sin(now * 0.002) * 0.6;
+  dreamTriggerMesh.position.y = 8 + bob;
+  dreamTriggerMesh.rotation.y += 0.01;
+  dreamTriggerMesh.visible = true;
+}
+
+function hideBaseEnvironment() {
+  if (!dreamOriginalEnv) return;
+  if (gridHelper) gridHelper.visible = false;
+  if (horizonRingRef) horizonRingRef.visible = false;
+  if (horizonInnerRingRef) horizonInnerRingRef.visible = false;
+  if (sunMeshRef) sunMeshRef.visible = false;
+  if (sunGlowRef) sunGlowRef.visible = false;
+  if (starsRef) starsRef.visible = false;
+  if (auroraRef) auroraRef.visible = false;
+  if (floorMaterial) floorMaterial.opacity = 0;
+  if (biomePropsGroup) biomePropsGroup.visible = false;
+  if (biomeSceneGroup) biomeSceneGroup.visible = false;
+}
+
+function restoreBaseEnvironment() {
+  if (!dreamOriginalEnv) return;
+  if (gridHelper) gridHelper.visible = dreamOriginalEnv.gridVisible;
+  if (horizonRingRef) horizonRingRef.visible = dreamOriginalEnv.horizonVisible;
+  if (horizonInnerRingRef) horizonInnerRingRef.visible = dreamOriginalEnv.horizonInnerVisible;
+  if (sunMeshRef) sunMeshRef.visible = dreamOriginalEnv.sunVisible;
+  if (sunGlowRef) sunGlowRef.visible = dreamOriginalEnv.sunGlowVisible;
+  if (starsRef) starsRef.visible = dreamOriginalEnv.starsVisible;
+  if (auroraRef) auroraRef.visible = dreamOriginalEnv.auroraVisible;
+  if (floorMaterial && typeof dreamOriginalEnv.floorOpacity === 'number') {
+    floorMaterial.opacity = dreamOriginalEnv.floorOpacity;
+  }
+  if (biomePropsGroup) biomePropsGroup.visible = dreamOriginalEnv.biomePropsVisible;
+  if (biomeSceneGroup) biomeSceneGroup.visible = dreamOriginalEnv.biomeSceneVisible;
+}
+
+function enterDreamWorldScene() {
+  if (game.inDreamWorld) return;
+  game.inDreamWorld = true;
+  dreamOriginalEnv = {
+    background: scene.background ? scene.background.clone() : new THREE.Color(0x000000),
+    fogColor: scene.fog ? scene.fog.color.clone() : new THREE.Color(0x000000),
+    fogDensity: scene.fog ? scene.fog.density : 0.012,
+    gridVisible: gridHelper ? gridHelper.visible : true,
+    horizonVisible: horizonRingRef ? horizonRingRef.visible : true,
+    horizonInnerVisible: horizonInnerRingRef ? horizonInnerRingRef.visible : true,
+    sunVisible: sunMeshRef ? sunMeshRef.visible : true,
+    sunGlowVisible: sunGlowRef ? sunGlowRef.visible : true,
+    starsVisible: starsRef ? starsRef.visible : true,
+    auroraVisible: auroraRef ? auroraRef.visible : false,
+    floorOpacity: floorMaterial ? floorMaterial.opacity : 1,
+    biomePropsVisible: biomePropsGroup ? biomePropsGroup.visible : true,
+    biomeSceneVisible: biomeSceneGroup ? biomeSceneGroup.visible : true,
+  };
+
+  clearAllEnemies();
+  clearBoss();
+  clearBossDebris();
+  clearBossProjectiles();
+  clearAllProjectiles();
+
+  initDreamWorld(scene);
+  enterDreamWorld();
+
+  const fog = getDreamFogSettings();
+  if (scene.fog) {
+    scene.fog.color.setHex(fog.color);
+    scene.fog.density = fog.density;
+  }
+  if (scene.background) scene.background.setHex(0x120018);
+  hideBaseEnvironment();
+
+  camera.position.copy(getDreamSpawnPosition());
+  if (dreamTriggerMesh) dreamTriggerMesh.visible = false;
+}
+
+function exitDreamWorldScene() {
+  if (!game.inDreamWorld) return;
+  game.inDreamWorld = false;
+  exitDreamWorld();
+
+  if (dreamOriginalEnv) {
+    if (scene.background) scene.background.copy(dreamOriginalEnv.background);
+    if (scene.fog) {
+      scene.fog.color.copy(dreamOriginalEnv.fogColor);
+      scene.fog.density = dreamOriginalEnv.fogDensity;
+    }
+  }
+  restoreBaseEnvironment();
+  camera.position.copy(dreamReturnPosition);
+  if (dreamTriggerMesh) dreamTriggerMesh.visible = true;
+}
+
+function startDreamTransition() {
+  if (dreamTransition) return;
+  dreamReturnPosition.copy(camera.position);
+  dreamTransition = { phase: 'out', timer: 0, duration: 0.8, target: 'enter' };
+  showFloatingMessage('The dream calls...', {
+    color: '#ffffff',
+    fontSize: 64,
+    scale: 0.45,
+    duration: 2000,
+  });
+}
+
+function startDreamReturn() {
+  if (dreamTransition) return;
+  dreamTransition = { phase: 'out', timer: 0, duration: 0.6, target: 'exit' };
+  showFloatingMessage('The dream fades...', {
+    color: '#ffffff',
+    fontSize: 56,
+    scale: 0.4,
+    duration: 1500,
+  });
+}
+
+function updateDreamTransition(rawDt) {
+  if (!dreamTransition || !dreamFadeOverlay) return;
+  dreamTransition.timer += rawDt;
+  const t = Math.min(1, dreamTransition.timer / dreamTransition.duration);
+  const opacity = dreamTransition.phase === 'out' ? t : 1 - t;
+  dreamFadeOverlay.visible = opacity > 0;
+  dreamFadeOverlay.material.opacity = opacity;
+
+  if (t >= 1) {
+    if (dreamTransition.phase === 'out') {
+      if (dreamTransition.target === 'enter') enterDreamWorldScene();
+      if (dreamTransition.target === 'exit') exitDreamWorldScene();
+      dreamTransition.phase = 'in';
+      dreamTransition.timer = 0;
+    } else {
+      dreamFadeOverlay.visible = false;
+      dreamTransition = null;
+    }
+  }
+}
+
+function applyDreamReward() {
+  if (game.dreamCompleted) return;
+  game.dreamCompleted = true;
+  addUpgrade('dream_fragment', 'left');
+  addUpgrade('dream_fragment', 'right');
+  saveDreamState();
+  startDreamFragmentTrail();
+}
+
+function startDreamFragmentTrail() {
+  if (!camera) return;
+  if (dreamTrail && dreamTrail.group) {
+    camera.remove(dreamTrail.group);
+  }
+
+  const count = 40;
+  const positions = new Float32Array(count * 3);
+  const offsets = [];
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 0.1 + Math.random() * 0.2;
+    const height = (Math.random() - 0.5) * 0.3;
+    offsets.push({ angle, radius, height, speed: 0.6 + Math.random() * 0.6 });
+    positions[i * 3] = Math.cos(angle) * radius;
+    positions[i * 3 + 1] = height;
+    positions[i * 3 + 2] = Math.sin(angle) * radius - 0.6;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xaa88ff,
+    size: 0.08,
+    transparent: true,
+    opacity: 0.75,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const points = new THREE.Points(geo, mat);
+  const group = new THREE.Group();
+  group.add(points);
+  group.position.set(0, 0.05, 0);
+  camera.add(group);
+
+  dreamTrail = {
+    group,
+    points,
+    geo,
+    offsets,
+    startedAt: performance.now(),
+    expiresAt: performance.now() + 30000,
+  };
+}
+
+function updateDreamFragmentTrail(now) {
+  if (!dreamTrail) return;
+  if (now >= dreamTrail.expiresAt) {
+    camera.remove(dreamTrail.group);
+    if (dreamTrail.geo) dreamTrail.geo.dispose();
+    if (dreamTrail.points && dreamTrail.points.material) dreamTrail.points.material.dispose();
+    dreamTrail = null;
+    return;
+  }
+
+  const positions = dreamTrail.geo.attributes.position.array;
+  dreamTrail.offsets.forEach((o, i) => {
+    const spin = o.angle + (now * 0.001 * o.speed);
+    positions[i * 3] = Math.cos(spin) * o.radius;
+    positions[i * 3 + 1] = o.height + Math.sin(now * 0.002 + i) * 0.02;
+    positions[i * 3 + 2] = Math.sin(spin) * o.radius - 0.6;
+  });
+  dreamTrail.geo.attributes.position.needsUpdate = true;
 }
 
 function startEnvironmentFade(direction, duration, onComplete) {

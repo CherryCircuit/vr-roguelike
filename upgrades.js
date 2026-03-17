@@ -63,6 +63,9 @@ export const UPGRADE_POOL = [
   // Seeker Burst specific
   { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff' },
 ];
+export const EXTRA_UPGRADES = [
+  { id: 'dream_fragment', name: 'Dream Fragment', desc: '+10% damage', color: '#cc88ff', tier: 'dream' },
+];
 
 /** RARE upgrades offered after Level 5 boss */
 export const RARE_UPGRADE_POOL = [
@@ -126,7 +129,7 @@ export function getRandomUpgradeExcluding(excludeIds = []) {
 
 /** Look up an upgrade definition by id */
 export function getUpgradeDef(id) {
-  return UPGRADE_POOL.find(u => u.id === id) || null;
+  return UPGRADE_POOL.find(u => u.id === id) || EXTRA_UPGRADES.find(u => u.id === id) || null;
 }
 
 /**
@@ -147,6 +150,8 @@ export function getWeaponStats(upgrades) {
 
   // Base values (include special boss upgrades)
   let damage = 15 + (u.scope || 0) * 10 + (u.mega_scope || 0) * 25;
+  const dreamBonus = (u.dream_fragment || 0) * 0.1;
+  if (dreamBonus > 0) damage *= (1 + dreamBonus);
   let fireInterval = (300 / (1 + (u.barrel || 0) * 0.15 + (u.turbo_barrel || 0) * 0.3)) * 0.57;
   let projectileCount = 1 + (u.double_shot || 0) + (u.triple_shot || 0) * 2;
   let critChance = Math.min((u.critical || 0) * 0.15 + (u.super_crit || 0) * 0.25, 0.9);
