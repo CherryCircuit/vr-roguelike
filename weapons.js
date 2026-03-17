@@ -342,7 +342,6 @@ export const UPGRADE_POOL = [
   { id: 'ricochet', name: 'Ricochet', desc: 'Shots bounce to nearby enemy', color: '#aaffaa', type: 'universal' },
   
   // Standard Blaster specific upgrades
-  { id: 'doubleshot', name: 'Doubleshot', desc: 'Standard Blaster: Fire 2 shots at once', color: '#00ffff', type: 'weapon_specific', weapon: 'standard_blaster' },
   { id: 'triple_shot', name: 'Triple Shot', desc: 'Standard Blaster: Fire 3 shots at once', color: '#00ffff', type: 'weapon_specific', weapon: 'standard_blaster' },
   
   // Buckshot specific upgrades
