@@ -7901,6 +7901,9 @@ function render(timestamp) {
   }
   updateBiomeProps(now, rawDt);
 
+  // Update desktop controls (WASD + mouse) in all states when enabled
+  updateDesktopControls(dt);
+
   const st = game.state;
 
   // ── Title screen ──
@@ -8187,8 +8190,6 @@ function render(timestamp) {
       }
     }
 
-    // Update desktop controls (WASD + mouse) if in desktop mode
-    const desktopUpdates = updateDesktopControls(dt);
     const collisions = updateEnemies(dt, now, playerPos);
 
     // Boss update and health bar
@@ -8920,6 +8921,10 @@ function buildSynthwaveValleyScene(group) {
   // version should behave like a stable biome backdrop.
   group.userData.update = null;
 
+  // Synthwave spawn position: player at x: 0, y: -6.172, z: 0
+  // Group position is negative of target spawn to place player at origin
+  group.position.set(0, 6.172, 0);
+
   // Rotate so player faces sun
   group.rotation.y = 0;
 }
@@ -9208,11 +9213,11 @@ function buildDesertNightScene(group) {
   moonGroup.position.set(-45, 35, -60);
   group.add(moonGroup);
 
-  group.rotation.y = -0.35; // Turn player left ~20 degrees to face away from tall dunes on right
+  group.rotation.y = 0.002; // yaw: -0.11°
 
-  // Shift biome position so player spawns where the removed cactus was (x:5, z:9)
-  // Player at origin (0,0,0) -> biome at (-5, 0, -9) puts player at cactus position
-  group.position.set(-5, 0, -9);
+  // Desert spawn position: player at x: -6.226, y: 1.600, z: -2.325
+  // Group position is negative of target spawn to place player at origin
+  group.position.set(6.226, -1.600, 2.325);
 
   // === ANIMATION UPDATE ===
   group.userData.update = (now, dt) => {
@@ -9687,9 +9692,11 @@ function buildAlienPlanetScene(group) {
     }
   };
 
-  group.rotation.y = 0.2; // aim player slightly toward river flow
-  group.position.x = -15; // Move biome left so player moves right relative to biome (Issue 1: increased shift)
-  group.position.z = 10; // Move biome forward so player sits further back from the action
+  group.rotation.y = -0.062; // yaw: 3.55°
+
+  // Alien Planet spawn position: player at x: -6.628, y: 1.081, z: 13.926
+  // Group position is negative of target spawn to place player at origin
+  group.position.set(6.628, -1.081, -13.926);
 }
 
 function buildHellscapeLavaScene(group) {
@@ -10208,5 +10215,8 @@ function buildHellscapeLavaScene(group) {
     geyserGeo.attributes.position.needsUpdate = true;
   };
 
-  group.rotation.y = 0; // face moons
+  // Hellscape spawn position: player at x: -26.599, y: 3.421, z: 0.486
+  // Group position is negative of target spawn to place player at origin
+  group.position.set(26.599, -3.421, -0.486);
+  group.rotation.y = 0.248; // yaw: 14.21°
 }
