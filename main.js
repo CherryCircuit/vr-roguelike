@@ -374,9 +374,17 @@ function init() {
   renderer.toneMapping = THREE.NoToneMapping;
   document.body.appendChild(renderer.domElement);
 
-  // VR Button
-  const vrButton = VRButton.createButton(renderer);
+  // VR Button - disable foveated rendering to remove visible quality boxes
+  const vrButton = VRButton.createButton(renderer, {
+    optionalFeatures: ['local-floor', 'bounded-floor'],
+  });
   document.body.appendChild(vrButton);
+
+  // Disable foveated rendering (removes visible quality boxes in Quest VR)
+  renderer.xr.addEventListener('sessionstart', () => {
+    console.log('[vr] Session started - disabling foveation');
+    renderer.xr.setFoveation(0);
+  });
 
   // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
   // Desktop controls will auto-enable if VR isn't available
