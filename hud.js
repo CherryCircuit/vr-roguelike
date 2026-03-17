@@ -2899,7 +2899,7 @@ function renderScoreboardCanvas() {
 
     // Name
     ctx.fillStyle = '#ccffff';
-    ctx.fillText((score.name || 'ANON').toUpperCase(), 140, y);
+    ctx.fillText((score.name || 'ANON').toUpperCase(), 155, y);
 
     // Score
     ctx.fillStyle = '#ffffff';

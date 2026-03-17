@@ -2632,6 +2632,11 @@ class Boss {
       isWeakPointHit = true;
     }
 
+    // Charge cannon damage cap against bosses (max 100 damage per shot)
+    if (hitInfo.isChargeCannon) {
+      amount = Math.min(amount, 100);
+    }
+
     this.hp -= amount;
     if (this.hp <= 0) this.hp = 0;
 

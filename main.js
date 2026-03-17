@@ -192,6 +192,7 @@ let biomePropsBiome = null;
 const biomePropFloaters = [];
 let biomeSceneGroup = null;
 let biomeSceneBiome = null;
+let biomeOriginalFog = null;  // Store original fog when entering custom scene biomes
 
 let dreamTriggerMesh = null;
 let dreamTransition = null;
@@ -295,6 +296,23 @@ function resolveAccuracyPellet(shotId) {
 let cameraShake = 0;
 let cameraShakeIntensity = 0;
 const originalCameraPos = new THREE.Vector3();
+
+// Helper: Get adjusted camera position for VR mode
+// In VR mode, the camera Y position represents the user's actual eye height.
+// This can vary from person to person, so we adjust it to match the game's
+// expected eye level of 1.6m for consistent UI positioning and enemy targeting.
+function getAdjustedCameraPosition() {
+  if (!renderer || !renderer.xr || !renderer.xr.isPresenting) {
+    return camera.position.clone();
+  }
+  // In VR mode, adjust camera Y to match game's expected eye level
+  const adjusted = camera.position.clone();
+  const vrCameraY = camera.position.y;
+  const expectedEyeLevel = 1.6;
+  // Raise the virtual camera Y to match where enemies are targeting
+  adjusted.y = Math.max(vrCameraY, expectedEyeLevel);
+  return adjusted;
+}
 
 // Screen shake system
 let screenShakeIntensity = 0;
@@ -445,6 +463,7 @@ function init() {
   window.__test.getEnemyCount = getEnemyCount;
   window.__test.getCamera = () => camera;
   window.__test.getRenderer = () => renderer;
+
   // Test hook: deterministic single-shot at a chosen enemy for headless runs.
   // Params: enemyIndex (number), options { distance, hp, snapToCamera }.
   // Returns true if a projectile was fired.
@@ -658,6 +677,12 @@ function clearBiomeScene() {
   biomeSceneGroup = null;
   biomeSceneBiome = null;
   biomeTerrainMaterials = [];  // Clear terrain flash references
+
+  // Restore original fog when clearing custom scene biome
+  if (biomeOriginalFog && scene) {
+    scene.fog = new THREE.FogExp2(biomeOriginalFog.color, biomeOriginalFog.density);
+    biomeOriginalFog = null;
+  }
 }
 
 function disposeObject3D(obj) {
@@ -5765,7 +5790,7 @@ function startGame() {
   applyEnvironmentFade(0);
   showHUD();
   updateHUD(game);
-  showReadyScreen(game.level, camera.position);
+  showReadyScreen(game.level, getAdjustedCameraPosition());
   resetReadyCountdown();
 
   // Setup kills remaining alert for level 1
@@ -6000,7 +6025,7 @@ function completeLevel() {
   } else {
     levelFadeReady = true;
   }
-  showLevelComplete(game.level, camera.position);
+  showLevelComplete(game.level, getAdjustedCameraPosition());
 
   if (!game.justBossKill && [4, 9, 14, 19].includes(game.level)) {
     fadeOutMusic(1200);
@@ -6049,7 +6074,7 @@ function showUpgradeScreen() {
     console.log('[game] Level 1→2: Showing MAIN weapon selection');
     const mainWeaponOptions = Object.values(MAIN_WEAPONS);
     pendingUpgrades = mainWeaponOptions;
-    showUpgradeCards(pendingUpgrades, camera.position, hand);
+    showUpgradeCards(pendingUpgrades, getAdjustedCameraPosition(), hand);
     upgradeSelectionCooldown = 1.5;
     blasterDisplays.forEach(d => { if (d) d.userData.needsUpdate = true; });
     return;
@@ -6072,7 +6097,7 @@ function showUpgradeScreen() {
     pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3, mainWeaponId) : getRandomUpgrades(3, mainWeaponId);
   }
 
-  showUpgradeCards(pendingUpgrades, camera.position, hand);
+  showUpgradeCards(pendingUpgrades, getAdjustedCameraPosition(), hand);
   upgradeSelectionCooldown = 1.5; // prevent instant selection
 
   // Mark blaster displays for update
@@ -6156,7 +6181,7 @@ function advanceLevelAfterUpgrade() {
       applyThemeForLevel(game.level);
 
       // Show ready screen with countdown
-      showReadyScreen(game.level, camera.position);
+      showReadyScreen(game.level, getAdjustedCameraPosition());
       resetReadyCountdown();
 
       if (game.level === 6) {
@@ -6237,9 +6262,9 @@ function endGame(victory) {
   stopLightningSound();
 
   if (victory) {
-    showVictory(game.score, camera.position);
+    showVictory(game.score, getAdjustedCameraPosition());
   } else {
-    showGameOver(game.score, camera.position);
+    showGameOver(game.score, getAdjustedCameraPosition());
     // Play game over music (no loop - play once)
     playMusic('gameOver', false);
   }
@@ -7128,7 +7153,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   if (boss) {
     const dist = pointToSegmentDist(boss.mesh.position, _chargeBeamA, _chargeBeamB);
     if (dist < beamWidth) {
-      const result = hitBoss(Math.round(damage));
+      const result = hitBoss(Math.round(damage), { isChargeCannon: true });
 
       // Shield reflection
       if (result.shieldReflected) {
@@ -7175,8 +7200,29 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
     }
   }
 
+  // Check collision with boss projectiles (charge beam destroys them)
+  const bossProjectiles = getBossProjectiles();
+  if (bossProjectiles.length > 0) {
+    for (let i = bossProjectiles.length - 1; i >= 0; i--) {
+      const bossProj = bossProjectiles[i];
+      if (!bossProj || !bossProj.mesh) continue;
+      
+      // Check if boss projectile intersects with beam line
+      const dist = pointToSegmentDist(bossProj.mesh.position, _chargeBeamA, _chargeBeamB);
+      if (dist < beamWidth + 0.3) { // Slightly larger collision radius
+        // Destroy boss projectile with explosion effect
+        spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
+        scene.remove(bossProj.mesh);
+        disposeObject3D(bossProj.mesh);
+        bossProjectiles.splice(i, 1);
+      }
+    }
+  }
+
   // Brief beam visual (cylinder) - color shifts from cyan to white based on charge
-  const beamGeo = new THREE.CylinderGeometry(beamWidth * 0.5, beamWidth * 0.5, range, 8);
+  // Visual width is thinner than hit detection for better aesthetics
+  const visualBeamWidth = beamWidth * 0.3; // 30% of hit detection width
+  const beamGeo = new THREE.CylinderGeometry(visualBeamWidth, visualBeamWidth * 0.1, range, 8); // Tapers toward horizon
   // Color interpolates from cyan (low charge) to white (full charge)
   const beamColor = new THREE.Color().lerpColors(
     new THREE.Color(0x00ffff),  // Cyan at low charge
@@ -7186,7 +7232,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   const beamMat = new THREE.MeshBasicMaterial({
     color: beamColor,
     transparent: true,
-    opacity: 0.4 + progress * 0.5,  // More opaque at higher charge
+    opacity: 0.8, // Start fully opaque
     side: THREE.DoubleSide,
     depthWrite: false,
     blending: THREE.AdditiveBlending,  // Glow effect
@@ -7195,8 +7241,10 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   beamMesh.position.copy(origin).addScaledVector(direction, range * 0.5);
   beamMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
   beamMesh.userData.createdAt = performance.now();
-  beamMesh.userData.duration = 150;
+  beamMesh.userData.duration = 200; // Longer duration for fade effect
   beamMesh.userData.isChargeBeam = true;
+  beamMesh.userData.pulsePhase = 0; // For pulse animation
+  beamMesh.userData.maxOpacity = 0.8;
   scene.add(beamMesh);
   explosionVisuals.push(beamMesh);
 }
@@ -7568,7 +7616,24 @@ function updateExplosionVisuals(dt, now) {
     } else {
       const t = age / m.userData.duration;
       if (m.userData.isChargeBeam) {
-        m.material.opacity = (0.4 + 0.4) * (1 - t);
+        // Horizon-fade animation: appears full, then fades toward distance
+        // Pulse effect: beam feels like it's "shooting through" the scene
+        
+        // Phase 1: Full opacity pulse (0-30% of duration)
+        // Phase 2: Horizon fade (30-100% of duration)
+        const pulsePhase = t < 0.3 ? t / 0.3 : 1.0;
+        const fadePhase = t < 0.3 ? 0 : (t - 0.3) / 0.7;
+        
+        // Opacity: starts at max, pulses slightly, then fades
+        const pulseIntensity = Math.sin(pulsePhase * Math.PI) * 0.2;
+        const baseOpacity = m.userData.maxOpacity || 0.8;
+        const fadeOpacity = 1 - Math.pow(fadePhase, 2); // Quadratic fade for smoother effect
+        
+        m.material.opacity = baseOpacity * (1 + pulseIntensity) * fadeOpacity;
+        
+        // Scale the beam down slightly over time (shooting into space effect)
+        const scaleDown = 1 - fadePhase * 0.3;
+        m.scale.set(scaleDown, 1, scaleDown);
       } else if (m.userData.isToxicPool) {
         // Toxic pool - check for player damage over time
         m.material.opacity = 0.6 * (1 - t * 0.5);
@@ -9226,6 +9291,12 @@ function rebuildBiomeScene(biomeId, theme) {
   // Update aurora colors for new biome
   updateAuroraColors(theme);
 
+  // Store original fog for custom scene biomes
+  biomeOriginalFog = {
+    color: scene.fog ? scene.fog.color.clone() : new THREE.Color(0x000000),
+    density: scene.fog ? scene.fog.density : 0.012
+  };
+
   biomeSceneGroup = new THREE.Group();
   biomeSceneGroup.name = `biome-scene-${biomeId}`;
   scene.add(biomeSceneGroup);
@@ -9261,6 +9332,11 @@ function buildSynthwaveValleyScene(group) {
   // the local material brightness without affecting other biomes.
   const brightness = 0.82;
 
+  // Set synthwave fog for atmospheric depth and distance fade
+  if (scene) {
+    scene.fog = new THREE.FogExp2(0x2a004a, 0.0008);
+  }
+
   // Sky dome (no stars, we use global starfield)
   const skyGeo = new THREE.SphereGeometry(2800, 32, 24);
   const skyMat = new THREE.ShaderMaterial({
@@ -9289,7 +9365,7 @@ function buildSynthwaveValleyScene(group) {
     uFogColor: { value: new THREE.Color(0x2a004a) },
     uFlashIntensity: { value: 0.0 },
   };
-  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);
+  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 80, 80);
   terrainGeo.rotateX(-Math.PI / 2);
   const terrainMat = new THREE.ShaderMaterial({
     uniforms: terrainUniforms,
@@ -9780,18 +9856,11 @@ function buildAlienPlanetScene(group) {
   moonGlow.frustumCulled = false; // Fix disappearing when looking up
   group.add(moonGlow);
 
-  // Lighting - moonLight for ambient scene lighting
+  // Lighting - moonLight for ambient scene lighting (shadows DISABLED for FPS)
   const moonLight = new THREE.DirectionalLight(0xcc88ff, 8.4);
   moonLight.position.set(60, 80, -40);
-  moonLight.castShadow = true;
-  moonLight.shadow.mapSize.width = 1024;
-  moonLight.shadow.mapSize.height = 1024;
-  moonLight.shadow.camera.near = 10;
-  moonLight.shadow.camera.far = 200;
-  moonLight.shadow.camera.left = -50;
-  moonLight.shadow.camera.right = 50;
-  moonLight.shadow.camera.top = 50;
-  moonLight.shadow.camera.bottom = -50;
+  // SHADOWS DISABLED - major FPS cost in this biome
+  moonLight.castShadow = false;
   group.add(moonLight);
 
   // Green light - moved HIGH (y: 35) to not block view
@@ -9847,12 +9916,13 @@ function buildAlienPlanetScene(group) {
     return mountainGroup;
   };
 
-  for (let ring = 0; ring < 2; ring++) {
-    const count = 8 + ring * 8;
-    const radius = 45 + ring * 18;
+  // Mountains - single ring for FPS (was 2 rings = 24 mountains)
+  for (let ring = 0; ring < 1; ring++) {
+    const count = 14;  // Single ring of 14 mountains (was 8+16=24)
+    const radius = 50;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.3;
-      const r = radius + (Math.random() - 0.5) * 8;
+      const r = radius + (Math.random() - 0.5) * 10;
       const x = Math.cos(angle) * r;
       const z = Math.sin(angle) * r;
       group.add(createMountain(x, z, 0.8 + Math.random() * 0.4));
@@ -9967,8 +10037,8 @@ function buildAlienPlanetScene(group) {
     return plantGroup;
   };
 
-  // Place 100 plants along river with random offsets (reduced for performance)
-  for (let i = 0; i < 100; i++) {
+  // Place 50 plants along river with random offsets (reduced for performance)
+  for (let i = 0; i < 50; i++) {
     const t = Math.random();
     const riverT = t * 59;
     const idx = Math.floor(riverT);
@@ -9996,15 +10066,7 @@ function buildAlienPlanetScene(group) {
 
     const plantType = Math.floor(Math.random() * 4);
     const plant = createAlienPlant(x, z, plantType);
-    // Issue 5: Enable shadows for flora
-    plant.castShadow = true;
-    plant.receiveShadow = true;
-    plant.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
+    // Shadow casting disabled for FPS
     alienPlants.push(plant);
     group.add(plant);
   }
@@ -10045,7 +10107,7 @@ function buildAlienPlanetScene(group) {
   // AGGRESSIVE: Only spawn in front of player (negative Z)
   const critterGeo = new THREE.SphereGeometry(0.18, 8, 6);
   const critterGlowGeo = new THREE.SphereGeometry(0.3, 8, 6);
-  for (let i = 0; i < 20; i++) {  // Reduced from 40 to 20
+  for (let i = 0; i < 10; i++) {  // Reduced from 20 to 10
     const angle = Math.random() * Math.PI * 2;
     const radius = 6 + Math.random() * 35;  // Spread wider
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 4;
@@ -10076,10 +10138,7 @@ function buildAlienPlanetScene(group) {
   const fireflyVelocities = [];
   const fireflyGeo = new THREE.BufferGeometry();
 
-  for (let i = 0; i < 80; i++) {
-    const x = (Math.random() - 0.5) * 60;
-    const y = 1 + Math.random() * 8;
-    const z = (Math.random() - 0.5) * 60;
+  for (let i = 0; i < 40; i++) {
 
     // AGGRESSIVE: Skip fireflies behind player (positive Z)
     if (z > 0) continue;
@@ -10139,17 +10198,17 @@ function buildAlienPlanetScene(group) {
     return mesh;
   };
 
-  // Far background city on horizon (FIXED: was 55-100, now 120-220)
-  cityMeshes.push(generateCityLayer(boxGeo, 100, 120, 150, 30, 60));
-  cityMeshes.push(generateCityLayer(cylinderGeo, 80, 140, 180, 40, 80));
-  cityMeshes.push(generateCityLayer(coneGeo, 60, 160, 200, 50, 100));
+  // Far background city on horizon (REDUCED for FPS: was 100+80+60=240)
+  cityMeshes.push(generateCityLayer(boxGeo, 50, 120, 150, 30, 60));
+  cityMeshes.push(generateCityLayer(cylinderGeo, 40, 140, 180, 40, 80));
+  cityMeshes.push(generateCityLayer(coneGeo, 30, 160, 200, 50, 100));
   cityMeshes.forEach((mesh) => group.add(mesh));
 
-  // Mega towers - far on horizon (FIXED: was 60-70, now 160-180)
+  // Mega towers - far on horizon (REDUCED for FPS: was 10)
   const megaGeo = new THREE.CylinderGeometry(1, 1.5, 1, 5);
-  const megaMesh = new THREE.InstancedMesh(megaGeo, cityShaderMat, 10);
-  for (let i = 0; i < 10; i++) {
-    const angle = (i / 10) * Math.PI * 2;
+  const megaMesh = new THREE.InstancedMesh(megaGeo, cityShaderMat, 5);
+  for (let i = 0; i < 5; i++) {
+    const angle = (i / 5) * Math.PI * 2;
     const dist = 160 + Math.random() * 20;
     const h = 110 + Math.random() * 20;
     dummy.position.set(Math.cos(angle) * dist, h / 2, Math.sin(angle) * dist);
@@ -10170,7 +10229,7 @@ function buildAlienPlanetScene(group) {
 
     // Animate firefly drift
     const ffPos = fireflyGeo.attributes.position.array;
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 40; i++) {
       const idx = i * 3;
       ffPos[idx] += fireflyVelocities[idx];
       ffPos[idx + 1] += fireflyVelocities[idx + 1];
