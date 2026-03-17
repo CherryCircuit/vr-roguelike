@@ -1245,13 +1245,15 @@ export function hideGameOver() {
 // VR damage indicator: bright environment flash when player takes damage
 // This is the PRIMARY hit indicator in VR (camera shake doesn't work well)
 // Must be very visible across all biomes (Synthwave, Desert, Alien Planet, Hellscape)
-export function triggerHitFlash() {
+export function triggerHitFlash(includeHoloGlitch = false) {
   // High initial opacity for maximum visibility
   // Additive blending makes this visible even on bright/colored backgrounds
   hitFlashOpacity = 0.9;
 
-  // Also trigger holographic glitch effect on HUD
-  triggerHoloGlitch();
+  // HUD glitch should only happen when the player takes damage.
+  if (includeHoloGlitch) {
+    triggerHoloGlitch();
+  }
 }
 
 export function updateHitFlash(dt) {

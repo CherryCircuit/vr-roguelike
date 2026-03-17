@@ -6880,6 +6880,7 @@ export function updateBossProjectiles(dt, now, playerPos) {
     const wiggleOffset = Math.sin(proj.wigglePhase) * (proj.wiggleAmplitude || 0.008);
     const pulse = 0.75 + Math.sin(age * 0.015 + (proj.mesh.userData.glowPhase || 0)) * 0.25;
 
+    const prevPos = proj.mesh.position.clone();
     proj.mesh.position.addScaledVector(proj.velocity, adjustedDt);
     proj.mesh.position.addScaledVector(side, wiggleOffset);
     proj.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), forward);
@@ -7003,3 +7004,4 @@ export function getFastEnemies() {
 export function getSwarmEnemies() {
   return activeEnemies.filter(e => e.type === 'swarm');
 }
+
