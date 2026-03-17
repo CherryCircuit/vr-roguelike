@@ -8950,8 +8950,8 @@ function buildSynthwaveValleyScene(group) {
   // version should behave like a stable biome backdrop.
   group.userData.update = null;
 
-  // Synthwave floor HUD height: group.position.y = 0.10
-  group.position.set(0, 0.10, 0);
+  // Synthwave floor HUD height: group.position.y = 6.82
+  group.position.set(0, 6.82, 0);
 
   // Rotate so player faces sun
   group.rotation.y = 0;
@@ -9241,8 +9241,8 @@ function buildDesertNightScene(group) {
   moonGroup.position.set(-45, 35, -60);
   group.add(moonGroup);
 
-  // Desert floor HUD height: Y = -0.20, rotated 25 degrees (+0.436 rad)
-  group.rotation.y = 0.436; // yaw: 25 degrees
+  // Desert floor HUD height: Y = -0.20, rotated 25 degrees (-0.436 rad)
+  group.rotation.y = -0.436; // yaw: -25 degrees
   group.position.set(-7.12, -0.20, -9.82);
 
   // === ANIMATION UPDATE ===
