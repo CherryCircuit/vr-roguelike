@@ -408,7 +408,7 @@ function init() {
   const floorY = floorHeight - 0.3;  // Match floor HUD height from biome scenes
   floorHUDDebugMarker = new THREE.Mesh(
     new THREE.BoxGeometry(0.2, 0.2, 0.2),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false })
+    new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, side: THREE.DoubleSide })
   );
   floorHUDDebugMarker.position.set(0, floorY, 0);
   scene.add(floorHUDDebugMarker);
@@ -8696,9 +8696,10 @@ function render(timestamp) {
   const scanlinesEl = document.getElementById('scanlines');
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
-  // Update floor HUD debug marker position to follow player
+  // Update floor HUD debug marker position to follow player (X, Y, Z)
   if (floorHUDDebugMarker && camera) {
     floorHUDDebugMarker.position.x = camera.position.x;
+    floorHUDDebugMarker.position.y = camera.position.y;
     floorHUDDebugMarker.position.z = camera.position.z;
   }
 
