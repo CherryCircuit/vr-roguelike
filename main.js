@@ -126,11 +126,11 @@ let playerStillnessStartTime = null;
 let laserMineSpawnCooldown = 0;
 
 // PERFORMANCE: Hard cap on active projectiles to prevent accumulation
-const MAX_PROJECTILES = 50;
+const MAX_PROJECTILES = 100;
 
 // PERFORMANCE: Projectile pool for reuse (avoid creating geometry per shot)
 const projectilePool = [];
-const PROJECTILE_POOL_SIZE = 60;
+const PROJECTILE_POOL_SIZE = 120;
 
 // PHYSICS DEATH SYSTEM: Voxel pool for death explosions
 const voxelPool = [];
@@ -356,6 +356,7 @@ function init() {
   // Camera
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(0, 1.6, 0);
+  camera.rotation.set(0, 0, 0);
 
   // Renderer — optimized for Quest performance
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -5836,6 +5837,8 @@ function initBossDeathOverlays() {
 function startBossDeathCinematic(boss) {
   if (!boss || bossDeathCinematic.active) return;
 
+  console.log('[boss-cinematic] Starting boss death cinematic');
+  
   resetAllSlowMoState();
   bossDeathCinematic.active = true;
   bossDeathCinematic.timer = 0;
@@ -5844,13 +5847,18 @@ function startBossDeathCinematic(boss) {
   bossDeathCinematic.wasFinalBoss = game.level >= 20;
   bossDeathFreezeTimer = BOSS_DEATH_FREEZE;
 
+  // Ensure overlays exist and are properly initialized
   if (bossDeathWhiteOverlay) {
     bossDeathWhiteOverlay.material.opacity = 0;
-    bossDeathWhiteOverlay.visible = false;
+    bossDeathWhiteOverlay.visible = true;  // Set visible so opacity changes take effect
+  } else {
+    console.warn('[boss-cinematic] White overlay not initialized!');
   }
   if (bossDeathBlackOverlay) {
     bossDeathBlackOverlay.material.opacity = 0;
-    bossDeathBlackOverlay.visible = false;
+    bossDeathBlackOverlay.visible = true;  // Set visible so opacity changes take effect
+  } else {
+    console.warn('[boss-cinematic] Black overlay not initialized!');
   }
 
   spawnBossDebris(boss);
@@ -5863,6 +5871,7 @@ function startBossDeathCinematic(boss) {
   clearBoss();
 
   game.state = State.BOSS_DEATH_CINEMATIC;
+  console.log('[boss-cinematic] State set to BOSS_DEATH_CINEMATIC');
 }
 
 function finishBossDeathCinematic() {
@@ -7146,12 +7155,12 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
 }
 
 function spawnProjectile(origin, direction, controllerIndex, stats, shotId, options = {}) {
-  // PERFORMANCE: Enforce hard cap on active projectiles
+  // PERFORMANCE: Recycle oldest projectile when at cap to keep fire continuous
   if (projectiles.length >= MAX_PROJECTILES) {
-    // Skip spawning - too many projectiles active
-    // This prevents accumulation with dual blasters + multi-shot upgrades
-    resolveAccuracyPellet(shotId);
-    return;
+    const recycled = projectiles.shift();
+    if (recycled) {
+      returnProjectileToPool(recycled);
+    }
   }
 
   const now = performance.now();
@@ -7172,8 +7181,16 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   let mesh = getPooledProjectile(poolType, color);
 
   if (!mesh) {
-    // Pool exhausted - skip this projectile (prevents unbounded growth)
-    resolveAccuracyPellet(shotId);
+    // Pool exhausted - recycle oldest active projectile to keep fire continuous
+    const recycled = projectiles.shift();
+    if (recycled) {
+      returnProjectileToPool(recycled);
+      mesh = recycled;
+    }
+  }
+
+  if (!mesh) {
+    // No available projectile to recycle
     return;
   }
 
@@ -8236,7 +8253,11 @@ function render(timestamp) {
   // Update desktop controls (WASD + mouse) in all states when enabled
   updateDesktopControls(dt);
 
-  const st = game.state;
+  let st = game.state;
+  if (bossDeathCinematic.active && st !== State.BOSS_DEATH_CINEMATIC) {
+    st = State.BOSS_DEATH_CINEMATIC;
+    game.state = st;
+  }
 
   // ── Title screen ──
   if (st === State.TITLE) {
@@ -9016,11 +9037,15 @@ function render(timestamp) {
   const scanlinesEl = document.getElementById('scanlines');
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
-  // Update floor HUD debug marker: small white plane at player feet
-  if (floorHUDDebugMarker && camera) {
-    floorHUDDebugMarker.position.x = camera.position.x;
-    floorHUDDebugMarker.position.y = camera.position.y - 1.6;  // Offset to feet level (player eye at 1.6)
-    floorHUDDebugMarker.position.z = camera.position.z;
+  // Hide floor HUD debug marker in VR — creates a white box that follows the head
+  if (floorHUDDebugMarker) {
+    floorHUDDebugMarker.visible = !renderer.xr.isPresenting;
+    // Update floor HUD debug marker: small white plane at player feet
+    if (camera && !renderer.xr.isPresenting) {
+      floorHUDDebugMarker.position.x = camera.position.x;
+      floorHUDDebugMarker.position.y = camera.position.y - 1.6;  // Offset to feet level (player eye at 1.6)
+      floorHUDDebugMarker.position.z = camera.position.z;
+    }
   }
 
   renderer.render(scene, camera);
@@ -9111,7 +9136,7 @@ function getBiomeFloorY() {
     case 'synthwave_valley': return 0.10;
     case 'desert_night': return -0.20;
     case 'alien_planet': return -0.28;
-    case 'hellscape_lava': return -0.22;
+    case 'hellscape_lava': return 0.05;
     default: return 0.05;
   }
 }
@@ -9268,10 +9293,18 @@ function buildSynthwaveValleyScene(group) {
   // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
   // The standalone HTML used perpetual scrolling and pulsing, but the game
   // version should behave like a stable biome backdrop.
-  group.userData.update = null;
+  // Also hide the far city boxes in VR to avoid head-tracking quads.
+  let lastVRState = null;
+  group.userData.update = () => {
+    const inVR = !!(renderer && renderer.xr && renderer.xr.isPresenting);
+    if (inVR === lastVRState) return;
+    lastVRState = inVR;
+    cityMeshes.forEach((mesh) => { mesh.visible = !inVR; });
+  };
+  group.userData.update();
 
-  // Synthwave floor HUD height: group.position.y = 6.82
-  group.position.set(0, 6.82, 0);
+  // Synthwave floor HUD height: group.position.y = 0.10
+  group.position.set(0, 0.10, 0);
 
   // Rotate so player faces sun
   group.rotation.y = 0;
@@ -9711,8 +9744,8 @@ function buildAlienPlanetScene(group) {
     return mountainGroup;
   };
 
-  for (let ring = 0; ring < 3; ring++) {
-    const count = 8 + ring * 6;
+  for (let ring = 0; ring < 2; ring++) {
+    const count = 8 + ring * 8;
     const radius = 45 + ring * 18;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.3;
@@ -9831,8 +9864,8 @@ function buildAlienPlanetScene(group) {
     return plantGroup;
   };
 
-  // Place 240 plants along river with random offsets (Issue 3: doubled from 120)
-  for (let i = 0; i < 240; i++) {
+  // Place 100 plants along river with random offsets (reduced for performance)
+  for (let i = 0; i < 100; i++) {
     const t = Math.random();
     const riverT = t * 59;
     const idx = Math.floor(riverT);
@@ -9870,8 +9903,8 @@ function buildAlienPlanetScene(group) {
     group.add(plant);
   }
 
-  // Extra flora spread around the player (increased for more coverage)
-  for (let i = 0; i < 120; i++) {  // Increased from 70 to 120
+  // Extra flora spread around the player (reduced for performance)
+  for (let i = 0; i < 50; i++) {  // Reduced from 120 to 50
     const angle = Math.random() * Math.PI * 2;
     const radius = 8 + Math.random() * 40;  // Increased spread radius from 35 to 40
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 8;
@@ -9898,10 +9931,10 @@ function buildAlienPlanetScene(group) {
     group.add(plant);
   }
 
-  // Small fauna critters (increased for more life)
+  // Small fauna critters (reduced for performance)
   const critterGeo = new THREE.SphereGeometry(0.18, 8, 6);
   const critterGlowGeo = new THREE.SphereGeometry(0.3, 8, 6);
-  for (let i = 0; i < 40; i++) {  // Increased from 24 to 40
+  for (let i = 0; i < 20; i++) {  // Reduced from 40 to 20
     const angle = Math.random() * Math.PI * 2;
     const radius = 6 + Math.random() * 35;  // Spread wider
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 4;
@@ -9922,12 +9955,12 @@ function buildAlienPlanetScene(group) {
     group.add(critterGroup);
   }
 
-  // Fireflies - 240 particles with gentle drift (Issue 3: doubled from 120)
+  // Fireflies - 80 particles with gentle drift (reduced for performance)
   const fireflyPositions = [];
   const fireflyVelocities = [];
   const fireflyGeo = new THREE.BufferGeometry();
 
-  for (let i = 0; i < 240; i++) {
+  for (let i = 0; i < 80; i++) {
     const x = (Math.random() - 0.5) * 60;
     const y = 1 + Math.random() * 8;
     const z = (Math.random() - 0.5) * 60;
@@ -9968,6 +10001,7 @@ function buildAlienPlanetScene(group) {
   const cylinderGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
   const coneGeo = new THREE.ConeGeometry(0.5, 1, 4);
   const dummy = new THREE.Object3D();
+  const cityMeshes = [];
 
   const generateCityLayer = (geometry, count, minDist, maxDist, minHeight, maxHeight) => {
     const mesh = new THREE.InstancedMesh(geometry, cityShaderMat, count);
@@ -9986,9 +10020,10 @@ function buildAlienPlanetScene(group) {
   };
 
   // Far background city on horizon (FIXED: was 55-100, now 120-220)
-  group.add(generateCityLayer(boxGeo, 100, 120, 150, 30, 60));
-  group.add(generateCityLayer(cylinderGeo, 80, 140, 180, 40, 80));
-  group.add(generateCityLayer(coneGeo, 60, 160, 200, 50, 100));
+  cityMeshes.push(generateCityLayer(boxGeo, 100, 120, 150, 30, 60));
+  cityMeshes.push(generateCityLayer(cylinderGeo, 80, 140, 180, 40, 80));
+  cityMeshes.push(generateCityLayer(coneGeo, 60, 160, 200, 50, 100));
+  cityMeshes.forEach((mesh) => group.add(mesh));
 
   // Mega towers - far on horizon (FIXED: was 60-70, now 160-180)
   const megaGeo = new THREE.CylinderGeometry(1, 1.5, 1, 5);
@@ -10002,6 +10037,7 @@ function buildAlienPlanetScene(group) {
     dummy.updateMatrix();
     megaMesh.setMatrixAt(i, dummy.matrix);
   }
+  cityMeshes.push(megaMesh);
   group.add(megaMesh);
 
   // Animation update
@@ -10014,7 +10050,7 @@ function buildAlienPlanetScene(group) {
 
     // Animate firefly drift
     const ffPos = fireflyGeo.attributes.position.array;
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 80; i++) {
       const idx = i * 3;
       ffPos[idx] += fireflyVelocities[idx];
       ffPos[idx + 1] += fireflyVelocities[idx + 1];
@@ -10560,7 +10596,10 @@ function buildHellscapeLavaScene(group) {
     geyserGeo.attributes.position.needsUpdate = true;
   };
 
-  // Hellscape floor HUD height: group.position.y = -0.22
-  group.position.set(26.599, -0.22, -0.486);
+  // Hellscape floor HUD height: group.position.y = 0.05
+  group.position.set(26.599, 0.05, -0.486);
   group.rotation.y = 0.248; // yaw: 14.21°
 }
+
+
+
