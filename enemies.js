@@ -321,7 +321,7 @@ const MAX_ENEMY_DEBRIS = 50;  // Cap for performance
 
 // Boss death debris (physics-based from commit 2abb1b5)
 const bossDebris = [];
-const MAX_DEBRIS = 100;  // Cap for performance
+const MAX_DEBRIS = 56;  // Cap for performance (reduced ~25% from 75)
 
 // Player forward direction for front-arc constraints
 const _playerForwardRef = new THREE.Vector3(0, 0, -1);
@@ -2710,7 +2710,7 @@ class Boss {
     _dir.copy(playerPos).sub(this.mesh.position);
     const dist = _dir.length();
     if (dist > 0.01) _dir.divideScalar(dist);
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
     this.mesh.position.addScaledVector(_dir, 0.3 * dt);
   }
 
@@ -2784,7 +2784,7 @@ class ScrapGolemBoss extends Boss {
     
     // Slow movement toward player
     this.mesh.position.addScaledVector(dirToPlayer, 0.8 * dt);
-    this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+    this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
     
     // Ground slam attack
     this.slamTimer += dt;
@@ -2862,7 +2862,7 @@ class HoloPhantomBoss extends Boss {
     // Fast erratic movement
     if (this.state === 'visible') {
       this.mesh.position.addScaledVector(dirToPlayer, 2.0 * dt);
-      this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+      this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
       
       // Create decoys
       this.decoyTimer += dt;
@@ -2963,7 +2963,7 @@ class PulseEmitterBoss extends Boss {
     
     // Moderate movement
     this.mesh.position.addScaledVector(dirToPlayer, 1.2 * dt);
-    this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+    this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
     
     // Pulse attacks
     this.pulseTimer += dt;
@@ -3077,7 +3077,7 @@ class RustSerpentBoss extends Boss {
     
     this.mesh.position.addScaledVector(dirToPlayer, this.slitherSpeed * dt);
     this.mesh.position.addScaledVector(perp, slitherOffset * dt);
-    this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+    this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
     
     // Leave toxic trail
     this.toxicTimer += dt;
@@ -3149,7 +3149,7 @@ class StaticWispBoss extends Boss {
     
     this.mesh.position.addScaledVector(dirToPlayer, 2.5 * dt);
     this.mesh.position.addScaledVector(this.zigzagDir, 1.5 * dt);
-    this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
+    this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
     
     // Electric attacks
     this.electricTimer += dt;
@@ -3609,7 +3609,7 @@ class SkullBoss extends Boss {
     this.updateHeadColor();
     
     // Face player
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
   }
   
   updatePhase2(dt, now, playerPos) {
@@ -3804,7 +3804,7 @@ class DodgerBoss extends Boss {
 
     // Always face player when visible
     if (this.state !== 'hidden' && this.state !== 'hiding') {
-      this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+      this.mesh.lookAt(_look.copy(playerPos));
 
       // Visual effects based on state
       this.updateVisualEffects(now);
@@ -4086,7 +4086,7 @@ class HunterBoss extends Boss {
       this.mesh.position.addScaledVector(dirToPlayer, 1 * dt);
     }
 
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
   }
 
   onPhaseChange(newPhase) {
@@ -4199,7 +4199,7 @@ class DJBoss extends Boss {
     const beatOffset = Math.sin(now * 0.01) * 0.1;
     this.mesh.position.y = 1.5 + beatOffset;
 
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
   }
 
   spawnFanMinion(playerPos) {
@@ -4370,7 +4370,7 @@ class StarfighterBoss extends Boss {
     // Banking animation
     this.mesh.rotation.z = Math.sin(now * 0.003) * 0.2 * this.strafeDir;
 
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
   }
 
   onPhaseChange(newPhase) {
@@ -4500,7 +4500,7 @@ class ScientistBoss extends Boss {
       this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.5 * dt);
     }
 
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
   }
 
   spawnCompiledMinion(playerPos) {
@@ -4661,7 +4661,7 @@ class MonkBoss extends Boss {
       this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
     }
 
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
     this.mesh.rotation.y += dt * 0.5;
   }
 
@@ -4726,7 +4726,7 @@ class WalterBoss extends Boss {
     _dir.copy(playerPos).sub(this.mesh.position);
     const dist = _dir.length();
     if (dist > 0.01) _dir.divideScalar(dist);
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
     
     const speed = 0.15 + this.phase * 0.05;
     this.mesh.position.addScaledVector(_dir, speed * dt);
@@ -4849,7 +4849,7 @@ class KernelBoss extends Boss {
     _dir.copy(playerPos).sub(this.mesh.position);
     const dist = _dir.length();
     if (dist > 0.01) _dir.divideScalar(dist);
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
     
     const speed = 0.05 + this.phase * 0.02;
     this.mesh.position.addScaledVector(_dir, speed * dt);
@@ -4942,7 +4942,7 @@ class KrakenBoss extends Boss {
     _dir.copy(playerPos).sub(this.mesh.position);
     const dist = _dir.length();
     if (dist > 0.01) _dir.divideScalar(dist);
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
     
     const speed = 0.1 + this.phase * 0.03;
     this.mesh.position.addScaledVector(_dir, speed * dt);
@@ -5022,7 +5022,7 @@ class SeraphimBoss extends Boss {
       _dir.copy(playerPos).sub(this.mesh.position);
       const dist = _dir.length();
       if (dist > 0.01) _dir.divideScalar(dist);
-      this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+      this.mesh.lookAt(_look.copy(playerPos));
       
       // Float up and down
       const baseY = 1.5;
@@ -5258,7 +5258,7 @@ class OutlawBoss extends Boss {
       }
     }
 
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
   }
 
   vanish(now, playerPos) {
@@ -5420,7 +5420,7 @@ class CommanderBoss extends Boss {
       this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
     }
 
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
   }
 
   fireLaser(playerPos) {
@@ -5577,7 +5577,7 @@ class DivaBoss extends Boss {
       this.mesh.position.addScaledVector(dirToPlayer, 0.2 * dt);
     }
 
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
   }
 
   fireMicrophoneBeam(mic, playerPos) {
@@ -5753,7 +5753,7 @@ class TwinGlitchBoss extends Boss {
       this.mesh.position.addScaledVector(dirToPlayer, 0.2 * dt);
     }
 
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
   }
 
   swapVulnerability() {
@@ -5917,7 +5917,7 @@ class MinotaurBoss extends Boss {
       }
     }
 
-    this.mesh.lookAt(_look.set(playerPos.x, this.mesh.position.y, playerPos.z));
+    this.mesh.lookAt(_look.copy(playerPos));
   }
 
   startCharge(playerPos) {

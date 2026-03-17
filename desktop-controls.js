@@ -100,6 +100,8 @@ export function enable() {
   if (cameraRef) {
     player.position.copy(cameraRef.position);
     player.rotation.copy(cameraRef.rotation);
+    player.rotation.x = 0;
+    cameraRef.rotation.x = 0;
   }
 
   // Request pointer lock for mouse look
@@ -451,9 +453,12 @@ function onMouseMove(e) {
   // Yaw (horizontal rotation)
   player.rotation.y -= movementX * mouseSensitivity;
 
-  // Pitch (vertical rotation) - INVERTED Y-AXIS (pull down = look up)
-  player.rotation.x += movementY * mouseSensitivity;
-  player.rotation.x = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, player.rotation.x));
+  // Pitch (vertical rotation) - DISABLED for VR biome fixes
+  // player.rotation.x += movementY * mouseSensitivity;
+  // player.rotation.x = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, player.rotation.x));
+
+  // Force pitch to zero
+  player.rotation.x = 0;
 
   // Apply to camera
   if (cameraRef) {
