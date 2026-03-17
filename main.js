@@ -96,6 +96,7 @@ function getCountryDisplayLabel() {
 
 // ── Module State ───────────────────────────────────────────
 let scene, camera, renderer;
+let floorHUDDebugMarker;  // Small white box to show floor HUD position
 const controllers = [];
 const controllerTriggerPressed = [false, false];
 const projectiles = [];
@@ -401,6 +402,17 @@ function init() {
 
   // Desktop controls for non-VR playtesting
   initDesktopControls(scene, camera, renderer);
+
+  // Floor HUD debug marker: small white box to visualize floor HUD plane position
+  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+  const floorY = floorHeight - 0.3;  // Match floor HUD height from biome scenes
+  floorHUDDebugMarker = new THREE.Mesh(
+    new THREE.BoxGeometry(0.2, 0.2, 0.2),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false })
+  );
+  floorHUDDebugMarker.position.set(0, floorY, 0);
+  scene.add(floorHUDDebugMarker);
+  console.log('[debug] Floor HUD debug marker added at y=' + floorY);
 
   // Test helpers for automation
   window.__test = window.__test || {};
@@ -8683,6 +8695,12 @@ function render(timestamp) {
   // Hide scanlines overlay in VR — it creates a dark box that follows the head and obscures the view
   const scanlinesEl = document.getElementById('scanlines');
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
+
+  // Update floor HUD debug marker position to follow player
+  if (floorHUDDebugMarker && camera) {
+    floorHUDDebugMarker.position.x = camera.position.x;
+    floorHUDDebugMarker.position.z = camera.position.z;
+  }
 
   renderer.render(scene, camera);
 }
