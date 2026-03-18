@@ -359,8 +359,7 @@ export function initHUD(camera, scene) {
   // ── VR HUD (stationary on floor, Space Pirate Trainer style) ──
   createHUDElements();
   hudGroup.position.set(0, 0.05, -3);  // On floor, 3 feet in front of spawn
-  hudGroup.rotation.x = -Math.PI / 2;  // Rotate to face up (floor plane)
-  hudGroup.rotation.y = 0.349;  // 20° toward negative Z (player's facing direction) - ONE TIME ONLY
+  hudGroup.rotation.x = -Math.PI / 2 + 0.349;  // Face up + 20° tilt toward player (one-time static)
   scene.add(hudGroup);
 
   // ── UI Groups (initially hidden) ──
