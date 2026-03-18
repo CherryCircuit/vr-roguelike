@@ -293,8 +293,7 @@ function resolveAccuracyPellet(shotId) {
     accuracyShots.delete(shotId);
     if (!shot.hit) {
       registerAccuracyMiss();
-      // Trigger hurt effect: red flash, shake, faster popup shrink
-      triggerAccuracyHurt();
+      // REMOVED: triggerAccuracyHurt() - red flash should only trigger on player damage, not missed shots
     }
   }
 }
@@ -1450,25 +1449,24 @@ function createSun() {
   canvas.height = 512;
   const ctx = canvas.getContext('2d');
 
-  // Draw sun circle — only bottom half visible (sits on horizon)
-  // Upper half: warm yellow/orange. Lower half: deep orange/red with bands.
-  // #1 FIX: DRAMATICALLY increased brightness for maximum visibility
-  const sunGrad = ctx.createLinearGradient(256, 30, 256, 482);
-  sunGrad.addColorStop(0, '#ffffff');    // Pure white-yellow at top (maximum brightness)
-  sunGrad.addColorStop(0.15, '#ffff99'); // Bright yellow
-  sunGrad.addColorStop(0.3, '#ffdd66');  // Bright orange-yellow
-  sunGrad.addColorStop(0.5, '#ffaa33');  // Bright orange
-  sunGrad.addColorStop(0.7, '#ff7700');  // Bright red-orange
-  sunGrad.addColorStop(1.0, '#ff4400');  // Bright red at bottom
+  // FIXED: Use radial gradient for bright center to dimmer edges (like reference image)
+  // Combined with vertical gradient for top-to-bottom color variation
+  const sunGrad = ctx.createRadialGradient(256, 256, 0, 256, 256, 248);
+  sunGrad.addColorStop(0, '#ffffff');    // Bright white center
+  sunGrad.addColorStop(0.2, '#ffff99');  // Bright yellow
+  sunGrad.addColorStop(0.4, '#ffcc66');  // Orange-yellow
+  sunGrad.addColorStop(0.6, '#ff9933');  // Orange
+  sunGrad.addColorStop(0.8, '#ff6600');  // Red-orange
+  sunGrad.addColorStop(1.0, '#ff4400');  // Red at edges
 
   ctx.beginPath();
   ctx.arc(256, 256, 248, 0, Math.PI * 2);
   ctx.fillStyle = sunGrad;
   ctx.fill();
 
-  // #1 FIX: MUCH stronger outer glow baked into the texture for visibility
-  ctx.shadowColor = '#ffff00';  // Pure yellow glow (brightest)
-  ctx.shadowBlur = 50;          // Much larger glow radius
+  // Outer glow baked into texture for visibility
+  ctx.shadowColor = '#ffaa00';  // Orange glow
+  ctx.shadowBlur = 40;          // Large glow radius
   ctx.beginPath();
   ctx.arc(256, 256, 248, 0, Math.PI * 2);
   ctx.fillStyle = sunGrad;
@@ -1511,16 +1509,16 @@ function createSun() {
   sunMeshRef = sunMesh;
   registerFadeMaterial(sunMeshRef.material);
 
-  // #1 FIX: Outer glow behind sun (additive for bloom effect) - DRAMATICALLY increased brightness
+  // Outer glow behind sun (additive for bloom effect)
   const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xffff00,        // Pure yellow glow (brightest possible)
+    color: 0xffaa00,        // Orange glow (matching sun gradient)
     side: THREE.DoubleSide,
     transparent: true,
-    opacity: 0.8,           // Much higher opacity for visibility
+    opacity: 0.7,           // High opacity for visibility
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
-  const glow = new THREE.Mesh(new THREE.CircleGeometry(35, 32), glowMat);  // Much larger radius: 35 (was 28)
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(35, 32), glowMat);
   glow.position.set(0, 12, -89.5);
   glow.renderOrder = -11;
   scene.add(glow);
@@ -9432,14 +9430,14 @@ function buildSynthwaveValleyScene(group) {
   }
 
   // Sky dome (no stars, we use global starfield)
-  // EXACT colors: Horizon #FE9753 (orange) → Mountain tips #E00186 (pink) → Sun top #2C0051 (purple) → Black
+  // EXACT colors: Horizon #FE9053 (orange) → Mountain tips #E00186 (pink) → Sun top #2C0051 (purple) → Top #1A004A (dark purple) → Black
   const skyGeo = new THREE.SphereGeometry(2800, 32, 24);
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: {
-      topColor: { value: new THREE.Color(0x000000) },      // EXACT: Above sun fade to black
+      topColor: { value: new THREE.Color(0x1A004A) },      // FIXED: Dark purple at top before fading to black
       midColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple
-      horizonColor: { value: new THREE.Color(0xFE9753) },  // EXACT: Horizon orange
+      horizonColor: { value: new THREE.Color(0xFE9053) },  // FIXED: Horizon orange (more saturated)
       glowColor: { value: new THREE.Color(0xE00186) },     // EXACT: Mountain tips pink/magenta
     },
     // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
@@ -9453,11 +9451,11 @@ function buildSynthwaveValleyScene(group) {
   group.add(sky);
   registerFadeMaterial(skyMat);
 
-  // Terrain - EXACT colors: Gridlines #015CC1 (bright blue), Between gridlines #0A0F42 (dark blue)
+  // Terrain - EXACT colors: Gridlines #015CC1 (bright blue), Between gridlines #0C0E3E (dark blue)
   // HIGH-POLY from bae1304: 240x240 segments (restored from over-optimized 80x80)
   const terrainUniforms = {
     uGridColor: { value: new THREE.Color(0x015CC1) },     // EXACT: Gridlines bright blue
-    uBaseColor: { value: new THREE.Color(0x0A0F42) },     // EXACT: Between gridlines dark blue
+    uBaseColor: { value: new THREE.Color(0x0C0E3E) },     // FIXED: Between gridlines dark blue
     uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
     uFlashIntensity: { value: 0.0 },
   };
