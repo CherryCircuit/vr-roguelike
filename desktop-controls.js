@@ -543,12 +543,19 @@ function handleFireInput() {
 // ── Debug Position Panel ────────────────────────────────────
 
 let debugPanelElement = null;
+let lookAtRaycaster = null;
+let currentLookTarget = null;
+let originalMaterials = new Map(); // Store original materials for highlight reset
 
 function showDebugPositionPanel() {
   if (debugPanelElement) {
     debugPanelElement.style.display = 'block';
     return;
   }
+
+  // Create raycaster for look-at detection
+  lookAtRaycaster = new THREE.Raycaster();
+  lookAtRaycaster.far = 100; // Max distance to detect objects
 
   // Create debug panel element
   debugPanelElement = document.createElement('div');
@@ -577,6 +584,10 @@ function showDebugPositionPanel() {
     <div style="margin-top: 8px; color: #ffffff;">Rotation (degrees):</div>
     <div id="debug-rot-x">Pitch: 0.00</div>
     <div id="debug-rot-y">Yaw: 0.00</div>
+    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(0,255,255,0.3); color: #ffff00;">LOOKING AT:</div>
+    <div id="debug-look-name" style="color: #00ff88; font-weight: bold;">Nothing</div>
+    <div id="debug-look-type" style="color: #888888; font-size: 11px;">Type: -</div>
+    <div id="debug-look-dist" style="color: #888888; font-size: 11px;">Distance: -</div>
     <div style="margin-top: 12px; font-size: 11px; color: #888888;">
       WASD: Move | Q/E: Up/Down<br>
       C: Copy to clipboard
@@ -610,6 +621,12 @@ function hideDebugPositionPanel() {
   if (debugPanelElement) {
     debugPanelElement.style.display = 'none';
   }
+  // Clear any active highlight
+  if (currentLookTarget) {
+    clearHighlight(currentLookTarget);
+    currentLookTarget = null;
+  }
+  originalMaterials.clear();
 }
 
 function updateDebugPositionPanel() {
@@ -620,6 +637,9 @@ function updateDebugPositionPanel() {
   const posZEl = debugPanelElement.querySelector('#debug-pos-z');
   const rotXEl = debugPanelElement.querySelector('#debug-rot-x');
   const rotYEl = debugPanelElement.querySelector('#debug-rot-y');
+  const lookNameEl = debugPanelElement.querySelector('#debug-look-name');
+  const lookTypeEl = debugPanelElement.querySelector('#debug-look-type');
+  const lookDistEl = debugPanelElement.querySelector('#debug-look-dist');
 
   if (posXEl) posXEl.textContent = `X: ${player.position.x.toFixed(2)}`;
   if (posYEl) posYEl.textContent = `Y: ${player.position.y.toFixed(2)}`;
@@ -631,6 +651,140 @@ function updateDebugPositionPanel() {
 
   if (rotXEl) rotXEl.textContent = `Pitch: ${pitchDeg.toFixed(2)}°`;
   if (rotYEl) rotYEl.textContent = `Yaw: ${yawDeg.toFixed(2)}°`;
+
+  // === LOOK-AT DETECTION ===
+  if (lookAtRaycaster && cameraRef && sceneRef) {
+    // Cast ray from camera center
+    lookAtRaycaster.setFromCamera({ x: 0, y: 0 }, cameraRef);
+    const intersects = lookAtRaycaster.intersectObjects(sceneRef.children, true);
+
+    // Remove highlight from previous target
+    if (currentLookTarget) {
+      clearHighlight(currentLookTarget);
+      currentLookTarget = null;
+    }
+
+    if (intersects.length > 0) {
+      const hit = intersects[0];
+      const obj = hit.object;
+
+      // Walk up to find named ancestor (groups often have names, meshes may not)
+      let namedObj = obj;
+      let objName = obj.name || obj.userData?.name || obj.userData?.id || null;
+      
+      // Walk up the parent chain to find a name
+      let parent = obj.parent;
+      while (!objName && parent && parent !== sceneRef) {
+        if (parent.name) {
+          objName = parent.name;
+          namedObj = parent;
+          break;
+        }
+        if (parent.userData?.name) {
+          objName = parent.userData.name;
+          namedObj = parent;
+          break;
+        }
+        if (parent.userData?.id) {
+          objName = parent.userData.id;
+          namedObj = parent;
+          break;
+        }
+        parent = parent.parent;
+      }
+
+      // Determine object type
+      let objType = 'Unknown';
+      if (obj.geometry) {
+        const geoType = obj.geometry.type?.replace('Geometry', '').replace('Buffer', '') || 'Mesh';
+        objType = geoType;
+      }
+      if (obj.type) {
+        objType = obj.type;
+      }
+      if (obj.userData?.enemyType) {
+        objType = `Enemy: ${obj.userData.enemyType}`;
+      }
+      if (obj.userData?.scenery) {
+        objType = 'Scenery';
+      }
+      if (obj.userData?.isUpgradeCard) {
+        objType = 'Upgrade Card';
+      }
+
+      // Fallback name if none found
+      if (!objName) {
+        objName = `<unnamed ${objType}>`;
+      }
+
+      // Update display
+      if (lookNameEl) lookNameEl.textContent = objName;
+      if (lookTypeEl) lookTypeEl.textContent = `Type: ${objType}`;
+      if (lookDistEl) lookDistEl.textContent = `Distance: ${hit.distance.toFixed(2)}`;
+
+      // Highlight the object
+      currentLookTarget = obj;
+      applyHighlight(obj);
+    } else {
+      // Nothing in view
+      if (lookNameEl) lookNameEl.textContent = 'Nothing';
+      if (lookTypeEl) lookTypeEl.textContent = 'Type: -';
+      if (lookDistEl) lookDistEl.textContent = 'Distance: -';
+    }
+  }
+}
+
+// === HIGHLIGHT SYSTEM ===
+
+/**
+ * Apply a highlight effect to an object
+ */
+function applyHighlight(obj) {
+  if (!obj || !obj.material) return;
+
+  // Store original material properties
+  if (!originalMaterials.has(obj)) {
+    originalMaterials.set(obj, {
+      emissive: obj.material.emissive ? obj.material.emissive.clone() : null,
+      emissiveIntensity: obj.material.emissiveIntensity || 0,
+      color: obj.material.color ? obj.material.color.clone() : null,
+    });
+  }
+
+  // Apply highlight (yellow glow)
+  if (obj.material.emissive) {
+    obj.material.emissive.setHex(0xffff00);
+    obj.material.emissiveIntensity = 0.5;
+  }
+  // Also tint the color slightly if no emissive
+  if (obj.material.color && !obj.material.emissive) {
+    obj.material.color.setHex(0xffff88);
+  }
+
+  // Mark as highlighted
+  obj.userData._debugHighlighted = true;
+}
+
+/**
+ * Clear highlight effect from an object
+ */
+function clearHighlight(obj) {
+  if (!obj) return;
+
+  const original = originalMaterials.get(obj);
+  if (original) {
+    // Restore original material properties
+    if (obj.material.emissive && original.emissive) {
+      obj.material.emissive.copy(original.emissive);
+      obj.material.emissiveIntensity = original.emissiveIntensity;
+    }
+    if (obj.material.color && original.color && !obj.material.emissive) {
+      obj.material.color.copy(original.color);
+    }
+    originalMaterials.delete(obj);
+  }
+
+  obj.userData._debugHighlighted = false;
 }
 
 function copyPositionToClipboard() {
