@@ -593,8 +593,7 @@ function createEnvironment() {
   const horizonGrad = horizonCtx.createLinearGradient(0, 64, 0, 0);
   horizonGrad.addColorStop(0, '#FE9053');   // EXACT: Horizon orange at base
   horizonGrad.addColorStop(0.4, '#E00186'); // EXACT: Mountain tips pink
-  horizonGrad.addColorStop(0.7, '#2C005188');
-  horizonGrad.addColorStop(1.0, '#1A004A00');
+  horizonGrad.addColorStop(1.0, '#1A004A'); // EXACT: Dark purple at top
   horizonCtx.fillStyle = horizonGrad;
   horizonCtx.fillRect(0, 0, 4, 64);
 
@@ -1677,15 +1676,12 @@ function createAtmosphere() {
   const ctx = canvas.getContext('2d');
 
   // #2 FIX: DRAMATICALLY brighter and taller gradient for maximum visibility
-  // Note: CSS rgba() alpha is 0.0-1.0
+  // EXACT synthwave colors: Horizon #FE9053 (orange) → Pink #E00186 → Dark purple #1A004A
   const grad = ctx.createLinearGradient(0, 256, 0, 0);  // bottom to top
-  grad.addColorStop(0, 'rgba(255, 180, 80, 1.0)');       // Much brighter orange at base
-  grad.addColorStop(0.1, 'rgba(255, 140, 70, 0.95)');    // Brighter and more opaque
-  grad.addColorStop(0.25, 'rgba(255, 100, 80, 0.75)');   // Brighter red-orange
-  grad.addColorStop(0.45, 'rgba(255, 70, 90, 0.55)');    // Brighter and more visible
-  grad.addColorStop(0.65, 'rgba(220, 50, 80, 0.35)');    // More visible purple-red
-  grad.addColorStop(0.85, 'rgba(180, 30, 70, 0.15)');    // More visible
-  grad.addColorStop(1.0, 'rgba(120, 15, 60, 0.0)');      // Fade to transparent
+  grad.addColorStop(0, 'rgba(254, 144, 83, 1.0)');       // EXACT: Horizon orange #FE9053
+  grad.addColorStop(0.2, 'rgba(224, 1, 134, 0.9)');      // EXACT: Mountain tips pink #E00186
+  grad.addColorStop(0.5, 'rgba(44, 0, 81, 0.6)');        // EXACT: Sun top purple #2C0051
+  grad.addColorStop(1.0, 'rgba(26, 0, 74, 0.0)');        // EXACT: Dark purple #1A004A fade to transparent
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 4, 256);
 
