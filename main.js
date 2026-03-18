@@ -585,15 +585,16 @@ function createEnvironment() {
   const horizonSegments = 48;
 
   // Create gradient texture for horizon glow (bright at bottom, fading up)
+  // EXACT synthwave colors: Horizon #FE9053 (orange) → Pink #E00186 → Purple #2C0051
   const horizonCanvas = document.createElement('canvas');
   horizonCanvas.width = 4;
   horizonCanvas.height = 64;
   const horizonCtx = horizonCanvas.getContext('2d');
   const horizonGrad = horizonCtx.createLinearGradient(0, 64, 0, 0);
-  horizonGrad.addColorStop(0, '#ffaacc');   // Bright pinkish-white at base
-  horizonGrad.addColorStop(0.3, '#ff66aa');
-  horizonGrad.addColorStop(0.7, '#ff225588');
-  horizonGrad.addColorStop(1.0, '#ff000000');
+  horizonGrad.addColorStop(0, '#FE9053');   // EXACT: Horizon orange at base
+  horizonGrad.addColorStop(0.4, '#E00186'); // EXACT: Mountain tips pink
+  horizonGrad.addColorStop(0.7, '#2C005188');
+  horizonGrad.addColorStop(1.0, '#1A004A00');
   horizonCtx.fillStyle = horizonGrad;
   horizonCtx.fillRect(0, 0, 4, 64);
 
@@ -613,9 +614,10 @@ function createEnvironment() {
   registerFadeMaterial(horizonRingRef.material);
 
   // Second brighter, shorter glow layer for intensity at ground level
+  // EXACT synthwave color: Horizon orange #FE9053
   const horizonInnerGeo = new THREE.CylinderGeometry(horizonRadius - 0.5, horizonRadius - 0.5, 1.5, horizonSegments, 1, true);
   const horizonInnerMat = new THREE.MeshBasicMaterial({
-    color: 0xffccee,
+    color: 0xFE9053,  // EXACT: Horizon orange
     transparent: true,
     opacity: 0.5,
     side: THREE.BackSide,
