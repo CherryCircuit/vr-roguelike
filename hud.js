@@ -358,7 +358,7 @@ export function initHUD(camera, scene) {
 
   // ── VR HUD (stationary on floor, Space Pirate Trainer style) ──
   createHUDElements();
-  hudGroup.position.set(0, 0.05 + SCENE_Y_OFFSET, -3);  // On floor, 3 feet in front of spawn, with SCENE_Y_OFFSET
+  hudGroup.position.set(0, 0.05, -3);  // On floor, 3 feet in front of spawn
   hudGroup.rotation.x = -Math.PI / 2;  // Rotate to face up (floor plane)
   scene.add(hudGroup);
 
@@ -813,34 +813,6 @@ export function updateHolographicGlitch(now) {
 
 export function triggerHealthGainAnimation() {
   heartAnimationState.healthGain = 1.0;
-}
-
-/**
- * Update floor HUD rotation to face 20° toward player's direction
- * Uses camera.getWorldDirection() to get player-facing direction
- */
-export function updateFloorHUDRotation() {
-  if (!cameraRef || !hudGroup.visible) return;
-
-  const direction = new THREE.Vector3();
-  cameraRef.getWorldDirection(direction);
-
-  // Project onto XZ plane (ignore Y component)
-  direction.y = 0;
-  direction.normalize();
-
-  // Calculate Y rotation angle from direction vector
-  // atan2(x, z) gives angle on XZ plane
-  const angle = Math.atan2(direction.x, direction.z);
-
-  // Apply 20° offset (convert to radians: 20° * π/180 ≈ 0.349)
-  const angle20DegOffset = 20 * Math.PI / 180;
-  const finalAngle = angle + angle20DegOffset;
-
-  // Set Y rotation around vertical axis
-  // Keep X rotation at -90° to face up (floor plane)
-  hudGroup.rotation.x = -Math.PI / 2;
-  hudGroup.rotation.y = finalAngle;
 }
 
 function updateSpriteText(sprite, text, opts = {}) {
