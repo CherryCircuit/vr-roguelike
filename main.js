@@ -79,6 +79,9 @@ const SUN_GLOW = 0xff6600;
 const MTN_DARK = 0x1a0033;
 const MTN_WIRE = 0x6600aa;
 
+// VR camera height fix: Shift entire scene down so XR camera at ~0.875m appears 1.6m above floor
+const SCENE_Y_OFFSET = -0.725;
+
 const LASER_RANGE = 50;
 const LASER_DURATION = 250;
 
@@ -382,9 +385,12 @@ function init() {
 
   // Camera - added directly to scene for proper VR hand positioning
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 1.6, 0);
   camera.rotation.set(0, 0, 0);
   scene.add(camera);
+
+  // Set camera height only in desktop mode (VR uses XR tracking)
+  // Note: WebXR will override this in VR mode
+  camera.position.set(0, 1.6, 0);
 
   // Renderer — optimized for Quest performance
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -569,7 +575,7 @@ function createEnvironment() {
   registerFadeMaterial(floorMaterial);
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -0.01;
+  floor.position.y = -0.01 + SCENE_Y_OFFSET;
   floor.frustumCulled = false;
   floor.renderOrder = -1;  // Render before other transparent objects
   // Ensure floor is always visible by setting a large bounding sphere
@@ -791,7 +797,7 @@ function rebuildBiomeProps(biomeId, theme) {
         const pillar = new THREE.Mesh(geo, material);
         pillar.name = `pillar_${i}_${side > 0 ? 'right' : 'left'}`;
         pillar.scale.set(1, height, 1);
-        pillar.position.set(side * xOffset, height * 0.5, z);
+        pillar.position.set(side * xOffset, height * 0.5 + SCENE_Y_OFFSET, z);
         pillar.rotation.z = tilt * side;
         biomePropsGroup.add(pillar);
       });
@@ -815,7 +821,7 @@ function rebuildBiomeProps(biomeId, theme) {
       arch.name = `arch_${i}`;
       arch.userData.sceneryName = 'arch';
       arch.scale.set(radius, radius, radius);
-      arch.position.set(0, y, z);
+      arch.position.set(0, y + SCENE_Y_OFFSET, z);
       arch.rotation.x = Math.PI;
       arch.rotation.z = tilt * (i % 2 === 0 ? 1 : -1);
       biomePropsGroup.add(arch);
@@ -843,9 +849,9 @@ function rebuildBiomeProps(biomeId, theme) {
       left.name = `rect_arch_${i}_left`;
       right.name = `rect_arch_${i}_right`;
       top.name = `rect_arch_${i}_top`;
-      left.position.set(-width * 0.5, y + height * 0.5, z);
-      right.position.set(width * 0.5, y + height * 0.5, z);
-      top.position.set(0, y + height + thickness * 0.5, z);
+      left.position.set(-width * 0.5, y + height * 0.5 + SCENE_Y_OFFSET, z);
+      right.position.set(width * 0.5, y + height * 0.5 + SCENE_Y_OFFSET, z);
+      top.position.set(0, y + height + thickness * 0.5 + SCENE_Y_OFFSET, z);
       biomePropsGroup.add(left, right, top);
     }
   };
@@ -873,10 +879,10 @@ function rebuildBiomeProps(biomeId, theme) {
       const platform = new THREE.Mesh(geo, material);
       platform.name = `platform_${platformType}_${i}`;
       platform.scale.set(size, 1, size);
-      platform.position.set(x, y, z);
+      platform.position.set(x, y + SCENE_Y_OFFSET, z);
       platform.rotation.y = Math.random() * Math.PI * 2;
       biomePropsGroup.add(platform);
-      addFloatingPlatform(platform, y, 0.35 + Math.random() * 0.25, 0.001 + Math.random() * 0.0015, 0.15 + Math.random() * 0.25);
+      addFloatingPlatform(platform, y + SCENE_Y_OFFSET, 0.35 + Math.random() * 0.25, 0.001 + Math.random() * 0.0015, 0.15 + Math.random() * 0.25);
     }
   };
 
@@ -1525,7 +1531,7 @@ function createSun() {
   });
   // Position so the lower ~40% of the sun dips below the horizon
   const sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), sunMat);
-  sunMesh.position.set(0, 12, -89);
+  sunMesh.position.set(0, 12 + SCENE_Y_OFFSET, -89);
   sunMesh.renderOrder = -10;
   scene.add(sunMesh);
   sunMeshRef = sunMesh;
@@ -1541,7 +1547,7 @@ function createSun() {
     depthWrite: false,
   });
   const glow = new THREE.Mesh(new THREE.CircleGeometry(35, 32), glowMat);
-  glow.position.set(0, 12, -89.5);
+  glow.position.set(0, 12 + SCENE_Y_OFFSET, -89.5);
   glow.renderOrder = -11;
   scene.add(glow);
   sunGlowRef = glow;
@@ -1590,7 +1596,7 @@ function createAurora() {
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.name = 'auroraRef';  // Debug panel name
-  mesh.position.set(0, 25, 0);  // Raised from y=15 to y=25
+  mesh.position.set(0, 25 + SCENE_Y_OFFSET, 0);  // Raised from y=15 to y=25
   mesh.renderOrder = -21;
   scene.add(mesh);
   auroraRef = mesh;
@@ -1708,7 +1714,7 @@ function createAtmosphere() {
   });
   const cylinder = new THREE.Mesh(cylGeo, cylMat);
   cylinder.name = 'atmosphereRef';  // Debug panel name
-  cylinder.position.set(0, height / 2 - 2, 0);  // Base near ground level (adjusted for new height)
+  cylinder.position.set(0, height / 2 - 2 + SCENE_Y_OFFSET, 0);  // Base near ground level (adjusted for new height)
   cylinder.renderOrder = -13;
   scene.add(cylinder);
   atmosphereRef = cylinder;
@@ -9329,7 +9335,7 @@ function render(timestamp) {
     // Update floor HUD debug marker: small white plane at player feet
     if (camera && !renderer.xr.isPresenting) {
       floorHUDDebugMarker.position.x = camera.position.x;
-      floorHUDDebugMarker.position.y = camera.position.y - 1.6;  // Offset to feet level (player eye at 1.6)
+      floorHUDDebugMarker.position.y = camera.position.y - 1.6 + SCENE_Y_OFFSET;  // Offset to feet level (player eye at 1.6 + offset)
       floorHUDDebugMarker.position.z = camera.position.z;
     }
   }
@@ -9444,13 +9450,17 @@ function rebuildBiomeScene(biomeId, theme) {
 
 // Get physics floor Y for current biome (matches visual floor HUD height)
 function getBiomeFloorY() {
-  switch (biomeSceneBiome) {
-    case 'synthwave_valley': return 0.10;
-    case 'desert_night': return -0.20;
-    case 'alien_planet': return -0.28;
-    case 'hellscape_lava': return 0.05;
-    default: return 0.05;
-  }
+  const floorY = (() => {
+    switch (biomeSceneBiome) {
+      case 'synthwave_valley': return 0.10;
+      case 'desert_night': return -0.20;
+      case 'alien_planet': return -0.28;
+      case 'hellscape_lava': return 0.05;
+      default: return 0.05;
+    }
+  })();
+  // Apply scene Y offset for VR camera height fix
+  return floorY + SCENE_Y_OFFSET;
 }
 
 // Log cylinder colors for debugging
