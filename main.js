@@ -607,6 +607,7 @@ function createEnvironment() {
     blending: THREE.AdditiveBlending,
   });
   horizonRingRef = new THREE.Mesh(horizonGeo, horizonMat);
+  horizonRingRef.name = 'horizonRingRef';  // Debug panel name
   horizonRingRef.position.set(0, horizonHeight / 2 - 0.5, 0);
   horizonRingRef.renderOrder = -2;
   scene.add(horizonRingRef);
@@ -624,6 +625,7 @@ function createEnvironment() {
     blending: THREE.AdditiveBlending,
   });
   horizonInnerRingRef = new THREE.Mesh(horizonInnerGeo, horizonInnerMat);
+  horizonInnerRingRef.name = 'horizonInnerRingRef';  // Debug panel name
   horizonInnerRingRef.position.set(0, 0.25, 0);
   horizonInnerRingRef.renderOrder = -2;
   scene.add(horizonInnerRingRef);
@@ -1581,6 +1583,7 @@ function createAurora() {
     blending: THREE.AdditiveBlending,
   });
   const mesh = new THREE.Mesh(geo, mat);
+  mesh.name = 'auroraRef';  // Debug panel name
   mesh.position.set(0, 25, 0);  // Raised from y=15 to y=25
   mesh.renderOrder = -21;
   scene.add(mesh);
@@ -1698,6 +1701,7 @@ function createAtmosphere() {
     depthWrite: false,
   });
   const cylinder = new THREE.Mesh(cylGeo, cylMat);
+  cylinder.name = 'atmosphereRef';  // Debug panel name
   cylinder.position.set(0, height / 2 - 2, 0);  // Base near ground level (adjusted for new height)
   cylinder.renderOrder = -13;
   scene.add(cylinder);
