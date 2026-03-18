@@ -9428,19 +9428,19 @@ function buildSynthwaveValleyScene(group) {
 
   // Set synthwave fog for atmospheric depth and distance fade
   if (scene) {
-    scene.fog = new THREE.FogExp2(0x2a004a, 0.0008);
+    scene.fog = new THREE.FogExp2(0x2C0051, 0.0008);  // EXACT: Sun top purple
   }
 
   // Sky dome (no stars, we use global starfield)
-  // Orange → pink → purple horizon atmosphere fading out
+  // EXACT colors: Horizon #FE9753 (orange) → Mountain tips #E00186 (pink) → Sun top #2C0051 (purple) → Black
   const skyGeo = new THREE.SphereGeometry(2800, 32, 24);
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: {
-      topColor: { value: new THREE.Color(0x1a0030) },      // Deep purple at top
-      midColor: { value: new THREE.Color(0x6b2d8c) },      // Purple mid
-      horizonColor: { value: new THREE.Color(0xff6b4a) },  // Orange at horizon
-      glowColor: { value: new THREE.Color(0xff99aa) },     // Pink glow band
+      topColor: { value: new THREE.Color(0x000000) },      // EXACT: Above sun fade to black
+      midColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple
+      horizonColor: { value: new THREE.Color(0xFE9753) },  // EXACT: Horizon orange
+      glowColor: { value: new THREE.Color(0xE00186) },     // EXACT: Mountain tips pink/magenta
     },
     // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
     // stable in stereo rendering and does not rely on manual clip-space math.
@@ -9453,14 +9453,15 @@ function buildSynthwaveValleyScene(group) {
   group.add(sky);
   registerFadeMaterial(skyMat);
 
-  // Terrain - CYAN grid floor (synthwave style)
+  // Terrain - EXACT colors: Gridlines #015CC1 (bright blue), Between gridlines #0A0F42 (dark blue)
+  // HIGH-POLY from bae1304: 240x240 segments (restored from over-optimized 80x80)
   const terrainUniforms = {
-    uGridColor: { value: new THREE.Color(0x00aaaa) },     // Muted teal grid
-    uBaseColor: { value: new THREE.Color(0x0a0020) },     // Dark base
-    uFogColor: { value: new THREE.Color(0x1a0030) },      // Purple fog
+    uGridColor: { value: new THREE.Color(0x015CC1) },     // EXACT: Gridlines bright blue
+    uBaseColor: { value: new THREE.Color(0x0A0F42) },     // EXACT: Between gridlines dark blue
+    uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
     uFlashIntensity: { value: 0.0 },
   };
-  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 80, 80);
+  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);  // HIGH-POLY restored from bae1304
   terrainGeo.rotateX(-Math.PI / 2);
   const terrainMat = new THREE.ShaderMaterial({
     uniforms: terrainUniforms,
@@ -9476,19 +9477,20 @@ function buildSynthwaveValleyScene(group) {
     fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
-  terrain.position.set(0, floorY + 1.5 + 8, -700);  // Moved up by 8 units (Task 4)
+  terrain.position.set(0, floorY + 1.5, -700);
   terrain.frustumCulled = false;
   group.add(terrain);
   registerFadeMaterial(terrainMat);
   // Store terrain material for damage flash
   biomeTerrainMaterials.push({ type: 'shader', material: terrainMat });
 
-  // Muted teal mountains - darker, moodier synthwave aesthetic
-  // Restored quality: step reduced from 40 to 20 for higher resolution
+  // Mountains - EXACT color: Mountain tips #E00186 (pink/magenta)
+  // REMOVED: Flat mountain-like shapes at Z -800, -850, -900 (over-optimized teal layers)
+  // Single layer from bae1304 with EXACT pink color
   const makeLayer = (color, opacity, scaleY, z, y) => {
     const points = [];
     const width = 2000;
-    const step = 20;
+    const step = 80;  // From bae1304
     for (let x = -width / 2; x <= width / 2; x += step) {
       const n1 = Math.sin(x * 0.012 + z * 0.003) * 0.5 + 0.5;
       const n2 = Math.sin(x * 0.043 - z * 0.001) * 0.5 + 0.5;
@@ -9499,10 +9501,10 @@ function buildSynthwaveValleyScene(group) {
     points.push(new THREE.Vector2(width / 2, -120));
     const shape = new THREE.Shape(points);
     const geo = new THREE.ShapeGeometry(shape);
-    const mat = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity,
+    const mat = new THREE.MeshBasicMaterial({ 
+      color, 
+      transparent: true, 
+      opacity, 
       depthWrite: false,
       depthTest: true,
       polygonOffset: true,
@@ -9510,19 +9512,17 @@ function buildSynthwaveValleyScene(group) {
       polygonOffsetUnits: 2.0,
     });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0, y + 8, z);  // Moved up by 8 units (Task 4)
+    mesh.position.set(0, y, z);
     mesh.frustumCulled = false;
     group.add(mesh);
     registerFadeMaterial(mat);
   };
-  // Muted teal mountains - multiple layers for depth
-  makeLayer(0x007777, 0.35, 100, -900, -15);  // Far layer (darker)
-  makeLayer(0x008888, 0.45, 80, -850, -10);   // Main layer
-  makeLayer(0x006666, 0.25, 60, -800, -5);    // Near layer (darkest)
+  // EXACT: Mountain tips #E00186 (pink/magenta) - single layer at -850 from bae1304
+  makeLayer(0xE00186, 0.18, 80, -850, -10);
 
-  // Sun + glow - smaller stylized sun (not massive)
+  // Sun + glow - positioned to match atmosphere gradient
   const sunGroup = new THREE.Group();
-  sunGroup.position.set(0, 55 + 8, -760);  // Raised position for smaller sun
+  sunGroup.position.set(0, 30, -760);
   group.add(sunGroup);
 
   const makeRadial = (inner, outer) => {
@@ -9537,75 +9537,51 @@ function buildSynthwaveValleyScene(group) {
     ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
     return new THREE.CanvasTexture(c);
   };
-  // Stylized sun - orange-yellow core with moderate glow
-  const sunGlowTex = makeRadial('rgba(255,180,50,1.0)', 'rgba(255,100,30,0.7)');
-  const sunCoreTex = makeRadial('rgba(255,220,100,1.0)', 'rgba(255,180,50,1.0)');
-  const sunOuterGlowTex = makeRadial('rgba(255,200,80,0.6)', 'rgba(255,120,50,0.2)');
-  // Outer glow - moderate size (FIX: converted Sprite to Mesh to disable billboarding)
-  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(280, 280), sunOuterGlowMat);
+  // Sun matching EXACT atmosphere colors: #FE9753 orange core
+  const sunGlowTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(254,151,83,0.85)');  // EXACT: #FE9753
+  const sunCoreTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(255,255,255,1.0)');
+  const sunOuterGlowTex = makeRadial('rgba(254,151,83,0.9)', 'rgba(224,1,134,0.3)');  // EXACT: #FE9753 → #E00186
+  // Outer massive glow
+  const sunOuterGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  sunOuterGlow.scale.set(700, 700, 1);
   sunOuterGlow.frustumCulled = false;
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
-  registerFadeMaterial(sunOuterGlowMat);
-  // Main glow (FIX: converted Sprite to Mesh to disable billboarding)
-  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffaa00, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), sunGlowMat);
+  // Main bright glow
+  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  sunGlow.scale.set(550, 550, 1);
   sunGlow.frustumCulled = false;
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
-  registerFadeMaterial(sunGlowMat);
-  // Orange-yellow core - smaller distinct circle (FIX: converted Sprite to Mesh to disable billboarding)
-  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunCoreTex, color: 0xffcc00, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), sunCoreMat);
+  // White-hot core
+  const sunCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunCoreTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  sunCore.scale.set(200, 200, 1);
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
-  registerFadeMaterial(sunCoreMat);
 
-  // Horizon glow - orange→pink→purple gradient fade matching the atmosphere
+  // Horizon glow - EXACT: #FE9753 (orange) center
   const horizonGlowGeo = new THREE.PlaneGeometry(1400, 150);
   const horizonGlowMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    uniforms: { 
-      c1: { value: new THREE.Color(0xffaa44) },  // Orange center
-      c2: { value: new THREE.Color(0xff6688) }   // Pink edges
-    },
+    uniforms: { c1: { value: new THREE.Color(0xFE9753) }, c2: { value: new THREE.Color(0xE00186) } },  // EXACT: orange → pink
     vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
-    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.38,vUv.y)*(1.0-smoothstep(0.62,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.4,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*1.5); gl_FragColor=vec4(col, alpha*side*0.85); }`,
+    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.38,vUv.y)*(1.0-smoothstep(0.62,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.4,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*1.5); gl_FragColor=vec4(col, alpha*side*0.95); }`,
   });
   const horizonGlow = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
-  horizonGlow.position.set(0, 12 + 8, -745);  // Moved up by 8 units (Task 4)
+  horizonGlow.position.set(0, 12, -745);
   horizonGlow.frustumCulled = false;
   group.add(horizonGlow);
   registerFadeMaterial(horizonGlowMat);
 
-  // Subtle pink ground fade near horizon
-  const groundFadeGeo = new THREE.PlaneGeometry(1600, 200);
-  const groundFadeMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    uniforms: { 
-      c1: { value: new THREE.Color(0xff6688) },  // Pink
-      c2: { value: new THREE.Color(0x1a0030) }   // Purple fade to dark
-    },
-    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
-    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(1.0,0.3,vUv.y)*0.25; vec3 col=mix(c1,c2,vUv.y); gl_FragColor=vec4(col, alpha); }`,
-  });
-  const groundFade = new THREE.Mesh(groundFadeGeo, groundFadeMat);
-  groundFade.position.set(0, 5 + 8, -650);
-  groundFade.rotation.x = -Math.PI * 0.1;
-  groundFade.frustumCulled = false;
-  group.add(groundFade);
-  registerFadeMaterial(groundFadeMat);
-
   // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
   // The standalone HTML used perpetual scrolling and pulsing, but the game
   // version should behave like a stable biome backdrop.
+  group.userData.update = null;
 
-  // Synthwave floor HUD height: group.position.y = 0.10
-  group.position.set(0, 0.10, 0);
+  // Synthwave floor HUD height: group.position.y = 6.82
+  group.position.set(0, 6.82, 0);
 
   // Rotate so player faces sun
   group.rotation.y = 0;
