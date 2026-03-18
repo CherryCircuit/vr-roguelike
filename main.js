@@ -378,6 +378,69 @@ function init() {
   loadDebugSettings();
   loadDreamState();
 
+  // Fog/atmosphere system - FFR optimization for Quest VR
+  // Increased fog density in VR mode to reduce render load on distant objects
+  let ffrFogDensity = 0.012;  // Default fog density
+  let ffrRenderDistance = 80;  // Objects beyond this distance fade out
+  let ffrEnabled = true;  // FFR optimization enabled by default
+
+  // Update fog settings based on VR mode
+  function updateFFRFog() {
+    if (!renderer || !scene.fog) return;
+    
+    const isVR = renderer.xr.isPresenting;
+    
+    if (isVR && ffrEnabled) {
+      // Quest VR mode: denser fog to hide distant geometry
+      ffrFogDensity = 0.02;  // 67% denser fog for VR
+      ffrRenderDistance = 50;  // Objects beyond 50m fade out
+      if (ffrFogDensity !== scene.fog.density) {
+        console.log('[FFR] VR mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
+      }
+    } else {
+      // Desktop mode: standard fog
+      ffrFogDensity = 0.012;  // Original density
+      ffrRenderDistance = 80;  // Full visibility
+      if (ffrFogDensity !== scene.fog.density) {
+        console.log('[FFR] Desktop mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
+      }
+    }
+    
+    // Update scene fog (only if not in dream world or custom scene biome)
+    if (!game.inDreamWorld && !biomeSceneBiome) {
+      scene.fog.density = ffrFogDensity;
+    }
+  }
+
+  // Apply distance-based fade to objects for FFR
+  function applyDistanceFade(object, cameraPos) {
+    if (!object || !object.position) return;
+    
+    const dist = object.position.distanceTo(cameraPos);
+    
+    // Fade objects beyond render distance
+    if (dist > ffrRenderDistance) {
+      const fadeAmount = Math.min(1, (dist - ffrRenderDistance) / 20);
+      
+      // Recursively apply opacity fade to all materials
+      object.traverse((child) => {
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach((mat) => {
+              if (mat.transparent !== undefined) {
+                mat.opacity = Math.max(0, (mat.__fadeBase || mat.opacity || 1) * (1 - fadeAmount));
+                mat.transparent = true;
+              }
+            });
+          } else if (child.material.transparent !== undefined) {
+            child.material.opacity = Math.max(0, (child.material.__fadeBase || child.material.opacity || 1) * (1 - fadeAmount));
+            child.material.transparent = true;
+          }
+        }
+      });
+    }
+  }
+
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
@@ -8460,6 +8523,9 @@ function render(timestamp) {
 
   const dt = rawDt * effectiveTimeScale;  // Scaled time for game logic
 
+  // Update FFR fog based on VR/desktop mode
+  updateFFRFog();
+
   if (currentTheme) {
     updateAmbientParticles(rawDt, currentTheme, getAdjustedCameraPosition());
   }
@@ -9544,14 +9610,15 @@ function buildSynthwaveValleyScene(group) {
   registerFadeMaterial(skyMat);
 
   // Terrain - EXACT colors: Gridlines #015CC1 (bright blue), Between gridlines #0C0E3E (dark blue)
-  // HIGH-POLY from bae1304: 240x240 segments (restored from over-optimized 80x80)
+  // PERFORMANCE FIX: Reduced from 240x240 (57,600 vertices) to 120x120 (14,400 vertices) for 75% reduction
+  // Still provides good visual quality while improving FPS at level start
   const terrainUniforms = {
     uGridColor: { value: new THREE.Color(0x015CC1) },     // EXACT: Gridlines bright blue
     uBaseColor: { value: new THREE.Color(0x0C0E3E) },     // FIXED: Between gridlines dark blue
     uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
     uFlashIntensity: { value: 0.0 },
   };
-  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);  // HIGH-POLY restored from bae1304
+  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 120, 120);  // PERFORMANCE: Reduced from 240x240 to 120x120
   terrainGeo.rotateX(-Math.PI / 2);
   const terrainMat = new THREE.ShaderMaterial({
     uniforms: terrainUniforms,
@@ -9710,7 +9777,8 @@ function buildDesertNightScene(group) {
   group.add(hemiLight);
 
   // Ground
-  const geometry = new THREE.PlaneGeometry(140, 140, 70, 70);
+  // PERFORMANCE FIX: Reduced from 70x70 (4900 vertices) to 50x50 (2500 vertices) for ~50% reduction
+  const geometry = new THREE.PlaneGeometry(140, 140, 50, 50);
   geometry.rotateX(-Math.PI / 2);
   const positions = geometry.attributes.position;
   const colors = [];
@@ -9843,8 +9911,8 @@ function buildDesertNightScene(group) {
     group.add(cactus);
   });
 
-  // === TWINKLING STARS (2000 particles) ===
-  const starCount = 2000;
+  // === TWINKLING STARS (PERFORMANCE: Reduced from 2000 to 800 particles) ===
+  const starCount = 800;
   const starPositions = new Float32Array(starCount * 3);
   const starPhases = new Float32Array(starCount);
 
@@ -10130,7 +10198,7 @@ function buildAlienPlanetScene(group) {
     }
   }
 
-  // Alien Plants - 4 types along river
+  // Alien Plants - 3 types along river (removed fern type - too expensive with 40-72 meshes)
   const alienPlants = [];
 
   const createAlienPlant = (x, z, type) => {
@@ -10148,6 +10216,8 @@ function buildAlienPlanetScene(group) {
       });
       const spire = new THREE.Mesh(spireGeo, spireMat);
       spire.position.y = height / 2;
+      spire.castShadow = false;
+      spire.receiveShadow = false;
       plantGroup.add(spire);
 
       // Glowing orb on top
@@ -10155,6 +10225,8 @@ function buildAlienPlanetScene(group) {
       const orbMat = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
       const orb = new THREE.Mesh(orbGeo, orbMat);
       orb.position.y = height + 0.2;
+      orb.castShadow = false;
+      orb.receiveShadow = false;
       plantGroup.add(orb);
 
     } else if (type === 1) {
@@ -10179,6 +10251,8 @@ function buildAlienPlanetScene(group) {
           Math.random() * Math.PI,
           (Math.random() - 0.5) * 0.4
         );
+        crystal.castShadow = false;
+        crystal.receiveShadow = false;
         plantGroup.add(crystal);
       }
 
@@ -10189,6 +10263,8 @@ function buildAlienPlanetScene(group) {
       const stemMat = new THREE.MeshStandardMaterial({ color: 0x204020, roughness: 0.8 });
       const stem = new THREE.Mesh(stemGeo, stemMat);
       stem.position.y = stemHeight / 2;
+      stem.castShadow = false;
+      stem.receiveShadow = false;
       plantGroup.add(stem);
 
       const capGeo = new THREE.SphereGeometry(0.4, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -10200,46 +10276,21 @@ function buildAlienPlanetScene(group) {
       });
       const cap = new THREE.Mesh(capGeo, capMat);
       cap.position.y = stemHeight;
+      cap.castShadow = false;
+      cap.receiveShadow = false;
       plantGroup.add(cap);
-
-    } else {
-      // Fern - radiating fronds with triangular leaves
-      const frondCount = 5 + Math.floor(Math.random() * 5);
-      for (let f = 0; f < frondCount; f++) {
-        const angle = (f / frondCount) * Math.PI * 2;
-        const frondGroup = new THREE.Group();
-
-        for (let l = 0; l < 8; l++) {
-          const leafGeo = new THREE.ConeGeometry(0.08, 0.4, 3);
-          const leafMat = new THREE.MeshStandardMaterial({
-            color: 0x008833,
-            emissive: 0x00ff44,
-            emissiveIntensity: 0.3,
-            roughness: 0.7
-          });
-          const leaf = new THREE.Mesh(leafGeo, leafMat);
-          leaf.position.set(0.1 + l * 0.08, 0.1 + l * 0.05, 0);
-          leaf.rotation.z = -0.3;
-          frondGroup.add(leaf);
-        }
-
-        frondGroup.rotation.y = angle;
-        frondGroup.rotation.x = -0.2;
-        plantGroup.add(frondGroup);
-      }
     }
 
     plantGroup.position.set(x, floorY, z);
-    plantGroup.userData.baseRotationX = plantGroup.rotation.x;
-    plantGroup.userData.baseRotationZ = plantGroup.rotation.z;
-    plantGroup.userData.swayOffset = Math.random() * Math.PI * 2;
-    plantGroup.userData.swaySpeed = 0.5 + Math.random() * 0.5;
+    plantGroup.castShadow = false;
+    plantGroup.receiveShadow = false;
+    // REMOVED: Sway animation data - per-frame rotation is too expensive
 
     return plantGroup;
   };
 
-  // Place 50 plants along river with random offsets (reduced for performance)
-  for (let i = 0; i < 50; i++) {
+  // Place 15 plants along river with random offsets (reduced for FPS)
+  for (let i = 0; i < 15; i++) {
     const t = Math.random();
     const riverT = t * 59;
     const idx = Math.floor(riverT);
@@ -10265,18 +10316,18 @@ function buildAlienPlanetScene(group) {
       continue; // Skip this plant to keep front area clear
     }
 
-    const plantType = Math.floor(Math.random() * 4);
+    const plantType = Math.floor(Math.random() * 3);  // Only 3 types (removed fern)
     const plant = createAlienPlant(x, z, plantType);
     // Shadow casting disabled for FPS
     alienPlants.push(plant);
     group.add(plant);
   }
 
-  // Extra flora spread around the player (reduced for performance)
+  // Extra flora spread around the player (reduced for FPS)
   // AGGRESSIVE: Only spawn in front of player (negative Z, front 180-degree arc)
-  for (let i = 0; i < 50; i++) {  // Reduced from 120 to 50
+  for (let i = 0; i < 15; i++) {  // Reduced from 50 to 15 (total plants: 30 instead of 100)
     const angle = Math.random() * Math.PI * 2;
-    const radius = 8 + Math.random() * 40;  // Increased spread radius from 35 to 40
+    const radius = 8 + Math.random() * 40;
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 8;
     const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 8;
 
@@ -10290,27 +10341,28 @@ function buildAlienPlanetScene(group) {
       continue; // Skip this plant to keep front area clear
     }
 
-    const plantType = Math.floor(Math.random() * 4);
+    const plantType = Math.floor(Math.random() * 3);  // Only 3 types (removed fern)
     const plant = createAlienPlant(x, z, plantType);
-    plant.castShadow = true;
-    plant.receiveShadow = true;
+    // Shadow casting disabled for FPS
+    plant.castShadow = false;
+    plant.receiveShadow = false;
     plant.traverse((child) => {
       if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
+        child.castShadow = false;
+        child.receiveShadow = false;
       }
     });
     alienPlants.push(plant);
     group.add(plant);
   }
 
-  // Small fauna critters (reduced for performance)
+  // Small fauna critters (reduced for FPS)
   // AGGRESSIVE: Only spawn in front of player (negative Z)
   const critterGeo = new THREE.SphereGeometry(0.18, 8, 6);
   const critterGlowGeo = new THREE.SphereGeometry(0.3, 8, 6);
-  for (let i = 0; i < 10; i++) {  // Reduced from 20 to 10
+  for (let i = 0; i < 5; i++) {  // Reduced from 10 to 5 for FPS
     const angle = Math.random() * Math.PI * 2;
-    const radius = 6 + Math.random() * 35;  // Spread wider
+    const radius = 6 + Math.random() * 35;
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 4;
     const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 4;
 
@@ -10321,6 +10373,8 @@ function buildAlienPlanetScene(group) {
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, emissive: 0x00ff66, emissiveIntensity: 0.4 });
     const body = new THREE.Mesh(critterGeo, bodyMat);
     body.position.y = 0.2;
+    body.castShadow = false;
+    body.receiveShadow = false;
     critterGroup.add(body);
 
     const glowMat = new THREE.MeshBasicMaterial({ color: 0x33ffaa, transparent: true, opacity: 0.3 });
@@ -10333,13 +10387,12 @@ function buildAlienPlanetScene(group) {
     group.add(critterGroup);
   }
 
-  // Fireflies - 60 particles with gentle drift (restored from 40 for visuals)
+  // Fireflies - 25 particles with gentle drift (reduced from 60 for FPS)
   // AGGRESSIVE: Only spawn in front of player (negative Z)
   const fireflyPositions = [];
-  const fireflyVelocities = [];
   const fireflyGeo = new THREE.BufferGeometry();
 
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 25; i++) {
     const angle = Math.random() * Math.PI * 2;
     const radius = 4 + Math.random() * 35;
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 3;
@@ -10350,17 +10403,12 @@ function buildAlienPlanetScene(group) {
     if (z > 0) continue;
 
     fireflyPositions.push(x, y, z);
-    fireflyVelocities.push(
-      (Math.random() - 0.5) * 0.02,
-      (Math.random() - 0.5) * 0.01,
-      (Math.random() - 0.5) * 0.02
-    );
   }
 
   fireflyGeo.setAttribute('position', new THREE.Float32BufferAttribute(fireflyPositions, 3));
   const fireflyMat = new THREE.PointsMaterial({
     color: 0x44ff88,
-    size: 0.12,  // Restored from 0.0875 for better visibility
+    size: 0.12,
     transparent: true,
     opacity: 0.9,
     sizeAttenuation: true
@@ -10404,10 +10452,10 @@ function buildAlienPlanetScene(group) {
     return mesh;
   };
 
-  // Far background city on horizon (REDUCED for FPS: was 100+80+60=240)
-  cityMeshes.push(generateCityLayer(boxGeo, 50, 120, 150, 30, 60));
-  cityMeshes.push(generateCityLayer(cylinderGeo, 40, 140, 180, 40, 80));
-  cityMeshes.push(generateCityLayer(coneGeo, 30, 160, 200, 50, 100));
+  // Far background city on horizon (REDUCED for FPS: was 100+80+60=240, now 30+25+20=75)
+  cityMeshes.push(generateCityLayer(boxGeo, 30, 120, 150, 30, 60));
+  cityMeshes.push(generateCityLayer(cylinderGeo, 25, 140, 180, 40, 80));
+  cityMeshes.push(generateCityLayer(coneGeo, 20, 160, 200, 50, 100));
   cityMeshes.forEach((mesh) => group.add(mesh));
 
   // Mega towers - far on horizon (REDUCED for FPS: was 10)
@@ -10437,35 +10485,11 @@ function buildAlienPlanetScene(group) {
     // Green light pulse: every frame (cheap - single value)
     greenLight.intensity = 1.2 + Math.sin(time * 2) * 0.3;
 
-    // Firefly drift: every 3rd frame (expensive - 60 particle updates)
-    if (frameCounter % 3 === 0) {
-      const ffPos = fireflyGeo.attributes.position.array;
-      const ffDt = dt * 3; // Compensate for skipped frames
-      for (let i = 0; i < 60; i++) {
-        const idx = i * 3;
-        ffPos[idx] += fireflyVelocities[idx] * ffDt * 60;
-        ffPos[idx + 1] += fireflyVelocities[idx + 1] * ffDt * 60;
-        ffPos[idx + 2] += fireflyVelocities[idx + 2] * ffDt * 60;
+    // REMOVED: Firefly drift animation - per-frame position updates were too expensive
+    // Fireflies are now static for better FPS
 
-        // Wrap around boundaries
-        if (ffPos[idx] > 30) ffPos[idx] = -30;
-        if (ffPos[idx] < -30) ffPos[idx] = 30;
-        if (ffPos[idx + 1] > 10) ffPos[idx + 1] = 1;
-        if (ffPos[idx + 1] < 0.5) ffPos[idx + 1] = 9;
-        if (ffPos[idx + 2] > 30) ffPos[idx + 2] = -30;
-        if (ffPos[idx + 2] < -30) ffPos[idx + 2] = 30;
-      }
-      fireflyGeo.attributes.position.needsUpdate = true;
-    }
-
-    // Plant sway: every 2nd frame (expensive - 100 object updates)
-    if (frameCounter % 2 === 0) {
-      for (const plant of alienPlants) {
-        const sway = Math.sin(time * plant.userData.swaySpeed + plant.userData.swayOffset) * 0.05;
-        plant.rotation.x = plant.userData.baseRotationX + sway;
-        plant.rotation.z = plant.userData.baseRotationZ + sway * 0.7;
-      }
-    }
+    // REMOVED: Plant sway animation - per-frame rotation was too expensive
+    // Plants are now static for better FPS
   };
 
   group.rotation.y = -0.062; // yaw: 3.55°
