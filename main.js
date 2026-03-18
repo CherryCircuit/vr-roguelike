@@ -8204,6 +8204,18 @@ function updateProjectiles(dt) {
       }
     }
 
+    // Also check active boss (bosses are not in regular enemies array)
+    const boss = getBoss();
+    if (boss && boss.mesh) {
+      const dx = projPos.x - boss.mesh.position.x;
+      const dy = projPos.y - boss.mesh.position.y;
+      const dz = projPos.z - boss.mesh.position.z;
+      const distSq = dx * dx + dy * dy + dz * dz;
+      if (distSq < (broadRadius + 3) * (broadRadius + 3)) {
+        nearbyEnemies.push(boss.mesh);
+      }
+    }
+
     let hits = [];
     if (nearbyEnemies.length > 0) {
       raycaster.set(proj.position, proj.userData.velocity.clone().normalize());
@@ -8994,35 +9006,35 @@ function render(timestamp) {
     const bossProjs = getBossProjectiles();
     for (let i = bossProjs.length - 1; i >= 0; i--) {
       const proj = bossProjs[i];
-      if (proj.hitPlayer) {
-        // Check if reflector drone can reflect this projectile
-        if (checkReflectorDroneReflection(proj.mesh.position, true)) {
-          // Projectile was reflected - remove it without damaging player
-          scene.remove(proj.mesh);
-          disposeObject3D(proj.mesh);
-          bossProjs.splice(i, 1);
-          continue;
-        }
+      if (!proj || !proj.hitPlayer) continue;
 
-        triggerHostileProjectileExplosion(proj.mesh.position.clone(), 0.35, 0);
+      // Check if reflector drone can reflect this projectile
+      if (checkReflectorDroneReflection(proj.mesh.position, true)) {
+        // Projectile was reflected - remove it without damaging player
         scene.remove(proj.mesh);
         disposeObject3D(proj.mesh);
         bossProjs.splice(i, 1);
-
-        const dead = damagePlayer(proj.damage || 1);
-        triggerHitFlash(true);
-        playDamageSound();
-        cameraShake = 0.4;
-        cameraShakeIntensity = 0.04;
-        originalCameraPos.copy(camera.position);
-
-        // Light screen shake on projectile damage
-        triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
-
-        floorFlashing = true;
-        floorFlashTimer = 1.0;
-        if (dead) endGame(false);
+        continue;
       }
+
+      triggerHostileProjectileExplosion(proj.mesh.position.clone(), 0.35, 0);
+      scene.remove(proj.mesh);
+      disposeObject3D(proj.mesh);
+      bossProjs.splice(i, 1);
+
+      const dead = damagePlayer(proj.damage || 1);
+      triggerHitFlash(true);
+      playDamageSound();
+      cameraShake = 0.4;
+      cameraShakeIntensity = 0.04;
+      originalCameraPos.copy(camera.position);
+
+      // Light screen shake on projectile damage
+      triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
+
+      floorFlashing = true;
+      floorFlashTimer = 1.0;
+      if (dead) endGame(false);
     }
 
     // Check for DoT damage on enemies
