@@ -360,6 +360,7 @@ export function initHUD(camera, scene) {
   createHUDElements();
   hudGroup.position.set(0, 0.05, -3);  // On floor, 3 feet in front of spawn
   hudGroup.rotation.x = -Math.PI / 2;  // Rotate to face up (floor plane)
+  hudGroup.rotation.y = 0.349;  // 20° toward negative Z (player's facing direction) - ONE TIME ONLY
   scene.add(hudGroup);
 
   // ── UI Groups (initially hidden) ──
