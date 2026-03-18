@@ -597,39 +597,39 @@ function createEnvironment() {
   horizonCtx.fillStyle = horizonGrad;
   horizonCtx.fillRect(0, 0, 4, 64);
 
-  const horizonTexture = new THREE.CanvasTexture(horizonCanvas);
-  const horizonGeo = new THREE.CylinderGeometry(horizonRadius, horizonRadius, horizonHeight, horizonSegments, 1, true);
-  const horizonMat = new THREE.MeshBasicMaterial({
-    map: horizonTexture,
-    transparent: true,
-    side: THREE.BackSide,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  horizonRingRef = new THREE.Mesh(horizonGeo, horizonMat);
-  horizonRingRef.name = 'horizonRingRef';  // Debug panel name
-  horizonRingRef.position.set(0, horizonHeight / 2 - 0.5, 0);
-  horizonRingRef.renderOrder = -2;
-  scene.add(horizonRingRef);
-  registerFadeMaterial(horizonRingRef.material);
+  // const horizonTexture = new THREE.CanvasTexture(horizonCanvas);
+  // const horizonGeo = new THREE.CylinderGeometry(horizonRadius, horizonRadius, horizonHeight, horizonSegments, 1, true);
+  // const horizonMat = new THREE.MeshBasicMaterial({
+  //   map: horizonTexture,
+  //   transparent: true,
+  //   side: THREE.BackSide,
+  //   depthWrite: false,
+  //   blending: THREE.AdditiveBlending,
+  // });
+  // horizonRingRef = new THREE.Mesh(horizonGeo, horizonMat);
+  // horizonRingRef.name = 'horizonRingRef';  // Debug panel name
+  // horizonRingRef.position.set(0, horizonHeight / 2 - 0.5, 0);
+  // horizonRingRef.renderOrder = -2;
+  // scene.add(horizonRingRef);
+  // registerFadeMaterial(horizonRingRef.material);
 
   // Second brighter, shorter glow layer for intensity at ground level
-  // EXACT synthwave color: Horizon orange #FE9053
-  const horizonInnerGeo = new THREE.CylinderGeometry(horizonRadius - 0.5, horizonRadius - 0.5, 1.5, horizonSegments, 1, true);
-  const horizonInnerMat = new THREE.MeshBasicMaterial({
-    color: 0xFE9053,  // EXACT: Horizon orange
-    transparent: true,
-    opacity: 0.5,
-    side: THREE.BackSide,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  horizonInnerRingRef = new THREE.Mesh(horizonInnerGeo, horizonInnerMat);
-  horizonInnerRingRef.name = 'horizonInnerRingRef';  // Debug panel name
-  horizonInnerRingRef.position.set(0, 0.25, 0);
-  horizonInnerRingRef.renderOrder = -2;
-  scene.add(horizonInnerRingRef);
-  registerFadeMaterial(horizonInnerRingRef.material);
+  // REMOVED: Was causing conflicts with synthwave scene
+  // const horizonInnerGeo = new THREE.CylinderGeometry(horizonRadius - 0.5, horizonRadius - 0.5, 1.5, horizonSegments, 1, true);
+  // const horizonInnerMat = new THREE.MeshBasicMaterial({
+  //   color: 0xFE9053,  // EXACT: Horizon orange
+  //   transparent: true,
+  //   opacity: 0.5,
+  //   side: THREE.BackSide,
+  //   depthWrite: false,
+  //   blending: THREE.AdditiveBlending,
+  // });
+  // horizonInnerRingRef = new THREE.Mesh(horizonInnerGeo, horizonInnerMat);
+  // horizonInnerRingRef.name = 'horizonInnerRingRef';  // Debug panel name
+  // horizonInnerRingRef.position.set(0, 0.25, 0);
+  // horizonInnerRingRef.renderOrder = -2;
+  // scene.add(horizonInnerRingRef);
+  // registerFadeMaterial(horizonInnerRingRef.material);
 
   createSun();
   createMountains();
@@ -7446,9 +7446,11 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
     // Freeze frame briefly (0.1s visual pause)
     const freezeDuration = 100; // 0.1 seconds
 
-    // Small camera jolt
-    camera.position.x += (Math.random() - 0.5) * 0.05;
-    camera.position.y += (Math.random() - 0.5) * 0.05;
+    // Small camera jolt (desktop only - skip in VR to avoid fighting with WebXR tracking)
+    if (!renderer.xr.isPresenting) {
+      camera.position.x += (Math.random() - 0.5) * 0.05;
+      camera.position.y += (Math.random() - 0.5) * 0.05;
+    }
 
     // White flash overlay using existing hit flash system
     triggerHitFlash();
@@ -9123,17 +9125,23 @@ function render(timestamp) {
   }
 
   // ── Camera shake on damage ──
-  if (cameraShake > 0) {
+  // NOTE: Skip camera position modification in VR - WebXR controls camera position
+  // and modifying it directly causes fighting/alternation with headset tracking
+  if (cameraShake > 0 && !renderer.xr.isPresenting) {
     cameraShake -= rawDt;
     if (cameraShake <= 0) {
       cameraShake = 0;
     } else {
-      // Apply random shake offset
+      // Apply random shake offset (desktop only)
       const shake = cameraShakeIntensity * (cameraShake / 0.5);  // Fade out over duration
       camera.position.x += (Math.random() - 0.5) * shake;
       camera.position.y += (Math.random() - 0.5) * shake;
       camera.position.z += (Math.random() - 0.5) * shake;
     }
+  } else if (cameraShake > 0) {
+    // In VR, just decrement timer without modifying camera position
+    cameraShake -= rawDt;
+    if (cameraShake <= 0) cameraShake = 0;
   }
 
   // ── VR camera height is handled by XR reference space offset ──
@@ -9431,6 +9439,51 @@ function getBiomeFloorY() {
   }
 }
 
+// Log cylinder colors for debugging
+function logCylinderColors() {
+  console.log('=== CYLINDER COLORS ===');
+  
+  // atmosphereRef
+  if (typeof atmosphereRef !== 'undefined' && atmosphereRef.material) {
+    if (atmosphereRef.material.uniforms) {
+      const uni = atmosphereRef.material.uniforms;
+      console.log('atmosphereRef (atmosphere cylinder):');
+      console.log('  - uFogColor:', uni.uFogColor?.value?.getHexString());
+      console.log('  - Gradient stops:');
+      console.log('    0% (base): rgba(254,144,83,1.0) -> #FE9053 (horizon orange)');
+      console.log('    20%: rgba(224,1,134,0.9) -> #E00186 (pink)');
+      console.log('    50%: rgba(44,0,81,0.6) -> #2C0051 (sun top purple)');
+      console.log('    100% (top): rgba(26,0,74,0.0) -> #1A004A (dark purple)');
+    }
+  }
+  
+  // auroraRef
+  if (typeof auroraRef !== 'undefined' && auroraRef.material) {
+    const tex = auroraRef.material.map;
+    if (tex && tex.image) {
+      const canvas = tex.image;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        console.log('auroraRef (aurora cylinder):');
+        const imageData = ctx.getImageData(0, 0, canvas.width, 1);
+        console.log('  - Bottom pixel:', imageData.data);
+      }
+    }
+    
+    // Use scenery.js theme colors
+    if (window.THEMES && window.THEMES.synthwave_valley && window.THEMES.synthwave_valley.aurora) {
+      const colors = window.THEMES.synthwave_valley.aurora.colors;
+      console.log('  - Theme colors:', colors);
+    }
+  }
+  
+  // horizonRingRef and horizonInnerRingRef - REMOVED
+  console.log('horizonRingRef: REMOVED');
+  console.log('horizonInnerRingRef: REMOVED');
+  
+  console.log('====================');
+}
+
 function buildSynthwaveValleyScene(group) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
@@ -9587,6 +9640,9 @@ function buildSynthwaveValleyScene(group) {
   horizonGlow.frustumCulled = false;
   group.add(horizonGlow);
   registerFadeMaterial(horizonGlowMat);
+
+  // Log cylinder colors for debugging
+  logCylinderColors();
 
   // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
   // The standalone HTML used perpetual scrolling and pulsing, but the game
