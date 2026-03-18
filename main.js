@@ -8468,8 +8468,10 @@ function render(timestamp) {
   // Process seeker burst queue (burst fire timing)
   processSeekerBurstQueue(now);
 
-  // Update desktop controls (WASD + mouse) in all states when enabled
-  updateDesktopControls(dt);
+  // Update desktop controls (WASD + mouse) in all states when enabled AND NOT in VR
+  if (!renderer.xr.isPresenting) {
+    updateDesktopControls(dt);
+  }
 
   let st = game.state;
   if (bossDeathCinematic.active && st !== State.BOSS_DEATH_CINEMATIC) {
