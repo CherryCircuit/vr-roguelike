@@ -759,9 +759,10 @@ function updateDebugPositionPanel() {
         }
       }
 
-      // Update display
+      // Update display with more detail
+      const geoType = obj.geometry?.type?.replace('Geometry', '').replace('Buffer', '') || objType;
       if (lookNameEl) lookNameEl.textContent = objName;
-      if (lookTypeEl) lookTypeEl.textContent = `Type: ${objType}`;
+      if (lookTypeEl) lookTypeEl.textContent = `Type: ${geoType} (${obj.type})`;
       if (lookDistEl) lookDistEl.textContent = `Distance: ${validHit.distance.toFixed(2)}`;
 
       // Highlight the object
