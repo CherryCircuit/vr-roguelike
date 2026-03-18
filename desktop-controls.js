@@ -664,31 +664,68 @@ function updateDebugPositionPanel() {
       currentLookTarget = null;
     }
 
-    if (intersects.length > 0) {
-      const hit = intersects[0];
+    // Find first valid hit (skip camera-attached objects and very close objects)
+    let validHit = null;
+    let validObj = null;
+    
+    for (const hit of intersects) {
       const obj = hit.object;
-
-      // Walk up to find named ancestor (groups often have names, meshes may not)
-      let namedObj = obj;
-      let objName = obj.name || obj.userData?.name || obj.userData?.id || null;
       
-      // Walk up the parent chain to find a name
+      // Skip objects very close (likely camera-attached UI)
+      if (hit.distance < 0.5) continue;
+      
+      // Check if this object or any parent is the camera
+      let isCameraChild = false;
+      let checkParent = obj.parent;
+      while (checkParent) {
+        if (checkParent === cameraRef || checkParent.isCamera) {
+          isCameraChild = true;
+          break;
+        }
+        checkParent = checkParent.parent;
+      }
+      if (isCameraChild) continue;
+      
+      // This is a valid scene object
+      validHit = hit;
+      validObj = obj;
+      break;
+    }
+
+    if (validHit && validObj) {
+      const obj = validObj;
+      
+      // Walk up to find named ancestor (groups often have names, meshes may not)
+      let objName = null;
+      
+      // Check userData fields first (more likely to have meaningful names)
+      const userDataFields = ['name', 'id', 'enemyType', 'sceneryType', 'type', 'label'];
+      for (const field of userDataFields) {
+        if (obj.userData?.[field]) {
+          objName = obj.userData[field];
+          break;
+        }
+      }
+      
+      // Then check object.name
+      if (!objName && obj.name) {
+        objName = obj.name;
+      }
+      
+      // Walk up parent chain looking for name
       let parent = obj.parent;
       while (!objName && parent && parent !== sceneRef) {
+        // Check parent name
         if (parent.name) {
           objName = parent.name;
-          namedObj = parent;
           break;
         }
-        if (parent.userData?.name) {
-          objName = parent.userData.name;
-          namedObj = parent;
-          break;
-        }
-        if (parent.userData?.id) {
-          objName = parent.userData.id;
-          namedObj = parent;
-          break;
+        // Check parent userData
+        for (const field of userDataFields) {
+          if (parent.userData?.[field]) {
+            objName = parent.userData[field];
+            break;
+          }
         }
         parent = parent.parent;
       }
@@ -712,15 +749,20 @@ function updateDebugPositionPanel() {
         objType = 'Upgrade Card';
       }
 
-      // Fallback name if none found
+      // Fallback name if none found - use geometry info
       if (!objName) {
-        objName = `<unnamed ${objType}>`;
+        if (obj.geometry) {
+          const geoInfo = obj.geometry.type || 'Geometry';
+          objName = `<${geoInfo}>`;
+        } else {
+          objName = `<unnamed ${objType}>`;
+        }
       }
 
       // Update display
       if (lookNameEl) lookNameEl.textContent = objName;
       if (lookTypeEl) lookTypeEl.textContent = `Type: ${objType}`;
-      if (lookDistEl) lookDistEl.textContent = `Distance: ${hit.distance.toFixed(2)}`;
+      if (lookDistEl) lookDistEl.textContent = `Distance: ${validHit.distance.toFixed(2)}`;
 
       // Highlight the object
       currentLookTarget = obj;

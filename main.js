@@ -786,6 +786,7 @@ function rebuildBiomeProps(biomeId, theme) {
       const z = zStart + i * zStep;
       [-1, 1].forEach((side) => {
         const pillar = new THREE.Mesh(geo, material);
+        pillar.name = `pillar_${i}_${side > 0 ? 'right' : 'left'}`;
         pillar.scale.set(1, height, 1);
         pillar.position.set(side * xOffset, height * 0.5, z);
         pillar.rotation.z = tilt * side;
@@ -808,6 +809,7 @@ function rebuildBiomeProps(biomeId, theme) {
     for (let i = 0; i < count; i++) {
       const z = zStart + i * zStep;
       const arch = new THREE.Mesh(geo, material);
+      arch.name = `arch_${i}`;
       arch.scale.set(radius, radius, radius);
       arch.position.set(0, y, z);
       arch.rotation.x = Math.PI;
@@ -834,6 +836,9 @@ function rebuildBiomeProps(biomeId, theme) {
       const left = new THREE.Mesh(legGeo, material);
       const right = new THREE.Mesh(legGeo, material);
       const top = new THREE.Mesh(topGeo, material);
+      left.name = `rect_arch_${i}_left`;
+      right.name = `rect_arch_${i}_right`;
+      top.name = `rect_arch_${i}_top`;
       left.position.set(-width * 0.5, y + height * 0.5, z);
       right.position.set(width * 0.5, y + height * 0.5, z);
       top.position.set(0, y + height + thickness * 0.5, z);
@@ -862,6 +867,7 @@ function rebuildBiomeProps(biomeId, theme) {
       const z = zStart + i * zStep;
       const x = (Math.random() - 0.5) * xSpread;
       const platform = new THREE.Mesh(geo, material);
+      platform.name = `platform_${platformType}_${i}`;
       platform.scale.set(size, 1, size);
       platform.position.set(x, y, z);
       platform.rotation.y = Math.random() * Math.PI * 2;

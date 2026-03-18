@@ -457,9 +457,10 @@ function spawnTrainEnemy(type, position, levelConfig) {
 
   group.position.copy(position);
   group.userData.isEnemy = true;
+  group.userData.enemyType = type; // For debug identification
 
   // Add hitbox
-  const hitboxGeo = new THREE.BoxGeometry(def.hitboxRadius * 2, def.hitboxRadius * 2, trainLength * def.voxelSize * 1.5);
+  const hitboxGeo = new THREE.BoxGeometry(def.hitboxRadius * 2, def.hitboxRadius * 2, def.hitboxRadius * 2);
   const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
   const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
   hitbox.userData.isEnemyHitbox = true;
@@ -908,6 +909,7 @@ function spawnGeometryShifterSplit(position, hp, scale) {
     group.position.copy(spawnPos);
     group.scale.setScalar(scale);
     group.userData.isEnemy = true;
+    group.userData.enemyType = 'geometry_shifter_split'; // For debug identification
 
     // Add hitbox
     const hitboxGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
@@ -985,6 +987,7 @@ function spawnCloneMimicSplit(position) {
     group.position.copy(spawnPos);
     group.scale.setScalar(0.7);
     group.userData.isEnemy = true;
+    group.userData.enemyType = 'clone_mimic_split'; // For debug identification
 
     // Add hitbox
     const hitboxGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
@@ -1286,6 +1289,7 @@ export function spawnEnemy(type, position, levelConfig) {
 
   group.position.copy(position);
   group.userData.isEnemy = true;
+  group.userData.enemyType = type; // For debug identification
 
   // Tank: one random voxel is weak point (double damage)
   if (isTank) {
