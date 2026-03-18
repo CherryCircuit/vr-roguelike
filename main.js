@@ -8203,16 +8203,6 @@ function updateProjectiles(dt) {
         nearbyEnemies.push(enemy.mesh);
       }
     }
-    // Also check boss mesh
-    if (activeBoss && activeBoss.mesh) {
-      const dx = projPos.x - activeBoss.mesh.position.x;
-      const dy = projPos.y - activeBoss.mesh.position.y;
-      const dz = projPos.z - activeBoss.mesh.position.z;
-      const distSq = dx * dx + dy * dy + dz * dz;
-      if (distSq < (broadRadius + 3) * (broadRadius + 3)) {
-        nearbyEnemies.push(activeBoss.mesh);
-      }
-    }
 
     let hits = [];
     if (nearbyEnemies.length > 0) {
