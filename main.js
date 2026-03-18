@@ -365,6 +365,40 @@ const MAX_NANITE_SWARMS = 2;
 const activeReflectorDrones = [];
 const MAX_REFLECTOR_DRONES = 2;
 
+// Fog/atmosphere system - FFR optimization for Quest VR
+// Increased fog density in VR mode to reduce render load on distant objects
+let ffrFogDensity = 0.012;  // Default fog density
+let ffrRenderDistance = 80;  // Objects beyond this distance fade out
+let ffrEnabled = true;  // FFR optimization enabled by default
+
+// Update fog settings based on VR mode
+function updateFFRFog() {
+  if (!renderer || !scene.fog) return;
+
+  const isVR = renderer.xr.isPresenting;
+
+  if (isVR && ffrEnabled) {
+    // Quest VR mode: denser fog to hide distant geometry
+    ffrFogDensity = 0.02;  // 67% denser fog for VR
+    ffrRenderDistance = 50;  // Objects beyond 50m fade out
+    if (ffrFogDensity !== scene.fog.density) {
+      console.log('[FFR] VR mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
+    }
+  } else {
+    // Desktop mode: standard fog
+    ffrFogDensity = 0.012;  // Original density
+    ffrRenderDistance = 80;  // Full visibility
+    if (ffrFogDensity !== scene.fog.density) {
+      console.log('[FFR] Desktop mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
+    }
+  }
+
+  // Update scene fog (only if not in dream world or custom scene biome)
+  if (!game.inDreamWorld && !biomeSceneBiome) {
+    scene.fog.density = ffrFogDensity;
+  }
+}
+
 // ── Bootstrap ──────────────────────────────────────────────
 init();
 
@@ -377,40 +411,6 @@ function init() {
   // Load debug settings from localStorage
   loadDebugSettings();
   loadDreamState();
-
-  // Fog/atmosphere system - FFR optimization for Quest VR
-  // Increased fog density in VR mode to reduce render load on distant objects
-  let ffrFogDensity = 0.012;  // Default fog density
-  let ffrRenderDistance = 80;  // Objects beyond this distance fade out
-  let ffrEnabled = true;  // FFR optimization enabled by default
-
-  // Update fog settings based on VR mode
-  function updateFFRFog() {
-    if (!renderer || !scene.fog) return;
-    
-    const isVR = renderer.xr.isPresenting;
-    
-    if (isVR && ffrEnabled) {
-      // Quest VR mode: denser fog to hide distant geometry
-      ffrFogDensity = 0.02;  // 67% denser fog for VR
-      ffrRenderDistance = 50;  // Objects beyond 50m fade out
-      if (ffrFogDensity !== scene.fog.density) {
-        console.log('[FFR] VR mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
-      }
-    } else {
-      // Desktop mode: standard fog
-      ffrFogDensity = 0.012;  // Original density
-      ffrRenderDistance = 80;  // Full visibility
-      if (ffrFogDensity !== scene.fog.density) {
-        console.log('[FFR] Desktop mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
-      }
-    }
-    
-    // Update scene fog (only if not in dream world or custom scene biome)
-    if (!game.inDreamWorld && !biomeSceneBiome) {
-      scene.fog.density = ffrFogDensity;
-    }
-  }
 
   // Apply distance-based fade to objects for FFR
   function applyDistanceFade(object, cameraPos) {
