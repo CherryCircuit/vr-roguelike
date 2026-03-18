@@ -78,6 +78,16 @@ let nameEntrySlots = [];
 let keyboardKeys = [];
 let nameEntryActionMeshes = [];
 let hoveredKey = null;
+let keyboardMeshCache = []; // Cached array of keyboard meshes for faster hit testing
+
+// Keyboard optimization: pooled materials and geometries
+const keyboardKeyPool = {
+  materials: {},
+  geometries: {},
+  borderMaterials: {},
+  textLabels: {},
+  initialized: false
+};
 
 // Level intro state
 let levelIntroActive = false;
@@ -325,9 +335,10 @@ function makeHeartsTexture(health, maxHealth, animParams = {}) {
     else if (hpForThisHeart === 1) state = 'half';
     else state = 'empty';
     
-    // #23: Calculate animation state for this heart
+    // #23: Removed continuous glow pulse - hearts are now static
+    // Only show glow effect if explicitly triggered (not used in static mode)
     const animState = {
-      glowIntensity: state === 'full' ? (0.5 + 0.5 * Math.sin(glowPhase + i * 0.5)) : 0,
+      glowIntensity: 0,  // Static hearts, no continuous glow pulse
       hitFlash: hitFlash > 0 && i === Math.floor(health / 2) ? hitFlash : 0,
       isHealthGain: healthGain > 0 && i === Math.floor((health - 2) / 2) && state === 'full'
     };
@@ -838,9 +849,9 @@ function updateSpriteText(sprite, text, opts = {}) {
 export function updateHUD(gameState) {
   if (!hudGroup.visible) return;
 
-  // #23: Update heart animation state
+  // #23: Removed continuous glow pulse animation for performance
+  // Hearts are now static - only animate when health changes (hitFlash, healthGain)
   const now = performance.now();
-  heartAnimationState.glowPhase = now * 0.003;  // Slow glow pulse
 
   // Decay hit flash
   if (heartAnimationState.hitFlash > 0) {
@@ -2464,12 +2475,50 @@ export function isKillsAlertActive() {
 
 // ── Name Entry Screen ───────────────────────────────────────
 
+// Initialize keyboard pool (call once at startup)
+function initKeyboardPool() {
+  if (keyboardKeyPool.initialized) return;
+
+  // Pooled materials (shared across keys of same type)
+  keyboardKeyPool.materials = {
+    letter: new THREE.MeshBasicMaterial({ color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+    ok: new THREE.MeshBasicMaterial({ color: 0x003300, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+    del: new THREE.MeshBasicMaterial({ color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+    space: new THREE.MeshBasicMaterial({ color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+  };
+
+  // Pooled geometries (reused for same-sized keys)
+  const keySize = 0.26;
+  keyboardKeyPool.geometries = {
+    normal: new THREE.PlaneGeometry(keySize, keySize),
+    wide: new THREE.PlaneGeometry(keySize * 1.5, keySize),
+    space: new THREE.PlaneGeometry(keySize * 3, keySize),
+  };
+
+  // Pooled border materials (shared across keys of same type)
+  keyboardKeyPool.borderMaterials = {
+    letter: new THREE.LineBasicMaterial({ color: 0x444488 }),
+    ok: new THREE.LineBasicMaterial({ color: 0x00ff00 }),
+    del: new THREE.LineBasicMaterial({ color: 0xff4444 }),
+    space: new THREE.LineBasicMaterial({ color: 0x444488 }),
+  };
+
+  // Pooled text labels (cache sprite textures)
+  // Labels created on-demand to reduce initial overhead
+
+  keyboardKeyPool.initialized = true;
+}
+
 export function showNameEntry(score, level, storedName, countryLabel, playerPos) {
+  // Initialize pool on first use
+  initKeyboardPool();
+
   hideAll();
   while (nameEntryGroup.children.length) nameEntryGroup.remove(nameEntryGroup.children[0]);
   nameEntrySlots = [];
   keyboardKeys = [];
   nameEntryActionMeshes = [];
+  keyboardMeshCache = []; // Clear mesh cache
   hoveredKey = null;
   nameEntryName = storedName || '';
   nameEntryCursor = nameEntryName.length;
@@ -2566,7 +2615,7 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
     nameEntryGroup.add(slotGroup);
   }
 
-  // Virtual keyboard
+  // Virtual keyboard - OPTIMIZED with pooled resources
   const rows = [
     ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
     ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
@@ -2577,6 +2626,9 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
   const keySize = 0.26;
   const keyGap = 0.03;
   let rowY = 0.1;
+
+  // Cache text labels for keyboard keys (avoid creating duplicate sprites)
+  const labelCache = {};
 
   for (const row of rows) {
     const rowWidth = row.reduce((sum, key) => {
@@ -2589,36 +2641,59 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
 
     for (const key of row) {
       let w = keySize;
-      if (key === 'SPACE') w = keySize * 3;
-      else if (key === 'OK' || key === 'DEL') w = keySize * 1.5;
+      let matType = 'letter';
+      let geomType = 'normal';
+      let borderType = 'letter';
+
+      // Determine key type for resource pooling
+      if (key === 'SPACE') {
+        w = keySize * 3;
+        matType = 'space';
+        geomType = 'space';
+        borderType = 'space';
+      } else if (key === 'OK') {
+        w = keySize * 1.5;
+        matType = 'ok';
+        geomType = 'wide';
+        borderType = 'ok';
+      } else if (key === 'DEL') {
+        w = keySize * 1.5;
+        matType = 'del';
+        geomType = 'wide';
+        borderType = 'del';
+      }
 
       const keyGroup = new THREE.Group();
       keyGroup.position.set(keyX + w / 2, rowY, 0);
 
-      const keyGeo = new THREE.PlaneGeometry(w, keySize);
-      const isAction = key === 'OK' || key === 'DEL' || key === 'SPACE';
-      const keyColor = key === 'OK' ? 0x003300 : (key === 'DEL' ? 0x330000 : 0x111133);
-      const keyMat = new THREE.MeshBasicMaterial({
-        color: keyColor, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
-      });
-      const keyMesh = new THREE.Mesh(keyGeo, keyMat);
+      // Reuse pooled geometry and material
+      const keyMesh = new THREE.Mesh(keyboardKeyPool.geometries[geomType], keyboardKeyPool.materials[matType]);
       keyMesh.userData.keyValue = key;
       keyMesh.userData.isKeyboardKey = true;
       keyGroup.add(keyMesh);
 
-      const borderGeo = new THREE.EdgesGeometry(keyGeo);
-      const borderColor = key === 'OK' ? 0x00ff00 : (key === 'DEL' ? 0xff4444 : 0x444488);
-      keyGroup.add(new THREE.LineSegments(borderGeo, new THREE.LineBasicMaterial({ color: borderColor })));
+      // Reuse pooled border material (geometry must be unique per key)
+      const borderGeo = new THREE.EdgesGeometry(keyboardKeyPool.geometries[geomType]);
+      keyGroup.add(new THREE.LineSegments(borderGeo, keyboardKeyPool.borderMaterials[borderType]));
 
+      // Create or cache label sprite
       const label = key === 'SPACE' ? '___' : key;
       const textColor = key === 'OK' ? '#00ff00' : (key === 'DEL' ? '#ff4444' : '#ccccff');
-      const keyLabel = makeSprite(label, {
-        fontSize: 60, color: textColor, scale: 0.165,
-      });
+      let keyLabel = labelCache[label];
+
+      if (!keyLabel) {
+        keyLabel = makeSprite(label, {
+          fontSize: 60, color: textColor, scale: 0.165,
+        });
+        labelCache[label] = keyLabel;
+      }
+
+      // Clone the label sprite (texture is reused)
       keyLabel.position.set(0, 0, 0.01);
       keyGroup.add(keyLabel);
 
-      keyboardKeys.push({ group: keyGroup, mesh: keyMesh, mat: keyMat, key, baseColor: keyColor });
+      keyboardKeys.push({ group: keyGroup, mesh: keyMesh, mat: keyboardKeyPool.materials[matType], key, baseColor: keyboardKeyPool.materials[matType].color.getHex() });
+      keyboardMeshCache.push(keyMesh); // Cache mesh for faster hit testing
       nameEntryGroup.add(keyGroup);
 
       keyX += w + keyGap;
@@ -2644,8 +2719,8 @@ export function getNameEntryHit(raycaster) {
       if (action) return { action };
     }
   }
-  const meshes = keyboardKeys.map(k => k.mesh);
-  const hits = raycaster.intersectObjects(meshes, false);
+  // Use cached mesh array instead of mapping on every call
+  const hits = raycaster.intersectObjects(keyboardMeshCache, false);
   if (hits.length > 0) {
     const key = hits[0].object.userData.keyValue;
     return processKeyPress(key);
