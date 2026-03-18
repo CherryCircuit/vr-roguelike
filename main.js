@@ -1306,7 +1306,10 @@ function enterDreamWorldScene() {
   if (scene.background) scene.background.setHex(0x120018);
   hideBaseEnvironment();
 
-  camera.position.copy(getDreamSpawnPosition());
+  // Only modify camera position in desktop mode (in VR, WebXR controls camera)
+  if (!renderer.xr.isPresenting) {
+    camera.position.copy(getDreamSpawnPosition());
+  }
   if (dreamTriggerMesh) dreamTriggerMesh.visible = false;
 }
 
@@ -1323,7 +1326,10 @@ function exitDreamWorldScene() {
     }
   }
   restoreBaseEnvironment();
-  camera.position.copy(dreamReturnPosition);
+  // Only modify camera position in desktop mode (in VR, WebXR controls camera)
+  if (!renderer.xr.isPresenting) {
+    camera.position.copy(dreamReturnPosition);
+  }
   if (dreamTriggerMesh) dreamTriggerMesh.visible = true;
 }
 
@@ -4113,9 +4119,13 @@ function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
   // Clamp destination to ground level
   destination.y = Math.max(0.5, destination.y);
 
-  // Teleport player
-  camera.position.copy(destination);
-  console.log(`[Phase Dash] Teleported from (${oldPosition.x.toFixed(2)}, ${oldPosition.y.toFixed(2)}, ${oldPosition.z.toFixed(2)}) to (${destination.x.toFixed(2)}, ${destination.y.toFixed(2)}, ${destination.z.toFixed(2)})`);
+  // Teleport player (desktop only - in VR, WebXR controls camera position)
+  if (!renderer.xr.isPresenting) {
+    camera.position.copy(destination);
+    console.log(`[Phase Dash] Teleported from (${oldPosition.x.toFixed(2)}, ${oldPosition.y.toFixed(2)}, ${oldPosition.z.toFixed(2)}) to (${destination.x.toFixed(2)}, ${destination.y.toFixed(2)}, ${destination.z.toFixed(2)})`);
+  } else {
+    console.log(`[Phase Dash] VR mode - teleport visual only (WebXR controls camera)`);
+  }
 
   // Create blue ghostly afterimage at old position
   const afterimageGroup = new THREE.Group();
@@ -5547,9 +5557,13 @@ function fireTeleport(origin, direction, hand, altWeapon) {
   startEffect.position.copy(playerPos);
   scene.add(startEffect);
 
-  // Teleport player
-  camera.position.copy(destination);
-  console.log(`[Teleport] Moved from (${playerPos.x.toFixed(2)}, ${playerPos.y.toFixed(2)}, ${playerPos.z.toFixed(2)}) to (${destination.x.toFixed(2)}, ${destination.y.toFixed(2)}, ${destination.z.toFixed(2)})`);
+  // Teleport player (desktop only - in VR, WebXR controls camera position)
+  if (!renderer.xr.isPresenting) {
+    camera.position.copy(destination);
+    console.log(`[Teleport] Moved from (${playerPos.x.toFixed(2)}, ${playerPos.y.toFixed(2)}, ${playerPos.z.toFixed(2)}) to (${destination.x.toFixed(2)}, ${destination.y.toFixed(2)}, ${destination.z.toFixed(2)})`);
+  } else {
+    console.log(`[Teleport] VR mode - teleport visual only (WebXR controls camera)`);
+  }
 
   // Create visual effect at end position
   const endEffectGeo = new THREE.SphereGeometry(0.5, 16, 16);
@@ -7452,8 +7466,8 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       camera.position.y += (Math.random() - 0.5) * 0.05;
     }
 
-    // White flash overlay using existing hit flash system
-    triggerHitFlash();
+    // No red screen flash on crits - removed per user request
+    // triggerHitFlash();
 
     console.log(`[Impact] CRITICAL HIT! Damage: ${Math.round(damage)}, Freeze: ${freezeDuration}ms`);
   }
