@@ -8185,8 +8185,40 @@ function updateProjectiles(dt) {
     }
 
     // Check collision with enemies
-    raycaster.set(proj.position, proj.userData.velocity.clone().normalize());
-    const hits = raycaster.intersectObjects(enemies, true);
+    // PERFORMANCE: Broad-phase distance check before expensive raycast.
+    // Only raycast against enemies within a reasonable radius of the projectile.
+    // This reduces raycasting from O(projectiles * all_enemies) to O(projectiles * nearby_enemies).
+    const projPos = proj.position;
+    const broadRadius = moveDistance * 2 + 1.5; // Move distance + max hitbox radius
+    const nearbyEnemies = [];
+    const allActiveEnemies = getEnemies();
+    for (let ei = 0; ei < allActiveEnemies.length; ei++) {
+      const enemy = allActiveEnemies[ei];
+      const dx = projPos.x - enemy.mesh.position.x;
+      const dy = projPos.y - enemy.mesh.position.y;
+      const dz = projPos.z - enemy.mesh.position.z;
+      const distSq = dx * dx + dy * dy + dz * dz;
+      const r = (enemy.hitboxRadius || 1) + broadRadius;
+      if (distSq < r * r) {
+        nearbyEnemies.push(enemy.mesh);
+      }
+    }
+    // Also check boss mesh
+    if (activeBoss && activeBoss.mesh) {
+      const dx = projPos.x - activeBoss.mesh.position.x;
+      const dy = projPos.y - activeBoss.mesh.position.y;
+      const dz = projPos.z - activeBoss.mesh.position.z;
+      const distSq = dx * dx + dy * dy + dz * dz;
+      if (distSq < (broadRadius + 3) * (broadRadius + 3)) {
+        nearbyEnemies.push(activeBoss.mesh);
+      }
+    }
+
+    let hits = [];
+    if (nearbyEnemies.length > 0) {
+      raycaster.set(proj.position, proj.userData.velocity.clone().normalize());
+      hits = raycaster.intersectObjects(nearbyEnemies, true);
+    }
 
     if (hits.length > 0 && hits[0].distance < moveDistance * 2) {
       const result = getEnemyByMesh(hits[0].object);
@@ -9136,21 +9168,7 @@ function render(timestamp) {
     gameOverCooldown = Math.max(0, gameOverCooldown - dt);
   }
 
-  // ── Name entry (keyboard hover) ──
-  else if (st === State.NAME_ENTRY) {
-    for (let i = 0; i < controllers.length; i++) {
-      const ctrl = controllers[i];
-      if (!ctrl) continue;
-      const origin = new THREE.Vector3();
-      const quat = new THREE.Quaternion();
-      ctrl.getWorldPosition(origin);
-      ctrl.getWorldQuaternion(quat);
-      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-      const rc = new THREE.Raycaster(origin, dir, 0, 10);
-      updateKeyboardHover(rc);
-      break;  // Only need one controller for hover
-    }
-  }
+  // ── Name entry hover is handled by the unified updateHUDHover below ──
 
   if (st !== State.PLAYING) {
     updateHolographicGlitch(now);
