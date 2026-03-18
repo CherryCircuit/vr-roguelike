@@ -133,9 +133,24 @@ let laserMineSpawnCooldown = 0;
 // PERFORMANCE: Hard cap on active projectiles to prevent accumulation
 const MAX_PROJECTILES = 100;
 
-// PERFORMANCE: Projectile pool for reuse (avoid creating geometry per shot)
-const projectilePool = [];
+// PERFORMANCE: InstancedMesh projectile system
+// Instead of individual THREE.Group/Mesh objects per projectile (each a draw call),
+// we use ONE InstancedMesh per projectile type. This collapses ~100 draw calls
+// down to ~4, matching the three.js physics_ammo_instancing pattern.
 const PROJECTILE_POOL_SIZE = 120;
+
+// Per-instance data arrays (parallel to InstancedMesh instance indices)
+const projectileInstanceData = [];  // { active, velocity, stats, controllerIndex, ... }
+
+// InstancedMesh references per pool type
+const instancedProjectiles = {};  // poolType -> { mesh, count, freeIndices: Set }
+
+// Reusable temp objects (avoid GC pressure)
+const _projMatrix = new THREE.Matrix4();
+const _projPosition = new THREE.Vector3();
+const _projQuaternion = new THREE.Quaternion();
+const _projScale = new THREE.Vector3(1, 1, 1);
+const _projColor = new THREE.Color();
 
 // PHYSICS DEATH SYSTEM: Voxel pool for death explosions
 const voxelPool = [];
@@ -6395,152 +6410,231 @@ function triggerScreenShake(intensity, duration) {
   console.log(`[Shake] Intensity: ${intensity}, Duration: ${duration}ms`);
 }
 
-// PERFORMANCE: Initialize projectile pool for reuse
+// PERFORMANCE: Initialize InstancedMesh projectile pools
+// One InstancedMesh per projectile type = minimal draw calls.
+// Each instance is positioned via setMatrixAt(), colored via setColorAt().
 function initProjectilePool() {
-  // Pre-create pooled projectile meshes (both types: laser and buckshot)
-  const colors = [NEON_CYAN, NEON_PINK];
+  // ── Laser bolts (most common, cyan & pink) ──
+  // Use merged bolt+glow geometry for a single draw call per instance
+  const laserGeo = new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6);
+  const laserMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85 });
+  const laserIM = new THREE.InstancedMesh(laserGeo, laserMat, 120);
+  laserIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  laserIM.count = 0;  // Start with 0 visible instances
+  laserIM.frustumCulled = false;  // We manage visibility manually
+  scene.add(laserIM);
+  instancedProjectiles['laser'] = { mesh: laserIM, maxCount: 120, freeIndices: new Set() };
 
+  // ── Buckshot pellets ──
+  const buckGeo = new THREE.SphereGeometry(0.025, 6, 6);
+  const buckMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+  const buckIM = new THREE.InstancedMesh(buckGeo, buckMat, 20);
+  buckIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  buckIM.count = 0;
+  buckIM.frustumCulled = false;
+  scene.add(buckIM);
+  instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
+
+  // ── Seeker burst bolts (homing) ──
+  // Head sphere for seekers
+  const seekerGeo = new THREE.SphereGeometry(0.03, 8, 8);
+  const seekerMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+  const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
+  seekerIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  seekerIM.count = 0;
+  seekerIM.frustumCulled = false;
+  scene.add(seekerIM);
+  instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 28, freeIndices: new Set() };
+
+  // ── Plasma carbine darts ──
+  const plasmaGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.5, 6);
+  const plasmaMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+  const plasmaIM = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 30);
+  plasmaIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  plasmaIM.count = 0;
+  plasmaIM.frustumCulled = false;
+  scene.add(plasmaIM);
+  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, maxCount: 30, freeIndices: new Set() };
+
+  // Initialize instance data array with nulls
   for (let i = 0; i < PROJECTILE_POOL_SIZE; i++) {
-    const color = colors[i % 2];
-
-    // Create laser bolt (most common)
-    const group = new THREE.Group();
-    const boltLength = 1.0;
-    const boltGeo = new THREE.CylinderGeometry(0.015, 0.015, boltLength, 6);
-    const bolt = new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ color }));
-    bolt.rotation.x = Math.PI / 2;
-    bolt.position.z = -boltLength / 2;
-    group.add(bolt);
-
-    // Glow cylinder
-    const glowGeo = new THREE.CylinderGeometry(0.035, 0.035, boltLength, 6);
-    const glowBolt = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
-    glowBolt.rotation.x = Math.PI / 2;
-    glowBolt.position.z = -boltLength / 2;
-    group.add(glowBolt);
-
-    group.visible = false;
-    group.userData.isPooled = true;
-    group.userData.poolType = 'laser';
-    scene.add(group);
-    projectilePool.push(group);
+    projectileInstanceData.push(null);
   }
 
-  // Add some buckshot pellets to pool
-  for (let i = 0; i < 20; i++) {
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.025, 6, 6),
-      new THREE.MeshBasicMaterial({ color: 0xdddddd })
-    );
-    mesh.visible = false;
-    mesh.userData.isPooled = true;
-    mesh.userData.poolType = 'buckshot';
-    scene.add(mesh);
-    projectilePool.push(mesh);
-  }
-
-  // Add seeker burst beams to pool (sperm-like homing bolts)
-  for (let i = 0; i < 28; i++) {
-    const color = colors[i % 2];
-    const seekerGroup = new THREE.Group();
-
-    const headGeo = new THREE.SphereGeometry(0.03, 8, 8);  // Reduced from 0.06 to 0.03 (50% smaller)
-    const headMat = new THREE.MeshBasicMaterial({ color });
-    const head = new THREE.Mesh(headGeo, headMat);
-    head.position.z = -0.2;
-    seekerGroup.add(head);
-
-    const tailGeo = new THREE.CylinderGeometry(0.012, 0.028, 0.5, 6);
-    const tailMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 });
-    const tail = new THREE.Mesh(tailGeo, tailMat);
-    tail.rotation.x = Math.PI / 2;
-    tail.position.z = 0.12;
-    seekerGroup.add(tail);
-
-    const glowGeo = new THREE.SphereGeometry(0.06, 8, 8);  // Reduced from 0.12 to 0.06 (50% smaller to match head)
-    const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending });
-    const glow = new THREE.Mesh(glowGeo, glowMat);
-    glow.position.z = -0.2;
-    seekerGroup.add(glow);
-
-    seekerGroup.visible = false;
-    seekerGroup.userData.isPooled = true;
-    seekerGroup.userData.poolType = 'seeker';
-    scene.add(seekerGroup);
-    projectilePool.push(seekerGroup);
-  }
-
-  // Add plasma carbine projectiles to pool (short cyan darts)
-  for (let i = 0; i < 30; i++) {
-    const plasmaColor = 0x00ffff;  // Cyan
-    const plasmaGroup = new THREE.Group();
-    
-    // Short dart-like bolt (0.5 length instead of 1.0)
-    const boltLength = 0.5;
-    const boltGeo = new THREE.CylinderGeometry(0.011, 0.011, boltLength, 6);  // 25% smaller radius
-    const bolt = new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({ color: plasmaColor }));
-    bolt.rotation.x = Math.PI / 2;
-    bolt.position.z = -boltLength / 2;
-    plasmaGroup.add(bolt);
-
-    // Glow cylinder
-    const glowGeo = new THREE.CylinderGeometry(0.026, 0.026, boltLength, 6);  // 25% smaller glow
-    const glowBolt = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ 
-      color: plasmaColor, 
-      transparent: true, 
-      opacity: 0.25,
-      blending: THREE.AdditiveBlending 
-    }));
-    glowBolt.rotation.x = Math.PI / 2;
-    glowBolt.position.z = -boltLength / 2;
-    plasmaGroup.add(glowBolt);
-
-    plasmaGroup.visible = false;
-    plasmaGroup.userData.isPooled = true;
-    plasmaGroup.userData.poolType = 'plasma_carbine';
-    scene.add(plasmaGroup);
-    projectilePool.push(plasmaGroup);
-  }
-
-  console.log(`[performance] Projectile pool initialized: ${projectilePool.length} objects`);
+  console.log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(20), seeker(28), plasma_carbine(30)');
 }
 
-// PERFORMANCE: Get a projectile from pool or return null if exhausted
+// PERFORMANCE: Acquire an instance slot from the InstancedMesh pool.
+// Returns { index, pool } or null if pool exhausted.
 function getPooledProjectile(poolType, color) {
-  // Find inactive projectile of correct type
-  for (const proj of projectilePool) {
-    if (!proj.visible && proj.userData.poolType === poolType) {
-      if (proj.children) {
-        proj.children.forEach(child => {
-          if (child.material) child.material.color.setHex(color);
-        });
-      } else if (proj.material) {
-        proj.material.color.setHex(color);
-      }
-      return proj;
+  const pool = instancedProjectiles[poolType];
+  if (!pool) return null;
+
+  // Find a free slot
+  let slotIndex = -1;
+  if (pool.freeIndices.size > 0) {
+    slotIndex = pool.freeIndices.values().next().value;
+    pool.freeIndices.delete(slotIndex);
+  } else if (pool.mesh.count < pool.maxCount) {
+    slotIndex = pool.mesh.count;
+    pool.mesh.count = slotIndex + 1;
+  } else {
+    // Pool exhausted - try to recycle oldest
+    return null;
+  }
+
+  // Set instance color
+  pool.mesh.setColorAt(slotIndex, _projColor.setHex(color));
+
+  // Initialize instance data
+  if (!projectileInstanceData[slotIndex]) {
+    projectileInstanceData[slotIndex] = {};
+  }
+  const data = projectileInstanceData[slotIndex];
+  data.active = true;
+  data.poolType = poolType;
+  data.instanceIndex = slotIndex;
+  data.position = new THREE.Vector3();
+  data.quaternion = new THREE.Quaternion();
+
+  // Return a lightweight proxy object that updateProjectiles() can use
+  // This proxy mimics the old mesh interface: .position, .userData, .visible
+  return createProjectileProxy(poolType, slotIndex, color);
+}
+
+// Create a proxy object that mimics THREE.Mesh for projectile compatibility.
+// The proxy tracks position/rotation in the parallel data array and syncs
+// to the InstancedMesh via commitProjectileInstance().
+function createProjectileProxy(poolType, instanceIndex, color) {
+  const pool = instancedProjectiles[poolType];
+  const data = projectileInstanceData[instanceIndex];
+
+  // Proxy position that writes to InstancedMatrix on commit
+  const pos = new THREE.Vector3();
+
+  const proxy = {
+    // Compatible with existing code that checks these
+    visible: true,
+    userData: {
+      isPooled: true,
+      poolType: poolType,
+      instanceIndex: instanceIndex,
+      velocity: null,
+      stats: null,
+      controllerIndex: undefined,
+      isExploding: undefined,
+      lifetime: undefined,
+      createdAt: undefined,
+      hitEnemies: null,
+      shotId: undefined,
+      hitConfirmed: false,
+      homingRange: 0,
+      homingStrength: 0,
+      baseSpeed: 0,
+      homingTarget: null,
+      tailPhase: 0,
+      tailSpeed: 0,
+      direction: null,
+      speed: 0,
+      wigglePhase: Math.random() * Math.PI * 2,
+      damage: 0,
+      duration: 0,
+      isBossProjectile: false,
+      isDecoy: false,
+      explosionRadius: 0,
+      explosionDamage: 0,
+      naniteInfused: false,
+      isDroneProjectile: false,
+    },
+    // Position accessor - returns a vector that we sync to the instance matrix
+    get position() { return pos; },
+    set position(v) { pos.copy(v); },
+    // Quaternion for orientation
+    get quaternion() { return data.quaternion; },
+    set quaternion(q) { data.quaternion.copy(q); },
+    // Children accessor (compatibility for seeker visual updates)
+    children: [],
+    // Material (compatibility)
+    material: pool.mesh.material,
+  };
+
+  // Sync position to the InstancedMesh
+  proxy.commit = function() {
+    _projMatrix.compose(pos, data.quaternion, _projScale);
+    pool.mesh.setMatrixAt(instanceIndex, _projMatrix);
+    pool.mesh.instanceMatrix.needsUpdate = true;
+  };
+
+  return proxy;
+}
+
+// PERFORMANCE: Return projectile instance to pool (deactivate)
+function returnProjectileToPool(proj) {
+  if (!proj || !proj.userData) return;
+
+  const poolType = proj.userData.poolType;
+  const instanceIndex = proj.userData.instanceIndex;
+
+  if (poolType && instanceIndex !== undefined && instancedProjectiles[poolType]) {
+    const pool = instancedProjectiles[poolType];
+
+    // Hide instance by scaling to zero
+    _projMatrix.makeScale(0, 0, 0);
+    pool.mesh.setMatrixAt(instanceIndex, _projMatrix);
+    pool.mesh.instanceMatrix.needsUpdate = true;
+
+    // Mark as free
+    pool.freeIndices.add(instanceIndex);
+
+    // Adjust visible count if needed
+    while (pool.mesh.count > 0 && pool.freeIndices.has(pool.mesh.count - 1)) {
+      pool.mesh.count--;
+      pool.freeIndices.delete(pool.mesh.count);
+    }
+
+    // Clear instance data
+    if (projectileInstanceData[instanceIndex]) {
+      const d = projectileInstanceData[instanceIndex];
+      d.active = false;
+      // Reset all userData fields
+      const ud = proj.userData;
+      ud.velocity = null;
+      ud.stats = null;
+      ud.controllerIndex = undefined;
+      ud.isExploding = undefined;
+      ud.lifetime = undefined;
+      ud.createdAt = undefined;
+      ud.hitEnemies = null;
+      ud.homingRange = 0;
+      ud.homingStrength = 0;
+      ud.baseSpeed = 0;
+      ud.homingTarget = null;
+      ud.tailPhase = 0;
+      ud.tailSpeed = 0;
+      ud.direction = null;
+      ud.speed = 0;
+      ud.damage = 0;
+      ud.duration = 0;
+      ud.isBossProjectile = false;
+      ud.isDecoy = false;
+      ud.naniteInfused = false;
+      ud.isDroneProjectile = false;
+    }
+  } else {
+    // Fallback for non-instanced projectiles (hostile projectiles, decoys, etc.)
+    proj.visible = false;
+  }
+}
+
+// Commit all active projectile instance matrices to GPU
+// Call once per frame after updateProjectiles()
+function commitAllProjectileInstances() {
+  for (const poolType in instancedProjectiles) {
+    const pool = instancedProjectiles[poolType];
+    if (pool.mesh.instanceMatrix) {
+      pool.mesh.instanceMatrix.needsUpdate = true;
     }
   }
-
-  // Pool exhausted - return null (caller should skip spawn)
-  return null;
-}
-
-// PERFORMANCE: Return projectile to pool instead of destroying
-function returnProjectileToPool(proj) {
-  proj.visible = false;
-  proj.userData.velocity = null;
-  proj.userData.stats = null;
-  proj.userData.controllerIndex = undefined;
-  proj.userData.isExploding = undefined;
-  proj.userData.lifetime = undefined;
-  proj.userData.createdAt = undefined;
-  proj.userData.hitEnemies = null;
-  proj.userData.homingRange = undefined;
-  proj.userData.homingStrength = undefined;
-  proj.userData.baseSpeed = undefined;
-  proj.userData.homingTarget = undefined;
-  proj.userData.tailPhase = undefined;
-  proj.userData.tailSpeed = undefined;
 }
 
 function isHostileProjectile(proj) {
@@ -7471,6 +7565,11 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), direction);
   }
 
+  // Commit initial position to InstancedMesh
+  if (mesh.commit) {
+    mesh.commit();
+  }
+
   projectiles.push(mesh);
 
   if (!options.suppressSound) {
@@ -8037,8 +8136,6 @@ function resolveProjectileAccuracy(proj) {
 
 function updateProjectiles(dt) {
   const now = performance.now();
-  const raycaster = new THREE.Raycaster();
-  const enemies = getEnemyMeshes(true).concat(getBossMinionMeshes());
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const proj = projectiles[i];
@@ -8155,6 +8252,11 @@ function updateProjectiles(dt) {
     const moveDistance = proj.userData.velocity.length() * adjustedDt;
     proj.position.addScaledVector(proj.userData.velocity, adjustedDt);
 
+    // Commit position to InstancedMesh (sync GPU buffer)
+    if (proj.commit) {
+      proj.commit();
+    }
+
     // Check if projectile passes through nanite swarm and gains nanite damage
     checkProjectileNaniteInteraction(proj);
 
@@ -8218,6 +8320,7 @@ function updateProjectiles(dt) {
 
     let hits = [];
     if (nearbyEnemies.length > 0) {
+      const raycaster = new THREE.Raycaster();
       raycaster.set(proj.position, proj.userData.velocity.clone().normalize());
       hits = raycaster.intersectObjects(nearbyEnemies, true);
     }
@@ -8526,8 +8629,9 @@ function render(timestamp) {
 
   // PERFORMANCE: Log stats every 5 seconds in debug mode
   if (typeof window !== 'undefined' && window.debugPerfMonitor && frameCount % 300 === 0) {
+    const instancedCounts = Object.entries(instancedProjectiles).map(([t, p]) => `${t}:${p.mesh.count}/${p.maxCount}`).join(', ');
     console.log(`[PERF] Projectiles: ${projectiles.length}/${MAX_PROJECTILES}, ` +
-                `Pool: ${projectilePool.filter(p => p.visible).length}/${projectilePool.length} active, ` +
+                `InstancedMesh: {${instancedCounts}}, ` +
                 `Explosions: ${explosionVisuals.length}`);
   }
 
