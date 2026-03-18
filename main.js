@@ -47,7 +47,7 @@ import {
   updateHUDHover,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, showBossAlert, hideBossAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
-  updateHolographicGlitch, resetHoloGlitch,
+  updateHolographicGlitch, resetHoloGlitch, updateFloorHUDRotation,
   showFloatingMessage, hideFloatingMessage, updateFloatingMessage,
   nameEntryGroup
 } from './hud.js';
@@ -9089,6 +9089,9 @@ function render(timestamp) {
   if (st !== State.PLAYING) {
     updateHolographicGlitch(now);
   }
+
+  // Update floor HUD rotation (20° toward player direction)
+  updateFloorHUDRotation();
 
   // ── Unified UI hover detection for all menu states ──
   if (st === State.TITLE || st === State.UPGRADE_SELECT || st === State.SCOREBOARD || 
