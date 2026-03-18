@@ -413,9 +413,16 @@ export const THEMES = {
     hideBaseEnv: true,
     keepStars: true,
     customScene: 'synthwave_valley',
-    // Aurora borealis colors: cyan/magenta/purple - BRIGHTER
+    // Aurora borealis colors: synthwave gradient - horizon orange to pink to dark purple
     aurora: {
-      colors: ['rgba(0,255,255,0)', 'rgba(0,255,200,0.2)', 'rgba(200,0,255,0.35)', 'rgba(255,0,200,0.3)', 'rgba(100,0,180,0.15)', 'rgba(0,100,150,0)'],
+      colors: [
+        'rgba(254,144,83,0)',        // Transparent at very bottom
+        'rgba(254,144,83,0.4)',      // EXACT: Horizon orange #FE9053
+        'rgba(224,1,134,0.35)',      // EXACT: Mountain tips pink #E00186
+        'rgba(26,0,74,0.25)',        // EXACT: Dark purple #1A004A
+        'rgba(26,0,74,0.1)',         // Fade to transparent
+        'rgba(26,0,74,0)',
+      ],
     },
   },
 
