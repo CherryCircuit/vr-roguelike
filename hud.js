@@ -7,6 +7,9 @@ import * as THREE from 'three';
 import { State, game } from './game.js';
 import { playMenuHoverSound } from './audio.js';
 
+// VR camera height fix: Shift entire scene down so XR camera at ~0.875m appears 1.6m above floor
+const SCENE_Y_OFFSET = -0.725;
+
 // ── Module state ───────────────────────────────────────────
 let sceneRef, cameraRef;
 
@@ -914,7 +917,7 @@ export function showLevelComplete(level, playerPos) {
 
   // Position in front of player (VR-friendly)
   levelTextGroup.position.copy(playerPos);
-  levelTextGroup.position.y += 1.3; // Moved down for better centering
+  levelTextGroup.position.y += 1.3 + SCENE_Y_OFFSET; // Moved down for better centering
   levelTextGroup.position.z -= 3; // 3 feet in front of player
   levelTextGroup.visible = true;
 }
@@ -938,9 +941,9 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
     upgradeGroup.position.copy(playerPos);
   } else {
     console.warn('[hud] showUpgradeCards received invalid playerPos, using default');
-    upgradeGroup.position.set(0, 1.6, -4);
+    upgradeGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4);
   }
-  upgradeGroup.position.y += 0.9; // Moved down for better centering
+  upgradeGroup.position.y += 0.9 + SCENE_Y_OFFSET; // Moved down for better centering
   upgradeGroup.position.z -= 4; // 4 feet in front of player
 
   // "Choose an upgrade for [HAND]" header
@@ -1210,7 +1213,7 @@ export function showGameOver(score, playerPos) {
 
   // Position in front of player (VR-friendly)
   gameOverGroup.position.copy(playerPos);
-  gameOverGroup.position.y += 1.6; // Eye level
+  gameOverGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
   gameOverGroup.position.z -= 5; // 5 feet in front of player
   gameOverGroup.visible = true;
 }
@@ -1234,7 +1237,7 @@ export function showVictory(score, playerPos) {
 
   // Position in front of player (VR-friendly)
   gameOverGroup.position.copy(playerPos);
-  gameOverGroup.position.y += 1.6; // Eye level
+  gameOverGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
   gameOverGroup.position.z -= 5; // 5 feet in front of player
   gameOverGroup.visible = true;
 }
@@ -1905,8 +1908,8 @@ export function showDebugMenu() {
   hideAll();
   while (debugMenuGroup.children.length) debugMenuGroup.remove(debugMenuGroup.children[0]);
   debugToggleItems = [];
-  
-  debugMenuGroup.position.set(0, 1.6, -4);
+
+  debugMenuGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4);
   debugMenuGroup.visible = true;
 
   // Header
@@ -2164,10 +2167,10 @@ export function showReadyScreen(level, playerPos) {
   // Position in front of the player
   if (playerPos) {
     readyGroup.position.copy(playerPos);
-    readyGroup.position.y = 1.6;
+    readyGroup.position.y = 1.6 + SCENE_Y_OFFSET;
     readyGroup.position.z -= 4;
   } else {
-    readyGroup.position.set(0, 1.6, -4);
+    readyGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4);
   }
   readyGroup.visible = true;
 
@@ -2223,7 +2226,7 @@ export function showLevelIntro(level) {
   levelIntroStage = 'level';
 
   // Position in front of spawn
-  levelTextGroup.position.set(0, 1.6, -4);
+  levelTextGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4);
   levelTextGroup.visible = true;
 
   // "LEVEL" text
@@ -2325,7 +2328,7 @@ export function showKillsRemainingAlert(remaining) {
   const jitter = 0.2;
   const jitterX = (Math.random() - 0.5) * jitter * 2;
   const jitterY = (Math.random() - 0.5) * jitter * 2;
-  levelTextGroup.position.set(jitterX, 1.6 + jitterY, -4.5);
+  levelTextGroup.position.set(jitterX, 1.6 + jitterY + SCENE_Y_OFFSET, -4.5);
   levelTextGroup.visible = true;
 
   // Clear any existing content
@@ -2347,7 +2350,7 @@ export function showKillsRemainingAlert(remaining) {
 
 export function showBossAlert() {
   // Position in front of player (VR-friendly)
-  levelTextGroup.position.set(0, 1.6, -4.5);
+  levelTextGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4.5);
   levelTextGroup.visible = true;
 
   // Clear any existing content
@@ -2474,10 +2477,10 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
   // Position in front of player (VR-friendly)
   if (playerPos) {
     nameEntryGroup.position.copy(playerPos);
-    nameEntryGroup.position.y += 1.6; // Eye level
+    nameEntryGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
     nameEntryGroup.position.z -= 4; // 4 feet in front of player
   } else {
-    nameEntryGroup.position.set(0, 1.6, -4); // Fallback
+    nameEntryGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4); // Fallback
   }
   nameEntryGroup.visible = true;
 
@@ -2745,10 +2748,10 @@ export function showScoreboard(scores, headerText, playerPos) {
   // Position in front of player (VR-friendly)
   if (playerPos) {
     scoreboardGroup.position.copy(playerPos);
-    scoreboardGroup.position.y += 1.6; // Eye level
+    scoreboardGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
     scoreboardGroup.position.z -= 5; // 5 feet in front of player
   } else {
-    scoreboardGroup.position.set(0, 1.6, -5); // Fallback
+    scoreboardGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -5); // Fallback
   }
   scoreboardGroup.visible = true;
 
@@ -3030,10 +3033,10 @@ export function showCountrySelect(countries, continents, initialContinent, playe
   // Position in front of player (VR-friendly)
   if (playerPos) {
     countrySelectGroup.position.copy(playerPos);
-    countrySelectGroup.position.y += 1.6; // Eye level
+    countrySelectGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
     countrySelectGroup.position.z -= 4; // 4 feet in front of player
   } else {
-    countrySelectGroup.position.set(0, 1.6, -4); // Fallback
+    countrySelectGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4); // Fallback
   }
   countrySelectGroup.visible = true;
 
