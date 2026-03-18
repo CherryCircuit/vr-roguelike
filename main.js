@@ -310,6 +310,12 @@ const originalCameraPos = new THREE.Vector3();
 function getAdjustedCameraPosition() {
   const worldPos = new THREE.Vector3();
   camera.getWorldPosition(worldPos);
+  
+  // DEBUG: Log camera Y in VR to diagnose targeting issue
+  if (renderer && renderer.xr && renderer.xr.isPresenting) {
+    console.log('[VR DEBUG] Camera Y:', worldPos.y.toFixed(3), 'Local Y:', camera.position.y.toFixed(3));
+  }
+  
   return worldPos;
 }
 
