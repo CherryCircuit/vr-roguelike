@@ -72,7 +72,7 @@ window.game = game;
 
 // ── Constants ──────────────────────────────────────────────
 const NEON_PINK = 0xff00ff;
-const NEON_CYAN = 0x00ffff;
+const NEON_CYAN = 0x00aaaa;  // Muted teal (not bright neon cyan)
 const DARK_BG = 0x0a0015;
 const SUN_CORE = 0xffaa00;
 const SUN_GLOW = 0xff6600;
@@ -99,7 +99,7 @@ function getCountryDisplayLabel() {
 
 // ── Module State ───────────────────────────────────────────
 let scene, camera, renderer;
-let cameraRig;  // Parent group for VR camera height offset
+// Camera added directly to scene (no rig - VR hands need direct camera)
 let floorHUDDebugMarker;  // Small white box to show floor HUD position
 const controllers = [];
 const controllerTriggerPressed = [false, false];
@@ -375,22 +375,11 @@ function init() {
   scene.background = new THREE.Color(0x000000);
   scene.fog = new THREE.FogExp2(0x000000, 0.012);
 
-  // Camera rig for VR height offset
-  // In Three.js WebXR, the camera position is controlled by the XR device.
-  // To adjust the virtual camera height, we put the camera inside a "rig" group
-  // and translate the rig. This is different from the reference space offset approach
-  // which didn't work in testing.
-  cameraRig = new THREE.Group();
-  cameraRig.name = 'cameraRig';
-
-  // Camera
+  // Camera - added directly to scene for proper VR hand positioning
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(0, 1.6, 0);
   camera.rotation.set(0, 0, 0);
-
-  // Add camera to rig, then rig to scene
-  cameraRig.add(camera);
-  scene.add(cameraRig);
+  scene.add(camera);
 
   // Renderer — optimized for Quest performance
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -411,34 +400,15 @@ function init() {
   document.body.appendChild(vrButton);
 
   // Disable foveated rendering (removes visible quality boxes in Quest VR)
-  // Apply VR camera height offset using the camera rig approach
   renderer.xr.addEventListener('sessionstart', () => {
     console.log('[vr] Session started - disabling foveation');
     renderer.xr.setFoveation(0);
-
-    // Apply camera height offset by translating the camera rig
-    // This approach moves the entire camera hierarchy upward
-    const CAMERA_HEIGHT_OFFSET = 0.4;  // meters to raise the virtual camera
-    cameraRig.position.y = CAMERA_HEIGHT_OFFSET;
-    console.log('[vr] Applied camera height offset of', CAMERA_HEIGHT_OFFSET, 'm via camera rig');
-    console.log('[vr] Camera rig position:', cameraRig.position);
-    console.log('[vr] Camera local position:', camera.position);
-
-    // Log the world position after a short delay (once XR has updated the camera)
-    setTimeout(() => {
-      const worldPos = new THREE.Vector3();
-      camera.getWorldPosition(worldPos);
-      console.log('[vr] Camera world position after XR update:', worldPos);
-    }, 1000);
-
-    // Note: We tried the XRReferenceSpace.getOffsetReferenceSpace() approach but it didn't work.
-    // The camera rig approach is more reliable because it directly translates the camera hierarchy.
+    // Camera is added directly to scene - VR hands work correctly now
   });
 
-  // Reset camera rig position when VR session ends
+  // No camera rig reset needed - camera is direct child of scene
   renderer.xr.addEventListener('sessionend', () => {
-    console.log('[vr] Session ended - resetting camera rig');
-    cameraRig.position.y = 0;
+    console.log('[vr] Session ended');
   });
 
   // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
@@ -9485,7 +9455,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Terrain - CYAN grid floor (synthwave style)
   const terrainUniforms = {
-    uGridColor: { value: new THREE.Color(0x00ffff) },     // Cyan grid
+    uGridColor: { value: new THREE.Color(0x00aaaa) },     // Muted teal grid
     uBaseColor: { value: new THREE.Color(0x0a0020) },     // Dark base
     uFogColor: { value: new THREE.Color(0x1a0030) },      // Purple fog
     uFlashIntensity: { value: 0.0 },
@@ -9513,12 +9483,12 @@ function buildSynthwaveValleyScene(group) {
   // Store terrain material for damage flash
   biomeTerrainMaterials.push({ type: 'shader', material: terrainMat });
 
-  // Mountains with polygonOffset to prevent Z-fighting
-  // CYAN wireframe grid style mountains (synthwave aesthetic)
+  // Muted teal mountains - darker, moodier synthwave aesthetic
+  // Restored quality: step reduced from 40 to 20 for higher resolution
   const makeLayer = (color, opacity, scaleY, z, y) => {
     const points = [];
     const width = 2000;
-    const step = 40;
+    const step = 20;
     for (let x = -width / 2; x <= width / 2; x += step) {
       const n1 = Math.sin(x * 0.012 + z * 0.003) * 0.5 + 0.5;
       const n2 = Math.sin(x * 0.043 - z * 0.001) * 0.5 + 0.5;
@@ -9545,10 +9515,10 @@ function buildSynthwaveValleyScene(group) {
     group.add(mesh);
     registerFadeMaterial(mat);
   };
-  // Cyan mountains - multiple layers for depth
-  makeLayer(0x00dddd, 0.35, 100, -900, -15);  // Far cyan layer (more visible)
-  makeLayer(0x00ffff, 0.45, 80, -850, -10);   // Main cyan layer
-  makeLayer(0x00aaaa, 0.25, 60, -800, -5);    // Near cyan layer (darker)
+  // Muted teal mountains - multiple layers for depth
+  makeLayer(0x007777, 0.35, 100, -900, -15);  // Far layer (darker)
+  makeLayer(0x008888, 0.45, 80, -850, -10);   // Main layer
+  makeLayer(0x006666, 0.25, 60, -800, -5);    // Near layer (darkest)
 
   // Sun + glow - smaller stylized sun (not massive)
   const sunGroup = new THREE.Group();
@@ -10954,6 +10924,11 @@ function buildHellscapeLavaScene(group) {
   // Hellscape floor HUD height: group.position.y = 0.05
   group.position.set(26.599, 0.05, -0.486);
   group.rotation.y = 0.248; // yaw: 14.21°
+}
+
+
+
+y = 0.248; // yaw: 14.21°
 }
 
 
