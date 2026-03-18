@@ -810,6 +810,7 @@ function rebuildBiomeProps(biomeId, theme) {
       const z = zStart + i * zStep;
       const arch = new THREE.Mesh(geo, material);
       arch.name = `arch_${i}`;
+      arch.userData.sceneryName = 'arch';
       arch.scale.set(radius, radius, radius);
       arch.position.set(0, y, z);
       arch.rotation.x = Math.PI;
