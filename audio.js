@@ -452,13 +452,13 @@ export function playExplosionSound() {
 
 // ── Player damage ──────────────────────────────────────────
 export function playDamageSound() {
-  // Minecraft-style "OUCH" - sharp static crack with immediate impact
-  // Key: white noise burst + low thump, very short (0.1-0.15s)
+  // Minecraft-style "OUCH" - sharp static crack with extended decay
+  // Extended from 0.12s to 0.22s for better feedback feel
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
   // 1. WHITE NOISE BURST - the "crack" sound (like Minecraft hit)
-  const noiseBufferSize = Math.floor(ctx.sampleRate * 0.12); // 120ms
+  const noiseBufferSize = Math.floor(ctx.sampleRate * 0.22); // 220ms (extended from 120ms)
   const noiseBuffer = ctx.createBuffer(1, noiseBufferSize, ctx.sampleRate);
   const noiseData = noiseBuffer.getChannelData(0);
   for (let i = 0; i < noiseBufferSize; i++) {
@@ -474,49 +474,49 @@ export function playDamageSound() {
   noiseFilter.frequency.setValueAtTime(2000, t); // Mid-high crack
   noiseFilter.Q.setValueAtTime(2, t);
 
-  // Noise envelope: INSTANT attack, quick decay
+  // Noise envelope: INSTANT attack, extended decay
   const noiseGain = ctx.createGain();
   noiseGain.gain.setValueAtTime(0.5, t); // LOUD initial crack
-  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08); // Fast decay
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15); // Extended decay
 
   noise.connect(noiseFilter);
   noiseFilter.connect(noiseGain);
   noiseGain.connect(ctx.destination);
 
   noise.start(t);
-  noise.stop(t + 0.12);
+  noise.stop(t + 0.22);
 
-  // 2. LOW THUMP - body impact feel
+  // 2. LOW THUMP - body impact feel (extended decay)
   const thumpOsc = ctx.createOscillator();
   thumpOsc.type = 'sine';
   thumpOsc.frequency.setValueAtTime(150, t);
-  thumpOsc.frequency.exponentialRampToValueAtTime(40, t + 0.1); // Drop for "punch"
+  thumpOsc.frequency.exponentialRampToValueAtTime(40, t + 0.2); // Extended drop
 
   const thumpGain = ctx.createGain();
   thumpGain.gain.setValueAtTime(0.4, t); // Strong initial thump
-  thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+  thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.2); // Extended decay
 
   thumpOsc.connect(thumpGain);
   thumpGain.connect(ctx.destination);
 
   thumpOsc.start(t);
-  thumpOsc.stop(t + 0.1);
+  thumpOsc.stop(t + 0.2);
 
   // 3. HIGH CRACK - add sharpness (like a whip crack)
   const crackOsc = ctx.createOscillator();
   crackOsc.type = 'square';
   crackOsc.frequency.setValueAtTime(800, t);
-  crackOsc.frequency.exponentialRampToValueAtTime(100, t + 0.05); // Quick drop
+  crackOsc.frequency.exponentialRampToValueAtTime(100, t + 0.08); // Extended drop
 
   const crackGain = ctx.createGain();
   crackGain.gain.setValueAtTime(0.15, t);
-  crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+  crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08); // Extended decay
 
   crackOsc.connect(crackGain);
   crackGain.connect(ctx.destination);
 
   crackOsc.start(t);
-  crackOsc.stop(t + 0.05);
+  crackOsc.stop(t + 0.08);
 }
 
 // ── Enemy/Boss Projectile Fire Sound ─────────────────────────

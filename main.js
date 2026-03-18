@@ -99,6 +99,7 @@ function getCountryDisplayLabel() {
 
 // ── Module State ───────────────────────────────────────────
 let scene, camera, renderer;
+let cameraRig;  // Parent group for VR camera height offset
 let floorHUDDebugMarker;  // Small white box to show floor HUD position
 const controllers = [];
 const controllerTriggerPressed = [false, false];
@@ -304,10 +305,13 @@ let cameraShakeIntensity = 0;
 const originalCameraPos = new THREE.Vector3();
 
 // Helper: Get camera position for UI positioning and enemy targeting
-// With the XR reference space offset (set during session start), camera.position.y
-// already includes the height offset. This function just returns the current position.
+// Returns the WORLD position of the camera (including camera rig offset)
+// In VR mode, the camera rig adds a height offset, so we need to get the world position
+// to ensure enemies target the correct height.
 function getAdjustedCameraPosition() {
-  return camera.position.clone();
+  const worldPos = new THREE.Vector3();
+  camera.getWorldPosition(worldPos);
+  return worldPos;
 }
 
 // Screen shake system
@@ -371,10 +375,22 @@ function init() {
   scene.background = new THREE.Color(0x000000);
   scene.fog = new THREE.FogExp2(0x000000, 0.012);
 
+  // Camera rig for VR height offset
+  // In Three.js WebXR, the camera position is controlled by the XR device.
+  // To adjust the virtual camera height, we put the camera inside a "rig" group
+  // and translate the rig. This is different from the reference space offset approach
+  // which didn't work in testing.
+  cameraRig = new THREE.Group();
+  cameraRig.name = 'cameraRig';
+
   // Camera
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(0, 1.6, 0);
   camera.rotation.set(0, 0, 0);
+
+  // Add camera to rig, then rig to scene
+  cameraRig.add(camera);
+  scene.add(cameraRig);
 
   // Renderer — optimized for Quest performance
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -395,30 +411,34 @@ function init() {
   document.body.appendChild(vrButton);
 
   // Disable foveated rendering (removes visible quality boxes in Quest VR)
+  // Apply VR camera height offset using the camera rig approach
   renderer.xr.addEventListener('sessionstart', () => {
     console.log('[vr] Session started - disabling foveation');
     renderer.xr.setFoveation(0);
 
-    // Fix VR camera height by offsetting the XR reference space
-    // In WebXR, camera.position is controlled by the XR device and updated every frame.
-    // To raise the virtual camera, we need to offset the reference space origin.
-    const session = renderer.xr.getSession();
-    if (session) {
-      session.requestReferenceSpace('local-floor').then((refSpace) => {
-        // Create an offset that raises the virtual camera by 0.4m
-        // This makes the player appear taller in the virtual world
-        const CAMERA_HEIGHT_OFFSET = 0.4;  // meters to raise the virtual camera
-        const offsetTransform = new XRRigidTransform(
-          { x: 0, y: CAMERA_HEIGHT_OFFSET, z: 0 },
-          { x: 0, y: 0, z: 0, w: 1 }
-        );
-        const offsetRefSpace = refSpace.getOffsetReferenceSpace(offsetTransform);
-        renderer.xr.setReferenceSpace(offsetRefSpace);
-        console.log('[vr] Applied camera height offset of', CAMERA_HEIGHT_OFFSET, 'm');
-      }).catch((err) => {
-        console.warn('[vr] Failed to set reference space offset:', err);
-      });
-    }
+    // Apply camera height offset by translating the camera rig
+    // This approach moves the entire camera hierarchy upward
+    const CAMERA_HEIGHT_OFFSET = 0.4;  // meters to raise the virtual camera
+    cameraRig.position.y = CAMERA_HEIGHT_OFFSET;
+    console.log('[vr] Applied camera height offset of', CAMERA_HEIGHT_OFFSET, 'm via camera rig');
+    console.log('[vr] Camera rig position:', cameraRig.position);
+    console.log('[vr] Camera local position:', camera.position);
+
+    // Log the world position after a short delay (once XR has updated the camera)
+    setTimeout(() => {
+      const worldPos = new THREE.Vector3();
+      camera.getWorldPosition(worldPos);
+      console.log('[vr] Camera world position after XR update:', worldPos);
+    }, 1000);
+
+    // Note: We tried the XRReferenceSpace.getOffsetReferenceSpace() approach but it didn't work.
+    // The camera rig approach is more reliable because it directly translates the camera hierarchy.
+  });
+
+  // Reset camera rig position when VR session ends
+  renderer.xr.addEventListener('sessionend', () => {
+    console.log('[vr] Session ended - resetting camera rig');
+    cameraRig.position.y = 0;
   });
 
   // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
@@ -8438,7 +8458,7 @@ function render(timestamp) {
   const dt = rawDt * effectiveTimeScale;  // Scaled time for game logic
 
   if (currentTheme) {
-    updateAmbientParticles(rawDt, currentTheme, camera.position);
+    updateAmbientParticles(rawDt, currentTheme, getAdjustedCameraPosition());
   }
   updateBiomeProps(now, rawDt);
   
@@ -8689,7 +8709,7 @@ function render(timestamp) {
     }
 
     // Fast enemy proximity alerts
-    updateFastEnemyAlerts(dt, camera.position);
+    updateFastEnemyAlerts(dt, getAdjustedCameraPosition());
 
     // Update enemies - use adjusted camera position for VR mode
     // This ensures enemies target the correct height (1.6m) regardless of VR camera Y
@@ -9281,7 +9301,7 @@ function render(timestamp) {
   // ── New ALT weapon updates ──
   updateGrenades(dt, now);
   updateProximityMines(now, dt);
-  updateAttackDrones(now, dt, camera.position);
+  updateAttackDrones(now, dt, getAdjustedCameraPosition());
   updateEMPVisuals(now, dt);
   updateTeleportEffects(now, dt);
   updateFPS(now, {
@@ -9442,14 +9462,15 @@ function buildSynthwaveValleyScene(group) {
   }
 
   // Sky dome (no stars, we use global starfield)
+  // Orange → pink → purple horizon atmosphere fading out
   const skyGeo = new THREE.SphereGeometry(2800, 32, 24);
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: {
-      topColor: { value: new THREE.Color(0x2a004a) },
-      midColor: { value: new THREE.Color(0x7b2cbf) },
-      horizonColor: { value: new THREE.Color(0xd93ea2) },
-      glowColor: { value: new THREE.Color(0xffb2df) },
+      topColor: { value: new THREE.Color(0x1a0030) },      // Deep purple at top
+      midColor: { value: new THREE.Color(0x6b2d8c) },      // Purple mid
+      horizonColor: { value: new THREE.Color(0xff6b4a) },  // Orange at horizon
+      glowColor: { value: new THREE.Color(0xff99aa) },     // Pink glow band
     },
     // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
     // stable in stereo rendering and does not rely on manual clip-space math.
@@ -9462,11 +9483,11 @@ function buildSynthwaveValleyScene(group) {
   group.add(sky);
   registerFadeMaterial(skyMat);
 
-  // Terrain
+  // Terrain - CYAN grid floor (synthwave style)
   const terrainUniforms = {
-    uGridColor: { value: new THREE.Color(0xff2ed1) },
-    uBaseColor: { value: new THREE.Color(0x0a0020) },
-    uFogColor: { value: new THREE.Color(0x2a004a) },
+    uGridColor: { value: new THREE.Color(0x00ffff) },     // Cyan grid
+    uBaseColor: { value: new THREE.Color(0x0a0020) },     // Dark base
+    uFogColor: { value: new THREE.Color(0x1a0030) },      // Purple fog
     uFlashIntensity: { value: 0.0 },
   };
   const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 80, 80);
@@ -9493,7 +9514,7 @@ function buildSynthwaveValleyScene(group) {
   biomeTerrainMaterials.push({ type: 'shader', material: terrainMat });
 
   // Mountains with polygonOffset to prevent Z-fighting
-  // Restored quality: reduced step from 80 to 40 for better mountain resolution
+  // CYAN wireframe grid style mountains (synthwave aesthetic)
   const makeLayer = (color, opacity, scaleY, z, y) => {
     const points = [];
     const width = 2000;
@@ -9524,12 +9545,14 @@ function buildSynthwaveValleyScene(group) {
     group.add(mesh);
     registerFadeMaterial(mat);
   };
-  makeLayer(0x5f1da8, 0.18, 80, -850, -10);
-  // Removed purple triangle layers at -700 and -560 (user requested)
+  // Cyan mountains - multiple layers for depth
+  makeLayer(0x00dddd, 0.35, 100, -900, -15);  // Far cyan layer (more visible)
+  makeLayer(0x00ffff, 0.45, 80, -850, -10);   // Main cyan layer
+  makeLayer(0x00aaaa, 0.25, 60, -800, -5);    // Near cyan layer (darker)
 
-  // Sun + glow
+  // Sun + glow - smaller stylized sun (not massive)
   const sunGroup = new THREE.Group();
-  sunGroup.position.set(0, 30 + 8, -760);  // Moved up by 8 units (Task 4)
+  sunGroup.position.set(0, 55 + 8, -760);  // Raised position for smaller sun
   group.add(sunGroup);
 
   const makeRadial = (inner, outer) => {
@@ -9544,50 +9567,68 @@ function buildSynthwaveValleyScene(group) {
     ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
     return new THREE.CanvasTexture(c);
   };
-  // EXTREMELY bright sun - orange-yellow core with massive glow to illuminate the scene
-  const sunGlowTex = makeRadial('rgba(255,200,50,1.0)', 'rgba(255,150,30,0.85)');
-  const sunCoreTex = makeRadial('rgba(255,220,80,1.0)', 'rgba(255,200,50,1.0)');
-  // Add a second brighter glow layer for maximum intensity
-  const sunOuterGlowTex = makeRadial('rgba(255,230,100,0.9)', 'rgba(255,180,60,0.3)');
-  // Outer massive glow - very large to illuminate scene (FIX: converted Sprite to Mesh to disable billboarding)
-  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), sunOuterGlowMat);
-  sunOuterGlow.scale.set(700, 700, 1);
+  // Stylized sun - orange-yellow core with moderate glow
+  const sunGlowTex = makeRadial('rgba(255,180,50,1.0)', 'rgba(255,100,30,0.7)');
+  const sunCoreTex = makeRadial('rgba(255,220,100,1.0)', 'rgba(255,180,50,1.0)');
+  const sunOuterGlowTex = makeRadial('rgba(255,200,80,0.6)', 'rgba(255,120,50,0.2)');
+  // Outer glow - moderate size (FIX: converted Sprite to Mesh to disable billboarding)
+  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(280, 280), sunOuterGlowMat);
   sunOuterGlow.frustumCulled = false;
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
   registerFadeMaterial(sunOuterGlowMat);
-  // Main bright glow (FIX: converted Sprite to Mesh to disable billboarding)
-  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffcc00, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(550, 550), sunGlowMat);
-  sunGlow.scale.set(550, 550, 1);
+  // Main glow (FIX: converted Sprite to Mesh to disable billboarding)
+  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffaa00, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), sunGlowMat);
   sunGlow.frustumCulled = false;
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
   registerFadeMaterial(sunGlowMat);
-  // Orange-yellow core - should be visible as a distinct circle (FIX: converted Sprite to Mesh to disable billboarding)
-  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunCoreTex, color: 0xffdd00, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), sunCoreMat);
-  sunCore.scale.set(200, 200, 1);  // Smaller core for distinct circle
+  // Orange-yellow core - smaller distinct circle (FIX: converted Sprite to Mesh to disable billboarding)
+  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunCoreTex, color: 0xffcc00, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), sunCoreMat);
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
   registerFadeMaterial(sunCoreMat);
 
-  // Horizon glow - EXTREMELY bright to match the orange-yellow sun and illuminate the scene
+  // Horizon glow - orange→pink→purple gradient fade matching the atmosphere
   const horizonGlowGeo = new THREE.PlaneGeometry(1400, 150);
   const horizonGlowMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    uniforms: { c1: { value: new THREE.Color(0xffcc00) }, c2: { value: new THREE.Color(0xffaa00) } },
+    uniforms: { 
+      c1: { value: new THREE.Color(0xffaa44) },  // Orange center
+      c2: { value: new THREE.Color(0xff6688) }   // Pink edges
+    },
     vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
-    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.38,vUv.y)*(1.0-smoothstep(0.62,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.4,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*1.5); gl_FragColor=vec4(col, alpha*side*0.95); }`,
+    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.38,vUv.y)*(1.0-smoothstep(0.62,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.4,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*1.5); gl_FragColor=vec4(col, alpha*side*0.85); }`,
   });
   const horizonGlow = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
   horizonGlow.position.set(0, 12 + 8, -745);  // Moved up by 8 units (Task 4)
   horizonGlow.frustumCulled = false;
   group.add(horizonGlow);
   registerFadeMaterial(horizonGlowMat);
+
+  // Subtle pink ground fade near horizon
+  const groundFadeGeo = new THREE.PlaneGeometry(1600, 200);
+  const groundFadeMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { 
+      c1: { value: new THREE.Color(0xff6688) },  // Pink
+      c2: { value: new THREE.Color(0x1a0030) }   // Purple fade to dark
+    },
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(1.0,0.3,vUv.y)*0.25; vec3 col=mix(c1,c2,vUv.y); gl_FragColor=vec4(col, alpha); }`,
+  });
+  const groundFade = new THREE.Mesh(groundFadeGeo, groundFadeMat);
+  groundFade.position.set(0, 5 + 8, -650);
+  groundFade.rotation.x = -Math.PI * 0.1;
+  groundFade.frustumCulled = false;
+  group.add(groundFade);
+  registerFadeMaterial(groundFadeMat);
 
   // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
   // The standalone HTML used perpetual scrolling and pulsing, but the game
