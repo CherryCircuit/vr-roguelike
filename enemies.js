@@ -594,8 +594,7 @@ function spawnBabySpiders(position, count = 3) {
     spider.position.copy(position);
     spider.position.x += (Math.random() - 0.5) * 0.5;
     spider.position.z += (Math.random() - 0.5) * 0.5;
-    const SCENE_Y_OFFSET = -0.725;
-    spider.position.y = 0.3 + SCENE_Y_OFFSET;
+    spider.position.y = 0.3;
 
     sceneRef.add(spider);
     babySpiders.push({
@@ -627,8 +626,7 @@ function spawnShieldShards(position, count = 3) {
     shard.position.copy(position);
     shard.position.x += (Math.random() - 0.5) * 1.5;
     shard.position.z += (Math.random() - 0.5) * 1.5;
-    const SCENE_Y_OFFSET = -0.725;
-    shard.position.y = 0.3 + SCENE_Y_OFFSET;
+    shard.position.y = 0.3;
 
     sceneRef.add(shard);
     shieldShards.push({
@@ -1468,8 +1466,7 @@ export function updateEnemies(dt, now, playerPos) {
       e.mesh.position.x += Math.cos(e.spiralAngle) * 0.3 * dt;
       e.mesh.position.y += spiralOffset * 0.1 * dt;
       // Keep within bounds
-      const SCENE_Y_OFFSET = -0.725;
-      e.mesh.position.y = Math.max(0.5 + SCENE_Y_OFFSET, Math.min(3.5 + SCENE_Y_OFFSET, e.mesh.position.y));
+      e.mesh.position.y = Math.max(0.5, Math.min(3.5, e.mesh.position.y));
 
       // Animate trailing voxels to follow in spiral
       if (e.trailingVoxels) {
@@ -1587,16 +1584,15 @@ export function updateEnemies(dt, now, playerPos) {
         if (Math.random() < 0.01) {
           const surfaces = ['floor', 'wall', 'ceiling'];
           const surface = surfaces[Math.floor(Math.random() * surfaces.length)];
-          const SCENE_Y_OFFSET = -0.725;
 
           if (surface === 'ceiling') {
-            e.mesh.position.y = 3.5 + SCENE_Y_OFFSET;
+            e.mesh.position.y = 3.5;
             e.wallNormal.set(0, -1, 0);
           } else if (surface === 'wall') {
-            e.mesh.position.y = 1.5 + Math.random() + SCENE_Y_OFFSET;
+            e.mesh.position.y = 1.5 + Math.random();
             e.wallNormal.set(Math.random() > 0.5 ? 1 : -1, 0, 0);
           } else {
-            e.mesh.position.y = 0.5 + SCENE_Y_OFFSET;
+            e.mesh.position.y = 0.5;
             e.wallNormal.set(0, 1, 0);
           }
         }
@@ -1631,8 +1627,7 @@ export function updateEnemies(dt, now, playerPos) {
         // Auto-detach after 3 seconds
         if (e.latchTimer > 3) {
           e.spiderState = 'roaming';
-          const SCENE_Y_OFFSET = -0.725;
-          e.mesh.position.y = 0.5 + SCENE_Y_OFFSET;
+          e.mesh.position.y = 0.5;
         }
       }
     }
@@ -2841,8 +2836,7 @@ class ScrapGolemBoss extends Boss {
     const pos = this.mesh.position.clone();
     pos.x += Math.cos(angle) * dist;
     pos.z += Math.sin(angle) * dist;
-    const SCENE_Y_OFFSET = -0.725;
-    pos.y = 1 + SCENE_Y_OFFSET;
+    pos.y = 1;
 
     // Use spawnBossMinion from enemies.js
     if (typeof spawnBossMinion === 'function') {
@@ -3674,8 +3668,7 @@ class SkullBoss extends Boss {
     const bound = 15;
     this.mesh.position.x = Math.max(-bound, Math.min(bound, this.mesh.position.x));
     this.mesh.position.z = Math.max(-bound, Math.min(bound, this.mesh.position.z));
-    const SCENE_Y_OFFSET = -0.725;
-    this.mesh.position.y = 1.5 + SCENE_Y_OFFSET;
+    this.mesh.position.y = 1.5;
   }
   
   fireHandProjectile(hand, playerPos) {
@@ -4219,8 +4212,7 @@ class DJBoss extends Boss {
 
     // Slight movement to the beat
     const beatOffset = Math.sin(now * 0.01) * 0.1;
-    const SCENE_Y_OFFSET = -0.725;
-    this.mesh.position.y = 1.5 + beatOffset + SCENE_Y_OFFSET;
+    this.mesh.position.y = 1.5 + beatOffset;
 
     this.mesh.lookAt(_look.copy(playerPos));
   }
@@ -7042,12 +7034,10 @@ export function getSpawnPosition(airSpawns, verticalAngle = 0, distanceRange = n
 
   const x = Math.sin(angle) * distance;
   const z = -Math.cos(angle) * distance;
-  // Apply scene Y offset for VR camera height fix
-  const SCENE_Y_OFFSET = -0.725;
-  let y = 1.5 + SCENE_Y_OFFSET;
+  let y = 1.5;
 
   if (airSpawns) {
-    y = 0.5 + Math.random() * 2.5 + SCENE_Y_OFFSET;
+    y = 0.5 + Math.random() * 2.5;
   }
 
   // Apply vertical angle for difficulty progression

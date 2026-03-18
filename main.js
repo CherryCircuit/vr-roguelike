@@ -388,9 +388,7 @@ function init() {
   camera.rotation.set(0, 0, 0);
   scene.add(camera);
 
-  // Set camera height only in desktop mode (VR uses XR tracking)
-  // Note: WebXR will override this in VR mode
-  camera.position.set(0, 1.6, 0);
+  // Camera position is controlled by WebXR in VR mode, desktop mode sets it elsewhere
 
   // Renderer — optimized for Quest performance
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
