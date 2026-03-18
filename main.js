@@ -10928,8 +10928,3 @@ function buildHellscapeLavaScene(group) {
 
 
 
-y = 0.248; // yaw: 14.21°
-}
-
-
-
