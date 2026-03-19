@@ -2551,23 +2551,6 @@ export function updateEnemies(dt, now, playerPos) {
     _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
     e.mesh.lookAt(_look);
 
-    // Apply visual tints for status effects
-    e.mesh.traverse(c => {
-      if (c.isMesh && c.material) {
-        const baseColor = e.baseColor.clone();
-        if (se.fire.stacks > 0) {
-          c.material.color.setHex(0xff4400);
-        } else if (se.freeze.stacks > 0) {
-          c.material.color.setHex(0x44aaff);
-        } else if (se.shock.stacks > 0) {
-          c.material.color.setHex(0xffff44);
-        } else {
-          const dmgRatio = 1 - e.hp / e.maxHp;
-          c.material.color.copy(baseColor).lerp(_redColor, dmgRatio);
-        }
-      }
-    });
-
     // ── Collision with player ──
     if (dist < 0.9) {
       collisions.push(i);
@@ -2578,13 +2561,19 @@ export function updateEnemies(dt, now, playerPos) {
     updateStatusEffects(e, dt);
 
     // ── Colour: lerp from base → red based on damage ──
+    // For instanced enemies, sync color directly to InstancedMesh (e.material is null for instanced types)
     const dmgRatio = 1 - e.hp / e.maxHp;
-    e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
-    // Sync damage color to InstancedMesh for basic/fast enemies
     if (e.mesh.userData.instanceId !== undefined) {
+      // Instanced enemy: calculate damage color and sync to InstancedMesh
+      const damageColor = new THREE.Color().copy(e.baseColor).lerp(_redColor, dmgRatio);
       const pool = e.mesh.userData.instancePool;
-      pool.mesh.setColorAt(e.mesh.userData.instanceId, e.material.color);
+      pool.mesh.setColorAt(e.mesh.userData.instanceId, damageColor);
       pool.mesh.instanceColor.needsUpdate = true;
+    } else {
+      // Non-instanced enemy: update material color directly
+      if (e.material) {
+        e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
+      }
     }
   }
 
