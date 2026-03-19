@@ -383,7 +383,7 @@ const MAX_REFLECTOR_DRONES = 2;
 // Fog/atmosphere system - FFR optimization for Quest VR
 // Increased fog density in VR mode to reduce render load on distant objects
 let ffrFogDensity = 0.012;  // Default fog density
-let ffrRenderDistance = 80;  // Objects beyond this distance fade out
+let ffrRenderDistance = 120;  // Objects beyond this distance fade out (increased to 120 for enemy visibility)
 let ffrEnabled = true;  // FFR optimization enabled by default
 
 // Update fog settings based on VR mode
@@ -395,14 +395,14 @@ function updateFFRFog() {
   if (isVR && ffrEnabled) {
     // Quest VR mode: denser fog to hide distant geometry
     ffrFogDensity = 0.02;  // 67% denser fog for VR
-    ffrRenderDistance = 50;  // Objects beyond 50m fade out
+    ffrRenderDistance = 60;  // Objects beyond 60m fade out (increased from 50)
     if (ffrFogDensity !== scene.fog.density) {
       console.log('[FFR] VR mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
     }
   } else {
     // Desktop mode: standard fog
     ffrFogDensity = 0.012;  // Original density
-    ffrRenderDistance = 80;  // Full visibility
+    ffrRenderDistance = 120;  // Increased from 80 for enemy visibility
     if (ffrFogDensity !== scene.fog.density) {
       console.log('[FFR] Desktop mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
     }
