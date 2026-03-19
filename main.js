@@ -10,7 +10,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, loadDreamState, saveDreamState, startGameWithSeed, getBiomeForLevel } from './game.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, loadDreamState, saveDreamState, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
@@ -48,6 +48,7 @@ import {
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
   showDebugMenu, hideDebugMenu, getDebugMenuHit, showReadyScreen, hideReadyScreen, updateReadyCountdownText, updateTitleDebugIndicator,
+  showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown, hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
   updateHUDHover,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, showBossAlert, hideBossAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
@@ -59,7 +60,7 @@ import {
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
   getPosition, getAimRaycaster, getVirtualController,
-  isLocked, isEnabled as isDesktopEnabled
+  isLocked, isEnabled as isDesktopEnabled, setOnPauseCallback
 } from './desktop-controls.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -258,6 +259,10 @@ let pendingUpgrades = [];
 // Game over cooldown
 let gameOverCooldown = 0;
 
+// Pause menu state
+let pauseCountdown = 0;
+const PAUSE_COUNTDOWN_DURATION = 3.0;
+
 // Bullet-time slow-mo (restored from commit 5bb0b69)
 let slowMoActive = false;
 let slowMoDuration = 0;
@@ -279,6 +284,7 @@ const accuracyShots = new Map();
 function startAccuracyShot(pelletCount) {
   const shotId = ++accuracyShotId;
   accuracyShots.set(shotId, { remaining: pelletCount, hit: false });
+  trackShot();
   return shotId;
 }
 
@@ -289,6 +295,7 @@ function markAccuracyHit(shotId) {
   const shot = accuracyShots.get(shotId);
   if (!shot || shot.hit) return;
   shot.hit = true;
+  trackShotHit();
 
   // Store previous multiplier before hit
   const oldMultiplier = game.accuracyMultiplier || 1;
@@ -544,6 +551,9 @@ function init() {
 
   // Desktop controls for non-VR playtesting
   initDesktopControls(scene, camera, renderer);
+
+  // Set up pause callback for ESC key
+  setOnPauseCallback(togglePause);
 
   // Floor HUD debug marker: small white plane to visualize floor HUD position
   // Create a small flat plane at player feet level, following camera
@@ -2276,6 +2286,9 @@ function onTriggerPress(controller, index) {
     handleReadyScreenTrigger(controller);
   } else if (st === State.DEBUG_MENU) {
     handleDebugMenuTrigger(controller);
+  } else if (st === State.PAUSED) {
+    // Press trigger to resume from pause
+    startPauseCountdown();
   }
 }
 
@@ -2335,6 +2348,8 @@ function handleDesktopClick() {
     handleDesktopReadyScreenClick();
   } else if (st === State.DEBUG_MENU) {
     handleDesktopDebugMenuClick();
+  } else if (st === State.PAUSED) {
+    handleDesktopPauseClick();
   }
 }
 
@@ -2523,6 +2538,17 @@ function handleDesktopReadyScreenClick() {
   if (readyCountdownActive) return;
   playMenuClick();
   startReadyCountdown();
+}
+
+function handleDesktopPauseClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const btnHit = getPauseMenuHit(raycaster);
+  if (btnHit === 'resume') {
+    playMenuClick();
+    startPauseCountdown();
+  }
 }
 
 function handleDesktopDebugMenuClick() {
@@ -3399,7 +3425,7 @@ function destroyDecoy(decoy, explode) {
           const destroyData = destroyEnemy(idx);
           if (destroyData) {
             game.kills++;
-            game.totalKills++;
+            trackKill();
             addScore(destroyData.scoreValue);
             updateHUD(game);
           }
@@ -3594,7 +3620,7 @@ function updateMinesAndBlackHoles(dt, now, playerPos) {
           const destroyData = destroyEnemy(index);
           if (destroyData) {
             game.kills++;
-            game.totalKills++;
+            trackKill();
             addScore(destroyData.scoreValue);
             updateHUD(game);
           }
@@ -3947,7 +3973,7 @@ function updateNaniteSwarms(now, dt, playerPos) {
             const destroyData = destroyEnemy(index);
             if (destroyData) {
               game.kills++;
-              game.totalKills++;
+              trackKill();
               addScore(destroyData.scoreValue);
               updateHUD(game);
 
@@ -4231,7 +4257,7 @@ function updateTethers(dt, now, playerPos) {
             const destroyData = destroyEnemy(tether.enemyIndex);
             if (destroyData) {
               game.kills++;
-              game.totalKills++;
+              trackKill();
               addScore(destroyData.scoreValue);
               updateHUD(game);
             }
@@ -4394,7 +4420,7 @@ function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
           const destroyData = destroyEnemy(enemyIndex);
           if (destroyData) {
             game.kills++;
-            game.totalKills++;
+            trackKill();
             addScore(destroyData.scoreValue);
             updateHUD(game);
           }
@@ -4444,7 +4470,7 @@ function updatePhaseDashAfterimages(now, dt) {
             const destroyData = destroyEnemy(enemyIndex);
             if (destroyData) {
               game.kills++;
-              game.totalKills++;
+              trackKill();
               addScore(destroyData.scoreValue);
               updateHUD(game);
             }
@@ -5036,7 +5062,7 @@ function detonatePlasmaOrb(orb, enemyIndex) {
       const destroyData = destroyEnemy(enemyIndex);
       if (destroyData) {
         game.kills++;
-        game.totalKills++;
+        trackKill();
         game.killsWithoutHit++;
         addScore(destroyData.scoreValue);
 
@@ -5209,7 +5235,7 @@ function detonateGrenade(grenade, index) {
         const destroyData = destroyEnemy(i);
         if (destroyData) {
           game.kills++;
-          game.totalKills++;
+          trackKill();
           addScore(destroyData.scoreValue);
           updateHUD(game);
 
@@ -5363,7 +5389,7 @@ function detonateProximityMine(mine, index) {
         const destroyData = destroyEnemy(i);
         if (destroyData) {
           game.kills++;
-          game.totalKills++;
+          trackKill();
           addScore(destroyData.scoreValue);
           updateHUD(game);
 
@@ -5640,7 +5666,7 @@ function fireEMP(origin, hand, altWeapon) {
         const destroyData = destroyEnemy(i);
         if (destroyData) {
           game.kills++;
-          game.totalKills++;
+          trackKill();
           addScore(destroyData.scoreValue);
           updateHUD(game);
 
@@ -6459,6 +6485,43 @@ function advanceLevelAfterUpgrade() {
   }
 }
 
+// ── Pause System ───────────────────────────────────────────
+function togglePause() {
+  if (game.state === State.PLAYING) {
+    game.state = State.PAUSED;
+    showPauseMenu();
+    // Release pointer lock when pausing
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
+  } else if (game.state === State.PAUSED) {
+    startPauseCountdown();
+  }
+}
+
+function startPauseCountdown() {
+  hidePauseMenu();
+  pauseCountdown = PAUSE_COUNTDOWN_DURATION;
+  showPauseCountdown(pauseCountdown);
+}
+
+function updatePauseCountdown(dt) {
+  if (pauseCountdown > 0) {
+    pauseCountdown -= dt;
+    if (pauseCountdown <= 0) {
+      pauseCountdown = 0;
+      hidePauseCountdown();
+      game.state = State.PLAYING;
+      // Re-request pointer lock when resuming
+      if (!renderer.xr.isPresenting && isDesktopEnabled()) {
+        document.body.requestPointerLock?.();
+      }
+    } else {
+      updatePauseCountdownDisplay(pauseCountdown);
+    }
+  }
+}
+
 function endGame(victory) {
   console.log(`[game] Game ${victory ? 'won' : 'over'} — score: ${game.score}`);
   resetAllSlowMoState();
@@ -7214,7 +7277,7 @@ function updateLightningBeam(controller, index, stats, dt) {
           const destroyData = destroyEnemy(enemyIndex);
           if (destroyData) {
             game.kills++;
-            game.totalKills++;
+            trackKill();
             game.killsWithoutHit++;
             addScore(destroyData.scoreValue);
 
@@ -7514,7 +7577,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
       if (result.killed) {
         playExplosionSound();
         game.kills++;
-        game.totalKills++;
+        trackKill(true);
         addScore(boss.scoreValue);
 
         // Update HUD immediately to show correct kill count before level complete
@@ -7717,8 +7780,11 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
   if (hitWeakPoint) damage *= 2;
 
   // Critical hit
+  let isCrit = false;
   if (stats.critChance > 0 && Math.random() < stats.critChance) {
     damage *= (stats.critMultiplier || 2);
+    isCrit = true;
+    trackCrit();
   }
 
   // Impact freeze for critical hits or weak points
@@ -7781,7 +7847,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
     const destroyData = destroyEnemy(enemyIndex, isCritical, result.overkill > 0);
     if (destroyData) {
       game.kills++;
-      game.totalKills++;
+      trackKill();
       game.killsWithoutHit++;
       addScore(destroyData.scoreValue);
 
@@ -7849,7 +7915,10 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
 
 function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
   let damage = stats.damage;
-  if (stats.critChance > 0 && Math.random() < stats.critChance) damage *= (stats.critMultiplier || 2);
+  if (stats.critChance > 0 && Math.random() < stats.critChance) {
+    damage *= (stats.critMultiplier || 2);
+    trackCrit();
+  }
   const result = hitBoss(damage, { handIndex });
 
   // Shield reflection: damage player instead of boss
@@ -7890,7 +7959,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
   if (result.killed) {
     playExplosionSound();
     game.kills++;
-    game.totalKills++;
+    trackKill(true);
     game.killsWithoutHit++;
     addScore(boss.scoreValue);
 
@@ -8798,6 +8867,9 @@ function render(timestamp) {
 
   // ── Playing ──
   else if (st === State.PLAYING) {
+    // Track time played
+    game.runStats.timePlayed += rawDt;
+
     // Update kills remaining alert (auto-hide after timeout)
     updateKillsAlert(now);
 
@@ -9256,7 +9328,7 @@ function render(timestamp) {
           const destroyData = destroyEnemy(i);
           if (destroyData) {
             game.kills++;
-            game.totalKills++;
+            trackKill();
             game.killsWithoutHit++;
             addScore(destroyData.scoreValue);
 
@@ -9318,6 +9390,12 @@ function render(timestamp) {
   // ── Boss death cinematic ──
   else if (st === State.BOSS_DEATH_CINEMATIC) {
     updateBossDeathCinematic(rawDt);
+  }
+
+  // ── Paused ──
+  else if (st === State.PAUSED) {
+    // Game is paused - just update pause menu visuals
+    updatePauseMenu(now);
   }
 
   // ── Ready screen countdown ──
@@ -9642,6 +9720,10 @@ function render(timestamp) {
       return;
     }
   }
+
+  // Update pause countdown if active
+  updatePauseCountdown(rawDt);
+
   renderer.render(scene, camera);
 }
 

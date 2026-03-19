@@ -60,6 +60,13 @@ const aimRaycaster = new THREE.Raycaster();
 const aimOrigin = new THREE.Vector3();
 const aimDirection = new THREE.Vector3();
 
+// ESC/pause callback
+let onPauseCallback = null;
+
+export function setOnPauseCallback(callback) {
+  onPauseCallback = callback;
+}
+
 // ── Public API ─────────────────────────────────────────────
 
 /**
@@ -435,7 +442,9 @@ function onKeyDown(e) {
 
   // ESC for menu/pause
   if (key === 'escape') {
-    // Pause menu will be handled by main.js
+    if (onPauseCallback) {
+      onPauseCallback();
+    }
     console.log('[desktop-controls] ESC pressed');
   }
 }
