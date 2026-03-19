@@ -414,11 +414,34 @@ function updateFFRFog() {
 }
 
 // ── Bootstrap ──────────────────────────────────────────────
+
+// ── Selective Bloom (must be defined before init()) ──
+var BLOOM_LAYER = 1;
+var bloomComposer = null;
+var SelectiveBloomCompositeShader = {
+  uniforms: {
+    baseTexture: { value: null },
+    bloomTexture: { value: null },
+  },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D baseTexture;
+    uniform sampler2D bloomTexture;
+    varying vec2 vUv;
+    void main() {
+      vec4 base = texture2D(baseTexture, vUv);
+      vec4 bloom = texture2D(bloomTexture, vUv);
+      gl_FragColor = base + bloom;
+    }
+  `,
+};
+
 init();
 
 // ============================================================
 //  INITIALISATION
 // ============================================================
+
 function init() {
   console.log('[SPACEOMICIDE] Initialising...');
 
@@ -497,90 +520,7 @@ function init() {
     console.log('[vr] Session ended');
   });
 
-  // ── Selective Bloom (desktop only, synthwave_valley biome) ──
-  // VR limitation: EffectComposer doesn't support WebXR multi-eye rendering.
-  // Bloom is only applied in desktop mode. In VR, the scene renders directly.
-  const BLOOM_LAYER = 1;
-  let bloomComposer = null;
-
-  // Selective bloom composite shader: adds bloom texture on top of base render
-  const SelectiveBloomCompositeShader = {
-    uniforms: {
-      baseTexture: { value: null },
-      bloomTexture: { value: null },
-    },
-    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `
-      uniform sampler2D baseTexture;
-      uniform sampler2D bloomTexture;
-      varying vec2 vUv;
-      void main() {
-        vec4 base = texture2D(baseTexture, vUv);
-        vec4 bloom = texture2D(bloomTexture, vUv);
-        gl_FragColor = base + bloom;
-      }
-    `,
-  };
-
-  function initSelectiveBloom() {
-    const rtParams = {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      format: THREE.RGBAFormat,
-      type: THREE.HalfFloatType,
-    };
-
-    // Composer that renders the full scene (layer 0 only — bloom objects excluded)
-    const baseComposer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
-      window.innerWidth, window.innerHeight, rtParams
-    ));
-    const baseRenderPass = new RenderPass(scene, camera);
-    baseComposer.addPass(baseRenderPass);
-
-    // Bloom composer: renders only bloom-layer objects, then applies bloom
-    const bloomComposer_ = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
-      window.innerWidth, window.innerHeight, rtParams
-    ));
-
-    // Make the camera see only bloom objects (layer 1) for this pass
-    const bloomCamera = camera.clone();
-    bloomCamera.layers.set(BLOOM_LAYER);
-    const bloomRenderPass = new RenderPass(scene, bloomCamera);
-    bloomComposer_.addPass(bloomRenderPass);
-
-    const bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.3,   // strength
-      0,     // radius
-      0      // threshold
-    );
-    bloomComposer_.addPass(bloomPass);
-
-    // Final composite: base scene + bloom overlay
-    const compositePass = new ShaderPass(SelectiveBloomCompositeShader);
-    compositePass.uniforms.baseTexture.value = baseComposer.renderTarget1.texture;
-    compositePass.uniforms.bloomTexture.value = bloomComposer_.renderTarget2.texture;
-    baseComposer.addPass(compositePass);
-
-    bloomComposer = { baseComposer, bloomComposer: bloomComposer_, compositePass, bloomCamera };
-    console.log('[bloom] Selective bloom initialized (desktop only)');
-  }
-
-  // Mark an object for bloom by enabling the bloom layer
-  function enableBloomOnObject(obj) {
-    obj.layers.enable(BLOOM_LAYER);
-  }
-
-  function resizeBloomComposer() {
-    if (!bloomComposer) return;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    bloomComposer.baseComposer.setSize(w, h);
-    bloomComposer.bloomComposer.setSize(w, h);
-    bloomComposer.bloomComposer.passes[1].resolution.set(w, h);
-  }
-
-  // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
+    // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
   // Desktop controls will auto-enable if VR isn't available
   if (!navigator.xr) {
     console.warn('[init] WebXR not supported - desktop mode will be enabled');
@@ -689,7 +629,7 @@ function init() {
   initProjectilePool();
 
   // Initialize selective bloom postprocessing (desktop only)
-  initSelectiveBloom();
+  // initSelectiveBloom(); // DISABLED: bloom causing issues, remove for now
 
   // Start at title
   resetGame();
@@ -705,6 +645,67 @@ function init() {
   playMusic('menu');
 
   console.log('[init] SPACEOMICIDE ready — pull trigger at title screen to start');
+}
+
+// ============================================================
+//  SELECTIVE BLOOM (desktop only, synthwave_valley biome)
+// ============================================================
+
+function initSelectiveBloom() {
+  const rtParams = {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.HalfFloatType,
+  };
+
+  // Composer that renders the full scene (layer 0 only — bloom objects excluded)
+  const baseComposer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
+    window.innerWidth, window.innerHeight, rtParams
+  ));
+  const baseRenderPass = new RenderPass(scene, camera);
+  baseComposer.addPass(baseRenderPass);
+
+  // Bloom composer: renders only bloom-layer objects, then applies bloom
+  const bloomComposer_ = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
+    window.innerWidth, window.innerHeight, rtParams
+  ));
+
+  // Make the camera see only bloom objects (layer 1) for this pass
+  const bloomCamera = camera.clone();
+  bloomCamera.layers.set(BLOOM_LAYER);
+  const bloomRenderPass = new RenderPass(scene, bloomCamera);
+  bloomComposer_.addPass(bloomRenderPass);
+
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.3,   // strength
+    0,     // radius
+    0      // threshold
+  );
+  bloomComposer_.addPass(bloomPass);
+
+  // Final composite: base scene + bloom overlay
+  const compositePass = new ShaderPass(SelectiveBloomCompositeShader);
+  compositePass.uniforms.baseTexture.value = baseComposer.renderTarget1.texture;
+  compositePass.uniforms.bloomTexture.value = bloomComposer_.renderTarget2.texture;
+  baseComposer.addPass(compositePass);
+
+  bloomComposer = { baseComposer, bloomComposer: bloomComposer_, compositePass, bloomCamera };
+  console.log('[bloom] Selective bloom initialized (desktop only)');
+}
+
+function enableBloomOnObject(obj) {
+  obj.layers.enable(BLOOM_LAYER);
+}
+
+function resizeBloomComposer() {
+  if (!bloomComposer) return;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  bloomComposer.baseComposer.setSize(w, h);
+  bloomComposer.bloomComposer.setSize(w, h);
+  bloomComposer.bloomComposer.passes[1].resolution.set(w, h);
 }
 
 // ============================================================
@@ -2249,7 +2250,7 @@ function animateBlasterScanLines(display) {
 //  INPUT HANDLING
 // ============================================================
 // Scoreboard flow context
-let scoreboardFromGameOver = false;  // true = came from game over, false = came from title
+var scoreboardFromGameOver = false;  // true = came from game over, false = came from title
 
 function onTriggerPress(controller, index) {
   const st = game.state;
@@ -9784,7 +9785,7 @@ function logCylinderColors() {
   }
   
   // auroraRef
-  if (typeof auroraRef !== 'undefined' && auroraRef.material) {
+  if (auroraRef && auroraRef.material) {
     const tex = auroraRef.material.map;
     if (tex && tex.image) {
       const canvas = tex.image;
