@@ -20,6 +20,7 @@ export const State = {
   DEBUG_MENU: 'debug_menu',
   BOSS_ALERT: 'boss_alert',
   BOSS_DEATH_CINEMATIC: 'boss_death_cinematic',
+  PAUSED: 'paused',
 };
 
 // ── Seed Deck System ─────────────────────────────────────────
@@ -157,6 +158,21 @@ export const game = {
   debugBiomeOverride: null,  // Force a specific biome for previews
   inDreamWorld: false,
   dreamCompleted: false,
+
+  // Run statistics for pause menu
+  runStats: {
+    shotsFired: 0,
+    shotsHit: 0,
+    totalDamageDealt: 0,
+    bossesKilled: 0,
+    timePlayed: 0,
+    longestKillStreak: 0,
+    currentKillStreak: 0,
+    damageTaken: 0,
+    nukesUsed: 0,
+    critsLanded: 0,
+    levelsCompleted: 0,
+  },
 };
 
 // ── Helpers ────────────────────────────────────────────────
@@ -219,6 +235,21 @@ export function resetGame() {
     comboMultiplier: 1,
     lastKillTime: 0,
     comboResetTime: 3000, // 3 seconds
+
+    // Reset run statistics
+    runStats: {
+      shotsFired: 0,
+      shotsHit: 0,
+      totalDamageDealt: 0,
+      bossesKilled: 0,
+      timePlayed: 0,
+      longestKillStreak: 0,
+      currentKillStreak: 0,
+      damageTaken: 0,
+      nukesUsed: 0,
+      critsLanded: 0,
+      levelsCompleted: 0,
+    },
 
     // Reset slow-mo death camera
     slowmoActive: false,
@@ -368,11 +399,40 @@ export function registerAccuracyMiss() {
 export function damagePlayer(amount) {
   game.health = Math.max(0, game.health - amount);
   game.killsWithoutHit = 0;
+  game.runStats.damageTaken += amount;
+  // Reset kill streak on damage taken
+  game.runStats.currentKillStreak = 0;
   return game.health <= 0;
 }
 
 export function healPlayer(amount) {
   game.health = Math.min(game.maxHealth, game.health + amount);
+}
+
+export function trackKill(isBoss = false) {
+  game.totalKills++;
+  game.runStats.currentKillStreak++;
+  if (game.runStats.currentKillStreak > game.runStats.longestKillStreak) {
+    game.runStats.longestKillStreak = game.runStats.currentKillStreak;
+  }
+  if (isBoss) {
+    game.runStats.bossesKilled++;
+  }
+}
+
+export function trackShot() {
+  game.runStats.shotsFired++;
+}
+
+export function trackShotHit(damage = 0) {
+  game.runStats.shotsHit++;
+  if (damage > 0) {
+    game.runStats.totalDamageDealt += damage;
+  }
+}
+
+export function trackCrit() {
+  game.runStats.critsLanded++;
 }
 
 export function addUpgrade(id, hand) {

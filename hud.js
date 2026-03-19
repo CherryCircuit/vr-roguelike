@@ -25,6 +25,8 @@ const scoreboardGroup = new THREE.Group();
 const countrySelectGroup = new THREE.Group();
 const readyGroup = new THREE.Group();
 const debugMenuGroup = new THREE.Group();  // DEBUG menu
+const pauseMenuGroup = new THREE.Group();  // Pause menu
+const pauseCountdownGroup = new THREE.Group();  // 3-2-1 countdown overlay
 const floatingMessageGroup = new THREE.Group();
 
 // HUD element references
@@ -388,7 +390,7 @@ export function initHUD(camera, scene) {
   floatingMessageGroup.position.set(0, 0.1, -0.8);
   camera.add(floatingMessageGroup);
 
-  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup, debugMenuGroup].forEach(g => {
+  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup, debugMenuGroup, pauseMenuGroup, pauseCountdownGroup].forEach(g => {
     g.visible = false;
     g.rotation.set(0, 0, 0);
     scene.add(g);
@@ -3723,12 +3725,552 @@ export function hideUpgradeHandHighlights(controllers) {
   });
 }
 
-/** Updates the spinning animation of the highlight */
+/** Updates spinning animation of the highlight */
 export function updateUpgradeHandHighlights(now) {
   [readyGroup, upgradeGroup].forEach(g => {
     // This is handled via normal scene graph if attached to controller
   });
 }
 
-// Export nameEntryGroup for use in other modules
-export { nameEntryGroup };
+// ============================================================
+//  PAUSE MENU
+// ============================================================
+
+let pauseMenuElements = {
+  panel: null,
+  leftBlasterSection: null,
+  rightBlasterSection: null,
+  statsSection: null,
+  chartCanvas: null,
+  resumeButton: null,
+};
+
+let pauseMenuAnimation = {
+  slideIn: 0,
+  targetSlideIn: 0,
+  startTime: 0,
+  chartAnimation: 0,
+  numbersAnimated: false,
+};
+
+let pauseCountdownText = null;
+let pauseCountdownOverlay = null;
+
+/**
+ * Show the pause menu with stats and blaster upgrade info
+ */
+export function showPauseMenu() {
+  pauseMenuGroup.visible = true;
+  pauseMenuGroup.position.set(0, 1.2, -2.5);
+
+  if (pauseMenuElements.panel) {
+    // Already initialized
+    pauseMenuAnimation.targetSlideIn = 1;
+    pauseMenuAnimation.startTime = performance.now();
+    pauseMenuAnimation.chartAnimation = 0;
+    pauseMenuAnimation.numbersAnimated = false;
+    return;
+  }
+
+  createPauseMenu();
+}
+
+/**
+ * Hide the pause menu
+ */
+export function hidePauseMenu() {
+  pauseMenuGroup.visible = false;
+}
+
+/**
+ * Update pause menu animations and charts
+ */
+export function updatePauseMenu(now) {
+  if (!pauseMenuGroup.visible) return;
+
+  // Animate slide-in
+  const slideDuration = 500; // ms
+  if (pauseMenuAnimation.slideIn < 1) {
+    pauseMenuAnimation.slideIn = Math.min(1, (now - pauseMenuAnimation.startTime) / slideDuration);
+  }
+
+  // Slide menu in from right (-4 to 0)
+  const baseX = (1 - pauseMenuAnimation.slideIn) * 4;
+  pauseMenuGroup.position.x = baseX;
+
+  // Animate charts
+  if (pauseMenuAnimation.chartAnimation < 1) {
+    pauseMenuAnimation.chartAnimation += 0.02;
+    if (pauseMenuAnimation.chartAnimation > 1) pauseMenuAnimation.chartAnimation = 1;
+    updatePauseCharts();
+  }
+
+  // Animate numbers
+  if (!pauseMenuAnimation.numbersAnimated && pauseMenuAnimation.slideIn > 0.5) {
+    pauseMenuAnimation.numbersAnimated = true;
+    updatePauseStatsNumbers();
+  }
+}
+
+/**
+ * Create the pause menu UI
+ */
+function createPauseMenu() {
+  const group = pauseMenuGroup;
+
+  // Main panel with holographic border
+  const panelWidth = 3.5;
+  const panelHeight = 2.5;
+
+  // Background panel
+  const panelGeo = new THREE.PlaneGeometry(panelWidth, panelHeight);
+  const panelMat = new THREE.MeshBasicMaterial({
+    color: 0x0a0015,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide
+  });
+  const panel = new THREE.Mesh(panelGeo, panelMat);
+  group.add(panel);
+
+  // Neon border (cyan)
+  const borderThickness = 0.03;
+  const borderMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+  [
+    { w: panelWidth, h: borderThickness, x: 0, y: panelHeight / 2 },
+    { w: panelWidth, h: borderThickness, x: 0, y: -panelHeight / 2 },
+    { w: borderThickness, h: panelHeight, x: panelWidth / 2, y: 0 },
+    { w: borderThickness, h: panelHeight, x: -panelWidth / 2, y: 0 },
+  ].forEach(b => {
+    const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
+    border.position.set(b.x, b.y, 0.01);
+    group.add(border);
+  });
+
+  pauseMenuElements.panel = panel;
+
+  // Left blaster section
+  const leftSection = createBlasterSection('left', -1.2);
+  leftSection.position.set(-0.9, 0.5, 0.02);
+  group.add(leftSection);
+  pauseMenuElements.leftBlasterSection = leftSection;
+
+  // Right blaster section
+  const rightSection = createBlasterSection('right', 1.2);
+  rightSection.position.set(0.9, 0.5, 0.02);
+  group.add(rightSection);
+  pauseMenuElements.rightBlasterSection = rightSection;
+
+  // Stats section
+  const statsSection = createStatsSection();
+  statsSection.position.set(0, -0.5, 0.02);
+  group.add(statsSection);
+  pauseMenuElements.statsSection = statsSection;
+
+  // Resume button
+  const resumeBtn = createResumeButton();
+  resumeBtn.position.set(0, -1.0, 0.03);
+  group.add(resumeBtn);
+  pauseMenuElements.resumeButton = resumeBtn;
+
+  // Initialize animation
+  pauseMenuAnimation.startTime = performance.now();
+  pauseMenuAnimation.slideIn = 0;
+  pauseMenuAnimation.chartAnimation = 0;
+  pauseMenuAnimation.numbersAnimated = false;
+}
+
+/**
+ * Create blaster upgrade section for one hand
+ */
+function createBlasterSection(hand, panelX) {
+  const group = new THREE.Group();
+
+  // Section background
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.3, 1.2),
+    new THREE.MeshBasicMaterial({ color: 0x1a0033, transparent: true, opacity: 0.7 })
+  );
+  group.add(bg);
+
+  // Section border (pink)
+  const borderMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+  const borderWidth = 1.3;
+  const borderHeight = 0.05;
+  [
+    { w: borderWidth, h: borderHeight, x: 0, y: 0.6 },
+    { w: borderWidth, h: borderHeight, x: 0, y: -0.6 },
+  ].forEach(b => {
+    const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
+    border.position.set(b.x, b.y, 0.01);
+    group.add(border);
+  });
+
+  // Title
+  const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, { fontSize: 0.12, color: '#00ffff' });
+  titleText.position.set(0, 0.45, 0.02);
+  group.add(titleText);
+
+  // Weapon name
+  const weaponId = game.mainWeapon[hand];
+  const weaponName = weaponId.replace(/_/g, ' ').toUpperCase();
+  const weaponText = makeSprite(weaponName, { fontSize: 0.09, color: '#ffffff' });
+  weaponText.position.set(0, 0.32, 0.02);
+  group.add(weaponText);
+
+  // Upgrades list
+  const upgrades = game.upgrades[hand] || {};
+  const upgradeEntries = Object.entries(upgrades);
+  const yOffset = 0.15;
+
+  if (upgradeEntries.length > 0) {
+    upgradeEntries.forEach(([id, count], index) => {
+      const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, { fontSize: 0.07, color: '#ffffff' });
+      const yPos = yOffset - (index * 0.12);
+      upgradeText.position.set(0, yPos, 0.02);
+      group.add(upgradeText);
+    });
+  } else {
+    const noUpgradesText = makeSprite('No upgrades', { fontSize: 0.07, color: '#888888' });
+    noUpgradesText.position.set(0, 0.1, 0.02);
+    group.add(noUpgradesText);
+  }
+
+  return group;
+}
+
+/**
+ * Create stats section with charts
+ */
+function createStatsSection() {
+  const group = new THREE.Group();
+
+  // Background
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.2, 1.1),
+    new THREE.MeshBasicMaterial({ color: 0x15002a, transparent: true, opacity: 0.7 })
+  );
+  group.add(bg);
+
+  // Title
+  const titleText = makeSprite('RUN STATISTICS', { fontSize: 0.11, color: '#ff00ff' });
+  titleText.position.set(0, 0.45, 0.02);
+  group.add(titleText);
+
+  // Stats text columns
+  const leftStats = [
+    `KILLS: ${game.runStats.totalKills || game.totalKills || 0}`,
+    `SHOTS: ${game.runStats.shotsFired}`,
+    `HITS: ${game.runStats.shotsHit}`,
+  ];
+
+  const rightStats = [
+    `ACCURACY: ${calculateAccuracy()}%`,
+    `STREAK: ${game.runStats.longestKillStreak}`,
+    `BOSS: ${game.runStats.bossesKilled}`,
+  ];
+
+  leftStats.forEach((stat, index) => {
+    const text = makeSprite(stat, { fontSize: 0.075, color: '#00ffff' });
+    text.position.set(-1.1, 0.25 - (index * 0.1), 0.02);
+    group.add(text);
+  });
+
+  rightStats.forEach((stat, index) => {
+    const text = makeSprite(stat, { fontSize: 0.075, color: '#00ffff' });
+    text.position.set(1.1, 0.25 - (index * 0.1), 0.02);
+    group.add(text);
+  });
+
+  // Canvas for charts (accuracy donut + damage bars)
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const chartTexture = new THREE.CanvasTexture(canvas);
+  const chartMat = new THREE.MeshBasicMaterial({
+    map: chartTexture,
+    transparent: true,
+    side: THREE.DoubleSide
+  });
+  const chartMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), chartMat);
+  chartMesh.position.set(0, -0.2, 0.02);
+  group.add(chartMesh);
+
+  pauseMenuElements.chartCanvas = { canvas, texture: chartTexture, mesh: chartMesh };
+
+  return group;
+}
+
+/**
+ * Update pause menu charts
+ */
+function updatePauseCharts() {
+  if (!pauseMenuElements.chartCanvas) return;
+
+  const { canvas, texture, mesh } = pauseMenuElements.chartCanvas;
+  const ctx = canvas.getContext('2d');
+  const anim = pauseMenuAnimation.chartAnimation;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw accuracy donut chart
+  const centerX = 80;
+  const centerY = canvas.height / 2;
+  const radius = 35;
+  const accuracy = calculateAccuracy();
+  const accuracyAngle = (accuracy / 100) * Math.PI * 2;
+
+  // Outer ring (cyan)
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = '#004444';
+  ctx.lineWidth = 8;
+  ctx.stroke();
+
+  // Accuracy arc (animated)
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, -Math.PI / 2, -Math.PI / 2 + accuracyAngle * anim);
+  ctx.strokeStyle = '#00ffff';
+  ctx.lineWidth = 8;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Accuracy percentage text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 24px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${Math.floor(accuracy * anim)}%`, centerX, centerY);
+
+  // Draw damage per hand bar chart
+  const barBaseX = 160;
+  const barBaseY = canvas.height - 20;
+  const barWidth = 20;
+  const barSpacing = 25;
+
+  ['left', 'right'].forEach((hand, i) => {
+    const damage = game.handStats[hand].totalDamage || 0;
+    const maxDamage = Math.max(game.handStats.left.totalDamage, game.handStats.right.totalDamage, 100);
+    const barHeight = (damage / maxDamage) * 50 * anim;
+
+    // Bar background
+    ctx.fillStyle = '#333333';
+    ctx.fillRect(barBaseX + (i * barSpacing), barBaseY - 50, barWidth, 50);
+
+    // Bar (pink for left, cyan for right)
+    ctx.fillStyle = hand === 'left' ? '#ff00ff' : '#00ffff';
+    ctx.fillRect(barBaseX + (i * barSpacing), barBaseY - barHeight, barWidth, barHeight);
+
+    // Label
+    ctx.fillStyle = '#888888';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(hand.toUpperCase(), barBaseX + (i * barSpacing) + barWidth / 2, barBaseY + 10);
+  });
+
+  // Update texture
+  texture.needsUpdate = true;
+}
+
+/**
+ * Update stats numbers with counting animation
+ */
+function updatePauseStatsNumbers() {
+  if (!pauseMenuElements.leftBlasterSection || !pauseMenuElements.rightBlasterSection) return;
+
+  // Update left blaster section
+  updateSectionStats(pauseMenuElements.leftBlasterSection, 'left');
+  updateSectionStats(pauseMenuElements.rightBlasterSection, 'right');
+  updateStatsSectionText();
+}
+
+/**
+ * Update stats section text
+ */
+function updateStatsSectionText() {
+  // Remove old stats sprites
+  pauseMenuElements.statsSection.children.forEach(child => {
+    if (child.material && child.material.map) {
+      // Keep the chart mesh, remove text sprites
+      if (!child.geometry.type.includes('Plane')) {
+        pauseMenuElements.statsSection.remove(child);
+      }
+    }
+  });
+
+  // Add updated stats
+  const leftStats = [
+    `KILLS: ${game.totalKills}`,
+    `SHOTS: ${game.runStats.shotsFired}`,
+    `HITS: ${game.runStats.shotsHit}`,
+  ];
+
+  const rightStats = [
+    `ACCURACY: ${calculateAccuracy()}%`,
+    `STREAK: ${game.runStats.longestKillStreak}`,
+    `BOSS: ${game.runStats.bossesKilled}`,
+  ];
+
+  let leftIndex = 0;
+  let rightIndex = 0;
+
+  leftStats.forEach((stat) => {
+    const text = makeSprite(stat, { fontSize: 0.075, color: '#00ffff' });
+    text.position.set(-1.1, 0.25 - (leftIndex * 0.1), 0.03);
+    pauseMenuElements.statsSection.add(text);
+    leftIndex++;
+  });
+
+  rightStats.forEach((stat) => {
+    const text = makeSprite(stat, { fontSize: 0.075, color: '#00ffff' });
+    text.position.set(1.1, 0.25 - (rightIndex * 0.1), 0.03);
+    pauseMenuElements.statsSection.add(text);
+    rightIndex++;
+  });
+}
+
+/**
+ * Update section stats for blasters
+ */
+function updateSectionStats(section, hand) {
+  // Remove old upgrade sprites
+  section.children.forEach(child => {
+    if (child.userData && child.userData.isUpgradeSprite) {
+      section.remove(child);
+    }
+  });
+
+  // Add updated weapon name
+  const weaponId = game.mainWeapon[hand];
+  const weaponName = weaponId.replace(/_/g, ' ').toUpperCase();
+
+  // Update blaster section with current stats
+  const upgrades = game.upgrades[hand] || {};
+  const upgradeEntries = Object.entries(upgrades);
+  const yOffset = 0.15;
+
+  upgradeEntries.forEach(([id, count], index) => {
+    const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, { fontSize: 0.07, color: '#ffffff' });
+    const yPos = yOffset - (index * 0.12);
+    upgradeText.position.set(0, yPos, 0.03);
+    upgradeText.userData = { isUpgradeSprite: true };
+    section.add(upgradeText);
+  });
+}
+
+/**
+ * Create resume button
+ */
+function createResumeButton() {
+  const group = new THREE.Group();
+
+  // Button background
+  const btnWidth = 1.5;
+  const btnHeight = 0.4;
+  const btnBg = new THREE.Mesh(
+    new THREE.PlaneGeometry(btnWidth, btnHeight),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 })
+  );
+  group.add(btnBg);
+
+  // Button border
+  const borderMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+  const borderWidth = btnWidth;
+  const borderHeight = 0.05;
+  [
+    { w: borderWidth, h: borderHeight, x: 0, y: btnHeight / 2 },
+    { w: borderWidth, h: borderHeight, x: 0, y: -btnHeight / 2 },
+  ].forEach(b => {
+    const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
+    border.position.set(b.x, b.y, 0.01);
+    group.add(border);
+  });
+
+  // Button text
+  const text = makeSprite('RESUME', { fontSize: 0.14, color: '#00ffff' });
+  text.position.set(0, 0, 0.02);
+  group.add(text);
+
+  // Store button data for raycasting
+  group.userData = {
+    isResumeButton: true,
+    width: btnWidth,
+    height: btnHeight
+  };
+
+  return group;
+}
+
+/**
+ * Show pause countdown overlay (3, 2, 1)
+ */
+export function showPauseCountdown(seconds) {
+  pauseCountdownGroup.visible = true;
+  pauseCountdownGroup.position.set(0, 1.5, -3);
+
+  if (!pauseCountdownText) {
+    // Create countdown text
+    const text = makeSprite(`${Math.ceil(seconds)}`, { fontSize: 1.0, color: '#ff00ff', glowColor: '#ff00ff' });
+    pauseCountdownText = text;
+    pauseCountdownGroup.add(text);
+  }
+}
+
+/**
+ * Hide pause countdown
+ */
+export function hidePauseCountdown() {
+  pauseCountdownGroup.visible = false;
+}
+
+/**
+ * Update pause countdown display
+ */
+export function updatePauseCountdownDisplay(seconds) {
+  if (pauseCountdownText) {
+    // Remove old text
+    pauseCountdownGroup.remove(pauseCountdownText);
+
+    // Create new text with current number
+    const newSeconds = Math.ceil(seconds);
+    const color = newSeconds <= 1 ? '#ff0000' : '#ff00ff';
+    const text = makeSprite(`${newSeconds}`, { fontSize: 1.0, color: color, glowColor: color });
+    pauseCountdownText = text;
+    pauseCountdownGroup.add(text);
+  }
+}
+
+/**
+ * Handle raycast hits on pause menu (for desktop clicks)
+ */
+export function getPauseMenuHit(raycaster) {
+  if (!pauseMenuGroup.visible) return null;
+
+  const intersects = raycaster.intersectObjects(pauseMenuGroup.children, true);
+
+  for (const intersect of intersects) {
+    let obj = intersect.object;
+    while (obj && !obj.userData.isResumeButton) {
+      obj = obj.parent;
+    }
+
+    if (obj && obj.userData.isResumeButton) {
+      return 'resume';
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Calculate accuracy percentage
+ */
+function calculateAccuracy() {
+  const fired = game.runStats.shotsFired;
+  const hit = game.runStats.shotsHit;
+  if (fired === 0) return 0;
+  return Math.round((hit / fired) * 100);
+}
+
+// Export nameEntryGroup and pauseMenuGroup for use in other modules
+export { nameEntryGroup, pauseMenuGroup, pauseCountdownGroup };
