@@ -407,7 +407,7 @@ function updateFFRFog() {
     ffrRenderDistance = 60;  // Objects beyond 60m fade out (increased from 50)
   } else {
     // Desktop mode: standard fog
-    ffrFogDensity = 0.012;  // Original density
+    ffrFogDensity = 0.008;  // Subtle fog for depth (0.008 = ~375 units visibility)
     ffrRenderDistance = 120;  // Increased from 80 for enemy visibility
   }
 
@@ -478,7 +478,7 @@ function init() {
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.012);
+  scene.fog = new THREE.FogExp2(0x000000, 0.008);  // Subtle fog (0.008 = ~375 units visibility)
 
   // Camera - added directly to scene for proper VR hand positioning
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -6961,7 +6961,7 @@ function spawnVoxelExplosion(position, color, voxelCount, enemyType = 'basic', i
   }
   
   // Cap at 10 voxels per enemy to prevent spam
-  voxelCount = Math.min(voxelCount, 10);
+  voxelCount = Math.min(voxelCount, 8);
   
   // Make room by removing oldest voxels if at cap
   while (activeVoxels.length >= MAX_ACTIVE_VOXELS && activeVoxels.length > 0) {
