@@ -1193,7 +1193,7 @@ export function startLightningSound() {
   const ctx = getAudioContext();
   
   // Create audio element and source
-  lightningAudio = new Audio('mnt/project/soundfx/lightning_loop.mp3');
+  lightningAudio = new Audio('mnt/project/music/sfx_lightning_loop.mp3');
   lightningAudio.loop = true;
   lightningAudio.crossOrigin = 'anonymous';
   
@@ -1216,7 +1216,7 @@ export function startLightningSound() {
   // After 4 seconds of continuous play, ease volume down slightly
   lightningVolumeTimeout = setTimeout(() => {
     if (lightningGain) {
-      lightningGain.gain.setValueAtTime(3.5, ctx.currentTime);
+      lightningGain.gain.setValueAtTime(0.8, ctx.currentTime);
       console.log('[audio] Lightning volume eased (4s continuous)');
     }
   }, 4000);
