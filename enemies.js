@@ -453,7 +453,6 @@ function initBasicInstancePool() {
 
   const basicMat = new THREE.MeshBasicMaterial({
     transparent: true,
-    depthWrite: false, depthTest: false,
     opacity: 0.7,
   });
 
@@ -585,7 +584,6 @@ function initFastInstancePool() {
 
   const fastMat = new THREE.MeshBasicMaterial({
     transparent: true,
-    depthWrite: false, depthTest: false,
     opacity: 0.7,
   });
 
@@ -718,7 +716,6 @@ function initTankInstancePool() {
 
   const tankMat = new THREE.MeshBasicMaterial({
     transparent: true,
-    depthWrite: false, depthTest: false,
     opacity: 0.7,
   });
 
@@ -850,7 +847,6 @@ function initSwarmInstancePool() {
 
   const swarmMat = new THREE.MeshBasicMaterial({
     transparent: true,
-    depthWrite: false, depthTest: false,
     opacity: 0.7,
   });
 
@@ -964,7 +960,6 @@ function spawnTrainEnemy(type, position, levelConfig) {
   const material = new THREE.MeshBasicMaterial({
     color: def.color,
     transparent: true,
-    depthWrite: false, depthTest: false,
     opacity: 0.8,
   });
 
@@ -1119,7 +1114,6 @@ function spawnBabySpiders(position, count = 3) {
       color: 0xff6644,
       transparent: true,
       opacity: 0.7,
-      depthWrite: false,
     });
     const spider = new THREE.Mesh(geo, mat);
     spider.position.copy(position);
@@ -1152,7 +1146,6 @@ function spawnShieldShards(position, count = 3) {
       color: 0xcccccc,
       transparent: true,
       opacity: 0.8,
-      depthWrite: false,
     });
     const shard = new THREE.Mesh(geo, mat);
     shard.position.copy(position);
@@ -1422,7 +1415,6 @@ function spawnGeometryShifterSplit(position, hp, scale) {
     const mat = new THREE.MeshBasicMaterial({
       color: 0xff88ff,
       transparent: true,
-      depthWrite: false, depthTest: false,
       opacity: 0.7,
     });
 
@@ -1509,7 +1501,6 @@ function spawnCloneMimicSplit(position) {
     const mat = new THREE.MeshBasicMaterial({
       color: 0xff00aa,
       transparent: true,
-      depthWrite: false, depthTest: false,
       opacity: 0.5,
     });
 
@@ -1772,7 +1763,6 @@ export function spawnEnemy(type, position, levelConfig) {
     sharedMaterials[type] = new THREE.MeshBasicMaterial({
       color: def.color,
       transparent: true,
-      depthWrite: false, depthTest: false,
       opacity: 0.7,
     });
   }
@@ -3272,8 +3262,7 @@ class Boss {
     const mat = new THREE.MeshBasicMaterial({
       color: def.color,
       transparent: true,
-      opacity: 0.9,
-      depthWrite: false,
+      opacity: 0.9
     });
     const rows = def.pattern.length;
     const cols = def.pattern[0].length;
@@ -3319,7 +3308,6 @@ class Boss {
         color: 0xffffff,  // White - very obvious in VR
         transparent: true,
         opacity: 0.95,   // Higher opacity for visibility
-        depthWrite: false,
       });
       weak.material = weakMaterial;
       this.weakPoints.push(weak);
@@ -3972,8 +3960,7 @@ class SkullHand {
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.9,
-      depthWrite: false, depthTest: false,
+      opacity: 0.9
     });
     
     // Palm (center)
@@ -4138,8 +4125,7 @@ class SkullBoss extends Boss {
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.9,
-      depthWrite: false,
+      opacity: 0.9
     });
     
     // Skull top (dome)
@@ -4175,8 +4161,7 @@ class SkullBoss extends Boss {
     const eyeMat = new THREE.MeshBasicMaterial({
       color: 0xff0000,
       transparent: true,
-      opacity: 0.8,
-      depthWrite: false,
+      opacity: 0.8
     });
     
     const leftEye = new THREE.Mesh(eyeGeo, eyeMat.clone());
@@ -4719,8 +4704,7 @@ class HunterBoss extends Boss {
     const droneMat = new THREE.MeshBasicMaterial({
       color: 0xff6600,
       transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
+      opacity: 0.95
     });
 
     // Drone body (2x2 pattern)
@@ -4850,8 +4834,7 @@ class DJBoss extends Boss {
       const speakerMat = new THREE.MeshBasicMaterial({
         color: 0x8800ff,
         transparent: true,
-        opacity: 0.9,
-        depthWrite: false,
+        opacity: 0.9
       });
 
       // Speaker body
@@ -4875,8 +4858,7 @@ class DJBoss extends Boss {
     const boothMat = new THREE.MeshBasicMaterial({
       color: 0x4400aa,
       transparent: true,
-      opacity: 0.85,
-      depthWrite: false,
+      opacity: 0.85
     });
     const booth = new THREE.Mesh(boothGeo, boothMat);
     booth.position.set(0, 0, 0.5);
@@ -4971,8 +4953,7 @@ class StarfighterBoss extends Boss {
     const wingMat = new THREE.MeshBasicMaterial({
       color: 0x00aaff,
       transparent: true,
-      opacity: 0.9,
-      depthWrite: false,
+      opacity: 0.9
     });
 
     // Left wing
@@ -4998,8 +4979,7 @@ class StarfighterBoss extends Boss {
     const cockpitMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
+      opacity: 0.95
     });
     const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
     cockpit.position.set(0, 0, 0.5);
@@ -5131,8 +5111,7 @@ class ScientistBoss extends Boss {
     const compilerMat = new THREE.MeshBasicMaterial({
       color: 0xff00ff,
       transparent: true,
-      opacity: 0.9,
-      depthWrite: false,
+      opacity: 0.9
     });
 
     // 3x3x3 cube
@@ -5163,8 +5142,7 @@ class ScientistBoss extends Boss {
       const dataMat = new THREE.MeshBasicMaterial({
         color: 0x00ffff,
         transparent: true,
-        opacity: 0.95,
-        depthWrite: false,
+        opacity: 0.95
       });
       const dataCube = new THREE.Mesh(dataGeo, dataMat);
       const angle = (i / 4) * Math.PI * 2;
@@ -5275,8 +5253,7 @@ class MonkBoss extends Boss {
     const nodeMat = new THREE.MeshBasicMaterial({
       color: 0xffdd00,
       transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
+      opacity: 0.95
     });
 
     for (let i = 0; i < nodeCount; i++) {
@@ -5307,8 +5284,7 @@ class MonkBoss extends Boss {
     const bodyMat = new THREE.MeshBasicMaterial({
       color: 0xffaa00,
       transparent: true,
-      opacity: 0.85,
-      depthWrite: false,
+      opacity: 0.85
     });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.userData.isBossBody = true;
@@ -5321,7 +5297,6 @@ class MonkBoss extends Boss {
       transparent: true,
       opacity: 0.5,
       side: THREE.DoubleSide
-      depthWrite: false,
     });
     this.auraMesh = new THREE.Mesh(auraGeo, auraMat);
     this.auraMesh.rotation.x = -Math.PI / 2;
@@ -6081,8 +6056,7 @@ class CommanderBoss extends Boss {
     const tileMat = new THREE.MeshBasicMaterial({
       color: 0x00aaff,
       transparent: true,
-      opacity: 0.7,
-      depthWrite: false,
+      opacity: 0.7
     });
 
     for (let i = 0; i < tileCount; i++) {
@@ -6225,8 +6199,7 @@ class DivaBoss extends Boss {
       const micMat = new THREE.MeshBasicMaterial({
         color: 0xff00ff,
         transparent: true,
-        opacity: 0.9,
-        depthWrite: false,
+        opacity: 0.9
       });
 
       // Microphone stand
@@ -6241,8 +6214,7 @@ class DivaBoss extends Boss {
       const headMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
-        opacity: 0.95,
-        depthWrite: false,
+        opacity: 0.95
       });
       const head = new THREE.Mesh(headGeo, headMat);
       head.position.set(pos.x + 0.1, pos.y + 0.45, pos.z);
@@ -6375,8 +6347,7 @@ class TwinGlitchBoss extends Boss {
       const sisterMat = new THREE.MeshBasicMaterial({
         color: data.color,
         transparent: true,
-        opacity: 0.9,
-        depthWrite: false,
+        opacity: 0.9
       });
 
       // Sister body (3x3 pattern)
@@ -6394,8 +6365,7 @@ class TwinGlitchBoss extends Boss {
       const coreMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
-        opacity: 0.95,
-        depthWrite: false,
+        opacity: 0.95
       });
       const core = new THREE.Mesh(coreGeo, coreMat);
       core.position.set(0.375, 0.375, 0.2);
@@ -6580,8 +6550,7 @@ class MinotaurBoss extends Boss {
       const hornMat = new THREE.MeshBasicMaterial({
         color: 0xff0088,
         transparent: true,
-        opacity: 0.9,
-        depthWrite: false,
+        opacity: 0.9
       });
 
       // Horn (tapered up)
@@ -7492,7 +7461,7 @@ export function spawnBossMinion(fromPos, playerPos, type = 'basic') {
   const group = new THREE.Group();
   const def = ENEMY_DEFS[type] || ENEMY_DEFS.basic;
   const geo = getGeo(def.voxelSize);
-  const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, depthWrite: false, opacity: 0.8 });
+  const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.8 });
 
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 2; c++) {
@@ -7591,7 +7560,7 @@ export function spawnBossProjectile(fromPos, targetPos) {
     transparent: true,
     opacity: 0.7,
     blending: THREE.AdditiveBlending,
-    depthWrite: false, depthTest: false,
+    depthWrite: false,
   });
   const glow = new THREE.Mesh(glowGeo, glowMat);
   projGroup.add(glow);
