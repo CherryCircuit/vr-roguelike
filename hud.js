@@ -90,16 +90,14 @@ const keyboardKeyPool = {
   initialized: false
 };
 
-// ── Keyboard Instancing: Merged Geometry Approach ──────────
-// Instead of ~36 individual key groups (108+ draw calls), we merge all
-// key face geometries into 4 draw calls (one per material type) and
-// all border geometries into 4 draw calls (one per border material type).
-// Key labels use a single sprite atlas. Total: ~12 draw calls vs ~108.
-let keyboardMergedMeshes = null;   // { faces: { letter, ok, del, space }, borders: { letter, ok, del, space } }
+// ── Keyboard Instancing: Hybrid Merged/Per-Key Approach ──────────
+// Per-key box meshes (36 draw calls) for individual highlight control,
+// merged border geometries (4 draw calls) and merged label atlas (1 draw call).
+// Total: ~41 draw calls vs ~108 original.
+let keyboardKeyMeshes = [];        // Per-key box meshes (individual materials for highlighting)
 let keyboardAtlasSprite = null;     // Single sprite for all key labels
 let keyboardHitTargets = [];        // Invisible planes for raycasting (positioned over each key)
 let keyboardKeyLayout = [];         // Layout data: { x, y, w, key, type } for each key
-let keyboardGlowMeshes = null;      // Pre-created glow meshes per key (no dynamic allocation)
 
 // Level intro state
 let levelIntroActive = false;
@@ -2694,26 +2692,22 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
     rowY -= keySize + keyGap;
   }
 
-  // ── Merge face geometries by material type ──
-  // Groups keys by material type, translates each key's geometry to its world position,
-  // then merges into a single BufferGeometry per type. Result: 4 draw calls for all faces.
-  const faceGeometriesByType = { letter: [], ok: [], del: [], space: [] };
+  // ── Per-key box meshes (individual materials for cursor/highlight) ──
+  // Each key gets its own mesh + material so hover highlights affect only one key.
+  // 36 individual box meshes = 36 draw calls (still much better than original ~108).
+  keyboardKeyMeshes = [];
   for (const k of keyboardKeyLayout) {
     const geo = keyboardKeyPool.geometries[k.geomType].clone();
-    geo.translate(k.x, k.y, 0);
-    faceGeometriesByType[k.matType].push(geo);
-  }
-
-  keyboardMergedMeshes = {};
-  for (const [type, geos] of Object.entries(faceGeometriesByType)) {
-    if (geos.length === 0) continue;
-    const merged = mergeGeometries(geos);
-    const mesh = new THREE.Mesh(merged, keyboardKeyPool.materials[type]);
+    const mat = keyboardKeyPool.materials[k.matType].clone();
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(k.x, k.y, 0);
     mesh.renderOrder = 1;
     nameEntryGroup.add(mesh);
-    keyboardMergedMeshes[type] = mesh;
-    // Dispose cloned source geometries (merged copy owns the buffers now)
-    geos.forEach(g => g.dispose());
+    keyboardKeyMeshes.push(mesh);
+    // Store per-key material reference for hover highlighting
+    k.boxMat = mat;
+    k.boxMesh = mesh;
+    k.baseColor = mat.color.getHex();
   }
 
   // ── Merge border geometries by type ──
@@ -2782,9 +2776,14 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
     const uv = labelUVMap[label];
     if (!uv) continue;
 
+    // Label plane aspect ratio must match atlas cell aspect ratio (cellW/cellH)
+    // to prevent text stretching. Plane is sized to fit within key bounds.
     const planeW = k.w * 0.85;
-    const planeH = keySize * 0.6;
-    const labelGeo = new THREE.PlaneGeometry(planeW, planeH);
+    const planeH = planeW * (cellH / cellW);  // Match atlas cell aspect ratio (4:3)
+    // Clamp height to not exceed key height
+    const maxH = keySize * 0.7;
+    const finalH = Math.min(planeH, maxH);
+    const labelGeo = new THREE.PlaneGeometry(planeW, finalH);
     // Remap UVs to sample from the correct atlas cell
     const posAttr = labelGeo.attributes.uv;
     for (let vi = 0; vi < posAttr.count; vi++) {
@@ -2840,61 +2839,20 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
     keyboardHitTargets.push(hitMesh);
   }
 
-  // ── Pre-create glow meshes for hover effects (MERGED) ──
-  // All glow planes are merged into a single geometry with a shared material.
-  // Per-frame, we update opacity on the material (all glow at once).
-  // For per-key glow control, we use a shader with per-vertex opacity attribute.
-  // SIMPLIFICATION: Use a single merged glow mesh with uniform opacity for now.
-  // The visual effect is slightly different (all keys glow when any is hovered)
-  // but the performance win is massive (36 draw calls → 1).
-  // TODO: Per-key opacity via vertex colors if needed.
-  const glowGeometries = [];
-  for (const k of keyboardKeyLayout) {
-    const glowColor = k.key === 'OK' ? '0,255,136' : (k.key === 'DEL' ? '255,68,68' : '0,255,255');
-    const glowGeo = keyboardKeyPool.geometries[k.geomType].clone();
-    glowGeo.translate(k.x, k.y, 0.02);
-    glowGeometries.push(glowGeo);
-  }
-  const mergedGlowGeo = glowGeometries.length > 0 ? mergeGeometries(glowGeometries) : null;
-  const glowMat = new THREE.MeshBasicMaterial({
-    map: getHoverGlowTexture('0,255,255'),
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  let mergedGlowMesh = null;
-  if (mergedGlowGeo) {
-    mergedGlowMesh = new THREE.Mesh(mergedGlowGeo, glowMat);
-    mergedGlowMesh.scale.set(1.3, 1.3, 1.3);
-    mergedGlowMesh.renderOrder = 998;
-    nameEntryGroup.add(mergedGlowMesh);
-    glowGeometries.forEach(g => g.dispose());
-  }
-
-  keyboardGlowMeshes = {
-    mesh: mergedGlowMesh,
-    material: glowMat,
-    hovered: false,
-  };
+  // ── Per-key glow removed: per-key material highlighting handles hover feedback ──
+  // Each key's boxMat color is smoothly interpolated in updateHUDHover(),
+  // providing bright-on-hover feedback without the "all keys glow" artifact.
 }
 
 export function hideNameEntry() {
   nameEntryGroup.visible = false;
-  // Dispose merged keyboard geometries and glow mesh to prevent memory leaks
-  if (keyboardMergedMeshes) {
-    for (const mesh of Object.values(keyboardMergedMeshes)) {
+  // Dispose per-key box meshes and their materials
+  if (keyboardKeyMeshes) {
+    for (const mesh of keyboardKeyMeshes) {
+      if (mesh.material) mesh.material.dispose();
       if (mesh.geometry) mesh.geometry.dispose();
     }
-    keyboardMergedMeshes = null;
-  }
-  if (keyboardGlowMeshes) {
-    if (keyboardGlowMeshes.mesh) {
-      if (keyboardGlowMeshes.mesh.geometry) keyboardGlowMeshes.mesh.geometry.dispose();
-    }
-    if (keyboardGlowMeshes.material) keyboardGlowMeshes.material.dispose();
-    keyboardGlowMeshes = null;
+    keyboardKeyMeshes = [];
   }
   // Clear layout data
   keyboardKeyLayout = [];
@@ -3590,31 +3548,33 @@ export function updateHUDHover(raycasters) {
 
   let newHover = false;
 
-  // ── Update pre-created merged keyboard glow mesh ──
-  // Keyboard keys use a single merged glow mesh instead of per-key dynamic creation.
-  // Fade in when any keyboard key is hovered, fade out when none are.
-  if (keyboardGlowMeshes && keyboardGlowMeshes.mesh && nameEntryGroup.visible) {
-    const anyKeyHovered = keyboardHitTargets.some(t => hoveredObjs.has(t));
-    keyboardGlowMeshes.hovered = anyKeyHovered;
-    const current = keyboardGlowMeshes.material.opacity || 0;
-    const target = anyKeyHovered ? 0.65 : 0;
-    keyboardGlowMeshes.material.opacity = current + (target - current) * 0.15;
-  }
+  // ── Per-key box highlighting is handled in the hoverables loop below ──
+  // (no merged glow mesh needed; each key has its own material)
 
   // We need to keep track of ALL hoverables to reset those NOT hovered
   // Traverse and reset or set scale/rotation (skip keyboard keys - handled above)
   hoverables.forEach(obj => {
     // Skip keyboard keys: their glow is handled by pre-created meshes above
     if (obj.userData.isKeyboardKey) {
-      // Track hover state for sound effect
+      const layoutIdx = obj.userData._keyLayoutIndex;
+      const layoutEntry = keyboardKeyLayout[layoutIdx];
       if (hoveredObjs.has(obj)) {
         if (!obj.userData._isActuallyHovered) {
           obj.userData._isActuallyHovered = true;
           newHover = true;
         }
+        // Per-key box highlight: brighten the hovered key's material
+        if (layoutEntry && layoutEntry.boxMat) {
+          const hc = layoutEntry.key === 'OK' ? 0x005500 : (layoutEntry.key === 'DEL' ? 0x550000 : 0x112255);
+          layoutEntry.boxMat.color.lerp(new THREE.Color(hc), 0.2);
+        }
       } else {
         if (obj.userData._isActuallyHovered) {
           obj.userData._isActuallyHovered = false;
+        }
+        // Revert to base color when not hovered
+        if (layoutEntry && layoutEntry.boxMat && layoutEntry.baseColor !== undefined) {
+          layoutEntry.boxMat.color.lerp(new THREE.Color(layoutEntry.baseColor), 0.15);
         }
       }
       return;
