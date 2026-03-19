@@ -124,6 +124,12 @@ let scoreboardHeader = '';
 let scoreboardPage = 0;
 let scoreboardSpinnerTimer = null;
 const SCOREBOARD_PAGE_SIZE = 10;
+let lastSubmittedTimestamp = null; // Track most recent score submission for highlighting
+
+// Set the timestamp of the most recently submitted score (called from main.js after submitScore)
+export function setLastSubmittedTimestamp(timestamp) {
+  lastSubmittedTimestamp = timestamp;
+}
 
 // Country select state
 let countryListCanvas = null;
@@ -3116,8 +3122,10 @@ function renderScoreboardCanvas() {
     const score = scoreboardScores[i];
     const y = (i - startIdx) * rowHeight + rowHeight / 2 + 120;
     const rank = i + 1;
-    const isPlayer = !playerHighlighted && highlightName && (score.name || '').toUpperCase() === highlightName;
-    if (isPlayer) playerHighlighted = true;
+    // Highlight only if name matches AND timestamp matches the most recent submission
+    const nameMatches = highlightName && (score.name || '').toUpperCase() === highlightName;
+    const timestampMatches = lastSubmittedTimestamp && score.created_at === lastSubmittedTimestamp;
+    const isPlayer = nameMatches && timestampMatches;
 
     // Highlight row background for the player's entry
     if (isPlayer) {
@@ -3151,13 +3159,9 @@ function renderScoreboardCanvas() {
       } catch (e) { /* skip flag */ }
     }
 
-    // Name
-    if (isPlayer) {
-      ctx.fillStyle = '#ffdd00';
-      ctx.fillText('\u2605', 138, y);
-    }
+    // Name (removed gold star character that was overlapping)
     ctx.fillStyle = isPlayer ? '#ffffff' : '#ccffff';
-    ctx.fillText((score.name || 'ANON').toUpperCase(), 155, y);
+    ctx.fillText((score.name || 'ANON').toUpperCase(), 160, y);
 
     // Score
     ctx.fillStyle = '#ffffff';
