@@ -99,9 +99,9 @@ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIn
     filter.Q.setValueAtTime(10, t);
     gain.gain.setValueAtTime(0.45, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-    osc.stop(t + 0.2);
-    osc2.stop(t + 0.2);
-    lfo.stop(t + 0.2);
+    try { osc.stop(t + 0.2); } catch(e) { /* not started */ }
+    try { osc2.stop(t + 0.2); } catch(e) { /* not started */ }
+    try { lfo.stop(t + 0.2); } catch(e) { /* not started */ }
   } else {
     // Short staccato "p" - very brief, sharp attack
     osc.frequency.setValueAtTime(600, t);
@@ -114,9 +114,9 @@ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIn
     filter.Q.setValueAtTime(12, t);
     gain.gain.setValueAtTime(0.35, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-    osc.stop(t + 0.04);
-    osc2.stop(t + 0.04);
-    lfo.stop(t + 0.04);
+    try { osc.stop(t + 0.04); } catch(e) { /* not started */ }
+    try { osc2.stop(t + 0.04); } catch(e) { /* not started */ }
+    try { lfo.stop(t + 0.04); } catch(e) { /* not started */ }
   }
 
   lfo.connect(lfoGain);
