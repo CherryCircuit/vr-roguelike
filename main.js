@@ -10793,7 +10793,7 @@ function buildAlienPlanetScene(group) {
       const dist = minDist + Math.random() * (maxDist - minDist);
       const height = minHeight + Math.random() * (maxHeight - minHeight);
       const width = 1.5 + Math.random() * 4.5; // 3x thicker (was 0.5 + Math.random() * 1.5)
-      dummy.position.set(Math.cos(angle) * dist, height / 2, Math.sin(angle) * dist);
+      dummy.position.set(Math.cos(angle) * dist, (height / 2) - 3, Math.sin(angle) * dist);
       dummy.scale.set(width, height, width);
       dummy.rotation.y = Math.random() * Math.PI;
       dummy.updateMatrix();
