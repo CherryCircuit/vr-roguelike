@@ -453,7 +453,7 @@ function initBasicInstancePool() {
 
   const basicMat = new THREE.MeshBasicMaterial({
     transparent: true,
-    depthWrite: false,
+    depthWrite: false, depthTest: false,
     opacity: 0.7,
   });
 
@@ -585,7 +585,7 @@ function initFastInstancePool() {
 
   const fastMat = new THREE.MeshBasicMaterial({
     transparent: true,
-    depthWrite: false,
+    depthWrite: false, depthTest: false,
     opacity: 0.7,
   });
 
@@ -718,7 +718,7 @@ function initTankInstancePool() {
 
   const tankMat = new THREE.MeshBasicMaterial({
     transparent: true,
-    depthWrite: false,
+    depthWrite: false, depthTest: false,
     opacity: 0.7,
   });
 
@@ -850,7 +850,7 @@ function initSwarmInstancePool() {
 
   const swarmMat = new THREE.MeshBasicMaterial({
     transparent: true,
-    depthWrite: false,
+    depthWrite: false, depthTest: false,
     opacity: 0.7,
   });
 
@@ -964,7 +964,7 @@ function spawnTrainEnemy(type, position, levelConfig) {
   const material = new THREE.MeshBasicMaterial({
     color: def.color,
     transparent: true,
-    depthWrite: false,
+    depthWrite: false, depthTest: false,
     opacity: 0.8,
   });
 
@@ -1420,7 +1420,7 @@ function spawnGeometryShifterSplit(position, hp, scale) {
     const mat = new THREE.MeshBasicMaterial({
       color: 0xff88ff,
       transparent: true,
-      depthWrite: false,
+      depthWrite: false, depthTest: false,
       opacity: 0.7,
     });
 
@@ -1507,7 +1507,7 @@ function spawnCloneMimicSplit(position) {
     const mat = new THREE.MeshBasicMaterial({
       color: 0xff00aa,
       transparent: true,
-      depthWrite: false,
+      depthWrite: false, depthTest: false,
       opacity: 0.5,
     });
 
@@ -1770,7 +1770,7 @@ export function spawnEnemy(type, position, levelConfig) {
     sharedMaterials[type] = new THREE.MeshBasicMaterial({
       color: def.color,
       transparent: true,
-      depthWrite: false,
+      depthWrite: false, depthTest: false,
       opacity: 0.7,
     });
   }
@@ -3968,7 +3968,8 @@ class SkullHand {
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.9,
+      depthWrite: false, depthTest: false,
     });
     
     // Palm (center)
@@ -7568,7 +7569,7 @@ export function spawnBossProjectile(fromPos, targetPos) {
     transparent: true,
     opacity: 0.7,
     blending: THREE.AdditiveBlending,
-    depthWrite: false,
+    depthWrite: false, depthTest: false,
   });
   const glow = new THREE.Mesh(glowGeo, glowMat);
   projGroup.add(glow);
