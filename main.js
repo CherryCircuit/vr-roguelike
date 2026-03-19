@@ -2438,7 +2438,11 @@ function handleDesktopNameEntryClick() {
     game.state = State.SCOREBOARD;
     showScoreboard([], 'SUBMITTING...');
     const country = getStoredCountry() || '';
-    submitScore(name, game.finalScore, game.finalLevel, country).then(() => {
+    submitScore(name, game.finalScore, game.finalLevel, country).then((data) => {
+      // Store the timestamp of the submitted score for highlighting
+      if (data && data[0] && data[0].created_at) {
+        setLastSubmittedTimestamp(data[0].created_at);
+      }
       return new Promise(resolve => setTimeout(resolve, 500));
     }).then(() => {
       return fetchTopScores();
@@ -2636,7 +2640,11 @@ function handleNameEntryTrigger(controller) {
     game.state = State.SCOREBOARD;
     showScoreboard([], 'SUBMITTING...');
     const country = getStoredCountry() || '';
-    submitScore(name, game.finalScore, game.finalLevel, country).then(() => {
+    submitScore(name, game.finalScore, game.finalLevel, country).then((data) => {
+      // Store the timestamp of the submitted score for highlighting
+      if (data && data[0] && data[0].created_at) {
+        setLastSubmittedTimestamp(data[0].created_at);
+      }
       // Small artificial delay to ensure DB indexing is finished for consistent read-after-write
       return new Promise(resolve => setTimeout(resolve, 500));
     }).then(() => {
@@ -10381,32 +10389,38 @@ function buildDesertNightScene(group) {
   group.rotation.y = -0.436; // yaw: -25 degrees
   group.position.set(-2.12, -0.20, -4.82);  // Moved 5 units +X and +Z
 
+  // Frame counter for throttling dust particle updates (Issue 4: reduce CPU cost)
+  let desertFrameCount = 0;
+
   // === ANIMATION UPDATE ===
   group.userData.update = (now, dt) => {
     const time = now * 0.001;
-    // Update stars twinkle
+    // Update stars twinkle (shader-based, already efficient)
     starMaterial.uniforms.uTime.value = time;
-    // Update dust
+    // Update dust shader time
     dustMaterial.uniforms.uTime.value = time;
 
-    // Animate dust particle positions with floating motion
-    const dustPos = dustGeometry.attributes.position.array;
-    for (let i = 0; i < dustCount; i++) {
-      const idx = i * 3;
-      // Gentle wind drift
-      dustPos[idx] += 0.005 * dt;
-      dustPos[idx + 1] += Math.sin(time + dustPhases[i]) * 0.001 * dt;
-      dustPos[idx + 2] += Math.cos(time * 0.7 + dustPhases[i]) * 0.002 * dt;
+    // Throttle dust particle position updates to every 5th frame (Issue 4: reduce CPU cost)
+    desertFrameCount++;
+    if (desertFrameCount % 5 === 0) {
+      const dustPos = dustGeometry.attributes.position.array;
+      for (let i = 0; i < dustCount; i++) {
+        const idx = i * 3;
+        // Gentle wind drift (scaled by 5 since we only update every 5th frame)
+        dustPos[idx] += 0.025 * dt;
+        dustPos[idx + 1] += Math.sin(time + dustPhases[i]) * 0.005 * dt;
+        dustPos[idx + 2] += Math.cos(time * 0.7 + dustPhases[i]) * 0.01 * dt;
 
-      // Wrap around boundaries
-      if (dustPos[idx] > 30) dustPos[idx] = -30;
-      if (dustPos[idx] < -30) dustPos[idx] = 30;
-      if (dustPos[idx + 1] > floorY + 15) dustPos[idx + 1] = floorY;
-      if (dustPos[idx + 1] < floorY) dustPos[idx + 1] = floorY + 15;
-      if (dustPos[idx + 2] > 30) dustPos[idx + 2] = -30;
-      if (dustPos[idx + 2] < -30) dustPos[idx + 2] = 30;
+        // Wrap around boundaries
+        if (dustPos[idx] > 30) dustPos[idx] = -30;
+        if (dustPos[idx] < -30) dustPos[idx] = 30;
+        if (dustPos[idx + 1] > floorY + 15) dustPos[idx + 1] = floorY;
+        if (dustPos[idx + 1] < floorY) dustPos[idx + 1] = floorY + 15;
+        if (dustPos[idx + 2] > 30) dustPos[idx + 2] = -30;
+        if (dustPos[idx + 2] < -30) dustPos[idx + 2] = 30;
+      }
+      dustGeometry.attributes.position.needsUpdate = true;
     }
-    dustGeometry.attributes.position.needsUpdate = true;
   };
 }
 

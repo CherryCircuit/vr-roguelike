@@ -1181,24 +1181,42 @@ export function stopLowHealthWarningSound() {
   lowHealthLfoGain = null;
 }
 
-// ── Lightning beam continuous sound (MP3 loop) ─────────────
+// ── Lightning beam continuous sound (MP3 loop with Web Audio API) ─────────────
 let lightningAudio = null;
+let lightningSource = null;
+let lightningGain = null;
 let lightningVolumeTimeout = null;
 
 export function startLightningSound() {
-  if (lightningAudio) return;  // Already playing
+  if (lightningSource) return;  // Already playing
 
+  const ctx = getAudioContext();
+  
+  // Create audio element and source
   lightningAudio = new Audio('mnt/project/soundfx/lightning_loop.mp3');
   lightningAudio.loop = true;
-  lightningAudio.volume = 0.5; // "Full" starting volume
+  lightningAudio.crossOrigin = 'anonymous';
+  
+  // Create MediaElementSource and GainNode for volume control
+  lightningSource = ctx.createMediaElementSource(lightningAudio);
+  lightningGain = ctx.createGain();
+  
+  // Set high gain (4x) to make the quiet MP3 audible
+  lightningGain.gain.setValueAtTime(4.0, ctx.currentTime);
+  
+  // Connect: source -> gain -> destination
+  lightningSource.connect(lightningGain);
+  lightningGain.connect(ctx.destination);
+  
+  // Start playback
   lightningAudio.play().catch(err => {
     console.warn('[audio] Lightning loop playback failed:', err);
   });
 
   // After 4 seconds of continuous play, lower volume by 40%
   lightningVolumeTimeout = setTimeout(() => {
-    if (lightningAudio) {
-      lightningAudio.volume = 0.3; // 40% reduction (0.5 * 0.6)
+    if (lightningGain) {
+      lightningGain.gain.setValueAtTime(2.4, ctx.currentTime); // 4.0 * 0.6 = 2.4
       console.log('[audio] Lightning volume dipped (4s continuous)');
     }
   }, 4000);
@@ -1209,6 +1227,14 @@ export function stopLightningSound() {
     lightningAudio.pause();
     lightningAudio.currentTime = 0;
     lightningAudio = null;
+  }
+  if (lightningSource) {
+    lightningSource.disconnect();
+    lightningSource = null;
+  }
+  if (lightningGain) {
+    lightningGain.disconnect();
+    lightningGain = null;
   }
   if (lightningVolumeTimeout) {
     clearTimeout(lightningVolumeTimeout);

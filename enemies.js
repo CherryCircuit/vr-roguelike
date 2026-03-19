@@ -2927,17 +2927,30 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   // [Physics Death System] Spawn voxel explosions with physics
   console.log(`[enemy-death] destroyEnemy: spawnVoxelExplosion=${!!spawnVoxelExplosion}, type=${e.type}`);
   if (spawnVoxelExplosion) {
-    // Reduced voxel counts for performance (big: 5-6, small: 2-3)
-    let voxelCount = e.type === 'tank' ? 6 : e.type === 'basic' ? 4 : 3;
-    // New enemy voxel counts
+    // Calculate voxel count based on enemy type
+    // Get the number of voxels in the enemy mesh
+    const voxelCountInMesh = e.mesh.children.filter(c => c.isMesh && !c.userData.isEnemyHitbox).length;
+    
+    let voxelCount;
+    if (e.type === 'swarm') {
+      // SWARM: Always 1 debris
+      voxelCount = 1;
+    } else if (e.type === 'tank') {
+      // TANK: Max 6 debris
+      voxelCount = 6;
+    } else {
+      // Other enemies: random between 2 and min(voxelCount, 6)
+      const maxDebris = Math.min(voxelCountInMesh, 6);
+      const minDebris = 2;
+      voxelCount = Math.floor(Math.random() * (maxDebris - minDebris + 1)) + minDebris;
+    }
+    
+    // New enemy voxel counts (override for special types)
     if (e.isTrain) voxelCount = Math.min(e.trainLength || 5, 5); // Cap train voxels
     if (e.shapeShift) voxelCount = 5;
     if (e.isRanged) voxelCount = 5;
     if (e.isMimic) voxelCount = 4;
     if (e.isSpider) voxelCount = 3;
-    // Small enemies get fewer bits
-    if (e.type === 'swarm') voxelCount = 2;
-    if (e.type === 'fast') voxelCount = 3;
 
     console.log(`[enemy-death] Spawning ${voxelCount} voxels at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
     spawnVoxelExplosion(pos, color.getHex(), voxelCount, e.type, isCritical, isOverkill);
