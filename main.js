@@ -5,6 +5,10 @@
 
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, loadDreamState, saveDreamState, startGameWithSeed, getBiomeForLevel } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
@@ -492,6 +496,103 @@ function init() {
   renderer.xr.addEventListener('sessionend', () => {
     console.log('[vr] Session ended');
   });
+
+  // ── Selective Bloom (desktop only, synthwave_valley biome) ──
+  // VR limitation: EffectComposer doesn't support WebXR multi-eye rendering.
+  // Bloom is only applied in desktop mode. In VR, the scene renders directly.
+  const BLOOM_LAYER = 1;
+  let bloomComposer = null;
+  let bloomBaseMaterial = null;
+  let bloomBaseMesh = null;
+
+  // Selective bloom composite shader: adds bloom texture on top of base render
+  const SelectiveBloomCompositeShader = {
+    uniforms: {
+      baseTexture: { value: null },
+      bloomTexture: { value: null },
+    },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      uniform sampler2D baseTexture;
+      uniform sampler2D bloomTexture;
+      varying vec2 vUv;
+      void main() {
+        vec4 base = texture2D(baseTexture, vUv);
+        vec4 bloom = texture2D(bloomTexture, vUv);
+        gl_FragColor = base + bloom;
+      }
+    `,
+  };
+
+  function initSelectiveBloom() {
+    const rtParams = {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.HalfFloatType,
+    };
+
+    // Composer that renders the full scene (layer 0 only — bloom objects excluded)
+    const baseComposer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
+      window.innerWidth, window.innerHeight, rtParams
+    ));
+    const baseRenderPass = new RenderPass(scene, camera);
+    baseComposer.addPass(baseRenderPass);
+
+    // Bloom composer: renders only bloom-layer objects, then applies bloom
+    const bloomComposer_ = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
+      window.innerWidth, window.innerHeight, rtParams
+    ));
+
+    // Make the camera see only bloom objects (layer 1) for this pass
+    const bloomCamera = camera.clone();
+    bloomCamera.layers.set(BLOOM_LAYER);
+    const bloomRenderPass = new RenderPass(scene, bloomCamera);
+    bloomComposer_.addPass(bloomRenderPass);
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.3,   // strength
+      0,     // radius
+      0      // threshold
+    );
+    bloomComposer_.addPass(bloomPass);
+
+    // Final composite: base scene + bloom overlay
+    const compositePass = new ShaderPass(SelectiveBloomCompositeShader);
+    compositePass.uniforms.baseTexture.value = baseComposer.renderTarget1.texture;
+    compositePass.uniforms.bloomTexture.value = bloomComposer_.renderTarget2.texture;
+    baseComposer.addPass(compositePass);
+
+    bloomComposer = { baseComposer, bloomComposer: bloomComposer_, compositePass, bloomCamera };
+    console.log('[bloom] Selective bloom initialized (desktop only)');
+  }
+
+  // Mark an object for bloom by enabling the bloom layer
+  function enableBloomOnObject(obj) {
+    obj.layers.enable(BLOOM_LAYER);
+  }
+
+  function resizeBloomComposer() {
+    if (!bloomComposer) return;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    bloomComposer.baseComposer.setSize(w, h);
+    bloomComposer.bloomComposer.setSize(w, h);
+    bloomComposer.bloomComposer.passes[1].resolution.set(w, h);
+  }
+
+  // Handle resize
+  const origResize = window.addEventListener ? null : null;  // placeholder
+  const _origOnResize = onWindowResize;
+
+  function renderWithBloom() {
+    if (!bloomComposer) {
+      renderer.render(scene, camera);
+      return;
+    }
+    bloomComposer.baseComposer.render();
+  }
 
   // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
   // Desktop controls will auto-enable if VR isn't available
@@ -11018,6 +11119,110 @@ function buildHellscapeLavaScene(group) {
   group.add(geyserPoints);
 
   // ========================================
+  // 7. FLAME PILLARS (distant fire columns)
+  // ========================================
+  const PILLAR_COUNT = 7;
+  const PARTICLES_PER_PILLAR = 35;
+  const TOTAL_FLAME_PILLAR_PARTICLES = PILLAR_COUNT * PARTICLES_PER_PILLAR;
+
+  // Canvas-drawn flame sprite texture (64x64, soft radial gradient)
+  const flameCanvas = document.createElement('canvas');
+  flameCanvas.width = 64;
+  flameCanvas.height = 64;
+  const fCtx = flameCanvas.getContext('2d');
+  const flameGrad = fCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  flameGrad.addColorStop(0, 'rgba(255,255,200,1.0)');
+  flameGrad.addColorStop(0.2, 'rgba(255,200,50,0.9)');
+  flameGrad.addColorStop(0.5, 'rgba(255,100,0,0.6)');
+  flameGrad.addColorStop(0.8, 'rgba(200,30,0,0.2)');
+  flameGrad.addColorStop(1, 'rgba(100,0,0,0.0)');
+  fCtx.fillStyle = flameGrad;
+  fCtx.fillRect(0, 0, 64, 64);
+  const flameTexture = new THREE.CanvasTexture(flameCanvas);
+
+  // Pillar positions: spread around the arena at 30-70 units distance
+  const pillarDefs = [];
+  for (let i = 0; i < PILLAR_COUNT; i++) {
+    const angle = (i / PILLAR_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
+    const dist = 35 + Math.random() * 40; // 35-75 units away
+    pillarDefs.push({
+      x: Math.cos(angle) * dist + 10.0, // Account for terrain X shift
+      z: Math.sin(angle) * dist,
+      height: 12 + Math.random() * 10, // Pillar height 12-22 units
+      radius: 1.5 + Math.random() * 1.5, // Base radius 1.5-3 units
+      speed: 0.6 + Math.random() * 0.4 // Rise speed multiplier
+    });
+  }
+
+  // Particle arrays
+  const flamePositions = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES * 3);
+  const flameSizes = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES);
+  const flameParticleData = []; // Per-particle: { pillarIdx, t (0-1 life progress) }
+
+  const initFlameParticle = (idx) => {
+    const pillarIdx = idx % PILLAR_COUNT;
+    const pillar = pillarDefs[pillarIdx];
+    const i3 = idx * 3;
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.random() * pillar.radius;
+    const t = Math.random(); // Start at random height for stagger
+
+    flamePositions[i3] = pillar.x + Math.cos(angle) * r;
+    flamePositions[i3 + 1] = floorY + t * pillar.height;
+    flamePositions[i3 + 2] = pillar.z + Math.sin(angle) * r;
+    flameSizes[idx] = 1.0 + (1.0 - t) * 2.0; // Larger at base, smaller at top
+
+    if (!flameParticleData[idx]) {
+      flameParticleData[idx] = { pillarIdx, speed: 0.3 + Math.random() * 0.3 };
+    }
+    flameParticleData[idx].t = t;
+    flameParticleData[idx].pillarIdx = pillarIdx;
+  };
+
+  for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
+    initFlameParticle(i);
+  }
+
+  const flamePillarGeo = new THREE.BufferGeometry();
+  flamePillarGeo.setAttribute('position', new THREE.BufferAttribute(flamePositions, 3));
+  flamePillarGeo.setAttribute('aSize', new THREE.BufferAttribute(flameSizes, 1));
+
+  // Use ShaderMaterial for per-particle size with sizeAttenuation
+  const flamePillarMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTexture: { value: flameTexture },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+    },
+    vertexShader: `
+      attribute float aSize;
+      varying float vAlpha;
+      uniform float uPixelRatio;
+      void main() {
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = aSize * uPixelRatio * (200.0 / -mvPosition.z);
+        gl_PointSize = clamp(gl_PointSize, 1.0, 64.0);
+        gl_Position = projectionMatrix * mvPosition;
+        // Fade particles that are very high (near top of pillar)
+        vAlpha = aSize / 3.0;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uTexture;
+      varying float vAlpha;
+      void main() {
+        vec4 texColor = texture2D(uTexture, gl_PointCoord);
+        gl_FragColor = vec4(texColor.rgb, texColor.a * vAlpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  const flamePillarPoints = new THREE.Points(flamePillarGeo, flamePillarMat);
+  group.add(flamePillarPoints);
+
+  // ========================================
   // MOONS (existing)
   // ========================================
   const createMoon = (size, color, glowColor) => {
@@ -11139,6 +11344,35 @@ function buildHellscapeLavaScene(group) {
     }
     geyserGeo.setDrawRange(0, activeCount);
     geyserGeo.attributes.position.needsUpdate = true;
+
+    // Flame pillar animation
+    const fpPos = flamePillarGeo.attributes.position.array;
+    const fpSizes = flamePillarGeo.attributes.aSize.array;
+    for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
+      const pd = flameParticleData[i];
+      const pillar = pillarDefs[pd.pillarIdx];
+      const i3 = i * 3;
+      const dtSec = dt * 0.001;
+
+      // Advance particle up the pillar
+      pd.t += dtSec * pd.speed * pillar.speed / pillar.height;
+
+      if (pd.t >= 1.0) {
+        // Respawn at base
+        initFlameParticle(i);
+      } else {
+        // Slight horizontal drift as particle rises
+        const drift = (Math.random() - 0.5) * 0.05;
+        fpPos[i3] += drift;
+        fpPos[i3 + 1] += pd.speed * dtSec * pillar.speed;
+        fpPos[i3 + 2] += drift;
+
+        // Shrink as particle rises
+        fpSizes[i] = Math.max(0.3, (1.0 - pd.t) * 3.0);
+      }
+    }
+    flamePillarGeo.attributes.position.needsUpdate = true;
+    flamePillarGeo.attributes.aSize.needsUpdate = true;
   };
 
   // Hellscape floor HUD height: group.position.y = 0.05
