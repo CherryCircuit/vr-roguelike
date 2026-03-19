@@ -54,7 +54,8 @@ import {
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
   updateHolographicGlitch, resetHoloGlitch,
   showFloatingMessage, hideFloatingMessage, updateFloatingMessage,
-  nameEntryGroup
+  nameEntryGroup,
+  setLastSubmittedTimestamp
 } from './hud.js';
 
 import {
@@ -10799,13 +10800,70 @@ function buildAlienPlanetScene(group) {
     const angle = (i / 5) * Math.PI * 2;
     const dist = 160 + Math.random() * 20;
     const h = 110 + Math.random() * 20;
-    dummy.position.set(Math.cos(angle) * dist, h / 2, Math.sin(angle) * dist);
+    dummy.position.set(Math.cos(angle) * dist, (h / 2) - 3, Math.sin(angle) * dist); // Issue 5: Lower mega towers by 3 units
     dummy.scale.set(5, h, 5);
     dummy.updateMatrix();
     megaMesh.setMatrixAt(i, dummy.matrix);
   }
   cityMeshes.push(megaMesh);
   group.add(megaMesh);
+
+  // Issue 6b: Fog cylinder to fade distant buildings (like Synthwave atmosphere)
+  const fogCylRadius = 140; // Tighter than synthwave's 92
+  const fogCylHeight = 90;
+  const fogCylGeo = new THREE.CylinderGeometry(fogCylRadius, fogCylRadius, fogCylHeight, 48, 1, true);
+  const fogCylMat = new THREE.MeshBasicMaterial({
+    color: 0x0a0510, // Dark purple-gray matching alien planet
+    transparent: true,
+    opacity: 0.35,
+    side: THREE.BackSide,
+    depthWrite: false,
+    blending: THREE.NormalBlending
+  });
+  const fogCylinder = new THREE.Mesh(fogCylGeo, fogCylMat);
+  fogCylinder.position.set(0, fogCylHeight / 2 + floorY, 0);
+  fogCylinder.renderOrder = -12;
+  group.add(fogCylinder);
+
+  // Issue 7: Distant low-poly mountains at ~200 units (alien planet colors)
+  const createDistantMountain = (x, z, scale) => {
+    const peakCount = 1 + Math.floor(Math.random() * 2);
+    const mountainGroup = new THREE.Group();
+    for (let p = 0; p < peakCount; p++) {
+      const height = (20 + Math.random() * 30) * scale;
+      const radius = Math.max(4, (4 + Math.random() * 6) * scale);
+      // Low-poly cone with 5-7 segments
+      const peakGeo = new THREE.ConeGeometry(radius, height, 5 + Math.floor(Math.random() * 3));
+      const peakMat = new THREE.MeshStandardMaterial({
+        color: 0x0a2015, // Dark teal-green
+        roughness: 0.9,
+        metalness: 0.1,
+        flatShading: true
+      });
+      const peak = new THREE.Mesh(peakGeo, peakMat);
+      peak.position.set(
+        (Math.random() - 0.5) * 6 * scale,
+        height / 2,
+        (Math.random() - 0.5) * 6 * scale
+      );
+      peak.castShadow = false;
+      peak.receiveShadow = false;
+      mountainGroup.add(peak);
+    }
+    mountainGroup.position.set(x, floorY, z);
+    return mountainGroup;
+  };
+
+  // Ring of 10 distant mountains at ~200 units
+  const distantMountainCount = 10;
+  const distantMountainRadius = 200;
+  for (let i = 0; i < distantMountainCount; i++) {
+    const angle = (i / distantMountainCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+    const r = distantMountainRadius + (Math.random() - 0.5) * 20;
+    const x = Math.cos(angle) * r;
+    const z = Math.sin(angle) * r;
+    group.add(createDistantMountain(x, z, 1.0 + Math.random() * 0.5));
+  }
 
   // Animation update - OPTIMIZED: stagger updates to reduce per-frame cost
   let frameCounter = 0;
