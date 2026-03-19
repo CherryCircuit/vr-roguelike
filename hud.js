@@ -3835,7 +3835,8 @@ function createPauseMenu() {
     color: 0x0a0015,
     transparent: true,
     opacity: 0.95,  // Increased from 0.85 for VR visibility
-    side: THREE.DoubleSide
+    side: THREE.DoubleSide,
+    depthWrite: false
   });
   const panel = new THREE.Mesh(panelGeo, panelMat);
   group.add(panel);

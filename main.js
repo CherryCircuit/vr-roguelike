@@ -10782,7 +10782,7 @@ function buildAlienPlanetScene(group) {
   });
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
   const cylinderGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
-  const coneGeo = new THREE.ConeGeometry(0.5, 1, 4);
+  const coneGeo = new THREE.BoxGeometry(1, 1, 1);
   const dummy = new THREE.Object3D();
   const cityMeshes = [];
 
