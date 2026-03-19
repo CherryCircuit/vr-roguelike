@@ -130,7 +130,7 @@ export const MAIN_WEAPONS = {
       aoeRadius: 0,
       spreadAngle: 0,  // Parallel homing beams
       homing: true,  // Shots track enemies
-      homingRange: 15,  // Tracking range
+      homingRange: 8,  // Tracking range (reduced from 15, requires aiming)
       projectileSpeed: 32,
     },
   },

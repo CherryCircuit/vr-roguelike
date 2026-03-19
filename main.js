@@ -7005,17 +7005,21 @@ function fireMainWeapon(controller, index) {
       spreadDir.normalize();
 
       // Queue shot with delay for burst effect
+      const isLastShot = i === count - 1;
       seekerBurstQueue.push({
         origin: origin.clone(),
         direction: spreadDir,
         controllerIndex: index,
         stats: stats,
         shotId: shotId,
-        fireTime: now + i * SEEKER_BURST_DELAY
+        fireTime: now + i * SEEKER_BURST_DELAY,
+        isLastShot: isLastShot,
+        burstIndex: i,
+        totalShots: count
       });
     }
-    // Play initial burst sound
-    playSeekerBurstSound();
+    // Play first shot sound (staccato "p")
+    playSeekerBurstSound(false, count);
     console.log(`[MAIN weapon] ${hand} hand queued ${count} seeker burst shot(s)`);
   } else {
     // Standard simultaneous fire for non-homing weapons
@@ -7555,7 +7559,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   mesh.userData.shotId = shotId;
   mesh.userData.hitConfirmed = false;
   mesh.userData.homingRange = stats.homing ? (stats.homingRange || 15) : 0;
-  mesh.userData.homingStrength = stats.homing ? 6.5 : 0;
+  mesh.userData.homingStrength = stats.homing ? 15 : 0;
   mesh.userData.baseSpeed = projectileSpeed;
   mesh.userData.homingTarget = null;
   mesh.userData.tailPhase = stats.homing ? Math.random() * Math.PI * 2 : 0;
@@ -7592,6 +7596,8 @@ function processSeekerBurstQueue(now) {
     const shot = seekerBurstQueue[i];
     if (now >= shot.fireTime) {
       spawnProjectile(shot.origin, shot.direction, shot.controllerIndex, shot.stats, shot.shotId, { suppressSound: true });
+      // Play per-shot sound: "p" for middle shots, full "pew" for last
+      playSeekerBurstSound(shot.isLastShot, shot.totalShots, shot.burstIndex);
       seekerBurstQueue.splice(i, 1);
     }
   }
@@ -8235,7 +8241,9 @@ function updateProjectiles(dt) {
           .subVectors(targetMesh.position, proj.position)
           .normalize()
           .multiplyScalar(baseSpeed);
-        const homingStrength = proj.userData.homingStrength || 3.5;
+        // Use high homing strength so seekers directly target enemies
+        // instead of circling them at low turn rates
+        const homingStrength = proj.userData.homingStrength || 15;
         proj.userData.velocity.lerp(desired, Math.min(1, homingStrength * adjustedDt));
         if (proj.userData.velocity.lengthSq() > 0.0001) {
           proj.userData.velocity.setLength(baseSpeed);
@@ -9375,9 +9383,6 @@ function render(timestamp) {
     lowHealthWarningActive = false;
     lowHealthPulseTimer = 0;
     stopLowHealthWarningSound();
-    if (floorMaterial && !floorFlashing) {
-      floorMaterial.color.copy(floorBaseColor);
-    }
     // Reset terrain flash
     biomeTerrainMaterials.forEach(item => {
       if (item.type === 'shader') {
@@ -9393,7 +9398,6 @@ function render(timestamp) {
     floorFlashTimer -= rawDt;
     if (floorFlashTimer <= 0) {
       floorFlashing = false;
-      if (floorMaterial) floorMaterial.color.copy(floorBaseColor);
       // Reset terrain flash
       biomeTerrainMaterials.forEach(item => {
         if (item.type === 'shader') {
@@ -9416,9 +9420,6 @@ function render(timestamp) {
       const t = floorFlashTimer / 1.0;  // 1s flash duration
       const flashIntensity = t;  // 0 to 1, fading out
       const flashColor = new THREE.Color(0xff0000);
-      if (floorMaterial) {
-        floorMaterial.color.lerpColors(floorBaseColor, flashColor, t);
-      }
       // Flash terrain materials
       biomeTerrainMaterials.forEach(item => {
         if (item.type === 'shader') {

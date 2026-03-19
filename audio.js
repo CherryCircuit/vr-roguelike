@@ -69,8 +69,10 @@ export function playShoothSound() {
 }
 
 // ── Seeker Burst sound (distinct homing beam) ───────────────
-export function playSeekerBurstSound() {
-  // Burst sound: "p-p-p-pew" - quick sharp "p" sounds, ending with full "pew"
+// isLastShot: true = full "pew", false = short "p" staccato
+// totalShots: total burst count (for volume scaling)
+// burstIndex: which shot in the burst (0-based)
+export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIndex = 0) {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
@@ -85,25 +87,40 @@ export function playSeekerBurstSound() {
   osc2.type = 'triangle';
   lfo.type = 'sine';
 
-  // Start low pitch for "p" sound, ramp up for "ew" at the end
-  osc.frequency.setValueAtTime(320, t);
-  osc.frequency.exponentialRampToValueAtTime(960, t + 0.12);  // Reduced duration for quicker burst
-  osc2.frequency.setValueAtTime(120, t);
-  osc2.frequency.exponentialRampToValueAtTime(200, t + 0.12);  // Reduced duration
-  lfo.frequency.setValueAtTime(25, t);  // Faster LFO for more aggressive "p-p-p"
+  if (isLastShot) {
+    // Full "pew" sound - longer, louder, higher pitch sweep
+    osc.frequency.setValueAtTime(320, t);
+    osc.frequency.exponentialRampToValueAtTime(1200, t + 0.18);
+    osc2.frequency.setValueAtTime(120, t);
+    osc2.frequency.exponentialRampToValueAtTime(280, t + 0.18);
+    lfo.frequency.setValueAtTime(25, t);
+    lfoGain.gain.setValueAtTime(35, t);
+    filter.frequency.setValueAtTime(1500, t);
+    filter.Q.setValueAtTime(10, t);
+    gain.gain.setValueAtTime(0.45, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.stop(t + 0.2);
+    osc2.stop(t + 0.2);
+    lfo.stop(t + 0.2);
+  } else {
+    // Short staccato "p" - very brief, sharp attack
+    osc.frequency.setValueAtTime(600, t);
+    osc.frequency.exponentialRampToValueAtTime(800, t + 0.03);
+    osc2.frequency.setValueAtTime(150, t);
+    osc2.frequency.exponentialRampToValueAtTime(180, t + 0.03);
+    lfo.frequency.setValueAtTime(40, t);
+    lfoGain.gain.setValueAtTime(20, t);
+    filter.frequency.setValueAtTime(2000, t);
+    filter.Q.setValueAtTime(12, t);
+    gain.gain.setValueAtTime(0.35, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    osc.stop(t + 0.04);
+    osc2.stop(t + 0.04);
+    lfo.stop(t + 0.04);
+  }
 
-  lfoGain.gain.setValueAtTime(35, t);  // More pitch modulation for staccato feel
   lfo.connect(lfoGain);
   lfoGain.connect(osc.frequency);
-
-  filter.type = 'bandpass';
-  filter.frequency.setValueAtTime(1300, t);  // Brighter filter for crisp "p" sounds
-  filter.Q.setValueAtTime(10, t);  // Higher Q for more resonant "p" attacks
-
-  // Shorter overall duration for quick burst feel
-  gain.gain.setValueAtTime(0.18, t);
-  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);  // Reduced from 0.18 to 0.14
-
   osc.connect(filter);
   osc2.connect(filter);
   filter.connect(gain);
@@ -112,9 +129,6 @@ export function playSeekerBurstSound() {
   osc.start(t);
   osc2.start(t);
   lfo.start(t);
-  osc.stop(t + 0.14);
-  osc2.stop(t + 0.14);
-  lfo.stop(t + 0.14);
 }
 
 // ── Double Shot sound ──────────────────────────────────────
