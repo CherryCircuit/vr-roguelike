@@ -6491,6 +6491,7 @@ function getPooledProjectile(poolType, color) {
 
   // Set instance color
   pool.mesh.setColorAt(slotIndex, _projColor.setHex(color));
+  pool.mesh.instanceColor.needsUpdate = true;
 
   // Initialize instance data
   if (!projectileInstanceData[slotIndex]) {
