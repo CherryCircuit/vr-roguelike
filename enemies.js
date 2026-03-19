@@ -535,6 +535,415 @@ function releaseAllBasicInstances() {
   console.log('[basic-instance] All slots released (clearAllEnemies)');
 }
 
+// ── Fast enemy InstancedMesh pool ──────────────────────────
+// One InstancedMesh for all 'fast' enemies = 1 draw call instead of N.
+const MAX_FAST_INSTANCES = 40;
+const fastInstancePool = {
+  mesh: null,
+  freeIndices: new Set(),
+  initialized: false,
+};
+const _fastDummyMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const _fastColorTmp = new THREE.Color();
+
+/**
+ * Build merged geometry for 'fast' enemy pattern and create InstancedMesh.
+ * Called from initEnemies() after sceneRef is available.
+ */
+function initFastInstancePool() {
+  if (fastInstancePool.initialized || !sceneRef) return;
+
+  const def = ENEMY_DEFS.fast;
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+
+  const geometries = [];
+  for (let d = 0; d < def.depth; d++) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (def.pattern[r][c]) {
+          const g = geo.clone();
+          g.translate(
+            (c - cx) * def.voxelSize,
+            (cy - r) * def.voxelSize,
+            d * def.voxelSize,
+          );
+          geometries.push(g);
+        }
+      }
+    }
+  }
+
+  let fastGeo;
+  if (geometries.length > 0) {
+    fastGeo = mergeGeometries(geometries);
+    geometries.forEach(g => g.dispose());
+  }
+  if (!fastGeo) {
+    console.warn('[fast-instance] Failed to build merged geometry, falling back to box');
+    fastGeo = new THREE.BoxGeometry(def.voxelSize, def.voxelSize, def.voxelSize);
+  }
+
+  const fastMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.7,
+  });
+
+  const im = new THREE.InstancedMesh(fastGeo, fastMat, MAX_FAST_INSTANCES);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.count = 0;
+  im.frustumCulled = false;
+
+  // Initialize all instances as invisible (zero scale)
+  for (let i = 0; i < MAX_FAST_INSTANCES; i++) {
+    im.setMatrixAt(i, _fastDummyMatrix);
+  }
+  im.instanceMatrix.needsUpdate = true;
+
+  sceneRef.add(im);
+  fastInstancePool.mesh = im;
+  fastInstancePool.initialized = true;
+
+  console.log(`[fast-instance] Pool initialized: ${MAX_FAST_INSTANCES} slots`);
+}
+
+/**
+ * Acquire an instance slot for a fast enemy.
+ * Returns { instanceId, pool } or null if pool exhausted.
+ */
+function acquireFastInstance() {
+  if (!fastInstancePool.initialized) return null;
+  const pool = fastInstancePool;
+
+  let instanceId;
+  if (pool.freeIndices.size > 0) {
+    instanceId = pool.freeIndices.values().next().value;
+    pool.freeIndices.delete(instanceId);
+  } else if (pool.mesh.count < MAX_FAST_INSTANCES) {
+    instanceId = pool.mesh.count;
+    pool.mesh.count = instanceId + 1;
+  } else {
+    console.warn('[fast-instance] Pool exhausted! Falling back to individual mesh.');
+    return null;
+  }
+
+  console.log(`[fast-instance] Acquired slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
+  return { instanceId, pool };
+}
+
+/**
+ * Release an instance slot back to the fast pool.
+ */
+function releaseFastInstance(instanceId) {
+  if (!fastInstancePool.initialized) return;
+  const pool = fastInstancePool;
+
+  // Hide instance by zeroing its matrix
+  pool.mesh.setMatrixAt(instanceId, _fastDummyMatrix);
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.freeIndices.add(instanceId);
+
+  // Shrink .count if this was the last active slot
+  if (instanceId === pool.mesh.count - 1) {
+    pool.mesh.count = instanceId;
+  }
+
+  console.log(`[fast-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
+}
+
+/**
+ * Release ALL fast instance slots (for level transitions).
+ */
+function releaseAllFastInstances() {
+  if (!fastInstancePool.initialized) return;
+  const pool = fastInstancePool;
+
+  for (let i = 0; i < pool.mesh.count; i++) {
+    pool.mesh.setMatrixAt(i, _fastDummyMatrix);
+  }
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.mesh.count = 0;
+  pool.freeIndices.clear();
+
+  console.log('[fast-instance] All slots released (clearAllEnemies)');
+}
+
+// ── Tank enemy InstancedMesh pool ──────────────────────────
+// One InstancedMesh for all 'tank' enemies. Tank uses a merged
+// box geometry from its 2x2 voxel pattern (same approach as basic/fast).
+const MAX_TANK_INSTANCES = 15;
+const tankInstancePool = {
+  mesh: null,
+  freeIndices: new Set(),
+  initialized: false,
+};
+const _tankDummyMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const _tankColorTmp = new THREE.Color();
+
+/**
+ * Build merged geometry for 'tank' enemy pattern and create InstancedMesh.
+ * Called from initEnemies() after sceneRef is available.
+ */
+function initTankInstancePool() {
+  if (tankInstancePool.initialized || !sceneRef) return;
+
+  const def = ENEMY_DEFS.tank;
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+
+  const geometries = [];
+  for (let d = 0; d < def.depth; d++) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (def.pattern[r][c]) {
+          const g = geo.clone();
+          g.translate(
+            (c - cx) * def.voxelSize,
+            (cy - r) * def.voxelSize,
+            d * def.voxelSize,
+          );
+          geometries.push(g);
+        }
+      }
+    }
+  }
+
+  let tankGeo;
+  if (geometries.length > 0) {
+    tankGeo = mergeGeometries(geometries);
+    geometries.forEach(g => g.dispose());
+  }
+  if (!tankGeo) {
+    console.warn('[tank-instance] Failed to build merged geometry, falling back to box');
+    tankGeo = new THREE.BoxGeometry(def.voxelSize, def.voxelSize, def.voxelSize);
+  }
+
+  const tankMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.7,
+  });
+
+  const im = new THREE.InstancedMesh(tankGeo, tankMat, MAX_TANK_INSTANCES);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.count = 0;
+  im.frustumCulled = false;
+
+  // Initialize all instances as invisible (zero scale)
+  for (let i = 0; i < MAX_TANK_INSTANCES; i++) {
+    im.setMatrixAt(i, _tankDummyMatrix);
+  }
+  im.instanceMatrix.needsUpdate = true;
+
+  sceneRef.add(im);
+  tankInstancePool.mesh = im;
+  tankInstancePool.initialized = true;
+
+  console.log(`[tank-instance] Pool initialized: ${MAX_TANK_INSTANCES} slots`);
+}
+
+/**
+ * Acquire an instance slot for a tank enemy.
+ * Returns { instanceId, pool } or null if pool exhausted.
+ */
+function acquireTankInstance() {
+  if (!tankInstancePool.initialized) return null;
+  const pool = tankInstancePool;
+
+  let instanceId;
+  if (pool.freeIndices.size > 0) {
+    instanceId = pool.freeIndices.values().next().value;
+    pool.freeIndices.delete(instanceId);
+  } else if (pool.mesh.count < MAX_TANK_INSTANCES) {
+    instanceId = pool.mesh.count;
+    pool.mesh.count = instanceId + 1;
+  } else {
+    console.warn('[tank-instance] Pool exhausted! Falling back to individual mesh.');
+    return null;
+  }
+
+  console.log(`[tank-instance] Acquired slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
+  return { instanceId, pool };
+}
+
+/**
+ * Release an instance slot back to the tank pool.
+ */
+function releaseTankInstance(instanceId) {
+  if (!tankInstancePool.initialized) return;
+  const pool = tankInstancePool;
+
+  // Hide instance by zeroing its matrix
+  pool.mesh.setMatrixAt(instanceId, _tankDummyMatrix);
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.freeIndices.add(instanceId);
+
+  // Shrink .count if this was the last active slot
+  if (instanceId === pool.mesh.count - 1) {
+    pool.mesh.count = instanceId;
+  }
+
+  console.log(`[tank-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
+}
+
+/**
+ * Release ALL tank instance slots (for level transitions).
+ */
+function releaseAllTankInstances() {
+  if (!tankInstancePool.initialized) return;
+  const pool = tankInstancePool;
+
+  for (let i = 0; i < pool.mesh.count; i++) {
+    pool.mesh.setMatrixAt(i, _tankDummyMatrix);
+  }
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.mesh.count = 0;
+  pool.freeIndices.clear();
+
+  console.log('[tank-instance] All slots released (clearAllEnemies)');
+}
+
+// ── Swarm enemy InstancedMesh pool ─────────────────────────
+// One InstancedMesh for all 'swarm' enemies = 1 draw call instead of N.
+const MAX_SWARM_INSTANCES = 60;
+const swarmInstancePool = {
+  mesh: null,
+  freeIndices: new Set(),
+  initialized: false,
+};
+const _swarmDummyMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const _swarmColorTmp = new THREE.Color();
+
+/**
+ * Build merged geometry for 'swarm' enemy pattern and create InstancedMesh.
+ * Called from initEnemies() after sceneRef is available.
+ */
+function initSwarmInstancePool() {
+  if (swarmInstancePool.initialized || !sceneRef) return;
+
+  const def = ENEMY_DEFS.swarm;
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+
+  const geometries = [];
+  for (let d = 0; d < def.depth; d++) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (def.pattern[r][c]) {
+          const g = geo.clone();
+          g.translate(
+            (c - cx) * def.voxelSize,
+            (cy - r) * def.voxelSize,
+            d * def.voxelSize,
+          );
+          geometries.push(g);
+        }
+      }
+    }
+  }
+
+  let swarmGeo;
+  if (geometries.length > 0) {
+    swarmGeo = mergeGeometries(geometries);
+    geometries.forEach(g => g.dispose());
+  }
+  if (!swarmGeo) {
+    console.warn('[swarm-instance] Failed to build merged geometry, falling back to box');
+    swarmGeo = new THREE.BoxGeometry(def.voxelSize, def.voxelSize, def.voxelSize);
+  }
+
+  const swarmMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.7,
+  });
+
+  const im = new THREE.InstancedMesh(swarmGeo, swarmMat, MAX_SWARM_INSTANCES);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.count = 0;
+  im.frustumCulled = false;
+
+  // Initialize all instances as invisible (zero scale)
+  for (let i = 0; i < MAX_SWARM_INSTANCES; i++) {
+    im.setMatrixAt(i, _swarmDummyMatrix);
+  }
+  im.instanceMatrix.needsUpdate = true;
+
+  sceneRef.add(im);
+  swarmInstancePool.mesh = im;
+  swarmInstancePool.initialized = true;
+
+  console.log(`[swarm-instance] Pool initialized: ${MAX_SWARM_INSTANCES} slots`);
+}
+
+/**
+ * Acquire an instance slot for a swarm enemy.
+ * Returns { instanceId, pool } or null if pool exhausted.
+ */
+function acquireSwarmInstance() {
+  if (!swarmInstancePool.initialized) return null;
+  const pool = swarmInstancePool;
+
+  let instanceId;
+  if (pool.freeIndices.size > 0) {
+    instanceId = pool.freeIndices.values().next().value;
+    pool.freeIndices.delete(instanceId);
+  } else if (pool.mesh.count < MAX_SWARM_INSTANCES) {
+    instanceId = pool.mesh.count;
+    pool.mesh.count = instanceId + 1;
+  } else {
+    console.warn('[swarm-instance] Pool exhausted! Falling back to individual mesh.');
+    return null;
+  }
+
+  console.log(`[swarm-instance] Acquired slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
+  return { instanceId, pool };
+}
+
+/**
+ * Release an instance slot back to the swarm pool.
+ */
+function releaseSwarmInstance(instanceId) {
+  if (!swarmInstancePool.initialized) return;
+  const pool = swarmInstancePool;
+
+  // Hide instance by zeroing its matrix
+  pool.mesh.setMatrixAt(instanceId, _swarmDummyMatrix);
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.freeIndices.add(instanceId);
+
+  // Shrink .count if this was the last active slot
+  if (instanceId === pool.mesh.count - 1) {
+    pool.mesh.count = instanceId;
+  }
+
+  console.log(`[swarm-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
+}
+
+/**
+ * Release ALL swarm instance slots (for level transitions).
+ */
+function releaseAllSwarmInstances() {
+  if (!swarmInstancePool.initialized) return;
+  const pool = swarmInstancePool;
+
+  for (let i = 0; i < pool.mesh.count; i++) {
+    pool.mesh.setMatrixAt(i, _swarmDummyMatrix);
+  }
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.mesh.count = 0;
+  pool.freeIndices.clear();
+
+  console.log('[swarm-instance] All slots released (clearAllEnemies)');
+}
+
 // Player movement history for Clone Mimics (stores last 3 seconds of positions)
 const playerMovementHistory = [];
 const MOVEMENT_HISTORY_DURATION = 3000; // 3 seconds in ms
@@ -1344,6 +1753,15 @@ export function initEnemies(scene) {
 
   // Initialize basic enemy InstancedMesh pool
   initBasicInstancePool();
+
+  // Initialize tank enemy InstancedMesh pool
+  initTankInstancePool();
+
+  // Initialize fast enemy InstancedMesh pool
+  initFastInstancePool();
+
+  // Initialize swarm enemy InstancedMesh pool
+  initSwarmInstancePool();
 }
 
 /**
@@ -1402,9 +1820,75 @@ export function spawnEnemy(type, position, levelConfig) {
     // If pool exhausted, fall through to normal path
   }
 
-  // For non-instanced basic and all other non-tank, non-jelly enemies,
+  // ── Fast enemy InstancedMesh path ──
+  let useInstancedFast = false;
+  if (type === 'fast') {
+    const instance = acquireFastInstance();
+    if (instance) {
+      useInstancedFast = true;
+      group.userData.instanceId = instance.instanceId;
+      group.userData.instancePool = instance.pool;
+
+      // Position the group and sync the instance matrix
+      group.position.copy(position);
+      group.updateMatrix();
+      instance.pool.mesh.setMatrixAt(instance.instanceId, group.matrix);
+      instance.pool.mesh.instanceMatrix.needsUpdate = true;
+
+      // Set initial instance color
+      instance.pool.mesh.setColorAt(instance.instanceId, _fastColorTmp.setHex(def.color));
+      if (instance.pool.mesh.instanceColor) instance.pool.mesh.instanceColor.needsUpdate = true;
+    }
+    // If pool exhausted, fall through to normal path
+  }
+
+  // ── Swarm enemy InstancedMesh path ──
+  let useInstancedSwarm = false;
+  if (type === 'swarm') {
+    const instance = acquireSwarmInstance();
+    if (instance) {
+      useInstancedSwarm = true;
+      group.userData.instanceId = instance.instanceId;
+      group.userData.instancePool = instance.pool;
+
+      // Position the group and sync the instance matrix
+      group.position.copy(position);
+      group.updateMatrix();
+      instance.pool.mesh.setMatrixAt(instance.instanceId, group.matrix);
+      instance.pool.mesh.instanceMatrix.needsUpdate = true;
+
+      // Set initial instance color
+      instance.pool.mesh.setColorAt(instance.instanceId, _swarmColorTmp.setHex(def.color));
+      if (instance.pool.mesh.instanceColor) instance.pool.mesh.instanceColor.needsUpdate = true;
+    }
+    // If pool exhausted, fall through to normal path
+  }
+
+  // ── Tank enemy InstancedMesh path ──
+  let useInstancedTank = false;
+  if (type === 'tank') {
+    const instance = acquireTankInstance();
+    if (instance) {
+      useInstancedTank = true;
+      group.userData.instanceId = instance.instanceId;
+      group.userData.instancePool = instance.pool;
+
+      // Position the group and sync the instance matrix
+      group.position.copy(position);
+      group.updateMatrix();
+      instance.pool.mesh.setMatrixAt(instance.instanceId, group.matrix);
+      instance.pool.mesh.instanceMatrix.needsUpdate = true;
+
+      // Set initial instance color
+      instance.pool.mesh.setColorAt(instance.instanceId, _tankColorTmp.setHex(def.color));
+      if (instance.pool.mesh.instanceColor) instance.pool.mesh.instanceColor.needsUpdate = true;
+    }
+    // If pool exhausted, fall through to normal path
+  }
+
+  // For non-instanced basic/fast/swarm/tank and all other non-tank, non-jelly enemies,
   // merge voxel geometries into a single mesh
-  if (!useInstancedBasic && !isTank && !def.isJelly) {
+  if (!useInstancedBasic && !useInstancedFast && !useInstancedSwarm && !useInstancedTank && !isTank && !def.isJelly) {
     const geometries = [];
     for (let d = 0; d < def.depth; d++) {
       for (let r = 0; r < rows; r++) {
@@ -1431,8 +1915,25 @@ export function spawnEnemy(type, position, levelConfig) {
       // Dispose cloned geometries (the merged one is a new copy)
       geometries.forEach(g => g.dispose());
     }
-  } else {
-    // Tank: keep individual voxels for weak-point targeting
+  } else if (isTank && !useInstancedTank) {
+    // Tank (non-instanced fallback): keep individual voxels for weak-point targeting
+    for (let d = 0; d < def.depth; d++) {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (def.pattern[r][c]) {
+            const cube = new THREE.Mesh(geo, material);
+            cube.position.set(
+              (c - cx) * def.voxelSize,
+              (cy - r) * def.voxelSize,
+              d * def.voxelSize,
+            );
+            group.add(cube);
+          }
+        }
+      }
+    }
+  } else if (def.isJelly) {
+    // Jelly: individual voxels for shrink mechanic
     for (let d = 0; d < def.depth; d++) {
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -1621,7 +2122,7 @@ export function updateEnemies(dt, now, playerPos) {
       e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
     }
 
-    // Sync InstancedMesh matrix for basic enemies
+    // Sync InstancedMesh matrix for basic/fast enemies
     if (e.mesh.userData.instanceId !== undefined) {
       e.mesh.updateMatrix();
       const iid = e.mesh.userData.instanceId;
@@ -2079,7 +2580,7 @@ export function updateEnemies(dt, now, playerPos) {
     // ── Colour: lerp from base → red based on damage ──
     const dmgRatio = 1 - e.hp / e.maxHp;
     e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
-    // Sync damage color to InstancedMesh for basic enemies
+    // Sync damage color to InstancedMesh for basic/fast enemies
     if (e.mesh.userData.instanceId !== undefined) {
       const pool = e.mesh.userData.instancePool;
       pool.mesh.setColorAt(e.mesh.userData.instanceId, e.material.color);
@@ -2308,6 +2809,21 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
     releaseBasicInstance(e.mesh.userData.instanceId);
   }
 
+  // Release InstancedMesh slot for fast enemies
+  if (e.type === 'fast' && e.mesh.userData.instanceId !== undefined) {
+    releaseFastInstance(e.mesh.userData.instanceId);
+  }
+
+  // Release InstancedMesh slot for swarm enemies
+  if (e.type === 'swarm' && e.mesh.userData.instanceId !== undefined) {
+    releaseSwarmInstance(e.mesh.userData.instanceId);
+  }
+
+  // Release InstancedMesh slot for tank enemies
+  if (e.type === 'tank' && e.mesh.userData.instanceId !== undefined) {
+    releaseTankInstance(e.mesh.userData.instanceId);
+  }
+
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
 
@@ -2431,6 +2947,15 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
 export function clearAllEnemies() {
   // Release all basic enemy InstancedMesh slots
   releaseAllBasicInstances();
+
+  // Release all fast enemy InstancedMesh slots
+  releaseAllFastInstances();
+
+  // Release all swarm enemy InstancedMesh slots
+  releaseAllSwarmInstances();
+
+  // Release all tank enemy InstancedMesh slots
+  releaseAllTankInstances();
 
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     sceneRef.remove(activeEnemies[i].mesh);
