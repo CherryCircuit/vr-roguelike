@@ -3800,6 +3800,8 @@ function updateNaniteSwarms(now, dt, playerPos) {
     }
 
     // Animate particles - swirling glitter effect
+    // GPU optimization: update twinkle opacity every 3 frames instead of every frame
+    const twinkleFrame = Math.floor(now / 50) % 3 === 0;
     swarm.particles.forEach(p => {
       // Update angle for rotation
       p.angle += p.speed * dt;
@@ -3810,8 +3812,10 @@ function updateNaniteSwarms(now, dt, playerPos) {
       p.mesh.position.y = p.radius * Math.sin(p.phi) * Math.sin(p.angle);
       p.mesh.position.z = p.radius * Math.cos(p.phi);
 
-      // Twinkle effect - random opacity
-      p.mesh.material.opacity = 0.3 + Math.sin(now * 0.01 + p.angle) * 0.5;
+      // Twinkle effect - GPU optimization: throttle to every 3rd frame (~20fps twinkle)
+      if (twinkleFrame) {
+        p.mesh.material.opacity = 0.3 + Math.sin(now * 0.01 + p.angle) * 0.5;
+      }
     });
 
     // Pulse the core

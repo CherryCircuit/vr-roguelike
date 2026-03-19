@@ -8,6 +8,218 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getStasisSlowFactor } from './stasis.js';
 import { playTingSound, playEnemyProjectileSound } from './audio.js';
 
+// ── GPU Shader System ──────────────────────────────────────
+// Moves per-frame material updates (color, opacity, emissive) to GPU
+// uniforms via onBeforeCompile. Reduces CPU overhead significantly.
+//
+// Usage:
+//   const mat = new THREE.MeshBasicMaterial({ ... });
+//   attachGPUUniforms(mat, { uFadeProgress: { value: 0.0 }, uTime: { value: 0.0 } });
+//   Then set mat.userData.gpu.uniforms.uFadeProgress.value when needed.
+//
+// Supported uniform names:
+//   uFadeProgress (float 0-1): replaces opacity = base * (1 - progress)
+//   uTime (float ms): provides time for pulsing effects
+//   uOpacity (float): direct opacity override
+//   uColorTint (vec3): multiplies base color (for status effects)
+
+const _gpuColor = new THREE.Color();
+const _gpuColorTint = new THREE.Color(1, 1, 1);
+
+/**
+ * Attach GPU shader uniforms to a MeshBasicMaterial via onBeforeCompile.
+ * Returns the material for chaining. Stores uniforms at mat.userData.gpu.uniforms.
+ */
+function attachGPUUniforms(material, uniforms) {
+  if (!material || material.userData.gpu) return material; // Already attached
+
+  material.userData.gpu = { uniforms };
+
+  material.onBeforeCompile = (shader) => {
+    // Inject uniform declarations
+    let uniformDecls = '';
+    const uniformNames = Object.keys(uniforms);
+    for (const name of uniformNames) {
+      const u = uniforms[name];
+      if (u.value instanceof THREE.Color) {
+        uniformDecls += `uniform vec3 ${name};\n`;
+      } else if (typeof u.value === 'number') {
+        uniformDecls += `uniform float ${name};\n`;
+      }
+    }
+
+    shader.vertexShader = uniformDecls + shader.vertexShader;
+    shader.fragmentShader = uniformDecls + shader.fragmentShader;
+
+    // Store refs so we can update them
+    for (const name of uniformNames) {
+      shader.uniforms[name] = uniforms[name];
+    }
+
+    // ── Fragment shader modifications ──
+    // Build a combined color_fragment replacement if needed
+    let colorFragExtra = '';
+    if (uniforms.uFadeProgress !== undefined) {
+      colorFragExtra += '\n  diffuseColor.a *= (1.0 - uFadeProgress);';
+    }
+    if (uniforms.uColorTint !== undefined) {
+      colorFragExtra += '\n  diffuseColor.rgb *= uColorTint;';
+    }
+    if (colorFragExtra) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        ${colorFragExtra}
+        `
+      );
+    }
+
+    // Handle uOpacity: override opacity after clipping
+    if (uniforms.uOpacity !== undefined) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>
+        diffuseColor.a = uOpacity;
+        `
+      );
+    }
+
+    // Handle uPulseOpacity: opacity = base + sin(uTime * speed) * amplitude
+    if (uniforms.uPulseSpeed !== undefined && uniforms.uPulseAmp !== undefined && uniforms.uPulseBase !== undefined) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>
+        diffuseColor.a = uPulseBase + sin(uTime * uPulseSpeed) * uPulseAmp;
+        `
+      );
+    }
+  };
+
+  return material;
+}
+
+/**
+ * Helper: create a fade-capable material (for explosions, arcs, etc.)
+ * Instead of per-frame opacity = base * (1 - age/lifetime), set uniform once.
+ */
+function createFadeMaterial(color, baseOpacity = 1.0) {
+  const mat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: baseOpacity,
+  });
+  attachGPUUniforms(mat, {
+    uFadeProgress: { value: 0.0 },
+  });
+  return mat;
+}
+
+/**
+ * Helper: create a pulse-capable material (for glowing effects)
+ * GPU handles opacity = base + sin(time * speed) * amplitude
+ */
+function createPulseMaterial(color, baseOpacity = 0.7, speed = 0.003, amplitude = 0.2) {
+  const mat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: baseOpacity,
+  });
+  attachGPUUniforms(mat, {
+    uTime: { value: 0.0 },
+    uPulseBase: { value: baseOpacity },
+    uPulseSpeed: { value: speed },
+    uPulseAmp: { value: amplitude },
+  });
+  return mat;
+}
+
+// ── Visual state tracking for on-change updates ───────────
+// Instead of per-frame traverse, track last known visual state
+// and only update materials when state actually changes.
+
+function getEnemyVisualState(e) {
+  const se = e.statusEffects;
+  let statusType = 'none';
+  if (se.fire.stacks > 0) statusType = 'fire';
+  else if (se.freeze.stacks > 0) statusType = 'freeze';
+  else if (se.shock.stacks > 0) statusType = 'shock';
+  return {
+    hpRatio: e.hp / e.maxHp,
+    statusType,
+    statusStacks: se[statusType]?.stacks || 0,
+  };
+}
+
+// Reusable color for status tints
+const _statusColors = {
+  fire: new THREE.Color(0xff4400),
+  freeze: new THREE.Color(0x44aaff),
+  shock: new THREE.Color(0xffff44),
+};
+
+/**
+ * Update enemy visual color only when state changes (not per-frame).
+ * Returns true if visuals were updated.
+ */
+function updateEnemyVisualsOnChange(e) {
+  const state = getEnemyVisualState(e);
+  const last = e._lastVisualState;
+
+  // Check if anything changed
+  if (last &&
+      last.hpRatio === state.hpRatio &&
+      last.statusType === state.statusType &&
+      last.statusStacks === state.statusStacks) {
+    return false;
+  }
+
+  // State changed - update visuals
+  e._lastVisualState = state;
+
+  const useInstancing = INSTANCED_TYPES.has(e.type) && e.mesh.userData.instanceId !== undefined;
+
+  if (useInstancing) {
+    // Update instanced color
+    const instanceId = e.mesh.userData.instanceId;
+    if (instanceId !== undefined) {
+      if (state.statusType !== 'none') {
+        _instColor.copy(_statusColors[state.statusType]);
+      } else {
+        const dmgRatio = 1 - state.hpRatio;
+        _instColor.copy(e.baseColor).lerp(_redColor, dmgRatio);
+      }
+      updateInstanceColor(e.type, instanceId, _instColor);
+    }
+  } else {
+    // Update non-instanced enemy material color
+    const material = e.material;
+    if (material && material.color) {
+      if (state.statusType !== 'none') {
+        material.color.copy(_statusColors[state.statusType]);
+      } else {
+        const dmgRatio = 1 - state.hpRatio;
+        material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
+      }
+    }
+
+    // Also update individual voxel meshes for non-merged geometries (tank, jelly)
+    e.mesh.traverse(c => {
+      if (c.isMesh && c.material && c !== e.mesh && !c.userData.isEnemyHitbox) {
+        if (c.material.color && c.material !== material) {
+          if (state.statusType !== 'none') {
+            c.material.color.copy(_statusColors[state.statusType]);
+          } else {
+            const dmgRatio = 1 - state.hpRatio;
+            c.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
+          }
+        }
+      }
+    });
+  }
+
+  return true;
+}
+
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
 
@@ -398,6 +610,198 @@ function getGeo(size) {
 
 // Shared materials per enemy type (avoid creating new material per spawn)
 const sharedMaterials = {};
+
+// ── InstancedMesh Pool System ──────────────────────────────
+// Reduces draw calls by batching enemies of the same type into
+// a single InstancedMesh. Per-instance colors via instanceColor
+// handle status effect tints (fire/freeze/shock/damage) without
+// per-enemy material clones.
+//
+// Types that benefit from instancing (merged geometry, no special
+// per-voxel material needs): basic, fast, swarm, conductor,
+// phase_wraith, dream_slime, dream_eye
+//
+// Types kept as individual meshes (need per-voxel control):
+//   tank (weak point targeting), jelly (voxel shrinking),
+//   spiral_swimmer (train of voxels), mirror_knight (opacity pulse)
+
+const MAX_INSTANCES_PER_TYPE = 20;
+
+// Which enemy types use InstancedMesh rendering
+const INSTANCED_TYPES = new Set([
+  'basic', 'fast', 'swarm', 'conductor',
+  'phase_wraith', 'dream_slime', 'dream_eye',
+]);
+
+const instancePools = {};    // type → { mesh, freeIndices, geo }
+const instanceEnemyMap = {}; // `${type}:${id}` → index in activeEnemies
+
+// Temp objects reused per frame to avoid allocation
+const _instMatrix = new THREE.Matrix4();
+const _instPosition = new THREE.Vector3();
+const _instQuaternion = new THREE.Quaternion();
+const _instScale = new THREE.Vector3(1, 1, 1);
+const _instColor = new THREE.Color();
+
+/**
+ * Build a merged geometry for an enemy type definition.
+ * Returns the merged BufferGeometry or null if empty.
+ */
+function buildMergedGeo(def) {
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+  const geometries = [];
+
+  for (let d = 0; d < def.depth; d++) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (def.pattern[r][c]) {
+          const g = geo.clone();
+          g.translate(
+            (c - cx) * def.voxelSize,
+            (cy - r) * def.voxelSize,
+            d * def.voxelSize,
+          );
+          geometries.push(g);
+        }
+      }
+    }
+  }
+
+  if (geometries.length === 0) return null;
+  const merged = mergeGeometries(geometries);
+  geometries.forEach(g => g.dispose());
+  return merged;
+}
+
+/**
+ * Initialize InstancedMesh pools for all instanced enemy types.
+ * Called from initEnemies().
+ */
+function initInstancePools() {
+  for (const type of INSTANCED_TYPES) {
+    const def = ENEMY_DEFS[type];
+    if (!def) continue;
+
+    const geo = buildMergedGeo(def);
+    if (!geo) continue;
+
+    // Material: MeshBasicMaterial with instanceColor support
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff, // Base white; instanceColor tints per-instance
+      transparent: true,
+      opacity: 0.7,
+    });
+
+    const mesh = new THREE.InstancedMesh(geo, material, MAX_INSTANCES_PER_TYPE);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0; // Start with zero visible instances
+    mesh.userData.isEnemyInstancedMesh = true;
+    mesh.userData.enemyType = type;
+
+    // Initialize instanceColor buffer
+    mesh.setColorAt(0, new THREE.Color(def.color));
+    mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+
+    sceneRef.add(mesh);
+
+    instancePools[type] = {
+      mesh,
+      geo,
+      freeIndices: new Set(),
+      count: 0,
+    };
+
+    // All slots start free
+    for (let i = 0; i < MAX_INSTANCES_PER_TYPE; i++) {
+      instancePools[type].freeIndices.add(i);
+    }
+  }
+}
+
+/**
+ * Acquire an instance slot for an enemy type.
+ * Returns { instanceId, pool } or null if pool is full.
+ */
+function acquireInstance(type) {
+  const pool = instancePools[type];
+  if (!pool || pool.freeIndices.size === 0) return null;
+
+  const instanceId = pool.freeIndices.values().next().value;
+  pool.freeIndices.delete(instanceId);
+  pool.count++;
+
+  // Ensure pool.mesh.count covers this instance
+  if (instanceId >= pool.mesh.count) {
+    pool.mesh.count = instanceId + 1;
+  }
+
+  return { instanceId, pool };
+}
+
+/**
+ * Release an instance slot back to the pool.
+ */
+function releaseInstance(type, instanceId) {
+  const pool = instancePools[type];
+  if (!pool) return;
+
+  // Hide the instance by scaling to zero
+  _instMatrix.makeScale(0, 0, 0);
+  pool.mesh.setMatrixAt(instanceId, _instMatrix);
+
+  pool.freeIndices.add(instanceId);
+  pool.count--;
+
+  // Shrink visible count if this was the last instance
+  if (pool.count === 0) {
+    pool.mesh.count = 0;
+  }
+
+  // Clean up mapping
+  delete instanceEnemyMap[`${type}:${instanceId}`];
+}
+
+/**
+ * Update an instance's transform matrix from an enemy's group.
+ */
+function updateInstanceMatrix(type, instanceId, group) {
+  const pool = instancePools[type];
+  if (!pool) return;
+
+  group.updateMatrixWorld(true);
+  pool.mesh.setMatrixAt(instanceId, group.matrix);
+  pool.mesh.instanceMatrix.needsUpdate = true;
+}
+
+/**
+ * Update an instance's color via instanceColor.
+ */
+function updateInstanceColor(type, instanceId, color) {
+  const pool = instancePools[type];
+  if (!pool) return;
+
+  pool.mesh.setColorAt(instanceId, color);
+  pool.mesh.instanceColor.needsUpdate = true;
+}
+
+/**
+ * Dispose all instance pools (for cleanup).
+ */
+function disposeInstancePools() {
+  for (const type of Object.keys(instancePools)) {
+    const pool = instancePools[type];
+    if (pool.mesh) {
+      sceneRef.remove(pool.mesh);
+      pool.mesh.geometry.dispose();
+      pool.mesh.material.dispose();
+    }
+    delete instancePools[type];
+  }
+}
 
 // Player movement history for Clone Mimics (stores last 3 seconds of positions)
 const playerMovementHistory = [];
@@ -1205,6 +1609,11 @@ export function initEnemies(scene) {
   if (!telegraphingSystem) {
     telegraphingSystem = new TelegraphingSystem(scene, null);
   }
+
+  // Initialize InstancedMesh pools for batched enemy rendering
+  if (Object.keys(instancePools).length === 0) {
+    initInstancePools();
+  }
 }
 
 /**
@@ -1221,86 +1630,145 @@ export function spawnEnemy(type, position, levelConfig) {
     return spawnTrainEnemy(type, position, levelConfig);
   }
 
-  // Clone shared material (clone is cheap, shares shader program)
-  if (!sharedMaterials[type]) {
-    sharedMaterials[type] = new THREE.MeshBasicMaterial({
-      color: def.color,
-      transparent: true,
-      opacity: 0.7,
-    });
-  }
-  const material = sharedMaterials[type].clone();
-
   const group = new THREE.Group();
-  const geo = getGeo(def.voxelSize);
-  const rows = def.pattern.length;
-  const cols = def.pattern[0].length;
-  const cx = (cols - 1) / 2;
-  const cy = (rows - 1) / 2;
+  const useInstancing = INSTANCED_TYPES.has(type);
   const isTank = type === 'tank';
 
-  // For non-tank enemies, merge voxel geometries into a single mesh
-  // This reduces draw calls from ~10-20 per enemy down to 1
-  if (!isTank && !def.isJelly) {
-    const geometries = [];
-    for (let d = 0; d < def.depth; d++) {
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          if (def.pattern[r][c]) {
-            const g = geo.clone();
-            g.translate(
-              (c - cx) * def.voxelSize,
-              (cy - r) * def.voxelSize,
-              d * def.voxelSize,
-            );
-            geometries.push(g);
-          }
-        }
+  let material = null; // Will be set for non-instanced enemies
+
+  if (useInstancing) {
+    // ── InstancedMesh path ──
+    // Visual rendering handled by InstancedMesh pool.
+    // Group only holds invisible hitbox for raycasting.
+    const instance = acquireInstance(type);
+    if (!instance) {
+      // Pool exhausted: fall back to individual mesh
+      console.warn(`[InstancedMesh] Pool full for ${type}, falling back`);
+    } else {
+      group.userData.instanceId = instance.instanceId;
+      instanceEnemyMap[`${type}:${instance.instanceId}`] = activeEnemies.length;
+
+      // Set initial transform
+      group.position.copy(position);
+      group.updateMatrix();
+      instance.pool.mesh.setMatrixAt(instance.instanceId, group.matrix);
+      instance.pool.mesh.instanceMatrix.needsUpdate = true;
+
+      // Set initial color from enemy def
+      _instColor.setHex(def.color);
+      instance.pool.mesh.setColorAt(instance.instanceId, _instColor);
+      if (instance.pool.mesh.instanceColor) {
+        instance.pool.mesh.instanceColor.needsUpdate = true;
       }
-    }
-    if (geometries.length > 0) {
-      const mergedGeo = mergeGeometries(geometries);
-      if (mergedGeo) {
-        const mergedMesh = new THREE.Mesh(mergedGeo, material);
-        mergedMesh.userData.isMergedGeometry = true;
-        group.add(mergedMesh);
-      }
-      // Dispose cloned geometries (the merged one is a new copy)
-      geometries.forEach(g => g.dispose());
     }
   } else {
-    // Tank: keep individual voxels for weak-point targeting
-    for (let d = 0; d < def.depth; d++) {
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          if (def.pattern[r][c]) {
-            const cube = new THREE.Mesh(geo, material);
-            cube.position.set(
-              (c - cx) * def.voxelSize,
-              (cy - r) * def.voxelSize,
-              d * def.voxelSize,
-            );
-            group.add(cube);
+    // ── Individual mesh path (tank, jelly, mirror_knight, etc.) ──
+    // Clone shared material (clone is cheap, shares shader program)
+    if (!sharedMaterials[type]) {
+      sharedMaterials[type] = new THREE.MeshBasicMaterial({
+        color: def.color,
+        transparent: true,
+        opacity: 0.7,
+      });
+    }
+    material = sharedMaterials[type].clone();
+
+    const geo = getGeo(def.voxelSize);
+    const rows = def.pattern.length;
+    const cols = def.pattern[0].length;
+    const cx = (cols - 1) / 2;
+    const cy = (rows - 1) / 2;
+
+    // For non-tank enemies, merge voxel geometries into a single mesh
+    if (!isTank && !def.isJelly) {
+      const geometries = [];
+      for (let d = 0; d < def.depth; d++) {
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (def.pattern[r][c]) {
+              const g = geo.clone();
+              g.translate(
+                (c - cx) * def.voxelSize,
+                (cy - r) * def.voxelSize,
+                d * def.voxelSize,
+              );
+              geometries.push(g);
+            }
+          }
+        }
+      }
+      if (geometries.length > 0) {
+        const mergedGeo = mergeGeometries(geometries);
+        if (mergedGeo) {
+          const mergedMesh = new THREE.Mesh(mergedGeo, material);
+          mergedMesh.userData.isMergedGeometry = true;
+          group.add(mergedMesh);
+        }
+        geometries.forEach(g => g.dispose());
+      }
+    } else {
+      // Tank/Jelly: keep individual voxels for weak-point targeting or shrinking
+      for (let d = 0; d < def.depth; d++) {
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (def.pattern[r][c]) {
+              const cube = new THREE.Mesh(geo, material);
+              cube.position.set(
+                (c - cx) * def.voxelSize,
+                (cy - r) * def.voxelSize,
+                d * def.voxelSize,
+              );
+              group.add(cube);
+            }
           }
         }
       }
     }
+
+    // Tank: one random voxel is weak point (double damage)
+    if (isTank) {
+      const voxels = group.children.filter(c => !c.userData.isEnemyHitbox);
+      if (voxels.length > 0) {
+        const weak = voxels[Math.floor(Math.random() * voxels.length)];
+        weak.userData.weakPoint = true;
+      }
+    }
+
+    // Store material reference on group for non-instanced enemies
+    group.userData.enemyMaterial = material;
+
+    // ── GPU shader uniforms for time-based effects ──
+    // Attach pulse uniforms for enemy types that need per-frame time animation.
+    // This moves Math.sin(now * ...) from CPU traverse to GPU shader.
+    // Only for non-instanced enemies (instanced types don't have per-enemy materials).
+    if (type === 'mirror_knight') {
+      // Mirror Knight: shield reflect glow pulse
+      attachGPUUniforms(material, {
+        uTime: { value: 0.0 },
+        uPulseBase: { value: 0.5 },
+        uPulseSpeed: { value: 0.003 },
+        uPulseAmp: { value: 0.2 },
+      });
+      group.userData.gpuNeedsTimeUpdate = true;
+    }
+  }
+
+  // ── GPU flags for instanced enemy types ──
+  // Instanced enemies share materials, so we track state per-enemy
+  // rather than per-material. Phase Wraith opacity is handled via
+  // on-change traverse (since instanced mesh has no per-instance opacity).
+  if (type === 'phase_wraith') {
+    group.userData.gpuNeedsOpacityUpdate = true;
+    group.userData._lastPhaseOpacity = 0.85;
   }
 
   group.position.copy(position);
   group.userData.isEnemy = true;
-  group.userData.enemyType = type; // For debug identification
-
-  // Tank: one random voxel is weak point (double damage)
-  if (isTank) {
-    const voxels = group.children.filter(c => !c.userData.isEnemyHitbox);
-    if (voxels.length > 0) {
-      const weak = voxels[Math.floor(Math.random() * voxels.length)];
-      weak.userData.weakPoint = true;
-    }
-  }
+  group.userData.enemyType = type;
 
   // Add invisible box hitbox for better hit detection (cheaper than sphere)
+  // Note: material.visible=false still allows raycasting (Three.js only
+  // checks Object3D.visible, not material.visible, for ray intersection)
   const hitboxGeo = new THREE.BoxGeometry(def.hitboxRadius * 2, def.hitboxRadius * 2, def.hitboxRadius * 2);
   const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
   const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
@@ -1533,14 +2001,8 @@ export function updateEnemies(dt, now, playerPos) {
         e.coreExposed = false;
       }
 
-      // Telegraph glow before firing
-      if (e.fireTimer >= 2.0 && !e.coreExposed) {
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            setMaterialEmissiveSafe(c.material, new THREE.Color(0xffffff), (e.fireTimer - 2.0) / 0.5);
-          }
-        });
-      }
+      // Telegraph glow: skip per-frame traverse (pulse_bomber commented out)
+      // if (e.fireTimer >= 2.0 && !e.coreExposed) { ... }
 
       // Keep distance from player
       if (dist < 4) {
@@ -1569,12 +2031,9 @@ export function updateEnemies(dt, now, playerPos) {
         }
       }
 
-      // Glitchy visual effect
-      e.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          c.material.opacity = 0.5 + Math.sin(now * 0.01) * 0.2;
-        }
-      });
+      // Glitchy visual effect (GPU: handled by shader if available, else skip)
+      // Note: clone_mimic is commented out; split variant doesn't have GPU uniforms
+      // This is a no-op for most enemies
     }
 
     // Spider Walker: wall/ceiling movement and latching
@@ -1640,13 +2099,13 @@ export function updateEnemies(dt, now, playerPos) {
         if (e.mirrorImmuneTimer <= 0) {
           e.mirrorImmune = false;
         }
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            const pulse = 0.5 + Math.sin(now * 0.02) * 0.3;
-            c.material.opacity = pulse;
-            setMaterialEmissiveSafe(c.material, new THREE.Color(0xd0d0d0), 0.8);
-          }
-        });
+        // GPU: update pulse uniforms for immune state (faster pulse)
+        if (e.mesh.userData.gpuNeedsTimeUpdate && e.material.userData.gpu) {
+          e.material.userData.gpu.uniforms.uTime.value = now;
+          e.material.userData.gpu.uniforms.uPulseBase.value = 0.5;
+          e.material.userData.gpu.uniforms.uPulseSpeed.value = 0.02;
+          e.material.userData.gpu.uniforms.uPulseAmp.value = 0.3;
+        }
       } else {
         // Check if player is standing still (confuses the knight)
         const playerVel = playerPos.clone().sub(e.mirrorLastPlayerDir);
@@ -1683,13 +2142,11 @@ export function updateEnemies(dt, now, playerPos) {
           e.mesh.position.addScaledVector(mirrorDir, e.speed * speedMod * dt * phaseSpeed);
         }
 
-        // Shield visual effect
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            const reflectGlow = Math.sin(now * 0.003) * 0.2 + 0.5;
-            c.material.opacity = reflectGlow;
-          }
-        });
+        // Shield visual effect (GPU: pulse handled by shader uniform)
+        if (e.mesh.userData.gpuNeedsTimeUpdate && e.material.userData.gpu) {
+          e.material.userData.gpu.uniforms.uTime.value = now;
+          e.material.userData.gpu.uniforms.uPulseBase.value = 0.5;
+        }
       }
     }
 
@@ -1701,12 +2158,7 @@ export function updateEnemies(dt, now, playerPos) {
       if (e.portalDisoriented) {
         // Disoriented after exiting portal: move slower
         speedMod *= 0.3;
-        // Visual glitch effect
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            c.material.opacity = 0.3 + Math.random() * 0.4;
-          }
-        });
+        // Visual glitch: skip per-frame traverse (portal_mantis commented out)
         if (e.portalDisorientTimer <= 0) {
           e.portalDisoriented = false;
         }
@@ -1725,28 +2177,15 @@ export function updateEnemies(dt, now, playerPos) {
         e.portalDisorientTimer = 0.5;
       }
 
-      // Portal glow effect when ready to teleport
-      if (e.portalTimer >= e.portalCooldown * 0.7) {
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            setMaterialEmissiveSafe(c.material, new THREE.Color(0x00ffaa), 0.5);
-          }
-        });
-      }
+      // Portal glow: skip per-frame traverse (portal_mantis commented out)
     }
 
     // Black Hole Totem: stationary, creates gravity field
     if (e.isBlackhole) {
       // Stationary - no movement
-
       // Visual effect: dark swirling vortex
-      e.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          const pulse = 0.3 + Math.sin(now * 0.005) * 0.2;
-          c.material.opacity = pulse;
-          setMaterialEmissiveSafe(c.material, new THREE.Color(0x220033), 0.5);
-        }
-      });
+      // GPU: pulse handled by shader uniforms (if material has GPU setup)
+      // Note: blackhole_totem is currently commented out in ENEMY_DEFS
 
       // Rotation effect
       e.mesh.rotation.y += dt * 2;
@@ -1788,11 +2227,32 @@ export function updateEnemies(dt, now, playerPos) {
             spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc);
           }
 
-          other.mesh.traverse(c => {
-            if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-              setMaterialEmissiveSafe(c.material, new THREE.Color(0xff66cc), 0.35);
+          // GPU: only update linked enemy emissive when link state changes
+          // (not per-frame)
+          if (!other._conductorLinked) {
+            other._conductorLinked = true;
+            other._conductorLinkedTime = now;
+            // For non-instanced linked enemies, set emissive once
+            if (!INSTANCED_TYPES.has(other.type)) {
+              other.mesh.traverse(c => {
+                if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+                  setMaterialEmissiveSafe(c.material, new THREE.Color(0xff66cc), 0.35);
+                }
+              });
             }
-          });
+          }
+        } else {
+          // Unlinked: clear emissive
+          if (other._conductorLinked) {
+            other._conductorLinked = false;
+            if (!INSTANCED_TYPES.has(other.type)) {
+              other.mesh.traverse(c => {
+                if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+                  setMaterialEmissiveSafe(c.material, new THREE.Color(0x000000), 0);
+                }
+              });
+            }
+          }
         }
       }
 
@@ -1800,11 +2260,20 @@ export function updateEnemies(dt, now, playerPos) {
         e.conductorArcTimer = e.conductorArcCooldown;
       }
 
-      e.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          setMaterialEmissiveSafe(c.material, new THREE.Color(0xff66cc), e.linkedEnemies.length > 0 ? 0.7 : 0.3);
+      // Conductor self-glow: only update on change for non-instanced
+      // (instanced conductor has no visible meshes in group)
+      const prevLinked = e._wasLinked;
+      const nowLinked = e.linkedEnemies.length > 0;
+      if (prevLinked !== nowLinked) {
+        e._wasLinked = nowLinked;
+        if (!INSTANCED_TYPES.has(e.type)) {
+          e.mesh.traverse(c => {
+            if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+              setMaterialEmissiveSafe(c.material, new THREE.Color(0xff66cc), nowLinked ? 0.7 : 0.3);
+            }
+          });
         }
-      });
+      }
     }
 
     // Phase Wraith: appears midfield, spawns swarm, blinks out when shot
@@ -1862,13 +2331,21 @@ export function updateEnemies(dt, now, playerPos) {
         }
       }
 
-      e.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          const targetOpacity = e.phaseHidden ? 0.05 : (e.phaseStunTimer > 0 ? 0.35 : 0.85);
-          c.material.opacity = targetOpacity;
-          setMaterialEmissiveSafe(c.material, new THREE.Color(0x8844ff), e.phaseHidden ? 0.2 : 0.5);
+      // Phase Wraith visual state: only update for non-instanced enemies
+      // Instanced enemies have no visible meshes in their group (only hitbox)
+      // so this traverse is a no-op for instanced types. Skip entirely.
+      if (!INSTANCED_TYPES.has(e.type)) {
+        const targetOpacity = e.phaseHidden ? 0.05 : (e.phaseStunTimer > 0 ? 0.35 : 0.85);
+        // Only traverse when opacity actually changes
+        if (targetOpacity !== e.mesh.userData._lastPhaseOpacity) {
+          e.mesh.userData._lastPhaseOpacity = targetOpacity;
+          e.mesh.traverse(c => {
+            if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+              c.material.opacity = targetOpacity;
+            }
+          });
         }
-      });
+      }
     }
 
     if (e.isPhase && e.phaseHidden) {
@@ -1879,22 +2356,13 @@ export function updateEnemies(dt, now, playerPos) {
     _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
     e.mesh.lookAt(_look);
 
-    // Apply visual tints for status effects
-    e.mesh.traverse(c => {
-      if (c.isMesh && c.material) {
-        const baseColor = e.baseColor.clone();
-        if (se.fire.stacks > 0) {
-          c.material.color.setHex(0xff4400);
-        } else if (se.freeze.stacks > 0) {
-          c.material.color.setHex(0x44aaff);
-        } else if (se.shock.stacks > 0) {
-          c.material.color.setHex(0xffff44);
-        } else {
-          const dmgRatio = 1 - e.hp / e.maxHp;
-          c.material.color.copy(baseColor).lerp(_redColor, dmgRatio);
-        }
-      }
-    });
+    // ── Update instanced mesh transform ──
+    if (e.mesh.userData.instanceId !== undefined) {
+      updateInstanceMatrix(e.type, e.mesh.userData.instanceId, e.mesh);
+    }
+
+    // ── Visual tints: only update when state changes (GPU-friendly) ──
+    updateEnemyVisualsOnChange(e);
 
     // ── Collision with player ──
     if (dist < 0.9) {
@@ -1904,10 +2372,6 @@ export function updateEnemies(dt, now, playerPos) {
 
     // ── Status effect ticking ──
     updateStatusEffects(e, dt);
-
-    // ── Colour: lerp from base → red based on damage ──
-    const dmgRatio = 1 - e.hp / e.maxHp;
-    e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
   }
 
   updatePulseBomberRings(dt, now, playerPos);
@@ -1916,6 +2380,7 @@ export function updateEnemies(dt, now, playerPos) {
 }
 
 const _redColor = new THREE.Color(0xff0000);
+const _skullDamagedColor = new THREE.Color(0x660000);
 
 function updateStatusEffects(e, dt) {
   const se = e.statusEffects;
@@ -2233,8 +2698,8 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
       c.geometry.dispose();
     }
   });
-  // Dispose material
-  e.material.dispose();
+  // Dispose material (only for non-instanced enemies)
+  if (e.material) e.material.dispose();
   activeEnemies.splice(index, 1);
   _enemyMeshesDirty = true;  // Invalidate cache
 
@@ -2646,13 +3111,17 @@ class Boss {
     this.hp -= amount;
     if (this.hp <= 0) this.hp = 0;
 
-    // Update color based on damage
+    // Update color based on damage (only when HP changes)
+    // GPU optimization: only traverse when damage ratio actually changes
     const damageRatio = 1 - this.hp / this.maxHp;
-    this.mesh.traverse(c => {
-      if (c.isMesh && c.material && !c.userData.isBossBody) {
-        c.material.color.copy(this.baseColor).lerp(new THREE.Color(0xff0000), damageRatio);
-      }
-    });
+    if (damageRatio !== this._lastDamageRatio) {
+      this._lastDamageRatio = damageRatio;
+      this.mesh.traverse(c => {
+        if (c.isMesh && c.material && !c.userData.isBossBody) {
+          c.material.color.copy(this.baseColor).lerp(_redColor, damageRatio);
+        }
+      });
+    }
 
     // Phase transitions (66%, 33%)
     const prevPhase = this.phase;
@@ -3335,14 +3804,16 @@ class SkullHand {
     }
     
     // Update color based on damage - darken toward dark red
+    // GPU: only update when damage ratio changes (not per-frame)
     const damageRatio = 1 - this.hp / this.maxHp;
-    this.group.traverse(c => {
-      if (c.isMesh && c.material && c.userData.isHandBody) {
-        const baseColor = new THREE.Color(0xffffff);
-        const damagedColor = new THREE.Color(0x660000); // Dark red
-        c.material.color.copy(baseColor).lerp(damagedColor, damageRatio);
-      }
-    });
+    if (damageRatio !== this._lastDamageRatio) {
+      this._lastDamageRatio = damageRatio;
+      this.group.traverse(c => {
+        if (c.isMesh && c.material && c.userData.isHandBody) {
+          c.material.color.setHex(0xffffff).lerp(_skullDamagedColor, damageRatio);
+        }
+      });
+    }
   }
   
   takeDamage(amount) {
@@ -3712,15 +4183,15 @@ class SkullBoss extends Boss {
   
   updateHeadColor() {
     const damageRatio = 1 - this.hp / this.maxHp;
-    const baseColor = new THREE.Color(0xffffff);
-    // More dramatic darkening: progress from white -> pink -> red -> dark red -> almost black
+    // GPU: only update when damage ratio actually changes
+    if (damageRatio === this._lastHeadDamageRatio) return;
+    this._lastHeadDamageRatio = damageRatio;
+
     const damagedColor = new THREE.Color(0x330000); // Very dark red (almost black)
-    
-    // Exponential darkening for more dramatic effect
     const enhancedRatio = Math.pow(damageRatio, 0.7); // Darker faster
     
     this.skullVoxels.forEach(voxel => {
-      voxel.material.color.copy(baseColor).lerp(damagedColor, enhancedRatio);
+      voxel.material.color.setHex(0xffffff).lerp(damagedColor, enhancedRatio);
     });
   }
   
