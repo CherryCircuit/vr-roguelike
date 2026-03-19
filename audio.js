@@ -1201,8 +1201,8 @@ export function startLightningSound() {
   lightningSource = ctx.createMediaElementSource(lightningAudio);
   lightningGain = ctx.createGain();
   
-  // Set high gain (5x) to make the lightning gun audible over other SFX
-  lightningGain.gain.setValueAtTime(5.0, ctx.currentTime);
+  // Set normal gain (volume boosted in MP3 file)
+  lightningGain.gain.setValueAtTime(1.0, ctx.currentTime);
   
   // Connect: source -> gain -> destination
   lightningSource.connect(lightningGain);
