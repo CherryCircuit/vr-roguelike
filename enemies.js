@@ -33,6 +33,21 @@ function setMaterialEmissiveSafe(material, color, intensity = 1) {
   if (Object.prototype.hasOwnProperty.call(material, 'emissiveIntensity')) delete material.emissiveIntensity;
 }
 
+// Helper: create an enemy MeshBasicMaterial with consistent transparency settings.
+// depthWrite:false prevents transparent enemies from writing to depth buffer,
+// which fixes the "more opaque when looking up" blending issue.
+// fog:false prevents FogExp2 from altering enemy color based on camera angle.
+function makeEnemyMat(opts = {}) {
+  return new THREE.MeshBasicMaterial({
+    color: opts.color ?? 0xffffff,
+    transparent: true,
+    opacity: opts.opacity ?? 0.7,
+    depthWrite: false,
+    fog: false,
+    ...(opts.side ? { side: opts.side } : {}),
+  });
+}
+
 // ── Voxel patterns (simplified for performance) ───────────
 const PATTERNS = {
   basic: [
@@ -454,10 +469,13 @@ function initBasicInstancePool() {
   const basicMat = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: 0.7,
+    depthWrite: false,
+    fog: false,
   });
 
   const im = new THREE.InstancedMesh(basicGeo, basicMat, MAX_BASIC_INSTANCES);
   im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.renderOrder = 10;
   im.count = 0;
   im.frustumCulled = false;
 
@@ -585,10 +603,13 @@ function initFastInstancePool() {
   const fastMat = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: 0.7,
+    depthWrite: false,
+    fog: false,
   });
 
   const im = new THREE.InstancedMesh(fastGeo, fastMat, MAX_FAST_INSTANCES);
   im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.renderOrder = 10;
   im.count = 0;
   im.frustumCulled = false;
 
@@ -717,10 +738,13 @@ function initTankInstancePool() {
   const tankMat = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: 0.7,
+    depthWrite: false,
+    fog: false,
   });
 
   const im = new THREE.InstancedMesh(tankGeo, tankMat, MAX_TANK_INSTANCES);
   im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.renderOrder = 10;
   im.count = 0;
   im.frustumCulled = false;
 
@@ -848,10 +872,13 @@ function initSwarmInstancePool() {
   const swarmMat = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: 0.7,
+    depthWrite: false,
+    fog: false,
   });
 
   const im = new THREE.InstancedMesh(swarmGeo, swarmMat, MAX_SWARM_INSTANCES);
   im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.renderOrder = 10;
   im.count = 0;
   im.frustumCulled = false;
 
@@ -956,11 +983,14 @@ function spawnTrainEnemy(type, position, levelConfig) {
 
   // Create the lead "scout" voxel
   const group = new THREE.Group();
+  group.renderOrder = 10;
   const geo = getGeo(def.voxelSize);
   const material = new THREE.MeshBasicMaterial({
     color: def.color,
     transparent: true,
     opacity: 0.8,
+    depthWrite: false,
+    fog: false,
   });
 
   // Scout (leader) voxel - marked as weak point
@@ -1114,8 +1144,11 @@ function spawnBabySpiders(position, count = 3) {
       color: 0xff6644,
       transparent: true,
       opacity: 0.7,
+      depthWrite: false,
+      fog: false,
     });
     const spider = new THREE.Mesh(geo, mat);
+    spider.renderOrder = 10;
     spider.position.copy(position);
     spider.position.x += (Math.random() - 0.5) * 0.5;
     spider.position.z += (Math.random() - 0.5) * 0.5;
@@ -1146,8 +1179,11 @@ function spawnShieldShards(position, count = 3) {
       color: 0xcccccc,
       transparent: true,
       opacity: 0.8,
+      depthWrite: false,
+      fog: false,
     });
     const shard = new THREE.Mesh(geo, mat);
+    shard.renderOrder = 10;
     shard.position.copy(position);
     shard.position.x += (Math.random() - 0.5) * 1.5;
     shard.position.z += (Math.random() - 0.5) * 1.5;
@@ -1209,8 +1245,11 @@ function spawnPhaseEcho(position) {
     color: 0x8844ff,
     transparent: true,
     opacity: 0.6,
+    depthWrite: false,
+    fog: false,
   });
   const echo = new THREE.Mesh(geo, mat);
+  echo.renderOrder = 10;
   echo.position.copy(position);
 
   sceneRef.add(echo);
@@ -1416,9 +1455,12 @@ function spawnGeometryShifterSplit(position, hp, scale) {
       color: 0xff88ff,
       transparent: true,
       opacity: 0.7,
+      depthWrite: false,
+      fog: false,
     });
 
     const group = new THREE.Group();
+    group.renderOrder = 10;
     // Simple 2x2 pattern for split
     const pattern = [[1, 1], [1, 1]];
     pattern.forEach((row, r) => {
@@ -1502,9 +1544,12 @@ function spawnCloneMimicSplit(position) {
       color: 0xff00aa,
       transparent: true,
       opacity: 0.5,
+      depthWrite: false,
+      fog: false,
     });
 
     const group = new THREE.Group();
+    group.renderOrder = 10;
     // Simple pattern
     const cube = new THREE.Mesh(geo, mat.clone());
     group.add(cube);
@@ -1764,11 +1809,14 @@ export function spawnEnemy(type, position, levelConfig) {
       color: def.color,
       transparent: true,
       opacity: 0.7,
+      depthWrite: false,
+      fog: false,
     });
   }
   const material = sharedMaterials[type].clone();
 
   const group = new THREE.Group();
+  group.renderOrder = 10;
   const geo = getGeo(def.voxelSize);
   const rows = def.pattern.length;
   const cols = def.pattern[0].length;
@@ -3258,11 +3306,14 @@ class Boss {
 
   buildMesh(def) {
     const group = new THREE.Group();
+    group.renderOrder = 10;
     const geo = getGeo(def.voxelSize);
     const mat = new THREE.MeshBasicMaterial({
       color: def.color,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.9,
+      depthWrite: false,
+      fog: false,
     });
     const rows = def.pattern.length;
     const cols = def.pattern[0].length;
@@ -3308,6 +3359,8 @@ class Boss {
         color: 0xffffff,  // White - very obvious in VR
         transparent: true,
         opacity: 0.95,   // Higher opacity for visibility
+        depthWrite: false,
+        fog: false,
       });
       weak.material = weakMaterial;
       this.weakPoints.push(weak);
@@ -3956,11 +4009,14 @@ class SkullHand {
   buildMesh() {
     // Voxel hand - skeletal hand shape
     this.group = new THREE.Group();
+    this.group.renderOrder = 10;
     const geo = getGeo(0.18);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.9,
+      depthWrite: false,
+      fog: false,
     });
     
     // Palm (center)
@@ -4121,11 +4177,14 @@ class SkullBoss extends Boss {
     }
     
     const skullGroup = new THREE.Group();
+    skullGroup.renderOrder = 10;
     const geo = getGeo(0.25);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.9,
+      depthWrite: false,
+      fog: false,
     });
     
     // Skull top (dome)
@@ -4161,7 +4220,9 @@ class SkullBoss extends Boss {
     const eyeMat = new THREE.MeshBasicMaterial({
       color: 0xff0000,
       transparent: true,
-      opacity: 0.8
+      opacity: 0.8,
+      depthWrite: false,
+      fog: false,
     });
     
     const leftEye = new THREE.Mesh(eyeGeo, eyeMat.clone());
@@ -7459,9 +7520,10 @@ export function clearBossDebris() {
 const bossMinions = [];
 export function spawnBossMinion(fromPos, playerPos, type = 'basic') {
   const group = new THREE.Group();
+  group.renderOrder = 10;
   const def = ENEMY_DEFS[type] || ENEMY_DEFS.basic;
   const geo = getGeo(def.voxelSize);
-  const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.8 });
+  const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.8, depthWrite: false, fog: false });
 
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 2; c++) {
