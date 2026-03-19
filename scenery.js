@@ -387,7 +387,7 @@ export const THEMES = {
 
   // ── New biomes (replace legacy reskins) ───────────────────
   synthwave_valley: {
-    skyColor: 0x05000d,
+    skyColor: 0x1a004a,
     fogColor: 0x2a004a,
     fogDensity: 0.0008,
     gridColor: '#ff2ed1',

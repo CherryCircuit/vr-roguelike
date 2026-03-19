@@ -1625,7 +1625,7 @@ function createSun() {
   registerFadeMaterial(sunGlowRef.material);
 
   createOminousHorizon();
-  createAurora();
+  // createAurora(); // REMOVED: auroraRef cylinder deleted, using atmosphereRef only
   // Atmosphere: vertical gradient cylinder around player
   createAtmosphere();
 }
@@ -1752,7 +1752,7 @@ function createAtmosphere() {
   // #2 FIX: Increased height for taller gradient reach into the sky
   const segments = 48;
   const radius = 92;  // Just behind mountains
-  const height = 45;  // Increased from 30 to 45 for taller gradient
+  const height = 54;  // 20% taller than 45
 
   // Create a canvas for the gradient texture
   // Use full-opacity colors and control alpha separately in the gradient
@@ -1764,10 +1764,10 @@ function createAtmosphere() {
   // #2 FIX: DRAMATICALLY brighter and taller gradient for maximum visibility
   // EXACT synthwave colors: Horizon #FE9053 (orange) → Pink #E00186 → Dark purple #1A004A
   const grad = ctx.createLinearGradient(0, 256, 0, 0);  // bottom to top
-  grad.addColorStop(0, 'rgba(254, 144, 83, 1.0)');       // EXACT: Horizon orange #FE9053
-  grad.addColorStop(0.2, 'rgba(224, 1, 134, 0.9)');      // EXACT: Mountain tips pink #E00186
-  grad.addColorStop(0.5, 'rgba(44, 0, 81, 0.6)');        // EXACT: Sun top purple #2C0051
-  grad.addColorStop(1.0, 'rgba(26, 0, 74, 0.0)');        // EXACT: Dark purple #1A004A fade to transparent
+  grad.addColorStop(0, 'rgba(255, 126, 49, 1.0)');       // #ff7e31 (lowest Y)
+  grad.addColorStop(0.4, 'rgba(243, 7, 135, 0.9)');      // #f30787 (40% height)
+  grad.addColorStop(0.75, 'rgba(113, 0, 110, 0.6)');     // #71006e (75% height)
+  grad.addColorStop(1.0, 'rgba(26, 0, 74, 0.0)');        // #1a004a (top, fade to transparent)
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 4, 256);
 
@@ -9719,7 +9719,7 @@ function buildSynthwaveValleyScene(group) {
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: {
-      topColor: { value: new THREE.Color(0x1A004A) },      // FIXED: Dark purple at top before fading to black
+      topColor: { value: new THREE.Color(0x1A004A) },      // #1a004a (matches skybox)
       midColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple
       horizonColor: { value: new THREE.Color(0xFE9053) },  // FIXED: Horizon orange (more saturated)
       glowColor: { value: new THREE.Color(0xE00186) },     // EXACT: Mountain tips pink/magenta
@@ -9740,7 +9740,7 @@ function buildSynthwaveValleyScene(group) {
   // Still provides good visual quality while improving FPS at level start
   const terrainUniforms = {
     uGridColor: { value: new THREE.Color(0x015CC1) },     // EXACT: Gridlines bright blue
-    uBaseColor: { value: new THREE.Color(0x0C0E3E) },     // FIXED: Between gridlines dark blue
+    uBaseColor: { value: new THREE.Color(0x0C0E3F) },     // #0C0E3F dark blue base
     uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
     uFlashIntensity: { value: 0.0 },
   };
@@ -9866,8 +9866,8 @@ function buildSynthwaveValleyScene(group) {
   // version should behave like a stable biome backdrop.
   group.userData.update = null;
 
-  // Synthwave floor HUD height: group.position.y = 6.82
-  group.position.set(0, 6.82, 0);
+  // Synthwave floor HUD height: group.position.y = 5.82
+  group.position.set(0, 5.82, 0);
 
   // Rotate so player faces sun
   group.rotation.y = 0;
