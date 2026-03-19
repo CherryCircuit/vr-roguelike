@@ -3306,7 +3306,7 @@ class Boss {
       const weakMaterial = new THREE.MeshBasicMaterial({
         color: 0xffffff,  // White - very obvious in VR
         transparent: false,
-        opacity: 0.95,   // Higher opacity for visibility
+        opacity: 1.0,   // Higher opacity for visibility
       });
       weak.material = weakMaterial;
       this.weakPoints.push(weak);
