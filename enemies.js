@@ -1307,8 +1307,12 @@ function damageNearbyEnemies(position, damage, radius) {
 
 /**
  * Spawn electric arc effect (for Conductor chain overload).
+ * @param {THREE.Vector3} fromPos - Start position
+ * @param {THREE.Vector3} toPos - End position
+ * @param {number} color - Arc color
+ * @param {number} conductorIndex - Optional index of conductor that spawned this arc
  */
-function spawnElectricArc(fromPos, toPos, color = 0xffcc00) {
+function spawnElectricArc(fromPos, toPos, color = 0xffcc00, conductorIndex = -1) {
   // Create a simple line for the electric arc
   const points = [];
   const segments = 10;
@@ -1334,15 +1338,33 @@ function spawnElectricArc(fromPos, toPos, color = 0xffcc00) {
 
   sceneRef.add(arc);
 
-  // Store for cleanup
+  // Store for cleanup (track conductor index for cleanup when conductor dies)
   electricArcs.push({
     mesh: arc,
     createdAt: performance.now(),
     lifetime: 200, // 0.2 seconds
+    conductorIndex: conductorIndex,
   });
 }
 
 const electricArcs = [];
+
+/**
+ * Clear all electric arcs spawned by a specific conductor.
+ * Called when a conductor dies to immediately remove its buff visuals.
+ * @param {number} conductorIndex - Index of the conductor in activeEnemies
+ */
+function clearConductorArcs(conductorIndex) {
+  for (let i = electricArcs.length - 1; i >= 0; i--) {
+    const arc = electricArcs[i];
+    if (arc.conductorIndex === conductorIndex) {
+      sceneRef.remove(arc.mesh);
+      arc.mesh.geometry.dispose();
+      arc.mesh.material.dispose();
+      electricArcs.splice(i, 1);
+    }
+  }
+}
 
 /**
  * Update electric arcs (fade out).
@@ -2485,7 +2507,7 @@ export function updateEnemies(dt, now, playerPos) {
           other.speed = other.baseSpeed * (1 + e.linkSpeedBonus);
 
           if (e.conductorArcTimer <= 0) {
-            spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc);
+            spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc, i);
           }
 
           other.mesh.traverse(c => {
@@ -2885,16 +2907,21 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   }
 
   // Conductor: Chain overload - kills all linked enemies
-  if (e.isConductor && e.linkedEnemies.length > 0) {
-    // Kill all linked enemies (chain reaction)
-    e.linkedEnemies.forEach(linkedIdx => {
-      if (activeEnemies[linkedIdx]) {
-        // Deal massive damage to linked enemy
-        activeEnemies[linkedIdx].hp = 0;
-        // Visual feedback: electric arc
-        spawnElectricArc(pos, activeEnemies[linkedIdx].mesh.position.clone());
-      }
-    });
+  if (e.isConductor) {
+    // Clear all electric arcs spawned by this conductor immediately
+    clearConductorArcs(index);
+
+    if (e.linkedEnemies.length > 0) {
+      // Kill all linked enemies (chain reaction)
+      e.linkedEnemies.forEach(linkedIdx => {
+        if (activeEnemies[linkedIdx]) {
+          // Deal massive damage to linked enemy
+          activeEnemies[linkedIdx].hp = 0;
+          // Visual feedback: electric arc (short-lived, for death effect only)
+          spawnElectricArc(pos, activeEnemies[linkedIdx].mesh.position.clone(), 0xff66cc, -1);
+        }
+      });
+    }
   }
 
   // [Physics Death System] Spawn voxel explosions with physics
@@ -7581,6 +7608,25 @@ export function hitBossMinion(index, damage) {
   return { killed: false };
 }
 
+/**
+ * Distance-only clamp (no look direction constraint).
+ * Used for boss minions to prevent them from "following" player's head.
+ */
+function clampPositionToDistance(position, playerPos, minDist = 2, maxDist = 18) {
+  const dx = position.x - playerPos.x;
+  const dz = position.z - playerPos.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist > maxDist) {
+    const s = maxDist / dist;
+    position.x = playerPos.x + dx * s;
+    position.z = playerPos.z + dz * s;
+  } else if (dist < minDist && dist > 0.001) {
+    const s = minDist / dist;
+    position.x = playerPos.x + dx * s;
+    position.z = playerPos.z + dz * s;
+  }
+}
+
 export function updateBossMinions(dt, playerPos) {
   for (let i = bossMinions.length - 1; i >= 0; i--) {
     const m = bossMinions[i];
@@ -7595,7 +7641,8 @@ export function updateBossMinions(dt, playerPos) {
     m.mesh.rotation.y = m.mesh.userData.slideAngle || 0;
     _dir.copy(playerPos).sub(m.mesh.position).normalize();
     m.mesh.position.addScaledVector(_dir, (m.speed || 0.6) * dt);
-    clampPositionToFrontArc(m.mesh.position, playerPos, 2.0, 18, 120);
+    // Use distance-only clamp (not front-arc) to prevent minions from following player's look direction
+    clampPositionToDistance(m.mesh.position, playerPos, 2.0, 18);
   }
 }
 
