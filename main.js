@@ -502,8 +502,6 @@ function init() {
   // Bloom is only applied in desktop mode. In VR, the scene renders directly.
   const BLOOM_LAYER = 1;
   let bloomComposer = null;
-  let bloomBaseMaterial = null;
-  let bloomBaseMesh = null;
 
   // Selective bloom composite shader: adds bloom texture on top of base render
   const SelectiveBloomCompositeShader = {
@@ -580,18 +578,6 @@ function init() {
     bloomComposer.baseComposer.setSize(w, h);
     bloomComposer.bloomComposer.setSize(w, h);
     bloomComposer.bloomComposer.passes[1].resolution.set(w, h);
-  }
-
-  // Handle resize
-  const origResize = window.addEventListener ? null : null;  // placeholder
-  const _origOnResize = onWindowResize;
-
-  function renderWithBloom() {
-    if (!bloomComposer) {
-      renderer.render(scene, camera);
-      return;
-    }
-    bloomComposer.baseComposer.render();
   }
 
   // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
@@ -701,6 +687,9 @@ function init() {
 
   // PERFORMANCE: Initialize projectile pool
   initProjectilePool();
+
+  // Initialize selective bloom postprocessing (desktop only)
+  initSelectiveBloom();
 
   // Start at title
   resetGame();
@@ -6523,6 +6512,7 @@ function initProjectilePool() {
   laserIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   laserIM.count = 0;  // Start with 0 visible instances
   laserIM.frustumCulled = false;  // We manage visibility manually
+  laserIM.layers.enable(BLOOM_LAYER);  // Selective bloom: laser bolts glow
   scene.add(laserIM);
   instancedProjectiles['laser'] = { mesh: laserIM, maxCount: 120, freeIndices: new Set() };
 
@@ -9634,7 +9624,24 @@ function render(timestamp) {
     }
   }
 
-  renderer.render(scene, camera);
+  // Selective bloom: only in desktop mode for synthwave_valley biome
+  if (!renderer.xr.isPresenting && bloomComposer && biomeSceneBiome === 'synthwave_valley') {
+    // Sync bloom camera with main camera (same position, projection, different layers)
+    bloomComposer.bloomCamera.position.copy(camera.position);
+    bloomComposer.bloomCamera.quaternion.copy(camera.quaternion);
+    bloomComposer.bloomCamera.projectionMatrix.copy(camera.projectionMatrix);
+    // Temporarily enable tone mapping with exposure for bloom rendering
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.24;
+    // Render bloom pass first (produces bloom texture)
+    bloomComposer.bloomComposer.render();
+    // Then render base + composite (reads bloom texture, outputs to screen)
+    bloomComposer.baseComposer.render();
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMappingExposure = 1.0;
+  } else {
+    renderer.render(scene, camera);
+  }
 }
 
 // ============================================================
@@ -9678,6 +9685,7 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  resizeBloomComposer();
 }
 
 // ── Custom biome scenes (new HTML-extracted biomes) ─────────
@@ -9864,6 +9872,7 @@ function buildSynthwaveValleyScene(group) {
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
   terrain.position.set(0, floorY + 1.5, -700);
   terrain.frustumCulled = false;
+  terrain.layers.enable(BLOOM_LAYER);  // Selective bloom: floor grid glows
   group.add(terrain);
   registerFadeMaterial(terrainMat);
   // Store terrain material for damage flash
