@@ -3767,7 +3767,8 @@ let pauseCountdownOverlay = null;
  */
 export function showPauseMenu() {
   pauseMenuGroup.visible = true;
-  pauseMenuGroup.position.set(0, 1.2, -2.5);
+  pauseMenuGroup.position.set(0, 1.2, -3.0);  // Closer to player for VR visibility
+  pauseMenuGroup.scale.set(1.3, 1.3, 1.3);  // Scale up for VR readability
 
   if (pauseMenuElements.panel) {
     // Already initialized
@@ -3833,7 +3834,7 @@ function createPauseMenu() {
   const panelMat = new THREE.MeshBasicMaterial({
     color: 0x0a0015,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.95,  // Increased from 0.85 for VR visibility
     side: THREE.DoubleSide
   });
   const panel = new THREE.Mesh(panelGeo, panelMat);
@@ -3913,14 +3914,14 @@ function createBlasterSection(hand, panelX) {
   });
 
   // Title
-  const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, { fontSize: 0.12, color: '#00ffff' });
+  const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, { fontSize: 0.15, color: '#00ffff' });
   titleText.position.set(0, 0.45, 0.02);
   group.add(titleText);
 
   // Weapon name
   const weaponId = game.mainWeapon[hand];
   const weaponName = weaponId.replace(/_/g, ' ').toUpperCase();
-  const weaponText = makeSprite(weaponName, { fontSize: 0.09, color: '#ffffff' });
+  const weaponText = makeSprite(weaponName, { fontSize: 0.1, color: '#ffffff' });
   weaponText.position.set(0, 0.32, 0.02);
   group.add(weaponText);
 
@@ -3931,13 +3932,13 @@ function createBlasterSection(hand, panelX) {
 
   if (upgradeEntries.length > 0) {
     upgradeEntries.forEach(([id, count], index) => {
-      const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, { fontSize: 0.07, color: '#ffffff' });
+      const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, { fontSize: 0.1, color: '#ffffff' });
       const yPos = yOffset - (index * 0.12);
       upgradeText.position.set(0, yPos, 0.02);
       group.add(upgradeText);
     });
   } else {
-    const noUpgradesText = makeSprite('No upgrades', { fontSize: 0.07, color: '#888888' });
+    const noUpgradesText = makeSprite('No upgrades', { fontSize: 0.1, color: '#888888' });
     noUpgradesText.position.set(0, 0.1, 0.02);
     group.add(noUpgradesText);
   }
@@ -3959,7 +3960,7 @@ function createStatsSection() {
   group.add(bg);
 
   // Title
-  const titleText = makeSprite('RUN STATISTICS', { fontSize: 0.11, color: '#ff00ff' });
+  const titleText = makeSprite('RUN STATISTICS', { fontSize: 0.15, color: '#ff00ff' });
   titleText.position.set(0, 0.45, 0.02);
   group.add(titleText);
 
@@ -3977,13 +3978,13 @@ function createStatsSection() {
   ];
 
   leftStats.forEach((stat, index) => {
-    const text = makeSprite(stat, { fontSize: 0.075, color: '#00ffff' });
+    const text = makeSprite(stat, { fontSize: 0.1, color: '#00ffff' });
     text.position.set(-1.1, 0.25 - (index * 0.1), 0.02);
     group.add(text);
   });
 
   rightStats.forEach((stat, index) => {
-    const text = makeSprite(stat, { fontSize: 0.075, color: '#00ffff' });
+    const text = makeSprite(stat, { fontSize: 0.1, color: '#00ffff' });
     text.position.set(1.1, 0.25 - (index * 0.1), 0.02);
     group.add(text);
   });

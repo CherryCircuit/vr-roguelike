@@ -2927,25 +2927,25 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   // [Physics Death System] Spawn voxel explosions with physics
   console.log(`[enemy-death] destroyEnemy: spawnVoxelExplosion=${!!spawnVoxelExplosion}, type=${e.type}`);
   if (spawnVoxelExplosion) {
-    // Calculate voxel count based on enemy type
-    // Get the number of voxels in the enemy mesh
-    const voxelCountInMesh = e.mesh.children.filter(c => c.isMesh && !c.userData.isEnemyHitbox).length;
-    
+    // Debris count based on enemy voxel pattern size
     let voxelCount;
-    if (e.type === 'swarm') {
-      // SWARM: Always 1 debris
-      voxelCount = 1;
-    } else if (e.type === 'tank') {
-      // TANK: Max 6 debris
-      voxelCount = 6;
+    const voxelPatternSize = e.voxelPatternSize || e.mesh.children.filter(c => c.isMesh && !c.userData.isEnemyHitbox).length;
+
+    if (voxelPatternSize <= 1) {
+      voxelCount = Math.floor(Math.random() * 3) + 1;  // 1-3
+    } else if (voxelPatternSize === 2) {
+      voxelCount = Math.floor(Math.random() * 3) + 2;  // 2-4
+    } else if (voxelPatternSize === 3) {
+      voxelCount = Math.floor(Math.random() * 3) + 2;  // 2-4
+    } else if (voxelPatternSize === 4) {
+      voxelCount = Math.floor(Math.random() * 4) + 2;  // 2-5
+    } else if (voxelPatternSize === 5) {
+      voxelCount = Math.floor(Math.random() * 3) + 3;  // 3-5
     } else {
-      // Other enemies: random between 2 and min(voxelCount, 6)
-      const maxDebris = Math.min(voxelCountInMesh, 6);
-      const minDebris = 2;
-      voxelCount = Math.floor(Math.random() * (maxDebris - minDebris + 1)) + minDebris;
+      voxelCount = 6;  // Tank or larger: always 6
     }
-    
-    // New enemy voxel counts (override for special types)
+
+    // Special type overrides (can override the random count)
     if (e.isTrain) voxelCount = Math.min(e.trainLength || 5, 5); // Cap train voxels
     if (e.shapeShift) voxelCount = 5;
     if (e.isRanged) voxelCount = 5;
