@@ -125,10 +125,14 @@ let scoreboardPage = 0;
 let scoreboardSpinnerTimer = null;
 const SCOREBOARD_PAGE_SIZE = 10;
 let lastSubmittedTimestamp = null; // Track most recent score submission for highlighting
+let lastSubmittedPageIndex = -1; // Page to auto-navigate to after submission
 
-// Set the timestamp of the most recently submitted score (called from main.js after submitScore)
 export function setLastSubmittedTimestamp(timestamp) {
   lastSubmittedTimestamp = timestamp;
+}
+
+export function setLastSubmittedPageIndex(pageIndex) {
+  lastSubmittedPageIndex = pageIndex;
 }
 
 // Country select state
@@ -396,11 +400,20 @@ export function initHUD(camera, scene) {
   floatingMessageGroup.position.set(0, 0.1, -0.8);
   camera.add(floatingMessageGroup);
 
-  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup, debugMenuGroup, pauseMenuGroup, pauseCountdownGroup].forEach(g => {
+  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup, debugMenuGroup].forEach(g => {
     g.visible = false;
     g.rotation.set(0, 0, 0);
     scene.add(g);
   });
+
+  // Pause menu and countdown attach to camera so they follow the player
+  pauseMenuGroup.visible = false;
+  pauseMenuGroup.rotation.set(0, 0, 0);
+  camera.add(pauseMenuGroup);
+
+  pauseCountdownGroup.visible = false;
+  pauseCountdownGroup.rotation.set(0, 0, 0);
+  camera.add(pauseCountdownGroup);
 
   // ── Hit flash (red plane in front of camera) ──
   // VR damage indicator: bright red flash that covers entire view
@@ -2982,7 +2995,8 @@ export function showScoreboard(scores, headerText, playerPos) {
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
-  scoreboardPage = 0;
+  scoreboardPage = lastSubmittedPageIndex >= 0 ? lastSubmittedPageIndex : 0;
+  lastSubmittedPageIndex = -1; // Reset after use
   scoreboardHeader = headerText || 'GLOBAL LEADERBOARD';
   if (scoreboardSpinnerTimer) {
     clearInterval(scoreboardSpinnerTimer);
@@ -3767,7 +3781,7 @@ let pauseCountdownOverlay = null;
  */
 export function showPauseMenu() {
   pauseMenuGroup.visible = true;
-  pauseMenuGroup.position.set(0, 1.2, -3.0);  // Closer to player for VR visibility
+  pauseMenuGroup.position.set(0, 0, -2);  // 2m in front of camera (camera-local space)
   pauseMenuGroup.scale.set(1.3, 1.3, 1.3);  // Scale up for VR readability
 
   if (pauseMenuElements.panel) {
@@ -4214,7 +4228,7 @@ function createResumeButton() {
  */
 export function showPauseCountdown(seconds) {
   pauseCountdownGroup.visible = true;
-  pauseCountdownGroup.position.set(0, 1.5, -3);
+  pauseCountdownGroup.position.set(0, 0, -2.5);
 
   if (!pauseCountdownText) {
     // Create countdown text

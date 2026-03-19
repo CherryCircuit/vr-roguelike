@@ -55,7 +55,8 @@ import {
   updateHolographicGlitch, resetHoloGlitch,
   showFloatingMessage, hideFloatingMessage, updateFloatingMessage,
   nameEntryGroup,
-  setLastSubmittedTimestamp
+  setLastSubmittedTimestamp,
+  setLastSubmittedPageIndex
 } from './hud.js';
 
 import {
@@ -421,10 +422,8 @@ function updateFFRFog() {
     lastFFRMode = currentMode;
   }
 
-  // Update scene fog (only if not in dream world or custom scene biome)
-  if (!game.inDreamWorld && !biomeSceneBiome) {
-    scene.fog.density = ffrFogDensity;
-  }
+  // Update scene fog density (always, for all biomes)
+  scene.fog.density = ffrFogDensity;
 }
 
 // ── Bootstrap ──────────────────────────────────────────────
@@ -2398,6 +2397,14 @@ function handleDesktopTitleClick() {
 }
 
 function handleDesktopGameOverClick() {
+  // Skip scoreboard if score is zero
+  if (game.score <= 0) {
+    hideGameOver();
+    resetGame();
+    showTitle();
+    return;
+  }
+
   game.finalScore = game.score;
   game.finalLevel = game.level;
   scoreboardFromGameOver = true;
@@ -2447,6 +2454,13 @@ function handleDesktopNameEntryClick() {
     }).then(() => {
       return fetchTopScores();
     }).then(scores => {
+      // Find the page the submitted score is on and auto-navigate
+      if (lastSubmittedTimestamp) {
+        const idx = scores.findIndex(s => s.created_at === lastSubmittedTimestamp);
+        if (idx >= 0) {
+          setLastSubmittedPageIndex(Math.floor(idx / 10));
+        }
+      }
       showScoreboard(scores, 'GLOBAL');
     }).catch(err => {
       console.error('[scoreboard] Detailed error in submission flow:', err);
@@ -2558,10 +2572,8 @@ function handleDesktopReadyScreenClick() {
 
 function handleDesktopPauseClick() {
   const raycaster = getAimRaycaster();
-  if (!raycaster) return;
-
-  const btnHit = getPauseMenuHit(raycaster);
-  if (btnHit === 'resume') {
+  const btnHit = raycaster ? getPauseMenuHit(raycaster) : null;
+  if (btnHit === 'resume' || !raycaster) {
     playMenuClick();
     startPauseCountdown();
   }
@@ -2594,6 +2606,14 @@ function handleDesktopDebugMenuClick() {
 }
 
 function handleGameOverTrigger(controller) {
+  // Skip scoreboard if score is zero
+  if (game.score <= 0) {
+    hideGameOver();
+    resetGame();
+    showTitle();
+    return;
+  }
+
   // Store final score/level for name entry
   game.finalScore = game.score;
   game.finalLevel = game.level;
@@ -9924,7 +9944,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Set synthwave fog for atmospheric depth and distance fade
   if (scene) {
-    scene.fog = new THREE.FogExp2(0x2C0051, 0.0008);  // EXACT: Sun top purple
+    scene.fog = new THREE.FogExp2(0x2C0051, 0.008);  // Purple fog matching biome
   }
 
   // Sky dome (no stars, we use global starfield)
