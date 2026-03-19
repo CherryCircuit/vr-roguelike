@@ -415,26 +415,9 @@ function updateFFRFog() {
 
 // ── Bootstrap ──────────────────────────────────────────────
 
-// ── Selective Bloom (must be defined before init()) ──
-var BLOOM_LAYER = 1;
-var bloomComposer = null;
-var SelectiveBloomCompositeShader = {
-  uniforms: {
-    baseTexture: { value: null },
-    bloomTexture: { value: null },
-  },
-  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `
-    uniform sampler2D baseTexture;
-    uniform sampler2D bloomTexture;
-    varying vec2 vUv;
-    void main() {
-      vec4 base = texture2D(baseTexture, vUv);
-      vec4 bloom = texture2D(bloomTexture, vUv);
-      gl_FragColor = base + bloom;
-    }
-  `,
-};
+// Bloom layer constant — must be before init() since buildSynthwaveValleyScene
+// references it during init execution. All other bloom code uses lazy init.
+const BLOOM_LAYER = 1;
 
 init();
 
@@ -649,9 +632,33 @@ function init() {
 
 // ============================================================
 //  SELECTIVE BLOOM (desktop only, synthwave_valley biome)
+//  Lazy-initialized on first render frame when synthwave biome
+//  is active in desktop mode. No bootstrap ordering dependency.
 // ============================================================
 
+let bloomComposer = null;
+
+const SelectiveBloomCompositeShader = {
+  uniforms: {
+    baseTexture: { value: null },
+    bloomTexture: { value: null },
+  },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D baseTexture;
+    uniform sampler2D bloomTexture;
+    varying vec2 vUv;
+    void main() {
+      vec4 base = texture2D(baseTexture, vUv);
+      vec4 bloom = texture2D(bloomTexture, vUv);
+      gl_FragColor = base + bloom;
+    }
+  `,
+};
+
 function initSelectiveBloom() {
+  if (bloomComposer) return;  // Already initialized
+
   const rtParams = {
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
@@ -659,23 +666,18 @@ function initSelectiveBloom() {
     type: THREE.HalfFloatType,
   };
 
-  // Composer that renders the full scene (layer 0 only — bloom objects excluded)
   const baseComposer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
     window.innerWidth, window.innerHeight, rtParams
   ));
-  const baseRenderPass = new RenderPass(scene, camera);
-  baseComposer.addPass(baseRenderPass);
+  baseComposer.addPass(new RenderPass(scene, camera));
 
-  // Bloom composer: renders only bloom-layer objects, then applies bloom
   const bloomComposer_ = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
     window.innerWidth, window.innerHeight, rtParams
   ));
 
-  // Make the camera see only bloom objects (layer 1) for this pass
   const bloomCamera = camera.clone();
   bloomCamera.layers.set(BLOOM_LAYER);
-  const bloomRenderPass = new RenderPass(scene, bloomCamera);
-  bloomComposer_.addPass(bloomRenderPass);
+  bloomComposer_.addPass(new RenderPass(scene, bloomCamera));
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
@@ -685,7 +687,6 @@ function initSelectiveBloom() {
   );
   bloomComposer_.addPass(bloomPass);
 
-  // Final composite: base scene + bloom overlay
   const compositePass = new ShaderPass(SelectiveBloomCompositeShader);
   compositePass.uniforms.baseTexture.value = baseComposer.renderTarget1.texture;
   compositePass.uniforms.bloomTexture.value = bloomComposer_.renderTarget2.texture;
@@ -9625,24 +9626,23 @@ function render(timestamp) {
     }
   }
 
-  // Selective bloom: only in desktop mode for synthwave_valley biome
-  if (!renderer.xr.isPresenting && bloomComposer && biomeSceneBiome === 'synthwave_valley') {
-    // Sync bloom camera with main camera (same position, projection, different layers)
-    bloomComposer.bloomCamera.position.copy(camera.position);
-    bloomComposer.bloomCamera.quaternion.copy(camera.quaternion);
-    bloomComposer.bloomCamera.projectionMatrix.copy(camera.projectionMatrix);
-    // Temporarily enable tone mapping with exposure for bloom rendering
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.24;
-    // Render bloom pass first (produces bloom texture)
-    bloomComposer.bloomComposer.render();
-    // Then render base + composite (reads bloom texture, outputs to screen)
-    bloomComposer.baseComposer.render();
-    renderer.toneMapping = THREE.NoToneMapping;
-    renderer.toneMappingExposure = 1.0;
-  } else {
-    renderer.render(scene, camera);
+  // Selective bloom: lazy-init + render, only in desktop mode for synthwave_valley biome
+  if (!renderer.xr.isPresenting && biomeSceneBiome === 'synthwave_valley') {
+    if (!bloomComposer) initSelectiveBloom();  // Lazy init on first frame
+    if (bloomComposer) {
+      bloomComposer.bloomCamera.position.copy(camera.position);
+      bloomComposer.bloomCamera.quaternion.copy(camera.quaternion);
+      bloomComposer.bloomCamera.projectionMatrix.copy(camera.projectionMatrix);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.24;
+      bloomComposer.bloomComposer.render();
+      bloomComposer.baseComposer.render();
+      renderer.toneMapping = THREE.NoToneMapping;
+      renderer.toneMappingExposure = 1.0;
+      return;
+    }
   }
+  renderer.render(scene, camera);
 }
 
 // ============================================================
