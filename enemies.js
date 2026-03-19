@@ -452,8 +452,8 @@ function initBasicInstancePool() {
   }
 
   const basicMat = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: 0.7,
+    transparent: false,
+    opacity: 1.0,
   });
 
   const im = new THREE.InstancedMesh(basicGeo, basicMat, MAX_BASIC_INSTANCES);
@@ -583,8 +583,8 @@ function initFastInstancePool() {
   }
 
   const fastMat = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: 0.7,
+    transparent: false,
+    opacity: 1.0,
   });
 
   const im = new THREE.InstancedMesh(fastGeo, fastMat, MAX_FAST_INSTANCES);
@@ -715,8 +715,8 @@ function initTankInstancePool() {
   }
 
   const tankMat = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: 0.7,
+    transparent: false,
+    opacity: 1.0,
   });
 
   const im = new THREE.InstancedMesh(tankGeo, tankMat, MAX_TANK_INSTANCES);
@@ -846,8 +846,8 @@ function initSwarmInstancePool() {
   }
 
   const swarmMat = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: 0.7,
+    transparent: false,
+    opacity: 1.0,
   });
 
   const im = new THREE.InstancedMesh(swarmGeo, swarmMat, MAX_SWARM_INSTANCES);
@@ -959,8 +959,7 @@ function spawnTrainEnemy(type, position, levelConfig) {
   const geo = getGeo(def.voxelSize);
   const material = new THREE.MeshBasicMaterial({
     color: def.color,
-    transparent: true,
-    opacity: 0.8,
+    opacity: 1.0,
   });
 
   // Scout (leader) voxel - marked as weak point
@@ -1039,8 +1038,8 @@ function spawnSonicRing(position, targetPos) {
   const ringGeo = new THREE.TorusGeometry(0.3, 0.08, 8, 16);
   const ringMat = new THREE.MeshBasicMaterial({
     color: 0x8800ff,
-    transparent: true,
-    opacity: 0.8,
+    transparent: false,
+    opacity: 1.0,
   });
   const ring = new THREE.Mesh(ringGeo, ringMat);
   ring.position.copy(position);
@@ -1112,8 +1111,8 @@ function spawnBabySpiders(position, count = 3) {
     const geo = getGeo(0.12);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xff6644,
-      transparent: true,
-      opacity: 0.7,
+      transparent: false,
+      opacity: 1.0,
     });
     const spider = new THREE.Mesh(geo, mat);
     spider.position.copy(position);
@@ -1144,8 +1143,8 @@ function spawnShieldShards(position, count = 3) {
     const geo = getGeo(0.25);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xcccccc,
-      transparent: true,
-      opacity: 0.8,
+      transparent: false,
+      opacity: 1.0,
     });
     const shard = new THREE.Mesh(geo, mat);
     shard.position.copy(position);
@@ -1207,8 +1206,8 @@ function spawnPhaseEcho(position) {
   const geo = getGeo(0.22);
   const mat = new THREE.MeshBasicMaterial({
     color: 0x8844ff,
-    transparent: true,
-    opacity: 0.6,
+    transparent: false,
+    opacity: 1.0,
   });
   const echo = new THREE.Mesh(geo, mat);
   echo.position.copy(position);
@@ -1288,7 +1287,7 @@ function spawnElectricArc(fromPos, toPos, color = 0xffcc00) {
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineBasicMaterial({
     color,
-    transparent: true,
+    transparent: false,
     opacity: 1.0,
   });
   const arc = new THREE.Line(geometry, material);
@@ -1414,8 +1413,8 @@ function spawnGeometryShifterSplit(position, hp, scale) {
     const geo = getGeo(0.2);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xff88ff,
-      transparent: true,
-      opacity: 0.7,
+      transparent: false,
+      opacity: 1.0,
     });
 
     const group = new THREE.Group();
@@ -1500,8 +1499,8 @@ function spawnCloneMimicSplit(position) {
     const geo = getGeo(0.2);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xff00aa,
-      transparent: true,
-      opacity: 0.5,
+      transparent: false,
+      opacity: 1.0,
     });
 
     const group = new THREE.Group();
@@ -1587,7 +1586,7 @@ function initExplosionPool() {
 
   for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
     const tex = i % 2 === 0 ? explosionTexturePink : explosionTextureCyan;
-    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 1 });
+    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: false, opacity: 1 });
     const sprite = new THREE.Sprite(spriteMat);
     sprite.scale.set(0.1, 0.1, 1);
     sprite.visible = false;
@@ -1672,7 +1671,7 @@ function spawnStatusEffectBubble(position, effectType, stacks) {
   texture.premultiplyAlpha = false;
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(1.5, 0.75),
-    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ map: texture, transparent: false, depthTest: false, side: THREE.DoubleSide })
   );
   mesh.position.copy(position);
   mesh.position.y += 1.2;
@@ -1762,8 +1761,8 @@ export function spawnEnemy(type, position, levelConfig) {
   if (!sharedMaterials[type]) {
     sharedMaterials[type] = new THREE.MeshBasicMaterial({
       color: def.color,
-      transparent: true,
-      opacity: 0.7,
+      transparent: false,
+      opacity: 1.0,
     });
   }
   const material = sharedMaterials[type].clone();
@@ -3030,8 +3029,8 @@ class TelegraphingSystem {
         const projGeo = new THREE.SphereGeometry(0.25, 16, 16);
         const projMat = new THREE.MeshBasicMaterial({
           color: effect.color,
-          transparent: true,
-          opacity: 0.8,
+          transparent: false,
+          opacity: 1.0,
           wireframe: false
         });
         effect.mesh = new THREE.Mesh(projGeo, projMat);
@@ -3052,7 +3051,7 @@ class TelegraphingSystem {
         const chargeGeo = new THREE.SphereGeometry(0.1, 16, 16);
         const chargeMat = new THREE.MeshBasicMaterial({
           color: effect.color,
-          transparent: true,
+          transparent: false,
           opacity: 0.6
         });
         effect.mesh = new THREE.Mesh(chargeGeo, chargeMat);
@@ -3071,7 +3070,7 @@ class TelegraphingSystem {
         const minionGeo = new THREE.SphereGeometry(0.3, 16, 16);
         const minionMat = new THREE.MeshBasicMaterial({
           color: effect.color,
-          transparent: true,
+          transparent: false,
           opacity: 0.7
         });
         effect.mesh = new THREE.Mesh(minionGeo, minionMat);
@@ -3089,8 +3088,8 @@ class TelegraphingSystem {
         const eyeGeo = new THREE.CircleGeometry(0.8, 32);
         const eyeMat = new THREE.MeshBasicMaterial({
           color: effect.color,
-          transparent: true,
-          opacity: 0.5,
+          transparent: false,
+          opacity: 1.0,
           side: THREE.DoubleSide
         });
         effect.mesh = new THREE.Mesh(eyeGeo, eyeMat);
@@ -3103,7 +3102,7 @@ class TelegraphingSystem {
         const meleeGeo = new THREE.SphereGeometry(0.6, 16, 16);
         const meleeMat = new THREE.MeshBasicMaterial({
           color: effect.color,
-          transparent: true,
+          transparent: false,
           opacity: 0.6
         });
         effect.mesh = new THREE.Mesh(meleeGeo, meleeMat);
@@ -3261,7 +3260,7 @@ class Boss {
     const geo = getGeo(def.voxelSize);
     const mat = new THREE.MeshBasicMaterial({
       color: def.color,
-      transparent: true,
+      transparent: false,
       opacity: 0.9
     });
     const rows = def.pattern.length;
@@ -3306,7 +3305,7 @@ class Boss {
       // Make weak point visually distinct: lighter color + higher opacity
       const weakMaterial = new THREE.MeshBasicMaterial({
         color: 0xffffff,  // White - very obvious in VR
-        transparent: true,
+        transparent: false,
         opacity: 0.95,   // Higher opacity for visibility
       });
       weak.material = weakMaterial;
@@ -3959,7 +3958,7 @@ class SkullHand {
     const geo = getGeo(0.18);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
-      transparent: true,
+      transparent: false,
       opacity: 0.9
     });
     
@@ -4124,7 +4123,7 @@ class SkullBoss extends Boss {
     const geo = getGeo(0.25);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
-      transparent: true,
+      transparent: false,
       opacity: 0.9
     });
     
@@ -4160,7 +4159,7 @@ class SkullBoss extends Boss {
     const eyeGeo = getGeo(0.15);
     const eyeMat = new THREE.MeshBasicMaterial({
       color: 0xff0000,
-      transparent: true,
+      transparent: false,
       opacity: 0.8
     });
     
@@ -4703,7 +4702,7 @@ class HunterBoss extends Boss {
     const geo = getGeo(0.15);
     const droneMat = new THREE.MeshBasicMaterial({
       color: 0xff6600,
-      transparent: true,
+      transparent: false,
       opacity: 0.95
     });
 
@@ -4833,7 +4832,7 @@ class DJBoss extends Boss {
       const geo = getGeo(0.25);
       const speakerMat = new THREE.MeshBasicMaterial({
         color: 0x8800ff,
-        transparent: true,
+        transparent: false,
         opacity: 0.9
       });
 
@@ -4857,7 +4856,7 @@ class DJBoss extends Boss {
     const boothGeo = getGeo(0.3);
     const boothMat = new THREE.MeshBasicMaterial({
       color: 0x4400aa,
-      transparent: true,
+      transparent: false,
       opacity: 0.85
     });
     const booth = new THREE.Mesh(boothGeo, boothMat);
@@ -4952,7 +4951,7 @@ class StarfighterBoss extends Boss {
     const wingGeo = getGeo(0.25);
     const wingMat = new THREE.MeshBasicMaterial({
       color: 0x00aaff,
-      transparent: true,
+      transparent: false,
       opacity: 0.9
     });
 
@@ -4978,7 +4977,7 @@ class StarfighterBoss extends Boss {
     const cockpitGeo = getGeo(0.2);
     const cockpitMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
-      transparent: true,
+      transparent: false,
       opacity: 0.95
     });
     const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
@@ -5110,7 +5109,7 @@ class ScientistBoss extends Boss {
     const geo = getGeo(0.2);
     const compilerMat = new THREE.MeshBasicMaterial({
       color: 0xff00ff,
-      transparent: true,
+      transparent: false,
       opacity: 0.9
     });
 
@@ -5141,7 +5140,7 @@ class ScientistBoss extends Boss {
       const dataGeo = getGeo(0.08);
       const dataMat = new THREE.MeshBasicMaterial({
         color: 0x00ffff,
-        transparent: true,
+        transparent: false,
         opacity: 0.95
       });
       const dataCube = new THREE.Mesh(dataGeo, dataMat);
@@ -5252,7 +5251,7 @@ class MonkBoss extends Boss {
     const geo = getGeo(0.2);
     const nodeMat = new THREE.MeshBasicMaterial({
       color: 0xffdd00,
-      transparent: true,
+      transparent: false,
       opacity: 0.95
     });
 
@@ -5283,7 +5282,7 @@ class MonkBoss extends Boss {
     const bodyGeo = getGeo(0.3);
     const bodyMat = new THREE.MeshBasicMaterial({
       color: 0xffaa00,
-      transparent: true,
+      transparent: false,
       opacity: 0.85
     });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
@@ -5294,8 +5293,8 @@ class MonkBoss extends Boss {
     const auraGeo = new THREE.RingGeometry(0.8, 1.0, 32);
     const auraMat = new THREE.MeshBasicMaterial({
       color: 0xffaa00,
-      transparent: true,
-      opacity: 0.5,
+      transparent: false,
+      opacity: 1.0,
       side: THREE.DoubleSide
     });
     this.auraMesh = new THREE.Mesh(auraGeo, auraMat);
@@ -6055,7 +6054,7 @@ class CommanderBoss extends Boss {
     const geo = getGeo(0.2);
     const tileMat = new THREE.MeshBasicMaterial({
       color: 0x00aaff,
-      transparent: true,
+      transparent: false,
       opacity: 0.7
     });
 
@@ -6198,7 +6197,7 @@ class DivaBoss extends Boss {
       const geo = getGeo(0.15);
       const micMat = new THREE.MeshBasicMaterial({
         color: 0xff00ff,
-        transparent: true,
+        transparent: false,
         opacity: 0.9
       });
 
@@ -6213,7 +6212,7 @@ class DivaBoss extends Boss {
       const headGeo = getGeo(0.12);
       const headMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
-        transparent: true,
+        transparent: false,
         opacity: 0.95
       });
       const head = new THREE.Mesh(headGeo, headMat);
@@ -6346,7 +6345,7 @@ class TwinGlitchBoss extends Boss {
       const geo = getGeo(0.25);
       const sisterMat = new THREE.MeshBasicMaterial({
         color: data.color,
-        transparent: true,
+        transparent: false,
         opacity: 0.9
       });
 
@@ -6364,7 +6363,7 @@ class TwinGlitchBoss extends Boss {
       const coreGeo = getGeo(0.18);
       const coreMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
-        transparent: true,
+        transparent: false,
         opacity: 0.95
       });
       const core = new THREE.Mesh(coreGeo, coreMat);
@@ -6549,7 +6548,7 @@ class MinotaurBoss extends Boss {
       const geo = getGeo(0.15);
       const hornMat = new THREE.MeshBasicMaterial({
         color: 0xff0088,
-        transparent: true,
+        transparent: false,
         opacity: 0.9
       });
 
@@ -7341,8 +7340,8 @@ export function spawnBossDebris(boss) {
     const geo = voxel.geometry.clone();
     const mat = new THREE.MeshBasicMaterial({
       color: voxel.material.color || bossColor,
-      transparent: true,
-      opacity: 0.9,
+      transparent: false,
+      opacity: 1.0,
     });
 
     const debris = new THREE.Mesh(geo, mat);
@@ -7461,7 +7460,7 @@ export function spawnBossMinion(fromPos, playerPos, type = 'basic') {
   const group = new THREE.Group();
   const def = ENEMY_DEFS[type] || ENEMY_DEFS.basic;
   const geo = getGeo(def.voxelSize);
-  const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.8 });
+  const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: false, opacity: 0.8 });
 
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 2; c++) {
@@ -7557,8 +7556,8 @@ export function spawnBossProjectile(fromPos, targetPos) {
   const glowGeo = getGeo(0.14);
   const glowMat = new THREE.MeshBasicMaterial({
     color: 0xff88aa,
-    transparent: true,
-    opacity: 0.7,
+    transparent: false,
+    opacity: 1.0,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
