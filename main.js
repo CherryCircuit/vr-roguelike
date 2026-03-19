@@ -8594,7 +8594,8 @@ function updateProjectiles(dt) {
     }
     
     // Check collision with boss projectiles (player can shoot them down)
-    if (proj.userData.stats) { // Only player projectiles
+    // Boss projectiles should NOT collide with other boss projectiles - only with player
+    if (proj.userData.stats && !proj.userData.isBossProjectile) { // Only player projectiles, exclude boss projectiles
       const bossProjs = getBossProjectiles();
       if (bossProjs.length > 0) {
         for (let j = bossProjs.length - 1; j >= 0; j--) {
