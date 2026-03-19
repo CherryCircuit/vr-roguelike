@@ -510,11 +510,6 @@ function releaseBasicInstance(instanceId) {
   pool.mesh.instanceMatrix.needsUpdate = true;
   pool.freeIndices.add(instanceId);
 
-  // Shrink .count if this was the last active slot
-  if (instanceId === pool.mesh.count - 1) {
-    pool.mesh.count = instanceId;
-  }
-
   console.log(`[basic-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
 }
 
@@ -645,11 +640,6 @@ function releaseFastInstance(instanceId) {
   pool.mesh.setMatrixAt(instanceId, _fastDummyMatrix);
   pool.mesh.instanceMatrix.needsUpdate = true;
   pool.freeIndices.add(instanceId);
-
-  // Shrink .count if this was the last active slot
-  if (instanceId === pool.mesh.count - 1) {
-    pool.mesh.count = instanceId;
-  }
 
   console.log(`[fast-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
 }
@@ -783,11 +773,6 @@ function releaseTankInstance(instanceId) {
   pool.mesh.instanceMatrix.needsUpdate = true;
   pool.freeIndices.add(instanceId);
 
-  // Shrink .count if this was the last active slot
-  if (instanceId === pool.mesh.count - 1) {
-    pool.mesh.count = instanceId;
-  }
-
   console.log(`[tank-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
 }
 
@@ -918,11 +903,6 @@ function releaseSwarmInstance(instanceId) {
   pool.mesh.setMatrixAt(instanceId, _swarmDummyMatrix);
   pool.mesh.instanceMatrix.needsUpdate = true;
   pool.freeIndices.add(instanceId);
-
-  // Shrink .count if this was the last active slot
-  if (instanceId === pool.mesh.count - 1) {
-    pool.mesh.count = instanceId;
-  }
 
   console.log(`[swarm-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
 }
