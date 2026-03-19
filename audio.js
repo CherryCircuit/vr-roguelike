@@ -1201,8 +1201,8 @@ export function startLightningSound() {
   lightningSource = ctx.createMediaElementSource(lightningAudio);
   lightningGain = ctx.createGain();
   
-  // Set high gain (4x) to make the quiet MP3 audible
-  lightningGain.gain.setValueAtTime(4.0, ctx.currentTime);
+  // Set high gain (5x) to make the lightning gun audible over other SFX
+  lightningGain.gain.setValueAtTime(5.0, ctx.currentTime);
   
   // Connect: source -> gain -> destination
   lightningSource.connect(lightningGain);
@@ -1213,11 +1213,11 @@ export function startLightningSound() {
     console.warn('[audio] Lightning loop playback failed:', err);
   });
 
-  // After 4 seconds of continuous play, lower volume by 40%
+  // After 4 seconds of continuous play, ease volume down slightly
   lightningVolumeTimeout = setTimeout(() => {
     if (lightningGain) {
-      lightningGain.gain.setValueAtTime(2.4, ctx.currentTime); // 4.0 * 0.6 = 2.4
-      console.log('[audio] Lightning volume dipped (4s continuous)');
+      lightningGain.gain.setValueAtTime(3.5, ctx.currentTime);
+      console.log('[audio] Lightning volume eased (4s continuous)');
     }
   }, 4000);
 }
