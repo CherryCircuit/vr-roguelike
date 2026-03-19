@@ -399,6 +399,142 @@ function getGeo(size) {
 // Shared materials per enemy type (avoid creating new material per spawn)
 const sharedMaterials = {};
 
+// ── Basic enemy InstancedMesh pool ─────────────────────────
+// One InstancedMesh for all 'basic' enemies = 1 draw call instead of N.
+const MAX_BASIC_INSTANCES = 30;
+const basicInstancePool = {
+  mesh: null,
+  freeIndices: new Set(),
+  initialized: false,
+};
+const _basicDummyMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const _basicColorTmp = new THREE.Color();
+
+/**
+ * Build merged geometry for 'basic' enemy pattern and create InstancedMesh.
+ * Called from initEnemies() after sceneRef is available.
+ */
+function initBasicInstancePool() {
+  if (basicInstancePool.initialized || !sceneRef) return;
+
+  const def = ENEMY_DEFS.basic;
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+
+  const geometries = [];
+  for (let d = 0; d < def.depth; d++) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (def.pattern[r][c]) {
+          const g = geo.clone();
+          g.translate(
+            (c - cx) * def.voxelSize,
+            (cy - r) * def.voxelSize,
+            d * def.voxelSize,
+          );
+          geometries.push(g);
+        }
+      }
+    }
+  }
+
+  let basicGeo;
+  if (geometries.length > 0) {
+    basicGeo = mergeGeometries(geometries);
+    geometries.forEach(g => g.dispose());
+  }
+  if (!basicGeo) {
+    console.warn('[basic-instance] Failed to build merged geometry, falling back to box');
+    basicGeo = new THREE.BoxGeometry(def.voxelSize, def.voxelSize, def.voxelSize);
+  }
+
+  const basicMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.7,
+  });
+
+  const im = new THREE.InstancedMesh(basicGeo, basicMat, MAX_BASIC_INSTANCES);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.count = 0;
+  im.frustumCulled = false;
+
+  // Initialize all instances as invisible (zero scale)
+  for (let i = 0; i < MAX_BASIC_INSTANCES; i++) {
+    im.setMatrixAt(i, _basicDummyMatrix);
+  }
+  im.instanceMatrix.needsUpdate = true;
+
+  sceneRef.add(im);
+  basicInstancePool.mesh = im;
+  basicInstancePool.initialized = true;
+
+  console.log(`[basic-instance] Pool initialized: ${MAX_BASIC_INSTANCES} slots`);
+}
+
+/**
+ * Acquire an instance slot for a basic enemy.
+ * Returns { instanceId } or null if pool exhausted.
+ */
+function acquireBasicInstance() {
+  if (!basicInstancePool.initialized) return null;
+  const pool = basicInstancePool;
+
+  let instanceId;
+  if (pool.freeIndices.size > 0) {
+    instanceId = pool.freeIndices.values().next().value;
+    pool.freeIndices.delete(instanceId);
+  } else if (pool.mesh.count < MAX_BASIC_INSTANCES) {
+    instanceId = pool.mesh.count;
+    pool.mesh.count = instanceId + 1;
+  } else {
+    console.warn('[basic-instance] Pool exhausted! Falling back to individual mesh.');
+    return null;
+  }
+
+  console.log(`[basic-instance] Acquired slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
+  return { instanceId, pool };
+}
+
+/**
+ * Release an instance slot back to the pool.
+ */
+function releaseBasicInstance(instanceId) {
+  if (!basicInstancePool.initialized) return;
+  const pool = basicInstancePool;
+
+  // Hide instance by zeroing its matrix
+  pool.mesh.setMatrixAt(instanceId, _basicDummyMatrix);
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.freeIndices.add(instanceId);
+
+  // Shrink .count if this was the last active slot
+  if (instanceId === pool.mesh.count - 1) {
+    pool.mesh.count = instanceId;
+  }
+
+  console.log(`[basic-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
+}
+
+/**
+ * Release ALL basic instance slots (for level transitions).
+ */
+function releaseAllBasicInstances() {
+  if (!basicInstancePool.initialized) return;
+  const pool = basicInstancePool;
+
+  for (let i = 0; i < pool.mesh.count; i++) {
+    pool.mesh.setMatrixAt(i, _basicDummyMatrix);
+  }
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.mesh.count = 0;
+  pool.freeIndices.clear();
+
+  console.log('[basic-instance] All slots released (clearAllEnemies)');
+}
+
 // Player movement history for Clone Mimics (stores last 3 seconds of positions)
 const playerMovementHistory = [];
 const MOVEMENT_HISTORY_DURATION = 3000; // 3 seconds in ms
@@ -1205,6 +1341,9 @@ export function initEnemies(scene) {
   if (!telegraphingSystem) {
     telegraphingSystem = new TelegraphingSystem(scene, null);
   }
+
+  // Initialize basic enemy InstancedMesh pool
+  initBasicInstancePool();
 }
 
 /**
@@ -1239,9 +1378,33 @@ export function spawnEnemy(type, position, levelConfig) {
   const cy = (rows - 1) / 2;
   const isTank = type === 'tank';
 
-  // For non-tank enemies, merge voxel geometries into a single mesh
-  // This reduces draw calls from ~10-20 per enemy down to 1
-  if (!isTank && !def.isJelly) {
+  // ── Basic enemy InstancedMesh path ──
+  // Basic enemies use the InstancedMesh pool for rendering.
+  // The group only holds the invisible hitbox for raycasting compatibility.
+  let useInstancedBasic = false;
+  if (type === 'basic') {
+    const instance = acquireBasicInstance();
+    if (instance) {
+      useInstancedBasic = true;
+      group.userData.instanceId = instance.instanceId;
+      group.userData.instancePool = instance.pool;
+
+      // Position the group and sync the instance matrix
+      group.position.copy(position);
+      group.updateMatrix();
+      instance.pool.mesh.setMatrixAt(instance.instanceId, group.matrix);
+      instance.pool.mesh.instanceMatrix.needsUpdate = true;
+
+      // Set initial instance color
+      instance.pool.mesh.setColorAt(instance.instanceId, _basicColorTmp.setHex(def.color));
+      if (instance.pool.mesh.instanceColor) instance.pool.mesh.instanceColor.needsUpdate = true;
+    }
+    // If pool exhausted, fall through to normal path
+  }
+
+  // For non-instanced basic and all other non-tank, non-jelly enemies,
+  // merge voxel geometries into a single mesh
+  if (!useInstancedBasic && !isTank && !def.isJelly) {
     const geometries = [];
     for (let d = 0; d < def.depth; d++) {
       for (let r = 0; r < rows; r++) {
@@ -1456,6 +1619,14 @@ export function updateEnemies(dt, now, playerPos) {
 
     if (!e.isMirror && !e.isConductor && !e.isPhase) {
       e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
+    }
+
+    // Sync InstancedMesh matrix for basic enemies
+    if (e.mesh.userData.instanceId !== undefined) {
+      e.mesh.updateMatrix();
+      const iid = e.mesh.userData.instanceId;
+      e.mesh.userData.instancePool.mesh.setMatrixAt(iid, e.mesh.matrix);
+      e.mesh.userData.instancePool.mesh.instanceMatrix.needsUpdate = true;
     }
 
     // ── Special Enemy AI Behaviors ──
@@ -1908,6 +2079,12 @@ export function updateEnemies(dt, now, playerPos) {
     // ── Colour: lerp from base → red based on damage ──
     const dmgRatio = 1 - e.hp / e.maxHp;
     e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
+    // Sync damage color to InstancedMesh for basic enemies
+    if (e.mesh.userData.instanceId !== undefined) {
+      const pool = e.mesh.userData.instancePool;
+      pool.mesh.setColorAt(e.mesh.userData.instanceId, e.material.color);
+      pool.mesh.instanceColor.needsUpdate = true;
+    }
   }
 
   updatePulseBomberRings(dt, now, playerPos);
@@ -2126,6 +2303,11 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   const e = activeEnemies[index];
   if (!e) return null;
 
+  // Release InstancedMesh slot for basic enemies
+  if (e.type === 'basic' && e.mesh.userData.instanceId !== undefined) {
+    releaseBasicInstance(e.mesh.userData.instanceId);
+  }
+
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
 
@@ -2227,12 +2409,14 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
 
   // Remove enemy mesh from scene
   sceneRef.remove(e.mesh);
-  // Dispose merged geometry if present
-  e.mesh.traverse(c => {
-    if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
-      c.geometry.dispose();
-    }
-  });
+  // Dispose merged geometry if present (skip if instanced - geometry lives in pool)
+  if (e.mesh.userData.instanceId === undefined) {
+    e.mesh.traverse(c => {
+      if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
+        c.geometry.dispose();
+      }
+    });
+  }
   // Dispose material
   e.material.dispose();
   activeEnemies.splice(index, 1);
@@ -2245,14 +2429,19 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
  * Remove all enemies (for level transitions).
  */
 export function clearAllEnemies() {
+  // Release all basic enemy InstancedMesh slots
+  releaseAllBasicInstances();
+
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     sceneRef.remove(activeEnemies[i].mesh);
-    // Dispose merged geometry
-    activeEnemies[i].mesh.traverse(c => {
-      if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
-        c.geometry.dispose();
-      }
-    });
+    // Dispose merged geometry (skip if instanced - geometry lives in pool)
+    if (activeEnemies[i].mesh.userData.instanceId === undefined) {
+      activeEnemies[i].mesh.traverse(c => {
+        if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
+          c.geometry.dispose();
+        }
+      });
+    }
     if (activeEnemies[i].material) {
       activeEnemies[i].material.dispose();
     }
