@@ -6421,6 +6421,7 @@ function initProjectilePool() {
   // ── Laser bolts (most common, cyan & pink) ──
   // Use merged bolt+glow geometry for a single draw call per instance
   const laserGeo = new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6);
+  laserGeo.rotateX(Math.PI / 2); // Rotate to align with -Z direction
   const laserMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85 });
   const laserIM = new THREE.InstancedMesh(laserGeo, laserMat, 120);
   laserIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -6452,6 +6453,7 @@ function initProjectilePool() {
 
   // ── Plasma carbine darts ──
   const plasmaGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.5, 6);
+  plasmaGeo.rotateX(Math.PI / 2); // Rotate to align with -Z direction
   const plasmaMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
   const plasmaIM = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 30);
   plasmaIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
