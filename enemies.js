@@ -3507,7 +3507,20 @@ class Boss {
   }
 
   constrainToFrontArc(playerPos) {
-    clampPositionToFrontArc(this.mesh.position, playerPos, this.minDistance, this.maxDistance, this.frontArc);
+    // Distance-only clamp: keep boss within [minDistance, maxDistance] of player
+    // but do NOT constrain to player's look direction (fixes boss "following" head)
+    const dx = this.mesh.position.x - playerPos.x;
+    const dz = this.mesh.position.z - playerPos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist > this.maxDistance) {
+      const s = this.maxDistance / dist;
+      this.mesh.position.x = playerPos.x + dx * s;
+      this.mesh.position.z = playerPos.z + dz * s;
+    } else if (dist < this.minDistance && dist > 0.001) {
+      const s = this.minDistance / dist;
+      this.mesh.position.x = playerPos.x + dx * s;
+      this.mesh.position.z = playerPos.z + dz * s;
+    }
   }
 
   destroy() {

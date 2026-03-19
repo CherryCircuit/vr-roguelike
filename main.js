@@ -391,27 +391,33 @@ const MAX_REFLECTOR_DRONES = 2;
 let ffrFogDensity = 0.012;  // Default fog density
 let ffrRenderDistance = 120;  // Objects beyond this distance fade out (increased to 120 for enemy visibility)
 let ffrEnabled = true;  // FFR optimization enabled by default
+let lastFFRMode = null;  // Track mode changes to avoid per-frame logging
 
 // Update fog settings based on VR mode
 function updateFFRFog() {
   if (!renderer || !scene.fog) return;
 
   const isVR = renderer.xr.isPresenting;
+  const currentMode = isVR && ffrEnabled ? 'vr' : 'desktop';
 
   if (isVR && ffrEnabled) {
     // Quest VR mode: denser fog to hide distant geometry
     ffrFogDensity = 0.02;  // 67% denser fog for VR
     ffrRenderDistance = 60;  // Objects beyond 60m fade out (increased from 50)
-    if (ffrFogDensity !== scene.fog.density) {
-      console.log('[FFR] VR mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
-    }
   } else {
     // Desktop mode: standard fog
     ffrFogDensity = 0.012;  // Original density
     ffrRenderDistance = 120;  // Increased from 80 for enemy visibility
-    if (ffrFogDensity !== scene.fog.density) {
+  }
+
+  // Only log on mode transition
+  if (currentMode !== lastFFRMode) {
+    if (currentMode === 'vr') {
+      console.log('[FFR] VR mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
+    } else {
       console.log('[FFR] Desktop mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
     }
+    lastFFRMode = currentMode;
   }
 
   // Update scene fog (only if not in dream world or custom scene biome)
@@ -622,7 +628,8 @@ function init() {
   initProjectilePool();
 
   // Initialize selective bloom postprocessing (desktop only)
-  // initSelectiveBloom(); // DISABLED: bloom causing issues, remove for now
+  // Lazy-init happens in render loop (line 9719) to avoid TDZ issues
+  // initSelectiveBloom();
 
   // Start at title
   resetGame();
@@ -2075,9 +2082,13 @@ function setupControllers() {
     controller.addEventListener('squeezestart', () => { onSqueezePress(controller, i); });
     controller.addEventListener('squeezeend', () => { onSqueezeRelease(i); });
     
+    // Pause via left controller secondary/menu button
+    if (i === 0) {
+      controller.addEventListener('secondary', () => { togglePause(); });
+    }
+    
     controller.addEventListener('connected', (e) => {
       console.log(`[controller] ${i} connected — ${e.data.handedness}`);
-      controller.userData.handedness = e.data.handedness;
       const display = blasterDisplays[i];
       if (display) {
         display.userData.hand = controller.userData.handedness;
@@ -9937,7 +9948,7 @@ function buildSynthwaveValleyScene(group) {
     uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
     uFlashIntensity: { value: 0.0 },
   };
-  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 120, 120);  // PERFORMANCE: Reduced from 240x240 to 120x120
+  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);
   terrainGeo.rotateX(-Math.PI / 2);
   const terrainMat = new THREE.ShaderMaterial({
     uniforms: terrainUniforms,
@@ -10097,8 +10108,7 @@ function buildDesertNightScene(group) {
   group.add(hemiLight);
 
   // Ground
-  // PERFORMANCE FIX: Reduced from 70x70 (4900 vertices) to 50x50 (2500 vertices) for ~50% reduction
-  const geometry = new THREE.PlaneGeometry(140, 140, 50, 50);
+  const geometry = new THREE.PlaneGeometry(140, 140, 70, 70);
   geometry.rotateX(-Math.PI / 2);
   const positions = geometry.attributes.position;
   const colors = [];
@@ -10231,8 +10241,8 @@ function buildDesertNightScene(group) {
     group.add(cactus);
   });
 
-  // === TWINKLING STARS (PERFORMANCE: Reduced from 2000 to 800 particles) ===
-  const starCount = 800;
+  // === TWINKLING STARS (400 particles - reduced from 800 for performance) ===
+  const starCount = 400;
   const starPositions = new Float32Array(starCount * 3);
   const starPhases = new Float32Array(starCount);
 
@@ -10282,16 +10292,18 @@ function buildDesertNightScene(group) {
     `,
     transparent: true,
     depthWrite: false,
+    fog: false,
     blending: THREE.AdditiveBlending
   });
 
   const stars = new THREE.Points(starGeometry, starMaterial);
   stars.frustumCulled = false; // Fix disappearing when looking up
+  stars.renderOrder = 999;
   group.add(stars);
   registerFadeMaterial(starMaterial);
 
-  // === DUST PARTICLES (600 particles) ===
-  const dustCount = 600;
+  // === DUST PARTICLES (300 particles - reduced from 600 for performance) ===
+  const dustCount = 300;
   const dustPositions = new Float32Array(dustCount * 3);
   const dustPhases = new Float32Array(dustCount);
 
@@ -10335,10 +10347,12 @@ function buildDesertNightScene(group) {
     `,
     transparent: true,
     depthWrite: false,
+    fog: false,
     blending: THREE.AdditiveBlending
   });
 
   const dust = new THREE.Points(dustGeometry, dustMaterial);
+  dust.renderOrder = 999;
   group.add(dust);
   registerFadeMaterial(dustMaterial);
 

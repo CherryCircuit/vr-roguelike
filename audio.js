@@ -126,9 +126,9 @@ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIn
   filter.connect(gain);
   gain.connect(ctx.destination);
 
-  osc.start(t);
-  osc2.start(t);
-  lfo.start(t);
+  try { osc.start(t); } catch(e) { /* already stopped */ }
+  try { osc2.start(t); } catch(e) { /* already stopped */ }
+  try { lfo.start(t); } catch(e) { /* already stopped */ }
 }
 
 // ── Double Shot sound ──────────────────────────────────────

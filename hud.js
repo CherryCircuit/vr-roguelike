@@ -3110,12 +3110,14 @@ function renderScoreboardCanvas() {
   ctx.stroke();
 
   const highlightName = nameEntryName.trim().toUpperCase();
+  let playerHighlighted = false;
 
   for (let i = startIdx; i < endIdx; i++) {
     const score = scoreboardScores[i];
     const y = (i - startIdx) * rowHeight + rowHeight / 2 + 120;
     const rank = i + 1;
-    const isPlayer = highlightName && (score.name || '').toUpperCase() === highlightName;
+    const isPlayer = !playerHighlighted && highlightName && (score.name || '').toUpperCase() === highlightName;
+    if (isPlayer) playerHighlighted = true;
 
     // Highlight row background for the player's entry
     if (isPlayer) {
