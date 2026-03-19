@@ -3107,10 +3107,22 @@ function renderScoreboardCanvas() {
   ctx.lineTo(w - 12, 90);
   ctx.stroke();
 
+  const highlightName = nameEntryName.trim().toUpperCase();
+
   for (let i = startIdx; i < endIdx; i++) {
     const score = scoreboardScores[i];
     const y = (i - startIdx) * rowHeight + rowHeight / 2 + 120;
     const rank = i + 1;
+    const isPlayer = highlightName && (score.name || '').toUpperCase() === highlightName;
+
+    // Highlight row background for the player's entry
+    if (isPlayer) {
+      ctx.fillStyle = 'rgba(0, 255, 255, 0.18)';
+      ctx.fillRect(6, y - rowHeight / 2 + 4, w - 12, rowHeight - 8);
+      ctx.strokeStyle = 'rgba(0, 255, 255, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(6, y - rowHeight / 2 + 4, w - 12, rowHeight - 8);
+    }
 
     // Rank color
     if (rank === 1) ctx.fillStyle = '#ffdd00';
@@ -3136,7 +3148,11 @@ function renderScoreboardCanvas() {
     }
 
     // Name
-    ctx.fillStyle = '#ccffff';
+    if (isPlayer) {
+      ctx.fillStyle = '#ffdd00';
+      ctx.fillText('\u2605', 138, y);
+    }
+    ctx.fillStyle = isPlayer ? '#ffffff' : '#ccffff';
     ctx.fillText((score.name || 'ANON').toUpperCase(), 155, y);
 
     // Score
