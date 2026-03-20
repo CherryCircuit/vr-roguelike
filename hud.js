@@ -406,11 +406,12 @@ export function initHUD(camera, scene) {
     scene.add(g);
   });
 
-  // Pause menu and countdown attach to camera so they follow the player
+  // Pause menu in 3D world space (fixed position, not camera-locked)
   pauseMenuGroup.visible = false;
   pauseMenuGroup.rotation.set(0, 0, 0);
-  camera.add(pauseMenuGroup);
+  scene.add(pauseMenuGroup);
 
+  // Countdown still follows camera so player can see it
   pauseCountdownGroup.visible = false;
   pauseCountdownGroup.rotation.set(0, 0, 0);
   camera.add(pauseCountdownGroup);
@@ -3781,8 +3782,8 @@ let pauseCountdownOverlay = null;
  */
 export function showPauseMenu() {
   pauseMenuGroup.visible = true;
-  pauseMenuGroup.position.set(0, 0, -2);  // 2m in front of camera (camera-local space)
-  pauseMenuGroup.scale.set(1.3, 1.3, 1.3);  // Scale up for VR readability
+  // Position updated each frame in updatePauseMenu to face camera
+  pauseMenuGroup.scale.set(1.3, 1.3, 1.3);
 
   if (pauseMenuElements.panel) {
     // Already initialized
@@ -3809,15 +3810,30 @@ export function hidePauseMenu() {
 export function updatePauseMenu(now) {
   if (!pauseMenuGroup.visible) return;
 
+  // Position menu 2m in front of camera in world space, facing camera
+  if (cameraRef) {
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraRef.quaternion);
+    forward.y = 0;
+    forward.normalize();
+    pauseMenuGroup.position.set(
+      cameraRef.position.x + forward.x * 2,
+      cameraRef.position.y,
+      cameraRef.position.z + forward.z * 2
+    );
+    // Face the camera (look at camera position)
+    pauseMenuGroup.lookAt(cameraRef.position.x, cameraRef.position.y, cameraRef.position.z);
+  }
+
   // Animate slide-in
   const slideDuration = 500; // ms
   if (pauseMenuAnimation.slideIn < 1) {
     pauseMenuAnimation.slideIn = Math.min(1, (now - pauseMenuAnimation.startTime) / slideDuration);
   }
 
-  // Slide menu in from right (-4 to 0)
-  const baseX = (1 - pauseMenuAnimation.slideIn) * 4;
-  pauseMenuGroup.position.x = baseX;
+  // Slide menu in from right (offset X in local space after lookAt)
+  const slideOffset = new THREE.Vector3((1 - pauseMenuAnimation.slideIn) * 4, 0, 0);
+  slideOffset.applyQuaternion(pauseMenuGroup.quaternion);
+  pauseMenuGroup.position.add(slideOffset);
 
   // Animate charts
   if (pauseMenuAnimation.chartAnimation < 1) {

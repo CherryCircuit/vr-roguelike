@@ -422,8 +422,8 @@ function updateFFRFog() {
     lastFFRMode = currentMode;
   }
 
-  // Update scene fog density (always, for all biomes)
-  scene.fog.density = ffrFogDensity;
+  // Don't override biome-specific fog density — only set if no biome theme is active
+  // Biome themes set their own density via scenery.js applyTheme()
 }
 
 // ── Bootstrap ──────────────────────────────────────────────
@@ -477,7 +477,7 @@ function init() {
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.008);  // Subtle fog (0.008 = ~375 units visibility)
+  scene.fog = new THREE.FogExp2(0x888888, 0.008);  // Visible atmospheric fog (will be overridden per biome)
 
   // Camera - added directly to scene for proper VR hand positioning
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -10450,7 +10450,7 @@ function buildAlienPlanetScene(group) {
   const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
 
   // Ground
-  const groundGeo = new THREE.PlaneGeometry(300, 300, 20, 20);
+  const groundGeo = new THREE.PlaneGeometry(300, 300, 60, 60);
   const groundPositions = groundGeo.attributes.position;
   for (let i = 0; i < groundPositions.count; i++) {
     const x = groundPositions.getX(i);
@@ -10552,19 +10552,20 @@ function buildAlienPlanetScene(group) {
       mountainGroup.add(peak);
     }
     mountainGroup.position.set(x, floorY, z);
+    mountainGroup.frustumCulled = false; // Prevent culling at distance
     return mountainGroup;
   };
 
   // Mountains - single ring for FPS (was 2 rings = 24 mountains)
   for (let ring = 0; ring < 1; ring++) {
     const count = 14;  // Single ring of 14 mountains (was 8+16=24)
-    const radius = 50;
+    const radius = 40;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.3;
       const r = radius + (Math.random() - 0.5) * 10;
       const x = Math.cos(angle) * r;
       const z = Math.sin(angle) * r;
-      group.add(createMountain(x, z, 0.8 + Math.random() * 0.4));
+      group.add(createMountain(x, z, 1.2 + Math.random() * 0.6));
     }
   }
 
@@ -10886,6 +10887,7 @@ function buildAlienPlanetScene(group) {
       mountainGroup.add(peak);
     }
     mountainGroup.position.set(x, floorY, z);
+    mountainGroup.frustumCulled = false; // Prevent culling at distance
     return mountainGroup;
   };
 

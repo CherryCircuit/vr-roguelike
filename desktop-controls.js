@@ -40,7 +40,11 @@ const player = {
 };
 
 // Debug movement settings (for desktop no-clip mode)
-const moveSpeed = 8.0; // units per second
+const walkSpeed = 8.0; // starting speed
+const sprintSpeed = 18.0; // max speed after holding ~1.5s
+const rampTime = 1.5; // seconds to reach sprint speed
+let currentMoveSpeed = walkSpeed;
+let moveRampTimer = 0; // how long movement keys have been held
 const verticalSpeed = 5.0; // units per second for Q/E
 const friction = 10.0; // damping factor
 const acceleration = 30.0; // acceleration factor
@@ -272,7 +276,10 @@ export function update(dt) {
     if (moveDir.lengthSq() > 0) {
       const horizontal = new THREE.Vector3(moveDir.x, 0, moveDir.z);
       if (horizontal.lengthSq() > 0) {
-        horizontal.normalize().multiplyScalar(moveSpeed);
+        // Ramp speed from walk to sprint
+        moveRampTimer = Math.min(moveRampTimer + dt, rampTime);
+        currentMoveSpeed = walkSpeed + (sprintSpeed - walkSpeed) * (moveRampTimer / rampTime);
+        horizontal.normalize().multiplyScalar(currentMoveSpeed);
       }
 
       // Apply vertical speed
@@ -288,6 +295,9 @@ export function update(dt) {
     } else {
       // Apply friction when not moving
       player.velocity.multiplyScalar(1 - friction * dt);
+      // Reset speed ramp when no movement keys held
+      moveRampTimer = 0;
+      currentMoveSpeed = walkSpeed;
     }
 
     // Stop very small velocities
