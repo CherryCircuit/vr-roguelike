@@ -3,6 +3,7 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { mergeBufferGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ── References for animation and theme updates ─────────────
 let sunMeshRef = null;
@@ -103,21 +104,50 @@ export function regenerateGridTexture(colorStr) {
 export function createMountainRing(scene) {
   // Create TWO mountain walls - left and right sides
   // These frame a tunnel/path leading toward the sun AND behind the player
+  // OPTIMIZED: Using merged geometries to reduce draw calls from 120 to 2
   
-  const mountainMeshes = [];
-  const wireframeMeshes = [];
+  const fillGeometries = [];
+  const wireframeGeometries = [];
   
   // Create mountains on LEFT side (from far behind to far in front)
-  createMountainWall(scene, -45, -1, mountainMeshes, wireframeMeshes);
+  createMountainWall(-45, -1, fillGeometries, wireframeGeometries);
   
   // Create mountains on RIGHT side  
-  createMountainWall(scene, 45, 1, mountainMeshes, wireframeMeshes);
+  createMountainWall(45, 1, fillGeometries, wireframeGeometries);
   
-  mountainRefs = { fillMesh: mountainMeshes, wireframe: wireframeMeshes };
+  // Merge all fill geometries into one
+  const mergedFillGeometry = mergeBufferGeometries(fillGeometries, false);
+  const fillMat = new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    side: THREE.DoubleSide
+  });
+  const fillMesh = new THREE.Mesh(mergedFillGeometry, fillMat);
+  fillMesh.renderOrder = -5;
+  fillMesh.matrixAutoUpdate = false;
+  fillMesh.frustumCulled = false;
+  scene.add(fillMesh);
+  
+  // Merge all wireframe geometries into one
+  const mergedWireframeGeometry = mergeBufferGeometries(wireframeGeometries, false);
+  const wireMat = new THREE.LineBasicMaterial({
+    color: 0xff00ff,
+    transparent: true,
+    opacity: 1.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    linewidth: 3,
+  });
+  const wireframe = new THREE.LineSegments(mergedWireframeGeometry, wireMat);
+  wireframe.renderOrder = -4;
+  wireframe.matrixAutoUpdate = false;
+  wireframe.frustumCulled = false;
+  scene.add(wireframe);
+  
+  mountainRefs = { fillMesh, wireframe };
   return mountainRefs;
 }
 
-function createMountainWall(scene, xOffset, direction, mountainMeshes, wireframeMeshes) {
+function createMountainWall(xOffset, direction, fillGeometries, wireframeGeometries) {
   // Create continuous mountain range from far behind to far in front
   const NUM_MOUNTAINS = 24;  // More mountains for longer range
   const SPACING = 18;
@@ -135,7 +165,7 @@ function createMountainWall(scene, xOffset, direction, mountainMeshes, wireframe
     // MOST mountains have multiple peaks (70%)
     const hasMultiPeak = Math.random() > 0.3;
     
-    createMountainMesh(scene, xOffset, zPos, height, width, direction, hasMultiPeak, mountainMeshes, wireframeMeshes);
+    createMountainGeometry(xOffset, zPos, height, width, direction, hasMultiPeak, fillGeometries, wireframeGeometries);
   }
   
   // Add a SEMICIRCLE of mountains BEHIND the player to block the horizon
@@ -150,11 +180,11 @@ function createMountainWall(scene, xOffset, direction, mountainMeshes, wireframe
     const width = 25 + Math.random() * 10;
     const hasMultiPeak = Math.random() > 0.2;  // 80% multi-peak
     
-    createMountainMesh(scene, x, z, height, width, direction, hasMultiPeak, mountainMeshes, wireframeMeshes);
+    createMountainGeometry(x, z, height, width, direction, hasMultiPeak, fillGeometries, wireframeGeometries);
   }
 }
 
-function createMountainMesh(scene, x, z, height, width, direction, hasMultiPeak, mountainMeshes, wireframeMeshes) {
+function createMountainGeometry(x, z, height, width, direction, hasMultiPeak, fillGeometries, wireframeGeometries) {
   const positions = [];
   const indices = [];
   
@@ -213,32 +243,15 @@ function createMountainMesh(scene, x, z, height, width, direction, hasMultiPeak,
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   
-  // Black fill
-  const fillMat = new THREE.MeshBasicMaterial({
-    color: 0x000000,
-    side: THREE.DoubleSide
-  });
-  const fillMesh = new THREE.Mesh(geometry, fillMat);
-  fillMesh.position.set(x, 0, z);
-  fillMesh.renderOrder = -5;
-  scene.add(fillMesh);
-  mountainMeshes.push(fillMesh);
+  // Translate geometry to its world position
+  geometry.translate(x, 0, z);
   
-  // Thick neon magenta wireframe (using LineSegments with wider lines)
+  // Add to fill geometries array
+  fillGeometries.push(geometry);
+  
+  // Create edges geometry for wireframe
   const edges = new THREE.EdgesGeometry(geometry, 1);
-  const wireMat = new THREE.LineBasicMaterial({
-    color: 0xff00ff,
-    transparent: true,
-    opacity: 1.0,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    linewidth: 3,  // Thicker lines (note: may not work on all platforms)
-  });
-  const wireframe = new THREE.LineSegments(edges, wireMat);
-  wireframe.position.set(x, 0, z);
-  wireframe.renderOrder = -4;
-  scene.add(wireframe);
-  wireframeMeshes.push(wireframe);
+  wireframeGeometries.push(edges);
 }
 
 // ── Sun with Enhanced Glow ─────────────────────────────────

@@ -948,7 +948,7 @@ const pulseBomberRings = [];
  * Record player position for Clone Mimic tracking.
  * Call this from main game loop.
  */
-export function recordPlayerPosition(pos, now) {
+function recordPlayerPosition(pos, now) {
   playerMovementHistory.push({ pos: pos.clone(), time: now });
   // Remove entries older than MOVEMENT_HISTORY_DURATION
   while (playerMovementHistory.length > 0 && now - playerMovementHistory[0].time > MOVEMENT_HISTORY_DURATION) {
@@ -1106,14 +1106,14 @@ export function updatePulseBomberRings(dt, now, playerPos) {
 /**
  * Check if player was hit by any sonic rings.
  */
-export function getPulseBomberRingHits() {
+function getPulseBomberRingHits() {
   return pulseBomberRings.filter(r => r.hitPlayer);
 }
 
 /**
  * Clear hit flags on pulse bomber rings.
  */
-export function clearPulseBomberRingHits() {
+function clearPulseBomberRingHits() {
   pulseBomberRings.forEach(r => r.hitPlayer = false);
 }
 
@@ -1185,7 +1185,7 @@ function spawnShieldShards(position, count = 3) {
 /**
  * Update shield shards (ground hazards).
  */
-export function updateShieldShards(dt, now, playerPos) {
+function updateShieldShards(dt, now, playerPos) {
   const collisions = [];
 
   for (let i = shieldShards.length - 1; i >= 0; i--) {
@@ -1247,7 +1247,7 @@ function spawnPhaseEcho(position) {
 /**
  * Update phase echoes (distraction ghosts).
  */
-export function updatePhaseEchoes(dt, now) {
+function updatePhaseEchoes(dt, now) {
   for (let i = phaseEchoes.length - 1; i >= 0; i--) {
     const echo = phaseEchoes[i];
     const age = now - echo.createdAt;

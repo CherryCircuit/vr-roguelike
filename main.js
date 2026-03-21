@@ -73,6 +73,7 @@ import {
 } from './scoreboard.js';
 import { getThemeForLevel, initAmbientParticles, updateAmbientParticles, createInnkeeper } from './scenery.js';
 import { initDreamWorld, enterDreamWorld, exitDreamWorld, getDreamFogSettings, getDreamSpawnPosition } from './dream-world.js';
+import { SpatialHash } from './spatial-hash.js';
 
 // Expose game state to window for debugging/testing
 window.State = State;
@@ -132,6 +133,9 @@ const activePlasmaOrbs = [];  // { mesh, velocity, damage, aoeRadius, expiresAt,
 
 // Phase Dash afterimages
 const activePhaseDashAfterimages = [];  // { mesh, position, expiresAt, damage, aoeRadius }
+
+// Spatial hash for fast enemy proximity queries (rebuilds each frame)
+const enemySpatialHash = new SpatialHash(15);  // 15 unit cells >= max query radius
 
 // Laser mine passive tracking
 let playerLastPosition = new THREE.Vector3();
@@ -4299,9 +4303,11 @@ function updatePhaseDashAfterimages(now, dt) {
 
     // Check if afterimage should detonate
     if (age >= afterimage.expiresAt) {
-      // Detonate - AOE damage
-      const enemies = getEnemies();
-      enemies.forEach((e, enemyIndex) => {
+      // Detonate - AOE damage using spatial hash
+      const enemies = getEnemies();  // Still needed for index lookup
+      const nearby = enemySpatialHash.query(afterimage.position.x, afterimage.position.z, afterimage.aoeRadius);
+      for (const e of nearby) {
+        const enemyIndex = enemies.indexOf(e);
         const dist = e.mesh.position.distanceTo(afterimage.position);
         if (dist < afterimage.aoeRadius) {
           const damageMultiplier = 1 - (dist / afterimage.aoeRadius);
@@ -4320,7 +4326,7 @@ function updatePhaseDashAfterimages(now, dt) {
             }
           }
         }
-      });
+      }
 
       // Visual explosion
       spawnExplosionVisual(afterimage.position, afterimage.aoeRadius);
@@ -4812,6 +4818,7 @@ function firePlasmaOrb(origin, direction, hand, altWeapon) {
 }
 
 function updatePlasmaOrbs(now, dt) {
+  const enemies = getEnemies();  // Still needed for index lookup
   for (let i = activePlasmaOrbs.length - 1; i >= 0; i--) {
     const orb = activePlasmaOrbs[i];
 
@@ -4830,18 +4837,18 @@ function updatePlasmaOrbs(now, dt) {
       continue;
     }
 
-    // Find nearest enemy for homing
-    const enemies = getEnemies();
+    // Find nearest enemy for homing using spatial hash
+    const nearbyForHoming = enemySpatialHash.query(orb.mesh.position.x, orb.mesh.position.z, orb.homingRange);
     let nearestEnemy = null;
     let nearestDist = orb.homingRange;
 
-    enemies.forEach(e => {
+    for (const e of nearbyForHoming) {
       const dist = e.mesh.position.distanceTo(orb.mesh.position);
       if (dist < nearestDist) {
         nearestDist = dist;
         nearestEnemy = e;
       }
-    });
+    }
 
     // Homing behavior: steer towards nearest enemy
     if (nearestEnemy) {
@@ -4880,15 +4887,17 @@ function updatePlasmaOrbs(now, dt) {
       });
     }
 
-    // Check collision with enemies
-    enemies.forEach((e, index) => {
+    // Check collision with enemies using spatial hash
+    const nearbyForCollision = enemySpatialHash.query(orb.mesh.position.x, orb.mesh.position.z, 0.5);
+    for (const e of nearbyForCollision) {
       const dist = orb.mesh.position.distanceTo(e.mesh.position);
       if (dist < 0.3) { // Collision radius
         // Detonate orb
-        detonatePlasmaOrb(orb, index);
+        const enemyIndex = enemies.indexOf(e);
+        detonatePlasmaOrb(orb, enemyIndex);
         return; // Exit loop after detonation
       }
-    });
+    }
 
     // Check if orb can be shot by player (detonate early)
     // This is handled in projectile collision detection
@@ -4922,18 +4931,20 @@ function detonatePlasmaOrb(orb, enemyIndex) {
     }
   }
 
-  // AOE damage to nearby enemies
+  // AOE damage to nearby enemies using spatial hash
   if (orb.aoeRadius > 0) {
-    const enemies = getEnemies();
-    enemies.forEach((e, i) => {
-      if (i === enemyIndex) return; // Skip the enemy we already hit
+    const enemies = getEnemies();  // Still needed for index lookup
+    const nearby = enemySpatialHash.query(orb.mesh.position.x, orb.mesh.position.z, orb.aoeRadius);
+    for (const e of nearby) {
+      const i = enemies.indexOf(e);
+      if (i === enemyIndex) continue; // Skip the enemy we already hit
       const dist = e.mesh.position.distanceTo(orb.mesh.position);
       if (dist < orb.aoeRadius) {
         const aoeDamage = orb.damage * 0.5 * (1 - dist / orb.aoeRadius);
         hitEnemy(i, aoeDamage);
         spawnDamageNumber(e.mesh.position, aoeDamage, '#aa44ff');
       }
-    });
+    }
   }
 
   // Visual explosion
@@ -5065,9 +5076,11 @@ function updateGrenades(dt, now) {
 function detonateGrenade(grenade, index) {
   console.log('[Grenade] Detonated!');
 
-  // AOE damage to enemies
-  const enemies = getEnemies();
-  enemies.forEach((e, i) => {
+  // AOE damage to enemies using spatial hash
+  const enemies = getEnemies();  // Still needed for index lookup
+  const nearby = enemySpatialHash.query(grenade.mesh.position.x, grenade.mesh.position.z, grenade.aoeRadius);
+  for (const e of nearby) {
+    const i = enemies.indexOf(e);
     const dist = e.mesh.position.distanceTo(grenade.mesh.position);
     if (dist < grenade.aoeRadius) {
       const damageMultiplier = 1 - (dist / grenade.aoeRadius);
@@ -5098,7 +5111,7 @@ function detonateGrenade(grenade, index) {
         }
       }
     }
-  });
+  }
 
   // Visual explosion
   spawnExplosionVisual(grenade.mesh.position, grenade.aoeRadius);
@@ -5180,8 +5193,6 @@ function fireProximityMine(origin, hand, altWeapon) {
 }
 
 function updateProximityMines(now, dt) {
-  const enemies = getEnemies();
-
   for (let i = activeProximityMines.length - 1; i >= 0; i--) {
     const mine = activeProximityMines[i];
     const age = now - mine.placedAt;
@@ -5205,8 +5216,9 @@ function updateProximityMines(now, dt) {
     // Not armed yet - skip proximity check
     if (!mine.isArmed) continue;
 
-    // Check for enemy proximity
-    for (const e of enemies) {
+    // Check for enemy proximity using spatial hash
+    const nearby = enemySpatialHash.query(mine.position.x, mine.position.z, mine.triggerRadius);
+    for (const e of nearby) {
       const dist = e.mesh.position.distanceTo(mine.position);
       if (dist < mine.triggerRadius) {
         detonateProximityMine(mine, i);
@@ -5219,9 +5231,11 @@ function updateProximityMines(now, dt) {
 function detonateProximityMine(mine, index) {
   console.log('[Mine] Detonated!');
 
-  // AOE damage to enemies
-  const enemies = getEnemies();
-  enemies.forEach((e, i) => {
+  // AOE damage to enemies using spatial hash
+  const enemies = getEnemies();  // Still needed for index lookup
+  const nearby = enemySpatialHash.query(mine.position.x, mine.position.z, mine.aoeRadius);
+  for (const e of nearby) {
+    const i = enemies.indexOf(e);
     const dist = e.mesh.position.distanceTo(mine.position);
     if (dist < mine.aoeRadius) {
       const damageMultiplier = 1 - (dist / mine.aoeRadius);
@@ -5252,7 +5266,7 @@ function detonateProximityMine(mine, index) {
         }
       }
     }
-  });
+  }
 
   // Visual explosion
   spawnExplosionVisual(mine.position, mine.aoeRadius);
@@ -7036,21 +7050,24 @@ function updateLightningBeam(controller, index, stats, dt) {
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
 
-  // Find all enemies within range and chain to them
-  const enemies = getEnemies();
+  // Find enemies within range using spatial hash (O(1) lookup)
+  const enemies = getEnemies();  // Still needed for index lookup
+  const nearbyEnemies = enemySpatialHash.query(origin.x, origin.z, stats.lightningRange);
   const targets = [];
   const maxChains = 2 + Math.floor(stats.lightningRange / 8);  // More chains with upgrades
 
-  enemies.forEach((e, i) => {
+  for (const e of nearbyEnemies) {
     const dist = e.mesh.position.distanceTo(origin);
     const toEnemy = e.mesh.position.clone().sub(origin).normalize();
     const angle = toEnemy.dot(direction);
 
     // Within range and roughly in front (45° cone)
     if (dist < stats.lightningRange && angle > 0.7) {
-      targets.push({ index: i, enemy: e, dist });
+      // Find enemy index for hitEnemy call
+      const enemyIndex = enemies.indexOf(e);
+      targets.push({ index: enemyIndex, enemy: e, dist });
     }
-  });
+  }
 
   // Sort by distance, take closest N
   targets.sort((a, b) => a.dist - b.dist);
@@ -9019,6 +9036,16 @@ function render(timestamp) {
 
     const collisions = updateEnemies(dt, now, playerPos);
 
+    // Rebuild spatial hash for enemy proximity queries (O(1) lookups)
+    enemySpatialHash.clear();
+    const enemies = getEnemies();
+    for (const e of enemies) {
+      if (e.mesh) {
+        const pos = e.mesh.position;
+        enemySpatialHash.insert(e, pos.x, pos.z);
+      }
+    }
+
     // Boss update and health bar
     const boss = getBoss();
     if (boss) {
@@ -9129,8 +9156,8 @@ function render(timestamp) {
       if (dead) endGame(false);
     }
 
-    // Check for DoT damage on enemies
-    const enemies = getEnemies();
+    // Check for DoT damage on enemies (reuse from spatial hash rebuild above)
+    // enemies already declared
     enemies.forEach((e, i) => {
       if (e._lastDoT) {
         const colorMap = { fire: '#ff4400', shock: '#4488ff', freeze: '#88ccff' };

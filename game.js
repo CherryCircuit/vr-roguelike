@@ -347,7 +347,7 @@ export function saveDreamState() {
 /**
  * Toggle performance monitor mode
  */
-export function togglePerfMonitor() {
+function togglePerfMonitor() {
   game.debugPerfMonitor = !game.debugPerfMonitor;
   saveDebugSettings();
   return game.debugPerfMonitor;
@@ -356,7 +356,7 @@ export function togglePerfMonitor() {
 /**
  * Toggle FPS display
  */
-export function toggleFPSDisplay() {
+function toggleFPSDisplay() {
   game.debugShowFPS = !game.debugShowFPS;
   saveDebugSettings();
   return game.debugShowFPS;
@@ -371,7 +371,7 @@ export function addScore(points) {
   game.score += Math.floor(points * accuracyMult);
 }
 
-export function getAccuracyMultiplier() {
+function getAccuracyMultiplier() {
   return game.accuracyMultiplier || 1;
 }
 
@@ -405,7 +405,7 @@ export function damagePlayer(amount) {
   return game.health <= 0;
 }
 
-export function healPlayer(amount) {
+function healPlayer(amount) {
   game.health = Math.min(game.maxHealth, game.health + amount);
 }
 
@@ -508,7 +508,7 @@ export function getBiomeForLevel(level) {
 /**
  * Get available enemies for current level from seed deck
  */
-export function getEnemiesForLevel(level) {
+function getEnemiesForLevel(level) {
   const deck = getSeedDeck();
   if (!deck) {
     // Fallback to default enemy system

@@ -167,7 +167,7 @@ export function disable() {
 /**
  * Toggle between VR and desktop mode.
  */
-export function toggleMode() {
+function toggleMode() {
   if (enabled) {
     disable();
     return false; // VR mode
@@ -887,7 +887,7 @@ function copyPositionToClipboard() {
  * Get current position string formatted for biome spawn.
  * Returns: "{ x: X, y: Y, z: Z }"
  */
-export function getPositionString() {
+function getPositionString() {
   const pos = player.position;
   return `{ x: ${pos.x.toFixed(3)}, y: ${pos.y.toFixed(3)}, z: ${pos.z.toFixed(3)} }`;
 }
@@ -936,6 +936,6 @@ function hideDesktopHUD() {
 /**
  * Get control scheme name for display.
  */
-export function getControlScheme() {
+function getControlScheme() {
   return enabled ? 'Desktop (Keyboard/Mouse)' : 'VR Controllers';
 }

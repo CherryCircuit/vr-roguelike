@@ -98,7 +98,7 @@ export const SPECIAL_UPGRADE_POOL = [
 ];
 
 /** Get upgrades by tier */
-export function getUpgradesByTier(level) {
+function getUpgradesByTier(level) {
   if (level >= 15) return ULTRA_UPGRADE_POOL;
   if (level >= 10) return EPIC_UPGRADE_POOL;
   if (level >= 5) return RARE_UPGRADE_POOL;
@@ -120,7 +120,7 @@ export function getRandomUpgrades(count, excludeIds = []) {
 }
 
 /** Pick one random upgrade excluding given ids (for side-grade replacement card) */
-export function getRandomUpgradeExcluding(excludeIds = []) {
+function getRandomUpgradeExcluding(excludeIds = []) {
   const set = new Set(excludeIds);
   const pool = UPGRADE_POOL.filter(u => !set.has(u.id));
   if (pool.length === 0) return null;
@@ -135,7 +135,7 @@ export function getUpgradeDef(id) {
 /**
  * Check if an upgrade is an alt weapon type
  */
-export function isAltWeaponUpgrade(upgradeId) {
+function isAltWeaponUpgrade(upgradeId) {
   const def = getUpgradeDef(upgradeId);
   return def && def.type === 'alt';
 }
