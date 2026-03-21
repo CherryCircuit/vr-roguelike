@@ -99,9 +99,6 @@ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIn
     filter.Q.setValueAtTime(10, t);
     gain.gain.setValueAtTime(0.45, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-    try { osc.stop(t + 0.2); } catch(e) { /* not started */ }
-    try { osc2.stop(t + 0.2); } catch(e) { /* not started */ }
-    try { lfo.stop(t + 0.2); } catch(e) { /* not started */ }
   } else {
     // Short staccato "p" - very brief, sharp attack
     osc.frequency.setValueAtTime(600, t);
@@ -114,9 +111,6 @@ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIn
     filter.Q.setValueAtTime(12, t);
     gain.gain.setValueAtTime(0.35, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-    try { osc.stop(t + 0.04); } catch(e) { /* not started */ }
-    try { osc2.stop(t + 0.04); } catch(e) { /* not started */ }
-    try { lfo.stop(t + 0.04); } catch(e) { /* not started */ }
   }
 
   lfo.connect(lfoGain);
@@ -126,9 +120,19 @@ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIn
   filter.connect(gain);
   gain.connect(ctx.destination);
 
-  try { osc.start(t); } catch(e) { /* already stopped */ }
-  try { osc2.start(t); } catch(e) { /* already stopped */ }
-  try { lfo.start(t); } catch(e) { /* already stopped */ }
+  // Start oscillators BEFORE scheduling stop to avoid "cannot call stop without calling start first" error
+  try {
+    osc.start(t);
+    osc2.start(t);
+    lfo.start(t);
+    // Schedule stop after start succeeds
+    const stopTime = isLastShot ? t + 0.2 : t + 0.04;
+    osc.stop(stopTime);
+    osc2.stop(stopTime);
+    lfo.stop(stopTime);
+  } catch(e) {
+    // If start fails, don't attempt stop
+  }
 }
 
 // ── Double Shot sound ──────────────────────────────────────
