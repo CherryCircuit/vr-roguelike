@@ -9522,6 +9522,7 @@ function render(timestamp) {
   updateFPS(now, {
     perfMonitor: (typeof window !== 'undefined' && window.debugPerfMonitor) || game.debugPerfMonitor,
     frameTimeMs: rawDt * 1000,
+    rendererInfo: renderer.info,
   });
 
   // Music visualizer (DISABLED - causing FPS drops)

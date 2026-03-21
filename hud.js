@@ -1807,20 +1807,29 @@ export function updateFPS(now, opts = {}) {
       : null;
 
     let text = `FPS: ${fps}`;
+    let color = '#00ff00';
     if (perfMonitor) {
       text += ` | FT: ${avgFrameMs.toFixed(1)}ms`;
       if (memMb != null) text += ` | Mem: ${memMb}MB`;
+
+      const ri = opts.rendererInfo;
+      if (ri) {
+        text += `\nDC: ${ri.render.calls} | Tri: ${(ri.render.triangles / 1000).toFixed(1)}k | Tex: ${ri.memory.textures} | Geo: ${ri.memory.geometries}`;
+      }
+
+      const ftColor = avgFrameMs > 33 ? '#ff0000' : avgFrameMs > 20 ? '#ffff00' : '#00ff00';
+      const dcColor = ri && ri.render.calls > 200 ? '#ff0000' : ftColor;
+      color = dcColor;
+    } else {
+      const fpsColor = fps < 30 ? '#ff0000' : fps < 60 ? '#ffff00' : '#00ff00';
+      color = fpsColor;
     }
 
-    const fpsColor = fps < 30 ? '#ff0000' : fps < 60 ? '#ffff00' : '#00ff00';
-    const ftColor = avgFrameMs > 33 ? '#ff0000' : avgFrameMs > 20 ? '#ffff00' : '#00ff00';
-    const color = perfMonitor ? ftColor : fpsColor;
-
     const { texture, aspect } = makeTextTexture(text, {
-      fontSize: perfMonitor ? 24 : 32,
+      fontSize: perfMonitor ? 20 : 32,
       color,
       shadow: true,
-      maxWidth: perfMonitor ? 300 : null,
+      maxWidth: perfMonitor ? 500 : null,
     });
     if (fpsSprite.material.map) fpsSprite.material.map.dispose();
     fpsSprite.material.map = texture;

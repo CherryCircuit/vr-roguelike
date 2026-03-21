@@ -7643,37 +7643,34 @@ export function updateBossMinions(dt, playerPos) {
   }
 }
 
-// ── PROJECTILES (for compatibility) ───────────────────────────
-const bossProjectiles = [];
+// ── BOSS PROJECTILES (InstancedMesh pool) ───────────────────────
+// Boss projectiles use TWO InstancedMesh pools (core + glow) sharing instance indices.
+// This reduces draw calls from 2N (N projectiles × 2 meshes) to just 2.
+const BOSS_PROJ_POOL_SIZE = 50;
 
-function disposeBossProjectileMesh(mesh) {
-  if (!mesh) return;
-  sceneRef.remove(mesh);
-  mesh.traverse(c => {
-    if (c.geometry) c.geometry.dispose();
-    if (c.material) c.material.dispose();
-  });
-}
+let bossProjCorePool = null;   // InstancedMesh for core spheres (red)
+let bossProjGlowPool = null;   // InstancedMesh for glow spheres (pink, transparent)
+let bossProjFreeIndices = [];  // Available instance indices
+const bossProjData = [];       // Per-instance data (parallel to instance indices)
+const _bossProjMatrix = new THREE.Matrix4();
+const _bossProjScale = new THREE.Vector3();
+const _identityQuat = new THREE.Quaternion();  // Identity rotation
+const _unitScale = new THREE.Vector3(1, 1, 1);  // Unit scale for initial spawn
 
-export function clearBossProjectiles() {
-  for (let i = bossProjectiles.length - 1; i >= 0; i--) {
-    disposeBossProjectileMesh(bossProjectiles[i].mesh);
-  }
-  bossProjectiles.length = 0;
-}
+function initBossProjPools() {
+  if (bossProjCorePool || !sceneRef) return;
 
-export function spawnBossProjectile(fromPos, targetPos) {
-  // Play sound when boss fires projectile
-  playEnemyProjectileSound();
-
-  const projGroup = new THREE.Group();
-
-  const coreGeo = getGeo(0.065);
+  // Core sphere (smaller, opaque red)
+  const coreGeo = new THREE.SphereGeometry(0.065, 8, 8);
   const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3355 });
-  const core = new THREE.Mesh(coreGeo, coreMat);
-  projGroup.add(core);
+  bossProjCorePool = new THREE.InstancedMesh(coreGeo, coreMat, BOSS_PROJ_POOL_SIZE);
+  bossProjCorePool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  bossProjCorePool.count = 0;
+  bossProjCorePool.frustumCulled = false;
+  sceneRef.add(bossProjCorePool);
 
-  const glowGeo = getGeo(0.14);
+  // Glow sphere (larger, transparent pink with additive blending)
+  const glowGeo = new THREE.SphereGeometry(0.14, 8, 8);
   const glowMat = new THREE.MeshBasicMaterial({
     color: 0xff88aa,
     transparent: true,
@@ -7681,42 +7678,146 @@ export function spawnBossProjectile(fromPos, targetPos) {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
-  const glow = new THREE.Mesh(glowGeo, glowMat);
-  projGroup.add(glow);
+  bossProjGlowPool = new THREE.InstancedMesh(glowGeo, glowMat, BOSS_PROJ_POOL_SIZE);
+  bossProjGlowPool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  bossProjGlowPool.count = 0;
+  bossProjGlowPool.frustumCulled = false;
+  sceneRef.add(bossProjGlowPool);
 
-  projGroup.position.copy(fromPos);
-  projGroup.userData.isBossProjectile = true;
-  projGroup.userData.glowPhase = Math.random() * Math.PI * 2;
+  // Initialize free indices (all available)
+  for (let i = 0; i < BOSS_PROJ_POOL_SIZE; i++) {
+    bossProjFreeIndices.push(i);
+    bossProjData.push(null);
+  }
 
+  console.log('[performance] Boss projectile InstancedMesh pools initialized (50 instances, 2 draw calls)');
+}
+
+function acquireBossProjIndex() {
+  if (bossProjFreeIndices.length === 0) {
+    console.warn('[bossProj] Pool exhausted');
+    return -1;
+  }
+  const idx = bossProjFreeIndices.pop();
+
+  // Expand visible count if needed
+  if (idx >= bossProjCorePool.count) {
+    bossProjCorePool.count = idx + 1;
+    bossProjGlowPool.count = idx + 1;
+  }
+
+  return idx;
+}
+
+function releaseBossProjIndex(idx) {
+  if (idx < 0 || idx >= BOSS_PROJ_POOL_SIZE) return;
+
+  // Hide instance by scaling to 0
+  _bossProjMatrix.makeScale(0, 0, 0);
+  bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
+  bossProjGlowPool.setMatrixAt(idx, _bossProjMatrix);
+
+  bossProjData[idx] = null;
+  bossProjFreeIndices.push(idx);
+}
+
+// Legacy array for compatibility with getBossProjectiles()
+const bossProjectiles = [];
+
+export function clearBossProjectiles() {
+  // Release all active instances
+  for (let i = 0; i < bossProjData.length; i++) {
+    if (bossProjData[i] !== null) {
+      releaseBossProjIndex(i);
+    }
+  }
+  bossProjectiles.length = 0;
+  bossProjCorePool.instanceMatrix.needsUpdate = true;
+  bossProjGlowPool.instanceMatrix.needsUpdate = true;
+}
+
+export function spawnBossProjectile(fromPos, targetPos) {
+  // Initialize pools if needed (called once on first spawn)
+  initBossProjPools();
+
+  // Acquire an instance slot
+  const idx = acquireBossProjIndex();
+  if (idx < 0) return; // Pool exhausted
+
+  // Play sound when boss fires projectile
+  playEnemyProjectileSound();
+
+  // Calculate direction and speed
   const dir = new THREE.Vector3().copy(targetPos).sub(fromPos).normalize();
   const speed = 5.2;
 
-  sceneRef.add(projGroup);
-  bossProjectiles.push({
-    mesh: projGroup,
+  // Store per-instance data
+  const data = {
+    instanceIndex: idx,
+    position: fromPos.clone(),
     velocity: dir.multiplyScalar(speed),
     createdAt: performance.now(),
     lifetime: 3600,
     homingStrength: 8.0,
     wigglePhase: Math.random() * Math.PI * 2,
+    wiggleAmplitude: 0.008,
     damage: 1,
     explosionDamage: 1,
     explosionRadius: 0.3,
     hitRadius: 0.45,
-    wiggleAmplitude: 0.008,
+    glowPhase: Math.random() * Math.PI * 2,
+    hitPlayer: false,
+  };
+  bossProjData[idx] = data;
+
+  // Set initial matrix (position + unit scale)
+  _bossProjMatrix.compose(fromPos, _identityQuat, _unitScale);
+  bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
+  bossProjGlowPool.setMatrixAt(idx, _bossProjMatrix);
+  bossProjCorePool.instanceMatrix.needsUpdate = true;
+  bossProjGlowPool.instanceMatrix.needsUpdate = true;
+
+  // Create lightweight proxy for compatibility with getBossProjectiles()
+  const proxy = {
+    position: data.position,
+    userData: { isBossProjectile: true },
+  };
+  bossProjectiles.push({
+    mesh: proxy,
+    _instIdx: idx,
+    velocity: data.velocity,
+    createdAt: data.createdAt,
+    lifetime: data.lifetime,
+    homingStrength: data.homingStrength,
+    wigglePhase: data.wigglePhase,
+    damage: data.damage,
+    explosionDamage: data.explosionDamage,
+    explosionRadius: data.explosionRadius,
+    hitRadius: data.hitRadius,
+    wiggleAmplitude: data.wiggleAmplitude,
+    hitPlayer: false,
   });
 }
 
 export function updateBossProjectiles(dt, now, playerPos) {
+  if (!bossProjCorePool) return;
+
   for (let i = bossProjectiles.length - 1; i >= 0; i--) {
     const proj = bossProjectiles[i];
+    const idx = proj._instIdx;
+    const data = bossProjData[idx];
+    if (!data) {
+      bossProjectiles.splice(i, 1);
+      continue;
+    }
+
     const age = now - proj.createdAt;
 
     if (age > proj.lifetime) {
       if (typeof window !== 'undefined' && window.createExplosionAt) {
         window.createExplosionAt(proj.mesh.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
       }
-      disposeBossProjectileMesh(proj.mesh);
+      releaseBossProjIndex(idx);
       bossProjectiles.splice(i, 1);
       continue;
     }
@@ -7737,20 +7838,22 @@ export function updateBossProjectiles(dt, now, playerPos) {
     if (_scratch3.lengthSq() < 0.0001) _scratch3.set(1, 0, 0);
     _scratch3.normalize();
     const wiggleOffset = Math.sin(proj.wigglePhase) * (proj.wiggleAmplitude || 0.008);
-    const pulse = 0.75 + Math.sin(age * 0.015 + (proj.mesh.userData.glowPhase || 0)) * 0.25;
+    const pulse = 0.75 + Math.sin(age * 0.015 + (data.glowPhase || 0)) * 0.25;
 
     proj.mesh.position.addScaledVector(proj.velocity, adjustedDt);
     proj.mesh.position.addScaledVector(_scratch3, wiggleOffset);
-    proj.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), _scratch2);
-    proj.mesh.children.forEach((child, index) => {
-      if (!child.material) return;
-      if (index === 0) {
-        child.scale.setScalar(0.9 + pulse * 0.12);
-      } else {
-        child.scale.setScalar(0.95 + pulse * 0.25);
-        child.material.opacity = 0.35 + pulse * 0.35;
-      }
-    });
+
+    // Update instance matrices with pulsing scale
+    const coreScale = 0.9 + pulse * 0.12;
+    const glowScale = 0.95 + pulse * 0.25;
+
+    _bossProjScale.set(coreScale, coreScale, coreScale);
+    _bossProjMatrix.compose(proj.mesh.position, _identityQuat, _bossProjScale);
+    bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
+
+    _bossProjScale.set(glowScale, glowScale, glowScale);
+    _bossProjMatrix.compose(proj.mesh.position, _identityQuat, _bossProjScale);
+    bossProjGlowPool.setMatrixAt(idx, _bossProjMatrix);
 
     if (proj.mesh.position.distanceTo(playerPos) < (proj.hitRadius || 0.45)) {
       proj.hitPlayer = true;
@@ -7759,6 +7862,10 @@ export function updateBossProjectiles(dt, now, playerPos) {
       }
     }
   }
+
+  // Mark buffers for GPU update
+  bossProjCorePool.instanceMatrix.needsUpdate = true;
+  bossProjGlowPool.instanceMatrix.needsUpdate = true;
 }
 
 export function getBossProjectiles() {
