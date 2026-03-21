@@ -11,7 +11,7 @@ export const THEMES = {
   sunrise_highway: {
     skyColor: 0xff8866,
     fogColor: 0xffd4b8,
-    fogDensity: 0.009,
+    fogDensity: 0.018,
     gridColor: '#ffffff',
     gridOpacity: 0.9,
     gridScale: 1.0,
@@ -38,12 +38,7 @@ export const THEMES = {
   vapor_sunset: {
     skyColor: 0xff77aa,
     fogColor: 0xffc8dd,
-    fogDensity: 0.008,
-    gridColor: '#00ffff',
-    gridOpacity: 0.7,
-    gridScale: 0.9,
-    mountainFill: 0x220033,
-    mountainWire: 0x660066,
+    fogDensity: 0.016,
     mountainWireOpacity: 0.5,
     mountainScale: 0.8,
     floorColor: 0x220022,
@@ -65,7 +60,7 @@ export const THEMES = {
   ocean_floor: {
     skyColor: 0x001133,
     fogColor: 0x113355,
-    fogDensity: 0.012,
+    fogDensity: 0.016,
     gridColor: '#00ffaa',
     gridOpacity: 0.6,
     gridScale: 0.8,
@@ -92,7 +87,7 @@ export const THEMES = {
   synthwave: {
     skyColor: 0x000000,
     fogColor: 0x111111,
-    fogDensity: 0.012,
+    fogDensity: 0.016,
     gridColor: '#ff00ff',
     gridOpacity: 0.85,
     mountainFill: 0x0a0020,
@@ -112,7 +107,7 @@ export const THEMES = {
   hellscape: {
     skyColor: 0x0a0000,
     fogColor: 0x331111,
-    fogDensity: 0.015,
+    fogDensity: 0.02,
     gridColor: '#ff4400',
     gridOpacity: 0.9,
     mountainFill: 0x1a0000,
@@ -132,7 +127,7 @@ export const THEMES = {
   circuit_board: {
     skyColor: 0x003300,
     fogColor: 0x114411,
-    fogDensity: 0.015,
+    fogDensity: 0.02,
     gridColor: '#ffcc00',
     gridOpacity: 0.8,
     gridScale: 1.3,
@@ -159,7 +154,7 @@ export const THEMES = {
   frozen: {
     skyColor: 0x000a15,
     fogColor: 0x112244,
-    fogDensity: 0.01,
+    fogDensity: 0.018,
     gridColor: '#0088ff',
     gridOpacity: 0.7,
     mountainFill: 0x001133,
@@ -183,7 +178,7 @@ export const THEMES = {
   corruption: {
     skyColor: 0x050005,
     fogColor: 0x1a0a1a,
-    fogDensity: 0.018,
+    fogDensity: 0.025,
     gridColor: '#aa00ff',
     gridOpacity: 0.6,
     mountainFill: 0x0a000a,
@@ -203,7 +198,7 @@ export const THEMES = {
   the_stack: {
     skyColor: 0x333333,
     fogColor: 0x666666,
-    fogDensity: 0.01,
+    fogDensity: 0.018,
     gridColor: '#ffaa00',
     gridOpacity: 0.7,
     gridScale: 1.4,
@@ -230,7 +225,7 @@ export const THEMES = {
   digital_rain: {
     skyColor: 0x000000,
     fogColor: 0x002200,
-    fogDensity: 0.01,
+    fogDensity: 0.018,
     gridColor: '#00ff00',
     gridOpacity: 0.5,
     gridScale: 1.1,
@@ -261,7 +256,7 @@ export const THEMES = {
   boss: {
     skyColor: 0x0a0000,
     fogColor: 0x331111,
-    fogDensity: 0.02,
+    fogDensity: 0.025,
     gridColor: '#ff0000',
     gridOpacity: 1.0,
     mountainFill: 0x1a0000,
@@ -281,7 +276,7 @@ export const THEMES = {
   kaleidoscope: {
     skyColor: 0x000000,
     fogColor: 0x222222,
-    fogDensity: 0.015,
+    fogDensity: 0.02,
     gridColor: '#ffffff',
     gridOpacity: 0.9,
     gridScale: 0.6,
@@ -308,7 +303,7 @@ export const THEMES = {
   retro_arcade: {
     skyColor: 0x110022,
     fogColor: 0x331144,
-    fogDensity: 0.012,
+    fogDensity: 0.018,
     gridColor: '#ff00ff',
     gridOpacity: 0.75,
     gridScale: 1.5,
@@ -335,7 +330,7 @@ export const THEMES = {
   void_garden: {
     skyColor: 0x000005,
     fogColor: 0x0a0a22,
-    fogDensity: 0.01,
+    fogDensity: 0.018,
     gridColor: '#aaaaff',
     gridOpacity: 0.5,
     gridScale: 0.7,
@@ -362,7 +357,7 @@ export const THEMES = {
   neon_rainforest: {
     skyColor: 0x001a0d,
     fogColor: 0x113322,
-    fogDensity: 0.014,
+    fogDensity: 0.02,
     gridColor: '#00ff88',
     gridOpacity: 0.65,
     gridScale: 1.2,
@@ -389,7 +384,7 @@ export const THEMES = {
   synthwave_valley: {
     skyColor: 0x1a004a,
     fogColor: 0x3a1a5a,
-    fogDensity: 0.008,
+    fogDensity: 0.016,
     gridColor: '#ff2ed1',
     gridOpacity: 0,
     gridScale: 1,
@@ -429,7 +424,7 @@ export const THEMES = {
   desert_night: {
     skyColor: 0x06080c,
     fogColor: 0x121820,
-    fogDensity: 0.012,
+    fogDensity: 0.018,
     gridColor: '#000000',
     gridOpacity: 0,
     gridScale: 1,
@@ -462,7 +457,7 @@ export const THEMES = {
   alien_planet: {
     skyColor: 0x080812,
     fogColor: 0x1a1525,
-    fogDensity: 0.008,
+    fogDensity: 0.016,
     gridColor: '#000000',
     gridOpacity: 0,
     gridScale: 1,
@@ -495,7 +490,7 @@ export const THEMES = {
   hellscape_lava: {
     skyColor: 0x000000,
     fogColor: 0x111111,
-    fogDensity: 0.010,
+    fogDensity: 0.02,
     gridColor: '#000000',
     gridOpacity: 0,
     gridScale: 1,

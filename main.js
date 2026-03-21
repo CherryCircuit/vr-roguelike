@@ -1223,6 +1223,14 @@ function applyThemeForLevel(level) {
 
   currentTheme = theme;
 
+  // Apply fog from biome theme
+  if (scene.fog && theme.fogColor !== undefined) {
+    scene.fog.color.setHex(theme.fogColor);
+  }
+  if (scene.fog && theme.fogDensity !== undefined) {
+    scene.fog.density = theme.fogDensity;
+  }
+
   const hideBaseEnv = !!theme.hideBaseEnv;
   if (gridHelper) gridHelper.visible = !hideBaseEnv;
   if (horizonRingRef) horizonRingRef.visible = !hideBaseEnv;
@@ -9950,7 +9958,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Set synthwave fog for atmospheric depth and distance fade
   if (scene) {
-    scene.fog = new THREE.FogExp2(0x2C0051, 0.008);  // Purple fog matching biome
+    scene.fog = new THREE.FogExp2(0x2C0051, 0.016);  // Purple fog matching biome
   }
 
   // Sky dome (no stars, we use global starfield)
