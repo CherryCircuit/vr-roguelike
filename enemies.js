@@ -33,20 +33,11 @@ function setMaterialEmissiveSafe(material, color, intensity = 1) {
   if (Object.prototype.hasOwnProperty.call(material, 'emissiveIntensity')) delete material.emissiveIntensity;
 }
 
-// Helper: create an enemy MeshBasicMaterial with consistent transparency settings.
-// depthWrite:false prevents transparent enemies from writing to depth buffer,
-// which fixes the "more opaque when looking up" blending issue.
-// fog:false prevents FogExp2 from altering enemy color based on camera angle.
-function makeEnemyMat(opts = {}) {
-  return new THREE.MeshBasicMaterial({
-    color: opts.color ?? 0xffffff,
-    transparent: true,
-    opacity: opts.opacity ?? 0.7,
-    depthWrite: false,
-    fog: false,
-    ...(opts.side ? { side: opts.side } : {}),
-  });
-}
+// Pre-allocated scratch vectors (avoid per-frame GC in update methods)
+const _scratch = new THREE.Vector3();
+const _scratch2 = new THREE.Vector3();
+const _scratch3 = new THREE.Vector3();
+const _scratchColor = new THREE.Color();
 
 // ── Voxel patterns (simplified for performance) ───────────
 const PATTERNS = {
@@ -113,14 +104,6 @@ const PATTERNS = {
 
 function parsePattern(strings) {
   return strings.map(row => row.split('').map(c => (c === '1' ? 1 : 0)));
-}
-
-function buildJellyPattern(height) {
-  const rows = [];
-  for (let i = 0; i < height; i++) {
-    rows.push('1');
-  }
-  return parsePattern(rows);
 }
 
 function updateJellyHitbox(enemy) {
@@ -1420,11 +1403,11 @@ export function updateBabySpiders(dt, now, playerPos) {
     }
 
     // Chase player
-    const dir = playerPos.clone().sub(spider.mesh.position);
-    const dist = dir.length();
+    _scratch.copy(playerPos).sub(spider.mesh.position);
+    const dist = _scratch.length();
     if (dist > 0.1) {
-      dir.normalize();
-      spider.mesh.position.addScaledVector(dir, spider.speed * dt);
+      _scratch.normalize();
+      spider.mesh.position.addScaledVector(_scratch, spider.speed * dt);
     }
 
     // Collision with player
@@ -2257,9 +2240,10 @@ export function updateEnemies(dt, now, playerPos) {
 
       // Telegraph glow before firing
       if (e.fireTimer >= 2.0 && !e.coreExposed) {
+        _scratchColor.set(0xffffff);
         e.mesh.traverse(c => {
           if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            setMaterialEmissiveSafe(c.material, new THREE.Color(0xffffff), (e.fireTimer - 2.0) / 0.5);
+            setMaterialEmissiveSafe(c.material, _scratchColor, (e.fireTimer - 2.0) / 0.5);
           }
         });
       }
@@ -2283,11 +2267,11 @@ export function updateEnemies(dt, now, playerPos) {
       }
 
       if (targetPos) {
-        const mimicDir = targetPos.clone().sub(e.mesh.position);
-        const mimicDist = mimicDir.length();
+        _scratch.copy(targetPos).sub(e.mesh.position);
+        const mimicDist = _scratch.length();
         if (mimicDist > 0.1) {
-          mimicDir.normalize();
-          e.mesh.position.addScaledVector(mimicDir, e.speed * speedMod * dt);
+          _scratch.normalize();
+          e.mesh.position.addScaledVector(_scratch, e.speed * speedMod * dt);
         }
       }
 
@@ -2615,9 +2599,9 @@ export function updateEnemies(dt, now, playerPos) {
     const dmgRatio = 1 - e.hp / e.maxHp;
     if (e.mesh.userData.instanceId !== undefined) {
       // Instanced enemy: calculate damage color and sync to InstancedMesh
-      const damageColor = new THREE.Color().copy(e.baseColor).lerp(_redColor, dmgRatio);
+      _scratchColor.copy(e.baseColor).lerp(_redColor, dmgRatio);
       const pool = e.mesh.userData.instancePool;
-      pool.mesh.setColorAt(e.mesh.userData.instanceId, damageColor);
+      pool.mesh.setColorAt(e.mesh.userData.instanceId, _scratchColor);
       pool.mesh.instanceColor.needsUpdate = true;
     } else {
       // Non-instanced enemy: update material color directly
@@ -3586,10 +3570,10 @@ class ScrapGolemBoss extends Boss {
   }
 
   updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    _scratch.copy(playerPos).sub(this.mesh.position).normalize();
     
     // Slow movement toward player
-    this.mesh.position.addScaledVector(dirToPlayer, 0.8 * dt);
+    this.mesh.position.addScaledVector(_scratch, 0.8 * dt);
     this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
     
     // Ground slam attack
@@ -3663,11 +3647,11 @@ class HoloPhantomBoss extends Boss {
   }
 
   updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    _scratch.copy(playerPos).sub(this.mesh.position).normalize();
     
     // Fast erratic movement
     if (this.state === 'visible') {
-      this.mesh.position.addScaledVector(dirToPlayer, 2.0 * dt);
+      this.mesh.position.addScaledVector(_scratch, 2.0 * dt);
       this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
       
       // Create decoys
@@ -4122,19 +4106,19 @@ class SkullHand {
     this.group.position.y += Math.sin(now * 0.003 + this.handIndex) * 0.15;
     
     // Rotate to face player (world direction)
-    const worldPos = this.group.getWorldPosition(new THREE.Vector3());
-    const lookDir = playerPos.clone().sub(worldPos);
-    if (lookDir.length() > 0.1) {
-      this.group.lookAt(playerPos.x, worldPos.y, playerPos.z);
+    this.group.getWorldPosition(_scratch);
+    _scratch2.copy(playerPos).sub(_scratch);
+    if (_scratch2.length() > 0.1) {
+      this.group.lookAt(playerPos.x, _scratch.y, playerPos.z);
     }
     
     // Update color based on damage - darken toward dark red
     const damageRatio = 1 - this.hp / this.maxHp;
     this.group.traverse(c => {
       if (c.isMesh && c.material && c.userData.isHandBody) {
-        const baseColor = new THREE.Color(0xffffff);
+        _scratchColor.set(0xffffff);
         const damagedColor = new THREE.Color(0x660000); // Dark red
-        c.material.color.copy(baseColor).lerp(damagedColor, damageRatio);
+        c.material.color.copy(_scratchColor).lerp(damagedColor, damageRatio);
       }
     });
   }
@@ -7740,25 +7724,24 @@ export function updateBossProjectiles(dt, now, playerPos) {
     const slowFactor = getStasisSlowFactor(proj.mesh.position);
     const adjustedDt = dt * slowFactor;
     const speed = proj.velocity.length();
-    const toPlayer = new THREE.Vector3().subVectors(playerPos, proj.mesh.position).normalize();
-    const desiredVelocity = toPlayer.multiplyScalar(speed);
+    _scratch.subVectors(playerPos, proj.mesh.position).normalize();
+    const desiredVelocity = _scratch.multiplyScalar(speed);
     proj.velocity.lerp(desiredVelocity, Math.min(1, (proj.homingStrength || 2.5) * adjustedDt));
     if (proj.velocity.lengthSq() > 0.0001) {
       proj.velocity.setLength(speed);
     }
 
     proj.wigglePhase = (proj.wigglePhase || 0) + adjustedDt * 7.0;
-    const forward = proj.velocity.clone().normalize();
-    const side = new THREE.Vector3(-forward.z, 0, forward.x);
-    if (side.lengthSq() < 0.0001) side.set(1, 0, 0);
-    side.normalize();
+    _scratch2.copy(proj.velocity).normalize();
+    _scratch3.set(-_scratch2.z, 0, _scratch2.x);
+    if (_scratch3.lengthSq() < 0.0001) _scratch3.set(1, 0, 0);
+    _scratch3.normalize();
     const wiggleOffset = Math.sin(proj.wigglePhase) * (proj.wiggleAmplitude || 0.008);
     const pulse = 0.75 + Math.sin(age * 0.015 + (proj.mesh.userData.glowPhase || 0)) * 0.25;
 
-    const prevPos = proj.mesh.position.clone();
     proj.mesh.position.addScaledVector(proj.velocity, adjustedDt);
-    proj.mesh.position.addScaledVector(side, wiggleOffset);
-    proj.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), forward);
+    proj.mesh.position.addScaledVector(_scratch3, wiggleOffset);
+    proj.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), _scratch2);
     proj.mesh.children.forEach((child, index) => {
       if (!child.material) return;
       if (index === 0) {
