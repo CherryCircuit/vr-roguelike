@@ -495,7 +495,7 @@ export const THEMES = {
   hellscape_lava: {
     skyColor: 0x000000,
     fogColor: 0x111111,
-    fogDensity: 0.008,
+    fogDensity: 0.010,
     gridColor: '#000000',
     gridOpacity: 0,
     gridScale: 1,
@@ -1104,3 +1104,4 @@ export function createInnkeeper() {
   group.userData.sprite = sprite;
   return group;
 }
+
