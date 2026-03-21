@@ -126,7 +126,7 @@ function spawnSparks(position, count) {
 }
 
 // ── Shockwave (for charge shot) ───────────────────────────
-export function spawnShockwave(position, direction, progress) {
+function spawnShockwave(position, direction, progress) {
   const ring = new THREE.Mesh(
     new THREE.TorusGeometry(0.3, 0.05, 8, 24),
     new THREE.MeshBasicMaterial({

@@ -290,7 +290,7 @@ function createRapidFireModel() {
 }
 
 // ── Update Weapon Model on Controller ─────────────────────
-export function updateControllerWeapon(controller, weaponId) {
+function updateControllerWeapon(controller, weaponId) {
   // Remove old model
   const oldModel = controller.getObjectByName('weaponModel');
   if (oldModel) {

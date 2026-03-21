@@ -1392,7 +1392,7 @@ export function spawnDamageNumber(position, damage, color) {
   }
 }
 
-export function spawnOuchBubble(position, text = 'OUCH!') {
+function spawnOuchBubble(position, text = 'OUCH!') {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   canvas.width = 256;
@@ -1559,7 +1559,7 @@ export function spawnComboPopup(combo, cameraPos) {
   comboPopups.push(mesh);
 }
 
-export function updateComboPopups(dt, now) {
+function updateComboPopups(dt, now) {
   for (let i = comboPopups.length - 1; i >= 0; i--) {
     const popup = comboPopups[i];
     const age = now - popup.userData.createdAt;
@@ -1581,7 +1581,7 @@ export function updateComboPopups(dt, now) {
   }
 }
 
-export function checkComboIncrease(currentCombo, cameraPos, playSoundFn) {
+function checkComboIncrease(currentCombo, cameraPos, playSoundFn) {
   if (currentCombo > lastComboValue && currentCombo > 1) {
     spawnComboPopup(currentCombo, cameraPos);
     if (playSoundFn) playSoundFn();
@@ -1868,7 +1868,7 @@ export function getTitleButtonHit(raycaster) {
 }
 
 // ── Run Diagnostics ──────────────────────────────────────
-export function runDiagnostics() {
+function runDiagnostics() {
   const results = [];
   let allPassed = true;
 
@@ -2262,7 +2262,7 @@ export function updateReadyCountdownText(text) {
 
 // ── Level Intro Screen ───────────────────────────────────────
 
-export function showLevelIntro(level) {
+function showLevelIntro(level) {
   hideAll();
   levelIntroActive = true;
   levelIntroStartTime = performance.now();
@@ -2288,7 +2288,7 @@ export function showLevelIntro(level) {
   levelTextGroup.add(levelNum);
 }
 
-export function updateLevelIntro(now) {
+function updateLevelIntro(now) {
   if (!levelIntroActive) return;
 
   const elapsed = now - levelIntroStartTime;
@@ -2352,7 +2352,7 @@ export function updateLevelIntro(now) {
   return false; // Still in progress
 }
 
-export function hideLevelIntro() {
+function hideLevelIntro() {
   levelIntroActive = false;
   levelTextGroup.visible = false;
 }
@@ -2501,7 +2501,7 @@ export function hideKillsAlert() {
   }
 }
 
-export function isKillsAlertActive() {
+function isKillsAlertActive() {
   return killsAlertActive;
 }
 
@@ -3713,7 +3713,7 @@ export function updateHUDHover(raycasters) {
 }
 
 /** Highlights the controller currently selected for upgrade */
-export function showUpgradeHandHighlight(hand, controllers) {
+function showUpgradeHandHighlight(hand, controllers) {
   controllers.forEach((ctrl, i) => {
     const ctrlHand = ctrl.userData && ctrl.userData.handedness;
     const isHand = ctrlHand ? ctrlHand === hand : ((i === 0 && hand === 'left') || (i === 1 && hand === 'right'));
@@ -3739,7 +3739,7 @@ export function showUpgradeHandHighlight(hand, controllers) {
   });
 }
 
-export function hideUpgradeHandHighlights(controllers) {
+function hideUpgradeHandHighlights(controllers) {
   controllers.forEach(ctrl => {
     const existing = ctrl.getObjectByName('upgradeHighlight');
     if (existing) ctrl.remove(existing);
@@ -3747,7 +3747,7 @@ export function hideUpgradeHandHighlights(controllers) {
 }
 
 /** Updates spinning animation of the highlight */
-export function updateUpgradeHandHighlights(now) {
+function updateUpgradeHandHighlights(now) {
   [readyGroup, upgradeGroup].forEach(g => {
     // This is handled via normal scene graph if attached to controller
   });

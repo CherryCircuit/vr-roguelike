@@ -213,22 +213,22 @@ class SeedDeck {
 // ── Helper Functions ───────────────────────────────────────
 
 // Generate a daily seed (same for everyone on the same day)
-export function getDailySeed() {
+function getDailySeed() {
   return Math.floor(Date.now() / 86400000);
 }
 
 // Generate a weekly seed (same for everyone in the same week)
-export function getWeeklySeed() {
+function getWeeklySeed() {
   return Math.floor(Date.now() / 604800000);
 }
 
 // Generate a random seed
-export function getRandomSeed() {
+function getRandomSeed() {
   return Date.now();
 }
 
 // Parse seed from string (supports numbers and strings)
-export function parseSeed(input) {
+function parseSeed(input) {
   if (typeof input === 'number') return input;
   
   // Hash string to number

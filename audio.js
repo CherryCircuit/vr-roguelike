@@ -11,7 +11,7 @@ function getAudioContext() {
   return audioCtx;
 }
 
-export function resumeAudioContext() {
+function resumeAudioContext() {
   const ctx = getAudioContext();
   if (ctx.state === 'suspended') {
     ctx.resume();
@@ -132,7 +132,7 @@ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIn
 }
 
 // ── Double Shot sound ──────────────────────────────────────
-export function playDoubleShotSound() {
+function playDoubleShotSound() {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
@@ -851,7 +851,7 @@ export function playErrorSound() {
 //
 // Note: This sound is used for the TITLE → PLAYING transition (main menu to level 1).
 // Subsequent levels use LEVEL_INTRO sequence (issue #18) which doesn't require this transition.
-export function playTransitionSound() {
+function playTransitionSound() {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
@@ -1478,7 +1478,7 @@ export function fadeOutMusic(durationMs = 1200) {
   requestAnimationFrame(step);
 }
 
-export function setMusicVolume(vol) {
+function setMusicVolume(vol) {
   musicVolume = Math.max(0, Math.min(1, vol));
   if (currentMusic) {
     currentMusic.volume = musicVolume;
