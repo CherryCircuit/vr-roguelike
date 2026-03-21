@@ -9850,6 +9850,7 @@ function buildSynthwaveValleyScene(group) {
   makeLayer(0xE00186, 0.18, 80, -850, -10);
 
   // Sun + glow - positioned to match atmosphere gradient (non-billboarding flat planes)
+  // Sun + glow - flat planes (no billboard), using retro synthwave PNG
   const sunGroup = new THREE.Group();
   sunGroup.position.set(0, 30, -760);
   group.add(sunGroup);
@@ -9866,49 +9867,10 @@ function buildSynthwaveValleyScene(group) {
     ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
     return new THREE.CanvasTexture(c);
   };
-  // Retro synthwave sun disc with horizontal scan lines
-  const makeSunDiscTex = () => {
-    const c = document.createElement('canvas');
-    c.width = 512; c.height = 512;
-    const ctx = c.getContext('2d');
-    const r = 248;
-    const cx = 256, cy = 256;
-    // Radial gradient: white center fading to orange-red edges
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    grad.addColorStop(0, '#ffffff');
-    grad.addColorStop(0.2, '#fff5e0');
-    grad.addColorStop(0.4, '#ffcc66');
-    grad.addColorStop(0.6, '#ff9933');
-    grad.addColorStop(0.8, '#FE9753');
-    grad.addColorStop(1.0, '#cc3300');
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = grad;
-    ctx.fill();
-    // Horizontal scan line bands (lower half, thicker at bottom)
-    ctx.globalCompositeOperation = 'destination-out';
-    const bandDefs = [
-      { y: 0.90, h: 0.065 },
-      { y: 0.82, h: 0.050 },
-      { y: 0.75, h: 0.038 },
-      { y: 0.69, h: 0.028 },
-      { y: 0.64, h: 0.020 },
-      { y: 0.60, h: 0.013 },
-      { y: 0.57, h: 0.008 },
-      { y: 0.54, h: 0.004 },
-    ];
-    for (const b of bandDefs) {
-      const by = b.y * 512;
-      const bh = b.h * 512;
-      ctx.fillStyle = 'black';
-      ctx.fillRect(0, by - bh / 2, 512, bh);
-    }
-    ctx.globalCompositeOperation = 'source-over';
-    return new THREE.CanvasTexture(c);
-  };
-  const sunGlowTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(254,151,83,0.85)');  // EXACT: #FE9753
-  const sunOuterGlowTex = makeRadial('rgba(254,151,83,0.9)', 'rgba(224,1,134,0.3)');  // EXACT: #FE9753 → #E00186
-  const sunDiscTex = makeSunDiscTex();
+
+  const sunGlowTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(254,151,83,0.85)');
+  const sunOuterGlowTex = makeRadial('rgba(254,151,83,0.9)', 'rgba(224,1,134,0.3)');
+
   // Outer massive glow (flat plane, no billboard)
   const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
   const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), sunOuterGlowMat);
@@ -9916,6 +9878,7 @@ function buildSynthwaveValleyScene(group) {
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
   registerFadeMaterial(sunOuterGlowMat);
+
   // Main bright glow
   const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
   const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(550, 550), sunGlowMat);
@@ -9923,9 +9886,12 @@ function buildSynthwaveValleyScene(group) {
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
   registerFadeMaterial(sunGlowMat);
-  // Retro scan-line sun disc (flat plane, no billboard)
-  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunDiscTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), sunCoreMat);
+
+  // Retro synthwave sun disc from PNG (flat plane, no billboard)
+  const texLoader = new THREE.TextureLoader();
+  const sunDiscTex = texLoader.load('assets/sun-retro.png');
+  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunDiscTex, color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
+  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), sunCoreMat);
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
