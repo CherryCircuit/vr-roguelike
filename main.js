@@ -152,7 +152,13 @@ const MAX_PROJECTILES = 100;
 const PROJECTILE_POOL_SIZE = 120;
 
 // Per-instance data arrays (parallel to InstancedMesh instance indices)
-const projectileInstanceData = [];  // { active, velocity, stats, controllerIndex, ... }
+// FIXED: Use pool-specific data arrays to prevent corruption when multiple weapon types fire simultaneously
+const projectileInstanceData = {
+  laser: [],
+  buckshot: [],
+  seeker: [],
+  plasma_carbine: []
+};  // poolType -> [{ active, velocity, stats, controllerIndex, ... }]
 
 // InstancedMesh references per pool type
 const instancedProjectiles = {};  // poolType -> { mesh, count, freeIndices: Set }
@@ -456,7 +462,7 @@ function init() {
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x888888, 0.025);  // Visible atmospheric fog (will be overridden per biome)
+  scene.fog = new THREE.FogExp2(0x888888, 0.018);  // Reduced fog density to fix black plane in VR
 
   // Camera - added directly to scene for proper VR hand positioning
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -865,6 +871,8 @@ function clearBiomeScene() {
 
 function disposeObject3D(obj) {
   if (!obj) return;
+  // Guard: only traverse if obj is a THREE.Object3D (proxy objects from InstancedMesh pools don't have .traverse)
+  if (typeof obj.traverse !== 'function') return;
   obj.traverse((child) => {
     if (child.geometry) child.geometry.dispose();
     if (child.material) {
@@ -6472,10 +6480,13 @@ function initProjectilePool() {
   scene.add(plasmaIM);
   instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, maxCount: 30, freeIndices: new Set() };
 
-  // Initialize instance data array with nulls
-  for (let i = 0; i < PROJECTILE_POOL_SIZE; i++) {
-    projectileInstanceData.push(null);
-  }
+  // Initialize instance data arrays for each pool type (separate arrays prevent corruption)
+  Object.keys(projectileInstanceData).forEach(poolType => {
+    const maxCount = instancedProjectiles[poolType].maxCount;
+    for (let i = 0; i < maxCount; i++) {
+      projectileInstanceData[poolType].push(null);
+    }
+  });
 
   console.log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(20), seeker(28), plasma_carbine(30)');
 }
@@ -6504,10 +6515,10 @@ function getPooledProjectile(poolType, color) {
   pool.mesh.instanceColor.needsUpdate = true;
 
   // Initialize instance data
-  if (!projectileInstanceData[slotIndex]) {
-    projectileInstanceData[slotIndex] = {};
+  if (!projectileInstanceData[poolType][slotIndex]) {
+    projectileInstanceData[poolType][slotIndex] = {};
   }
-  const data = projectileInstanceData[slotIndex];
+  const data = projectileInstanceData[poolType][slotIndex];
   data.active = true;
   data.poolType = poolType;
   data.instanceIndex = slotIndex;
@@ -6524,7 +6535,7 @@ function getPooledProjectile(poolType, color) {
 // to the InstancedMesh via commitProjectileInstance().
 function createProjectileProxy(poolType, instanceIndex, color) {
   const pool = instancedProjectiles[poolType];
-  const data = projectileInstanceData[instanceIndex];
+  const data = projectileInstanceData[poolType][instanceIndex];
 
   // Proxy position that writes to InstancedMatrix on commit
   const pos = new THREE.Vector3();
@@ -6610,8 +6621,8 @@ function returnProjectileToPool(proj) {
     }
 
     // Clear instance data
-    if (projectileInstanceData[instanceIndex]) {
-      const d = projectileInstanceData[instanceIndex];
+    if (projectileInstanceData[poolType][instanceIndex]) {
+      const d = projectileInstanceData[poolType][instanceIndex];
       d.active = false;
       // Reset all userData fields
       const ud = proj.userData;
@@ -11380,6 +11391,4 @@ function buildHellscapeLavaScene(group) {
   group.position.set(26.599, 0.05, -0.486);
   group.rotation.y = 0.248; // yaw: 14.21°
 }
-
-
 
