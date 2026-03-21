@@ -72,8 +72,7 @@ import {
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
 import { getThemeForLevel, initAmbientParticles, updateAmbientParticles, createInnkeeper } from './scenery.js';
-import { getBiomePool } from './seed.js';
-import { initDreamWorld, enterDreamWorld, exitDreamWorld, updateDreamWorld, handleDreamProjectileHit, getDreamFogSettings, getDreamSpawnPosition } from './dream-world.js';
+import { initDreamWorld, enterDreamWorld, exitDreamWorld, getDreamFogSettings, getDreamSpawnPosition } from './dream-world.js';
 
 // Expose game state to window for debugging/testing
 window.State = State;
@@ -248,6 +247,9 @@ let floorMaterial = null;
 let floorBaseColor = new THREE.Color(0x220044);
 let floorFlashTimer = 0;
 let floorFlashing = false;
+
+// Pre-allocated raycasters (reused to avoid per-frame GC)
+const _uiRaycaster = new THREE.Raycaster();
 
 // Low health warning
 let lowHealthWarningActive = false;
@@ -446,35 +448,6 @@ function init() {
   // Load debug settings from localStorage
   loadDebugSettings();
   loadDreamState();
-
-  // Apply distance-based fade to objects for FFR
-  function applyDistanceFade(object, cameraPos) {
-    if (!object || !object.position) return;
-    
-    const dist = object.position.distanceTo(cameraPos);
-    
-    // Fade objects beyond render distance
-    if (dist > ffrRenderDistance) {
-      const fadeAmount = Math.min(1, (dist - ffrRenderDistance) / 20);
-      
-      // Recursively apply opacity fade to all materials
-      object.traverse((child) => {
-        if (child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach((mat) => {
-              if (mat.transparent !== undefined) {
-                mat.opacity = Math.max(0, (mat.__fadeBase || mat.opacity || 1) * (1 - fadeAmount));
-                mat.transparent = true;
-              }
-            });
-          } else if (child.material.transparent !== undefined) {
-            child.material.opacity = Math.max(0, (child.material.__fadeBase || child.material.opacity || 1) * (1 - fadeAmount));
-            child.material.transparent = true;
-          }
-        }
-      });
-    }
-  }
 
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
@@ -715,10 +688,6 @@ function initSelectiveBloom() {
   console.log('[bloom] Selective bloom initialized (desktop only)');
 }
 
-function enableBloomOnObject(obj) {
-  obj.layers.enable(BLOOM_LAYER);
-}
-
 function resizeBloomComposer() {
   if (!bloomComposer) return;
   const w = window.innerWidth;
@@ -743,6 +712,7 @@ function createEnvironment() {
   }
   gridHelper.frustumCulled = false;
   scene.add(gridHelper);
+  gridHelper.matrixAutoUpdate = false;
 
   const floorGeo = new THREE.PlaneGeometry(200, 200);
   const floorMat = new THREE.MeshBasicMaterial({
@@ -765,6 +735,7 @@ function createEnvironment() {
   floor.geometry.boundingSphere.radius = 150;
   floor.geometry.boundingSphere.center.set(0, 0, 0);
   scene.add(floor);
+  floor.matrixAutoUpdate = false;
 
   // Horizon glow ring — a cylinder ring at the grid edge, visible from inside
   // Provides the illusion of a glowing horizon all around the player
@@ -1351,90 +1322,6 @@ function updateInnkeeperForLevel(level) {
   }
 }
 
-function updateInnkeeperMessage(playerPos) {
-  if (!innkeeperRef || game.inDreamWorld || game.state !== State.PLAYING) {
-    if (innkeeperMessageVisible) {
-      hideFloatingMessage();
-      innkeeperMessageVisible = false;
-    }
-    return;
-  }
-
-  const dist = innkeeperRef.position.distanceTo(playerPos);
-  if (dist < 3.2) {
-    if (!innkeeperMessageVisible) {
-      showFloatingMessage("Welcome, traveler! Wish I had that 'plasma carbine' back in stock... strange dreams lately.", {
-        color: '#ffeecc',
-        fontSize: 44,
-        scale: 0.35,
-        sticky: true,
-        offsetY: -0.05,
-        offsetZ: -0.9,
-      });
-      innkeeperMessageVisible = true;
-    }
-  } else if (innkeeperMessageVisible) {
-    hideFloatingMessage();
-    innkeeperMessageVisible = false;
-  }
-}
-
-function initDreamFadeOverlay() {
-  dreamFadeOverlay = new THREE.Mesh(
-    new THREE.PlaneGeometry(6, 6),
-    new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    })
-  );
-  dreamFadeOverlay.renderOrder = 1003;
-  dreamFadeOverlay.visible = false;
-  dreamFadeOverlay.position.set(0, 0, -0.25);
-  camera.add(dreamFadeOverlay);
-}
-
-function createDreamTrigger() {
-  if (!scene || dreamTriggerMesh) return;
-  const core = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.6, 0),
-    new THREE.MeshBasicMaterial({ color: 0x88ccff })
-  );
-  const glow = new THREE.Mesh(
-    new THREE.SphereGeometry(0.9, 8, 8),
-    new THREE.MeshBasicMaterial({
-      color: 0xccf2ff,
-      transparent: true,
-      opacity: 0.4,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    })
-  );
-  const group = new THREE.Group();
-  group.add(core);
-  group.add(glow);
-  group.position.set(0, 8, 50);
-  group.userData.isDreamTrigger = true;
-  dreamTriggerMesh = group;
-  dreamTriggerMesh.visible = false;
-  scene.add(group);
-}
-
-function updateDreamTrigger(now) {
-  if (!dreamTriggerMesh) return;
-  if (game.inDreamWorld || game.state !== State.PLAYING) {
-    dreamTriggerMesh.visible = false;
-    return;
-  }
-  const bob = Math.sin(now * 0.002) * 0.6;
-  dreamTriggerMesh.position.y = 8 + bob;
-  dreamTriggerMesh.rotation.y += 0.01;
-  dreamTriggerMesh.visible = true;
-}
-
 function hideBaseEnvironment() {
   if (!dreamOriginalEnv) return;
   if (gridHelper) gridHelper.visible = false;
@@ -1529,59 +1416,6 @@ function exitDreamWorldScene() {
   if (dreamTriggerMesh) dreamTriggerMesh.visible = true;
 }
 
-function startDreamTransition() {
-  if (dreamTransition) return;
-  dreamReturnPosition.copy(camera.position);
-  dreamTransition = { phase: 'out', timer: 0, duration: 0.8, target: 'enter' };
-  showFloatingMessage('The dream calls...', {
-    color: '#ffffff',
-    fontSize: 64,
-    scale: 0.45,
-    duration: 2000,
-  });
-}
-
-function startDreamReturn() {
-  if (dreamTransition) return;
-  dreamTransition = { phase: 'out', timer: 0, duration: 0.6, target: 'exit' };
-  showFloatingMessage('The dream fades...', {
-    color: '#ffffff',
-    fontSize: 56,
-    scale: 0.4,
-    duration: 1500,
-  });
-}
-
-function updateDreamTransition(rawDt) {
-  if (!dreamTransition || !dreamFadeOverlay) return;
-  dreamTransition.timer += rawDt;
-  const t = Math.min(1, dreamTransition.timer / dreamTransition.duration);
-  const opacity = dreamTransition.phase === 'out' ? t : 1 - t;
-  dreamFadeOverlay.visible = opacity > 0;
-  dreamFadeOverlay.material.opacity = opacity;
-
-  if (t >= 1) {
-    if (dreamTransition.phase === 'out') {
-      if (dreamTransition.target === 'enter') enterDreamWorldScene();
-      if (dreamTransition.target === 'exit') exitDreamWorldScene();
-      dreamTransition.phase = 'in';
-      dreamTransition.timer = 0;
-    } else {
-      dreamFadeOverlay.visible = false;
-      dreamTransition = null;
-    }
-  }
-}
-
-function applyDreamReward() {
-  if (game.dreamCompleted) return;
-  game.dreamCompleted = true;
-  addUpgrade('dream_fragment', 'left');
-  addUpgrade('dream_fragment', 'right');
-  saveDreamState();
-  startDreamFragmentTrail();
-}
-
 function startDreamFragmentTrail() {
   if (!camera) return;
   if (dreamTrail && dreamTrail.group) {
@@ -1625,26 +1459,6 @@ function startDreamFragmentTrail() {
     startedAt: performance.now(),
     expiresAt: performance.now() + 30000,
   };
-}
-
-function updateDreamFragmentTrail(now) {
-  if (!dreamTrail) return;
-  if (now >= dreamTrail.expiresAt) {
-    camera.remove(dreamTrail.group);
-    if (dreamTrail.geo) dreamTrail.geo.dispose();
-    if (dreamTrail.points && dreamTrail.points.material) dreamTrail.points.material.dispose();
-    dreamTrail = null;
-    return;
-  }
-
-  const positions = dreamTrail.geo.attributes.position.array;
-  dreamTrail.offsets.forEach((o, i) => {
-    const spin = o.angle + (now * 0.001 * o.speed);
-    positions[i * 3] = Math.cos(spin) * o.radius;
-    positions[i * 3 + 1] = o.height + Math.sin(now * 0.002 + i) * 0.02;
-    positions[i * 3 + 2] = Math.sin(spin) * o.radius - 0.6;
-  });
-  dreamTrail.geo.attributes.position.needsUpdate = true;
 }
 
 function startEnvironmentFade(direction, duration, onComplete) {
@@ -1929,6 +1743,7 @@ function createMountains() {
     const fillMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
     fillMesh.position.set(0, 0, z);
     fillMesh.renderOrder = -5;  // Draw after foreground, before sun
+    fillMesh.matrixAutoUpdate = false;
     scene.add(fillMesh);
     registerFadeMaterial(fillMesh.material);
 
@@ -1937,6 +1752,7 @@ function createMountains() {
     edgePoints.push(new THREE.Vector3(100, 0, z));
     const geometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
     const edgeLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.8 }));
+    edgeLine.matrixAutoUpdate = false;
     scene.add(edgeLine);
     registerFadeMaterial(edgeLine.material);
 
@@ -2319,9 +2135,9 @@ function handleTitleTrigger(controller) {
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-  const raycaster = new THREE.Raycaster(origin, direction, 0, 20);
+  _uiRaycaster.set(origin, direction, 0, 20);
 
-  const btnHit = getTitleButtonHit(raycaster);
+  const btnHit = getTitleButtonHit(_uiRaycaster);
   if (btnHit === 'scoreboard') {
     playMenuClick();
     scoreboardFromGameOver = false;
@@ -2649,9 +2465,9 @@ function handleNameEntryTrigger(controller) {
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-  const raycaster = new THREE.Raycaster(origin, direction, 0, 10);
+  _uiRaycaster.set(origin, direction, 0, 10);
 
-  const result = getNameEntryHit(raycaster);
+  const result = getNameEntryHit(_uiRaycaster);
   if (result && result.action === 'country') {
     playMenuClick();
     scoreboardFromGameOver = true;
@@ -2697,9 +2513,9 @@ function handleScoreboardTrigger(controller) {
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-  const raycaster = new THREE.Raycaster(origin, direction, 0, 20);
+  _uiRaycaster.set(origin, direction, 0, 20);
 
-  const action = getScoreboardHit(raycaster);
+  const action = getScoreboardHit(_uiRaycaster);
   if (action === 'back') {
     hideScoreboard();
     resetGame();
@@ -2730,9 +2546,9 @@ function handleCountrySelectTrigger(controller) {
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-  const raycaster = new THREE.Raycaster(origin, direction, 0, 10);
+  _uiRaycaster.set(origin, direction, 0, 10);
 
-  const result = getCountrySelectHit(raycaster, COUNTRIES);
+  const result = getCountrySelectHit(_uiRaycaster, COUNTRIES);
   if (!result) return;
 
   if (result.action === 'back') {
@@ -2998,16 +2814,6 @@ function updateShields(now) {
     const pulse = 1 + Math.sin(now * 0.01) * 0.05;
     shield.mesh.scale.setScalar(pulse);
   }
-}
-
-function checkShieldBlock(projectilePos) {
-  for (const shield of activeShields) {
-    const dist = projectilePos.distanceTo(shield.position);
-    if (dist < 0.8) {
-      return true;  // Blocked
-    }
-  }
-  return false;
 }
 
 // ============================================================
@@ -3826,21 +3632,6 @@ function destroyBlackHole(bh) {
   });
 }
 
-// Check if projectile hits a mine (for triggering black holes by shooting)
-function checkProjectileHitsMine(proj) {
-  for (let i = activeMines.length - 1; i >= 0; i--) {
-    const mine = activeMines[i];
-    if (!mine.armed) continue;
-
-    const dist = proj.position.distanceTo(mine.mesh.position);
-    if (dist < 0.3) {
-      triggerBlackHole(mine, i);
-      return true;
-    }
-  }
-  return false;
-}
-
 // ============================================================
 //  NANITE SWARM IMPLEMENTATION
 // ============================================================
@@ -4111,9 +3902,9 @@ function checkProjectileNaniteInteraction(proj) {
 
 function fireTetherHarpoon(origin, direction, hand, altWeapon) {
   // Raycast to find enemy within range
-  const raycaster = new THREE.Raycaster(origin, direction, 0, altWeapon.range);
+  _uiRaycaster.set(origin, direction, 0, altWeapon.range);
   const enemyMeshes = getEnemyMeshes(true);
-  const hits = raycaster.intersectObjects(enemyMeshes, true);
+  const hits = _uiRaycaster.intersectObjects(enemyMeshes, true);
 
   if (hits.length === 0) {
     console.log('[Tether Harpoon] No target in range');
@@ -6024,9 +5815,9 @@ function handleDebugMenuTrigger(controller) {
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-  const raycaster = new THREE.Raycaster(origin, direction, 0, 10);
+  _uiRaycaster.set(origin, direction, 0, 10);
 
-  const result = getDebugMenuHit(raycaster);
+  const result = getDebugMenuHit(_uiRaycaster);
   if (result && result.action === 'back') {
     playMenuClick();
     saveDebugSettings();  // Save settings before leaving
@@ -6838,17 +6629,6 @@ function returnProjectileToPool(proj) {
   }
 }
 
-// Commit all active projectile instance matrices to GPU
-// Call once per frame after updateProjectiles()
-function commitAllProjectileInstances() {
-  for (const poolType in instancedProjectiles) {
-    const pool = instancedProjectiles[poolType];
-    if (pool.mesh.instanceMatrix) {
-      pool.mesh.instanceMatrix.needsUpdate = true;
-    }
-  }
-}
-
 function isHostileProjectile(proj) {
   return !!(proj && proj.userData && (proj.userData.isBossProjectile || (proj.userData.damage && !proj.userData.stats)));
 }
@@ -7426,21 +7206,6 @@ function chargeTimeToProgress(t) {
   return 1 - Math.exp(-k * clampedT);
 }
 
-/** Charge shot: scale 0.6s->0.2, 1.5s->0.3, 2.5s->0.4, 4s->0.6, 5s->1.0 */
-function chargeTimeToScale(t) {
-  if (t >= CHARGE_SHOT_MAX_TIME) return 1;
-  if (t <= 0.6) return (t / 0.6) * 0.2;
-  const keyframes = [[0.6, 0.2], [1.5, 0.3], [2.5, 0.4], [4, 0.6], [5, 1]];
-  for (let k = 1; k < keyframes.length; k++) {
-    if (t <= keyframes[k][0]) {
-      const [t0, s0] = keyframes[k - 1];
-      const [t1, s1] = keyframes[k];
-      return s0 + (s1 - s0) * (t - t0) / (t1 - t0);
-    }
-  }
-  return 1;
-}
-
 /**
  * Create or update charge visual effects on controller
  * - Glowing sphere that gets brighter with charge
@@ -7816,11 +7581,6 @@ function processSeekerBurstQueue(now) {
 // ============================================================
 //  SLOW-MO DEATH CAMERA
 // ============================================================
-function triggerSlowmoDeathSequence() {
-  game.slowmoActive = true;
-  game.slowmoTimer = performance.now() + game.slowmoDuration;
-  console.log('[slow-mo] Death sequence triggered!');
-}
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
@@ -8546,9 +8306,8 @@ function updateProjectiles(dt) {
 
     let hits = [];
     if (nearbyEnemies.length > 0) {
-      const raycaster = new THREE.Raycaster();
-      raycaster.set(proj.position, proj.userData.velocity.clone().normalize());
-      hits = raycaster.intersectObjects(nearbyEnemies, true);
+      _uiRaycaster.set(proj.position, proj.userData.velocity.clone().normalize());
+      hits = _uiRaycaster.intersectObjects(nearbyEnemies, true);
     }
 
     if (hits.length > 0 && hits[0].distance < moveDistance * 2) {
@@ -8736,9 +8495,8 @@ function selectUpgrade(controller) {
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-
-  const raycaster = new THREE.Raycaster(origin, direction, 0, 10);
-  const result = getUpgradeCardHit(raycaster);
+  _uiRaycaster.set(origin, direction, 0, 10);
+  const result = getUpgradeCardHit(_uiRaycaster);
 
   if (result) {
     selectUpgradeAndAdvance(result.upgrade, result.hand);
