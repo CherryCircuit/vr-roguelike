@@ -384,7 +384,7 @@ export const THEMES = {
   synthwave_valley: {
     skyColor: 0x1a004a,
     fogColor: 0x3a1a5a,
-    fogDensity: 0.030,
+    fogDensity: 0.018,
     gridColor: '#ff2ed1',
     gridOpacity: 0,
     gridScale: 1,

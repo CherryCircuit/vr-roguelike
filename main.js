@@ -9755,7 +9755,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Set synthwave fog for atmospheric depth and distance fade
   if (scene) {
-    scene.fog = new THREE.FogExp2(0x2C0051, 0.025);  // Purple fog matching biome
+    scene.fog = new THREE.FogExp2(0x2C0051, 0.018);  // Purple fog matching biome
   }
 
   // Sky dome (no stars, we use global starfield)
@@ -9779,6 +9779,28 @@ function buildSynthwaveValleyScene(group) {
   sky.frustumCulled = false;
   group.add(sky);
   registerFadeMaterial(skyMat);
+
+  // Atmosphere gradient cylinder - matches base createAtmosphere() but inside biome scene group
+  const atmCanvas = document.createElement('canvas');
+  atmCanvas.width = 4;
+  atmCanvas.height = 256;
+  const atmCtx = atmCanvas.getContext('2d');
+  const atmGrad = atmCtx.createLinearGradient(0, 256, 0, 0);  // bottom to top
+  atmGrad.addColorStop(0, 'rgba(255, 126, 49, 1.0)');       // #ff7e31 horizon orange
+  atmGrad.addColorStop(0.4, 'rgba(243, 7, 135, 0.9)');      // #f30787 pink
+  atmGrad.addColorStop(0.75, 'rgba(113, 0, 110, 0.6)');     // #71006e purple
+  atmGrad.addColorStop(1.0, 'rgba(26, 0, 74, 0.0)');        // #1a004a fade to transparent
+  atmCtx.fillStyle = atmGrad;
+  atmCtx.fillRect(0, 0, 4, 256);
+  const atmTexture = new THREE.CanvasTexture(atmCanvas);
+  atmTexture.wrapS = THREE.RepeatWrapping;
+  const atmGeo = new THREE.CylinderGeometry(92, 92, 54, 48, 1, true);
+  const atmMat = new THREE.MeshBasicMaterial({ map: atmTexture, transparent: true, opacity: 1.0, side: THREE.BackSide, depthWrite: false });
+  const atmCylinder = new THREE.Mesh(atmGeo, atmMat);
+  atmCylinder.position.set(0, 25, 0);  // base near ground, tall enough for atmosphere
+  atmCylinder.renderOrder = -13;
+  group.add(atmCylinder);
+  registerFadeMaterial(atmMat);
 
   // Terrain - EXACT colors: Gridlines #015CC1 (bright blue), Between gridlines #0C0E3E (dark blue)
   // PERFORMANCE FIX: Reduced from 240x240 (57,600 vertices) to 120x120 (14,400 vertices) for 75% reduction
@@ -9849,10 +9871,9 @@ function buildSynthwaveValleyScene(group) {
   // EXACT: Mountain tips #E00186 (pink/magenta) - single layer at -850 from bae1304
   makeLayer(0xE00186, 0.18, 80, -850, -10);
 
-  // Sun + glow - positioned to match atmosphere gradient (non-billboarding flat planes)
   // Sun + glow - flat planes (no billboard), using retro synthwave PNG
   const sunGroup = new THREE.Group();
-  sunGroup.position.set(0, 30, -760);
+  sunGroup.position.set(0, 40, -80);  // Close enough to be visible through fog, above horizon line
   group.add(sunGroup);
 
   const makeRadial = (inner, outer) => {
@@ -9871,27 +9892,48 @@ function buildSynthwaveValleyScene(group) {
   const sunGlowTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(254,151,83,0.85)');
   const sunOuterGlowTex = makeRadial('rgba(254,151,83,0.9)', 'rgba(224,1,134,0.3)');
 
-  // Outer massive glow (flat plane, no billboard)
-  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), sunOuterGlowMat);
+  // Outer massive glow (flat plane, no billboard, fog-proof, no depth test)
+  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), sunOuterGlowMat);
   sunOuterGlow.frustumCulled = false;
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
   registerFadeMaterial(sunOuterGlowMat);
 
-  // Main bright glow
-  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(550, 550), sunGlowMat);
+  // Main bright glow (fog-proof, no depth test)
+  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), sunGlowMat);
   sunGlow.frustumCulled = false;
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
   registerFadeMaterial(sunGlowMat);
 
   // Retro synthwave sun disc from PNG (flat plane, no billboard)
-  const texLoader = new THREE.TextureLoader();
-  const sunDiscTex = texLoader.load('assets/sun-retro.png');
-  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunDiscTex, color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.NormalBlending, side: THREE.DoubleSide });
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), sunCoreMat);
+  // PNG has white background - process to make white pixels transparent
+  const sunDiscTex = new THREE.TextureLoader().load('assets/sun-retro.png');
+  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunDiscTex, color: 0xffffff, transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide, fog: false });
+  // Process: load PNG, threshold white pixels to transparent, replace material map
+  const sunDiscImg = new Image();
+  sunDiscImg.crossOrigin = 'anonymous';
+  sunDiscImg.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = sunDiscImg.width;
+    c.height = sunDiscImg.height;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(sunDiscImg, 0, 0);
+    const id = ctx.getImageData(0, 0, c.width, c.height);
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if ((d[i] + d[i+1] + d[i+2]) / 3 > 240) d[i+3] = 0;
+    }
+    ctx.putImageData(id, 0, 0);
+    if (sunCoreMat.map) sunCoreMat.map.dispose();
+    sunCoreMat.map = new THREE.CanvasTexture(c);
+    sunCoreMat.map.needsUpdate = true;
+    sunCoreMat.needsUpdate = true;
+  };
+  sunDiscImg.src = 'assets/sun-retro.png';
+  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), sunCoreMat);
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
