@@ -44,6 +44,11 @@ let comboSprite = null;
 let comboCooldownSprite = null;
 let fpsSprite = null;
 
+// FPS counter optimization: reuse canvas/texture to avoid churn
+let fpsCanvas = null;
+let fpsCtx = null;
+let fpsTexture = null;
+
 // Debug menu state
 let debugToggleItems = [];
 
@@ -82,6 +87,18 @@ let keyboardKeys = [];
 let nameEntryActionMeshes = [];
 let hoveredKey = null;
 let keyboardMeshCache = []; // Cached array of keyboard meshes for faster hit testing
+
+// Name entry optimization: cached sprites and reusable character slot canvases
+let nameEntryHeaderSprite = null;
+let nameEntryScoreSprite = null;
+let nameEntryCountrySprite = null;
+let nameEntryChangeTextSprite = null;
+let nameEntryCharSprites = []; // 6 pre-created character slot sprites
+let nameEntryCharCanvases = []; // 6 reusable canvases for character slots
+let nameEntryCharCtxs = []; // 6 reusable canvas contexts
+let nameEntryCharTextures = []; // 6 reusable textures
+let nameEntryStaticGroup = null; // Group to hold cached static sprites
+let nameEntryInitialized = false; // Flag to track if sprites are pre-created
 
 // Keyboard optimization: pooled materials and geometries
 const keyboardKeyPool = {
@@ -437,10 +454,25 @@ export function initHUD(camera, scene) {
   camera.add(hitFlash);
 
   // ── FPS Counter (top left, attached to camera, more visible in VR) ──
-  fpsSprite = makeSprite('FPS: 0', { fontSize: 36, color: '#00ff00', shadow: true, scale: 0.15 });
+  // Optimized: reuse canvas/texture to avoid creating/disposing every 250ms
+  fpsCanvas = document.createElement('canvas');
+  fpsCanvas.width = 1024;
+  fpsCanvas.height = 128;
+  fpsCtx = fpsCanvas.getContext('2d');
+  fpsTexture = new THREE.CanvasTexture(fpsCanvas);
+  fpsTexture.minFilter = THREE.LinearFilter;
+
+  const fpsGeo = new THREE.PlaneGeometry(0.15 * (1024 / 128), 0.15);
+  const fpsMat = new THREE.MeshBasicMaterial({
+    map: fpsTexture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  fpsSprite = new THREE.Mesh(fpsGeo, fpsMat);
   fpsSprite.position.set(-0.15, 0.12, -0.5);  // Moved closer to center
   fpsSprite.renderOrder = 1001;
-  fpsSprite.material.depthTest = false;  // Always render on top
   camera.add(fpsSprite);
 
   // ── Boss health bar (top center, camera-attached, 3 segments) ──
@@ -1825,15 +1857,38 @@ export function updateFPS(now, opts = {}) {
       color = fpsColor;
     }
 
-    const { texture, aspect } = makeTextTexture(text, {
-      fontSize: perfMonitor ? 20 : 32,
-      color,
-      shadow: true,
-      maxWidth: perfMonitor ? 500 : null,
+    // Optimized: reuse canvas/texture instead of creating new ones
+    // Clear canvas
+    fpsCtx.clearRect(0, 0, fpsCanvas.width, fpsCanvas.height);
+
+    // Configure text style
+    const fontSize = perfMonitor ? 48 : 72;
+    fpsCtx.font = `bold ${fontSize}px Arial, sans-serif`;
+    fpsCtx.textAlign = 'center';
+    fpsCtx.textBaseline = 'middle';
+
+    // Drop shadow
+    fpsCtx.fillStyle = 'rgba(0,0,0,0.6)';
+    const lines = text.split('\n');
+    const lineHeight = fontSize * 1.3;
+    lines.forEach((line, i) => {
+      const y = (fpsCanvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+      fpsCtx.fillText(line, fpsCanvas.width / 2 + 2, y + 2);
     });
-    if (fpsSprite.material.map) fpsSprite.material.map.dispose();
-    fpsSprite.material.map = texture;
-    fpsSprite.material.needsUpdate = true;
+
+    // Main text
+    fpsCtx.fillStyle = color;
+    lines.forEach((line, i) => {
+      const y = (fpsCanvas.height / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+      fpsCtx.fillText(line, fpsCanvas.width / 2, y);
+    });
+
+    // Update texture (no dispose/recreate)
+    fpsTexture.needsUpdate = true;
+
+    // Adjust sprite scale based on text content
+    const textWidth = Math.max(...lines.map(l => fpsCtx.measureText(l).width));
+    const aspect = textWidth / fpsCanvas.height;
     fpsSprite.scale.set(aspect * 0.15, 0.15, 1);
     fpsSprite.visible = true;
     lastFpsUpdate = now;
@@ -2550,9 +2605,84 @@ function initKeyboardPool() {
   keyboardKeyPool.initialized = true;
 }
 
+// Initialize name entry character slot sprites (call once)
+// Creates reusable canvases/textures for 6 character slots to avoid
+// creating/disposing textures on every keypress
+function initNameEntryCharSprites() {
+  if (nameEntryInitialized) return;
+
+  const charSize = 256; // Canvas size for each character
+  const slotScale = 0.22;
+  const fontSize = 64;
+
+  for (let i = 0; i < 6; i++) {
+    // Create reusable canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = charSize;
+    canvas.height = charSize;
+    const ctx = canvas.getContext('2d');
+
+    // Create texture from canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+
+    // Create sprite mesh (PlaneGeometry, not THREE.Sprite)
+    const aspect = 1; // Square
+    const geo = new THREE.PlaneGeometry(slotScale * aspect, slotScale);
+    const mat = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 999;
+    mesh.userData.isSlotChar = true;
+    mesh.visible = false; // Hidden until character is typed
+
+    // Store references
+    nameEntryCharCanvases.push(canvas);
+    nameEntryCharCtxs.push(ctx);
+    nameEntryCharTextures.push(texture);
+    nameEntryCharSprites.push(mesh);
+  }
+
+  nameEntryInitialized = true;
+}
+
+// Update a single character slot sprite's texture
+function updateCharSlotSprite(index, char) {
+  if (index < 0 || index >= 6) return;
+  
+  const canvas = nameEntryCharCanvases[index];
+  const ctx = nameEntryCharCtxs[index];
+  const texture = nameEntryCharTextures[index];
+  const mesh = nameEntryCharSprites[index];
+
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (char) {
+    // Draw character
+    ctx.font = 'bold 64px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(char, canvas.width / 2, canvas.height / 2);
+    mesh.visible = true;
+  } else {
+    mesh.visible = false;
+  }
+
+  texture.needsUpdate = true;
+}
+
 export function showNameEntry(score, level, storedName, countryLabel, playerPos) {
   // Initialize pool on first use
   initKeyboardPool();
+  // Initialize cached character slot sprites
+  initNameEntryCharSprites();
 
   hideAll();
   while (nameEntryGroup.children.length) nameEntryGroup.remove(nameEntryGroup.children[0]);
@@ -2619,7 +2749,7 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
   nameEntryGroup.add(changeGroup);
   nameEntryActionMeshes.push(changeMesh);
 
-  // 6 character slot boxes
+  // 6 character slot boxes (using cached sprites)
   const slotWidth = 0.22;
   const slotGap = 0.04;
   const totalWidth = 6 * slotWidth + 5 * slotGap;
@@ -2642,15 +2772,12 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
     const borderColor = i === nameEntryCursor ? 0x00ffff : 0x666666;
     slotGroup.add(new THREE.LineSegments(borderGeo, new THREE.LineBasicMaterial({ color: borderColor })));
 
+    // Use cached character sprite instead of creating new one
     const char = nameEntryName[i] || '';
-    if (char) {
-      const charSprite = makeSprite(char, {
-        fontSize: 64, color: '#ffffff', scale: 0.22,
-      });
-      charSprite.position.set(0, 0, 0.01);
-      charSprite.userData.isSlotChar = true;
-      slotGroup.add(charSprite);
-    }
+    const charSprite = nameEntryCharSprites[i];
+    updateCharSlotSprite(i, char);
+    charSprite.position.set(0, 0, 0.01);
+    slotGroup.add(charSprite);
 
     nameEntrySlots.push({ group: slotGroup, box, boxMat });
     nameEntryGroup.add(slotGroup);
@@ -2948,27 +3075,10 @@ function refreshNameSlots() {
     const isCursor = i === nameEntryCursor || (nameEntryCursor >= 6 && i === 5);
     slot.boxMat.color.setHex(isCursor ? 0x003344 : 0x110022);
 
-    // Remove old char sprite and dispose its texture to prevent memory leak
-    const old = slot.group.children.filter(c => c.userData && c.userData.isSlotChar);
-    old.forEach(c => {
-      if (c.material && c.material.map) {
-        c.material.map.dispose();
-      }
-      if (c.material) c.material.dispose();
-      if (c.geometry) c.geometry.dispose();
-      slot.group.remove(c);
-    });
-
-    // Add new char
+    // Optimized: just update the cached sprite's texture
+    // instead of creating/disposing sprites on every keypress
     const char = nameEntryName[i] || '';
-    if (char) {
-      const charSprite = makeSprite(char, {
-        fontSize: 64, color: '#ffffff', scale: 0.22,
-      });
-      charSprite.position.set(0, 0, 0.01);
-      charSprite.userData.isSlotChar = true;
-      slot.group.add(charSprite);
-    }
+    updateCharSlotSprite(i, char);
   });
 }
 
