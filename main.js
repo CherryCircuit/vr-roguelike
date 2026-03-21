@@ -479,7 +479,7 @@ function init() {
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x888888, 0.018);  // Visible atmospheric fog (will be overridden per biome)
+  scene.fog = new THREE.FogExp2(0x888888, 0.025);  // Visible atmospheric fog (will be overridden per biome)
 
   // Camera - added directly to scene for proper VR hand positioning
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -9958,7 +9958,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Set synthwave fog for atmospheric depth and distance fade
   if (scene) {
-    scene.fog = new THREE.FogExp2(0x2C0051, 0.016);  // Purple fog matching biome
+    scene.fog = new THREE.FogExp2(0x2C0051, 0.025);  // Purple fog matching biome
   }
 
   // Sky dome (no stars, we use global starfield)
