@@ -24,7 +24,9 @@ import {
   playKillsAlertSound, playTingSound, playSeekerBurstSound, playHealSound,
   // Charge cannon sounds
   startChargeSound, updateChargeSound, stopChargeSound,
-  playChargeReadySound, playChargeFireSound
+  playChargeReadySound, playChargeFireSound,
+  // Boss and name entry sounds
+  playIncomingBossSound, playNoOneMakesItSound
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -2416,6 +2418,7 @@ function handleDesktopGameOverClick() {
   } else {
     game.state = State.NAME_ENTRY;
     showNameEntry(game.finalScore, game.finalLevel, getStoredName(), getCountryDisplayLabel());
+    playNoOneMakesItSound();
   }
 }
 
@@ -2627,6 +2630,7 @@ function handleGameOverTrigger(controller) {
   } else {
     game.state = State.NAME_ENTRY;
     showNameEntry(game.finalScore, game.finalLevel, getStoredName(), getCountryDisplayLabel());
+    playNoOneMakesItSound();
   }
 }
 
@@ -6071,7 +6075,7 @@ function startGame() {
   killsAlertShownThisLevel = false;
   const cfg = game._levelConfig;
   if (cfg && !cfg.isBoss) {
-    const threshold = game.level >= 11 ? 10 : 5;
+    const threshold = game.level >= 16 ? 20 : game.level >= 11 ? 15 : game.level >= 6 ? 10 : 5;
     killsAlertTriggerKill = cfg.killTarget - threshold;
     if (killsAlertTriggerKill <= 0) killsAlertTriggerKill = null;
   } else {
@@ -6449,6 +6453,7 @@ function advanceLevelAfterUpgrade() {
       playMusic(bossCategory);
       playBossAlertSound();
       showBossAlert();
+      playIncomingBossSound();
       console.log(`[game] Boss alert for level ${game.level} - boss music started`);
       
       // Hide blaster displays during alert
@@ -6505,7 +6510,7 @@ function advanceLevelAfterUpgrade() {
       killsAlertShownThisLevel = false;
       const cfg = game._levelConfig;
       if (cfg && !cfg.isBoss) {
-        const threshold = game.level >= 11 ? 10 : 5;
+        const threshold = game.level >= 16 ? 20 : game.level >= 11 ? 15 : game.level >= 6 ? 10 : 5;
         killsAlertTriggerKill = cfg.killTarget - threshold;
         if (killsAlertTriggerKill <= 0) killsAlertTriggerKill = null;
       } else {

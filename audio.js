@@ -1097,8 +1097,8 @@ export function playSlowMoReverseSound() {
 
 // ── Kills remaining alert sound ────────────────────────────────
 export function playKillsAlertSound(remaining = null) {
-  if (remaining === 5 || remaining === 10) {
-    const audio = new Audio(`mnt/project/music/${remaining}_kills_remaining.mp3`);
+  if (remaining === 5 || remaining === 10 || remaining === 15 || remaining === 20) {
+    const audio = new Audio(`mnt/project/music/sfx_${remaining}-kills-remaining.mp3`);
     audio.volume = 0.5;
     audio.play().catch(err => {
       console.warn('[audio] Failed to play kills remaining clip:', err);
@@ -1125,6 +1125,20 @@ export function playKillsAlertSound(remaining = null) {
 
   osc.start(t);
   osc.stop(t + 0.47);
+}
+
+// ── Incoming boss alert sound ──────────────────────────────────
+export function playIncomingBossSound() {
+  const audio = new Audio('mnt/project/music/sfx_incoming-boss.mp3');
+  audio.volume = 0.5;
+  audio.play().catch(err => console.warn('[audio] Failed to play incoming boss clip:', err));
+}
+
+// ── No one makes it to level 20 sound ──────────────────────────
+export function playNoOneMakesItSound() {
+  const audio = new Audio('mnt/project/music/sfx_no-one-makes-it-to-level-20.mp3');
+  audio.volume = 0.5;
+  audio.play().catch(err => console.warn('[audio] Failed to play name entry clip:', err));
 }
 
 // ── Low health warning loop (gentle pulse) ────────────────────
@@ -1254,25 +1268,39 @@ let musicFadeToken = 0;
 
 const musicTracks = {
   menu: ['mnt/project/music/00_Main_Menu.mp3'],
-  gameOver: ['mnt/project/music/XX_Game_Over.mp3'],
+  gameOver: ['mnt/project/music/sfx_game-over.mp3'],
   levels1to5: [
     'mnt/project/music/0101_Levels_1-4.mp3',
     'mnt/project/music/0102_Levels_1-4.mp3',
     'mnt/project/music/0103_Levels_1-4.mp3',
-    'mnt/project/music/0104_Levels_1-4.mp3'
+    'mnt/project/music/0104_Levels_1-4.mp3',
+    'mnt/project/music/0105_Levels_1-4.mp3',
+    'mnt/project/music/0106_Levels_1-4.mp3',
+    'mnt/project/music/0107_Levels_1-4.mp3',
+    'mnt/project/music/0108_Levels_1-4.mp3',
+    'mnt/project/music/0109_Levels_1-4.mp3',
+    'mnt/project/music/0110_Levels_1-4.mp3'
   ],
   levels6to10: [
     'mnt/project/music/0201_Levels_6-9.mp3',
     'mnt/project/music/0202_Levels_6-9.mp3',
     'mnt/project/music/0203_Levels_6-9.mp3',
-    'mnt/project/music/0204_Levels_6-9.mp3'
+    'mnt/project/music/0204_Levels_6-9.mp3',
+    'mnt/project/music/0205_Levels_6-9.mp3',
+    'mnt/project/music/0206_Levels_6-9.mp3',
+    'mnt/project/music/0207_Levels_6-9.mp3',
+    'mnt/project/music/0208_Levels_6-9.mp3',
+    'mnt/project/music/0209_Levels_6-9.mp3',
+    'mnt/project/music/0210_Levels_6-9.mp3'
   ],
   levels11to14: [
     'mnt/project/music/0301_Levels_11-14.mp3',
     'mnt/project/music/0302_Levels_11-14.mp3',
-    'mnt/project/music/0303_Levels_11-14.mp3',
     'mnt/project/music/0304_Levels_11-14.mp3',
-    'mnt/project/music/0305_Levels_11-14.mp3'
+    'mnt/project/music/0305_Levels_11-14.mp3',
+    'mnt/project/music/0306_Levels_11-14.mp3',
+    'mnt/project/music/0307_Levels_11-14.mp3',
+    'mnt/project/music/0308_Levels_11-14.mp3'
   ],
   levels16to19: [
     'mnt/project/music/0401_Levels_16-19.mp3',
