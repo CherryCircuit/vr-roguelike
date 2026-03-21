@@ -479,7 +479,7 @@ function init() {
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x888888, 0.008);  // Visible atmospheric fog (will be overridden per biome)
+  scene.fog = new THREE.FogExp2(0x888888, 0.018);  // Visible atmospheric fog (will be overridden per biome)
 
   // Camera - added directly to scene for proper VR hand positioning
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -2576,7 +2576,8 @@ function handleDesktopReadyScreenClick() {
 function handleDesktopPauseClick() {
   const raycaster = getAimRaycaster();
   const btnHit = raycaster ? getPauseMenuHit(raycaster) : null;
-  if (btnHit === 'resume' || !raycaster) {
+  // Resume if: hit resume button, OR raycaster null, OR raycaster exists but missed (click anywhere to resume)
+  if (btnHit === 'resume' || !raycaster || btnHit === null) {
     playMenuClick();
     startPauseCountdown();
   }
@@ -10455,12 +10456,12 @@ function buildAlienPlanetScene(group) {
   const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
 
   // Ground
-  const groundGeo = new THREE.PlaneGeometry(300, 300, 60, 60);
+  const groundGeo = new THREE.PlaneGeometry(300, 300, 120, 120);
   const groundPositions = groundGeo.attributes.position;
   for (let i = 0; i < groundPositions.count; i++) {
     const x = groundPositions.getX(i);
     const y = groundPositions.getY(i);
-    groundPositions.setZ(i, Math.sin(x * 0.05) * Math.cos(y * 0.05) * 0.5);
+    groundPositions.setZ(i, Math.sin(x * 0.03) * Math.cos(y * 0.03) * 0.3);
   }
   groundGeo.computeVertexNormals();
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0510, roughness: 1, metalness: 0, flatShading: true });
@@ -10866,13 +10867,13 @@ function buildAlienPlanetScene(group) {
   fogCylinder.renderOrder = -12;
   group.add(fogCylinder);
 
-  // Issue 7: Distant low-poly mountains at ~200 units (alien planet colors)
+  // Issue 7: Distant low-poly mountains at ~100 units (alien planet colors) - closer and larger for visibility
   const createDistantMountain = (x, z, scale) => {
     const peakCount = 1 + Math.floor(Math.random() * 2);
     const mountainGroup = new THREE.Group();
     for (let p = 0; p < peakCount; p++) {
-      const height = (20 + Math.random() * 30) * scale;
-      const radius = Math.max(4, (4 + Math.random() * 6) * scale);
+      const height = (30 + Math.random() * 50) * scale;
+      const radius = Math.max(6, (6 + Math.random() * 10) * scale);
       // Low-poly cone with 5-7 segments
       const peakGeo = new THREE.ConeGeometry(radius, height, 5 + Math.floor(Math.random() * 3));
       const peakMat = new THREE.MeshStandardMaterial({
@@ -10896,9 +10897,9 @@ function buildAlienPlanetScene(group) {
     return mountainGroup;
   };
 
-  // Ring of 10 distant mountains at ~200 units
+  // Ring of 10 distant mountains at ~100 units (closer for visibility with fog)
   const distantMountainCount = 10;
-  const distantMountainRadius = 200;
+  const distantMountainRadius = 100;
   for (let i = 0; i < distantMountainCount; i++) {
     const angle = (i / distantMountainCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
     const r = distantMountainRadius + (Math.random() - 0.5) * 20;

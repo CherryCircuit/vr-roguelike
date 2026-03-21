@@ -421,9 +421,18 @@ function setupEventListeners() {
 }
 
 function onKeyDown(e) {
-  if (!enabled) return;
-
   const key = e.key.toLowerCase();
+
+  // ESC for pause/resume - ALWAYS works, even when not enabled
+  if (key === 'escape') {
+    if (onPauseCallback) {
+      onPauseCallback();
+    }
+    console.log('[desktop-controls] ESC pressed');
+    return;
+  }
+
+  if (!enabled) return;
 
   // Movement keys
   if (key === 'w') keys.w = true;
@@ -449,14 +458,6 @@ function onKeyDown(e) {
   if (key === '2') weaponState.fireMode = 'right';
   if (key === '3') weaponState.fireMode = 'both';
   if (key === '4') weaponState.fireMode = 'both'; // Alternate both mode
-
-  // ESC for menu/pause
-  if (key === 'escape') {
-    if (onPauseCallback) {
-      onPauseCallback();
-    }
-    console.log('[desktop-controls] ESC pressed');
-  }
 }
 
 function onKeyUp(e) {
