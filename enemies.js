@@ -7732,8 +7732,8 @@ export function clearBossProjectiles() {
     }
   }
   bossProjectiles.length = 0;
-  bossProjCorePool.instanceMatrix.needsUpdate = true;
-  bossProjGlowPool.instanceMatrix.needsUpdate = true;
+  if (bossProjCorePool) bossProjCorePool.instanceMatrix.needsUpdate = true;
+  if (bossProjGlowPool) bossProjGlowPool.instanceMatrix.needsUpdate = true;
 }
 
 export function spawnBossProjectile(fromPos, targetPos) {

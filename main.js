@@ -1219,6 +1219,12 @@ function applyThemeForLevel(level) {
   if (horizonRingRef) horizonRingRef.visible = !hideBaseEnv;
   if (horizonInnerRingRef) horizonInnerRingRef.visible = !hideBaseEnv;
   if (sunMeshRef) sunMeshRef.visible = !hideBaseEnv;
+  // Hide base environment mountains when custom biome scene replaces them
+  mountainLines.forEach((layer) => {
+    if (layer.fillMesh) layer.fillMesh.visible = !hideBaseEnv;
+    if (layer.line) layer.line.visible = !hideBaseEnv;
+  });
+  if (atmosphereRef) atmosphereRef.visible = !hideBaseEnv;
   if (sunGlowRef) sunGlowRef.visible = !hideBaseEnv;
   if (starsRef) starsRef.visible = theme.keepStars ? true : !hideBaseEnv;
 
@@ -9873,7 +9879,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Sun + glow - flat planes (no billboard), using retro synthwave PNG
   const sunGroup = new THREE.Group();
-  sunGroup.position.set(0, 40, -80);  // Close enough to be visible through fog, above horizon line
+  sunGroup.position.set(0, 45, -300);  // Far enough to look proportional, fog-proof materials
   group.add(sunGroup);
 
   const makeRadial = (inner, outer) => {
@@ -9894,7 +9900,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Outer massive glow (flat plane, no billboard, fog-proof, no depth test)
   const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), sunOuterGlowMat);
+  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), sunOuterGlowMat);
   sunOuterGlow.frustumCulled = false;
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
@@ -9902,7 +9908,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Main bright glow (fog-proof, no depth test)
   const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), sunGlowMat);
+  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(350, 350), sunGlowMat);
   sunGlow.frustumCulled = false;
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
@@ -9933,7 +9939,7 @@ function buildSynthwaveValleyScene(group) {
     sunCoreMat.needsUpdate = true;
   };
   sunDiscImg.src = 'assets/sun-retro.png';
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), sunCoreMat);
+  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), sunCoreMat);
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
