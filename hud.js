@@ -4073,14 +4073,14 @@ function createBlasterSection(hand, panelX) {
   });
 
   // Title
-  const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, { fontSize: 0.15, color: '#00ffff' });
+  const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, { fontSize: 48, color: '#00ffff', scale: 0.15 });
   titleText.position.set(0, 0.45, 0.02);
   group.add(titleText);
 
   // Weapon name
   const weaponId = game.mainWeapon[hand];
   const weaponName = weaponId.replace(/_/g, ' ').toUpperCase();
-  const weaponText = makeSprite(weaponName, { fontSize: 0.1, color: '#ffffff' });
+  const weaponText = makeSprite(weaponName, { fontSize: 36, color: '#ffffff', scale: 0.1 });
   weaponText.position.set(0, 0.32, 0.02);
   group.add(weaponText);
 
@@ -4091,13 +4091,13 @@ function createBlasterSection(hand, panelX) {
 
   if (upgradeEntries.length > 0) {
     upgradeEntries.forEach(([id, count], index) => {
-      const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, { fontSize: 0.1, color: '#ffffff' });
+      const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, { fontSize: 36, color: '#ffffff', scale: 0.1 });
       const yPos = yOffset - (index * 0.12);
       upgradeText.position.set(0, yPos, 0.02);
       group.add(upgradeText);
     });
   } else {
-    const noUpgradesText = makeSprite('No upgrades', { fontSize: 0.1, color: '#888888' });
+    const noUpgradesText = makeSprite('No upgrades', { fontSize: 36, color: '#888888', scale: 0.1 });
     noUpgradesText.position.set(0, 0.1, 0.02);
     group.add(noUpgradesText);
   }
@@ -4120,7 +4120,7 @@ function createStatsSection() {
   group.add(bg);
 
   // Title
-  const titleText = makeSprite('RUN STATISTICS', { fontSize: 0.15, color: '#ff00ff' });
+  const titleText = makeSprite('RUN STATISTICS', { fontSize: 48, color: '#ff00ff', scale: 0.15 });
   titleText.position.set(0, 0.45, 0.02);
   group.add(titleText);
 
@@ -4138,13 +4138,13 @@ function createStatsSection() {
   ];
 
   leftStats.forEach((stat, index) => {
-    const text = makeSprite(stat, { fontSize: 0.1, color: '#00ffff' });
+    const text = makeSprite(stat, { fontSize: 36, color: '#00ffff', scale: 0.1 });
     text.position.set(-1.1, 0.25 - (index * 0.1), 0.02);
     group.add(text);
   });
 
   rightStats.forEach((stat, index) => {
-    const text = makeSprite(stat, { fontSize: 0.1, color: '#00ffff' });
+    const text = makeSprite(stat, { fontSize: 36, color: '#00ffff', scale: 0.1 });
     text.position.set(1.1, 0.25 - (index * 0.1), 0.02);
     group.add(text);
   });
@@ -4354,7 +4354,7 @@ function createResumeButton() {
   });
 
   // Button text
-  const text = makeSprite('RESUME', { fontSize: 0.14, color: '#00ffff' });
+  const text = makeSprite('RESUME', { fontSize: 42, color: '#00ffff', scale: 0.14 });
   text.position.set(0, 0, 0.02);
   group.add(text);
 
@@ -4377,7 +4377,7 @@ export function showPauseCountdown(seconds) {
 
   if (!pauseCountdownText) {
     // Create countdown text
-    const text = makeSprite(`${Math.ceil(seconds)}`, { fontSize: 1.0, color: '#ff00ff', glowColor: '#ff00ff' });
+    const text = makeSprite(`${Math.ceil(seconds)}`, { fontSize: 120, color: '#ff00ff', glowColor: '#ff00ff', scale: 1.0 });
     pauseCountdownText = text;
     pauseCountdownGroup.add(text);
   }
@@ -4401,7 +4401,7 @@ export function updatePauseCountdownDisplay(seconds) {
     // Create new text with current number
     const newSeconds = Math.ceil(seconds);
     const color = newSeconds <= 1 ? '#ff0000' : '#ff00ff';
-    const text = makeSprite(`${newSeconds}`, { fontSize: 1.0, color: color, glowColor: color });
+    const text = makeSprite(`${newSeconds}`, { fontSize: 120, color: color, glowColor: color, scale: 1.0 });
     pauseCountdownText = text;
     pauseCountdownGroup.add(text);
   }
