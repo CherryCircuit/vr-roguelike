@@ -1774,7 +1774,7 @@ function createSparklingStars(theme) {
     blending: THREE.AdditiveBlending
   });
   const stars = new THREE.Points(geo, mat);
-  stars.renderOrder = -20;
+  stars.renderOrder = 10;  // Render after skydome (-20) and sun (-3 to -1)
   stars.userData.update = (now) => {
     mat.uniforms.uTime.value = now * 0.001;
   };
@@ -1804,7 +1804,7 @@ function createStars() {
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
   const stars = new THREE.Points(geo, mat);
-  stars.renderOrder = -20;
+  stars.renderOrder = 10;  // Render after skydome (-20) and sun (-3 to -1)
   scene.add(stars);
   starsRef = stars;
   registerFadeMaterial(starsRef.material);
@@ -1837,7 +1837,7 @@ function rebuildStars(theme) {
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   const mat = new THREE.PointsMaterial({ color: theme.starColor || 0xffffff, size: theme.starSize || 0.5 });
   const stars = new THREE.Points(geo, mat);
-  stars.renderOrder = -20;
+  stars.renderOrder = 10;  // Render after skydome (-20) and sun (-3 to -1)
   scene.add(stars);
   starsRef = stars;
   registerFadeMaterial(starsRef.material);
