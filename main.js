@@ -9671,13 +9671,13 @@ function buildSynthwaveValleyScene(group) {
     uniforms: {
       topColor: { value: new THREE.Color(0x1A004A) },      // Top: dark purple
       midColor: { value: new THREE.Color(0x71006E) },      // 75% from equator: deep purple
-      horizonColor: { value: new THREE.Color(0xFF7E31) },  // Equator: bright orange
+      horizonColor: { value: new THREE.Color(0xFF8626) },  // Equator: bright orange
       glowColor: { value: new THREE.Color(0xF30787) },     // 40% from equator: pink
     },
     // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
     // stable in stereo rendering and does not rely on manual clip-space math.
     vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ vec3 dir=normalize(vWorldPosition); float h=clamp(dir.y*0.5+0.5,0.0,1.0); vec3 col; if(h<0.5){ col=horizonColor; }else{ float t=(h-0.5)*2.0; col=mix(horizonColor,glowColor,smoothstep(0.0,0.4,t)); col=mix(col,midColor,smoothstep(0.4,0.75,t)); col=mix(col,topColor,smoothstep(0.75,1.0,t)); } gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ float worldY=vWorldPosition.y; vec3 col; if(worldY<0.0){ col=horizonColor; }else if(worldY<400.0){ float t=worldY/400.0; col=mix(horizonColor,glowColor,t); }else if(worldY<700.0){ float t=(worldY-400.0)/300.0; col=mix(glowColor,midColor,t); }else if(worldY<1000.0){ float t=(worldY-700.0)/300.0; col=mix(midColor,topColor,t); }else{ col=topColor; } gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
     depthWrite: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
@@ -9690,8 +9690,8 @@ function buildSynthwaveValleyScene(group) {
   // PERFORMANCE FIX: Reduced from 240x240 (57,600 vertices) to 120x120 (14,400 vertices) for 75% reduction
   // Still provides good visual quality while improving FPS at level start
   const terrainUniforms = {
-    uGridColor: { value: new THREE.Color(0x015CC1) },     // EXACT: Gridlines bright blue
-    uBaseColor: { value: new THREE.Color(0x0C0E3F) },     // #0C0E3F dark blue base
+    uGridColor: { value: new THREE.Color(0x4368AC) },     // Gridlines
+    uBaseColor: { value: new THREE.Color(0x0C1347) },     // Primary/base color
     uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
     uFlashIntensity: { value: 0.0 },
   };
@@ -9708,7 +9708,7 @@ function buildSynthwaveValleyScene(group) {
     // Fix for synthwave floor popping in VR: keep the terrain static and use the
     // built-in modelViewMatrix projection instead of manual projection math.
     vertexShader: `varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vec4 mvPosition=modelViewMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; vFogDistance=length(mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }`,
-    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/3.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float gx=gridLine(vObjPos.x*gridScale,0.35); float gz=gridLine(vObjPos.z*gridScale,0.35); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
   terrain.position.set(0, floorY + 1.5, -700);
@@ -9721,7 +9721,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Sun + glow - flat planes (no billboard), using retro synthwave PNG
   const sunGroup = new THREE.Group();
-  sunGroup.position.set(0, 120, -1700);  // Y raised so full circle is above horizon
+  sunGroup.position.set(0, 270, -1700);  // Y raised so full circle is above horizon
   group.add(sunGroup);
 
   const makeRadial = (inner, outer) => {
@@ -9742,7 +9742,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Outer massive glow (flat plane, no billboard, fog-proof, no depth test)
   const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(1500, 1500), sunOuterGlowMat);
+  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), sunOuterGlowMat);
   sunOuterGlow.frustumCulled = false;
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
@@ -9750,7 +9750,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Main bright glow (fog-proof, no depth test)
   const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(1080, 1080), sunGlowMat);
+  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(864, 864), sunGlowMat);
   sunGlow.frustumCulled = false;
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
@@ -9781,7 +9781,7 @@ function buildSynthwaveValleyScene(group) {
     sunCoreMat.needsUpdate = true;
   };
   sunDiscImg.src = 'assets/sun-retro.png';
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(720, 720), sunCoreMat);
+  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(576, 576), sunCoreMat);
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
@@ -11257,4 +11257,9 @@ function buildHellscapeLavaScene(group) {
   group.position.set(26.599, 0.05, -0.486);
   group.rotation.y = 0.248; // yaw: 14.21°
 }
+
+; // yaw: 14.21°
+}
+
+
 
