@@ -9661,7 +9661,7 @@ function buildSynthwaveValleyScene(group) {
   // Fix for synthwave valley lighting regression: the extracted scene lost the
   // original standalone scene's punch after we removed postprocessing, so raise
   // the local material brightness without affecting other biomes.
-  const brightness = 0.82;
+  const brightness = 1.0;
 
   // Sky dome (no stars, we use global starfield)
   // EXACT colors: Horizon #FE9053 (orange) → Mountain tips #E00186 (pink) → Sun top #2C0051 (purple) → Top #1A004A (dark purple) → Black
