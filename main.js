@@ -9699,11 +9699,12 @@ function buildSynthwaveValleyScene(group) {
     // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
     // stable in stereo rendering and does not rely on manual clip-space math.
     vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ vec3 dir=normalize(vWorldPosition); float h=clamp(dir.y*0.5+0.5,0.0,1.0); float upper=smoothstep(0.5,1.0,h); vec3 col=mix(horizonColor,midColor,smoothstep(0.5,0.7,h)); col=mix(col,topColor,smoothstep(0.7,1.0,h)); float horizonBand=exp(-pow(abs(h-0.5)*8.0,2.0)); col+=glowColor*horizonBand*0.3; gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ vec3 dir=normalize(vWorldPosition); float h=clamp(dir.y*0.5+0.5,0.0,1.0); vec3 col; if(h<0.5){ col=horizonColor; }else{ col=mix(horizonColor,glowColor,smoothstep(0.5,0.58,h)); col=mix(col,midColor,smoothstep(0.58,0.72,h)); col=mix(col,topColor,smoothstep(0.72,1.0,h)); } gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
     depthWrite: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
   sky.frustumCulled = false;
+  sky.renderOrder = -20;  // Draw before sun (which is at -3 to -1)
   group.add(sky);
   registerFadeMaterial(skyMat);
 
