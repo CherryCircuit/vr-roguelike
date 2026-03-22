@@ -1745,6 +1745,58 @@ function spawnStatusEffectBubble(position, effectType, stacks) {
 }
 
 /**
+ * Spawn a health gain popup (+💖) at enemy position when VAMPIRE triggers.
+ */
+export function spawnHealthGainPopup(position) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 128;
+
+  // Green background with heart
+  ctx.fillStyle = '#00ff88';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Text: green +💖
+  ctx.font = 'bold 64px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#00ff88';
+  ctx.shadowColor = '#004422';
+  ctx.shadowBlur = 8;
+  ctx.fillText('+💖', canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+  });
+
+  const mesh = new THREE.Sprite(material);
+  mesh.position.copy(position);
+  mesh.position.y += 0.3;  // Slightly above enemy
+  mesh.scale.set(0.6, 0.3, 1);
+  mesh.renderOrder = 997;
+  mesh.userData.createdAt = performance.now();
+  mesh.userData.lifetime = 1000;
+  mesh.userData.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.3, 1.2, (Math.random() - 0.5) * 0.3);
+
+  sceneRef.add(mesh);
+  statusBubbles.push(mesh);
+
+  // Cap total to prevent perf issues
+  while (statusBubbles.length > 20) {
+    const old = statusBubbles.shift();
+    sceneRef.remove(old);
+    old.material.map.dispose();
+    old.material.dispose();
+  }
+}
+
+/**
  * Update status effect bubbles (animate and remove expired).
  */
 export function updateStatusBubbles(dt, now) {

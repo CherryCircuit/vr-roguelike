@@ -182,7 +182,7 @@
       </div>
     </div>
     
-    <p id="version-text" style="font-size: 1em; opacity: 0.6; margin-top: 12px;">v2026.03.22.0306</p>
+    <p id="version-text" style="font-size: 1em; opacity: 0.6; margin-top: 12px;">v2026.03.22.0322</p>
   </div>
 
   <!-- Fallback if WebXR is not available -->
@@ -212,6 +212,18 @@
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-seed-controls"> Seed deck settings</label>
     <button id="debug-next-biome" style="margin-top:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Next biome</button>
+
+    <!-- Visual Tuning Section (collapsible) -->
+    <div style="margin-top:12px;border-top:1px solid #333;padding-top:8px;">
+      <div id="visual-toggle" style="color:#ff00ff;cursor:pointer;user-select:none;">▶ Visual Tuning</div>
+      <div id="visual-controls" style="display:none;margin-top:8px;padding-left:8px;">
+        <label style="display:block;margin-top:4px;"><input type="checkbox" id="debug-glow"> Glow effect</label>
+        <label style="display:block;margin-top:4px;"><input type="checkbox" id="debug-bloom" checked> Bloom</label>
+        <label style="display:block;margin-top:4px;"><input type="checkbox" id="debug-smoke"> Smoke/fog particles</label>
+        <label style="display:block;margin-top:4px;">Fog intensity: <input type="range" id="debug-fog-intensity" min="0" max="100" value="58" style="width:80px;vertical-align:middle;"></label>
+      </div>
+    </div>
+
     <button id="copy-log-btn" style="margin-top:8px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;">📋 COPY LOG</button>
   </div>
   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
@@ -246,7 +258,7 @@
   <script type="module" src="main.js"></script>
   <script>
     (function() {
-      const GAME_VERSION = 'v2026.03.22.0306';
+      const GAME_VERSION = 'v2026.03.22.0322';
       document.title = GAME_VERSION;
       const versionEl = document.getElementById('version-text');
       if (versionEl) versionEl.textContent = GAME_VERSION;
@@ -277,7 +289,42 @@
           }
         });
       }
-      
+
+      // Visual Tuning Section Toggle
+      const visualToggle = document.getElementById('visual-toggle');
+      const visualControls = document.getElementById('visual-controls');
+      if (visualToggle && visualControls) {
+        visualToggle.addEventListener('click', function() {
+          const isExpanded = visualControls.style.display !== 'none';
+          visualControls.style.display = isExpanded ? 'none' : 'block';
+          visualToggle.textContent = (isExpanded ? '▶' : '▼') + ' Visual Tuning';
+        });
+
+        // Glow toggle
+        document.getElementById('debug-glow').addEventListener('change', function() {
+          window.debugGlow = this.checked;
+        });
+
+        // Bloom toggle
+        document.getElementById('debug-bloom').addEventListener('change', function() {
+          window.debugBloom = this.checked;
+        });
+
+        // Smoke/fog particles toggle
+        document.getElementById('debug-smoke').addEventListener('change', function() {
+          window.debugSmoke = this.checked;
+        });
+
+        // Fog intensity slider
+        document.getElementById('debug-fog-intensity').addEventListener('input', function() {
+          window.debugFogIntensity = parseInt(this.value, 10) / 100;
+        });
+
+        // Initialize defaults
+        window.debugBloom = true;
+        window.debugFogIntensity = 0.58;
+      }
+
       // Seed Deck Controls
       const seedInput = document.getElementById('seed-input');
       const seedTier = document.getElementById('seed-tier');

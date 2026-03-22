@@ -35,7 +35,7 @@ import {
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward,
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
-  clearAllTelegraphs
+  clearAllTelegraphs, spawnHealthGainPopup
 } from './enemies.js';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -276,6 +276,9 @@ let gameOverCooldown = 0;
 
 // Pause menu state
 let pauseCountdown = 0;
+let pauseCountdownActive = false;
+let pauseCountdownStartTime = 0;
+let pauseCountdownLastValue = 0;
 const PAUSE_COUNTDOWN_DURATION = 3.0;
 
 // Bullet-time slow-mo (restored from commit 5bb0b69)
@@ -1690,7 +1693,7 @@ function createMountains() {
     peaks.forEach(([x, y]) => edgePoints.push(new THREE.Vector3(x, y, z)));
     edgePoints.push(new THREE.Vector3(100, 0, z));
     const geometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
-    const edgeLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.8 }));
+    const edgeLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.5 }));
     edgeLine.matrixAutoUpdate = false;
     scene.add(edgeLine);
     registerFadeMaterial(edgeLine.material);
@@ -6294,25 +6297,37 @@ function togglePause() {
 }
 
 function startPauseCountdown() {
+  if (pauseCountdownActive) return;
   hidePauseMenu();
+  pauseCountdownActive = true;
+  pauseCountdownStartTime = performance.now();
+  pauseCountdownLastValue = Math.ceil(PAUSE_COUNTDOWN_DURATION);
   pauseCountdown = PAUSE_COUNTDOWN_DURATION;
   showPauseCountdown(pauseCountdown);
+  updatePauseCountdownDisplay(pauseCountdown);
 }
 
-function updatePauseCountdown(dt) {
-  if (pauseCountdown > 0) {
-    pauseCountdown -= dt;
-    if (pauseCountdown <= 0) {
-      pauseCountdown = 0;
-      hidePauseCountdown();
-      game.state = State.PLAYING;
-      // Re-request pointer lock when resuming
-      if (!renderer.xr.isPresenting && isDesktopEnabled()) {
-        document.body.requestPointerLock?.();
-      }
-    } else {
-      updatePauseCountdownDisplay(pauseCountdown);
+function updatePauseCountdown(now) {
+  if (!pauseCountdownActive) return;
+  const elapsed = (now - pauseCountdownStartTime) / 1000;
+  const remaining = PAUSE_COUNTDOWN_DURATION - elapsed;
+  if (remaining <= 0) {
+    pauseCountdownActive = false;
+    pauseCountdown = 0;
+    hidePauseCountdown();
+    game.state = State.PLAYING;
+    // Re-request pointer lock when resuming
+    if (!renderer.xr.isPresenting && isDesktopEnabled()) {
+      document.body.requestPointerLock?.();
     }
+    return;
+  }
+
+  pauseCountdown = remaining;
+  const displayValue = Math.ceil(remaining);
+  if (displayValue !== pauseCountdownLastValue) {
+    pauseCountdownLastValue = displayValue;
+    updatePauseCountdownDisplay(pauseCountdown);
   }
 }
 
@@ -7665,7 +7680,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       if (stats.vampiricInterval > 0 && game.totalKills % stats.vampiricInterval === 0) {
         game.health = Math.min(game.maxHealth, game.health + 1);
         console.log('[vampiric] Healed 1 HP');
-        triggerHealthGainAnimation();  // Show heart icon visual
+        spawnHealthGainPopup(destroyData.position);  // Spawn +💖 popup at enemy position
         playHealSound();  // Play healing sound
       }
 
@@ -9490,7 +9505,7 @@ function render(timestamp) {
   }
 
   // Update pause countdown if active
-  updatePauseCountdown(rawDt);
+  updatePauseCountdown(now);
 
   renderer.render(scene, camera);
 }
@@ -9708,7 +9723,7 @@ function buildSynthwaveValleyScene(group) {
     // Fix for synthwave floor popping in VR: keep the terrain static and use the
     // built-in modelViewMatrix projection instead of manual projection math.
     vertexShader: `varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vec4 mvPosition=modelViewMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; vFogDistance=length(mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }`,
-    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float dist=length(vObjPos.xz); float lineW=0.35*smoothstep(800.0,50.0,dist); float gx=gridLine(vObjPos.x*gridScale,lineW); float gz=gridLine(vObjPos.z*gridScale,lineW); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float dist=length(vObjPos.xz); float lineW=0.25*smoothstep(1000.0,100.0,dist); float gx=gridLine(vObjPos.x*gridScale,lineW); float gz=gridLine(vObjPos.z*gridScale,lineW); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
   terrain.position.set(0, floorY + 1.5, -700);

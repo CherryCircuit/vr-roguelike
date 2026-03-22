@@ -340,10 +340,7 @@ export const UPGRADE_POOL = [
   { id: 'fire', name: 'Fire', desc: 'Ignites: weakens + fire DoT', color: '#ff4400', type: 'universal' },
   { id: 'freeze', name: 'Freeze', desc: 'Greatly slows enemies', color: '#88ccff', type: 'universal' },
   { id: 'ricochet', name: 'Ricochet', desc: 'Shots bounce to nearby enemy', color: '#aaffaa', type: 'universal' },
-  
-  // Standard Blaster specific upgrades
-  { id: 'triple_shot', name: 'Triple Shot', desc: 'Standard Blaster: Fire 3 shots at once', color: '#00ffff', type: 'weapon_specific', weapon: 'standard_blaster' },
-  
+
   // Buckshot specific upgrades
   { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot' },
   { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot' },
