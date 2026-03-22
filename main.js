@@ -213,6 +213,9 @@ const chargeParticleSystems = [null, null];
 // Holographic blaster displays (per controller)
 const blasterDisplays = [null, null];
 
+// Mountain visualizer references (for per-theme color updates)
+const mountainLines = [];
+
 // Environment refs for level-based scaling (sun, ominous horizon)
 let sunMeshRef = null;
 let sunGlowRef = null;
@@ -1150,11 +1153,6 @@ function applyThemeForLevel(level) {
   if (horizonRingRef) horizonRingRef.visible = !hideBaseEnv;
   if (horizonInnerRingRef) horizonInnerRingRef.visible = !hideBaseEnv;
   if (sunMeshRef) sunMeshRef.visible = !hideBaseEnv;
-  // Hide base environment mountains when custom biome scene replaces them
-  mountainLines.forEach((layer) => {
-    if (layer.fillMesh) layer.fillMesh.visible = !hideBaseEnv;
-    if (layer.line) layer.line.visible = !hideBaseEnv;
-  });
   if (atmosphereRef) atmosphereRef.visible = !hideBaseEnv;
   if (sunGlowRef) sunGlowRef.visible = !hideBaseEnv;
   if (starsRef) starsRef.visible = theme.keepStars ? true : !hideBaseEnv;
@@ -1668,7 +1666,7 @@ function createMountains() {
     { z: -85, color: 0x0d001a, peaks: generatePeaks(12, 6, 20), layerIndex: 0 },
     { z: -75, color: MTN_DARK, peaks: generatePeaks(10, 4, 14), layerIndex: 1 },
   ];
-  layers.forEach(({ z, color, peaks }) => {
+  layers.forEach(({ z, color, peaks, layerIndex }) => {
     const shape = new THREE.Shape();
     shape.moveTo(-100, 0);
     peaks.forEach(([x, y]) => shape.lineTo(x, y));
@@ -1691,6 +1689,8 @@ function createMountains() {
     scene.add(edgeLine);
     registerFadeMaterial(edgeLine.material);
 
+    // Store for theme color updates
+    mountainLines[layerIndex] = { line: edgeLine, geometry, z, fillMesh };
   });
 }
 
@@ -11222,10 +11222,6 @@ function buildHellscapeLavaScene(group) {
   };
 
   // Hellscape floor HUD height: group.position.y = 0.05
-  group.position.set(26.599, 0.05, -0.486);
-  group.rotation.y = 0.248; // yaw: 14.21°
-}
-.05
   group.position.set(26.599, 0.05, -0.486);
   group.rotation.y = 0.248; // yaw: 14.21°
 }

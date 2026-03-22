@@ -1366,27 +1366,9 @@ function playNextTrack() {
 
   const ctx = getAudioContext();
 
-  // Create analyser if it doesn't exist
-  if (!musicAnalyser) {
-    musicAnalyser = ctx.createAnalyser();
-    musicAnalyser.fftSize = 64;  // Small for performance (32 frequency bins)
-    musicAnalyser.smoothingTimeConstant = 0.8;
-    musicAnalyser.connect(ctx.destination);
-  }
-
   currentMusic = new Audio(track);
   currentMusic.volume = musicVolume;
   currentMusic.loop = false;  // Don't loop individual tracks
-
-  // Connect same-origin music through analyser for visualization.
-  // Cross-origin CDN tracks can still play directly, but should not be routed
-  // through Web Audio unless the CDN sends permissive CORS headers.
-  musicSource = null;
-  const isCrossOriginTrack = /^https?:\/\//i.test(track);
-  if (!isCrossOriginTrack) {
-    musicSource = ctx.createMediaElementSource(currentMusic);
-    musicSource.connect(musicAnalyser);
-  }
 
   // Auto-advance to next track when current ends (only if playlist looping is enabled)
   currentMusic.addEventListener('ended', () => {
