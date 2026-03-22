@@ -2942,20 +2942,43 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
     damageNearbyEnemies(pos, e.deathExplosionDamage, 5.0);
   }
 
+  // Cleanup: if this enemy is linked by a conductor, remove it from that conductor's list
+  // and reset emissive. Must happen before mesh is removed from scene.
+  for (let ci = 0; ci < activeEnemies.length; ci++) {
+    const cond = activeEnemies[ci];
+    if (!cond.isConductor || ci === index) continue;
+    const linkIdx = cond.linkedEnemies.indexOf(index);
+    if (linkIdx !== -1) {
+      cond.linkedEnemies.splice(linkIdx, 1);
+    }
+  }
+  // Reset pink emissive on linked enemies
+  if (e.linkedByConductor) {
+    e.mesh.traverse(c => {
+      if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+        setMaterialEmissiveSafe(c.material, new THREE.Color(0x000000), 0);
+      }
+    });
+  }
+
   // Conductor: Chain overload - kills all linked enemies
   if (e.isConductor) {
     // Clear all electric arcs spawned by this conductor immediately
     clearConductorArcs(index);
 
     if (e.linkedEnemies.length > 0) {
-      // Kill all linked enemies (chain reaction)
-      e.linkedEnemies.forEach(linkedIdx => {
-        if (activeEnemies[linkedIdx]) {
-          // Deal massive damage to linked enemy
-          activeEnemies[linkedIdx].hp = 0;
-          // Visual feedback: electric arc (short-lived, for death effect only)
-          spawnElectricArc(pos, activeEnemies[linkedIdx].mesh.position.clone(), 0xff66cc, -1);
-        }
+      // Snapshot linked enemy references before killing to avoid index corruption
+      // (recursive destroyEnemy calls will splice activeEnemies, shifting indices)
+      const linkedRefs = e.linkedEnemies
+        .map(idx => activeEnemies[idx])
+        .filter(ref => ref != null);
+      e.linkedEnemies = [];
+
+      linkedRefs.forEach(ref => {
+        // Visual feedback: electric arc (short-lived, for death effect only)
+        spawnElectricArc(pos, ref.mesh.position.clone(), 0xff66cc, -1);
+        // Set hp to 0; the main update loop will call destroyEnemy on next iteration
+        ref.hp = 0;
       });
     }
   }
@@ -3038,6 +3061,9 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
  * Remove all enemies (for level transitions).
  */
 export function clearAllEnemies() {
+  // Clear electric arcs (conductor arcs must not leak across level transitions)
+  clearAllElectricArcs();
+
   // Release all basic enemy InstancedMesh slots
   releaseAllBasicInstances();
 

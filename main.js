@@ -20,7 +20,7 @@ import {
   playSlowMoSound, playSlowMoReverseSound, playComboSound,
   startLightningSound, stopLightningSound,
   startLowHealthWarningSound, stopLowHealthWarningSound,
-  playMusic, playBossMusic, stopMusic, fadeOutMusic, getMusicFrequencyData,
+  playMusic, playBossMusic, stopMusic, fadeOutMusic,
   playKillsAlertSound, playTingSound, playSeekerBurstSound, playHealSound,
   // Charge cannon sounds
   startChargeSound, updateChargeSound, stopChargeSound,
@@ -212,10 +212,6 @@ const chargeParticleSystems = [null, null];
 
 // Holographic blaster displays (per controller)
 const blasterDisplays = [null, null];
-
-// Mountain visualizer
-const mountainLines = [];
-const mountainBasePeaks = [];
 
 // Environment refs for level-based scaling (sun, ominous horizon)
 let sunMeshRef = null;
@@ -1672,10 +1668,7 @@ function createMountains() {
     { z: -85, color: 0x0d001a, peaks: generatePeaks(12, 6, 20), layerIndex: 0 },
     { z: -75, color: MTN_DARK, peaks: generatePeaks(10, 4, 14), layerIndex: 1 },
   ];
-  layers.forEach(({ z, color, peaks, layerIndex }) => {
-    // Store base peaks for animation
-    mountainBasePeaks[layerIndex] = peaks.map(([x, y]) => ({ x, y, baseY: y }));
-
+  layers.forEach(({ z, color, peaks }) => {
     const shape = new THREE.Shape();
     shape.moveTo(-100, 0);
     peaks.forEach(([x, y]) => shape.lineTo(x, y));
@@ -1698,8 +1691,6 @@ function createMountains() {
     scene.add(edgeLine);
     registerFadeMaterial(edgeLine.material);
 
-    // Store for animation
-    mountainLines[layerIndex] = { line: edgeLine, geometry, z, fillMesh, shape };
   });
 }
 
@@ -9478,11 +9469,6 @@ function render(timestamp) {
     rendererInfo: renderer.info,
   });
 
-  // Music visualizer (DISABLED - causing FPS drops)
-  // if (now % 3 < 1) {
-  //   updateMountainVisualizer();
-  // }
-
   // Hide scanlines overlay in VR — it creates a dark box that follows the head and obscures the view
   const scanlinesEl = document.getElementById('scanlines');
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
@@ -9509,40 +9495,6 @@ function render(timestamp) {
 
   renderer.render(scene, camera);
 }
-
-// ============================================================
-//  MUSIC VISUALIZER
-// ============================================================
-function updateMountainVisualizer() {
-  const freqData = getMusicFrequencyData();
-  if (!freqData || mountainLines.length === 0) return;
-
-  mountainLines.forEach((layer, layerIndex) => {
-    const peaks = mountainBasePeaks[layerIndex];
-    if (!peaks) return;
-
-    const points = [new THREE.Vector3(-100, 0, layer.z)];
-
-    peaks.forEach((peak, i) => {
-      // Map frequency bins to peaks (spread across spectrum)
-      const binIndex = Math.floor((i / peaks.length) * freqData.length);
-      const amplitude = freqData[binIndex] / 255;  // Normalize 0-1
-
-      // Subtle height modulation (max 2 units up/down)
-      const heightMod = amplitude * 2 * (layerIndex === 0 ? 0.8 : 1.2);
-      const newY = peak.baseY + heightMod;
-
-      points.push(new THREE.Vector3(peak.x, newY, layer.z));
-    });
-
-    points.push(new THREE.Vector3(100, 0, layer.z));
-
-    // Update line geometry
-    layer.geometry.setFromPoints(points);
-    layer.geometry.attributes.position.needsUpdate = true;
-  });
-}
-
 
 // ============================================================
 //  WINDOW RESIZE

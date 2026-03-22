@@ -1266,8 +1266,6 @@ let musicVolume = 0.33;  // Increased by 10% (was 0.3)
 let currentPlaylist = [];
 let currentTrackIndex = 0;
 let loopPlaylist = true;  // Controls whether playlist loops (false for game over)
-let musicAnalyser = null;
-let musicSource = null;
 let musicFadeToken = 0;
 
 const musicTracks = {
@@ -1408,14 +1406,6 @@ function playNextTrack() {
   currentMusic.play().catch(err => {
     console.warn('[music] Autoplay prevented, will start on first interaction');
   });
-}
-
-// Get audio frequency data for visualization
-export function getMusicFrequencyData() {
-  if (!musicAnalyser) return null;
-  const dataArray = new Uint8Array(musicAnalyser.frequencyBinCount);
-  musicAnalyser.getByteFrequencyData(dataArray);
-  return dataArray;
 }
 
 function stopCurrentMusic() {
