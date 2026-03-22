@@ -40,9 +40,9 @@ const player = {
 };
 
 // Debug movement settings (for desktop no-clip mode)
-const walkSpeed = 8.0; // starting speed
-const sprintSpeed = 18.0; // max speed after holding ~1.5s
-const rampTime = 1.5; // seconds to reach sprint speed
+const walkSpeed = 12.0; // starting speed (bumped from 8.0 for faster biome traversal)
+const sprintSpeed = 30.0; // max speed after holding (bumped from 18.0)
+const rampTime = 1.0; // seconds to reach sprint speed (bumped from 1.5s for faster ramp)
 let currentMoveSpeed = walkSpeed;
 let moveRampTimer = 0; // how long movement keys have been held
 const verticalSpeed = 5.0; // units per second for Q/E
