@@ -1102,7 +1102,7 @@ export function playSlowMoReverseSound() {
 // ── Kills remaining alert sound ────────────────────────────────
 export function playKillsAlertSound(remaining = null) {
   if (remaining === 5 || remaining === 10 || remaining === 15 || remaining === 20) {
-    const audio = new Audio(`mnt/project/music/sfx_${remaining}-kills-remaining.mp3`);
+    const audio = new Audio(`https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_${remaining}-kills-remaining.mp3`);
     audio.volume = 0.5;
     audio.play().catch(err => {
       console.warn('[audio] Failed to play kills remaining clip:', err);
@@ -1133,14 +1133,14 @@ export function playKillsAlertSound(remaining = null) {
 
 // ── Incoming boss alert sound ──────────────────────────────────
 export function playIncomingBossSound() {
-  const audio = new Audio('mnt/project/music/sfx_incoming-boss.mp3');
+  const audio = new Audio('https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_incoming-boss.mp3');
   audio.volume = 0.5;
   audio.play().catch(err => console.warn('[audio] Failed to play incoming boss clip:', err));
 }
 
 // ── No one makes it to level 20 sound ──────────────────────────
 export function playNoOneMakesItSound() {
-  const audio = new Audio('mnt/project/music/sfx_no-one-makes-it-to-level-20.mp3');
+  const audio = new Audio('https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_no-one-makes-it-to-level-20.mp3');
   audio.volume = 0.5;
   audio.play().catch(err => console.warn('[audio] Failed to play name entry clip:', err));
 }
@@ -1211,7 +1211,7 @@ export function startLightningSound() {
   const ctx = getAudioContext();
   
   // Create audio element and source
-  lightningAudio = new Audio('mnt/project/music/sfx_lightning_loop.mp3');
+  lightningAudio = new Audio('https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_lightning_loop.mp3');
   lightningAudio.loop = true;
   lightningAudio.crossOrigin = 'anonymous';
   
@@ -1271,73 +1271,73 @@ let musicSource = null;
 let musicFadeToken = 0;
 
 const musicTracks = {
-  menu: ['mnt/project/music/00_Main_Menu.mp3'],
-  gameOver: ['mnt/project/music/sfx_game-over.mp3'],
+  menu: ['https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/00_Main_Menu.mp3'],
+  gameOver: ['https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_game-over.mp3'],
   levels1to5: [
-    'mnt/project/music/0101_Levels_1-4.mp3',
-    'mnt/project/music/0102_Levels_1-4.mp3',
-    'mnt/project/music/0103_Levels_1-4.mp3',
-    'mnt/project/music/0104_Levels_1-4.mp3',
-    'mnt/project/music/0105_Levels_1-4.mp3',
-    'mnt/project/music/0106_Levels_1-4.mp3',
-    'mnt/project/music/0107_Levels_1-4.mp3',
-    'mnt/project/music/0108_Levels_1-4.mp3',
-    'mnt/project/music/0109_Levels_1-4.mp3',
-    'mnt/project/music/0110_Levels_1-4.mp3'
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0101_Levels_1-4.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0102_Levels_1-4.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0103_Levels_1-4.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0104_Levels_1-4.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0105_Levels_1-4.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0106_Levels_1-4.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0107_Levels_1-4.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0108_Levels_1-4.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0109_Levels_1-4.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0110_Levels_1-4.mp3'
   ],
   levels6to10: [
-    'mnt/project/music/0201_Levels_6-9.mp3',
-    'mnt/project/music/0202_Levels_6-9.mp3',
-    'mnt/project/music/0203_Levels_6-9.mp3',
-    'mnt/project/music/0204_Levels_6-9.mp3',
-    'mnt/project/music/0205_Levels_6-9.mp3',
-    'mnt/project/music/0206_Levels_6-9.mp3',
-    'mnt/project/music/0207_Levels_6-9.mp3',
-    'mnt/project/music/0208_Levels_6-9.mp3',
-    'mnt/project/music/0209_Levels_6-9.mp3',
-    'mnt/project/music/0210_Levels_6-9.mp3'
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0201_Levels_6-9.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0202_Levels_6-9.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0203_Levels_6-9.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0204_Levels_6-9.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0205_Levels_6-9.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0206_Levels_6-9.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0207_Levels_6-9.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0208_Levels_6-9.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0209_Levels_6-9.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0210_Levels_6-9.mp3'
   ],
   levels11to14: [
-    'mnt/project/music/0301_Levels_11-14.mp3',
-    'mnt/project/music/0302_Levels_11-14.mp3',
-    'mnt/project/music/0304_Levels_11-14.mp3',
-    'mnt/project/music/0305_Levels_11-14.mp3',
-    'mnt/project/music/0306_Levels_11-14.mp3',
-    'mnt/project/music/0307_Levels_11-14.mp3',
-    'mnt/project/music/0308_Levels_11-14.mp3'
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0301_Levels_11-14.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0302_Levels_11-14.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0304_Levels_11-14.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0305_Levels_11-14.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0306_Levels_11-14.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0307_Levels_11-14.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0308_Levels_11-14.mp3'
   ],
   levels16to19: [
-    'mnt/project/music/0401_Levels_16-19.mp3',
-    'mnt/project/music/0402_Levels_16-19.mp3',
-    'mnt/project/music/0403_Levels_16-19.mp3',
-    'mnt/project/music/0404_Levels_16-19.mp3'
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0401_Levels_16-19.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0402_Levels_16-19.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0403_Levels_16-19.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/0404_Levels_16-19.mp3'
   ]
 };
 
 const bossTracks = {
   1: [
-    'mnt/project/music/B101_Level_05_Boss.mp3',
-    'mnt/project/music/B102_Level_05_Boss.mp3',
-    'mnt/project/music/B103_Level_05_Boss.mp3',
-    'mnt/project/music/B104_Level_05_Boss.mp3'
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B101_Level_05_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B102_Level_05_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B103_Level_05_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B104_Level_05_Boss.mp3'
   ],
   2: [
-    'mnt/project/music/B201_Level_10_Boss.mp3',
-    'mnt/project/music/B202_Level_10_Boss.mp3',
-    'mnt/project/music/B203_Level_10_Boss.mp3',
-    'mnt/project/music/B204_Level_10_Boss.mp3'
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B201_Level_10_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B202_Level_10_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B203_Level_10_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B204_Level_10_Boss.mp3'
   ],
   3: [
-    'mnt/project/music/B301_Level_15_Boss.mp3',
-    'mnt/project/music/B302_Level_15_Boss.mp3',
-    'mnt/project/music/B303_Level_15_Boss.mp3',
-    'mnt/project/music/B304_Level_15_Boss.mp3'
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B301_Level_15_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B302_Level_15_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B303_Level_15_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B304_Level_15_Boss.mp3'
   ],
   4: [
-    'mnt/project/music/B401_Level_20_Boss.mp3',
-    'mnt/project/music/B402_Level_20_Boss.mp3',
-    'mnt/project/music/B403_Level_20_Boss.mp3',
-    'mnt/project/music/B404_Level_20_Boss.mp3'
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B401_Level_20_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B402_Level_20_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B403_Level_20_Boss.mp3',
+    'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B404_Level_20_Boss.mp3'
   ]
 };
 
@@ -1380,9 +1380,15 @@ function playNextTrack() {
   currentMusic.volume = musicVolume;
   currentMusic.loop = false;  // Don't loop individual tracks
 
-  // Connect audio through analyser for visualization
-  musicSource = ctx.createMediaElementSource(currentMusic);
-  musicSource.connect(musicAnalyser);
+  // Connect same-origin music through analyser for visualization.
+  // Cross-origin CDN tracks can still play directly, but should not be routed
+  // through Web Audio unless the CDN sends permissive CORS headers.
+  musicSource = null;
+  const isCrossOriginTrack = /^https?:\/\//i.test(track);
+  if (!isCrossOriginTrack) {
+    musicSource = ctx.createMediaElementSource(currentMusic);
+    musicSource.connect(musicAnalyser);
+  }
 
   // Auto-advance to next track when current ends (only if playlist looping is enabled)
   currentMusic.addEventListener('ended', () => {

@@ -462,7 +462,7 @@ export function initHUD(camera, scene) {
   fpsTexture = new THREE.CanvasTexture(fpsCanvas);
   fpsTexture.minFilter = THREE.LinearFilter;
 
-  const fpsGeo = new THREE.PlaneGeometry(0.15 * (1024 / 128), 0.15);
+  const fpsGeo = new THREE.PlaneGeometry(0.8, 0.15);  // Will be resized dynamically in updateFPS
   const fpsMat = new THREE.MeshBasicMaterial({
     map: fpsTexture,
     transparent: true,
@@ -1076,7 +1076,7 @@ function createUpgradeCard(upgrade, position) {
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
-    opacity: 0.85,
+    opacity: 1.0,  // Increased from 0.85 by 30% (capped at 1.0)
     side: THREE.DoubleSide,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
@@ -1157,7 +1157,7 @@ function createSkipCard(position) {
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x220044,
     transparent: true,
-    opacity: 0.7,
+    opacity: 0.91,  // Increased from 0.7 by 30%
     side: THREE.DoubleSide,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
@@ -1886,10 +1886,13 @@ export function updateFPS(now, opts = {}) {
     // Update texture (no dispose/recreate)
     fpsTexture.needsUpdate = true;
 
-    // Adjust sprite scale based on text content
-    const textWidth = Math.max(...lines.map(l => fpsCtx.measureText(l).width));
-    const aspect = textWidth / fpsCanvas.height;
-    fpsSprite.scale.set(aspect * 0.15, 0.15, 1);
+    // Adjust sprite geometry to match canvas aspect ratio (prevents squishing)
+    // Use fixed aspect ratio based on canvas size to avoid stretching
+    const canvasAspect = fpsCanvas.width / fpsCanvas.height;  // 1024/128 = 8
+    const displayScale = perfMonitor ? 0.25 : 0.15;  // Larger scale for perf monitor
+    const baseHeight = perfMonitor ? 0.12 : 0.08;  // Adjust height based on mode
+    fpsSprite.geometry.dispose();
+    fpsSprite.geometry = new THREE.PlaneGeometry(canvasAspect * baseHeight, baseHeight);
     fpsSprite.visible = true;
     lastFpsUpdate = now;
   }
@@ -3893,8 +3896,11 @@ let pauseMenuAnimation = {
   numbersAnimated: false,
 };
 
+let pauseCountdownHeader = null;
+let pauseCountdownInstruction = null;
 let pauseCountdownText = null;
 let pauseCountdownOverlay = null;
+let pauseCountdownInitialized = false;
 
 /**
  * Show the pause menu with stats and blaster upgrade info
@@ -4370,17 +4376,43 @@ function createResumeButton() {
 
 /**
  * Show pause countdown overlay (3, 2, 1)
+ * Rebuilds every time to match the start-of-game ready screen style exactly.
  */
 export function showPauseCountdown(seconds) {
+  // Clear and rebuild every time (same pattern as showReadyScreen)
+  while (pauseCountdownGroup.children.length) pauseCountdownGroup.remove(pauseCountdownGroup.children[0]);
+  pauseCountdownInitialized = false;
+  pauseCountdownHeader = null;
+  pauseCountdownInstruction = null;
+  pauseCountdownText = null;
+
   pauseCountdownGroup.visible = true;
   pauseCountdownGroup.position.set(0, 0, -2.5);
 
-  if (!pauseCountdownText) {
-    // Create countdown text
-    const text = makeSprite(`${Math.ceil(seconds)}`, { fontSize: 120, color: '#ff00ff', glowColor: '#ff00ff', scale: 1.0 });
-    pauseCountdownText = text;
-    pauseCountdownGroup.add(text);
-  }
+  // Match showReadyScreen exactly: "READY?" header in yellow
+  const header = makeSprite('READY?', {
+    fontSize: 70, color: '#ffff00', glow: true, scale: 0.6,
+  });
+  header.position.set(0, 0.8, 0);
+  pauseCountdownHeader = header;
+  pauseCountdownGroup.add(header);
+
+  // Match showReadyScreen: "SHOOT TO RESUME" in cyan (same as "SHOOT TO BEGIN")
+  const instruction = makeSprite('SHOOT TO RESUME', {
+    fontSize: 40, color: '#00ffff', scale: 0.4,
+  });
+  instruction.position.set(0, 0.4, 0);
+  pauseCountdownInstruction = instruction;
+  pauseCountdownGroup.add(instruction);
+
+  // Match showReadyScreen: WHITE countdown number with cyan glow
+  const text = makeSprite(`${Math.ceil(seconds)}`, {
+    fontSize: 120, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.7,
+  });
+  text.position.set(0, -0.05, 0.01);
+  pauseCountdownText = text;
+  pauseCountdownGroup.add(text);
+  pauseCountdownInitialized = true;
 }
 
 /**
@@ -4394,17 +4426,22 @@ export function hidePauseCountdown() {
  * Update pause countdown display
  */
 export function updatePauseCountdownDisplay(seconds) {
-  if (pauseCountdownText) {
-    // Remove old text
-    pauseCountdownGroup.remove(pauseCountdownText);
+  if (!pauseCountdownText) return;
 
-    // Create new text with current number
-    const newSeconds = Math.ceil(seconds);
-    const color = newSeconds <= 1 ? '#ff0000' : '#ff00ff';
-    const text = makeSprite(`${newSeconds}`, { fontSize: 120, color: color, glowColor: color, scale: 1.0 });
-    pauseCountdownText = text;
-    pauseCountdownGroup.add(text);
+  if (!seconds) {
+    pauseCountdownText.visible = false;
+    return;
   }
+
+  pauseCountdownText.visible = true;
+  const newSeconds = Math.ceil(seconds);
+  updateSpriteText(pauseCountdownText, `${newSeconds}`, {
+    fontSize: 120,
+    color: '#ffffff',
+    glow: true,
+    glowColor: '#00ffff',
+    scale: 0.7,
+  });
 }
 
 /**
