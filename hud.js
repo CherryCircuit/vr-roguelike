@@ -3901,8 +3901,22 @@ let pauseCountdownOverlay = null;
  */
 export function showPauseMenu() {
   pauseMenuGroup.visible = true;
-  // Position updated each frame in updatePauseMenu to face camera
   pauseMenuGroup.scale.set(1.3, 1.3, 1.3);
+
+  // Position menu at fixed world position (2m in front of camera when paused)
+  // This makes it stay in 3D space so player can walk around it
+  if (cameraRef) {
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraRef.quaternion);
+    forward.y = 0;
+    forward.normalize();
+    pauseMenuGroup.position.set(
+      cameraRef.position.x + forward.x * 2,
+      cameraRef.position.y,
+      cameraRef.position.z + forward.z * 2
+    );
+    // Face the camera once (billboard on pause, not every frame)
+    pauseMenuGroup.lookAt(cameraRef.position.x, cameraRef.position.y, cameraRef.position.z);
+  }
 
   if (pauseMenuElements.panel) {
     // Already initialized
@@ -3929,19 +3943,8 @@ export function hidePauseMenu() {
 export function updatePauseMenu(now) {
   if (!pauseMenuGroup.visible) return;
 
-  // Position menu 2m in front of camera in world space, facing camera
-  if (cameraRef) {
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraRef.quaternion);
-    forward.y = 0;
-    forward.normalize();
-    pauseMenuGroup.position.set(
-      cameraRef.position.x + forward.x * 2,
-      cameraRef.position.y,
-      cameraRef.position.z + forward.z * 2
-    );
-    // Face the camera (look at camera position)
-    pauseMenuGroup.lookAt(cameraRef.position.x, cameraRef.position.y, cameraRef.position.z);
-  }
+  // Menu stays at fixed world position (set in showPauseMenu)
+  // No per-frame repositioning - player can walk around it in 3D space
 
   // Animate slide-in
   const slideDuration = 500; // ms
@@ -3949,7 +3952,7 @@ export function updatePauseMenu(now) {
     pauseMenuAnimation.slideIn = Math.min(1, (now - pauseMenuAnimation.startTime) / slideDuration);
   }
 
-  // Slide menu in from right (offset X in local space after lookAt)
+  // Slide menu in from right (offset X in local space)
   const slideOffset = new THREE.Vector3((1 - pauseMenuAnimation.slideIn) * 4, 0, 0);
   slideOffset.applyQuaternion(pauseMenuGroup.quaternion);
   pauseMenuGroup.position.add(slideOffset);
@@ -3988,6 +3991,7 @@ function createPauseMenu() {
     depthWrite: false
   });
   const panel = new THREE.Mesh(panelGeo, panelMat);
+  panel.renderOrder = 0;  // Render before text (text has renderOrder=999)
   group.add(panel);
 
   // Neon border (cyan)
@@ -4001,6 +4005,7 @@ function createPauseMenu() {
   ].forEach(b => {
     const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
     border.position.set(b.x, b.y, 0.01);
+    border.renderOrder = 1;  // Render after panel, before text
     group.add(border);
   });
 
@@ -4046,8 +4051,9 @@ function createBlasterSection(hand, panelX) {
   // Section background
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(1.3, 1.2),
-    new THREE.MeshBasicMaterial({ color: 0x1a0033, transparent: true, opacity: 0.7 })
+    new THREE.MeshBasicMaterial({ color: 0x1a0033, transparent: true, opacity: 0.7, depthWrite: false })
   );
+  bg.renderOrder = 0;  // Render before text
   group.add(bg);
 
   // Section border (pink)
@@ -4105,8 +4111,9 @@ function createStatsSection() {
   // Background
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(3.2, 1.1),
-    new THREE.MeshBasicMaterial({ color: 0x15002a, transparent: true, opacity: 0.7 })
+    new THREE.MeshBasicMaterial({ color: 0x15002a, transparent: true, opacity: 0.7, depthWrite: false })
   );
+  bg.renderOrder = 0;  // Render before text
   group.add(bg);
 
   // Title
