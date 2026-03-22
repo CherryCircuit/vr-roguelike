@@ -11257,9 +11257,3 @@ function buildHellscapeLavaScene(group) {
   group.position.set(26.599, 0.05, -0.486);
   group.rotation.y = 0.248; // yaw: 14.21°
 }
-
-; // yaw: 14.21°
-}
-
-
-
