@@ -3100,6 +3100,45 @@ export function clearAllEnemies() {
     ring.material.dispose();
   }
   pulseBomberRings.length = 0;
+
+  // Clear shield shards (Mirror Knight death ground hazards)
+  for (let i = shieldShards.length - 1; i >= 0; i--) {
+    const shard = shieldShards[i];
+    sceneRef.remove(shard.mesh);
+    if (shard.mesh.geometry) shard.mesh.geometry.dispose();
+    if (shard.mesh.material) shard.mesh.material.dispose();
+  }
+  shieldShards.length = 0;
+
+  // Clear phase echoes (Phase Wraith death ghosts)
+  for (let i = phaseEchoes.length - 1; i >= 0; i--) {
+    const echo = phaseEchoes[i];
+    sceneRef.remove(echo.mesh);
+    if (echo.mesh.geometry) echo.mesh.geometry.dispose();
+    if (echo.mesh.material) echo.mesh.material.dispose();
+  }
+  phaseEchoes.length = 0;
+
+  // Clear baby spiders (Spider Walker death babies)
+  for (let i = babySpiders.length - 1; i >= 0; i--) {
+    const spider = babySpiders[i];
+    sceneRef.remove(spider.mesh);
+    if (spider.mesh.geometry) spider.mesh.geometry.dispose();
+    if (spider.mesh.material) spider.mesh.material.dispose();
+  }
+  babySpiders.length = 0;
+
+  // Clear status bubbles (status effect popup sprites)
+  for (let i = statusBubbles.length - 1; i >= 0; i--) {
+    const b = statusBubbles[i];
+    sceneRef.remove(b);
+    if (b.material) {
+      if (b.material.map) b.material.map.dispose();
+      b.material.dispose();
+    }
+    if (b.geometry) b.geometry.dispose();
+  }
+  statusBubbles.length = 0;
 }
 
 /**
