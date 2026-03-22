@@ -9699,7 +9699,7 @@ function buildSynthwaveValleyScene(group) {
     // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
     // stable in stereo rendering and does not rely on manual clip-space math.
     vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ vec3 dir=normalize(vWorldPosition); float h=clamp(dir.y*0.5+0.5,0.0,1.0); vec3 col=mix(midColor, topColor, smoothstep(0.55,1.0,h)); col=mix(horizonColor, col, smoothstep(0.0,0.62,h)); float horizonBand=exp(-pow(abs(h-0.48)*9.0,2.0)); col+=glowColor*horizonBand*0.32; gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ vec3 dir=normalize(vWorldPosition); float h=clamp(dir.y*0.5+0.5,0.0,1.0); float upper=smoothstep(0.5,1.0,h); vec3 col=mix(horizonColor,midColor,smoothstep(0.5,0.7,h)); col=mix(col,topColor,smoothstep(0.7,1.0,h)); float horizonBand=exp(-pow(abs(h-0.5)*8.0,2.0)); col+=glowColor*horizonBand*0.3; gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
     depthWrite: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
@@ -9761,42 +9761,6 @@ function buildSynthwaveValleyScene(group) {
   registerFadeMaterial(terrainMat);
   // Store terrain material for damage flash
   biomeTerrainMaterials.push({ type: 'shader', material: terrainMat });
-
-  // Mountains - EXACT color: Mountain tips #E00186 (pink/magenta)
-  // REMOVED: Flat mountain-like shapes at Z -800, -850, -900 (over-optimized teal layers)
-  // Single layer from bae1304 with EXACT pink color
-  const makeLayer = (color, opacity, scaleY, z, y) => {
-    const points = [];
-    const width = 2000;
-    const step = 80;  // From bae1304
-    for (let x = -width / 2; x <= width / 2; x += step) {
-      const n1 = Math.sin(x * 0.012 + z * 0.003) * 0.5 + 0.5;
-      const n2 = Math.sin(x * 0.043 - z * 0.001) * 0.5 + 0.5;
-      const spike = Math.pow(n1, 2.8) * 0.7 + Math.pow(n2, 5.0) * 0.5;
-      points.push(new THREE.Vector2(x, spike * scaleY));
-    }
-    points.unshift(new THREE.Vector2(-width / 2, -120));
-    points.push(new THREE.Vector2(width / 2, -120));
-    const shape = new THREE.Shape(points);
-    const geo = new THREE.ShapeGeometry(shape);
-    const mat = new THREE.MeshBasicMaterial({ 
-      color, 
-      transparent: true, 
-      opacity, 
-      depthWrite: false,
-      depthTest: true,
-      polygonOffset: true,
-      polygonOffsetFactor: 1.0,
-      polygonOffsetUnits: 2.0,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0, y, z);
-    mesh.frustumCulled = false;
-    group.add(mesh);
-    registerFadeMaterial(mat);
-  };
-  // EXACT: Mountain tips #E00186 (pink/magenta) - single layer at -850 from bae1304
-  makeLayer(0xE00186, 0.18, 80, -850, -10);
 
   // Sun + glow - flat planes (no billboard), using retro synthwave PNG
   const sunGroup = new THREE.Group();
@@ -9865,21 +9829,6 @@ function buildSynthwaveValleyScene(group) {
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
   registerFadeMaterial(sunCoreMat);
-
-  // Horizon glow - EXACT: #FE9753 (orange) center
-  const horizonGlowGeo = new THREE.PlaneGeometry(1400, 150);
-  const horizonGlowMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    uniforms: { c1: { value: new THREE.Color(0xFE9753) }, c2: { value: new THREE.Color(0xE00186) } },  // EXACT: orange → pink
-    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
-    fragmentShader: `varying vec2 vUv; uniform vec3 c1; uniform vec3 c2; void main(){ float alpha=smoothstep(0.0,0.38,vUv.y)*(1.0-smoothstep(0.62,1.0,vUv.y)); float side=1.0-smoothstep(0.0,0.4,abs(vUv.x-0.5)*2.0); vec3 col=mix(c2,c1,1.0-abs(vUv.x-0.5)*1.5); gl_FragColor=vec4(col, alpha*side*0.95); }`,
-  });
-  const horizonGlow = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
-  horizonGlow.position.set(0, 12, -745);
-  horizonGlow.frustumCulled = false;
-  group.add(horizonGlow);
-  registerFadeMaterial(horizonGlowMat);
 
   // Log cylinder colors for debugging
   logCylinderColors();
