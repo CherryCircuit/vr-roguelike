@@ -112,7 +112,7 @@ function getCountryDisplayLabel() {
 // ── Module State ───────────────────────────────────────────
 let scene, camera, renderer;
 // Camera added directly to scene (no rig - VR hands need direct camera)
-let floorHUDDebugMarker;  // Small white box to show floor HUD position
+// floorHUDDebugMarker removed - was debug white plane
 const controllers = [];
 const controllerTriggerPressed = [false, false];
 const projectiles = [];
@@ -504,17 +504,6 @@ function init() {
 
   // Set up pause callback for ESC key
   setOnPauseCallback(togglePause);
-
-  // Floor HUD debug marker: small white plane to visualize floor HUD position
-  // Create a small flat plane at player feet level, following camera
-  floorHUDDebugMarker = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.3, 0.3),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
-  );
-  floorHUDDebugMarker.rotation.x = -Math.PI / 2;  // Flat on ground
-  floorHUDDebugMarker.position.set(0, 0, 0);
-  scene.add(floorHUDDebugMarker);
-  console.log('[debug] Floor HUD debug marker added (white plane)');
 
   // Test helpers for automation
   window.__test = window.__test || {};
@@ -9483,17 +9472,6 @@ function render(timestamp) {
   const scanlinesEl = document.getElementById('scanlines');
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
-  // Hide floor HUD debug marker in VR — creates a white box that follows the head
-  if (floorHUDDebugMarker) {
-    floorHUDDebugMarker.visible = !renderer.xr.isPresenting;
-    // Update floor HUD debug marker: small white plane at player feet
-    if (camera && !renderer.xr.isPresenting) {
-      floorHUDDebugMarker.position.x = camera.position.x;
-      floorHUDDebugMarker.position.y = camera.position.y - 1.6 + SCENE_Y_OFFSET;  // Offset to feet level (player eye at 1.6 + offset)
-      floorHUDDebugMarker.position.z = camera.position.z;
-    }
-  }
-
   // Selective bloom: lazy-init + render, only in desktop mode for synthwave_valley biome
   if (!renderer.xr.isPresenting && biomeSceneBiome === 'synthwave_valley') {
     if (!bloomComposer) initSelectiveBloom();  // Lazy init on first frame
@@ -9691,15 +9669,15 @@ function buildSynthwaveValleyScene(group) {
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: {
-      topColor: { value: new THREE.Color(0x1A004A) },      // #1a004a (matches skybox)
-      midColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple
-      horizonColor: { value: new THREE.Color(0xFE9053) },  // FIXED: Horizon orange (more saturated)
-      glowColor: { value: new THREE.Color(0xE00186) },     // EXACT: Mountain tips pink/magenta
+      topColor: { value: new THREE.Color(0x1A004A) },      // Top: dark purple
+      midColor: { value: new THREE.Color(0x71006E) },      // 75% from equator: deep purple
+      horizonColor: { value: new THREE.Color(0xFF7E31) },  // Equator: bright orange
+      glowColor: { value: new THREE.Color(0xF30787) },     // 40% from equator: pink
     },
     // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
     // stable in stereo rendering and does not rely on manual clip-space math.
     vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ vec3 dir=normalize(vWorldPosition); float h=clamp(dir.y*0.5+0.5,0.0,1.0); vec3 col; if(h<0.5){ col=horizonColor; }else{ col=mix(horizonColor,glowColor,smoothstep(0.5,0.58,h)); col=mix(col,midColor,smoothstep(0.58,0.72,h)); col=mix(col,topColor,smoothstep(0.72,1.0,h)); } gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ vec3 dir=normalize(vWorldPosition); float h=clamp(dir.y*0.5+0.5,0.0,1.0); vec3 col; if(h<0.5){ col=horizonColor; }else{ float t=(h-0.5)*2.0; col=mix(horizonColor,glowColor,smoothstep(0.0,0.4,t)); col=mix(col,midColor,smoothstep(0.4,0.75,t)); col=mix(col,topColor,smoothstep(0.75,1.0,t)); } gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
     depthWrite: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
@@ -9707,28 +9685,6 @@ function buildSynthwaveValleyScene(group) {
   sky.renderOrder = -20;  // Draw before sun (which is at -3 to -1)
   group.add(sky);
   registerFadeMaterial(skyMat);
-
-  // Atmosphere gradient cylinder - matches base createAtmosphere() but inside biome scene group
-  const atmCanvas = document.createElement('canvas');
-  atmCanvas.width = 4;
-  atmCanvas.height = 256;
-  const atmCtx = atmCanvas.getContext('2d');
-  const atmGrad = atmCtx.createLinearGradient(0, 256, 0, 0);  // bottom to top
-  atmGrad.addColorStop(0, 'rgba(255, 126, 49, 1.0)');       // #ff7e31 horizon orange
-  atmGrad.addColorStop(0.4, 'rgba(243, 7, 135, 0.9)');      // #f30787 pink
-  atmGrad.addColorStop(0.75, 'rgba(113, 0, 110, 0.6)');     // #71006e purple
-  atmGrad.addColorStop(1.0, 'rgba(26, 0, 74, 0.0)');        // #1a004a fade to transparent
-  atmCtx.fillStyle = atmGrad;
-  atmCtx.fillRect(0, 0, 4, 256);
-  const atmTexture = new THREE.CanvasTexture(atmCanvas);
-  atmTexture.wrapS = THREE.RepeatWrapping;
-  const atmGeo = new THREE.CylinderGeometry(92, 92, 54, 48, 1, true);
-  const atmMat = new THREE.MeshBasicMaterial({ map: atmTexture, transparent: true, opacity: 1.0, side: THREE.BackSide, depthWrite: false });
-  const atmCylinder = new THREE.Mesh(atmGeo, atmMat);
-  atmCylinder.position.set(0, 25, 0);  // base near ground, tall enough for atmosphere
-  atmCylinder.renderOrder = -13;
-  group.add(atmCylinder);
-  registerFadeMaterial(atmMat);
 
   // Terrain - EXACT colors: Gridlines #015CC1 (bright blue), Between gridlines #0C0E3E (dark blue)
   // PERFORMANCE FIX: Reduced from 240x240 (57,600 vertices) to 120x120 (14,400 vertices) for 75% reduction
@@ -9765,7 +9721,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Sun + glow - flat planes (no billboard), using retro synthwave PNG
   const sunGroup = new THREE.Group();
-  sunGroup.position.set(0, 45, -1700);  // Beyond mountains, matching original position
+  sunGroup.position.set(0, 120, -1700);  // Y raised so full circle is above horizon
   group.add(sunGroup);
 
   const makeRadial = (inner, outer) => {
@@ -9786,7 +9742,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Outer massive glow (flat plane, no billboard, fog-proof, no depth test)
   const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(2500, 2500), sunOuterGlowMat);
+  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(1500, 1500), sunOuterGlowMat);
   sunOuterGlow.frustumCulled = false;
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
@@ -9794,7 +9750,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Main bright glow (fog-proof, no depth test)
   const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800), sunGlowMat);
+  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(1080, 1080), sunGlowMat);
   sunGlow.frustumCulled = false;
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
@@ -9825,7 +9781,7 @@ function buildSynthwaveValleyScene(group) {
     sunCoreMat.needsUpdate = true;
   };
   sunDiscImg.src = 'assets/sun-retro.png';
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), sunCoreMat);
+  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(720, 720), sunCoreMat);
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
