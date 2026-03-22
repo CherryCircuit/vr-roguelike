@@ -3899,6 +3899,8 @@ let pauseCountdownOverlay = null;
 /**
  * Show the pause menu with stats and blaster upgrade info
  */
+let pauseMenuBasePosition = new THREE.Vector3();
+
 export function showPauseMenu() {
   pauseMenuGroup.visible = true;
   pauseMenuGroup.scale.set(1.3, 1.3, 1.3);
@@ -3909,11 +3911,12 @@ export function showPauseMenu() {
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraRef.quaternion);
     forward.y = 0;
     forward.normalize();
-    pauseMenuGroup.position.set(
+    pauseMenuBasePosition.set(
       cameraRef.position.x + forward.x * 2,
       cameraRef.position.y,
       cameraRef.position.z + forward.z * 2
     );
+    pauseMenuGroup.position.copy(pauseMenuBasePosition);
     // Face the camera once (billboard on pause, not every frame)
     pauseMenuGroup.lookAt(cameraRef.position.x, cameraRef.position.y, cameraRef.position.z);
   }
@@ -3952,10 +3955,10 @@ export function updatePauseMenu(now) {
     pauseMenuAnimation.slideIn = Math.min(1, (now - pauseMenuAnimation.startTime) / slideDuration);
   }
 
-  // Slide menu in from right (offset X in local space)
+  // Slide menu in from right (offset X in local space, relative to base position)
   const slideOffset = new THREE.Vector3((1 - pauseMenuAnimation.slideIn) * 4, 0, 0);
   slideOffset.applyQuaternion(pauseMenuGroup.quaternion);
-  pauseMenuGroup.position.add(slideOffset);
+  pauseMenuGroup.position.copy(pauseMenuBasePosition).add(slideOffset);
 
   // Animate charts
   if (pauseMenuAnimation.chartAnimation < 1) {
