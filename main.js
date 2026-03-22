@@ -6040,6 +6040,7 @@ function completeLevel() {
 
   // Clear all conductor electric arcs
   clearAllElectricArcs();
+  clearBossProjectiles();
 
   // Clear all telegraph effects
   clearAllTelegraphs();
@@ -11221,6 +11222,10 @@ function buildHellscapeLavaScene(group) {
   };
 
   // Hellscape floor HUD height: group.position.y = 0.05
+  group.position.set(26.599, 0.05, -0.486);
+  group.rotation.y = 0.248; // yaw: 14.21°
+}
+.05
   group.position.set(26.599, 0.05, -0.486);
   group.rotation.y = 0.248; // yaw: 14.21°
 }

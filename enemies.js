@@ -7826,7 +7826,7 @@ function acquireBossProjIndex() {
   return idx;
 }
 
-function releaseBossProjIndex(idx) {
+export function releaseBossProjIndex(idx) {
   if (idx < 0 || idx >= BOSS_PROJ_POOL_SIZE) return;
 
   // Hide instance by scaling to 0
