@@ -6,7 +6,6 @@ import * as THREE from 'three';
 import { spawnEnemy, getEnemies } from './enemies.js';
 
 const DREAM_SIZE = 30;
-const DREAM_FOG = { color: 0x220033, density: 0.045 };
 const TORCH_TRIGGER_DIST = 1.6;
 
 let dreamGroup = null;
@@ -140,7 +139,7 @@ function openChest() {
 }
 
 export function getDreamFogSettings() {
-  return DREAM_FOG;
+  return { color: 0x000000, density: 0 };
 }
 
 export function getDreamSpawnPosition() {

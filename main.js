@@ -235,7 +235,6 @@ let biomePropsBiome = null;
 const biomePropFloaters = [];
 let biomeSceneGroup = null;
 let biomeSceneBiome = null;
-let biomeOriginalFog = null;  // Store original fog when entering custom scene biomes
 
 let dreamTriggerMesh = null;
 let dreamTransition = null;
@@ -402,44 +401,6 @@ const MAX_NANITE_SWARMS = 2;
 const activeReflectorDrones = [];
 const MAX_REFLECTOR_DRONES = 2;
 
-// Fog/atmosphere system - FFR optimization for Quest VR
-// Increased fog density in VR mode to reduce render load on distant objects
-let ffrFogDensity = 0.012;  // Default fog density
-let ffrRenderDistance = 120;  // Objects beyond this distance fade out (increased to 120 for enemy visibility)
-let ffrEnabled = true;  // FFR optimization enabled by default
-let lastFFRMode = null;  // Track mode changes to avoid per-frame logging
-
-// Update fog settings based on VR mode
-function updateFFRFog() {
-  if (!renderer || !scene.fog) return;
-
-  const isVR = renderer.xr.isPresenting;
-  const currentMode = isVR && ffrEnabled ? 'vr' : 'desktop';
-
-  if (isVR && ffrEnabled) {
-    // Quest VR mode: denser fog to hide distant geometry
-    ffrFogDensity = 0.02;  // 67% denser fog for VR
-    ffrRenderDistance = 60;  // Objects beyond 60m fade out (increased from 50)
-  } else {
-    // Desktop mode: standard fog
-    ffrFogDensity = 0.008;  // Subtle fog for depth (0.008 = ~375 units visibility)
-    ffrRenderDistance = 120;  // Increased from 80 for enemy visibility
-  }
-
-  // Only log on mode transition
-  if (currentMode !== lastFFRMode) {
-    if (currentMode === 'vr') {
-      console.log('[FFR] VR mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
-    } else {
-      console.log('[FFR] Desktop mode: fog density =', ffrFogDensity, 'render distance =', ffrRenderDistance);
-    }
-    lastFFRMode = currentMode;
-  }
-
-  // Don't override biome-specific fog density — only set if no biome theme is active
-  // Biome themes set their own density via scenery.js applyTheme()
-}
-
 // ── Bootstrap ──────────────────────────────────────────────
 
 // Bloom layer constant — must be before init() since buildSynthwaveValleyScene
@@ -462,10 +423,8 @@ function init() {
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x888888, 0.018);  // Reduced fog density to fix black plane in VR
-
   // Camera - added directly to scene for proper VR hand positioning
-  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 5000);
   camera.rotation.set(0, 0, 0);
   scene.add(camera);
 
@@ -861,12 +820,6 @@ function clearBiomeScene() {
   biomeSceneGroup = null;
   biomeSceneBiome = null;
   biomeTerrainMaterials = [];  // Clear terrain flash references
-
-  // Restore original fog when clearing custom scene biome
-  if (biomeOriginalFog && scene) {
-    scene.fog = new THREE.FogExp2(biomeOriginalFog.color, biomeOriginalFog.density);
-    biomeOriginalFog = null;
-  }
 }
 
 function disposeObject3D(obj) {
@@ -1138,9 +1091,7 @@ function applyEnvironmentFade(fade) {
 
   if (scene && currentTheme) {
     const bg = new THREE.Color(currentTheme.skyColor).lerp(mixColor, environmentFade);
-    const fog = new THREE.Color(currentTheme.fogColor).lerp(mixColor, environmentFade);
     scene.background.copy(bg);
-    scene.fog.color.copy(fog);
   }
 
   environmentFadeTargets.forEach((material) => {
@@ -1205,14 +1156,6 @@ function applyThemeForLevel(level) {
   if (!theme || !scene) return;
 
   currentTheme = theme;
-
-  // Apply fog from biome theme
-  if (scene.fog && theme.fogColor !== undefined) {
-    scene.fog.color.setHex(theme.fogColor);
-  }
-  if (scene.fog && theme.fogDensity !== undefined) {
-    scene.fog.density = theme.fogDensity;
-  }
 
   const hideBaseEnv = !!theme.hideBaseEnv;
   if (gridHelper) gridHelper.visible = !hideBaseEnv;
@@ -1375,8 +1318,6 @@ function enterDreamWorldScene() {
   game.inDreamWorld = true;
   dreamOriginalEnv = {
     background: scene.background ? scene.background.clone() : new THREE.Color(0x000000),
-    fogColor: scene.fog ? scene.fog.color.clone() : new THREE.Color(0x000000),
-    fogDensity: scene.fog ? scene.fog.density : 0.012,
     gridVisible: gridHelper ? gridHelper.visible : true,
     horizonVisible: horizonRingRef ? horizonRingRef.visible : true,
     horizonInnerVisible: horizonInnerRingRef ? horizonInnerRingRef.visible : true,
@@ -1399,11 +1340,6 @@ function enterDreamWorldScene() {
   initDreamWorld(scene);
   enterDreamWorld();
 
-  const fog = getDreamFogSettings();
-  if (scene.fog) {
-    scene.fog.color.setHex(fog.color);
-    scene.fog.density = fog.density;
-  }
   if (scene.background) scene.background.setHex(0x120018);
   hideBaseEnvironment();
 
@@ -1421,10 +1357,6 @@ function exitDreamWorldScene() {
 
   if (dreamOriginalEnv) {
     if (scene.background) scene.background.copy(dreamOriginalEnv.background);
-    if (scene.fog) {
-      scene.fog.color.copy(dreamOriginalEnv.fogColor);
-      scene.fog.density = dreamOriginalEnv.fogDensity;
-    }
   }
   restoreBaseEnvironment();
   // Only modify camera position in desktop mode (in VR, WebXR controls camera)
@@ -6441,6 +6373,9 @@ function triggerScreenShake(intensity, duration) {
 // One InstancedMesh per projectile type = minimal draw calls.
 // Each instance is positioned via setMatrixAt(), colored via setColorAt().
 function initProjectilePool() {
+  // Guard against re-init on game restart — pools persist across games
+  if (instancedProjectiles['laser']) return;
+
   // ── Laser bolts (most common, cyan & pink) ──
   // Use merged bolt+glow geometry for a single draw call per instance
   const laserGeo = new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6);
@@ -8680,9 +8615,6 @@ function render(timestamp) {
 
   const dt = rawDt * effectiveTimeScale;  // Scaled time for game logic
 
-  // Update FFR fog based on VR/desktop mode
-  updateFFRFog();
-
   if (currentTheme) {
     updateAmbientParticles(rawDt, currentTheme, getAdjustedCameraPosition());
   }
@@ -9649,12 +9581,6 @@ function rebuildBiomeScene(biomeId, theme) {
   // Update aurora colors for new biome
   updateAuroraColors(theme);
 
-  // Store original fog for custom scene biomes
-  biomeOriginalFog = {
-    color: scene.fog ? scene.fog.color.clone() : new THREE.Color(0x000000),
-    density: scene.fog ? scene.fog.density : 0.012
-  };
-
   biomeSceneGroup = new THREE.Group();
   biomeSceneGroup.name = `biome-scene-${biomeId}`;
   scene.add(biomeSceneGroup);
@@ -9758,11 +9684,6 @@ function buildSynthwaveValleyScene(group) {
   // original standalone scene's punch after we removed postprocessing, so raise
   // the local material brightness without affecting other biomes.
   const brightness = 0.82;
-
-  // Set synthwave fog for atmospheric depth and distance fade
-  if (scene) {
-    scene.fog = new THREE.FogExp2(0x2C0051, 0.018);  // Purple fog matching biome
-  }
 
   // Sky dome (no stars, we use global starfield)
   // EXACT colors: Horizon #FE9053 (orange) → Mountain tips #E00186 (pink) → Sun top #2C0051 (purple) → Top #1A004A (dark purple) → Black
@@ -9879,7 +9800,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Sun + glow - flat planes (no billboard), using retro synthwave PNG
   const sunGroup = new THREE.Group();
-  sunGroup.position.set(0, 45, -300);  // Far enough to look proportional, fog-proof materials
+  sunGroup.position.set(0, 45, -1700);  // Beyond mountains, matching original position
   group.add(sunGroup);
 
   const makeRadial = (inner, outer) => {
@@ -9900,7 +9821,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Outer massive glow (flat plane, no billboard, fog-proof, no depth test)
   const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), sunOuterGlowMat);
+  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(2500, 2500), sunOuterGlowMat);
   sunOuterGlow.frustumCulled = false;
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
@@ -9908,7 +9829,7 @@ function buildSynthwaveValleyScene(group) {
 
   // Main bright glow (fog-proof, no depth test)
   const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(350, 350), sunGlowMat);
+  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800), sunGlowMat);
   sunGlow.frustumCulled = false;
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
@@ -9939,7 +9860,7 @@ function buildSynthwaveValleyScene(group) {
     sunCoreMat.needsUpdate = true;
   };
   sunDiscImg.src = 'assets/sun-retro.png';
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), sunCoreMat);
+  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), sunCoreMat);
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
@@ -10710,23 +10631,6 @@ function buildAlienPlanetScene(group) {
   }
   cityMeshes.push(megaMesh);
   group.add(megaMesh);
-
-  // Issue 6b: Fog cylinder to fade distant buildings (like Synthwave atmosphere)
-  const fogCylRadius = 140; // Tighter than synthwave's 92
-  const fogCylHeight = 90;
-  const fogCylGeo = new THREE.CylinderGeometry(fogCylRadius, fogCylRadius, fogCylHeight, 48, 1, true);
-  const fogCylMat = new THREE.MeshBasicMaterial({
-    color: 0x0a0510, // Dark purple-gray matching alien planet
-    transparent: true,
-    opacity: 0.35,
-    side: THREE.BackSide,
-    depthWrite: false,
-    blending: THREE.NormalBlending
-  });
-  const fogCylinder = new THREE.Mesh(fogCylGeo, fogCylMat);
-  fogCylinder.position.set(0, fogCylHeight / 2 + floorY, 0);
-  fogCylinder.renderOrder = -12;
-  group.add(fogCylinder);
 
   // Issue 7: Distant low-poly mountains at ~100 units (alien planet colors) - closer and larger for visibility
   const createDistantMountain = (x, z, scale) => {
