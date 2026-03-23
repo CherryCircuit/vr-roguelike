@@ -20,7 +20,7 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon'
 };
 
-const ROOT_DIR = __dirname;
+const ROOT_DIR = path.resolve(__dirname, '../..');
 const PORT = 8000;
 
 function getMimeType(filePath) {
