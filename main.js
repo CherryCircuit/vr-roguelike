@@ -228,6 +228,10 @@ let auroraRef = null;
 let auroraCanvas = null;
 let auroraCtx = null;
 let atmosphereRef = null;
+let vhsRetroShellRef = null;
+let vhsRetroScanlineMatRef = null;
+let vhsRetroGlowMatRef = null;
+let vhsRetroScanlineTexRef = null;
 let currentTheme = null;
 let biomePropsGroup = null;
 let biomePropsBiome = null;
@@ -264,6 +268,7 @@ const _dreamPrevProjectilePos = new THREE.Vector3();
 const _dreamSegment = new THREE.Vector3();
 const _dreamToCenter = new THREE.Vector3();
 const _dreamClosestPoint = new THREE.Vector3();
+const _vhsPlayerPos = new THREE.Vector3();
 
 // Low health warning
 let lowHealthWarningActive = false;
@@ -974,6 +979,7 @@ function createEnvironment() {
   // registerFadeMaterial(horizonInnerRingRef.material);
 
   createSun();
+  createVHSRetroShell();
   // Removed legacy flat ShapeGeometry mountain layers. They were stale overlays
   // that conflicted with the biome-specific terrain scenes.
   createStars();
@@ -1514,6 +1520,7 @@ function hideBaseEnvironment() {
   if (sunGlowRef) sunGlowRef.visible = false;
   if (starsRef) starsRef.visible = false;
   if (auroraRef) auroraRef.visible = false;
+  if (vhsRetroShellRef) vhsRetroShellRef.visible = false;
   if (floorMaterial) floorMaterial.opacity = 0;
   if (biomePropsGroup) biomePropsGroup.visible = false;
   if (biomeSceneGroup) biomeSceneGroup.visible = false;
@@ -1528,6 +1535,7 @@ function restoreBaseEnvironment() {
   if (sunGlowRef) sunGlowRef.visible = dreamOriginalEnv.sunGlowVisible;
   if (starsRef) starsRef.visible = dreamOriginalEnv.starsVisible;
   if (auroraRef) auroraRef.visible = dreamOriginalEnv.auroraVisible;
+  if (vhsRetroShellRef) vhsRetroShellRef.visible = dreamOriginalEnv.vhsRetroVisible !== false;
   if (floorMaterial && typeof dreamOriginalEnv.floorOpacity === 'number') {
     floorMaterial.opacity = dreamOriginalEnv.floorOpacity;
   }
@@ -1547,6 +1555,7 @@ function enterDreamWorldScene() {
     sunGlowVisible: sunGlowRef ? sunGlowRef.visible : true,
     starsVisible: starsRef ? starsRef.visible : true,
     auroraVisible: auroraRef ? auroraRef.visible : false,
+    vhsRetroVisible: vhsRetroShellRef ? vhsRetroShellRef.visible : true,
     floorOpacity: floorMaterial ? floorMaterial.opacity : 1,
     biomePropsVisible: biomePropsGroup ? biomePropsGroup.visible : true,
     biomeSceneVisible: biomeSceneGroup ? biomeSceneGroup.visible : true,
@@ -2023,6 +2032,140 @@ function createAtmosphere() {
   scene.add(cylinder);
   atmosphereRef = cylinder;
   registerFadeMaterial(atmosphereRef.material);
+}
+
+function createVHSScanlineTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+
+  // Transparent base keeps the effect subtle in VR.
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (let y = 0; y < canvas.height; y += 2) {
+    const alpha = 0.06 + Math.random() * 0.045;
+    ctx.fillStyle = `rgba(210, 230, 255, ${alpha.toFixed(3)})`;
+    ctx.fillRect(0, y, canvas.width, 1);
+  }
+
+  // Add sparse tape-noise streaks for a light VHS feel.
+  for (let i = 0; i < 22; i++) {
+    const y = Math.floor(Math.random() * canvas.height);
+    const h = 1 + Math.floor(Math.random() * 2);
+    const alpha = 0.03 + Math.random() * 0.03;
+    ctx.fillStyle = `rgba(255, 200, 235, ${alpha.toFixed(3)})`;
+    ctx.fillRect(0, y, canvas.width, h);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, 2);
+  return texture;
+}
+
+function createVHSGlowTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 16;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+
+  const grad = ctx.createLinearGradient(0, 256, 0, 0);
+  grad.addColorStop(0.0, 'rgba(255, 120, 165, 0.18)');
+  grad.addColorStop(0.35, 'rgba(180, 130, 255, 0.10)');
+  grad.addColorStop(0.7, 'rgba(120, 180, 255, 0.04)');
+  grad.addColorStop(1.0, 'rgba(120, 180, 255, 0.0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  return texture;
+}
+
+function createVHSRetroShell() {
+  if (!scene || vhsRetroShellRef) return;
+
+  // VR-safe VHS effect: world-space cylinders, not a full-screen post process.
+  // This avoids eye strain from head-locked overlays and keeps stereo depth intact.
+  const shellGroup = new THREE.Group();
+  shellGroup.name = 'vhsRetroShellRef';
+
+  const radius = 86;
+  const height = 46;
+  const segments = 40;
+
+  const scanlineGeo = new THREE.CylinderGeometry(radius, radius, height, segments, 1, true);
+  const scanlineTex = createVHSScanlineTexture();
+  const scanlineMat = new THREE.MeshBasicMaterial({
+    map: scanlineTex,
+    color: 0x99b8ff,
+    transparent: true,
+    opacity: 0.10,
+    side: THREE.BackSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const scanlineShell = new THREE.Mesh(scanlineGeo, scanlineMat);
+  scanlineShell.name = 'vhs-scanline-shell';
+  scanlineShell.renderOrder = -14;
+  shellGroup.add(scanlineShell);
+
+  const glowGeo = new THREE.CylinderGeometry(radius - 1.5, radius - 1.5, height, segments, 1, true);
+  const glowTex = createVHSGlowTexture();
+  const glowMat = new THREE.MeshBasicMaterial({
+    map: glowTex,
+    color: 0xff7aa6,
+    transparent: true,
+    opacity: 0.06,
+    side: THREE.BackSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const glowShell = new THREE.Mesh(glowGeo, glowMat);
+  glowShell.name = 'vhs-glow-shell';
+  glowShell.renderOrder = -15;
+  shellGroup.add(glowShell);
+
+  shellGroup.position.set(0, (height * 0.5) - 1 + SCENE_Y_OFFSET, 0);
+  shellGroup.frustumCulled = false;
+  scene.add(shellGroup);
+
+  vhsRetroShellRef = shellGroup;
+  vhsRetroScanlineMatRef = scanlineMat;
+  vhsRetroGlowMatRef = glowMat;
+  vhsRetroScanlineTexRef = scanlineTex;
+
+  registerFadeMaterial(scanlineMat);
+  registerFadeMaterial(glowMat);
+}
+
+function updateVHSRetroShell(now) {
+  if (!vhsRetroShellRef || !camera) return;
+
+  camera.getWorldPosition(_vhsPlayerPos);
+  vhsRetroShellRef.position.x = _vhsPlayerPos.x;
+  vhsRetroShellRef.position.z = _vhsPlayerPos.z;
+
+  if (vhsRetroScanlineTexRef) {
+    vhsRetroScanlineTexRef.offset.y = (now * 0.000035) % 1;
+    vhsRetroScanlineTexRef.offset.x = Math.sin(now * 0.0001) * 0.01;
+  }
+
+  const fadeScale = 1 - environmentFade;
+  if (vhsRetroScanlineMatRef) {
+    const base = vhsRetroScanlineMatRef.__fadeBase ?? 0.10;
+    const flicker = 0.95 + Math.sin(now * 0.0018) * 0.05;
+    vhsRetroScanlineMatRef.opacity = base * fadeScale * flicker;
+  }
+
+  if (vhsRetroGlowMatRef) {
+    const base = vhsRetroGlowMatRef.__fadeBase ?? 0.06;
+    const pulse = 0.9 + Math.sin(now * 0.0011) * 0.1;
+    vhsRetroGlowMatRef.opacity = base * fadeScale * pulse;
+  }
 }
 
 function createMountains() {
@@ -9897,6 +10040,7 @@ function render(timestamp) {
 
   // Keep visual tuning and secret trigger visuals responsive every frame.
   applyVisualTuning();
+  updateVHSRetroShell(now);
   updateDreamTriggerVisual(now);
 
   // Update pause countdown BEFORE any early-return render path.
@@ -10570,7 +10714,7 @@ function buildAlienPlanetScene(group) {
   const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
 
   // Ground
-  const groundGeo = new THREE.PlaneGeometry(300, 300, 120, 120);
+  const groundGeo = new THREE.PlaneGeometry(300, 300, 84, 84);
   const groundPositions = groundGeo.attributes.position;
   for (let i = 0; i < groundPositions.count; i++) {
     const x = groundPositions.getX(i);
@@ -10650,97 +10794,110 @@ function buildAlienPlanetScene(group) {
   }
   // Green river-object REMOVED - was blocking view and looking out of place
 
-  // Mountains - 3 rings of procedural jagged mountains
+  // Mountains - keep silhouette, reduce per-biome geometry churn by reusing assets.
+  const alienMountainMaterial = new THREE.MeshStandardMaterial({
+    color: 0x1a1020,
+    roughness: 0.9,
+    metalness: 0.1,
+    flatShading: true
+  });
+  const alienMountainGeometries = [5, 6, 7].map((segments) => new THREE.ConeGeometry(1, 1, segments));
+
   const createMountain = (x, z, scale) => {
-    const peakCount = 1 + Math.floor(Math.random() * 3);
+    const peakCount = 1 + Math.floor(Math.random() * 2);
     const mountainGroup = new THREE.Group();
     for (let p = 0; p < peakCount; p++) {
       const height = (12 + Math.random() * 18) * scale;
-      const radius = Math.max(2.5, (2 + Math.random() * 3) * scale); // Minimum radius of 2.5 for no skinny pyramids
-      const peakGeo = new THREE.ConeGeometry(radius, height, 5 + Math.floor(Math.random() * 3));
-      const peakMat = new THREE.MeshStandardMaterial({
-        color: 0x1a1020,
-        roughness: 0.9,
-        metalness: 0.1,
-        flatShading: true
-      });
-      const peak = new THREE.Mesh(peakGeo, peakMat);
+      const radius = Math.max(2.5, (2 + Math.random() * 3) * scale);
+      const peakGeo = alienMountainGeometries[Math.floor(Math.random() * alienMountainGeometries.length)];
+      const peak = new THREE.Mesh(peakGeo, alienMountainMaterial);
       peak.position.set(
         (Math.random() - 0.5) * 4 * scale,
         height / 2,
         (Math.random() - 0.5) * 4 * scale
       );
-      // Issue 5: Enable shadows for mountains
+      peak.scale.set(radius, height, radius);
       peak.castShadow = true;
       peak.receiveShadow = true;
       mountainGroup.add(peak);
     }
     mountainGroup.position.set(x, floorY, z);
-    mountainGroup.frustumCulled = false; // Prevent culling at distance
+    mountainGroup.frustumCulled = false;
     return mountainGroup;
   };
 
-  // Mountains - single ring for FPS (was 2 rings = 24 mountains)
-  for (let ring = 0; ring < 1; ring++) {
-    const count = 14;  // Single ring of 14 mountains (was 8+16=24)
-    const radius = 40;
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.3;
-      const r = radius + (Math.random() - 0.5) * 10;
-      const x = Math.cos(angle) * r;
-      const z = Math.sin(angle) * r;
-      group.add(createMountain(x, z, 1.2 + Math.random() * 0.6));
-    }
+  // Mountains - trimmed ring count. Still surrounds the arena, fewer draw calls.
+  const mountainCount = 10;
+  const mountainRadius = 40;
+  for (let i = 0; i < mountainCount; i++) {
+    const angle = (i / mountainCount) * Math.PI * 2 + Math.random() * 0.3;
+    const r = mountainRadius + (Math.random() - 0.5) * 10;
+    const x = Math.cos(angle) * r;
+    const z = Math.sin(angle) * r;
+    group.add(createMountain(x, z, 1.2 + Math.random() * 0.6));
   }
 
   // Alien Plants - 3 types along river (removed fern type - too expensive with 40-72 meshes)
   const alienPlants = [];
+  const alienPlantAssets = {
+    spireGeo: new THREE.ConeGeometry(1, 1, 6),
+    spireMat: new THREE.MeshStandardMaterial({
+      color: 0x00aa33,
+      emissive: 0x00ff44,
+      emissiveIntensity: 0.6,
+      roughness: 0.5
+    }),
+    orbGeo: new THREE.IcosahedronGeometry(1, 1),
+    orbMat: new THREE.MeshBasicMaterial({ color: 0x00ff66 }),
+    crystalGeo: new THREE.ConeGeometry(1, 1, 3),
+    crystalMat: new THREE.MeshStandardMaterial({
+      color: 0x00cc55,
+      emissive: 0x00ff66,
+      emissiveIntensity: 0.7,
+      roughness: 0.3
+    }),
+    stemGeo: new THREE.CylinderGeometry(1, 1, 1, 8),
+    stemMat: new THREE.MeshStandardMaterial({ color: 0x204020, roughness: 0.8 }),
+    capGeo: new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2),
+    capMat: new THREE.MeshStandardMaterial({
+      color: 0x00aa44,
+      emissive: 0x00ff55,
+      emissiveIntensity: 0.5,
+      roughness: 0.6
+    })
+  };
 
   const createAlienPlant = (x, z, type) => {
     const plantGroup = new THREE.Group();
 
     if (type === 0) {
-      // Glowing Spire - tall thin cone with glowing orb on top
+      // Glowing spire
       const height = 3 + Math.random() * 5;
-      const spireGeo = new THREE.ConeGeometry(0.2, height, 6);
-      const spireMat = new THREE.MeshStandardMaterial({
-        color: 0x00aa33,
-        emissive: 0x00ff44,
-        emissiveIntensity: 0.6,
-        roughness: 0.5
-      });
-      const spire = new THREE.Mesh(spireGeo, spireMat);
+      const spire = new THREE.Mesh(alienPlantAssets.spireGeo, alienPlantAssets.spireMat);
       spire.position.y = height / 2;
+      spire.scale.set(0.2, height, 0.2);
       spire.castShadow = false;
       spire.receiveShadow = false;
       plantGroup.add(spire);
 
-      // Glowing orb on top
-      const orbGeo = new THREE.IcosahedronGeometry(0.3, 1);
-      const orbMat = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
-      const orb = new THREE.Mesh(orbGeo, orbMat);
+      const orb = new THREE.Mesh(alienPlantAssets.orbGeo, alienPlantAssets.orbMat);
       orb.position.y = height + 0.2;
+      orb.scale.setScalar(0.3);
       orb.castShadow = false;
       orb.receiveShadow = false;
       plantGroup.add(orb);
 
     } else if (type === 1) {
-      // Crystal Cluster - 3 small angular cones
+      // Crystal cluster
       for (let c = 0; c < 3; c++) {
         const height = 0.8 + Math.random() * 1.2;
-        const crystalGeo = new THREE.ConeGeometry(0.15, height, 3);
-        const crystalMat = new THREE.MeshStandardMaterial({
-          color: 0x00cc55,
-          emissive: 0x00ff66,
-          emissiveIntensity: 0.7,
-          roughness: 0.3
-        });
-        const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+        const crystal = new THREE.Mesh(alienPlantAssets.crystalGeo, alienPlantAssets.crystalMat);
         crystal.position.set(
           (Math.random() - 0.5) * 0.4,
           height / 2,
           (Math.random() - 0.5) * 0.4
         );
+        crystal.scale.set(0.15, height, 0.15);
         crystal.rotation.set(
           (Math.random() - 0.5) * 0.4,
           Math.random() * Math.PI,
@@ -10752,25 +10909,18 @@ function buildAlienPlanetScene(group) {
       }
 
     } else if (type === 2) {
-      // Mushroom - cylinder stem + hemisphere cap
+      // Mushroom
       const stemHeight = 0.5 + Math.random() * 0.5;
-      const stemGeo = new THREE.CylinderGeometry(0.1, 0.15, stemHeight, 8);
-      const stemMat = new THREE.MeshStandardMaterial({ color: 0x204020, roughness: 0.8 });
-      const stem = new THREE.Mesh(stemGeo, stemMat);
+      const stem = new THREE.Mesh(alienPlantAssets.stemGeo, alienPlantAssets.stemMat);
       stem.position.y = stemHeight / 2;
+      stem.scale.set(0.1, stemHeight, 0.15);
       stem.castShadow = false;
       stem.receiveShadow = false;
       plantGroup.add(stem);
 
-      const capGeo = new THREE.SphereGeometry(0.4, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
-      const capMat = new THREE.MeshStandardMaterial({
-        color: 0x00aa44,
-        emissive: 0x00ff55,
-        emissiveIntensity: 0.5,
-        roughness: 0.6
-      });
-      const cap = new THREE.Mesh(capGeo, capMat);
+      const cap = new THREE.Mesh(alienPlantAssets.capGeo, alienPlantAssets.capMat);
       cap.position.y = stemHeight;
+      cap.scale.setScalar(0.4);
       cap.castShadow = false;
       cap.receiveShadow = false;
       plantGroup.add(cap);
@@ -10784,8 +10934,8 @@ function buildAlienPlanetScene(group) {
     return plantGroup;
   };
 
-  // Place 15 plants along river with random offsets (reduced for FPS)
-  for (let i = 0; i < 15; i++) {
+  // Place plants along river with random offsets
+  for (let i = 0; i < 12; i++) {
     const t = Math.random();
     const riverT = t * 59;
     const idx = Math.floor(riverT);
@@ -10820,7 +10970,7 @@ function buildAlienPlanetScene(group) {
 
   // Extra flora spread around the player (reduced for FPS)
   // AGGRESSIVE: Only spawn in front of player (negative Z, front 180-degree arc)
-  for (let i = 0; i < 15; i++) {  // Reduced from 50 to 15 (total plants: 30 instead of 100)
+  for (let i = 0; i < 12; i++) {  // Reduced from 50 to 12 (total target: ~24 before culling)
     const angle = Math.random() * Math.PI * 2;
     const radius = 8 + Math.random() * 40;
     const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 8;
@@ -10855,6 +11005,8 @@ function buildAlienPlanetScene(group) {
   // AGGRESSIVE: Only spawn in front of player (negative Z)
   const critterGeo = new THREE.SphereGeometry(0.18, 8, 6);
   const critterGlowGeo = new THREE.SphereGeometry(0.3, 8, 6);
+  const critterBodyMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, emissive: 0x00ff66, emissiveIntensity: 0.4 });
+  const critterGlowMat = new THREE.MeshBasicMaterial({ color: 0x33ffaa, transparent: true, opacity: 0.3 });
   for (let i = 0; i < 5; i++) {  // Reduced from 10 to 5 for FPS
     const angle = Math.random() * Math.PI * 2;
     const radius = 6 + Math.random() * 35;
@@ -10865,15 +11017,13 @@ function buildAlienPlanetScene(group) {
     if (z > 0) continue;
 
     const critterGroup = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, emissive: 0x00ff66, emissiveIntensity: 0.4 });
-    const body = new THREE.Mesh(critterGeo, bodyMat);
+    const body = new THREE.Mesh(critterGeo, critterBodyMat);
     body.position.y = 0.2;
     body.castShadow = false;
     body.receiveShadow = false;
     critterGroup.add(body);
 
-    const glowMat = new THREE.MeshBasicMaterial({ color: 0x33ffaa, transparent: true, opacity: 0.3 });
-    const glow = new THREE.Mesh(critterGlowGeo, glowMat);
+    const glow = new THREE.Mesh(critterGlowGeo, critterGlowMat);
     glow.position.y = 0.2;
     critterGroup.add(glow);
 
@@ -10968,38 +11118,39 @@ function buildAlienPlanetScene(group) {
   cityMeshes.push(megaMesh);
   group.add(megaMesh);
 
-  // Issue 7: Distant low-poly mountains at ~100 units (alien planet colors) - closer and larger for visibility
+  // Distant low-poly mountains at ~100 units.
+  const distantMountainMaterial = new THREE.MeshStandardMaterial({
+    color: 0x0a2015,
+    roughness: 0.9,
+    metalness: 0.1,
+    flatShading: true
+  });
+  const distantMountainGeometries = [5, 6, 7].map((segments) => new THREE.ConeGeometry(1, 1, segments));
+
   const createDistantMountain = (x, z, scale) => {
     const peakCount = 1 + Math.floor(Math.random() * 2);
     const mountainGroup = new THREE.Group();
     for (let p = 0; p < peakCount; p++) {
       const height = (30 + Math.random() * 50) * scale;
       const radius = Math.max(6, (6 + Math.random() * 10) * scale);
-      // Low-poly cone with 5-7 segments
-      const peakGeo = new THREE.ConeGeometry(radius, height, 5 + Math.floor(Math.random() * 3));
-      const peakMat = new THREE.MeshStandardMaterial({
-        color: 0x0a2015, // Dark teal-green
-        roughness: 0.9,
-        metalness: 0.1,
-        flatShading: true
-      });
-      const peak = new THREE.Mesh(peakGeo, peakMat);
+      const peakGeo = distantMountainGeometries[Math.floor(Math.random() * distantMountainGeometries.length)];
+      const peak = new THREE.Mesh(peakGeo, distantMountainMaterial);
       peak.position.set(
         (Math.random() - 0.5) * 6 * scale,
         height / 2,
         (Math.random() - 0.5) * 6 * scale
       );
+      peak.scale.set(radius, height, radius);
       peak.castShadow = false;
       peak.receiveShadow = false;
       mountainGroup.add(peak);
     }
     mountainGroup.position.set(x, floorY, z);
-    mountainGroup.frustumCulled = false; // Prevent culling at distance
+    mountainGroup.frustumCulled = false;
     return mountainGroup;
   };
 
-  // Ring of 10 distant mountains at ~100 units (closer for visibility with fog)
-  const distantMountainCount = 10;
+  const distantMountainCount = 8;
   const distantMountainRadius = 100;
   for (let i = 0; i < distantMountainCount; i++) {
     const angle = (i / distantMountainCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
@@ -11046,8 +11197,8 @@ function buildHellscapeLavaScene(group) {
   const moonLight = new THREE.DirectionalLight(0xff3333, 2.5);
   moonLight.position.set(20, 30, -100);
   moonLight.castShadow = true;
-  moonLight.shadow.mapSize.width = 2048;
-  moonLight.shadow.mapSize.height = 2048;
+  moonLight.shadow.mapSize.width = 1024;
+  moonLight.shadow.mapSize.height = 1024;
   moonLight.shadow.camera.near = 0.5;
   moonLight.shadow.camera.far = 500;
   moonLight.shadow.camera.left = -100;
@@ -11068,7 +11219,7 @@ function buildHellscapeLavaScene(group) {
   // ========================================
   // TERRAIN (existing logic)
   // ========================================
-  const geometry = new THREE.PlaneGeometry(300, 300, 200, 200);
+  const geometry = new THREE.PlaneGeometry(300, 300, 140, 140);
   geometry.rotateX(-Math.PI / 2);
   const positions = geometry.attributes.position;
   for (let i = 0; i < positions.count; i++) {
@@ -11144,9 +11295,12 @@ function buildHellscapeLavaScene(group) {
   group.add(flashPlane);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
+  const placementDummy = new THREE.Object3D();
+
   // ========================================
-  // 2. JAGGED ROCKS (50 scattered)
+  // 2. JAGGED ROCKS (instanced)
   // ========================================
+  const rockCount = 36;
   const rockGeo = new THREE.TetrahedronGeometry(1, 0);
   const rockMat = new THREE.MeshStandardMaterial({
     color: 0x1a1a1a,
@@ -11154,9 +11308,9 @@ function buildHellscapeLavaScene(group) {
     metalness: 0.2,
     flatShading: true
   });
+  const rockMesh = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
 
-  for (let i = 0; i < 50; i++) {
-    const rock = new THREE.Mesh(rockGeo, rockMat);
+  for (let i = 0; i < rockCount; i++) {
     let x, z, riverX, distToRiver;
     let attempts = 0;
     do {
@@ -11167,63 +11321,41 @@ function buildHellscapeLavaScene(group) {
       attempts++;
     } while (distToRiver < 8 && attempts < 20);
 
-    rock.position.set(x, floorY + 0.5, z);
-    // Scale: taller than wide (0.5-4.0)
-    const scaleY = 0.5 + Math.random() * 3.5;
-    const scaleX = 0.5 + Math.random() * 1.5;
-    rock.scale.set(scaleX, scaleY, scaleX);
-    rock.rotation.set(
+    const scaleY = 0.5 + Math.random() * 3.0;
+    const scaleX = 0.5 + Math.random() * 1.3;
+    placementDummy.position.set(x, floorY + 0.5, z);
+    placementDummy.scale.set(scaleX, scaleY, scaleX);
+    placementDummy.rotation.set(
       Math.random() * Math.PI,
       Math.random() * Math.PI * 2,
       Math.random() * Math.PI
     );
-    rock.castShadow = true;
-    rock.receiveShadow = true;
-    group.add(rock);
+    placementDummy.updateMatrix();
+    rockMesh.setMatrixAt(i, placementDummy.matrix);
   }
+  rockMesh.instanceMatrix.needsUpdate = true;
+  rockMesh.castShadow = true;
+  rockMesh.receiveShadow = true;
+  rockMesh.frustumCulled = false;
+  group.add(rockMesh);
 
   // ========================================
-  // 3. DEAD TREES (25 procedural)
+  // 3. DEAD TREES (instanced + simplified)
   // ========================================
-  const treeMat = new THREE.MeshStandardMaterial({
+  const treeMaterial = new THREE.MeshStandardMaterial({
     color: 0x0a0a0a,
     roughness: 0.9,
     metalness: 0.1,
     flatShading: true
   });
+  const trunkGeo = new THREE.CylinderGeometry(0.8, 1.0, 1, 5);
+  const branchGeo = new THREE.CylinderGeometry(0.6, 0.8, 1, 5);
 
-  const createBranch = (depth, maxDepth, length, radius) => {
-    const branchGroup = new THREE.Group();
+  const treeDefs = [];
+  let totalBranches = 0;
+  const treeCount = 18;
 
-    // Main branch cylinder (5 sides)
-    const branchGeo = new THREE.CylinderGeometry(radius * 0.7, radius, length, 5);
-    const branch = new THREE.Mesh(branchGeo, treeMat);
-    branch.position.y = length / 2;
-    branch.castShadow = true;
-    branch.receiveShadow = true;
-    branchGroup.add(branch);
-
-    // Add child branches if not at max depth
-    if (depth < maxDepth) {
-      const numChildren = 2 + Math.floor(Math.random() * 2); // 2-3 children
-      for (let i = 0; i < numChildren; i++) {
-        const childBranch = createBranch(
-          depth + 1,
-          maxDepth,
-          length * 0.6,
-          radius * 0.6
-        );
-        childBranch.position.y = length;
-        childBranch.rotation.z = (Math.random() - 0.5) * 1.2;
-        childBranch.rotation.y = (i / numChildren) * Math.PI * 2 + Math.random() * 0.5;
-        branchGroup.add(childBranch);
-      }
-    }
-
-    return branchGroup;
-  };
-
-  for (let i = 0; i < 25; i++) {
+  for (let i = 0; i < treeCount; i++) {
     let x, z, riverX, distToRiver;
     let attempts = 0;
     do {
@@ -11234,18 +11366,63 @@ function buildHellscapeLavaScene(group) {
       attempts++;
     } while (distToRiver < 8 && attempts < 20);
 
-    const tree = createBranch(0, 3, 3 + Math.random() * 2, 0.2 + Math.random() * 0.1);
-    tree.position.set(x, floorY, z);
-    tree.rotation.y = Math.random() * Math.PI * 2;
-    const treeScale = 0.8 + Math.random() * 0.6;
-    tree.scale.setScalar(treeScale);
-    group.add(tree);
+    const trunkHeight = 2.6 + Math.random() * 2.0;
+    const trunkRadius = 0.16 + Math.random() * 0.07;
+    const treeYaw = Math.random() * Math.PI * 2;
+    const branchCount = 2 + Math.floor(Math.random() * 2);
+
+    treeDefs.push({ x, z, trunkHeight, trunkRadius, treeYaw, branchCount });
+    totalBranches += branchCount;
   }
 
+  const trunkMesh = new THREE.InstancedMesh(trunkGeo, treeMaterial, treeDefs.length);
+  const branchMesh = new THREE.InstancedMesh(branchGeo, treeMaterial, totalBranches);
+
+  let branchIdx = 0;
+  for (let i = 0; i < treeDefs.length; i++) {
+    const tree = treeDefs[i];
+
+    placementDummy.position.set(tree.x, floorY + tree.trunkHeight * 0.5, tree.z);
+    placementDummy.rotation.set(0, tree.treeYaw, (Math.random() - 0.5) * 0.08);
+    placementDummy.scale.set(tree.trunkRadius, tree.trunkHeight, tree.trunkRadius);
+    placementDummy.updateMatrix();
+    trunkMesh.setMatrixAt(i, placementDummy.matrix);
+
+    for (let b = 0; b < tree.branchCount; b++) {
+      const branchLength = tree.trunkHeight * (0.35 + Math.random() * 0.25);
+      const branchRadius = tree.trunkRadius * (0.62 + Math.random() * 0.2);
+      const branchYaw = tree.treeYaw + ((b / tree.branchCount) * Math.PI * 2) + (Math.random() - 0.5) * 0.6;
+      const branchTilt = (0.45 + Math.random() * 0.7) * (Math.random() > 0.5 ? 1 : -1);
+      const baseHeight = floorY + tree.trunkHeight * (0.45 + Math.random() * 0.35);
+
+      placementDummy.position.set(
+        tree.x + Math.cos(branchYaw) * (tree.trunkRadius * 0.5),
+        baseHeight,
+        tree.z + Math.sin(branchYaw) * (tree.trunkRadius * 0.5)
+      );
+      placementDummy.rotation.set(0, branchYaw, branchTilt);
+      placementDummy.scale.set(branchRadius, branchLength, branchRadius * 0.9);
+      placementDummy.updateMatrix();
+      branchMesh.setMatrixAt(branchIdx, placementDummy.matrix);
+      branchIdx++;
+    }
+  }
+
+  trunkMesh.instanceMatrix.needsUpdate = true;
+  branchMesh.instanceMatrix.needsUpdate = true;
+  trunkMesh.castShadow = true;
+  trunkMesh.receiveShadow = true;
+  branchMesh.castShadow = true;
+  branchMesh.receiveShadow = true;
+  trunkMesh.frustumCulled = false;
+  branchMesh.frustumCulled = false;
+  group.add(trunkMesh);
+  group.add(branchMesh);
+
   // ========================================
-  // 4. TWINKLING STARS (1500 particles with red tint)
+  // 4. TWINKLING STARS (1000 particles with red tint)
   // ========================================
-  const starCount = 1500;
+  const starCount = 1000;
   const starPositions = new Float32Array(starCount * 3);
   const starColors = new Float32Array(starCount * 3);
   const starSizes = new Float32Array(starCount);
@@ -11315,9 +11492,9 @@ function buildHellscapeLavaScene(group) {
   group.add(stars);
 
   // ========================================
-  // 5. SPARK PARTICLES (200 rising from lava)
+  // 5. SPARK PARTICLES (lifetime-based, deterministic)
   // ========================================
-  const sparkCount = 200;
+  const sparkCount = 140;
   const sparkPositions = new Float32Array(sparkCount * 3);
   const sparkVelocities = new Float32Array(sparkCount * 3);
   const sparkLifetimes = new Float32Array(sparkCount);
@@ -11326,15 +11503,16 @@ function buildHellscapeLavaScene(group) {
   const initSpark = (idx) => {
     const i3 = idx * 3;
     const z = (Math.random() - 0.5) * 100;
-    const riverX = Math.sin(z * 0.03) * 15.0 + 10.0;  // Account for terrain X shift
+    const riverX = Math.sin(z * 0.03) * 15.0 + 10.0;
     sparkPositions[i3] = riverX + (Math.random() - 0.5) * 4;
-    sparkPositions[i3 + 1] = floorY - 0.5 + Math.random() * 0.5;  // Account for terrain Y offset
+    sparkPositions[i3 + 1] = floorY - 0.9 + Math.random() * 0.3;
     sparkPositions[i3 + 2] = z;
-    sparkVelocities[i3] = (Math.random() - 0.5) * 0.02;
-    sparkVelocities[i3 + 1] = 0.03 + Math.random() * 0.05;
-    sparkVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
+    // Velocity units are per-second.
+    sparkVelocities[i3] = (Math.random() - 0.5) * 1.0;
+    sparkVelocities[i3 + 1] = 2.0 + Math.random() * 2.2;
+    sparkVelocities[i3 + 2] = (Math.random() - 0.5) * 1.0;
     sparkLifetimes[idx] = 0;
-    sparkMaxLifetimes[idx] = 2 + Math.random() * 3;
+    sparkMaxLifetimes[idx] = 0.9 + Math.random() * 1.2;
   };
 
   for (let i = 0; i < sparkCount; i++) {
@@ -11360,7 +11538,7 @@ function buildHellscapeLavaScene(group) {
   // ========================================
   // 5b. ASH PARTICLES (dark floating)
   // ========================================
-  const ashCount = 260;
+  const ashCount = 180;
   const ashPositions = new Float32Array(ashCount * 3);
   const ashVelocities = new Float32Array(ashCount * 3);
   for (let i = 0; i < ashCount; i++) {
@@ -11368,9 +11546,10 @@ function buildHellscapeLavaScene(group) {
     ashPositions[i3] = (Math.random() - 0.5) * 80;
     ashPositions[i3 + 1] = 1 + Math.random() * 10;
     ashPositions[i3 + 2] = (Math.random() - 0.5) * 80;
-    ashVelocities[i3] = (Math.random() - 0.5) * 0.02;
-    ashVelocities[i3 + 1] = 0.01 + Math.random() * 0.015;
-    ashVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
+    // Velocity units are per-second.
+    ashVelocities[i3] = (Math.random() - 0.5) * 0.55;
+    ashVelocities[i3 + 1] = 0.08 + Math.random() * 0.18;
+    ashVelocities[i3 + 2] = (Math.random() - 0.5) * 0.55;
   }
   const ashGeo = new THREE.BufferGeometry();
   ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPositions, 3));
@@ -11404,11 +11583,12 @@ function buildHellscapeLavaScene(group) {
         x: x + (Math.random() - 0.5) * 2,
         y: baseY,
         z: z + (Math.random() - 0.5) * 2,
-        vx: (Math.random() - 0.5) * 0.1,
-        vy: 0.8 + Math.random() * 0.5, // Strong upward velocity
-        vz: (Math.random() - 0.5) * 0.1,
+        // Velocity units are per-second.
+        vx: (Math.random() - 0.5) * 3.5,
+        vy: 14 + Math.random() * 8,
+        vz: (Math.random() - 0.5) * 3.5,
         life: 0,
-        maxLife: 1.5 + Math.random() * 1.5
+        maxLife: 0.9 + Math.random() * 0.7
       });
     }
   };
@@ -11433,8 +11613,8 @@ function buildHellscapeLavaScene(group) {
   // ========================================
   // 7. FLAME PILLARS (distant fire columns)
   // ========================================
-  const PILLAR_COUNT = 7;
-  const PARTICLES_PER_PILLAR = 35;
+  const PILLAR_COUNT = 6;
+  const PARTICLES_PER_PILLAR = 28;
   const TOTAL_FLAME_PILLAR_PARTICLES = PILLAR_COUNT * PARTICLES_PER_PILLAR;
 
   // Canvas-drawn flame sprite texture (64x64, soft radial gradient)
@@ -11462,7 +11642,7 @@ function buildHellscapeLavaScene(group) {
       z: Math.sin(angle) * dist,
       height: 12 + Math.random() * 10, // Pillar height 12-22 units
       radius: 1.5 + Math.random() * 1.5, // Base radius 1.5-3 units
-      speed: 0.6 + Math.random() * 0.4 // Rise speed multiplier
+      speed: 0.9 + Math.random() * 0.5 // Rise speed multiplier
     });
   }
 
@@ -11485,7 +11665,12 @@ function buildHellscapeLavaScene(group) {
     flameSizes[idx] = 1.0 + (1.0 - t) * 2.0; // Larger at base, smaller at top
 
     if (!flameParticleData[idx]) {
-      flameParticleData[idx] = { pillarIdx, speed: 0.3 + Math.random() * 0.3 };
+      flameParticleData[idx] = {
+        pillarIdx,
+        speed: 2.0 + Math.random() * 1.2,
+        driftPhase: Math.random() * Math.PI * 2,
+        driftAmp: 0.18 + Math.random() * 0.12
+      };
     }
     flameParticleData[idx].t = t;
     flameParticleData[idx].pillarIdx = pillarIdx;
@@ -11582,31 +11767,23 @@ function buildHellscapeLavaScene(group) {
     // Lava glow intensity pulse
     lavaGlow.intensity = 2.0 + Math.sin(time * 2) * 0.5;
 
-    // Update spark particles - continuously spawn from lava river
+    const dtSec = Math.min(dt, 0.05);
+
+    // Spark particles: lifetime + height-capped respawn (fixes "fly upward forever").
     const sparkPos = sparkGeo.attributes.position.array;
-
-    // Continuously spawn 10-15 new sparks each frame from random positions along the river
-    // (increased spawn rate for more dynamic lava effect)
-    const sparksToSpawn = 10 + Math.floor(Math.random() * 6);  // Was 6 + Math.floor(Math.random() * 4)
-    for (let s = 0; s < sparksToSpawn; s++) {
-      const randomIdx = Math.floor(Math.random() * sparkCount);
-      // Only respawn if lifetime is mostly elapsed or just starting fresh
-      if (sparkLifetimes[randomIdx] > sparkMaxLifetimes[randomIdx] * 0.8) {
-        initSpark(randomIdx);
-      }
-    }
-
     for (let i = 0; i < sparkCount; i++) {
       const i3 = i * 3;
-      sparkLifetimes[i] += dt * 0.001;
+      sparkLifetimes[i] += dtSec;
 
-      if (sparkLifetimes[i] > sparkMaxLifetimes[i]) {
+      if (sparkLifetimes[i] >= sparkMaxLifetimes[i] || sparkPos[i3 + 1] > floorY + 7.5) {
         initSpark(i);
-      } else {
-        sparkPos[i3] += sparkVelocities[i3];
-        sparkPos[i3 + 1] += sparkVelocities[i3 + 1];
-        sparkPos[i3 + 2] += sparkVelocities[i3 + 2];
+        continue;
       }
+
+      sparkVelocities[i3 + 1] = Math.max(0.45, sparkVelocities[i3 + 1] - 3.2 * dtSec);
+      sparkPos[i3] += sparkVelocities[i3] * dtSec;
+      sparkPos[i3 + 1] += sparkVelocities[i3 + 1] * dtSec;
+      sparkPos[i3 + 2] += sparkVelocities[i3 + 2] * dtSec;
     }
     sparkGeo.attributes.position.needsUpdate = true;
 
@@ -11614,10 +11791,15 @@ function buildHellscapeLavaScene(group) {
     const ashPos = ashGeo.attributes.position.array;
     for (let i = 0; i < ashCount; i++) {
       const i3 = i * 3;
-      ashPos[i3] += ashVelocities[i3] * dt * 0.6;
-      ashPos[i3 + 1] += ashVelocities[i3 + 1] * dt * 0.6;
-      ashPos[i3 + 2] += ashVelocities[i3 + 2] * dt * 0.6;
-      if (ashPos[i3 + 1] > 12) ashPos[i3 + 1] = 1;
+      ashPos[i3] += ashVelocities[i3] * dtSec;
+      ashPos[i3 + 1] += ashVelocities[i3 + 1] * dtSec;
+      ashPos[i3 + 2] += ashVelocities[i3 + 2] * dtSec;
+
+      if (ashPos[i3 + 1] > 12) {
+        ashPos[i3] = (Math.random() - 0.5) * 80;
+        ashPos[i3 + 1] = 1;
+        ashPos[i3 + 2] = (Math.random() - 0.5) * 80;
+      }
       if (ashPos[i3] > 40) ashPos[i3] = -40;
       if (ashPos[i3] < -40) ashPos[i3] = 40;
       if (ashPos[i3 + 2] > 40) ashPos[i3 + 2] = -40;
@@ -11631,22 +11813,21 @@ function buildHellscapeLavaScene(group) {
       lastGeyserTime = now;
     }
 
-    // Update geyser particles
     const geyserPos = geyserGeo.attributes.position.array;
     let activeCount = 0;
     for (let i = geyserParticles.length - 1; i >= 0; i--) {
       const p = geyserParticles[i];
-      p.life += dt * 0.001;
+      p.life += dtSec;
 
       if (p.life > p.maxLife) {
         geyserParticles.splice(i, 1);
         continue;
       }
 
-      p.x += p.vx;
-      p.y += p.vy;
-      p.z += p.vz;
-      p.vy -= 0.03; // Gravity
+      p.x += p.vx * dtSec;
+      p.y += p.vy * dtSec;
+      p.z += p.vz * dtSec;
+      p.vy -= 18 * dtSec;
 
       const idx = activeCount * 3;
       geyserPos[idx] = p.x;
@@ -11664,22 +11845,17 @@ function buildHellscapeLavaScene(group) {
       const pd = flameParticleData[i];
       const pillar = pillarDefs[pd.pillarIdx];
       const i3 = i * 3;
-      const dtSec = dt * 0.001;
 
-      // Advance particle up the pillar
-      pd.t += dtSec * pd.speed * pillar.speed / pillar.height;
+      pd.t += (pd.speed * dtSec * pillar.speed) / Math.max(1, pillar.height);
 
       if (pd.t >= 1.0) {
-        // Respawn at base
         initFlameParticle(i);
       } else {
-        // Slight horizontal drift as particle rises
-        const drift = (Math.random() - 0.5) * 0.05;
-        fpPos[i3] += drift;
+        const driftWave = Math.sin(time * 2.2 + pd.driftPhase) * pd.driftAmp * dtSec;
+        fpPos[i3] += Math.cos(pd.driftPhase) * driftWave;
         fpPos[i3 + 1] += pd.speed * dtSec * pillar.speed;
-        fpPos[i3 + 2] += drift;
+        fpPos[i3 + 2] += Math.sin(pd.driftPhase) * driftWave;
 
-        // Shrink as particle rises
         fpSizes[i] = Math.max(0.3, (1.0 - pd.t) * 3.0);
       }
     }
