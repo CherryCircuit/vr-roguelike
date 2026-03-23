@@ -210,7 +210,7 @@
     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
-    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-position-panel" checked> Debug position box</label>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-position-panel"> Debug position box</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-seed-controls"> Seed deck settings</label>
     <button id="debug-next-biome" style="margin-top:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Next biome</button>
 
@@ -300,8 +300,19 @@
 
       const debugPositionToggle = document.getElementById('debug-position-panel');
       if (debugPositionToggle) {
-        window.debugPositionPanel = true;
-        debugPositionToggle.checked = true;
+        let debugPositionDefault = false;
+        try {
+          const storedDebug = localStorage.getItem('spaceomicide_debug');
+          if (storedDebug) {
+            const parsedDebug = JSON.parse(storedDebug);
+            debugPositionDefault = parsedDebug.debugShowPosition === true;
+          }
+        } catch (err) {
+          debugPositionDefault = false;
+        }
+
+        window.debugPositionPanel = debugPositionDefault;
+        debugPositionToggle.checked = debugPositionDefault;
         debugPositionToggle.addEventListener('change', function() {
           window.debugPositionPanel = this.checked;
         });

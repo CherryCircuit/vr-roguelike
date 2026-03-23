@@ -3921,7 +3921,16 @@ let pauseCountdownInitialized = false;
 let pauseMenuBasePosition = new THREE.Vector3();
 const PAUSE_MENU_SCALE = 0.78;          // ~40% smaller than previous 1.3 scale
 const PAUSE_MENU_DISTANCE = 2.6;        // Slightly farther from player in VR
-const PAUSE_MENU_RENDER_ORDER = 2200;   // Draw over floor HUD layers
+const PAUSE_MENU_RENDER_ORDER = 10000;  // Draw over floor HUD layers
+const PAUSE_MENU_FONT_MULTIPLIER = 2.5;
+
+function scalePauseFont(baseFontSize) {
+  return Math.round(baseFontSize * PAUSE_MENU_FONT_MULTIPLIER);
+}
+
+function scalePauseText(baseScale) {
+  return baseScale * PAUSE_MENU_FONT_MULTIPLIER;
+}
 
 function applyPauseMenuRenderPriority(root) {
   if (!root) return;
@@ -4020,8 +4029,8 @@ function createPauseMenu() {
   const group = pauseMenuGroup;
 
   // Main panel with holographic border
-  const panelWidth = 3.5;
-  const panelHeight = 2.7;
+  const panelWidth = 4.6;
+  const panelHeight = 4.1;
 
   // Background panel
   const panelGeo = new THREE.PlaneGeometry(panelWidth, panelHeight);
@@ -4054,26 +4063,26 @@ function createPauseMenu() {
   pauseMenuElements.panel = panel;
 
   // Left blaster section
-  const leftSection = createBlasterSection('left', -1.2);
-  leftSection.position.set(-0.9, 0.5, 0.02);
+  const leftSection = createBlasterSection('left', -1.25);
+  leftSection.position.set(-1.25, 0.72, 0.02);
   group.add(leftSection);
   pauseMenuElements.leftBlasterSection = leftSection;
 
   // Right blaster section
-  const rightSection = createBlasterSection('right', 1.2);
-  rightSection.position.set(0.9, 0.5, 0.02);
+  const rightSection = createBlasterSection('right', 1.25);
+  rightSection.position.set(1.25, 0.72, 0.02);
   group.add(rightSection);
   pauseMenuElements.rightBlasterSection = rightSection;
 
-  // Stats section
+  // Stats section (centered under blasters)
   const statsSection = createStatsSection();
-  statsSection.position.set(0, -0.42, 0.02);
+  statsSection.position.set(0, -0.58, 0.02);
   group.add(statsSection);
   pauseMenuElements.statsSection = statsSection;
 
-  // Resume button (pulled lower and made smaller to prevent overlap with stats section)
+  // Resume button (moved up)
   const resumeBtn = createResumeButton();
-  resumeBtn.position.set(0, -1.2, 0.03);
+  resumeBtn.position.set(0, -1.38, 0.03);
   group.add(resumeBtn);
   pauseMenuElements.resumeButton = resumeBtn;
 
@@ -4094,7 +4103,7 @@ function createBlasterSection(hand, panelX) {
 
   // Section background
   const bg = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.3, 1.2),
+    new THREE.PlaneGeometry(1.9, 1.8),
     new THREE.MeshBasicMaterial({ color: 0x1a0033, transparent: true, opacity: 0.7, depthWrite: false })
   );
   bg.renderOrder = 0;  // Render before text
@@ -4102,11 +4111,11 @@ function createBlasterSection(hand, panelX) {
 
   // Section border (pink)
   const borderMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
-  const borderWidth = 1.3;
-  const borderHeight = 0.05;
+  const borderWidth = 1.9;
+  const borderHeight = 0.06;
   [
-    { w: borderWidth, h: borderHeight, x: 0, y: 0.6 },
-    { w: borderWidth, h: borderHeight, x: 0, y: -0.6 },
+    { w: borderWidth, h: borderHeight, x: 0, y: 0.9 },
+    { w: borderWidth, h: borderHeight, x: 0, y: -0.9 },
   ].forEach(b => {
     const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
     border.position.set(b.x, b.y, 0.01);
@@ -4114,32 +4123,50 @@ function createBlasterSection(hand, panelX) {
   });
 
   // Title
-  const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, { fontSize: 48, color: '#00ffff', scale: 0.15 });
-  titleText.position.set(0, 0.45, 0.02);
+  const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, {
+    fontSize: scalePauseFont(48),
+    color: '#00ffff',
+    scale: scalePauseText(0.15)
+  });
+  titleText.position.set(0, 0.68, 0.02);
   group.add(titleText);
 
   // Weapon name
   const weaponId = game.mainWeapon[hand];
   const weaponName = weaponId.replace(/_/g, ' ').toUpperCase();
-  const weaponText = makeSprite(weaponName, { fontSize: 36, color: '#ffffff', scale: 0.1 });
-  weaponText.position.set(0, 0.32, 0.02);
+  const weaponText = makeSprite(weaponName, {
+    fontSize: scalePauseFont(36),
+    color: '#ffffff',
+    scale: scalePauseText(0.1)
+  });
+  weaponText.position.set(0, 0.38, 0.02);
   group.add(weaponText);
 
   // Upgrades list
   const upgrades = game.upgrades[hand] || {};
   const upgradeEntries = Object.entries(upgrades);
-  const yOffset = 0.15;
+  const yOffset = 0.08;
 
   if (upgradeEntries.length > 0) {
     upgradeEntries.forEach(([id, count], index) => {
-      const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, { fontSize: 36, color: '#ffffff', scale: 0.1 });
-      const yPos = yOffset - (index * 0.12);
+      const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, {
+        fontSize: scalePauseFont(36),
+        color: '#ffffff',
+        scale: scalePauseText(0.1)
+      });
+      const yPos = yOffset - (index * 0.24);
       upgradeText.position.set(0, yPos, 0.02);
+      upgradeText.userData = { isUpgradeSprite: true };
       group.add(upgradeText);
     });
   } else {
-    const noUpgradesText = makeSprite('No upgrades', { fontSize: 36, color: '#888888', scale: 0.1 });
-    noUpgradesText.position.set(0, 0.1, 0.02);
+    const noUpgradesText = makeSprite('NO UPGRADES', {
+      fontSize: scalePauseFont(36),
+      color: '#888888',
+      scale: scalePauseText(0.1)
+    });
+    noUpgradesText.position.set(0, 0.08, 0.02);
+    noUpgradesText.userData = { isUpgradeSprite: true };
     group.add(noUpgradesText);
   }
 
@@ -4154,39 +4181,54 @@ function createStatsSection() {
 
   // Background
   const bg = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.2, 1.1),
+    new THREE.PlaneGeometry(4.2, 2.2),
     new THREE.MeshBasicMaterial({ color: 0x15002a, transparent: true, opacity: 0.7, depthWrite: false })
   );
   bg.renderOrder = 0;  // Render before text
   group.add(bg);
 
   // Title
-  const titleText = makeSprite('RUN STATISTICS', { fontSize: 48, color: '#ff00ff', scale: 0.15 });
-  titleText.position.set(0, 0.45, 0.02);
+  const titleText = makeSprite('RUN STATISTICS', {
+    fontSize: scalePauseFont(48),
+    color: '#ff00ff',
+    scale: scalePauseText(0.15)
+  });
+  titleText.position.set(0, 0.84, 0.02);
   group.add(titleText);
 
-  // Stats text columns
-  const leftStats = [
+  // KILLS/SHOTS/HITS centered under the blaster sections
+  const primaryStats = [
     `KILLS: ${game.runStats.totalKills || game.totalKills || 0}`,
     `SHOTS: ${game.runStats.shotsFired}`,
     `HITS: ${game.runStats.shotsHit}`,
   ];
 
-  const rightStats = [
+  primaryStats.forEach((stat, index) => {
+    const text = makeSprite(stat, {
+      fontSize: scalePauseFont(36),
+      color: '#00ffff',
+      scale: scalePauseText(0.1)
+    });
+    text.position.set(0, 0.44 - (index * 0.24), 0.02);
+    text.userData = { isPauseStatText: true };
+    group.add(text);
+  });
+
+  // Everything else sits below KILLS/SHOTS/HITS
+  const secondaryStats = [
     `ACCURACY: ${calculateAccuracy()}%`,
     `STREAK: ${game.runStats.longestKillStreak}`,
     `BOSS: ${game.runStats.bossesKilled}`,
   ];
 
-  leftStats.forEach((stat, index) => {
-    const text = makeSprite(stat, { fontSize: 36, color: '#00ffff', scale: 0.1 });
-    text.position.set(-1.1, 0.25 - (index * 0.1), 0.02);
-    group.add(text);
-  });
-
-  rightStats.forEach((stat, index) => {
-    const text = makeSprite(stat, { fontSize: 36, color: '#00ffff', scale: 0.1 });
-    text.position.set(1.1, 0.25 - (index * 0.1), 0.02);
+  secondaryStats.forEach((stat, index) => {
+    const text = makeSprite(stat, {
+      fontSize: scalePauseFont(36),
+      color: '#00ffff',
+      scale: scalePauseText(0.1)
+    });
+    text.position.set(-1.08, -0.34 - (index * 0.22), 0.02);
+    text.userData = { isPauseStatText: true };
     group.add(text);
   });
 
@@ -4200,8 +4242,8 @@ function createStatsSection() {
     transparent: true,
     side: THREE.DoubleSide
   });
-  const chartMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), chartMat);
-  chartMesh.position.set(0, -0.2, 0.02);
+  const chartMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.9), chartMat);
+  chartMesh.position.set(1.1, -0.82, 0.02);
   group.add(chartMesh);
 
   pauseMenuElements.chartCanvas = { canvas, texture: chartTexture, mesh: chartMesh };
@@ -4271,7 +4313,7 @@ function updatePauseCharts() {
 
     // Label
     ctx.fillStyle = '#888888';
-    ctx.font = '10px monospace';
+    ctx.font = `${scalePauseFont(10)}px monospace`;
     ctx.textAlign = 'center';
     ctx.fillText(hand.toUpperCase(), barBaseX + (i * barSpacing) + barWidth / 2, barBaseY + 10);
   });
@@ -4290,50 +4332,57 @@ function updatePauseStatsNumbers() {
   updateSectionStats(pauseMenuElements.leftBlasterSection, 'left');
   updateSectionStats(pauseMenuElements.rightBlasterSection, 'right');
   updateStatsSectionText();
+  applyPauseMenuRenderPriority(pauseMenuGroup);
 }
 
 /**
  * Update stats section text
  */
 function updateStatsSectionText() {
-  // Remove old stats sprites
-  pauseMenuElements.statsSection.children.forEach(child => {
-    if (child.material && child.material.map) {
-      // Keep the chart mesh, remove text sprites
-      if (!child.geometry.type.includes('Plane')) {
-        pauseMenuElements.statsSection.remove(child);
-      }
+  if (!pauseMenuElements.statsSection) return;
+
+  // Remove old stat text sprites, keep panel/title/chart mesh.
+  const section = pauseMenuElements.statsSection;
+  [...section.children].forEach((child) => {
+    if (child.userData && child.userData.isPauseStatText) {
+      section.remove(child);
     }
   });
 
-  // Add updated stats
-  const leftStats = [
-    `KILLS: ${game.totalKills}`,
+  // Add updated centered KILLS/SHOTS/HITS block.
+  const primaryStats = [
+    `KILLS: ${game.runStats.totalKills || game.totalKills || 0}`,
     `SHOTS: ${game.runStats.shotsFired}`,
     `HITS: ${game.runStats.shotsHit}`,
   ];
 
-  const rightStats = [
+  primaryStats.forEach((stat, index) => {
+    const text = makeSprite(stat, {
+      fontSize: scalePauseFont(36),
+      color: '#00ffff',
+      scale: scalePauseText(0.1)
+    });
+    text.position.set(0, 0.44 - (index * 0.24), 0.03);
+    text.userData = { isPauseStatText: true };
+    section.add(text);
+  });
+
+  // Add the rest of the stats below.
+  const secondaryStats = [
     `ACCURACY: ${calculateAccuracy()}%`,
     `STREAK: ${game.runStats.longestKillStreak}`,
     `BOSS: ${game.runStats.bossesKilled}`,
   ];
 
-  let leftIndex = 0;
-  let rightIndex = 0;
-
-  leftStats.forEach((stat) => {
-    const text = makeSprite(stat, { fontSize: 0.075, color: '#00ffff' });
-    text.position.set(-1.1, 0.25 - (leftIndex * 0.1), 0.03);
-    pauseMenuElements.statsSection.add(text);
-    leftIndex++;
-  });
-
-  rightStats.forEach((stat) => {
-    const text = makeSprite(stat, { fontSize: 0.075, color: '#00ffff' });
-    text.position.set(1.1, 0.25 - (rightIndex * 0.1), 0.03);
-    pauseMenuElements.statsSection.add(text);
-    rightIndex++;
+  secondaryStats.forEach((stat, index) => {
+    const text = makeSprite(stat, {
+      fontSize: scalePauseFont(36),
+      color: '#00ffff',
+      scale: scalePauseText(0.1)
+    });
+    text.position.set(-1.08, -0.34 - (index * 0.22), 0.03);
+    text.userData = { isPauseStatText: true };
+    section.add(text);
   });
 }
 
@@ -4342,28 +4391,39 @@ function updateStatsSectionText() {
  */
 function updateSectionStats(section, hand) {
   // Remove old upgrade sprites
-  section.children.forEach(child => {
+  [...section.children].forEach((child) => {
     if (child.userData && child.userData.isUpgradeSprite) {
       section.remove(child);
     }
   });
 
-  // Add updated weapon name
-  const weaponId = game.mainWeapon[hand];
-  const weaponName = weaponId.replace(/_/g, ' ').toUpperCase();
-
   // Update blaster section with current stats
   const upgrades = game.upgrades[hand] || {};
   const upgradeEntries = Object.entries(upgrades);
-  const yOffset = 0.15;
+  const yOffset = 0.08;
 
-  upgradeEntries.forEach(([id, count], index) => {
-    const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, { fontSize: 0.07, color: '#ffffff' });
-    const yPos = yOffset - (index * 0.12);
-    upgradeText.position.set(0, yPos, 0.03);
-    upgradeText.userData = { isUpgradeSprite: true };
-    section.add(upgradeText);
-  });
+  if (upgradeEntries.length > 0) {
+    upgradeEntries.forEach(([id, count], index) => {
+      const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, {
+        fontSize: scalePauseFont(36),
+        color: '#ffffff',
+        scale: scalePauseText(0.1)
+      });
+      const yPos = yOffset - (index * 0.24);
+      upgradeText.position.set(0, yPos, 0.03);
+      upgradeText.userData = { isUpgradeSprite: true };
+      section.add(upgradeText);
+    });
+  } else {
+    const noUpgradesText = makeSprite('NO UPGRADES', {
+      fontSize: scalePauseFont(36),
+      color: '#888888',
+      scale: scalePauseText(0.1)
+    });
+    noUpgradesText.position.set(0, 0.08, 0.03);
+    noUpgradesText.userData = { isUpgradeSprite: true };
+    section.add(noUpgradesText);
+  }
 }
 
 /**
@@ -4373,8 +4433,8 @@ function createResumeButton() {
   const group = new THREE.Group();
 
   // Button background
-  const btnWidth = 1.2;
-  const btnHeight = 0.28;
+  const btnWidth = 2.0;
+  const btnHeight = 0.56;
   const btnBg = new THREE.Mesh(
     new THREE.PlaneGeometry(btnWidth, btnHeight),
     new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 })
@@ -4384,7 +4444,7 @@ function createResumeButton() {
   // Button border
   const borderMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
   const borderWidth = btnWidth;
-  const borderHeight = 0.035;
+  const borderHeight = 0.06;
   [
     { w: borderWidth, h: borderHeight, x: 0, y: btnHeight / 2 },
     { w: borderWidth, h: borderHeight, x: 0, y: -btnHeight / 2 },
@@ -4395,7 +4455,11 @@ function createResumeButton() {
   });
 
   // Button text
-  const text = makeSprite('RESUME', { fontSize: 38, color: '#00ffff', scale: 0.12 });
+  const text = makeSprite('RESUME', {
+    fontSize: scalePauseFont(38),
+    color: '#00ffff',
+    scale: scalePauseText(0.12)
+  });
   text.position.set(0, 0, 0.02);
   group.add(text);
 
