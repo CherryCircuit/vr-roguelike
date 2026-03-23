@@ -4,23 +4,25 @@
 // ============================================================
 
 const { execSync } = require('child_process');
+const path = require('path');
+const REPO_ROOT = path.resolve(__dirname, '..');
 
 console.log('\n🐵 WORKER MONITOR - Quick health check\n');
 
 try {
   // Check git status
-  const gitStatus = execSync('git status --short', { encoding: 'utf8', cwd: __dirname });
+  const gitStatus = execSync('git status --short', { encoding: 'utf8', cwd: REPO_ROOT });
   console.log('📝 GIT STATUS:');
   console.log('  ' + gitStatus.trim() + '\n');
 
   // Show last 5 commits
-  const gitLog = execSync('git log --oneline -5', { encoding: 'utf8', cwd: __dirname });
+  const gitLog = execSync('git log --oneline -5', { encoding: 'utf8', cwd: REPO_ROOT });
   console.log('📜 RECENT COMMITS:');
   const lines = gitLog.trim().split('\n');
   lines.forEach(line => console.log('  ' + line + '\n'));
 
   // Simple zombie check based on git history
-  const lastCommitTime = execSync('git log -1 --format=%ct', { encoding: 'utf8', cwd: __dirname });
+  const lastCommitTime = execSync('git log -1 --format=%ct', { encoding: 'utf8', cwd: REPO_ROOT });
   const lastCommitSeconds = parseInt(lastCommitTime.trim());
   const now = Math.floor(Date.now() / 1000);
   const minutesSinceCommit = (now - lastCommitSeconds) / 60;
