@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "headline": { "type": "string", "minLength": 1 },
+    "overall_risk": {
+      "type": "string",
+      "enum": ["none", "low", "medium", "high", "critical"]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["no material issues found", "issues found"]
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "focus_areas": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "maxItems": 8
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "category": {
+            "type": "string",
+            "enum": ["correctness", "performance", "stability", "maintainability", "security", "waste"]
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "critical"]
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "file": { "type": "string", "minLength": 1 },
+          "start_line": { "type": "integer", "minimum": 1 },
+          "end_line": { "type": "integer", "minimum": 1 },
+          "impact": { "type": "string", "minLength": 1 },
+          "evidence": { "type": "string", "minLength": 1 },
+          "recommendation": { "type": "string", "minLength": 1 }
+        },
+        "required": [
+          "title",
+          "category",
+          "severity",
+          "confidence",
+          "file",
+          "start_line",
+          "end_line",
+          "impact",
+          "evidence",
+          "recommendation"
+        ]
+      }
+    }
+  },
+  "required": ["headline", "overall_risk", "verdict", "summary", "focus_areas", "findings"]
+}

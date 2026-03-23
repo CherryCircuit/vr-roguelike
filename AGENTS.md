@@ -355,6 +355,17 @@ if (controller?.userData?.weapon?.fire) {
 }
 ```
 
+## Review guidelines
+
+When running automated code review on this repository:
+
+- Prioritize correctness, runtime stability, and VR performance over style.
+- Treat per-frame allocations, repeated full-array scans in hot paths, and missed cleanup on reset or level transitions as high-value findings.
+- Flag console-error risks, null/undefined controller or XR-session access, and state-machine regressions around pause, restart, death, and boss transitions.
+- Ignore cosmetic naming or formatting feedback unless it blocks understanding or hides a bug.
+- Prefer a few precise findings with file and line references over broad advice.
+- Call out duplicate logic only when it creates real maintenance or bug risk.
+
 ## 15. FINAL REMINDER
 
 **You are building a VR game that people play in headsets.**

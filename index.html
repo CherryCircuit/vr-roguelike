@@ -210,6 +210,7 @@
     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-position-panel" checked> Debug position box</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-seed-controls"> Seed deck settings</label>
     <button id="debug-next-biome" style="margin-top:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Next biome</button>
 
@@ -217,10 +218,26 @@
     <div style="margin-top:12px;border-top:1px solid #333;padding-top:8px;">
       <div id="visual-toggle" style="color:#ff00ff;cursor:pointer;user-select:none;">▶ Visual Tuning</div>
       <div id="visual-controls" style="display:none;margin-top:8px;padding-left:8px;">
-        <label style="display:block;margin-top:4px;"><input type="checkbox" id="debug-glow"> Glow effect</label>
-        <label style="display:block;margin-top:4px;"><input type="checkbox" id="debug-bloom" checked> Bloom</label>
-        <label style="display:block;margin-top:4px;"><input type="checkbox" id="debug-smoke"> Smoke/fog particles</label>
-        <label style="display:block;margin-top:4px;">Fog intensity: <input type="range" id="debug-fog-intensity" min="0" max="100" value="58" style="width:80px;vertical-align:middle;"></label>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label for="debug-glow-strength" style="width:150px;">Glow strength</label>
+          <input type="range" id="debug-glow-strength" min="0" max="2" step="0.01" value="1" style="width:90px;">
+          <input type="number" id="debug-glow-strength-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label for="debug-bloom-strength" style="width:150px;">Bloom strength</label>
+          <input type="range" id="debug-bloom-strength" min="0" max="2" step="0.01" value="1" style="width:90px;">
+          <input type="number" id="debug-bloom-strength-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label for="debug-smoke-strength" style="width:150px;">Smoke particles</label>
+          <input type="range" id="debug-smoke-strength" min="0" max="2" step="0.01" value="1" style="width:90px;">
+          <input type="number" id="debug-smoke-strength-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label for="debug-fog-intensity" style="width:150px;">Fog intensity</label>
+          <input type="range" id="debug-fog-intensity" min="0" max="1" step="0.01" value="0.58" style="width:90px;">
+          <input type="number" id="debug-fog-intensity-value" min="0" max="1" step="0.01" value="0.58" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+        </div>
       </div>
     </div>
 
@@ -281,6 +298,15 @@
         consolePanel.style.display = this.checked ? 'block' : 'none';
       });
 
+      const debugPositionToggle = document.getElementById('debug-position-panel');
+      if (debugPositionToggle) {
+        window.debugPositionPanel = true;
+        debugPositionToggle.checked = true;
+        debugPositionToggle.addEventListener('change', function() {
+          window.debugPositionPanel = this.checked;
+        });
+      }
+
       const debugNextBiomeBtn = document.getElementById('debug-next-biome');
       if (debugNextBiomeBtn) {
         debugNextBiomeBtn.addEventListener('click', function() {
@@ -300,29 +326,44 @@
           visualToggle.textContent = (isExpanded ? '▶' : '▼') + ' Visual Tuning';
         });
 
-        // Glow toggle
-        document.getElementById('debug-glow').addEventListener('change', function() {
-          window.debugGlow = this.checked;
+        const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+        const bindRangeAndNumber = (rangeId, numberId, min, max, fallback, setter) => {
+          const range = document.getElementById(rangeId);
+          const number = document.getElementById(numberId);
+          if (!range || !number) return;
+
+          const apply = (raw) => {
+            const parsed = Number(raw);
+            const value = Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback;
+            const fixed = value.toFixed(2);
+            range.value = fixed;
+            number.value = fixed;
+            setter(value);
+          };
+
+          range.addEventListener('input', () => apply(range.value));
+          number.addEventListener('change', () => apply(number.value));
+          apply(fallback);
+        };
+
+        bindRangeAndNumber('debug-glow-strength', 'debug-glow-strength-value', 0, 2, 1.0, (value) => {
+          window.debugGlowStrength = value;
+          window.debugGlow = value > 0;
         });
 
-        // Bloom toggle
-        document.getElementById('debug-bloom').addEventListener('change', function() {
-          window.debugBloom = this.checked;
+        bindRangeAndNumber('debug-bloom-strength', 'debug-bloom-strength-value', 0, 2, 1.0, (value) => {
+          window.debugBloomStrength = value;
+          window.debugBloom = value > 0;
         });
 
-        // Smoke/fog particles toggle
-        document.getElementById('debug-smoke').addEventListener('change', function() {
-          window.debugSmoke = this.checked;
+        bindRangeAndNumber('debug-smoke-strength', 'debug-smoke-strength-value', 0, 2, 1.0, (value) => {
+          window.debugSmokeStrength = value;
+          window.debugSmoke = value > 0;
         });
 
-        // Fog intensity slider
-        document.getElementById('debug-fog-intensity').addEventListener('input', function() {
-          window.debugFogIntensity = parseInt(this.value, 10) / 100;
+        bindRangeAndNumber('debug-fog-intensity', 'debug-fog-intensity-value', 0, 1, 0.58, (value) => {
+          window.debugFogIntensity = value;
         });
-
-        // Initialize defaults
-        window.debugBloom = true;
-        window.debugFogIntensity = 0.58;
       }
 
       // Seed Deck Controls

@@ -2043,6 +2043,19 @@ export function showDebugMenu() {
       toggle: () => { game.debugShowFPS = !game.debugShowFPS; }
     },
     {
+      id: 'position',
+      type: 'toggle',
+      label: 'POSITION BOX',
+      getState: () => game.debugShowPosition,
+      toggle: () => {
+        game.debugShowPosition = !game.debugShowPosition;
+        // Sync with desktop DOM panel so both stay in lock-step
+        if (typeof window !== 'undefined') {
+          window.debugPositionPanel = game.debugShowPosition;
+        }
+      }
+    },
+    {
       id: 'perf',
       type: 'toggle',
       label: 'PERF MONITOR',
@@ -2119,12 +2132,12 @@ export function showDebugMenu() {
   const instructions = makeSprite('CLICK TO TOGGLE OR CYCLE', {
     fontSize: 24, color: '#888888', scale: 0.15,
   });
-  instructions.position.set(0, -0.3, 0);
+  instructions.position.set(0, -0.65, 0);
   debugMenuGroup.add(instructions);
 
   // BACK button
   const backGroup = new THREE.Group();
-  backGroup.position.set(0, -0.7, 0);
+  backGroup.position.set(0, -1.05, 0);
   const backGeo = new THREE.PlaneGeometry(0.8, 0.28);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -3906,21 +3919,40 @@ let pauseCountdownInitialized = false;
  * Show the pause menu with stats and blaster upgrade info
  */
 let pauseMenuBasePosition = new THREE.Vector3();
+const PAUSE_MENU_SCALE = 0.78;          // ~40% smaller than previous 1.3 scale
+const PAUSE_MENU_DISTANCE = 2.6;        // Slightly farther from player in VR
+const PAUSE_MENU_RENDER_ORDER = 2200;   // Draw over floor HUD layers
+
+function applyPauseMenuRenderPriority(root) {
+  if (!root) return;
+  root.traverse((child) => {
+    if (!child.material) return;
+
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((mat) => {
+      if (!mat) return;
+      mat.depthTest = false;
+      mat.depthWrite = false;
+    });
+
+    child.renderOrder = PAUSE_MENU_RENDER_ORDER;
+  });
+}
 
 export function showPauseMenu() {
   pauseMenuGroup.visible = true;
-  pauseMenuGroup.scale.set(1.3, 1.3, 1.3);
+  pauseMenuGroup.scale.set(PAUSE_MENU_SCALE, PAUSE_MENU_SCALE, PAUSE_MENU_SCALE);
 
-  // Position menu at fixed world position (2m in front of camera when paused)
+  // Position menu at fixed world position slightly farther from camera when paused.
   // This makes it stay in 3D space so player can walk around it
   if (cameraRef) {
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraRef.quaternion);
     forward.y = 0;
     forward.normalize();
     pauseMenuBasePosition.set(
-      cameraRef.position.x + forward.x * 2,
+      cameraRef.position.x + forward.x * PAUSE_MENU_DISTANCE,
       cameraRef.position.y,
-      cameraRef.position.z + forward.z * 2
+      cameraRef.position.z + forward.z * PAUSE_MENU_DISTANCE
     );
     pauseMenuGroup.position.copy(pauseMenuBasePosition);
     // Face the camera once (billboard on pause, not every frame)
@@ -3933,6 +3965,7 @@ export function showPauseMenu() {
     pauseMenuAnimation.startTime = performance.now();
     pauseMenuAnimation.chartAnimation = 0;
     pauseMenuAnimation.numbersAnimated = false;
+    applyPauseMenuRenderPriority(pauseMenuGroup);
     return;
   }
 
@@ -3988,7 +4021,7 @@ function createPauseMenu() {
 
   // Main panel with holographic border
   const panelWidth = 3.5;
-  const panelHeight = 2.5;
+  const panelHeight = 2.7;
 
   // Background panel
   const panelGeo = new THREE.PlaneGeometry(panelWidth, panelHeight);
@@ -4034,13 +4067,13 @@ function createPauseMenu() {
 
   // Stats section
   const statsSection = createStatsSection();
-  statsSection.position.set(0, -0.5, 0.02);
+  statsSection.position.set(0, -0.42, 0.02);
   group.add(statsSection);
   pauseMenuElements.statsSection = statsSection;
 
-  // Resume button
+  // Resume button (pulled lower and made smaller to prevent overlap with stats section)
   const resumeBtn = createResumeButton();
-  resumeBtn.position.set(0, -1.0, 0.03);
+  resumeBtn.position.set(0, -1.2, 0.03);
   group.add(resumeBtn);
   pauseMenuElements.resumeButton = resumeBtn;
 
@@ -4049,6 +4082,8 @@ function createPauseMenu() {
   pauseMenuAnimation.slideIn = 0;
   pauseMenuAnimation.chartAnimation = 0;
   pauseMenuAnimation.numbersAnimated = false;
+
+  applyPauseMenuRenderPriority(group);
 }
 
 /**
@@ -4338,8 +4373,8 @@ function createResumeButton() {
   const group = new THREE.Group();
 
   // Button background
-  const btnWidth = 1.5;
-  const btnHeight = 0.4;
+  const btnWidth = 1.2;
+  const btnHeight = 0.28;
   const btnBg = new THREE.Mesh(
     new THREE.PlaneGeometry(btnWidth, btnHeight),
     new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 })
@@ -4349,7 +4384,7 @@ function createResumeButton() {
   // Button border
   const borderMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
   const borderWidth = btnWidth;
-  const borderHeight = 0.05;
+  const borderHeight = 0.035;
   [
     { w: borderWidth, h: borderHeight, x: 0, y: btnHeight / 2 },
     { w: borderWidth, h: borderHeight, x: 0, y: -btnHeight / 2 },
@@ -4360,7 +4395,7 @@ function createResumeButton() {
   });
 
   // Button text
-  const text = makeSprite('RESUME', { fontSize: 42, color: '#00ffff', scale: 0.14 });
+  const text = makeSprite('RESUME', { fontSize: 38, color: '#00ffff', scale: 0.12 });
   text.position.set(0, 0, 0.02);
   group.add(text);
 
