@@ -658,19 +658,28 @@ export function initAmbientParticles(scene) {
 }
 
 export function updateAmbientParticles(dt, theme, playerPos) {
+  const smokeStrengthRaw = typeof window !== 'undefined' ? Number(window.debugSmokeStrength) : NaN;
+  const smokeStrength = Number.isFinite(smokeStrengthRaw)
+    ? Math.min(2, Math.max(0, smokeStrengthRaw))
+    : 1.0;
+
   // Update primary particles
-  if (!ambientParticles || !theme.particles) {
+  if (!ambientParticles || !theme.particles || smokeStrength <= 0.001) {
     if (ambientParticles) ambientParticles.visible = false;
   } else {
     ambientParticles.visible = true;
 
-    const maxCount = Math.min(theme.particles.count || AMBIENT_POOL, AMBIENT_POOL);
+    const baseCount = Math.min(theme.particles.count || AMBIENT_POOL, AMBIENT_POOL);
+    const maxCount = Math.max(1, Math.min(AMBIENT_POOL, Math.round(baseCount * smokeStrength)));
     ambientGeo.setDrawRange(0, maxCount);
 
     const particleSize = theme.particles.size || 0.05;
     if (ambientParticles.material.size !== particleSize) {
       ambientParticles.material.size = particleSize;
     }
+
+    const baseOpacity = theme.particles.opacity !== undefined ? theme.particles.opacity : 0.6;
+    ambientParticles.material.opacity = Math.min(1, baseOpacity * Math.max(0.05, smokeStrength));
 
     // Kaleidoscope: Color-shifting particles
     if (theme.particles.type === 'prism') {
@@ -896,12 +905,13 @@ export function updateAmbientParticles(dt, theme, playerPos) {
   }
 
   // Update secondary particles
-  if (!secondaryParticles || !theme.secondaryParticles) {
+  if (!secondaryParticles || !theme.secondaryParticles || smokeStrength <= 0.001) {
     if (secondaryParticles) secondaryParticles.visible = false;
   } else {
     secondaryParticles.visible = true;
 
-    const maxCount = Math.min(theme.secondaryParticles.count || SECONDARY_POOL, SECONDARY_POOL);
+    const baseCount = Math.min(theme.secondaryParticles.count || SECONDARY_POOL, SECONDARY_POOL);
+    const maxCount = Math.max(1, Math.min(SECONDARY_POOL, Math.round(baseCount * smokeStrength)));
     secondaryGeo.setDrawRange(0, maxCount);
 
     const particleSize = theme.secondaryParticles.size || 0.08;
@@ -909,6 +919,8 @@ export function updateAmbientParticles(dt, theme, playerPos) {
       secondaryParticles.material.size = particleSize;
     }
 
+    const baseOpacity = theme.secondaryParticles.opacity !== undefined ? theme.secondaryParticles.opacity : 0.5;
+    secondaryParticles.material.opacity = Math.min(1, baseOpacity * Math.max(0.05, smokeStrength));
     secondaryParticles.material.color.setHex(theme.secondaryParticles.color);
 
     const positions = secondaryGeo.attributes.position.array;

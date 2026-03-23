@@ -155,6 +155,7 @@ export const game = {
   // DEBUG: Performance monitoring settings
   debugPerfMonitor: false,  // Extended FPS stats (frame time, memory)
   debugShowFPS: true,  // Always show FPS counter in VR
+  debugShowPosition: true,  // Show debug position box (desktop DOM + VR toggle)
   debugBiomeOverride: null,  // Force a specific biome for previews
   inDreamWorld: false,
   dreamCompleted: false,
@@ -181,6 +182,7 @@ export function resetGame() {
   const preservedDebug = {
     debugPerfMonitor: game.debugPerfMonitor,
     debugShowFPS: game.debugShowFPS,
+    debugShowPosition: game.debugShowPosition,
     debugBiomeOverride: game.debugBiomeOverride,
   };
   
@@ -294,6 +296,7 @@ export function loadDebugSettings() {
       const settings = JSON.parse(stored);
       game.debugPerfMonitor = settings.debugPerfMonitor ?? false;
       game.debugShowFPS = settings.debugShowFPS ?? true;
+      game.debugShowPosition = settings.debugShowPosition ?? true;
       // NOTE: debugBiomeOverride is NOT loaded - it resets on page refresh
       console.log('[debug] Loaded settings:', settings);
     }
@@ -310,6 +313,7 @@ export function saveDebugSettings() {
     const settings = {
       debugPerfMonitor: game.debugPerfMonitor,
       debugShowFPS: game.debugShowFPS,
+      debugShowPosition: game.debugShowPosition,
       // NOTE: debugBiomeOverride is NOT saved - it resets on page refresh
     };
     localStorage.setItem('spaceomicide_debug', JSON.stringify(settings));
@@ -360,6 +364,19 @@ function toggleFPSDisplay() {
   game.debugShowFPS = !game.debugShowFPS;
   saveDebugSettings();
   return game.debugShowFPS;
+}
+
+/**
+ * Toggle debug position box
+ */
+function togglePositionDisplay() {
+  game.debugShowPosition = !game.debugShowPosition;
+  // Sync with desktop DOM panel
+  if (typeof window !== 'undefined') {
+    window.debugPositionPanel = game.debugShowPosition;
+  }
+  saveDebugSettings();
+  return game.debugShowPosition;
 }
 
 export function getLevelConfig() {

@@ -72,7 +72,7 @@ import {
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
 import { getThemeForLevel, initAmbientParticles, updateAmbientParticles, createInnkeeper } from './scenery.js';
-import { initDreamWorld, enterDreamWorld, exitDreamWorld, getDreamFogSettings, getDreamSpawnPosition } from './dream-world.js';
+import { initDreamWorld, enterDreamWorld, exitDreamWorld, getDreamFogSettings, getDreamSpawnPosition, handleDreamProjectileHit, updateDreamWorld } from './dream-world.js';
 import { SpatialHash } from './spatial-hash.js';
 
 // Expose game state to window for debugging/testing
@@ -259,6 +259,12 @@ let floorFlashing = false;
 // Pre-allocated raycasters (reused to avoid per-frame GC)
 const _uiRaycaster = new THREE.Raycaster();
 
+// Dream trigger hit-test temp vectors (avoid per-frame allocations in projectile loop)
+const _dreamPrevProjectilePos = new THREE.Vector3();
+const _dreamSegment = new THREE.Vector3();
+const _dreamToCenter = new THREE.Vector3();
+const _dreamClosestPoint = new THREE.Vector3();
+
 // Low health warning
 let lowHealthWarningActive = false;
 let lowHealthPulseTimer = 0;
@@ -409,6 +415,30 @@ const MAX_REFLECTOR_DRONES = 2;
 // references it during init execution. All other bloom code uses lazy init.
 const BLOOM_LAYER = 1;
 
+// Visual tuning defaults for debug sliders in index.html.
+const VISUAL_TUNING_DEFAULTS = {
+  glowStrength: 1.0,
+  bloomStrength: 1.0,
+  smokeStrength: 1.0,
+  fogIntensity: 0.58,
+};
+
+// References that let debug visual tuning affect synthwave valley elements.
+const synthVisualRefs = {
+  terrainUniforms: null,
+  sunOuterGlowMat: null,
+  sunGlowMat: null,
+  sunCoreMat: null,
+};
+
+// Player projectile materials that should respond to visual tuning sliders.
+const playerProjectileMaterials = [];
+
+// VR pause button edge tracking (gamepad/menu style buttons).
+const vrPauseButtonPressed = new Map();
+let lastVRPauseToggleTime = 0;
+const VR_PAUSE_DEBOUNCE_MS = 350;
+
 init();
 
 // ============================================================
@@ -421,6 +451,11 @@ function init() {
   // Load debug settings from localStorage
   loadDebugSettings();
   loadDreamState();
+
+  // Sync desktop position panel with game state (may differ from HTML checkbox default)
+  if (typeof window !== 'undefined') {
+    window.debugPositionPanel = game.debugShowPosition;
+  }
 
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
   scene = new THREE.Scene();
@@ -644,7 +679,7 @@ function initSelectiveBloom() {
   compositePass.uniforms.bloomTexture.value = bloomComposer_.renderTarget2.texture;
   baseComposer.addPass(compositePass);
 
-  bloomComposer = { baseComposer, bloomComposer: bloomComposer_, compositePass, bloomCamera };
+  bloomComposer = { baseComposer, bloomComposer: bloomComposer_, compositePass, bloomCamera, bloomPass };
   console.log('[bloom] Selective bloom initialized (desktop only)');
 }
 
@@ -655,6 +690,194 @@ function resizeBloomComposer() {
   bloomComposer.baseComposer.setSize(w, h);
   bloomComposer.bloomComposer.setSize(w, h);
   bloomComposer.bloomComposer.passes[1].resolution.set(w, h);
+}
+
+function clampDebugValue(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function getVisualTuning() {
+  if (typeof window === 'undefined') {
+    return { ...VISUAL_TUNING_DEFAULTS };
+  }
+
+  return {
+    glowStrength: clampDebugValue(window.debugGlowStrength, 0, 2, VISUAL_TUNING_DEFAULTS.glowStrength),
+    bloomStrength: clampDebugValue(window.debugBloomStrength, 0, 2, VISUAL_TUNING_DEFAULTS.bloomStrength),
+    smokeStrength: clampDebugValue(window.debugSmokeStrength, 0, 2, VISUAL_TUNING_DEFAULTS.smokeStrength),
+    fogIntensity: clampDebugValue(window.debugFogIntensity, 0, 1, VISUAL_TUNING_DEFAULTS.fogIntensity),
+  };
+}
+
+function registerPlayerProjectileMaterial(material) {
+  if (!material) return;
+  if (!material.userData) material.userData = {};
+  if (material.userData.baseOpacity === undefined) {
+    material.userData.baseOpacity = material.opacity !== undefined ? material.opacity : 1;
+  }
+  if (!playerProjectileMaterials.includes(material)) {
+    playerProjectileMaterials.push(material);
+  }
+}
+
+function applyVisualTuning() {
+  const tuning = getVisualTuning();
+
+  if (synthVisualRefs.terrainUniforms) {
+    if (synthVisualRefs.terrainUniforms.uGlowIntensity) {
+      synthVisualRefs.terrainUniforms.uGlowIntensity.value = tuning.glowStrength;
+    }
+    if (synthVisualRefs.terrainUniforms.uFogIntensity) {
+      synthVisualRefs.terrainUniforms.uFogIntensity.value = tuning.fogIntensity;
+    }
+  }
+
+  const glowOpacityScale = 0.2 + (tuning.glowStrength * 0.8);
+  [
+    synthVisualRefs.sunOuterGlowMat,
+    synthVisualRefs.sunGlowMat,
+    synthVisualRefs.sunCoreMat,
+  ].forEach((mat) => {
+    if (!mat) return;
+    if (!mat.userData) mat.userData = {};
+    if (mat.userData.baseOpacity === undefined) {
+      mat.userData.baseOpacity = mat.opacity !== undefined ? mat.opacity : 1;
+    }
+    mat.opacity = mat.userData.baseOpacity * glowOpacityScale;
+  });
+
+  // Also apply glow tuning to all pooled player projectile materials.
+  const projectileOpacityScale = 0.35 + (tuning.glowStrength * 0.65);
+  playerProjectileMaterials.forEach((mat) => {
+    if (!mat) return;
+    if (!mat.userData) mat.userData = {};
+    if (mat.userData.baseOpacity === undefined) {
+      mat.userData.baseOpacity = mat.opacity !== undefined ? mat.opacity : 1;
+    }
+    mat.opacity = mat.userData.baseOpacity * projectileOpacityScale;
+  });
+
+  if (bloomComposer?.bloomPass) {
+    bloomComposer.bloomPass.strength = 0.3 * tuning.bloomStrength;
+  }
+}
+
+function cleanupLegacyShapeGeometry(targetGroup) {
+  if (!targetGroup) return;
+
+  const staleMeshes = [];
+  const worldPos = new THREE.Vector3();
+  const boundsSize = new THREE.Vector3();
+
+  targetGroup.traverse((child) => {
+    if (!child?.isMesh || !child.geometry) return;
+    if (child.geometry.type !== 'ShapeGeometry') return;
+
+    child.getWorldPosition(worldPos);
+    const atWorldOrigin = worldPos.lengthSq() <= 0.0001;
+
+    // Non-obvious safety guard: legacy audio-peak mountains were large flat
+    // ShapeGeometry meshes locked at world origin. Keep this strict so we do
+    // not remove gameplay hex meshes that also use ShapeGeometry.
+    if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+    if (!child.geometry.boundingBox) return;
+    child.geometry.boundingBox.getSize(boundsSize);
+    const isLargeLegacyPlane = boundsSize.lengthSq() >= (25 * 25);
+
+    if (!atWorldOrigin || !isLargeLegacyPlane) return;
+    staleMeshes.push(child);
+  });
+
+  staleMeshes.forEach((mesh, idx) => {
+    if (mesh.parent) mesh.parent.remove(mesh);
+    disposeObject3D(mesh);
+    console.log(`[biome] Removed stale ShapeGeometry legacy mountain at world origin (${idx + 1}/${staleMeshes.length})`);
+  });
+}
+
+function sanitizeBiomeMeshName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function assignBiomePlaneNames(targetGroup, biomeId) {
+  if (!targetGroup) return;
+
+  const usedPlaneNames = new Set();
+
+  targetGroup.traverse((child) => {
+    if (!child?.isMesh || !child.geometry) return;
+    if (child.geometry.type !== 'PlaneGeometry') return;
+
+    const geoParams = child.geometry.parameters || {};
+    const widthTag = Number.isFinite(geoParams.width) ? `w${Math.round(geoParams.width)}` : 'w';
+    const heightTag = Number.isFinite(geoParams.height) ? `h${Math.round(geoParams.height)}` : 'h';
+
+    const preferredName =
+      sanitizeBiomeMeshName(child.userData?.planeName) ||
+      sanitizeBiomeMeshName(child.name) ||
+      sanitizeBiomeMeshName(child.parent?.name) ||
+      `${biomeId}-plane-${widthTag}-${heightTag}`;
+
+    let baseName = preferredName || `${biomeId}-plane-${widthTag}-${heightTag}`;
+    let uniqueName = baseName;
+    let suffix = 2;
+
+    while (usedPlaneNames.has(uniqueName)) {
+      uniqueName = `${baseName}-${suffix++}`;
+    }
+
+    // Keep userData + mesh name in sync so debug tooling and inspector searches
+    // both resolve to the same human-readable PlaneGeometry label.
+    child.name = uniqueName;
+    child.userData.planeName = uniqueName;
+    usedPlaneNames.add(uniqueName);
+  });
+}
+
+function updateVRPauseButton(now) {
+  const session = renderer?.xr?.getSession?.();
+  if (!session) {
+    vrPauseButtonPressed.clear();
+    return;
+  }
+
+  let pausePressedThisFrame = false;
+
+  session.inputSources.forEach((source, sourceIndex) => {
+    const gamepad = source.gamepad;
+    if (!gamepad?.buttons || gamepad.buttons.length === 0) return;
+
+    // WebXR mappings vary by controller. Check common non-trigger buttons so
+    // at least one hardware button can open pause on most headsets/controllers.
+    const pressed = !!(
+      gamepad.buttons[3]?.pressed || // thumbstick click
+      gamepad.buttons[4]?.pressed || // X/A
+      gamepad.buttons[5]?.pressed || // Y/B
+      gamepad.buttons[2]?.pressed    // touchpad/menu fallback on some mappings
+    );
+
+    const key = `${source.handedness || 'none'}-${sourceIndex}`;
+    const wasPressed = vrPauseButtonPressed.get(key) === true;
+    vrPauseButtonPressed.set(key, pressed);
+
+    if (pressed && !wasPressed) {
+      pausePressedThisFrame = true;
+    }
+  });
+
+  if (!pausePressedThisFrame) return;
+  if (now - lastVRPauseToggleTime < VR_PAUSE_DEBOUNCE_MS) return;
+
+  if (game.state === State.PLAYING || game.state === State.PAUSED) {
+    lastVRPauseToggleTime = now;
+    togglePause();
+  }
 }
 
 // ============================================================
@@ -751,9 +974,11 @@ function createEnvironment() {
   // registerFadeMaterial(horizonInnerRingRef.material);
 
   createSun();
-  createMountains();
+  // Removed legacy flat ShapeGeometry mountain layers. They were stale overlays
+  // that conflicted with the biome-specific terrain scenes.
   createStars();
   initAmbientParticles(scene);
+  createDreamTrigger();
 
   // NOTE: Lights removed — all materials are MeshBasicMaterial (unlit)
   // so lights have zero visual effect but cost GPU overhead.
@@ -811,6 +1036,11 @@ function clearBiomeScene() {
   biomeSceneGroup = null;
   biomeSceneBiome = null;
   biomeTerrainMaterials = [];  // Clear terrain flash references
+
+  synthVisualRefs.terrainUniforms = null;
+  synthVisualRefs.sunOuterGlowMat = null;
+  synthVisualRefs.sunGlowMat = null;
+  synthVisualRefs.sunCoreMat = null;
 }
 
 function disposeObject3D(obj) {
@@ -1187,10 +1417,16 @@ function applyThemeForLevel(level) {
 
   const mountainScale = theme.mountainScale !== undefined ? theme.mountainScale : 1;
   mountainLines.forEach((layer) => {
+    if (layer.fillMesh) {
+      layer.fillMesh.visible = !hideBaseEnv;
+    }
     if (layer.fillMesh && layer.fillMesh.material) {
       layer.fillMesh.material.color.setHex(theme.mountainFill);
       layer.fillMesh.material.__fadeBase = 1;
       layer.fillMesh.scale.set(1, mountainScale, 1);
+    }
+    if (layer.line) {
+      layer.line.visible = !hideBaseEnv;
     }
     if (layer.line && layer.line.material) {
       layer.line.material.color.setHex(theme.mountainWire);
@@ -1333,7 +1569,7 @@ function enterDreamWorldScene() {
   if (!renderer.xr.isPresenting) {
     camera.position.copy(getDreamSpawnPosition());
   }
-  if (dreamTriggerMesh) dreamTriggerMesh.visible = false;
+  refreshDreamTriggerVisibility();
 }
 
 function exitDreamWorldScene() {
@@ -1349,7 +1585,7 @@ function exitDreamWorldScene() {
   if (!renderer.xr.isPresenting) {
     camera.position.copy(dreamReturnPosition);
   }
-  if (dreamTriggerMesh) dreamTriggerMesh.visible = true;
+  refreshDreamTriggerVisibility();
 }
 
 function startDreamFragmentTrail() {
@@ -1404,6 +1640,134 @@ function startEnvironmentFade(direction, duration, onComplete) {
     timer: duration,
     onComplete,
   };
+}
+
+function createDreamTrigger() {
+  if (!scene || dreamTriggerMesh) return;
+
+  const triggerGroup = new THREE.Group();
+  triggerGroup.name = 'dream-secret-trigger';
+
+  const core = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.35, 1),
+    new THREE.MeshBasicMaterial({ color: 0xaa66ff, transparent: true, opacity: 0.9, depthWrite: false })
+  );
+  core.name = 'dream-trigger-core';
+  triggerGroup.add(core);
+
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.7, 12, 12),
+    new THREE.MeshBasicMaterial({
+      color: 0xcc88ff,
+      transparent: true,
+      opacity: 0.3,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  glow.name = 'dream-trigger-glow';
+  triggerGroup.add(glow);
+
+  triggerGroup.userData = {
+    radius: 0.85,
+    pulseBaseScale: 1,
+    glow,
+    core,
+    placedForRun: false,
+  };
+
+  scene.add(triggerGroup);
+  dreamTriggerMesh = triggerGroup;
+  placeDreamTriggerBehindPlayer(true);
+  refreshDreamTriggerVisibility();
+}
+
+function placeDreamTriggerBehindPlayer(force = false) {
+  if (!dreamTriggerMesh || !camera) return;
+  if (dreamTriggerMesh.userData.placedForRun && !force) return;
+
+  const playerPos = getAdjustedCameraPosition();
+  const facing = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  facing.y = 0;
+  if (facing.lengthSq() < 0.0001) facing.set(0, 0, -1);
+  facing.normalize();
+
+  const behind = facing.clone().multiplyScalar(-8.0);
+  dreamTriggerMesh.position.set(
+    playerPos.x + behind.x,
+    Math.max(1.2, playerPos.y - 0.05),
+    playerPos.z + behind.z,
+  );
+  dreamTriggerMesh.lookAt(playerPos.x, dreamTriggerMesh.position.y, playerPos.z);
+  dreamTriggerMesh.userData.placedForRun = true;
+}
+
+function refreshDreamTriggerVisibility() {
+  if (!dreamTriggerMesh) return;
+  dreamTriggerMesh.visible = !game.inDreamWorld && !game.dreamCompleted;
+}
+
+function didProjectileHitDreamTrigger(previousPos, currentPos) {
+  if (!dreamTriggerMesh?.visible) return false;
+
+  const radius = dreamTriggerMesh.userData?.radius || 0.85;
+  const radiusSq = radius * radius;
+  const center = dreamTriggerMesh.position;
+
+  // Segment-vs-sphere test so fast projectiles cannot tunnel through the trigger.
+  _dreamSegment.subVectors(currentPos, previousPos);
+  const segmentLenSq = _dreamSegment.lengthSq();
+
+  if (segmentLenSq < 1e-6) {
+    return previousPos.distanceToSquared(center) <= radiusSq;
+  }
+
+  _dreamToCenter.subVectors(center, previousPos);
+  const t = THREE.MathUtils.clamp(_dreamToCenter.dot(_dreamSegment) / segmentLenSq, 0, 1);
+  _dreamClosestPoint.copy(previousPos).addScaledVector(_dreamSegment, t);
+  return _dreamClosestPoint.distanceToSquared(center) <= radiusSq;
+}
+
+function triggerDreamWorldFromSecret() {
+  if (game.inDreamWorld || dreamTransition) return;
+
+  dreamTransition = { state: 'entering' };
+  dreamReturnPosition.copy(getAdjustedCameraPosition());
+
+  // Fade through black so the secret transfer feels intentional in VR.
+  startEnvironmentFade('out', 0.45, () => {
+    enterDreamWorldScene();
+    refreshDreamTriggerVisibility();
+    startEnvironmentFade('in', 0.45, () => {
+      dreamTransition = null;
+    });
+  });
+}
+
+function completeDreamWorldRun() {
+  if (!game.dreamCompleted) {
+    game.dreamCompleted = true;
+    addUpgrade('dream_fragment', 'left');
+    addUpgrade('dream_fragment', 'right');
+    saveDreamState();
+    showFloatingMessage('DREAM FRAGMENT ACQUIRED', '#cc88ff', 3.0, false);
+  }
+
+  exitDreamWorldScene();
+  refreshDreamTriggerVisibility();
+}
+
+function updateDreamTriggerVisual(now) {
+  if (!dreamTriggerMesh?.visible) return;
+
+  const pulse = 1 + Math.sin(now * 0.0022) * 0.08;
+  dreamTriggerMesh.scale.setScalar(pulse);
+
+  const glow = dreamTriggerMesh.userData?.glow;
+  if (glow?.material) {
+    glow.material.opacity = 0.22 + (Math.sin(now * 0.0031) * 0.08 + 0.08);
+  }
 }
 
 function createSun() {
@@ -5721,6 +6085,12 @@ function beginGameplayFromReady() {
 
   // Stagger setup
   game.spawnTimer = 1.0;
+
+  if (dreamTriggerMesh) {
+    dreamTriggerMesh.userData.placedForRun = false;
+    placeDreamTriggerBehindPlayer(true);
+    refreshDreamTriggerVisibility();
+  }
 }
 
 function startReadyCountdown() {
@@ -5803,6 +6173,13 @@ function startGame() {
   }
 
   resetAllSlowMoState();
+  dreamTransition = null;
+
+  if (dreamTriggerMesh) {
+    dreamTriggerMesh.userData.placedForRun = false;
+    placeDreamTriggerBehindPlayer(true);
+    refreshDreamTriggerVisibility();
+  }
   
   game.state = State.READY_SCREEN;
   game.level = 1;
@@ -6377,6 +6754,7 @@ function initProjectilePool() {
   const laserGeo = new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6);
   laserGeo.rotateX(Math.PI / 2); // Rotate to align with -Z direction
   const laserMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85 });
+  registerPlayerProjectileMaterial(laserMat);
   const laserIM = new THREE.InstancedMesh(laserGeo, laserMat, 120);
   laserIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   laserIM.count = 0;  // Start with 0 visible instances
@@ -6388,6 +6766,7 @@ function initProjectilePool() {
   // ── Buckshot pellets ──
   const buckGeo = new THREE.SphereGeometry(0.025, 6, 6);
   const buckMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+  registerPlayerProjectileMaterial(buckMat);
   const buckIM = new THREE.InstancedMesh(buckGeo, buckMat, 20);
   buckIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   buckIM.count = 0;
@@ -6399,6 +6778,7 @@ function initProjectilePool() {
   // Head sphere for seekers
   const seekerGeo = new THREE.SphereGeometry(0.03, 8, 8);
   const seekerMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+  registerPlayerProjectileMaterial(seekerMat);
   const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
   seekerIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   seekerIM.count = 0;
@@ -6410,6 +6790,7 @@ function initProjectilePool() {
   const plasmaGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.5, 6);
   plasmaGeo.rotateX(Math.PI / 2); // Rotate to align with -Z direction
   const plasmaMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+  registerPlayerProjectileMaterial(plasmaMat);
   const plasmaIM = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 30);
   plasmaIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   plasmaIM.count = 0;
@@ -8201,6 +8582,7 @@ function updateProjectiles(dt) {
 
     // Move projectile (apply stasis slow effect)
     const moveDistance = proj.userData.velocity.length() * adjustedDt;
+    _dreamPrevProjectilePos.copy(proj.position);
     proj.position.addScaledVector(proj.userData.velocity, adjustedDt);
 
     // Commit position to InstancedMesh (sync GPU buffer)
@@ -8210,6 +8592,34 @@ function updateProjectiles(dt) {
 
     // Check if projectile passes through nanite swarm and gains nanite damage
     checkProjectileNaniteInteraction(proj);
+
+    // Secret dream trigger: shoot the hidden object behind spawn to enter dream mode.
+    // Use segment-vs-sphere test so high-speed shots still register.
+    if (proj.userData.stats && !game.inDreamWorld && didProjectileHitDreamTrigger(_dreamPrevProjectilePos, proj.position)) {
+      markProjectileHit(proj);
+      resolveProjectileAccuracy(proj);
+      if (proj.userData.isPooled) {
+        returnProjectileToPool(proj);
+      } else {
+        scene.remove(proj);
+      }
+      projectiles.splice(i, 1);
+      triggerDreamWorldFromSecret();
+      continue;
+    }
+
+    // Dream-world interactions (torches can be lit by shooting them).
+    if (proj.userData.stats && game.inDreamWorld && handleDreamProjectileHit(proj)) {
+      markProjectileHit(proj);
+      resolveProjectileAccuracy(proj);
+      if (proj.userData.isPooled) {
+        returnProjectileToPool(proj);
+      } else {
+        scene.remove(proj);
+      }
+      projectiles.splice(i, 1);
+      continue;
+    }
 
     // Check collision with plasma orbs (player can shoot orbs to detonate early)
     if (checkPlasmaOrbDetonation(proj)) {
@@ -8624,6 +9034,9 @@ function render(timestamp) {
     updateDesktopControls(dt);
   }
 
+  // Poll VR menu/thumbstick buttons so at least one hardware button can pause.
+  updateVRPauseButton(now);
+
   let st = game.state;
   if (bossDeathCinematic.active && st !== State.BOSS_DEATH_CINEMATIC) {
     st = State.BOSS_DEATH_CINEMATIC;
@@ -8651,7 +9064,15 @@ function render(timestamp) {
     // SAFEGUARD: Ensure blaster displays are visible during gameplay
     // Prevents text/billboard elements from disappearing
     blasterDisplays.forEach(d => { if (d) d.visible = false; });  // Hidden during gameplay
-    spawnEnemyWave(dt);
+
+    if (!game.inDreamWorld) {
+      spawnEnemyWave(dt);
+    } else {
+      const dreamState = updateDreamWorld(now, dt, getAdjustedCameraPosition());
+      if (dreamState?.exit) {
+        completeDreamWorldRun();
+      }
+    }
 
     // Full-auto shooting / Lightning beams / Charge shots (VR controllers)
     for (let i = 0; i < 2; i++) {
@@ -9474,6 +9895,14 @@ function render(timestamp) {
   const scanlinesEl = document.getElementById('scanlines');
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
+  // Keep visual tuning and secret trigger visuals responsive every frame.
+  applyVisualTuning();
+  updateDreamTriggerVisual(now);
+
+  // Update pause countdown BEFORE any early-return render path.
+  // This fixes countdown freeze when selective bloom is active.
+  updatePauseCountdown(now);
+
   // Selective bloom: lazy-init + render, only in desktop mode for synthwave_valley biome
   if (!renderer.xr.isPresenting && biomeSceneBiome === 'synthwave_valley') {
     if (!bloomComposer) initSelectiveBloom();  // Lazy init on first frame
@@ -9490,9 +9919,6 @@ function render(timestamp) {
       return;
     }
   }
-
-  // Update pause countdown if active
-  updatePauseCountdown(now);
 
   renderer.render(scene, camera);
 }
@@ -9541,6 +9967,11 @@ function rebuildBiomeScene(biomeId, theme) {
   } else if (theme.customScene === 'hellscape_lava') {
     buildHellscapeLavaScene(biomeSceneGroup);
   }
+
+  // Cleanup stale legacy meshes and give all biome PlaneGeometry meshes
+  // unique, readable names for debug look-at tooling.
+  cleanupLegacyShapeGeometry(scene);
+  assignBiomePlaneNames(biomeSceneGroup, biomeId);
 
   // Register all biome scene materials for environment fade
   // This ensures everything fades to black during boss death cinematic
@@ -9626,6 +10057,13 @@ function logCylinderColors() {
 function buildSynthwaveValleyScene(group) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
+
+  // Reset synth visual tuning refs each time this biome scene is rebuilt.
+  synthVisualRefs.terrainUniforms = null;
+  synthVisualRefs.sunOuterGlowMat = null;
+  synthVisualRefs.sunGlowMat = null;
+  synthVisualRefs.sunCoreMat = null;
+
   // Fix for synthwave valley lighting regression: the extracted scene lost the
   // original standalone scene's punch after we removed postprocessing, so raise
   // the local material brightness without affecting other biomes.
@@ -9662,6 +10100,8 @@ function buildSynthwaveValleyScene(group) {
     uBaseColor: { value: new THREE.Color(0x0C1347) },     // Primary/base color
     uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
     uFlashIntensity: { value: 0.0 },
+    uGlowIntensity: { value: getVisualTuning().glowStrength },
+    uFogIntensity: { value: getVisualTuning().fogIntensity },
   };
   const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);
   terrainGeo.rotateX(-Math.PI / 2);
@@ -9676,9 +10116,11 @@ function buildSynthwaveValleyScene(group) {
     // Fix for synthwave floor popping in VR: keep the terrain static and use the
     // built-in modelViewMatrix projection instead of manual projection math.
     vertexShader: `varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vec4 mvPosition=modelViewMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; vFogDistance=length(mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }`,
-    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float dist=length(vObjPos.xz); float lineW=0.25*smoothstep(1000.0,100.0,dist); float gx=gridLine(vObjPos.x*gridScale,lineW); float gz=gridLine(vObjPos.z*gridScale,lineW); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34); vec3 col=mix(uBaseColor, uGridColor, grid); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*0.58,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; uniform float uGlowIntensity; uniform float uFogIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float dist=length(vObjPos.xz); float lineW=0.25*smoothstep(1000.0,100.0,dist); float gx=gridLine(vObjPos.x*gridScale,lineW); float gz=gridLine(vObjPos.z*gridScale,lineW); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34*uGlowIntensity); vec3 col=mix(uBaseColor, uGridColor, clamp(grid*uGlowIntensity,0.0,1.0)); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18*uGlowIntensity; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*uFogIntensity,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+  terrain.name = 'synthwave-valley-floor-and-mountains';
+  terrain.userData.planeName = 'synthwave-valley-floor-and-mountains';
   terrain.position.set(0, floorY + 1.5, -700);
   terrain.frustumCulled = false;
   terrain.layers.enable(BLOOM_LAYER);  // Selective bloom: floor grid glows
@@ -9687,8 +10129,11 @@ function buildSynthwaveValleyScene(group) {
   // Store terrain material for damage flash
   biomeTerrainMaterials.push({ type: 'shader', material: terrainMat });
 
+  synthVisualRefs.terrainUniforms = terrainUniforms;
+
   // Sun + glow - flat planes (no billboard), using retro synthwave PNG
   const sunGroup = new THREE.Group();
+  sunGroup.name = 'synthwave-sun-group';
   sunGroup.position.set(0, 270, -1700);  // Y raised so full circle is above horizon
   group.add(sunGroup);
 
@@ -9710,19 +10155,25 @@ function buildSynthwaveValleyScene(group) {
 
   // Outer massive glow (flat plane, no billboard, fog-proof, no depth test)
   const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(1080, 1080), sunOuterGlowMat);
+  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(875, 875), sunOuterGlowMat); // 10% smaller again (81% of original)
+  sunOuterGlow.name = 'synthwave-sun-outer-glow';
+  sunOuterGlow.userData.planeName = 'synthwave-sun-outer-glow';
   sunOuterGlow.frustumCulled = false;
   sunOuterGlow.renderOrder = -3;
   sunGroup.add(sunOuterGlow);
   registerFadeMaterial(sunOuterGlowMat);
+  synthVisualRefs.sunOuterGlowMat = sunOuterGlowMat;
 
   // Main bright glow (fog-proof, no depth test)
   const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(864, 864), sunGlowMat);
+  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), sunGlowMat); // 10% smaller again (81% of original)
+  sunGlow.name = 'synthwave-sun-main-glow';
+  sunGlow.userData.planeName = 'synthwave-sun-main-glow';
   sunGlow.frustumCulled = false;
   sunGlow.renderOrder = -2;
   sunGroup.add(sunGlow);
   registerFadeMaterial(sunGlowMat);
+  synthVisualRefs.sunGlowMat = sunGlowMat;
 
   // Retro synthwave sun disc from PNG (flat plane, no billboard)
   // PNG has white background - process to make white pixels transparent
@@ -9749,11 +10200,14 @@ function buildSynthwaveValleyScene(group) {
     sunCoreMat.needsUpdate = true;
   };
   sunDiscImg.src = 'assets/sun-retro.png';
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(576, 576), sunCoreMat);
+  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(466, 466), sunCoreMat); // 10% smaller again (81% of original)
+  sunCore.name = 'synthwave-sun-core-disc';
+  sunCore.userData.planeName = 'synthwave-sun-core-disc';
   sunCore.frustumCulled = false;
   sunCore.renderOrder = -1;
   sunGroup.add(sunCore);
   registerFadeMaterial(sunCoreMat);
+  synthVisualRefs.sunCoreMat = sunCoreMat;
 
   // Log cylinder colors for debugging
   logCylinderColors();
@@ -9836,6 +10290,8 @@ function buildDesertNightScene(group) {
   geometry.computeVertexNormals();
   const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const terrain = new THREE.Mesh(geometry, material);
+  terrain.name = 'desert-night-terrain';
+  terrain.userData.planeName = 'desert-night-terrain';
   terrain.position.y = floorY;
   terrain.frustumCulled = false;
   terrain.receiveShadow = true;  // Sand dunes receive cactus shadows
@@ -9852,6 +10308,8 @@ function buildDesertNightScene(group) {
     side: THREE.DoubleSide
   });
   const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+  flashPlane.name = 'desert-night-damage-flash-plane';
+  flashPlane.userData.planeName = 'desert-night-damage-flash-plane';
   flashPlane.rotation.x = -Math.PI / 2;
   flashPlane.position.y = floorY + 0.02; // Very close to terrain surface
   flashPlane.frustumCulled = false;
@@ -10122,6 +10580,8 @@ function buildAlienPlanetScene(group) {
   groundGeo.computeVertexNormals();
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0510, roughness: 1, metalness: 0, flatShading: true });
   const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.name = 'alien-planet-ground-plane';
+  ground.userData.planeName = 'alien-planet-ground-plane';
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = floorY;
   ground.frustumCulled = false;
@@ -10137,6 +10597,8 @@ function buildAlienPlanetScene(group) {
     side: THREE.DoubleSide
   });
   const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+  flashPlane.name = 'alien-planet-damage-flash-plane';
+  flashPlane.userData.planeName = 'alien-planet-damage-flash-plane';
   flashPlane.rotation.x = -Math.PI / 2;
   flashPlane.position.y = floorY + 0.1;
   flashPlane.frustumCulled = false;
@@ -10656,6 +11118,8 @@ function buildHellscapeLavaScene(group) {
   });
 
   const terrain = new THREE.Mesh(geometry, material);
+  terrain.name = 'hellscape-lava-terrain';
+  terrain.userData.planeName = 'hellscape-lava-terrain';
   terrain.receiveShadow = true;
   terrain.position.y = floorY;
   terrain.position.x = -10.0;  // Shift terrain left so player spawns on riverbank (not riverbed)
@@ -10672,6 +11136,8 @@ function buildHellscapeLavaScene(group) {
     side: THREE.DoubleSide
   });
   const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+  flashPlane.name = 'hellscape-lava-damage-flash-plane';
+  flashPlane.userData.planeName = 'hellscape-lava-damage-flash-plane';
   flashPlane.rotation.x = -Math.PI / 2;
   flashPlane.position.y = floorY + 0.05;
   flashPlane.frustumCulled = false;

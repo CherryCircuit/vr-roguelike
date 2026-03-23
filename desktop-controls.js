@@ -138,7 +138,7 @@ export function enable() {
 
   // Show desktop mode indicator and debug panel
   showDesktopHUD();
-  showDebugPositionPanel();
+  syncDebugPositionPanelVisibility();
 }
 
 /**
@@ -322,6 +322,9 @@ export function update(dt) {
   }
   player.rotation.z = 0;
 
+  // Keep debug-position panel visibility synced with HTML debug toggle.
+  syncDebugPositionPanelVisibility();
+
   // Update debug position display
   updateDebugPositionPanel();
 
@@ -401,7 +404,7 @@ function setupEventListeners() {
   // Click to request pointer lock
   document.addEventListener('click', (e) => {
     if (!enabled || mouse.locked) return;
-    if (e && e.target && e.target.closest && (e.target.closest('#debug-panel') || e.target.closest('#debug-toggle'))) {
+    if (e && e.target && e.target.closest && (e.target.closest('#debug-panel') || e.target.closest('#debug-toggle') || e.target.closest('#debug-position-panel'))) {
       return;
     }
     document.body.requestPointerLock = document.body.requestPointerLock ||
@@ -566,6 +569,20 @@ let debugPanelElement = null;
 let lookAtRaycaster = null;
 let currentLookTarget = null;
 let originalMaterials = new Map(); // Store original materials for highlight reset
+
+function shouldShowDebugPositionPanel() {
+  // Default ON unless explicitly disabled from the HTML debug panel.
+  if (typeof window === 'undefined') return true;
+  return window.debugPositionPanel !== false;
+}
+
+function syncDebugPositionPanelVisibility() {
+  if (shouldShowDebugPositionPanel()) {
+    showDebugPositionPanel();
+  } else {
+    hideDebugPositionPanel();
+  }
+}
 
 function showDebugPositionPanel() {
   if (debugPanelElement) {
