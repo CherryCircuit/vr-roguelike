@@ -3938,6 +3938,12 @@ const PAUSE_MENU_DISTANCE = 2.6;        // Slightly farther from player in VR
 const PAUSE_MENU_RENDER_ORDER = 10000;  // Draw over floor HUD layers
 const PAUSE_MENU_FONT_MULTIPLIER = 2.5;
 
+// Render order constants for pause menu elements (layered back to front)
+const PAUSE_PANEL_RENDER_ORDER = 10000;
+const PAUSE_BORDER_RENDER_ORDER = 10001;
+const PAUSE_SECTION_BG_RENDER_ORDER = 10002;
+const PAUSE_TEXT_RENDER_ORDER = 10010;
+
 function scalePauseFont(baseFontSize) {
   return Math.round(baseFontSize * PAUSE_MENU_FONT_MULTIPLIER);
 }
@@ -3954,11 +3960,33 @@ function applyPauseMenuRenderPriority(root) {
     const materials = Array.isArray(child.material) ? child.material : [child.material];
     materials.forEach((mat) => {
       if (!mat) return;
+      // CRITICAL: Both must be false for UI to render correctly over scene
       mat.depthTest = false;
       mat.depthWrite = false;
+      // Ensure transparency is enabled
+      if (mat.opacity !== undefined && mat.opacity < 1) {
+        mat.transparent = true;
+      }
     });
 
-    child.renderOrder = PAUSE_MENU_RENDER_ORDER;
+    // Set render order if not already set
+    if (child.renderOrder === 0 || child.renderOrder === undefined) {
+      child.renderOrder = PAUSE_TEXT_RENDER_ORDER;
+    }
+  });
+}
+
+/**
+ * Create a consistent UI material for pause menu elements
+ */
+function createPauseMaterial(color, opacity = 0.85) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
   });
 }
 
@@ -4052,22 +4080,16 @@ function createPauseMenu() {
   const panelWidth = 4.6;
   const panelHeight = 4.1;
 
-  // Background panel
+  // Background panel - semi-transparent black, no depth interaction
   const panelGeo = new THREE.PlaneGeometry(panelWidth, panelHeight);
-  const panelMat = new THREE.MeshBasicMaterial({
-    color: 0x0a0015,
-    transparent: true,
-    opacity: 0.98,  // High opacity for readability
-    side: THREE.DoubleSide,
-    depthWrite: false
-  });
+  const panelMat = createPauseMaterial(0x0a0015, 0.85);
   const panel = new THREE.Mesh(panelGeo, panelMat);
-  panel.renderOrder = PAUSE_MENU_RENDER_ORDER;  // Ensure panel renders at correct priority
+  panel.renderOrder = PAUSE_PANEL_RENDER_ORDER;
   group.add(panel);
 
-  // Neon border (cyan)
+  // Neon border (cyan) - no depth interaction
   const borderThickness = 0.03;
-  const borderMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+  const borderMat = createPauseMaterial(0x00ffff, 1.0);
   [
     { w: panelWidth, h: borderThickness, x: 0, y: panelHeight / 2 },
     { w: panelWidth, h: borderThickness, x: 0, y: -panelHeight / 2 },
@@ -4076,7 +4098,7 @@ function createPauseMenu() {
   ].forEach(b => {
     const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
     border.position.set(b.x, b.y, 0.01);
-    border.renderOrder = PAUSE_MENU_RENDER_ORDER + 1;  // Render after panel
+    border.renderOrder = PAUSE_BORDER_RENDER_ORDER;
     group.add(border);
   });
 
@@ -4121,16 +4143,16 @@ function createPauseMenu() {
 function createBlasterSection(hand, panelX) {
   const group = new THREE.Group();
 
-  // Section background (higher opacity for better readability)
+  // Section background
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(1.9, 1.8),
-    new THREE.MeshBasicMaterial({ color: 0x1a0033, transparent: true, opacity: 0.85, depthWrite: false })
+    createPauseMaterial(0x1a0033, 0.85)
   );
-  bg.renderOrder = 0;  // Will be overridden by applyPauseMenuRenderPriority
+  bg.renderOrder = PAUSE_SECTION_BG_RENDER_ORDER;
   group.add(bg);
 
   // Section border (pink)
-  const borderMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+  const borderMat = createPauseMaterial(0xff00ff, 1.0);
   const borderWidth = 1.9;
   const borderHeight = 0.06;
   [
@@ -4139,6 +4161,7 @@ function createBlasterSection(hand, panelX) {
   ].forEach(b => {
     const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
     border.position.set(b.x, b.y, 0.01);
+    border.renderOrder = PAUSE_BORDER_RENDER_ORDER;
     group.add(border);
   });
 
@@ -4146,7 +4169,8 @@ function createBlasterSection(hand, panelX) {
   const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, {
     fontSize: scalePauseFont(48),
     color: '#00ffff',
-    scale: scalePauseText(0.15)
+    scale: scalePauseText(0.15),
+    renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
   titleText.position.set(0, 0.68, 0.02);
   group.add(titleText);
@@ -4157,7 +4181,8 @@ function createBlasterSection(hand, panelX) {
   const weaponText = makeSprite(weaponName, {
     fontSize: scalePauseFont(36),
     color: '#ffffff',
-    scale: scalePauseText(0.1)
+    scale: scalePauseText(0.1),
+    renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
   weaponText.position.set(0, 0.38, 0.02);
   group.add(weaponText);
@@ -4172,7 +4197,8 @@ function createBlasterSection(hand, panelX) {
       const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, {
         fontSize: scalePauseFont(36),
         color: '#ffffff',
-        scale: scalePauseText(0.1)
+        scale: scalePauseText(0.1),
+        renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
       const yPos = yOffset - (index * 0.24);
       upgradeText.position.set(0, yPos, 0.02);
@@ -4183,7 +4209,8 @@ function createBlasterSection(hand, panelX) {
     const noUpgradesText = makeSprite('NO UPGRADES', {
       fontSize: scalePauseFont(36),
       color: '#888888',
-      scale: scalePauseText(0.1)
+      scale: scalePauseText(0.1),
+      renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     noUpgradesText.position.set(0, 0.08, 0.02);
     noUpgradesText.userData = { isUpgradeSprite: true };
@@ -4202,16 +4229,17 @@ function createStatsSection() {
   // Background (higher opacity for readability)
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(4.2, 2.2),
-    new THREE.MeshBasicMaterial({ color: 0x15002a, transparent: true, opacity: 0.85, depthWrite: false })
+    createPauseMaterial(0x15002a, 0.85)
   );
-  bg.renderOrder = 0;  // Will be overridden by applyPauseMenuRenderPriority
+  bg.renderOrder = PAUSE_SECTION_BG_RENDER_ORDER;
   group.add(bg);
 
   // Title
   const titleText = makeSprite('RUN STATISTICS', {
     fontSize: scalePauseFont(48),
     color: '#ff00ff',
-    scale: scalePauseText(0.15)
+    scale: scalePauseText(0.15),
+    renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
   titleText.position.set(0, 0.84, 0.02);
   group.add(titleText);
@@ -4227,7 +4255,8 @@ function createStatsSection() {
     const text = makeSprite(stat, {
       fontSize: scalePauseFont(36),
       color: '#00ffff',
-      scale: scalePauseText(0.1)
+      scale: scalePauseText(0.1),
+      renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     text.position.set(0, 0.44 - (index * 0.24), 0.02);
     text.userData = { isPauseStatText: true };
@@ -4245,7 +4274,8 @@ function createStatsSection() {
     const text = makeSprite(stat, {
       fontSize: scalePauseFont(36),
       color: '#00ffff',
-      scale: scalePauseText(0.1)
+      scale: scalePauseText(0.1),
+      renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     text.position.set(-1.08, -0.34 - (index * 0.22), 0.02);
     text.userData = { isPauseStatText: true };
@@ -4260,10 +4290,13 @@ function createStatsSection() {
   const chartMat = new THREE.MeshBasicMaterial({
     map: chartTexture,
     transparent: true,
+    depthTest: false,
+    depthWrite: false,
     side: THREE.DoubleSide
   });
   const chartMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.9), chartMat);
   chartMesh.position.set(1.1, -0.82, 0.02);
+  chartMesh.renderOrder = PAUSE_TEXT_RENDER_ORDER;
   group.add(chartMesh);
 
   pauseMenuElements.chartCanvas = { canvas, texture: chartTexture, mesh: chartMesh };
@@ -4380,7 +4413,8 @@ function updateStatsSectionText() {
     const text = makeSprite(stat, {
       fontSize: scalePauseFont(36),
       color: '#00ffff',
-      scale: scalePauseText(0.1)
+      scale: scalePauseText(0.1),
+      renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     text.position.set(0, 0.44 - (index * 0.24), 0.03);
     text.userData = { isPauseStatText: true };
@@ -4398,7 +4432,8 @@ function updateStatsSectionText() {
     const text = makeSprite(stat, {
       fontSize: scalePauseFont(36),
       color: '#00ffff',
-      scale: scalePauseText(0.1)
+      scale: scalePauseText(0.1),
+      renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     text.position.set(-1.08, -0.34 - (index * 0.22), 0.03);
     text.userData = { isPauseStatText: true };
@@ -4427,7 +4462,8 @@ function updateSectionStats(section, hand) {
       const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, {
         fontSize: scalePauseFont(36),
         color: '#ffffff',
-        scale: scalePauseText(0.1)
+        scale: scalePauseText(0.1),
+        renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
       const yPos = yOffset - (index * 0.24);
       upgradeText.position.set(0, yPos, 0.03);
@@ -4438,7 +4474,8 @@ function updateSectionStats(section, hand) {
     const noUpgradesText = makeSprite('NO UPGRADES', {
       fontSize: scalePauseFont(36),
       color: '#888888',
-      scale: scalePauseText(0.1)
+      scale: scalePauseText(0.1),
+      renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     noUpgradesText.position.set(0, 0.08, 0.03);
     noUpgradesText.userData = { isUpgradeSprite: true };
@@ -4457,12 +4494,13 @@ function createResumeButton() {
   const btnHeight = 0.56;
   const btnBg = new THREE.Mesh(
     new THREE.PlaneGeometry(btnWidth, btnHeight),
-    new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 })
+    createPauseMaterial(0x00ffff, 0.3)
   );
+  btnBg.renderOrder = PAUSE_SECTION_BG_RENDER_ORDER;
   group.add(btnBg);
 
   // Button border
-  const borderMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+  const borderMat = createPauseMaterial(0x00ffff, 1.0);
   const borderWidth = btnWidth;
   const borderHeight = 0.06;
   [
@@ -4471,6 +4509,7 @@ function createResumeButton() {
   ].forEach(b => {
     const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
     border.position.set(b.x, b.y, 0.01);
+    border.renderOrder = PAUSE_BORDER_RENDER_ORDER;
     group.add(border);
   });
 
@@ -4478,7 +4517,8 @@ function createResumeButton() {
   const text = makeSprite('RESUME', {
     fontSize: scalePauseFont(38),
     color: '#00ffff',
-    scale: scalePauseText(0.12)
+    scale: scalePauseText(0.12),
+    renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
   text.position.set(0, 0, 0.02);
   group.add(text);
