@@ -7833,6 +7833,8 @@ export function releaseBossProjIndex(idx) {
   _bossProjMatrix.makeScale(0, 0, 0);
   bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
   bossProjGlowPool.setMatrixAt(idx, _bossProjMatrix);
+  bossProjCorePool.instanceMatrix.needsUpdate = true;
+  bossProjGlowPool.instanceMatrix.needsUpdate = true;
 
   bossProjData[idx] = null;
   bossProjFreeIndices.push(idx);
@@ -7849,8 +7851,24 @@ export function clearBossProjectiles() {
     }
   }
   bossProjectiles.length = 0;
-  if (bossProjCorePool) bossProjCorePool.instanceMatrix.needsUpdate = true;
-  if (bossProjGlowPool) bossProjGlowPool.instanceMatrix.needsUpdate = true;
+
+  // Reset count to 0 so instances are properly hidden
+  // (releasing scales them to 0, but count must also be reset)
+  if (bossProjCorePool) {
+    bossProjCorePool.count = 0;
+    bossProjCorePool.instanceMatrix.needsUpdate = true;
+  }
+  if (bossProjGlowPool) {
+    bossProjGlowPool.count = 0;
+    bossProjGlowPool.instanceMatrix.needsUpdate = true;
+  }
+
+  // Reset free indices to initial state
+  bossProjFreeIndices.length = 0;
+  for (let i = 0; i < BOSS_PROJ_POOL_SIZE; i++) {
+    bossProjFreeIndices.push(i);
+    bossProjData[i] = null;
+  }
 }
 
 export function spawnBossProjectile(fromPos, targetPos) {

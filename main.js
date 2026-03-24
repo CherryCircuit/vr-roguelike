@@ -3,6 +3,14 @@
 //  Phase 1: Core game loop with levels, enemies, upgrades, HUD
 // ============================================================
 
+// ============================================================
+// MODULE IMPORTS
+// Dependencies: game.js, weapons.js, audio.js, enemies.js,
+//   stasis.js, vfx.js, biome-scenes.js, boss-death-cinematic.js,
+//   hud.js, desktop-controls.js, scoreboard.js, scenery.js,
+//   dream-world.js, spatial-hash.js
+// ============================================================
+
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -39,6 +47,12 @@ import {
 } from './enemies.js';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
+import { rebuildBiomeScene as rebuildBiomeSceneModule, getBiomeFloorY as getBiomeFloorYModule } from './biome-scenes.js';
+import {
+  initBossDeathCinematic, initBossDeathOverlays, startBossDeathCinematic,
+  updateBossDeathCinematic, updateBossDeathFreeze, shouldFreezeTime,
+  isBossDeathCinematicActive, BOSS_DEATH_FREEZE
+} from './boss-death-cinematic.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
@@ -79,6 +93,14 @@ import { SpatialHash } from './spatial-hash.js';
 window.State = State;
 window.game = game;
 
+// Debug flag for projectile firing investigation
+window.DEBUG_PROJECTILES = false;
+
+// ============================================================
+// CONSTANTS & CONFIGURATION
+// Color palette, timing, physics constants
+// ============================================================
+
 // ── Constants ──────────────────────────────────────────────
 const NEON_PINK = 0xff00ff;
 const NEON_CYAN = 0x00aaaa;  // Muted teal (not bright neon cyan)
@@ -108,6 +130,12 @@ function getCountryDisplayLabel() {
   const prefix = flag ? `${flag} ` : '';
   return `COUNTRY: ${prefix}${label}`;
 }
+
+// ============================================================
+// MODULE STATE
+// Scene, camera, renderer, controller state, pools, queues
+// COUPLING: Many functions reference these globals directly
+// ============================================================
 
 // ── Module State ───────────────────────────────────────────
 let scene, camera, renderer;
@@ -260,8 +288,21 @@ let floorBaseColor = new THREE.Color(0x220044);
 let floorFlashTimer = 0;
 let floorFlashing = false;
 
+// ============================================================
+// POOLED OBJECTS (HOT PATH OPTIMIZATION)
+// Pre-allocated Raycasters, Vector3, Quaternion to avoid GC
+// COUPLING: Reused across render loop, projectile updates, UI hover
+// ============================================================
+
 // Pre-allocated raycasters (reused to avoid per-frame GC)
 const _uiRaycaster = new THREE.Raycaster();
+
+// Pooled UI hover raycasters for controller/desktop hover detection
+// Avoids creating new Raycaster/Vector3/Quaternion every frame in menu states
+const _uiHoverRaycasters = [new THREE.Raycaster(), new THREE.Raycaster()];
+const _uiHoverOrigins = [new THREE.Vector3(), new THREE.Vector3()];
+const _uiHoverQuats = [new THREE.Quaternion(), new THREE.Quaternion()];
+const _uiHoverDirs = [new THREE.Vector3(), new THREE.Vector3()];
 
 // Dream trigger hit-test temp vectors (avoid per-frame allocations in projectile loop)
 const _dreamPrevProjectilePos = new THREE.Vector3();
@@ -375,22 +416,7 @@ function getAdjustedCameraPosition() {
 let screenShakeIntensity = 0;
 let screenShakeTime = 0;
 
-// Boss death cinematic overlays
-const BOSS_DEATH_FREEZE = 0.18;
-const BOSS_DEATH_EXPLOSION_TIME = 0.9;
-const BOSS_DEATH_WHITE_FADE = 0.35;
-const BOSS_DEATH_BLACK_FADE = 0.55;
-const BOSS_DEATH_EXPLOSION_INTERVAL = 0.12;
-let bossDeathFreezeTimer = 0;
-let bossDeathWhiteOverlay = null;
-let bossDeathBlackOverlay = null;
-let bossDeathCinematic = {
-  active: false,
-  timer: 0,
-  explosionTimer: 0,
-  bossPos: new THREE.Vector3(),
-  wasFinalBoss: false,
-};
+// Boss death cinematic state is now in boss-death-cinematic.js module
 
 // Decoy system
 const activeDecoys = [];
@@ -413,6 +439,12 @@ const MAX_NANITE_SWARMS = 2;
 // Reflector drone system
 const activeReflectorDrones = [];
 const MAX_REFLECTOR_DRONES = 2;
+
+// ============================================================
+// BOOTSTRAP & INITIALISATION
+// Entry point: init() called at module load
+// Dependencies: All module state must be declared above
+// ============================================================
 
 // ── Bootstrap ──────────────────────────────────────────────
 
@@ -522,6 +554,25 @@ function init() {
   applyEnvironmentFade(0);
   setupControllers();
 
+  // Init boss death cinematic module with dependencies
+  initBossDeathCinematic({
+    camera,
+    game,
+    State,
+    spawnBossDebris,
+    spawnExplosionVisual,
+    hideBossHealthBar,
+    clearBoss,
+    clearAllTelegraphs,
+    playExplosionSound,
+    stopMusic,
+    completeLevel,
+    endGame,
+    applyEnvironmentFade,
+    resetAllSlowMoState,
+    hideKillsAlert,
+  });
+
   // Init subsystems
   initEnemies(scene);
   initHUD(camera, scene);
@@ -623,9 +674,9 @@ function init() {
 }
 
 // ============================================================
-//  SELECTIVE BLOOM (desktop only, synthwave_valley biome)
-//  Lazy-initialized on first render frame when synthwave biome
-//  is active in desktop mode. No bootstrap ordering dependency.
+// SELECTIVE BLOOM (Desktop only, synthwave_valley biome)
+// Lazy-initialized on first render frame
+// COUPLING: References BLOOM_LAYER, synthVisualRefs, renderer
 // ============================================================
 
 let bloomComposer = null;
@@ -886,8 +937,11 @@ function updateVRPauseButton(now) {
 }
 
 // ============================================================
-//  ENVIRONMENT
+// ENVIRONMENT CREATION
+// Sun, aurora, mountains, stars, horizon, VHS retro shell
+// COUPLING: Updates scene directly, registers fade materials
 // ============================================================
+
 function createEnvironment() {
   // Grid floor - reduced size to cut ugly distant static
   gridHelper = new THREE.GridHelper(120, 48, NEON_PINK, 0xff0088);
@@ -2334,7 +2388,10 @@ function rebuildStars(theme) {
 }
 
 // ============================================================
-//  CONTROLLERS
+// CONTROLLER SETUP & INPUT HANDLING
+// VR controllers, trigger press/release, squeeze, desktop click
+// HOT PATH: onTriggerPress called every frame when trigger held
+// COUPLING: Directly calls fireMainWeapon, fireAltWeapon
 // ============================================================
 function setupControllers() {
   for (let i = 0; i < 2; i++) {
@@ -3066,7 +3123,11 @@ function onTriggerRelease(index) {
 }
 
 // ============================================================
-//  ALT WEAPON HANDLERS (squeeze trigger)
+// ALT WEAPON SYSTEMS
+// Shield, laser mines, decoys, black holes, tethers, nanites,
+// phase dash, reflector drones, stasis, plasma orbs, grenades,
+// proximity mines, attack drones, EMP, teleport
+// COUPLING: Updates scene, activeShields/activeLaserMines/etc arrays
 // ============================================================
 function onSqueezePress(controller, index) {
   const st = game.state;
@@ -3804,6 +3865,9 @@ function fireBlackHole(origin, direction, hand, altWeapon) {
   playShoothSound();
 }
 
+// Pooled temp vector for black hole pull (per-enemy per-frame)
+const _bhPullToCenter = new THREE.Vector3();
+
 function updateMinesAndBlackHoles(dt, now, playerPos) {
   // Update mines (projectiles that haven't triggered yet)
   for (let i = activeMines.length - 1; i >= 0; i--) {
@@ -3871,8 +3935,8 @@ function updateMinesAndBlackHoles(dt, now, playerPos) {
 
         // Pull strength increases toward center, fades at end
         const pullStrength = (1 - dist / bh.pullRadius) * (1 - progress * 0.5) * 8;
-        const toCenter = new THREE.Vector3().subVectors(bh.position, e.mesh.position).normalize();
-        e.mesh.position.addScaledVector(toCenter, pullStrength * dt);
+        _bhPullToCenter.subVectors(bh.position, e.mesh.position).normalize();
+        e.mesh.position.addScaledVector(_bhPullToCenter, pullStrength * dt);
 
         // Record that this enemy was affected (for stun)
         if (!bh.affectedEnemies.has(idx)) {
@@ -6291,6 +6355,11 @@ function handleDebugMenuTrigger(controller) {
   // Toggle clicks are handled in getDebugMenuHit with visual updates
 }
 
+// ============================================================
+// GAME FLOW & STATE MANAGEMENT
+// startGame, completeLevel, togglePause, endGame, debug jump
+// COUPLING: Transitions game.state, calls HUD show/hide, audio
+// ============================================================
 function startGame() {
   console.log('[game] Starting new game');
   hideTitle();
@@ -6377,166 +6446,10 @@ function resetAllSlowMoState() {
   }
 }
 
-function initBossDeathOverlays() {
-  const geo = new THREE.PlaneGeometry(6, 6);
-  bossDeathWhiteOverlay = new THREE.Mesh(
-    geo,
-    new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    }),
-  );
-  bossDeathWhiteOverlay.renderOrder = 1002;
-  bossDeathWhiteOverlay.visible = false;
-  bossDeathWhiteOverlay.position.set(0, 0, -0.26);
-  camera.add(bossDeathWhiteOverlay);
-
-  bossDeathBlackOverlay = new THREE.Mesh(
-    geo,
-    new THREE.MeshBasicMaterial({
-      color: 0x000000,
-      transparent: true,
-      opacity: 0,
-      depthTest: false,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    }),
-  );
-  bossDeathBlackOverlay.renderOrder = 1003;
-  bossDeathBlackOverlay.visible = false;
-  bossDeathBlackOverlay.position.set(0, 0, -0.25);
-  camera.add(bossDeathBlackOverlay);
-}
-
-function startBossDeathCinematic(boss) {
-  if (!boss || bossDeathCinematic.active) return;
-
-  console.log('[boss-cinematic] Starting boss death cinematic');
-  
-  resetAllSlowMoState();
-  bossDeathCinematic.active = true;
-  bossDeathCinematic.timer = 0;
-  bossDeathCinematic.explosionTimer = 0;
-  bossDeathCinematic.bossPos.copy(boss.mesh.position);
-  bossDeathCinematic.wasFinalBoss = game.level >= 20;
-  bossDeathFreezeTimer = BOSS_DEATH_FREEZE;
-
-  // Ensure overlays exist and are properly initialized
-  if (bossDeathWhiteOverlay) {
-    bossDeathWhiteOverlay.material.opacity = 0;
-    bossDeathWhiteOverlay.visible = true;  // Set visible so opacity changes take effect
-  } else {
-    console.warn('[boss-cinematic] White overlay not initialized!');
-  }
-  if (bossDeathBlackOverlay) {
-    bossDeathBlackOverlay.material.opacity = 0;
-    bossDeathBlackOverlay.visible = true;  // Set visible so opacity changes take effect
-  } else {
-    console.warn('[boss-cinematic] Black overlay not initialized!');
-  }
-
-  spawnBossDebris(boss);
-  if (typeof window !== 'undefined' && window.playBossDeath) {
-    window.playBossDeath();
-  }
-  stopMusic();
-  playExplosionSound();
-  hideBossHealthBar();
-  clearBoss();
-  clearAllTelegraphs();
-
-  game.state = State.BOSS_DEATH_CINEMATIC;
-  console.log('[boss-cinematic] State set to BOSS_DEATH_CINEMATIC');
-}
-
-function finishBossDeathCinematic() {
-  bossDeathCinematic.active = false;
-  bossDeathCinematic.timer = 0;
-  bossDeathCinematic.explosionTimer = 0;
-
-  if (bossDeathWhiteOverlay) {
-    bossDeathWhiteOverlay.material.opacity = 0;
-    bossDeathWhiteOverlay.visible = false;
-  }
-  if (bossDeathBlackOverlay) {
-    bossDeathBlackOverlay.material.opacity = 0;
-    bossDeathBlackOverlay.visible = false;
-  }
-
-  if (bossDeathCinematic.wasFinalBoss) {
-    bossDeathCinematic.wasFinalBoss = false;
-    endGame(true);
-    return;
-  }
-
-  bossDeathCinematic.wasFinalBoss = false;
-  completeLevel();
-}
-
-function updateBossDeathCinematic(rawDt) {
-  if (!bossDeathCinematic.active) return;
-
-  bossDeathCinematic.timer += rawDt;
-  const t = bossDeathCinematic.timer;
-  const explosionStart = BOSS_DEATH_FREEZE;
-  const explosionEnd = explosionStart + BOSS_DEATH_EXPLOSION_TIME;
-  const whiteStart = explosionEnd;
-  const whiteEnd = whiteStart + BOSS_DEATH_WHITE_FADE;
-  const blackEnd = whiteEnd + BOSS_DEATH_BLACK_FADE;
-
-  if (t >= explosionStart && t <= explosionEnd) {
-    bossDeathCinematic.explosionTimer -= rawDt;
-    if (bossDeathCinematic.explosionTimer <= 0) {
-      const offset = new THREE.Vector3(
-        (Math.random() - 0.5) * 1.8,
-        (Math.random() - 0.5) * 1.2,
-        (Math.random() - 0.5) * 1.8,
-      );
-      const explosionPos = bossDeathCinematic.bossPos.clone().add(offset);
-      spawnExplosionVisual(explosionPos, 0.7 + Math.random() * 0.8);
-      playExplosionSound();  // Play explosion sound for each boss death explosion
-      bossDeathCinematic.explosionTimer = BOSS_DEATH_EXPLOSION_INTERVAL;
-    }
-  }
-
-  let whiteOpacity = 0;
-  let blackOpacity = 0;
-  let envFade = 0;  // Environment fade synced with black overlay
-  if (t >= whiteStart && t < whiteEnd) {
-    whiteOpacity = (t - whiteStart) / BOSS_DEATH_WHITE_FADE;
-  } else if (t >= whiteEnd && t < blackEnd) {
-    const progress = (t - whiteEnd) / BOSS_DEATH_BLACK_FADE;
-    whiteOpacity = 1 - progress;
-    blackOpacity = progress;
-    envFade = progress;  // Fade environment with black overlay
-  } else if (t >= blackEnd) {
-    blackOpacity = 1;
-    envFade = 1;  // Full fade
-  }
-
-  // Apply environment fade - ALL scene elements fade to black
-  applyEnvironmentFade(envFade);
-
-  if (bossDeathWhiteOverlay) {
-    bossDeathWhiteOverlay.visible = whiteOpacity > 0;
-    bossDeathWhiteOverlay.material.opacity = Math.min(1, Math.max(0, whiteOpacity));
-  }
-  if (bossDeathBlackOverlay) {
-    bossDeathBlackOverlay.visible = blackOpacity > 0;
-    bossDeathBlackOverlay.material.opacity = Math.min(1, Math.max(0, blackOpacity));
-  }
-
-  if (t >= blackEnd) {
-    finishBossDeathCinematic();
-  }
-}
+// Boss death cinematic functions are now in boss-death-cinematic.js (imported at top)
 
 function completeLevel() {
-  if (bossDeathCinematic.active) return;
+  if (isBossDeathCinematicActive()) return;
 
   console.log(`[game] Level ${game.level} complete`);
 
@@ -6875,7 +6788,9 @@ function endGame(victory) {
 }
 
 // ============================================================
-//  SHOOTING & COMBAT
+// SHOOTING & COMBAT
+// Projectile pool, weapon firing, hit detection, explosions
+// HOT PATH: updateProjectiles() called every frame
 // ============================================================
 
 // Screen shake trigger function
@@ -6884,6 +6799,13 @@ function triggerScreenShake(intensity, duration) {
   screenShakeTime = performance.now() + duration;
   console.log(`[Shake] Intensity: ${intensity}, Duration: ${duration}ms`);
 }
+
+// ============================================================
+// PROJECTILE POOL MANAGEMENT
+// InstancedMesh pools for laser, buckshot, seeker, plasma_carbine
+// HOT PATH: getPooledProjectile, returnProjectileToPool, commit()
+// COUPLING: instancedProjectiles, projectileInstanceData arrays
+// ============================================================
 
 // PERFORMANCE: Initialize InstancedMesh projectile pools
 // One InstancedMesh per projectile type = minimal draw calls.
@@ -7195,7 +7117,10 @@ function updateHostileProjectileVisual(proj, now) {
 }
 
 // ============================================================
-//  PHYSICS DEATH SYSTEM - Voxel Pool
+// VOXEL PHYSICS DEATH SYSTEM
+// Pooled voxels for enemy death explosions
+// HOT PATH: updateVoxelPhysics() called every frame
+// COUPLING: voxelPool, activeVoxels arrays, scene.add/remove
 // ============================================================
 
 /**
@@ -7427,7 +7352,10 @@ function updateVoxelPhysics(dt, now) {
 }
 
 // ============================================================
-//  MAIN WEAPON FIRING
+// MAIN WEAPON FIRING
+// fireMainWeapon, lightning beams, charge shots, plasma carbine
+// HOT PATH: Called every frame when trigger held during PLAYING
+// COUPLING: weaponCooldowns, chargeShotStartTime, projectiles[]
 // ============================================================
 function fireMainWeapon(controller, index) {
   const now = performance.now();
@@ -7454,6 +7382,12 @@ function fireMainWeapon(controller, index) {
   controller.getWorldPosition(origin);
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+
+  // Debug logging for projectile investigation
+  if (window.DEBUG_PROJECTILES) {
+    const handLabel = index === 0 ? 'LEFT' : 'RIGHT';
+    console.log(`[PROJECTILE DEBUG] hand=${handLabel} weapon=${mainWeaponId} quat=(${quat.x.toFixed(3)}, ${quat.y.toFixed(3)}, ${quat.z.toFixed(3)}, ${quat.w.toFixed(3)}) dir=(${direction.x.toFixed(3)}, ${direction.y.toFixed(3)}, ${direction.z.toFixed(3)})`);
+  }
 
   // Fire projectile(s)
   const count = stats.projectileCount;
@@ -7636,6 +7570,10 @@ function updateLightningBeam(controller, index, stats, dt) {
   }
 }
 
+// Pooled temp vectors for lightning bolt generation (per-segment)
+const _lightningDir = new THREE.Vector3();
+const _lightningPerp = new THREE.Vector3();
+
 // Create zigzag lightning bolt between two points
 function createLightningBolt(start, end) {
   const points = [start.clone()];
@@ -7647,9 +7585,9 @@ function createLightningBolt(start, end) {
     const mid = new THREE.Vector3().lerpVectors(start, end, t);
 
     // Random perpendicular offset
-    const dir = new THREE.Vector3().subVectors(end, start).normalize();
-    const perp = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
-    const offset = perp.multiplyScalar((Math.random() - 0.5) * zigzagAmount);
+    _lightningDir.subVectors(end, start).normalize();
+    _lightningPerp.set(-_lightningDir.z, 0, _lightningDir.x).normalize();
+    const offset = _lightningPerp.clone().multiplyScalar((Math.random() - 0.5) * zigzagAmount);
 
     mid.add(offset);
     points.push(mid);
@@ -7807,18 +7745,26 @@ function hideChargeVisuals(index) {
   }
 }
 
+// Pooled temp vectors for pointToSegmentDist (hot path)
+const _ptsAb = new THREE.Vector3();
+const _ptsAp = new THREE.Vector3();
+const _ptsProj = new THREE.Vector3();
+
 /** Distance from point to line segment (a to b) */
 function pointToSegmentDist(p, a, b) {
-  const ab = new THREE.Vector3().subVectors(b, a);
-  const ap = new THREE.Vector3().subVectors(p, a);
-  const t = Math.max(0, Math.min(1, ap.dot(ab) / ab.lengthSq()));
-  const proj = new THREE.Vector3().copy(a).addScaledVector(ab, t);
-  return p.distanceTo(proj);
+  _ptsAb.subVectors(b, a);
+  _ptsAp.subVectors(p, a);
+  const t = Math.max(0, Math.min(1, _ptsAp.dot(_ptsAb) / _ptsAb.lengthSq()));
+  _ptsProj.copy(a).addScaledVector(_ptsAb, t);
+  return p.distanceTo(_ptsProj);
 }
 
 const _chargeBeamA = new THREE.Vector3();
 const _chargeBeamB = new THREE.Vector3();
 const _playerForward = new THREE.Vector3();
+const _chargeBeamOrigin = new THREE.Vector3();
+const _chargeBeamQuat = new THREE.Quaternion();
+const _chargeBeamDir = new THREE.Vector3(0, 0, -1);
 
 function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   if (chargeTimeSec < CHARGE_SHOT_MIN_FIRE) return; // minimum charge to fire
@@ -7834,14 +7780,12 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   const beamWidth = 0.2 + progress * 1.3;
   const range = 50;
 
-  const origin = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  controller.getWorldPosition(origin);
-  controller.getWorldQuaternion(quat);
-  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  controller.getWorldPosition(_chargeBeamOrigin);
+  controller.getWorldQuaternion(_chargeBeamQuat);
+  _chargeBeamDir.set(0, 0, -1).applyQuaternion(_chargeBeamQuat);
 
-  _chargeBeamA.copy(origin);
-  _chargeBeamB.copy(origin).addScaledVector(direction, range);
+  _chargeBeamA.copy(_chargeBeamOrigin);
+  _chargeBeamB.copy(_chargeBeamOrigin).addScaledVector(_chargeBeamDir, range);
 
   const controllerIndex = index;
   const hand = getHandForController(index);
@@ -7943,8 +7887,8 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
     blending: THREE.AdditiveBlending,  // Glow effect
   });
   const beamMesh = new THREE.Mesh(beamGeo, beamMat);
-  beamMesh.position.copy(origin).addScaledVector(direction, range * 0.5);
-  beamMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  beamMesh.position.copy(_chargeBeamOrigin).addScaledVector(_chargeBeamDir, range * 0.5);
+  beamMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _chargeBeamDir);
   beamMesh.userData.createdAt = performance.now();
   beamMesh.userData.duration = 200; // Longer duration for fade effect
   beamMesh.userData.isChargeBeam = true;
@@ -7972,6 +7916,12 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   const isPlasmaCarbine = stats.mainWeaponId === 'plasma_carbine';
   const poolType = stats.homing ? 'seeker' : (isPlasmaCarbine ? 'plasma_carbine' : (isBuckshot ? 'buckshot' : 'laser'));
 
+  // Debug logging for projectile investigation
+  if (window.DEBUG_PROJECTILES) {
+    const handLabel = controllerIndex === 0 ? 'LEFT' : 'RIGHT';
+    console.log(`[PROJECTILE DEBUG SPAWN] hand=${handLabel} pool=${poolType} weapon=${stats.mainWeaponId || 'unknown'} dir=(${direction.x.toFixed(3)}, ${direction.y.toFixed(3)}, ${direction.z.toFixed(3)})`);
+  }
+
   // Big Boom: only one exploding shot per hand every 2.75s
   let isExploding = false;
   if (stats.aoeRadius > 0) {
@@ -7989,7 +7939,9 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
     const recycled = projectiles.shift();
     if (recycled) {
       returnProjectileToPool(recycled);
-      mesh = recycled;
+      // BUG FIX: Don't reuse the recycled proxy - get a fresh one from the pool
+      // The recycled proxy's instance index may have been invalidated by count adjustment
+      mesh = getPooledProjectile(poolType, color);
     }
   }
 
@@ -8607,6 +8559,21 @@ function resolveProjectileAccuracy(proj) {
   resolveAccuracyPellet(proj.userData.shotId);
 }
 
+// Pooled temp vectors for projectile hot paths (per-frame allocations)
+const _projHomingDesired = new THREE.Vector3();
+const _projHomingQuatDir = new THREE.Vector3(0, 0, -1);
+const _projHomingVelNorm = new THREE.Vector3();
+const _hostileProjDesired = new THREE.Vector3();
+const _hostileProjCurrent = new THREE.Vector3();
+const _hostileProjSide = new THREE.Vector3();
+
+// ============================================================
+// PROJECTILE UPDATE LOOP
+// Movement, homing, hostile projectiles, collision detection
+// HOT PATH: Called every frame from render()
+// COUPLING: projectiles[], instancedProjectiles, enemies spatial hash
+// RISK: Changes here affect hit detection, game feel, performance
+// ============================================================
 function updateProjectiles(dt) {
   const now = performance.now();
 
@@ -8634,18 +8601,17 @@ function updateProjectiles(dt) {
         const slowFactor = getStasisSlowFactor(proj.position);
         const adjustedDt = dt * slowFactor;
         const playerPos = camera.position;
-        const prevPos = proj.position.clone();
 
         // Mini-swarm style steering and visual pop so hostile shots feel alive.
-        const desiredDir = new THREE.Vector3().subVectors(playerPos, proj.position).normalize();
-        const currentDir = proj.userData.direction.clone().normalize();
-        currentDir.lerp(desiredDir, Math.min(1, adjustedDt * 2.8));
-        proj.userData.direction.copy(currentDir.normalize());
+        _hostileProjDesired.subVectors(playerPos, proj.position).normalize();
+        _hostileProjCurrent.copy(proj.userData.direction).normalize();
+        _hostileProjCurrent.lerp(_hostileProjDesired, Math.min(1, adjustedDt * 2.8));
+        proj.userData.direction.copy(_hostileProjCurrent.normalize());
 
         const wigglePhase = (proj.userData.wigglePhase || Math.random() * Math.PI * 2) + adjustedDt * 8;
         proj.userData.wigglePhase = wigglePhase;
-        const side = new THREE.Vector3(-proj.userData.direction.z, 0, proj.userData.direction.x).normalize();
-        proj.position.addScaledVector(side, Math.sin(wigglePhase) * 0.015);
+        _hostileProjSide.set(-proj.userData.direction.z, 0, proj.userData.direction.x).normalize();
+        proj.position.addScaledVector(_hostileProjSide, Math.sin(wigglePhase) * 0.015);
         proj.position.addScaledVector(proj.userData.direction, proj.userData.speed * adjustedDt);
         updateHostileProjectileVisual(proj, now);
 
@@ -8702,14 +8668,11 @@ function updateProjectiles(dt) {
 
       const baseSpeed = proj.userData.baseSpeed || proj.userData.velocity.length();
       if (targetMesh) {
-        const desired = new THREE.Vector3()
-          .subVectors(targetMesh.position, proj.position)
-          .normalize()
-          .multiplyScalar(baseSpeed);
+        _projHomingDesired.subVectors(targetMesh.position, proj.position).normalize().multiplyScalar(baseSpeed);
         // Use high homing strength so seekers directly target enemies
         // instead of circling them at low turn rates
         const homingStrength = proj.userData.homingStrength || 15;
-        proj.userData.velocity.lerp(desired, Math.min(1, homingStrength * adjustedDt));
+        proj.userData.velocity.lerp(_projHomingDesired, Math.min(1, homingStrength * adjustedDt));
         if (proj.userData.velocity.lengthSq() > 0.0001) {
           proj.userData.velocity.setLength(baseSpeed);
         }
@@ -8718,7 +8681,9 @@ function updateProjectiles(dt) {
       }
 
       if (proj.userData.velocity.lengthSq() > 0.0001) {
-        proj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), proj.userData.velocity.clone().normalize());
+        _projHomingQuatDir.set(0, 0, -1);
+        _projHomingVelNorm.copy(proj.userData.velocity).normalize();
+        proj.quaternion.setFromUnitVectors(_projHomingQuatDir, _projHomingVelNorm);
       }
       updateSeekerProjectileVisual(proj, adjustedDt);
     }
@@ -9022,7 +8987,10 @@ function selectUpgrade(controller) {
 }
 
 // ============================================================
-//  ENEMY SPAWNING
+// ENEMY WAVE SPAWNING
+// spawnEnemyWave, fast enemy proximity alerts
+// Called every frame during PLAYING state
+// COUPLING: game._levelConfig, getBoss/spawnBoss, enemies.js
 // ============================================================
 function spawnEnemyWave(dt) {
   if (game.state !== State.PLAYING) return;
@@ -9122,7 +9090,14 @@ function updateFastEnemyAlerts(dt, playerPos) {
 }
 
 // ============================================================
-//  RENDER / UPDATE LOOP
+// RENDER LOOP (THE BIG ONE)
+// Core game loop: time scaling, state machine, all subsystems
+// HOT PATH: Called every frame (60fps target)
+// SUB-SECTIONS: Title, Playing, Boss Death Cinematic, Paused,
+//   Ready Screen, Boss Alert, Level Complete, Upgrade Select,
+//   Game Over/Victory, UI Hover, Universal Updates
+// COUPLING: Reads/writes game.state, calls ALL update functions
+// RISK: Any change here affects frame timing, game feel, audio sync
 // ============================================================
 function render(timestamp) {
   frameCount++;
@@ -9156,9 +9131,8 @@ function render(timestamp) {
 
   // Use game.timeScale if death sequence is active, otherwise use bullet-time timeScale
   let effectiveTimeScale = game.slowmoActive ? game.timeScale : timeScale;
-  if (bossDeathFreezeTimer > 0) {
-    bossDeathFreezeTimer -= rawDt;
-    if (bossDeathFreezeTimer < 0) bossDeathFreezeTimer = 0;
+  if (shouldFreezeTime()) {
+    updateBossDeathFreeze(rawDt);
     effectiveTimeScale = 0;
   }
 
@@ -9181,7 +9155,7 @@ function render(timestamp) {
   updateVRPauseButton(now);
 
   let st = game.state;
-  if (bossDeathCinematic.active && st !== State.BOSS_DEATH_CINEMATIC) {
+  if (isBossDeathCinematicActive() && st !== State.BOSS_DEATH_CINEMATIC) {
     st = State.BOSS_DEATH_CINEMATIC;
     game.state = st;
   }
@@ -9814,17 +9788,23 @@ function render(timestamp) {
   if (st === State.TITLE || st === State.UPGRADE_SELECT || st === State.SCOREBOARD || 
       st === State.REGIONAL_SCORES || st === State.COUNTRY_SELECT || st === State.READY_SCREEN ||
       st === State.NAME_ENTRY) {
-    // Collect all raycasters from controllers
+    // PERFORMANCE: Reuse pooled raycasters instead of creating new ones each frame
+    // This reduces GC pressure during menu navigation and keyboard name entry
     const raycasters = [];
     for (let i = 0; i < controllers.length; i++) {
       const ctrl = controllers[i];
       if (!ctrl) continue;
-      const origin = new THREE.Vector3();
-      const quat = new THREE.Quaternion();
+      // Reuse pooled objects instead of creating new ones
+      const origin = _uiHoverOrigins[i];
+      const quat = _uiHoverQuats[i];
+      const dir = _uiHoverDirs[i];
       ctrl.getWorldPosition(origin);
       ctrl.getWorldQuaternion(quat);
-      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-      raycasters.push(new THREE.Raycaster(origin, dir, 0, 10));
+      dir.set(0, 0, -1).applyQuaternion(quat);
+      // Reuse pooled raycaster and update its properties
+      const rc = _uiHoverRaycasters[i];
+      rc.set(origin, dir, 0, 10);
+      raycasters.push(rc);
     }
     // Also add desktop aim raycaster if available
     if (isDesktopEnabled()) {
@@ -10077,1793 +10057,43 @@ function onWindowResize() {
   resizeBloomComposer();
 }
 
-// ── Custom biome scenes (new HTML-extracted biomes) ─────────
+// ============================================================
+// BIOME SCENE ORCHESTRATION
+// Delegates to biome-scenes.js module for scene building
+// COUPLING: biomeSceneGroup, biomeSceneBiome state shared via getters
+// ============================================================
 
+// Wrapper that delegates to biome-scenes.js module
 function rebuildBiomeScene(biomeId, theme) {
-  console.log('[debug] rebuildBiomeScene: biomeId=', biomeId, 'customScene=', theme?.customScene);
-  if (!scene || !theme || !theme.customScene) {
-    console.log('[debug] Clearing biome scene (no custom scene)');
-    clearBiomeScene();
-    return;
-  }
-  if (biomeSceneGroup && biomeSceneBiome === biomeId) {
-    console.log('[debug] Biome scene already built for', biomeId, ', skipping');
-    return;
-  }
+  // State object that the module can update
+  const state = {
+    get biomeSceneGroup() { return biomeSceneGroup; },
+    set biomeSceneGroup(val) { biomeSceneGroup = val; },
+    get biomeSceneBiome() { return biomeSceneBiome; },
+    set biomeSceneBiome(val) { biomeSceneBiome = val; },
+  };
 
-  console.log('[debug] Building new biome scene for', biomeId);
-  clearBiomeScene();
-
-  // Update aurora colors for new biome
-  updateAuroraColors(theme);
-
-  biomeSceneGroup = new THREE.Group();
-  biomeSceneGroup.name = `biome-scene-${biomeId}`;
-  scene.add(biomeSceneGroup);
-  biomeSceneBiome = biomeId;
-
-  if (theme.customScene === 'synthwave_valley') {
-    buildSynthwaveValleyScene(biomeSceneGroup);
-  } else if (theme.customScene === 'desert_night') {
-    buildDesertNightScene(biomeSceneGroup);
-  } else if (theme.customScene === 'alien_planet') {
-    buildAlienPlanetScene(biomeSceneGroup);
-  } else if (theme.customScene === 'hellscape_lava') {
-    buildHellscapeLavaScene(biomeSceneGroup);
-  }
-
-  // Cleanup stale legacy meshes and give all biome PlaneGeometry meshes
-  // unique, readable names for debug look-at tooling.
-  cleanupLegacyShapeGeometry(scene);
-  assignBiomePlaneNames(biomeSceneGroup, biomeId);
-
-  // Register all biome scene materials for environment fade
-  // This ensures everything fades to black during boss death cinematic
-  if (biomeSceneGroup) {
-    biomeSceneGroup.traverse((child) => {
-      if (child.isMesh && child.material) {
-        if (Array.isArray(child.material)) {
-          child.material.forEach(m => registerFadeMaterial(m));
-        } else {
-          registerFadeMaterial(child.material);
-        }
-      }
-      if (child.isPoints && child.material) {
-        registerFadeMaterial(child.material);
-      }
-      if (child.isLine && child.material) {
-        registerFadeMaterial(child.material);
-      }
-    });
-  }
+  rebuildBiomeSceneModule({
+    scene,
+    biomeId,
+    theme,
+    state,
+    clearBiomeScene,
+    registerFadeMaterial,
+    updateAuroraColors,
+    cleanupLegacyShapeGeometry,
+    assignBiomePlaneNames,
+    refs: {
+      floorMaterial,
+      synthVisualRefs,
+      BLOOM_LAYER,
+      getVisualTuning,
+    },
+    biomeTerrainMaterials,
+  });
 }
 
 // Get physics floor Y for current biome (matches visual floor HUD height)
 function getBiomeFloorY() {
-  const floorY = (() => {
-    switch (biomeSceneBiome) {
-      case 'synthwave_valley': return 0.10;
-      case 'desert_night': return -0.20;
-      case 'alien_planet': return -0.28;
-      case 'hellscape_lava': return 0.05;
-      default: return 0.05;
-    }
-  })();
-  // Apply scene Y offset for VR camera height fix
-  return floorY + SCENE_Y_OFFSET;
-}
-
-// Log cylinder colors for debugging
-function logCylinderColors() {
-  console.log('=== CYLINDER COLORS ===');
-  
-  // atmosphereRef
-  if (typeof atmosphereRef !== 'undefined' && atmosphereRef.material) {
-    if (atmosphereRef.material.uniforms) {
-      const uni = atmosphereRef.material.uniforms;
-      console.log('atmosphereRef (atmosphere cylinder):');
-      console.log('  - uFogColor:', uni.uFogColor?.value?.getHexString());
-      console.log('  - Gradient stops:');
-      console.log('    0% (base): rgba(254,144,83,1.0) -> #FE9053 (horizon orange)');
-      console.log('    20%: rgba(224,1,134,0.9) -> #E00186 (pink)');
-      console.log('    50%: rgba(44,0,81,0.6) -> #2C0051 (sun top purple)');
-      console.log('    100% (top): rgba(26,0,74,0.0) -> #1A004A (dark purple)');
-    }
-  }
-  
-  // auroraRef
-  if (auroraRef && auroraRef.material) {
-    const tex = auroraRef.material.map;
-    if (tex && tex.image) {
-      const canvas = tex.image;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        console.log('auroraRef (aurora cylinder):');
-        const imageData = ctx.getImageData(0, 0, canvas.width, 1);
-        console.log('  - Bottom pixel:', imageData.data);
-      }
-    }
-    
-    // Use scenery.js theme colors
-    if (window.THEMES && window.THEMES.synthwave_valley && window.THEMES.synthwave_valley.aurora) {
-      const colors = window.THEMES.synthwave_valley.aurora.colors;
-      console.log('  - Theme colors:', colors);
-    }
-  }
-  
-  // horizonRingRef and horizonInnerRingRef - REMOVED
-  console.log('horizonRingRef: REMOVED');
-  console.log('horizonInnerRingRef: REMOVED');
-  
-  console.log('====================');
-}
-
-function buildSynthwaveValleyScene(group) {
-  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
-  const floorY = floorHeight;
-
-  // Reset synth visual tuning refs each time this biome scene is rebuilt.
-  synthVisualRefs.terrainUniforms = null;
-  synthVisualRefs.sunOuterGlowMat = null;
-  synthVisualRefs.sunGlowMat = null;
-  synthVisualRefs.sunCoreMat = null;
-
-  // Fix for synthwave valley lighting regression: the extracted scene lost the
-  // original standalone scene's punch after we removed postprocessing, so raise
-  // the local material brightness without affecting other biomes.
-  const brightness = 1.0;
-
-  // Sky dome (no stars, we use global starfield)
-  // EXACT colors: Horizon #FE9053 (orange) → Mountain tips #E00186 (pink) → Sun top #2C0051 (purple) → Top #1A004A (dark purple) → Black
-  const skyGeo = new THREE.SphereGeometry(2800, 32, 24);
-  const skyMat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    uniforms: {
-      topColor: { value: new THREE.Color(0x1A004A) },      // Top: dark purple
-      midColor: { value: new THREE.Color(0x71006E) },      // 75% from equator: deep purple
-      horizonColor: { value: new THREE.Color(0xFF8626) },  // Equator: bright orange
-      glowColor: { value: new THREE.Color(0xF30787) },     // 40% from equator: pink
-    },
-    // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
-    // stable in stereo rendering and does not rely on manual clip-space math.
-    vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ float worldY=vWorldPosition.y; float t1=smoothstep(0.0,550.0,worldY); float t2=smoothstep(0.0,950.0,worldY); float t3=smoothstep(0.0,1400.0,worldY); vec3 col=horizonColor; col=mix(col,glowColor,t1); col=mix(col,midColor,t2); col=mix(col,topColor,t3); col=pow(col,vec3(1.0/2.2)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
-    depthWrite: false,
-  });
-  const sky = new THREE.Mesh(skyGeo, skyMat);
-  sky.frustumCulled = false;
-  sky.renderOrder = -20;  // Draw before sun (which is at -3 to -1)
-  group.add(sky);
-  registerFadeMaterial(skyMat);
-
-  // Terrain - EXACT colors: Gridlines #015CC1 (bright blue), Between gridlines #0C0E3E (dark blue)
-  // PERFORMANCE FIX: Reduced from 240x240 (57,600 vertices) to 120x120 (14,400 vertices) for 75% reduction
-  // Still provides good visual quality while improving FPS at level start
-  const terrainUniforms = {
-    uGridColor: { value: new THREE.Color(0x4368AC) },     // Gridlines
-    uBaseColor: { value: new THREE.Color(0x0C1347) },     // Primary/base color
-    uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
-    uFlashIntensity: { value: 0.0 },
-    uGlowIntensity: { value: getVisualTuning().glowStrength },
-    uFogIntensity: { value: getVisualTuning().fogIntensity },
-  };
-  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);
-  terrainGeo.rotateX(-Math.PI / 2);
-  const terrainMat = new THREE.ShaderMaterial({
-    uniforms: terrainUniforms,
-    side: THREE.DoubleSide,
-    depthWrite: true,
-    depthTest: true,
-    polygonOffset: true,
-    polygonOffsetFactor: 2.0,
-    polygonOffsetUnits: 8.0,
-    // Fix for synthwave floor popping in VR: keep the terrain static and use the
-    // built-in modelViewMatrix projection instead of manual projection math.
-    vertexShader: `varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vec4 mvPosition=modelViewMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; vFogDistance=length(mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }`,
-    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; uniform float uGlowIntensity; uniform float uFogIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float dist=length(vObjPos.xz); float lineW=0.25*smoothstep(1000.0,100.0,dist); float gx=gridLine(vObjPos.x*gridScale,lineW); float gz=gridLine(vObjPos.z*gridScale,lineW); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34*uGlowIntensity); vec3 col=mix(uBaseColor, uGridColor, clamp(grid*uGlowIntensity,0.0,1.0)); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18*uGlowIntensity; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*uFogIntensity,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
-  });
-  const terrain = new THREE.Mesh(terrainGeo, terrainMat);
-  terrain.name = 'synthwave-valley-floor-and-mountains';
-  terrain.userData.planeName = 'synthwave-valley-floor-and-mountains';
-  terrain.position.set(0, floorY + 1.5, -700);
-  terrain.frustumCulled = false;
-  terrain.layers.enable(BLOOM_LAYER);  // Selective bloom: floor grid glows
-  group.add(terrain);
-  registerFadeMaterial(terrainMat);
-  // Store terrain material for damage flash
-  biomeTerrainMaterials.push({ type: 'shader', material: terrainMat });
-
-  synthVisualRefs.terrainUniforms = terrainUniforms;
-
-  // Sun + glow - flat planes (no billboard), using retro synthwave PNG
-  const sunGroup = new THREE.Group();
-  sunGroup.name = 'synthwave-sun-group';
-  sunGroup.position.set(0, 270, -1700);  // Y raised so full circle is above horizon
-  group.add(sunGroup);
-
-  const makeRadial = (inner, outer) => {
-    const c = document.createElement('canvas');
-    c.width = 512; c.height = 512;
-    const ctx = c.getContext('2d');
-    const g = ctx.createRadialGradient(256,256,0,256,256,256);
-    g.addColorStop(0.0, inner);
-    g.addColorStop(0.35, inner);
-    g.addColorStop(0.6, outer);
-    g.addColorStop(1.0, 'rgba(255,102,204,0)');
-    ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
-    return new THREE.CanvasTexture(c);
-  };
-
-  const sunGlowTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(254,151,83,0.85)');
-  const sunOuterGlowTex = makeRadial('rgba(254,151,83,0.9)', 'rgba(224,1,134,0.3)');
-
-  // Outer massive glow (flat plane, no billboard, fog-proof, no depth test)
-  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(875, 875), sunOuterGlowMat); // 10% smaller again (81% of original)
-  sunOuterGlow.name = 'synthwave-sun-outer-glow';
-  sunOuterGlow.userData.planeName = 'synthwave-sun-outer-glow';
-  sunOuterGlow.frustumCulled = false;
-  sunOuterGlow.renderOrder = -3;
-  sunGroup.add(sunOuterGlow);
-  registerFadeMaterial(sunOuterGlowMat);
-  synthVisualRefs.sunOuterGlowMat = sunOuterGlowMat;
-
-  // Main bright glow (fog-proof, no depth test)
-  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), sunGlowMat); // 10% smaller again (81% of original)
-  sunGlow.name = 'synthwave-sun-main-glow';
-  sunGlow.userData.planeName = 'synthwave-sun-main-glow';
-  sunGlow.frustumCulled = false;
-  sunGlow.renderOrder = -2;
-  sunGroup.add(sunGlow);
-  registerFadeMaterial(sunGlowMat);
-  synthVisualRefs.sunGlowMat = sunGlowMat;
-
-  // Retro synthwave sun disc from PNG (flat plane, no billboard)
-  // PNG has white background - process to make white pixels transparent
-  const sunDiscTex = new THREE.TextureLoader().load('assets/sun-retro.png');
-  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunDiscTex, color: 0xffffff, transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide, fog: false });
-  // Process: load PNG, threshold white pixels to transparent, replace material map
-  const sunDiscImg = new Image();
-  sunDiscImg.crossOrigin = 'anonymous';
-  sunDiscImg.onload = () => {
-    const c = document.createElement('canvas');
-    c.width = sunDiscImg.width;
-    c.height = sunDiscImg.height;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(sunDiscImg, 0, 0);
-    const id = ctx.getImageData(0, 0, c.width, c.height);
-    const d = id.data;
-    for (let i = 0; i < d.length; i += 4) {
-      if ((d[i] + d[i+1] + d[i+2]) / 3 > 240) d[i+3] = 0;
-    }
-    ctx.putImageData(id, 0, 0);
-    if (sunCoreMat.map) sunCoreMat.map.dispose();
-    sunCoreMat.map = new THREE.CanvasTexture(c);
-    sunCoreMat.map.needsUpdate = true;
-    sunCoreMat.needsUpdate = true;
-  };
-  sunDiscImg.src = 'assets/sun-retro.png';
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(466, 466), sunCoreMat); // 10% smaller again (81% of original)
-  sunCore.name = 'synthwave-sun-core-disc';
-  sunCore.userData.planeName = 'synthwave-sun-core-disc';
-  sunCore.frustumCulled = false;
-  sunCore.renderOrder = -1;
-  sunGroup.add(sunCore);
-  registerFadeMaterial(sunCoreMat);
-  synthVisualRefs.sunCoreMat = sunCoreMat;
-
-  // Log cylinder colors for debugging
-  logCylinderColors();
-
-  // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
-  // The standalone HTML used perpetual scrolling and pulsing, but the game
-  // version should behave like a stable biome backdrop.
-  group.userData.update = null;
-
-  // Synthwave floor HUD height: group.position.y = 5.82
-  group.position.set(0, 5.82, 0);
-
-  // Rotate so player faces sun
-  group.rotation.y = 0;
-}
-
-function buildDesertNightScene(group) {
-  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
-  const floorY = floorHeight;
-  const sceneColor = 0x06080c;
-
-  // === LIGHTING (CRITICAL) ===
-  // Pale moonlight
-  const moonLight = new THREE.DirectionalLight(0xd4e5f7, 2.34);
-  moonLight.position.set(-30, 50, -30);
-  group.add(moonLight);
-
-  // Point light for long moon-like shadows from cacti
-  const shadowLight = new THREE.PointLight(0xd4e5f7, 1.5, 100);
-  shadowLight.position.set(-45, 35, -60); // Same as moon position
-  shadowLight.castShadow = true;
-  shadowLight.shadow.mapSize.width = 1024;
-  shadowLight.shadow.mapSize.height = 1024;
-  shadowLight.shadow.camera.near = 10;
-  shadowLight.shadow.camera.far = 100;
-  group.add(shadowLight);
-
-  // Very dim ambient
-  const ambientLight = new THREE.AmbientLight(0x1a2035, 0.15);
-  group.add(ambientLight);
-
-  // Hemisphere light for sky/ground color
-  const hemiLight = new THREE.HemisphereLight(0x1a2035, 0x2d1f1a, 0.2);
-  group.add(hemiLight);
-
-  // Ground
-  const geometry = new THREE.PlaneGeometry(140, 140, 70, 70);
-  geometry.rotateX(-Math.PI / 2);
-  const positions = geometry.attributes.position;
-  const colors = [];
-  const flatRadius = 12.0;
-  const mountainStart = 18.0;
-  for (let i = 0; i < positions.count; i++) {
-    const x = positions.getX(i);
-    const z = positions.getZ(i);
-    const dist = Math.sqrt(x * x + z * z);
-    let heightFactor = Math.min(Math.max((dist - flatRadius) / (mountainStart - flatRadius), 0), 1);
-    heightFactor = heightFactor * heightFactor * (3 - 2 * heightFactor);
-    let height = 0;
-    height += Math.sin(x * 0.08 + 0.5) * Math.cos(z * 0.06) * 4.0;
-    height += Math.sin(x * 0.04 + 2) * Math.sin(z * 0.05 + 1) * 3.0;
-    height += Math.sin(x * 0.15 + z * 0.1) * 1.5;
-    height += Math.cos(z * 0.12 - x * 0.08) * 1.0;
-    height += Math.sin(x * 0.3) * Math.cos(z * 0.25) * 0.5;
-    if (dist > mountainStart) {
-      height += Math.sin(x * 0.4 + z * 0.3) * 2.0;
-      height += Math.cos(x * 0.2 - z * 0.5) * 2.5;
-    }
-    const finalHeight = height * heightFactor;
-    positions.setY(i, finalHeight);
-    const heightNorm = (finalHeight + 5) / 15;
-    const baseColor = new THREE.Color(0x2a241b);
-    const highlightColor = new THREE.Color(0x585144);
-    const moonTint = new THREE.Color(0x404a5a);
-    let color = baseColor.clone().lerp(highlightColor, Math.max(0, Math.min(1, heightNorm)));
-    color.lerp(moonTint, heightNorm * 0.2);
-    colors.push(color.r, color.g, color.b);
-  }
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.computeVertexNormals();
-  const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  const terrain = new THREE.Mesh(geometry, material);
-  terrain.name = 'desert-night-terrain';
-  terrain.userData.planeName = 'desert-night-terrain';
-  terrain.position.y = floorY;
-  terrain.frustumCulled = false;
-  terrain.receiveShadow = true;  // Sand dunes receive cactus shadows
-  group.add(terrain);
-  registerFadeMaterial(material);
-
-  // Flash overlay plane for damage feedback (entire sand floor turns red)
-  const flashGeo = new THREE.PlaneGeometry(140, 140);
-  const flashMat = new THREE.MeshBasicMaterial({
-    color: 0xff0000,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    side: THREE.DoubleSide
-  });
-  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
-  flashPlane.name = 'desert-night-damage-flash-plane';
-  flashPlane.userData.planeName = 'desert-night-damage-flash-plane';
-  flashPlane.rotation.x = -Math.PI / 2;
-  flashPlane.position.y = floorY + 0.02; // Very close to terrain surface
-  flashPlane.frustumCulled = false;
-  group.add(flashPlane);
-  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
-
-  // === CACTUSES (9 procedural) ===
-  const createCactus = (height) => {
-    const cactusGroup = new THREE.Group();
-    const bodyColor = 0x1a3d20;
-    const armColor = 0x2d5535;
-    const segments = 3 + Math.floor(Math.random() * 2); // 3-4 segments
-    let currentY = 0;
-    const segmentHeight = height / segments;
-
-    // Main body segments
-    for (let i = 0; i < segments; i++) {
-      const radius = 0.12 + (segments - i) * 0.03; // Taper upward
-      const segGeo = new THREE.CylinderGeometry(radius * 0.9, radius, segmentHeight, 5);
-      const segMat = new THREE.MeshLambertMaterial({ color: bodyColor, flatShading: true });
-      const segment = new THREE.Mesh(segGeo, segMat);
-      segment.position.y = currentY + segmentHeight / 2;
-      segment.castShadow = true;  // Cacti cast shadows
-      segment.receiveShadow = true;
-      cactusGroup.add(segment);
-      currentY += segmentHeight;
-    }
-
-    // Random arms (0-2)
-    const numArms = Math.floor(Math.random() * 3);
-    for (let a = 0; a < numArms; a++) {
-      const armY = segmentHeight * (1 + Math.floor(Math.random() * (segments - 1)));
-      const side = Math.random() > 0.5 ? 1 : -1;
-      const armLength = 0.4 + Math.random() * 0.4;
-
-      // Horizontal part
-      const hArmGeo = new THREE.CylinderGeometry(0.08, 0.1, armLength, 5);
-      const hArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
-      const hArm = new THREE.Mesh(hArmGeo, hArmMat);
-      hArm.castShadow = true;
-      hArm.receiveShadow = true;
-      hArm.rotation.z = Math.PI / 2;
-      hArm.position.set(side * armLength / 2, armY, 0);
-      cactusGroup.add(hArm);
-
-      // Vertical part (upward)
-      const vArmHeight = 0.5 + Math.random() * 0.5;
-      const vArmGeo = new THREE.CylinderGeometry(0.06, 0.08, vArmHeight, 5);
-      const vArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
-      const vArm = new THREE.Mesh(vArmGeo, vArmMat);
-      vArm.castShadow = true;
-      vArm.receiveShadow = true;
-      vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
-      cactusGroup.add(vArm);
-    }
-
-    // REMOVED: Fake circle shadow - now using point light for realistic moon shadows
-    // Cacti will cast natural shadows from the shadowLight
-
-    return cactusGroup;
-  };
-
-  const cactusPositions = [
-    { x: 6, z: 4, h: 2.5 },
-    { x: -4, z: 6, h: 3 },
-    { x: 8, z: -3, h: 2 },
-    { x: -7, z: -5, h: 2.8 },
-    { x: 3, z: -8, h: 1.8 },
-    { x: -10, z: 1, h: 2.2 },
-    { x: 0, z: 10, h: 2.3 },
-    // Removed cactus at {x: 5, z: 9, h: 1.9} - player now spawns there
-    { x: -5, z: -9, h: 2.4 },
-  ];
-
-  cactusPositions.forEach(pos => {
-    const cactus = createCactus(pos.h);
-    cactus.position.set(pos.x, floorY, pos.z);
-    cactus.rotation.y = Math.random() * Math.PI * 2;
-    group.add(cactus);
-  });
-
-  // === TWINKLING STARS (400 particles - reduced from 800 for performance) ===
-  const starCount = 400;
-  const starPositions = new Float32Array(starCount * 3);
-  const starPhases = new Float32Array(starCount);
-
-  for (let i = 0; i < starCount; i++) {
-    // Hemisphere distribution
-    const theta = Math.random() * Math.PI * 2;
-    const radius = 80 + Math.random() * 40; // 80-120
-    const phi = Math.random() * Math.PI * 0.5; // Upper hemisphere
-
-    starPositions[i * 3] = Math.cos(theta) * Math.sin(phi) * radius;
-    starPositions[i * 3 + 1] = Math.cos(phi) * radius + 10; // Offset up
-    starPositions[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * radius;
-    starPhases[i] = Math.random() * Math.PI * 2;
-  }
-
-  const starGeometry = new THREE.BufferGeometry();
-  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-  starGeometry.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
-
-  const starMaterial = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime: { value: 0 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
-    },
-    vertexShader: `
-      attribute float aPhase;
-      uniform float uTime;
-      uniform float uPixelRatio;
-      varying float vTwinkle;
-      void main() {
-        vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        float size = 2.0 * uPixelRatio * vTwinkle;
-        gl_PointSize = size * (200.0 / -mvPosition.z);
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: `
-      varying float vTwinkle;
-      void main() {
-        float dist = length(gl_PointCoord - vec2(0.5));
-        if (dist > 0.5) discard;
-        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-        vec3 color = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.95, 0.9), vTwinkle);
-        gl_FragColor = vec4(color * (0.7 + vTwinkle * 0.3), alpha * vTwinkle);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    fog: false,
-    blending: THREE.AdditiveBlending
-  });
-
-  const stars = new THREE.Points(starGeometry, starMaterial);
-  stars.frustumCulled = false; // Fix disappearing when looking up
-  stars.renderOrder = 999;
-  group.add(stars);
-  registerFadeMaterial(starMaterial);
-
-  // === DUST PARTICLES (300 particles - reduced from 600 for performance) ===
-  const dustCount = 300;
-  const dustPositions = new Float32Array(dustCount * 3);
-  const dustPhases = new Float32Array(dustCount);
-
-  for (let i = 0; i < dustCount; i++) {
-    dustPositions[i * 3] = (Math.random() - 0.5) * 60;
-    dustPositions[i * 3 + 1] = Math.random() * 15 + floorY;
-    dustPositions[i * 3 + 2] = (Math.random() - 0.5) * 60;
-    dustPhases[i] = Math.random() * Math.PI * 2;
-  }
-
-  const dustGeometry = new THREE.BufferGeometry();
-  dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
-  dustGeometry.setAttribute('aPhase', new THREE.BufferAttribute(dustPhases, 1));
-
-  const dustMaterial = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime: { value: 0 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
-    },
-    vertexShader: `
-      attribute float aPhase;
-      uniform float uTime;
-      uniform float uPixelRatio;
-      varying float vAlpha;
-      void main() {
-        vAlpha = 0.5 + 0.3 * sin(uTime + aPhase);
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = 4.0 * uPixelRatio;
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: `
-      varying float vAlpha;
-      void main() {
-        float dist = length(gl_PointCoord - vec2(0.5));
-        if (dist > 0.5) discard;
-        float alpha = (1.0 - smoothstep(0.0, 0.5, dist)) * vAlpha * 1.2;
-        vec3 dustColor = vec3(0.8, 0.85, 0.9);
-        gl_FragColor = vec4(dustColor, alpha);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    fog: false,
-    blending: THREE.AdditiveBlending
-  });
-
-  const dust = new THREE.Points(dustGeometry, dustMaterial);
-  dust.renderOrder = 999;
-  group.add(dust);
-  registerFadeMaterial(dustMaterial);
-
-  // Moon
-  const moonGroup = new THREE.Group();
-  const moonGeometry = new THREE.IcosahedronGeometry(8, 2);
-  const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xfffef8 });
-  const moon = new THREE.Mesh(moonGeometry, moonMaterial);
-  moonGroup.add(moon);
-  registerFadeMaterial(moonMaterial);
-  const innerGlowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 });
-  const innerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(9.5, 2), innerGlowMat);
-  const outerGlowMat = new THREE.MeshBasicMaterial({ color: 0xd4e5f7, transparent: true, opacity: 0.12 });
-  const outerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 2), outerGlowMat);
-  const farGlowMat = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.06 });
-  const farGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(18, 2), farGlowMat);
-  moonGroup.add(innerGlow, outerGlow, farGlow);
-  registerFadeMaterial(innerGlowMat);
-  registerFadeMaterial(outerGlowMat);
-  registerFadeMaterial(farGlowMat);
-  moonGroup.position.set(-45, 35, -60);
-  group.add(moonGroup);
-
-  // Desert floor HUD height: Y = -0.20, rotated 25 degrees (-0.436 rad)
-  group.rotation.y = -0.436; // yaw: -25 degrees
-  group.position.set(-2.12, -0.20, -4.82);  // Moved 5 units +X and +Z
-
-  // Frame counter for throttling dust particle updates (Issue 4: reduce CPU cost)
-  let desertFrameCount = 0;
-
-  // === ANIMATION UPDATE ===
-  group.userData.update = (now, dt) => {
-    const time = now * 0.001;
-    // Update stars twinkle (shader-based, already efficient)
-    starMaterial.uniforms.uTime.value = time;
-    // Update dust shader time
-    dustMaterial.uniforms.uTime.value = time;
-
-    // Throttle dust particle position updates to every 5th frame (Issue 4: reduce CPU cost)
-    desertFrameCount++;
-    if (desertFrameCount % 5 === 0) {
-      const dustPos = dustGeometry.attributes.position.array;
-      for (let i = 0; i < dustCount; i++) {
-        const idx = i * 3;
-        // Gentle wind drift (scaled by 5 since we only update every 5th frame)
-        dustPos[idx] += 0.025 * dt;
-        dustPos[idx + 1] += Math.sin(time + dustPhases[i]) * 0.005 * dt;
-        dustPos[idx + 2] += Math.cos(time * 0.7 + dustPhases[i]) * 0.01 * dt;
-
-        // Wrap around boundaries
-        if (dustPos[idx] > 30) dustPos[idx] = -30;
-        if (dustPos[idx] < -30) dustPos[idx] = 30;
-        if (dustPos[idx + 1] > floorY + 15) dustPos[idx + 1] = floorY;
-        if (dustPos[idx + 1] < floorY) dustPos[idx + 1] = floorY + 15;
-        if (dustPos[idx + 2] > 30) dustPos[idx + 2] = -30;
-        if (dustPos[idx + 2] < -30) dustPos[idx + 2] = 30;
-      }
-      dustGeometry.attributes.position.needsUpdate = true;
-    }
-  };
-}
-
-function buildAlienPlanetScene(group) {
-  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
-  const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
-
-  // Ground
-  const groundGeo = new THREE.PlaneGeometry(300, 300, 84, 84);
-  const groundPositions = groundGeo.attributes.position;
-  for (let i = 0; i < groundPositions.count; i++) {
-    const x = groundPositions.getX(i);
-    const y = groundPositions.getY(i);
-    groundPositions.setZ(i, Math.sin(x * 0.03) * Math.cos(y * 0.03) * 0.3);
-  }
-  groundGeo.computeVertexNormals();
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0510, roughness: 1, metalness: 0, flatShading: true });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.name = 'alien-planet-ground-plane';
-  ground.userData.planeName = 'alien-planet-ground-plane';
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = floorY;
-  ground.frustumCulled = false;
-  group.add(ground);
-
-  // Flash overlay plane for damage feedback (Issue 2: 320x320 for full floor coverage)
-  const flashGeo = new THREE.PlaneGeometry(320, 320);
-  const flashMat = new THREE.MeshBasicMaterial({
-    color: 0xff0000,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    side: THREE.DoubleSide
-  });
-  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
-  flashPlane.name = 'alien-planet-damage-flash-plane';
-  flashPlane.userData.planeName = 'alien-planet-damage-flash-plane';
-  flashPlane.rotation.x = -Math.PI / 2;
-  flashPlane.position.y = floorY + 0.1;
-  flashPlane.frustumCulled = false;
-  group.add(flashPlane);
-  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
-
-  // Moon and glow
-  const moonGeo = new THREE.IcosahedronGeometry(24, 1);
-  const moonMat = new THREE.MeshBasicMaterial({ color: 0xddaaff, transparent: true, opacity: 0.95 });
-  const moon = new THREE.Mesh(moonGeo, moonMat);
-  moon.position.set(60, 80, -40);
-  moon.frustumCulled = false; // Fix disappearing when looking up
-  group.add(moon);
-  const moonGlowGeo = new THREE.IcosahedronGeometry(36, 1);
-  const moonGlowMat = new THREE.MeshBasicMaterial({ color: 0xaa66ff, transparent: true, opacity: 0.15, side: THREE.BackSide });
-  const moonGlow = new THREE.Mesh(moonGlowGeo, moonGlowMat);
-  moonGlow.position.copy(moon.position);
-  moonGlow.frustumCulled = false; // Fix disappearing when looking up
-  group.add(moonGlow);
-
-  // Lighting - moonLight for ambient scene lighting (shadows DISABLED for FPS)
-  const moonLight = new THREE.DirectionalLight(0xcc88ff, 8.4);
-  moonLight.position.set(60, 80, -40);
-  // SHADOWS DISABLED - major FPS cost in this biome
-  moonLight.castShadow = false;
-  group.add(moonLight);
-
-  // Green light - moved HIGH (y: 35) to not block view
-  const greenLight = new THREE.PointLight(0x00ff66, 1.2, 80);
-  greenLight.position.set(0, 35, 0);
-  group.add(greenLight);
-
-  // Purple accent lights
-  const purpleLight1 = new THREE.PointLight(0x6622aa, 1.5, 50);
-  purpleLight1.position.set(-30, 20, -30);
-  group.add(purpleLight1);
-
-  const purpleLight2 = new THREE.PointLight(0x8833cc, 1.2, 45);
-  purpleLight2.position.set(25, 18, 35);
-  group.add(purpleLight2);
-
-  // River path used for plant placement (but no visible river mesh)
-  const riverPoints = [];
-  for (let i = 0; i < 60; i++) {
-    const t = i / 59;
-    const x = Math.sin(t * Math.PI * 2.5) * 12 + Math.sin(t * Math.PI * 5) * 4;
-    const z = t * 120 - 60;
-    riverPoints.push(new THREE.Vector3(x, 0.1, z));
-  }
-  // Green river-object REMOVED - was blocking view and looking out of place
-
-  // Mountains - keep silhouette, reduce per-biome geometry churn by reusing assets.
-  const alienMountainMaterial = new THREE.MeshStandardMaterial({
-    color: 0x1a1020,
-    roughness: 0.9,
-    metalness: 0.1,
-    flatShading: true
-  });
-  const alienMountainGeometries = [5, 6, 7].map((segments) => new THREE.ConeGeometry(1, 1, segments));
-
-  const createMountain = (x, z, scale) => {
-    const peakCount = 1 + Math.floor(Math.random() * 2);
-    const mountainGroup = new THREE.Group();
-    for (let p = 0; p < peakCount; p++) {
-      const height = (12 + Math.random() * 18) * scale;
-      const radius = Math.max(2.5, (2 + Math.random() * 3) * scale);
-      const peakGeo = alienMountainGeometries[Math.floor(Math.random() * alienMountainGeometries.length)];
-      const peak = new THREE.Mesh(peakGeo, alienMountainMaterial);
-      peak.position.set(
-        (Math.random() - 0.5) * 4 * scale,
-        height / 2,
-        (Math.random() - 0.5) * 4 * scale
-      );
-      peak.scale.set(radius, height, radius);
-      peak.castShadow = true;
-      peak.receiveShadow = true;
-      mountainGroup.add(peak);
-    }
-    mountainGroup.position.set(x, floorY, z);
-    mountainGroup.frustumCulled = false;
-    return mountainGroup;
-  };
-
-  // Mountains - trimmed ring count. Still surrounds the arena, fewer draw calls.
-  const mountainCount = 10;
-  const mountainRadius = 40;
-  for (let i = 0; i < mountainCount; i++) {
-    const angle = (i / mountainCount) * Math.PI * 2 + Math.random() * 0.3;
-    const r = mountainRadius + (Math.random() - 0.5) * 10;
-    const x = Math.cos(angle) * r;
-    const z = Math.sin(angle) * r;
-    group.add(createMountain(x, z, 1.2 + Math.random() * 0.6));
-  }
-
-  // Alien Plants - 3 types along river (removed fern type - too expensive with 40-72 meshes)
-  const alienPlants = [];
-  const alienPlantAssets = {
-    spireGeo: new THREE.ConeGeometry(1, 1, 6),
-    spireMat: new THREE.MeshStandardMaterial({
-      color: 0x00aa33,
-      emissive: 0x00ff44,
-      emissiveIntensity: 0.6,
-      roughness: 0.5
-    }),
-    orbGeo: new THREE.IcosahedronGeometry(1, 1),
-    orbMat: new THREE.MeshBasicMaterial({ color: 0x00ff66 }),
-    crystalGeo: new THREE.ConeGeometry(1, 1, 3),
-    crystalMat: new THREE.MeshStandardMaterial({
-      color: 0x00cc55,
-      emissive: 0x00ff66,
-      emissiveIntensity: 0.7,
-      roughness: 0.3
-    }),
-    stemGeo: new THREE.CylinderGeometry(1, 1, 1, 8),
-    stemMat: new THREE.MeshStandardMaterial({ color: 0x204020, roughness: 0.8 }),
-    capGeo: new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2),
-    capMat: new THREE.MeshStandardMaterial({
-      color: 0x00aa44,
-      emissive: 0x00ff55,
-      emissiveIntensity: 0.5,
-      roughness: 0.6
-    })
-  };
-
-  const createAlienPlant = (x, z, type) => {
-    const plantGroup = new THREE.Group();
-
-    if (type === 0) {
-      // Glowing spire
-      const height = 3 + Math.random() * 5;
-      const spire = new THREE.Mesh(alienPlantAssets.spireGeo, alienPlantAssets.spireMat);
-      spire.position.y = height / 2;
-      spire.scale.set(0.2, height, 0.2);
-      spire.castShadow = false;
-      spire.receiveShadow = false;
-      plantGroup.add(spire);
-
-      const orb = new THREE.Mesh(alienPlantAssets.orbGeo, alienPlantAssets.orbMat);
-      orb.position.y = height + 0.2;
-      orb.scale.setScalar(0.3);
-      orb.castShadow = false;
-      orb.receiveShadow = false;
-      plantGroup.add(orb);
-
-    } else if (type === 1) {
-      // Crystal cluster
-      for (let c = 0; c < 3; c++) {
-        const height = 0.8 + Math.random() * 1.2;
-        const crystal = new THREE.Mesh(alienPlantAssets.crystalGeo, alienPlantAssets.crystalMat);
-        crystal.position.set(
-          (Math.random() - 0.5) * 0.4,
-          height / 2,
-          (Math.random() - 0.5) * 0.4
-        );
-        crystal.scale.set(0.15, height, 0.15);
-        crystal.rotation.set(
-          (Math.random() - 0.5) * 0.4,
-          Math.random() * Math.PI,
-          (Math.random() - 0.5) * 0.4
-        );
-        crystal.castShadow = false;
-        crystal.receiveShadow = false;
-        plantGroup.add(crystal);
-      }
-
-    } else if (type === 2) {
-      // Mushroom
-      const stemHeight = 0.5 + Math.random() * 0.5;
-      const stem = new THREE.Mesh(alienPlantAssets.stemGeo, alienPlantAssets.stemMat);
-      stem.position.y = stemHeight / 2;
-      stem.scale.set(0.1, stemHeight, 0.15);
-      stem.castShadow = false;
-      stem.receiveShadow = false;
-      plantGroup.add(stem);
-
-      const cap = new THREE.Mesh(alienPlantAssets.capGeo, alienPlantAssets.capMat);
-      cap.position.y = stemHeight;
-      cap.scale.setScalar(0.4);
-      cap.castShadow = false;
-      cap.receiveShadow = false;
-      plantGroup.add(cap);
-    }
-
-    plantGroup.position.set(x, floorY, z);
-    plantGroup.castShadow = false;
-    plantGroup.receiveShadow = false;
-    // REMOVED: Sway animation data - per-frame rotation is too expensive
-
-    return plantGroup;
-  };
-
-  // Place plants along river with random offsets
-  for (let i = 0; i < 12; i++) {
-    const t = Math.random();
-    const riverT = t * 59;
-    const idx = Math.floor(riverT);
-    const frac = riverT - idx;
-
-    const p1 = riverPoints[Math.min(idx, 59)];
-    const p2 = riverPoints[Math.min(idx + 1, 59)];
-
-    const x = p1.x + (p2.x - p1.x) * frac + (Math.random() - 0.5) * 8;
-    const z = p1.z + (p2.z - p1.z) * frac + (Math.random() - 0.5) * 8;
-
-    // Keep plants away from river center
-    const distToCenter = Math.abs(x - (p1.x + (p2.x - p1.x) * frac));
-    if (distToCenter < 3) continue;
-
-    // AGGRESSIVE: Skip plants behind player (positive Z)
-    if (z > 0) continue;
-
-    // Clearance zone: no tall plants within 12 units directly in front of player spawn
-    const clearanceRadius = 12;
-    const distToPlayer = Math.sqrt(x * x + z * z);
-    if (distToPlayer < clearanceRadius && z < 5) {
-      continue; // Skip this plant to keep front area clear
-    }
-
-    const plantType = Math.floor(Math.random() * 3);  // Only 3 types (removed fern)
-    const plant = createAlienPlant(x, z, plantType);
-    // Shadow casting disabled for FPS
-    alienPlants.push(plant);
-    group.add(plant);
-  }
-
-  // Extra flora spread around the player (reduced for FPS)
-  // AGGRESSIVE: Only spawn in front of player (negative Z, front 180-degree arc)
-  for (let i = 0; i < 12; i++) {  // Reduced from 50 to 12 (total target: ~24 before culling)
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 8 + Math.random() * 40;
-    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 8;
-    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 8;
-
-    // AGGRESSIVE: Skip objects behind player (positive Z)
-    if (z > 0) continue;
-
-    // Clearance zone: no tall plants within 12 units directly in front of player spawn
-    const clearanceRadius = 12;
-    const distToPlayer = Math.sqrt(x * x + z * z);
-    if (distToPlayer < clearanceRadius && z < 5) {
-      continue; // Skip this plant to keep front area clear
-    }
-
-    const plantType = Math.floor(Math.random() * 3);  // Only 3 types (removed fern)
-    const plant = createAlienPlant(x, z, plantType);
-    // Shadow casting disabled for FPS
-    plant.castShadow = false;
-    plant.receiveShadow = false;
-    plant.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = false;
-        child.receiveShadow = false;
-      }
-    });
-    alienPlants.push(plant);
-    group.add(plant);
-  }
-
-  // Small fauna critters (reduced for FPS)
-  // AGGRESSIVE: Only spawn in front of player (negative Z)
-  const critterGeo = new THREE.SphereGeometry(0.18, 8, 6);
-  const critterGlowGeo = new THREE.SphereGeometry(0.3, 8, 6);
-  const critterBodyMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, emissive: 0x00ff66, emissiveIntensity: 0.4 });
-  const critterGlowMat = new THREE.MeshBasicMaterial({ color: 0x33ffaa, transparent: true, opacity: 0.3 });
-  for (let i = 0; i < 5; i++) {  // Reduced from 10 to 5 for FPS
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 6 + Math.random() * 35;
-    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 4;
-    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 4;
-
-    // AGGRESSIVE: Skip critters behind player (positive Z)
-    if (z > 0) continue;
-
-    const critterGroup = new THREE.Group();
-    const body = new THREE.Mesh(critterGeo, critterBodyMat);
-    body.position.y = 0.2;
-    body.castShadow = false;
-    body.receiveShadow = false;
-    critterGroup.add(body);
-
-    const glow = new THREE.Mesh(critterGlowGeo, critterGlowMat);
-    glow.position.y = 0.2;
-    critterGroup.add(glow);
-
-    critterGroup.position.set(x, floorY, z);
-    critterGroup.rotation.y = Math.random() * Math.PI * 2;
-    group.add(critterGroup);
-  }
-
-  // Fireflies - 25 particles with gentle drift (reduced from 60 for FPS)
-  // AGGRESSIVE: Only spawn in front of player (negative Z)
-  const fireflyPositions = [];
-  const fireflyGeo = new THREE.BufferGeometry();
-
-  for (let i = 0; i < 25; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 4 + Math.random() * 35;
-    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 3;
-    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 3;
-    const y = 0.5 + Math.random() * 3;  // Float above ground
-
-    // AGGRESSIVE: Skip fireflies behind player (positive Z)
-    if (z > 0) continue;
-
-    fireflyPositions.push(x, y, z);
-  }
-
-  fireflyGeo.setAttribute('position', new THREE.Float32BufferAttribute(fireflyPositions, 3));
-  const fireflyMat = new THREE.PointsMaterial({
-    color: 0x44ff88,
-    size: 0.12,
-    transparent: true,
-    opacity: 0.9,
-    sizeAttenuation: true
-  });
-  const fireflies = new THREE.Points(fireflyGeo, fireflyMat);
-  fireflies.frustumCulled = false; // Fix disappearing when looking up
-  group.add(fireflies);
-
-  // River sparkles removed along with river mesh
-
-  // Instanced city - FAR on horizon (was too close at 55-100)
-  const cityShaderMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime: { value: 0 },
-      uMoonDir: { value: new THREE.Vector3(60, 80, -40).normalize() },
-      uMoonColor: { value: new THREE.Color(0xcc88ff) },
-      uBaseColor: { value: new THREE.Color(0x0a0a15) }
-    },
-    vertexShader: `varying vec2 vUv; varying vec3 vNormal; varying vec3 vWorldPos; void main(){ vUv=uv; vNormal=normalize(normalMatrix*normal); vec4 worldPos=modelMatrix*instanceMatrix*vec4(position,1.0); vWorldPos=worldPos.xyz; gl_Position=projectionMatrix*viewMatrix*worldPos; }`,
-    fragmentShader: `uniform float uTime; uniform vec3 uMoonDir; uniform vec3 uMoonColor; uniform vec3 uBaseColor; varying vec2 vUv; varying vec3 vNormal; float rand(vec2 co){ return fract(sin(dot(co, vec2(12.9898,78.233)))*43758.5453);} void main(){ float moonLight=max(dot(vNormal,uMoonDir),0.0); vec3 finalColor=uBaseColor*(0.2+moonLight*0.8)*uMoonColor; vec2 uv=vUv; float numWindowsX=6.0; float numWindowsY=15.0; vec2 grid=floor(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); vec2 gridUv=fract(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); float windowMask=step(0.15,gridUv.x)*step(gridUv.x,0.85)*step(0.1,gridUv.y)*step(gridUv.y,0.9); float r=rand(grid); float isLit=step(0.5,r); if(windowMask>0.5 && isLit>0.5){ vec3 windowColor=mix(vec3(0.0,1.0,0.5), vec3(0.5,0.0,1.0), rand(grid*0.5)); float flicker=0.9+0.1*sin(uTime*2.0+rand(grid)*10.0); finalColor=windowColor*flicker*1.5; } gl_FragColor=vec4(finalColor,1.0); }`
-  });
-  const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-  const cylinderGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
-  const coneGeo = new THREE.BoxGeometry(1, 1, 1);
-  const dummy = new THREE.Object3D();
-  const cityMeshes = [];
-
-  const generateCityLayer = (geometry, count, minDist, maxDist, minHeight, maxHeight) => {
-    const mesh = new THREE.InstancedMesh(geometry, cityShaderMat, count);
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = minDist + Math.random() * (maxDist - minDist);
-      const height = minHeight + Math.random() * (maxHeight - minHeight);
-      const width = 1.5 + Math.random() * 4.5; // 3x thicker (was 0.5 + Math.random() * 1.5)
-      dummy.position.set(Math.cos(angle) * dist, (height / 2) - 3, Math.sin(angle) * dist);
-      dummy.scale.set(width, height, width);
-      dummy.rotation.y = Math.random() * Math.PI;
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-    }
-    return mesh;
-  };
-
-  // Far background city on horizon (REDUCED for FPS: was 100+80+60=240, now 30+25+20=75)
-  cityMeshes.push(generateCityLayer(boxGeo, 30, 120, 150, 30, 60));
-  cityMeshes.push(generateCityLayer(cylinderGeo, 25, 140, 180, 40, 80));
-  cityMeshes.push(generateCityLayer(coneGeo, 20, 160, 200, 50, 100));
-  cityMeshes.forEach((mesh) => group.add(mesh));
-
-  // Mega towers - far on horizon (REDUCED for FPS: was 10)
-  const megaGeo = new THREE.CylinderGeometry(1, 1.5, 1, 5);
-  const megaMesh = new THREE.InstancedMesh(megaGeo, cityShaderMat, 5);
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2;
-    const dist = 160 + Math.random() * 20;
-    const h = 110 + Math.random() * 20;
-    dummy.position.set(Math.cos(angle) * dist, (h / 2) - 3, Math.sin(angle) * dist); // Issue 5: Lower mega towers by 3 units
-    dummy.scale.set(5, h, 5);
-    dummy.updateMatrix();
-    megaMesh.setMatrixAt(i, dummy.matrix);
-  }
-  cityMeshes.push(megaMesh);
-  group.add(megaMesh);
-
-  // Distant low-poly mountains at ~100 units.
-  const distantMountainMaterial = new THREE.MeshStandardMaterial({
-    color: 0x0a2015,
-    roughness: 0.9,
-    metalness: 0.1,
-    flatShading: true
-  });
-  const distantMountainGeometries = [5, 6, 7].map((segments) => new THREE.ConeGeometry(1, 1, segments));
-
-  const createDistantMountain = (x, z, scale) => {
-    const peakCount = 1 + Math.floor(Math.random() * 2);
-    const mountainGroup = new THREE.Group();
-    for (let p = 0; p < peakCount; p++) {
-      const height = (30 + Math.random() * 50) * scale;
-      const radius = Math.max(6, (6 + Math.random() * 10) * scale);
-      const peakGeo = distantMountainGeometries[Math.floor(Math.random() * distantMountainGeometries.length)];
-      const peak = new THREE.Mesh(peakGeo, distantMountainMaterial);
-      peak.position.set(
-        (Math.random() - 0.5) * 6 * scale,
-        height / 2,
-        (Math.random() - 0.5) * 6 * scale
-      );
-      peak.scale.set(radius, height, radius);
-      peak.castShadow = false;
-      peak.receiveShadow = false;
-      mountainGroup.add(peak);
-    }
-    mountainGroup.position.set(x, floorY, z);
-    mountainGroup.frustumCulled = false;
-    return mountainGroup;
-  };
-
-  const distantMountainCount = 8;
-  const distantMountainRadius = 100;
-  for (let i = 0; i < distantMountainCount; i++) {
-    const angle = (i / distantMountainCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
-    const r = distantMountainRadius + (Math.random() - 0.5) * 20;
-    const x = Math.cos(angle) * r;
-    const z = Math.sin(angle) * r;
-    group.add(createDistantMountain(x, z, 1.0 + Math.random() * 0.5));
-  }
-
-  // Animation update - OPTIMIZED: stagger updates to reduce per-frame cost
-  let frameCounter = 0;
-  group.userData.update = (now, dt) => {
-    frameCounter++;
-    const time = now * 0.001;
-
-    // City shader: update every frame (cheap - just uniform)
-    cityShaderMat.uniforms.uTime.value = time;
-
-    // Green light pulse: every frame (cheap - single value)
-    greenLight.intensity = 1.2 + Math.sin(time * 2) * 0.3;
-
-    // REMOVED: Firefly drift animation - per-frame position updates were too expensive
-    // Fireflies are now static for better FPS
-
-    // REMOVED: Plant sway animation - per-frame rotation was too expensive
-    // Plants are now static for better FPS
-  };
-
-  group.rotation.y = -0.062; // yaw: 3.55°
-
-  // Alien floor HUD height: group.position.y = -0.28
-  group.position.set(6.628, -0.28, -13.926);
-}
-
-function buildHellscapeLavaScene(group) {
-  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
-  const floorY = floorHeight;  // Player stands on riverbanks at correct height
-  const valleyWidth = 35.0;
-
-  // ========================================
-  // 1. LIGHTING (CRITICAL)
-  // ========================================
-  // Red moonlight with shadows
-  const moonLight = new THREE.DirectionalLight(0xff3333, 2.5);
-  moonLight.position.set(20, 30, -100);
-  moonLight.castShadow = true;
-  moonLight.shadow.mapSize.width = 1024;
-  moonLight.shadow.mapSize.height = 1024;
-  moonLight.shadow.camera.near = 0.5;
-  moonLight.shadow.camera.far = 500;
-  moonLight.shadow.camera.left = -100;
-  moonLight.shadow.camera.right = 100;
-  moonLight.shadow.camera.top = 100;
-  moonLight.shadow.camera.bottom = -100;
-  group.add(moonLight);
-
-  // Very dim ambient
-  const ambientLight = new THREE.AmbientLight(0x220505, 0.1);
-  group.add(ambientLight);
-
-  // Lava glow point light (will animate)
-  const lavaGlow = new THREE.PointLight(0xff3300, 2.5, 60);
-  lavaGlow.position.set(0, 5, 0);
-  group.add(lavaGlow);
-
-  // ========================================
-  // TERRAIN (existing logic)
-  // ========================================
-  const geometry = new THREE.PlaneGeometry(300, 300, 140, 140);
-  geometry.rotateX(-Math.PI / 2);
-  const positions = geometry.attributes.position;
-  for (let i = 0; i < positions.count; i++) {
-    const x = positions.getX(i);
-    const z = positions.getZ(i);
-    const riverX = Math.sin(z * 0.03) * 15.0;
-    const distToRiver = Math.abs(x - riverX);
-    const riverWidth = 5.0;
-    const distFromCenter = Math.abs(x);
-    let height = 0;
-    const valleyFloorHeight = 0.0;  // Fixed: was 1.5, causing camera to appear below ground
-    if (distFromCenter > valleyWidth) {
-      const mountainFactor = (distFromCenter - valleyWidth) / 15.0;
-      let mHeight = 0;
-      mHeight += Math.abs(Math.sin(x * 0.05) * Math.cos(z * 0.04)) * 15.0;
-      mHeight += Math.abs(Math.sin(z * 0.08 + 1.0)) * 10.0;
-      mHeight += Math.abs(Math.cos(x * 0.12 - z * 0.08)) * 6.0;
-      mHeight += (Math.random() * 3.0);
-      height = valleyFloorHeight + mHeight * Math.min(mountainFactor, 1.0);
-    } else {
-      height = valleyFloorHeight;
-      height += (Math.sin(x * 0.5) * Math.cos(z * 0.5)) * 0.3;
-      if (distToRiver < riverWidth) {
-        height = -1.0;
-      } else if (distToRiver < riverWidth + 3.0) {
-        height = Math.min(height, valleyFloorHeight - (riverWidth + 3.0 - distToRiver) * 0.5);
-      }
-    }
-    positions.setY(i, height);
-  }
-  geometry.computeVertexNormals();
-
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x110505,
-    roughness: 0.9,
-    metalness: 0.1,
-    flatShading: true,
-    onBeforeCompile: (shader) => {
-      shader.uniforms.uTime = { value: 0 };
-      shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\nvarying vec3 vPosition; varying float vElevation; uniform float uTime;`);
-      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\nvPosition = position; vElevation = position.y;`);
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vPosition; varying float vElevation; uniform float uTime;`);
-      shader.fragmentShader = shader.fragmentShader.replace('#include <emissive_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { } else { float distToLava = vElevation - lavaThreshold; float glowReflection = smoothstep(5.0, 0.0, distToLava); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; totalEmissiveRadiance = vec3(0.6, 0.1, 0.0) * glowReflection * pulse; } #include <emissive_fragment>`);
-      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.05, 0.05); vec3 lavaColorBright = vec3(1.0, 0.25, 0.2); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.7 + 0.3 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor, 0.9); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
-      material.userData.shader = shader;
-    }
-  });
-
-  const terrain = new THREE.Mesh(geometry, material);
-  terrain.name = 'hellscape-lava-terrain';
-  terrain.userData.planeName = 'hellscape-lava-terrain';
-  terrain.receiveShadow = true;
-  terrain.position.y = floorY;
-  terrain.position.x = -10.0;  // Shift terrain left so player spawns on riverbank (not riverbed)
-  terrain.position.z = 0.0;  // Player on flat valley floor
-  group.add(terrain);
-
-  // Flash overlay plane for damage feedback
-  const flashGeo = new THREE.PlaneGeometry(300, 300);
-  const flashMat = new THREE.MeshBasicMaterial({
-    color: 0xff0000,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    side: THREE.DoubleSide
-  });
-  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
-  flashPlane.name = 'hellscape-lava-damage-flash-plane';
-  flashPlane.userData.planeName = 'hellscape-lava-damage-flash-plane';
-  flashPlane.rotation.x = -Math.PI / 2;
-  flashPlane.position.y = floorY + 0.05;
-  flashPlane.frustumCulled = false;
-  group.add(flashPlane);
-  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
-
-  const placementDummy = new THREE.Object3D();
-
-  // ========================================
-  // 2. JAGGED ROCKS (instanced)
-  // ========================================
-  const rockCount = 36;
-  const rockGeo = new THREE.TetrahedronGeometry(1, 0);
-  const rockMat = new THREE.MeshStandardMaterial({
-    color: 0x1a1a1a,
-    roughness: 0.8,
-    metalness: 0.2,
-    flatShading: true
-  });
-  const rockMesh = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
-
-  for (let i = 0; i < rockCount; i++) {
-    let x, z, riverX, distToRiver;
-    let attempts = 0;
-    do {
-      x = (Math.random() - 0.5) * 60;
-      z = (Math.random() - 0.5) * 100;
-      riverX = Math.sin(z * 0.03) * 15.0;
-      distToRiver = Math.abs(x - riverX);
-      attempts++;
-    } while (distToRiver < 8 && attempts < 20);
-
-    const scaleY = 0.5 + Math.random() * 3.0;
-    const scaleX = 0.5 + Math.random() * 1.3;
-    placementDummy.position.set(x, floorY + 0.5, z);
-    placementDummy.scale.set(scaleX, scaleY, scaleX);
-    placementDummy.rotation.set(
-      Math.random() * Math.PI,
-      Math.random() * Math.PI * 2,
-      Math.random() * Math.PI
-    );
-    placementDummy.updateMatrix();
-    rockMesh.setMatrixAt(i, placementDummy.matrix);
-  }
-  rockMesh.instanceMatrix.needsUpdate = true;
-  rockMesh.castShadow = true;
-  rockMesh.receiveShadow = true;
-  rockMesh.frustumCulled = false;
-  group.add(rockMesh);
-
-  // ========================================
-  // 3. DEAD TREES (instanced + simplified)
-  // ========================================
-  const treeMaterial = new THREE.MeshStandardMaterial({
-    color: 0x0a0a0a,
-    roughness: 0.9,
-    metalness: 0.1,
-    flatShading: true
-  });
-  const trunkGeo = new THREE.CylinderGeometry(0.8, 1.0, 1, 5);
-  const branchGeo = new THREE.CylinderGeometry(0.6, 0.8, 1, 5);
-
-  const treeDefs = [];
-  let totalBranches = 0;
-  const treeCount = 18;
-
-  for (let i = 0; i < treeCount; i++) {
-    let x, z, riverX, distToRiver;
-    let attempts = 0;
-    do {
-      x = (Math.random() - 0.5) * 60;
-      z = (Math.random() - 0.5) * 100;
-      riverX = Math.sin(z * 0.03) * 15.0;
-      distToRiver = Math.abs(x - riverX);
-      attempts++;
-    } while (distToRiver < 8 && attempts < 20);
-
-    const trunkHeight = 2.6 + Math.random() * 2.0;
-    const trunkRadius = 0.16 + Math.random() * 0.07;
-    const treeYaw = Math.random() * Math.PI * 2;
-    const branchCount = 2 + Math.floor(Math.random() * 2);
-
-    treeDefs.push({ x, z, trunkHeight, trunkRadius, treeYaw, branchCount });
-    totalBranches += branchCount;
-  }
-
-  const trunkMesh = new THREE.InstancedMesh(trunkGeo, treeMaterial, treeDefs.length);
-  const branchMesh = new THREE.InstancedMesh(branchGeo, treeMaterial, totalBranches);
-
-  let branchIdx = 0;
-  for (let i = 0; i < treeDefs.length; i++) {
-    const tree = treeDefs[i];
-
-    placementDummy.position.set(tree.x, floorY + tree.trunkHeight * 0.5, tree.z);
-    placementDummy.rotation.set(0, tree.treeYaw, (Math.random() - 0.5) * 0.08);
-    placementDummy.scale.set(tree.trunkRadius, tree.trunkHeight, tree.trunkRadius);
-    placementDummy.updateMatrix();
-    trunkMesh.setMatrixAt(i, placementDummy.matrix);
-
-    for (let b = 0; b < tree.branchCount; b++) {
-      const branchLength = tree.trunkHeight * (0.35 + Math.random() * 0.25);
-      const branchRadius = tree.trunkRadius * (0.62 + Math.random() * 0.2);
-      const branchYaw = tree.treeYaw + ((b / tree.branchCount) * Math.PI * 2) + (Math.random() - 0.5) * 0.6;
-      const branchTilt = (0.45 + Math.random() * 0.7) * (Math.random() > 0.5 ? 1 : -1);
-      const baseHeight = floorY + tree.trunkHeight * (0.45 + Math.random() * 0.35);
-
-      placementDummy.position.set(
-        tree.x + Math.cos(branchYaw) * (tree.trunkRadius * 0.5),
-        baseHeight,
-        tree.z + Math.sin(branchYaw) * (tree.trunkRadius * 0.5)
-      );
-      placementDummy.rotation.set(0, branchYaw, branchTilt);
-      placementDummy.scale.set(branchRadius, branchLength, branchRadius * 0.9);
-      placementDummy.updateMatrix();
-      branchMesh.setMatrixAt(branchIdx, placementDummy.matrix);
-      branchIdx++;
-    }
-  }
-
-  trunkMesh.instanceMatrix.needsUpdate = true;
-  branchMesh.instanceMatrix.needsUpdate = true;
-  trunkMesh.castShadow = true;
-  trunkMesh.receiveShadow = true;
-  branchMesh.castShadow = true;
-  branchMesh.receiveShadow = true;
-  trunkMesh.frustumCulled = false;
-  branchMesh.frustumCulled = false;
-  group.add(trunkMesh);
-  group.add(branchMesh);
-
-  // ========================================
-  // 4. TWINKLING STARS (1000 particles with red tint)
-  // ========================================
-  const starCount = 1000;
-  const starPositions = new Float32Array(starCount * 3);
-  const starColors = new Float32Array(starCount * 3);
-  const starSizes = new Float32Array(starCount);
-  const starPhases = new Float32Array(starCount);
-
-  for (let i = 0; i < starCount; i++) {
-    const i3 = i * 3;
-    // Position in a dome
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.random() * Math.PI * 0.5; // Upper hemisphere
-    const r = 120 + Math.random() * 80;
-    starPositions[i3] = r * Math.sin(phi) * Math.cos(theta);
-    starPositions[i3 + 1] = r * Math.cos(phi) + 20;
-    starPositions[i3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-
-    // Red-tinted colors: mix between (0.6, 0.2, 0.2) and (1.0, 0.8, 0.8)
-    const colorMix = Math.random();
-    starColors[i3] = 0.6 + colorMix * 0.4;     // R
-    starColors[i3 + 1] = 0.2 + colorMix * 0.6; // G
-    starColors[i3 + 2] = 0.2 + colorMix * 0.6; // B
-
-    starSizes[i] = 0.5 + Math.random() * 1.5;
-    starPhases[i] = Math.random() * Math.PI * 2;
-  }
-
-  const starGeo = new THREE.BufferGeometry();
-  starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-  starGeo.setAttribute('aColor', new THREE.BufferAttribute(starColors, 3));
-  starGeo.setAttribute('aSize', new THREE.BufferAttribute(starSizes, 1));
-  starGeo.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
-
-  const starMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime: { value: 0 }
-    },
-    vertexShader: `
-      attribute vec3 aColor;
-      attribute float aSize;
-      attribute float aPhase;
-      varying vec3 vColor;
-      varying float vTwinkle;
-      uniform float uTime;
-      void main() {
-        vColor = aColor;
-        vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = aSize * (300.0 / -mvPosition.z) * vTwinkle;
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: `
-      varying vec3 vColor;
-      varying float vTwinkle;
-      void main() {
-        float dist = length(gl_PointCoord - vec2(0.5));
-        if (dist > 0.5) discard;
-        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-        gl_FragColor = vec4(vColor * vTwinkle, alpha);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-
-  const stars = new THREE.Points(starGeo, starMat);
-  group.add(stars);
-
-  // ========================================
-  // 5. SPARK PARTICLES (lifetime-based, deterministic)
-  // ========================================
-  const sparkCount = 140;
-  const sparkPositions = new Float32Array(sparkCount * 3);
-  const sparkVelocities = new Float32Array(sparkCount * 3);
-  const sparkLifetimes = new Float32Array(sparkCount);
-  const sparkMaxLifetimes = new Float32Array(sparkCount);
-
-  const initSpark = (idx) => {
-    const i3 = idx * 3;
-    const z = (Math.random() - 0.5) * 100;
-    const riverX = Math.sin(z * 0.03) * 15.0 + 10.0;
-    sparkPositions[i3] = riverX + (Math.random() - 0.5) * 4;
-    sparkPositions[i3 + 1] = floorY - 0.9 + Math.random() * 0.3;
-    sparkPositions[i3 + 2] = z;
-    // Velocity units are per-second.
-    sparkVelocities[i3] = (Math.random() - 0.5) * 1.0;
-    sparkVelocities[i3 + 1] = 2.0 + Math.random() * 2.2;
-    sparkVelocities[i3 + 2] = (Math.random() - 0.5) * 1.0;
-    sparkLifetimes[idx] = 0;
-    sparkMaxLifetimes[idx] = 0.9 + Math.random() * 1.2;
-  };
-
-  for (let i = 0; i < sparkCount; i++) {
-    initSpark(i);
-    sparkLifetimes[i] = Math.random() * sparkMaxLifetimes[i]; // Stagger initial lifetimes
-  }
-
-  const sparkGeo = new THREE.BufferGeometry();
-  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
-
-  const sparkMat = new THREE.PointsMaterial({
-    color: 0xffaa00,
-    size: 0.3,
-    transparent: true,
-    opacity: 0.8,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-
-  const sparks = new THREE.Points(sparkGeo, sparkMat);
-  group.add(sparks);
-
-  // ========================================
-  // 5b. ASH PARTICLES (dark floating)
-  // ========================================
-  const ashCount = 180;
-  const ashPositions = new Float32Array(ashCount * 3);
-  const ashVelocities = new Float32Array(ashCount * 3);
-  for (let i = 0; i < ashCount; i++) {
-    const i3 = i * 3;
-    ashPositions[i3] = (Math.random() - 0.5) * 80;
-    ashPositions[i3 + 1] = 1 + Math.random() * 10;
-    ashPositions[i3 + 2] = (Math.random() - 0.5) * 80;
-    // Velocity units are per-second.
-    ashVelocities[i3] = (Math.random() - 0.5) * 0.55;
-    ashVelocities[i3 + 1] = 0.08 + Math.random() * 0.18;
-    ashVelocities[i3 + 2] = (Math.random() - 0.5) * 0.55;
-  }
-  const ashGeo = new THREE.BufferGeometry();
-  ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPositions, 3));
-  const ashMat = new THREE.PointsMaterial({
-    color: 0x2b2b2b,
-    size: 0.06,  // Smaller than alien particles (0.0875)
-    transparent: true,
-    opacity: 0.5,
-    depthWrite: false
-  });
-  const ash = new THREE.Points(ashGeo, ashMat);
-  group.add(ash);
-
-  // ========================================
-  // 6. FLAME GEYSERS (periodic eruptions)
-  // ========================================
-  const geyserParticles = [];
-  let lastGeyserTime = 0;
-  const geyserInterval = 5000; // 5 seconds
-
-  const createGeyserBurst = (now) => {
-    const particleCount = 100;
-    // Spawn from mountainsides (outside valleyWidth), accounting for terrain X shift
-    const side = Math.random() > 0.5 ? 1 : -1;
-    const x = side * (valleyWidth + 5 + Math.random() * 20) + 10.0;  // Account for terrain X shift
-    const z = (Math.random() - 0.5) * 80;
-    const baseY = floorY + 5;
-
-    for (let i = 0; i < particleCount; i++) {
-      geyserParticles.push({
-        x: x + (Math.random() - 0.5) * 2,
-        y: baseY,
-        z: z + (Math.random() - 0.5) * 2,
-        // Velocity units are per-second.
-        vx: (Math.random() - 0.5) * 3.5,
-        vy: 14 + Math.random() * 8,
-        vz: (Math.random() - 0.5) * 3.5,
-        life: 0,
-        maxLife: 0.9 + Math.random() * 0.7
-      });
-    }
-  };
-
-  const geyserGeo = new THREE.BufferGeometry();
-  const geyserPositions = new Float32Array(500 * 3); // Max 500 particles
-  geyserGeo.setAttribute('position', new THREE.BufferAttribute(geyserPositions, 3));
-  geyserGeo.setDrawRange(0, 0);
-
-  const geyserMat = new THREE.PointsMaterial({
-    color: 0xff6600,
-    size: 0.4,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-
-  const geyserPoints = new THREE.Points(geyserGeo, geyserMat);
-  group.add(geyserPoints);
-
-  // ========================================
-  // 7. FLAME PILLARS (distant fire columns)
-  // ========================================
-  const PILLAR_COUNT = 6;
-  const PARTICLES_PER_PILLAR = 28;
-  const TOTAL_FLAME_PILLAR_PARTICLES = PILLAR_COUNT * PARTICLES_PER_PILLAR;
-
-  // Canvas-drawn flame sprite texture (64x64, soft radial gradient)
-  const flameCanvas = document.createElement('canvas');
-  flameCanvas.width = 64;
-  flameCanvas.height = 64;
-  const fCtx = flameCanvas.getContext('2d');
-  const flameGrad = fCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  flameGrad.addColorStop(0, 'rgba(255,255,200,1.0)');
-  flameGrad.addColorStop(0.2, 'rgba(255,200,50,0.9)');
-  flameGrad.addColorStop(0.5, 'rgba(255,100,0,0.6)');
-  flameGrad.addColorStop(0.8, 'rgba(200,30,0,0.2)');
-  flameGrad.addColorStop(1, 'rgba(100,0,0,0.0)');
-  fCtx.fillStyle = flameGrad;
-  fCtx.fillRect(0, 0, 64, 64);
-  const flameTexture = new THREE.CanvasTexture(flameCanvas);
-
-  // Pillar positions: spread around the arena at 30-70 units distance
-  const pillarDefs = [];
-  for (let i = 0; i < PILLAR_COUNT; i++) {
-    const angle = (i / PILLAR_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
-    const dist = 35 + Math.random() * 40; // 35-75 units away
-    pillarDefs.push({
-      x: Math.cos(angle) * dist + 10.0, // Account for terrain X shift
-      z: Math.sin(angle) * dist,
-      height: 12 + Math.random() * 10, // Pillar height 12-22 units
-      radius: 1.5 + Math.random() * 1.5, // Base radius 1.5-3 units
-      speed: 0.9 + Math.random() * 0.5 // Rise speed multiplier
-    });
-  }
-
-  // Particle arrays
-  const flamePositions = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES * 3);
-  const flameSizes = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES);
-  const flameParticleData = []; // Per-particle: { pillarIdx, t (0-1 life progress) }
-
-  const initFlameParticle = (idx) => {
-    const pillarIdx = idx % PILLAR_COUNT;
-    const pillar = pillarDefs[pillarIdx];
-    const i3 = idx * 3;
-    const angle = Math.random() * Math.PI * 2;
-    const r = Math.random() * pillar.radius;
-    const t = Math.random(); // Start at random height for stagger
-
-    flamePositions[i3] = pillar.x + Math.cos(angle) * r;
-    flamePositions[i3 + 1] = floorY + t * pillar.height;
-    flamePositions[i3 + 2] = pillar.z + Math.sin(angle) * r;
-    flameSizes[idx] = 1.0 + (1.0 - t) * 2.0; // Larger at base, smaller at top
-
-    if (!flameParticleData[idx]) {
-      flameParticleData[idx] = {
-        pillarIdx,
-        speed: 2.0 + Math.random() * 1.2,
-        driftPhase: Math.random() * Math.PI * 2,
-        driftAmp: 0.18 + Math.random() * 0.12
-      };
-    }
-    flameParticleData[idx].t = t;
-    flameParticleData[idx].pillarIdx = pillarIdx;
-  };
-
-  for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
-    initFlameParticle(i);
-  }
-
-  const flamePillarGeo = new THREE.BufferGeometry();
-  flamePillarGeo.setAttribute('position', new THREE.BufferAttribute(flamePositions, 3));
-  flamePillarGeo.setAttribute('aSize', new THREE.BufferAttribute(flameSizes, 1));
-
-  // Use ShaderMaterial for per-particle size with sizeAttenuation
-  const flamePillarMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTexture: { value: flameTexture },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
-    },
-    vertexShader: `
-      attribute float aSize;
-      varying float vAlpha;
-      uniform float uPixelRatio;
-      void main() {
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = aSize * uPixelRatio * (200.0 / -mvPosition.z);
-        gl_PointSize = clamp(gl_PointSize, 1.0, 64.0);
-        gl_Position = projectionMatrix * mvPosition;
-        // Fade particles that are very high (near top of pillar)
-        vAlpha = aSize / 3.0;
-      }
-    `,
-    fragmentShader: `
-      uniform sampler2D uTexture;
-      varying float vAlpha;
-      void main() {
-        vec4 texColor = texture2D(uTexture, gl_PointCoord);
-        gl_FragColor = vec4(texColor.rgb, texColor.a * vAlpha);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-
-  const flamePillarPoints = new THREE.Points(flamePillarGeo, flamePillarMat);
-  group.add(flamePillarPoints);
-
-  // ========================================
-  // MOONS (existing)
-  // ========================================
-  const createMoon = (size, color, glowColor) => {
-    const mGroup = new THREE.Group();
-    const moonGeo = new THREE.IcosahedronGeometry(size, 2);
-    const moonMat = new THREE.MeshBasicMaterial({ color });
-    mGroup.add(new THREE.Mesh(moonGeo, moonMat));
-    const glowGeo = new THREE.IcosahedronGeometry(size * 1.2, 2);
-    const glowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.3 });
-    mGroup.add(new THREE.Mesh(glowGeo, glowMat));
-    const farGlowGeo = new THREE.IcosahedronGeometry(size * 1.5, 2);
-    const farGlowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.1 });
-    mGroup.add(new THREE.Mesh(farGlowGeo, farGlowMat));
-    return mGroup;
-  };
-  const moon1 = createMoon(10.5, 0xaa1111, 0xff2200);
-  moon1.position.set(20, 25, -100);
-  group.add(moon1);
-  const moon2 = createMoon(7.5, 0x880000, 0xaa0000);
-  moon2.position.set(-40, 20, -90);
-  group.add(moon2);
-  const moon3 = createMoon(5.4, 0x550000, 0x770000);
-  moon3.position.set(-20, 35, -95);
-  group.add(moon3);
-
-  // ========================================
-  // ANIMATION UPDATE
-  // ========================================
-  group.userData.update = (now, dt) => {
-    const time = now * 0.001;
-
-    // Terrain shader
-    if (material.userData.shader) {
-      material.userData.shader.uniforms.uTime.value = time;
-    }
-
-    // Star twinkle
-    starMat.uniforms.uTime.value = time;
-
-    // Lava glow position animation (circle)
-    lavaGlow.position.x = Math.sin(time * 0.3) * 15;
-    lavaGlow.position.z = Math.cos(time * 0.3) * 20;
-    lavaGlow.position.y = 5 + Math.sin(time * 0.5) * 2;
-
-    // Lava glow intensity pulse
-    lavaGlow.intensity = 2.0 + Math.sin(time * 2) * 0.5;
-
-    const dtSec = Math.min(dt, 0.05);
-
-    // Spark particles: lifetime + height-capped respawn (fixes "fly upward forever").
-    const sparkPos = sparkGeo.attributes.position.array;
-    for (let i = 0; i < sparkCount; i++) {
-      const i3 = i * 3;
-      sparkLifetimes[i] += dtSec;
-
-      if (sparkLifetimes[i] >= sparkMaxLifetimes[i] || sparkPos[i3 + 1] > floorY + 7.5) {
-        initSpark(i);
-        continue;
-      }
-
-      sparkVelocities[i3 + 1] = Math.max(0.45, sparkVelocities[i3 + 1] - 3.2 * dtSec);
-      sparkPos[i3] += sparkVelocities[i3] * dtSec;
-      sparkPos[i3 + 1] += sparkVelocities[i3 + 1] * dtSec;
-      sparkPos[i3 + 2] += sparkVelocities[i3 + 2] * dtSec;
-    }
-    sparkGeo.attributes.position.needsUpdate = true;
-
-    // Ash drift
-    const ashPos = ashGeo.attributes.position.array;
-    for (let i = 0; i < ashCount; i++) {
-      const i3 = i * 3;
-      ashPos[i3] += ashVelocities[i3] * dtSec;
-      ashPos[i3 + 1] += ashVelocities[i3 + 1] * dtSec;
-      ashPos[i3 + 2] += ashVelocities[i3 + 2] * dtSec;
-
-      if (ashPos[i3 + 1] > 12) {
-        ashPos[i3] = (Math.random() - 0.5) * 80;
-        ashPos[i3 + 1] = 1;
-        ashPos[i3 + 2] = (Math.random() - 0.5) * 80;
-      }
-      if (ashPos[i3] > 40) ashPos[i3] = -40;
-      if (ashPos[i3] < -40) ashPos[i3] = 40;
-      if (ashPos[i3 + 2] > 40) ashPos[i3 + 2] = -40;
-      if (ashPos[i3 + 2] < -40) ashPos[i3 + 2] = 40;
-    }
-    ashGeo.attributes.position.needsUpdate = true;
-
-    // Geyser trigger and update
-    if (now - lastGeyserTime > geyserInterval) {
-      createGeyserBurst(now);
-      lastGeyserTime = now;
-    }
-
-    const geyserPos = geyserGeo.attributes.position.array;
-    let activeCount = 0;
-    for (let i = geyserParticles.length - 1; i >= 0; i--) {
-      const p = geyserParticles[i];
-      p.life += dtSec;
-
-      if (p.life > p.maxLife) {
-        geyserParticles.splice(i, 1);
-        continue;
-      }
-
-      p.x += p.vx * dtSec;
-      p.y += p.vy * dtSec;
-      p.z += p.vz * dtSec;
-      p.vy -= 18 * dtSec;
-
-      const idx = activeCount * 3;
-      geyserPos[idx] = p.x;
-      geyserPos[idx + 1] = p.y;
-      geyserPos[idx + 2] = p.z;
-      activeCount++;
-    }
-    geyserGeo.setDrawRange(0, activeCount);
-    geyserGeo.attributes.position.needsUpdate = true;
-
-    // Flame pillar animation
-    const fpPos = flamePillarGeo.attributes.position.array;
-    const fpSizes = flamePillarGeo.attributes.aSize.array;
-    for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
-      const pd = flameParticleData[i];
-      const pillar = pillarDefs[pd.pillarIdx];
-      const i3 = i * 3;
-
-      pd.t += (pd.speed * dtSec * pillar.speed) / Math.max(1, pillar.height);
-
-      if (pd.t >= 1.0) {
-        initFlameParticle(i);
-      } else {
-        const driftWave = Math.sin(time * 2.2 + pd.driftPhase) * pd.driftAmp * dtSec;
-        fpPos[i3] += Math.cos(pd.driftPhase) * driftWave;
-        fpPos[i3 + 1] += pd.speed * dtSec * pillar.speed;
-        fpPos[i3 + 2] += Math.sin(pd.driftPhase) * driftWave;
-
-        fpSizes[i] = Math.max(0.3, (1.0 - pd.t) * 3.0);
-      }
-    }
-    flamePillarGeo.attributes.position.needsUpdate = true;
-    flamePillarGeo.attributes.aSize.needsUpdate = true;
-  };
-
-  // Hellscape floor HUD height: group.position.y = 0.05
-  group.position.set(26.599, 0.05, -0.486);
-  group.rotation.y = 0.248; // yaw: 14.21°
+  return getBiomeFloorYModule(biomeSceneBiome, SCENE_Y_OFFSET);
 }
