@@ -7396,7 +7396,7 @@ function fireMainWeapon(controller, index) {
 
   // Fire projectile(s)
   const count = stats.projectileCount;
-  const shotId = startAccuracyShot(count);
+  const shotId = startAccuracyShot(count, hand);
   const isBuckshot = stats.spreadAngle > 0 && !stats.homing;
 
   // Calculate perpendicular offset axis for multi-shot
