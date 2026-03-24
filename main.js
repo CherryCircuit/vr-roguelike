@@ -1814,7 +1814,7 @@ function completeDreamWorldRun() {
     addUpgrade('dream_fragment', 'left');
     addUpgrade('dream_fragment', 'right');
     saveDreamState();
-    showFloatingMessage('DREAM FRAGMENT ACQUIRED', '#cc88ff', 3.0, false);
+    showFloatingMessage('DREAM FRAGMENT ACQUIRED', { color: '#cc88ff', duration: 3000 });
   }
 
   exitDreamWorldScene();
