@@ -928,6 +928,9 @@ export function updateHUD(gameState) {
   // Hearts are now static - only animate when health changes (hitFlash, healthGain)
   const now = performance.now();
 
+  // Update floating message (auto-hide after duration)
+  updateFloatingMessage(now);
+
   // Decay hit flash
   if (heartAnimationState.hitFlash > 0) {
     heartAnimationState.hitFlash -= 0.05;
@@ -4048,12 +4051,12 @@ function createPauseMenu() {
   const panelMat = new THREE.MeshBasicMaterial({
     color: 0x0a0015,
     transparent: true,
-    opacity: 0.95,  // Increased from 0.85 for VR visibility
+    opacity: 0.98,  // High opacity for readability
     side: THREE.DoubleSide,
     depthWrite: false
   });
   const panel = new THREE.Mesh(panelGeo, panelMat);
-  panel.renderOrder = 0;  // Render before text (text has renderOrder=999)
+  panel.renderOrder = PAUSE_MENU_RENDER_ORDER;  // Ensure panel renders at correct priority
   group.add(panel);
 
   // Neon border (cyan)
@@ -4067,7 +4070,7 @@ function createPauseMenu() {
   ].forEach(b => {
     const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
     border.position.set(b.x, b.y, 0.01);
-    border.renderOrder = 1;  // Render after panel, before text
+    border.renderOrder = PAUSE_MENU_RENDER_ORDER + 1;  // Render after panel
     group.add(border);
   });
 
@@ -4112,12 +4115,12 @@ function createPauseMenu() {
 function createBlasterSection(hand, panelX) {
   const group = new THREE.Group();
 
-  // Section background
+  // Section background (higher opacity for better readability)
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(1.9, 1.8),
-    new THREE.MeshBasicMaterial({ color: 0x1a0033, transparent: true, opacity: 0.7, depthWrite: false })
+    new THREE.MeshBasicMaterial({ color: 0x1a0033, transparent: true, opacity: 0.85, depthWrite: false })
   );
-  bg.renderOrder = 0;  // Render before text
+  bg.renderOrder = 0;  // Will be overridden by applyPauseMenuRenderPriority
   group.add(bg);
 
   // Section border (pink)
@@ -4153,9 +4156,9 @@ function createBlasterSection(hand, panelX) {
   weaponText.position.set(0, 0.38, 0.02);
   group.add(weaponText);
 
-  // Upgrades list
+  // Upgrades list (exclude dream_fragment - it's a collectible, not an upgrade)
   const upgrades = game.upgrades[hand] || {};
-  const upgradeEntries = Object.entries(upgrades);
+  const upgradeEntries = Object.entries(upgrades).filter(([id]) => id !== 'dream_fragment');
   const yOffset = 0.08;
 
   if (upgradeEntries.length > 0) {
