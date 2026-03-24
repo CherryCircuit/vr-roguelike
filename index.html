@@ -218,6 +218,22 @@
     <div style="margin-top:12px;border-top:1px solid #333;padding-top:8px;">
       <div id="visual-toggle" style="color:#ff00ff;cursor:pointer;user-select:none;">▶ Visual Tuning</div>
       <div id="visual-controls" style="display:none;margin-top:8px;padding-left:8px;">
+        <div style="font-size:11px;line-height:1.4;opacity:0.7;color:#88d8ff;">
+          Shell controls are XR-safe and work in VR. Anaglyph/stereo are desktop-only and bypass selective bloom while active.
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+          <label for="debug-render-mode" style="width:150px;">Render mode</label>
+          <select id="debug-render-mode" style="width:154px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+            <option value="normal" selected>Normal</option>
+            <option value="anaglyph">Anaglyph (desktop)</option>
+            <option value="stereo">Stereo (desktop)</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label for="debug-stereo-eye-separation" style="width:150px;">Stereo eye sep</label>
+          <input type="range" id="debug-stereo-eye-separation" min="0.01" max="0.2" step="0.001" value="0.064" style="width:90px;">
+          <input type="number" id="debug-stereo-eye-separation-value" min="0.01" max="0.2" step="0.001" value="0.064" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+        </div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
           <label for="debug-glow-strength" style="width:150px;">Glow strength</label>
           <input type="range" id="debug-glow-strength" min="0" max="2" step="0.01" value="1" style="width:90px;">
@@ -227,6 +243,30 @@
           <label for="debug-bloom-strength" style="width:150px;">Bloom strength</label>
           <input type="range" id="debug-bloom-strength" min="0" max="2" step="0.01" value="1" style="width:90px;">
           <input type="number" id="debug-bloom-strength-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label for="debug-shell-strength" style="width:150px;">Shell strength</label>
+          <input type="range" id="debug-shell-strength" min="0" max="2" step="0.01" value="1" style="width:90px;">
+          <input type="number" id="debug-shell-strength-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label for="debug-shell-saturation" style="width:150px;">Shell saturation</label>
+          <input type="range" id="debug-shell-saturation" min="0" max="2" step="0.01" value="1" style="width:90px;">
+          <input type="number" id="debug-shell-saturation-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label for="debug-shell-scanline-speed" style="width:150px;">Scanline speed</label>
+          <input type="range" id="debug-shell-scanline-speed" min="0" max="3" step="0.01" value="1" style="width:90px;">
+          <input type="number" id="debug-shell-scanline-speed-value" min="0" max="3" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label for="debug-shell-noise-amount" style="width:150px;">Noise amount</label>
+          <input type="range" id="debug-shell-noise-amount" min="0" max="2" step="0.01" value="0.35" style="width:90px;">
+          <input type="number" id="debug-shell-noise-amount-value" min="0" max="2" step="0.01" value="0.35" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+          <label for="debug-shell-tint" style="width:150px;">Shell tint</label>
+          <input type="color" id="debug-shell-tint" value="#99b8ff" style="width:58px;height:24px;background:#220044;border:1px solid #ff00ff;padding:0;">
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
           <label for="debug-smoke-strength" style="width:150px;">Smoke particles</label>
@@ -275,7 +315,7 @@
   <script type="module" src="main.js"></script>
   <script>
     (function() {
-      const GAME_VERSION = 'v2026.03.22.0322';
+      const GAME_VERSION = 'v2026.03.24.1520';
       document.title = GAME_VERSION;
       const versionEl = document.getElementById('version-text');
       if (versionEl) versionEl.textContent = GAME_VERSION;
@@ -285,6 +325,15 @@
       const toggle = document.getElementById('debug-toggle');
       const consolePanel = document.getElementById('console-panel');
       const consoleLogs = document.getElementById('console-logs');
+      window.debugRenderMode = 'normal';
+      window.debugStereoEyeSeparation = 0.064;
+      window.debugGlowStrength = 1.0;
+      window.debugBloomStrength = 1.0;
+      window.debugShellStrength = 1.0;
+      window.debugShellSaturation = 1.0;
+      window.debugShellScanlineSpeed = 1.0;
+      window.debugShellNoiseAmount = 0.35;
+      window.debugShellTint = '#99b8ff';
       if (params.get('debug') === '1') panel.style.display = 'block';
       toggle.addEventListener('click', function(e) { e.preventDefault(); panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; });
       document.getElementById('debug-jump').addEventListener('click', function() {
@@ -338,7 +387,7 @@
         });
 
         const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-        const bindRangeAndNumber = (rangeId, numberId, min, max, fallback, setter) => {
+        const bindRangeAndNumber = (rangeId, numberId, min, max, fallback, setter, digits = 2) => {
           const range = document.getElementById(rangeId);
           const number = document.getElementById(numberId);
           if (!range || !number) return;
@@ -346,7 +395,7 @@
           const apply = (raw) => {
             const parsed = Number(raw);
             const value = Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback;
-            const fixed = value.toFixed(2);
+            const fixed = value.toFixed(digits);
             range.value = fixed;
             number.value = fixed;
             setter(value);
@@ -367,6 +416,22 @@
           window.debugBloom = value > 0;
         });
 
+        bindRangeAndNumber('debug-shell-strength', 'debug-shell-strength-value', 0, 2, 1.0, (value) => {
+          window.debugShellStrength = value;
+        });
+
+        bindRangeAndNumber('debug-shell-saturation', 'debug-shell-saturation-value', 0, 2, 1.0, (value) => {
+          window.debugShellSaturation = value;
+        });
+
+        bindRangeAndNumber('debug-shell-scanline-speed', 'debug-shell-scanline-speed-value', 0, 3, 1.0, (value) => {
+          window.debugShellScanlineSpeed = value;
+        });
+
+        bindRangeAndNumber('debug-shell-noise-amount', 'debug-shell-noise-amount-value', 0, 2, 0.35, (value) => {
+          window.debugShellNoiseAmount = value;
+        });
+
         bindRangeAndNumber('debug-smoke-strength', 'debug-smoke-strength-value', 0, 2, 1.0, (value) => {
           window.debugSmokeStrength = value;
           window.debugSmoke = value > 0;
@@ -375,6 +440,26 @@
         bindRangeAndNumber('debug-fog-intensity', 'debug-fog-intensity-value', 0, 1, 0.58, (value) => {
           window.debugFogIntensity = value;
         });
+
+        const renderModeSelect = document.getElementById('debug-render-mode');
+        if (renderModeSelect) {
+          renderModeSelect.addEventListener('change', () => {
+            window.debugRenderMode = renderModeSelect.value;
+          });
+          window.debugRenderMode = renderModeSelect.value;
+        }
+
+        bindRangeAndNumber('debug-stereo-eye-separation', 'debug-stereo-eye-separation-value', 0.01, 0.2, 0.064, (value) => {
+          window.debugStereoEyeSeparation = value;
+        }, 3);
+
+        const shellTintInput = document.getElementById('debug-shell-tint');
+        if (shellTintInput) {
+          shellTintInput.addEventListener('input', () => {
+            window.debugShellTint = shellTintInput.value;
+          });
+          window.debugShellTint = shellTintInput.value;
+        }
       }
 
       // Seed Deck Controls

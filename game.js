@@ -129,8 +129,8 @@ export const game = {
   killsWithoutHit: 0,
 
   handStats: {
-    left: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0 },
-    right: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0 }
+    left: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0, enemyKills: {} },
+    right: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0, enemyKills: {} }
   },
 
   justBossKill: false,
@@ -218,8 +218,8 @@ export function resetGame() {
     spawnTimer: 0,
     killsWithoutHit: 0,
     handStats: {
-      left: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0 },
-      right: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0 }
+      left: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0, enemyKills: {} },
+      right: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0, enemyKills: {} }
     },
     justBossKill: false,
     nextUpgradeHand: 'left',

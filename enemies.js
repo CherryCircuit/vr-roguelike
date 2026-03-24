@@ -3054,7 +3054,7 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   activeEnemies.splice(index, 1);
   _enemyMeshesDirty = true;  // Invalidate cache
 
-  return { position: pos, scoreValue: e.scoreValue, baseColor: color };
+  return { position: pos, scoreValue: e.scoreValue, baseColor: color, type: e.type };
 }
 
 /**

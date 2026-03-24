@@ -360,6 +360,9 @@ export const UPGRADE_POOL = [
   
   // Seeker Burst specific upgrades
   { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff', type: 'weapon_specific', weapon: 'seeker_burst' },
+
+  // Nuke upgrade (universal — grants +1 nuke charge)
+  { id: 'extra_nuke', name: 'Extra Nuke', desc: '+1 nuke charge (alt-fire)', color: '#ffff44', type: 'universal' },
 ];
 
 // Special upgrades (after boss victories)
