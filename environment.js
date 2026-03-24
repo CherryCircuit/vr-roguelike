@@ -316,6 +316,7 @@ export function createSun(scene) {
   const sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), sunMat);
   sunMesh.position.set(0, 12, -89);
   sunMesh.renderOrder = -10;
+  sunMesh.frustumCulled = false;  // Prevent disappearing when looking around
   scene.add(sunMesh);
   sunMeshRef = sunMesh;
 
@@ -331,6 +332,7 @@ export function createSun(scene) {
   const glow = new THREE.Mesh(new THREE.CircleGeometry(24, 32), glowMat);
   glow.position.set(0, 12, -89.5);
   glow.renderOrder = -11;
+  glow.frustumCulled = false;  // Prevent disappearing when looking around
   scene.add(glow);
   sunGlowRef = glow;
 
@@ -352,6 +354,7 @@ export function createSun(scene) {
     const mesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 32), mat);
     mesh.position.set(0, 12, -89.8);
     mesh.renderOrder = -12;
+    mesh.frustumCulled = false;  // Prevent disappearing when looking around
     scene.add(mesh);
   });
 
@@ -441,6 +444,7 @@ export function createStars(scene) {
 
   const stars = new THREE.Points(starsGeo, starsMat);
   stars.renderOrder = -15;
+  stars.frustumCulled = false;  // Prevent disappearing when looking around
   scene.add(stars);
 
   return { stars, starsMat };
@@ -483,6 +487,7 @@ export function createAtmosphere(scene) {
   const cylinder = new THREE.Mesh(cylGeo, cylMat);
   cylinder.position.set(0, height / 2 - 2, 0);
   cylinder.renderOrder = -13;
+  cylinder.frustumCulled = false;  // Prevent disappearing when looking around
   scene.add(cylinder);
 
   return cylinder;

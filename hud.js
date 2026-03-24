@@ -428,6 +428,14 @@ export function initHUD(camera, scene) {
   pauseMenuGroup.rotation.set(0, 0, 0);
   scene.add(pauseMenuGroup);
 
+  // Disable frustum culling on all UI groups to prevent disappearing when looking around
+  // UI elements have unreliable bounding boxes/spheres that cause false culling
+  [
+    titleGroup, hudGroup, floatingMessageGroup, levelTextGroup, upgradeGroup,
+    gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup,
+    readyGroup, debugMenuGroup, pauseMenuGroup, pauseCountdownGroup
+  ].forEach(g => { if (g) g.frustumCulled = false; });
+
   // Countdown still follows camera so player can see it
   pauseCountdownGroup.visible = false;
   pauseCountdownGroup.rotation.set(0, 0, 0);
@@ -450,6 +458,7 @@ export function initHUD(camera, scene) {
   );
   hitFlash.renderOrder = 999;
   hitFlash.visible = false;
+  hitFlash.frustumCulled = false;  // Prevent disappearing when looking around
   hitFlash.position.set(0, 0, -0.25);  // Very close to camera for full coverage
   camera.add(hitFlash);
 
@@ -473,6 +482,7 @@ export function initHUD(camera, scene) {
   fpsSprite = new THREE.Mesh(fpsGeo, fpsMat);
   fpsSprite.position.set(-0.15, 0.12, -0.5);  // Moved closer to center
   fpsSprite.renderOrder = 1001;
+  fpsSprite.frustumCulled = false;  // Prevent disappearing when looking around
   camera.add(fpsSprite);
 
   // ── Boss health bar (top center, camera-attached, 3 segments) ──
@@ -491,6 +501,7 @@ export function initHUD(camera, scene) {
     bossHealthGroup.add(bar);
     bossHealthBars.push(bar);
   }
+  bossHealthGroup.frustumCulled = false;  // Prevent disappearing when looking around
   camera.add(bossHealthGroup);
 }
 

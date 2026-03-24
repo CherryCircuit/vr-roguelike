@@ -107,6 +107,7 @@ export function initBossDeathOverlays() {
   );
   bossDeathWhiteOverlay.renderOrder = 1002;
   bossDeathWhiteOverlay.visible = false;
+  bossDeathWhiteOverlay.frustumCulled = false;  // Prevent disappearing when looking around
   bossDeathWhiteOverlay.position.set(0, 0, -0.26);
   deps.camera.add(bossDeathWhiteOverlay);
 
@@ -123,6 +124,7 @@ export function initBossDeathOverlays() {
   );
   bossDeathBlackOverlay.renderOrder = 1003;
   bossDeathBlackOverlay.visible = false;
+  bossDeathBlackOverlay.frustumCulled = false;  // Prevent disappearing when looking around
   bossDeathBlackOverlay.position.set(0, 0, -0.25);
   deps.camera.add(bossDeathBlackOverlay);
 }
