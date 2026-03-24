@@ -17,6 +17,7 @@ export const BOSS_DEATH_EXPLOSION_INTERVAL = 0.12;
 let bossDeathFreezeTimer = 0;
 let bossDeathWhiteOverlay = null;
 let bossDeathBlackOverlay = null;
+let bossDeathOverlayDismissed = false;  // True after dismissBossDeathOverlay() is called
 let bossDeathCinematic = {
   active: false,
   timer: 0,
@@ -177,30 +178,56 @@ export function startBossDeathCinematic(boss) {
 }
 
 /**
- * Finish the boss death cinematic and transition to next state
+ * Finish the boss death cinematic and transition to next state.
+ * The black overlay is intentionally kept visible to prevent the old biome
+ * from popping back while completeLevel sets up the transition.
  */
 export function finishBossDeathCinematic() {
   bossDeathCinematic.active = false;
   bossDeathCinematic.timer = 0;
   bossDeathCinematic.explosionTimer = 0;
 
+  // Hide white overlay (done with), but KEEP black overlay visible.
+  // The black overlay prevents any pop-back of the old biome scene.
+  // It will be dismissed later via dismissBossDeathOverlay().
   if (bossDeathWhiteOverlay) {
     bossDeathWhiteOverlay.material.opacity = 0;
     bossDeathWhiteOverlay.visible = false;
   }
-  if (bossDeathBlackOverlay) {
-    bossDeathBlackOverlay.material.opacity = 0;
-    bossDeathBlackOverlay.visible = false;
-  }
+  // Black overlay stays at opacity 1, visible = true
+  bossDeathOverlayDismissed = false;
 
   if (bossDeathCinematic.wasFinalBoss) {
     bossDeathCinematic.wasFinalBoss = false;
+    // For final boss, dismiss overlay and end game
+    dismissBossDeathOverlay();
     if (deps.endGame) deps.endGame(true);
     return;
   }
 
   bossDeathCinematic.wasFinalBoss = false;
   if (deps.completeLevel) deps.completeLevel();
+}
+
+/**
+ * Check if the boss death black overlay is still active (covering the screen).
+ * Used by main.js to know the environment is already fully faded.
+ * @returns {boolean} True if the black overlay is still visible
+ */
+export function isBossDeathOverlayActive() {
+  return !bossDeathOverlayDismissed && bossDeathBlackOverlay && bossDeathBlackOverlay.visible;
+}
+
+/**
+ * Dismiss the boss death black overlay. Call this after the new biome is set up
+ * and the environment fade-in has started, so no pop-back can occur.
+ */
+export function dismissBossDeathOverlay() {
+  bossDeathOverlayDismissed = true;
+  if (bossDeathBlackOverlay) {
+    bossDeathBlackOverlay.material.opacity = 0;
+    bossDeathBlackOverlay.visible = false;
+  }
 }
 
 /**
@@ -239,8 +266,11 @@ export function updateBossDeathCinematic(rawDt) {
   if (t >= whiteStart && t < whiteEnd) {
     whiteOpacity = (t - whiteStart) / BOSS_DEATH_WHITE_FADE;
   } else if (t >= whiteEnd && t < blackEnd) {
+    // Crossfade: keep white at full opacity, fade black in ON TOP of white.
+    // This prevents ShaderMaterial elements (stars, sky) from bleeding through
+    // during the transition since at least one overlay is always fully opaque.
+    whiteOpacity = 1;
     const progress = (t - whiteEnd) / BOSS_DEATH_BLACK_FADE;
-    whiteOpacity = 1 - progress;
     blackOpacity = progress;
     envFade = progress;  // Fade environment with black overlay
   } else if (t >= blackEnd) {

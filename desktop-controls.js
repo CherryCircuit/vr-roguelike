@@ -66,9 +66,14 @@ const aimDirection = new THREE.Vector3();
 
 // ESC/pause callback
 let onPauseCallback = null;
+let onNukeCallback = null;
 
 export function setOnPauseCallback(callback) {
   onPauseCallback = callback;
+}
+
+export function setOnNukeCallback(callback) {
+  onNukeCallback = callback;
 }
 
 // ── Public API ─────────────────────────────────────────────
@@ -461,6 +466,13 @@ function onKeyDown(e) {
   if (key === '2') weaponState.fireMode = 'right';
   if (key === '3') weaponState.fireMode = 'both';
   if (key === '4') weaponState.fireMode = 'both'; // Alternate both mode
+
+  // Nuke (N key) — desktop alt-fire
+  if (key === 'n') {
+    if (onNukeCallback) {
+      onNukeCallback();
+    }
+  }
 }
 
 function onKeyUp(e) {

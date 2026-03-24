@@ -40,6 +40,7 @@ let killCountSprite = null;
 let levelSprite = null;
 let scoreSprite = null;
 let scoreTitleSprite = null;
+let nukeSprite = null;
 let comboSprite = null;
 let comboCooldownSprite = null;
 let fpsSprite = null;
@@ -783,6 +784,11 @@ function createHUDElements() {
   levelSprite.position.set(1.5, 0.45, 0);  // #19: Same Y as hearts
   hudGroup.add(levelSprite);
 
+  // Nuke counter — left side, below hearts
+  nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 1.4 });
+  nukeSprite.position.set(-1.5, -0.55, 0);
+  hudGroup.add(nukeSprite);
+
   // Accuracy bonus — below score on left side
   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 1.8 });
   comboSprite.position.set(0, -0.85, 0);
@@ -967,6 +973,15 @@ export function updateHUD(gameState) {
 
   // Score - increased 50% for VR readability
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.39 });
+
+  // Nuke counter
+  const nukeCount = gameState.nukes || 0;
+  if (nukeCount > 0 && nukeSprite) {
+    nukeSprite.visible = true;
+    updateSpriteText(nukeSprite, `☢ X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.28 });
+  } else if (nukeSprite) {
+    nukeSprite.visible = false;
+  }
 
   // Accuracy bonus - 200% larger with descriptive label
   const accuracyBonus = game.accuracyBonus || 0;
@@ -4014,7 +4029,26 @@ export function showPauseMenu() {
   }
 
   if (pauseMenuElements.panel) {
-    // Already initialized
+    // Already initialized - rebuild blaster sections so stats are fresh
+    ['left', 'right'].forEach(hand => {
+      const oldSection = pauseMenuElements[hand + 'BlasterSection'];
+      if (oldSection) {
+        // Dispose all children properly
+        oldSection.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (child.material.map) child.material.map.dispose();
+            child.material.dispose();
+          }
+        });
+        pauseMenuGroup.remove(oldSection);
+      }
+      const newSection = createBlasterSection(hand);
+      newSection.position.set(hand === 'left' ? -1.25 : 1.25, 0.4, 0.02);
+      pauseMenuGroup.add(newSection);
+      pauseMenuElements[hand + 'BlasterSection'] = newSection;
+    });
+
     pauseMenuAnimation.targetSlideIn = 1;
     pauseMenuAnimation.startTime = performance.now();
     pauseMenuAnimation.chartAnimation = 0;
@@ -4133,11 +4167,57 @@ function createPauseMenu() {
   applyPauseMenuRenderPriority(group);
 }
 
+// Upgrade icons and colors
+const UPGRADE_ICONS = {
+  rapid_fire: { icon: '🔥', color: '#ff6600' },
+  damage_up: { icon: '⚡', color: '#ffff00' },
+  spread_shot: { icon: '💫', color: '#00ffff' },
+  piercing: { icon: '🗡️', color: '#ff0000' },
+  homing: { icon: '🎯', color: '#00ff00' },
+  magnetize: { icon: '🧲', color: '#ff00ff' },
+  charge_shot: { icon: '💥', color: '#ff8800' },
+  bounce: { icon: '🔄', color: '#88ff00' },
+  chain_lightning: { icon: '⚡', color: '#00ffff' },
+};
+
+// Enemy type icons for kill tracking
+const ENEMY_ICONS = {
+  grunt: '👾',
+  tank: '🤖',
+  speeder: '💨',
+  shooter: '🔫',
+  bomber: '💣',
+  boss: '👹',
+};
+
+/**
+ * Create a separator line (glowing cyan)
+ */
+function createSeparator(width = 1.8) {
+  const group = new THREE.Group();
+  const lineGeo = new THREE.PlaneGeometry(width, 0.02);
+  const lineMat = createPauseMaterial(0x00ffff, 0.6);
+  const line = new THREE.Mesh(lineGeo, lineMat);
+  line.renderOrder = PAUSE_TEXT_RENDER_ORDER;
+  group.add(line);
+  
+  // Glow effect
+  const glowGeo = new THREE.PlaneGeometry(width, 0.06);
+  const glowMat = createPauseMaterial(0x00ffff, 0.15);
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.position.z = -0.01;
+  glow.renderOrder = PAUSE_TEXT_RENDER_ORDER - 1;
+  group.add(glow);
+  
+  return group;
+}
+
 /**
  * Create blaster upgrade section for one hand (no nested background)
  */
 function createBlasterSection(hand, panelX) {
   const group = new THREE.Group();
+  let yPos = 1.1;
 
   // Title
   const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, {
@@ -4146,11 +4226,12 @@ function createBlasterSection(hand, panelX) {
     scale: scalePauseText(0.15),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
-  titleText.position.set(0, 1.1, 0.02);
+  titleText.position.set(0, yPos, 0.02);
   group.add(titleText);
+  yPos -= 0.35;
 
   // Weapon name
-  const weaponId = game.mainWeapon[hand];
+  const weaponId = game.mainWeapon[hand] || 'BLASTER';
   const weaponName = weaponId.replace(/_/g, ' ').toUpperCase();
   const weaponText = makeSprite(weaponName, {
     fontSize: scalePauseFont(36),
@@ -4158,19 +4239,38 @@ function createBlasterSection(hand, panelX) {
     scale: scalePauseText(0.1),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
-  weaponText.position.set(0, 0.85, 0.02);
+  weaponText.position.set(0, yPos, 0.02);
   group.add(weaponText);
+  yPos -= 0.3;
+
+  // Separator after weapon name
+  const sep1 = createSeparator(1.8);
+  sep1.position.set(0, yPos, 0.02);
+  group.add(sep1);
+  yPos -= 0.3;
+
+  // Upgrades header
+  const upgradesHeader = makeSprite('[UPGRADES]', {
+    fontSize: scalePauseFont(28),
+    color: '#888888',
+    scale: scalePauseText(0.08),
+    renderOrder: PAUSE_TEXT_RENDER_ORDER
+  });
+  upgradesHeader.position.set(0, yPos, 0.02);
+  group.add(upgradesHeader);
+  yPos -= 0.3;
 
   // Upgrades list (exclude dream_fragment - it's a collectible, not an upgrade)
   const upgrades = game.upgrades[hand] || {};
   const upgradeEntries = Object.entries(upgrades).filter(([id]) => id !== 'dream_fragment');
-  let yPos = 0.55;
 
   if (upgradeEntries.length > 0) {
     upgradeEntries.forEach(([id, count], index) => {
-      const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, {
+      const iconData = UPGRADE_ICONS[id] || { icon: '•', color: '#ffffff' };
+      const displayName = id.replace(/_/g, ' ').toUpperCase();
+      const upgradeText = makeSprite(`${iconData.icon} ${displayName} x${count}`, {
         fontSize: scalePauseFont(32),
-        color: '#ffffff',
+        color: iconData.color,
         scale: scalePauseText(0.09),
         renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
@@ -4178,22 +4278,44 @@ function createBlasterSection(hand, panelX) {
       upgradeText.userData = { isUpgradeSprite: true };
       group.add(upgradeText);
     });
-    yPos -= (upgradeEntries.length * 0.22 + 0.15);
+    yPos -= (upgradeEntries.length * 0.22 + 0.2);
   } else {
     const noUpgradesText = makeSprite('NO UPGRADES', {
       fontSize: scalePauseFont(32),
-      color: '#888888',
+      color: '#666666',
       scale: scalePauseText(0.09),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     noUpgradesText.position.set(0, yPos, 0.02);
     noUpgradesText.userData = { isUpgradeSprite: true };
     group.add(noUpgradesText);
-    yPos -= 0.37;
+    yPos -= 0.42;
   }
 
+  // Separator after upgrades
+  const sep2 = createSeparator(1.8);
+  sep2.position.set(0, yPos, 0.02);
+  group.add(sep2);
+  yPos -= 0.3;
+
+  // Stats header
+  const statsHeader = makeSprite('[STATS]', {
+    fontSize: scalePauseFont(28),
+    color: '#888888',
+    scale: scalePauseText(0.08),
+    renderOrder: PAUSE_TEXT_RENDER_ORDER
+  });
+  statsHeader.position.set(0, yPos, 0.02);
+  group.add(statsHeader);
+  yPos -= 0.3;
+
   // Stats for this hand: KILLS, SHOTS, HITS, ACCURACY
-  const stats = game.handStats[hand] || { kills: 0, shotsFired: 0, shotsHit: 0 };
+  const handData = game.handStats[hand] || {};
+  const stats = {
+    kills: handData.kills ?? 0,
+    shotsFired: handData.shotsFired ?? 0,
+    shotsHit: handData.shotsHit ?? 0
+  };
   const accuracy = stats.shotsFired > 0 ? Math.round((stats.shotsHit / stats.shotsFired) * 100) : 0;
 
   const statLines = [
@@ -4214,6 +4336,53 @@ function createBlasterSection(hand, panelX) {
     statText.userData = { isStatSprite: true, hand, statKey: stat.label };
     group.add(statText);
   });
+  yPos -= (statLines.length * 0.22 + 0.2);
+
+  // Separator after stats
+  const sep3 = createSeparator(1.8);
+  sep3.position.set(0, yPos, 0.02);
+  group.add(sep3);
+  yPos -= 0.3;
+
+  // Enemies Killed section
+  const enemiesHeader = makeSprite('[ENEMIES KILLED]', {
+    fontSize: scalePauseFont(28),
+    color: '#888888',
+    scale: scalePauseText(0.08),
+    renderOrder: PAUSE_TEXT_RENDER_ORDER
+  });
+  enemiesHeader.position.set(0, yPos, 0.02);
+  group.add(enemiesHeader);
+  yPos -= 0.3;
+
+  // Enemy kills by type
+  const enemyKills = handData.enemyKills || {};
+  const enemyEntries = Object.entries(enemyKills).filter(([_, count]) => count > 0);
+
+  if (enemyEntries.length > 0) {
+    enemyEntries.forEach(([type, count], index) => {
+      const icon = ENEMY_ICONS[type] || '💀';
+      const enemyText = makeSprite(`${icon} ${type.toUpperCase()} x${count}`, {
+        fontSize: scalePauseFont(28),
+        color: '#ff6666',
+        scale: scalePauseText(0.08),
+        renderOrder: PAUSE_TEXT_RENDER_ORDER
+      });
+      enemyText.position.set(0, yPos - (index * 0.2), 0.02);
+      enemyText.userData = { isEnemyKillSprite: true };
+      group.add(enemyText);
+    });
+  } else {
+    const noEnemiesText = makeSprite('NO ENEMIES', {
+      fontSize: scalePauseFont(28),
+      color: '#666666',
+      scale: scalePauseText(0.08),
+      renderOrder: PAUSE_TEXT_RENDER_ORDER
+    });
+    noEnemiesText.position.set(0, yPos, 0.02);
+    noEnemiesText.userData = { isEnemyKillSprite: true };
+    group.add(noEnemiesText);
+  }
 
   return group;
 }
@@ -4457,9 +4626,11 @@ function updateSectionStats(section, hand) {
 
   if (upgradeEntries.length > 0) {
     upgradeEntries.forEach(([id, count], index) => {
-      const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, {
+      const iconData = UPGRADE_ICONS[id] || { icon: '•', color: '#ffffff' };
+      const displayName = id.replace(/_/g, ' ').toUpperCase();
+      const upgradeText = makeSprite(`${iconData.icon} ${displayName} x${count}`, {
         fontSize: scalePauseFont(36),
-        color: '#ffffff',
+        color: iconData.color,
         scale: scalePauseText(0.1),
         renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
