@@ -4076,9 +4076,9 @@ export function updatePauseMenu(now) {
 function createPauseMenu() {
   const group = pauseMenuGroup;
 
-  // Main panel with holographic border
+  // Main panel - ONE dark see-through plane
   const panelWidth = 4.6;
-  const panelHeight = 4.1;
+  const panelHeight = 3.2;  // Shorter since no separate stats section
 
   // Background panel - semi-transparent black, no depth interaction
   const panelGeo = new THREE.PlaneGeometry(panelWidth, panelHeight);
@@ -4104,27 +4104,23 @@ function createPauseMenu() {
 
   pauseMenuElements.panel = panel;
 
-  // Left blaster section
-  const leftSection = createBlasterSection('left', -1.25);
-  leftSection.position.set(-1.25, 0.72, 0.02);
+  // Left blaster section (includes stats now)
+  const leftSection = createBlasterSection('left');
+  leftSection.position.set(-1.25, 0.4, 0.02);
   group.add(leftSection);
   pauseMenuElements.leftBlasterSection = leftSection;
 
-  // Right blaster section
-  const rightSection = createBlasterSection('right', 1.25);
-  rightSection.position.set(1.25, 0.72, 0.02);
+  // Right blaster section (includes stats now)
+  const rightSection = createBlasterSection('right');
+  rightSection.position.set(1.25, 0.4, 0.02);
   group.add(rightSection);
   pauseMenuElements.rightBlasterSection = rightSection;
 
-  // Stats section (centered under blasters)
-  const statsSection = createStatsSection();
-  statsSection.position.set(0, -0.58, 0.02);
-  group.add(statsSection);
-  pauseMenuElements.statsSection = statsSection;
+  // No more separate stats section - stats are in blaster sections
 
-  // Resume button (moved up)
+  // Resume button
   const resumeBtn = createResumeButton();
-  resumeBtn.position.set(0, -1.38, 0.03);
+  resumeBtn.position.set(0, -1.2, 0.03);
   group.add(resumeBtn);
   pauseMenuElements.resumeButton = resumeBtn;
 
@@ -4138,32 +4134,10 @@ function createPauseMenu() {
 }
 
 /**
- * Create blaster upgrade section for one hand
+ * Create blaster upgrade section for one hand (no nested background)
  */
 function createBlasterSection(hand, panelX) {
   const group = new THREE.Group();
-
-  // Section background
-  const bg = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.9, 1.8),
-    createPauseMaterial(0x1a0033, 0.85)
-  );
-  bg.renderOrder = PAUSE_SECTION_BG_RENDER_ORDER;
-  group.add(bg);
-
-  // Section border (pink)
-  const borderMat = createPauseMaterial(0xff00ff, 1.0);
-  const borderWidth = 1.9;
-  const borderHeight = 0.06;
-  [
-    { w: borderWidth, h: borderHeight, x: 0, y: 0.9 },
-    { w: borderWidth, h: borderHeight, x: 0, y: -0.9 },
-  ].forEach(b => {
-    const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
-    border.position.set(b.x, b.y, 0.01);
-    border.renderOrder = PAUSE_BORDER_RENDER_ORDER;
-    group.add(border);
-  });
 
   // Title
   const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, {
@@ -4172,7 +4146,7 @@ function createBlasterSection(hand, panelX) {
     scale: scalePauseText(0.15),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
-  titleText.position.set(0, 0.68, 0.02);
+  titleText.position.set(0, 1.1, 0.02);
   group.add(titleText);
 
   // Weapon name
@@ -4184,38 +4158,62 @@ function createBlasterSection(hand, panelX) {
     scale: scalePauseText(0.1),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
-  weaponText.position.set(0, 0.38, 0.02);
+  weaponText.position.set(0, 0.85, 0.02);
   group.add(weaponText);
 
   // Upgrades list (exclude dream_fragment - it's a collectible, not an upgrade)
   const upgrades = game.upgrades[hand] || {};
   const upgradeEntries = Object.entries(upgrades).filter(([id]) => id !== 'dream_fragment');
-  const yOffset = 0.08;
+  let yPos = 0.55;
 
   if (upgradeEntries.length > 0) {
     upgradeEntries.forEach(([id, count], index) => {
       const upgradeText = makeSprite(`${id.replace(/_/g, ' ').toUpperCase()} x${count}`, {
-        fontSize: scalePauseFont(36),
+        fontSize: scalePauseFont(32),
         color: '#ffffff',
-        scale: scalePauseText(0.1),
+        scale: scalePauseText(0.09),
         renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
-      const yPos = yOffset - (index * 0.24);
-      upgradeText.position.set(0, yPos, 0.02);
+      upgradeText.position.set(0, yPos - (index * 0.22), 0.02);
       upgradeText.userData = { isUpgradeSprite: true };
       group.add(upgradeText);
     });
+    yPos -= (upgradeEntries.length * 0.22 + 0.15);
   } else {
     const noUpgradesText = makeSprite('NO UPGRADES', {
-      fontSize: scalePauseFont(36),
+      fontSize: scalePauseFont(32),
       color: '#888888',
-      scale: scalePauseText(0.1),
+      scale: scalePauseText(0.09),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
-    noUpgradesText.position.set(0, 0.08, 0.02);
+    noUpgradesText.position.set(0, yPos, 0.02);
     noUpgradesText.userData = { isUpgradeSprite: true };
     group.add(noUpgradesText);
+    yPos -= 0.37;
   }
+
+  // Stats for this hand: KILLS, SHOTS, HITS, ACCURACY
+  const stats = game.handStats[hand] || { kills: 0, shotsFired: 0, shotsHit: 0 };
+  const accuracy = stats.shotsFired > 0 ? Math.round((stats.shotsHit / stats.shotsFired) * 100) : 0;
+
+  const statLines = [
+    { label: 'KILLS', value: stats.kills, color: '#ff00ff' },
+    { label: 'SHOTS', value: stats.shotsFired, color: '#00ffff' },
+    { label: 'HITS', value: stats.shotsHit, color: '#00ffff' },
+    { label: 'ACC', value: `${accuracy}%`, color: accuracy >= 50 ? '#00ff00' : '#ff4444' },
+  ];
+
+  statLines.forEach((stat, index) => {
+    const statText = makeSprite(`${stat.label}: ${stat.value}`, {
+      fontSize: scalePauseFont(32),
+      color: stat.color,
+      scale: scalePauseText(0.09),
+      renderOrder: PAUSE_TEXT_RENDER_ORDER
+    });
+    statText.position.set(0, yPos - (index * 0.22), 0.02);
+    statText.userData = { isStatSprite: true, hand, statKey: stat.label };
+    group.add(statText);
+  });
 
   return group;
 }
@@ -4489,45 +4487,21 @@ function updateSectionStats(section, hand) {
 function createResumeButton() {
   const group = new THREE.Group();
 
-  // Button background
-  const btnWidth = 2.0;
-  const btnHeight = 0.56;
-  const btnBg = new THREE.Mesh(
-    new THREE.PlaneGeometry(btnWidth, btnHeight),
-    createPauseMaterial(0x00ffff, 0.3)
-  );
-  btnBg.renderOrder = PAUSE_SECTION_BG_RENDER_ORDER;
-  group.add(btnBg);
-
-  // Button border
-  const borderMat = createPauseMaterial(0x00ffff, 1.0);
-  const borderWidth = btnWidth;
-  const borderHeight = 0.06;
-  [
-    { w: borderWidth, h: borderHeight, x: 0, y: btnHeight / 2 },
-    { w: borderWidth, h: borderHeight, x: 0, y: -btnHeight / 2 },
-  ].forEach(b => {
-    const border = new THREE.Mesh(new THREE.PlaneGeometry(b.w, b.h), borderMat);
-    border.position.set(b.x, b.y, 0.01);
-    border.renderOrder = PAUSE_BORDER_RENDER_ORDER;
-    group.add(border);
-  });
-
-  // Button text
+  // Button text (no background, just text)
   const text = makeSprite('RESUME', {
-    fontSize: scalePauseFont(38),
+    fontSize: scalePauseFont(42),
     color: '#00ffff',
-    scale: scalePauseText(0.12),
+    scale: scalePauseText(0.14),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
   text.position.set(0, 0, 0.02);
   group.add(text);
 
-  // Store button data for raycasting
+  // Store button data for raycasting (hitbox is larger than text)
   group.userData = {
     isResumeButton: true,
-    width: btnWidth,
-    height: btnHeight
+    width: 2.0,
+    height: 0.5
   };
 
   return group;
