@@ -4193,12 +4193,12 @@ function createBlasterSection(hand, panelX) {
 function createStatsSection() {
   const group = new THREE.Group();
 
-  // Background
+  // Background (higher opacity for readability)
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(4.2, 2.2),
-    new THREE.MeshBasicMaterial({ color: 0x15002a, transparent: true, opacity: 0.7, depthWrite: false })
+    new THREE.MeshBasicMaterial({ color: 0x15002a, transparent: true, opacity: 0.85, depthWrite: false })
   );
-  bg.renderOrder = 0;  // Render before text
+  bg.renderOrder = 0;  // Will be overridden by applyPauseMenuRenderPriority
   group.add(bg);
 
   // Title
