@@ -129,8 +129,8 @@ export const game = {
   killsWithoutHit: 0,
 
   handStats: {
-    left: { kills: 0, totalDamage: 0 },
-    right: { kills: 0, totalDamage: 0 }
+    left: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0 },
+    right: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0 }
   },
 
   justBossKill: false,
@@ -218,8 +218,8 @@ export function resetGame() {
     spawnTimer: 0,
     killsWithoutHit: 0,
     handStats: {
-      left: { kills: 0, totalDamage: 0 },
-      right: { kills: 0, totalDamage: 0 }
+      left: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0 },
+      right: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0 }
     },
     justBossKill: false,
     nextUpgradeHand: 'left',
@@ -437,14 +437,20 @@ export function trackKill(isBoss = false) {
   }
 }
 
-export function trackShot() {
+export function trackShot(hand) {
   game.runStats.shotsFired++;
+  if (hand) {
+    game.handStats[hand].shotsFired++;
+  }
 }
 
-export function trackShotHit(damage = 0) {
+export function trackShotHit(damage = 0, hand) {
   game.runStats.shotsHit++;
   if (damage > 0) {
     game.runStats.totalDamageDealt += damage;
+  }
+  if (hand) {
+    game.handStats[hand].shotsHit++;
   }
 }
 

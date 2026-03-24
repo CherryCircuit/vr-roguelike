@@ -350,21 +350,21 @@ let killsAlertTriggerKill = null;
 let accuracyShotId = 0;
 const accuracyShots = new Map();
 
-function startAccuracyShot(pelletCount) {
+function startAccuracyShot(pelletCount, hand) {
   const shotId = ++accuracyShotId;
-  accuracyShots.set(shotId, { remaining: pelletCount, hit: false });
-  trackShot();
+  accuracyShots.set(shotId, { remaining: pelletCount, hit: false, hand });
+  trackShot(hand);
   return shotId;
 }
 
 // Track previous accuracy multiplier for popup triggers
 let prevAccuracyMultiplier = 1;
 
-function markAccuracyHit(shotId) {
+function markAccuracyHit(shotId, hand) {
   const shot = accuracyShots.get(shotId);
   if (!shot || shot.hit) return;
   shot.hit = true;
-  trackShotHit();
+  trackShotHit(0, hand);
 
   // Store previous multiplier before hit
   const oldMultiplier = game.accuracyMultiplier || 1;
