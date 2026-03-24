@@ -3966,6 +3966,9 @@ export function showPauseMenu() {
   pauseMenuGroup.visible = true;
   pauseMenuGroup.scale.set(PAUSE_MENU_SCALE, PAUSE_MENU_SCALE, PAUSE_MENU_SCALE);
 
+  // Hide floor HUD while pause menu is open
+  if (hudGroup) hudGroup.visible = false;
+
   // Position menu at fixed world position slightly farther from camera when paused.
   // This makes it stay in 3D space so player can walk around it
   if (cameraRef) {
@@ -4000,6 +4003,9 @@ export function showPauseMenu() {
  */
 export function hidePauseMenu() {
   pauseMenuGroup.visible = false;
+
+  // Restore floor HUD
+  if (hudGroup) hudGroup.visible = true;
 }
 
 /**
@@ -4411,9 +4417,9 @@ function updateSectionStats(section, hand) {
     }
   });
 
-  // Update blaster section with current stats
+  // Update blaster section with current stats (exclude dream_fragment)
   const upgrades = game.upgrades[hand] || {};
-  const upgradeEntries = Object.entries(upgrades);
+  const upgradeEntries = Object.entries(upgrades).filter(([id]) => id !== 'dream_fragment');
   const yOffset = 0.08;
 
   if (upgradeEntries.length > 0) {

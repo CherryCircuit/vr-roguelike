@@ -571,9 +571,9 @@ let currentLookTarget = null;
 let originalMaterials = new Map(); // Store original materials for highlight reset
 
 function shouldShowDebugPositionPanel() {
-  // Default ON unless explicitly disabled from the HTML debug panel.
-  if (typeof window === 'undefined') return true;
-  return window.debugPositionPanel !== false;
+  // Default OFF unless explicitly enabled through DEBUG menu checkbox
+  if (typeof window === 'undefined') return false;
+  return window.debugPositionPanel === true;
 }
 
 function syncDebugPositionPanelVisibility() {

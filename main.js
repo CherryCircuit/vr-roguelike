@@ -6741,9 +6741,14 @@ function updatePauseCountdown(now) {
     pauseCountdown = 0;
     hidePauseCountdown();
     game.state = State.PLAYING;
-    // Re-request pointer lock when resuming
+    // Re-request pointer lock when resuming (suppress error if user just exited)
     if (!renderer.xr.isPresenting && isDesktopEnabled()) {
-      document.body.requestPointerLock?.();
+      try {
+        document.body.requestPointerLock?.();
+      } catch (e) {
+        // SecurityError is expected if user just exited pointer lock via ESC
+        console.debug('[pause] Pointer lock request deferred (user exit)');
+      }
     }
     return;
   }

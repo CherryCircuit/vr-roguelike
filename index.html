@@ -555,11 +555,19 @@
       };
 
       window.addEventListener('error', function(e) {
+        // Suppress pointer lock SecurityError - expected when user exits via ESC
+        if (e.message && e.message.includes('Pointer lock')) return;
         const where = `${e.filename || 'unknown'}:${e.lineno || 0}:${e.colno || 0}`;
         window.showWebError(`${e.message} @ ${where}`, e.error?.stack || e.stack || '');
       });
 
       window.addEventListener('unhandledrejection', function(e) {
+        // Suppress pointer lock SecurityError - expected when user exits via ESC
+        const reason = String(e.reason || '');
+        if (reason.includes('Pointer lock') || reason.includes('SecurityError')) {
+          console.debug('[game] Suppressed pointer lock error');
+          return;
+        }
         window.showWebError('Unhandled Promise Rejection: ' + e.reason, e.reason?.stack || '');
       });
     })();
