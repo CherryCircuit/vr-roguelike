@@ -1,0 +1,12 @@
+{
+  "period": "2026-03",
+  "generated_at": "2026-03-25T02:40:53.498850-07:00",
+  "days_available": 1,
+  "note": "Insufficient data for full analysis",
+  "manual_tasks_detected": [],
+  "new_skills_available": [],
+  "new_capabilities": [],
+  "recommendations": [
+    "Insufficient data (1/7 days). Full scan requires at least 7 days of logs."
+  ]
+}

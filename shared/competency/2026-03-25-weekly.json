@@ -1,0 +1,204 @@
+{
+  "period": "2026-03-19 to 2026-03-25",
+  "generated_at": "2026-03-25T03:17:29.245262-07:00",
+  "days_with_data": 1,
+  "agents": {
+    "ampy": {
+      "sessions": 2,
+      "user_messages": 37,
+      "avg_tools_per_session": 7.5,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [],
+      "notes": []
+    },
+    "brother-bot": {
+      "sessions": 1,
+      "user_messages": 3,
+      "avg_tools_per_session": 3.0,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "underutilized"
+      ],
+      "notes": []
+    },
+    "codey": {
+      "sessions": 11,
+      "user_messages": 49,
+      "avg_tools_per_session": 3.7,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 0.18,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "low_engagement",
+        "overloaded"
+      ],
+      "notes": []
+    },
+    "comfy": {
+      "sessions": 1,
+      "user_messages": 28,
+      "avg_tools_per_session": 2.0,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "underutilized"
+      ],
+      "notes": []
+    },
+    "crafty": {
+      "sessions": 1,
+      "user_messages": 3,
+      "avg_tools_per_session": 0.0,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "underutilized"
+      ],
+      "notes": []
+    },
+    "durey": {
+      "sessions": 1,
+      "user_messages": 4,
+      "avg_tools_per_session": 0.0,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "underutilized"
+      ],
+      "notes": []
+    },
+    "main": {
+      "sessions": 1,
+      "user_messages": 4,
+      "avg_tools_per_session": 3.0,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "underutilized"
+      ],
+      "notes": []
+    },
+    "serena": {
+      "sessions": 1,
+      "user_messages": 5,
+      "avg_tools_per_session": 6.0,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "underutilized"
+      ],
+      "notes": []
+    }
+  },
+  "summary": {
+    "best_performing": "ampy",
+    "most_improved": null,
+    "needs_attention": [
+      "codey"
+    ],
+    "overall_health": "concerning"
+  },
+  "flags_total": [
+    {
+      "agent": "brother-bot",
+      "type": "underutilized",
+      "detail": "Only 1 session(s) this week",
+      "suggestion": "Consider if Brother-bot's role could be expanded or if tasks are being routed elsewhere"
+    },
+    {
+      "agent": "codey",
+      "type": "low_engagement",
+      "detail": "Disengagement rate at 82% (18% engagement)",
+      "suggestion": "Check if Codey is meeting user expectations"
+    },
+    {
+      "agent": "codey",
+      "type": "overloaded",
+      "detail": "11 sessions this week (2x average)",
+      "suggestion": "Consider routing some tasks to other agents to reduce Codey's load"
+    },
+    {
+      "agent": "comfy",
+      "type": "underutilized",
+      "detail": "Only 1 session(s) this week",
+      "suggestion": "Consider if Comfy's role could be expanded or if tasks are being routed elsewhere"
+    },
+    {
+      "agent": "crafty",
+      "type": "underutilized",
+      "detail": "Only 1 session(s) this week",
+      "suggestion": "Consider if Crafty's role could be expanded or if tasks are being routed elsewhere"
+    },
+    {
+      "agent": "durey",
+      "type": "underutilized",
+      "detail": "Only 1 session(s) this week",
+      "suggestion": "Consider if Durey's role could be expanded or if tasks are being routed elsewhere"
+    },
+    {
+      "agent": "main",
+      "type": "underutilized",
+      "detail": "Only 1 session(s) this week",
+      "suggestion": "Consider if Main's role could be expanded or if tasks are being routed elsewhere"
+    },
+    {
+      "agent": "serena",
+      "type": "underutilized",
+      "detail": "Only 1 session(s) this week",
+      "suggestion": "Consider if Serena's role could be expanded or if tasks are being routed elsewhere"
+    }
+  ],
+  "recommendations": [
+    "Best performing: \u26a1 ampy (100% completion)",
+    "Check if Codey is meeting user expectations"
+  ]
+}

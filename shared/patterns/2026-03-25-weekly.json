@@ -1,0 +1,14 @@
+{
+  "period": "2026-03-19 to 2026-03-25",
+  "generated_at": "2026-03-25T02:40:53.474021-07:00",
+  "days_available": 1,
+  "note": "Insufficient data for full analysis",
+  "automation_candidates": [],
+  "sequence_patterns": [],
+  "pain_points": [],
+  "time_patterns": {},
+  "agent_utilization": {},
+  "insights": [
+    "Insufficient data (1/3 days). Full analysis requires at least 3 days of logs."
+  ]
+}
