@@ -45,6 +45,7 @@ import {
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward,
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
+  releaseBossProjIndex,
   clearAllTelegraphs, spawnHealthGainPopup
 } from './enemies.js';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
@@ -6778,6 +6779,9 @@ function showUpgradeScreen() {
   hideLevelComplete();
   resetHoloGlitch();
 
+  // Dismiss boss death overlay so upgrade cards are visible
+  dismissBossDeathOverlay();
+
   // Stop lightning sound during upgrade screen
   stopLightningSound();
 
@@ -8129,8 +8133,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
       if (dist < beamWidth + 0.3) { // Slightly larger collision radius
         // Destroy boss projectile with explosion effect
         spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
-        scene.remove(bossProj.mesh);
-        disposeObject3D(bossProj.mesh);
+        if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
         bossProjectiles.splice(i, 1);
       }
     }
@@ -9156,9 +9159,7 @@ function updateProjectiles(dt) {
           const dist = proj.position.distanceTo(bossProj.mesh.position);
           if (dist < 0.5) {
             spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
-            markProjectileHit(proj);
-            scene.remove(bossProj.mesh);
-            disposeObject3D(bossProj.mesh);
+            if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
             bossProjs.splice(j, 1);
 
             if (!proj.userData.stats?.piercing) {
@@ -9889,15 +9890,13 @@ function render(timestamp) {
       // Check if reflector drone can reflect this projectile
       if (checkReflectorDroneReflection(proj.mesh.position, true)) {
         // Projectile was reflected - remove it without damaging player
-        scene.remove(proj.mesh);
-        disposeObject3D(proj.mesh);
+        if (proj._instIdx !== undefined) releaseBossProjIndex(proj._instIdx);
         bossProjs.splice(i, 1);
         continue;
       }
 
       triggerHostileProjectileExplosion(proj.mesh.position.clone(), 0.35, 0);
-      scene.remove(proj.mesh);
-      disposeObject3D(proj.mesh);
+      if (proj._instIdx !== undefined) releaseBossProjIndex(proj._instIdx);
       bossProjs.splice(i, 1);
 
       const dead = damagePlayer(proj.damage || 1);
