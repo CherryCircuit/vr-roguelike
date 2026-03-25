@@ -7779,7 +7779,7 @@ function initBossProjPools() {
 
   // Core sphere (smaller, opaque red)
   const coreGeo = new THREE.SphereGeometry(0.065, 8, 8);
-  const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3355 });
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3355, depthWrite: false, depthTest: false });
   bossProjCorePool = new THREE.InstancedMesh(coreGeo, coreMat, BOSS_PROJ_POOL_SIZE);
   bossProjCorePool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   bossProjCorePool.count = 0;
@@ -7794,6 +7794,7 @@ function initBossProjPools() {
     opacity: 0.7,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
+    depthTest: false,
   });
   bossProjGlowPool = new THREE.InstancedMesh(glowGeo, glowMat, BOSS_PROJ_POOL_SIZE);
   bossProjGlowPool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
