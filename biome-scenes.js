@@ -358,82 +358,86 @@ function buildSynthwaveValleyScene(group, deps) {
 
 function buildDesertNightScene(group, deps) {
   const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
-  
+
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
-  const sceneColor = 0x06080c;
 
-  // === LIGHTING (CRITICAL) ===
-  // Pale moonlight
-  const moonLight = new THREE.DirectionalLight(0xd4e5f7, 2.34);
+  // ── AURORA MACHINE DESERT ──────────────────────────────────
+  // Sacred machine ruins in a moonlit desert.
+  // Broad dunes, ring gates, obelisks, buried hubs, shard fields.
+  // Warm sand base with cool cyan/green aurora accents.
+
+  // === LIGHTING ===
+  // Cool moonlight (shifted from warm to complement cyan aurora)
+  const moonLight = new THREE.DirectionalLight(0xc8daf0, 1.8);
   moonLight.position.set(-30, 50, -30);
   group.add(moonLight);
 
-  // Point light for long moon-like shadows from cacti
-  const shadowLight = new THREE.PointLight(0xd4e5f7, 1.5, 100);
-  shadowLight.position.set(-45, 35, -60); // Same as moon position
-  shadowLight.castShadow = true;
-  shadowLight.shadow.mapSize.width = 1024;
-  shadowLight.shadow.mapSize.height = 1024;
-  shadowLight.shadow.camera.near = 10;
-  shadowLight.shadow.camera.far = 100;
-  group.add(shadowLight);
-
-  // Very dim ambient
-  const ambientLight = new THREE.AmbientLight(0x1a2035, 0.15);
+  // Dim warm ambient (sand reflection)
+  const ambientLight = new THREE.AmbientLight(0x1a2535, 0.18);
   group.add(ambientLight);
 
-  // Hemisphere light for sky/ground color
-  const hemiLight = new THREE.HemisphereLight(0x1a2035, 0x2d1f1a, 0.2);
+  // Hemisphere: cool sky, warm ground
+  const hemiLight = new THREE.HemisphereLight(0x1a2545, 0x3a2a1a, 0.2);
   group.add(hemiLight);
 
-  // Ground
-  const geometry = new THREE.PlaneGeometry(140, 140, 70, 70);
+  // === TERRAIN: Broad dunes ===
+  const terrainSize = 140;
+  const geometry = new THREE.PlaneGeometry(terrainSize, terrainSize, 70, 70);
   geometry.rotateX(-Math.PI / 2);
   const positions = geometry.attributes.position;
   const colors = [];
-  const flatRadius = 12.0;
-  const mountainStart = 18.0;
+  const flatRadius = 14.0;
+  const duneStart = 20.0;
+
   for (let i = 0; i < positions.count; i++) {
     const x = positions.getX(i);
     const z = positions.getZ(i);
     const dist = Math.sqrt(x * x + z * z);
-    let heightFactor = Math.min(Math.max((dist - flatRadius) / (mountainStart - flatRadius), 0), 1);
+
+    // Smoothstep for flat center → dune transition
+    let heightFactor = Math.min(Math.max((dist - flatRadius) / (duneStart - flatRadius), 0), 1);
     heightFactor = heightFactor * heightFactor * (3 - 2 * heightFactor);
+
+    // Broad dune shapes (low frequency, long wavelength)
     let height = 0;
-    height += Math.sin(x * 0.08 + 0.5) * Math.cos(z * 0.06) * 4.0;
-    height += Math.sin(x * 0.04 + 2) * Math.sin(z * 0.05 + 1) * 3.0;
-    height += Math.sin(x * 0.15 + z * 0.1) * 1.5;
-    height += Math.cos(z * 0.12 - x * 0.08) * 1.0;
-    height += Math.sin(x * 0.3) * Math.cos(z * 0.25) * 0.5;
-    if (dist > mountainStart) {
-      height += Math.sin(x * 0.4 + z * 0.3) * 2.0;
-      height += Math.cos(x * 0.2 - z * 0.5) * 2.5;
+    height += Math.sin(x * 0.045 + 0.5) * Math.cos(z * 0.035) * 5.0;
+    height += Math.sin(x * 0.025 + 2) * Math.sin(z * 0.03 + 1) * 4.0;
+    height += Math.cos(z * 0.06 - x * 0.04) * 1.5;
+    // Sharp ridges at dune crests for silhouette definition
+    if (dist > duneStart) {
+      height += Math.abs(Math.sin(x * 0.08 + z * 0.06)) * 2.0;
     }
+
     const finalHeight = height * heightFactor;
     positions.setY(i, finalHeight);
-    const heightNorm = (finalHeight + 5) / 15;
-    const baseColor = new THREE.Color(0x2a241b);
-    const highlightColor = new THREE.Color(0x585144);
-    const moonTint = new THREE.Color(0x404a5a);
-    let color = baseColor.clone().lerp(highlightColor, Math.max(0, Math.min(1, heightNorm)));
-    color.lerp(moonTint, heightNorm * 0.2);
+
+    // Sand coloring: warm base, moonlit highlights on crests
+    const heightNorm = Math.min(1, Math.max(0, (finalHeight + 3) / 12));
+    const sandDark = new THREE.Color(0x1a1610);
+    const sandMid = new THREE.Color(0x3a3020);
+    const sandLit = new THREE.Color(0x504838);
+    const moonTint = new THREE.Color(0x304050);
+
+    let color = sandDark.clone().lerp(sandMid, heightNorm * 0.6);
+    color.lerp(sandLit, heightNorm * heightNorm * 0.5);
+    color.lerp(moonTint, heightNorm * 0.15);
     colors.push(color.r, color.g, color.b);
   }
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geometry.computeVertexNormals();
+
   const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const terrain = new THREE.Mesh(geometry, material);
   terrain.name = 'desert-night-terrain';
   terrain.userData.planeName = 'desert-night-terrain';
   terrain.position.y = floorY;
   terrain.frustumCulled = false;
-  terrain.receiveShadow = true;  // Sand dunes receive cactus shadows
   group.add(terrain);
   registerFadeMaterial(material);
 
-  // Flash overlay plane for damage feedback (entire sand floor turns red)
-  const flashGeo = new THREE.PlaneGeometry(140, 140);
+  // Flash overlay for damage feedback
+  const flashGeo = new THREE.PlaneGeometry(terrainSize, terrainSize);
   const flashMat = new THREE.MeshBasicMaterial({
     color: 0xff0000,
     transparent: true,
@@ -445,99 +449,217 @@ function buildDesertNightScene(group, deps) {
   flashPlane.name = 'desert-night-damage-flash-plane';
   flashPlane.userData.planeName = 'desert-night-damage-flash-plane';
   flashPlane.rotation.x = -Math.PI / 2;
-  flashPlane.position.y = floorY + 0.02; // Very close to terrain surface
+  flashPlane.position.y = floorY + 0.02;
   flashPlane.frustumCulled = false;
   group.add(flashPlane);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
-  // === CACTUSES (9 procedural) ===
-  const createCactus = (height) => {
-    const cactusGroup = new THREE.Group();
-    const bodyColor = 0x1a3d20;
-    const armColor = 0x2d5535;
-    const segments = 3 + Math.floor(Math.random() * 2); // 3-4 segments
-    let currentY = 0;
-    const segmentHeight = height / segments;
+  // ── SHARED GEOMETRY (modular, repeated) ───────────────────
 
-    // Main body segments
-    for (let i = 0; i < segments; i++) {
-      const radius = 0.12 + (segments - i) * 0.03; // Taper upward
-      const segGeo = new THREE.CylinderGeometry(radius * 0.9, radius, segmentHeight, 5);
-      const segMat = new THREE.MeshLambertMaterial({ color: bodyColor, flatShading: true });
-      const segment = new THREE.Mesh(segGeo, segMat);
-      segment.position.y = currentY + segmentHeight / 2;
-      segment.castShadow = true;  // Cacti cast shadows
-      segment.receiveShadow = true;
-      cactusGroup.add(segment);
-      currentY += segmentHeight;
-    }
+  // Ring gates: torus geometry, dark metal with cyan edge glow
+  const ringGeo = new THREE.TorusGeometry(4, 0.3, 6, 16);
+  const ringMat = new THREE.MeshLambertMaterial({
+    color: 0x1a1820,
+    emissive: 0x0a2030,
+    emissiveIntensity: 0.6,
+    flatShading: true
+  });
+  registerFadeMaterial(ringMat);
 
-    // Random arms (0-2)
-    const numArms = Math.floor(Math.random() * 3);
-    for (let a = 0; a < numArms; a++) {
-      const armY = segmentHeight * (1 + Math.floor(Math.random() * (segments - 1)));
-      const side = Math.random() > 0.5 ? 1 : -1;
-      const armLength = 0.4 + Math.random() * 0.4;
+  // Ring glow ring (slightly larger, additive)
+  const ringGlowGeo = new THREE.TorusGeometry(4, 0.5, 4, 16);
+  const ringGlowMat = new THREE.MeshBasicMaterial({
+    color: 0x00ddaa,
+    transparent: true,
+    opacity: 0.12,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: true
+  });
+  registerFadeMaterial(ringGlowMat);
 
-      // Horizontal part
-      const hArmGeo = new THREE.CylinderGeometry(0.08, 0.1, armLength, 5);
-      const hArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
-      const hArm = new THREE.Mesh(hArmGeo, hArmMat);
-      hArm.castShadow = true;
-      hArm.receiveShadow = true;
-      hArm.rotation.z = Math.PI / 2;
-      hArm.position.set(side * armLength / 2, armY, 0);
-      cactusGroup.add(hArm);
-
-      // Vertical part (upward)
-      const vArmHeight = 0.5 + Math.random() * 0.5;
-      const vArmGeo = new THREE.CylinderGeometry(0.06, 0.08, vArmHeight, 5);
-      const vArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
-      const vArm = new THREE.Mesh(vArmGeo, vArmMat);
-      vArm.castShadow = true;
-      vArm.receiveShadow = true;
-      vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
-      cactusGroup.add(vArm);
-    }
-
-    // REMOVED: Fake circle shadow - now using point light for realistic moon shadows
-    // Cacti will cast natural shadows from the shadowLight
-
-    return cactusGroup;
-  };
-
-  const cactusPositions = [
-    { x: 6, z: 4, h: 2.5 },
-    { x: -4, z: 6, h: 3 },
-    { x: 8, z: -3, h: 2 },
-    { x: -7, z: -5, h: 2.8 },
-    { x: 3, z: -8, h: 1.8 },
-    { x: -10, z: 1, h: 2.2 },
-    { x: 0, z: 10, h: 2.3 },
-    // Removed cactus at {x: 5, z: 9, h: 1.9} - player now spawns there
-    { x: -5, z: -9, h: 2.4 },
+  // Ring gate configs: [x, z, rotY, tiltX, scale]
+  const ringGates = [
+    [30, -20, 0.3, 0.1, 1.0],
+    [-35, -30, -0.8, -0.15, 0.85],
+    [15, -40, 1.2, 0.05, 1.1],
+    [-20, 25, 0.6, -0.2, 0.9],
+    [40, 15, -0.4, 0.12, 0.75],
+    [-45, -10, 2.0, 0.0, 1.0],
   ];
 
-  cactusPositions.forEach(pos => {
-    const cactus = createCactus(pos.h);
-    cactus.position.set(pos.x, floorY, pos.z);
-    cactus.rotation.y = Math.random() * Math.PI * 2;
-    group.add(cactus);
+  ringGates.forEach(([rx, rz, ry, tiltX, s], i) => {
+    const ringGroup = new THREE.Group();
+    ringGroup.name = `ring-gate-${i}`;
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    const glow = new THREE.Mesh(ringGlowGeo, ringGlowMat);
+    ringGroup.add(ring, glow);
+    ringGroup.position.set(rx, floorY + 5 * s, rz);
+    ringGroup.rotation.set(tiltX, ry, 0);
+    ringGroup.scale.setScalar(s);
+    group.add(ringGroup);
   });
 
-  // === TWINKLING STARS (400 particles - reduced from 800 for performance) ===
-  const starCount = 400;
+  // Obelisks: tall thin boxes with faint cyan tip
+  const obeliskGeo = new THREE.BoxGeometry(0.8, 1, 0.8);
+  obeliskGeo.translate(0, 0.5, 0); // pivot at base
+  const obeliskMat = new THREE.MeshLambertMaterial({
+    color: 0x201c18,
+    emissive: 0x081015,
+    emissiveIntensity: 0.3,
+    flatShading: true
+  });
+  registerFadeMaterial(obeliskMat);
+
+  // Obelisk tip cap
+  const obeliskCapGeo = new THREE.BoxGeometry(0.9, 0.4, 0.9);
+  const obeliskCapMat = new THREE.MeshBasicMaterial({
+    color: 0x00ccaa,
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: true
+  });
+  registerFadeMaterial(obeliskCapMat);
+
+  // Obelisk configs: [x, z, height, rotY]
+  const obelisks = [
+    [-12, -15, 8, 0.2],
+    [18, -8, 10, -0.5],
+    [-25, 18, 7, 1.1],
+    [35, -25, 9, 0.8],
+    [-8, 30, 6, -0.3],
+    [28, 20, 11, 1.5],
+  ];
+
+  obelisks.forEach(([ox, oz, oh, ory], i) => {
+    const obGroup = new THREE.Group();
+    obGroup.name = `obelisk-${i}`;
+    const body = new THREE.Mesh(obeliskGeo, obeliskMat);
+    body.scale.set(1, oh, 1);
+    const cap = new THREE.Mesh(obeliskCapGeo, obeliskCapMat);
+    cap.position.y = oh;
+    obGroup.add(body, cap);
+    obGroup.position.set(ox, floorY, oz);
+    obGroup.rotation.y = ory;
+    group.add(obGroup);
+  });
+
+  // Buried hubs: half-sunk cylinders with faint glow ring at ground level
+  const hubGeo = new THREE.CylinderGeometry(3, 3.5, 1.5, 8, 1, true);
+  const hubMat = new THREE.MeshLambertMaterial({
+    color: 0x18150f,
+    emissive: 0x0a1518,
+    emissiveIntensity: 0.4,
+    flatShading: true,
+    side: THREE.DoubleSide
+  });
+  registerFadeMaterial(hubMat);
+
+  // Hub glow disc
+  const hubGlowGeo = new THREE.RingGeometry(2.5, 4, 16);
+  const hubGlowMat = new THREE.MeshBasicMaterial({
+    color: 0x00bbcc,
+    transparent: true,
+    opacity: 0.1,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    fog: true
+  });
+  registerFadeMaterial(hubGlowMat);
+
+  const hubs = [
+    [-30, -35],
+    [25, -45],
+    [-15, 40],
+    [45, 30],
+  ];
+
+  hubs.forEach(([hx, hz], i) => {
+    const hubGroup = new THREE.Group();
+    hubGroup.name = `buried-hub-${i}`;
+    const hub = new THREE.Mesh(hubGeo, hubMat);
+    hub.position.y = -0.5; // half-buried
+    const glow = new THREE.Mesh(hubGlowGeo, hubGlowMat);
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.y = 0.05;
+    hubGroup.add(hub, glow);
+    hubGroup.position.set(hx, floorY, hz);
+    group.add(hubGroup);
+  });
+
+  // Shard fields: clusters of thin rotated boxes (like crystalline machine fragments)
+  const shardGeo = new THREE.BoxGeometry(0.15, 3, 0.4);
+  shardGeo.translate(0, 1.5, 0); // pivot at base
+  const shardMat = new THREE.MeshLambertMaterial({
+    color: 0x2a2520,
+    emissive: 0x0a1820,
+    emissiveIntensity: 0.5,
+    flatShading: true
+  });
+  registerFadeMaterial(shardMat);
+
+  // Shard edge glow (slightly larger, additive)
+  const shardGlowGeo = new THREE.BoxGeometry(0.3, 3, 0.55);
+  shardGlowGeo.translate(0, 1.5, 0);
+  const shardGlowMat = new THREE.MeshBasicMaterial({
+    color: 0x00aa88,
+    transparent: true,
+    opacity: 0.08,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: true
+  });
+  registerFadeMaterial(shardGlowMat);
+
+  // Shard cluster configs: [centerX, centerZ, count]
+  const shardClusters = [
+    [20, -35, 6],
+    [-38, -20, 5],
+    [10, 35, 4],
+    [-25, -45, 7],
+    [40, -10, 5],
+  ];
+
+  shardClusters.forEach(([cx, cz, count], ci) => {
+    for (let j = 0; j < count; j++) {
+      const shardGroup = new THREE.Group();
+      shardGroup.name = `shard-${ci}-${j}`;
+      const angle = (j / count) * Math.PI * 2 + ci * 0.7;
+      const radius = 1.5 + Math.random() * 3;
+      const shard = new THREE.Mesh(shardGeo, shardMat);
+      const glow = new THREE.Mesh(shardGlowGeo, shardGlowMat);
+      shardGroup.add(shard, glow);
+
+      const heightScale = 0.4 + Math.random() * 0.8;
+      shardGroup.scale.set(1, heightScale, 1);
+      shardGroup.position.set(
+        cx + Math.cos(angle) * radius,
+        floorY,
+        cz + Math.sin(angle) * radius
+      );
+      shardGroup.rotation.set(
+        (Math.random() - 0.5) * 0.3,
+        Math.random() * Math.PI * 2,
+        (Math.random() - 0.5) * 0.4
+      );
+      group.add(shardGroup);
+    }
+  });
+
+  // === STARS (300, shader-based twinkle, no per-frame CPU) ===
+  const starCount = 300;
   const starPositions = new Float32Array(starCount * 3);
   const starPhases = new Float32Array(starCount);
 
   for (let i = 0; i < starCount; i++) {
-    // Hemisphere distribution
     const theta = Math.random() * Math.PI * 2;
-    const radius = 80 + Math.random() * 40; // 80-120
-    const phi = Math.random() * Math.PI * 0.5; // Upper hemisphere
-
+    const radius = 80 + Math.random() * 40;
+    const phi = Math.random() * Math.PI * 0.5;
     starPositions[i * 3] = Math.cos(theta) * Math.sin(phi) * radius;
-    starPositions[i * 3 + 1] = Math.cos(phi) * radius + 10; // Offset up
+    starPositions[i * 3 + 1] = Math.cos(phi) * radius + 10;
     starPositions[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * radius;
     starPhases[i] = Math.random() * Math.PI * 2;
   }
@@ -570,7 +692,7 @@ function buildDesertNightScene(group, deps) {
         float dist = length(gl_PointCoord - vec2(0.5));
         if (dist > 0.5) discard;
         float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-        vec3 color = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.95, 0.9), vTwinkle);
+        vec3 color = mix(vec3(0.7, 0.85, 1.0), vec3(0.5, 1.0, 0.85), vTwinkle);
         gl_FragColor = vec4(color * (0.7 + vTwinkle * 0.3), alpha * vTwinkle);
       }
     `,
@@ -581,121 +703,102 @@ function buildDesertNightScene(group, deps) {
   });
 
   const stars = new THREE.Points(starGeometry, starMaterial);
-  stars.frustumCulled = false; // Fix disappearing when looking up
+  stars.frustumCulled = false;
   stars.renderOrder = 999;
   group.add(stars);
   registerFadeMaterial(starMaterial);
 
-  // === DUST PARTICLES (300 particles - reduced from 600 for performance) ===
-  const dustCount = 300;
-  const dustPositions = new Float32Array(dustCount * 3);
-  const dustPhases = new Float32Array(dustCount);
-
-  for (let i = 0; i < dustCount; i++) {
-    dustPositions[i * 3] = (Math.random() - 0.5) * 60;
-    dustPositions[i * 3 + 1] = Math.random() * 15 + floorY;
-    dustPositions[i * 3 + 2] = (Math.random() - 0.5) * 60;
-    dustPhases[i] = Math.random() * Math.PI * 2;
-  }
-
-  const dustGeometry = new THREE.BufferGeometry();
-  dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
-  dustGeometry.setAttribute('aPhase', new THREE.BufferAttribute(dustPhases, 1));
-
-  const dustMaterial = new THREE.ShaderMaterial({
+  // === AURORA STRIPS (cheap: 3 flat planes with animated opacity) ===
+  const auroraStripGeo = new THREE.PlaneGeometry(120, 12, 1, 1);
+  const auroraStripMat = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+      uColor1: { value: new THREE.Color(0x00ddaa) },
+      uColor2: { value: new THREE.Color(0x00aacc) },
     },
     vertexShader: `
-      attribute float aPhase;
-      uniform float uTime;
-      uniform float uPixelRatio;
-      varying float vAlpha;
+      varying vec2 vUv;
       void main() {
-        vAlpha = 0.5 + 0.3 * sin(uTime + aPhase);
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = 4.0 * uPixelRatio;
-        gl_Position = projectionMatrix * mvPosition;
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
     fragmentShader: `
-      varying float vAlpha;
+      uniform float uTime;
+      uniform vec3 uColor1;
+      uniform vec3 uColor2;
+      varying vec2 vUv;
       void main() {
-        float dist = length(gl_PointCoord - vec2(0.5));
-        if (dist > 0.5) discard;
-        float alpha = (1.0 - smoothstep(0.0, 0.5, dist)) * vAlpha * 1.2;
-        vec3 dustColor = vec3(0.8, 0.85, 0.9);
-        gl_FragColor = vec4(dustColor, alpha);
+        float wave = sin(vUv.x * 3.14159 + uTime * 0.3) * 0.5 + 0.5;
+        float edge = smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.7, vUv.y);
+        float alpha = edge * (0.06 + wave * 0.04);
+        vec3 color = mix(uColor1, uColor2, wave);
+        gl_FragColor = vec4(color, alpha);
       }
     `,
     transparent: true,
     depthWrite: false,
-    fog: false,
-    blending: THREE.AdditiveBlending
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    fog: true
+  });
+  registerFadeMaterial(auroraStripMat);
+
+  // Three aurora strips at different heights and orientations
+  const auroraConfigs = [
+    { y: 55, rx: -0.3, rz: 0.1, opacity: 1.0 },
+    { y: 65, rx: -0.15, rz: -0.15, opacity: 0.7 },
+    { y: 48, rx: -0.4, rz: 0.2, opacity: 0.5 },
+  ];
+
+  auroraConfigs.forEach((cfg, i) => {
+    const strip = new THREE.Mesh(auroraStripGeo, auroraStripMat.clone());
+    strip.name = `aurora-strip-${i}`;
+    strip.material.uniforms.uTime.value = i * 1.5; // phase offset
+    strip.position.y = cfg.y;
+    strip.position.z = -40 - i * 15;
+    strip.rotation.x = cfg.rx;
+    strip.rotation.z = cfg.rz;
+    strip.frustumCulled = false;
+    group.add(strip);
   });
 
-  const dust = new THREE.Points(dustGeometry, dustMaterial);
-  dust.renderOrder = 999;
-  group.add(dust);
-  registerFadeMaterial(dustMaterial);
-
-  // Moon
+  // === MOON (simplified, 2 meshes instead of 4) ===
   const moonGroup = new THREE.Group();
   const moonGeometry = new THREE.IcosahedronGeometry(8, 2);
   const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xfffef8 });
   const moon = new THREE.Mesh(moonGeometry, moonMaterial);
   moonGroup.add(moon);
   registerFadeMaterial(moonMaterial);
-  const innerGlowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 });
-  const innerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(9.5, 2), innerGlowMat);
-  const outerGlowMat = new THREE.MeshBasicMaterial({ color: 0xd4e5f7, transparent: true, opacity: 0.12 });
-  const outerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 2), outerGlowMat);
-  const farGlowMat = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.06 });
-  const farGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(18, 2), farGlowMat);
-  moonGroup.add(innerGlow, outerGlow, farGlow);
-  registerFadeMaterial(innerGlowMat);
-  registerFadeMaterial(outerGlowMat);
-  registerFadeMaterial(farGlowMat);
+
+  const moonGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xc8daf0,
+    transparent: true,
+    opacity: 0.12,
+    side: THREE.BackSide
+  });
+  const moonGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(14, 2), moonGlowMat);
+  moonGroup.add(moonGlow);
+  registerFadeMaterial(moonGlowMat);
   moonGroup.position.set(-45, 35, -60);
   group.add(moonGroup);
 
   // Desert floor HUD height: Y = -0.20, rotated 25 degrees (-0.436 rad)
-  group.rotation.y = -0.436; // yaw: -25 degrees
-  group.position.set(-2.12, -0.20, -4.82);  // Moved 5 units +X and +Z
+  group.rotation.y = -0.436;
+  group.position.set(-2.12, -0.20, -4.82);
 
-  // Frame counter for throttling dust particle updates (Issue 4: reduce CPU cost)
-  let desertFrameCount = 0;
-
-  // === ANIMATION UPDATE ===
+  // === ANIMATION UPDATE (minimal: only star twinkle + aurora) ===
   group.userData.update = (now, dt) => {
     const time = now * 0.001;
-    // Update stars twinkle (shader-based, already efficient)
+    // Stars twinkle (shader uniform only, no CPU per-particle work)
     starMaterial.uniforms.uTime.value = time;
-    // Update dust shader time
-    dustMaterial.uniforms.uTime.value = time;
 
-    // Throttle dust particle position updates to every 5th frame (Issue 4: reduce CPU cost)
-    desertFrameCount++;
-    if (desertFrameCount % 5 === 0) {
-      const dustPos = dustGeometry.attributes.position.array;
-      for (let i = 0; i < dustCount; i++) {
-        const idx = i * 3;
-        // Gentle wind drift (scaled by 5 since we only update every 5th frame)
-        dustPos[idx] += 0.025 * dt;
-        dustPos[idx + 1] += Math.sin(time + dustPhases[i]) * 0.005 * dt;
-        dustPos[idx + 2] += Math.cos(time * 0.7 + dustPhases[i]) * 0.01 * dt;
-
-        // Wrap around boundaries
-        if (dustPos[idx] > 30) dustPos[idx] = -30;
-        if (dustPos[idx] < -30) dustPos[idx] = 30;
-        if (dustPos[idx + 1] > floorY + 15) dustPos[idx + 1] = floorY;
-        if (dustPos[idx + 1] < floorY) dustPos[idx + 1] = floorY + 15;
-        if (dustPos[idx + 2] > 30) dustPos[idx + 2] = -30;
-        if (dustPos[idx + 2] < -30) dustPos[idx + 2] = 30;
+    // Aurora strips drift
+    group.children.forEach(child => {
+      if (child.name && child.name.startsWith('aurora-strip-') && child.material.uniforms) {
+        child.material.uniforms.uTime.value = time;
       }
-      dustGeometry.attributes.position.needsUpdate = true;
-    }
+    });
   };
 }
 

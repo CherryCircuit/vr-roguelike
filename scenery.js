@@ -414,9 +414,9 @@ export const THEMES = {
     hideBaseEnv: true,
     keepStars: true,
     customScene: 'desert_night',
-    // Aurora borealis colors: warm orange/red - BRIGHTER
+    // Aurora borealis colors: cyan/green machine aurora
     aurora: {
-      colors: ['rgba(60,20,0,0)', 'rgba(255,100,0,0.2)', 'rgba(255,150,50,0.35)', 'rgba(255,80,30,0.3)', 'rgba(200,50,20,0.15)', 'rgba(80,20,10,0)'],
+      colors: ['rgba(0,20,30,0)', 'rgba(0,255,180,0.15)', 'rgba(0,220,200,0.30)', 'rgba(80,255,220,0.25)', 'rgba(0,180,150,0.12)', 'rgba(0,40,50,0)'],
     },
   },
 

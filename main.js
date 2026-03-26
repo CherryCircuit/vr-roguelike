@@ -3355,10 +3355,25 @@ function activateNuke() {
     e.hp = 0;
     destroyEnemy(i, false, true); // isCritical=false, isOverkill=true (nuke)
     game.kills++;
-    game.totalKills++;
     trackKill(false);
     addScore(50); // Base score per nuked enemy
     killed++;
+  }
+
+  if (killed > 0) {
+    updateHUD(game);
+
+    const cfg = game._levelConfig;
+    if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+      const remaining = cfg ? cfg.killTarget - game.kills : 0;
+      showKillsRemainingAlert(remaining);
+      playKillsAlertSound(remaining);
+      killsAlertShownThisLevel = true;
+    }
+
+    if (cfg && game.kills >= cfg.killTarget) {
+      completeLevel();
+    }
   }
 
   console.log(`[nuke] Activated! Killed ${killed} enemies. ${game.nukes} remaining.`);
