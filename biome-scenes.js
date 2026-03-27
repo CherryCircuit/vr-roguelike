@@ -716,15 +716,18 @@ function buildDesertNightScene(group, deps) {
     { y: 55, z: -80, rx: -0.45, rz: 0.18 },
   ];
 
+  const auroraStrips = [];
   auroraConfigs.forEach((cfg, i) => {
     const strip = new THREE.Mesh(auroraStripGeo, auroraStripMat.clone());
     strip.name = `aurora-strip-${i}`;
+    strip.userData.phaseOffset = i * 1.8;
     strip.material.uniforms.uTime.value = i * 1.8;
     strip.position.set(0, cfg.y, cfg.z);
     strip.rotation.x = cfg.rx;
     strip.rotation.z = cfg.rz;
     strip.frustumCulled = false;
     group.add(strip);
+    auroraStrips.push(strip);
   });
 
   // === MOON (larger, positioned for horizon dominance) ===
@@ -756,11 +759,9 @@ function buildDesertNightScene(group, deps) {
     const time = now * 0.001;
     starMaterial.uniforms.uTime.value = time;
 
-    group.children.forEach(child => {
-      if (child.name && child.name.startsWith('aurora-strip-') && child.material.uniforms) {
-        child.material.uniforms.uTime.value = time;
-      }
-    });
+    for (const strip of auroraStrips) {
+      strip.material.uniforms.uTime.value = time + strip.userData.phaseOffset;
+    }
   };
 }
 
