@@ -76,7 +76,8 @@ import {
   showFloatingMessage, hideFloatingMessage, updateFloatingMessage,
   nameEntryGroup,
   setLastSubmittedTimestamp,
-  setLastSubmittedPageIndex
+  setLastSubmittedPageIndex,
+  setFPSVisible
 } from './hud.js';
 
 import {
@@ -96,6 +97,7 @@ import { SpatialHash } from './spatial-hash.js';
 // Expose game state to window for debugging/testing
 window.State = State;
 window.game = game;
+window.hud = { setFPSVisible };
 
 // Debug flag for projectile firing investigation
 window.DEBUG_PROJECTILES = false;
@@ -1167,7 +1169,7 @@ function createEnvironment() {
   // registerFadeMaterial(horizonInnerRingRef.material);
 
   createSun();
-  createVHSRetroShell();
+  // createVHSRetroShell();  // REMOVED: Debug sphere for visual effects testing
   // Removed legacy flat ShapeGeometry mountain layers. They were stale overlays
   // that conflicted with the biome-specific terrain scenes.
   createStars();
@@ -2999,6 +3001,7 @@ function handleDesktopScoreboardClick() {
     return;
   }
   if (action === 'country') {
+    playMenuClick();  // #7: Activate sound for COUNTRY
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
     hideScoreboard();
@@ -3006,6 +3009,7 @@ function handleDesktopScoreboardClick() {
     return;
   }
   if (action === 'continent') {
+    playMenuClick();  // #7: Activate sound for CONTINENT
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
     hideScoreboard();
@@ -3207,12 +3211,14 @@ function handleScoreboardTrigger(controller) {
 
   const action = getScoreboardHit(_uiRaycaster);
   if (action === 'back') {
+    playMenuClick();  // #7: Activate sound for BACK
     hideScoreboard();
     resetGame();
     showTitle();
     return;
   }
   if (action === 'country') {
+    playMenuClick();  // #7: Activate sound for COUNTRY
     // Show country select for filtering
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
@@ -3221,6 +3227,7 @@ function handleScoreboardTrigger(controller) {
     return;
   }
   if (action === 'continent') {
+    playMenuClick();  // #7: Activate sound for CONTINENT
     // Show continent picker
     scoreboardFromGameOver = false;
     game.state = State.COUNTRY_SELECT;
@@ -3242,6 +3249,7 @@ function handleCountrySelectTrigger(controller) {
   if (!result) return;
 
   if (result.action === 'back') {
+    playMenuClick();  // #7: Activate sound for BACK
     hideCountrySelect();
     if (scoreboardFromGameOver) {
       // Back to name entry

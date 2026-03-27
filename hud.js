@@ -6,10 +6,31 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game } from './game.js';
-import { playMenuHoverSound } from './audio.js';
+import { playMenuHoverSound, playMenuClick } from './audio.js';
 
 // VR camera height fix: Shift entire scene down so XR camera at ~0.875m appears 1.6m above floor
 const SCENE_Y_OFFSET = -0.725;
+
+// ── November Font Loading ───────────────────────────────────
+let novemberFontLoaded = false;
+let novemberFontFamily = 'November';
+
+async function loadNovemberFont() {
+  if (novemberFontLoaded) return true;
+
+  try {
+    const font = new FontFace('November', 'url(assets/fonts/november.ttf)');
+    await font.load();
+    document.fonts.add(font);
+    novemberFontLoaded = true;
+    console.log('[hud] November font loaded successfully');
+    return true;
+  } catch (err) {
+    console.warn('[hud] Failed to load November font, falling back to monospace:', err);
+    novemberFontFamily = '"Courier New", monospace';
+    return false;
+  }
+}
 
 // ── Module state ───────────────────────────────────────────
 let sceneRef, cameraRef;
@@ -400,6 +421,9 @@ export function initHUD(camera, scene) {
   sceneRef = scene;
   cameraRef = camera;
 
+  // #11: Load November font for scoreboard
+  loadNovemberFont();
+
   // ── Title Screen (world-space, fixed position) ──
   createTitleScreen();
   titleGroup.position.set(0, 1.2, -3.5);  // Moved down for better centering
@@ -472,7 +496,7 @@ export function initHUD(camera, scene) {
   fpsTexture = new THREE.CanvasTexture(fpsCanvas);
   fpsTexture.minFilter = THREE.LinearFilter;
 
-  const fpsGeo = new THREE.PlaneGeometry(0.8, 0.15);  // Will be resized dynamically in updateFPS
+  const fpsGeo = new THREE.PlaneGeometry(0.16, 0.03);  // 80% smaller: 0.8*0.2, 0.15*0.2
   const fpsMat = new THREE.MeshBasicMaterial({
     map: fpsTexture,
     transparent: true,
@@ -765,28 +789,34 @@ function createHUDElements() {
   hudGroup.add(heartsSprite);
 
   // SCORE - center on floor with title above
-  scoreSprite = makeSprite('0', { fontSize: 90, color: '#ffff00', shadow: true, scale: 3.6 });
-  scoreSprite.position.set(0, 0, 0);
+  // #7: Scale adjusted to match LEVEL (0.45 for both titles, values aligned)
+  scoreSprite = makeSprite('0', { fontSize: 90, color: '#ffff00', shadow: true, scale: 0.39 });
+  scoreSprite.position.set(-0.5, 0.3, 0);  // #4: Moved up closer to SCORE title (was y=0.2)
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
+  // #7: Font size 72, scale 0.45 matches LEVEL title for perfect alignment
   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
-  scoreTitleSprite.position.set(0, 0.45, 0);  // #19: Same Y as hearts
+  scoreTitleSprite.position.set(-0.5, 0.45, 0);  // #4: Aligned with new score position
   hudGroup.add(scoreTitleSprite);
 
-  // Kill counter — right side on floor
-  killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 3.15 });
-  killCountSprite.position.set(1.5, 0, 0);
+  // Kill counter — below LEVEL display, moved left to be closer to SCORE
+  // #5: Moved up closer to LEVEL display (y=0.3, was y=0.2)
+  // #6: Moved left (x=0.2, was x=0.5) to be closer to SCORE display
+  killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 0.45 });
+  killCountSprite.position.set(0.2, 0.3, 0);
   hudGroup.add(killCountSprite);
 
-  // Level indicator — above kill counter on right
-  levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 2.925 });
-  levelSprite.position.set(1.5, 0.45, 0);  // #19: Same Y as hearts
+  // Level indicator — above kill counter, moved left closer to SCORE
+  // #6: Moved left (x=0.2, was x=0.5) to be closer to SCORE display
+  levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 0.45 });
+  levelSprite.position.set(0.2, 0.45, 0);  // #19: Same Y as hearts and SCORE title
   hudGroup.add(levelSprite);
 
-  // Nuke counter — left side, below hearts
-  nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 1.4 });
-  nukeSprite.position.set(-1.5, -0.55, 0);
+  // Nuke counter — right of LEVEL display on top row
+  // #6: Moved from x=1.4 to x=0.9 to be closer to LEVEL (right of it)
+  nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.28 });
+  nukeSprite.position.set(0.9, 0.45, 0);  // Right of LEVEL, aligned with top row
   hudGroup.add(nukeSprite);
 
   // Accuracy bonus — below score on left side
@@ -963,18 +993,21 @@ export function updateHUD(gameState) {
   heartsSprite.geometry.dispose();
   heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
 
-  // Kill counter - increased 50% for VR readability
+  // Kill counter - #5: Moved up closer to LEVEL display
+  // #6: Moved left to x=0.5 (center-right) to be closer to SCORE display
   const cfg = gameState._levelConfig;
   const killTarget = cfg ? cfg.killTarget : 0;
   updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.45 });
 
-  // Level - increased 50% for VR readability
+  // Level - #6: Moved left to x=0.5 (center-right) closer to SCORE display
+  // #7: Scale 0.45 matches SCORE title for perfect alignment
   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.45 });
 
-  // Score - increased 50% for VR readability
+  // Score - #4: Moved closer to SCORE title at x=-0.5 (center-left)
+  // #7: Scale 0.39 matches LEVEL value size for consistency
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.39 });
 
-  // Nuke counter
+  // Nuke counter - #6: Moved to x=1.4 (right) on top row, right of LEVEL display
   const nukeCount = gameState.nukes || 0;
   if (nukeCount > 0 && nukeSprite) {
     nukeSprite.visible = true;
@@ -1918,12 +1951,19 @@ export function updateFPS(now, opts = {}) {
     // Adjust sprite geometry to match canvas aspect ratio (prevents squishing)
     // Use fixed aspect ratio based on canvas size to avoid stretching
     const canvasAspect = fpsCanvas.width / fpsCanvas.height;  // 1024/128 = 8
-    const displayScale = perfMonitor ? 0.25 : 0.15;  // Larger scale for perf monitor
-    const baseHeight = perfMonitor ? 0.12 : 0.08;  // Adjust height based on mode
+    const displayScale = perfMonitor ? 0.05 : 0.03;  // 80% smaller: 0.25*0.2, 0.15*0.2
+    const baseHeight = perfMonitor ? 0.024 : 0.016;  // 80% smaller: 0.12*0.2, 0.08*0.2
     fpsSprite.geometry.dispose();
     fpsSprite.geometry = new THREE.PlaneGeometry(canvasAspect * baseHeight, baseHeight);
-    fpsSprite.visible = true;
+    fpsSprite.visible = game.debugShowFPS;  // Respect FPS display toggle
     lastFpsUpdate = now;
+  }
+}
+
+// ── FPS Display Toggle ────────────────────────────────────────
+export function setFPSVisible(visible) {
+  if (fpsSprite) {
+    fpsSprite.visible = visible;
   }
 }
 
@@ -3086,10 +3126,12 @@ export function getNameEntryHit(raycaster) {
 
 function processKeyPress(key) {
   if (key === 'OK') {
+    playMenuClick();  // #7: Activate sound for OK button
     if (nameEntryName.length > 0) return { action: 'submit', name: nameEntryName };
     return null;
   }
   if (key === 'DEL') {
+    playMenuClick();  // #7: Activate sound for DEL button
     if (nameEntryCursor > 0) {
       nameEntryName = nameEntryName.slice(0, -1);
       nameEntryCursor = nameEntryName.length;
@@ -3098,6 +3140,7 @@ function processKeyPress(key) {
     return null;
   }
   if (key === 'SPACE') {
+    playMenuClick();  // #7: Activate sound for SPACE button
     if (nameEntryName.length < 6) {
       nameEntryName += ' ';
       nameEntryCursor = nameEntryName.length;
@@ -3106,6 +3149,7 @@ function processKeyPress(key) {
     return null;
   }
   // Letter key
+  playMenuClick();  // #7: Activate sound for letter keys
   if (nameEntryName.length < 6) {
     nameEntryName += key;
     nameEntryCursor = nameEntryName.length;
@@ -3170,10 +3214,10 @@ export function showScoreboard(scores, headerText, playerPos) {
   // Position in front of player (VR-friendly)
   if (playerPos) {
     scoreboardGroup.position.copy(playerPos);
-    scoreboardGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
+    scoreboardGroup.position.y += 1.6 + SCENE_Y_OFFSET + 0.5; // Eye level + #9: Move up 0.5 units
     scoreboardGroup.position.z -= 5; // 5 feet in front of player
   } else {
-    scoreboardGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -5); // Fallback
+    scoreboardGroup.position.set(0, 1.6 + SCENE_Y_OFFSET + 0.5, -5); // Fallback + #9: Move up 0.5 units
   }
   scoreboardGroup.visible = true;
 
@@ -3251,6 +3295,47 @@ export function showScoreboard(scores, headerText, playerPos) {
   scoreboardGroup.add(backGroup);
 }
 
+// #11: Helper function to draw text with letter spacing and drop shadow
+function drawTextWithSpacing(ctx, text, x, y, color, letterSpacing = 3, fontSize = 44, align = 'left') {
+  // Drop shadow offset at 125 degrees with small distance
+  const shadowDistance = 3;
+  const shadowAngle = 125 * Math.PI / 180;
+  const shadowX = Math.cos(shadowAngle) * shadowDistance;
+  const shadowY = Math.sin(shadowAngle) * shadowDistance;
+
+  ctx.font = `bold ${fontSize}px ${novemberFontFamily}`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';  // Always use left alignment for character-by-character rendering
+
+  // Calculate total width for alignment
+  let totalWidth = 0;
+  for (let i = 0; i < text.length; i++) {
+    totalWidth += ctx.measureText(text[i]).width + letterSpacing;
+  }
+  totalWidth -= letterSpacing;  // Remove last letter spacing
+
+  // Adjust starting position for alignment
+  let startX = x;
+  if (align === 'center') startX = x - totalWidth / 2;
+  else if (align === 'right') startX = x - totalWidth;
+
+  // Draw shadow first
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';  // 90% opacity black
+  let currentX = startX + shadowX;
+  for (let i = 0; i < text.length; i++) {
+    ctx.fillText(text[i], currentX, y + shadowY);
+    currentX += ctx.measureText(text[i]).width + letterSpacing;
+  }
+
+  // Draw main text
+  ctx.fillStyle = color;
+  currentX = startX;
+  for (let i = 0; i < text.length; i++) {
+    ctx.fillText(text[i], currentX, y);
+    currentX += ctx.measureText(text[i]).width + letterSpacing;
+  }
+}
+
 function renderScoreboardCanvas() {
   const canvas = document.createElement('canvas');
   const w = 900;
@@ -3269,24 +3354,18 @@ function renderScoreboardCanvas() {
   ctx.lineWidth = 3;
   ctx.strokeRect(1, 1, w - 2, h - 2);
 
-  const rowHeight = 74;
+  const rowHeight = 80;  // #11: Slightly increased for better line spacing
   const maxVisible = SCOREBOARD_PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil(scoreboardScores.length / maxVisible));
   scoreboardPage = Math.max(0, Math.min(totalPages - 1, scoreboardPage));
   const startIdx = scoreboardPage * maxVisible;
   const endIdx = Math.min(startIdx + maxVisible, scoreboardScores.length);
 
-  ctx.font = 'bold 44px "Courier New", monospace';
-  ctx.textBaseline = 'middle';
-
-  // Header row
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'left';
-  ctx.fillText('#', 20, 60);
-  ctx.fillText('NAME', 110, 60);
-  ctx.textAlign = 'right';
-  ctx.fillText('SCORE', 640, 60);
-  ctx.fillText('LVL', 740, 60);
+  // #11: Header row with November font
+  drawTextWithSpacing(ctx, '#', 20, 60, '#ffffff', 3, 44, 'left');
+  drawTextWithSpacing(ctx, 'NAME', 110, 60, '#ffffff', 3, 44, 'left');
+  drawTextWithSpacing(ctx, 'SCORE', 640, 60, '#ffffff', 3, 44, 'right');
+  drawTextWithSpacing(ctx, 'LVL', 740, 60, '#ffffff', 3, 44, 'right');
 
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
   ctx.beginPath();
@@ -3315,15 +3394,16 @@ function renderScoreboardCanvas() {
       ctx.strokeRect(6, y - rowHeight / 2 + 4, w - 12, rowHeight - 8);
     }
 
-    // Rank color
-    if (rank === 1) ctx.fillStyle = '#ffdd00';
-    else if (rank === 2) ctx.fillStyle = '#cccccc';
-    else if (rank === 3) ctx.fillStyle = '#cc8844';
-    else ctx.fillStyle = '#66ffff';
+    // #11: Row color based on rank (full-line color)
+    let rowColor;
+    if (rank === 1) rowColor = '#FFD000';      // Gold for 1st
+    else if (rank === 2) rowColor = '#B5B5B5'; // Silver for 2nd
+    else if (rank === 3) rowColor = '#D68500'; // Bronze for 3rd
+    else rowColor = '#68FDFF';                 // Cyan for all others
 
-    ctx.textAlign = 'left';
+    // Rank
     const rankLabel = String(rank).padStart(2, '0');
-    ctx.fillText(rankLabel, 20, y);
+    drawTextWithSpacing(ctx, rankLabel, 20, y, rowColor, 3, 44, 'left');
 
     // Flag
     if (score.country) {
@@ -3331,28 +3411,25 @@ function renderScoreboardCanvas() {
         const flag = String.fromCodePoint(
           ...[...score.country.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
         );
-        ctx.font = '40px "Courier New", monospace';
+        ctx.font = '40px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
         ctx.fillStyle = '#ffffff';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
         ctx.fillText(flag, 95, y);
-        ctx.font = 'bold 44px "Courier New", monospace';
       } catch (e) { /* skip flag */ }
     }
 
-    // Name (removed gold star character that was overlapping)
-    ctx.fillStyle = isPlayer ? '#ffffff' : '#ccffff';
-    ctx.fillText((score.name || 'ANON').toUpperCase(), 160, y);
+    // Name (use row color)
+    const displayName = (score.name || 'ANON').toUpperCase();
+    drawTextWithSpacing(ctx, displayName, 160, y, isPlayer ? '#ffffff' : rowColor, 3, 44, 'left');
 
-    // Score
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'right';
+    // Score (use row color)
     const scoreVal = score.score !== undefined && score.score !== null ? score.score.toLocaleString() : '0';
-    ctx.fillText(scoreVal, 670, y);
+    drawTextWithSpacing(ctx, scoreVal, 670, y, rowColor, 3, 44, 'right');
 
-    // Level
-    ctx.fillStyle = '#66ffff';
-    ctx.textAlign = 'right';
+    // Level (use row color)
     const levelVal = score.level_reached !== undefined && score.level_reached !== null ? `L${String(score.level_reached).padStart(2, '0')}` : 'L?';
-    ctx.fillText(levelVal, 770, y);
+    drawTextWithSpacing(ctx, levelVal, 770, y, rowColor, 3, 44, 'right');
 
     // Divider line
     ctx.strokeStyle = 'rgba(0, 255, 255, 0.25)';
@@ -3379,12 +3456,9 @@ function renderScoreboardCanvas() {
     ctx.stroke();
   }
 
-  // Page indicator
+  // #11: Page indicator with November font, #10: moved up by ~0.1 units
   if (scoreboardScores.length > 0) {
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 38px "Courier New", monospace';
-    ctx.fillText(`PAGE ${scoreboardPage + 1} OF ${totalPages}`, w / 2, h - 20);
+    drawTextWithSpacing(ctx, `PAGE ${scoreboardPage + 1} OF ${totalPages}`, w / 2, h - 110, '#ffffff', 3, 38, 'center');
   }
 
   if (scoreboardTexture) scoreboardTexture.dispose();
@@ -3435,16 +3509,20 @@ export function getScoreboardHit(raycaster) {
   if (hits.length > 0) {
     const action = hits[0].object.userData.scoreboardAction;
     if (action === 'page_prev') {
+      playMenuClick();  // #7: Activate sound for PREV PAGE
       scoreboardPage = Math.max(0, scoreboardPage - 1);
       renderScoreboardCanvas();
       return null;
     }
     if (action === 'page_next') {
+      playMenuClick();  // #7: Activate sound for NEXT PAGE
       const totalPages = Math.max(1, Math.ceil(scoreboardScores.length / SCOREBOARD_PAGE_SIZE));
       scoreboardPage = Math.min(totalPages - 1, scoreboardPage + 1);
       renderScoreboardCanvas();
       return null;
     }
+    // #7: Activate sound for COUNTRY, CONTINENT, and BACK buttons
+    playMenuClick();
     return action;
   }
   return null;
@@ -3471,10 +3549,10 @@ export function showCountrySelect(countries, continents, initialContinent, playe
   // Position in front of player (VR-friendly)
   if (playerPos) {
     countrySelectGroup.position.copy(playerPos);
-    countrySelectGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
+    countrySelectGroup.position.y += 1.6 + SCENE_Y_OFFSET + 0.5; // Eye level + #9: Move up 0.5 units
     countrySelectGroup.position.z -= 4; // 4 feet in front of player
   } else {
-    countrySelectGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4); // Fallback
+    countrySelectGroup.position.set(0, 1.6 + SCENE_Y_OFFSET + 0.5, -4); // Fallback + #9: Move up 0.5 units
   }
   countrySelectGroup.visible = true;
 
@@ -3630,6 +3708,7 @@ export function getCountrySelectHit(raycaster, countries) {
   let hits = raycaster.intersectObjects(tabMeshes, false);
   if (hits.length > 0) {
     const continent = hits[0].object.userData.continentTab;
+    playMenuClick();  // #7: Activate sound for continent tab
     if (countrySelectMode === 'continent') {
       return { action: 'select_continent', continent };
     }
@@ -3652,6 +3731,7 @@ export function getCountrySelectHit(raycaster, countries) {
     hits = raycaster.intersectObjects(itemMeshes, false);
     if (hits.length > 0) {
       const code = hits[0].object.userData.countryCode;
+      playMenuClick();  // #7: Activate sound for country selection
       return { action: 'select', code };
     }
   }
@@ -3662,7 +3742,10 @@ export function getCountrySelectHit(raycaster, countries) {
     if (c.userData && c.userData.countryAction === 'back') actionMeshes.push(c);
   });
   hits = raycaster.intersectObjects(actionMeshes, false);
-  if (hits.length > 0) return { action: 'back' };
+  if (hits.length > 0) {
+    playMenuClick();  // #7: Activate sound for back button
+    return { action: 'back' };
+  }
 
   return null;
 }
