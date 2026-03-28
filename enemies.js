@@ -38,6 +38,7 @@ const _scratch = new THREE.Vector3();
 const _scratch2 = new THREE.Vector3();
 const _scratch3 = new THREE.Vector3();
 const _scratchColor = new THREE.Color();
+const _explosionSpriteVel = new THREE.Vector3();
 
 // ── Voxel patterns (simplified for performance) ───────────
 const PATTERNS = {
@@ -2984,11 +2985,17 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   }
 
   // [Physics Death System] Spawn voxel explosions with physics
-  console.log(`[enemy-death] destroyEnemy: spawnVoxelExplosion=${!!spawnVoxelExplosion}, type=${e.type}`);
   if (spawnVoxelExplosion) {
     // Debris count based on enemy voxel pattern size
     let voxelCount;
-    const voxelPatternSize = e.voxelPatternSize || e.mesh.children.filter(c => c.isMesh && !c.userData.isEnemyHitbox).length;
+    // Count child meshes without allocating an array (avoids GC spike on death)
+    let childMeshCount = e.voxelPatternSize || 0;
+    if (!childMeshCount) {
+      for (let ci = 0; ci < e.mesh.children.length; ci++) {
+        if (e.mesh.children[ci].isMesh && !e.mesh.children[ci].userData.isEnemyHitbox) childMeshCount++;
+      }
+    }
+    const voxelPatternSize = childMeshCount;
 
     if (voxelPatternSize <= 1) {
       voxelCount = Math.floor(Math.random() * 3) + 1;  // 1-3
@@ -3011,10 +3018,8 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
     if (e.isMimic) voxelCount = 4;
     if (e.isSpider) voxelCount = 3;
 
-    console.log(`[enemy-death] Spawning ${voxelCount} voxels at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+    // spawnVoxelExplosion(pos, color, voxelCount, type, isCritical, isOverkill)
     spawnVoxelExplosion(pos, color.getHex(), voxelCount, e.type, isCritical, isOverkill);
-  } else {
-    console.warn('[enemy-death] spawnVoxelExplosion is NULL!');
   }
 
   // Pooled explosion particles (no allocation per death)
@@ -3028,11 +3033,13 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
     sprite.position.copy(pos);
     sprite.visible = true;
 
-    sprite.userData.velocity = new THREE.Vector3(
+    // Reuse a pre-allocated velocity vector (clone to store on sprite)
+    const vel = _explosionSpriteVel.set(
       (Math.random() - 0.5) * 5,
       (Math.random() - 0.5) * 5,
       (Math.random() - 0.5) * 5,
-    );
+    ).clone();
+    sprite.userData.velocity = vel;
     sprite.userData.createdAt = performance.now();
     sprite.userData.lifetime = 300 + Math.random() * 200;
 
