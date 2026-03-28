@@ -7418,6 +7418,10 @@ function updateHostileProjectileVisual(proj, now) {
 // COUPLING: voxelPool, activeVoxels arrays, scene.add/remove
 // ============================================================
 
+// Pre-allocated temp vectors to avoid per-kill GC
+const _deathVel = new THREE.Vector3();
+const _spriteVel = new THREE.Vector3();
+
 /**
  * Initialize voxel pool for physics-based death explosions
  */
@@ -7493,8 +7497,6 @@ function spawnVoxelExplosion(position, color, voxelCount, enemyType = 'basic', i
   const availableVoxels = MAX_ACTIVE_VOXELS - activeVoxels.length;
   voxelCount = Math.min(voxelCount, availableVoxels);
   
-  console.log(`[physics-death] Spawning ${voxelCount} voxels for ${enemyType} (critical: ${isCritical}, overkill: ${isOverkill})`);
-  
   // Enemy-specific death patterns
   const pattern = getDeathPattern(enemyType);
   
@@ -7544,53 +7546,49 @@ function getDeathPattern(enemyType) {
   const patterns = {
     basic: {
       calculateVelocity: (i, total) => {
-        return new THREE.Vector3(
+        return _deathVel.set(
           (Math.random() - 0.5) * 6,
           Math.random() * 4 + 2,
           (Math.random() - 0.5) * 6
-        );
+        ).clone();
       }
     },
     tank: {
       calculateVelocity: (i, total) => {
-        // Slow, heavy chunks
-        return new THREE.Vector3(
+        return _deathVel.set(
           (Math.random() - 0.5) * 2,
           Math.random() * 2 + 1,
           (Math.random() - 0.5) * 2
-        );
+        ).clone();
       }
     },
     fast: {
       calculateVelocity: (i, total) => {
-        // Rapid explosion trail
-        return new THREE.Vector3(
+        return _deathVel.set(
           (Math.random() - 0.5) * 10,
           Math.random() * 6 + 3,
           (Math.random() - 0.5) * 10
-        );
+        ).clone();
       }
     },
     swarm: {
       calculateVelocity: (i, total) => {
-        // Tiny scatter
-        return new THREE.Vector3(
+        return _deathVel.set(
           (Math.random() - 0.5) * 8,
           Math.random() * 5 + 2,
           (Math.random() - 0.5) * 8
-        );
+        ).clone();
       }
     },
     boss: {
       calculateVelocity: (i, total) => {
-        // Massive burst + shockwave
         const angle = (i / total) * Math.PI * 2;
         const speed = 8 + Math.random() * 4;
-        return new THREE.Vector3(
+        return _deathVel.set(
           Math.cos(angle) * speed,
           Math.random() * 8 + 4,
           Math.sin(angle) * speed
-        );
+        ).clone();
       }
     }
   };
