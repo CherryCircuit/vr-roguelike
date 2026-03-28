@@ -781,45 +781,44 @@ function createHUDElements() {
 
   // Lives (hearts) - left side on floor
   // #19: Hearts aligned with TOP of SCORE and LEVEL X titles
+  // Layout: Spread horizontally to avoid overlap
   const heartsGeo = new THREE.PlaneGeometry(1.2, 0.24);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
-  heartsSprite.position.set(-1.5, 0.45, 0);  // #19: Moved up to align with titles (was y=0)
+  heartsSprite.position.set(-1.8, 0.45, 0);  // Far left, top row
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
-  // SCORE - center on floor with title above
-  // #7: Scale adjusted to match LEVEL (0.45 for both titles, values aligned)
+  // SCORE - center-left on floor with title above
+  // Layout: Spread from hearts
   scoreSprite = makeSprite('0', { fontSize: 90, color: '#ffff00', shadow: true, scale: 0.39 });
-  scoreSprite.position.set(-0.5, 0.3, 0);  // #4: Moved up closer to SCORE title (was y=0.2)
+  scoreSprite.position.set(-0.8, 0.3, 0);  // Center-left, second row
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
-  // #7: Font size 72, scale 0.45 matches LEVEL title for perfect alignment
   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
-  scoreTitleSprite.position.set(-0.5, 0.45, 0);  // #4: Aligned with new score position
+  scoreTitleSprite.position.set(-0.8, 0.45, 0);  // Center-left, top row
   hudGroup.add(scoreTitleSprite);
 
-  // Kill counter — below LEVEL display, moved left to be closer to SCORE
-  // #5: Moved up closer to LEVEL display (y=0.3, was y=0.2)
-  // #6: Moved left (x=0.2, was x=0.5) to be closer to SCORE display
+  // Kill counter — below LEVEL display
+  // Layout: Center-right, below level
   killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 0.45 });
-  killCountSprite.position.set(0.2, 0.3, 0);
+  killCountSprite.position.set(0.7, 0.3, 0);  // Center-right, second row
   hudGroup.add(killCountSprite);
 
-  // Level indicator — above kill counter, moved left closer to SCORE
-  // #6: Moved left (x=0.2, was x=0.5) to be closer to SCORE display
+  // Level indicator — above kill counter
+  // Layout: Center-right, top row
   levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 0.45 });
-  levelSprite.position.set(0.2, 0.45, 0);  // #19: Same Y as hearts and SCORE title
+  levelSprite.position.set(0.7, 0.45, 0);  // Center-right, top row
   hudGroup.add(levelSprite);
 
-  // Nuke counter — right of LEVEL display on top row
-  // #6: Moved from x=1.4 to x=0.9 to be closer to LEVEL (right of it)
+  // Nuke counter — far right, top row
+  // Layout: Far right to avoid overlap
   nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.28 });
-  nukeSprite.position.set(0.9, 0.45, 0);  // Right of LEVEL, aligned with top row
+  nukeSprite.position.set(1.5, 0.45, 0);  // Far right, top row
   hudGroup.add(nukeSprite);
 
-  // Accuracy bonus — below score on left side
+  // Accuracy bonus — center bottom
   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 1.8 });
   comboSprite.position.set(0, -0.85, 0);
   comboSprite.visible = false;

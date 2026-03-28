@@ -6813,9 +6813,9 @@ function showUpgradeScreen() {
 
   // Check if this is the level 1→2 transition where player chooses MAIN weapon
   if (needsMainWeaponChoice()) {
-    // Show MAIN weapon selection (all 6 types)
+    // Show MAIN weapon selection (all except Standard Blaster - it's the default)
     console.log('[game] Level 1→2: Showing MAIN weapon selection');
-    const mainWeaponOptions = Object.values(MAIN_WEAPONS);
+    const mainWeaponOptions = Object.values(MAIN_WEAPONS).filter(w => w.id !== 'standard_blaster');
     pendingUpgrades = mainWeaponOptions;
     showUpgradeCards(pendingUpgrades, getAdjustedCameraPosition(), hand);
     upgradeSelectionCooldown = 1.5;
@@ -7109,11 +7109,11 @@ function initProjectilePool() {
   // Guard against re-init on game restart — pools persist across games
   if (instancedProjectiles['laser']) return;
 
-  // ── Laser bolts (most common, cyan & pink) ──
-  // Use merged bolt+glow geometry for a single draw call per instance
-  const laserGeo = new THREE.CylinderGeometry(0.035, 0.035, 1.0, 6);
+  // ── Laser bolts (standard blaster - thin with glow) ──
+  // Thin cyan bolts that glow via bloom layer
+  const laserGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.0, 6);
   laserGeo.rotateX(Math.PI / 2); // Rotate to align with -Z direction
-  const laserMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85 });
+  const laserMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
   registerPlayerProjectileMaterial(laserMat);
   const laserIM = new THREE.InstancedMesh(laserGeo, laserMat, 120);
   laserIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -7123,26 +7123,27 @@ function initProjectilePool() {
   scene.add(laserIM);
   instancedProjectiles['laser'] = { mesh: laserIM, maxCount: 120, freeIndices: new Set() };
 
-  // ── Buckshot pellets ──
-  const buckGeo = new THREE.SphereGeometry(0.025, 6, 6);
-  const buckMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+  // ── Buckshot pellets (white, slightly larger) ──
+  const buckGeo = new THREE.SphereGeometry(0.035, 6, 6);
+  const buckMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95 });
   registerPlayerProjectileMaterial(buckMat);
   const buckIM = new THREE.InstancedMesh(buckGeo, buckMat, 20);
   buckIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   buckIM.count = 0;
   buckIM.frustumCulled = false;
+  buckIM.layers.enable(BLOOM_LAYER);  // Bloom for visibility
   scene.add(buckIM);
   instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
 
-  // ── Seeker burst bolts (homing) ──
-  // Head sphere for seekers
-  const seekerGeo = new THREE.SphereGeometry(0.03, 8, 8);
-  const seekerMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+  // ── Seeker burst bolts (homing - bright orange, larger) ──
+  const seekerGeo = new THREE.SphereGeometry(0.045, 8, 8);
+  const seekerMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95 });
   registerPlayerProjectileMaterial(seekerMat);
   const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
   seekerIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   seekerIM.count = 0;
   seekerIM.frustumCulled = false;
+  seekerIM.layers.enable(BLOOM_LAYER);  // Bloom for glow
   scene.add(seekerIM);
   instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 28, freeIndices: new Set() };
 
@@ -7289,14 +7290,8 @@ function returnProjectileToPool(proj) {
     pool.mesh.setMatrixAt(instanceIndex, _projMatrix);
     pool.mesh.instanceMatrix.needsUpdate = true;
 
-    // Mark as free
+    // Mark as free (DO NOT shrink count - can hide active instances at higher indices)
     pool.freeIndices.add(instanceIndex);
-
-    // Adjust visible count if needed
-    while (pool.mesh.count > 0 && pool.freeIndices.has(pool.mesh.count - 1)) {
-      pool.mesh.count--;
-      pool.freeIndices.delete(pool.mesh.count);
-    }
 
     // Clear instance data
     if (projectileInstanceData[poolType][instanceIndex]) {
@@ -8207,6 +8202,9 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   const isBuckshot = (stats.spreadAngle || 0) > BUCKSHOT_SPREAD_THRESHOLD && !stats.homing;
   const isPlasmaCarbine = stats.mainWeaponId === 'plasma_carbine';
   const poolType = stats.homing ? 'seeker' : (isPlasmaCarbine ? 'plasma_carbine' : (isBuckshot ? 'buckshot' : 'laser'));
+  
+  // Seeker color override: bright orange instead of controller-based cyan/pink
+  const projectileColor = stats.homing ? 0xff8800 : color;
 
   // Debug logging for projectile investigation
   if (window.DEBUG_PROJECTILES) {
@@ -8224,7 +8222,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   }
 
   // PERFORMANCE: Get projectile from pool instead of creating new
-  let mesh = getPooledProjectile(poolType, color);
+  let mesh = getPooledProjectile(poolType, projectileColor);
 
   if (!mesh) {
     // Pool exhausted - recycle oldest active projectile to keep fire continuous
@@ -8233,7 +8231,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
       returnProjectileToPool(recycled);
       // BUG FIX: Don't reuse the recycled proxy - get a fresh one from the pool
       // The recycled proxy's instance index may have been invalidated by count adjustment
-      mesh = getPooledProjectile(poolType, color);
+      mesh = getPooledProjectile(poolType, projectileColor);
     }
   }
 
