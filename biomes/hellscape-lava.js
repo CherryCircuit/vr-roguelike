@@ -1,61 +1,107 @@
 // ============================================================
 //  BIOME: Hellscape Lava
-//  Volcanic landscape with lava rivers and fire particles
+//  Volcanic landscape with lava river, rocks, and flame pillars
+//  Extracted from biome-scenes.js (restored version)
 // ============================================================
+
 import * as THREE from 'three';
 
 export function buildHellscapeLavaScene(group, deps) {
   const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
-  
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
-  const floorY = floorHeight;
-  const sceneColor = 0x1a0505;
+  const floorY = floorHeight;  // Player stands on riverbanks at correct height
+  const valleyWidth = 35.0;
 
-  // Sky dome (dark red/black)
-  const skyGeo = new THREE.SphereGeometry(500, 32, 24);
-  const skyMat = new THREE.MeshBasicMaterial({
-    color: sceneColor,
-    side: THREE.BackSide,
-  });
-  const sky = new THREE.Mesh(skyGeo, skyMat);
-  sky.frustumCulled = false;
-  sky.renderOrder = -20;
-  group.add(sky);
-  registerFadeMaterial(skyMat);
+  // ========================================
+  // 1. LIGHTING (CRITICAL)
+  // ========================================
+  // Red moonlight with shadows
+  const moonLight = new THREE.DirectionalLight(0xff3333, 2.5);
+  moonLight.position.set(20, 30, -100);
+  moonLight.castShadow = true;
+  moonLight.shadow.mapSize.width = 2048;
+  moonLight.shadow.mapSize.height = 2048;
+  moonLight.shadow.camera.near = 0.5;
+  moonLight.shadow.camera.far = 500;
+  moonLight.shadow.camera.left = -100;
+  moonLight.shadow.camera.right = 100;
+  moonLight.shadow.camera.top = 100;
+  moonLight.shadow.camera.bottom = -100;
+  group.add(moonLight);
 
-  // Lighting
-  const ambientLight = new THREE.AmbientLight(0x331111, 0.3);
+  // Very dim ambient
+  const ambientLight = new THREE.AmbientLight(0x220505, 0.1);
   group.add(ambientLight);
 
-  // Ground with lava rivers
-  const groundGeo = new THREE.PlaneGeometry(200, 200, 100, 100);
-  groundGeo.rotateX(-Math.PI / 2);
-  const groundPos = groundGeo.attributes.position;
-  const groundColors = [];
-  for (let i = 0; i < groundPos.count; i++) {
-    const x = groundPos.getX(i);
-    const z = groundPos.getZ(i);
-    // Lava river pattern
-    const lavaPattern = Math.sin(x * 0.05) * Math.cos(z * 0.05) + Math.sin(x * 0.1 + z * 0.1) * 0.5;
-    const isLava = lavaPattern > 0.3;
-    const height = isLava ? -0.5 : Math.sin(x * 0.02) * Math.cos(z * 0.02) * 2;
-    groundPos.setY(i, height);
-    const color = isLava ? new THREE.Color(0xff2200) : new THREE.Color(0x1a0505);
-    groundColors.push(color.r, color.g, color.b);
-  }
-  groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(groundColors, 3));
-  groundGeo.computeVertexNormals();
-  const groundMat = new THREE.MeshBasicMaterial({ vertexColors: true });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.name = 'hellscape-lava-ground';
-  ground.userData.planeName = 'hellscape-lava-ground';
-  ground.position.y = floorY;
-  ground.frustumCulled = false;
-  group.add(ground);
-  registerFadeMaterial(groundMat);
+  // Lava glow point light (will animate)
+  const lavaGlow = new THREE.PointLight(0xff3300, 2.5, 60);
+  lavaGlow.position.set(0, 5, 0);
+  group.add(lavaGlow);
 
-  // Flash overlay for damage feedback
-  const flashGeo = new THREE.PlaneGeometry(200, 200);
+  // ========================================
+  // TERRAIN (existing logic)
+  // ========================================
+  const geometry = new THREE.PlaneGeometry(300, 300, 200, 200);
+  geometry.rotateX(-Math.PI / 2);
+  const positions = geometry.attributes.position;
+  for (let i = 0; i < positions.count; i++) {
+    const x = positions.getX(i);
+    const z = positions.getZ(i);
+    const riverX = Math.sin(z * 0.03) * 15.0;
+    const distToRiver = Math.abs(x - riverX);
+    const riverWidth = 5.0;
+    const distFromCenter = Math.abs(x);
+    let height = 0;
+    const valleyFloorHeight = 0.0;  // Fixed: was 1.5, causing camera to appear below ground
+    if (distFromCenter > valleyWidth) {
+      const mountainFactor = (distFromCenter - valleyWidth) / 15.0;
+      let mHeight = 0;
+      mHeight += Math.abs(Math.sin(x * 0.05) * Math.cos(z * 0.04)) * 15.0;
+      mHeight += Math.abs(Math.sin(z * 0.08 + 1.0)) * 10.0;
+      mHeight += Math.abs(Math.cos(x * 0.12 - z * 0.08)) * 6.0;
+      mHeight += (Math.random() * 3.0);
+      height = valleyFloorHeight + mHeight * Math.min(mountainFactor, 1.0);
+    } else {
+      height = valleyFloorHeight;
+      height += (Math.sin(x * 0.5) * Math.cos(z * 0.5)) * 0.3;
+      if (distToRiver < riverWidth) {
+        height = -1.0;
+      } else if (distToRiver < riverWidth + 3.0) {
+        height = Math.min(height, valleyFloorHeight - (riverWidth + 3.0 - distToRiver) * 0.5);
+      }
+    }
+    positions.setY(i, height);
+  }
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x110505,
+    roughness: 0.9,
+    metalness: 0.1,
+    flatShading: true,
+    onBeforeCompile: (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>
+varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
+      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+vPosition = position; vElevation = position.y;`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <emissive_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { } else { float distToLava = vElevation - lavaThreshold; float glowReflection = smoothstep(5.0, 0.0, distToLava); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; totalEmissiveRadiance = vec3(0.6, 0.1, 0.0) * glowReflection * pulse; } #include <emissive_fragment>`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.05, 0.05); vec3 lavaColorBright = vec3(1.0, 0.25, 0.2); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.7 + 0.3 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor, 0.9); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
+      material.userData.shader = shader;
+    }
+  });
+
+  const terrain = new THREE.Mesh(geometry, material);
+  terrain.receiveShadow = true;
+  terrain.position.y = floorY;
+  terrain.position.x = -10.0;  // Shift terrain left so player spawns on riverbank (not riverbed)
+  terrain.position.z = 0.0;  // Player on flat valley floor
+  group.add(terrain);
+
+  // Flash overlay plane for damage feedback
+  const flashGeo = new THREE.PlaneGeometry(300, 300);
   const flashMat = new THREE.MeshBasicMaterial({
     color: 0xff0000,
     transparent: true,
@@ -64,346 +110,490 @@ export function buildHellscapeLavaScene(group, deps) {
     side: THREE.DoubleSide
   });
   const flashPlane = new THREE.Mesh(flashGeo, flashMat);
-  flashPlane.name = 'hellscape-lava-damage-flash-plane';
-  flashPlane.userData.planeName = 'hellscape-lava-damage-flash-plane';
   flashPlane.rotation.x = -Math.PI / 2;
-  flashPlane.position.y = floorY + 0.1;
+  flashPlane.position.y = floorY + 0.05;
   flashPlane.frustumCulled = false;
   group.add(flashPlane);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
-  // Lava glow plane (below ground for glow effect)
-  const glowGeo = new THREE.PlaneGeometry(200, 200);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xff4400,
-    transparent: true,
-    opacity: 0.5,
-    depthWrite: false,
-    side: THREE.DoubleSide
+  // ========================================
+  // 2. JAGGED ROCKS (50 scattered)
+  // ========================================
+  const rockGeo = new THREE.TetrahedronGeometry(1, 0);
+  const rockMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1a1a,
+    roughness: 0.8,
+    metalness: 0.2,
+    flatShading: true
   });
-  const glowPlane = new THREE.Mesh(glowGeo, glowMat);
-  glowPlane.rotation.x = -Math.PI / 2;
-  glowPlane.position.y = floorY - 0.6;
-  glowPlane.frustumCulled = false;
-  group.add(glowPlane);
-  registerFadeMaterial(glowMat);
 
-  // Fire particles
-  const fireCount = 150;
-  const firePositions = new Float32Array(fireCount * 3);
-  const fireVelocities = [];
-  const fireLifetimes = [];
-  for (let i = 0; i < fireCount; i++) {
-    firePositions[i * 3] = (Math.random() - 0.5) * 80;
-    firePositions[i * 3 + 1] = floorY - 0.3;
-    firePositions[i * 3 + 2] = (Math.random() - 0.5) * 80;
-    fireVelocities.push({
-      x: (Math.random() - 0.5) * 0.1,
-      y: 0.5 + Math.random() * 1.5,
-      z: (Math.random() - 0.5) * 0.1
-    });
-    fireLifetimes.push(Math.random() * 2);
+  for (let i = 0; i < 50; i++) {
+    const rock = new THREE.Mesh(rockGeo, rockMat);
+    let x, z, riverX, distToRiver;
+    let attempts = 0;
+    do {
+      x = (Math.random() - 0.5) * 60;
+      z = (Math.random() - 0.5) * 100;
+      riverX = Math.sin(z * 0.03) * 15.0;
+      distToRiver = Math.abs(x - riverX);
+      attempts++;
+    } while (distToRiver < 8 && attempts < 20);
+
+    rock.position.set(x, floorY + 0.5, z);
+    // Scale: taller than wide (0.5-4.0)
+    const scaleY = 0.5 + Math.random() * 3.5;
+    const scaleX = 0.5 + Math.random() * 1.5;
+    rock.scale.set(scaleX, scaleY, scaleX);
+    rock.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI
+    );
+    rock.castShadow = true;
+    rock.receiveShadow = true;
+    group.add(rock);
   }
-  const fireGeo = new THREE.BufferGeometry();
-  fireGeo.setAttribute('position', new THREE.BufferAttribute(firePositions, 3));
-  const fireMat = new THREE.PointsMaterial({
-    color: 0xff6600,
-    size: 0.8,
+
+  // ========================================
+  // 3. DEAD TREES (25 procedural)
+  // ========================================
+  const treeMat = new THREE.MeshStandardMaterial({
+    color: 0x0a0a0a,
+    roughness: 0.9,
+    metalness: 0.1,
+    flatShading: true
+  });
+
+  const createBranch = (depth, maxDepth, length, radius) => {
+    const branchGroup = new THREE.Group();
+
+    // Main branch cylinder (5 sides)
+    const branchGeo = new THREE.CylinderGeometry(radius * 0.7, radius, length, 5);
+    const branch = new THREE.Mesh(branchGeo, treeMat);
+    branch.position.y = length / 2;
+    branch.castShadow = true;
+    branch.receiveShadow = true;
+    branchGroup.add(branch);
+
+    // Add child branches if not at max depth
+    if (depth < maxDepth) {
+      const numChildren = 2 + Math.floor(Math.random() * 2); // 2-3 children
+      for (let i = 0; i < numChildren; i++) {
+        const childBranch = createBranch(
+          depth + 1,
+          maxDepth,
+          length * 0.6,
+          radius * 0.6
+        );
+        childBranch.position.y = length;
+        childBranch.rotation.z = (Math.random() - 0.5) * 1.2;
+        childBranch.rotation.y = (i / numChildren) * Math.PI * 2 + Math.random() * 0.5;
+        branchGroup.add(childBranch);
+      }
+    }
+
+    return branchGroup;
+  };
+
+  for (let i = 0; i < 25; i++) {
+    let x, z, riverX, distToRiver;
+    let attempts = 0;
+    do {
+      x = (Math.random() - 0.5) * 60;
+      z = (Math.random() - 0.5) * 100;
+      riverX = Math.sin(z * 0.03) * 15.0;
+      distToRiver = Math.abs(x - riverX);
+      attempts++;
+    } while (distToRiver < 8 && attempts < 20);
+
+    const tree = createBranch(0, 3, 3 + Math.random() * 2, 0.2 + Math.random() * 0.1);
+    tree.position.set(x, floorY, z);
+    tree.rotation.y = Math.random() * Math.PI * 2;
+    const treeScale = 0.8 + Math.random() * 0.6;
+    tree.scale.setScalar(treeScale);
+    group.add(tree);
+  }
+
+  // ========================================
+  // 4. TWINKLING STARS (1500 particles with red tint)
+  // ========================================
+  const starCount = 1500;
+  const starPositions = new Float32Array(starCount * 3);
+  const starColors = new Float32Array(starCount * 3);
+  const starSizes = new Float32Array(starCount);
+  const starPhases = new Float32Array(starCount);
+
+  for (let i = 0; i < starCount; i++) {
+    const i3 = i * 3;
+    // Position in a dome
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI * 0.5; // Upper hemisphere
+    const r = 120 + Math.random() * 80;
+    starPositions[i3] = r * Math.sin(phi) * Math.cos(theta);
+    starPositions[i3 + 1] = r * Math.cos(phi) + 20;
+    starPositions[i3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+    // Red-tinted colors: mix between (0.6, 0.2, 0.2) and (1.0, 0.8, 0.8)
+    const colorMix = Math.random();
+    starColors[i3] = 0.6 + colorMix * 0.4;     // R
+    starColors[i3 + 1] = 0.2 + colorMix * 0.6; // G
+    starColors[i3 + 2] = 0.2 + colorMix * 0.6; // B
+
+    starSizes[i] = 0.5 + Math.random() * 1.5;
+    starPhases[i] = Math.random() * Math.PI * 2;
+  }
+
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  starGeo.setAttribute('aColor', new THREE.BufferAttribute(starColors, 3));
+  starGeo.setAttribute('aSize', new THREE.BufferAttribute(starSizes, 1));
+  starGeo.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
+
+  const starMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }
+    },
+    vertexShader: `
+      attribute vec3 aColor;
+      attribute float aSize;
+      attribute float aPhase;
+      varying vec3 vColor;
+      varying float vTwinkle;
+      uniform float uTime;
+      void main() {
+        vColor = aColor;
+        vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = aSize * (300.0 / -mvPosition.z) * vTwinkle;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      varying float vTwinkle;
+      void main() {
+        float dist = length(gl_PointCoord - vec2(0.5));
+        if (dist > 0.5) discard;
+        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+        gl_FragColor = vec4(vColor * vTwinkle, alpha);
+      }
+    `,
     transparent: true,
-    opacity: 0.8,
+    depthWrite: false,
     blending: THREE.AdditiveBlending
   });
-  const fire = new THREE.Points(fireGeo, fireMat);
-  fire.frustumCulled = false;
-  group.add(fire);
-  registerFadeMaterial(fireMat);
 
-  // Ember particles (smaller, faster)
-  const emberCount = 200;
-  const emberPositions = new Float32Array(emberCount * 3);
-  const emberVelocities = [];
-  for (let i = 0; i < emberCount; i++) {
-    emberPositions[i * 3] = (Math.random() - 0.5) * 100;
-    emberPositions[i * 3 + 1] = floorY + Math.random() * 30;
-    emberPositions[i * 3 + 2] = (Math.random() - 0.5) * 100;
-    emberVelocities.push({
-      x: (Math.random() - 0.5) * 0.2,
-      y: 0.3 + Math.random() * 0.5,
-      z: (Math.random() - 0.5) * 0.2
-    });
+  const stars = new THREE.Points(starGeo, starMat);
+  group.add(stars);
+
+  // ========================================
+  // 5. SPARK PARTICLES (200 rising from lava)
+  // ========================================
+  const sparkCount = 200;
+  const sparkPositions = new Float32Array(sparkCount * 3);
+  const sparkVelocities = new Float32Array(sparkCount * 3);
+  const sparkLifetimes = new Float32Array(sparkCount);
+  const sparkMaxLifetimes = new Float32Array(sparkCount);
+
+  const initSpark = (idx) => {
+    const i3 = idx * 3;
+    const z = (Math.random() - 0.5) * 100;
+    const riverX = Math.sin(z * 0.03) * 15.0 + 10.0;  // Account for terrain X shift
+    sparkPositions[i3] = riverX + (Math.random() - 0.5) * 4;
+    sparkPositions[i3 + 1] = floorY - 0.5 + Math.random() * 0.5;  // Account for terrain Y offset
+    sparkPositions[i3 + 2] = z;
+    sparkVelocities[i3] = (Math.random() - 0.5) * 0.02;
+    sparkVelocities[i3 + 1] = 0.03 + Math.random() * 0.05;
+    sparkVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
+    sparkLifetimes[idx] = 0;
+    sparkMaxLifetimes[idx] = 2 + Math.random() * 3;
+  };
+
+  for (let i = 0; i < sparkCount; i++) {
+    initSpark(i);
+    sparkLifetimes[i] = Math.random() * sparkMaxLifetimes[i]; // Stagger initial lifetimes
   }
-  const emberGeo = new THREE.BufferGeometry();
-  emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPositions, 3));
-  const emberMat = new THREE.PointsMaterial({
+
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+
+  const sparkMat = new THREE.PointsMaterial({
     color: 0xffaa00,
     size: 0.3,
     transparent: true,
-    opacity: 0.6,
-    blending: THREE.AdditiveBlending
-  });
-  const embers = new THREE.Points(emberGeo, emberMat);
-  embers.frustumCulled = false;
-  group.add(embers);
-  registerFadeMaterial(emberMat);
-
-  // Rocky outcrops (procedural)
-  const createRock = () => {
-    const rockGeo = new THREE.DodecahedronGeometry(1, 0);
-    const rockMat = new THREE.MeshBasicMaterial({ color: 0x2a1515, flatShading: true });
-    const rock = new THREE.Mesh(rockGeo, rockMat);
-    rock.scale.set(
-      1 + Math.random() * 2,
-      1 + Math.random() * 3,
-      1 + Math.random() * 2
-    );
-    rock.rotation.set(
-      Math.random() * Math.PI,
-      Math.random() * Math.PI,
-      Math.random() * Math.PI
-    );
-    registerFadeMaterial(rockMat);
-    return rock;
-  };
-
-  const rockPositions = [
-    { x: 15, z: 15 },
-    { x: -20, z: 10 },
-    { x: 10, z: -25 },
-    { x: -15, z: -20 },
-    { x: 25, z: -10 },
-    { x: -30, z: 25 },
-  ];
-  rockPositions.forEach((pos) => {
-    const rock = createRock();
-    rock.position.set(pos.x, floorY + 1, pos.z);
-    group.add(rock);
+    opacity: 0.8,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
   });
 
-  // Ash particles (floating grey particles)
-  const ashCount = 100;
+  const sparks = new THREE.Points(sparkGeo, sparkMat);
+  group.add(sparks);
+
+  // ========================================
+  // 5b. ASH PARTICLES (dark floating)
+  // ========================================
+  const ashCount = 260;
   const ashPositions = new Float32Array(ashCount * 3);
+  const ashVelocities = new Float32Array(ashCount * 3);
   for (let i = 0; i < ashCount; i++) {
-    ashPositions[i * 3] = (Math.random() - 0.5) * 80;
-    ashPositions[i * 3 + 1] = Math.random() * 20 + floorY;
-    ashPositions[i * 3 + 2] = (Math.random() - 0.5) * 80;
+    const i3 = i * 3;
+    ashPositions[i3] = (Math.random() - 0.5) * 80;
+    ashPositions[i3 + 1] = 1 + Math.random() * 10;
+    ashPositions[i3 + 2] = (Math.random() - 0.5) * 80;
+    ashVelocities[i3] = (Math.random() - 0.5) * 0.02;
+    ashVelocities[i3 + 1] = 0.01 + Math.random() * 0.015;
+    ashVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
   }
   const ashGeo = new THREE.BufferGeometry();
   ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPositions, 3));
   const ashMat = new THREE.PointsMaterial({
-    color: 0x666666,
-    size: 0.2,
+    color: 0x2b2b2b,
+    size: 0.06,  // Smaller than alien particles (0.0875)
     transparent: true,
-    opacity: 0.4
+    opacity: 0.5,
+    depthWrite: false
   });
   const ash = new THREE.Points(ashGeo, ashMat);
-  ash.frustumCulled = false;
   group.add(ash);
-  registerFadeMaterial(ashMat);
 
-  // Geyser particles (periodic bursts)
-  const GEYSER_PARTICLE_COUNT = 50;
-  const geyserPos = new Float32Array(GEYSER_PARTICLE_COUNT * 3);
-  const geyserSizes = new Float32Array(GEYSER_PARTICLE_COUNT);
-  const geyserParticleData = [];
-  for (let i = 0; i < GEYSER_PARTICLE_COUNT; i++) {
-    geyserPos[i * 3] = 0;
-    geyserPos[i * 3 + 1] = -1000; // Hidden initially
-    geyserPos[i * 3 + 2] = 0;
-    geyserSizes[i] = 0;
-    geyserParticleData.push({
-      active: false,
-      x: 0, y: 0, z: 0,
-      vx: 0, vy: 0, vz: 0,
-      life: 0,
-      maxLife: 0
+  // ========================================
+  // 6. FLAME GEYSERS (periodic eruptions)
+  // ========================================
+  const geyserParticles = [];
+  let lastGeyserTime = 0;
+  const geyserInterval = 5000; // 5 seconds
+
+  const createGeyserBurst = (now) => {
+    const particleCount = 100;
+    // Spawn from mountainsides (outside valleyWidth), accounting for terrain X shift
+    const side = Math.random() > 0.5 ? 1 : -1;
+    const x = side * (valleyWidth + 5 + Math.random() * 20) + 10.0;  // Account for terrain X shift
+    const z = (Math.random() - 0.5) * 80;
+    const baseY = floorY + 5;
+
+    for (let i = 0; i < particleCount; i++) {
+      geyserParticles.push({
+        x: x + (Math.random() - 0.5) * 2,
+        y: baseY,
+        z: z + (Math.random() - 0.5) * 2,
+        vx: (Math.random() - 0.5) * 0.1,
+        vy: 0.8 + Math.random() * 0.5, // Strong upward velocity
+        vz: (Math.random() - 0.5) * 0.1,
+        life: 0,
+        maxLife: 1.5 + Math.random() * 1.5
+      });
+    }
+  };
+
+  const geyserGeo = new THREE.BufferGeometry();
+  const geyserPositions = new Float32Array(500 * 3); // Max 500 particles
+  geyserGeo.setAttribute('position', new THREE.BufferAttribute(geyserPositions, 3));
+  geyserGeo.setDrawRange(0, 0);
+
+  const geyserMat = new THREE.PointsMaterial({
+    color: 0xff6600,
+    size: 0.4,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+
+  const geyserPoints = new THREE.Points(geyserGeo, geyserMat);
+  group.add(geyserPoints);
+
+  // ========================================
+  // 7. FLAME PILLARS (distant fire columns)
+  // ========================================
+  const PILLAR_COUNT = 7;
+  const PARTICLES_PER_PILLAR = 35;
+  const TOTAL_FLAME_PILLAR_PARTICLES = PILLAR_COUNT * PARTICLES_PER_PILLAR;
+
+  // Canvas-drawn flame sprite texture (64x64, soft radial gradient)
+  const flameCanvas = document.createElement('canvas');
+  flameCanvas.width = 64;
+  flameCanvas.height = 64;
+  const fCtx = flameCanvas.getContext('2d');
+  const flameGrad = fCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  flameGrad.addColorStop(0, 'rgba(255,255,200,1.0)');
+  flameGrad.addColorStop(0.2, 'rgba(255,200,50,0.9)');
+  flameGrad.addColorStop(0.5, 'rgba(255,100,0,0.6)');
+  flameGrad.addColorStop(0.8, 'rgba(200,30,0,0.2)');
+  flameGrad.addColorStop(1, 'rgba(100,0,0,0.0)');
+  fCtx.fillStyle = flameGrad;
+  fCtx.fillRect(0, 0, 64, 64);
+  const flameTexture = new THREE.CanvasTexture(flameCanvas);
+
+  // Pillar positions: spread around the arena at 30-70 units distance
+  const pillarDefs = [];
+  for (let i = 0; i < PILLAR_COUNT; i++) {
+    const angle = (i / PILLAR_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
+    const dist = 35 + Math.random() * 40; // 35-75 units away
+    pillarDefs.push({
+      x: Math.cos(angle) * dist + 10.0, // Account for terrain X shift
+      z: Math.sin(angle) * dist,
+      height: 12 + Math.random() * 10, // Pillar height 12-22 units
+      radius: 1.5 + Math.random() * 1.5, // Base radius 1.5-3 units
+      speed: 0.6 + Math.random() * 0.4 // Rise speed multiplier
     });
   }
-  const geyserGeo = new THREE.BufferGeometry();
-  geyserGeo.setAttribute('position', new THREE.BufferAttribute(geyserPos, 3));
-  geyserGeo.setAttribute('aSize', new THREE.BufferAttribute(geyserSizes, 1));
-  const geyserMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uColor: { value: new THREE.Color(0xff6600) }
-    },
-    vertexShader: `
-      attribute float aSize;
-      void main() {
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = aSize * (300.0 / -mvPosition.z);
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: `
-      uniform vec3 uColor;
-      void main() {
-        float dist = length(gl_PointCoord - vec2(0.5));
-        if (dist > 0.5) discard;
-        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-        gl_FragColor = vec4(uColor, alpha * 0.8);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-  const geyserParticles = new THREE.Points(geyserGeo, geyserMat);
-  geyserParticles.frustumCulled = false;
-  group.add(geyserParticles);
-  registerFadeMaterial(geyserMat);
 
-  // Flame pillars (3 locations with constant particle streams)
-  const FLAME_PILLAR_PARTICLES = 60;
-  const TOTAL_FLAME_PILLAR_PARTICLES = FLAME_PILLAR_PARTICLES * 3;
-  const flamePillarPos = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES * 3);
-  const flamePillarSizes = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES);
-  const flameParticleData = [];
-  const pillarDefs = [
-    { x: -20, z: -15, height: 15, speed: 8 },
-    { x: 15, z: -20, height: 12, speed: 10 },
-    { x: 0, z: 20, height: 18, speed: 7 }
-  ];
+  // Particle arrays
+  const flamePositions = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES * 3);
+  const flameSizes = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES);
+  const flameParticleData = []; // Per-particle: { pillarIdx, t (0-1 life progress) }
 
-  const initFlameParticle = (i) => {
-    const pillarIdx = Math.floor(i / FLAME_PILLAR_PARTICLES);
+  const initFlameParticle = (idx) => {
+    const pillarIdx = idx % PILLAR_COUNT;
     const pillar = pillarDefs[pillarIdx];
-    const pd = flameParticleData[i];
-    pd.pillarIdx = pillarIdx;
-    pd.t = Math.random();
-    pd.speed = 0.8 + Math.random() * 0.4;
-    pd.driftPhase = Math.random() * Math.PI * 2;
-    pd.driftAmp = 0.3 + Math.random() * 0.4;
+    const i3 = idx * 3;
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.random() * pillar.radius;
+    const t = Math.random(); // Start at random height for stagger
 
-    const i3 = i * 3;
-    flamePillarPos[i3] = pillar.x + (Math.random() - 0.5) * 2;
-    flamePillarPos[i3 + 1] = floorY + pd.t * pillar.height;
-    flamePillarPos[i3 + 2] = pillar.z + (Math.random() - 0.5) * 2;
-    flamePillarSizes[i] = 2.0;
+    flamePositions[i3] = pillar.x + Math.cos(angle) * r;
+    flamePositions[i3 + 1] = floorY + t * pillar.height;
+    flamePositions[i3 + 2] = pillar.z + Math.sin(angle) * r;
+    flameSizes[idx] = 1.0 + (1.0 - t) * 2.0; // Larger at base, smaller at top
+
+    if (!flameParticleData[idx]) {
+      flameParticleData[idx] = { pillarIdx, speed: 0.3 + Math.random() * 0.3 };
+    }
+    flameParticleData[idx].t = t;
+    flameParticleData[idx].pillarIdx = pillarIdx;
   };
 
   for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
-    flameParticleData.push({
-      pillarIdx: 0,
-      t: 0,
-      speed: 1,
-      driftPhase: 0,
-      driftAmp: 0
-    });
     initFlameParticle(i);
   }
 
   const flamePillarGeo = new THREE.BufferGeometry();
-  flamePillarGeo.setAttribute('position', new THREE.BufferAttribute(flamePillarPos, 3));
-  flamePillarGeo.setAttribute('aSize', new THREE.BufferAttribute(flamePillarSizes, 1));
+  flamePillarGeo.setAttribute('position', new THREE.BufferAttribute(flamePositions, 3));
+  flamePillarGeo.setAttribute('aSize', new THREE.BufferAttribute(flameSizes, 1));
+
+  // Use ShaderMaterial for per-particle size with sizeAttenuation
   const flamePillarMat = new THREE.ShaderMaterial({
     uniforms: {
-      uColor: { value: new THREE.Color(0xff4400) }
+      uTexture: { value: flameTexture },
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
     },
     vertexShader: `
       attribute float aSize;
+      varying float vAlpha;
+      uniform float uPixelRatio;
       void main() {
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = aSize * (200.0 / -mvPosition.z);
+        gl_PointSize = aSize * uPixelRatio * (200.0 / -mvPosition.z);
+        gl_PointSize = clamp(gl_PointSize, 1.0, 64.0);
         gl_Position = projectionMatrix * mvPosition;
+        // Fade particles that are very high (near top of pillar)
+        vAlpha = aSize / 3.0;
       }
     `,
     fragmentShader: `
-      uniform vec3 uColor;
+      uniform sampler2D uTexture;
+      varying float vAlpha;
       void main() {
-        float dist = length(gl_PointCoord - vec2(0.5));
-        if (dist > 0.5) discard;
-        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-        gl_FragColor = vec4(uColor, alpha * 0.9);
+        vec4 texColor = texture2D(uTexture, gl_PointCoord);
+        gl_FragColor = vec4(texColor.rgb, texColor.a * vAlpha);
       }
     `,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending
   });
-  const flamePillars = new THREE.Points(flamePillarGeo, flamePillarMat);
-  flamePillars.frustumCulled = false;
-  group.add(flamePillars);
-  registerFadeMaterial(flamePillarMat);
 
-  // Geyser state
-  let lastGeyserTime = 0;
-  const geyserInterval = 2000; // ms between bursts
-  const activeGeyserParticles = [];
+  const flamePillarPoints = new THREE.Points(flamePillarGeo, flamePillarMat);
+  group.add(flamePillarPoints);
 
-  const createGeyserBurst = (now) => {
-    const burstX = (Math.random() - 0.5) * 60;
-    const burstZ = (Math.random() - 0.5) * 60;
-
-    for (let i = 0; i < 15; i++) {
-      const particleIdx = activeGeyserParticles.length % GEYSER_PARTICLE_COUNT;
-      const pd = geyserParticleData[particleIdx];
-      pd.active = true;
-      pd.x = burstX + (Math.random() - 0.5) * 2;
-      pd.y = floorY;
-      pd.z = burstZ + (Math.random() - 0.5) * 2;
-      pd.vx = (Math.random() - 0.5) * 4;
-      pd.vy = 10 + Math.random() * 8;
-      pd.vz = (Math.random() - 0.5) * 4;
-      pd.life = 0;
-      pd.maxLife = 1.5 + Math.random() * 1;
-
-      if (activeGeyserParticles.length < GEYSER_PARTICLE_COUNT) {
-        activeGeyserParticles.push(particleIdx);
-      }
-    }
+  // ========================================
+  // MOONS (existing)
+  // ========================================
+  const createMoon = (size, color, glowColor) => {
+    const mGroup = new THREE.Group();
+    const moonGeo = new THREE.IcosahedronGeometry(size, 2);
+    const moonMat = new THREE.MeshBasicMaterial({ color });
+    mGroup.add(new THREE.Mesh(moonGeo, moonMat));
+    const glowGeo = new THREE.IcosahedronGeometry(size * 1.2, 2);
+    const glowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.3 });
+    mGroup.add(new THREE.Mesh(glowGeo, glowMat));
+    const farGlowGeo = new THREE.IcosahedronGeometry(size * 1.5, 2);
+    const farGlowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.1 });
+    mGroup.add(new THREE.Mesh(farGlowGeo, farGlowMat));
+    return mGroup;
   };
+  const moon1 = createMoon(10.5, 0xaa1111, 0xff2200);
+  moon1.position.set(20, 25, -100);
+  group.add(moon1);
+  const moon2 = createMoon(7.5, 0x880000, 0xaa0000);
+  moon2.position.set(-40, 20, -90);
+  group.add(moon2);
+  const moon3 = createMoon(5.4, 0x550000, 0x770000);
+  moon3.position.set(-20, 35, -95);
+  group.add(moon3);
 
-  // Animation update
+  // ========================================
+  // ANIMATION UPDATE
+  // ========================================
   group.userData.update = (now, dt) => {
     const time = now * 0.001;
-    const dtSec = dt * 0.001;
 
-    // Fire particles
-    const firePos = fireGeo.attributes.position.array;
-    for (let i = 0; i < fireCount; i++) {
-      const idx = i * 3;
-      firePos[idx] += fireVelocities[i].x * dt;
-      firePos[idx + 1] += fireVelocities[i].y * dt;
-      firePos[idx + 2] += fireVelocities[i].z * dt;
-      fireLifetimes[i] += dtSec;
+    // Terrain shader
+    if (material.userData.shader) {
+      material.userData.shader.uniforms.uTime.value = time;
+    }
 
-      if (fireLifetimes[i] > 2 || firePos[idx + 1] > floorY + 10) {
-        firePos[idx] = (Math.random() - 0.5) * 80;
-        firePos[idx + 1] = floorY - 0.3;
-        firePos[idx + 2] = (Math.random() - 0.5) * 80;
-        fireLifetimes[i] = 0;
+    // Star twinkle
+    starMat.uniforms.uTime.value = time;
+
+    // Lava glow position animation (circle)
+    lavaGlow.position.x = Math.sin(time * 0.3) * 15;
+    lavaGlow.position.z = Math.cos(time * 0.3) * 20;
+    lavaGlow.position.y = 5 + Math.sin(time * 0.5) * 2;
+
+    // Lava glow intensity pulse
+    lavaGlow.intensity = 2.0 + Math.sin(time * 2) * 0.5;
+
+    // Update spark particles - continuously spawn from lava river
+    const sparkPos = sparkGeo.attributes.position.array;
+
+    // Continuously spawn 10-15 new sparks each frame from random positions along the river
+    // (increased spawn rate for more dynamic lava effect)
+    const sparksToSpawn = 10 + Math.floor(Math.random() * 6);  // Was 6 + Math.floor(Math.random() * 4)
+    for (let s = 0; s < sparksToSpawn; s++) {
+      const randomIdx = Math.floor(Math.random() * sparkCount);
+      // Only respawn if lifetime is mostly elapsed or just starting fresh
+      if (sparkLifetimes[randomIdx] > sparkMaxLifetimes[randomIdx] * 0.8) {
+        initSpark(randomIdx);
       }
     }
-    fireGeo.attributes.position.needsUpdate = true;
 
-    // Ember particles
-    const emberPosArr = emberGeo.attributes.position.array;
-    for (let i = 0; i < emberCount; i++) {
-      const idx = i * 3;
-      emberPosArr[idx] += emberVelocities[i].x * dt;
-      emberPosArr[idx + 1] += emberVelocities[i].y * dt;
-      emberPosArr[idx + 2] += emberVelocities[i].z * dt;
+    for (let i = 0; i < sparkCount; i++) {
+      const i3 = i * 3;
+      sparkLifetimes[i] += dt * 0.001;
 
-      if (emberPosArr[idx + 1] > floorY + 30) {
-        emberPosArr[idx] = (Math.random() - 0.5) * 100;
-        emberPosArr[idx + 1] = floorY;
-        emberPosArr[idx + 2] = (Math.random() - 0.5) * 100;
+      if (sparkLifetimes[i] > sparkMaxLifetimes[i]) {
+        initSpark(i);
+      } else {
+        sparkPos[i3] += sparkVelocities[i3];
+        sparkPos[i3 + 1] += sparkVelocities[i3 + 1];
+        sparkPos[i3 + 2] += sparkVelocities[i3 + 2];
       }
     }
-    emberGeo.attributes.position.needsUpdate = true;
+    sparkGeo.attributes.position.needsUpdate = true;
 
-    // Ash particles
-    const ashPosArr = ashGeo.attributes.position.array;
+    // Ash drift
+    const ashPos = ashGeo.attributes.position.array;
     for (let i = 0; i < ashCount; i++) {
-      const idx = i * 3;
-      ashPosArr[idx] += Math.sin(time + i) * 0.02;
-      ashPosArr[idx + 1] += 0.01 * dt;
-      ashPosArr[idx + 2] += Math.cos(time + i) * 0.02;
-
-      if (ashPosArr[idx] > 40) ashPosArr[idx] = -40;
-      if (ashPosArr[idx] < -40) ashPosArr[idx] = 40;
-      if (ashPosArr[idx + 1] > floorY + 20) ashPosArr[idx + 1] = floorY;
-      if (ashPosArr[idx + 2] > 40) ashPosArr[idx + 2] = -40;
-      if (ashPosArr[idx + 2] < -40) ashPosArr[idx + 2] = 40;
+      const i3 = i * 3;
+      ashPos[i3] += ashVelocities[i3] * dt * 0.6;
+      ashPos[i3 + 1] += ashVelocities[i3 + 1] * dt * 0.6;
+      ashPos[i3 + 2] += ashVelocities[i3 + 2] * dt * 0.6;
+      if (ashPos[i3 + 1] > 12) ashPos[i3 + 1] = 1;
+      if (ashPos[i3] > 40) ashPos[i3] = -40;
+      if (ashPos[i3] < -40) ashPos[i3] = 40;
+      if (ashPos[i3 + 2] > 40) ashPos[i3 + 2] = -40;
+      if (ashPos[i3 + 2] < -40) ashPos[i3 + 2] = 40;
     }
     ashGeo.attributes.position.needsUpdate = true;
 
@@ -413,28 +603,27 @@ export function buildHellscapeLavaScene(group, deps) {
       lastGeyserTime = now;
     }
 
-    const geyserPosArr = geyserGeo.attributes.position.array;
+    // Update geyser particles
+    const geyserPos = geyserGeo.attributes.position.array;
     let activeCount = 0;
-    for (let i = geyserParticleData.length - 1; i >= 0; i--) {
-      const p = geyserParticleData[i];
-      if (!p.active) continue;
-
-      p.life += dtSec;
+    for (let i = geyserParticles.length - 1; i >= 0; i--) {
+      const p = geyserParticles[i];
+      p.life += dt * 0.001;
 
       if (p.life > p.maxLife) {
-        p.active = false;
+        geyserParticles.splice(i, 1);
         continue;
       }
 
-      p.x += p.vx * dtSec;
-      p.y += p.vy * dtSec;
-      p.z += p.vz * dtSec;
-      p.vy -= 18 * dtSec;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.z += p.vz;
+      p.vy -= 0.03; // Gravity
 
       const idx = activeCount * 3;
-      geyserPosArr[idx] = p.x;
-      geyserPosArr[idx + 1] = p.y;
-      geyserPosArr[idx + 2] = p.z;
+      geyserPos[idx] = p.x;
+      geyserPos[idx + 1] = p.y;
+      geyserPos[idx + 2] = p.z;
       activeCount++;
     }
     geyserGeo.setDrawRange(0, activeCount);
@@ -447,17 +636,22 @@ export function buildHellscapeLavaScene(group, deps) {
       const pd = flameParticleData[i];
       const pillar = pillarDefs[pd.pillarIdx];
       const i3 = i * 3;
+      const dtSec = dt * 0.001;
 
-      pd.t += (pd.speed * dtSec * pillar.speed) / Math.max(1, pillar.height);
+      // Advance particle up the pillar
+      pd.t += dtSec * pd.speed * pillar.speed / pillar.height;
 
       if (pd.t >= 1.0) {
+        // Respawn at base
         initFlameParticle(i);
       } else {
-        const driftWave = Math.sin(time * 2.2 + pd.driftPhase) * pd.driftAmp * dtSec;
-        fpPos[i3] += Math.cos(pd.driftPhase) * driftWave;
+        // Slight horizontal drift as particle rises
+        const drift = (Math.random() - 0.5) * 0.05;
+        fpPos[i3] += drift;
         fpPos[i3 + 1] += pd.speed * dtSec * pillar.speed;
-        fpPos[i3 + 2] += Math.sin(pd.driftPhase) * driftWave;
+        fpPos[i3 + 2] += drift;
 
+        // Shrink as particle rises
         fpSizes[i] = Math.max(0.3, (1.0 - pd.t) * 3.0);
       }
     }

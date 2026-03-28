@@ -1323,11 +1323,13 @@ function spawnElectricArc(fromPos, toPos, color = 0xffcc00, conductorIndex = -1)
   sceneRef.add(arc);
 
   // Store for cleanup (track conductor index for cleanup when conductor dies)
+  // Also track target enemy for cleanup when buffed enemy dies
   electricArcs.push({
     mesh: arc,
     createdAt: performance.now(),
     lifetime: 200, // 0.2 seconds
     conductorIndex: conductorIndex,
+    targetEnemyIndex: -1, // Set by caller if available
   });
 }
 
@@ -1342,6 +1344,23 @@ function clearConductorArcs(conductorIndex) {
   for (let i = electricArcs.length - 1; i >= 0; i--) {
     const arc = electricArcs[i];
     if (arc.conductorIndex === conductorIndex) {
+      sceneRef.remove(arc.mesh);
+      arc.mesh.geometry.dispose();
+      arc.mesh.material.dispose();
+      electricArcs.splice(i, 1);
+    }
+  }
+}
+
+/**
+ * Clear all electric arcs connected to a specific buffed enemy.
+ * Called when a buffed enemy dies to immediately remove its lightning visuals.
+ * @param {number} targetEnemyIndex - Index of the buffed enemy in activeEnemies
+ */
+function clearTargetEnemyArcs(targetEnemyIndex) {
+  for (let i = electricArcs.length - 1; i >= 0; i--) {
+    const arc = electricArcs[i];
+    if (arc.targetEnemyIndex === targetEnemyIndex) {
       sceneRef.remove(arc.mesh);
       arc.mesh.geometry.dispose();
       arc.mesh.material.dispose();
@@ -1659,11 +1678,13 @@ function getExplosionSprite() {
 const _dir = new THREE.Vector3();
 const _look = new THREE.Vector3();
 
-// Status effect bubbles array (similar to damage numbers)
+// Status effect text popups (glowing title text style, similar to damage numbers)
 const statusBubbles = [];
 
 /**
- * Spawn a speech bubble indicating a status effect was applied.
+ * Spawn glowing title text indicating a status effect was applied.
+ * Task #4: Replaced comic bubble icons with large glowing text for VR readability.
+ * Colors: Fire=#ff3300, Freeze=#88ccff, Shock=#ffdd00
  */
 function spawnStatusEffectBubble(position, effectType, stacks) {
   const canvas = document.createElement('canvas');
@@ -1672,66 +1693,78 @@ function spawnStatusEffectBubble(position, effectType, stacks) {
   canvas.height = 128;
 
   // Determine color and text based on effect type
-  let bgColor, textColor, text;
+  // Task #4: Use specified glowing colors for each effect
+  let glowColor, text;
   switch (effectType) {
     case 'fire':
-      bgColor = '#ff4400';
-      textColor = '#ffffff';
+      glowColor = '#ff3300';  // Hot red
       text = stacks > 1 ? `FIRE x${stacks}!` : 'FIRE!';
       break;
     case 'shock':
-      bgColor = '#ffff44';
-      textColor = '#000000';
+      glowColor = '#ffdd00';  // Electric yellow
       text = stacks > 1 ? `SHOCK x${stacks}!` : 'SHOCK!';
       break;
     case 'freeze':
-      bgColor = '#44aaff';
-      textColor = '#ffffff';
+      glowColor = '#88ccff';  // Icy blue
       text = stacks > 1 ? `CHILL x${stacks}!` : 'CHILL!';
       break;
     default:
-      bgColor = '#888888';
-      textColor = '#ffffff';
+      glowColor = '#ffffff';
       text = 'EFFECT!';
   }
 
-  // Background bubble
-  ctx.fillStyle = bgColor;
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 6;
-
-  // Flashy comic bubble shape
-  ctx.beginPath();
-  ctx.moveTo(40, 60);
-  ctx.lineTo(20, 20); ctx.lineTo(80, 40);
-  ctx.lineTo(128, 10); ctx.lineTo(176, 40);
-  ctx.lineTo(236, 20); ctx.lineTo(216, 60);
-  ctx.lineTo(236, 100); ctx.lineTo(176, 80);
-  ctx.lineTo(128, 110); ctx.lineTo(80, 80);
-  ctx.lineTo(20, 100); ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.font = 'bold 36px "Comic Sans MS", cursive, sans-serif';
-  if (text.length > 8) ctx.font = 'bold 24px "Comic Sans MS", cursive, sans-serif';
+  // Large font for VR readability
+  const fontSize = 56;
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = textColor;
+
+  // Glow effect (similar to damage numbers)
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 20;
+
+  // Drop shadow for depth
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillText(text, 130, 66);
+
+  // Main glowing text
+  ctx.fillStyle = glowColor;
   ctx.fillText(text, 128, 64);
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
   texture.premultiplyAlpha = false;
+
+  // Larger scale for VR readability (similar to damage numbers)
+  const scale = 0.5;
+  const width = scale * 2;
+  const height = scale;
+
   const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.5, 0.75),
-    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, side: THREE.DoubleSide })
+    new THREE.PlaneGeometry(width, height),
+    new THREE.MeshBasicMaterial({ 
+      map: texture, 
+      transparent: true, 
+      opacity: 0.95,
+      depthTest: false, 
+      side: THREE.DoubleSide 
+    })
   );
+  
+  // Position at enemy, pop up effect
   mesh.position.copy(position);
-  mesh.position.y += 1.2;
-  mesh.position.z += 0.5;
-  mesh.renderOrder = 997;
+  mesh.position.y += 1.2;  // Above enemy
+  mesh.position.x += (Math.random() - 0.5) * 0.3;
+  mesh.position.z += (Math.random() - 0.5) * 0.3;
+  
+  mesh.renderOrder = 998;
   mesh.userData.createdAt = performance.now();
   mesh.userData.lifetime = 800;
-  mesh.userData.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.5, 1.5, (Math.random() - 0.5) * 0.5);
+  mesh.userData.velocity = new THREE.Vector3(
+    (Math.random() - 0.5) * 0.5,
+    1.2,  // Float up
+    (Math.random() - 0.5) * 0.5
+  );
 
   sceneRef.add(mesh);
   statusBubbles.push(mesh);
@@ -1855,6 +1888,12 @@ export function spawnEnemy(type, position, levelConfig) {
   const def = ENEMY_DEFS[type];
   if (!def) return;
   if (type === 'mirror_knight' && activeEnemies.some(enemy => enemy.isMirror)) return;
+
+  // Limit 5-high jelly enemies to 1 concurrent (they're too hard in groups)
+  if (type === 'jelly' && activeEnemies.some(enemy => enemy.isJelly)) return;
+
+  // Limit conductor (warden) enemies to 2 concurrent
+  if (type === 'conductor' && activeEnemies.filter(enemy => enemy.isConductor).length >= 2) return;
 
   // Handle special enemy types
   if (def.isTrain) {
@@ -2545,6 +2584,10 @@ export function updateEnemies(dt, now, playerPos) {
 
           if (e.conductorArcTimer <= 0) {
             spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc, i);
+            // Track the last spawned arc's target for cleanup when buffed enemy dies
+            if (electricArcs.length > 0) {
+              electricArcs[electricArcs.length - 1].targetEnemyIndex = j;
+            }
           }
 
           other.mesh.traverse(c => {
@@ -2960,6 +3003,8 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
         setMaterialEmissiveSafe(c.material, new THREE.Color(0x000000), 0);
       }
     });
+    // Clear all electric arcs connected to this buffed enemy
+    clearTargetEnemyArcs(index);
   }
 
   // Conductor: Chain overload - kills all linked enemies

@@ -275,6 +275,10 @@ const biomePropFloaters = [];
 let biomeSceneGroup = null;
 let biomeSceneBiome = null;
 
+// Dream sequence trigger - DISABLED until player can collect upgrades in dreamworld
+// The dream sequence code and transition system remain intact, just hidden from players
+const DREAM_TRIGGER_ENABLED = false;
+
 let dreamTriggerMesh = null;
 let dreamTransition = null;
 let dreamFadeOverlay = null;
@@ -1904,7 +1908,8 @@ function placeDreamTriggerBehindPlayer(force = false) {
 
 function refreshDreamTriggerVisibility() {
   if (!dreamTriggerMesh) return;
-  dreamTriggerMesh.visible = !game.inDreamWorld && !game.dreamCompleted;
+  // Dream trigger disabled until player can collect upgrades in dreamworld
+  dreamTriggerMesh.visible = DREAM_TRIGGER_ENABLED && !game.inDreamWorld && !game.dreamCompleted;
 }
 
 function didProjectileHitDreamTrigger(previousPos, currentPos) {

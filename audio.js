@@ -68,59 +68,59 @@ export function playShoothSound() {
   }
 }
 
-// ── Seeker Burst sound (soft homing whistle) ───────────────
-// isLastShot: true = full "whistle", false = short chirp
+// ── Seeker Burst sound (sfxr-based square wave burst) ──────
+// Translated from sfxr parameters. wave_type=0 (square), with phaser effect.
+// isLastShot: true = longer sustain+decay variant, false = short chirp variant
 export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIndex = 0) {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
+  // sfxr parameter sets (shared params)
+  // p_base_freq: 0.5203 → ~452Hz, wave_type: 0 (square)
+  // p_duty: 0.159, p_duty_ramp: 0.021
+  // p_pha_offset: 0.083, p_pha_ramp: -0.184
+  // p_lpf_freq: 1 (wide open), p_hpf_freq: 0.11 (~2200Hz)
+  // sound_vol: 0.25
+  const baseFreq = 20 * Math.pow(400, 0.5203121253268148); // ~452Hz
+  const sustainTime = isLastShot ? 0.122 : 0.076;
+  const decayTime = isLastShot ? 0.28 : 0.079;
+  const freqRamp = isLastShot ? -0.277 : -0.209; // per second
+
+  // sfxr freq_ramp is exponential change per second
+  const endFreq = Math.max(20, baseFreq * Math.pow(2, freqRamp));
+
   const osc = ctx.createOscillator();
-  const osc2 = ctx.createOscillator();
   const gain = ctx.createGain();
-  const filter = ctx.createBiquadFilter();
 
-  // Soft sine + triangle blend for pleasant whistle
-  osc.type = 'sine';
-  osc2.type = 'triangle';
+  // wave_type 0 = square
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(baseFreq, t);
+  osc.frequency.exponentialRampToValueAtTime(endFreq, t + sustainTime + decayTime);
 
-  if (isLastShot) {
-    // Full whistle: smooth rising tone, soft attack/decay
-    osc.frequency.setValueAtTime(180, t);
-    osc.frequency.exponentialRampToValueAtTime(520, t + 0.12);
-    osc.frequency.exponentialRampToValueAtTime(380, t + 0.25);
-    osc2.frequency.setValueAtTime(90, t);
-    osc2.frequency.exponentialRampToValueAtTime(260, t + 0.12);
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(2200, t);
-    filter.Q.setValueAtTime(1.5, t);
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.35, t + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-  } else {
-    // Short chirp: quick rising blip
-    osc.frequency.setValueAtTime(220, t);
-    osc.frequency.exponentialRampToValueAtTime(380, t + 0.05);
-    osc2.frequency.setValueAtTime(110, t);
-    osc2.frequency.exponentialRampToValueAtTime(190, t + 0.05);
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(3000, t);
-    filter.Q.setValueAtTime(1.0, t);
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.25, t + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-  }
+  // HPF at ~2200Hz (p_hpf_freq: 0.1096 → 20*pow(400,0.1096) ≈ 41Hz... 
+  // sfxr maps 0-1 to 0-10000Hz for HPF: 0.1096 * 10000 ≈ 1096Hz)
+  const hpf = ctx.createBiquadFilter();
+  hpf.type = 'highpass';
+  hpf.frequency.setValueAtTime(1096, t);
+  hpf.Q.setValueAtTime(1, t);
 
-  osc.connect(filter);
-  osc2.connect(filter);
-  filter.connect(gain);
+  // Envelope: attack 0.015s, sustain with punch 0.171, sustain time, decay
+  const attack = 0.015;
+  const vol = 0.25;
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(vol * (1 + 0.171), t + attack); // punch boosts initial
+  gain.gain.linearRampToValueAtTime(vol, t + attack + 0.02); // punch settles
+  gain.gain.linearRampToValueAtTime(vol, t + attack + sustainTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + attack + sustainTime + decayTime);
+
+  osc.connect(hpf);
+  hpf.connect(gain);
   gain.connect(ctx.destination);
 
+  const stopTime = t + attack + sustainTime + decayTime + 0.01;
   try {
     osc.start(t);
-    osc2.start(t);
-    const stopTime = isLastShot ? t + 0.28 : t + 0.08;
     osc.stop(stopTime);
-    osc2.stop(stopTime);
   } catch(e) {
     // If start fails, don't attempt stop
   }
