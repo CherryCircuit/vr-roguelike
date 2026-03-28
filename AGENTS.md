@@ -355,16 +355,63 @@ if (controller?.userData?.weapon?.fire) {
 }
 ```
 
-## Review guidelines
+## Review Guidelines (Codex Cloud)
 
-When running automated code review on this repository:
+Automated nightly review runs against the `nightly-review` branch PR. Codex: focus on these 7 areas, in priority order.
 
+### Priority 1: Performance (P0)
+- **VR frame budget**: 11ms per frame target (72fps on Quest). Anything that risks spiking above this is P0.
+- **Render loop hot paths**: `updateProjectiles()`, `updateVoxelPhysics()`, `updateEnemies()`, `animate()`. Flag any new allocations, string operations, or scene graph traversals in these functions.
+- **GC pressure**: `new` operators in per-frame code, `.filter()`/`.map()` creating throwaway arrays in hot paths, unbounded array growth.
+- **Draw call count**: New meshes added per frame instead of instanced. Individual materials where shared would work.
+
+### Priority 2: Code Optimization (P1)
+- **Duplicate or overlapping functions**: Same logic implemented in multiple places. Consolidate.
+- **Unnecessary iterations**: Nested loops that could be flat, `.find()` after `.filter()` when one pass suffices.
+- **Redundant state checks**: Testing the same condition multiple times in a call chain.
+- **Over-engineering**: Complex abstractions for simple operations that slow readability.
+
+### Priority 3: Memory Leaks (P0)
+- **Growing arrays**: `push()` without corresponding `splice()`/`shift()`, especially in game loops.
+- **Orphaned objects**: Meshes/sprites removed from scene but still referenced in arrays. Event listeners attached but never removed on level reset.
+- **Pool health**: Instanced mesh pools where items are acquired but never released. `freeIndices` sets that grow without bound.
+- **Closure captures**: Callbacks that capture large objects and prevent GC.
+
+### Priority 4: VR Frame Budget (P0)
+- **Per-frame string operations**: Template literals, `.toFixed()`, string concatenation in `animate()` or its callees.
+- **Scene graph scans**: `traverse()`, `getObjectByName()`, `.children.forEach()` with string matching. These are O(n) per frame.
+- **Synchronous operations**: `console.log` in hot paths (synchronous on Quest, blocks render thread).
+- **Material updates per frame**: Changing material properties triggers shader recompile. Batch or use uniforms.
+
+### Priority 5: State Machine Integrity (P1)
+- **Edge cases in combat flow**: Enemy death during level transition, projectile hitting dead enemy, upgrade selection during game over.
+- **Level progression**: `resetGame()` must clear ALL state. Check for stale references to previous level objects.
+- **Pause/resume**: VR session exit/renter must not leave dangling timeouts or stale controller references.
+- **Boss transitions**: Boss spawn/despawn must clean up boss-specific state (projectiles, minions, timers).
+
+### Priority 6: Instanced Mesh Safety (P0)
+- **Count shrinking bug**: Never shrink `InstancedMesh.count` when freeing indices. Active instances at higher indices become invisible. Just scale to zero and track free indices.
+- **Free index reuse**: When recycling, ensure the freed index is actually removed from the free set before reuse.
+- **Matrix updates**: After changing `instanceMatrix`, call `instanceMatrix.needsUpdate = true`. After changing color, call `instanceColor.needsUpdate = true`.
+- **Pool exhaustion**: What happens when all pool items are in use? Must handle gracefully, not crash.
+
+### Priority 7: Console Noise (P2)
+- **Leftover debug logging**: `console.log`, `console.warn`, `console.debug` in production code paths (not just dev). Each one blocks the render thread on Quest.
+- **Verbose error logging**: Catch blocks that log full stack traces on expected errors (like pool exhaustion).
+
+### Severity Levels
+- **P0 (Must Fix)**: Will cause crashes, frame drops, invisible objects, or memory leaks. Fix immediately.
+- **P1 (Should Fix)**: Performance regression risk, code duplication that creates maintenance burden, edge cases that could surface in gameplay.
+- **P2 (Nice to Have)**: Style cleanup, minor optimization, defensive coding improvements.
+
+### Review Rules
 - Prioritize correctness, runtime stability, and VR performance over style.
-- Treat per-frame allocations, repeated full-array scans in hot paths, and missed cleanup on reset or level transitions as high-value findings.
-- Flag console-error risks, null/undefined controller or XR-session access, and state-machine regressions around pause, restart, death, and boss transitions.
-- Ignore cosmetic naming or formatting feedback unless it blocks understanding or hides a bug.
+- Flag null/undefined controller or XR-session access as P0.
+- Ignore cosmetic naming or formatting unless it hides a bug.
 - Prefer a few precise findings with file and line references over broad advice.
 - Call out duplicate logic only when it creates real maintenance or bug risk.
+- Do NOT flag intentional patterns: pooling, state machines, instanced meshes. These are architectural choices, not bugs.
+- If no genuine issues found, say "No issues found" rather than inventing low-value feedback.
 
 ## 15. FINAL REMINDER
 
