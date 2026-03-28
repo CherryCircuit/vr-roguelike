@@ -68,68 +68,59 @@ export function playShoothSound() {
   }
 }
 
-// ── Seeker Burst sound (distinct homing beam) ───────────────
-// isLastShot: true = full "pew", false = short "p" staccato
-// totalShots: total burst count (for volume scaling)
-// burstIndex: which shot in the burst (0-based)
+// ── Seeker Burst sound (soft homing whistle) ───────────────
+// isLastShot: true = full "whistle", false = short chirp
 export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIndex = 0) {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
   const osc = ctx.createOscillator();
   const osc2 = ctx.createOscillator();
-  const lfo = ctx.createOscillator();
   const gain = ctx.createGain();
-  const lfoGain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
 
-  osc.type = 'sawtooth';
+  // Soft sine + triangle blend for pleasant whistle
+  osc.type = 'sine';
   osc2.type = 'triangle';
-  lfo.type = 'sine';
 
   if (isLastShot) {
-    // Full "pew" sound - longer, louder, higher pitch sweep
-    osc.frequency.setValueAtTime(320, t);
-    osc.frequency.exponentialRampToValueAtTime(1200, t + 0.18);
-    osc2.frequency.setValueAtTime(120, t);
-    osc2.frequency.exponentialRampToValueAtTime(280, t + 0.18);
-    lfo.frequency.setValueAtTime(25, t);
-    lfoGain.gain.setValueAtTime(35, t);
-    filter.frequency.setValueAtTime(1500, t);
-    filter.Q.setValueAtTime(10, t);
-    gain.gain.setValueAtTime(0.45, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    // Full whistle: smooth rising tone, soft attack/decay
+    osc.frequency.setValueAtTime(180, t);
+    osc.frequency.exponentialRampToValueAtTime(520, t + 0.12);
+    osc.frequency.exponentialRampToValueAtTime(380, t + 0.25);
+    osc2.frequency.setValueAtTime(90, t);
+    osc2.frequency.exponentialRampToValueAtTime(260, t + 0.12);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2200, t);
+    filter.Q.setValueAtTime(1.5, t);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.35, t + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
   } else {
-    // Short staccato "p" - very brief, sharp attack
-    osc.frequency.setValueAtTime(600, t);
-    osc.frequency.exponentialRampToValueAtTime(800, t + 0.03);
-    osc2.frequency.setValueAtTime(150, t);
-    osc2.frequency.exponentialRampToValueAtTime(180, t + 0.03);
-    lfo.frequency.setValueAtTime(40, t);
-    lfoGain.gain.setValueAtTime(20, t);
-    filter.frequency.setValueAtTime(2000, t);
-    filter.Q.setValueAtTime(12, t);
-    gain.gain.setValueAtTime(0.35, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    // Short chirp: quick rising blip
+    osc.frequency.setValueAtTime(220, t);
+    osc.frequency.exponentialRampToValueAtTime(380, t + 0.05);
+    osc2.frequency.setValueAtTime(110, t);
+    osc2.frequency.exponentialRampToValueAtTime(190, t + 0.05);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(3000, t);
+    filter.Q.setValueAtTime(1.0, t);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.25, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
   }
 
-  lfo.connect(lfoGain);
-  lfoGain.connect(osc.frequency);
   osc.connect(filter);
   osc2.connect(filter);
   filter.connect(gain);
   gain.connect(ctx.destination);
 
-  // Start oscillators BEFORE scheduling stop to avoid "cannot call stop without calling start first" error
   try {
     osc.start(t);
     osc2.start(t);
-    lfo.start(t);
-    // Schedule stop after start succeeds
-    const stopTime = isLastShot ? t + 0.2 : t + 0.04;
+    const stopTime = isLastShot ? t + 0.28 : t + 0.08;
     osc.stop(stopTime);
     osc2.stop(stopTime);
-    lfo.stop(stopTime);
   } catch(e) {
     // If start fails, don't attempt stop
   }
