@@ -791,13 +791,15 @@ function createHUDElements() {
 
   // SCORE - center-left on floor with title above
   // Layout: Spread from hearts
+  // Task #3: Moved right by 0.3 to avoid overlap with hearts
   scoreSprite = makeSprite('0', { fontSize: 90, color: '#ffff00', shadow: true, scale: 0.39 });
-  scoreSprite.position.set(-0.8, 0.3, 0);  // Center-left, second row
+  scoreSprite.position.set(-0.5, 0.3, 0);  // Center-left, second row (moved right from -0.8)
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
+  // Task #3: Moved right by 0.3 to avoid overlap with hearts
   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
-  scoreTitleSprite.position.set(-0.8, 0.45, 0);  // Center-left, top row
+  scoreTitleSprite.position.set(-0.2, 0.45, 0);  // Moved right from -0.5 to clear hearts
   hudGroup.add(scoreTitleSprite);
 
   // Kill counter — below LEVEL display
@@ -814,7 +816,7 @@ function createHUDElements() {
 
   // Nuke counter — far right, top row
   // Layout: Far right to avoid overlap
-  nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.28 });
+  nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.322 });
   nukeSprite.position.set(1.5, 0.45, 0);  // Far right, top row
   hudGroup.add(nukeSprite);
 
@@ -1002,7 +1004,7 @@ export function updateHUD(gameState) {
   // #7: Scale 0.45 matches SCORE title for perfect alignment
   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.45 });
 
-  // Score - #4: Moved closer to SCORE title at x=-0.5 (center-left)
+  // Score - Task #3: Moved right to x=-0.3 to avoid overlap with hearts
   // #7: Scale 0.39 matches LEVEL value size for consistency
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.39 });
 
