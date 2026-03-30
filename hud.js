@@ -1004,7 +1004,7 @@ export function updateHUD(gameState) {
   // #7: Scale 0.45 matches SCORE title for perfect alignment
   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.45 });
 
-  // Score - Task #3: Moved right to x=-0.3 to avoid overlap with hearts
+  // Score - Task #3: Moved right to x=-1.5 to avoid overlap with hearts
   // #7: Scale 0.39 matches LEVEL value size for consistency
   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.39 });
 
@@ -1012,7 +1012,7 @@ export function updateHUD(gameState) {
   const nukeCount = gameState.nukes || 0;
   if (nukeCount > 0 && nukeSprite) {
     nukeSprite.visible = true;
-    updateSpriteText(nukeSprite, `☢ X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.28 });
+    updateSpriteText(nukeSprite, `☢ X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.322 });
   } else if (nukeSprite) {
     nukeSprite.visible = false;
   }
@@ -4866,3 +4866,4 @@ function calculateAccuracy() {
 
 // Export nameEntryGroup and pauseMenuGroup for use in other modules
 export { nameEntryGroup, pauseMenuGroup, pauseCountdownGroup };
+
