@@ -566,6 +566,41 @@ export function playEnemyProjectileSound() {
   osc2.stop(t + 0.12);
 }
 
+// ── Enemy projectile proximity warning ───────────────────────
+export function playProjectileWarningSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'square';
+  filter.type = 'bandpass';
+
+  // Short, bright double-chirp.
+  osc.frequency.setValueAtTime(1250, t);
+  osc.frequency.exponentialRampToValueAtTime(1650, t + 0.04);
+
+  filter.frequency.setValueAtTime(1900, t);
+  filter.Q.setValueAtTime(8, t);
+
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.linearRampToValueAtTime(0.12, t + 0.004);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+
+  gain.gain.setValueAtTime(0.0001, t + 0.085);
+  gain.gain.linearRampToValueAtTime(0.10, t + 0.089);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + 0.16);
+}
+
 // ── Heal Sound (Vampiric/Health Pickup) ─────────────────────
 export function playHealSound() {
   // Pleasant ascending chime when player gains health

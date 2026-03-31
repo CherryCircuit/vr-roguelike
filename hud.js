@@ -1164,6 +1164,7 @@ function createUpgradeCard(upgrade, position) {
     glowColor: upgrade.color,
     scale: 0.24,
     depthTest: true,
+    maxWidth: 400,
   });
   nameSprite.position.set(0, 0.55, 0.01);
   group.add(nameSprite);
