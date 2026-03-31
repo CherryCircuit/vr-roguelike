@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getStasisSlowFactor } from './stasis.js';
-import { playTingSound, playEnemyProjectileSound } from './audio.js';
+import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound } from './audio.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
@@ -312,6 +312,7 @@ const ENEMY_DEFS = {
 // ── Module state ───────────────────────────────────────────
 let sceneRef = null;
 const activeEnemies = [];
+let nextEnemyId = 1;
 const explosionParts = [];
 
 // Enemy death physics bits
@@ -1007,6 +1008,7 @@ function spawnTrainEnemy(type, position, levelConfig) {
   group.add(hitbox);
 
   const enemy = {
+    id: nextEnemyId++,
     mesh: group,
     material,
     type,
@@ -1294,9 +1296,9 @@ function damageNearbyEnemies(position, damage, radius) {
  * @param {THREE.Vector3} fromPos - Start position
  * @param {THREE.Vector3} toPos - End position
  * @param {number} color - Arc color
- * @param {number} conductorIndex - Optional index of conductor that spawned this arc
+ * @param {number} conductorId - Optional unique ID of conductor that spawned this arc
  */
-function spawnElectricArc(fromPos, toPos, color = 0xffcc00, conductorIndex = -1) {
+function spawnElectricArc(fromPos, toPos, color = 0xffcc00, conductorId = -1) {
   // Create a simple line for the electric arc
   const points = [];
   const segments = 10;
@@ -1328,8 +1330,8 @@ function spawnElectricArc(fromPos, toPos, color = 0xffcc00, conductorIndex = -1)
     mesh: arc,
     createdAt: performance.now(),
     lifetime: 200, // 0.2 seconds
-    conductorIndex: conductorIndex,
-    targetEnemyIndex: -1, // Set by caller if available
+    conductorId: conductorId,
+    targetEnemyId: -1, // Set by caller if available
   });
 }
 
@@ -1338,12 +1340,12 @@ const electricArcs = [];
 /**
  * Clear all electric arcs spawned by a specific conductor.
  * Called when a conductor dies to immediately remove its buff visuals.
- * @param {number} conductorIndex - Index of the conductor in activeEnemies
+ * @param {number} conductorId - Unique ID of the conductor
  */
-function clearConductorArcs(conductorIndex) {
+function clearConductorArcs(conductorId) {
   for (let i = electricArcs.length - 1; i >= 0; i--) {
     const arc = electricArcs[i];
-    if (arc.conductorIndex === conductorIndex) {
+    if (arc.conductorId === conductorId) {
       sceneRef.remove(arc.mesh);
       arc.mesh.geometry.dispose();
       arc.mesh.material.dispose();
@@ -1355,12 +1357,12 @@ function clearConductorArcs(conductorIndex) {
 /**
  * Clear all electric arcs connected to a specific buffed enemy.
  * Called when a buffed enemy dies to immediately remove its lightning visuals.
- * @param {number} targetEnemyIndex - Index of the buffed enemy in activeEnemies
+ * @param {number} targetEnemyId - Unique ID of the buffed enemy
  */
-function clearTargetEnemyArcs(targetEnemyIndex) {
+function clearTargetEnemyArcs(targetEnemyId) {
   for (let i = electricArcs.length - 1; i >= 0; i--) {
     const arc = electricArcs[i];
-    if (arc.targetEnemyIndex === targetEnemyIndex) {
+    if (arc.targetEnemyId === targetEnemyId) {
       sceneRef.remove(arc.mesh);
       arc.mesh.geometry.dispose();
       arc.mesh.material.dispose();
@@ -2103,6 +2105,7 @@ export function spawnEnemy(type, position, levelConfig) {
   }
 
   const enemy = {
+    id: nextEnemyId++,
     mesh: group,
     material,
     type,
@@ -2583,10 +2586,10 @@ export function updateEnemies(dt, now, playerPos) {
           other.speed = other.baseSpeed * (1 + e.linkSpeedBonus);
 
           if (e.conductorArcTimer <= 0) {
-            spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc, i);
+            spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc, e.id);
             // Track the last spawned arc's target for cleanup when buffed enemy dies
             if (electricArcs.length > 0) {
-              electricArcs[electricArcs.length - 1].targetEnemyIndex = j;
+              electricArcs[electricArcs.length - 1].targetEnemyId = other.id;
             }
           }
 
@@ -3004,13 +3007,13 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
       }
     });
     // Clear all electric arcs connected to this buffed enemy
-    clearTargetEnemyArcs(index);
+    clearTargetEnemyArcs(e.id);
   }
 
   // Conductor: Chain overload - kills all linked enemies
   if (e.isConductor) {
     // Clear all electric arcs spawned by this conductor immediately
-    clearConductorArcs(index);
+    clearConductorArcs(e.id);
 
     if (e.linkedEnemies.length > 0) {
       // Snapshot linked enemy references before killing to avoid index corruption
@@ -7829,21 +7832,29 @@ const _unitScale = new THREE.Vector3(1, 1, 1);  // Unit scale for initial spawn
 function initBossProjPools() {
   if (bossProjCorePool || !sceneRef) return;
 
-  // Core sphere (smaller, opaque red)
-  const coreGeo = new THREE.SphereGeometry(0.065, 8, 8);
-  const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3355, depthWrite: false, depthTest: false });
+  // Enemy projectiles: make them match the "swarm" voxel vibe, but bright yellow.
+  // Box geometry reads way better in VR than tiny spheres.
+  const coreGeo = new THREE.BoxGeometry(0.13, 0.13, 0.13);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0xffff00,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    depthTest: false,
+  });
   bossProjCorePool = new THREE.InstancedMesh(coreGeo, coreMat, BOSS_PROJ_POOL_SIZE);
   bossProjCorePool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   bossProjCorePool.count = 0;
   bossProjCorePool.frustumCulled = false;
+  bossProjCorePool.renderOrder = 999;
   sceneRef.add(bossProjCorePool);
 
-  // Glow sphere (larger, transparent pink with additive blending)
-  const glowGeo = new THREE.SphereGeometry(0.14, 8, 8);
+  // Glow voxel (larger, transparent yellow with additive blending)
+  const glowGeo = new THREE.BoxGeometry(0.26, 0.26, 0.26);
   const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xff88aa,
+    color: 0xffee55,
     transparent: true,
-    opacity: 0.7,
+    opacity: 0.55,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     depthTest: false,
@@ -7852,6 +7863,7 @@ function initBossProjPools() {
   bossProjGlowPool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   bossProjGlowPool.count = 0;
   bossProjGlowPool.frustumCulled = false;
+  bossProjGlowPool.renderOrder = 998;
   sceneRef.add(bossProjGlowPool);
 
   // Initialize free indices (all available)
@@ -8043,7 +8055,14 @@ export function updateBossProjectiles(dt, now, playerPos) {
     _bossProjMatrix.compose(proj.mesh.position, _identityQuat, _bossProjScale);
     bossProjGlowPool.setMatrixAt(idx, _bossProjMatrix);
 
-    if (proj.mesh.position.distanceTo(playerPos) < (proj.hitRadius || 0.45)) {
+    // Proximity warning - play sound when projectile gets close (only once per projectile)
+    const distToPlayer = proj.mesh.position.distanceTo(playerPos);
+    if (distToPlayer < 4.0 && !proj.warned) {
+      playProjectileWarningSound();
+      proj.warned = true;
+    }
+
+    if (distToPlayer < (proj.hitRadius || 0.45)) {
       proj.hitPlayer = true;
       if (typeof window !== 'undefined' && window.createExplosionAt) {
         window.createExplosionAt(proj.mesh.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);

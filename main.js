@@ -36,7 +36,8 @@ import {
   startChargeSound, updateChargeSound, stopChargeSound,
   playChargeReadySound, playChargeFireSound,
   // Boss and name entry sounds
-  playIncomingBossSound, playNoOneMakesItSound
+  playIncomingBossSound, playNoOneMakesItSound,
+  playProjectileWarningSound
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -1187,10 +1188,59 @@ function createEnvironment() {
 
 function registerFadeMaterial(material) {
   if (!material) return;
+  // Prevent unbounded growth across level rebuilds.
+  if (environmentFadeTargets.includes(material)) return;
   const baseOpacity = material.opacity !== undefined ? material.opacity : 1;
   material.transparent = true;
   material.__fadeBase = baseOpacity;
   environmentFadeTargets.push(material);
+}
+
+function unregisterFadeMaterial(material) {
+  if (!material) return;
+  const idx = environmentFadeTargets.indexOf(material);
+  if (idx !== -1) environmentFadeTargets.splice(idx, 1);
+}
+
+function unregisterFadeMaterialsForObject(obj) {
+  if (!obj || typeof obj.traverse !== 'function') return;
+  obj.traverse((child) => {
+    if (!child.material) return;
+    if (Array.isArray(child.material)) child.material.forEach(unregisterFadeMaterial);
+    else unregisterFadeMaterial(child.material);
+  });
+}
+
+function disposeMaterialDeep(material) {
+  if (!material) return;
+  if (Array.isArray(material)) {
+    material.forEach(disposeMaterialDeep);
+    return;
+  }
+
+  // three.js does NOT dispose textures when a material is disposed.
+  const maps = [
+    'map',
+    'alphaMap',
+    'aoMap',
+    'bumpMap',
+    'displacementMap',
+    'emissiveMap',
+    'envMap',
+    'lightMap',
+    'metalnessMap',
+    'normalMap',
+    'roughnessMap',
+    'specularMap',
+  ];
+  for (const key of maps) {
+    const tex = material[key];
+    if (tex && tex.isTexture && typeof tex.dispose === 'function') {
+      tex.dispose();
+    }
+  }
+
+  if (typeof material.dispose === 'function') material.dispose();
 }
 
 function setMaterialEmissiveSafe(material, color, intensity = 1) {
@@ -1214,9 +1264,13 @@ function setMaterialEmissiveSafe(material, color, intensity = 1) {
 function clearBiomeProps() {
   if (!biomePropsGroup) return;
   scene.remove(biomePropsGroup);
+
+  // Prevent stale materials from keeping the old biome scene alive.
+  unregisterFadeMaterialsForObject(biomePropsGroup);
+
   biomePropsGroup.traverse((child) => {
     if (child.geometry) child.geometry.dispose();
-    if (child.material) child.material.dispose();
+    if (child.material) disposeMaterialDeep(child.material);
   });
   biomePropsGroup = null;
   biomePropsBiome = null;
@@ -1226,12 +1280,13 @@ function clearBiomeProps() {
 function clearBiomeScene() {
   if (!biomeSceneGroup) return;
   scene.remove(biomeSceneGroup);
+
+  // Prevent stale materials from keeping the old biome scene alive.
+  unregisterFadeMaterialsForObject(biomeSceneGroup);
+
   biomeSceneGroup.traverse((child) => {
     if (child.geometry) child.geometry.dispose();
-    if (child.material) {
-      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
-      else child.material.dispose();
-    }
+    if (child.material) disposeMaterialDeep(child.material);
   });
   biomeSceneGroup = null;
   biomeSceneBiome = null;
@@ -1247,12 +1302,12 @@ function disposeObject3D(obj) {
   if (!obj) return;
   // Guard: only traverse if obj is a THREE.Object3D (proxy objects from InstancedMesh pools don't have .traverse)
   if (typeof obj.traverse !== 'function') return;
+
+  unregisterFadeMaterialsForObject(obj);
+
   obj.traverse((child) => {
     if (child.geometry) child.geometry.dispose();
-    if (child.material) {
-      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
-      else child.material.dispose();
-    }
+    if (child.material) disposeMaterialDeep(child.material);
   });
 }
 
@@ -1761,6 +1816,7 @@ function enterDreamWorldScene() {
   clearBossProjectiles();
   clearAllTelegraphs();
   clearAllProjectiles();
+  clearAllAltWeaponEffects();
 
   initDreamWorld(scene);
   enterDreamWorld();
@@ -6054,6 +6110,11 @@ function detonateProximityMine(mine, index) {
 
 function destroyProximityMine(mine) {
   scene.remove(mine.mesh);
+  // Dispose all children (glow mesh) to prevent geometry/material leak
+  mine.mesh.children.forEach(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  });
   mine.mesh.geometry.dispose();
   mine.mesh.material.dispose();
 }
@@ -6752,6 +6813,9 @@ function completeLevel() {
   // Clear all telegraph effects
   clearAllTelegraphs();
 
+  // Clear all alt-weapon effects (grenades, mines, drones, etc.)
+  clearAllAltWeaponEffects();
+
   stopLightningSound();
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
   game.stateTimer = 2.0; // cooldown before upgrade screen
@@ -6781,10 +6845,13 @@ function completeLevel() {
 function clearAllProjectiles() {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const proj = projectiles[i];
-    if (proj.userData.isPooled) {
+    if (proj?.userData?.isPooled) {
       returnProjectileToPool(proj);
     } else {
       scene.remove(proj);
+      // Many hostile/boss helper projectiles allocate unique geo/mat per shot.
+      // Remove and dispose so GPU resources do not accumulate across levels.
+      disposeObject3D(proj);
     }
   }
   projectiles.length = 0;
@@ -6799,6 +6866,214 @@ function clearAllLightningBeams() {
     }
   }
   lightningTimers.fill(0);
+}
+
+// Clear all alt-weapon effects (grenades, mines, decoys, drones, etc.)
+// Called during level transitions to prevent geometry/material accumulation
+function clearAllAltWeaponEffects() {
+  // Clear active shields
+  for (let i = activeShields.length - 1; i >= 0; i--) {
+    const shield = activeShields[i];
+    scene.remove(shield.mesh);
+    shield.mesh.geometry.dispose();
+    shield.mesh.material.dispose();
+  }
+  activeShields.length = 0;
+
+  // Clear active laser mines
+  for (let i = activeLaserMines.length - 1; i >= 0; i--) {
+    const mine = activeLaserMines[i];
+    if (mine.mesh) {
+      scene.remove(mine.mesh);
+      mine.mesh.children.forEach(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+      });
+      if (mine.mesh.geometry) mine.mesh.geometry.dispose();
+      if (mine.mesh.material) mine.mesh.material.dispose();
+    }
+  }
+  activeLaserMines.length = 0;
+
+  // Clear active decoys
+  for (let i = activeDecoys.length - 1; i >= 0; i--) {
+    const decoy = activeDecoys[i];
+    scene.remove(decoy.mesh);
+    decoy.mesh.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  activeDecoys.length = 0;
+
+  // Clear active black holes
+  for (let i = activeBlackHoles.length - 1; i >= 0; i--) {
+    const bh = activeBlackHoles[i];
+    scene.remove(bh.mesh);
+    bh.mesh.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  activeBlackHoles.length = 0;
+
+  // Clear active mines (black hole mines)
+  for (let i = activeMines.length - 1; i >= 0; i--) {
+    const mine = activeMines[i];
+    if (mine.mesh) {
+      scene.remove(mine.mesh);
+      mine.mesh.children.forEach(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+      });
+    }
+  }
+  activeMines.length = 0;
+
+  // Clear active tethers
+  for (let i = activeTethers.length - 1; i >= 0; i--) {
+    const tether = activeTethers[i];
+    scene.remove(tether.mesh);
+    tether.mesh.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  activeTethers.length = 0;
+
+  // Clear active nanite swarms
+  for (let i = activeNaniteSwarms.length - 1; i >= 0; i--) {
+    const swarm = activeNaniteSwarms[i];
+    scene.remove(swarm.mesh);
+    swarm.mesh.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  activeNaniteSwarms.length = 0;
+
+  // Clear active reflector drones
+  for (let i = activeReflectorDrones.length - 1; i >= 0; i--) {
+    const drone = activeReflectorDrones[i];
+    scene.remove(drone.mesh);
+    drone.mesh.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  activeReflectorDrones.length = 0;
+
+  // Clear active grenades
+  for (let i = activeGrenades.length - 1; i >= 0; i--) {
+    const grenade = activeGrenades[i];
+    scene.remove(grenade.mesh);
+    grenade.mesh.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+    grenade.mesh.geometry.dispose();
+    grenade.mesh.material.dispose();
+  }
+  activeGrenades.length = 0;
+
+  // Clear active proximity mines
+  for (let i = activeProximityMines.length - 1; i >= 0; i--) {
+    const mine = activeProximityMines[i];
+    scene.remove(mine.mesh);
+    mine.mesh.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+    mine.mesh.geometry.dispose();
+    mine.mesh.material.dispose();
+  }
+  activeProximityMines.length = 0;
+
+  // Clear active attack drones
+  for (let i = activeAttackDrones.length - 1; i >= 0; i--) {
+    const drone = activeAttackDrones[i];
+    scene.remove(drone.mesh);
+    drone.mesh.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  activeAttackDrones.length = 0;
+
+  // Clear active plasma orbs
+  for (let i = activePlasmaOrbs.length - 1; i >= 0; i--) {
+    const orb = activePlasmaOrbs[i];
+    orb.trailParticles.forEach(t => {
+      scene.remove(t.mesh);
+      t.mesh.geometry.dispose();
+      t.mesh.material.dispose();
+    });
+    scene.remove(orb.mesh);
+    orb.mesh.geometry.dispose();
+    orb.mesh.material.dispose();
+  }
+  activePlasmaOrbs.length = 0;
+
+  // Clear active phase dash afterimages
+  for (let i = activePhaseDashAfterimages.length - 1; i >= 0; i--) {
+    const afterimage = activePhaseDashAfterimages[i];
+    scene.remove(afterimage.mesh);
+    afterimage.mesh.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  activePhaseDashAfterimages.length = 0;
+
+  // Clear active stasis fields
+  for (let i = activeStasisFields.length - 1; i >= 0; i--) {
+    const field = activeStasisFields[i];
+    scene.remove(field.mesh);
+    field.mesh.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  activeStasisFields.length = 0;
+
+  // Clear active EMP visuals
+  for (let i = activeEMPVisuals.length - 1; i >= 0; i--) {
+    const emp = activeEMPVisuals[i];
+    scene.remove(emp.mesh);
+    if (emp.mesh.geometry) emp.mesh.geometry.dispose();
+    if (emp.mesh.material) emp.mesh.material.dispose();
+  }
+  activeEMPVisuals.length = 0;
+
+  // Clear active teleport effects
+  for (let i = activeTeleportEffects.length - 1; i >= 0; i--) {
+    const effect = activeTeleportEffects[i];
+    scene.remove(effect.mesh);
+    if (effect.mesh.geometry) effect.mesh.geometry.dispose();
+    if (effect.mesh.material) effect.mesh.material.dispose();
+  }
+  activeTeleportEffects.length = 0;
+
+  // Clear explosion visuals (toxic pools, boss shields, etc.)
+  for (let i = explosionVisuals.length - 1; i >= 0; i--) {
+    const visual = explosionVisuals[i];
+    scene.remove(visual);
+    if (visual.geometry) visual.geometry.dispose();
+    if (visual.material) visual.material.dispose();
+  }
+  explosionVisuals.length = 0;
+
+  // Clear active voxels
+  for (let i = activeVoxels.length - 1; i >= 0; i--) {
+    const voxel = activeVoxels[i];
+    voxel.visible = false;
+    voxel.userData.velocity = null;
+    voxel.userData.createdAt = undefined;
+    voxel.userData.lifetime = undefined;
+  }
+  activeVoxels.length = 0;
+
+  console.log('[cleanup] Cleared all alt-weapon effects and visuals');
 }
 
 function showUpgradeScreen() {
@@ -7069,6 +7344,9 @@ function endGame(victory) {
 
   // PERFORMANCE: Clear all projectiles on game end
   clearAllProjectiles();
+
+  // Clear all alt-weapon effects
+  clearAllAltWeaponEffects();
 
   hideHUD();
   hideBossHealthBar();
@@ -8897,6 +9175,7 @@ function updateProjectiles(dt) {
         if (age > proj.userData.duration) {
           triggerHostileProjectileExplosion(proj.position, 0.3, 0);
           scene.remove(proj);
+          disposeObject3D(proj);
           projectiles.splice(i, 1);
           continue;
         }
@@ -8919,12 +9198,20 @@ function updateProjectiles(dt) {
         updateHostileProjectileVisual(proj, now);
 
         const dist = proj.position.distanceTo(playerPos);
+
+        // Warning beep when an enemy projectile is getting dangerously close.
+        if (dist < 4.0 && !proj.userData.warned) {
+          playProjectileWarningSound();
+          proj.userData.warned = true;
+        }
+
         if (dist < 1.0) {
           if (typeof damagePlayer === 'function') {
             damagePlayer(proj.userData.damage);
           }
           triggerHostileProjectileExplosion(proj.position, 0.4, 0);
           scene.remove(proj);
+          disposeObject3D(proj);
           projectiles.splice(i, 1);
           continue;
         }
@@ -8937,6 +9224,7 @@ function updateProjectiles(dt) {
         returnProjectileToPool(proj);
       } else {
         scene.remove(proj);
+        disposeObject3D(proj);
       }
       projectiles.splice(i, 1);
       continue;
@@ -8951,6 +9239,7 @@ function updateProjectiles(dt) {
         returnProjectileToPool(proj);
       } else {
         scene.remove(proj);
+        disposeObject3D(proj);
       }
       projectiles.splice(i, 1);
       continue;
@@ -9013,6 +9302,7 @@ function updateProjectiles(dt) {
         returnProjectileToPool(proj);
       } else {
         scene.remove(proj);
+        disposeObject3D(proj);
       }
       projectiles.splice(i, 1);
       triggerDreamWorldFromSecret();
@@ -9027,6 +9317,7 @@ function updateProjectiles(dt) {
         returnProjectileToPool(proj);
       } else {
         scene.remove(proj);
+        disposeObject3D(proj);
       }
       projectiles.splice(i, 1);
       continue;
@@ -9040,6 +9331,7 @@ function updateProjectiles(dt) {
         returnProjectileToPool(proj);
       } else {
         scene.remove(proj);
+        disposeObject3D(proj);
       }
       projectiles.splice(i, 1);
       continue;
@@ -9053,6 +9345,7 @@ function updateProjectiles(dt) {
         returnProjectileToPool(proj);
       } else {
         scene.remove(proj);
+        disposeObject3D(proj);
       }
       projectiles.splice(i, 1);
       continue;
@@ -9107,6 +9400,7 @@ function updateProjectiles(dt) {
             returnProjectileToPool(proj);
           } else {
             scene.remove(proj);
+            disposeObject3D(proj);
           }
           projectiles.splice(i, 1);
         }
@@ -9149,6 +9443,7 @@ function updateProjectiles(dt) {
             returnProjectileToPool(proj);
           } else {
             scene.remove(proj);
+            disposeObject3D(proj);
           }
           projectiles.splice(i, 1);
         }
@@ -9165,6 +9460,7 @@ function updateProjectiles(dt) {
               returnProjectileToPool(proj);
             } else {
               scene.remove(proj);
+              disposeObject3D(proj);
             }
             projectiles.splice(i, 1);
           }
@@ -9193,6 +9489,7 @@ function updateProjectiles(dt) {
                 returnProjectileToPool(proj);
               } else {
                 scene.remove(proj);
+                disposeObject3D(proj);
               }
               projectiles.splice(i, 1);
             }
@@ -9219,6 +9516,7 @@ function updateProjectiles(dt) {
             }
             
             scene.remove(bossProj);
+            disposeObject3D(bossProj);
             projectiles.splice(j, 1);
             
             // Destroy player projectile (unless piercing)
@@ -9229,6 +9527,7 @@ function updateProjectiles(dt) {
                 returnProjectileToPool(proj);
               } else {
                 scene.remove(proj);
+                disposeObject3D(proj);
               }
               projectiles.splice(i, 1);
             }
@@ -9248,6 +9547,7 @@ function updateProjectiles(dt) {
               // Destroy the visual
               spawnExplosionVisual(visual.position.clone(), 0.3);
               scene.remove(visual);
+              disposeObject3D(visual);
               explosionVisuals.splice(k, 1);
               markProjectileHit(proj);
               
@@ -9258,6 +9558,7 @@ function updateProjectiles(dt) {
                   returnProjectileToPool(proj);
                 } else {
                   scene.remove(proj);
+                  disposeObject3D(proj);
                 }
                 projectiles.splice(i, 1);
               }
@@ -9909,7 +10210,15 @@ function render(timestamp) {
     const bossProjs = getBossProjectiles();
     for (let i = bossProjs.length - 1; i >= 0; i--) {
       const proj = bossProjs[i];
-      if (!proj || !proj.hitPlayer) continue;
+      if (!proj) continue;
+
+      // Warning beep when instanced boss projectiles are about to ruin your day.
+      if (proj.mesh && !proj._warned && proj.mesh.position.distanceTo(playerPos) < 4.0) {
+        playProjectileWarningSound();
+        proj._warned = true;
+      }
+
+      if (!proj.hitPlayer) continue;
 
       // Check if reflector drone can reflect this projectile
       if (checkReflectorDroneReflection(proj.mesh.position, true)) {
@@ -10414,3 +10723,4 @@ function rebuildBiomeScene(biomeId, theme) {
 function getBiomeFloorY() {
   return getBiomeFloorYModule(biomeSceneBiome, SCENE_Y_OFFSET);
 }
+
