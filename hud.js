@@ -433,7 +433,7 @@ export function initHUD(camera, scene) {
 
   // ── VR HUD (stationary on floor, Space Pirate Trainer style) ──
   createHUDElements();
-  hudGroup.position.set(0, 0.05, -3);  // On floor, 3 feet in front of spawn
+  hudGroup.position.set(0, 0.0, -3);  // On floor, 3 feet in front of spawn; Y=0 to sit flush
   hudGroup.rotation.x = -Math.PI / 2 + 0.349;  // Face up + 20° tilt toward player (one-time static)
   scene.add(hudGroup);
 
@@ -785,21 +785,19 @@ function createHUDElements() {
   const heartsGeo = new THREE.PlaneGeometry(1.2, 0.24);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
-  heartsSprite.position.set(-1.8, 0.45, 0);  // Far left, top row
+  heartsSprite.position.set(-1.5, 0.45, 0);  // Far left, top row (moved right from -1.8)
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
   // SCORE - center-left on floor with title above
-  // Layout: Spread from hearts
-  // Task #3: Moved right by 0.3 to avoid overlap with hearts
-  scoreSprite = makeSprite('0', { fontSize: 90, color: '#ffff00', shadow: true, scale: 0.39 });
-  scoreSprite.position.set(-0.5, 0.3, 0);  // Center-left, second row (moved right from -0.8)
+  // Layout: Spread from hearts, number centered under SCORE title
+  scoreSprite = makeSprite('0', { fontSize: 75, color: '#ffff00', shadow: true, scale: 0.45 });
+  scoreSprite.position.set(-0.2, 0.3, 0);  // Centered under SCORE title
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
-  // Task #3: Moved right by 0.3 to avoid overlap with hearts
   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
-  scoreTitleSprite.position.set(-0.2, 0.45, 0);  // Moved right from -0.5 to clear hearts
+  scoreTitleSprite.position.set(-0.2, 0.45, 0);  // Top row, aligned with score number below
   hudGroup.add(scoreTitleSprite);
 
   // Kill counter — below LEVEL display
@@ -814,23 +812,23 @@ function createHUDElements() {
   levelSprite.position.set(0.7, 0.45, 0);  // Center-right, top row
   hudGroup.add(levelSprite);
 
-  // Nuke counter — far right, top row
-  // Layout: Far right to avoid overlap
-  nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.322 });
+  // Nuke counter — far right, top row; same size as SCORE/LEVEL titles
+  nukeSprite = makeSprite('☢ X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
   nukeSprite.position.set(1.5, 0.45, 0);  // Far right, top row
   hudGroup.add(nukeSprite);
 
-  // Accuracy bonus — center bottom
+  // Accuracy bonus — center, just below main HUD row
+  // Y=-0.45 keeps it close to the SCORE/LEVEL row (Y=0.3) without overlap
   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 1.8 });
-  comboSprite.position.set(0, -0.85, 0);
+  comboSprite.position.set(0, -0.45, 0);
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 
-  // Accuracy bonus meter bar
+  // Accuracy bonus meter bar — directly below combo text
   const cooldownGeo = new THREE.PlaneGeometry(0.5, 0.03);
   const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
-  comboCooldownSprite.position.set(0, -1.0, 0);  // Below bonus text
+  comboCooldownSprite.position.set(0, -0.6, 0);  // Below bonus text (moved from -1.0)
   comboCooldownSprite.visible = false;
   hudGroup.add(comboCooldownSprite);
 }
@@ -1004,15 +1002,14 @@ export function updateHUD(gameState) {
   // #7: Scale 0.45 matches SCORE title for perfect alignment
   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.45 });
 
-  // Score - Task #3: Moved right to x=-1.5 to avoid overlap with hearts
-  // #7: Scale 0.39 matches LEVEL value size for consistency
-  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.39 });
+  // Score - #4: fontSize:75 scale:0.45 matches kill counter for consistency
+  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.45 });
 
   // Nuke counter - #6: Moved to x=1.4 (right) on top row, right of LEVEL display
   const nukeCount = gameState.nukes || 0;
   if (nukeCount > 0 && nukeSprite) {
     nukeSprite.visible = true;
-    updateSpriteText(nukeSprite, `☢ X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.322 });
+    updateSpriteText(nukeSprite, `☢ X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
   } else if (nukeSprite) {
     nukeSprite.visible = false;
   }
@@ -1084,9 +1081,44 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.position.y += 0.9 + SCENE_Y_OFFSET; // Moved down for better centering
   upgradeGroup.position.z -= 4; // 4 feet in front of player
 
-  // "Choose an upgrade for [HAND]" header
-  const handName = hand === 'left' ? 'LEFT HAND' : 'RIGHT HAND';
-  const header = makeSprite(`CHOOSE UPGRADE: ${handName}`, { fontSize: 48, color: '#ffffff', glow: true, scale: 0.4 });
+  // Two-line upgrade header: "CHOOSE UPGRADE" in white + hand name in hand color
+  const handName = hand === 'left' ? 'LEFT BLASTER' : 'RIGHT BLASTER';
+  const handColor = hand === 'left' ? '#00ffff' : '#ff88aa';  // cyan for left, pink for right
+  const headerCanvas = document.createElement('canvas');
+  const hCtx = headerCanvas.getContext('2d');
+  const hFontSize = 48;
+  hCtx.font = `bold ${hFontSize}px Arial, sans-serif`;
+  const line1Text = 'CHOOSE UPGRADE';
+  const line2Text = handName;
+  const line1W = hCtx.measureText(line1Text).width;
+  const line2W = hCtx.measureText(line2Text).width;
+  const maxW = Math.ceil(Math.max(line1W, line2W));
+  const hLineHeight = hFontSize * 1.3;
+  const hPad = 25;  // glow padding
+  headerCanvas.width = maxW + hPad * 2;
+  headerCanvas.height = Math.ceil(hLineHeight * 2) + hPad * 2;
+  hCtx.font = `bold ${hFontSize}px Arial, sans-serif`;
+  hCtx.textAlign = 'center';
+  hCtx.textBaseline = 'middle';
+  // Line 1: white with glow
+  hCtx.shadowColor = '#ffffff';
+  hCtx.shadowBlur = 15;
+  hCtx.fillStyle = '#ffffff';
+  const hMidY = headerCanvas.height / 2;
+  hCtx.fillText(line1Text, headerCanvas.width / 2, hMidY - hLineHeight / 2);
+  // Line 2: hand color with glow
+  hCtx.shadowColor = handColor;
+  hCtx.fillStyle = handColor;
+  hCtx.fillText(line2Text, headerCanvas.width / 2, hMidY + hLineHeight / 2);
+  const headerTexture = new THREE.CanvasTexture(headerCanvas);
+  headerTexture.minFilter = THREE.LinearFilter;
+  headerTexture.premultiplyAlpha = false;
+  const headerAspect = headerCanvas.width / headerCanvas.height;
+  const headerScale = 0.4;
+  const headerGeom = new THREE.PlaneGeometry(headerAspect * headerScale, headerScale);
+  const headerMat = new THREE.MeshBasicMaterial({ map: headerTexture, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+  const header = new THREE.Mesh(headerGeom, headerMat);
+  header.renderOrder = 999;
   header.position.set(0, 1.05, 0);
   upgradeGroup.add(header);
 
