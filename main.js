@@ -44,7 +44,7 @@ import {
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
-  updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward,
+  updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward, setBossSpawnForward,
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
   releaseBossProjIndex,
   clearAllTelegraphs, spawnHealthGainPopup
@@ -296,6 +296,9 @@ let innkeeperMessageVisible = false;
 
 let environmentFade = 0;
 let environmentFadeState = null;
+const DEFAULT_LEVEL_SPAWN_FORWARD = new THREE.Vector3(0, 0, -1);
+const _levelSpawnForward = new THREE.Vector3(0, 0, -1);
+let biomeClearedForBossCinematic = false;
 const environmentFadeTargets = [];
 let levelFadeReady = false;
 
@@ -680,6 +683,7 @@ function init() {
     applyEnvironmentFade,
     resetAllSlowMoState,
     hideKillsAlert,
+    unloadBiomeForBossCinematic: purgeBiomeForBossCinematic,
   });
 
   // Init subsystems
@@ -1370,6 +1374,35 @@ function clearBiomeScene() {
   synthVisualRefs.sunOuterGlowMat = null;
   synthVisualRefs.sunGlowMat = null;
   synthVisualRefs.sunCoreMat = null;
+}
+
+function purgeBiomeForBossCinematic() {
+  if (biomeClearedForBossCinematic) return;
+  biomeClearedForBossCinematic = true;
+
+  // Drop the current biome geometry while the screen is black so upgrades
+  // appear on a clean slate before the next biome loads.
+  clearBiomeScene();
+  clearBiomeProps();
+
+  if (gridHelper) gridHelper.visible = false;
+  if (horizonRingRef) horizonRingRef.visible = false;
+  if (horizonInnerRingRef) horizonInnerRingRef.visible = false;
+  if (sunMeshRef) sunMeshRef.visible = false;
+  if (sunGlowRef) sunGlowRef.visible = false;
+  if (starsRef) starsRef.visible = false;
+  if (atmosphereRef) atmosphereRef.visible = false;
+  if (auroraRef) auroraRef.visible = false;
+  if (vhsRetroShellRef) vhsRetroShellRef.visible = false;
+  if (floorMaterial) floorMaterial.opacity = 0;
+  applyEnvironmentFade(1);
+  if (scene) {
+    if (scene.background && scene.background.isColor) {
+      scene.background.set(0x000000);
+    } else {
+      scene.background = new THREE.Color(0x000000);
+    }
+  }
 }
 
 function disposeObject3D(obj) {
@@ -2803,13 +2836,129 @@ function createControllerVisual(index) {
   return group;
 }
 
+/**
+ * Creates a blaster display with hologram shader effect.
+ * PERFORMANCE: Uses a single ShaderMaterial instead of 8 scan line meshes.
+ * This reduces draw calls from 16 (8 lines × 2 displays) to just 2 shader draws.
+ * 
+ * The hologram shader provides:
+ * - Animated scan lines (computed in fragment shader, no mesh animation)
+ * - Fresnel edge glow (view-dependent rim lighting)
+ * - Subtle flicker/glitch effects
+ * 
+ * Text sprites are cached and only rebuilt when weapon/upgrades change.
+ */
 function createBlasterDisplay(controllerIndex) {
   const group = new THREE.Group();
   const hand = getHandForController(controllerIndex);
 
-  // No background panel — text floats as part of hologram
+  // ═══════════════════════════════════════════════════════════════
+  // HOLOGRAM SHADER - Single draw call replaces 8 scan line meshes
+  // ═══════════════════════════════════════════════════════════════
+  
+  // Vertex shader: compute world-space position and normals for Fresnel effect
+  const holoVertexShader = `
+    varying vec2 vUv;
+    varying vec3 vPositionW;
+    varying vec4 vPos;
+    varying vec3 vNormalW;
 
-  // Subtle border outline (no solid panel behind it)
+    void main() {
+      vUv = uv;
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+      vPos = projectionMatrix * mvPosition;
+      vPositionW = (modelMatrix * vec4(position, 1.0)).xyz;
+      vNormalW = normalize(mat3(modelMatrix) * normal);
+      gl_Position = vPos;
+    }
+  `;
+
+  // Fragment shader: scan lines, Fresnel glow, flicker - all in one pass
+  const holoFragmentShader = `
+    uniform float uTime;
+    uniform vec3 uColor;
+    uniform float uOpacity;
+    uniform float uScanlineSize;
+    uniform float uSignalSpeed;
+    uniform float uFresnelAmount;
+    uniform float uFresnelOpacity;
+
+    varying vec2 vUv;
+    varying vec3 vPositionW;
+    varying vec4 vPos;
+    varying vec3 vNormalW;
+
+    float flicker(float amt, float time) {
+      return clamp(fract(cos(time) * 43758.5453123), amt, 1.0);
+    }
+    float random(float a, float b) {
+      return fract(cos(dot(vec2(a,b), vec2(12.9898,78.233))) * 43758.5453);
+    }
+
+    void main() {
+      // Screen-space coordinates for scanlines
+      vec2 vCoords = vPos.xy / vPos.w;
+      vCoords = vCoords * 0.5 + 0.5;
+      vec2 myUV = fract(vCoords);
+      
+      // Base hologram color with vertical gradient
+      vec4 holoColor = vec4(uColor, mix(1.0, vUv.y, 0.5));
+      
+      // Animated scanlines
+      float scanlines = 10.0;
+      scanlines += 20.0 * sin(uTime * uSignalSpeed * 20.8 - myUV.y * 60.0 * uScanlineSize);
+      scanlines *= smoothstep(1.3 * cos(uTime * uSignalSpeed + myUV.y * uScanlineSize), 0.78, 0.9);
+      scanlines *= max(0.25, sin(uTime * uSignalSpeed) * 1.0);
+      
+      // Random noise offsets for glitch effect
+      float r = random(vUv.x, vUv.y);
+      float b = random(vUv.y * 0.9, vUv.y * 0.2);
+      holoColor += vec4(r * scanlines, b * scanlines, r, 1.0) / 84.0;
+      
+      // Fresnel edge glow (view-dependent rim lighting)
+      vec3 viewDir = normalize(cameraPosition - vPositionW);
+      float fresnel = dot(viewDir, vNormalW) * (1.6 - uFresnelOpacity / 2.0);
+      fresnel = clamp(uFresnelAmount - fresnel, 0.0, uFresnelOpacity);
+      
+      // Subtle flicker for old-TV effect
+      float blink = flicker(0.6 - uSignalSpeed, uTime * uSignalSpeed * 0.02);
+      
+      // Final composition
+      vec3 finalColor = holoColor.rgb * blink + fresnel;
+      gl_FragColor = vec4(finalColor, uOpacity);
+    }
+  `;
+
+  // Create shader material with hologram effect uniforms
+  const holoMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0.0 },
+      uColor: { value: new THREE.Vector3(0.0, 0.84, 1.0) },  // Cyan to match game theme
+      uOpacity: { value: 0.85 },
+      uScanlineSize: { value: 8.0 },
+      uSignalSpeed: { value: 1.0 },
+      uFresnelAmount: { value: 0.45 },
+      uFresnelOpacity: { value: 1.0 }
+    },
+    vertexShader: holoVertexShader,
+    fragmentShader: holoFragmentShader,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  // Single plane with hologram shader replaces 8 scan line meshes
+  const holoGeo = new THREE.PlaneGeometry(0.21, 0.26);
+  const holoPlane = new THREE.Mesh(holoGeo, holoMaterial);
+  holoPlane.position.z = 0.003;  // Behind text but in front of border
+  holoPlane.renderOrder = 500;   // Render before text (text is default order)
+  group.add(holoPlane);
+
+  // Store material reference for animation (uTime updates in render loop)
+  group.userData.holoMaterial = holoMaterial;
+
+  // Subtle border outline (kept for visual definition)
   const borderPanelGeo = new THREE.PlaneGeometry(0.2, 0.25);
   const borderGeo = new THREE.EdgesGeometry(borderPanelGeo);
   const borderMat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 });
@@ -2817,38 +2966,28 @@ function createBlasterDisplay(controllerIndex) {
   border.position.z = 0.001;
   group.add(border);
 
-  // Scrolling scan lines for old-TV hologram effect
-  // Rendered IN FRONT of text (higher z + renderOrder) so they aren't occluded
-  const scanLines = [];
-  for (let i = 0; i < 8; i++) {
-    const lineGeo = new THREE.PlaneGeometry(0.21, 0.0015);
-    const lineMat = new THREE.MeshBasicMaterial({
-      color: 0x44ffff,
-      transparent: true,
-      opacity: 0.25,
-      depthTest: false,       // Always render on top
-      blending: THREE.AdditiveBlending,  // Glow through text
-    });
-    const line = new THREE.Mesh(lineGeo, lineMat);
-    line.position.y = -0.125 + (i * 0.035);
-    line.position.z = 0.005;  // Well in front of text (text is at z=0.002)
-    line.renderOrder = 1000;  // Render after everything else in the display
-    group.add(line);
-    scanLines.push(line);
-  }
-  group.userData.scanLines = scanLines;
-
   // Position above controller
   group.position.set(0, 0.15, -0.05);
   group.rotation.x = -Math.PI / 4;  // Tilt toward user
 
-  // Create text sprites (will be updated later)
+  // Initialize caching metadata for text sprites
   group.userData.hand = hand;
   group.userData.needsUpdate = true;
+  group.userData.lastRenderedHash = null;  // Hash of weapon+upgrades for dirty checking
 
   return group;
 }
 
+/**
+ * Updates blaster display text - CACHED to avoid per-frame Canvas recreation.
+ * 
+ * PERFORMANCE: Only recreates text sprites when weapon/upgrades actually change.
+ * Uses a hash of current stats to detect changes, eliminating the per-frame
+ * Canvas texture creation that was causing GC pressure and FPS drops.
+ * 
+ * The hologram shader animation (scan lines, glow) is handled separately by
+ * updating the uTime uniform in the render loop - no texture updates needed.
+ */
 function updateBlasterDisplay(display, controllerIndex) {
   if (!display || !display.visible) return;
 
@@ -2856,6 +2995,19 @@ function updateBlasterDisplay(display, controllerIndex) {
   display.userData.hand = hand;
   const stats = game.handStats[hand];
   const upgrades = game.upgrades[hand];
+
+  // Compute hash of current data for dirty checking
+  const upgradeCount = Object.values(upgrades).reduce((sum, count) => sum + count, 0);
+  const currentHash = `${hand}|${stats.kills}|${Math.round(stats.totalDamage)}|${upgradeCount}`;
+
+  // Skip text rebuild if data hasn't changed (cache hit)
+  if (display.userData.lastRenderedHash === currentHash) {
+    display.userData.needsUpdate = false;
+    return;
+  }
+
+  // Data changed - rebuild text sprites (cache miss)
+  display.userData.lastRenderedHash = currentHash;
 
   // Remove old text
   const oldText = display.children.filter(c => c.userData.isText);
@@ -2897,29 +3049,9 @@ function updateBlasterDisplay(display, controllerIndex) {
   display.add(makeText(`${hand.toUpperCase()} BLASTER`, 0.1));
   display.add(makeText(`KILLS: ${stats.kills}`, 0.04, 16));
   display.add(makeText(`DMG: ${Math.round(stats.totalDamage)}`, -0.02, 16));
-
-  // Show upgrade count
-  const upgradeCount = Object.values(upgrades).reduce((sum, count) => sum + count, 0);
   display.add(makeText(`UPGRADES: ${upgradeCount}`, -0.08, 16));
 
   display.userData.needsUpdate = false;
-}
-
-/** Animate hologram scan lines (called every frame, separate from data updates) */
-function animateBlasterScanLines(display) {
-  if (!display || !display.visible) return;
-  const scanLines = display.userData.scanLines;
-  if (!scanLines) return;
-  const time = performance.now() * 0.001;
-  for (let i = 0; i < scanLines.length; i++) {
-    const line = scanLines[i];
-    // Scroll upward, evenly spaced, moderate speed
-    let y = ((time * 0.12 + i * 0.035) % 0.28) - 0.14;
-    line.position.y = y;
-    // Fade near edges of the display area, brighter in the middle
-    const edgeDist = Math.min(Math.abs(y + 0.12), Math.abs(y - 0.12));
-    line.material.opacity = Math.min(0.35, edgeDist * 4);
-  }
 }
 
 // ============================================================
@@ -6599,6 +6731,7 @@ function debugJumpToLevel(targetLevel) {
   game.state = State.READY_SCREEN;
   game.level = targetLevel;
   game._levelConfig = getLevelConfig();
+  captureLevelSpawnForward();
   game.health = game.maxHealth;
 
   const hand = (lvl, idx) => ((lvl + idx) % 2 === 1 ? 'left' : 'right');
@@ -6770,6 +6903,12 @@ function handleDebugMenuTrigger(controller) {
 // startGame, completeLevel, togglePause, endGame, debug jump
 // COUPLING: Transitions game.state, calls HUD show/hide, audio
 // ============================================================
+function captureLevelSpawnForward() {
+  _levelSpawnForward.copy(DEFAULT_LEVEL_SPAWN_FORWARD);
+  setBossSpawnForward(_levelSpawnForward);
+  biomeClearedForBossCinematic = false;
+}
+
 function startGame() {
   console.log('[game] Starting new game');
   hideTitle();
@@ -6806,6 +6945,7 @@ function startGame() {
   game.state = State.READY_SCREEN;
   game.level = 1;
   game._levelConfig = getLevelConfig();
+  captureLevelSpawnForward();
   applyThemeForLevel(1);
   applyEnvironmentFade(0);
   showHUD();
@@ -7257,6 +7397,7 @@ function advanceLevelAfterUpgrade() {
     endGame(true); // victory
   } else {
     game._levelConfig = getLevelConfig();
+    captureLevelSpawnForward();
     applyThemeForLevel(game.level);
     const shouldFade = shouldFadeForBiomeTransition(game.level - 1);
     
@@ -7699,7 +7840,8 @@ function triggerHostileProjectileExplosion(position, radius = 0.35, damage = 0) 
 
 function spawnBossProjectileDestructionFX(position) {
   spawnExplosionVisual(position.clone(), 0.22);
-  spawnVoxelExplosion(position.clone(), 0xff6688, 4, 'basic', false, false);
+  // Yellow bits matching projectile color, capped at 3 per projectile death
+  spawnVoxelExplosion(position.clone(), 0xffff00, 3, 'basic', false, false);
 }
 
 function updateSeekerProjectileVisual(proj, dt) {
@@ -8095,6 +8237,14 @@ function fireMainWeapon(controller, index) {
   }
 }
 
+/**
+ * Handle the continuous lightning beam while the trigger is held.
+ * fireMainWeapon() returns early for lightning weapons, then the main update loop
+ * calls this every frame to: (1) read the controller pose, (2) grab nearby enemies
+ * from the spatial hash, (3) maintain the beam visuals/sound, and (4) tick damage
+ * on lightningTickInterval. This keeps lightning weapons feel like hold-to-fire beams
+ * without going through the projectile system.
+ */
 function updateLightningBeam(controller, index, stats, dt) {
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -10450,13 +10600,19 @@ function render(timestamp) {
     updateUpgradeCards(now, upgradeSelectionCooldown);
 
     // Show and update blaster displays
+    // PERFORMANCE: Shader animation replaces mesh-based scan lines
+    // Single uTime uniform update per display vs 8 mesh position updates
+    const holoTime = performance.now() * 0.001;
     blasterDisplays.forEach((display, i) => {
       if (display) {
         display.visible = true;
         if (display.userData.needsUpdate) {
           updateBlasterDisplay(display, i);
         }
-        animateBlasterScanLines(display);
+        // Update hologram shader time uniform for scan line animation
+        if (display.userData.holoMaterial) {
+          display.userData.holoMaterial.uniforms.uTime.value = holoTime;
+        }
       }
     });
   }

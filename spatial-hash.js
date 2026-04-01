@@ -25,6 +25,10 @@ export class SpatialHash {
       bucket = [];
       this.grid.set(key, bucket);
     }
+    if (obj && typeof obj === 'object') {
+      obj._hashX = x;
+      obj._hashZ = z;
+    }
     bucket.push(obj);
   }
 
@@ -39,14 +43,28 @@ export class SpatialHash {
     for (let cx = minCx; cx <= maxCx; cx++) {
       for (let cz = minCz; cz <= maxCz; cz++) {
         const bucket = this.grid.get(`${cx},${cz}`);
-        if (bucket) {
-          for (let i = 0; i < bucket.length; i++) {
-            const obj = bucket[i];
-            const dx = obj.x - x;
-            const dz = obj.z - z;
-            if (dx * dx + dz * dz <= rSq) {
-              results.push(obj);
+        if (!bucket) continue;
+        for (let i = 0; i < bucket.length; i++) {
+          const obj = bucket[i];
+          if (!obj || typeof obj !== 'object') continue;
+
+          let objX = obj._hashX;
+          let objZ = obj._hashZ;
+          if (!Number.isFinite(objX) || !Number.isFinite(objZ)) {
+            if (obj.mesh && obj.mesh.position) {
+              objX = obj.mesh.position.x;
+              objZ = obj.mesh.position.z;
+            } else if (Number.isFinite(obj.x) && Number.isFinite(obj.z)) {
+              objX = obj.x;
+              objZ = obj.z;
             }
+          }
+          if (!Number.isFinite(objX) || !Number.isFinite(objZ)) continue;
+
+          const dx = objX - x;
+          const dz = objZ - z;
+          if (dx * dx + dz * dz <= rSq) {
+            results.push(obj);
           }
         }
       }

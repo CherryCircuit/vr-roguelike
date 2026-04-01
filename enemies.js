@@ -325,6 +325,7 @@ const MAX_DEBRIS = 25;  // Cap for performance (reduced from 56)
 
 // Player forward direction for front-arc constraints
 const _playerForwardRef = new THREE.Vector3(0, 0, -1);
+const _bossSpawnForwardRef = new THREE.Vector3(0, 0, -1);
 const _frontDir = new THREE.Vector3();
 const _frontRight = new THREE.Vector3();
 const _frontFlat = new THREE.Vector3();
@@ -339,8 +340,22 @@ export function setPlayerForward(forward) {
   }
 }
 
-function clampPositionToFrontArc(position, playerPos, minDist = 3, maxDist = 20, arcDeg = 120) {
-  _frontDir.copy(_playerForwardRef);
+export function setBossSpawnForward(forward) {
+  if (!forward) {
+    _bossSpawnForwardRef.set(0, 0, -1);
+    return;
+  }
+  _bossSpawnForwardRef.copy(forward);
+  _bossSpawnForwardRef.y = 0;
+  if (_bossSpawnForwardRef.lengthSq() < 0.0001) {
+    _bossSpawnForwardRef.set(0, 0, -1);
+  } else {
+    _bossSpawnForwardRef.normalize();
+  }
+}
+
+function clampPositionToFrontArc(position, playerPos, minDist = 3, maxDist = 20, arcDeg = 120, forwardOverride = null) {
+  _frontDir.copy(forwardOverride || _playerForwardRef);
   _frontDir.y = 0;
   if (_frontDir.lengthSq() < 0.0001) {
     _frontDir.set(0, 0, -1);
@@ -3703,20 +3718,17 @@ class Boss {
   }
 
   constrainToFrontArc(playerPos) {
-    // Distance-only clamp: keep boss within [minDistance, maxDistance] of player
-    // but do NOT constrain to player's look direction (fixes boss "following" head)
-    const dx = this.mesh.position.x - playerPos.x;
-    const dz = this.mesh.position.z - playerPos.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist > this.maxDistance) {
-      const s = this.maxDistance / dist;
-      this.mesh.position.x = playerPos.x + dx * s;
-      this.mesh.position.z = playerPos.z + dz * s;
-    } else if (dist < this.minDistance && dist > 0.001) {
-      const s = this.minDistance / dist;
-      this.mesh.position.x = playerPos.x + dx * s;
-      this.mesh.position.z = playerPos.z + dz * s;
-    }
+    // Keep bosses locked to the same forward arc the player spawned facing.
+    // The spawn vector is captured once per level so bosses ignore head turns
+    // but still respect the encounter framing and distance limits.
+    clampPositionToFrontArc(
+      this.mesh.position,
+      playerPos,
+      this.minDistance,
+      this.maxDistance,
+      this.frontArc,
+      _bossSpawnForwardRef,
+    );
   }
 
   destroy() {
@@ -4632,6 +4644,8 @@ class SkullBoss extends Boss {
     }
     
     setTimeout(() => {
+      // Cancel if hand was destroyed during telegraph delay
+      if (!hand.alive) return;
       if (typeof spawnBossProjectile === 'function') {
         spawnBossProjectile(hand.getPosition(), playerPos);
       }

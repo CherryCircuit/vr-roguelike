@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPACE-OM-ICIDE Model Previewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0011; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+  #canvas-container { width: 100vw; height: 100vh; }
+
+  /* Top bar */
+  #toolbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 8px 16px;
+    background: rgba(10, 0, 17, 0.92);
+    border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+    backdrop-filter: blur(8px);
+  }
+  #toolbar h1 {
+    font-size: 13px; font-weight: 600; letter-spacing: 1px;
+    background: linear-gradient(90deg, #0ff, #f0f);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    white-space: nowrap;
+  }
+  #toolbar .btn {
+    padding: 5px 12px; border-radius: 6px; cursor: pointer;
+    background: rgba(0, 255, 255, 0.1); border: 1px solid rgba(0, 255, 255, 0.3);
+    font-size: 12px; transition: all 0.2s; white-space: nowrap; color: #fff;
+  }
+  #toolbar .btn:hover { background: rgba(0, 255, 255, 0.2); }
+  #toolbar label.btn { user-select: none; }
+  #toolbar input[type="file"] { display: none; }
+
+  select {
+    padding: 5px 8px; border-radius: 6px; font-size: 12px;
+    background: rgba(0, 255, 255, 0.1); border: 1px solid rgba(0, 255, 255, 0.3);
+    color: #fff; cursor: pointer;
+  }
+  select option { background: #1a0033; color: #fff; }
+
+  .sep { width: 1px; height: 20px; background: rgba(255,255,255,0.1); flex-shrink: 0; }
+
+  /* Complexity badge */
+  #complexity-badge {
+    position: fixed; top: 55px; left: 50%; transform: translateX(-50%); z-index: 100;
+    padding: 8px 20px; border-radius: 20px; font-size: 13px; font-weight: 600;
+    letter-spacing: 0.5px; opacity: 0; transition: all 0.4s;
+    pointer-events: none;
+  }
+  #complexity-badge.visible { opacity: 1; }
+  #complexity-badge.excellent { background: rgba(0,200,80,0.2); border: 1px solid #0c8; color: #0c8; }
+  #complexity-badge.good { background: rgba(0,255,255,0.15); border: 1px solid #0ff; color: #0ff; }
+  #complexity-badge.caution { background: rgba(255,200,0,0.15); border: 1px solid #fc0; color: #fc0; }
+  #complexity-badge.heavy { background: rgba(255,100,0,0.2); border: 1px solid #f60; color: #f60; }
+  #complexity-badge.too-heavy { background: rgba(255,0,60,0.2); border: 1px solid #f06; color: #f06; }
+
+  /* Info panel */
+  #info-panel {
+    position: fixed; bottom: 20px; left: 20px; z-index: 100;
+    padding: 14px 18px; border-radius: 8px; min-width: 260px;
+    background: rgba(10, 0, 17, 0.88);
+    border: 1px solid rgba(0, 255, 255, 0.15);
+    backdrop-filter: blur(8px);
+    font-size: 12px; line-height: 1.7;
+    opacity: 0; transition: opacity 0.3s;
+  }
+  #info-panel.visible { opacity: 1; }
+  #info-panel .label { color: rgba(255,255,255,0.5); }
+  #info-panel .value { color: #0ff; font-family: 'Courier New', monospace; }
+  #info-panel .section { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); }
+
+  /* Complexity bar */
+  .complexity-bar-bg {
+    margin-top: 4px; height: 6px; border-radius: 3px;
+    background: rgba(255,255,255,0.08); overflow: hidden;
+  }
+  .complexity-bar-fill {
+    height: 100%; border-radius: 3px; transition: width 0.5s, background 0.5s;
+  }
+
+  /* Side panel - Lighting & Textures */
+  #side-panel {
+    position: fixed; top: 55px; right: 0; z-index: 100;
+    width: 240px; padding: 14px 16px;
+    background: rgba(10, 0, 17, 0.92);
+    border-left: 1px solid rgba(0, 255, 255, 0.15);
+    border-bottom: 1px solid rgba(0, 255, 255, 0.15);
+    border-radius: 0 0 0 8px;
+    backdrop-filter: blur(8px);
+    font-size: 12px; line-height: 1.8;
+    display: none;
+  }
+  #side-panel.open { display: block; }
+  #side-panel h3 {
+    font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+    color: rgba(255,255,255,0.4); margin-bottom: 8px;
+  }
+  #side-panel .section { margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+  #side-panel .section:last-child { border-bottom: none; margin-bottom: 0; }
+  #side-panel label { color: rgba(255,255,255,0.6); display: block; margin-bottom: 2px; }
+  #side-panel input[type="range"] {
+    width: 100%; accent-color: #0ff; height: 4px;
+  }
+  #side-panel input[type="color"] {
+    width: 32px; height: 22px; border: 1px solid rgba(0,255,255,0.3);
+    border-radius: 4px; background: none; cursor: pointer; padding: 0;
+  }
+  #side-panel .row { display: flex; align-items: center; gap: 8px; }
+  #side-panel .row label { margin-bottom: 0; }
+  #side-panel .toggle-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  #side-panel .toggle-row input { accent-color: #0ff; }
+  #side-panel .toggle-row span { color: rgba(255,255,255,0.6); }
+
+  /* Texture preview grid */
+  #texture-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px;
+  }
+  #texture-grid .tex-thumb {
+    border: 1px solid rgba(0,255,255,0.15); border-radius: 4px;
+    overflow: hidden; cursor: pointer; position: relative;
+    aspect-ratio: 1;
+  }
+  #texture-grid .tex-thumb img, #texture-grid .tex-thumb canvas {
+    width: 100%; height: 100%; object-fit: contain; background: #111;
+  }
+  #texture-grid .tex-thumb .tex-label {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 2px 4px; font-size: 9px; color: rgba(255,255,255,0.7);
+    background: rgba(0,0,0,0.7); text-align: center;
+  }
+  #texture-grid .tex-empty {
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,0.2); font-size: 10px;
+    border: 1px dashed rgba(255,255,255,0.1); border-radius: 4px;
+    aspect-ratio: 1;
+  }
+
+  /* Controls help */
+  #controls-help {
+    position: fixed; bottom: 20px; right: 20px; z-index: 100;
+    padding: 12px 16px; border-radius: 8px;
+    background: rgba(10, 0, 17, 0.7);
+    border: 1px solid rgba(255, 0, 255, 0.15);
+    font-size: 11px; line-height: 1.8; color: rgba(255,255,255,0.5);
+  }
+  #controls-help span { color: #f0f; }
+
+  /* Drop zone overlay */
+  #drop-zone {
+    position: fixed; inset: 0; z-index: 200;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(10, 0, 17, 0.9);
+    border: 3px dashed rgba(0, 255, 255, 0.5);
+  }
+  #drop-zone.active { display: flex; }
+  #drop-zone p { font-size: 20px; color: #0ff; letter-spacing: 2px; }
+
+  /* Empty state */
+  #empty-state {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #empty-state.hidden { display: none; }
+  #empty-state p { font-size: 18px; color: rgba(255,255,255,0.25); letter-spacing: 1px; }
+  #empty-state .sub { font-size: 13px; margin-top: 8px; color: rgba(255,255,255,0.15); }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>🐵 MODEL PREVIEWER</h1>
+  <div class="sep"></div>
+  <label class="btn" for="file-input">📂 Load .glb</label>
+  <input type="file" id="file-input" accept=".glb,.gltf">
+  <select id="bg-select">
+    <option value="synthwave">Synthwave Ground</option>
+    <option value="grid">Grid</option>
+    <option value="dark">Dark Void</option>
+  </select>
+  <select id="scale-ref">
+    <option value="none">No Scale Ref</option>
+    <option value="player" selected>Player (1.7m)</option>
+    <option value="cube">1m Cube</option>
+  </select>
+  <div class="sep"></div>
+  <label class="btn" style="user-select:none;">
+    <input type="checkbox" id="wireframe-cb" style="margin-right:4px;"> Wire
+  </label>
+  <label class="btn" style="user-select:none;">
+    <input type="checkbox" id="normals-cb" style="margin-right:4px;"> Normals
+  </label>
+  <label class="btn" style="user-select:none;">
+    <input type="checkbox" id="uv-overlay-cb" style="margin-right:4px;"> UV
+  </label>
+  <div class="sep"></div>
+  <button class="btn" id="toggle-panel">💡 Lighting & Textures</button>
+</div>
+
+<!-- Complexity badge -->
+<div id="complexity-badge"></div>
+
+<!-- Side panel -->
+<div id="side-panel">
+  <div class="section">
+    <h3>🔆 Lighting</h3>
+    <label>Key Light: <span id="key-val">4</span></label>
+    <input type="range" id="key-intensity" min="0" max="8" step="0.1" value="4">
+    <div class="row" style="margin-top:6px;">
+      <label>Key Color</label>
+      <input type="color" id="key-color" value="#ffffff">
+    </div>
+    <label style="margin-top:8px;">Fill Light: <span id="fill-val">2</span></label>
+    <input type="range" id="fill-intensity" min="0" max="4" step="0.1" value="2">
+    <div class="row" style="margin-top:6px;">
+      <label>Fill Color</label>
+      <input type="color" id="fill-color" value="#ffffff">
+    </div>
+    <label style="margin-top:8px;">Rim Light: <span id="rim-val">2</span></label>
+    <input type="range" id="rim-intensity" min="0" max="4" step="0.1" value="2">
+    <div class="row" style="margin-top:6px;">
+      <label>Rim Color</label>
+      <input type="color" id="rim-color" value="#ffffff">
+    </div>
+    <label style="margin-top:8px;">Ambient: <span id="ambient-val">0.8</span></label>
+    <input type="range" id="ambient-intensity" min="0" max="3" step="0.1" value="0.8">
+  </div>
+  <div class="section">
+    <h3>🎨 Textures</h3>
+    <div id="texture-grid">
+      <div class="tex-empty">No model loaded</div>
+    </div>
+  </div>
+  <div class="section">
+    <h3>🎯 Render</h3>
+    <label class="toggle-row">
+      <input type="checkbox" id="shadows-cb">
+      <span>Shadows</span>
+    </label>
+    <label style="margin-top:6px;">Bias: <span id="shadow-bias-val">0.0000</span></label>
+    <input type="range" id="shadow-bias" min="-0.01" max="0.01" step="0.0001" value="0">
+    <label style="margin-top:4px;">Normal Bias: <span id="normal-bias-val">0.000</span></label>
+    <input type="range" id="normal-bias" min="0" max="0.1" step="0.001" value="0">
+    <label style="margin-top:4px;">Map Size: <span id="shadow-size-val">2048</span> <small style="opacity:0.5">(reload)</small></label>
+    <input type="range" id="shadow-size" min="256" max="4096" step="256" value="2048">
+    <label class="toggle-row" style="margin-top:4px;">
+      <input type="checkbox" id="tone-mapping-cb">
+      <span>ACES Tone Mapping</span>
+    </label>
+    <label class="toggle-row" style="margin-top:4px;">
+      <input type="checkbox" id="polygon-offset-cb" checked>
+      <span>Polygon Offset</span>
+    </label>
+    <label class="toggle-row" style="margin-top:4px;">
+      <input type="checkbox" id="depth-testing-cb" checked>
+      <span>Depth Testing</span>
+    </label>
+    <label class="toggle-row" style="margin-top:4px;">
+      <input type="checkbox" id="flat-shading-cb">
+      <span>Flat Shading</span>
+    </label>
+    <label class="toggle-row" style="margin-top:4px;">
+      <input type="checkbox" id="bounding-box-cb">
+      <span>Bounding Box</span>
+    </label>
+  </div>
+</div>
+
+<div id="canvas-container"></div>
+
+<div id="info-panel">
+  <div><span class="label">File:</span> <span class="value" id="info-file">—</span></div>
+  <div><span class="label">Dimensions:</span> <span class="value" id="info-dims">—</span></div>
+  <div><span class="label">Scale:</span> <span class="value" id="info-scale">—</span></div>
+  <div><span class="label">Origin:</span> <span class="value" id="info-origin">—</span></div>
+  <div class="section">
+    <div><span class="label">Meshes:</span> <span class="value" id="info-meshes">—</span></div>
+    <div><span class="label">Vertices:</span> <span class="value" id="info-verts">—</span></div>
+    <div><span class="label">Triangles:</span> <span class="value" id="info-tris">—</span></div>
+    <div><span class="label">Materials:</span> <span class="value" id="info-mats">—</span></div>
+    <div><span class="label">Textures:</span> <span class="value" id="info-texcount">—</span></div>
+  </div>
+  <div class="section">
+    <div><span class="label">Animations:</span> <span class="value" id="info-anims">—</span></div>
+  </div>
+  <!-- Complexity section -->
+  <div class="section">
+    <div><span class="label">Game Complexity:</span> <span class="value" id="info-complexity">—</span></div>
+    <div class="complexity-bar-bg"><div class="complexity-bar-fill" id="complexity-bar"></div></div>
+    <div id="complexity-advice" style="margin-top:4px; font-size:11px; color:rgba(255,255,255,0.5);"></div>
+  </div>
+  <div class="section" id="warnings-section" style="display:none;">
+    <div style="color:#ff0;">⚠ Warnings:</div>
+    <div id="info-warnings" style="color:rgba(255,255,255,0.7);"></div>
+  </div>
+</div>
+
+<div id="controls-help">
+  <span>Left drag</span> Rotate<br>
+  <span>Right drag</span> Pan<br>
+  <span>Scroll</span> Zoom<br>
+  <span>WASD</span> Move camera<br>
+  <span>R</span> Reset camera<br>
+  <span>F</span> Focus model<br>
+  <span>Space</span> Next anim<br>
+  <span>Drop .glb</span> Load file
+</div>
+
+<div id="drop-zone"><p>Drop .glb file here</p></div>
+
+<div id="empty-state">
+  <p>Load a .glb or .gltf model to preview</p>
+  <p class="sub">Drag & drop or use the button above</p>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+// ── Scene setup ──
+const container = document.getElementById('canvas-container');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = false;  // Disabled by default (checkbox unchecked)
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.LinearToneMapping;  // Linear by default (checkbox unchecked)
+renderer.toneMappingExposure = 1.0;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0011, 0.015);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(8, 5, 8);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 2, 0);
+controls.update();
+
+// ── Lighting ──
+const ambientLight = new THREE.AmbientLight(0x332244, 0.8);
+scene.add(ambientLight);
+
+const hemiLight = new THREE.HemisphereLight(0x0ff, 0xf0f, 0.3);
+scene.add(hemiLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 4);
+dirLight.position.set(5, 10, 5);
+dirLight.castShadow = false;  // Controlled by shadows checkbox
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 50;
+dirLight.shadow.camera.left = -15;
+dirLight.shadow.camera.right = 15;
+dirLight.shadow.camera.top = 15;
+dirLight.shadow.camera.bottom = -15;
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0xffffff, 2);
+fillLight.position.set(-5, 3, -5);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffffff, 2);
+rimLight.position.set(0, 2, -8);
+scene.add(rimLight);
+
+// ── Lighting controls ──
+function bindSlider(id, valId, target) {
+  const slider = document.getElementById(id);
+  const valSpan = document.getElementById(valId);
+  slider.addEventListener('input', () => {
+    target.intensity = parseFloat(slider.value);
+    valSpan.textContent = slider.value;
+  });
+}
+bindSlider('key-intensity', 'key-val', dirLight);
+bindSlider('fill-intensity', 'fill-val', fillLight);
+bindSlider('rim-intensity', 'rim-val', rimLight);
+bindSlider('ambient-intensity', 'ambient-val', ambientLight);
+
+document.getElementById('key-color').addEventListener('input', (e) => {
+  dirLight.color.set(e.target.value);
+});
+document.getElementById('fill-color').addEventListener('input', (e) => {
+  fillLight.color.set(e.target.value);
+});
+document.getElementById('rim-color').addEventListener('input', (e) => {
+  rimLight.color.set(e.target.value);
+});
+
+// ── Side panel toggle ──
+document.getElementById('toggle-panel').addEventListener('click', () => {
+  document.getElementById('side-panel').classList.toggle('open');
+});
+
+// ── Ground environments ──
+let groundGroup = new THREE.Group();
+scene.add(groundGroup);
+
+function buildSynthwaveGround() {
+  clearGround();
+  const gridGeo = new THREE.PlaneGeometry(100, 100, 50, 50);
+  const gridMat = new THREE.MeshStandardMaterial({
+    color: 0x0a0022, wireframe: true, transparent: true, opacity: 0.15,
+  });
+  const grid = new THREE.Mesh(gridGeo, gridMat);
+  grid.rotation.x = -Math.PI / 2; grid.receiveShadow = false;
+  groundGroup.add(grid);
+
+  const floorGeo = new THREE.PlaneGeometry(100, 100);
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x0a0011, roughness: 0.9, metalness: 0.1 });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2; floor.position.y = -0.01; floor.receiveShadow = false;
+  groundGroup.add(floor);
+
+  const linesMat = new THREE.LineBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.08 });
+  for (let i = -50; i <= 50; i += 2) {
+    groundGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(i, 0, -50), new THREE.Vector3(i, 0, 50)]), linesMat));
+    groundGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-50, 0, i), new THREE.Vector3(50, 0, i)]), linesMat));
+  }
+}
+
+function buildGridGround() {
+  clearGround();
+  const grid = new THREE.GridHelper(50, 50, 0x333333, 0x1a1a1a);
+  grid.position.y = 0;
+  groundGroup.add(grid);
+}
+
+function buildDarkVoid() {
+  clearGround();
+  scene.background = new THREE.Color(0x050008);
+  scene.fog = new THREE.FogExp2(0x050008, 0.008);
+}
+
+function clearGround() {
+  while (groundGroup.children.length) {
+    const child = groundGroup.children[0];
+    groundGroup.remove(child);
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  }
+  scene.background = null;
+  scene.fog = new THREE.FogExp2(0x0a0011, 0.015);
+}
+
+buildSynthwaveGround();
+
+document.getElementById('bg-select').addEventListener('change', (e) => {
+  if (e.target.value === 'synthwave') buildSynthwaveGround();
+  else if (e.target.value === 'grid') buildGridGround();
+  else buildDarkVoid();
+});
+
+// ── Scale references ──
+let scaleRefGroup = new THREE.Group();
+scene.add(scaleRefGroup);
+
+function buildScaleRef(type) {
+  clearScaleRef();
+  if (type === 'none') return;
+  if (type === 'player') {
+    const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.25 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.4, 8), mat);
+    body.position.y = 0.9; scaleRefGroup.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), mat);
+    head.position.y = 1.7; scaleRefGroup.add(head);
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.font = 'bold 32px monospace'; ctx.fillStyle = '#0ff'; ctx.textAlign = 'center';
+    ctx.fillText('1.7m', 128, 40);
+    const tex = new THREE.CanvasTexture(canvas);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.6 }));
+    sprite.position.set(0.6, 0.85, 0); sprite.scale.set(1, 0.25, 1);
+    scaleRefGroup.add(sprite);
+  }
+  if (type === 'cube') {
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const edges = new THREE.EdgesGeometry(geo);
+    const mat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.4 });
+    const cube = new THREE.LineSegments(edges, mat);
+    cube.position.y = 0.5; scaleRefGroup.add(cube);
+  }
+}
+
+function clearScaleRef() {
+  while (scaleRefGroup.children.length) {
+    const child = scaleRefGroup.children[0];
+    scaleRefGroup.remove(child);
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (child.material.map) child.material.map.dispose();
+      child.material.dispose();
+    }
+  }
+}
+
+buildScaleRef('player');
+document.getElementById('scale-ref').addEventListener('change', (e) => buildScaleRef(e.target.value));
+
+// ── WASD Camera Movement ──
+const keys = {};
+const moveSpeed = 5; // units per second
+const _forward = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _move = new THREE.Vector3();
+
+document.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  // Prevent default for game keys only
+  if (['KeyW','KeyA','KeyS','KeyD','KeyR','KeyF','Space'].includes(e.code)) {
+    e.preventDefault();
+  }
+});
+document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+function updateWASD(dt) {
+  _move.set(0, 0, 0);
+  // Get camera forward/right on the XZ plane
+  camera.getWorldDirection(_forward);
+  _forward.y = 0;
+  _forward.normalize();
+  _right.crossVectors(_forward, camera.up).normalize();
+
+  if (keys['KeyW']) _move.add(_forward);
+  if (keys['KeyS']) _move.sub(_forward);
+  if (keys['KeyD']) _move.add(_right);
+  if (keys['KeyA']) _move.sub(_right);
+  if (keys['KeyQ'] || keys['ShiftLeft']) _move.y -= 1;
+  if (keys['KeyE'] || keys['Space']) _move.y += 1;
+
+  if (_move.lengthSq() > 0) {
+    _move.normalize().multiplyScalar(moveSpeed * dt);
+    camera.position.add(_move);
+    controls.target.add(_move);
+  }
+}
+
+// ── Normal visualization ──
+let normalHelper = null;
+document.getElementById('normals-cb').addEventListener('change', (e) => {
+  if (normalHelper) { scene.remove(normalHelper); normalHelper = null; }
+  if (e.target.checked && currentModel) {
+    // Add per-mesh normal helpers
+    normalHelper = new THREE.Group();
+    currentModel.traverse((child) => {
+      if (child.isMesh && child.geometry) {
+        const geo = child.geometry;
+        if (geo.attributes.normal) {
+          const helper = new THREE.VertexNormalsHelper(child, 0.1, 0x00ff00);
+          normalHelper.add(helper);
+        }
+      }
+    });
+    scene.add(normalHelper);
+  }
+});
+
+// ── UV overlay visualization ──
+let originalMaterials = new Map();
+document.getElementById('uv-overlay-cb').addEventListener('change', (e) => {
+  if (!currentModel) return;
+  if (e.target.checked) {
+    // Store originals and swap to UV debug material
+    currentModel.traverse((child) => {
+      if (child.isMesh) {
+        originalMaterials.set(child.uuid, child.material);
+        child.material = uvDebugMaterial;
+      }
+    });
+  } else {
+    // Restore originals
+    currentModel.traverse((child) => {
+      if (child.isMesh && originalMaterials.has(child.uuid)) {
+        child.material = originalMaterials.get(child.uuid);
+        originalMaterials.delete(child.uuid);
+      }
+    });
+  }
+});
+
+// Create UV checker texture
+function createUVCheckerTexture() {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  // Grid
+  const gridSize = 8;
+  const cellSize = size / gridSize;
+  for (let y = 0; y < gridSize; y++) {
+    for (let x = 0; x < gridSize; x++) {
+      ctx.fillStyle = (x + y) % 2 === 0 ? '#ff00ff' : '#00ffff';
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+    }
+  }
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= gridSize; i++) {
+    ctx.beginPath(); ctx.moveTo(i * cellSize, 0); ctx.lineTo(i * cellSize, size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * cellSize); ctx.lineTo(size, i * cellSize); ctx.stroke();
+  }
+  // Labels
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.font = 'bold 24px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('U →', size / 2, size - 16);
+  ctx.save();
+  ctx.translate(16, size / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('V →', 0, 0);
+  ctx.restore();
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+const uvDebugMaterial = new THREE.MeshBasicMaterial({ map: createUVCheckerTexture(), side: THREE.DoubleSide });
+
+// ── Shadows toggle ──
+document.getElementById('shadows-cb').addEventListener('change', (e) => {
+  const enabled = e.target.checked;
+  renderer.shadowMap.enabled = enabled;
+  dirLight.castShadow = enabled;
+  fillLight.castShadow = enabled;
+  rimLight.castShadow = enabled;
+  floor.receiveShadow = enabled;
+  grid.receiveShadow = enabled;
+  if (currentModel) {
+    currentModel.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = enabled;
+        child.receiveShadow = enabled;
+      }
+    });
+  }
+});
+
+// ── Tone mapping toggle ──
+document.getElementById('tone-mapping-cb').addEventListener('change', (e) => {
+  renderer.toneMapping = e.target.checked ? THREE.ACESFilmicToneMapping : THREE.LinearToneMapping;
+  renderer.toneMappingExposure = e.target.checked ? 1.2 : 1.0;
+});
+
+// ── Shadow bias slider ──
+document.getElementById('shadow-bias').addEventListener('input', (e) => {
+  const val = parseFloat(e.target.value);
+  document.getElementById('shadow-bias-val').textContent = val.toFixed(4);
+  if (dirLight.shadow) dirLight.shadow.bias = val;
+  if (fillLight.shadow) fillLight.shadow.bias = val;
+  if (rimLight.shadow) rimLight.shadow.bias = val;
+});
+
+// ── Shadow normal bias slider ──
+document.getElementById('normal-bias').addEventListener('input', (e) => {
+  const val = parseFloat(e.target.value);
+  document.getElementById('normal-bias-val').textContent = val.toFixed(3);
+  if (dirLight.shadow) dirLight.shadow.normalBias = val;
+  if (fillLight.shadow) fillLight.shadow.normalBias = val;
+  if (rimLight.shadow) rimLight.shadow.normalBias = val;
+});
+
+// ── Shadow map size slider ──
+document.getElementById('shadow-size').addEventListener('input', (e) => {
+  const val = parseInt(e.target.value);
+  document.getElementById('shadow-size-val').textContent = val;
+  // Note: Requires model reload to take effect
+  if (dirLight.shadow) dirLight.shadow.mapSize.set(val, val);
+  if (fillLight.shadow) fillLight.shadow.mapSize.set(val, val);
+  if (rimLight.shadow) rimLight.shadow.mapSize.set(val, val);
+  // Force shadow map update
+  dirLight.shadow.map?.dispose();
+  fillLight.shadow.map?.dispose();
+  rimLight.shadow.map?.dispose();
+});
+
+// ── Polygon offset toggle ──
+document.getElementById('polygon-offset-cb').addEventListener('change', (e) => {
+  if (!currentModel) return;
+  currentModel.traverse((child) => {
+    if (child.isMesh && child.material) {
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(m => {
+        m.polygonOffset = e.target.checked;
+        m.needsUpdate = true;
+      });
+    }
+  });
+});
+
+// ── Depth testing toggle ──
+document.getElementById('depth-testing-cb').addEventListener('change', (e) => {
+  if (!currentModel) return;
+  currentModel.traverse((child) => {
+    if (child.isMesh && child.material) {
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(m => {
+        m.depthTest = e.target.checked;
+        m.depthWrite = e.target.checked;
+        m.needsUpdate = true;
+      });
+    }
+  });
+});
+
+// ── Flat shading toggle ──
+document.getElementById('flat-shading-cb').addEventListener('change', (e) => {
+  if (!currentModel) return;
+  currentModel.traverse((child) => {
+    if (child.isMesh && child.material) {
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(m => {
+        m.flatShading = e.target.checked;
+        m.needsUpdate = true;
+      });
+      // Recompute normals for flat shading
+      if (e.target.checked && child.geometry) {
+        child.geometry.deleteAttribute('smoothNormal');
+      }
+    }
+  });
+});
+
+// ── Bounding box toggle ──
+let bboxHelper = null;
+document.getElementById('bounding-box-cb').addEventListener('change', (e) => {
+  if (bboxHelper) { scene.remove(bboxHelper); bboxHelper = null; }
+  if (e.target.checked && currentModel) {
+    const box = new THREE.Box3().setFromObject(currentModel);
+    bboxHelper = new THREE.Box3Helper(box, 0x00ffff);
+    scene.add(bboxHelper);
+  }
+});
+
+// ── Wireframe toggle ──
+document.getElementById('wireframe-cb').addEventListener('change', (e) => {
+  if (!currentModel) return;
+  currentModel.traverse((child) => {
+    if (child.isMesh && child.material) {
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(m => { m.wireframe = e.target.checked; });
+    }
+  });
+});
+
+// ── GLTF Loader ──
+const gltfLoader = new GLTFLoader();
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/');
+gltfLoader.setDRACOLoader(dracoLoader);
+
+let currentModel = null;
+let mixer = null;
+let animActions = [];
+let animIndex = 0;
+
+// ── Complexity ratings based on our VR game's actual budgets ──
+// Our game runs on Quest. Enemies use BoxGeometry/SphereGeometry primitives (8-32 tris each).
+// Bosses are more complex but still instanced. Scenery is procedural geometry.
+// Total scene budget ~100k tris on Quest, so individual models need to be lean.
+const COMPLEXITY_TIERS = {
+  // triCount: { label, color, percent, advice }
+  // <200 tris: prop-level (debris, pickups, small scenery)
+  prop:     { max: 200,   label: 'PROP',     color: '#0c8', percent: 10,  advice: 'Great for small props, pickups, debris.' },
+  // <600 tris: enemy-level (our current enemies are ~8-32 tris, but GLTF enemies could be 200-600)
+  enemy:    { max: 600,   label: 'ENEMY',     color: '#0ff', percent: 25,  advice: 'Good for enemies. Our primitives are 8-32 tris.' },
+  // <1500 tris: scenery-level (trees, rocks, structures)
+  scenery:  { max: 1500,  label: 'SCENERY',   color: '#8cf', percent: 40,  advice: 'Fine for scenery. Use sparingly per scene.' },
+  // <3000: boss-level (single complex model, one per level)
+  boss:     { max: 3000,  label: 'BOSS',      color: '#fc0', percent: 55,  advice: 'Boss-tier complexity. One per level only.' },
+  // <6000: heavy (needs optimization, Decimate recommended)
+  heavy:    { max: 6000,  label: 'HEAVY',     color: '#f80', percent: 75,  advice: 'Run Decimate in Blender. Too heavy for VR.' },
+  // 6000+: too heavy
+  tooHeavy: { max: Infinity, label: 'TOO HEAVY', color: '#f06', percent: 95, advice: 'Must Decimate aggressively. Will hurt VR framerate.' },
+};
+
+function getComplexity(triCount) {
+  if (triCount <= COMPLEXITY_TIERS.prop.max) return { ...COMPLEXITY_TIERS.prop, tier: 'excellent' };
+  if (triCount <= COMPLEXITY_TIERS.enemy.max) return { ...COMPLEXITY_TIERS.enemy, tier: 'good' };
+  if (triCount <= COMPLEXITY_TIERS.scenery.max) return { ...COMPLEXITY_TIERS.scenery, tier: 'good' };
+  if (triCount <= COMPLEXITY_TIERS.boss.max) return { ...COMPLEXITY_TIERS.boss, tier: 'caution' };
+  if (triCount <= COMPLEXITY_TIERS.heavy.max) return { ...COMPLEXITY_TIERS.heavy, tier: 'heavy' };
+  return { ...COMPLEXITY_TIERS.tooHeavy, tier: 'too-heavy' };
+}
+
+function updateComplexityUI(triCount) {
+  const c = getComplexity(triCount);
+  const badge = document.getElementById('complexity-badge');
+  badge.textContent = `${c.label} — ${triCount.toLocaleString()} tris`;
+  badge.className = `visible ${c.tier}`;
+
+  document.getElementById('info-complexity').textContent = c.label;
+  document.getElementById('info-complexity').style.color = c.color;
+  const bar = document.getElementById('complexity-bar');
+  bar.style.width = `${c.percent}%`;
+  bar.style.background = c.color;
+  document.getElementById('complexity-advice').textContent = c.advice;
+  document.getElementById('complexity-advice').style.color = c.color;
+}
+
+// ── Texture preview ──
+function updateTextureGrid(model) {
+  const grid = document.getElementById('texture-grid');
+  grid.innerHTML = '';
+  const textures = new Map(); // name -> texture
+
+  model.traverse((child) => {
+    if (child.isMesh && child.material) {
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(mat => {
+        // Collect all texture maps
+        const mapTypes = [
+          { key: 'map', label: 'Diffuse' },
+          { key: 'normalMap', label: 'Normal' },
+          { key: 'roughnessMap', label: 'Rough' },
+          { key: 'metalnessMap', label: 'Metal' },
+          { key: 'emissiveMap', label: 'Emissive' },
+          { key: 'aoMap', label: 'AO' },
+        ];
+        mapTypes.forEach(({ key, label }) => {
+          if (mat[key] && mat[key].isTexture) {
+            const name = mat[key].name || `${label} (${mat.name || 'unnamed'})`;
+            if (!textures.has(name)) {
+              textures.set(name, { tex: mat[key], label });
+            }
+          }
+        });
+      });
+    }
+  });
+
+  document.getElementById('info-texcount').textContent = textures.size;
+
+  if (textures.size === 0) {
+    grid.innerHTML = '<div class="tex-empty">No textures</div>';
+    return;
+  }
+
+  textures.forEach(({ tex, label }, name) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'tex-thumb';
+    // Render texture to a small canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (tex.image) {
+      try { ctx.drawImage(tex.image, 0, 0, 128, 128); } catch(e) {
+        ctx.fillStyle = '#333'; ctx.fillRect(0, 0, 128, 128);
+        ctx.fillStyle = '#666'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('CORS', 64, 68);
+      }
+    } else {
+      ctx.fillStyle = '#222'; ctx.fillRect(0, 0, 128, 128);
+      ctx.fillStyle = '#444'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('No image', 64, 68);
+    }
+    thumb.appendChild(canvas);
+    const lbl = document.createElement('div');
+    lbl.className = 'tex-label';
+    lbl.textContent = `${label}`;
+    thumb.appendChild(lbl);
+    // Click to view full size
+    thumb.addEventListener('click', () => {
+      const w = window.open('', '_blank', `width=${tex.image?.width || 512},height=${tex.image?.height || 512}`);
+      if (w && tex.image) {
+        w.document.title = `${label}: ${name}`;
+        w.document.body.style.background = '#111';
+        w.document.body.style.display = 'flex';
+        w.document.body.style.justifyContent = 'center';
+        w.document.body.style.alignItems = 'center';
+        w.document.body.style.height = '100vh';
+        w.document.body.style.margin = '0';
+        const img = w.document.createElement('img');
+        img.src = tex.image.src || canvas.toDataURL();
+        img.style.maxWidth = '100%'; img.style.maxHeight = '100%';
+        img.style.imageRendering = 'pixelated';
+        w.document.body.appendChild(img);
+      }
+    });
+    grid.appendChild(thumb);
+  });
+}
+
+// ── Model loading ──
+function loadModel(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const buffer = e.target.result;
+
+    // Clean up old model
+    if (currentModel) {
+      scene.remove(currentModel);
+      currentModel.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach(m => {
+            if (m.map) m.map.dispose(); m.dispose();
+          });
+          else { if (child.material.map) child.material.map.dispose(); child.material.dispose(); }
+        }
+      });
+      currentModel = null;
+    }
+    if (normalHelper) { scene.remove(normalHelper); normalHelper = null; }
+    if (bboxHelper) { scene.remove(bboxHelper); bboxHelper = null; }
+    mixer = null; animActions = []; animIndex = 0;
+    originalMaterials.clear();
+
+    // Reset UI toggles
+    document.getElementById('normals-cb').checked = false;
+    document.getElementById('uv-overlay-cb').checked = false;
+    document.getElementById('bounding-box-cb').checked = false;
+
+    gltfLoader.parse(buffer, '', (gltf) => {
+      currentModel = gltf.scene;
+      scene.add(currentModel);
+
+      currentModel.traverse((child) => {
+        if (child.isMesh) {
+          // Read initial checkbox states
+          const shadowsEnabled = document.getElementById('shadows-cb').checked;
+          const polygonOffsetEnabled = document.getElementById('polygon-offset-cb').checked;
+          const depthTestingEnabled = document.getElementById('depth-testing-cb').checked;
+          const flatShadingEnabled = document.getElementById('flat-shading-cb').checked;
+          
+          child.castShadow = shadowsEnabled;
+          child.receiveShadow = shadowsEnabled;
+          
+          if (child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach(mat => {
+              mat.depthWrite = depthTestingEnabled;
+              mat.depthTest = depthTestingEnabled;
+              mat.polygonOffset = polygonOffsetEnabled;
+              mat.polygonOffsetFactor = 1;
+              mat.polygonOffsetUnits = 1;
+              if (flatShadingEnabled && mat.flatShading !== undefined) {
+                mat.flatShading = true;
+              }
+              mat.needsUpdate = true;
+            });
+          }
+        }
+      });
+
+      const box = new THREE.Box3().setFromObject(currentModel);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      currentModel.position.x -= center.x;
+      currentModel.position.z -= center.z;
+      currentModel.position.y -= box.min.y;
+
+      updateInfo(file.name, currentModel, size, box);
+      updateTextureGrid(currentModel);
+
+      if (gltf.animations && gltf.animations.length > 0) {
+        mixer = new THREE.AnimationMixer(currentModel);
+        gltf.animations.forEach((clip) => {
+          animActions.push({ action: mixer.clipAction(clip), name: clip.name });
+        });
+        animActions[0].action.play();
+        document.getElementById('info-anims').textContent =
+          `${gltf.animations.length} (${animActions.map(a => a.name).join(', ')})`;
+      } else {
+        document.getElementById('info-anims').textContent = 'None';
+      }
+
+      focusModel();
+      document.getElementById('empty-state').classList.add('hidden');
+      document.getElementById('info-panel').classList.add('visible');
+    }, (error) => {
+      console.error('GLTF parse error:', error);
+      alert('Failed to load model. Check console for details.');
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function updateInfo(filename, model, size, box) {
+  document.getElementById('info-file').textContent = filename;
+  document.getElementById('info-dims').textContent =
+    `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} m`;
+  document.getElementById('info-scale').textContent =
+    `${model.scale.x.toFixed(3)}, ${model.scale.y.toFixed(3)}, ${model.scale.z.toFixed(3)}`;
+  document.getElementById('info-origin').textContent =
+    `${model.position.x.toFixed(2)}, ${model.position.y.toFixed(2)}, ${model.position.z.toFixed(2)}`;
+
+  let meshCount = 0, vertCount = 0, triCount = 0;
+  const matSet = new Set();
+  model.traverse((child) => {
+    if (child.isMesh) {
+      meshCount++;
+      if (child.geometry) {
+        const pos = child.geometry.attributes.position;
+        if (pos) vertCount += pos.count;
+        if (child.geometry.index) triCount += child.geometry.index.count / 3;
+        else if (pos) triCount += pos.count / 3;
+      }
+      if (child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(m => matSet.add(m.name || m.uuid));
+      }
+    }
+  });
+  document.getElementById('info-meshes').textContent = meshCount;
+  document.getElementById('info-verts').textContent = vertCount.toLocaleString();
+  document.getElementById('info-tris').textContent = Math.round(triCount).toLocaleString();
+  document.getElementById('info-mats').textContent = matSet.size;
+
+  // Complexity rating
+  updateComplexityUI(Math.round(triCount));
+
+  // Warnings
+  const warnings = [];
+  if (model.scale.x !== 1 || model.scale.y !== 1 || model.scale.z !== 1) {
+    warnings.push(`Non-unity scale (${model.scale.x}, ${model.scale.y}, ${model.scale.z}). Apply transforms in Blender.`);
+  }
+  if (box.min.y < -0.1) {
+    warnings.push('Model extends below ground. Check origin point.');
+  }
+  const sizeMax = Math.max(size.x, size.y, size.z);
+  if (sizeMax > 50) warnings.push(`Very large (${sizeMax.toFixed(1)}m). Check unit scale.`);
+  if (sizeMax < 0.1) warnings.push(`Very small (${sizeMax.toFixed(3)}m). Check unit scale.`);
+  if (meshCount > 10) warnings.push(`${meshCount} meshes. Consider joining in Blender to reduce draw calls.`);
+
+  const warnSection = document.getElementById('warnings-section');
+  const warnDiv = document.getElementById('info-warnings');
+  if (warnings.length) {
+    warnSection.style.display = 'block';
+    warnDiv.innerHTML = warnings.map(w => `• ${w}`).join('<br>');
+  } else {
+    warnSection.style.display = 'none';
+  }
+}
+
+function focusModel() {
+  if (!currentModel) return;
+  const box = new THREE.Box3().setFromObject(currentModel);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const dist = maxDim * 2;
+  camera.position.set(center.x + dist * 0.6, center.y + dist * 0.4, center.z + dist * 0.6);
+  controls.target.copy(center);
+  controls.update();
+}
+
+function resetCamera() {
+  camera.position.set(8, 5, 8);
+  controls.target.set(0, 2, 0);
+  controls.update();
+}
+
+// ── File input ──
+document.getElementById('file-input').addEventListener('change', (e) => {
+  if (e.target.files.length) loadModel(e.target.files[0]);
+});
+
+// ── Drag & drop ──
+const dropZone = document.getElementById('drop-zone');
+let dragCounter = 0;
+
+document.addEventListener('dragenter', (e) => { e.preventDefault(); dragCounter++; dropZone.classList.add('active'); });
+document.addEventListener('dragleave', (e) => { e.preventDefault(); dragCounter--; if (dragCounter <= 0) { dropZone.classList.remove('active'); dragCounter = 0; } });
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+  e.preventDefault(); dragCounter = 0; dropZone.classList.remove('active');
+  if (e.dataTransfer.files.length) {
+    const file = e.dataTransfer.files[0];
+    if (file.name.match(/\.(glb|gltf)$/i)) loadModel(file);
+    else alert('Please drop a .glb or .gltf file');
+  }
+});
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'r' || e.key === 'R') { if (!keys['KeyR']) return; resetCamera(); }
+  if (e.key === 'f' || e.key === 'F') { if (!keys['KeyF']) return; focusModel(); }
+  // Anim cycling via Enter (since Space is now move-up)
+  if (e.key === 'Enter') {
+    if (animActions.length > 1) {
+      animActions[animIndex].action.stop();
+      animIndex = (animIndex + 1) % animActions.length;
+      animActions[animIndex].action.reset().play();
+    }
+  }
+});
+
+// ── VertexNormalsHelper (inline to avoid extra import) ──
+class VertexNormalsHelper extends THREE.LineSegments {
+  constructor(object, size, color) {
+    const nNormal = 0;
+    const objGeometry = object.geometry;
+    if (!objGeometry) { super(); return; }
+    const positionAttr = objGeometry.getAttribute('position');
+    const normalAttr = objGeometry.getAttribute('normal');
+    let count = 0;
+    if (positionAttr) count = positionAttr.count;
+    const points = new Float32Array(count * 6);
+    for (let i = 0; i < count; i++) {
+      const ox = positionAttr.getX(i), oy = positionAttr.getY(i), oz = positionAttr.getZ(i);
+      points[i * 6]     = ox;
+      points[i * 6 + 1] = oy;
+      points[i * 6 + 2] = oz;
+      if (normalAttr) {
+        points[i * 6 + 3] = ox + normalAttr.getX(i) * size;
+        points[i * 6 + 4] = oy + normalAttr.getY(i) * size;
+        points[i * 6 + 5] = oz + normalAttr.getZ(i) * size;
+      } else {
+        points[i * 6 + 3] = ox; points[i * 6 + 4] = oy; points[i * 6 + 5] = oz;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(points, 3));
+    const mat = new THREE.LineBasicMaterial({ color: color || 0x00ff00 });
+    super(geo, mat);
+    this.matrixAutoUpdate = false;
+    this.matrix.copy(object.matrixWorld);
+    object.add(this);
+    // Re-parent to keep in world space
+    object.remove(this);
+  }
+}
+
+// ── Animation loop ──
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  updateWASD(dt);
+  controls.update();
+  if (mixer) mixer.update(dt);
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// ── Resize ──
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

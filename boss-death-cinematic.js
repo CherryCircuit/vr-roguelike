@@ -43,6 +43,7 @@ let deps = {
   applyEnvironmentFade: null,
   resetAllSlowMoState: null,
   hideKillsAlert: null,
+  unloadBiomeForBossCinematic: null,
 };
 
 /**
@@ -196,6 +197,12 @@ export function finishBossDeathCinematic() {
   }
   // Black overlay stays at opacity 1, visible = true
   bossDeathOverlayDismissed = false;
+
+  // With the black overlay fully opaque, unload the outgoing biome so
+  // upgrade cards appear on a true black background before the rebuild.
+  if (deps.unloadBiomeForBossCinematic) {
+    deps.unloadBiomeForBossCinematic();
+  }
 
   if (bossDeathCinematic.wasFinalBoss) {
     bossDeathCinematic.wasFinalBoss = false;

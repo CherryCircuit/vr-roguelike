@@ -134,7 +134,7 @@ export const game = {
   },
 
   justBossKill: false,
-  nextUpgradeHand: 'left',  // Alternating hand for upgrades (left → right → left...)
+  nextUpgradeHand: Math.random() < 0.5 ? 'left' : 'right',  // Random first hand for upgrades
 
   finalScore: 0,
   finalLevel: 0,
@@ -222,7 +222,7 @@ export function resetGame() {
       right: { kills: 0, totalDamage: 0, shotsFired: 0, shotsHit: 0, enemyKills: {} }
     },
     justBossKill: false,
-    nextUpgradeHand: 'left',
+    nextUpgradeHand: Math.random() < 0.5 ? 'left' : 'right',  // Random first hand for upgrades
     finalScore: 0,
     finalLevel: 0,
 
