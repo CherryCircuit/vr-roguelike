@@ -15,11 +15,6 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, loadDreamState, saveDreamState, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
@@ -190,6 +185,69 @@ const MAX_PROJECTILES = 100;
 // down to ~4, matching the three.js physics_ammo_instancing pattern.
 const PROJECTILE_POOL_SIZE = 120;
 
+// Fake glow halos: VR-safe alternative to selective bloom.
+// Each projectile gets a Fresnel-shaded twin InstancedMesh so WebXR stays single-pass.
+const PROJECTILE_GLOW = {
+  falloff: 0.15,
+  internalRadius: 4.0,
+  opacity: 0.6,
+};
+
+// Fresnel-driven FakeGlowMaterial keeps the halo entirely in the shader so VR never pays for post.
+// Note: three.js auto-injects instanceMatrix for InstancedMesh, so we use the built-in chunks
+// instead of manually declaring it (which causes "redefinition" shader errors).
+const FAKE_GLOW_VERTEX_SHADER = `
+  varying vec3 vNormalW;
+  varying vec3 vPositionW;
+
+  void main() {
+    // three.js provides instanceMatrix automatically for InstancedMesh
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vPositionW = (modelMatrix * vec4(position, 1.0)).xyz;
+    vNormalW = normalize(normalMatrix * normal);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const FAKE_GLOW_FRAGMENT_SHADER = `
+  uniform vec3 uGlowColor;
+  uniform float uFalloff;
+  uniform float uGlowInternalRadius;
+  uniform float uOpacity;
+
+  varying vec3 vNormalW;
+  varying vec3 vPositionW;
+
+  void main() {
+    vec3 viewDirection = normalize(cameraPosition - vPositionW);
+    float intensity = pow(1.0 - abs(dot(viewDirection, vNormalW)), uGlowInternalRadius);
+    intensity = smoothstep(0.0, 1.0, intensity);
+    float falloff = 1.0 - uFalloff;
+    vec3 glow = uGlowColor * intensity * falloff;
+    gl_FragColor = vec4(glow, uOpacity * intensity);
+  }
+`;
+
+function createProjectileGlowMaterial(colorHex) {
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uGlowColor: { value: new THREE.Color(colorHex) },
+      uFalloff: { value: PROJECTILE_GLOW.falloff },
+      uGlowInternalRadius: { value: PROJECTILE_GLOW.internalRadius },
+      uOpacity: { value: PROJECTILE_GLOW.opacity },
+    },
+    vertexShader: FAKE_GLOW_VERTEX_SHADER,
+    fragmentShader: FAKE_GLOW_FRAGMENT_SHADER,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: true,
+  });
+  material.opacity = PROJECTILE_GLOW.opacity;
+  return material;
+}
+
 // Per-instance data arrays (parallel to InstancedMesh instance indices)
 // FIXED: Use pool-specific data arrays to prevent corruption when multiple weapon types fire simultaneously
 const projectileInstanceData = {
@@ -200,7 +258,7 @@ const projectileInstanceData = {
 };  // poolType -> [{ active, velocity, stats, controllerIndex, ... }]
 
 // InstancedMesh references per pool type
-const instancedProjectiles = {};  // poolType -> { mesh, count, freeIndices: Set }
+const instancedProjectiles = {};  // poolType -> { mesh, glowMesh, maxCount, freeIndices: Set }
 
 // Reusable temp objects (avoid GC pressure)
 const _projMatrix = new THREE.Matrix4();
@@ -477,14 +535,9 @@ const MAX_REFLECTOR_DRONES = 2;
 
 // ── Bootstrap ──────────────────────────────────────────────
 
-// Bloom layer constant — must be before init() since buildSynthwaveValleyScene
-// references it during init execution. All other bloom code uses lazy init.
-const BLOOM_LAYER = 1;
-
 // Visual tuning defaults for debug sliders in index.html.
 const VISUAL_TUNING_DEFAULTS = {
   glowStrength: 1.0,
-  bloomStrength: 1.0,
   smokeStrength: 1.0,
   fogIntensity: 0.58,
   shellStrength: 1.0,
@@ -786,10 +839,6 @@ function init() {
   // PERFORMANCE: Initialize projectile pool
   initProjectilePool();
 
-  // Initialize selective bloom postprocessing (desktop only)
-  // Lazy-init happens in render loop (line 9719) to avoid TDZ issues
-  // initSelectiveBloom();
-
   // Start at title
   resetGame();
   showTitle();
@@ -804,81 +853,6 @@ function init() {
   playMusic('menu');
 
   console.log('[init] SPACEOMICIDE ready — pull trigger at title screen to start');
-}
-
-// ============================================================
-// SELECTIVE BLOOM (Desktop only, synthwave_valley biome)
-// Lazy-initialized on first render frame
-// COUPLING: References BLOOM_LAYER, synthVisualRefs, renderer
-// ============================================================
-
-let bloomComposer = null;
-
-const SelectiveBloomCompositeShader = {
-  uniforms: {
-    baseTexture: { value: null },
-    bloomTexture: { value: null },
-  },
-  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `
-    uniform sampler2D baseTexture;
-    uniform sampler2D bloomTexture;
-    varying vec2 vUv;
-    void main() {
-      vec4 base = texture2D(baseTexture, vUv);
-      vec4 bloom = texture2D(bloomTexture, vUv);
-      gl_FragColor = base + bloom;
-    }
-  `,
-};
-
-function initSelectiveBloom() {
-  if (bloomComposer) return;  // Already initialized
-
-  const rtParams = {
-    minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter,
-    format: THREE.RGBAFormat,
-    type: THREE.HalfFloatType,
-  };
-
-  const baseComposer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
-    window.innerWidth, window.innerHeight, rtParams
-  ));
-  baseComposer.addPass(new RenderPass(scene, camera));
-
-  const bloomComposer_ = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
-    window.innerWidth, window.innerHeight, rtParams
-  ));
-
-  const bloomCamera = camera.clone();
-  bloomCamera.layers.set(BLOOM_LAYER);
-  bloomComposer_.addPass(new RenderPass(scene, bloomCamera));
-
-  const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.3,   // strength
-    0,     // radius
-    0      // threshold
-  );
-  bloomComposer_.addPass(bloomPass);
-
-  const compositePass = new ShaderPass(SelectiveBloomCompositeShader);
-  compositePass.uniforms.baseTexture.value = baseComposer.renderTarget1.texture;
-  compositePass.uniforms.bloomTexture.value = bloomComposer_.renderTarget2.texture;
-  baseComposer.addPass(compositePass);
-
-  bloomComposer = { baseComposer, bloomComposer: bloomComposer_, compositePass, bloomCamera, bloomPass };
-  console.log('[bloom] Selective bloom initialized (desktop only)');
-}
-
-function resizeBloomComposer() {
-  if (!bloomComposer) return;
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  bloomComposer.baseComposer.setSize(w, h);
-  bloomComposer.bloomComposer.setSize(w, h);
-  bloomComposer.bloomComposer.passes[1].resolution.set(w, h);
 }
 
 function initDesktopStereoEffects() {
@@ -918,7 +892,6 @@ function getVisualTuning() {
 
   return {
     glowStrength: clampDebugValue(window.debugGlowStrength, 0, 2, VISUAL_TUNING_DEFAULTS.glowStrength),
-    bloomStrength: clampDebugValue(window.debugBloomStrength, 0, 2, VISUAL_TUNING_DEFAULTS.bloomStrength),
     smokeStrength: clampDebugValue(window.debugSmokeStrength, 0, 2, VISUAL_TUNING_DEFAULTS.smokeStrength),
     fogIntensity: clampDebugValue(window.debugFogIntensity, 0, 1, VISUAL_TUNING_DEFAULTS.fogIntensity),
     shellStrength: clampDebugValue(window.debugShellStrength, 0, 2, VISUAL_TUNING_DEFAULTS.shellStrength),
@@ -947,6 +920,9 @@ function registerPlayerProjectileMaterial(material) {
   if (!material.userData) material.userData = {};
   if (material.userData.baseOpacity === undefined) {
     material.userData.baseOpacity = material.opacity !== undefined ? material.opacity : 1;
+  }
+  if (material.uniforms?.uOpacity && material.userData.baseUniformOpacity === undefined) {
+    material.userData.baseUniformOpacity = material.uniforms.uOpacity.value;
   }
   if (!playerProjectileMaterials.includes(material)) {
     playerProjectileMaterials.push(material);
@@ -983,15 +959,19 @@ function applyVisualTuning(tuning = getVisualTuning()) {
   playerProjectileMaterials.forEach((mat) => {
     if (!mat) return;
     if (!mat.userData) mat.userData = {};
-    if (mat.userData.baseOpacity === undefined) {
-      mat.userData.baseOpacity = mat.opacity !== undefined ? mat.opacity : 1;
+    if (mat.uniforms?.uOpacity) {
+      if (mat.userData.baseUniformOpacity === undefined) {
+        mat.userData.baseUniformOpacity = mat.uniforms.uOpacity.value;
+      }
+      mat.uniforms.uOpacity.value = (mat.userData.baseUniformOpacity ?? PROJECTILE_GLOW.opacity) * projectileOpacityScale;
+      mat.opacity = mat.uniforms.uOpacity.value;
+    } else {
+      if (mat.userData.baseOpacity === undefined) {
+        mat.userData.baseOpacity = mat.opacity !== undefined ? mat.opacity : 1;
+      }
+      mat.opacity = mat.userData.baseOpacity * projectileOpacityScale;
     }
-    mat.opacity = mat.userData.baseOpacity * projectileOpacityScale;
   });
-
-  if (bloomComposer?.bloomPass) {
-    bloomComposer.bloomPass.strength = 0.3 * tuning.bloomStrength;
-  }
 
   if (desktopEffectRefs.stereo) {
     desktopEffectRefs.stereo.eyeSeparation = tuning.stereoEyeSeparation;
@@ -1024,8 +1004,8 @@ function renderDesktopDebugEffect(tuning) {
 
   initDesktopStereoEffects();
 
-  // Desktop-only caveat: these effects render straight through the renderer,
-  // so selective bloom is intentionally bypassed while they are active.
+  // Desktop-only caveat: these stereo passes bypass the normal renderer path,
+  // so additive tweaks (like fake glow) should be considered inactive while they run.
   if (mode === 'anaglyph' && desktopEffectRefs.anaglyph) {
     desktopEffectRefs.anaglyph.render(scene, camera);
     return true;
@@ -2574,13 +2554,13 @@ function updateVHSRetroShell(now, tuning = getVisualTuning()) {
   }
 
   if (vhsRetroGlowMatRef) {
-    const base = (vhsRetroGlowMatRef.__fadeBase ?? 0.06) * tuning.shellStrength * (0.25 + tuning.glowStrength * 0.35 + tuning.bloomStrength * 0.5);
+    const base = (vhsRetroGlowMatRef.__fadeBase ?? 0.06) * tuning.shellStrength * (0.25 + tuning.glowStrength * 0.85);
     const pulse = 0.9 + Math.sin(now * 0.0011) * 0.1;
     vhsRetroGlowMatRef.opacity = base * fadeScale * pulse;
   }
 
   if (vhsRetroNoiseMatRef) {
-    const base = (vhsRetroNoiseMatRef.__fadeBase ?? 0.02) * tuning.shellStrength * tuning.shellNoiseAmount * (0.3 + tuning.bloomStrength * 0.7);
+    const base = (vhsRetroNoiseMatRef.__fadeBase ?? 0.02) * tuning.shellStrength * tuning.shellNoiseAmount * (0.3 + tuning.glowStrength * 0.7);
     const shimmer = 0.7 + Math.sin(now * 0.0031) * 0.3;
     vhsRetroNoiseMatRef.opacity = base * fadeScale * shimmer;
   }
@@ -7070,6 +7050,13 @@ function clearAllProjectiles() {
     }
   }
   projectiles.length = 0;
+
+  // Keep glow twins in lockstep with their parent InstancedMeshes after mass clears.
+  Object.values(instancedProjectiles).forEach((pool) => {
+    if (pool?.glowMesh) {
+      pool.glowMesh.count = pool.mesh.count;
+    }
+  });
 }
 
 // Clear all lightning gun beams
@@ -7605,24 +7592,36 @@ function triggerScreenShake(intensity, duration) {
 // One InstancedMesh per projectile type = minimal draw calls.
 // Each instance is positioned via setMatrixAt(), colored via setColorAt().
 function initProjectilePool() {
-  // Guard against re-init on game restart — pools persist across games
   if (instancedProjectiles['laser']) return;
 
-  // ── Laser bolts (standard blaster - thin with glow) ──
-  // Thin cyan bolts that glow via bloom layer
+  // Paired InstancedMeshes: core projectile + glow twin share instance matrices.
+  const createGlowTwin = (geometry, colorHex, maxCount) => {
+    const mat = createProjectileGlowMaterial(colorHex);
+    registerPlayerProjectileMaterial(mat);
+    const mesh = new THREE.InstancedMesh(geometry, mat, maxCount);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    return mesh;
+  };
+
+  // ── Laser bolts (standard blaster) ──
   const laserGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.0, 6);
-  laserGeo.rotateX(Math.PI / 2); // Rotate to align with -Z direction
+  laserGeo.rotateX(Math.PI / 2);
   const laserMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
   registerPlayerProjectileMaterial(laserMat);
   const laserIM = new THREE.InstancedMesh(laserGeo, laserMat, 120);
   laserIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  laserIM.count = 0;  // Start with 0 visible instances
-  laserIM.frustumCulled = false;  // We manage visibility manually
-  laserIM.layers.enable(BLOOM_LAYER);  // Selective bloom: laser bolts glow
+  laserIM.count = 0;
+  laserIM.frustumCulled = false;
   scene.add(laserIM);
-  instancedProjectiles['laser'] = { mesh: laserIM, maxCount: 120, freeIndices: new Set() };
+  const laserGlowGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.2, 6);
+  laserGlowGeo.rotateX(Math.PI / 2);
+  const laserGlowIM = createGlowTwin(laserGlowGeo, 0x00ffff, 120);
+  instancedProjectiles['laser'] = { mesh: laserIM, glowMesh: laserGlowIM, maxCount: 120, freeIndices: new Set() };
 
-  // ── Buckshot pellets (white, slightly larger) ──
+  // ── Buckshot pellets ──
   const buckGeo = new THREE.SphereGeometry(0.035, 6, 6);
   const buckMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95 });
   registerPlayerProjectileMaterial(buckMat);
@@ -7630,11 +7629,12 @@ function initProjectilePool() {
   buckIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   buckIM.count = 0;
   buckIM.frustumCulled = false;
-  buckIM.layers.enable(BLOOM_LAYER);  // Bloom for visibility
   scene.add(buckIM);
-  instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
+  const buckGlowGeo = new THREE.SphereGeometry(0.08, 8, 8);
+  const buckGlowIM = createGlowTwin(buckGlowGeo, 0xffffff, 20);
+  instancedProjectiles['buckshot'] = { mesh: buckIM, glowMesh: buckGlowIM, maxCount: 20, freeIndices: new Set() };
 
-  // ── Seeker burst bolts (homing - bright orange, larger) ──
+  // ── Seeker burst bolts ──
   const seekerGeo = new THREE.SphereGeometry(0.045, 8, 8);
   const seekerMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95 });
   registerPlayerProjectileMaterial(seekerMat);
@@ -7642,13 +7642,14 @@ function initProjectilePool() {
   seekerIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   seekerIM.count = 0;
   seekerIM.frustumCulled = false;
-  seekerIM.layers.enable(BLOOM_LAYER);  // Bloom for glow
   scene.add(seekerIM);
-  instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 28, freeIndices: new Set() };
+  const seekerGlowGeo = new THREE.SphereGeometry(0.1, 8, 8);
+  const seekerGlowIM = createGlowTwin(seekerGlowGeo, 0xff8800, 28);
+  instancedProjectiles['seeker'] = { mesh: seekerIM, glowMesh: seekerGlowIM, maxCount: 28, freeIndices: new Set() };
 
   // ── Plasma carbine darts ──
   const plasmaGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.5, 6);
-  plasmaGeo.rotateX(Math.PI / 2); // Rotate to align with -Z direction
+  plasmaGeo.rotateX(Math.PI / 2);
   const plasmaMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
   registerPlayerProjectileMaterial(plasmaMat);
   const plasmaIM = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 30);
@@ -7656,9 +7657,11 @@ function initProjectilePool() {
   plasmaIM.count = 0;
   plasmaIM.frustumCulled = false;
   scene.add(plasmaIM);
-  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, maxCount: 30, freeIndices: new Set() };
+  const plasmaGlowGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.6, 6);
+  plasmaGlowGeo.rotateX(Math.PI / 2);
+  const plasmaGlowIM = createGlowTwin(plasmaGlowGeo, 0x00ff88, 30);
+  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, glowMesh: plasmaGlowIM, maxCount: 30, freeIndices: new Set() };
 
-  // Initialize instance data arrays for each pool type (separate arrays prevent corruption)
   Object.keys(projectileInstanceData).forEach(poolType => {
     const maxCount = instancedProjectiles[poolType].maxCount;
     for (let i = 0; i < maxCount; i++) {
@@ -7691,6 +7694,10 @@ function getPooledProjectile(poolType, color) {
   // Set instance color
   pool.mesh.setColorAt(slotIndex, _projColor.setHex(color));
   pool.mesh.instanceColor.needsUpdate = true;
+
+  // Reset transforms so projectile + glow twins start hidden
+  _projMatrix.makeScale(0, 0, 0);
+  commitProjectileInstance(poolType, slotIndex, _projMatrix);
 
   // Initialize instance data
   if (!projectileInstanceData[poolType][slotIndex]) {
@@ -7764,14 +7771,27 @@ function createProjectileProxy(poolType, instanceIndex, color) {
     material: pool.mesh.material,
   };
 
-  // Sync position to the InstancedMesh
+  // Sync position to the InstancedMesh pair (core + glow)
   proxy.commit = function() {
     _projMatrix.compose(pos, data.quaternion, _projScale);
-    pool.mesh.setMatrixAt(instanceIndex, _projMatrix);
-    pool.mesh.instanceMatrix.needsUpdate = true;
+    commitProjectileInstance(poolType, instanceIndex, _projMatrix);
   };
 
   return proxy;
+}
+
+function commitProjectileInstance(poolType, instanceIndex, matrix) {
+  const pool = instancedProjectiles[poolType];
+  if (!pool) return;
+  pool.mesh.setMatrixAt(instanceIndex, matrix);
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  if (pool.glowMesh) {
+    if (pool.glowMesh.count < pool.mesh.count) {
+      pool.glowMesh.count = pool.mesh.count;
+    }
+    pool.glowMesh.setMatrixAt(instanceIndex, matrix);
+    pool.glowMesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 // PERFORMANCE: Return projectile instance to pool (deactivate)
@@ -7786,8 +7806,7 @@ function returnProjectileToPool(proj) {
 
     // Hide instance by scaling to zero
     _projMatrix.makeScale(0, 0, 0);
-    pool.mesh.setMatrixAt(instanceIndex, _projMatrix);
-    pool.mesh.instanceMatrix.needsUpdate = true;
+    commitProjectileInstance(poolType, instanceIndex, _projMatrix);
 
     // Mark as free (DO NOT shrink count - can hide active instances at higher indices)
     pool.freeIndices.add(instanceIndex);
@@ -10880,30 +10899,13 @@ function render(timestamp) {
   updateVHSRetroShell(now, visualTuning);
   updateDreamTriggerVisual(now);
 
-  // Update pause countdown BEFORE any early-return render path.
-  // This fixes countdown freeze when selective bloom is active.
+  // Update pause countdown BEFORE any early-return render path so desktop debug
+  // effects never freeze the countdown.
   updatePauseCountdown(now);
 
   // Desktop-only debug effects. XR intentionally keeps the default renderer path.
   if (!renderer.xr.isPresenting && renderDesktopDebugEffect(visualTuning)) {
     return;
-  }
-
-  // Selective bloom: lazy-init + render, only in normal desktop mode for synthwave_valley biome
-  if (!renderer.xr.isPresenting && getDesktopRenderMode(visualTuning) === 'normal' && biomeSceneBiome === 'synthwave_valley') {
-    if (!bloomComposer) initSelectiveBloom();  // Lazy init on first frame
-    if (bloomComposer) {
-      bloomComposer.bloomCamera.position.copy(camera.position);
-      bloomComposer.bloomCamera.quaternion.copy(camera.quaternion);
-      bloomComposer.bloomCamera.projectionMatrix.copy(camera.projectionMatrix);
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.24;
-      bloomComposer.bloomComposer.render();
-      bloomComposer.baseComposer.render();
-      renderer.toneMapping = THREE.NoToneMapping;
-      renderer.toneMappingExposure = 1.0;
-      return;
-    }
   }
 
   renderer.render(scene, camera);
@@ -10916,7 +10918,6 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  resizeBloomComposer();
   resizeDesktopStereoEffects();
 }
 
@@ -10949,7 +10950,6 @@ function rebuildBiomeScene(biomeId, theme) {
     refs: {
       floorMaterial,
       synthVisualRefs,
-      BLOOM_LAYER,
       getVisualTuning,
     },
     biomeTerrainMaterials,
