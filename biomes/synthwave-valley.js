@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 
 export function buildSynthwaveValleyScene(group, deps) {
-  const { registerFadeMaterial, floorMaterial, synthVisualRefs, biomeTerrainMaterials, BLOOM_LAYER, getVisualTuning } = deps;
+  const { registerFadeMaterial, floorMaterial, synthVisualRefs, biomeTerrainMaterials, getVisualTuning } = deps;
   
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
@@ -75,7 +75,6 @@ export function buildSynthwaveValleyScene(group, deps) {
   terrain.userData.planeName = 'synthwave-valley-floor-and-mountains';
   terrain.position.set(0, floorY + 1.5, -700);
   terrain.frustumCulled = false;
-  terrain.layers.enable(BLOOM_LAYER);  // Selective bloom: floor grid glows
   group.add(terrain);
   registerFadeMaterial(terrainMat);
   // Store terrain material for damage flash
@@ -215,7 +214,6 @@ export function buildSynthwaveValleyScene(group, deps) {
       strip.name = `${name}-led-${idx}`;
       strip.position.set(Math.cos(a) * 0.34, height * 0.5 + 0.15, Math.sin(a) * 0.34);
       strip.frustumCulled = false;
-      strip.layers.enable(BLOOM_LAYER);
       g.add(strip);
     });
     group.add(g);
@@ -260,7 +258,6 @@ export function buildSynthwaveValleyScene(group, deps) {
       glow.position.copy(m.position);
       glow.rotation.copy(m.rotation);
       glow.frustumCulled = false;
-      glow.layers.enable(BLOOM_LAYER);
       g.add(glow);
     });
     group.add(g);
@@ -286,7 +283,6 @@ export function buildSynthwaveValleyScene(group, deps) {
       cone.name = `${name}-tip`;
       cone.position.y = height + 0.25;
       cone.frustumCulled = false;
-      cone.layers.enable(BLOOM_LAYER);
       g.add(cone);
     }
     group.add(g);
@@ -311,7 +307,6 @@ export function buildSynthwaveValleyScene(group, deps) {
     c.scale.y = 1.5;
     c.rotation.set(0.3 * (i % 3), 0.4 * i, 0.2 * (i % 5));
     c.frustumCulled = false;
-    c.layers.enable(BLOOM_LAYER);
     group.add(c);
   });
 
@@ -321,13 +316,11 @@ export function buildSynthwaveValleyScene(group, deps) {
     core.name = `${name}-core`;
     core.position.set(x, y + 20, z);
     core.frustumCulled = false;
-    core.layers.enable(BLOOM_LAYER);
     group.add(core);
     const glow = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 40, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0x00FFFF, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     glow.name = `${name}-glow`;
     glow.position.set(x, y + 20, z);
     glow.frustumCulled = false;
-    glow.layers.enable(BLOOM_LAYER);
     registerFadeMaterial(glow.material);
     group.add(glow);
   };
@@ -353,7 +346,6 @@ export function buildSynthwaveValleyScene(group, deps) {
     mesh.userData.baseY = mesh.position.y;
     mesh.userData.phase = i * 0.7;
     mesh.frustumCulled = false;
-    mesh.layers.enable(BLOOM_LAYER);
     group.add(mesh);
     orbitals.push(mesh);
   });
@@ -408,7 +400,6 @@ export function buildSynthwaveValleyScene(group, deps) {
       node.name = `synth-circuit-tree-${i}-node-${b}`;
       node.position.set(Math.cos(b) * 0.8, 3.2 + b * 0.3, Math.sin(b) * 0.8);
       node.frustumCulled = false;
-      node.layers.enable(BLOOM_LAYER);
       g.add(node);
     }
     group.add(g);

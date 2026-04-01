@@ -75,7 +75,6 @@ export function rebuildBiomeScene(deps) {
     floorMaterial: refs.floorMaterial,
     synthVisualRefs: refs.synthVisualRefs,
     biomeTerrainMaterials,
-    BLOOM_LAYER: refs.BLOOM_LAYER,
     getVisualTuning: refs.getVisualTuning,
   };
 
@@ -189,7 +188,7 @@ export function logCylinderColors(refs) {
 // Note: Synthwave remains inline for now (kept as-is for stability)
 
 function buildSynthwaveValleyScene(group, deps) {
-  const { registerFadeMaterial, floorMaterial, synthVisualRefs, biomeTerrainMaterials, BLOOM_LAYER, getVisualTuning } = deps;
+  const { registerFadeMaterial, floorMaterial, synthVisualRefs, biomeTerrainMaterials, getVisualTuning } = deps;
   
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
@@ -259,7 +258,6 @@ function buildSynthwaveValleyScene(group, deps) {
   terrain.userData.planeName = 'synthwave-valley-floor-and-mountains';
   terrain.position.set(0, floorY + 1.5, -700);
   terrain.frustumCulled = false;
-  terrain.layers.enable(BLOOM_LAYER);  // Selective bloom: floor grid glows
   group.add(terrain);
   registerFadeMaterial(terrainMat);
   // Store terrain material for damage flash
