@@ -621,10 +621,7 @@ function init() {
 
   biomePointLight = new THREE.PointLight(0xffeedd, 1.5, 20, 2);
   biomePointLight.position.set(0, 2, 0);
-  biomePointLight.castShadow = true;
-  biomePointLight.shadow.mapSize.set(256, 256);
-  biomePointLight.shadow.bias = -0.01;
-  biomePointLight.shadow.normalBias = 0;
+  biomePointLight.castShadow = false;
   scene.add(biomePointLight);
   console.log('[lighting] Biome lights initialized');
 
