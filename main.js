@@ -146,6 +146,10 @@ function getCountryDisplayLabel() {
 
 // ── Module State ───────────────────────────────────────────
 let scene, camera, renderer;
+let biomeAmbientLight = null;
+let biomeDirectionalLight = null;
+let biomePointLight = null;
+let currentBiomeLightingConfig = null;
 // Camera added directly to scene (no rig - VR hands need direct camera)
 // floorHUDDebugMarker removed - was debug white plane
 const controllers = [];
@@ -511,6 +515,52 @@ const vrPauseButtonPressed = new Map();
 let lastVRPauseToggleTime = 0;
 const VR_PAUSE_DEBOUNCE_MS = 350;
 
+const BIOME_LIGHTING = {
+  synthwave_valley: {
+    ambient: { color: 0x110022, intensity: 0.15 },
+    directional: { color: 0xff8844, intensity: 0.8, position: [50, 80, 30] },
+    point: { color: 0xffeedd, intensity: 1.5, distance: 20 },
+  },
+  desert_night: {
+    ambient: { color: 0x0a0a1a, intensity: 0.12 },
+    directional: { color: 0xaaccff, intensity: 0.6, position: [-40, 60, -30] },
+    point: { color: 0xddddff, intensity: 1.2, distance: 18 },
+  },
+  alien_planet: {
+    ambient: { color: 0x0a1a0a, intensity: 0.1 },
+    directional: { color: 0x44ffaa, intensity: 0.5, position: [-30, 50, 40] },
+    point: { color: 0x88ff88, intensity: 1.0, distance: 16 },
+  },
+  hellscape_lava: {
+    ambient: { color: 0x1a0505, intensity: 0.08 },
+    directional: { color: 0xff2222, intensity: 0.7, position: [20, 40, -50] },
+    point: { color: 0xff4444, intensity: 1.3, distance: 15 },
+  },
+  default: {
+    ambient: { color: 0x110022, intensity: 0.15 },
+    directional: { color: 0xff8844, intensity: 0.6, position: [50, 80, 30] },
+    point: { color: 0xffeedd, intensity: 1.0, distance: 18 },
+  },
+};
+
+function applyBiomeLighting(biome) {
+  if (!biomeAmbientLight || !biomeDirectionalLight || !biomePointLight) {
+    console.warn('[lighting] Lights not initialized yet');
+    return;
+  }
+  const config = BIOME_LIGHTING[biome] || BIOME_LIGHTING.default;
+  currentBiomeLightingConfig = config;
+  biomeAmbientLight.color.setHex(config.ambient.color);
+  biomeAmbientLight.intensity = config.ambient.intensity;
+  biomeDirectionalLight.color.setHex(config.directional.color);
+  biomeDirectionalLight.intensity = config.directional.intensity;
+  biomeDirectionalLight.position.set(config.directional.position[0], config.directional.position[1], config.directional.position[2]);
+  biomePointLight.color.setHex(config.point.color);
+  biomePointLight.intensity = config.point.intensity;
+  biomePointLight.distance = config.point.distance;
+  console.log('[lighting] Applied lighting for biome:', biome);
+}
+
 init();
 
 // ============================================================
@@ -550,6 +600,30 @@ function init() {
   // No tone mapping — we use MeshBasicMaterial so ACES adds shader cost with no benefit
   renderer.toneMapping = THREE.NoToneMapping;
   document.body.appendChild(renderer.domElement);
+
+  // ── Biome Lighting System Init ───────────────────────────────────
+  biomeAmbientLight = new THREE.AmbientLight(0x110022, 0.15);
+  scene.add(biomeAmbientLight);
+
+  biomeDirectionalLight = new THREE.DirectionalLight(0xff8844, 0.8);
+  biomeDirectionalLight.position.set(50, 100, 50);
+  biomeDirectionalLight.castShadow = true;
+  biomeDirectionalLight.shadow.mapSize.set(256, 256);
+  biomeDirectionalLight.shadow.bias = -0.01;
+  biomeDirectionalLight.shadow.normalBias = 0;
+  biomeDirectionalLight.shadow.camera.near = 10;
+  biomeDirectionalLight.shadow.camera.far = 200;
+  biomeDirectionalLight.shadow.camera.left = -50;
+  biomeDirectionalLight.shadow.camera.right = 50;
+  biomeDirectionalLight.shadow.camera.top = 50;
+  biomeDirectionalLight.shadow.camera.bottom = -50;
+  scene.add(biomeDirectionalLight);
+
+  biomePointLight = new THREE.PointLight(0xffeedd, 1.5, 20, 2);
+  biomePointLight.position.set(0, 2, 0);
+  biomePointLight.castShadow = false;
+  scene.add(biomePointLight);
+  console.log('[lighting] Biome lights initialized');
 
   // VR Button - disable foveated rendering to remove visible quality boxes
   const vrButton = VRButton.createButton(renderer, {
@@ -1727,6 +1801,7 @@ function applyThemeForLevel(level) {
   }
 
   rebuildBiomeScene(getBiomeForLevel(level), theme);
+  applyBiomeLighting(getBiomeForLevel(level));
   updateInnkeeperForLevel(level);
   
   // Always update aurora colors for the current theme (not just customScene biomes)
@@ -9744,7 +9819,13 @@ function render(timestamp) {
     updateAmbientParticles(rawDt, currentTheme, getAdjustedCameraPosition());
   }
   updateBiomeProps(now, rawDt);
-  
+
+  // Update player-following point light
+  if (biomePointLight && camera) {
+    biomePointLight.position.copy(camera.position);
+    biomePointLight.position.y += 0.5;
+  }
+
   // Process seeker burst queue (burst fire timing)
   processSeekerBurstQueue(now);
 
