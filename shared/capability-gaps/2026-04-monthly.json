@@ -1,0 +1,26 @@
+{
+  "period": "2026-04",
+  "generated_at": "2026-04-01T09:45:16.004355-07:00",
+  "days_analyzed": 8,
+  "manual_tasks_detected": [],
+  "new_skills_available": [
+    {
+      "name": "clawhub skills listing",
+      "source": "clawhub",
+      "description": "Retrieved skills listing from https://clawhub.com/skills",
+      "relevance": "Review available skills for automation opportunities",
+      "raw_preview": "<!DOCTYPE html><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"preload\" as=\"image\" href=\"/clawd-logo.png\"/><title>ClawHub</title><meta name=\"description\" content=\"ClawHub \u2014 a fast skill registry for agents, with vector search.\"/><meta property=\"og:site_name\" content=\"ClawHub\"/><meta property=\"og:type\" content=\"website\"/><meta property=\"og:title\" content=\"ClawHub\"/><meta property=\"og:description\" content=\"ClawHub \u2014 a fas"
+    }
+  ],
+  "new_capabilities": [
+    {
+      "feature": "browser-related improvement: add built-in `profile=\"user\"` for the logged-in host browser",
+      "source": "openclaw-changelog (2026.3.13)",
+      "potential_use": "Review browser improvements for automation potential"
+    }
+  ],
+  "recommendations": [
+    "1 new OpenClaw capability/capabilities detected. Review changelog for automation potential.",
+    "Clawhub skills listing available. Review for relevant additions."
+  ]
+}
