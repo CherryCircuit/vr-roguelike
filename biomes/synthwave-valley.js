@@ -51,9 +51,12 @@ export function buildSynthwaveValleyScene(group, deps) {
     uGridColor: { value: new THREE.Color(0x4368AC) },     // Gridlines
     uBaseColor: { value: new THREE.Color(0x0C1347) },     // Primary/base color
     uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
+    uPulseColorA: { value: new THREE.Color(0xF30787) },   // Pink phase for grid and ridge pulsing
+    uPulseColorB: { value: new THREE.Color(0x00D9FF) },   // Blue phase for grid and ridge pulsing
     uFlashIntensity: { value: 0.0 },
     uGlowIntensity: { value: getVisualTuning().glowStrength },
     uFogIntensity: { value: getVisualTuning().fogIntensity },
+    uTime: { value: 0.0 },
   };
   const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);
   terrainGeo.rotateX(-Math.PI / 2);
@@ -68,7 +71,7 @@ export function buildSynthwaveValleyScene(group, deps) {
     // Fix for synthwave floor popping in VR: keep the terrain static and use the
     // built-in modelViewMatrix projection instead of manual projection math.
     vertexShader: `varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vec4 mvPosition=modelViewMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; vFogDistance=length(mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }`,
-    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; uniform float uGlowIntensity; uniform float uFogIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float dist=length(vObjPos.xz); float lineW=0.25*smoothstep(1000.0,100.0,dist); float gx=gridLine(vObjPos.x*gridScale,lineW); float gz=gridLine(vObjPos.z*gridScale,lineW); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34*uGlowIntensity); vec3 col=mix(uBaseColor, uGridColor, clamp(grid*uGlowIntensity,0.0,1.0)); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18*uGlowIntensity; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*uFogIntensity,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform vec3 uPulseColorA; uniform vec3 uPulseColorB; uniform float uFlashIntensity; uniform float uGlowIntensity; uniform float uFogIntensity; uniform float uTime; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float dist=length(vObjPos.xz); float lineW=0.25*smoothstep(1000.0,100.0,dist); float gx=gridLine(vObjPos.x*gridScale,lineW); float gz=gridLine(vObjPos.z*gridScale,lineW); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34*uGlowIntensity); float wave=0.5+0.5*sin(uTime*1.8 + vObjPos.x*0.018 + vObjPos.z*0.012); vec3 pulseColor=mix(uPulseColorA, uPulseColorB, wave); vec3 animatedGridColor=mix(uGridColor, pulseColor, 0.7); vec3 col=mix(uBaseColor, animatedGridColor, clamp(grid*uGlowIntensity,0.0,1.0)); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=pulseColor*ridgeGlow*0.22*uGlowIntensity; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*uFogIntensity,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
   terrain.name = 'synthwave-valley-floor-and-mountains';
@@ -105,7 +108,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   const sunOuterGlowTex = makeRadial('rgba(254,151,83,0.9)', 'rgba(224,1,134,0.3)');
 
   // Outer massive glow (flat plane, no billboard, fog-proof, no depth test)
-  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 0.32, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
   const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(875, 875), sunOuterGlowMat); // 10% smaller again (81% of original)
   sunOuterGlow.name = 'synthwave-sun-outer-glow';
   sunOuterGlow.userData.planeName = 'synthwave-sun-outer-glow';
@@ -408,6 +411,8 @@ export function buildSynthwaveValleyScene(group, deps) {
   const crystalMaterials = [crystalLargeMat, crystalMediumMat, crystalSmallTealMat, crystalSmallPurpleMat, crystalSmallPinkMat, lightBeamMat, orbCyanMat, orbPurpleMat, orbPinkMat, archGlowMat, fanCoralMat, pyramidMat];
   group.userData.update = (time, deltaTime) => {
     const t = time;
+    // Drive the floor and ridge color wave from one time uniform instead of touching geometry.
+    terrainUniforms.uTime.value = t * 0.001;
     columnNeonCyanMat.opacity = 0.5 + 0.4 * Math.sin(t * 0.8);
     columnNeonPurpleMat.opacity = 0.5 + 0.4 * Math.sin(t * 0.6 + 1.0);
     archGlowMat.opacity = 0.25 + 0.15 * Math.sin(t * 0.5);
@@ -429,11 +434,66 @@ export function buildSynthwaveValleyScene(group, deps) {
     });
   };
 
-  // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
+  // Palm trees: solid black silhouettes on flat planes (not billboards) between player and mountains
+  // Sparse placement, random scale/rotation, static in world space
+  const palmTreeFiles = ['assets/palm_tree_1.svg', 'assets/palm_tree_2.svg', 'assets/palm_tree_3.svg'];
+  const palmTreePositions = [
+    { x: -8, z: -60, scale: 1.2, rotY: 0.1 },
+    { x: 12, z: -80, scale: 0.9, rotY: -0.3 },
+    { x: -15, z: -120, scale: 1.5, rotY: 0.5 },
+    { x: 6, z: -45, scale: 0.7, rotY: -0.2 },
+    { x: -4, z: -90, scale: 1.1, rotY: 0.4 },
+    { x: 18, z: -140, scale: 1.3, rotY: -0.1 },
+    { x: -20, z: -100, scale: 0.8, rotY: 0.2 },
+  ];
+
+  palmTreeFiles.forEach((svgPath, idx) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 256;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, size, size);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.needsUpdate = true;
+
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        color: 0x000000,  // Solid black silhouette
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        depthTest: true,
+      });
+
+      // Use position from array or generate random if more instances needed
+      const pos = palmTreePositions[idx] || {
+        x: (Math.random() - 0.5) * 40,
+        z: -50 - Math.random() * 100,
+        scale: 0.7 + Math.random() * 0.8,
+        rotY: (Math.random() - 0.5) * 0.6
+      };
+
+      const planeGeo = new THREE.PlaneGeometry(8 * pos.scale, 12 * pos.scale);
+      const palmPlane = new THREE.Mesh(planeGeo, mat);
+      palmPlane.position.set(pos.x, 6 + 5.82, pos.z);  // Y offset to sit on ground + group offset
+      palmPlane.rotation.y = pos.rotY;
+      palmPlane.name = `palm-tree-${idx}`;
+      palmPlane.userData.planeName = `palm-tree-${idx}`;
+      group.add(palmPlane);
+      registerFadeMaterial(mat);
+    };
+    img.src = svgPath;
+  });
+
+  // Fix for synthwave valley "jiggle":keep the imported scene static in-game.
   // The standalone HTML used perpetual scrolling and pulsing, but the game
   // version should behave like a stable biome backdrop.
 
-  // Synthwave floor HUD height: group.position.y = 5.82
+  // Synthwave floor HUD height:group.position.y = 5.82
   group.position.set(0, 5.82, 0);
 
   // Rotate so player faces sun

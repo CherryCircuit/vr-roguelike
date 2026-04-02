@@ -11,6 +11,7 @@ export function buildDesertNightScene(group, deps) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
   const sceneColor = 0x06080c;
+  const duneOutlineColor = 0xAB3A93;
 
   // === LIGHTING (CRITICAL) ===
   // Pale moonlight
@@ -36,51 +37,105 @@ export function buildDesertNightScene(group, deps) {
   const hemiLight = new THREE.HemisphereLight(0x1a2035, 0x2d1f1a, 0.2);
   group.add(hemiLight);
 
-  // Ground
-  const geometry = new THREE.PlaneGeometry(140, 140, 70, 70);
-  geometry.rotateX(-Math.PI / 2);
-  const positions = geometry.attributes.position;
-  const colors = [];
-  const flatRadius = 12.0;
-  const mountainStart = 18.0;
-  for (let i = 0; i < positions.count; i++) {
-    const x = positions.getX(i);
-    const z = positions.getZ(i);
-    const dist = Math.sqrt(x * x + z * z);
-    let heightFactor = Math.min(Math.max((dist - flatRadius) / (mountainStart - flatRadius), 0), 1);
-    heightFactor = heightFactor * heightFactor * (3 - 2 * heightFactor);
-    let height = 0;
-    height += Math.sin(x * 0.08 + 0.5) * Math.cos(z * 0.06) * 4.0;
-    height += Math.sin(x * 0.04 + 2) * Math.sin(z * 0.05 + 1) * 3.0;
-    height += Math.sin(x * 0.15 + z * 0.1) * 1.5;
-    height += Math.cos(z * 0.12 - x * 0.08) * 1.0;
-    height += Math.sin(x * 0.3) * Math.cos(z * 0.25) * 0.5;
-    if (dist > mountainStart) {
-      height += Math.sin(x * 0.4 + z * 0.3) * 2.0;
-      height += Math.cos(x * 0.2 - z * 0.5) * 2.5;
-    }
-    const finalHeight = height * heightFactor;
-    positions.setY(i, finalHeight);
-    const heightNorm = (finalHeight + 5) / 15;
+  // Desert skydome mirrors the synthwave setup structurally, but uses moonlit sand tones
+  // at half brightness so the desert reads darker and calmer than the neon biome.
+  const skyGeo = new THREE.SphereGeometry(2200, 24, 18);
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: {
+      topColor: { value: new THREE.Color(0x06080c) },
+      midColor: { value: new THREE.Color(0x151b2d) },
+      horizonColor: { value: new THREE.Color(0x3d2f2a) },
+      moonGlowColor: { value: new THREE.Color(0x6a6271) },
+    },
+    vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 moonGlowColor; void main(){ float worldY=vWorldPosition.y; float t1=smoothstep(-140.0,220.0,worldY); float t2=smoothstep(120.0,780.0,worldY); float t3=smoothstep(300.0,1200.0,worldY); vec3 col=horizonColor; col=mix(col,moonGlowColor,t1); col=mix(col,midColor,t2); col=mix(col,topColor,t3); col=pow(col,vec3(1.0/2.2)); gl_FragColor=vec4(col*0.5,1.0); }`,
+    depthWrite: false,
+  });
+  const sky = new THREE.Mesh(skyGeo, skyMat);
+  sky.frustumCulled = false;
+  sky.renderOrder = -20;
+  group.add(sky);
+  registerFadeMaterial(skyMat);
+
+  const buildDunePanel = ({ width, depth, segmentsX, segmentsZ, centerX, centerZ, flatRadius, mountainStart }) => {
+    const geometry = new THREE.PlaneGeometry(width, depth, segmentsX, segmentsZ);
+    geometry.rotateX(-Math.PI / 2);
+    const positions = geometry.attributes.position;
+    const colors = [];
     const baseColor = new THREE.Color(0x2a241b);
     const highlightColor = new THREE.Color(0x585144);
     const moonTint = new THREE.Color(0x404a5a);
-    let color = baseColor.clone().lerp(highlightColor, Math.max(0, Math.min(1, heightNorm)));
-    color.lerp(moonTint, heightNorm * 0.2);
-    colors.push(color.r, color.g, color.b);
-  }
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.computeVertexNormals();
-  const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  const terrain = new THREE.Mesh(geometry, material);
-  terrain.position.y = floorY;
-  terrain.frustumCulled = false;
-  terrain.receiveShadow = true;  // Sand dunes receive cactus shadows
-  group.add(terrain);
-  registerFadeMaterial(material);
+
+    for (let i = 0; i < positions.count; i++) {
+      const localX = positions.getX(i);
+      const localZ = positions.getZ(i);
+      const worldX = centerX + localX;
+      const worldZ = centerZ + localZ;
+      const dist = Math.sqrt(localX * localX + localZ * localZ);
+      let heightFactor = Math.min(Math.max((dist - flatRadius) / (mountainStart - flatRadius), 0), 1);
+      heightFactor = heightFactor * heightFactor * (3 - 2 * heightFactor);
+
+      let height = 0;
+      height += Math.sin(worldX * 0.08 + 0.5) * Math.cos(worldZ * 0.06) * 4.0;
+      height += Math.sin(worldX * 0.04 + 2) * Math.sin(worldZ * 0.05 + 1) * 3.0;
+      height += Math.sin(worldX * 0.15 + worldZ * 0.1) * 1.5;
+      height += Math.cos(worldZ * 0.12 - worldX * 0.08) * 1.0;
+      height += Math.sin(worldX * 0.3) * Math.cos(worldZ * 0.25) * 0.5;
+      if (dist > mountainStart) {
+        height += Math.sin(worldX * 0.4 + worldZ * 0.3) * 2.0;
+        height += Math.cos(worldX * 0.2 - worldZ * 0.5) * 2.5;
+      }
+
+      const finalHeight = height * heightFactor;
+      positions.setY(i, finalHeight);
+      const heightNorm = (finalHeight + 5) / 15;
+      const color = baseColor.clone().lerp(highlightColor, Math.max(0, Math.min(1, heightNorm)));
+      color.lerp(moonTint, heightNorm * 0.2);
+      colors.push(color.r, color.g, color.b);
+    }
+
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+    const terrain = new THREE.Mesh(geometry, material);
+    terrain.position.set(centerX, floorY, centerZ);
+    terrain.frustumCulled = false;
+    terrain.receiveShadow = true;
+    group.add(terrain);
+    registerFadeMaterial(material);
+
+    // Outline the dune crests with a saturated pink so the desert keeps a stylized neon read.
+    const outline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geometry, 14),
+      new THREE.LineBasicMaterial({
+        color: duneOutlineColor,
+        transparent: true,
+        opacity: 0.7,
+        depthWrite: false,
+      })
+    );
+    outline.position.copy(terrain.position);
+    outline.frustumCulled = false;
+    group.add(outline);
+    registerFadeMaterial(outline.material);
+  };
+
+  // Replace the oversized single terrain slab with curated dune panels. This drops
+  // rear geometry and keeps only the front, side, and nearest rear dune row visible.
+  const dunePanels = [
+    { width: 96, depth: 96, segmentsX: 36, segmentsZ: 36, centerX: 0, centerZ: 0, flatRadius: 12.0, mountainStart: 18.0 },
+    { width: 92, depth: 42, segmentsX: 26, segmentsZ: 12, centerX: 0, centerZ: -58, flatRadius: 8.0, mountainStart: 14.0 },
+    { width: 40, depth: 110, segmentsX: 12, segmentsZ: 28, centerX: -58, centerZ: -8, flatRadius: 6.0, mountainStart: 12.0 },
+    { width: 40, depth: 110, segmentsX: 12, segmentsZ: 28, centerX: 58, centerZ: -8, flatRadius: 6.0, mountainStart: 12.0 },
+    { width: 72, depth: 28, segmentsX: 20, segmentsZ: 8, centerX: 0, centerZ: 56, flatRadius: 6.0, mountainStart: 12.0 },
+  ];
+  dunePanels.forEach(buildDunePanel);
 
   // Flash overlay plane for damage feedback (entire sand floor turns red)
-  const flashGeo = new THREE.PlaneGeometry(140, 140);
+  // Only cover the playable center after culling rear dune rows to avoid red flashes on removed geometry.
+  const flashGeo = new THREE.PlaneGeometry(96, 96);
   const flashMat = new THREE.MeshBasicMaterial({
     color: 0xff0000,
     transparent: true,

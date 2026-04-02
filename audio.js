@@ -1492,3 +1492,14 @@ function setMusicVolume(vol) {
     currentMusic.volume = musicVolume;
   }
 }
+
+// 3-2-1 countdown beep — plays on the "3" of every game-start and unpause countdown.
+let countdown321Audio = null;
+export function playCountdown321() {
+  if (!countdown321Audio) {
+    countdown321Audio = new Audio('mnt/project/music/sfx_321.m4a');
+  }
+  countdown321Audio.volume = 0.5;
+  countdown321Audio.currentTime = 0;
+  countdown321Audio.play().catch(() => {});
+}
