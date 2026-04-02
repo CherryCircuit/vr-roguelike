@@ -20,6 +20,17 @@ const keys = {
   e: false
 };
 
+// Track hold duration per movement key so desktop debug locomotion ramps smoothly
+// instead of snapping instantly to max speed on long traversals.
+const keyHoldDurations = {
+  w: 0,
+  a: 0,
+  s: 0,
+  d: 0,
+  q: 0,
+  e: 0
+};
+
 // Mouse state
 const mouse = {
   x: 0, y: 0,
@@ -40,12 +51,8 @@ const player = {
 };
 
 // Debug movement settings (for desktop no-clip mode)
-const walkSpeed = 12.0; // starting speed (bumped from 8.0 for faster biome traversal)
-const sprintSpeed = 300.0; // max speed — 10X previous, keep ramping fast
-const rampTime = 1.0; // seconds to reach sprint speed (bumped from 1.5s for faster ramp)
-let currentMoveSpeed = walkSpeed;
-let moveRampTimer = 0; // how long movement keys have been held
-const verticalSpeed = 300.0; // units per second for Q/E (matches sprint speed)
+const maxMoveSpeed = 300.0; // Peak debug travel speed for biome fly-throughs.
+const moveRampRate = -Math.log(0.05) / 3; // 95% of max speed at 3 seconds (~1.0).
 const friction = 10.0; // damping factor
 const acceleration = 30.0; // acceleration factor
 let debugMode = true; // debug movement enabled by default for positioning
@@ -234,6 +241,11 @@ export function update(dt) {
 
   player.isMoving = false;
 
+  // Keep hold durations monotonic while a key is down and hard reset on release.
+  Object.keys(keyHoldDurations).forEach((key) => {
+    keyHoldDurations[key] = keys[key] ? keyHoldDurations[key] + dt : 0;
+  });
+
   // Allow debug movement whenever desktop mode is available
   if (debugMode || enabled) {
     // Calculate movement direction based on camera orientation
@@ -277,19 +289,28 @@ export function update(dt) {
       player.isMoving = true;
     }
 
+    const getRampSpeed = (activeKeys, speedCap) => {
+      let longestHold = 0;
+      for (const key of activeKeys) {
+        if (keys[key]) longestHold = Math.max(longestHold, keyHoldDurations[key]);
+      }
+      // Exponential approach gives fine control on short taps without removing fast traversal.
+      return speedCap * (1 - Math.exp(-longestHold * moveRampRate));
+    };
+
     // Normalize horizontal movement if any
     if (moveDir.lengthSq() > 0) {
       const horizontal = new THREE.Vector3(moveDir.x, 0, moveDir.z);
       if (horizontal.lengthSq() > 0) {
-        // Ramp speed from walk to sprint
-        moveRampTimer = Math.min(moveRampTimer + dt, rampTime);
-        currentMoveSpeed = walkSpeed + (sprintSpeed - walkSpeed) * (moveRampTimer / rampTime);
-        horizontal.normalize().multiplyScalar(currentMoveSpeed);
+        // Use the longest-held horizontal key so strafing/diagonal motion ramps smoothly.
+        const horizontalSpeed = getRampSpeed(['w', 'a', 's', 'd'], maxMoveSpeed);
+        horizontal.normalize().multiplyScalar(horizontalSpeed);
       }
 
       // Apply vertical speed
       if (moveDir.y !== 0) {
-        moveDir.y *= verticalSpeed;
+        // Q/E share the same exponential ramp as WASD so free-fly motion feels consistent.
+        moveDir.y *= getRampSpeed(['q', 'e'], maxMoveSpeed);
       } else {
         moveDir.y = 0;
       }
@@ -300,9 +321,6 @@ export function update(dt) {
     } else {
       // Apply friction when not moving
       player.velocity.multiplyScalar(1 - friction * dt);
-      // Reset speed ramp when no movement keys held
-      moveRampTimer = 0;
-      currentMoveSpeed = walkSpeed;
     }
 
     // Stop very small velocities
@@ -391,6 +409,7 @@ function setupEventListeners() {
     mouse.buttons = 0;
     mouse.isPressed = false;
     keys.space = false;
+    Object.keys(keyHoldDurations).forEach((key) => { keyHoldDurations[key] = 0; });
   });
 
   // Reset on visibility change (tab switch, minimize)
@@ -399,6 +418,7 @@ function setupEventListeners() {
       mouse.buttons = 0;
       mouse.isPressed = false;
       keys.space = false;
+      Object.keys(keyHoldDurations).forEach((key) => { keyHoldDurations[key] = 0; });
     }
   });
 
@@ -479,12 +499,12 @@ function onKeyUp(e) {
   const key = e.key.toLowerCase();
 
   // Movement keys - always allow
-  if (key === 'w') keys.w = false;
-  if (key === 'a') keys.a = false;
-  if (key === 's') keys.s = false;
-  if (key === 'd') keys.d = false;
-  if (key === 'q') keys.q = false;
-  if (key === 'e') keys.e = false;
+  if (key === 'w') { keys.w = false; keyHoldDurations.w = 0; }
+  if (key === 'a') { keys.a = false; keyHoldDurations.a = 0; }
+  if (key === 's') { keys.s = false; keyHoldDurations.s = 0; }
+  if (key === 'd') { keys.d = false; keyHoldDurations.d = 0; }
+  if (key === 'q') { keys.q = false; keyHoldDurations.q = 0; }
+  if (key === 'e') { keys.e = false; keyHoldDurations.e = 0; }
 
   if (key === ' ') keys.space = false;
 }

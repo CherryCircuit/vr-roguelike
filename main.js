@@ -27,6 +27,7 @@ import {
   startLowHealthWarningSound, stopLowHealthWarningSound,
   playMusic, playBossMusic, stopMusic, fadeOutMusic,
   playKillsAlertSound, playTingSound, playSeekerBurstSound, playHealSound,
+  playCountdown321,
   // Charge cannon sounds
   startChargeSound, updateChargeSound, stopChargeSound,
   playChargeReadySound, playChargeFireSound,
@@ -86,7 +87,7 @@ import {
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
-import { getThemeForLevel, initAmbientParticles, updateAmbientParticles, createInnkeeper } from './scenery.js';
+import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js';
 import { initDreamWorld, enterDreamWorld, exitDreamWorld, getDreamFogSettings, getDreamSpawnPosition, handleDreamProjectileHit, updateDreamWorld } from './dream-world.js';
 import { SpatialHash } from './spatial-hash.js';
 
@@ -194,18 +195,23 @@ const PROJECTILE_GLOW = {
 };
 
 // Fresnel-driven FakeGlowMaterial keeps the halo entirely in the shader so VR never pays for post.
-// Note: three.js auto-injects instanceMatrix for InstancedMesh, so we use the built-in chunks
-// instead of manually declaring it (which causes "redefinition" shader errors).
+// For InstancedMesh, three.js auto-injects instanceMatrix but ShaderMaterial doesn't apply it
+// through modelViewMatrix like built-in materials do. We manually apply the instance transform
+// to get correct world positions and normals per-instance.
 const FAKE_GLOW_VERTEX_SHADER = `
   varying vec3 vNormalW;
   varying vec3 vPositionW;
 
   void main() {
-    // three.js provides instanceMatrix automatically for InstancedMesh
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vPositionW = (modelMatrix * vec4(position, 1.0)).xyz;
-    vNormalW = normalize(normalMatrix * normal);
-    gl_Position = projectionMatrix * mvPosition;
+    // Apply instance transform (three.js provides instanceMatrix for InstancedMesh)
+    vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+    vPositionW = worldPos.xyz;
+
+    // Transform normal through instance rotation (upper 3x3 of instanceMatrix)
+    mat3 instanceRot = mat3(instanceMatrix);
+    vNormalW = normalize(mat3(modelMatrix) * instanceRot * normal);
+
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
 `;
 
@@ -225,6 +231,8 @@ const FAKE_GLOW_FRAGMENT_SHADER = `
     float falloff = 1.0 - uFalloff;
     vec3 glow = uGlowColor * intensity * falloff;
     gl_FragColor = vec4(glow, uOpacity * intensity);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 
@@ -240,7 +248,7 @@ function createProjectileGlowMaterial(colorHex) {
     fragmentShader: FAKE_GLOW_FRAGMENT_SHADER,
     transparent: true,
     blending: THREE.AdditiveBlending,
-    side: THREE.BackSide,
+    side: THREE.DoubleSide,
     depthWrite: false,
     depthTest: true,
   });
@@ -348,8 +356,6 @@ let dreamFadeOverlay = null;
 let dreamReturnPosition = new THREE.Vector3();
 let dreamOriginalEnv = null;
 let dreamTrail = null;
-let innkeeperRef = null;
-let innkeeperMessageVisible = false;
 
 
 let environmentFade = 0;
@@ -1787,6 +1793,8 @@ function applyThemeForLevel(level) {
 
   if (sunGlowRef && sunGlowRef.material) {
     sunGlowRef.material.color.setHex(theme.sunGlowColor);
+    // Keep the reduced bloom level after theme refreshes instead of snapping back brighter.
+    sunGlowRef.material.opacity = 0.24;
   }
 
   if (horizonRingRef && horizonRingRef.material) {
@@ -1815,7 +1823,6 @@ function applyThemeForLevel(level) {
 
   rebuildBiomeScene(getBiomeForLevel(level), theme);
   applyBiomeLighting(getBiomeForLevel(level));
-  updateInnkeeperForLevel(level);
   
   // Always update aurora colors for the current theme (not just customScene biomes)
   updateAuroraColors(theme);
@@ -1828,24 +1835,6 @@ function applyThemeForLevel(level) {
   }
 
   applyEnvironmentFade(environmentFade);
-}
-
-function updateInnkeeperForLevel(level) {
-  if (!scene) return;
-  const shouldShow = level >= 1 && level <= 3;
-
-  if (shouldShow && !innkeeperRef) {
-    innkeeperRef = createInnkeeper();
-    innkeeperRef.position.set(6, 0, 6);
-    scene.add(innkeeperRef);
-  }
-
-  if (!shouldShow && innkeeperRef) {
-    scene.remove(innkeeperRef);
-    disposeObject3D(innkeeperRef);
-    innkeeperRef = null;
-    innkeeperMessageVisible = false;
-  }
 }
 
 function hideBaseEnvironment() {
@@ -2194,7 +2183,8 @@ function createSun() {
     color: 0xffaa00,        // Orange glow (matching sun gradient)
     side: THREE.DoubleSide,
     transparent: true,
-    opacity: 0.7,           // High opacity for visibility
+    // Tone down the legacy synth halo so it does not wash out the rest of the skyline.
+    opacity: 0.24,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
@@ -3064,7 +3054,21 @@ function onTriggerPress(controller, index) {
   } else if (st === State.DEBUG_MENU) {
     handleDebugMenuTrigger(controller);
   } else if (st === State.PAUSED) {
-    // Press trigger to resume from pause
+    handlePauseTrigger(controller);
+  }
+}
+
+function handlePauseTrigger(controller) {
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  _uiRaycaster.set(origin, direction, 0, 20);
+
+  // Require an explicit pause-menu button hit so desktop and VR share the same resume path.
+  if (getPauseMenuHit(_uiRaycaster) === 'resume') {
+    playMenuClick();
     startPauseCountdown();
   }
 }
@@ -3341,9 +3345,8 @@ function handleDesktopReadyScreenClick() {
 
 function handleDesktopPauseClick() {
   const raycaster = getAimRaycaster();
-  const btnHit = raycaster ? getPauseMenuHit(raycaster) : null;
-  // Resume if: hit resume button, OR raycaster null, OR raycaster exists but missed (click anywhere to resume)
-  if (btnHit === 'resume' || !raycaster || btnHit === null) {
+  // Match VR behavior: desktop pause only resumes when the button is actually selected.
+  if (raycaster && getPauseMenuHit(raycaster) === 'resume') {
     playMenuClick();
     startPauseCountdown();
   }
@@ -6829,6 +6832,7 @@ function startReadyCountdown() {
   readyCountdownStartTime = performance.now();
   readyCountdownLastValue = READY_COUNTDOWN_SECONDS;
   updateReadyCountdownText(`${READY_COUNTDOWN_SECONDS}`);
+  playCountdown321();  // 321 sound triggers on the "3"
 }
 
 function updateReadyCountdown(now) {
@@ -7503,6 +7507,7 @@ function startPauseCountdown() {
   pauseCountdown = PAUSE_COUNTDOWN_DURATION;
   showPauseCountdown(pauseCountdown);
   updatePauseCountdownDisplay(pauseCountdown);
+  playCountdown321();  // 321 sound triggers on the "3"
 }
 
 function updatePauseCountdown(now) {
@@ -10960,4 +10965,3 @@ function rebuildBiomeScene(biomeId, theme) {
 function getBiomeFloorY() {
   return getBiomeFloorYModule(biomeSceneBiome, SCENE_Y_OFFSET);
 }
-

@@ -4056,7 +4056,6 @@ let pauseMenuAnimation = {
 };
 
 let pauseCountdownHeader = null;
-let pauseCountdownInstruction = null;
 let pauseCountdownText = null;
 let pauseCountdownOverlay = null;
 let pauseCountdownInitialized = false;
@@ -4775,10 +4774,38 @@ function updateSectionStats(section, hand) {
 function createResumeButton() {
   const group = new THREE.Group();
 
-  // Button text (no background, just text)
+  // Match the title SCOREBOARD button style so pause/resume remains readable in VR.
+  const btnGeo = new THREE.PlaneGeometry(1.55, 0.34);
+  const btnMat = new THREE.MeshBasicMaterial({
+    color: 0x110033,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const btnMesh = new THREE.Mesh(btnGeo, btnMat);
+  btnMesh.userData.isResumeButton = true;
+  group.add(btnMesh);
+
+  const btnBorder = new THREE.LineSegments(
+    new THREE.EdgesGeometry(btnGeo),
+    new THREE.LineBasicMaterial({
+      color: 0xffff00,
+      transparent: true,
+      opacity: 1.0,
+      depthTest: false,
+      depthWrite: false,
+    })
+  );
+  btnBorder.renderOrder = PAUSE_TEXT_RENDER_ORDER;
+  group.add(btnBorder);
+
   const text = makeSprite('RESUME', {
     fontSize: scalePauseFont(42),
-    color: '#00ffff',
+    color: '#ffff00',
+    glow: true,
+    glowColor: '#ffff00',
     scale: scalePauseText(0.14),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
@@ -4804,7 +4831,6 @@ export function showPauseCountdown(seconds) {
   while (pauseCountdownGroup.children.length) pauseCountdownGroup.remove(pauseCountdownGroup.children[0]);
   pauseCountdownInitialized = false;
   pauseCountdownHeader = null;
-  pauseCountdownInstruction = null;
   pauseCountdownText = null;
 
   pauseCountdownGroup.visible = true;
@@ -4818,19 +4844,11 @@ export function showPauseCountdown(seconds) {
   pauseCountdownHeader = header;
   pauseCountdownGroup.add(header);
 
-  // Match showReadyScreen: "SHOOT TO RESUME" in cyan (same as "SHOOT TO BEGIN")
-  const instruction = makeSprite('SHOOT TO RESUME', {
-    fontSize: 40, color: '#00ffff', scale: 0.4,
-  });
-  instruction.position.set(0, 0.4, 0);
-  pauseCountdownInstruction = instruction;
-  pauseCountdownGroup.add(instruction);
-
-  // Match showReadyScreen: WHITE countdown number with cyan glow
+  // Show only the countdown number so the pause flow always resolves through the RESUME button.
   const text = makeSprite(`${Math.ceil(seconds)}`, {
     fontSize: 120, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.7,
   });
-  text.position.set(0, -0.05, 0.01);
+  text.position.set(0, 0.1, 0.01);
   pauseCountdownText = text;
   pauseCountdownGroup.add(text);
   pauseCountdownInitialized = true;
@@ -4899,4 +4917,3 @@ function calculateAccuracy() {
 
 // Export nameEntryGroup and pauseMenuGroup for use in other modules
 export { nameEntryGroup, pauseMenuGroup, pauseCountdownGroup };
-
