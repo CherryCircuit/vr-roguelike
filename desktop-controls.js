@@ -55,7 +55,15 @@ const maxMoveSpeed = 300.0; // Peak debug travel speed for biome fly-throughs.
 const moveRampRate = -Math.log(0.05) / 3; // 95% of max speed at 3 seconds (~1.0).
 const friction = 10.0; // damping factor
 const acceleration = 30.0; // acceleration factor
-let debugMode = true; // debug movement enabled by default for positioning
+let debugMode = false; // debug movement disabled by default (Fix 1.1: avoid per-frame Vector3 allocations)
+
+// Pre-allocated scratch vectors for update() (Fix 1.2: avoid per-frame allocations)
+const _moveDir = new THREE.Vector3();
+const _forward = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _horizontal = new THREE.Vector3();
+const _targetVelocity = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
 
 // Weapon state
 const weaponState = {
@@ -248,44 +256,40 @@ export function update(dt) {
 
   // Allow debug movement whenever desktop mode is available
   if (debugMode || enabled) {
-    // Calculate movement direction based on camera orientation
-    const moveDir = new THREE.Vector3();
+    // Fix 1.2: Reuse pre-allocated scratch vectors instead of allocating each frame
+    _moveDir.set(0, 0, 0);
 
     // Get forward and right vectors from camera orientation
-    const forward = new THREE.Vector3();
-    const right = new THREE.Vector3();
-    const up = new THREE.Vector3(0, 1, 0);
-
-    cameraRef.getWorldDirection(forward);
-    forward.y = 0; // Keep movement horizontal
-    forward.normalize();
-    right.crossVectors(forward, up).normalize();
+    cameraRef.getWorldDirection(_forward);
+    _forward.y = 0; // Keep movement horizontal
+    _forward.normalize();
+    _right.crossVectors(_forward, _up).normalize();
 
     // WASD movement
     if (keys.w) {
-      moveDir.add(forward);
+      _moveDir.add(_forward);
       player.isMoving = true;
     }
     if (keys.s) {
-      moveDir.sub(forward);
+      _moveDir.sub(_forward);
       player.isMoving = true;
     }
     if (keys.a) {
-      moveDir.sub(right);
+      _moveDir.sub(_right);
       player.isMoving = true;
     }
     if (keys.d) {
-      moveDir.add(right);
+      _moveDir.add(_right);
       player.isMoving = true;
     }
 
     // Q/E vertical movement
     if (keys.q) {
-      moveDir.y -= 1;
+      _moveDir.y -= 1;
       player.isMoving = true;
     }
     if (keys.e) {
-      moveDir.y += 1;
+      _moveDir.y += 1;
       player.isMoving = true;
     }
 
@@ -299,25 +303,25 @@ export function update(dt) {
     };
 
     // Normalize horizontal movement if any
-    if (moveDir.lengthSq() > 0) {
-      const horizontal = new THREE.Vector3(moveDir.x, 0, moveDir.z);
-      if (horizontal.lengthSq() > 0) {
+    if (_moveDir.lengthSq() > 0) {
+      _horizontal.set(_moveDir.x, 0, _moveDir.z);
+      if (_horizontal.lengthSq() > 0) {
         // Use the longest-held horizontal key so strafing/diagonal motion ramps smoothly.
         const horizontalSpeed = getRampSpeed(['w', 'a', 's', 'd'], maxMoveSpeed);
-        horizontal.normalize().multiplyScalar(horizontalSpeed);
+        _horizontal.normalize().multiplyScalar(horizontalSpeed);
       }
 
       // Apply vertical speed
-      if (moveDir.y !== 0) {
+      if (_moveDir.y !== 0) {
         // Q/E share the same exponential ramp as WASD so free-fly motion feels consistent.
-        moveDir.y *= getRampSpeed(['q', 'e'], maxMoveSpeed);
+        _moveDir.y *= getRampSpeed(['q', 'e'], maxMoveSpeed);
       } else {
-        moveDir.y = 0;
+        _moveDir.y = 0;
       }
 
       // Apply acceleration to velocity
-      const targetVelocity = new THREE.Vector3(horizontal.x, moveDir.y, horizontal.z);
-      player.velocity.lerp(targetVelocity, acceleration * dt);
+      _targetVelocity.set(_horizontal.x, _moveDir.y, _horizontal.z);
+      player.velocity.lerp(_targetVelocity, acceleration * dt);
     } else {
       // Apply friction when not moving
       player.velocity.multiplyScalar(1 - friction * dt);

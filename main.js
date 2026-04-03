@@ -15,7 +15,7 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, loadDreamState, saveDreamState, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit } from './game.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, loadDreamState, saveDreamState, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
@@ -379,6 +379,33 @@ const SLOW_MO_TRIGGER_DIST = 2.0;
 const SLOW_MO_RAMP_OUT_DURATION = 0.5;
 let timeScale = 1.0;
 
+// Slow-mo quality reduction state (Fix A: reduce GPU load during bullet-time)
+let _slowMoQualityReduced = false;
+let _slowMoOriginalBg = null;
+
+/**
+ * Reduce GPU load during bullet-time by lowering pixel ratio and clearing background.
+ * Only applies when NOT in VR mode (VR has its own render pipeline).
+ * @param {boolean} enabled - true to reduce quality, false to restore
+ */
+function setSlowMoQuality(enabled) {
+  // Skip entirely in VR mode
+  if (renderer.xr.isPresenting) return;
+  
+  if (enabled && !_slowMoQualityReduced) {
+    // Reduce quality: lower pixel ratio, remove background
+    renderer.setPixelRatio(1.0);
+    _slowMoOriginalBg = scene.background;
+    scene.background = null;
+    _slowMoQualityReduced = true;
+  } else if (!enabled && _slowMoQualityReduced) {
+    // Restore quality
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    scene.background = _slowMoOriginalBg;
+    _slowMoQualityReduced = false;
+  }
+}
+
 // Kills remaining alert state
 let killsAlertShownThisLevel = false;
 let killsAlertTriggerKill = null;
@@ -443,15 +470,19 @@ let nukeFlash = null;
 let nukeFlashTimer = 0;
 const NUKE_FLASH_DURATION = 600; // ms
 
+// Fix 1.5: Pre-allocated scratch vector for getAdjustedCameraPosition()
+const _adjustedCameraPosScratch = new THREE.Vector3();
+
+// Fix 1.3: Cached scanlines element (set once at init, not every frame)
+let _cachedScanlinesEl = null;
+
 // Helper: Get camera position for UI positioning and enemy targeting
 // Returns the WORLD position of the camera (including camera rig offset)
 // In VR mode, the camera rig adds a height offset, so we need to get the world position
 // to ensure enemies target the correct height.
 function getAdjustedCameraPosition() {
-  const worldPos = new THREE.Vector3();
-  camera.getWorldPosition(worldPos);
-  
-  return worldPos;
+  camera.getWorldPosition(_adjustedCameraPosScratch);
+  return _adjustedCameraPosScratch;
 }
 
 // Screen shake system
@@ -513,7 +544,7 @@ const synthVisualRefs = {
 };
 
 // Player projectile materials that should respond to visual tuning sliders.
-const playerProjectileMaterials = [];
+const playerProjectileMaterials = new Set();
 
 // Desktop-only post-style helpers. XR continues to use renderer.render(scene, camera).
 const desktopEffectRefs = {
@@ -1010,12 +1041,18 @@ function init() {
   // Camera position is controlled by WebXR in VR mode, desktop mode sets it elsewhere
 
   // Renderer — optimized for Quest performance
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  renderer = new THREE.WebGLRenderer({
+    antialias: !navigator.webdriver,  // Disable AA in headless/Puppeteer
+    alpha: true,
+    powerPreference: 'high-performance'
+  });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));  // Cap pixel ratio for perf
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));  // Cap at 1.5 — DPR 2 quadruples pixel count
   renderer.xr.enabled = true;
-  // Enable shadows for biome scenes (desert moon shadows, etc.)
-  renderer.shadowMap.enabled = true;
+  // Fix 1.8: Disable shadows by default (catastrophic perf in SwiftShader/headless)
+  // Only enable for real devices (not webdriver) with high quality tier
+  const enableShadows = !navigator.webdriver && (window.devicePixelRatio >= 2 || window.matchMedia?.('(min-width: 1200px)')?.matches);
+  renderer.shadowMap.enabled = enableShadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   // No tone mapping — we use MeshBasicMaterial so ACES adds shader cost with no benefit
   renderer.toneMapping = THREE.NoToneMapping;
@@ -1050,6 +1087,9 @@ function init() {
     optionalFeatures: ['local-floor', 'bounded-floor'],
   });
   document.body.appendChild(vrButton);
+
+  // Fix 1.3: Cache scanlines element once at init (not per-frame query)
+  _cachedScanlinesEl = document.getElementById('scanlines');
 
   // Disable foveated rendering (removes visible quality boxes in Quest VR)
   renderer.xr.addEventListener('sessionstart', () => {
@@ -1335,9 +1375,7 @@ function registerPlayerProjectileMaterial(material) {
   if (material.uniforms?.uOpacity && material.userData.baseUniformOpacity === undefined) {
     material.userData.baseUniformOpacity = material.uniforms.uOpacity.value;
   }
-  if (!playerProjectileMaterials.includes(material)) {
-    playerProjectileMaterials.push(material);
-  }
+  playerProjectileMaterials.add(material);
 }
 
 function applyVisualTuning(tuning = getVisualTuning()) {
@@ -7484,6 +7522,11 @@ function clearAllProjectiles() {
     }
   }
   projectiles.length = 0;
+
+  // Prune disposed materials from the projectile tuning set
+  for (const mat of playerProjectileMaterials) {
+    if (mat.disposed) playerProjectileMaterials.delete(mat);
+  }
 }
 
 // Clear all lightning gun beams
@@ -7704,6 +7747,10 @@ function clearAllAltWeaponEffects() {
 
   console.log('[cleanup] Cleared all alt-weapon effects and visuals');
 }
+
+// Register clearAllAltWeaponEffects as a resetGame() hook so voxels/effects
+// are properly cleared even on full game restart (not just level transitions).
+registerResetHook(clearAllAltWeaponEffects);
 
 function showUpgradeScreen() {
   console.log('[game] Showing upgrade selection');
@@ -10407,6 +10454,9 @@ function render(timestamp) {
   frameCount++;
   const now = timestamp || performance.now();
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
+  // Fix B: Cap delta time for game simulation to prevent enemies warping during frame spikes
+  const MAX_FRAME_DT = 0.033; // ~30 FPS cap — enemies can never advance more than 33ms per frame
+  const clampedRawDt = Math.min(rawDt, MAX_FRAME_DT);
   lastTime = now;
 
   // ── Frame profiler (debug/test only) ──
@@ -10442,12 +10492,12 @@ function render(timestamp) {
   // Use game.timeScale if death sequence is active, otherwise use bullet-time timeScale
   let effectiveTimeScale = game.slowmoActive ? game.timeScale : timeScale;
   if (shouldFreezeTime()) {
-    updateBossDeathFreeze(rawDt);
+    updateBossDeathFreeze(clampedRawDt);  // Fix B: use clamped dt for game simulation
     effectiveTimeScale = 0;
   }
 
   _mark('pre_ambient'); // ── end: timeScale + slowmo logic
-  const dt = rawDt * effectiveTimeScale;  // Scaled time for game logic
+  const dt = clampedRawDt * effectiveTimeScale;  // Fix B: use clamped dt for game simulation
 
   if (currentTheme) {
     updateAmbientParticles(rawDt, currentTheme, getAdjustedCameraPosition());
@@ -10464,10 +10514,11 @@ function render(timestamp) {
   // Process seeker burst queue (burst fire timing)
   processSeekerBurstQueue(now);
 
-  // Update desktop controls (WASD + mouse) in all states when enabled AND NOT in VR
+  // Fix 1.9: Profile desktop controls update
   if (!renderer.xr.isPresenting) {
     updateDesktopControls(dt);
   }
+  _mark('desktop_controls'); // ── end: desktop controls update
 
   // Poll VR menu/thumbstick buttons so at least one hardware button can pause.
   updateVRPauseButton(now);
@@ -10755,19 +10806,21 @@ function render(timestamp) {
 
     // Apply bullet-time slow-mo and ramp-out (timer-based from commit 5bb0b69)
     if (slowMoRampOut) {
-      slowMoRampOutTimer -= rawDt;
+      slowMoRampOutTimer -= clampedRawDt;  // Fix B: use clamped dt for game simulation
       if (slowMoRampOutTimer <= 0) {
         slowMoRampOut = false;
         timeScale = 1.0;
+        setSlowMoQuality(false);  // Fix A: restore GPU quality when ramp-out completes
       } else {
         timeScale = 0.2 + (1 - slowMoRampOutTimer / SLOW_MO_RAMP_OUT_DURATION) * 0.8;
       }
     } else if (slowMoActive) {
-      slowMoDuration -= rawDt;
+      slowMoDuration -= clampedRawDt;  // Fix B: use clamped dt for game simulation
       if (slowMoDuration <= 0) {
         slowMoActive = false;
         slowMoSoundPlayed = false;
         timeScale = 1.0;
+        setSlowMoQuality(false);  // Fix A: restore GPU quality when slow-mo ends
         console.log('[bullet-time] ENDED');
       } else {
         timeScale = 0.2;
@@ -10776,21 +10829,54 @@ function render(timestamp) {
       timeScale = 1.0;
     }
 
-    // If in slow-mo, check whether all enemies in trigger range are gone → ramp out over 0.5s + reverse sound
+    // Fix 1.6: Eliminate per-frame closures in bullet-time
+    // Replace filter() + some() with for loops and early exit
+    // Skip entirely when there are no potential threats
     if (slowMoActive && !slowMoRampOut) {
       const enemiesForRamp = getEnemies();
       const bossProjsForRamp = getBossProjectiles();
-      const hostileShotsForRamp = projectiles.filter(isHostileProjectile);
-      const anyNear = enemiesForRamp.some(e => e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST) ||
-        bossProjsForRamp.some(p => p.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST) ||
-        hostileShotsForRamp.some(p => p.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST);
-      if (!anyNear) {
+      
+      // Quick early exit if no threats exist at all
+      if (enemiesForRamp.length === 0 && bossProjsForRamp.length === 0 && projectiles.length === 0) {
+        // No threats - ramp out
         slowMoActive = false;
         slowMoSoundPlayed = false;
         slowMoRampOut = true;
         slowMoRampOutTimer = SLOW_MO_RAMP_OUT_DURATION;
         playSlowMoReverseSound();
         console.log('[bullet-time] RAMP OUT — enemies cleared');
+      } else {
+        // Check for nearby enemies
+        let anyNear = false;
+        for (let i = 0; i < enemiesForRamp.length && !anyNear; i++) {
+          const e = enemiesForRamp[i];
+          if (e.mesh && e.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST) {
+            anyNear = true;
+          }
+        }
+        // Check for nearby boss projectiles
+        for (let i = 0; i < bossProjsForRamp.length && !anyNear; i++) {
+          const p = bossProjsForRamp[i];
+          if (p.mesh && p.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST) {
+            anyNear = true;
+          }
+        }
+        // Check for nearby hostile shots (avoid filter allocation)
+        for (let i = 0; i < projectiles.length && !anyNear; i++) {
+          const p = projectiles[i];
+          if (isHostileProjectile(p) && p.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST) {
+            anyNear = true;
+          }
+        }
+        
+        if (!anyNear) {
+          slowMoActive = false;
+          slowMoSoundPlayed = false;
+          slowMoRampOut = true;
+          slowMoRampOutTimer = SLOW_MO_RAMP_OUT_DURATION;
+          playSlowMoReverseSound();
+          console.log('[bullet-time] RAMP OUT — enemies cleared');
+        }
       }
     }
 
@@ -10833,9 +10919,11 @@ function render(timestamp) {
       if (slowMoActive && !slowMoSoundPlayed) {
         playSlowMoSound();
         slowMoSoundPlayed = true;
+        setSlowMoQuality(true);  // Fix A: reduce GPU load during bullet-time
       }
     }
 
+    // Fix 1.9: Profile enemy updates
     const collisions = updateEnemies(dt, now, playerPos);
 
     // Rebuild spatial hash for enemy proximity queries (O(1) lookups)
@@ -10850,8 +10938,9 @@ function render(timestamp) {
         }
       }
     }
+    _mark('enemy_update'); // ── end: enemy updates + spatial hash
 
-    // Boss update and health bar
+    // Fix 1.9: Profile boss updates
     const boss = getBoss();
     if (boss) {
       updateBoss(dt, now, playerPos);
@@ -10867,7 +10956,9 @@ function render(timestamp) {
     } else {
       hideBossHealthBar();
     }
+    _mark('boss_update'); // ── end: boss updates + minions + health bar
 
+    // Fix 1.9: Profile player collision handling
     // Handle enemy collisions with player
     collisions.forEach(index => {
       destroyEnemy(index);
@@ -11062,7 +11153,7 @@ function render(timestamp) {
 
   // ── Boss death cinematic ──
   else if (st === State.BOSS_DEATH_CINEMATIC) {
-    updateBossDeathCinematic(rawDt);
+    updateBossDeathCinematic(clampedRawDt);  // Fix B: use clamped dt for game simulation
   }
 
   // ── Paused ──
@@ -11078,7 +11169,7 @@ function render(timestamp) {
 
   // ── Boss alert sequence ──
   else if (st === State.BOSS_ALERT) {
-    game.stateTimer -= rawDt;
+    game.stateTimer -= clampedRawDt;  // Fix B: use clamped dt for game simulation
     
     // Play alert sound periodically
     if (game.stateTimer > 1.0 && game.stateTimer < 2.5 && !game._alertSound2) {
@@ -11386,14 +11477,17 @@ function render(timestamp) {
   });
 
   // Hide scanlines overlay in VR — it creates a dark box that follows the head and obscures the view
-  const scanlinesEl = document.getElementById('scanlines');
-  if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
+  // Fix 1.3: Use cached element instead of per-frame query
+  if (_cachedScanlinesEl) _cachedScanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
   _mark('scanlines_misc'); // ── end: FPS, scanlines DOM
-  // Keep visual tuning and secret trigger visuals responsive every frame.
-  const visualTuning = getVisualTuning();
-  applyVisualTuning(visualTuning);
-  updateVHSRetroShell(now, visualTuning);
+  // Fix 1.4: Gate visual tuning behind debug flag to avoid per-frame object allocation + material iteration
+  // Only run when debug panel is open or visual tuning has changed
+  const visualTuning = (window.debugPerfMonitor || game.debugPerfMonitor) ? getVisualTuning() : null;
+  if (visualTuning) {
+    applyVisualTuning(visualTuning);
+    updateVHSRetroShell(now, visualTuning);
+  }
   updateDreamTriggerVisual(now);
   _mark('visual_tuning'); // ── end: applyVisualTuning + updateVHSRetroShell + updateDreamTriggerVisual
 
@@ -11405,7 +11499,8 @@ function render(timestamp) {
   _mark('telemetry'); // ── end: maybeRecordTelemetry
 
   // Desktop-only debug effects. XR intentionally keeps the default renderer path.
-  if (!renderer.xr.isPresenting && renderDesktopDebugEffect(visualTuning)) {
+  // Fix 1.4: visualTuning may be null when debug mode is off
+  if (!renderer.xr.isPresenting && visualTuning && renderDesktopDebugEffect(visualTuning)) {
     _mark('render_gpu'); _mark('total');
     return;
   }

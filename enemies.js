@@ -37,6 +37,16 @@ function setMaterialEmissiveSafe(material, color, intensity = 1) {
 const _scratch = new THREE.Vector3();
 const _scratch2 = new THREE.Vector3();
 const _scratch3 = new THREE.Vector3();
+
+// Pre-allocated scratch colors (avoid per-frame GC in enemy update hot paths)
+const _emissiveSilver = new THREE.Color(0xd0d0d0);
+const _emissiveGreen = new THREE.Color(0x00ffaa);
+const _emissivePurple = new THREE.Color(0x220033);
+const _emissivePink = new THREE.Color(0xff66cc);
+const _emissiveViolet = new THREE.Color(0x8844ff);
+const _emissiveBlack = new THREE.Color(0x000000);
+const _emissiveWhite = new THREE.Color(0xffffff);
+const _emissiveAmber = new THREE.Color(0xffaa00);
 const _scratchColor = new THREE.Color();
 const _explosionSpriteVel = new THREE.Vector3();
 
@@ -489,7 +499,7 @@ function initBasicInstancePool() {
   basicInstancePool.mesh = im;
   basicInstancePool.initialized = true;
 
-  console.log(`[basic-instance] Pool initialized: ${MAX_BASIC_INSTANCES} slots`);
+  if (window?.debugInstancing) console.log(`[basic-instance] Pool initialized: ${MAX_BASIC_INSTANCES} slots`);
 }
 
 /**
@@ -508,7 +518,7 @@ function acquireBasicInstance() {
     instanceId = pool.mesh.count;
     pool.mesh.count = instanceId + 1;
   } else {
-    console.warn('[basic-instance] Pool exhausted! Falling back to individual mesh.');
+    if (window?.debugInstancing) console.warn('[basic-instance] Pool exhausted! Falling back to individual mesh.');
     return null;
   }
 
@@ -543,7 +553,7 @@ function releaseAllBasicInstances() {
   pool.mesh.count = 0;
   pool.freeIndices.clear();
 
-  console.log('[basic-instance] All slots released (clearAllEnemies)');
+  if (window?.debugInstancing) console.log('[basic-instance] All slots released (clearAllEnemies)');
 }
 
 // ── Fast enemy InstancedMesh pool ──────────────────────────
@@ -621,7 +631,7 @@ function initFastInstancePool() {
   fastInstancePool.mesh = im;
   fastInstancePool.initialized = true;
 
-  console.log(`[fast-instance] Pool initialized: ${MAX_FAST_INSTANCES} slots`);
+  if (window?.debugInstancing) console.log(`[fast-instance] Pool initialized: ${MAX_FAST_INSTANCES} slots`);
 }
 
 /**
@@ -640,7 +650,7 @@ function acquireFastInstance() {
     instanceId = pool.mesh.count;
     pool.mesh.count = instanceId + 1;
   } else {
-    console.warn('[fast-instance] Pool exhausted! Falling back to individual mesh.');
+    if (window?.debugInstancing) console.warn('[fast-instance] Pool exhausted! Falling back to individual mesh.');
     return null;
   }
 
@@ -675,7 +685,7 @@ function releaseAllFastInstances() {
   pool.mesh.count = 0;
   pool.freeIndices.clear();
 
-  console.log('[fast-instance] All slots released (clearAllEnemies)');
+  if (window?.debugInstancing) console.log('[fast-instance] All slots released (clearAllEnemies)');
 }
 
 // ── Tank enemy InstancedMesh pool ──────────────────────────
@@ -754,7 +764,7 @@ function initTankInstancePool() {
   tankInstancePool.mesh = im;
   tankInstancePool.initialized = true;
 
-  console.log(`[tank-instance] Pool initialized: ${MAX_TANK_INSTANCES} slots`);
+  if (window?.debugInstancing) console.log(`[tank-instance] Pool initialized: ${MAX_TANK_INSTANCES} slots`);
 }
 
 /**
@@ -773,7 +783,7 @@ function acquireTankInstance() {
     instanceId = pool.mesh.count;
     pool.mesh.count = instanceId + 1;
   } else {
-    console.warn('[tank-instance] Pool exhausted! Falling back to individual mesh.');
+    if (window?.debugInstancing) console.warn('[tank-instance] Pool exhausted! Falling back to individual mesh.');
     return null;
   }
 
@@ -808,7 +818,7 @@ function releaseAllTankInstances() {
   pool.mesh.count = 0;
   pool.freeIndices.clear();
 
-  console.log('[tank-instance] All slots released (clearAllEnemies)');
+  if (window?.debugInstancing) console.log('[tank-instance] All slots released (clearAllEnemies)');
 }
 
 // ── Swarm enemy InstancedMesh pool ─────────────────────────
@@ -886,7 +896,7 @@ function initSwarmInstancePool() {
   swarmInstancePool.mesh = im;
   swarmInstancePool.initialized = true;
 
-  console.log(`[swarm-instance] Pool initialized: ${MAX_SWARM_INSTANCES} slots`);
+  if (window?.debugInstancing) console.log(`[swarm-instance] Pool initialized: ${MAX_SWARM_INSTANCES} slots`);
 }
 
 /**
@@ -905,7 +915,7 @@ function acquireSwarmInstance() {
     instanceId = pool.mesh.count;
     pool.mesh.count = instanceId + 1;
   } else {
-    console.warn('[swarm-instance] Pool exhausted! Falling back to individual mesh.');
+    if (window?.debugInstancing) console.warn('[swarm-instance] Pool exhausted! Falling back to individual mesh.');
     return null;
   }
 
@@ -940,7 +950,7 @@ function releaseAllSwarmInstances() {
   pool.mesh.count = 0;
   pool.freeIndices.clear();
 
-  console.log('[swarm-instance] All slots released (clearAllEnemies)');
+  if (window?.debugInstancing) console.log('[swarm-instance] All slots released (clearAllEnemies)');
 }
 
 // Player movement history for Clone Mimics (stores last 3 seconds of positions)
@@ -2210,6 +2220,14 @@ export function spawnEnemy(type, position, levelConfig) {
     phasePreferredDistMax: def.phasePreferredDistMax || 9.5,
   };
 
+  // Cache material references to avoid traverse() in the update hot path
+  enemy._cachedMaterials = [];
+  group.traverse(c => {
+    if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+      enemy._cachedMaterials.push(c.material);
+    }
+  });
+
   activeEnemies.push(enemy);
   _enemyMeshesDirty = true;  // Invalidate cache
   sceneRef.add(group);
@@ -2222,6 +2240,7 @@ export function spawnEnemy(type, position, levelConfig) {
  */
 export function updateEnemies(dt, now, playerPos) {
   const collisions = [];
+  const _dirtyPools = new Set();  // Collect pools that need GPU buffer sync
 
   for (let i = 0; i < activeEnemies.length; i++) {
     const e = activeEnemies[i];
@@ -2261,8 +2280,9 @@ export function updateEnemies(dt, now, playerPos) {
     if (e.mesh.userData.instanceId !== undefined) {
       e.mesh.updateMatrix();
       const iid = e.mesh.userData.instanceId;
-      e.mesh.userData.instancePool.mesh.setMatrixAt(iid, e.mesh.matrix);
-      e.mesh.userData.instancePool.mesh.instanceMatrix.needsUpdate = true;
+      const pool = e.mesh.userData.instancePool;
+      pool.mesh.setMatrixAt(iid, e.mesh.matrix);
+      _dirtyPools.add(pool);
     }
 
     // ── Special Enemy AI Behaviors ──
@@ -2312,11 +2332,9 @@ export function updateEnemies(dt, now, playerPos) {
 
         // Color change based on shape
         const shapeColors = { cube: 0xff0000, pyramid: 0xff8800, sphere: 0xffff00, tetrahedron: 0xff88ff };
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            c.material.color.setHex(shapeColors[e.currentShape] || e.baseColor.getHex());
-          }
-        });
+        for (const mat of e._cachedMaterials) {
+          mat.color.setHex(shapeColors[e.currentShape] || e.baseColor.getHex());
+        }
       }
     }
 
@@ -2343,11 +2361,9 @@ export function updateEnemies(dt, now, playerPos) {
       // Telegraph glow before firing
       if (e.fireTimer >= 2.0 && !e.coreExposed) {
         _scratchColor.set(0xffffff);
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            setMaterialEmissiveSafe(c.material, _scratchColor, (e.fireTimer - 2.0) / 0.5);
-          }
-        });
+        for (const mat of e._cachedMaterials) {
+          setMaterialEmissiveSafe(mat, _scratchColor, (e.fireTimer - 2.0) / 0.5);
+        }
       }
 
       // Keep distance from player
@@ -2378,11 +2394,9 @@ export function updateEnemies(dt, now, playerPos) {
       }
 
       // Glitchy visual effect
-      e.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          c.material.opacity = 0.5 + Math.sin(now * 0.01) * 0.2;
-        }
-      });
+      for (const mat of e._cachedMaterials) {
+        mat.opacity = 0.5 + Math.sin(now * 0.01) * 0.2;
+      }
     }
 
     // Spider Walker: wall/ceiling movement and latching
@@ -2448,13 +2462,11 @@ export function updateEnemies(dt, now, playerPos) {
         if (e.mirrorImmuneTimer <= 0) {
           e.mirrorImmune = false;
         }
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            const pulse = 0.5 + Math.sin(now * 0.02) * 0.3;
-            c.material.opacity = pulse;
-            setMaterialEmissiveSafe(c.material, new THREE.Color(0xd0d0d0), 0.8);
-          }
-        });
+        const pulse = 0.5 + Math.sin(now * 0.02) * 0.3;
+        for (const mat of e._cachedMaterials) {
+          mat.opacity = pulse;
+          setMaterialEmissiveSafe(mat, _emissiveSilver, 0.8);
+        }
       } else {
         // Check if player is standing still (confuses the knight)
         const playerVel = playerPos.clone().sub(e.mirrorLastPlayerDir);
@@ -2492,12 +2504,10 @@ export function updateEnemies(dt, now, playerPos) {
         }
 
         // Shield visual effect
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            const reflectGlow = Math.sin(now * 0.003) * 0.2 + 0.5;
-            c.material.opacity = reflectGlow;
-          }
-        });
+        const reflectGlow = Math.sin(now * 0.003) * 0.2 + 0.5;
+        for (const mat of e._cachedMaterials) {
+          mat.opacity = reflectGlow;
+        }
       }
     }
 
@@ -2510,11 +2520,9 @@ export function updateEnemies(dt, now, playerPos) {
         // Disoriented after exiting portal: move slower
         speedMod *= 0.3;
         // Visual glitch effect
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            c.material.opacity = 0.3 + Math.random() * 0.4;
-          }
-        });
+        for (const mat of e._cachedMaterials) {
+          mat.opacity = 0.3 + Math.random() * 0.4;
+        }
         if (e.portalDisorientTimer <= 0) {
           e.portalDisoriented = false;
         }
@@ -2535,11 +2543,9 @@ export function updateEnemies(dt, now, playerPos) {
 
       // Portal glow effect when ready to teleport
       if (e.portalTimer >= e.portalCooldown * 0.7) {
-        e.mesh.traverse(c => {
-          if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-            setMaterialEmissiveSafe(c.material, new THREE.Color(0x00ffaa), 0.5);
-          }
-        });
+        for (const mat of e._cachedMaterials) {
+          setMaterialEmissiveSafe(mat, _emissiveGreen, 0.5);
+        }
       }
     }
 
@@ -2548,13 +2554,11 @@ export function updateEnemies(dt, now, playerPos) {
       // Stationary - no movement
 
       // Visual effect: dark swirling vortex
-      e.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          const pulse = 0.3 + Math.sin(now * 0.005) * 0.2;
-          c.material.opacity = pulse;
-          setMaterialEmissiveSafe(c.material, new THREE.Color(0x220033), 0.5);
-        }
-      });
+      const pulse = 0.3 + Math.sin(now * 0.005) * 0.2;
+      for (const mat of e._cachedMaterials) {
+        mat.opacity = pulse;
+        setMaterialEmissiveSafe(mat, _emissivePurple, 0.5);
+      }
 
       // Rotation effect
       e.mesh.rotation.y += dt * 2;
@@ -2602,7 +2606,7 @@ export function updateEnemies(dt, now, playerPos) {
 
           other.mesh.traverse(c => {
             if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-              setMaterialEmissiveSafe(c.material, new THREE.Color(0xff66cc), 0.35);
+              setMaterialEmissiveSafe(c.material, _emissivePink, 0.35);
             }
           });
         }
@@ -2612,11 +2616,9 @@ export function updateEnemies(dt, now, playerPos) {
         e.conductorArcTimer = e.conductorArcCooldown;
       }
 
-      e.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          setMaterialEmissiveSafe(c.material, new THREE.Color(0xff66cc), e.linkedEnemies.length > 0 ? 0.7 : 0.3);
-        }
-      });
+      for (const mat of e._cachedMaterials) {
+        setMaterialEmissiveSafe(mat, _emissivePink, e.linkedEnemies.length > 0 ? 0.7 : 0.3);
+      }
     }
 
     // Phase Wraith: appears midfield, spawns swarm, blinks out when shot
@@ -2674,13 +2676,11 @@ export function updateEnemies(dt, now, playerPos) {
         }
       }
 
-      e.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-          const targetOpacity = e.phaseHidden ? 0.05 : (e.phaseStunTimer > 0 ? 0.35 : 0.85);
-          c.material.opacity = targetOpacity;
-          setMaterialEmissiveSafe(c.material, new THREE.Color(0x8844ff), e.phaseHidden ? 0.2 : 0.5);
-        }
-      });
+      const targetOpacity = e.phaseHidden ? 0.05 : (e.phaseStunTimer > 0 ? 0.35 : 0.85);
+      for (const mat of e._cachedMaterials) {
+        mat.opacity = targetOpacity;
+        setMaterialEmissiveSafe(mat, _emissiveViolet, e.phaseHidden ? 0.2 : 0.5);
+      }
     }
 
     if (e.isPhase && e.phaseHidden) {
@@ -2708,13 +2708,19 @@ export function updateEnemies(dt, now, playerPos) {
       _scratchColor.copy(e.baseColor).lerp(_redColor, dmgRatio);
       const pool = e.mesh.userData.instancePool;
       pool.mesh.setColorAt(e.mesh.userData.instanceId, _scratchColor);
-      pool.mesh.instanceColor.needsUpdate = true;
+      _dirtyPools.add(pool);
     } else {
       // Non-instanced enemy: update material color directly
       if (e.material) {
         e.material.color.copy(e.baseColor).lerp(_redColor, dmgRatio);
       }
     }
+  }
+
+  // Flush all dirty instanced pool buffers to GPU (once per pool, not per enemy)
+  for (const pool of _dirtyPools) {
+    pool.mesh.instanceMatrix.needsUpdate = true;
+    if (pool.mesh.instanceColor) pool.mesh.instanceColor.needsUpdate = true;
   }
 
   updatePulseBomberRings(dt, now, playerPos);
@@ -3010,7 +3016,7 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   if (e.linkedByConductor) {
     e.mesh.traverse(c => {
       if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-        setMaterialEmissiveSafe(c.material, new THREE.Color(0x000000), 0);
+        setMaterialEmissiveSafe(c.material, _emissiveBlack, 0);
       }
     });
     // Clear all electric arcs connected to this buffed enemy
@@ -3964,7 +3970,7 @@ class PulseEmitterBoss extends Boss {
     // Safely set emissiveIntensity on all child meshes with materials
     this.mesh.traverse(c => {
       if (c.isMesh && c.material) {
-        setMaterialEmissiveSafe(c.material, new THREE.Color(0xffffff), 0.8);
+        setMaterialEmissiveSafe(c.material, _emissiveWhite, 0.8);
       }
     });
     
@@ -3979,7 +3985,7 @@ class PulseEmitterBoss extends Boss {
       // Safely reset emissiveIntensity on all child meshes with materials
       this.mesh.traverse(c => {
         if (c.isMesh && c.material) {
-          setMaterialEmissiveSafe(c.material, new THREE.Color(0xffffff), 0.3);
+          setMaterialEmissiveSafe(c.material, _emissiveWhite, 0.3);
         }
       });
     }, this.shieldDuration * 1000);
@@ -6172,11 +6178,11 @@ class TrainBoss extends Boss {
             if (c.userData.car === this.activeCar) {
               c.userData.weakPoint = true;
               c.material.opacity = 1.0;
-              setMaterialEmissiveSafe(c.material, new THREE.Color(0xffaa00), c.material.emissiveIntensity ?? 1);
+              setMaterialEmissiveSafe(c.material, _emissiveAmber, c.material.emissiveIntensity ?? 1);
             } else {
               c.userData.weakPoint = false;
               c.material.opacity = 0.4;
-              setMaterialEmissiveSafe(c.material, new THREE.Color(0x000000), c.material.emissiveIntensity ?? 0);
+              setMaterialEmissiveSafe(c.material, _emissiveBlack, c.material.emissiveIntensity ?? 0);
             }
           }
         });
@@ -6187,7 +6193,7 @@ class TrainBoss extends Boss {
         if (c.userData && c.userData.isBossBody && c.userData.car) {
           c.userData.weakPoint = true;
           c.material.opacity = 1.0;
-          setMaterialEmissiveSafe(c.material, new THREE.Color(0xffaa00), c.material.emissiveIntensity ?? 1);
+          setMaterialEmissiveSafe(c.material, _emissiveAmber, c.material.emissiveIntensity ?? 1);
         }
       });
     }

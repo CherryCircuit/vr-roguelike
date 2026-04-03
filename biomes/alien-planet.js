@@ -20,7 +20,7 @@ export function buildAlienPlanetScene(group, deps) {
     groundPositions.setZ(i, Math.sin(x * 0.03) * Math.cos(y * 0.03) * 0.3);
   }
   groundGeo.computeVertexNormals();
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0510, roughness: 1, metalness: 0, flatShading: true });
+  const groundMat = new THREE.MeshLambertMaterial({ color: 0x0a0510, flatShading: true });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = floorY;
@@ -89,26 +89,26 @@ export function buildAlienPlanetScene(group, deps) {
   // Green river-object REMOVED - was blocking view and looking out of place
 
   // ── Shared materials & geometries (PERF: reduces ~120 unique mats to ~12) ──
-  const sharedMountainMat = new THREE.MeshStandardMaterial({
-    color: 0x1a1020, roughness: 0.9, metalness: 0.1, flatShading: true
+  const sharedMountainMat = new THREE.MeshLambertMaterial({
+    color: 0x1a1020, flatShading: true
   });
-  const sharedDistantMountainMat = new THREE.MeshStandardMaterial({
-    color: 0x0a2015, roughness: 0.9, metalness: 0.1, flatShading: true
+  const sharedDistantMountainMat = new THREE.MeshLambertMaterial({
+    color: 0x0a2015, flatShading: true
   });
-  const sharedSpireMat = new THREE.MeshStandardMaterial({
-    color: 0x00aa33, emissive: 0x00ff44, emissiveIntensity: 0.6, roughness: 0.5
+  const sharedSpireMat = new THREE.MeshLambertMaterial({
+    color: 0x00aa33, emissive: 0x00ff44, emissiveIntensity: 0.6
   });
   const sharedOrbGeo = new THREE.IcosahedronGeometry(0.3, 1);
   const sharedOrbMat = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
-  const sharedCrystalMat = new THREE.MeshStandardMaterial({
-    color: 0x00cc55, emissive: 0x00ff66, emissiveIntensity: 0.7, roughness: 0.3
+  const sharedCrystalMat = new THREE.MeshLambertMaterial({
+    color: 0x00cc55, emissive: 0x00ff66, emissiveIntensity: 0.7
   });
-  const sharedStemMat = new THREE.MeshStandardMaterial({ color: 0x204020, roughness: 0.8 });
+  const sharedStemMat = new THREE.MeshLambertMaterial({ color: 0x204020 });
   const sharedCapGeo = new THREE.SphereGeometry(0.4, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2);
-  const sharedCapMat = new THREE.MeshStandardMaterial({
-    color: 0x00aa44, emissive: 0x00ff55, emissiveIntensity: 0.5, roughness: 0.6
+  const sharedCapMat = new THREE.MeshLambertMaterial({
+    color: 0x00aa44, emissive: 0x00ff55, emissiveIntensity: 0.5
   });
-  const sharedCritterBodyMat = new THREE.MeshStandardMaterial({
+  const sharedCritterBodyMat = new THREE.MeshLambertMaterial({
     color: 0x00aa55, emissive: 0x00ff66, emissiveIntensity: 0.4
   });
   const sharedCritterGlowMat = new THREE.MeshBasicMaterial({

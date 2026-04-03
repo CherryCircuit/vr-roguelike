@@ -5,6 +5,10 @@
 
 import { SeedDeck, getBiomePool } from './seed.js';
 
+// Reset hooks — allow main.js to register cleanup callbacks called from resetGame()
+const _resetHooks = [];
+export function registerResetHook(fn) { _resetHooks.push(fn); }
+
 export const State = {
   TITLE: 'title',
   PLAYING: 'playing',
@@ -282,6 +286,9 @@ export function resetGame() {
   if (preservedSeed.seed !== null) {
     initSeedDeck(preservedSeed.seed, preservedSeed.seedTier);
   }
+
+  // Call registered reset hooks (e.g. clearAllAltWeaponEffects from main.js)
+  for (const hook of _resetHooks) hook();
 }
 
 // ── Debug Settings Helpers ──────────────────────────────────
