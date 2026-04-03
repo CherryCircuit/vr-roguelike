@@ -512,7 +512,6 @@ function acquireBasicInstance() {
     return null;
   }
 
-  console.log(`[basic-instance] Acquired slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
   return { instanceId, pool };
 }
 
@@ -528,7 +527,6 @@ function releaseBasicInstance(instanceId) {
   pool.mesh.instanceMatrix.needsUpdate = true;
   pool.freeIndices.add(instanceId);
 
-  console.log(`[basic-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
 }
 
 /**
@@ -646,7 +644,6 @@ function acquireFastInstance() {
     return null;
   }
 
-  console.log(`[fast-instance] Acquired slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
   return { instanceId, pool };
 }
 
@@ -662,7 +659,6 @@ function releaseFastInstance(instanceId) {
   pool.mesh.instanceMatrix.needsUpdate = true;
   pool.freeIndices.add(instanceId);
 
-  console.log(`[fast-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
 }
 
 /**
@@ -781,7 +777,6 @@ function acquireTankInstance() {
     return null;
   }
 
-  console.log(`[tank-instance] Acquired slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
   return { instanceId, pool };
 }
 
@@ -797,7 +792,6 @@ function releaseTankInstance(instanceId) {
   pool.mesh.instanceMatrix.needsUpdate = true;
   pool.freeIndices.add(instanceId);
 
-  console.log(`[tank-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
 }
 
 /**
@@ -915,7 +909,6 @@ function acquireSwarmInstance() {
     return null;
   }
 
-  console.log(`[swarm-instance] Acquired slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
   return { instanceId, pool };
 }
 
@@ -931,7 +924,6 @@ function releaseSwarmInstance(instanceId) {
   pool.mesh.instanceMatrix.needsUpdate = true;
   pool.freeIndices.add(instanceId);
 
-  console.log(`[swarm-instance] Released slot ${instanceId} (count=${pool.mesh.count}, free=${pool.freeIndices.size})`);
 }
 
 /**
@@ -3626,7 +3618,6 @@ class Boss {
   spawnMinion(position, playerPos, type = 'basic') {
     // Spawn a boss minion (simplified for now)
     // Would integrate with existing minion spawning system
-    console.log(`[Boss] Spawning minion: ${type}`);
     if (typeof spawnBossMinion === 'function') {
       spawnBossMinion(position.clone(), playerPos, type);
     }
@@ -5460,6 +5451,49 @@ class ScientistBoss extends Boss {
       data.rotation.x += dt * 2;
       data.rotation.y += dt * 2;
     });
+
+    // Data projectile firing from orbiting data cubes
+    this.dataFireTimer = (this.dataFireTimer || 0) + dt;
+    const dataFireRate = 3.0 / this.phase;
+    if (this.dataFireTimer >= dataFireRate) {
+      this.dataFireTimer = 0;
+      // Fire from a random orbiting data cube position
+      const dataCube = this.orbitingData[Math.floor(Math.random() * this.orbitingData.length)];
+      if (dataCube) {
+        const worldPos = new THREE.Vector3();
+        dataCube.getWorldPosition(worldPos);
+        if (this.telegraphing) {
+          this.showTelegraph('projectile', 0.35, 0xff00ff);
+        }
+        setTimeout(() => {
+          if (typeof spawnBossProjectile === 'function') {
+            spawnBossProjectile(worldPos, playerPos);
+          }
+        }, 200);
+      }
+    }
+
+    // Compiler burst: fires a spread of projectiles from the compiler
+    this.compilerBurstTimer = (this.compilerBurstTimer || 0) + dt;
+    const burstRate = 5.0 / this.phase;
+    if (this.compilerBurstTimer >= burstRate) {
+      this.compilerBurstTimer = 0;
+      if (this.telegraphing) {
+        this.showTelegraph('charge', 0.6, 0x00ffff);
+      }
+      const bossPos = this.mesh.position.clone();
+      setTimeout(() => {
+        // Fire 3 projectiles in a spread
+        for (let s = -1; s <= 1; s++) {
+          const target = playerPos.clone();
+          target.x += s * 0.8;
+          target.y += (Math.random() - 0.5) * 0.4;
+          if (typeof spawnBossProjectile === 'function') {
+            spawnBossProjectile(bossPos, target);
+          }
+        }
+      }, 350);
+    }
 
     // Compilation timer (spawns minions)
     this.compilationTimer += dt;
@@ -7588,6 +7622,7 @@ export function updateBoss(dt, now, playerPos) {
 
 export function clearBoss() {
   clearBossProjectiles();
+  clearBossMinions();
 
   if (activeBoss) {
     activeBoss.destroy();
@@ -7597,6 +7632,21 @@ export function clearBoss() {
       hideBossHealthBar();
     }
   }
+}
+
+/** Remove all boss minions from the scene and clear the array. */
+export function clearBossMinions() {
+  for (let i = bossMinions.length - 1; i >= 0; i--) {
+    const m = bossMinions[i];
+    if (m.mesh) {
+      sceneRef.remove(m.mesh);
+      m.mesh.traverse(c => {
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) c.material.dispose();
+      });
+    }
+  }
+  bossMinions.length = 0;
 }
 
 export function clearAllTelegraphs() {

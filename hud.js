@@ -517,14 +517,22 @@ export function initHUD(camera, scene) {
 
   // ── Boss health bar (top center, camera-attached, 3 segments) ──
   bossHealthGroup = new THREE.Group();
-  bossHealthGroup.position.set(0, 0.3, -0.6);
+  bossHealthGroup.position.set(0, 0.28, -0.5);
   bossHealthGroup.visible = false;
-  const barWidth = 0.25;
-  const barHeight = 0.03;
-  const gap = 0.01;
+  const barWidth = 0.30;
+  const barHeight = 0.04;
+  const gap = 0.014;
+
+  // Background bar for contrast (dark strip behind the health segments)
+  const bgGeo = new THREE.PlaneGeometry(barWidth * 3 + gap * 4, barHeight + 0.01);
+  const bgMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
+  const bgBar = new THREE.Mesh(bgGeo, bgMat);
+  bgBar.renderOrder = 999;
+  bossHealthGroup.add(bgBar);
+
   for (let i = 0; i < 3; i++) {
     const geo = new THREE.PlaneGeometry(barWidth, barHeight);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff0044, side: THREE.DoubleSide, depthTest: false });
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff0044, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
     const bar = new THREE.Mesh(geo, mat);
     bar.position.x = (i - 1) * (barWidth + gap);
     bar.renderOrder = 1000;
