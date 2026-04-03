@@ -190,17 +190,86 @@ const PROJECTILE_POOL_SIZE = 120;
 // Stable single-material projectile visuals. Keep the instanced system and simple,
 // visible projectile bodies. We can revisit a fancier blaster shader later.
 const PROJECTILE_BOLT = {
-  opacity: 0.95,
+  coreColor: 0xfff6e8,
+  opacity: 1.0,
 };
 
-function createProjectileMaterial(colorHex) {
+// Fresnel-driven FakeGlowMaterial for projectile visibility.
+// Twin InstancedMesh approach: core + glow share instance matrices.
+const PROJECTILE_GLOW = {
+  falloff: 0.15,
+  internalRadius: 4.0,
+  opacity: 0.6,
+};
+
+// Fake glow shaders for visible projectiles (Fresnel rim lighting)
+const FAKE_GLOW_VERTEX_SHADER = `
+  varying vec3 vNormalW;
+  varying vec3 vPositionW;
+  varying vec3 vLocalPos;
+
+  void main() {
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vPositionW = (modelMatrix * vec4(position, 1.0)).xyz;
+    vNormalW = normalize(normalMatrix * normal);
+    vLocalPos = position;
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const FAKE_GLOW_FRAGMENT_SHADER = `
+  uniform vec3 uGlowColor;
+  uniform float uFalloff;
+  uniform float uGlowInternalRadius;
+  uniform float uOpacity;
+  uniform float uGlowRadius;
+
+  varying vec3 vNormalW;
+  varying vec3 vPositionW;
+  varying vec3 vLocalPos;
+
+  void main() {
+    vec3 viewDirection = normalize(cameraPosition - vPositionW);
+    float rim = pow(1.0 - abs(dot(viewDirection, vNormalW)), uGlowInternalRadius);
+    rim = smoothstep(0.0, 1.0, rim);
+
+    float centerFade = 1.0 - smoothstep(uGlowRadius * 0.12, uGlowRadius, length(vLocalPos));
+    float intensity = max(centerFade * (1.0 - uFalloff), rim * 0.65);
+
+    vec3 glow = uGlowColor * (centerFade * 0.95 + rim * 0.55);
+    gl_FragColor = vec4(glow, uOpacity * intensity);
+  }
+`;
+
+function createProjectileMaterial() {
   const material = new THREE.MeshBasicMaterial({
-    color: colorHex,
+    color: PROJECTILE_BOLT.coreColor,
     transparent: true,
     opacity: PROJECTILE_BOLT.opacity,
     depthWrite: false,
   });
   material.userData.baseOpacity = PROJECTILE_BOLT.opacity;
+  return material;
+}
+
+function createProjectileGlowMaterial(colorHex, glowRadius = 1.0) {
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uGlowColor: { value: new THREE.Color(colorHex) },
+      uFalloff: { value: PROJECTILE_GLOW.falloff },
+      uGlowInternalRadius: { value: PROJECTILE_GLOW.internalRadius },
+      uOpacity: { value: PROJECTILE_GLOW.opacity },
+      uGlowRadius: { value: glowRadius },
+    },
+    vertexShader: FAKE_GLOW_VERTEX_SHADER,
+    fragmentShader: FAKE_GLOW_FRAGMENT_SHADER,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: true,
+  });
+  material.userData.baseOpacity = PROJECTILE_GLOW.opacity;
   return material;
 }
 
@@ -7994,54 +8063,80 @@ function triggerScreenShake(intensity, duration) {
 // PERFORMANCE: Initialize InstancedMesh projectile pools
 // One InstancedMesh per projectile type = minimal draw calls.
 // Each instance is positioned via setMatrixAt(), colored via setColorAt().
+// TWIN-MESH: Core mesh + Fresnel glow mesh for visibility.
 function initProjectilePool() {
   if (instancedProjectiles['laser']) return;
+
+  // Helper to create glow twin InstancedMesh
+  const createGlowTwin = (geometry, colorHex, maxCount) => {
+    geometry.computeBoundingSphere();
+    const glowRadius = geometry.boundingSphere ? geometry.boundingSphere.radius : 1.0;
+    const mat = createProjectileGlowMaterial(colorHex, glowRadius);
+    registerPlayerProjectileMaterial(mat);
+    const mesh = new THREE.InstancedMesh(geometry, mat, maxCount);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    return mesh;
+  };
 
   // ── Laser bolts (standard blaster) ──
   const laserGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.0, 6);
   laserGeo.rotateX(Math.PI / 2);
-  const laserMat = createProjectileMaterial(0x00ffff);
+  const laserMat = createProjectileMaterial();
   registerPlayerProjectileMaterial(laserMat);
   const laserIM = new THREE.InstancedMesh(laserGeo, laserMat, 120);
   laserIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   laserIM.count = 0;
   laserIM.frustumCulled = false;
   scene.add(laserIM);
-  instancedProjectiles['laser'] = { mesh: laserIM, maxCount: 120, freeIndices: new Set() };
+  // Glow twin (larger geometry for Fresnel rim)
+  const laserGlowGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.2, 6);
+  laserGlowGeo.rotateX(Math.PI / 2);
+  const laserGlowIM = createGlowTwin(laserGlowGeo, 0x00ffff, 120);
+  instancedProjectiles['laser'] = { mesh: laserIM, glowMesh: laserGlowIM, maxCount: 120, freeIndices: new Set() };
 
   // ── Buckshot pellets ──
   const buckGeo = new THREE.SphereGeometry(0.035, 6, 6);
-  const buckMat = createProjectileMaterial(0xffffff);
+  const buckMat = createProjectileMaterial();
   registerPlayerProjectileMaterial(buckMat);
   const buckIM = new THREE.InstancedMesh(buckGeo, buckMat, 20);
   buckIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   buckIM.count = 0;
   buckIM.frustumCulled = false;
   scene.add(buckIM);
-  instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
+  const buckGlowGeo = new THREE.SphereGeometry(0.08, 8, 8);
+  const buckGlowIM = createGlowTwin(buckGlowGeo, 0xffffff, 20);
+  instancedProjectiles['buckshot'] = { mesh: buckIM, glowMesh: buckGlowIM, maxCount: 20, freeIndices: new Set() };
 
   // ── Seeker burst bolts ──
   const seekerGeo = new THREE.SphereGeometry(0.045, 8, 8);
-  const seekerMat = createProjectileMaterial(0xff8800);
+  const seekerMat = createProjectileMaterial();
   registerPlayerProjectileMaterial(seekerMat);
   const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
   seekerIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   seekerIM.count = 0;
   seekerIM.frustumCulled = false;
   scene.add(seekerIM);
-  instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 28, freeIndices: new Set() };
+  const seekerGlowGeo = new THREE.SphereGeometry(0.1, 8, 8);
+  const seekerGlowIM = createGlowTwin(seekerGlowGeo, 0xff8800, 28);
+  instancedProjectiles['seeker'] = { mesh: seekerIM, glowMesh: seekerGlowIM, maxCount: 28, freeIndices: new Set() };
 
   // ── Plasma carbine darts ──
   const plasmaGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.5, 6);
   plasmaGeo.rotateX(Math.PI / 2);
-  const plasmaMat = createProjectileMaterial(0x00ff88);
+  const plasmaMat = createProjectileMaterial();
   registerPlayerProjectileMaterial(plasmaMat);
   const plasmaIM = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 30);
   plasmaIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   plasmaIM.count = 0;
   plasmaIM.frustumCulled = false;
   scene.add(plasmaIM);
-  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, maxCount: 30, freeIndices: new Set() };
+  const plasmaGlowGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.6, 6);
+  plasmaGlowGeo.rotateX(Math.PI / 2);
+  const plasmaGlowIM = createGlowTwin(plasmaGlowGeo, 0x00ff88, 30);
+  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, glowMesh: plasmaGlowIM, maxCount: 30, freeIndices: new Set() };
 
   Object.keys(projectileInstanceData).forEach(poolType => {
     const maxCount = instancedProjectiles[poolType].maxCount;
@@ -8050,7 +8145,7 @@ function initProjectilePool() {
     }
   });
 
-  console.log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(20), seeker(28), plasma_carbine(30)');
+  console.log('[performance] InstancedMesh projectile pools initialized with glow twins: laser(120), buckshot(20), seeker(28), plasma_carbine(30)');
 }
 
 // PERFORMANCE: Acquire an instance slot from the InstancedMesh pool.
@@ -8072,8 +8167,8 @@ function getPooledProjectile(poolType, color) {
     return null;
   }
 
-  // Set instance color
-  pool.mesh.setColorAt(slotIndex, _projColor.setHex(color));
+  // Keep the core hot-white and let the glow mesh carry the weapon color.
+  pool.mesh.setColorAt(slotIndex, _projColor.setHex(0xffffff));
   pool.mesh.instanceColor.needsUpdate = true;
 
   // Reset transforms so projectile + glow twins start hidden
@@ -8166,6 +8261,14 @@ function commitProjectileInstance(poolType, instanceIndex, matrix) {
   if (!pool) return;
   pool.mesh.setMatrixAt(instanceIndex, matrix);
   pool.mesh.instanceMatrix.needsUpdate = true;
+  // Sync glow twin mesh
+  if (pool.glowMesh) {
+    if (pool.glowMesh.count < pool.mesh.count) {
+      pool.glowMesh.count = pool.mesh.count;
+    }
+    pool.glowMesh.setMatrixAt(instanceIndex, matrix);
+    pool.glowMesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 // PERFORMANCE: Return projectile instance to pool (deactivate)
@@ -9059,17 +9162,46 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   // Brief beam visual (cylinder) - color shifts from cyan to white based on charge
   // Visual width is thinner than hit detection for better aesthetics
   const visualBeamWidth = beamWidth * 0.3; // 30% of hit detection width
-  const beamGeo = new THREE.CylinderGeometry(visualBeamWidth, visualBeamWidth * 0.1, range, 8); // Tapers toward horizon
+  
   // Color interpolates from cyan (low charge) to white (full charge)
   const beamColor = new THREE.Color().lerpColors(
     new THREE.Color(0x00ffff),  // Cyan at low charge
     new THREE.Color(0xffffff),  // White at full charge
     progress
   );
+  
+  // CORE BEAM: Always visible against all backgrounds (including bright terrain)
+  // Uses normal blending with higher opacity - this ensures visibility regardless of
+  // what's behind the beam. Critical for desert biome where additive-only beams vanish.
+  const coreWidth = visualBeamWidth * 0.4; // 40% of outer glow width
+  const coreGeo = new THREE.CylinderGeometry(coreWidth, coreWidth * 0.15, range, 6);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: beamColor,
+    transparent: true,
+    opacity: 0.9, // High opacity for visibility
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.NormalBlending, // Normal blending ensures visibility on bright terrain
+  });
+  const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+  coreMesh.position.copy(_chargeBeamOrigin).addScaledVector(_chargeBeamDir, range * 0.5);
+  coreMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _chargeBeamDir);
+  coreMesh.userData.createdAt = performance.now();
+  coreMesh.userData.duration = 200;
+  coreMesh.userData.isChargeBeamCore = true; // Distinguish from glow for animation
+  coreMesh.userData.pulsePhase = 0;
+  coreMesh.userData.maxOpacity = 0.9;
+  coreMesh.renderOrder = 100; // Render after terrain
+  scene.add(coreMesh);
+  explosionVisuals.push(coreMesh);
+  
+  // OUTER GLOW: Additive blending for neon aesthetic
+  // This creates the signature glow effect but alone can vanish against bright terrain
+  const beamGeo = new THREE.CylinderGeometry(visualBeamWidth, visualBeamWidth * 0.1, range, 8); // Tapers toward horizon
   const beamMat = new THREE.MeshBasicMaterial({
     color: beamColor,
     transparent: true,
-    opacity: 0.8, // Start fully opaque
+    opacity: 0.7,
     side: THREE.DoubleSide,
     depthWrite: false,
     blending: THREE.AdditiveBlending,  // Glow effect
@@ -9081,7 +9213,8 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   beamMesh.userData.duration = 200; // Longer duration for fade effect
   beamMesh.userData.isChargeBeam = true;
   beamMesh.userData.pulsePhase = 0; // For pulse animation
-  beamMesh.userData.maxOpacity = 0.8;
+  beamMesh.userData.maxOpacity = 0.7;
+  beamMesh.renderOrder = 101; // Render just after core
   scene.add(beamMesh);
   explosionVisuals.push(beamMesh);
 }
@@ -9500,9 +9633,10 @@ function updateExplosionVisuals(dt, now) {
       explosionVisuals.splice(i, 1);
     } else {
       const t = age / m.userData.duration;
-      if (m.userData.isChargeBeam) {
+      if (m.userData.isChargeBeamCore || m.userData.isChargeBeam) {
         // Horizon-fade animation: appears full, then fades toward distance
         // Pulse effect: beam feels like it's "shooting through" the scene
+        // Both core (NormalBlending) and glow (AdditiveBlending) share the same animation
         
         // Phase 1: Full opacity pulse (0-30% of duration)
         // Phase 2: Horizon fade (30-100% of duration)

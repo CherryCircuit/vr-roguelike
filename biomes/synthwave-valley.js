@@ -177,12 +177,16 @@ export function buildSynthwaveValleyScene(group, deps) {
   const mountainTex = new THREE.TextureLoader().load('assets/mountain_wrap.png');
   mountainTex.wrapS = THREE.RepeatWrapping;
   mountainTex.wrapT = THREE.ClampToEdgeWrapping;
-  // 9003px width / ~609px height ≈ 14.78 aspect. 6 repeats covers 360° cleanly.
-  mountainTex.repeat.set(6, 1);
+  // 9003px width / 609px height ≈ 14.78 aspect.
+  // With a 190-high cylinder, one full image repeat should span ~2808 world units.
+  const mountainRadius = 1550;
+  const mountainRepeatWidth = 2808;
+  mountainTex.repeat.set((2 * Math.PI * mountainRadius) / mountainRepeatWidth, 1);
   // Offset texture so middle of PNG faces -Z (forward in XR)
-  mountainTex.offset.x = 0.5 - (1/12); // Center minus half a repeat
+  const repeatCount = mountainTex.repeat.x;
+  mountainTex.offset.x = 0.5 - (0.5 / repeatCount);
 
-  const mountainCylinderGeo = new THREE.CylinderGeometry(1550, 1550, 350, 64, 1, true);
+  const mountainCylinderGeo = new THREE.CylinderGeometry(mountainRadius, mountainRadius, 190, 64, 1, true);
   const mountainCylinderMat = new THREE.MeshBasicMaterial({
     map: mountainTex,
     transparent: true,
@@ -193,7 +197,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   });
   const mountainCylinder = new THREE.Mesh(mountainCylinderGeo, mountainCylinderMat);
   mountainCylinder.name = 'synthwave-mountain-wrap';
-  mountainCylinder.position.set(0, 120, -1300);  // Between player and sun
+  mountainCylinder.position.set(0, 95, 0);  // bottom=0, top=190, centered at world origin
   mountainCylinder.frustumCulled = false;
   mountainCylinder.renderOrder = -4;  // Behind sun
   group.add(mountainCylinder);
@@ -282,8 +286,8 @@ export function buildSynthwaveValleyScene(group, deps) {
       vec3 cloudCol = baseColor * sunTint;
       cloudCol = pow(cloudCol, vec3(1.0 / 2.2));  // Gamma correct
 
-      // Soft alpha for distant transparent look
-      float alpha = cloudMask * 0.35;
+      // Soft alpha for distant transparent look, but strong enough to actually read in VR.
+      float alpha = cloudMask * 0.55;
 
       gl_FragColor = vec4(cloudCol, alpha);
     }
