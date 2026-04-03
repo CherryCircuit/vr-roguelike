@@ -593,6 +593,9 @@ const AMBIENT_POOL = 60;
 let ambientParticles = null;
 let ambientGeo = null;
 
+// Fix 1.7: Pre-allocated scratch Color for prism particles (avoid per-frame allocation)
+const _prismColorScratch = new THREE.Color();
+
 // Secondary particle system for layered effects
 const SECONDARY_POOL = 30;
 let secondaryParticles = null;
@@ -855,11 +858,12 @@ export function updateAmbientParticles(dt, theme, playerPos) {
     ambientParticles.material.opacity = Math.min(1, baseOpacity * Math.max(0.05, smokeStrength));
 
     // Kaleidoscope: Color-shifting particles
+    // Fix 1.7: Use pre-allocated scratch Color instead of new THREE.Color() each frame
     if (theme.particles.type === 'prism') {
       const now = performance.now();
       const hue = (now * 0.0001) % 1.0;
-      const color = new THREE.Color().setHSL(hue, 1.0, 0.5);
-      ambientParticles.material.color = color;
+      _prismColorScratch.setHSL(hue, 1.0, 0.5);
+      ambientParticles.material.color = _prismColorScratch;
     } else {
       ambientParticles.material.color.setHex(theme.particles.color);
     }

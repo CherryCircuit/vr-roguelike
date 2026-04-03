@@ -9,6 +9,8 @@ import combatStress from './scenarios/combat-stress.js';
 import restartChurn from './scenarios/restart-churn.js';
 import progressionRun from './scenarios/progression-run.js';
 import profileBuckets from './scenarios/profile-buckets.js';
+import combatProfileHighLevel from './scenarios/combat-profile-highlevel.js';
+import combatSpikeDiag from './scenarios/combat-spike-diag.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
@@ -59,6 +61,16 @@ const SCENARIOS = {
     runner: profileBuckets,
     defaults: { durationMs: 15000 },
     description: 'Enable per-frame bucket profiler, idle soak, then dump ranked hotspot report.',
+  },
+  'combat-profile-highlevel': {
+    runner: combatProfileHighLevel,
+    defaults: { targetLevel: 14, spawnWaitMs: 8000, profileDurationMs: 15000 },
+    description: 'Jump to high level, let enemies accumulate, profile buckets during active combat.',
+  },
+  'combat-spike-diag': {
+    runner: combatSpikeDiag,
+    defaults: { targetLevel: 14, spawnWaitMs: 8000, profileDurationMs: 20000, minimal: true, spikeThresholdMs: 50 },
+    description: 'Combat spike diagnostic: per-frame timing, spike detection, slow-mo event correlation. Use --minimal=false for full visuals.',
   },
 };
 
@@ -502,6 +514,18 @@ function selectScenarioOverrides(args) {
     },
     'profile-buckets': {
       durationMs: numberFromArg(args.profileDurationMs, undefined),
+    },
+    'combat-profile-highlevel': {
+      targetLevel: numberFromArg(args.targetLevel, undefined),
+      spawnWaitMs: numberFromArg(args.spawnWaitMs, undefined),
+      profileDurationMs: numberFromArg(args.profileDurationMs, undefined),
+    },
+    'combat-spike-diag': {
+      targetLevel: numberFromArg(args.targetLevel, undefined),
+      spawnWaitMs: numberFromArg(args.spawnWaitMs, undefined),
+      profileDurationMs: numberFromArg(args.profileDurationMs, undefined),
+      minimal: 'minimal' in args ? coerceBoolean(args.minimal) : undefined,
+      spikeThresholdMs: numberFromArg(args.spikeThresholdMs, undefined),
     },
   };
 }

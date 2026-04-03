@@ -119,18 +119,19 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
   // ========================================
-  // 2. JAGGED ROCKS (50 scattered)
+  // 2. JAGGED ROCKS (50 scattered) — INSTANCED
   // ========================================
   const rockGeo = new THREE.TetrahedronGeometry(1, 0);
-  const rockMat = new THREE.MeshStandardMaterial({
+  const rockMat = new THREE.MeshLambertMaterial({
     color: 0x1a1a1a,
-    roughness: 0.8,
-    metalness: 0.2,
     flatShading: true
   });
 
-  for (let i = 0; i < 50; i++) {
-    const rock = new THREE.Mesh(rockGeo, rockMat);
+  const rockCount = 50;
+  const rockMesh = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
+  const _rockDummy = new THREE.Object3D();
+  const _rockColor = new THREE.Color();
+  for (let i = 0; i < rockCount; i++) {
     let x, z, riverX, distToRiver;
     let attempts = 0;
     do {
@@ -141,85 +142,50 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       attempts++;
     } while (distToRiver < 8 && attempts < 20);
 
-    rock.position.set(x, floorY + 0.5, z);
-    // Scale: taller than wide (0.5-4.0)
     const scaleY = 0.5 + Math.random() * 3.5;
     const scaleX = 0.5 + Math.random() * 1.5;
-    rock.scale.set(scaleX, scaleY, scaleX);
-    rock.rotation.set(
+    _rockDummy.position.set(x, floorY + 0.5, z);
+    _rockDummy.scale.set(scaleX, scaleY, scaleX);
+    _rockDummy.rotation.set(
       Math.random() * Math.PI,
       Math.random() * Math.PI * 2,
       Math.random() * Math.PI
     );
-    rock.castShadow = true;
-    rock.receiveShadow = true;
-    group.add(rock);
+    _rockDummy.updateMatrix();
+    rockMesh.setMatrixAt(i, _rockDummy.matrix);
+    // Slight color variation
+    _rockColor.setHex(0x1a1a1a).offsetHSL(0, 0, (Math.random() - 0.5) * 0.05);
+    rockMesh.setColorAt(i, _rockColor);
   }
+  rockMesh.instanceMatrix.needsUpdate = true;
+  if (rockMesh.instanceColor) rockMesh.instanceColor.needsUpdate = true;
+  rockMesh.castShadow = true;
+  rockMesh.receiveShadow = true;
+  group.add(rockMesh);
 
   // ========================================
   // 3. DEAD TREES (20 procedural, simplified)
-  // OPTIMIZED: Replaced recursive depth-3 trees (15-40 meshes each)
-  // with 2 simpler procedural variants (2-3 meshes each).
-  // Original: ~375-1000 cylinders, New: ~40-60 cylinders
-  // Visual tradeoff: Less complex branching, but maintains hellscape vibe
+  // OPTIMIZED: Instanced trunks and branches. 2 draw calls instead of 40-60.
   // ========================================
-  const treeMat = new THREE.MeshStandardMaterial({
+  const treeMat = new THREE.MeshLambertMaterial({
     color: 0x0a0a0a,
-    roughness: 0.9,
-    metalness: 0.1,
     flatShading: true
   });
 
-  // Shared geometries for dead trees (reduce GPU memory)
-  const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 4, 5); // Main trunk
-  const branchGeo = new THREE.CylinderGeometry(0.06, 0.1, 2, 5); // Branch
+  const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 4, 5);
+  const branchGeo = new THREE.CylinderGeometry(0.06, 0.1, 2, 5);
 
-  // Variant A: Forked dead tree (trunk + 2 branches)
-  const createForkedTree = () => {
-    const group = new THREE.Group();
-    const trunk = new THREE.Mesh(trunkGeo, treeMat);
-    trunk.position.y = 2;
-    trunk.castShadow = true;
-    trunk.receiveShadow = true;
-    group.add(trunk);
+  // Collect all tree transforms, then batch into instanced meshes
+  const treeCount = 20;
+  const maxTrunks = treeCount; // 1 trunk per tree
+  const maxBranches = treeCount * 3; // up to 3 branches per tree (forked = 2, snag = 0-1)
+  const trunkMesh = new THREE.InstancedMesh(trunkGeo, treeMat, maxTrunks);
+  const branchMesh = new THREE.InstancedMesh(branchGeo, treeMat, maxBranches);
+  let trunkIdx = 0;
+  let branchIdx = 0;
+  const _treeDummy = new THREE.Object3D();
 
-    // Two main branches
-    for (let i = 0; i < 2; i++) {
-      const branch = new THREE.Mesh(branchGeo, treeMat);
-      branch.position.y = 3.5 + Math.random() * 0.5;
-      branch.rotation.z = (i === 0 ? 1 : -1) * (0.4 + Math.random() * 0.4);
-      branch.rotation.y = i * Math.PI + Math.random() * 0.5;
-      branch.castShadow = true;
-      group.add(branch);
-    }
-    return group;
-  };
-
-  // Variant B: Twisted snag (single bent trunk, optional small branch)
-  const createTwistedSnag = () => {
-    const group = new THREE.Group();
-    const trunk = new THREE.Mesh(trunkGeo, treeMat);
-    trunk.position.y = 2;
-    trunk.rotation.z = (Math.random() - 0.5) * 0.3; // Slight lean
-    trunk.castShadow = true;
-    trunk.receiveShadow = true;
-    group.add(trunk);
-
-    // Optional small branch
-    if (Math.random() > 0.5) {
-      const branch = new THREE.Mesh(branchGeo, treeMat);
-      branch.position.y = 2.5 + Math.random();
-      branch.rotation.z = (Math.random() > 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.4);
-      branch.rotation.y = Math.random() * Math.PI * 2;
-      branch.scale.setScalar(0.7); // Smaller branch
-      branch.castShadow = true;
-      group.add(branch);
-    }
-    return group;
-  };
-
-  // Spawn 20 trees (reduced from 25), mixed variants
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < treeCount; i++) {
     let x, z, riverX, distToRiver;
     let attempts = 0;
     do {
@@ -230,13 +196,52 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       attempts++;
     } while (distToRiver < 8 && attempts < 20);
 
-    const tree = Math.random() > 0.5 ? createForkedTree() : createTwistedSnag();
-    tree.position.set(x, floorY, z);
-    tree.rotation.y = Math.random() * Math.PI * 2;
+    const treeRotation = Math.random() * Math.PI * 2;
     const treeScale = 0.8 + Math.random() * 0.6;
-    tree.scale.setScalar(treeScale);
-    group.add(tree);
+    const isForked = Math.random() > 0.5;
+
+    // Trunk
+    _treeDummy.position.set(x, floorY + 2 * treeScale, z);
+    _treeDummy.rotation.set(0, treeRotation, isForked ? 0 : (Math.random() - 0.5) * 0.3);
+    _treeDummy.scale.setScalar(treeScale);
+    _treeDummy.updateMatrix();
+    trunkMesh.setMatrixAt(trunkIdx++, _treeDummy.matrix);
+
+    if (isForked) {
+      // 2 branches
+      for (let b = 0; b < 2; b++) {
+        _treeDummy.position.set(x, floorY + (3.5 + Math.random() * 0.5) * treeScale, z);
+        _treeDummy.rotation.set(
+          (b === 0 ? 1 : -1) * (0.4 + Math.random() * 0.4),
+          treeRotation + b * Math.PI + Math.random() * 0.5,
+          0
+        );
+        _treeDummy.scale.setScalar(treeScale);
+        _treeDummy.updateMatrix();
+        branchMesh.setMatrixAt(branchIdx++, _treeDummy.matrix);
+      }
+    } else if (Math.random() > 0.5) {
+      // Twisted snag with optional small branch
+      _treeDummy.position.set(x, floorY + (2.5 + Math.random()) * treeScale, z);
+      _treeDummy.rotation.set(
+        (Math.random() > 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.4),
+        Math.random() * Math.PI * 2,
+        0
+      );
+      _treeDummy.scale.setScalar(treeScale * 0.7);
+      _treeDummy.updateMatrix();
+      branchMesh.setMatrixAt(branchIdx++, _treeDummy.matrix);
+    }
   }
+
+  trunkMesh.count = trunkIdx;
+  branchMesh.count = branchIdx;
+  trunkMesh.instanceMatrix.needsUpdate = true;
+  branchMesh.instanceMatrix.needsUpdate = true;
+  trunkMesh.castShadow = true;
+  trunkMesh.receiveShadow = true;
+  group.add(trunkMesh);
+  group.add(branchMesh);
 
   // ========================================
   // 4. TWINKLING STARS (1500 particles with red tint)

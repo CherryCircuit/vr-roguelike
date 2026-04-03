@@ -4,18 +4,24 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// ── Supabase client ─────────────────────────────────────────
+// ── Supabase client (lazy-loaded) ────────────────────────────
 const SUPABASE_URL = 'https://lseixvdlsbietnalbhhe.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxzZWl4dmRsc2JpZXRuYWxiaGhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2MDM0NjMsImV4cCI6MjA4NjE3OTQ2M30.0Iboawe4PRx_CdBN1NphRt3D5ZhPGiE_7wiV2l-VvQg';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-console.log('[scoreboard] Supabase client initialized:', !!supabase);
+let _supabase = null;
+function getSupabase() {
+  if (!_supabase) {
+    _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log('[scoreboard] Supabase client initialized:', !!_supabase);
+  }
+  return _supabase;
+}
 
 // ── Score CRUD ──────────────────────────────────────────────
 
 export async function submitScore(name, score, levelReached, country) {
   console.log(`[scoreboard] Submitting score for ${name}: ${score} (Level ${levelReached}, Country: ${country})`);
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('scores')
     .insert([{ name, score, level_reached: levelReached, country }])
     .select();
@@ -30,7 +36,7 @@ export async function submitScore(name, score, levelReached, country) {
 
 export async function fetchTopScores(limit = 100) {
   console.log('[scoreboard] Fetching top scores...');
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('scores')
     .select('name, score, level_reached, country, created_at')
     .order('score', { ascending: false })
@@ -45,7 +51,7 @@ export async function fetchTopScores(limit = 100) {
 }
 
 export async function fetchScoresByCountry(country, limit = 100) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('scores')
     .select('name, score, level_reached, country, created_at')
     .eq('country', country)
@@ -64,7 +70,7 @@ export async function fetchScoresByContinent(continent, limit = 100) {
     .map(c => c.code);
   if (countryCodes.length === 0) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('scores')
     .select('name, score, level_reached, country, created_at')
     .in('country', countryCodes)
@@ -199,7 +205,7 @@ export async function testConnection() {
   console.log('=== Supabase Connection Diagnostic ===\n');
 
   const results = {
-    clientInitialized: !!supabase,
+    clientInitialized: !!getSupabase(),
     readAccess: false,
     writeAccess: false,
     tableExists: false,
@@ -218,7 +224,7 @@ export async function testConnection() {
   // Test 2: Table existence and read access
   console.log('Test 2: Read from scores table');
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabase()
       .from('scores')
       .select('*')
       .limit(1);
@@ -248,7 +254,7 @@ export async function testConnection() {
   console.log('Test 3: Write to scores table');
   const testName = `TEST_${Date.now()}`;
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabase()
       .from('scores')
       .insert([{
         name: testName,
@@ -271,7 +277,7 @@ export async function testConnection() {
       console.log('✅ Write access working');
 
       // Clean up test record
-      await supabase.from('scores').delete().eq('name', testName);
+      await getSupabase().from('scores').delete().eq('name', testName);
       console.log('✅ Test record cleaned up\n');
     }
   } catch (err) {

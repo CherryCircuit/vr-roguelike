@@ -1917,8 +1917,12 @@ export function updateKillChainPopups(dt, now, onFadeComplete) {
 }
 
 // ── FPS Counter & Performance Monitor ───────────────────────
-let fpsFrames = [];
-let fpsFrameTimes = [];
+// Ring buffer for FPS tracking — avoids O(n) Array.shift() in per-frame path.
+const FPS_RING_SIZE = 120; // Enough for 2 seconds at 60fps
+const _fpsRingTimes = new Float64Array(FPS_RING_SIZE);
+const _fpsRingFrameTimes = new Float64Array(FPS_RING_SIZE);
+let _fpsRingHead = 0;
+let _fpsRingCount = 0;
 let lastFpsUpdate = 0;
 
 export function updateFPS(now, opts = {}) {
@@ -1927,21 +1931,30 @@ export function updateFPS(now, opts = {}) {
   const perfMonitor = opts.perfMonitor || (typeof window !== 'undefined' && window.debugPerfMonitor);
   const frameTimeMs = opts.frameTimeMs;
 
-  // Track frame times
-  fpsFrames.push(now);
-  if (frameTimeMs != null) fpsFrameTimes.push(frameTimeMs);
-  while (fpsFrameTimes.length > fpsFrames.length) fpsFrameTimes.shift();
+  // Write to ring buffer
+  _fpsRingTimes[_fpsRingHead] = now;
+  _fpsRingFrameTimes[_fpsRingHead] = frameTimeMs != null ? frameTimeMs : 0;
+  _fpsRingHead = (_fpsRingHead + 1) % FPS_RING_SIZE;
+  if (_fpsRingCount < FPS_RING_SIZE) _fpsRingCount++;
 
-  // Keep only last second
-  while (fpsFrames.length > 0 && fpsFrames[0] < now - 1000) {
-    fpsFrames.shift();
-    if (fpsFrameTimes.length > 0) fpsFrameTimes.shift();
+  // Evict entries older than 1 second and count valid frames
+  let fps = 0;
+  let frameTimeSum = 0;
+  let frameTimeCount = 0;
+  const cutoff = now - 1000;
+  for (let i = 0; i < _fpsRingCount; i++) {
+    const idx = (_fpsRingHead - 1 - i + FPS_RING_SIZE) % FPS_RING_SIZE;
+    if (_fpsRingTimes[idx] < cutoff) break;
+    fps++;
+    if (_fpsRingFrameTimes[idx] > 0) {
+      frameTimeSum += _fpsRingFrameTimes[idx];
+      frameTimeCount++;
+    }
   }
 
   if (now - lastFpsUpdate > 250) {
-    const fps = Math.round(fpsFrames.length);
-    const avgFrameMs = fpsFrameTimes.length > 0
-      ? fpsFrameTimes.reduce((a, b) => a + b, 0) / fpsFrameTimes.length
+    const avgFrameMs = frameTimeCount > 0
+      ? frameTimeSum / frameTimeCount
       : (fps > 0 ? 1000 / fps : 0);
     const memMb = typeof performance !== 'undefined' && performance.memory
       ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0)
