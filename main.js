@@ -90,6 +90,7 @@ import {
 import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js';
 import { initDreamWorld, enterDreamWorld, exitDreamWorld, getDreamFogSettings, getDreamSpawnPosition, handleDreamProjectileHit, updateDreamWorld } from './dream-world.js';
 import { SpatialHash } from './spatial-hash.js';
+import { enableTelemetry, disableTelemetry, isTelemetryEnabled, setTelemetryHistoryMs, recordTelemetrySample, getTelemetrySnapshot } from './telemetry.js';
 
 // Expose game state to window for debugging/testing
 window.State = State;
@@ -186,73 +187,103 @@ const MAX_PROJECTILES = 100;
 // down to ~4, matching the three.js physics_ammo_instancing pattern.
 const PROJECTILE_POOL_SIZE = 120;
 
-// Fake glow halos: VR-safe alternative to selective bloom.
-// Each projectile gets a Fresnel-shaded twin InstancedMesh so WebXR stays single-pass.
-const PROJECTILE_GLOW = {
-  falloff: 0.15,
-  internalRadius: 4.0,
-  opacity: 0.6,
+// Star Wars-style blaster bolt shader: white-hot core, colored outer glow, soft edges
+// Single-pass replacement for the previous fake bloom twin-mesh system
+//
+// DESIGN NOTES:
+// - White-hot core is achieved via radial gradient blending to pure white
+// - Colored outer glow uses the base bolt color
+// - Soft edge falloff via alpha gradient
+// - Tunable via PROJECTILE_BOLT constants below
+//
+// KNOWN LIMITATIONS (need hand-tuning):
+// - Cylindrical geometry (laser/plasma) radial calculation assumes Y-axis length
+// - Core size/falloff may need adjustment per projectile type for optimal look
+// - Current radial calculation uses vPosition.xz - may need adjustment for non-standard geometry
+const PROJECTILE_BOLT = {
+  coreIntensity: 2.5,     // How bright the white core is
+  coreSize: 0.35,         // Size of the white core (0-1)
+  glowFalloff: 0.6,       // How quickly the glow fades at edges
+  opacity: 0.95,          // Base opacity
 };
 
-// Fresnel-driven FakeGlowMaterial keeps the halo entirely in the shader so VR never pays for post.
-// For InstancedMesh, three.js auto-injects instanceMatrix but ShaderMaterial doesn't apply it
-// through modelViewMatrix like built-in materials do. We manually apply the instance transform
-// to get correct world positions and normals per-instance.
-const FAKE_GLOW_VERTEX_SHADER = `
-  varying vec3 vNormalW;
-  varying vec3 vPositionW;
+// Custom shader material for blaster-bolt style projectiles
+// Creates a radial gradient: white center -> colored middle -> transparent edges
+const BLASTER_BOLT_VERTEX_SHADER = `
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vPosition;
 
   void main() {
-    // Apply instance transform (three.js provides instanceMatrix for InstancedMesh)
-    vec4 worldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
-    vPositionW = worldPos.xyz;
-
-    // Transform normal through instance rotation (upper 3x3 of instanceMatrix)
-    mat3 instanceRot = mat3(instanceMatrix);
-    vNormalW = normalize(mat3(modelMatrix) * instanceRot * normal);
-
-    gl_Position = projectionMatrix * viewMatrix * worldPos;
+    vUv = uv;
+    vNormal = normalize(normalMatrix * normal);
+    vPosition = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
-const FAKE_GLOW_FRAGMENT_SHADER = `
-  uniform vec3 uGlowColor;
-  uniform float uFalloff;
-  uniform float uGlowInternalRadius;
+const BLASTER_BOLT_FRAGMENT_SHADER = `
+  uniform vec3 uBoltColor;
+  uniform float uCoreIntensity;
+  uniform float uCoreSize;
+  uniform float uGlowFalloff;
   uniform float uOpacity;
 
-  varying vec3 vNormalW;
-  varying vec3 vPositionW;
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vPosition;
 
   void main() {
-    vec3 viewDirection = normalize(cameraPosition - vPositionW);
-    float intensity = pow(1.0 - abs(dot(viewDirection, vNormalW)), uGlowInternalRadius);
-    intensity = smoothstep(0.0, 1.0, intensity);
-    float falloff = 1.0 - uFalloff;
-    vec3 glow = uGlowColor * intensity * falloff;
-    gl_FragColor = vec4(glow, uOpacity * intensity);
-    #include <tonemapping_fragment>
-    #include <colorspace_fragment>
+    // Calculate radial distance from center for cylindrical/spherical geometry
+    // For cylinders: use UV.y for length gradient, distance from center axis for radial
+    // For spheres: use distance from center point
+    
+    // Radial distance from center (works for both cylinder and sphere)
+    float radialDist = length(vPosition.xz); // Assuming Y is the length axis for cylinders
+    float maxRadius = 0.5; // Normalize to geometry bounds
+    
+    // Normalize radial distance
+    float normalizedDist = clamp(radialDist / maxRadius, 0.0, 1.0);
+    
+    // Create intensity gradient: bright at center, fading outward
+    float coreGradient = 1.0 - smoothstep(0.0, uCoreSize, normalizedDist);
+    float glowGradient = 1.0 - pow(normalizedDist, uGlowFalloff);
+    
+    // White core color (high intensity)
+    vec3 coreColor = vec3(1.0, 1.0, 1.0) * uCoreIntensity;
+    
+    // Blend from white core to colored glow
+    vec3 finalColor = mix(uBoltColor, coreColor, coreGradient);
+    
+    // Apply glow intensity falloff
+    finalColor *= glowGradient;
+    
+    // Alpha falloff at edges for soft blaster-bolt look
+    float alpha = uOpacity * glowGradient;
+    alpha = smoothstep(0.0, 0.3, alpha); // Soft edge
+    
+    gl_FragColor = vec4(finalColor, alpha);
   }
 `;
 
-function createProjectileGlowMaterial(colorHex) {
+function createProjectileMaterial(colorHex) {
   const material = new THREE.ShaderMaterial({
     uniforms: {
-      uGlowColor: { value: new THREE.Color(colorHex) },
-      uFalloff: { value: PROJECTILE_GLOW.falloff },
-      uGlowInternalRadius: { value: PROJECTILE_GLOW.internalRadius },
-      uOpacity: { value: PROJECTILE_GLOW.opacity },
+      uBoltColor: { value: new THREE.Color(colorHex) },
+      uCoreIntensity: { value: PROJECTILE_BOLT.coreIntensity },
+      uCoreSize: { value: PROJECTILE_BOLT.coreSize },
+      uGlowFalloff: { value: PROJECTILE_BOLT.glowFalloff },
+      uOpacity: { value: PROJECTILE_BOLT.opacity },
     },
-    vertexShader: FAKE_GLOW_VERTEX_SHADER,
-    fragmentShader: FAKE_GLOW_FRAGMENT_SHADER,
+    vertexShader: BLASTER_BOLT_VERTEX_SHADER,
+    fragmentShader: BLASTER_BOLT_FRAGMENT_SHADER,
     transparent: true,
     blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
     depthWrite: false,
     depthTest: true,
   });
-  material.opacity = PROJECTILE_GLOW.opacity;
+  material.userData.baseUniformOpacity = PROJECTILE_BOLT.opacity;
   return material;
 }
 
@@ -409,6 +440,7 @@ let biomeTerrainMaterials = [];  // Array of { type: 'shader'|'overlay', materia
 // Upgrade selection
 let upgradeSelectionCooldown = 0;
 let pendingUpgrades = [];
+let pendingUpgradeHand = null;
 
 // Game over cooldown
 let gameOverCooldown = 0;
@@ -605,6 +637,8 @@ const BIOME_LIGHTING = {
   },
 };
 
+const AVAILABLE_BIOMES = Object.keys(BIOME_LIGHTING).filter((key) => key !== 'default');
+
 function applyBiomeLighting(biome) {
   if (!biomeAmbientLight || !biomeDirectionalLight || !biomePointLight) {
     console.warn('[lighting] Lights not initialized yet');
@@ -621,6 +655,413 @@ function applyBiomeLighting(biome) {
   biomePointLight.intensity = config.point.intensity;
   biomePointLight.distance = config.point.distance;
   console.log('[lighting] Applied lighting for biome:', biome);
+}
+
+// ── Progression automation helpers (test hooks) ─────────────────────────
+const PROGRESSION_AUTO_STRATEGIES = ['first-card', 'last-card', 'random', 'skip'];
+let progressionAutoStrategy = 'first-card';
+
+function normalizeBiomeInput(rawBiome, { preserveUndefined = false } = {}) {
+  if (rawBiome === undefined) {
+    return preserveUndefined ? undefined : null;
+  }
+  if (rawBiome === null) return null;
+  const normalized = String(rawBiome).trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (!normalized || normalized === 'auto' || normalized === 'default' || normalized === 'none') {
+    return null;
+  }
+  const match = AVAILABLE_BIOMES.find((name) => name === normalized);
+  return match || null;
+}
+
+function clampLevelNumber(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(20, Math.max(1, n));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function waitForCondition(check, options = {}) {
+  const { timeout = 10000, interval = 50, label = 'condition' } = options;
+  const start = performance.now();
+  return new Promise((resolve, reject) => {
+    function poll() {
+      try {
+        if (check()) {
+          resolve(true);
+          return;
+        }
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      if (performance.now() - start >= timeout) {
+        reject(new Error(`Timed out waiting for ${label}`));
+        return;
+      }
+      setTimeout(poll, interval);
+    }
+    poll();
+  });
+}
+
+function waitForStateMatch(targetState, options = {}) {
+  return waitForCondition(() => game.state === targetState, {
+    timeout: options.timeout || 10000,
+    interval: options.interval || 50,
+    label: options.label || `state ${targetState}`,
+  });
+}
+
+function getPendingUpgradeSummaries() {
+  if (game.state !== State.UPGRADE_SELECT) return [];
+  if (!Array.isArray(pendingUpgrades)) return [];
+  const entries = pendingUpgrades.map((upgrade, index) => ({
+    id: upgrade?.id || null,
+    name: upgrade?.name || null,
+    type: upgrade?.type || null,
+    hand: pendingUpgradeHand,
+    index,
+  })).filter((entry) => entry.id);
+  entries.push({ id: 'SKIP', name: 'Skip', type: 'skip', hand: pendingUpgradeHand, index: 'skip' });
+  return entries;
+}
+
+function trySelectUpgradeByIdForTests(upgradeId) {
+  if (game.state !== State.UPGRADE_SELECT) {
+    return { ok: false, reason: 'not_in_upgrade_select' };
+  }
+  if (upgradeSelectionCooldown > 0) {
+    return { ok: false, reason: 'cooldown_active' };
+  }
+  let upgrade = null;
+  if (upgradeId === 'SKIP') {
+    upgrade = { id: 'SKIP', name: 'Skip', type: 'skip' };
+  } else {
+    upgrade = pendingUpgrades.find((item) => item?.id === upgradeId) || null;
+  }
+  if (!upgrade) {
+    return { ok: false, reason: 'upgrade_not_available' };
+  }
+  const hand = pendingUpgradeHand || 'left';
+  selectUpgradeAndAdvance(upgrade, hand);
+  return {
+    ok: true,
+    selected: {
+      id: upgrade.id,
+      name: upgrade.name || upgrade.id,
+      type: upgrade.type || null,
+      hand,
+    },
+  };
+}
+
+function trySelectUpgradeByIndexForTests(index) {
+  const idx = Number.isInteger(index) ? index : 0;
+  const options = Array.isArray(pendingUpgrades) ? pendingUpgrades : [];
+  const upgrade = options[idx];
+  if (!upgrade) {
+    return { ok: false, reason: 'index_out_of_range' };
+  }
+  return trySelectUpgradeByIdForTests(upgrade.id);
+}
+function normalizeUpgradeStrategy(strategy) {
+  if (!strategy && strategy !== 0) return null;
+  const value = String(strategy).trim().toLowerCase();
+  if (value === 'first' || value === 'left') return 'first-card';
+  if (value === 'last' || value === 'right') return 'last-card';
+  if (value.startsWith('rand')) return 'random';
+  if (value === 'skip') return 'skip';
+  if (PROGRESSION_AUTO_STRATEGIES.includes(value)) return value;
+  return null;
+}
+
+async function autoSelectUpgradeByStrategy(strategy) {
+  const normalized = normalizeUpgradeStrategy(strategy) || progressionAutoStrategy;
+  const options = getPendingUpgradeSummaries().filter((entry) => entry.index !== 'skip');
+  let targetId = null;
+  if (normalized === 'skip') {
+    targetId = 'SKIP';
+  } else if (normalized === 'last-card' && options.length > 0) {
+    targetId = options[options.length - 1].id;
+  } else if (normalized === 'random' && options.length > 0) {
+    targetId = options[Math.floor(Math.random() * options.length)].id;
+  } else if (options.length > 0) {
+    targetId = options[0].id;
+  } else {
+    targetId = 'SKIP';
+  }
+  const result = trySelectUpgradeByIdForTests(targetId);
+  return { ...result, strategy: normalized };
+}
+
+async function waitForUpgradeEntry(timeout = 15000) {
+  const deadline = performance.now() + timeout;
+  while (performance.now() < deadline) {
+    const state = game.state;
+    if (state === State.UPGRADE_SELECT) return 'upgrade';
+    if (state === State.VICTORY || state === State.GAME_OVER) return state;
+    await sleep(50);
+  }
+  throw new Error('Timed out waiting for upgrade selection');
+}
+
+async function settlePostUpgradeState() {
+  if (game.state === State.READY_SCREEN) {
+    beginGameplayFromReady();
+    await waitForStateMatch(State.PLAYING, { timeout: 10000, label: 'ready_playing' });
+  } else if (game.state === State.BOSS_ALERT) {
+    game.stateTimer = 0;
+    await waitForStateMatch(State.PLAYING, { timeout: 10000, label: 'boss_alert_playing' });
+  }
+  return game.state;
+}
+
+async function settlePendingUpgradeIfNeeded(strategy) {
+  if (game.state === State.LEVEL_COMPLETE) {
+    await waitForUpgradeEntry();
+  }
+  if (game.state === State.UPGRADE_SELECT) {
+    await waitForCondition(() => upgradeSelectionCooldown <= 0, { timeout: 5000, label: 'upgrade_cooldown' });
+    await autoSelectUpgradeByStrategy(strategy);
+    await waitForCondition(() => game.state !== State.UPGRADE_SELECT, { timeout: 15000, label: 'upgrade_exit' });
+    await settlePostUpgradeState();
+  }
+}
+async function ensureReadyForProgression({ restart = false } = {}) {
+  if (restart || game.state === State.TITLE || game.state === State.VICTORY || game.state === State.GAME_OVER) {
+    await restartRunForProgression();
+    return;
+  }
+  const deadline = performance.now() + 15000;
+  while (performance.now() < deadline) {
+    const state = game.state;
+    if (state === State.PLAYING) return;
+    if (state === State.READY_SCREEN) {
+      beginGameplayFromReady();
+    } else if (state === State.BOSS_ALERT) {
+      game.stateTimer = 0;
+    }
+    await sleep(50);
+  }
+  throw new Error('Timed out waiting for playing state');
+}
+
+async function restartRunForProgression() {
+  resetGame();
+  showTitle();
+  startGame();
+  beginGameplayFromReady();
+  await waitForStateMatch(State.PLAYING, { timeout: 10000, label: 'restart_playing' });
+}
+
+function configureAutoStrategy(autoOptions) {
+  if (autoOptions === undefined || autoOptions === null) {
+    return progressionAutoStrategy;
+  }
+  const value = typeof autoOptions === 'string' ? autoOptions : autoOptions?.strategy;
+  const normalized = normalizeUpgradeStrategy(value) || progressionAutoStrategy;
+  if (PROGRESSION_AUTO_STRATEGIES.includes(normalized)) {
+    progressionAutoStrategy = normalized;
+  }
+  return progressionAutoStrategy;
+}
+
+function applyBiomeOverrideForProgression(biome, options = {}) {
+  const normalized = normalizeBiomeInput(biome);
+  if (normalized === undefined) {
+    return game.debugBiomeOverride || null;
+  }
+  game.debugBiomeOverride = normalized || null;
+  saveDebugSettings();
+  const level = game.level || 1;
+  if (options.fadeDuration && !environmentFadeState) {
+    const duration = Number(options.fadeDuration) || 0.3;
+    startEnvironmentFade('out', duration, () => {
+      applyThemeForLevel(level);
+      startEnvironmentFade('in', duration);
+    });
+  } else {
+    applyThemeForLevel(level);
+  }
+  return game.debugBiomeOverride;
+}
+async function startRunAtLevelForProgression(options = {}) {
+  const targetLevel = clampLevelNumber(options.level || 1);
+  debugJumpToLevel(targetLevel);
+  if (options.biome !== undefined) {
+    applyBiomeOverrideForProgression(options.biome);
+  }
+  if (options.skipCountdown === false) {
+    startReadyCountdown();
+  } else {
+    beginGameplayFromReady();
+  }
+  if (options.startPlaying !== false) {
+    await waitForStateMatch(State.PLAYING, { timeout: 10000, label: 'start_level_playing' });
+  }
+  return {
+    ok: true,
+    level: game.level,
+    biome: getBiomeForLevel(game.level),
+    state: game.state,
+  };
+}
+
+async function concludeUpgradeSelection(strategy) {
+  const phase = await waitForUpgradeEntry();
+  if (phase !== 'upgrade') {
+    return {
+      ok: true,
+      skipped: true,
+      reason: phase,
+      state: game.state,
+    };
+  }
+  await waitForCondition(() => upgradeSelectionCooldown <= 0, { timeout: 5000, label: 'upgrade_cooldown' });
+  const selection = await autoSelectUpgradeByStrategy(strategy);
+  await waitForCondition(() => game.state !== State.UPGRADE_SELECT, { timeout: 15000, label: 'upgrade_exit' });
+  await settlePostUpgradeState();
+  return selection;
+}
+
+async function forceLevelCompleteForTests(options = {}) {
+  const strategy = configureAutoStrategy(options?.autoUpgrades || options?.strategy);
+  await settlePendingUpgradeIfNeeded(strategy);
+  await ensureReadyForProgression({ restart: Boolean(options?.restart) });
+  game._levelConfig = getLevelConfig();
+  if (game.state === State.PLAYING) {
+    const targetKills = game._levelConfig?.killTarget;
+    if (Number.isFinite(targetKills)) {
+      game.kills = targetKills;
+    }
+    completeLevel();
+  }
+  if (options?.autoSelect === false) {
+    return {
+      ok: true,
+      awaitingUpgrade: true,
+      level: game.level,
+      state: game.state,
+    };
+  }
+  const selection = await concludeUpgradeSelection(strategy);
+  return {
+    ok: true,
+    selection,
+    level: game.level,
+    state: game.state,
+  };
+}
+async function runSingleLevelCycle(strategy) {
+  await settlePendingUpgradeIfNeeded(strategy);
+  await ensureReadyForProgression();
+  const startLevel = game.level;
+  const startBiome = getBiomeForLevel(startLevel);
+  const isBossLevel = Boolean(game._levelConfig?.isBoss || (startLevel % 5 === 0));
+  game._levelConfig = getLevelConfig();
+  if (game.state === State.PLAYING) {
+    const targetKills = game._levelConfig?.killTarget;
+    if (Number.isFinite(targetKills)) {
+      game.kills = targetKills;
+    }
+    completeLevel();
+  }
+  const selection = await concludeUpgradeSelection(strategy);
+  return {
+    level: startLevel,
+    biome: startBiome,
+    isBoss: isBossLevel,
+    selection,
+    nextLevel: game.level,
+    state: game.state,
+  };
+}
+
+function normalizeProgressionSegment(segment) {
+  const payload = typeof segment === 'object' && segment !== null ? segment : {};
+  const biome = Object.prototype.hasOwnProperty.call(payload, 'biome')
+    ? normalizeBiomeInput(payload.biome, { preserveUndefined: true })
+    : undefined;
+  const count = Math.max(1, Math.floor(Number(payload.levelCount ?? payload.levels ?? 1)));
+  const stopAfterBoss = Boolean(payload.stopAfterBoss || payload.stopOnBoss);
+  return { biome, levelCount: count, stopAfterBoss };
+}
+
+async function executeProgressionSegments(segmentsInput, autoOptions, { single = false, restart = false } = {}) {
+  const segments = Array.isArray(segmentsInput) && segmentsInput.length > 0
+    ? segmentsInput
+    : [{ levelCount: 1 }];
+  if (restart) {
+    await restartRunForProgression();
+  } else {
+    await ensureReadyForProgression();
+  }
+  const strategy = configureAutoStrategy(autoOptions);
+  const summaries = [];
+  for (const rawSegment of segments) {
+    const segment = normalizeProgressionSegment(rawSegment);
+    if (segment.biome !== undefined) {
+      applyBiomeOverrideForProgression(segment.biome);
+    }
+    const levelSummaries = [];
+    for (let i = 0; i < segment.levelCount; i += 1) {
+      const levelResult = await runSingleLevelCycle(strategy);
+      levelSummaries.push(levelResult);
+      if (segment.stopAfterBoss && levelResult.isBoss) break;
+      if (game.state === State.VICTORY || game.state === State.GAME_OVER) break;
+    }
+    summaries.push({
+      biome: segment.biome !== undefined ? segment.biome : game.debugBiomeOverride || null,
+      requestedLevels: segment.levelCount,
+      completedLevels: levelSummaries.length,
+      stopAfterBoss: segment.stopAfterBoss,
+      levels: levelSummaries,
+    });
+    if (game.state === State.VICTORY || game.state === State.GAME_OVER) break;
+  }
+  if (single) {
+    return summaries[0] || {
+      biome: game.debugBiomeOverride || null,
+      requestedLevels: 0,
+      completedLevels: 0,
+      stopAfterBoss: false,
+      levels: [],
+    };
+  }
+  return {
+    ok: true,
+    strategy,
+    segments: summaries,
+    finalLevel: game.level,
+    finalState: game.state,
+    biome: getBiomeForLevel(game.level),
+  };
+}
+function createProgressionAPI() {
+  return {
+    describe() {
+      return {
+        biomes: AVAILABLE_BIOMES.slice(),
+        autoUpgradeStrategies: PROGRESSION_AUTO_STRATEGIES.slice(),
+        defaultStrategy: progressionAutoStrategy,
+      };
+    },
+    getPendingUpgrades: () => getPendingUpgradeSummaries(),
+    selectUpgradeById: (upgradeId) => trySelectUpgradeByIdForTests(upgradeId),
+    selectUpgradeByIndex: (index) => trySelectUpgradeByIndexForTests(index),
+    skipUpgrade: () => trySelectUpgradeByIdForTests('SKIP'),
+    setAutoUpgrades: (options = {}) => ({ strategy: configureAutoStrategy(options) }),
+    startAt: (options = {}) => startRunAtLevelForProgression(options),
+    setBiome: (biome, options = {}) => ({ biome: applyBiomeOverrideForProgression(biome, options) }),
+    clearBiomeOverride: () => ({ biome: applyBiomeOverrideForProgression(null) }),
+    forceLevelComplete: (options = {}) => forceLevelCompleteForTests(options),
+    runSegment: (segment = {}) => executeProgressionSegments([segment], segment?.autoUpgrades || null, { single: true, restart: false }),
+    runPlan: (payload = {}) => executeProgressionSegments(payload?.segments || [], payload?.autoUpgrades || null, { single: false, restart: true }),
+  };
 }
 
 init();
@@ -794,8 +1235,55 @@ function init() {
   window.__test.getEnemyCount = getEnemyCount;
   window.__test.getCamera = () => camera;
   window.__test.getRenderer = () => renderer;
+  window.__test.getScene = () => scene;
   window.__test.activateNuke = activateNuke;
   window.__test.getNukeCount = () => game.nukes;
+  const telemetryBridge = {
+    enable: (options = {}) => enableTelemetry(options),
+    disable: () => disableTelemetry(),
+    isEnabled: () => isTelemetryEnabled(),
+    setHistoryWindow: (ms) => setTelemetryHistoryMs(ms),
+    snapshot: () => getTelemetrySnapshot(),
+    getSnapshot: () => getTelemetrySnapshot(),
+    collect: () => getTelemetrySnapshot(),
+  };
+  window.__test.telemetry = telemetryBridge;
+  const perfTarget = window.__perf || {};
+  perfTarget.enable = telemetryBridge.enable;
+  perfTarget.disable = telemetryBridge.disable;
+  perfTarget.isEnabled = telemetryBridge.isEnabled;
+  perfTarget.setHistoryWindow = telemetryBridge.setHistoryWindow;
+  perfTarget.snapshot = telemetryBridge.snapshot;
+  perfTarget.getSnapshot = telemetryBridge.getSnapshot;
+  perfTarget.collect = telemetryBridge.collect;
+  window.__perf = perfTarget;
+
+  // ── Frame profiler API (debug/test only) ──
+  // Enable:  window.__perf.startProfileBuckets()
+  // Read:    window.__perf._profileBuckets
+  // Reset:   window.__perf.startProfileBuckets()  (call again)
+  // Report:  window.__perf.dumpProfileBuckets()
+  perfTarget.startProfileBuckets = () => {
+    perfTarget._profileBuckets = {};
+    return perfTarget._profileBuckets;
+  };
+  perfTarget.dumpProfileBuckets = () => {
+    const b = perfTarget._profileBuckets;
+    if (!b || !b._frames) return 'No profile data. Call __perf.startProfileBuckets() first.';
+    const frames = b._frames;
+    const omit = new Set(['_frames', '_wallTotal']);
+    const entries = Object.keys(b).filter(k => !omit.has(k)).map(k => [k, b[k]]);
+    entries.sort((a, b) => b[1] - a[1]);
+    const wallTotal = b._wallTotal || 0;
+    let report = `=== Frame Profile Report (${frames} frames, wall total ${wallTotal.toFixed(1)}ms, avg ${(wallTotal / frames).toFixed(2)}ms/frame) ===\n`;
+    report += entries.map(([k, v]) => `${k}: ${v.toFixed(2)}ms total, avg ${(v / frames).toFixed(3)}ms/frame (${(v / wallTotal * 100).toFixed(1)}% of wall)`).join('\n');
+    return report;
+  };
+
+  const progressionAPI = createProgressionAPI();
+  window.__test.progression = progressionAPI;
+  perfTarget.progression = progressionAPI;
+  window.__progression = progressionAPI;
 
   // Test hook: deterministic single-shot at a chosen enemy for headless runs.
   // Params: enemyIndex (number), options { distance, hp, snapToCamera }.
@@ -969,7 +1457,7 @@ function applyVisualTuning(tuning = getVisualTuning()) {
       if (mat.userData.baseUniformOpacity === undefined) {
         mat.userData.baseUniformOpacity = mat.uniforms.uOpacity.value;
       }
-      mat.uniforms.uOpacity.value = (mat.userData.baseUniformOpacity ?? PROJECTILE_GLOW.opacity) * projectileOpacityScale;
+      mat.uniforms.uOpacity.value = (mat.userData.baseUniformOpacity ?? PROJECTILE_BOLT.opacity) * projectileOpacityScale;
       mat.opacity = mat.uniforms.uOpacity.value;
     } else {
       if (mat.userData.baseOpacity === undefined) {
@@ -7054,13 +7542,6 @@ function clearAllProjectiles() {
     }
   }
   projectiles.length = 0;
-
-  // Keep glow twins in lockstep with their parent InstancedMeshes after mass clears.
-  Object.values(instancedProjectiles).forEach((pool) => {
-    if (pool?.glowMesh) {
-      pool.glowMesh.count = pool.mesh.count;
-    }
-  });
 }
 
 // Clear all lightning gun beams
@@ -7296,6 +7777,7 @@ function showUpgradeScreen() {
 
   // Get the hand for this upgrade
   const hand = getNextUpgradeHand();
+  pendingUpgradeHand = hand;
 
   // Check if this is the level 1→2 transition where player chooses MAIN weapon
   if (needsMainWeaponChoice()) {
@@ -7333,51 +7815,50 @@ function showUpgradeScreen() {
   blasterDisplays.forEach(d => { if (d) d.userData.needsUpdate = true; });
 }
 
+function clearPendingUpgradeState() {
+  pendingUpgrades = [];
+  pendingUpgradeHand = null;
+}
+
+function finalizeUpgradeSelection() {
+  clearPendingUpgradeState();
+  playUpgradeSound();
+  hideUpgradeCards();
+  advanceLevelAfterUpgrade();
+}
+
 function selectUpgradeAndAdvance(upgrade, hand) {
   console.log(`[game] Selected: ${upgrade.name} for ${hand} hand`);
 
-  // Handle SKIP option - restore full health instead of upgrade
-  if (upgrade.id === 'SKIP') {
+  if (upgrade?.id === 'SKIP') {
     game.health = game.maxHealth;
     console.log('[game] Skipped upgrade, health restored to full');
-    playUpgradeSound();
-    hideUpgradeCards();
-    advanceLevelAfterUpgrade();
+    finalizeUpgradeSelection();
     return;
   }
 
-  // Check if this is a MAIN weapon selection (level 1→2)
-  if (upgrade.type === 'main') {
+  if (upgrade?.type === 'main') {
     console.log(`[game] Selected MAIN weapon: ${upgrade.id} for ${hand} hand`);
     setMainWeapon(upgrade.id, hand);
-    playUpgradeSound();
-    hideUpgradeCards();
-    advanceLevelAfterUpgrade();
+    finalizeUpgradeSelection();
     return;
   }
 
-  // Check if this is an ALT weapon
-  if (upgrade.type === 'alt') {
+  if (upgrade?.type === 'alt') {
     console.log(`[game] Selected ALT weapon: ${upgrade.id} for ${hand} hand`);
     setAltWeapon(upgrade.id, hand);
-    playUpgradeSound();
-    hideUpgradeCards();
-    advanceLevelAfterUpgrade();
+    finalizeUpgradeSelection();
     return;
   }
 
-  // Regular upgrade
   addUpgrade(upgrade.id, hand);
 
-  // Special handling for nuke upgrade
-  if (upgrade.id === 'extra_nuke') {
+  if (upgrade?.id === 'extra_nuke') {
     game.nukes = (game.nukes || 0) + 1;
     console.log(`[nuke] Extra nuke granted. Total: ${game.nukes}`);
   }
 
-  playUpgradeSound();
-  hideUpgradeCards();
-  advanceLevelAfterUpgrade();
+  finalizeUpgradeSelection();
 }
 
 function advanceLevelAfterUpgrade() {
@@ -7599,73 +8080,51 @@ function triggerScreenShake(intensity, duration) {
 function initProjectilePool() {
   if (instancedProjectiles['laser']) return;
 
-  // Paired InstancedMeshes: core projectile + glow twin share instance matrices.
-  const createGlowTwin = (geometry, colorHex, maxCount) => {
-    const mat = createProjectileGlowMaterial(colorHex);
-    registerPlayerProjectileMaterial(mat);
-    const mesh = new THREE.InstancedMesh(geometry, mat, maxCount);
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.count = 0;
-    mesh.frustumCulled = false;
-    scene.add(mesh);
-    return mesh;
-  };
-
   // ── Laser bolts (standard blaster) ──
-  const laserGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.0, 6);
+  const laserGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.0, 8);
   laserGeo.rotateX(Math.PI / 2);
-  const laserMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+  const laserMat = createProjectileMaterial(0x00ffff);
   registerPlayerProjectileMaterial(laserMat);
   const laserIM = new THREE.InstancedMesh(laserGeo, laserMat, 120);
   laserIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   laserIM.count = 0;
   laserIM.frustumCulled = false;
   scene.add(laserIM);
-  const laserGlowGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.2, 6);
-  laserGlowGeo.rotateX(Math.PI / 2);
-  const laserGlowIM = createGlowTwin(laserGlowGeo, 0x00ffff, 120);
-  instancedProjectiles['laser'] = { mesh: laserIM, glowMesh: laserGlowIM, maxCount: 120, freeIndices: new Set() };
+  instancedProjectiles['laser'] = { mesh: laserIM, maxCount: 120, freeIndices: new Set() };
 
   // ── Buckshot pellets ──
-  const buckGeo = new THREE.SphereGeometry(0.035, 6, 6);
-  const buckMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95 });
+  const buckGeo = new THREE.SphereGeometry(0.05, 8, 8);
+  const buckMat = createProjectileMaterial(0xffffff);
   registerPlayerProjectileMaterial(buckMat);
   const buckIM = new THREE.InstancedMesh(buckGeo, buckMat, 20);
   buckIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   buckIM.count = 0;
   buckIM.frustumCulled = false;
   scene.add(buckIM);
-  const buckGlowGeo = new THREE.SphereGeometry(0.08, 8, 8);
-  const buckGlowIM = createGlowTwin(buckGlowGeo, 0xffffff, 20);
-  instancedProjectiles['buckshot'] = { mesh: buckIM, glowMesh: buckGlowIM, maxCount: 20, freeIndices: new Set() };
+  instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
 
   // ── Seeker burst bolts ──
-  const seekerGeo = new THREE.SphereGeometry(0.045, 8, 8);
-  const seekerMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95 });
+  const seekerGeo = new THREE.SphereGeometry(0.06, 8, 8);
+  const seekerMat = createProjectileMaterial(0xff8800);
   registerPlayerProjectileMaterial(seekerMat);
   const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
   seekerIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   seekerIM.count = 0;
   seekerIM.frustumCulled = false;
   scene.add(seekerIM);
-  const seekerGlowGeo = new THREE.SphereGeometry(0.1, 8, 8);
-  const seekerGlowIM = createGlowTwin(seekerGlowGeo, 0xff8800, 28);
-  instancedProjectiles['seeker'] = { mesh: seekerIM, glowMesh: seekerGlowIM, maxCount: 28, freeIndices: new Set() };
+  instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 28, freeIndices: new Set() };
 
   // ── Plasma carbine darts ──
-  const plasmaGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.5, 6);
+  const plasmaGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
   plasmaGeo.rotateX(Math.PI / 2);
-  const plasmaMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+  const plasmaMat = createProjectileMaterial(0x00ff88);
   registerPlayerProjectileMaterial(plasmaMat);
   const plasmaIM = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 30);
   plasmaIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   plasmaIM.count = 0;
   plasmaIM.frustumCulled = false;
   scene.add(plasmaIM);
-  const plasmaGlowGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.6, 6);
-  plasmaGlowGeo.rotateX(Math.PI / 2);
-  const plasmaGlowIM = createGlowTwin(plasmaGlowGeo, 0x00ff88, 30);
-  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, glowMesh: plasmaGlowIM, maxCount: 30, freeIndices: new Set() };
+  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, maxCount: 30, freeIndices: new Set() };
 
   Object.keys(projectileInstanceData).forEach(poolType => {
     const maxCount = instancedProjectiles[poolType].maxCount;
@@ -7790,13 +8249,6 @@ function commitProjectileInstance(poolType, instanceIndex, matrix) {
   if (!pool) return;
   pool.mesh.setMatrixAt(instanceIndex, matrix);
   pool.mesh.instanceMatrix.needsUpdate = true;
-  if (pool.glowMesh) {
-    if (pool.glowMesh.count < pool.mesh.count) {
-      pool.glowMesh.count = pool.mesh.count;
-    }
-    pool.glowMesh.setMatrixAt(instanceIndex, matrix);
-    pool.glowMesh.instanceMatrix.needsUpdate = true;
-  }
 }
 
 // PERFORMANCE: Return projectile instance to pool (deactivate)
@@ -9396,6 +9848,8 @@ const _projHomingVelNorm = new THREE.Vector3();
 const _hostileProjDesired = new THREE.Vector3();
 const _hostileProjCurrent = new THREE.Vector3();
 const _hostileProjSide = new THREE.Vector3();
+const _projectileRayDir = new THREE.Vector3();
+const _projectileNearbyMeshes = [];
 
 // ============================================================
 // PROJECTILE UPDATE LOOP
@@ -9601,22 +10055,22 @@ function updateProjectiles(dt) {
     }
 
     // Check collision with enemies
-    // PERFORMANCE: Broad-phase distance check before expensive raycast.
-    // Only raycast against enemies within a reasonable radius of the projectile.
-    // This reduces raycasting from O(projectiles * all_enemies) to O(projectiles * nearby_enemies).
+    // PERFORMANCE: Use spatial hash to shrink candidate set before raycasting.
     const projPos = proj.position;
     const broadRadius = moveDistance * 2 + 1.5; // Move distance + max hitbox radius
-    const nearbyEnemies = [];
-    const allActiveEnemies = getEnemies();
-    for (let ei = 0; ei < allActiveEnemies.length; ei++) {
-      const enemy = allActiveEnemies[ei];
+    const hashRadius = broadRadius + 3;
+    _projectileNearbyMeshes.length = 0;
+    const hashed = enemySpatialHash.query(projPos.x, projPos.z, hashRadius);
+    for (let ei = 0; ei < hashed.length; ei++) {
+      const enemy = hashed[ei];
+      if (!enemy || !enemy.mesh) continue;
       const dx = projPos.x - enemy.mesh.position.x;
       const dy = projPos.y - enemy.mesh.position.y;
       const dz = projPos.z - enemy.mesh.position.z;
       const distSq = dx * dx + dy * dy + dz * dz;
       const r = (enemy.hitboxRadius || 1) + broadRadius;
       if (distSq < r * r) {
-        nearbyEnemies.push(enemy.mesh);
+        _projectileNearbyMeshes.push(enemy.mesh);
       }
     }
 
@@ -9628,14 +10082,24 @@ function updateProjectiles(dt) {
       const dz = projPos.z - boss.mesh.position.z;
       const distSq = dx * dx + dy * dy + dz * dz;
       if (distSq < (broadRadius + 3) * (broadRadius + 3)) {
-        nearbyEnemies.push(boss.mesh);
+        _projectileNearbyMeshes.push(boss.mesh);
       }
     }
 
     let hits = [];
-    if (nearbyEnemies.length > 0) {
-      _uiRaycaster.set(proj.position, proj.userData.velocity.clone().normalize());
-      hits = _uiRaycaster.intersectObjects(nearbyEnemies, true);
+    if (_projectileNearbyMeshes.length > 0) {
+      if (proj.userData.velocity && typeof proj.userData.velocity.lengthSq === 'function') {
+        _projectileRayDir.copy(proj.userData.velocity);
+      } else {
+        _projectileRayDir.set(0, 0, -1);
+      }
+      if (_projectileRayDir.lengthSq() === 0) {
+        _projectileRayDir.set(0, 0, -1);
+      } else {
+        _projectileRayDir.normalize();
+      }
+      _uiRaycaster.set(proj.position, _projectileRayDir);
+      hits = _uiRaycaster.intersectObjects(_projectileNearbyMeshes, true);
     }
 
     if (hits.length > 0 && hits[0].distance < moveDistance * 2) {
@@ -9956,6 +10420,12 @@ function render(timestamp) {
   const rawDt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
+  // ── Frame profiler (debug/test only) ──
+  const _prof = (typeof window !== 'undefined' && window.__perf && window.__perf._profileBuckets) ? window.__perf._profileBuckets : null;
+  let _lastMark = _prof ? performance.now() : 0;
+  const _mark = _prof ? (name) => { const t = performance.now(); _prof[name] = (_prof[name] || 0) + (t - _lastMark); _lastMark = t; } : () => {};
+  if (_prof) { _prof._frames = (_prof._frames || 0) + 1; _prof._wallTotal = (_prof._wallTotal || 0) + (now - (_prof._prevFrameNow || now)); _prof._prevFrameNow = now; }
+
   // PERFORMANCE: Log stats every 5 seconds in debug mode
   if (typeof window !== 'undefined' && window.debugPerfMonitor && frameCount % 300 === 0) {
     const instancedCounts = Object.entries(instancedProjectiles).map(([t, p]) => `${t}:${p.mesh.count}/${p.maxCount}`).join(', ');
@@ -9987,12 +10457,14 @@ function render(timestamp) {
     effectiveTimeScale = 0;
   }
 
+  _mark('pre_ambient'); // ── end: timeScale + slowmo logic
   const dt = rawDt * effectiveTimeScale;  // Scaled time for game logic
 
   if (currentTheme) {
     updateAmbientParticles(rawDt, currentTheme, getAdjustedCameraPosition());
   }
   updateBiomeProps(now, rawDt);
+  _mark('ambient_biome'); // ── end: ambient particles + biome props
 
   // Update player-following point light
   if (biomePointLight && camera) {
@@ -10018,6 +10490,7 @@ function render(timestamp) {
   }
 
   // ── Title screen ──
+  _mark('pre_state_dispatch'); // ── end: controls, seek, vr pause, desktop controls
   if (st === State.TITLE) {
     updateTitle(now);
     if (typeof window !== 'undefined' && window.debugJumpToLevel) {
@@ -10277,19 +10750,19 @@ function render(timestamp) {
     }
     setPlayerForward(_playerForward);
 
-    // Update decoys and black holes
-    updateDecoys(dt, now, playerPos);
-    updateMinesAndBlackHoles(dt, now, playerPos);
-    updateTethers(dt, now, playerPos);
-    updateNaniteSwarms(now, dt, playerPos);
+    // Update decoys and black holes (guarded to skip when no active instances)
+    if (activeDecoys.length > 0) updateDecoys(dt, now, playerPos);
+    if (activeMines.length > 0 || activeBlackHoles.length > 0) updateMinesAndBlackHoles(dt, now, playerPos);
+    if (activeTethers.length > 0) updateTethers(dt, now, playerPos);
+    if (activeNaniteSwarms.length > 0) updateNaniteSwarms(now, dt, playerPos);
     updatePhaseDashAfterimages(now, dt);
-    updateReflectorDrones(now, dt, playerPos);
+    if (activeReflectorDrones.length > 0) updateReflectorDrones(now, dt, playerPos);
 
     // Laser mine passive spawning (when player stands still)
     spawnLaserMinesPassively(playerPos, now, dt);
 
-    // Update laser mines
-    updateLaserMines(now, dt);
+    // Update laser mines (guarded to skip when no active instances)
+    if (activeLaserMines.length > 0) updateLaserMines(now, dt);
 
     // Apply bullet-time slow-mo and ramp-out (timer-based from commit 5bb0b69)
     if (slowMoRampOut) {
@@ -10377,12 +10850,15 @@ function render(timestamp) {
     const collisions = updateEnemies(dt, now, playerPos);
 
     // Rebuild spatial hash for enemy proximity queries (O(1) lookups)
-    enemySpatialHash.clear();
+    // Skip entirely when no enemies exist to avoid per-frame overhead.
     const enemies = getEnemies();
-    for (const e of enemies) {
-      if (e.mesh) {
-        const pos = e.mesh.position;
-        enemySpatialHash.insert(e, pos.x, pos.z);
+    if (enemies.length > 0) {
+      enemySpatialHash.clear();
+      for (const e of enemies) {
+        if (e.mesh) {
+          const pos = e.mesh.position;
+          enemySpatialHash.insert(e, pos.x, pos.z);
+        }
       }
     }
 
@@ -10847,15 +11323,16 @@ function render(timestamp) {
     }
   }
 
+  _mark('state_dispatch'); // ── end: state_dispatch (PLAYING/TITLE/PAUSE logic)
   // ── Universal updates ──
   updateProjectiles(dt);
   updateVoxelPhysics(dt, now);  // PHYSICS DEATH SYSTEM
-  updateShields(now);
-  updateStasisFields(now, dt);
-  updatePlasmaOrbs(now, dt);
+  if (activeShields.length > 0) updateShields(now);
+  if (activeStasisFields.length > 0) updateStasisFields(now, dt);
+  if (activePlasmaOrbs.length > 0) updatePlasmaOrbs(now, dt);
   updateExplosions(dt, now);
   updateVFX(dt);
-  updateExplosionVisuals(dt, now);
+  if (explosionVisuals.length > 0) updateExplosionVisuals(dt, now);
   updateDamageNumbers(dt, now);
   updateStatusBubbles(dt, now);
   updateBossDebris(dt, now, getBiomeFloorY());  // Boss debris physics with biome-aware floor
@@ -10882,12 +11359,13 @@ function render(timestamp) {
     }
   }
 
-  // ── New ALT weapon updates ──
-  updateGrenades(dt, now);
-  updateProximityMines(now, dt);
-  updateAttackDrones(now, dt, getAdjustedCameraPosition());
-  updateEMPVisuals(now, dt);
-  updateTeleportEffects(now, dt);
+  // ── New ALT weapon updates (guarded to skip when no active instances) ──
+  if (activeGrenades.length > 0) updateGrenades(dt, now);
+  if (activeProximityMines.length > 0) updateProximityMines(now, dt);
+  if (activeAttackDrones.length > 0) updateAttackDrones(now, dt, getAdjustedCameraPosition());
+  if (activeEMPVisuals.length > 0) updateEMPVisuals(now, dt);
+  if (activeTeleportEffects.length > 0) updateTeleportEffects(now, dt);
+  _mark('universal_updates'); // ── end: projectiles, physics, shields, VFX, damage numbers, grenades, FPS
   updateFPS(now, {
     perfMonitor: (typeof window !== 'undefined' && window.debugPerfMonitor) || game.debugPerfMonitor,
     frameTimeMs: rawDt * 1000,
@@ -10898,22 +11376,156 @@ function render(timestamp) {
   const scanlinesEl = document.getElementById('scanlines');
   if (scanlinesEl) scanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
 
+  _mark('scanlines_misc'); // ── end: FPS, scanlines DOM
   // Keep visual tuning and secret trigger visuals responsive every frame.
   const visualTuning = getVisualTuning();
   applyVisualTuning(visualTuning);
   updateVHSRetroShell(now, visualTuning);
   updateDreamTriggerVisual(now);
+  _mark('visual_tuning'); // ── end: applyVisualTuning + updateVHSRetroShell + updateDreamTriggerVisual
 
   // Update pause countdown BEFORE any early-return render path so desktop debug
   // effects never freeze the countdown.
   updatePauseCountdown(now);
 
+  maybeRecordTelemetry(now, rawDt, dt);
+  _mark('telemetry'); // ── end: maybeRecordTelemetry
+
   // Desktop-only debug effects. XR intentionally keeps the default renderer path.
   if (!renderer.xr.isPresenting && renderDesktopDebugEffect(visualTuning)) {
+    _mark('render_gpu'); _mark('total');
     return;
   }
 
   renderer.render(scene, camera);
+  _mark('render_gpu'); _mark('total');
+}
+
+// ============================================================
+//  PERFORMANCE TELEMETRY SUPPORT
+// ============================================================
+function shouldCollectTelemetrySample() {
+  if (!renderer) return false;
+  // Always sample at 1/6 rate (every 6th frame) even when enabled,
+  // to keep telemetry overhead under 1ms per frame.
+  if (frameCount % 6 !== 0) return false;
+  if (isTelemetryEnabled()) return true;
+  if (game.debugPerfMonitor) return true;
+  if (typeof window !== 'undefined' && window.debugPerfMonitor) return true;
+  return false;
+}
+
+function maybeRecordTelemetry(now, rawDt, scaledDt) {
+  if (!shouldCollectTelemetrySample()) return false;
+  recordTelemetrySample({
+    now,
+    frame: frameCount,
+    frameTimeMs: rawDt * 1000,
+    rawDelta: rawDt,
+    delta: scaledDt,
+    renderer: collectRendererStats(),
+    memory: collectHeapStats(),
+    counts: collectRuntimeCounts(),
+    gameplay: collectGameplaySnapshot(),
+  });
+  return true;
+}
+
+function collectRendererStats() {
+  if (!renderer || !renderer.info) return null;
+  const info = renderer.info;
+  return {
+    drawCalls: info.render.calls,
+    triangles: info.render.triangles,
+    lines: info.render.lines,
+    points: info.render.points,
+    geometries: info.memory.geometries,
+    textures: info.memory.textures,
+    programs: Array.isArray(info.programs) ? info.programs.length : (info.programs || 0),
+  };
+}
+
+function collectHeapStats() {
+  if (typeof performance === 'undefined' || !performance.memory) return null;
+  const { usedJSHeapSize, totalJSHeapSize, jsHeapSizeLimit } = performance.memory;
+  const toMb = (bytes) => Number((bytes / 1048576).toFixed(2));
+  return {
+    usedBytes: usedJSHeapSize,
+    totalBytes: totalJSHeapSize,
+    limitBytes: jsHeapSizeLimit,
+    usedMB: toMb(usedJSHeapSize),
+    totalMB: toMb(totalJSHeapSize),
+    limitMB: toMb(jsHeapSizeLimit),
+  };
+}
+
+function collectRuntimeCounts() {
+  const instancedStats = {};
+  Object.entries(instancedProjectiles).forEach(([key, pool]) => {
+    instancedStats[key] = {
+      active: pool.mesh ? pool.mesh.count : 0,
+      max: pool.maxCount || 0,
+      free: pool.freeIndices ? pool.freeIndices.size : 0,
+    };
+  });
+
+  const bossMinionMeshes = typeof getBossMinionMeshes === 'function' ? getBossMinionMeshes() : null;
+
+  return {
+    enemies: getEnemyCount(),
+    bossActive: !!getBoss(),
+    bossProjectiles: getBossProjectiles().length,
+    bossMinions: bossMinionMeshes ? bossMinionMeshes.length : 0,
+    projectiles: projectiles.length,
+    instancedProjectiles: instancedStats,
+    projectileQueue: seekerBurstQueue.length,
+    explosionVisuals: explosionVisuals.length,
+    voxelsActive: activeVoxels.length,
+    voxelPoolFree: voxelPool.length,
+    shields: activeShields.length,
+    stasisFields: activeStasisFields.length,
+    plasmaOrbs: activePlasmaOrbs.length,
+    laserMines: activeLaserMines.length,
+    grenades: activeGrenades.length,
+    decoys: activeDecoys.length,
+    blackHoles: activeBlackHoles.length,
+    mines: activeMines.length,
+    tethers: activeTethers.length,
+    naniteSwarms: activeNaniteSwarms.length,
+    reflectorDrones: activeReflectorDrones.length,
+    attackDrones: activeAttackDrones.length,
+    teleportEffects: activeTeleportEffects.length,
+    empBursts: activeEMPVisuals.length,
+    phaseDashAfterimages: activePhaseDashAfterimages.length,
+  };
+}
+
+function collectGameplaySnapshot() {
+  const levelConfig = getLevelConfig();
+  return {
+    state: game.state,
+    level: game.level,
+    isBossLevel: levelConfig?.isBoss || false,
+    killTarget: levelConfig?.killTarget ?? null,
+    kills: game.kills,
+    totalKills: game.totalKills,
+    score: game.score,
+    health: game.health,
+    maxHealth: game.maxHealth,
+    nukes: game.nukes,
+    slowmoActive: game.slowmoActive,
+    slowmoIntensity: game.slowmoIntensity,
+    timeScale: game.timeScale,
+    bulletTimeScale: timeScale,
+    inDreamWorld: game.inDreamWorld,
+    dreamCompleted: game.dreamCompleted,
+    runStats: {
+      timePlayed: game.runStats.timePlayed,
+      shotsFired: game.runStats.shotsFired,
+      shotsHit: game.runStats.shotsHit,
+      bossesKilled: game.runStats.bossesKilled,
+    },
+  };
 }
 
 // ============================================================

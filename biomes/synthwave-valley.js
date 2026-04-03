@@ -4,6 +4,93 @@
 // ============================================================
 import * as THREE from 'three';
 
+/**
+ * Build a non-uniform terrain grid for synthwave valley.
+ * Concentrates vertices in the player-visible corridor and mountain
+ * ridgeline while aggressively cutting density in fogged-out side/rear
+ * regions the player never sees.
+ *
+ * Distribution strategy:
+ *   X axis: 45-segment center corridor, 12-seg ridge transitions,
+ *           4-seg far silhouette edges
+ *   Z axis: 40-segment walking corridor, 25-seg far mountain zone,
+ *           sparse behind-player tail
+ *
+ * Result: ~16k triangles (vs 28.8k uniform 120x120) with ~2x
+ * higher detail where the player actually looks.
+ */
+function buildTaperedTerrainGeo() {
+  // Piecewise axis: each entry is [start, end, segmentCount].
+  // Consecutive ranges share their boundary vertex (end_n == start_n+1).
+  function piecewise(ranges) {
+    const pts = [];
+    for (let r = 0; r < ranges.length; r++) {
+      const start = ranges[r][0];
+      const end   = ranges[r][1];
+      const count = ranges[r][2];
+      const n = (r < ranges.length - 1) ? count : count + 1;
+      for (let i = 0; i < n; i++) {
+        pts.push(start + (end - start) * (i / count));
+      }
+    }
+    return pts;
+  }
+
+  // X: dense center corridor, moderate mountain flanks, sparse far edges
+  const xPos = piecewise([
+    [-1000, -600,  4],   // far left silhouette (fogged)
+    [-600,  -350,  8],   // left mountain body
+    [-350,  -150, 12],   // left ridge transition
+    [-150,   150, 45],   // center corridor — HIGH detail
+    [ 150,   350, 12],   // right ridge transition
+    [ 350,   600,  8],   // right mountain body
+    [ 600,  1000,  4],   // far right silhouette (fogged)
+  ]);
+
+  // Z: dense walking path + near mountains, sparse behind player
+  const zPos = piecewise([
+    [-1000, -500, 12],   // far scenic backdrop
+    [-500,  -100, 25],   // far mountains (ridgeline near z≈-260)
+    [-100,   500, 40],   // walking corridor — HIGH detail
+    [ 500,   750,  6],   // behind-player taper
+    [ 750,  1000,  3],   // far behind player — minimal
+  ]);
+
+  const nx = xPos.length;   // ~94
+  const nz = zPos.length;   // ~87
+  const vCount = nx * nz;
+
+  // Flat XZ plane (Y=0); the vertex shader displaces Y procedurally
+  const positions = new Float32Array(vCount * 3);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const idx = (j * nx + i) * 3;
+      positions[idx]     = xPos[i];
+      positions[idx + 1] = 0;
+      positions[idx + 2] = zPos[j];
+    }
+  }
+
+  // Triangle indices (two tris per quad)
+  const indices = [];
+  for (let j = 0; j < nz - 1; j++) {
+    for (let i = 0; i < nx - 1; i++) {
+      const a = j * nx + i;
+      const b = a + 1;
+      const c = a + nx;
+      const d = c + 1;
+      indices.push(a, c, b);
+      indices.push(b, c, d);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  // Shader is purely position-based (no normals/UVs used), skip computeVertexNormals
+  return geo;
+}
+
 export function buildSynthwaveValleyScene(group, deps) {
   const { registerFadeMaterial, floorMaterial, synthVisualRefs, biomeTerrainMaterials, getVisualTuning } = deps;
   
@@ -45,21 +132,20 @@ export function buildSynthwaveValleyScene(group, deps) {
   registerFadeMaterial(skyMat);
 
   // Terrain - EXACT colors: Gridlines #015CC1 (bright blue), Between gridlines #0C0E3E (dark blue)
-  // PERFORMANCE FIX: Reduced from 240x240 (57,600 vertices) to 120x120 (14,400 vertices) for 75% reduction
-  // Still provides good visual quality while improving FPS at level start
+  // TAPERED TERRAIN: Non-uniform grid concentrates detail in visible corridor (45 seg center)
+  // while cutting dead side/rear geometry. ~16k tris vs 28.8k uniform 120x120.
   const terrainUniforms = {
     uGridColor: { value: new THREE.Color(0x4368AC) },     // Gridlines
     uBaseColor: { value: new THREE.Color(0x0C1347) },     // Primary/base color
     uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
-    uPulseColorA: { value: new THREE.Color(0xF30787) },   // Pink phase for grid and ridge pulsing
-    uPulseColorB: { value: new THREE.Color(0x00D9FF) },   // Blue phase for grid and ridge pulsing
+    uPulseColorA: { value: new THREE.Color(0xF30787) },   // Pink phase for grid and mountain-edge pulse
+    uPulseColorB: { value: new THREE.Color(0x00D9FF) },   // Blue phase for grid and mountain-edge pulse
     uFlashIntensity: { value: 0.0 },
     uGlowIntensity: { value: getVisualTuning().glowStrength },
     uFogIntensity: { value: getVisualTuning().fogIntensity },
     uTime: { value: 0.0 },
   };
-  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);
-  terrainGeo.rotateX(-Math.PI / 2);
+  const terrainGeo = buildTaperedTerrainGeo();
   const terrainMat = new THREE.ShaderMaterial({
     uniforms: terrainUniforms,
     side: THREE.DoubleSide,
@@ -85,6 +171,173 @@ export function buildSynthwaveValleyScene(group, deps) {
 
   synthVisualRefs.terrainUniforms = terrainUniforms;
 
+  // ── MOUNTAIN WRAP CYLINDER ──
+  // Large open cylinder with mountain PNG on the inside, positioned IN FRONT of sun.
+  // This creates a 360° panoramic mountain backdrop as distant horizon.
+  const mountainTex = new THREE.TextureLoader().load('assets/mountain_wrap.png');
+  mountainTex.wrapS = THREE.RepeatWrapping;
+  mountainTex.wrapT = THREE.ClampToEdgeWrapping;
+  // 9003px width / ~609px height ≈ 14.78 aspect. 6 repeats covers 360° cleanly.
+  mountainTex.repeat.set(6, 1);
+  // Offset texture so middle of PNG faces -Z (forward in XR)
+  mountainTex.offset.x = 0.5 - (1/12); // Center minus half a repeat
+
+  const mountainCylinderGeo = new THREE.CylinderGeometry(1550, 1550, 350, 64, 1, true);
+  const mountainCylinderMat = new THREE.MeshBasicMaterial({
+    map: mountainTex,
+    transparent: true,
+    side: THREE.BackSide,  // Visible from inside
+    depthWrite: false,
+    depthTest: true,
+    fog: false,
+  });
+  const mountainCylinder = new THREE.Mesh(mountainCylinderGeo, mountainCylinderMat);
+  mountainCylinder.name = 'synthwave-mountain-wrap';
+  mountainCylinder.position.set(0, 120, -1300);  // Between player and sun
+  mountainCylinder.frustumCulled = false;
+  mountainCylinder.renderOrder = -4;  // Behind sun
+  group.add(mountainCylinder);
+  registerFadeMaterial(mountainCylinderMat);
+
+  // ── CLOUD DOMES ──
+  // Two inward-facing hemispheres with procedural cloud shader.
+  // Cheap for WebXR: low layer count, no raymarching, soft alpha.
+  const cloudUniforms = {
+    uTime: { value: 0.0 },
+    uSunDir: { value: new THREE.Vector3(0, 0.3, -1).normalize() },
+    uCloudColor: { value: new THREE.Color(0xffeedd) },  // Warm base
+    uSkyColor: { value: new THREE.Color(0x1A004A) },    // Dark purple sky
+    uHorizonColor: { value: new THREE.Color(0xFF8626) }, // Orange horizon
+  };
+
+  const cloudFragmentShader = `
+    varying vec3 vWorldPos;
+    varying vec2 vScreenUV;
+    uniform float uTime;
+    uniform vec3 uSunDir;
+    uniform vec3 uCloudColor;
+    uniform vec3 uSkyColor;
+    uniform vec3 uHorizonColor;
+
+    // Hash and noise functions for FBM
+    vec2 hash2(vec2 p) {
+      p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+      return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+    }
+
+    float noise(vec2 p) {
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(
+        mix(dot(hash2(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)),
+            dot(hash2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), u.x),
+        mix(dot(hash2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)),
+            dot(hash2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), u.x),
+        u.y
+      );
+    }
+
+    // 4-layer FBM (cheap, no raymarching)
+    float fbm(vec2 p) {
+      float value = 0.0;
+      float amp = 0.5;
+      for (int i = 0; i < 4; i++) {
+        value += amp * noise(p);
+        p *= 2.0;
+        amp *= 0.5;
+      }
+      return value;
+    }
+
+    void main() {
+      // Spherical to lat/lon for cloud sampling
+      vec3 n = normalize(vWorldPos);
+      float lat = asin(n.y);
+      float lon = atan(n.z, n.x);
+
+      // Very slow drift animation
+      vec2 cloudUV = vec2(lon * 0.8, lat * 1.5) + vec2(uTime * 0.008, 0.0);
+
+      // Layered FBM noise for cloud density
+      float n1 = fbm(cloudUV * 1.0);
+      float n2 = fbm(cloudUV * 2.5 + 10.0);
+      float density = n1 * 0.6 + n2 * 0.4;
+
+      // Soft cloud shapes using smoothstep
+      float cloudMask = smoothstep(0.2, 0.7, density);
+
+      // Clouds only in upper horizon / mid-sky band (not near zenith or ground)
+      float skyBand = smoothstep(0.1, 0.4, lat) * smoothstep(0.85, 0.5, lat);
+      cloudMask *= skyBand;
+
+      // Sun-facing tint: brighter on sun side
+      float sunFacing = max(0.0, dot(n, uSunDir));
+      vec3 sunTint = mix(vec3(1.0), vec3(1.2, 1.1, 0.9), sunFacing);
+
+      // Gradient from horizon to sky
+      vec3 baseColor = mix(uHorizonColor, uCloudColor, smoothstep(0.0, 0.5, lat));
+      baseColor = mix(baseColor, uSkyColor, smoothstep(0.5, 0.9, lat));
+
+      vec3 cloudCol = baseColor * sunTint;
+      cloudCol = pow(cloudCol, vec3(1.0 / 2.2));  // Gamma correct
+
+      // Soft alpha for distant transparent look
+      float alpha = cloudMask * 0.35;
+
+      gl_FragColor = vec4(cloudCol, alpha);
+    }
+  `;
+
+  const cloudVertexShader = `
+    varying vec3 vWorldPos;
+    void main() {
+      vec4 worldPos = modelMatrix * vec4(position, 1.0);
+      vWorldPos = worldPos.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+
+  // Lower cloud dome (closer to horizon)
+  const cloudDome1Geo = new THREE.SphereGeometry(2400, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.4);
+  const cloudDome1Mat = new THREE.ShaderMaterial({
+    uniforms: cloudUniforms,
+    vertexShader: cloudVertexShader,
+    fragmentShader: cloudFragmentShader,
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    fog: false,
+  });
+  const cloudDome1 = new THREE.Mesh(cloudDome1Geo, cloudDome1Mat);
+  cloudDome1.name = 'synthwave-cloud-dome-1';
+  cloudDome1.position.set(0, 0, -700);
+  cloudDome1.frustumCulled = false;
+  cloudDome1.renderOrder = -1;
+  group.add(cloudDome1);
+  registerFadeMaterial(cloudDome1Mat);
+
+  // Higher cloud dome (more sparse, near zenith)
+  const cloudDome2Geo = new THREE.SphereGeometry(2600, 32, 16, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.5);
+  const cloudDome2Mat = new THREE.ShaderMaterial({
+    uniforms: { ...cloudUniforms, uCloudColor: { value: new THREE.Color(0xffd4b3) } },
+    vertexShader: cloudVertexShader,
+    fragmentShader: cloudFragmentShader,
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    fog: false,
+  });
+  const cloudDome2 = new THREE.Mesh(cloudDome2Geo, cloudDome2Mat);
+  cloudDome2.name = 'synthwave-cloud-dome-2';
+  cloudDome2.position.set(0, 0, -700);
+  cloudDome2.frustumCulled = false;
+  cloudDome2.renderOrder = -1;
+  group.add(cloudDome2);
+  registerFadeMaterial(cloudDome2Mat);
+
   // Sun + glow - flat planes (no billboard), using retro synthwave PNG
   const sunGroup = new THREE.Group();
   sunGroup.name = 'synthwave-sun-group';
@@ -104,12 +357,13 @@ export function buildSynthwaveValleyScene(group, deps) {
     return new THREE.CanvasTexture(c);
   };
 
-  const sunGlowTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(254,151,83,0.85)');
-  const sunOuterGlowTex = makeRadial('rgba(254,151,83,0.9)', 'rgba(224,1,134,0.3)');
+  // DIMMER, YELLOWISH glow (not bright white)
+  const sunGlowTex = makeRadial('rgba(255,230,150,0.7)', 'rgba(254,151,83,0.4)');
+  const sunOuterGlowTex = makeRadial('rgba(254,180,100,0.3)', 'rgba(224,1,134,0.1)');
 
-  // Outer massive glow (flat plane, no billboard, fog-proof, no depth test)
-  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 0.32, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(875, 875), sunOuterGlowMat); // 10% smaller again (81% of original)
+  // Outer massive glow - much dimmer, yellowish-orange tint
+  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffcc88, transparent: true, opacity: 0.15, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(875, 875), sunOuterGlowMat);
   sunOuterGlow.name = 'synthwave-sun-outer-glow';
   sunOuterGlow.userData.planeName = 'synthwave-sun-outer-glow';
   sunOuterGlow.frustumCulled = false;
@@ -118,9 +372,9 @@ export function buildSynthwaveValleyScene(group, deps) {
   registerFadeMaterial(sunOuterGlowMat);
   synthVisualRefs.sunOuterGlowMat = sunOuterGlowMat;
 
-  // Main bright glow (fog-proof, no depth test)
-  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), sunGlowMat); // 10% smaller again (81% of original)
+  // Main glow - dimmer, yellowish
+  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffdd99, transparent: true, opacity: 0.5, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), sunGlowMat);
   sunGlow.name = 'synthwave-sun-main-glow';
   sunGlow.userData.planeName = 'synthwave-sun-main-glow';
   sunGlow.frustumCulled = false;
@@ -413,6 +667,9 @@ export function buildSynthwaveValleyScene(group, deps) {
     const t = time;
     // Drive the floor and ridge color wave from one time uniform instead of touching geometry.
     terrainUniforms.uTime.value = t * 0.001;
+    // Very slow cloud drift animation
+    cloudDome1Mat.uniforms.uTime.value = t * 0.0001;
+    cloudDome2Mat.uniforms.uTime.value = t * 0.00008;
     columnNeonCyanMat.opacity = 0.5 + 0.4 * Math.sin(t * 0.8);
     columnNeonPurpleMat.opacity = 0.5 + 0.4 * Math.sin(t * 0.6 + 1.0);
     archGlowMat.opacity = 0.25 + 0.15 * Math.sin(t * 0.5);

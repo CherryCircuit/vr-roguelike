@@ -65,6 +65,8 @@ let nukeSprite = null;
 let comboSprite = null;
 let comboCooldownSprite = null;
 let fpsSprite = null;
+const FPS_SPRITE_BASE_WIDTH = 0.16;
+const FPS_SPRITE_BASE_HEIGHT = 0.03;
 
 // FPS counter optimization: reuse canvas/texture to avoid churn
 let fpsCanvas = null;
@@ -154,7 +156,10 @@ let killsAlertDisplayTime = 0;
 let killsAlertMesh = null;
 
 // Scoreboard state
+const SCOREBOARD_CANVAS_WIDTH = 900;
+const SCOREBOARD_CANVAS_HEIGHT = 1080;
 let scoreboardCanvas = null;
+let scoreboardCtx = null;
 let scoreboardTexture = null;
 let scoreboardMesh = null;
 let scoreboardScrollOffset = 0;
@@ -496,7 +501,7 @@ export function initHUD(camera, scene) {
   fpsTexture = new THREE.CanvasTexture(fpsCanvas);
   fpsTexture.minFilter = THREE.LinearFilter;
 
-  const fpsGeo = new THREE.PlaneGeometry(0.16, 0.03);  // 80% smaller: 0.8*0.2, 0.15*0.2
+  const fpsGeo = new THREE.PlaneGeometry(FPS_SPRITE_BASE_WIDTH, FPS_SPRITE_BASE_HEIGHT);  // 80% smaller: 0.8*0.2, 0.15*0.2
   const fpsMat = new THREE.MeshBasicMaterial({
     map: fpsTexture,
     transparent: true,
@@ -1985,10 +1990,12 @@ export function updateFPS(now, opts = {}) {
     // Adjust sprite geometry to match canvas aspect ratio (prevents squishing)
     // Use fixed aspect ratio based on canvas size to avoid stretching
     const canvasAspect = fpsCanvas.width / fpsCanvas.height;  // 1024/128 = 8
-    const displayScale = perfMonitor ? 0.05 : 0.03;  // 80% smaller: 0.25*0.2, 0.15*0.2
     const baseHeight = perfMonitor ? 0.024 : 0.016;  // 80% smaller: 0.12*0.2, 0.08*0.2
-    fpsSprite.geometry.dispose();
-    fpsSprite.geometry = new THREE.PlaneGeometry(canvasAspect * baseHeight, baseHeight);
+    const spriteWidth = canvasAspect * baseHeight;
+    const spriteHeight = baseHeight;
+    const scaleX = spriteWidth / FPS_SPRITE_BASE_WIDTH;
+    const scaleY = spriteHeight / FPS_SPRITE_BASE_HEIGHT;
+    fpsSprite.scale.set(scaleX, scaleY, 1);
     fpsSprite.visible = game.debugShowFPS;  // Respect FPS display toggle
     lastFpsUpdate = now;
   }
@@ -3232,9 +3239,55 @@ function getScoreboardHeader(headerText) {
   return { main: headerText };
 }
 
+function disposeScoreboardNode(root) {
+  if (!root) return;
+  root.traverse((child) => {
+    if (child === scoreboardMesh) return;
+    if (child.geometry) {
+      child.geometry.dispose();
+    }
+    if (!child.material) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((mat) => {
+      if (!mat) return;
+      if (mat.map) {
+        mat.map.dispose();
+        mat.map = null;
+      }
+      if (mat.alphaMap) {
+        mat.alphaMap.dispose();
+        mat.alphaMap = null;
+      }
+      mat.dispose();
+    });
+  });
+}
+
+function ensureScoreboardCanvas() {
+  if (!scoreboardCanvas) {
+    scoreboardCanvas = document.createElement('canvas');
+    scoreboardCanvas.width = SCOREBOARD_CANVAS_WIDTH;
+    scoreboardCanvas.height = SCOREBOARD_CANVAS_HEIGHT;
+    scoreboardCtx = scoreboardCanvas.getContext('2d');
+  } else if (!scoreboardCtx) {
+    scoreboardCtx = scoreboardCanvas.getContext('2d');
+  } else if (scoreboardCanvas.width !== SCOREBOARD_CANVAS_WIDTH || scoreboardCanvas.height !== SCOREBOARD_CANVAS_HEIGHT) {
+    scoreboardCanvas.width = SCOREBOARD_CANVAS_WIDTH;
+    scoreboardCanvas.height = SCOREBOARD_CANVAS_HEIGHT;
+    scoreboardCtx = scoreboardCanvas.getContext('2d');
+  }
+  return scoreboardCtx;
+}
+
 export function showScoreboard(scores, headerText, playerPos) {
   hideAll();
-  while (scoreboardGroup.children.length) scoreboardGroup.remove(scoreboardGroup.children[0]);
+  while (scoreboardGroup.children.length) {
+    const child = scoreboardGroup.children[0];
+    scoreboardGroup.remove(child);
+    if (child !== scoreboardMesh) {
+      disposeScoreboardNode(child);
+    }
+  }
 
   scoreboardScores = scores;
   scoreboardScrollOffset = 0;
@@ -3371,12 +3424,11 @@ function drawTextWithSpacing(ctx, text, x, y, color, letterSpacing = 3, fontSize
 }
 
 function renderScoreboardCanvas() {
-  const canvas = document.createElement('canvas');
-  const w = 900;
-  const h = 1080;
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
+  const ctx = ensureScoreboardCanvas();
+  if (!ctx) return;
+  const canvas = scoreboardCanvas;
+  const w = canvas.width;
+  const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
   // Background
@@ -3495,22 +3547,27 @@ function renderScoreboardCanvas() {
     drawTextWithSpacing(ctx, `PAGE ${scoreboardPage + 1} OF ${totalPages}`, w / 2, h - 110, '#ffffff', 3, 38, 'center');
   }
 
-  if (scoreboardTexture) scoreboardTexture.dispose();
-  scoreboardTexture = new THREE.CanvasTexture(canvas);
-  scoreboardTexture.premultiplyAlpha = false;
-  scoreboardTexture.minFilter = THREE.LinearFilter;
+  if (!scoreboardTexture) {
+    scoreboardTexture = new THREE.CanvasTexture(canvas);
+    scoreboardTexture.premultiplyAlpha = false;
+    scoreboardTexture.minFilter = THREE.LinearFilter;
+  }
+  scoreboardTexture.needsUpdate = true;
 
   if (!scoreboardMesh) {
     const geo = new THREE.PlaneGeometry(2.05, 2.45);
     const mat = new THREE.MeshBasicMaterial({
-      map: scoreboardTexture, transparent: true, side: THREE.DoubleSide, depthTest: false,
+      map: scoreboardTexture,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthTest: false,
     });
     scoreboardMesh = new THREE.Mesh(geo, mat);
     scoreboardMesh.renderOrder = 999;
-  } else {
+  } else if (scoreboardMesh.material.map !== scoreboardTexture) {
     scoreboardMesh.material.map = scoreboardTexture;
-    scoreboardMesh.material.needsUpdate = true;
   }
+  scoreboardMesh.material.needsUpdate = true;
 
   if (scoreboardScores.length === 0 && !scoreboardSpinnerTimer) {
     scoreboardSpinnerTimer = setInterval(() => {
@@ -3522,7 +3579,6 @@ function renderScoreboardCanvas() {
       renderScoreboardCanvas();
     }, 200);
   }
-
 }
 
 export function hideScoreboard() {
@@ -3855,6 +3911,13 @@ export function updateHUDHover(raycasters) {
   if (nameEntryGroup.visible) {
     keyboardKeys.forEach(k => { if (k.mesh) hoverables.push(k.mesh); });
     nameEntryActionMeshes.forEach(m => { if (m) hoverables.push(m); });
+  }
+
+  // 7. Pause Menu (RESUME button)
+  if (pauseMenuGroup.visible) {
+    pauseMenuGroup.traverse(c => {
+      if (c.userData && c.userData.isResumeButton) hoverables.push(c);
+    });
   }
 
   if (hoverables.length === 0) return false;
