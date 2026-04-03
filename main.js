@@ -187,103 +187,20 @@ const MAX_PROJECTILES = 100;
 // down to ~4, matching the three.js physics_ammo_instancing pattern.
 const PROJECTILE_POOL_SIZE = 120;
 
-// Star Wars-style blaster bolt shader: white-hot core, colored outer glow, soft edges
-// Single-pass replacement for the previous fake bloom twin-mesh system
-//
-// DESIGN NOTES:
-// - White-hot core is achieved via radial gradient blending to pure white
-// - Colored outer glow uses the base bolt color
-// - Soft edge falloff via alpha gradient
-// - Tunable via PROJECTILE_BOLT constants below
-//
-// KNOWN LIMITATIONS (need hand-tuning):
-// - Cylindrical geometry (laser/plasma) radial calculation assumes Y-axis length
-// - Core size/falloff may need adjustment per projectile type for optimal look
-// - Current radial calculation uses vPosition.xz - may need adjustment for non-standard geometry
+// Stable single-material projectile visuals. Keep the instanced system and simple,
+// visible projectile bodies. We can revisit a fancier blaster shader later.
 const PROJECTILE_BOLT = {
-  coreIntensity: 2.5,     // How bright the white core is
-  coreSize: 0.35,         // Size of the white core (0-1)
-  glowFalloff: 0.6,       // How quickly the glow fades at edges
-  opacity: 0.95,          // Base opacity
+  opacity: 0.95,
 };
 
-// Custom shader material for blaster-bolt style projectiles
-// Creates a radial gradient: white center -> colored middle -> transparent edges
-const BLASTER_BOLT_VERTEX_SHADER = `
-  varying vec2 vUv;
-  varying vec3 vNormal;
-  varying vec3 vPosition;
-
-  void main() {
-    vUv = uv;
-    vNormal = normalize(normalMatrix * normal);
-    vPosition = position;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const BLASTER_BOLT_FRAGMENT_SHADER = `
-  uniform vec3 uBoltColor;
-  uniform float uCoreIntensity;
-  uniform float uCoreSize;
-  uniform float uGlowFalloff;
-  uniform float uOpacity;
-
-  varying vec2 vUv;
-  varying vec3 vNormal;
-  varying vec3 vPosition;
-
-  void main() {
-    // Calculate radial distance from center for cylindrical/spherical geometry
-    // For cylinders: use UV.y for length gradient, distance from center axis for radial
-    // For spheres: use distance from center point
-    
-    // Radial distance from center (works for both cylinder and sphere)
-    float radialDist = length(vPosition.xz); // Assuming Y is the length axis for cylinders
-    float maxRadius = 0.5; // Normalize to geometry bounds
-    
-    // Normalize radial distance
-    float normalizedDist = clamp(radialDist / maxRadius, 0.0, 1.0);
-    
-    // Create intensity gradient: bright at center, fading outward
-    float coreGradient = 1.0 - smoothstep(0.0, uCoreSize, normalizedDist);
-    float glowGradient = 1.0 - pow(normalizedDist, uGlowFalloff);
-    
-    // White core color (high intensity)
-    vec3 coreColor = vec3(1.0, 1.0, 1.0) * uCoreIntensity;
-    
-    // Blend from white core to colored glow
-    vec3 finalColor = mix(uBoltColor, coreColor, coreGradient);
-    
-    // Apply glow intensity falloff
-    finalColor *= glowGradient;
-    
-    // Alpha falloff at edges for soft blaster-bolt look
-    float alpha = uOpacity * glowGradient;
-    alpha = smoothstep(0.0, 0.3, alpha); // Soft edge
-    
-    gl_FragColor = vec4(finalColor, alpha);
-  }
-`;
-
 function createProjectileMaterial(colorHex) {
-  const material = new THREE.ShaderMaterial({
-    uniforms: {
-      uBoltColor: { value: new THREE.Color(colorHex) },
-      uCoreIntensity: { value: PROJECTILE_BOLT.coreIntensity },
-      uCoreSize: { value: PROJECTILE_BOLT.coreSize },
-      uGlowFalloff: { value: PROJECTILE_BOLT.glowFalloff },
-      uOpacity: { value: PROJECTILE_BOLT.opacity },
-    },
-    vertexShader: BLASTER_BOLT_VERTEX_SHADER,
-    fragmentShader: BLASTER_BOLT_FRAGMENT_SHADER,
+  const material = new THREE.MeshBasicMaterial({
+    color: colorHex,
     transparent: true,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
+    opacity: PROJECTILE_BOLT.opacity,
     depthWrite: false,
-    depthTest: true,
   });
-  material.userData.baseUniformOpacity = PROJECTILE_BOLT.opacity;
+  material.userData.baseOpacity = PROJECTILE_BOLT.opacity;
   return material;
 }
 
@@ -8081,7 +7998,7 @@ function initProjectilePool() {
   if (instancedProjectiles['laser']) return;
 
   // ── Laser bolts (standard blaster) ──
-  const laserGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.0, 8);
+  const laserGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.0, 6);
   laserGeo.rotateX(Math.PI / 2);
   const laserMat = createProjectileMaterial(0x00ffff);
   registerPlayerProjectileMaterial(laserMat);
@@ -8093,7 +8010,7 @@ function initProjectilePool() {
   instancedProjectiles['laser'] = { mesh: laserIM, maxCount: 120, freeIndices: new Set() };
 
   // ── Buckshot pellets ──
-  const buckGeo = new THREE.SphereGeometry(0.05, 8, 8);
+  const buckGeo = new THREE.SphereGeometry(0.035, 6, 6);
   const buckMat = createProjectileMaterial(0xffffff);
   registerPlayerProjectileMaterial(buckMat);
   const buckIM = new THREE.InstancedMesh(buckGeo, buckMat, 20);
@@ -8104,7 +8021,7 @@ function initProjectilePool() {
   instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
 
   // ── Seeker burst bolts ──
-  const seekerGeo = new THREE.SphereGeometry(0.06, 8, 8);
+  const seekerGeo = new THREE.SphereGeometry(0.045, 8, 8);
   const seekerMat = createProjectileMaterial(0xff8800);
   registerPlayerProjectileMaterial(seekerMat);
   const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
@@ -8115,7 +8032,7 @@ function initProjectilePool() {
   instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 28, freeIndices: new Set() };
 
   // ── Plasma carbine darts ──
-  const plasmaGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
+  const plasmaGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.5, 6);
   plasmaGeo.rotateX(Math.PI / 2);
   const plasmaMat = createProjectileMaterial(0x00ff88);
   registerPlayerProjectileMaterial(plasmaMat);
