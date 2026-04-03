@@ -190,166 +190,17 @@ const PROJECTILE_POOL_SIZE = 120;
 // Stable single-material projectile visuals. Keep the instanced system and simple,
 // visible projectile bodies. We can revisit a fancier blaster shader later.
 const PROJECTILE_BOLT = {
-  coreColor: 0xffffff,  // Pure white hot core
-  opacity: 1.0,
+  opacity: 0.75,
 };
 
-// Bloom-simulating glow for projectile visibility.
-// Triple InstancedMesh approach: core + inner glow + outer halo share instance matrices.
-// Designed to approximate UnrealBloomPass-style highlight glow without EffectComposer
-// (which is incompatible with WebXR). Uses gaussian-like soft falloff + additive blending.
-const PROJECTILE_GLOW = {
-  falloff: 0.15,       // Gaussian sigma control for inner glow
-  internalRadius: 3.5,  // Rim intensity
-  opacity: 0.95,       // Inner glow opacity (strong)
-};
-
-// Outer halo layer config (3rd mesh for bloom spread)
-const PROJECTILE_HALO = {
-  opacity: 0.55,       // Softer than inner glow
-  colorBoost: 1.3,     // Slightly brighter than inner glow color
-};
-
-// Bloom-simulating glow shaders (inner glow layer)
-// Uses gaussian radial falloff + Fresnel rim for bloom-like appearance
-const FAKE_GLOW_VERTEX_SHADER = `
-  varying vec3 vNormalW;
-  varying vec3 vPositionW;
-  varying vec3 vLocalPos;
-
-  void main() {
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vPositionW = (modelMatrix * vec4(position, 1.0)).xyz;
-    vNormalW = normalize(normalMatrix * normal);
-    vLocalPos = position;
-    gl_Position = projectionMatrix * mvPosition;
-  }
-`;
-
-const FAKE_GLOW_FRAGMENT_SHADER = `
-  uniform vec3 uGlowColor;
-  uniform float uFalloff;
-  uniform float uGlowInternalRadius;
-  uniform float uOpacity;
-  uniform float uGlowRadius;
-
-  varying vec3 vNormalW;
-  varying vec3 vPositionW;
-  varying vec3 vLocalPos;
-
-  void main() {
-    vec3 viewDirection = normalize(cameraPosition - vPositionW);
-    float rim = pow(1.0 - abs(dot(viewDirection, vNormalW)), uGlowInternalRadius);
-    rim = smoothstep(0.0, 1.0, rim);
-
-    // Gaussian-like soft radial falloff (bloom approximation)
-    float dist = length(vLocalPos) / max(uGlowRadius, 0.001);
-    float gaussian = exp(-dist * dist * 3.0) * 1.4;
-
-    // Combine gaussian core + Fresnel rim
-    float intensity = gaussian + rim * 0.5;
-    intensity = clamp(intensity, 0.0, 1.5);
-
-    // Hot white core blending to glow color (UnrealBloomPass style)
-    vec3 hotCore = vec3(1.0, 1.0, 1.0);
-    vec3 glow = mix(hotCore, uGlowColor, smoothstep(0.0, 0.5, dist)) * intensity;
-
-    gl_FragColor = vec4(glow, uOpacity * clamp(intensity, 0.0, 1.0));
-  }
-`;
-
-// Outer halo shader (softer, wider bloom spread layer)
-const HALO_VERTEX_SHADER = `
-  varying vec3 vNormalW;
-  varying vec3 vPositionW;
-  varying vec3 vLocalPos;
-
-  void main() {
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vPositionW = (modelMatrix * vec4(position, 1.0)).xyz;
-    vNormalW = normalize(normalMatrix * normal);
-    vLocalPos = position;
-    gl_Position = projectionMatrix * mvPosition;
-  }
-`;
-
-const HALO_FRAGMENT_SHADER = `
-  uniform vec3 uGlowColor;
-  uniform float uOpacity;
-  uniform float uGlowRadius;
-
-  varying vec3 vNormalW;
-  varying vec3 vPositionW;
-  varying vec3 vLocalPos;
-
-  void main() {
-    // Wide soft gaussian for bloom spread effect
-    float dist = length(vLocalPos) / max(uGlowRadius, 0.001);
-    float gaussian = exp(-dist * dist * 1.5);
-
-    // Gentle Fresnel for angle-independent visibility
-    vec3 viewDirection = normalize(cameraPosition - vPositionW);
-    float rim = pow(1.0 - abs(dot(viewDirection, vNormalW)), 2.0);
-    float intensity = gaussian * 0.7 + rim * 0.3;
-
-    // Color only (no white core) for soft outer bloom
-    vec3 halo = uGlowColor * intensity * 1.5;
-
-    gl_FragColor = vec4(halo, uOpacity * clamp(intensity, 0.0, 1.0));
-  }
-`;
-
-function createProjectileMaterial() {
+function createProjectileMaterial(colorHex) {
   const material = new THREE.MeshBasicMaterial({
-    color: PROJECTILE_BOLT.coreColor,
+    color: colorHex,
     transparent: true,
     opacity: PROJECTILE_BOLT.opacity,
     depthWrite: false,
   });
   material.userData.baseOpacity = PROJECTILE_BOLT.opacity;
-  return material;
-}
-
-function createProjectileGlowMaterial(colorHex, glowRadius = 1.0) {
-  const material = new THREE.ShaderMaterial({
-    uniforms: {
-      uGlowColor: { value: new THREE.Color(colorHex) },
-      uFalloff: { value: PROJECTILE_GLOW.falloff },
-      uGlowInternalRadius: { value: PROJECTILE_GLOW.internalRadius },
-      uOpacity: { value: PROJECTILE_GLOW.opacity },
-      uGlowRadius: { value: glowRadius },
-    },
-    vertexShader: FAKE_GLOW_VERTEX_SHADER,
-    fragmentShader: FAKE_GLOW_FRAGMENT_SHADER,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,  // Visible from all angles
-    depthWrite: false,
-    depthTest: true,
-  });
-  material.userData.baseOpacity = PROJECTILE_GLOW.opacity;
-  return material;
-}
-
-function createProjectileHaloMaterial(colorHex, glowRadius = 1.0) {
-  const color = new THREE.Color(colorHex);
-  // Boost halo brightness for soft outer bloom look
-  color.multiplyScalar(PROJECTILE_HALO.colorBoost);
-  const material = new THREE.ShaderMaterial({
-    uniforms: {
-      uGlowColor: { value: color },
-      uOpacity: { value: PROJECTILE_HALO.opacity },
-      uGlowRadius: { value: glowRadius },
-    },
-    vertexShader: HALO_VERTEX_SHADER,
-    fragmentShader: HALO_FRAGMENT_SHADER,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    depthTest: true,
-  });
-  material.userData.baseOpacity = PROJECTILE_HALO.opacity;
   return material;
 }
 
@@ -8172,40 +8023,10 @@ function triggerScreenShake(intensity, duration) {
 function initProjectilePool() {
   if (instancedProjectiles['laser']) return;
 
-  // Helper to create inner glow InstancedMesh
-  const createGlowTwin = (geometry, colorHex, maxCount) => {
-    geometry.computeBoundingSphere();
-    const glowRadius = geometry.boundingSphere ? geometry.boundingSphere.radius : 1.0;
-    const mat = createProjectileGlowMaterial(colorHex, glowRadius);
-    registerPlayerProjectileMaterial(mat);
-    const mesh = new THREE.InstancedMesh(geometry, mat, maxCount);
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.count = 0;
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 951;
-    scene.add(mesh);
-    return mesh;
-  };
-
-  // Helper to create outer halo InstancedMesh (3rd bloom-spread layer)
-  const createHaloTwin = (geometry, colorHex, maxCount) => {
-    geometry.computeBoundingSphere();
-    const glowRadius = geometry.boundingSphere ? geometry.boundingSphere.radius : 1.0;
-    const mat = createProjectileHaloMaterial(colorHex, glowRadius);
-    registerPlayerProjectileMaterial(mat);
-    const mesh = new THREE.InstancedMesh(geometry, mat, maxCount);
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.count = 0;
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 952;  // After inner glow, before UI
-    scene.add(mesh);
-    return mesh;
-  };
-
   // ── Laser bolts (standard blaster) ──
-  const laserGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.0, 6);
+  const laserGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.0, 6);
   laserGeo.rotateX(Math.PI / 2);
-  const laserMat = createProjectileMaterial();
+  const laserMat = createProjectileMaterial(0x00ffff);
   registerPlayerProjectileMaterial(laserMat);
   const laserIM = new THREE.InstancedMesh(laserGeo, laserMat, 120);
   laserIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -8213,19 +8034,11 @@ function initProjectilePool() {
   laserIM.frustumCulled = false;
   laserIM.renderOrder = 950;
   scene.add(laserIM);
-  // Inner glow (gaussian bloom core)
-  const laserGlowGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.3, 8);
-  laserGlowGeo.rotateX(Math.PI / 2);
-  const laserGlowIM = createGlowTwin(laserGlowGeo, 0x00ffff, 120);
-  // Outer halo (bloom spread)
-  const laserHaloGeo = new THREE.CylinderGeometry(0.16, 0.16, 1.5, 8);
-  laserHaloGeo.rotateX(Math.PI / 2);
-  const laserHaloIM = createHaloTwin(laserHaloGeo, 0x00ffff, 120);
-  instancedProjectiles['laser'] = { mesh: laserIM, glowMesh: laserGlowIM, haloMesh: laserHaloIM, maxCount: 120, freeIndices: new Set() };
+  instancedProjectiles['laser'] = { mesh: laserIM, maxCount: 120, freeIndices: new Set() };
 
   // ── Buckshot pellets ──
-  const buckGeo = new THREE.SphereGeometry(0.035, 6, 6);
-  const buckMat = createProjectileMaterial();
+  const buckGeo = new THREE.SphereGeometry(0.05, 6, 6);
+  const buckMat = createProjectileMaterial(0xffffff);
   registerPlayerProjectileMaterial(buckMat);
   const buckIM = new THREE.InstancedMesh(buckGeo, buckMat, 20);
   buckIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -8233,15 +8046,11 @@ function initProjectilePool() {
   buckIM.frustumCulled = false;
   buckIM.renderOrder = 950;
   scene.add(buckIM);
-  const buckGlowGeo = new THREE.SphereGeometry(0.12, 8, 8);
-  const buckGlowIM = createGlowTwin(buckGlowGeo, 0xffffff, 20);
-  const buckHaloGeo = new THREE.SphereGeometry(0.22, 8, 8);
-  const buckHaloIM = createHaloTwin(buckHaloGeo, 0xddeeff, 20);
-  instancedProjectiles['buckshot'] = { mesh: buckIM, glowMesh: buckGlowIM, haloMesh: buckHaloIM, maxCount: 20, freeIndices: new Set() };
+  instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
 
   // ── Seeker burst bolts ──
-  const seekerGeo = new THREE.SphereGeometry(0.045, 8, 8);
-  const seekerMat = createProjectileMaterial();
+  const seekerGeo = new THREE.SphereGeometry(0.06, 8, 8);
+  const seekerMat = createProjectileMaterial(0xff8800);
   registerPlayerProjectileMaterial(seekerMat);
   const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
   seekerIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -8249,16 +8058,12 @@ function initProjectilePool() {
   seekerIM.frustumCulled = false;
   seekerIM.renderOrder = 950;
   scene.add(seekerIM);
-  const seekerGlowGeo = new THREE.SphereGeometry(0.14, 8, 8);
-  const seekerGlowIM = createGlowTwin(seekerGlowGeo, 0xff8800, 28);
-  const seekerHaloGeo = new THREE.SphereGeometry(0.26, 8, 8);
-  const seekerHaloIM = createHaloTwin(seekerHaloGeo, 0xff6600, 28);
-  instancedProjectiles['seeker'] = { mesh: seekerIM, glowMesh: seekerGlowIM, haloMesh: seekerHaloIM, maxCount: 28, freeIndices: new Set() };
+  instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 28, freeIndices: new Set() };
 
   // ── Plasma carbine darts ──
-  const plasmaGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.5, 6);
+  const plasmaGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 6);
   plasmaGeo.rotateX(Math.PI / 2);
-  const plasmaMat = createProjectileMaterial();
+  const plasmaMat = createProjectileMaterial(0x00ff88);
   registerPlayerProjectileMaterial(plasmaMat);
   const plasmaIM = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 30);
   plasmaIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -8266,13 +8071,7 @@ function initProjectilePool() {
   plasmaIM.frustumCulled = false;
   plasmaIM.renderOrder = 950;
   scene.add(plasmaIM);
-  const plasmaGlowGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.7, 8);
-  plasmaGlowGeo.rotateX(Math.PI / 2);
-  const plasmaGlowIM = createGlowTwin(plasmaGlowGeo, 0x00ff88, 30);
-  const plasmaHaloGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.85, 8);
-  plasmaHaloGeo.rotateX(Math.PI / 2);
-  const plasmaHaloIM = createHaloTwin(plasmaHaloGeo, 0x00ff88, 30);
-  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, glowMesh: plasmaGlowIM, haloMesh: plasmaHaloIM, maxCount: 30, freeIndices: new Set() };
+  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, maxCount: 30, freeIndices: new Set() };
 
   Object.keys(projectileInstanceData).forEach(poolType => {
     const maxCount = instancedProjectiles[poolType].maxCount;
@@ -8281,7 +8080,7 @@ function initProjectilePool() {
     }
   });
 
-  console.log('[performance] InstancedMesh projectile pools initialized with bloom triple-layers (core+glow+halo): laser(120), buckshot(20), seeker(28), plasma_carbine(30)');
+  console.log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(20), seeker(28), plasma_carbine(30)');
 }
 
 // PERFORMANCE: Acquire an instance slot from the InstancedMesh pool.
@@ -8303,8 +8102,7 @@ function getPooledProjectile(poolType, color) {
     return null;
   }
 
-  // Keep the core hot-white and let the glow mesh carry the weapon color.
-  pool.mesh.setColorAt(slotIndex, _projColor.setHex(0xffffff));
+  pool.mesh.setColorAt(slotIndex, _projColor.setHex(color));
   pool.mesh.instanceColor.needsUpdate = true;
 
   // Reset transforms so projectile + glow twins start hidden
@@ -8397,22 +8195,6 @@ function commitProjectileInstance(poolType, instanceIndex, matrix) {
   if (!pool) return;
   pool.mesh.setMatrixAt(instanceIndex, matrix);
   pool.mesh.instanceMatrix.needsUpdate = true;
-  // Sync glow twin mesh
-  if (pool.glowMesh) {
-    if (pool.glowMesh.count < pool.mesh.count) {
-      pool.glowMesh.count = pool.mesh.count;
-    }
-    pool.glowMesh.setMatrixAt(instanceIndex, matrix);
-    pool.glowMesh.instanceMatrix.needsUpdate = true;
-  }
-  // Sync halo mesh (3rd bloom-spread layer)
-  if (pool.haloMesh) {
-    if (pool.haloMesh.count < pool.mesh.count) {
-      pool.haloMesh.count = pool.mesh.count;
-    }
-    pool.haloMesh.setMatrixAt(instanceIndex, matrix);
-    pool.haloMesh.instanceMatrix.needsUpdate = true;
-  }
 }
 
 // PERFORMANCE: Return projectile instance to pool (deactivate)
