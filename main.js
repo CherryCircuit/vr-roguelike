@@ -3076,18 +3076,38 @@ function generatePeaks(count, minH, maxH) {
 
 function createSparklingStars(theme) {
   const count = theme.starCount || 800;
-  const spread = theme.starSpread || 300;
-  const height = theme.starHeight || 80;
-  const base = theme.starBase || 10;
+  // FIX: Stars should be on a dome/hemisphere, not a clumped box
+  // Dome radius should be inside the sky sphere (2800 radius) so stars are visible
+  const domeRadius = theme.starDomeRadius || 2200;  // Inside sky sphere (2800)
+  const domeCenterY = theme.starDomeCenterY || 400;  // Raise center so dome covers horizon
+  
   const positions = new Float32Array(count * 3);
   const phases = new Float32Array(count);
+  
   for (let i = 0; i < count; i++) {
     const i3 = i * 3;
-    positions[i3] = (Math.random() - 0.5) * spread;
-    positions[i3 + 1] = Math.random() * height + base;
-    positions[i3 + 2] = (Math.random() - 0.5) * spread;
+    
+    // Hemisphere distribution: random point on upper hemisphere
+    // Use spherical coordinates for even distribution
+    // theta: 0 to 2*PI (around the dome)
+    // phi: 0 to PI/2 (from top to horizon for hemisphere)
+    const theta = Math.random() * Math.PI * 2;
+    // Use cos(phi) distribution for even spacing on sphere surface
+    // phi from 0 (top) to PI/2 (horizon)
+    const phi = Math.acos(1.0 - Math.random() * 0.9);  // Slight bias toward horizon for visual interest
+    
+    const x = Math.sin(phi) * Math.cos(theta);
+    const y = Math.cos(phi);  // y is up
+    const z = Math.sin(phi) * Math.sin(theta);
+    
+    // Scale by radius and offset by center
+    positions[i3] = x * domeRadius;
+    positions[i3 + 1] = y * domeRadius + domeCenterY;
+    positions[i3 + 2] = z * domeRadius;
+    
     phases[i] = Math.random() * Math.PI * 2;
   }
+  
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));

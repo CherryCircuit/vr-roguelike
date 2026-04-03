@@ -199,7 +199,9 @@ export function buildSynthwaveValleyScene(group, deps) {
   mountainCylinder.name = 'synthwave-mountain-wrap';
   mountainCylinder.position.set(0, 95, 0);  // bottom=0, top=190, centered at world origin
   mountainCylinder.frustumCulled = false;
-  mountainCylinder.renderOrder = -4;  // Behind sun
+  // FIX: Mountain must have higher renderOrder than sun (-3 to -1) AND sun must respect depth.
+  // Higher renderOrder = draws later = appears on top when depthTest is enabled.
+  mountainCylinder.renderOrder = 0;  // In front of sun (sun is -3 to -1)
   group.add(mountainCylinder);
   registerFadeMaterial(mountainCylinderMat);
 
@@ -216,7 +218,6 @@ export function buildSynthwaveValleyScene(group, deps) {
 
   const cloudFragmentShader = `
     varying vec3 vWorldPos;
-    varying vec2 vScreenUV;
     uniform float uTime;
     uniform vec3 uSunDir;
     uniform vec3 uCloudColor;
@@ -257,7 +258,12 @@ export function buildSynthwaveValleyScene(group, deps) {
     void main() {
       // Spherical to lat/lon for cloud sampling
       vec3 n = normalize(vWorldPos);
-      float lat = asin(n.y);
+      // FIX: Use proper spherical coordinates relative to dome center
+      // The dome is centered at (0, 0, -700), so offset the position
+      vec3 relPos = vWorldPos - vec3(0.0, 0.0, -700.0);
+      n = normalize(relPos);
+      
+      float lat = asin(n.y);  // -PI/2 to PI/2
       float lon = atan(n.z, n.x);
 
       // Very slow drift animation
@@ -271,8 +277,14 @@ export function buildSynthwaveValleyScene(group, deps) {
       // Soft cloud shapes using smoothstep
       float cloudMask = smoothstep(0.2, 0.7, density);
 
-      // Clouds only in upper horizon / mid-sky band (not near zenith or ground)
-      float skyBand = smoothstep(0.1, 0.4, lat) * smoothstep(0.85, 0.5, lat);
+      // FIX: Adjust sky band to work with dome geometry
+      // Lower dome covers phi 0 to 0.4*PI (0 to 72 degrees from top)
+      // Higher dome covers phi 0.3*PI to 0.8*PI (54 to 144 degrees from top)
+      // Convert lat (in radians, -PI/2 to PI/2) to normalized height
+      float normalizedHeight = (lat + 1.5708) / 3.1416;  // 0 at bottom, 1 at top
+      
+      // Clouds visible in mid-sky band (not at very bottom or very top)
+      float skyBand = smoothstep(0.2, 0.5, normalizedHeight) * smoothstep(0.95, 0.6, normalizedHeight);
       cloudMask *= skyBand;
 
       // Sun-facing tint: brighter on sun side
@@ -280,14 +292,14 @@ export function buildSynthwaveValleyScene(group, deps) {
       vec3 sunTint = mix(vec3(1.0), vec3(1.2, 1.1, 0.9), sunFacing);
 
       // Gradient from horizon to sky
-      vec3 baseColor = mix(uHorizonColor, uCloudColor, smoothstep(0.0, 0.5, lat));
-      baseColor = mix(baseColor, uSkyColor, smoothstep(0.5, 0.9, lat));
+      vec3 baseColor = mix(uHorizonColor, uCloudColor, smoothstep(0.0, 0.5, normalizedHeight));
+      baseColor = mix(baseColor, uSkyColor, smoothstep(0.5, 0.9, normalizedHeight));
 
       vec3 cloudCol = baseColor * sunTint;
       cloudCol = pow(cloudCol, vec3(1.0 / 2.2));  // Gamma correct
 
-      // Soft alpha for distant transparent look, but strong enough to actually read in VR.
-      float alpha = cloudMask * 0.55;
+      // FIX: Increase alpha for better visibility in VR
+      float alpha = cloudMask * 0.75;
 
       gl_FragColor = vec4(cloudCol, alpha);
     }
@@ -366,7 +378,8 @@ export function buildSynthwaveValleyScene(group, deps) {
   const sunOuterGlowTex = makeRadial('rgba(254,180,100,0.3)', 'rgba(224,1,134,0.1)');
 
   // Outer massive glow - much dimmer, yellowish-orange tint
-  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffcc88, transparent: true, opacity: 0.15, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  // FIX: Enable depthTest so mountain cylinder can occlude the sun
+  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffcc88, transparent: true, opacity: 0.15, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
   const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(875, 875), sunOuterGlowMat);
   sunOuterGlow.name = 'synthwave-sun-outer-glow';
   sunOuterGlow.userData.planeName = 'synthwave-sun-outer-glow';
@@ -377,7 +390,8 @@ export function buildSynthwaveValleyScene(group, deps) {
   synthVisualRefs.sunOuterGlowMat = sunOuterGlowMat;
 
   // Main glow - dimmer, yellowish
-  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffdd99, transparent: true, opacity: 0.5, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  // FIX: Enable depthTest so mountain cylinder can occlude the sun
+  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffdd99, transparent: true, opacity: 0.5, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
   const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), sunGlowMat);
   sunGlow.name = 'synthwave-sun-main-glow';
   sunGlow.userData.planeName = 'synthwave-sun-main-glow';
@@ -390,7 +404,8 @@ export function buildSynthwaveValleyScene(group, deps) {
   // Retro synthwave sun disc from PNG (flat plane, no billboard)
   // PNG has white background - process to make white pixels transparent
   const sunDiscTex = new THREE.TextureLoader().load('assets/sun-retro.png');
-  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunDiscTex, color: 0xffffff, transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide, fog: false });
+  // FIX: Enable depthTest so mountain cylinder can occlude the sun
+  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunDiscTex, color: 0xffffff, transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide, fog: false });
   // Process: load PNG, threshold white pixels to transparent, replace material map
   const sunDiscImg = new Image();
   sunDiscImg.crossOrigin = 'anonymous';
