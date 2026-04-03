@@ -453,7 +453,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   // version should behave like a stable biome backdrop.
 
   // Synthwave floor HUD height:group.position.y = 5.82
-  group.position.set(0, 5.82, 0);
+  group.position.set(0, -(floorY + 1.5), 0);
 
   // Rotate so player faces sun
   group.rotation.y = 0;
