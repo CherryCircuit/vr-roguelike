@@ -4,6 +4,18 @@
 
 let audioCtx = null;
 
+const skipStreamingAudio = typeof navigator !== 'undefined' && navigator.webdriver;
+let loggedStreamingSkip = false;
+function shouldStreamRemoteAudio() {
+  if (typeof window !== 'undefined' && window.debugForceStreamingAudio) return true;
+  if (!skipStreamingAudio) return true;
+  if (!loggedStreamingSkip) {
+    console.log('[audio] Skipping remote streaming audio under automation (navigator.webdriver=true)');
+    loggedStreamingSkip = true;
+  }
+  return false;
+}
+
 function getAudioContext() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1428,6 +1440,12 @@ export function playMusic(category, loop = true) {
   stopCurrentMusic();
   musicFadeToken += 1;
   loopPlaylist = loop;  // Store loop preference
+  currentPlaylist = [];
+  currentTrackIndex = 0;
+
+  if (!shouldStreamRemoteAudio()) {
+    return;
+  }
 
   // Get tracks for category (fresh copy)
   const tracks = musicTracks[category] ? [...musicTracks[category]] : [];
@@ -1444,6 +1462,12 @@ export function playMusic(category, loop = true) {
 export function playBossMusic(tier) {
   stopCurrentMusic();
   musicFadeToken += 1;
+  currentPlaylist = [];
+  currentTrackIndex = 0;
+
+  if (!shouldStreamRemoteAudio()) {
+    return;
+  }
 
   const tracks = bossTracks[tier] ? [...bossTracks[tier]] : [];
   if (!tracks || tracks.length === 0) return;

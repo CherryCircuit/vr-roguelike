@@ -41,7 +41,9 @@ export function buildHellscapeLavaScene(group, deps) {
   // ========================================
   // TERRAIN (existing logic)
   // ========================================
-  const geometry = new THREE.PlaneGeometry(300, 300, 200, 200);
+  // OPTIMIZED: Reduced from 200x200 (40,401 verts) to 100x100 (10,201 verts)
+  // Visual impact: Slightly less smooth terrain, but acceptable for hellscape
+  const geometry = new THREE.PlaneGeometry(300, 300, 100, 100);
   geometry.rotateX(-Math.PI / 2);
   const positions = geometry.attributes.position;
   for (let i = 0; i < positions.count; i++) {
@@ -155,7 +157,11 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   }
 
   // ========================================
-  // 3. DEAD TREES (25 procedural)
+  // 3. DEAD TREES (20 procedural, simplified)
+  // OPTIMIZED: Replaced recursive depth-3 trees (15-40 meshes each)
+  // with 2 simpler procedural variants (2-3 meshes each).
+  // Original: ~375-1000 cylinders, New: ~40-60 cylinders
+  // Visual tradeoff: Less complex branching, but maintains hellscape vibe
   // ========================================
   const treeMat = new THREE.MeshStandardMaterial({
     color: 0x0a0a0a,
@@ -164,38 +170,56 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     flatShading: true
   });
 
-  const createBranch = (depth, maxDepth, length, radius) => {
-    const branchGroup = new THREE.Group();
+  // Shared geometries for dead trees (reduce GPU memory)
+  const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 4, 5); // Main trunk
+  const branchGeo = new THREE.CylinderGeometry(0.06, 0.1, 2, 5); // Branch
 
-    // Main branch cylinder (5 sides)
-    const branchGeo = new THREE.CylinderGeometry(radius * 0.7, radius, length, 5);
-    const branch = new THREE.Mesh(branchGeo, treeMat);
-    branch.position.y = length / 2;
-    branch.castShadow = true;
-    branch.receiveShadow = true;
-    branchGroup.add(branch);
+  // Variant A: Forked dead tree (trunk + 2 branches)
+  const createForkedTree = () => {
+    const group = new THREE.Group();
+    const trunk = new THREE.Mesh(trunkGeo, treeMat);
+    trunk.position.y = 2;
+    trunk.castShadow = true;
+    trunk.receiveShadow = true;
+    group.add(trunk);
 
-    // Add child branches if not at max depth
-    if (depth < maxDepth) {
-      const numChildren = 2 + Math.floor(Math.random() * 2); // 2-3 children
-      for (let i = 0; i < numChildren; i++) {
-        const childBranch = createBranch(
-          depth + 1,
-          maxDepth,
-          length * 0.6,
-          radius * 0.6
-        );
-        childBranch.position.y = length;
-        childBranch.rotation.z = (Math.random() - 0.5) * 1.2;
-        childBranch.rotation.y = (i / numChildren) * Math.PI * 2 + Math.random() * 0.5;
-        branchGroup.add(childBranch);
-      }
+    // Two main branches
+    for (let i = 0; i < 2; i++) {
+      const branch = new THREE.Mesh(branchGeo, treeMat);
+      branch.position.y = 3.5 + Math.random() * 0.5;
+      branch.rotation.z = (i === 0 ? 1 : -1) * (0.4 + Math.random() * 0.4);
+      branch.rotation.y = i * Math.PI + Math.random() * 0.5;
+      branch.castShadow = true;
+      group.add(branch);
     }
-
-    return branchGroup;
+    return group;
   };
 
-  for (let i = 0; i < 25; i++) {
+  // Variant B: Twisted snag (single bent trunk, optional small branch)
+  const createTwistedSnag = () => {
+    const group = new THREE.Group();
+    const trunk = new THREE.Mesh(trunkGeo, treeMat);
+    trunk.position.y = 2;
+    trunk.rotation.z = (Math.random() - 0.5) * 0.3; // Slight lean
+    trunk.castShadow = true;
+    trunk.receiveShadow = true;
+    group.add(trunk);
+
+    // Optional small branch
+    if (Math.random() > 0.5) {
+      const branch = new THREE.Mesh(branchGeo, treeMat);
+      branch.position.y = 2.5 + Math.random();
+      branch.rotation.z = (Math.random() > 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.4);
+      branch.rotation.y = Math.random() * Math.PI * 2;
+      branch.scale.setScalar(0.7); // Smaller branch
+      branch.castShadow = true;
+      group.add(branch);
+    }
+    return group;
+  };
+
+  // Spawn 20 trees (reduced from 25), mixed variants
+  for (let i = 0; i < 20; i++) {
     let x, z, riverX, distToRiver;
     let attempts = 0;
     do {
@@ -206,7 +230,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       attempts++;
     } while (distToRiver < 8 && attempts < 20);
 
-    const tree = createBranch(0, 3, 3 + Math.random() * 2, 0.2 + Math.random() * 0.1);
+    const tree = Math.random() > 0.5 ? createForkedTree() : createTwistedSnag();
     tree.position.set(x, floorY, z);
     tree.rotation.y = Math.random() * Math.PI * 2;
     const treeScale = 0.8 + Math.random() * 0.6;
@@ -287,9 +311,9 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   group.add(stars);
 
   // ========================================
-  // 5. SPARK PARTICLES (200 rising from lava)
+  // 5. SPARK PARTICLES (150 rising from lava - optimized from 200)
   // ========================================
-  const sparkCount = 200;
+  const sparkCount = 150;
   const sparkPositions = new Float32Array(sparkCount * 3);
   const sparkVelocities = new Float32Array(sparkCount * 3);
   const sparkLifetimes = new Float32Array(sparkCount);
@@ -330,9 +354,9 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   group.add(sparks);
 
   // ========================================
-  // 5b. ASH PARTICLES (dark floating)
+  // 5b. ASH PARTICLES (dark floating - optimized from 260)
   // ========================================
-  const ashCount = 260;
+  const ashCount = 200;
   const ashPositions = new Float32Array(ashCount * 3);
   const ashVelocities = new Float32Array(ashCount * 3);
   for (let i = 0; i < ashCount; i++) {
@@ -386,7 +410,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   };
 
   const geyserGeo = new THREE.BufferGeometry();
-  const geyserPositions = new Float32Array(500 * 3); // Max 500 particles
+  const geyserPositions = new Float32Array(350 * 3); // Max 350 particles (optimized from 500)
   geyserGeo.setAttribute('position', new THREE.BufferAttribute(geyserPositions, 3));
   geyserGeo.setDrawRange(0, 0);
 
@@ -406,7 +430,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   // 7. FLAME PILLARS (distant fire columns)
   // ========================================
   const PILLAR_COUNT = 7;
-  const PARTICLES_PER_PILLAR = 35;
+  const PARTICLES_PER_PILLAR = 28;
   const TOTAL_FLAME_PILLAR_PARTICLES = PILLAR_COUNT * PARTICLES_PER_PILLAR;
 
   // Canvas-drawn flame sprite texture (64x64, soft radial gradient)
@@ -557,9 +581,9 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     // Update spark particles - continuously spawn from lava river
     const sparkPos = sparkGeo.attributes.position.array;
 
-    // Continuously spawn 10-15 new sparks each frame from random positions along the river
-    // (increased spawn rate for more dynamic lava effect)
-    const sparksToSpawn = 10 + Math.floor(Math.random() * 6);  // Was 6 + Math.floor(Math.random() * 4)
+    // Continuously spawn 8-12 new sparks each frame from random positions along the river
+    // (optimized spawn rate for performance)
+    const sparksToSpawn = 8 + Math.floor(Math.random() * 5);  // Was 6 + Math.floor(Math.random() * 4)
     for (let s = 0; s < sparksToSpawn; s++) {
       const randomIdx = Math.floor(Math.random() * sparkCount);
       // Only respawn if lifetime is mostly elapsed or just starting fresh
@@ -663,3 +687,5 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   group.position.set(26.599, 0.05, -0.486);
   group.rotation.y = 0.248; // yaw: 14.21°
 }
+
+

@@ -150,21 +150,30 @@ export function buildDesertNightScene(group, deps) {
   group.add(flashPlane);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
-  // === CACTUSES (9 procedural) ===
+  // === CACTUSES (8 procedural, simplified for perf) ===
+  // Shared materials to avoid per-segment allocation
+  const cactusBodyMat = new THREE.MeshLambertMaterial({ color: 0x1a3d20, flatShading: true });
+  const cactusArmMat = new THREE.MeshLambertMaterial({ color: 0x2d5535, flatShading: true });
+  registerFadeMaterial(cactusBodyMat);
+  registerFadeMaterial(cactusArmMat);
+
+  // Shared cylinder geometries (4 radial segments instead of 5)
+  const cactusGeoCache = {};
+
   const createCactus = (height) => {
     const cactusGroup = new THREE.Group();
-    const bodyColor = 0x1a3d20;
-    const armColor = 0x2d5535;
-    const segments = 3 + Math.floor(Math.random() * 2); // 3-4 segments
+    const segments = 2 + Math.floor(Math.random() * 2); // 2-3 segments (was 3-4)
     let currentY = 0;
     const segmentHeight = height / segments;
 
     // Main body segments
     for (let i = 0; i < segments; i++) {
       const radius = 0.12 + (segments - i) * 0.03; // Taper upward
-      const segGeo = new THREE.CylinderGeometry(radius * 0.9, radius, segmentHeight, 5);
-      const segMat = new THREE.MeshLambertMaterial({ color: bodyColor, flatShading: true });
-      const segment = new THREE.Mesh(segGeo, segMat);
+      const geoKey = `body_${radius.toFixed(2)}_${segmentHeight.toFixed(2)}`;
+      if (!cactusGeoCache[geoKey]) {
+        cactusGeoCache[geoKey] = new THREE.CylinderGeometry(radius * 0.9, radius, segmentHeight, 4);
+      }
+      const segment = new THREE.Mesh(cactusGeoCache[geoKey], cactusBodyMat);
       segment.position.y = currentY + segmentHeight / 2;
       segment.castShadow = true;  // Cacti cast shadows
       segment.receiveShadow = true;
@@ -172,36 +181,33 @@ export function buildDesertNightScene(group, deps) {
       currentY += segmentHeight;
     }
 
-    // Random arms (0-2)
-    const numArms = Math.floor(Math.random() * 3);
+    // Random arms (0-1 instead of 0-2)
+    const numArms = Math.floor(Math.random() * 2);
     for (let a = 0; a < numArms; a++) {
       const armY = segmentHeight * (1 + Math.floor(Math.random() * (segments - 1)));
       const side = Math.random() > 0.5 ? 1 : -1;
       const armLength = 0.4 + Math.random() * 0.4;
 
-      // Horizontal part
-      const hArmGeo = new THREE.CylinderGeometry(0.08, 0.1, armLength, 5);
-      const hArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
-      const hArm = new THREE.Mesh(hArmGeo, hArmMat);
-      hArm.castShadow = true;
-      hArm.receiveShadow = true;
+      // Horizontal part (cached geometry)
+      const hArmKey = `harm_${armLength.toFixed(2)}`;
+      if (!cactusGeoCache[hArmKey]) {
+        cactusGeoCache[hArmKey] = new THREE.CylinderGeometry(0.08, 0.1, armLength, 4);
+      }
+      const hArm = new THREE.Mesh(cactusGeoCache[hArmKey], cactusArmMat);
       hArm.rotation.z = Math.PI / 2;
       hArm.position.set(side * armLength / 2, armY, 0);
       cactusGroup.add(hArm);
 
-      // Vertical part (upward)
+      // Vertical part (cached geometry)
       const vArmHeight = 0.5 + Math.random() * 0.5;
-      const vArmGeo = new THREE.CylinderGeometry(0.06, 0.08, vArmHeight, 5);
-      const vArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
-      const vArm = new THREE.Mesh(vArmGeo, vArmMat);
-      vArm.castShadow = true;
-      vArm.receiveShadow = true;
+      const vArmKey = `varm_${vArmHeight.toFixed(2)}`;
+      if (!cactusGeoCache[vArmKey]) {
+        cactusGeoCache[vArmKey] = new THREE.CylinderGeometry(0.06, 0.08, vArmHeight, 4);
+      }
+      const vArm = new THREE.Mesh(cactusGeoCache[vArmKey], cactusArmMat);
       vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
       cactusGroup.add(vArm);
     }
-
-    // REMOVED: Fake circle shadow - now using point light for realistic moon shadows
-    // Cacti will cast natural shadows from the shadowLight
 
     return cactusGroup;
   };

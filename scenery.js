@@ -598,6 +598,179 @@ const SECONDARY_POOL = 30;
 let secondaryParticles = null;
 let secondaryGeo = null;
 
+// Lookup table for particle updates - eliminates switch statement overhead
+const PARTICLE_UPDATERS = {
+  dust: (positions, i3, now, speed, dt, i) => {
+    positions[i3 + 1] += Math.sin(now * 0.0002 + i) * 0.005;
+    positions[i3] += Math.cos(now * 0.0001 + i) * 0.01;
+    positions[i3 + 2] += Math.sin(now * 0.00015 + i) * 0.008;
+  },
+  
+  embers: (positions, i3, now, speed, dt, i) => {
+    positions[i3 + 1] += speed * dt;
+    positions[i3] += Math.sin(now * 0.001 + i) * 0.01;
+  },
+  
+  snow: (positions, i3, now, speed, dt, i) => {
+    positions[i3 + 1] -= speed * dt;
+    positions[i3] += Math.sin(now * 0.0005 + i) * 0.02;
+  },
+  
+  sparkle: (positions, i3, now, speed, dt, i) => {
+    positions[i3 + 1] += Math.sin(now * 0.0003 + i) * 0.008;
+    positions[i3] += Math.cos(now * 0.0002 + i) * 0.015;
+    positions[i3 + 2] += Math.sin(now * 0.00025 + i) * 0.012;
+  },
+  
+  corruption: (positions, i3, now, speed, dt, i, poolSize) => {
+    const a = now * 0.0003 + (i / poolSize) * Math.PI * 2;
+    positions[i3] += Math.cos(a) * speed * dt * 0.5;
+    positions[i3 + 2] += Math.sin(a) * speed * dt * 0.5;
+  },
+  
+  danger: (positions, i3, now, speed, dt, i, poolSize) => {
+    // Same as corruption
+    const a = now * 0.0003 + (i / poolSize) * Math.PI * 2;
+    positions[i3] += Math.cos(a) * speed * dt * 0.5;
+    positions[i3 + 2] += Math.sin(a) * speed * dt * 0.5;
+  },
+  
+  electrons: (positions, i3, now, speed, dt, i) => {
+    const direction = i % 4;
+    const electronSpeed = speed * dt;
+    if (direction === 0) positions[i3] += electronSpeed;
+    else if (direction === 1) positions[i3] -= electronSpeed;
+    else if (direction === 2) positions[i3 + 2] += electronSpeed;
+    else positions[i3 + 2] -= electronSpeed;
+  },
+  
+  code_rain: (positions, i3, now, speed, dt, i) => {
+    positions[i3 + 1] -= speed * dt;
+    positions[i3] += Math.sin(now * 0.0008 + i * 0.5) * 0.02;
+  },
+  
+  debris: (positions, i3, now, speed, dt, i) => {
+    positions[i3] += Math.sin(now * 0.0001 + i * 0.5) * 0.015;
+    positions[i3 + 1] += Math.cos(now * 0.0002 + i) * 0.008 - 0.01;
+    positions[i3 + 2] += Math.cos(now * 0.00015 + i * 0.3) * 0.012;
+  },
+  
+  prism: (positions, i3, now, speed, dt, i, poolSize) => {
+    const prismAngle = now * 0.0004 + (i / poolSize) * Math.PI * 6;
+    positions[i3] += Math.cos(prismAngle) * speed * dt;
+    positions[i3 + 1] += Math.sin(now * 0.0005 + i) * 0.02;
+    positions[i3 + 2] += Math.sin(prismAngle) * speed * dt;
+  },
+  
+  crystal: (positions, i3, now, speed, dt, i, poolSize) => {
+    const crystalAngle = now * 0.0002 + (i / poolSize) * Math.PI * 4;
+    positions[i3] += Math.cos(crystalAngle) * speed * dt * 0.5;
+    positions[i3 + 1] += Math.sin(now * 0.0003 + i) * 0.01;
+    positions[i3 + 2] += Math.sin(crystalAngle) * speed * dt * 0.5;
+  },
+  
+  pixels: (positions, i3, now, speed, dt, i) => {
+    positions[i3] += Math.sin(now * 0.0003 + i * 0.7) * 0.02;
+    positions[i3 + 1] += Math.cos(now * 0.0004 + i) * 0.015;
+    positions[i3 + 2] += Math.cos(now * 0.00025 + i * 0.5) * 0.018;
+  },
+  
+  pollen: (positions, i3, now, speed, dt, i) => {
+    positions[i3] += Math.sin(now * 0.0002 + i * 0.6) * 0.018;
+    positions[i3 + 1] += Math.cos(now * 0.0003 + i) * 0.012;
+    positions[i3 + 2] += Math.sin(now * 0.00025 + i * 0.4) * 0.015;
+  },
+  
+  bubbles: (positions, i3, now, speed, dt, i) => {
+    positions[i3 + 1] += speed * dt * 0.8;
+    positions[i3] += Math.sin(now * 0.002 + i * 1.5) * 0.025;
+    positions[i3 + 2] += Math.cos(now * 0.0018 + i * 1.2) * 0.022;
+  },
+  
+  current_flow: (positions, i3, now, speed, dt, i) => {
+    positions[i3] += speed * dt * 0.6;
+    positions[i3 + 1] += Math.sin(now * 0.0008 + i) * 0.01;
+  },
+  
+  smoke: (positions, i3, now, speed, dt, i) => {
+    positions[i3 + 1] += speed * dt;
+    positions[i3] += Math.sin(now * 0.0003 + i * 0.8) * 0.03;
+    positions[i3 + 2] += Math.cos(now * 0.00025 + i * 0.6) * 0.025;
+  },
+  
+  power_surge: (positions, i3, now, speed, dt, i) => {
+    const surgeDir = i % 2 === 0 ? 1 : -1;
+    positions[i3] += surgeDir * speed * dt * 1.2;
+    positions[i3 + 1] += Math.sin(now * 0.005 + i) * 0.005;
+  },
+  
+  ice_crystal: (positions, i3, now, speed, dt, i, poolSize) => {
+    const iceAngle = now * 0.0001 + (i / poolSize) * Math.PI * 2;
+    positions[i3] += Math.cos(iceAngle) * speed * dt * 0.3;
+    positions[i3 + 1] += Math.sin(now * 0.0002 + i) * 0.008;
+    positions[i3 + 2] += Math.sin(iceAngle) * speed * dt * 0.3;
+  },
+  
+  glitch_burst: (positions, i3, now, speed, dt, i, poolSize, playerPos) => {
+    if (Math.random() < 0.001) {
+      positions[i3] = playerPos.x + (Math.random() - 0.5) * 30;
+      positions[i3 + 1] = Math.random() * 12 + 2;
+      positions[i3 + 2] = playerPos.z + (Math.random() - 0.5) * 30;
+    }
+    positions[i3 + 1] -= speed * dt * 0.5;
+  },
+  
+  steam: (positions, i3, now, speed, dt, i) => {
+    positions[i3 + 1] += speed * dt * 0.7;
+    positions[i3] += Math.sin(now * 0.0002 + i * 0.9) * 0.035;
+    positions[i3 + 2] += Math.cos(now * 0.00018 + i * 0.7) * 0.03;
+  },
+  
+  mirror_shard: (positions, i3, now, speed, dt, i, poolSize) => {
+    const mirrorAngle = now * 0.0003 + (i / poolSize) * Math.PI * 8;
+    positions[i3] += Math.cos(mirrorAngle) * speed * dt;
+    positions[i3 + 2] += Math.sin(mirrorAngle) * speed * dt;
+    positions[i3 + 1] += Math.sin(now * 0.0004 + i) * 0.015;
+  },
+  
+  neon_sign: (positions, i3, now, speed, dt, i) => {
+    positions[i3 + 1] += Math.sin(now * 0.00005 + i) * 0.002;
+  },
+  
+  firefly: (positions, i3, now, speed, dt, i) => {
+    positions[i3] += Math.sin(now * 0.0006 + i * 1.3) * 0.025;
+    positions[i3 + 1] += Math.cos(now * 0.0007 + i * 1.1) * 0.02;
+    positions[i3 + 2] += Math.sin(now * 0.0005 + i * 0.9) * 0.022;
+  },
+  
+  nebula: (positions, i3, now, speed, dt, i, poolSize) => {
+    const nebulaAngle = now * 0.00005 + (i / poolSize) * Math.PI * 2;
+    positions[i3] += Math.cos(nebulaAngle) * speed * dt * 0.2;
+    positions[i3 + 1] += Math.sin(now * 0.00008 + i) * 0.003;
+    positions[i3 + 2] += Math.sin(nebulaAngle) * speed * dt * 0.2;
+  },
+  
+  highway_dust: (positions, i3, now, speed, dt, i) => {
+    positions[i3] += speed * dt * 0.5;
+    positions[i3 + 1] += Math.sin(now * 0.0003 + i * 0.7) * 0.015;
+    positions[i3 + 2] += Math.cos(now * 0.00025 + i * 0.5) * 0.012;
+  },
+  
+  wave_ripple: (positions, i3, now, speed, dt, i, poolSize) => {
+    const waveAngle = now * 0.0004 + (i / poolSize) * Math.PI * 3;
+    positions[i3] += Math.cos(waveAngle) * speed * dt * 0.3;
+    positions[i3 + 1] += Math.sin(now * 0.0003 + i) * 0.008;
+    positions[i3 + 2] += Math.sin(waveAngle) * speed * dt * 0.3;
+  }
+};
+
+// Default updater for unknown particle types
+const DEFAULT_UPDATER = (positions, i3, now, speed, dt, i) => {
+  positions[i3 + 1] += Math.sin(now * 0.0002 + i) * 0.01;
+  positions[i3] += Math.cos(now * 0.0001 + i) * 0.015;
+  positions[i3 + 2] += Math.sin(now * 0.00015 + i) * 0.012;
+};
+
 export function initAmbientParticles(scene) {
   // Primary particle system
   const positions = new Float32Array(AMBIENT_POOL * 3);
@@ -695,193 +868,15 @@ export function updateAmbientParticles(dt, theme, playerPos) {
     const speed = theme.particles.speed;
     const now = performance.now();
 
+    // Lookup and cache the particle updater function once
+    const particleType = theme.particles.type;
+    const updater = PARTICLE_UPDATERS[particleType] || DEFAULT_UPDATER;
+    
     for (let i = 0; i < maxCount; i++) {
       const i3 = i * 3;
 
-      switch (theme.particles.type) {
-        case 'dust':
-          // Floating dust particles in sunrise light
-          positions[i3 + 1] += Math.sin(now * 0.0002 + i) * 0.005;
-          positions[i3] += Math.cos(now * 0.0001 + i) * 0.01;
-          positions[i3 + 2] += Math.sin(now * 0.00015 + i) * 0.008;
-          break;
-
-        case 'embers':
-          // Rising embers
-          positions[i3 + 1] += speed * dt;
-          positions[i3] += Math.sin(now * 0.001 + i) * 0.01;
-          break;
-
-        case 'snow':
-          // Falling snow
-          positions[i3 + 1] -= speed * dt;
-          positions[i3] += Math.sin(now * 0.0005 + i) * 0.02;
-          break;
-
-        case 'sparkle':
-          // Twinkling sparkles for vapor sunset
-          positions[i3 + 1] += Math.sin(now * 0.0003 + i) * 0.008;
-          positions[i3] += Math.cos(now * 0.0002 + i) * 0.015;
-          positions[i3 + 2] += Math.sin(now * 0.00025 + i) * 0.012;
-          break;
-
-        case 'corruption':
-        case 'danger':
-          // Swirling corruption/danger particles
-          const a = now * 0.0003 + (i / AMBIENT_POOL) * Math.PI * 2;
-          positions[i3] += Math.cos(a) * speed * dt * 0.5;
-          positions[i3 + 2] += Math.sin(a) * speed * dt * 0.5;
-          break;
-
-        case 'electrons':
-          // Fast-moving electrons along circuit traces
-          const direction = i % 4; // 0: +x, 1: -x, 2: +z, 3: -z
-          const electronSpeed = speed * dt;
-          if (direction === 0) positions[i3] += electronSpeed;
-          else if (direction === 1) positions[i3] -= electronSpeed;
-          else if (direction === 2) positions[i3 + 2] += electronSpeed;
-          else positions[i3 + 2] -= electronSpeed;
-          break;
-
-        case 'code_rain':
-          // Matrix-style falling code rain
-          positions[i3 + 1] -= speed * dt; // Fall downward
-          positions[i3] += Math.sin(now * 0.0008 + i * 0.5) * 0.02; // Slight horizontal drift
-          break;
-
-        case 'debris':
-          // Industrial dust/debris drifting through The Stack
-          positions[i3] += Math.sin(now * 0.0001 + i * 0.5) * 0.015;
-          positions[i3 + 1] += Math.cos(now * 0.0002 + i) * 0.008 - 0.01; // slow descent
-          positions[i3 + 2] += Math.cos(now * 0.00015 + i * 0.3) * 0.012;
-          break;
-
-        case 'prism':
-          // Kaleidoscope: Color-shifting reflection particles
-          const prismAngle = now * 0.0004 + (i / AMBIENT_POOL) * Math.PI * 6;
-          positions[i3] += Math.cos(prismAngle) * speed * dt;
-          positions[i3 + 1] += Math.sin(now * 0.0005 + i) * 0.02;
-          positions[i3 + 2] += Math.sin(prismAngle) * speed * dt;
-          break;
-
-        case 'crystal':
-          // Void Garden: Floating crystalline particles drifting in void
-          const crystalAngle = now * 0.0002 + (i / AMBIENT_POOL) * Math.PI * 4;
-          positions[i3] += Math.cos(crystalAngle) * speed * dt * 0.5;
-          positions[i3 + 1] += Math.sin(now * 0.0003 + i) * 0.01;
-          positions[i3 + 2] += Math.sin(crystalAngle) * speed * dt * 0.5;
-          break;
-
-        case 'pixels':
-          // Retro Arcade: Floating neon pixel sparks
-          positions[i3] += Math.sin(now * 0.0003 + i * 0.7) * 0.02;
-          positions[i3 + 1] += Math.cos(now * 0.0004 + i) * 0.015;
-          positions[i3 + 2] += Math.cos(now * 0.00025 + i * 0.5) * 0.018;
-          break;
-
-        case 'pollen':
-          // Neon Rainforest: Floating pollen particles
-          positions[i3] += Math.sin(now * 0.0002 + i * 0.6) * 0.018;
-          positions[i3 + 1] += Math.cos(now * 0.0003 + i) * 0.012;
-          positions[i3 + 2] += Math.sin(now * 0.00025 + i * 0.4) * 0.015;
-          break;
-
-        // NEW ENHANCED PARTICLE TYPES
-        case 'bubbles':
-          // Ocean Floor: Rising bubbles with wobble
-          positions[i3 + 1] += speed * dt * 0.8;
-          positions[i3] += Math.sin(now * 0.002 + i * 1.5) * 0.025;
-          positions[i3 + 2] += Math.cos(now * 0.0018 + i * 1.2) * 0.022;
-          break;
-
-        case 'current_flow':
-          // Ocean Floor: Directional water currents
-          positions[i3] += speed * dt * 0.6; // Flow in +X direction
-          positions[i3 + 1] += Math.sin(now * 0.0008 + i) * 0.01;
-          break;
-
-        case 'smoke':
-          // Hellscape: Rising smoke clouds
-          positions[i3 + 1] += speed * dt;
-          positions[i3] += Math.sin(now * 0.0003 + i * 0.8) * 0.03;
-          positions[i3 + 2] += Math.cos(now * 0.00025 + i * 0.6) * 0.025;
-          break;
-
-        case 'power_surge':
-          // Circuit Board: Power surges along traces
-          const surgeDir = i % 2 === 0 ? 1 : -1;
-          positions[i3] += surgeDir * speed * dt * 1.2;
-          positions[i3 + 1] += Math.sin(now * 0.005 + i) * 0.005;
-          break;
-
-        case 'ice_crystal':
-          // Frozen: Slowly rotating ice crystals
-          const iceAngle = now * 0.0001 + (i / AMBIENT_POOL) * Math.PI * 2;
-          positions[i3] += Math.cos(iceAngle) * speed * dt * 0.3;
-          positions[i3 + 1] += Math.sin(now * 0.0002 + i) * 0.008;
-          positions[i3 + 2] += Math.sin(iceAngle) * speed * dt * 0.3;
-          break;
-
-        case 'glitch_burst':
-          // Digital Rain: Random glitch teleports
-          if (Math.random() < 0.001) { // Random teleport
-            positions[i3] = playerPos.x + (Math.random() - 0.5) * 30;
-            positions[i3 + 1] = Math.random() * 12 + 2;
-            positions[i3 + 2] = playerPos.z + (Math.random() - 0.5) * 30;
-          }
-          positions[i3 + 1] -= speed * dt * 0.5; // Slow fall
-          break;
-
-        case 'steam':
-          // The Stack: Industrial steam
-          positions[i3 + 1] += speed * dt * 0.7;
-          positions[i3] += Math.sin(now * 0.0002 + i * 0.9) * 0.035;
-          positions[i3 + 2] += Math.cos(now * 0.00018 + i * 0.7) * 0.03;
-          break;
-
-        case 'mirror_shard':
-          // Kaleidoscope: Rotating mirror fragments
-          const mirrorAngle = now * 0.0003 + (i / AMBIENT_POOL) * Math.PI * 8;
-          positions[i3] += Math.cos(mirrorAngle) * speed * dt;
-          positions[i3 + 2] += Math.sin(mirrorAngle) * speed * dt;
-          positions[i3 + 1] += Math.sin(now * 0.0004 + i) * 0.015;
-          break;
-
-        case 'neon_sign':
-          // Retro Arcade: Static neon sign particles (minimal movement)
-          positions[i3 + 1] += Math.sin(now * 0.00005 + i) * 0.002;
-          break;
-
-        case 'firefly':
-          // Neon Rainforest: Glowing fireflies with random movement
-          positions[i3] += Math.sin(now * 0.0006 + i * 1.3) * 0.025;
-          positions[i3 + 1] += Math.cos(now * 0.0007 + i * 1.1) * 0.02;
-          positions[i3 + 2] += Math.sin(now * 0.0005 + i * 0.9) * 0.022;
-          break;
-
-        case 'nebula':
-          // Void Garden: Slow nebula wisps
-          const nebulaAngle = now * 0.00005 + (i / AMBIENT_POOL) * Math.PI * 2;
-          positions[i3] += Math.cos(nebulaAngle) * speed * dt * 0.2;
-          positions[i3 + 1] += Math.sin(now * 0.00008 + i) * 0.003;
-          positions[i3 + 2] += Math.sin(nebulaAngle) * speed * dt * 0.2;
-          break;
-
-        case 'highway_dust':
-          // Sunrise Highway: Road dust clouds
-          positions[i3] += speed * dt * 0.5; // Drift forward
-          positions[i3 + 1] += Math.sin(now * 0.0003 + i * 0.7) * 0.015;
-          positions[i3 + 2] += Math.cos(now * 0.00025 + i * 0.5) * 0.012;
-          break;
-
-        case 'wave_ripple':
-          // Vapor Sunset: Gentle wave ripples
-          const waveAngle = now * 0.0004 + (i / AMBIENT_POOL) * Math.PI * 3;
-          positions[i3] += Math.cos(waveAngle) * speed * dt * 0.3;
-          positions[i3 + 1] += Math.sin(now * 0.0003 + i) * 0.008;
-          positions[i3 + 2] += Math.sin(waveAngle) * speed * dt * 0.3;
-          break;
-      }
+      // Update particle using lookup table (faster than switch statement)
+      updater(positions, i3, now, speed, dt, i, AMBIENT_POOL, playerPos);
 
       // Reset out-of-range particles
       const dx = positions[i3] - playerPos.x;
@@ -927,77 +922,15 @@ export function updateAmbientParticles(dt, theme, playerPos) {
     const speed = theme.secondaryParticles.speed;
     const now = performance.now();
 
+    // Lookup and cache the particle updater function once
+    const secondaryType = theme.secondaryParticles.type;
+    const secondaryUpdater = PARTICLE_UPDATERS[secondaryType] || DEFAULT_UPDATER;
+
     for (let i = 0; i < maxCount; i++) {
       const i3 = i * 3;
 
-      // Apply same particle logic as primary (simplified - just use same switch)
-      switch (theme.secondaryParticles.type) {
-        case 'current_flow':
-          positions[i3] += speed * dt * 0.6;
-          positions[i3 + 1] += Math.sin(now * 0.0008 + i) * 0.01;
-          break;
-        case 'smoke':
-          positions[i3 + 1] += speed * dt;
-          positions[i3] += Math.sin(now * 0.0003 + i * 0.8) * 0.03;
-          positions[i3 + 2] += Math.cos(now * 0.00025 + i * 0.6) * 0.025;
-          break;
-        case 'power_surge':
-          const surgeDir = i % 2 === 0 ? 1 : -1;
-          positions[i3] += surgeDir * speed * dt * 1.2;
-          break;
-        case 'ice_crystal':
-          const iceAngle = now * 0.0001 + (i / SECONDARY_POOL) * Math.PI * 2;
-          positions[i3] += Math.cos(iceAngle) * speed * dt * 0.3;
-          positions[i3 + 2] += Math.sin(iceAngle) * speed * dt * 0.3;
-          break;
-        case 'glitch_burst':
-          if (Math.random() < 0.001) {
-            positions[i3] = playerPos.x + (Math.random() - 0.5) * 30;
-            positions[i3 + 1] = Math.random() * 12 + 2;
-            positions[i3 + 2] = playerPos.z + (Math.random() - 0.5) * 30;
-          }
-          positions[i3 + 1] -= speed * dt * 0.5;
-          break;
-        case 'steam':
-          positions[i3 + 1] += speed * dt * 0.7;
-          positions[i3] += Math.sin(now * 0.0002 + i * 0.9) * 0.035;
-          positions[i3 + 2] += Math.cos(now * 0.00018 + i * 0.7) * 0.03;
-          break;
-        case 'mirror_shard':
-          const mirrorAngle = now * 0.0003 + (i / SECONDARY_POOL) * Math.PI * 8;
-          positions[i3] += Math.cos(mirrorAngle) * speed * dt;
-          positions[i3 + 2] += Math.sin(mirrorAngle) * speed * dt;
-          break;
-        case 'neon_sign':
-          positions[i3 + 1] += Math.sin(now * 0.00005 + i) * 0.002;
-          break;
-        case 'firefly':
-          positions[i3] += Math.sin(now * 0.0006 + i * 1.3) * 0.025;
-          positions[i3 + 1] += Math.cos(now * 0.0007 + i * 1.1) * 0.02;
-          positions[i3 + 2] += Math.sin(now * 0.0005 + i * 0.9) * 0.022;
-          break;
-        case 'nebula':
-          const nebulaAngle = now * 0.00005 + (i / SECONDARY_POOL) * Math.PI * 2;
-          positions[i3] += Math.cos(nebulaAngle) * speed * dt * 0.2;
-          positions[i3 + 2] += Math.sin(nebulaAngle) * speed * dt * 0.2;
-          break;
-        case 'highway_dust':
-          positions[i3] += speed * dt * 0.5;
-          positions[i3 + 1] += Math.sin(now * 0.0003 + i * 0.7) * 0.015;
-          positions[i3 + 2] += Math.cos(now * 0.00025 + i * 0.5) * 0.012;
-          break;
-        case 'wave_ripple':
-          const waveAngle = now * 0.0004 + (i / SECONDARY_POOL) * Math.PI * 3;
-          positions[i3] += Math.cos(waveAngle) * speed * dt * 0.3;
-          positions[i3 + 1] += Math.sin(now * 0.0003 + i) * 0.008;
-          positions[i3 + 2] += Math.sin(waveAngle) * speed * dt * 0.3;
-          break;
-        default:
-          // Default floating behavior
-          positions[i3 + 1] += Math.sin(now * 0.0002 + i) * 0.01;
-          positions[i3] += Math.cos(now * 0.0001 + i) * 0.015;
-          positions[i3 + 2] += Math.sin(now * 0.00015 + i) * 0.012;
-      }
+      // Update particle using lookup table (faster than switch statement)
+      secondaryUpdater(positions, i3, now, speed, dt, i, SECONDARY_POOL, playerPos);
 
       // Reset out-of-range secondary particles
       const dx = positions[i3] - playerPos.x;

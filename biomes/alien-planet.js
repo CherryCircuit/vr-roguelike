@@ -11,8 +11,8 @@ export function buildAlienPlanetScene(group, deps) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
 
-  // Ground
-  const groundGeo = new THREE.PlaneGeometry(300, 300, 120, 120);
+  // Ground (optimized: 32x32 segments, was 120x120)
+  const groundGeo = new THREE.PlaneGeometry(300, 300, 32, 32);
   const groundPositions = groundGeo.attributes.position;
   for (let i = 0; i < groundPositions.count; i++) {
     const x = groundPositions.getX(i);
@@ -88,33 +88,53 @@ export function buildAlienPlanetScene(group, deps) {
   }
   // Green river-object REMOVED - was blocking view and looking out of place
 
+  // ── Shared materials & geometries (PERF: reduces ~120 unique mats to ~12) ──
+  const sharedMountainMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1020, roughness: 0.9, metalness: 0.1, flatShading: true
+  });
+  const sharedDistantMountainMat = new THREE.MeshStandardMaterial({
+    color: 0x0a2015, roughness: 0.9, metalness: 0.1, flatShading: true
+  });
+  const sharedSpireMat = new THREE.MeshStandardMaterial({
+    color: 0x00aa33, emissive: 0x00ff44, emissiveIntensity: 0.6, roughness: 0.5
+  });
+  const sharedOrbGeo = new THREE.IcosahedronGeometry(0.3, 1);
+  const sharedOrbMat = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
+  const sharedCrystalMat = new THREE.MeshStandardMaterial({
+    color: 0x00cc55, emissive: 0x00ff66, emissiveIntensity: 0.7, roughness: 0.3
+  });
+  const sharedStemMat = new THREE.MeshStandardMaterial({ color: 0x204020, roughness: 0.8 });
+  const sharedCapGeo = new THREE.SphereGeometry(0.4, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+  const sharedCapMat = new THREE.MeshStandardMaterial({
+    color: 0x00aa44, emissive: 0x00ff55, emissiveIntensity: 0.5, roughness: 0.6
+  });
+  const sharedCritterBodyMat = new THREE.MeshStandardMaterial({
+    color: 0x00aa55, emissive: 0x00ff66, emissiveIntensity: 0.4
+  });
+  const sharedCritterGlowMat = new THREE.MeshBasicMaterial({
+    color: 0x33ffaa, transparent: true, opacity: 0.3
+  });
+
   // Mountains - 3 rings of procedural jagged mountains
   const createMountain = (x, z, scale) => {
     const peakCount = 1 + Math.floor(Math.random() * 3);
     const mountainGroup = new THREE.Group();
     for (let p = 0; p < peakCount; p++) {
       const height = (12 + Math.random() * 18) * scale;
-      const radius = Math.max(2.5, (2 + Math.random() * 3) * scale); // Minimum radius of 2.5 for no skinny pyramids
-      const peakGeo = new THREE.ConeGeometry(radius, height, 5 + Math.floor(Math.random() * 3));
-      const peakMat = new THREE.MeshStandardMaterial({
-        color: 0x1a1020,
-        roughness: 0.9,
-        metalness: 0.1,
-        flatShading: true
-      });
-      const peak = new THREE.Mesh(peakGeo, peakMat);
+      const radius = Math.max(2.5, (2 + Math.random() * 3) * scale);
+      const peakGeo = new THREE.ConeGeometry(radius, height, 6);
+      const peak = new THREE.Mesh(peakGeo, sharedMountainMat);
       peak.position.set(
         (Math.random() - 0.5) * 4 * scale,
         height / 2,
         (Math.random() - 0.5) * 4 * scale
       );
-      // Issue 5: Enable shadows for mountains
       peak.castShadow = true;
       peak.receiveShadow = true;
       mountainGroup.add(peak);
     }
     mountainGroup.position.set(x, floorY, z);
-    mountainGroup.frustumCulled = false; // Prevent culling at distance
+    mountainGroup.frustumCulled = false;
     return mountainGroup;
   };
 
@@ -138,42 +158,23 @@ export function buildAlienPlanetScene(group, deps) {
     const plantGroup = new THREE.Group();
 
     if (type === 0) {
-      // Glowing Spire - tall thin cone with glowing orb on top
+      // Glowing Spire - tall thin cone with glowing orb on top (shared mat/geo)
       const height = 3 + Math.random() * 5;
-      const spireGeo = new THREE.ConeGeometry(0.2, height, 6);
-      const spireMat = new THREE.MeshStandardMaterial({
-        color: 0x00aa33,
-        emissive: 0x00ff44,
-        emissiveIntensity: 0.6,
-        roughness: 0.5
-      });
-      const spire = new THREE.Mesh(spireGeo, spireMat);
+      const spireGeo = new THREE.ConeGeometry(0.2, height, 4);
+      const spire = new THREE.Mesh(spireGeo, sharedSpireMat);
       spire.position.y = height / 2;
-      spire.castShadow = false;
-      spire.receiveShadow = false;
       plantGroup.add(spire);
 
-      // Glowing orb on top
-      const orbGeo = new THREE.IcosahedronGeometry(0.3, 1);
-      const orbMat = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
-      const orb = new THREE.Mesh(orbGeo, orbMat);
+      const orb = new THREE.Mesh(sharedOrbGeo, sharedOrbMat);
       orb.position.y = height + 0.2;
-      orb.castShadow = false;
-      orb.receiveShadow = false;
       plantGroup.add(orb);
 
     } else if (type === 1) {
-      // Crystal Cluster - 3 small angular cones
-      for (let c = 0; c < 3; c++) {
+      // Crystal Cluster - 2 small angular cones (reduced from 3, shared mat)
+      for (let c = 0; c < 2; c++) {
         const height = 0.8 + Math.random() * 1.2;
         const crystalGeo = new THREE.ConeGeometry(0.15, height, 3);
-        const crystalMat = new THREE.MeshStandardMaterial({
-          color: 0x00cc55,
-          emissive: 0x00ff66,
-          emissiveIntensity: 0.7,
-          roughness: 0.3
-        });
-        const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+        const crystal = new THREE.Mesh(crystalGeo, sharedCrystalMat);
         crystal.position.set(
           (Math.random() - 0.5) * 0.4,
           height / 2,
@@ -184,41 +185,23 @@ export function buildAlienPlanetScene(group, deps) {
           Math.random() * Math.PI,
           (Math.random() - 0.5) * 0.4
         );
-        crystal.castShadow = false;
-        crystal.receiveShadow = false;
         plantGroup.add(crystal);
       }
 
     } else if (type === 2) {
-      // Mushroom - cylinder stem + hemisphere cap
+      // Mushroom - cylinder stem + hemisphere cap (shared mat/geo)
       const stemHeight = 0.5 + Math.random() * 0.5;
-      const stemGeo = new THREE.CylinderGeometry(0.1, 0.15, stemHeight, 8);
-      const stemMat = new THREE.MeshStandardMaterial({ color: 0x204020, roughness: 0.8 });
-      const stem = new THREE.Mesh(stemGeo, stemMat);
+      const stemGeo = new THREE.CylinderGeometry(0.1, 0.15, stemHeight, 6);
+      const stem = new THREE.Mesh(stemGeo, sharedStemMat);
       stem.position.y = stemHeight / 2;
-      stem.castShadow = false;
-      stem.receiveShadow = false;
       plantGroup.add(stem);
 
-      const capGeo = new THREE.SphereGeometry(0.4, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
-      const capMat = new THREE.MeshStandardMaterial({
-        color: 0x00aa44,
-        emissive: 0x00ff55,
-        emissiveIntensity: 0.5,
-        roughness: 0.6
-      });
-      const cap = new THREE.Mesh(capGeo, capMat);
+      const cap = new THREE.Mesh(sharedCapGeo, sharedCapMat);
       cap.position.y = stemHeight;
-      cap.castShadow = false;
-      cap.receiveShadow = false;
       plantGroup.add(cap);
     }
 
     plantGroup.position.set(x, floorY, z);
-    plantGroup.castShadow = false;
-    plantGroup.receiveShadow = false;
-    // REMOVED: Sway animation data - per-frame rotation is too expensive
-
     return plantGroup;
   };
 
@@ -276,23 +259,14 @@ export function buildAlienPlanetScene(group, deps) {
 
     const plantType = Math.floor(Math.random() * 3);  // Only 3 types (removed fern)
     const plant = createAlienPlant(x, z, plantType);
-    // Shadow casting disabled for FPS
-    plant.castShadow = false;
-    plant.receiveShadow = false;
-    plant.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = false;
-        child.receiveShadow = false;
-      }
-    });
     alienPlants.push(plant);
     group.add(plant);
   }
 
-  // Small fauna critters (reduced for FPS)
+  // Small fauna critters (reduced for FPS, shared materials)
   // AGGRESSIVE: Only spawn in front of player (negative Z)
-  const critterGeo = new THREE.SphereGeometry(0.18, 8, 6);
-  const critterGlowGeo = new THREE.SphereGeometry(0.3, 8, 6);
+  const critterGeo = new THREE.SphereGeometry(0.18, 6, 4);
+  const critterGlowGeo = new THREE.SphereGeometry(0.3, 6, 4);
   for (let i = 0; i < 5; i++) {  // Reduced from 10 to 5 for FPS
     const angle = Math.random() * Math.PI * 2;
     const radius = 6 + Math.random() * 35;
@@ -303,15 +277,11 @@ export function buildAlienPlanetScene(group, deps) {
     if (z > 0) continue;
 
     const critterGroup = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, emissive: 0x00ff66, emissiveIntensity: 0.4 });
-    const body = new THREE.Mesh(critterGeo, bodyMat);
+    const body = new THREE.Mesh(critterGeo, sharedCritterBodyMat);
     body.position.y = 0.2;
-    body.castShadow = false;
-    body.receiveShadow = false;
     critterGroup.add(body);
 
-    const glowMat = new THREE.MeshBasicMaterial({ color: 0x33ffaa, transparent: true, opacity: 0.3 });
-    const glow = new THREE.Mesh(critterGlowGeo, glowMat);
+    const glow = new THREE.Mesh(critterGlowGeo, sharedCritterGlowMat);
     glow.position.y = 0.2;
     critterGroup.add(glow);
 
@@ -406,33 +376,24 @@ export function buildAlienPlanetScene(group, deps) {
   cityMeshes.push(megaMesh);
   group.add(megaMesh);
 
-  // Issue 7: Distant low-poly mountains at ~100 units (alien planet colors) - closer and larger for visibility
+  // Issue 7: Distant low-poly mountains at ~100 units (alien planet colors)
   const createDistantMountain = (x, z, scale) => {
     const peakCount = 1 + Math.floor(Math.random() * 2);
     const mountainGroup = new THREE.Group();
     for (let p = 0; p < peakCount; p++) {
       const height = (30 + Math.random() * 50) * scale;
       const radius = Math.max(6, (6 + Math.random() * 10) * scale);
-      // Low-poly cone with 5-7 segments
-      const peakGeo = new THREE.ConeGeometry(radius, height, 5 + Math.floor(Math.random() * 3));
-      const peakMat = new THREE.MeshStandardMaterial({
-        color: 0x0a2015, // Dark teal-green
-        roughness: 0.9,
-        metalness: 0.1,
-        flatShading: true
-      });
-      const peak = new THREE.Mesh(peakGeo, peakMat);
+      const peakGeo = new THREE.ConeGeometry(radius, height, 6);
+      const peak = new THREE.Mesh(peakGeo, sharedDistantMountainMat);
       peak.position.set(
         (Math.random() - 0.5) * 6 * scale,
         height / 2,
         (Math.random() - 0.5) * 6 * scale
       );
-      peak.castShadow = false;
-      peak.receiveShadow = false;
       mountainGroup.add(peak);
     }
     mountainGroup.position.set(x, floorY, z);
-    mountainGroup.frustumCulled = false; // Prevent culling at distance
+    mountainGroup.frustumCulled = false;
     return mountainGroup;
   };
 
