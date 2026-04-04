@@ -43,7 +43,8 @@ import {
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward, setBossSpawnForward,
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
   releaseBossProjIndex, clearBossMinions,
-  clearAllTelegraphs, spawnHealthGainPopup
+  clearAllTelegraphs, spawnHealthGainPopup,
+  clearGeometryCaches
 } from './enemies.js';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -75,7 +76,8 @@ import {
   nameEntryGroup,
   setLastSubmittedTimestamp,
   setLastSubmittedPageIndex,
-  setFPSVisible
+  setFPSVisible,
+  clearHudGeoCache
 } from './hud.js';
 
 import {
@@ -7769,6 +7771,10 @@ registerResetHook(clearFloatingMessage);
 // but registered as separate hooks for safety on full game reset)
 registerResetHook(clearBossDebris);
 registerResetHook(clearAllElectricArcs);
+
+// Clear geometry/texture caches to prevent GPU object leaks on game restart
+registerResetHook(clearGeometryCaches);
+registerResetHook(clearHudGeoCache);
 
 // Reset nuke flash opacity on full game restart
 registerResetHook(() => {

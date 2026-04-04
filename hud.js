@@ -67,6 +67,13 @@ function getHudGeo(width, height) {
   return hudGeoCache[key];
 }
 
+export function clearHudGeoCache() {
+  for (const key of Object.keys(hudGeoCache)) {
+    hudGeoCache[key].dispose();
+    delete hudGeoCache[key];
+  }
+}
+
 // HUD element references
 let floatingMessageSprite = null;
 let floatingMessageHideAt = null;
