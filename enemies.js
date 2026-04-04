@@ -3109,14 +3109,21 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
 
   // Remove enemy mesh from scene
   sceneRef.remove(e.mesh);
-  // Dispose merged geometry if present (skip if instanced - geometry lives in pool)
-  if (e.mesh.userData.instanceId === undefined) {
-    e.mesh.traverse(c => {
-      if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
+  // Dispose all geometries including hitbox
+  // For instanced enemies, voxel geometry lives in the InstancedMesh pool,
+  // but hitbox geometry (userData.isEnemyHitbox) is per-enemy and must be disposed.
+  e.mesh.traverse(c => {
+    if (c.isMesh && c.geometry) {
+      // Skip instanced voxel geometry (shared pool), but always dispose hitboxes
+      if (c.userData.isEnemyHitbox || e.mesh.userData.instanceId === undefined) {
         c.geometry.dispose();
       }
-    });
-  }
+      // Dispose per-enemy materials (hitbox materials are not shared)
+      if (c.material && c.material !== e.material && !c.material._isShared) {
+        c.material.dispose();
+      }
+    }
+  });
   // Dispose material
   e.material.dispose();
   activeEnemies.splice(index, 1);
@@ -3146,14 +3153,18 @@ export function clearAllEnemies() {
 
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     sceneRef.remove(activeEnemies[i].mesh);
-    // Dispose merged geometry (skip if instanced - geometry lives in pool)
-    if (activeEnemies[i].mesh.userData.instanceId === undefined) {
-      activeEnemies[i].mesh.traverse(c => {
-        if (c.isMesh && c.userData.isMergedGeometry && c.geometry) {
+    // Dispose all geometries including hitbox
+    // For instanced enemies, voxel geometry lives in pool, but hitboxes must be disposed
+    activeEnemies[i].mesh.traverse(c => {
+      if (c.isMesh && c.geometry) {
+        if (c.userData.isEnemyHitbox || activeEnemies[i].mesh.userData.instanceId === undefined) {
           c.geometry.dispose();
         }
-      });
-    }
+        if (c.material && c.material !== activeEnemies[i].material && !c.material._isShared) {
+          c.material.dispose();
+        }
+      }
+    });
     if (activeEnemies[i].material) {
       activeEnemies[i].material.dispose();
     }
@@ -3207,6 +3218,36 @@ export function clearAllEnemies() {
     if (b.geometry) b.geometry.dispose();
   }
   statusBubbles.length = 0;
+
+  // Clear explosion parts (death particle sprites)
+  for (let i = explosionParts.length - 1; i >= 0; i--) {
+    const p = explosionParts[i];
+    if (p.parent) p.parent.remove(p);
+    if (p.material) {
+      if (p.material.map) p.material.map.dispose();
+      p.material.dispose();
+    }
+    if (p.geometry) p.geometry.dispose();
+  }
+  explosionParts.length = 0;
+
+  // Clear enemy debris (unused placeholder array, clean anyway)
+  for (let i = enemyDebris.length - 1; i >= 0; i--) {
+    const d = enemyDebris[i];
+    if (d.parent) d.parent.remove(d);
+    if (d.geometry) d.geometry.dispose();
+    if (d.material) d.material.dispose();
+  }
+  enemyDebris.length = 0;
+
+  // Clear boss debris
+  clearBossDebris();
+
+  // Clear boss minions (in case boss wasn't killed)
+  clearBossMinions();
+
+  // Clear boss itself
+  clearBoss();
 }
 
 /**

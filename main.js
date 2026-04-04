@@ -71,6 +71,7 @@ import {
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
   updateHolographicGlitch, resetHoloGlitch,
   showFloatingMessage, hideFloatingMessage, updateFloatingMessage,
+  clearAllDamageNumbers, clearAllComboPopups, clearAllKillChainPopups, clearFloatingMessage,
   nameEntryGroup,
   setLastSubmittedTimestamp,
   setLastSubmittedPageIndex,
@@ -7483,6 +7484,12 @@ function completeLevel() {
   // Clear all alt-weapon effects (grenades, mines, drones, etc.)
   clearAllAltWeaponEffects();
 
+  // Clear HUD popup elements (damage numbers, combo/kill-chain popups, floating messages)
+  clearAllDamageNumbers();
+  clearAllComboPopups();
+  clearAllKillChainPopups();
+  clearFloatingMessage();
+
   stopLightningSound();
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
   game.stateTimer = 2.0; // cooldown before upgrade screen
@@ -7751,6 +7758,25 @@ function clearAllAltWeaponEffects() {
 // Register clearAllAltWeaponEffects as a resetGame() hook so voxels/effects
 // are properly cleared even on full game restart (not just level transitions).
 registerResetHook(clearAllAltWeaponEffects);
+
+// Register HUD cleanup hooks (damage numbers, combo popups, kill-chain popups, floating messages)
+registerResetHook(clearAllDamageNumbers);
+registerResetHook(clearAllComboPopups);
+registerResetHook(clearAllKillChainPopups);
+registerResetHook(clearFloatingMessage);
+
+// Register enemy cleanup hooks (boss debris, electric arcs already called in clearAllEnemies,
+// but registered as separate hooks for safety on full game reset)
+registerResetHook(clearBossDebris);
+registerResetHook(clearAllElectricArcs);
+
+// Reset nuke flash opacity on full game restart
+registerResetHook(() => {
+  if (nukeFlash) {
+    nukeFlash.material.opacity = 0;
+    nukeFlashTimer = 0;
+  }
+});
 
 function showUpgradeScreen() {
   console.log('[game] Showing upgrade selection');
