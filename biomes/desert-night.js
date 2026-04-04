@@ -37,6 +37,11 @@ export function buildDesertNightScene(group, deps) {
   const hemiLight = new THREE.HemisphereLight(0x1a2035, 0x2d1f1a, 0.2);
   group.add(hemiLight);
 
+  // Front-fill light so cacti in front of player are visible as green
+  const frontFillLight = new THREE.PointLight(0xd4e5f7, 1.0, 40);
+  frontFillLight.position.set(0, 8, -15);
+  group.add(frontFillLight);
+
   // Desert skydome mirrors the synthwave setup structurally, but uses moonlit sand tones
   // at half brightness so the desert reads darker and calmer than the neon biome.
   const skyGeo = new THREE.SphereGeometry(2200, 24, 18);
@@ -129,7 +134,7 @@ export function buildDesertNightScene(group, deps) {
     { width: 92, depth: 42, segmentsX: 26, segmentsZ: 12, centerX: 0, centerZ: -58, flatRadius: 8.0, mountainStart: 14.0 },
     { width: 40, depth: 110, segmentsX: 12, segmentsZ: 28, centerX: -58, centerZ: -8, flatRadius: 6.0, mountainStart: 12.0 },
     { width: 40, depth: 110, segmentsX: 12, segmentsZ: 28, centerX: 58, centerZ: -8, flatRadius: 6.0, mountainStart: 12.0 },
-    { width: 72, depth: 28, segmentsX: 20, segmentsZ: 8, centerX: 0, centerZ: 56, flatRadius: 6.0, mountainStart: 12.0 },
+    // { width: 72, depth: 28, segmentsX: 20, segmentsZ: 8, centerX: 0, centerZ: 56, flatRadius: 6.0, mountainStart: 12.0 },  // Removed: never seen by player
   ];
   dunePanels.forEach(buildDunePanel);
 
@@ -292,59 +297,7 @@ export function buildDesertNightScene(group, deps) {
   group.add(stars);
   registerFadeMaterial(starMaterial);
 
-  // === DUST PARTICLES (300 particles - reduced from 600 for performance) ===
-  const dustCount = 300;
-  const dustPositions = new Float32Array(dustCount * 3);
-  const dustPhases = new Float32Array(dustCount);
 
-  for (let i = 0; i < dustCount; i++) {
-    dustPositions[i * 3] = (Math.random() - 0.5) * 60;
-    dustPositions[i * 3 + 1] = Math.random() * 15 + floorY;
-    dustPositions[i * 3 + 2] = (Math.random() - 0.5) * 60;
-    dustPhases[i] = Math.random() * Math.PI * 2;
-  }
-
-  const dustGeometry = new THREE.BufferGeometry();
-  dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
-  dustGeometry.setAttribute('aPhase', new THREE.BufferAttribute(dustPhases, 1));
-
-  const dustMaterial = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime: { value: 0 },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
-    },
-    vertexShader: `
-      attribute float aPhase;
-      uniform float uTime;
-      uniform float uPixelRatio;
-      varying float vAlpha;
-      void main() {
-        vAlpha = 0.5 + 0.3 * sin(uTime + aPhase);
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = 4.0 * uPixelRatio;
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: `
-      varying float vAlpha;
-      void main() {
-        float dist = length(gl_PointCoord - vec2(0.5));
-        if (dist > 0.5) discard;
-        float alpha = (1.0 - smoothstep(0.0, 0.5, dist)) * vAlpha * 1.2;
-        vec3 dustColor = vec3(0.8, 0.85, 0.9);
-        gl_FragColor = vec4(dustColor, alpha);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    fog: false,
-    blending: THREE.AdditiveBlending
-  });
-
-  const dust = new THREE.Points(dustGeometry, dustMaterial);
-  dust.renderOrder = 999;
-  group.add(dust);
-  registerFadeMaterial(dustMaterial);
 
   // Moon
   const moonGroup = new THREE.Group();
@@ -370,37 +323,13 @@ export function buildDesertNightScene(group, deps) {
   group.rotation.y = -0.436; // yaw: -25 degrees
   group.position.set(-2.12, -0.20, -4.82);  // Moved 5 units +X and +Z
 
-  // Frame counter for throttling dust particle updates (Issue 4: reduce CPU cost)
-  let desertFrameCount = 0;
+
 
   // === ANIMATION UPDATE ===
   group.userData.update = (now, dt) => {
     const time = now * 0.001;
     // Update stars twinkle (shader-based, already efficient)
     starMaterial.uniforms.uTime.value = time;
-    // Update dust shader time
-    dustMaterial.uniforms.uTime.value = time;
 
-    // Throttle dust particle position updates to every 5th frame (Issue 4: reduce CPU cost)
-    desertFrameCount++;
-    if (desertFrameCount % 5 === 0) {
-      const dustPos = dustGeometry.attributes.position.array;
-      for (let i = 0; i < dustCount; i++) {
-        const idx = i * 3;
-        // Gentle wind drift (scaled by 5 since we only update every 5th frame)
-        dustPos[idx] += 0.025 * dt;
-        dustPos[idx + 1] += Math.sin(time + dustPhases[i]) * 0.005 * dt;
-        dustPos[idx + 2] += Math.cos(time * 0.7 + dustPhases[i]) * 0.01 * dt;
-
-        // Wrap around boundaries
-        if (dustPos[idx] > 30) dustPos[idx] = -30;
-        if (dustPos[idx] < -30) dustPos[idx] = 30;
-        if (dustPos[idx + 1] > floorY + 15) dustPos[idx + 1] = floorY;
-        if (dustPos[idx + 1] < floorY) dustPos[idx + 1] = floorY + 15;
-        if (dustPos[idx + 2] > 30) dustPos[idx + 2] = -30;
-        if (dustPos[idx + 2] < -30) dustPos[idx + 2] = 30;
-      }
-      dustGeometry.attributes.position.needsUpdate = true;
-    }
   };
 }
