@@ -121,7 +121,7 @@ function updateJellyHitbox(enemy) {
   if (!enemy.hitbox || !enemy.voxelSize) return;
   const height = Math.max(1, enemy.jellyHeight) * enemy.voxelSize * 1.05;
   if (enemy.hitbox.geometry) enemy.hitbox.geometry.dispose();
-  enemy.hitbox.geometry = new THREE.BoxGeometry(enemy.hitboxRadius * 2, height, enemy.hitboxRadius * 2);
+  enemy.hitbox.geometry = getHitboxGeo(enemy.hitboxRadius * 2, height, enemy.hitboxRadius * 2);
 }
 
 function shrinkJelly(enemy) {
@@ -409,6 +409,16 @@ let _enemyMeshesDirty = true;
 function rebuildMeshCache() {
   _cachedEnemyMeshes = activeEnemies.map(e => e.mesh);
   _enemyMeshesDirty = false;
+}
+
+// Shared hitbox geometry cache
+const hitboxGeoCache = {};
+function getHitboxGeo(w, h, d) {
+  const key = `${w.toFixed(4)},${h.toFixed(4)},${d.toFixed(4)}`;
+  if (!hitboxGeoCache[key]) {
+    hitboxGeoCache[key] = new THREE.BoxGeometry(w, h, d);
+  }
+  return hitboxGeoCache[key];
 }
 
 // Shared cube geometry (reused across all voxel cubes)
@@ -1500,9 +1510,8 @@ function spawnTrainEnemy(type, position, levelConfig) {
   group.userData.enemyType = type;
 
   // Add hitbox
-  const hitboxGeo = new THREE.BoxGeometry(def.hitboxRadius * 2, def.hitboxRadius * 2, def.hitboxRadius * 2);
   const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-  const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+  const hitbox = new THREE.Mesh(getHitboxGeo(def.hitboxRadius * 2, def.hitboxRadius * 2, def.hitboxRadius * 2), hitboxMat);
   hitbox.userData.isEnemyHitbox = true;
   hitbox.position.z = -(trainLength * def.voxelSize * 0.75);
   group.add(hitbox);
@@ -2006,9 +2015,8 @@ function spawnGeometryShifterSplit(position, hp, scale) {
     group.userData.enemyType = 'geometry_shifter_split'; // For debug identification
 
     // Add hitbox
-    const hitboxGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    const hitbox = new THREE.Mesh(getHitboxGeo(0.4, 0.4, 0.4), hitboxMat);
     hitbox.userData.isEnemyHitbox = true;
     group.add(hitbox);
 
@@ -2087,9 +2095,8 @@ function spawnCloneMimicSplit(position) {
     group.userData.enemyType = 'clone_mimic_split'; // For debug identification
 
     // Add hitbox
-    const hitboxGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    const hitbox = new THREE.Mesh(getHitboxGeo(0.3, 0.3, 0.3), hitboxMat);
     hitbox.userData.isEnemyHitbox = true;
     group.add(hitbox);
 
@@ -2672,16 +2679,14 @@ export function spawnEnemy(type, position, levelConfig) {
   }
 
   // Add invisible box hitbox for better hit detection (cheaper than sphere)
-  const hitboxGeo = new THREE.BoxGeometry(def.hitboxRadius * 2, def.hitboxRadius * 2, def.hitboxRadius * 2);
   const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-  const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+  const hitbox = new THREE.Mesh(getHitboxGeo(def.hitboxRadius * 2, def.hitboxRadius * 2, def.hitboxRadius * 2), hitboxMat);
   hitbox.userData.isEnemyHitbox = true;
   group.add(hitbox);
 
   if (def.isJelly) {
-    if (hitbox.geometry) hitbox.geometry.dispose();
     const jellyHeight = (def.jellyBaseHeight || def.pattern.length) * def.voxelSize * 1.05;
-    hitbox.geometry = new THREE.BoxGeometry(def.hitboxRadius * 2, jellyHeight, def.hitboxRadius * 2);
+    hitbox.geometry = getHitboxGeo(def.hitboxRadius * 2, jellyHeight, def.hitboxRadius * 2);
   }
 
   const enemy = {
@@ -3434,7 +3439,7 @@ export function hitEnemy(index, damage, hitInfo = {}) {
       if (e.hitbox) {
         if (e.hitbox.geometry) e.hitbox.geometry.dispose();
         const length = e.trainLength * e.voxelSize * 1.5;
-        e.hitbox.geometry = new THREE.BoxGeometry(e.hitboxRadius * 2, e.hitboxRadius * 2, length);
+        e.hitbox.geometry = getHitboxGeo(e.hitboxRadius * 2, e.hitboxRadius * 2, length);
         e.hitbox.position.z = -(e.trainLength * e.voxelSize * 0.75);
       }
 
