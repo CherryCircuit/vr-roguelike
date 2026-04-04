@@ -431,6 +431,18 @@ function getGeo(size) {
   return sharedGeos[key];
 }
 
+// Clear all geometry caches (called on game restart to prevent GPU object leaks)
+export function clearGeometryCaches() {
+  for (const key of Object.keys(hitboxGeoCache)) {
+    hitboxGeoCache[key].dispose();
+    delete hitboxGeoCache[key];
+  }
+  for (const key of Object.keys(sharedGeos)) {
+    sharedGeos[key].dispose();
+    delete sharedGeos[key];
+  }
+}
+
 // Shared materials per enemy type (avoid creating new material per spawn)
 const sharedMaterials = {};
 
@@ -1467,6 +1479,8 @@ function spawnTrainEnemy(type, position, levelConfig) {
       pool.mesh.setMatrixAt(inst.instanceId, matrix);
       pool.mesh.setColorAt(inst.instanceId, _spiralSwimmerColorTmp.setHex(def.color));
     }
+    // Head segment (index 0): brighter white to mark the weak point
+    pool.mesh.setColorAt(instanceIds[0].instanceId, _spiralSwimmerColorTmp.setHex(0xffffff));
     pool.mesh.instanceMatrix.needsUpdate = true;
     if (pool.mesh.instanceColor) pool.mesh.instanceColor.needsUpdate = true;
 
@@ -2884,8 +2898,10 @@ export function updateEnemies(dt, now, playerPos) {
           const localZ = -i * e.voxelSize * 1.5;
 
           // Build matrix with local offset and world position
+          const headScale = i === 0 ? 1.3 : 1.0;
           const matrix = new THREE.Matrix4();
           matrix.makeTranslation(localX, localY, localZ);
+          matrix.scale(new THREE.Vector3(headScale, headScale, headScale));
           matrix.premultiply(new THREE.Matrix4().makeTranslation(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z));
           pool.mesh.setMatrixAt(iid, matrix);
         }
@@ -3745,6 +3761,9 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
  * Remove all enemies (for level transitions).
  */
 export function clearAllEnemies() {
+  // Clear geometry caches to prevent GPU object accumulation across game restarts
+  clearGeometryCaches();
+
   // Clear electric arcs (conductor arcs must not leak across level transitions)
   clearAllElectricArcs();
 
@@ -4206,10 +4225,9 @@ class Boss {
       }
     }
 
-    // Add hitbox
-    const hitboxGeo = new THREE.SphereGeometry(def.hitboxRadius || 0.5, 8, 8);
+    // Add hitbox (use cached geometry to avoid per-spawn leak)
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    const hitbox = new THREE.Mesh(getHitboxGeo((def.hitboxRadius || 0.5) * 2, (def.hitboxRadius || 0.5) * 2, (def.hitboxRadius || 0.5) * 2), hitboxMat);
     hitbox.userData.isBossHitbox = true;
     group.add(hitbox);
 
@@ -4922,10 +4940,9 @@ class SkullHand {
       this.group.add(finger);
     });
     
-    // Hitbox
-    const hitboxGeo = new THREE.SphereGeometry(0.5, 8, 8);
+    // Hitbox (use cached geometry to avoid per-spawn leak)
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    const hitbox = new THREE.Mesh(getHitboxGeo(1.0, 1.0, 1.0), hitboxMat);
     hitbox.userData.isHandHitbox = true;
     hitbox.userData.handIndex = this.handIndex;
     hitbox.userData.skullHand = this;
@@ -5172,10 +5189,9 @@ class SkullBoss extends Boss {
     this.mesh.add(skullGroup);
     this.skullGroup = skullGroup;
     
-    // Add hitbox for head
-    const hitboxGeo = new THREE.SphereGeometry(1.0, 8, 8);
+    // Add hitbox for head (use cached geometry to avoid per-spawn leak)
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-    const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+    const hitbox = new THREE.Mesh(getHitboxGeo(2.0, 2.0, 2.0), hitboxMat);
     hitbox.userData.isBossHitbox = true;
     hitbox.userData.isSkullHead = true;
     this.mesh.add(hitbox);
