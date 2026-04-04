@@ -953,6 +953,439 @@ function releaseAllSwarmInstances() {
   if (window?.debugInstancing) console.log('[swarm-instance] All slots released (clearAllEnemies)');
 }
 
+// ── Conductor enemy InstancedMesh pool ──────────────────────
+// One InstancedMesh for all 'conductor' enemies = 1 draw call instead of N.
+const MAX_CONDUCTOR_INSTANCES = 20;
+const conductorInstancePool = {
+  mesh: null,
+  freeIndices: new Set(),
+  initialized: false,
+};
+const _conductorDummyMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const _conductorColorTmp = new THREE.Color();
+
+function initConductorInstancePool() {
+  if (conductorInstancePool.initialized || !sceneRef) return;
+
+  const def = ENEMY_DEFS.conductor;
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+
+  const geometries = [];
+  for (let d = 0; d < def.depth; d++) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (def.pattern[r][c]) {
+          const g = geo.clone();
+          g.translate(
+            (c - cx) * def.voxelSize,
+            (cy - r) * def.voxelSize,
+            d * def.voxelSize,
+          );
+          geometries.push(g);
+        }
+      }
+    }
+  }
+
+  let conductorGeo;
+  if (geometries.length > 0) {
+    conductorGeo = mergeGeometries(geometries);
+    geometries.forEach(g => g.dispose());
+  }
+  if (!conductorGeo) {
+    console.warn('[conductor-instance] Failed to build merged geometry, falling back to box');
+    conductorGeo = new THREE.BoxGeometry(def.voxelSize, def.voxelSize, def.voxelSize);
+  }
+
+  const conductorMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.7,
+    depthWrite: false,
+    fog: false,
+  });
+
+  const im = new THREE.InstancedMesh(conductorGeo, conductorMat, MAX_CONDUCTOR_INSTANCES);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.renderOrder = 10;
+  im.count = 0;
+  im.frustumCulled = false;
+
+  for (let i = 0; i < MAX_CONDUCTOR_INSTANCES; i++) {
+    im.setMatrixAt(i, _conductorDummyMatrix);
+  }
+  im.instanceMatrix.needsUpdate = true;
+
+  sceneRef.add(im);
+  conductorInstancePool.mesh = im;
+  conductorInstancePool.initialized = true;
+
+  if (window?.debugInstancing) console.log(`[conductor-instance] Pool initialized: ${MAX_CONDUCTOR_INSTANCES} slots`);
+}
+
+function acquireConductorInstance() {
+  if (!conductorInstancePool.initialized) return null;
+  const pool = conductorInstancePool;
+
+  let instanceId;
+  if (pool.freeIndices.size > 0) {
+    instanceId = pool.freeIndices.values().next().value;
+    pool.freeIndices.delete(instanceId);
+  } else if (pool.mesh.count < MAX_CONDUCTOR_INSTANCES) {
+    instanceId = pool.mesh.count;
+    pool.mesh.count = instanceId + 1;
+  } else {
+    if (window?.debugInstancing) console.warn('[conductor-instance] Pool exhausted! Falling back to individual mesh.');
+    return null;
+  }
+
+  return { instanceId, pool };
+}
+
+function releaseConductorInstance(instanceId) {
+  if (!conductorInstancePool.initialized) return;
+  const pool = conductorInstancePool;
+
+  pool.mesh.setMatrixAt(instanceId, _conductorDummyMatrix);
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.freeIndices.add(instanceId);
+}
+
+function releaseAllConductorInstances() {
+  if (!conductorInstancePool.initialized) return;
+  const pool = conductorInstancePool;
+
+  for (let i = 0; i < pool.mesh.count; i++) {
+    pool.mesh.setMatrixAt(i, _conductorDummyMatrix);
+  }
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.mesh.count = 0;
+  pool.freeIndices.clear();
+
+  if (window?.debugInstancing) console.log('[conductor-instance] All slots released (clearAllEnemies)');
+}
+
+// ── Phase Wraith enemy InstancedMesh pool ───────────────────
+// One InstancedMesh for all 'phase_wraith' enemies = 1 draw call instead of N.
+const MAX_PHASE_WRAITH_INSTANCES = 15;
+const phaseWraithInstancePool = {
+  mesh: null,
+  freeIndices: new Set(),
+  initialized: false,
+};
+const _phaseWraithDummyMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const _phaseWraithColorTmp = new THREE.Color();
+
+function initPhaseWraithInstancePool() {
+  if (phaseWraithInstancePool.initialized || !sceneRef) return;
+
+  const def = ENEMY_DEFS.phase_wraith;
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+
+  const geometries = [];
+  for (let d = 0; d < def.depth; d++) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (def.pattern[r][c]) {
+          const g = geo.clone();
+          g.translate(
+            (c - cx) * def.voxelSize,
+            (cy - r) * def.voxelSize,
+            d * def.voxelSize,
+          );
+          geometries.push(g);
+        }
+      }
+    }
+  }
+
+  let phaseWraithGeo;
+  if (geometries.length > 0) {
+    phaseWraithGeo = mergeGeometries(geometries);
+    geometries.forEach(g => g.dispose());
+  }
+  if (!phaseWraithGeo) {
+    console.warn('[phase_wraith-instance] Failed to build merged geometry, falling back to box');
+    phaseWraithGeo = new THREE.BoxGeometry(def.voxelSize, def.voxelSize, def.voxelSize);
+  }
+
+  const phaseWraithMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.7,
+    depthWrite: false,
+    fog: false,
+  });
+
+  const im = new THREE.InstancedMesh(phaseWraithGeo, phaseWraithMat, MAX_PHASE_WRAITH_INSTANCES);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.renderOrder = 10;
+  im.count = 0;
+  im.frustumCulled = false;
+
+  for (let i = 0; i < MAX_PHASE_WRAITH_INSTANCES; i++) {
+    im.setMatrixAt(i, _phaseWraithDummyMatrix);
+  }
+  im.instanceMatrix.needsUpdate = true;
+
+  sceneRef.add(im);
+  phaseWraithInstancePool.mesh = im;
+  phaseWraithInstancePool.initialized = true;
+
+  if (window?.debugInstancing) console.log(`[phase_wraith-instance] Pool initialized: ${MAX_PHASE_WRAITH_INSTANCES} slots`);
+}
+
+function acquirePhaseWraithInstance() {
+  if (!phaseWraithInstancePool.initialized) return null;
+  const pool = phaseWraithInstancePool;
+
+  let instanceId;
+  if (pool.freeIndices.size > 0) {
+    instanceId = pool.freeIndices.values().next().value;
+    pool.freeIndices.delete(instanceId);
+  } else if (pool.mesh.count < MAX_PHASE_WRAITH_INSTANCES) {
+    instanceId = pool.mesh.count;
+    pool.mesh.count = instanceId + 1;
+  } else {
+    if (window?.debugInstancing) console.warn('[phase_wraith-instance] Pool exhausted! Falling back to individual mesh.');
+    return null;
+  }
+
+  return { instanceId, pool };
+}
+
+function releasePhaseWraithInstance(instanceId) {
+  if (!phaseWraithInstancePool.initialized) return;
+  const pool = phaseWraithInstancePool;
+
+  pool.mesh.setMatrixAt(instanceId, _phaseWraithDummyMatrix);
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.freeIndices.add(instanceId);
+}
+
+function releaseAllPhaseWraithInstances() {
+  if (!phaseWraithInstancePool.initialized) return;
+  const pool = phaseWraithInstancePool;
+
+  for (let i = 0; i < pool.mesh.count; i++) {
+    pool.mesh.setMatrixAt(i, _phaseWraithDummyMatrix);
+  }
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.mesh.count = 0;
+  pool.freeIndices.clear();
+
+  if (window?.debugInstancing) console.log('[phase_wraith-instance] All slots released (clearAllEnemies)');
+}
+
+// ── Mirror Knight enemy InstancedMesh pool ──────────────────
+// One InstancedMesh for all 'mirror_knight' enemies = 1 draw call instead of N.
+const MAX_MIRROR_KNIGHT_INSTANCES = 5;
+const mirrorKnightInstancePool = {
+  mesh: null,
+  freeIndices: new Set(),
+  initialized: false,
+};
+const _mirrorKnightDummyMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const _mirrorKnightColorTmp = new THREE.Color();
+
+function initMirrorKnightInstancePool() {
+  if (mirrorKnightInstancePool.initialized || !sceneRef) return;
+
+  const def = ENEMY_DEFS.mirror_knight;
+  const geo = getGeo(def.voxelSize);
+  const rows = def.pattern.length;
+  const cols = def.pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+
+  const geometries = [];
+  for (let d = 0; d < def.depth; d++) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (def.pattern[r][c]) {
+          const g = geo.clone();
+          g.translate(
+            (c - cx) * def.voxelSize,
+            (cy - r) * def.voxelSize,
+            d * def.voxelSize,
+          );
+          geometries.push(g);
+        }
+      }
+    }
+  }
+
+  let mirrorKnightGeo;
+  if (geometries.length > 0) {
+    mirrorKnightGeo = mergeGeometries(geometries);
+    geometries.forEach(g => g.dispose());
+  }
+  if (!mirrorKnightGeo) {
+    console.warn('[mirror_knight-instance] Failed to build merged geometry, falling back to box');
+    mirrorKnightGeo = new THREE.BoxGeometry(def.voxelSize, def.voxelSize, def.voxelSize);
+  }
+
+  const mirrorKnightMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.7,
+    depthWrite: false,
+    fog: false,
+  });
+
+  const im = new THREE.InstancedMesh(mirrorKnightGeo, mirrorKnightMat, MAX_MIRROR_KNIGHT_INSTANCES);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.renderOrder = 10;
+  im.count = 0;
+  im.frustumCulled = false;
+
+  for (let i = 0; i < MAX_MIRROR_KNIGHT_INSTANCES; i++) {
+    im.setMatrixAt(i, _mirrorKnightDummyMatrix);
+  }
+  im.instanceMatrix.needsUpdate = true;
+
+  sceneRef.add(im);
+  mirrorKnightInstancePool.mesh = im;
+  mirrorKnightInstancePool.initialized = true;
+
+  if (window?.debugInstancing) console.log(`[mirror_knight-instance] Pool initialized: ${MAX_MIRROR_KNIGHT_INSTANCES} slots`);
+}
+
+function acquireMirrorKnightInstance() {
+  if (!mirrorKnightInstancePool.initialized) return null;
+  const pool = mirrorKnightInstancePool;
+
+  let instanceId;
+  if (pool.freeIndices.size > 0) {
+    instanceId = pool.freeIndices.values().next().value;
+    pool.freeIndices.delete(instanceId);
+  } else if (pool.mesh.count < MAX_MIRROR_KNIGHT_INSTANCES) {
+    instanceId = pool.mesh.count;
+    pool.mesh.count = instanceId + 1;
+  } else {
+    if (window?.debugInstancing) console.warn('[mirror_knight-instance] Pool exhausted! Falling back to individual mesh.');
+    return null;
+  }
+
+  return { instanceId, pool };
+}
+
+function releaseMirrorKnightInstance(instanceId) {
+  if (!mirrorKnightInstancePool.initialized) return;
+  const pool = mirrorKnightInstancePool;
+
+  pool.mesh.setMatrixAt(instanceId, _mirrorKnightDummyMatrix);
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.freeIndices.add(instanceId);
+}
+
+function releaseAllMirrorKnightInstances() {
+  if (!mirrorKnightInstancePool.initialized) return;
+  const pool = mirrorKnightInstancePool;
+
+  for (let i = 0; i < pool.mesh.count; i++) {
+    pool.mesh.setMatrixAt(i, _mirrorKnightDummyMatrix);
+  }
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.mesh.count = 0;
+  pool.freeIndices.clear();
+
+  if (window?.debugInstancing) console.log('[mirror_knight-instance] All slots released (clearAllEnemies)');
+}
+
+// ── Spiral Swimmer train segment InstancedMesh pool ─────────
+// One InstancedMesh for all spiral_swimmer segments = 1 draw call instead of N.
+// Each train has trainLength (10) segments, so pool size accommodates multiple trains.
+const MAX_SPIRAL_SWIMMER_INSTANCES = 50; // ~5 trains of 10 segments each
+const spiralSwimmerInstancePool = {
+  mesh: null,
+  freeIndices: new Set(),
+  initialized: false,
+};
+const _spiralSwimmerDummyMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const _spiralSwimmerColorTmp = new THREE.Color();
+
+function initSpiralSwimmerInstancePool() {
+  if (spiralSwimmerInstancePool.initialized || !sceneRef) return;
+
+  const def = ENEMY_DEFS.spiral_swimmer;
+  // Spiral swimmer has a single-voxel pattern
+  const geo = getGeo(def.voxelSize);
+
+  const spiralSwimmerGeo = geo.clone();
+
+  const spiralSwimmerMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.8,
+    depthWrite: false,
+    fog: false,
+  });
+
+  const im = new THREE.InstancedMesh(spiralSwimmerGeo, spiralSwimmerMat, MAX_SPIRAL_SWIMMER_INSTANCES);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.renderOrder = 10;
+  im.count = 0;
+  im.frustumCulled = false;
+
+  for (let i = 0; i < MAX_SPIRAL_SWIMMER_INSTANCES; i++) {
+    im.setMatrixAt(i, _spiralSwimmerDummyMatrix);
+  }
+  im.instanceMatrix.needsUpdate = true;
+
+  sceneRef.add(im);
+  spiralSwimmerInstancePool.mesh = im;
+  spiralSwimmerInstancePool.initialized = true;
+
+  if (window?.debugInstancing) console.log(`[spiral_swimmer-instance] Pool initialized: ${MAX_SPIRAL_SWIMMER_INSTANCES} slots`);
+}
+
+function acquireSpiralSwimmerInstance() {
+  if (!spiralSwimmerInstancePool.initialized) return null;
+  const pool = spiralSwimmerInstancePool;
+
+  let instanceId;
+  if (pool.freeIndices.size > 0) {
+    instanceId = pool.freeIndices.values().next().value;
+    pool.freeIndices.delete(instanceId);
+  } else if (pool.mesh.count < MAX_SPIRAL_SWIMMER_INSTANCES) {
+    instanceId = pool.mesh.count;
+    pool.mesh.count = instanceId + 1;
+  } else {
+    if (window?.debugInstancing) console.warn('[spiral_swimmer-instance] Pool exhausted! Falling back to individual mesh.');
+    return null;
+  }
+
+  return { instanceId, pool };
+}
+
+function releaseSpiralSwimmerInstance(instanceId) {
+  if (!spiralSwimmerInstancePool.initialized) return;
+  const pool = spiralSwimmerInstancePool;
+
+  pool.mesh.setMatrixAt(instanceId, _spiralSwimmerDummyMatrix);
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.freeIndices.add(instanceId);
+}
+
+function releaseAllSpiralSwimmerInstances() {
+  if (!spiralSwimmerInstancePool.initialized) return;
+  const pool = spiralSwimmerInstancePool;
+
+  for (let i = 0; i < pool.mesh.count; i++) {
+    pool.mesh.setMatrixAt(i, _spiralSwimmerDummyMatrix);
+  }
+  pool.mesh.instanceMatrix.needsUpdate = true;
+  pool.mesh.count = 0;
+  pool.freeIndices.clear();
+
+  if (window?.debugInstancing) console.log('[spiral_swimmer-instance] All slots released (clearAllEnemies)');
+}
+
 // Player movement history for Clone Mimics (stores last 3 seconds of positions)
 const playerMovementHistory = [];
 const MOVEMENT_HISTORY_DURATION = 3000; // 3 seconds in ms
@@ -983,38 +1416,88 @@ function spawnTrainEnemy(type, position, levelConfig) {
   const def = ENEMY_DEFS[type];
   const trainLength = def.trainLength || 8;
 
-  // Create the lead "scout" voxel
+  // Create the group to hold hitbox and track position
   const group = new THREE.Group();
   group.renderOrder = 10;
-  const geo = getGeo(def.voxelSize);
-  const material = new THREE.MeshBasicMaterial({
-    color: def.color,
-    transparent: true,
-    opacity: 0.8,
-    depthWrite: false,
-    fog: false,
-  });
 
-  // Scout (leader) voxel - marked as weak point
-  const scout = new THREE.Mesh(geo, material.clone());
-  scout.position.set(0, 0, 0);
-  scout.userData.isScout = true;
-  scout.userData.weakPoint = true;
-  group.add(scout);
+  // Try to use instanced rendering for train segments
+  const instanceIds = []; // Track all instance IDs for this train
+  let useInstancedTrain = false;
 
-  // Create trailing voxels
-  const trailingVoxels = [];
-  for (let i = 1; i < trainLength; i++) {
-    const voxel = new THREE.Mesh(geo, material.clone());
-    voxel.position.set(0, 0, -i * def.voxelSize * 1.5);
-    voxel.userData.trainIndex = i;
-    group.add(voxel);
-    trailingVoxels.push(voxel);
+  // Acquire instances for all segments
+  for (let i = 0; i < trainLength; i++) {
+    const instance = acquireSpiralSwimmerInstance();
+    if (instance) {
+      instanceIds.push(instance);
+    } else {
+      // Pool exhausted, release any acquired instances and fall back
+      instanceIds.forEach(inst => releaseSpiralSwimmerInstance(inst.instanceId));
+      instanceIds.length = 0;
+      break;
+    }
+  }
+
+  useInstancedTrain = instanceIds.length === trainLength;
+
+  if (useInstancedTrain) {
+    // Instanced path: set up instance matrices and colors
+    const pool = instanceIds[0].pool;
+
+    // Set initial positions for all segments
+    for (let i = 0; i < trainLength; i++) {
+      const inst = instanceIds[i];
+      const segmentPos = position.clone();
+      if (i > 0) {
+        segmentPos.z -= i * def.voxelSize * 1.5;
+      }
+
+      // Create matrix for this segment
+      const matrix = new THREE.Matrix4();
+      matrix.setPosition(segmentPos);
+      pool.mesh.setMatrixAt(inst.instanceId, matrix);
+      pool.mesh.setColorAt(inst.instanceId, _spiralSwimmerColorTmp.setHex(def.color));
+    }
+    pool.mesh.instanceMatrix.needsUpdate = true;
+    if (pool.mesh.instanceColor) pool.mesh.instanceColor.needsUpdate = true;
+
+    // Store instance info in group userData
+    group.userData.instanceIds = instanceIds.map(inst => inst.instanceId);
+    group.userData.instancePool = pool;
+    group.userData.useInstancedTrain = true;
+  } else {
+    // Fallback: create individual meshes
+    const geo = getGeo(def.voxelSize);
+    const material = new THREE.MeshBasicMaterial({
+      color: def.color,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      fog: false,
+    });
+
+    // Scout (leader) voxel - marked as weak point
+    const scout = new THREE.Mesh(geo, material.clone());
+    scout.position.set(0, 0, 0);
+    scout.userData.isScout = true;
+    scout.userData.weakPoint = true;
+    group.add(scout);
+
+    // Create trailing voxels
+    const trailingVoxels = [];
+    for (let i = 1; i < trainLength; i++) {
+      const voxel = new THREE.Mesh(geo, material.clone());
+      voxel.position.set(0, 0, -i * def.voxelSize * 1.5);
+      voxel.userData.trainIndex = i;
+      group.add(voxel);
+      trailingVoxels.push(voxel);
+    }
+
+    group.userData.trailingVoxels = trailingVoxels;
   }
 
   group.position.copy(position);
   group.userData.isEnemy = true;
-  group.userData.enemyType = type; // For debug identification
+  group.userData.enemyType = type;
 
   // Add hitbox
   const hitboxGeo = new THREE.BoxGeometry(def.hitboxRadius * 2, def.hitboxRadius * 2, def.hitboxRadius * 2);
@@ -1027,7 +1510,6 @@ function spawnTrainEnemy(type, position, levelConfig) {
   const enemy = {
     id: nextEnemyId++,
     mesh: group,
-    material,
     type,
     hp: Math.round(def.baseHp * levelConfig.hpMultiplier),
     maxHp: Math.round(def.baseHp * levelConfig.hpMultiplier),
@@ -1051,7 +1533,8 @@ function spawnTrainEnemy(type, position, levelConfig) {
     // Train-specific state
     isTrain: true,
     trainLength,
-    trailingVoxels,
+    trailingVoxels: useInstancedTrain ? null : group.userData.trailingVoxels,
+    instanceIds: useInstancedTrain ? group.userData.instanceIds : null,
     hitbox,
     spiralAngle: 0,
     spiralRadius: 0.8,
@@ -1897,6 +2380,18 @@ export function initEnemies(scene) {
 
   // Initialize swarm enemy InstancedMesh pool
   initSwarmInstancePool();
+
+  // Initialize conductor enemy InstancedMesh pool
+  initConductorInstancePool();
+
+  // Initialize phase_wraith enemy InstancedMesh pool
+  initPhaseWraithInstancePool();
+
+  // Initialize mirror_knight enemy InstancedMesh pool
+  initMirrorKnightInstancePool();
+
+  // Initialize spiral_swimmer enemy InstancedMesh pool (for train segments)
+  initSpiralSwimmerInstancePool();
 }
 
 /**
@@ -2030,9 +2525,77 @@ export function spawnEnemy(type, position, levelConfig) {
     // If pool exhausted, fall through to normal path
   }
 
+  // ── Conductor enemy InstancedMesh path ──
+  let useInstancedConductor = false;
+  if (type === 'conductor') {
+    const instance = acquireConductorInstance();
+    if (instance) {
+      useInstancedConductor = true;
+      group.userData.instanceId = instance.instanceId;
+      group.userData.instancePool = instance.pool;
+
+      // Position the group and sync the instance matrix
+      group.position.copy(position);
+      group.updateMatrix();
+      instance.pool.mesh.setMatrixAt(instance.instanceId, group.matrix);
+      instance.pool.mesh.instanceMatrix.needsUpdate = true;
+
+      // Set initial instance color
+      instance.pool.mesh.setColorAt(instance.instanceId, _conductorColorTmp.setHex(def.color));
+      if (instance.pool.mesh.instanceColor) instance.pool.mesh.instanceColor.needsUpdate = true;
+    }
+    // If pool exhausted, fall through to normal path
+  }
+
+  // ── Phase Wraith enemy InstancedMesh path ──
+  let useInstancedPhaseWraith = false;
+  if (type === 'phase_wraith') {
+    const instance = acquirePhaseWraithInstance();
+    if (instance) {
+      useInstancedPhaseWraith = true;
+      group.userData.instanceId = instance.instanceId;
+      group.userData.instancePool = instance.pool;
+
+      // Position the group and sync the instance matrix
+      group.position.copy(position);
+      group.updateMatrix();
+      instance.pool.mesh.setMatrixAt(instance.instanceId, group.matrix);
+      instance.pool.mesh.instanceMatrix.needsUpdate = true;
+
+      // Set initial instance color
+      instance.pool.mesh.setColorAt(instance.instanceId, _phaseWraithColorTmp.setHex(def.color));
+      if (instance.pool.mesh.instanceColor) instance.pool.mesh.instanceColor.needsUpdate = true;
+    }
+    // If pool exhausted, fall through to normal path
+  }
+
+  // ── Mirror Knight enemy InstancedMesh path ──
+  let useInstancedMirrorKnight = false;
+  if (type === 'mirror_knight') {
+    const instance = acquireMirrorKnightInstance();
+    if (instance) {
+      useInstancedMirrorKnight = true;
+      group.userData.instanceId = instance.instanceId;
+      group.userData.instancePool = instance.pool;
+
+      // Position the group and sync the instance matrix
+      group.position.copy(position);
+      group.updateMatrix();
+      instance.pool.mesh.setMatrixAt(instance.instanceId, group.matrix);
+      instance.pool.mesh.instanceMatrix.needsUpdate = true;
+
+      // Set initial instance color
+      instance.pool.mesh.setColorAt(instance.instanceId, _mirrorKnightColorTmp.setHex(def.color));
+      if (instance.pool.mesh.instanceColor) instance.pool.mesh.instanceColor.needsUpdate = true;
+    }
+    // If pool exhausted, fall through to normal path
+  }
+
   // For non-instanced basic/fast/swarm/tank and all other non-tank, non-jelly enemies,
   // merge voxel geometries into a single mesh
-  if (!useInstancedBasic && !useInstancedFast && !useInstancedSwarm && !useInstancedTank && !isTank && !def.isJelly) {
+  const useInstanced = useInstancedBasic || useInstancedFast || useInstancedSwarm || useInstancedTank ||
+                       useInstancedConductor || useInstancedPhaseWraith || useInstancedMirrorKnight;
+  if (!useInstanced && !isTank && !def.isJelly) {
     const geometries = [];
     for (let d = 0; d < def.depth; d++) {
       for (let r = 0; r < rows; r++) {
@@ -2295,13 +2858,32 @@ export function updateEnemies(dt, now, playerPos) {
       // Keep within bounds
       e.mesh.position.y = Math.max(0.5, Math.min(3.5, e.mesh.position.y));
 
-      // Animate trailing voxels to follow in spiral
+      // Animate trailing voxels to follow in spiral (non-instanced fallback)
       if (e.trailingVoxels) {
         e.trailingVoxels.forEach((voxel, idx) => {
           const phase = e.spiralAngle - (idx + 1) * 0.4;
           voxel.position.x = Math.sin(phase) * e.spiralRadius * 0.5;
           voxel.position.y = Math.cos(phase) * e.spiralRadius * 0.3;
         });
+      }
+
+      // Sync instanced train segments (if using instancing)
+      if (e.instanceIds && e.mesh.userData.instancePool) {
+        const pool = e.mesh.userData.instancePool;
+        for (let i = 0; i < e.instanceIds.length; i++) {
+          const iid = e.instanceIds[i];
+          const phase = e.spiralAngle - i * 0.4;
+          const localX = Math.sin(phase) * e.spiralRadius * 0.5;
+          const localY = Math.cos(phase) * e.spiralRadius * 0.3;
+          const localZ = -i * e.voxelSize * 1.5;
+
+          // Build matrix with local offset and world position
+          const matrix = new THREE.Matrix4();
+          matrix.makeTranslation(localX, localY, localZ);
+          matrix.premultiply(new THREE.Matrix4().makeTranslation(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z));
+          pool.mesh.setMatrixAt(iid, matrix);
+        }
+        _dirtyPools.add(pool);
       }
     }
 
@@ -2959,6 +3541,27 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
     releaseTankInstance(e.mesh.userData.instanceId);
   }
 
+  // Release InstancedMesh slot for conductor enemies
+  if (e.type === 'conductor' && e.mesh.userData.instanceId !== undefined) {
+    releaseConductorInstance(e.mesh.userData.instanceId);
+  }
+
+  // Release InstancedMesh slot for phase_wraith enemies
+  if (e.type === 'phase_wraith' && e.mesh.userData.instanceId !== undefined) {
+    releasePhaseWraithInstance(e.mesh.userData.instanceId);
+  }
+
+  // Release InstancedMesh slot for mirror_knight enemies
+  if (e.type === 'mirror_knight' && e.mesh.userData.instanceId !== undefined) {
+    releaseMirrorKnightInstance(e.mesh.userData.instanceId);
+  }
+
+  // Release all InstancedMesh slots for spiral_swimmer (train) enemies
+  if (e.isTrain && e.instanceIds) {
+    e.instanceIds.forEach(iid => releaseSpiralSwimmerInstance(iid));
+    e.instanceIds.length = 0;
+  }
+
   const pos = e.mesh.position.clone();
   const color = e.baseColor.clone();
 
@@ -3150,6 +3753,18 @@ export function clearAllEnemies() {
 
   // Release all tank enemy InstancedMesh slots
   releaseAllTankInstances();
+
+  // Release all conductor enemy InstancedMesh slots
+  releaseAllConductorInstances();
+
+  // Release all phase_wraith enemy InstancedMesh slots
+  releaseAllPhaseWraithInstances();
+
+  // Release all mirror_knight enemy InstancedMesh slots
+  releaseAllMirrorKnightInstances();
+
+  // Release all spiral_swimmer enemy InstancedMesh slots
+  releaseAllSpiralSwimmerInstances();
 
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     sceneRef.remove(activeEnemies[i].mesh);
