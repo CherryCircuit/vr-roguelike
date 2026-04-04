@@ -50,6 +50,23 @@ const pauseMenuGroup = new THREE.Group();  // Pause menu
 const pauseCountdownGroup = new THREE.Group();  // 3-2-1 countdown overlay
 const floatingMessageGroup = new THREE.Group();
 
+// ── HUD Text Geometry Cache ───────────────────────────────────
+// Pool PlaneGeometry by aspect ratio bins to avoid GPU object churn
+// when HUD text changes frequently (score, kills, etc.)
+const hudGeoCache = {};
+
+function getHudGeo(width, height) {
+  // Bin to nearest 0.25 aspect ratio for cache efficiency
+  const ar = width / height;
+  const binnedAr = Math.round(ar * 4) / 4;
+  const binnedW = binnedAr * height;
+  const key = `${binnedW.toFixed(2)}x${height.toFixed(2)}`;
+  if (!hudGeoCache[key]) {
+    hudGeoCache[key] = new THREE.PlaneGeometry(binnedW, height);
+  }
+  return hudGeoCache[key];
+}
+
 // HUD element references
 let floatingMessageSprite = null;
 let floatingMessageHideAt = null;
@@ -1175,9 +1192,9 @@ function updateSpriteText(sprite, text, opts = {}) {
   sprite.material.needsUpdate = true;
 
   // Update geometry to match aspect ratio (prevents stretching)
+  // Use cached geometry by aspect ratio bin to avoid GPU object churn
   const scale = opts.scale || 0.3;
-  sprite.geometry.dispose();
-  sprite.geometry = new THREE.PlaneGeometry(aspect * scale, scale);
+  sprite.geometry = getHudGeo(aspect * scale, scale);
 }
 
 export function updateHUD(gameState) {
@@ -1216,8 +1233,7 @@ export function updateHUD(gameState) {
   // Cache geometry by maxHealth to avoid recreating on every frame
   if (heartsSprite.userData._heartsMaxHP !== gameState.maxHealth) {
     heartsSprite.userData._heartsMaxHP = gameState.maxHealth;
-    heartsSprite.geometry.dispose();
-    heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
+    heartsSprite.geometry = getHudGeo(ha * 0.48, 0.48);
   }
 
   // Kill counter - #5: Moved up closer to LEVEL display
