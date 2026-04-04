@@ -1542,6 +1542,7 @@ function spawnTrainEnemy(type, position, levelConfig) {
     // Train-specific state
     isTrain: true,
     trainLength,
+    material: null, // Train enemies don't own material (instanced pool or child meshes)
     trailingVoxels: useInstancedTrain ? null : group.userData.trailingVoxels,
     instanceIds: useInstancedTrain ? group.userData.instanceIds : null,
     hitbox,
@@ -3727,13 +3728,13 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
         c.geometry.dispose();
       }
       // Dispose per-enemy materials (hitbox materials are not shared)
-      if (c.material && c.material !== e.material && !c.material._isShared) {
+      if (c.material && c.material !== (e.material || null) && !c.material._isShared) {
         c.material.dispose();
       }
     }
   });
-  // Dispose material
-  e.material.dispose();
+  // Dispose material (if enemy owns one)
+  if (e.material) e.material.dispose();
   activeEnemies.splice(index, 1);
   _enemyMeshesDirty = true;  // Invalidate cache
 
