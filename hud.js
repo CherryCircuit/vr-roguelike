@@ -76,8 +76,212 @@ let fpsTexture = null;
 // Debug menu state
 let debugToggleItems = [];
 
-// Damage numbers
-const damageNumbers = [];
+// ── TextPopupPool: Object pool for popup meshes ────────────────────
+// Reuses pre-allocated PlaneGeometry + CanvasTexture + MeshBasicMaterial
+// to prevent GEO climbing from constant create/destroy cycles.
+
+class TextPopupPool {
+  constructor(scene, maxSize, defaults = {}) {
+    this.scene = scene;
+    this.maxSize = maxSize;
+    this.defaults = defaults;
+    this.pool = [];      // Available (inactive) meshes
+    this.active = [];    // Currently animating meshes
+
+    for (let i = 0; i < maxSize; i++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = defaults.canvasWidth || 128;
+      canvas.height = defaults.canvasHeight || 64;
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      texture.premultiplyAlpha = false;
+
+      const geometry = new THREE.PlaneGeometry(
+        defaults.width || 1,
+        defaults.height || 0.5
+      );
+
+      const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0,
+        depthTest: defaults.depthTest !== undefined ? defaults.depthTest : false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.renderOrder = defaults.renderOrder || 998;
+      mesh.visible = false;
+
+      mesh.userData = {
+        canvas: canvas,
+        ctx: canvas.getContext('2d'),
+        active: false,
+        velocity: new THREE.Vector3(),
+        createdAt: 0,
+        lifetime: 0,
+      };
+
+      this.pool.push(mesh);
+    }
+  }
+
+  acquire(position, drawFn, opts = {}) {
+    if (this.pool.length === 0) {
+      // Pool exhausted: steal oldest active mesh
+      if (this.active.length === 0) return null;
+      const stolen = this.active.shift();
+      this._deactivate(stolen);
+      this.pool.push(stolen);
+    }
+
+    const mesh = this.pool.pop();
+    const ud = mesh.userData;
+
+    // Clear and redraw canvas
+    ud.ctx.clearRect(0, 0, ud.canvas.width, ud.canvas.height);
+    ud.ctx.shadowColor = 'transparent';
+    ud.ctx.shadowBlur = 0;
+    drawFn(ud.canvas, ud.ctx, ud.canvas.width, ud.canvas.height);
+    mesh.material.map.needsUpdate = true;
+
+    // Use scale to adjust apparent size (geometry is fixed at pool creation)
+    const w = opts.width || this.defaults.width || 1;
+    const h = opts.height || this.defaults.height || 0.5;
+    const scaleX = w / (this.defaults.width || 1);
+    const scaleY = h / (this.defaults.height || 0.5);
+    mesh.scale.set(scaleX, scaleY, 1);
+
+    // Position
+    mesh.position.copy(position);
+    if (opts.offsetX) mesh.position.x += opts.offsetX;
+    if (opts.offsetY) mesh.position.y += opts.offsetY;
+    if (opts.offsetZ) mesh.position.z += opts.offsetZ;
+
+    // Velocity
+    ud.velocity.copy(opts.velocity || new THREE.Vector3(0, 0.5, 0));
+
+    // Timing
+    ud.createdAt = performance.now();
+    ud.lifetime = opts.lifetime || 1000;
+    ud.active = true;
+
+    // Copy extra userData fields for custom animations
+    if (opts.userData) {
+      for (const key of Object.keys(opts.userData)) {
+        ud[key] = opts.userData[key];
+      }
+    }
+
+    // Material
+    mesh.material.opacity = opts.opacity !== undefined ? opts.opacity : 0.9;
+    mesh.material.depthTest = opts.depthTest !== undefined ? opts.depthTest : false;
+    mesh.renderOrder = opts.renderOrder || this.defaults.renderOrder || 998;
+
+    mesh.visible = true;
+    this.scene.add(mesh);
+    this.active.push(mesh);
+
+    return mesh;
+  }
+
+  /**
+   * Return a single active mesh back to the pool.
+   * Used when custom update logic needs to expire individual items.
+   */
+  release(mesh) {
+    const idx = this.active.indexOf(mesh);
+    if (idx !== -1) {
+      this.active.splice(idx, 1);
+      this._deactivate(mesh);
+      this.pool.push(mesh);
+    }
+  }
+
+  update(dt, now, onExpire = null) {
+    for (let i = this.active.length - 1; i >= 0; i--) {
+      const mesh = this.active[i];
+      const ud = mesh.userData;
+      const age = now - ud.createdAt;
+
+      if (age > ud.lifetime) {
+        this.active.splice(i, 1);
+        this._deactivate(mesh);
+        this.pool.push(mesh);
+        if (onExpire) onExpire(mesh);
+      } else {
+        mesh.position.addScaledVector(ud.velocity, dt);
+        if (this.defaults.gravity) {
+          ud.velocity.y -= dt * 1.5;
+        }
+      }
+    }
+  }
+
+  clearAll() {
+    for (const mesh of this.active) {
+      this._deactivate(mesh);
+      this.pool.push(mesh);
+    }
+    this.active.length = 0;
+  }
+
+  get count() { return this.active.length; }
+
+  _deactivate(mesh) {
+    mesh.visible = false;
+    mesh.userData.active = false;
+    this.scene.remove(mesh);
+    mesh.scale.set(1, 1, 1);
+    // Reset material opacity so next acquire sets it fresh
+    mesh.material.opacity = 0;
+  }
+
+  dispose() {
+    this.clearAll();
+    for (const mesh of this.pool) {
+      mesh.material.map.dispose();
+      mesh.material.dispose();
+      mesh.geometry.dispose();
+    }
+    this.pool.length = 0;
+  }
+}
+
+// Popup pool instances (lazy-initialized when sceneRef is available)
+let damageNumberPool = null;
+let comboPopupPool = null;
+let killChainPool = null;
+
+function ensurePools() {
+  if (damageNumberPool) return;
+  damageNumberPool = new TextPopupPool(sceneRef, 25, {
+    canvasWidth: 128, canvasHeight: 64,
+    width: 0.65, height: 0.325,
+    gravity: true,
+    renderOrder: 998,
+  });
+  comboPopupPool = new TextPopupPool(sceneRef, 5, {
+    canvasWidth: 512, canvasHeight: 128,
+    width: 3.2, height: 0.8,
+    gravity: false,
+    renderOrder: 999,
+  });
+  killChainPool = new TextPopupPool(sceneRef, 5, {
+    canvasWidth: 512, canvasHeight: 256,
+    width: 3.0, height: 1.5,
+    gravity: false,
+    renderOrder: 999,
+  });
+}
+
+function disposePools() {
+  if (damageNumberPool) { damageNumberPool.dispose(); damageNumberPool = null; }
+  if (comboPopupPool) { comboPopupPool.dispose(); comboPopupPool = null; }
+  if (killChainPool) { killChainPool.dispose(); killChainPool = null; }
+}
 
 // Upgrade card meshes (for raycasting)
 let upgradeCards = [];
@@ -950,6 +1154,13 @@ export function triggerHealthGainAnimation() {
 }
 
 function updateSpriteText(sprite, text, opts = {}) {
+  // Build a cache key from text + opts to avoid recreating geometry/texture
+  // when nothing visually changed (e.g. repeated updateHUD calls between kills)
+  const cacheKey = text + '|' + (opts.fontSize || 40) + '|' + (opts.color || '#ffffff') +
+    '|' + (opts.glow ? '1' : '0') + '|' + (opts.glowColor || '') + '|' + (opts.scale || 0.3);
+  if (sprite.userData._lastTextCacheKey === cacheKey) return;
+  sprite.userData._lastTextCacheKey = cacheKey;
+
   // Dispose old texture
   if (sprite.material.map) sprite.material.map.dispose();
 
@@ -997,13 +1208,17 @@ export function updateHUD(gameState) {
   updateHolographicGlitch(now);
 
   // Hearts - proper aspect ratio with correct scale and animation
+  // Only rebuild geometry when maxHealth changes (aspect ratio changes)
   const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth, heartAnimationState);
   if (heartsSprite.material.map) heartsSprite.material.map.dispose();
   heartsSprite.material.map = ht;
   heartsSprite.material.needsUpdate = true;
-  // Update geometry to match aspect ratio (200% larger: height 0.48)
-  heartsSprite.geometry.dispose();
-  heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
+  // Cache geometry by maxHealth to avoid recreating on every frame
+  if (heartsSprite.userData._heartsMaxHP !== gameState.maxHealth) {
+    heartsSprite.userData._heartsMaxHP = gameState.maxHealth;
+    heartsSprite.geometry.dispose();
+    heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
+  }
 
   // Kill counter - #5: Moved up closer to LEVEL display
   // #6: Moved left to x=0.5 (center-right) to be closer to SCORE display
@@ -1056,8 +1271,8 @@ export function updateHUD(gameState) {
 // ── Level Complete / Transition Text ───────────────────────
 
 export function showLevelComplete(level, playerPos) {
-  // Clear old
-  while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
+  // Clear old with proper disposal
+  disposeGroupChildren(levelTextGroup);
 
   const s1 = makeSprite('LEVEL COMPLETE!', { fontSize: 80, color: '#00ffff', glow: true, glowSize: 20, scale: 0.75 });
   s1.position.set(0, 0.3, 0);  // Moved down for better centering
@@ -1318,7 +1533,7 @@ function createSkipCard(position) {
 }
 
 export function hideUpgradeCards() {
-  while (upgradeGroup.children.length) upgradeGroup.remove(upgradeGroup.children[0]);
+  disposeGroupChildren(upgradeGroup);
   upgradeGroup.visible = false;
   upgradeCards = [];
   upgradeChoices = [];
@@ -1380,7 +1595,7 @@ export function getUpgradeCardHit(raycaster) {
 
 export function showGameOver(score, playerPos) {
   hideAll();
-  while (gameOverGroup.children.length) gameOverGroup.remove(gameOverGroup.children[0]);
+  disposeGroupChildren(gameOverGroup);
 
   const s1 = makeSprite('GAME OVER', { fontSize: 120, color: '#ff0044', glow: true, glowSize: 30, scale: 1.4 });
   s1.position.set(0, 1.2, 0);
@@ -1404,7 +1619,7 @@ export function showGameOver(score, playerPos) {
 
 export function showVictory(score, playerPos) {
   hideAll();
-  while (gameOverGroup.children.length) gameOverGroup.remove(gameOverGroup.children[0]);
+  disposeGroupChildren(gameOverGroup);
 
   const s1 = makeSprite('VICTORY!', { fontSize: 120, color: '#ffff00', glow: true, glowSize: 30, scale: 1.5 });
   s1.position.set(0, 1.2, 0);
@@ -1468,259 +1683,151 @@ export function updateHitFlash(dt) {
 // ── Damage Numbers ─────────────────────────────────────────
 
 export function spawnDamageNumber(position, damage, color) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = 128;
-  canvas.height = 64;
+  ensurePools();
 
-  const fontSize = Math.min(48, 28 + damage / 6);
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  // Drop shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillText(Math.round(damage).toString(), 66, 34);
-
-  // Main text
-  ctx.fillStyle = color || '#ffffff';
-  ctx.fillText(Math.round(damage).toString(), 64, 32);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  texture.premultiplyAlpha = false;
-
-  // Use PlaneGeometry instead of Sprite to prevent billboarding
-  // Increased scale significantly for better visibility (+30% from before)
   const scale = (0.25 + Math.min(damage / 100, 0.15)) * 1.3;
   const width = scale * 2;
   const height = scale;
 
-  const geometry = new THREE.PlaneGeometry(width, height);
-  const mat = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    opacity: 0.9,
-    depthTest: false,
-    side: THREE.DoubleSide,
+  damageNumberPool.acquire(position, (canvas, ctx) => {
+    const fontSize = Math.min(48, 28 + damage / 6);
+    ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillText(Math.round(damage).toString(), 66, 34);
+
+    // Main text
+    ctx.fillStyle = color || '#ffffff';
+    ctx.fillText(Math.round(damage).toString(), 64, 32);
+  }, {
+    width, height, lifetime: 500,
+    offsetX: (Math.random() - 0.5) * 0.3,
+    offsetY: Math.random() * 0.2,
+    offsetZ: (Math.random() - 0.5) * 0.3,
+    velocity: new THREE.Vector3(
+      (Math.random() - 0.5) * 0.5,
+      0.8 + Math.random() * 0.5,
+      (Math.random() - 0.5) * 0.5,
+    ),
   });
-
-  const mesh = new THREE.Mesh(geometry, mat);
-  mesh.position.copy(position);
-  mesh.position.x += (Math.random() - 0.5) * 0.3;
-  mesh.position.y += Math.random() * 0.2;
-  mesh.position.z += (Math.random() - 0.5) * 0.3;
-
-  mesh.renderOrder = 998;
-
-  mesh.userData.velocity = new THREE.Vector3(
-    (Math.random() - 0.5) * 0.5,
-    0.8 + Math.random() * 0.5,
-    (Math.random() - 0.5) * 0.5,
-  );
-  mesh.userData.lifetime = 500;  // Reduced from 1000ms for performance
-  mesh.userData.createdAt = performance.now();
-
-  sceneRef.add(mesh);
-  damageNumbers.push(mesh);
-
-  // Cap total to prevent perf issues
-  while (damageNumbers.length > 20) {
-    const old = damageNumbers.shift();
-    sceneRef.remove(old);
-    old.material.map.dispose();
-    old.material.dispose();
-  }
 }
 
 function spawnOuchBubble(position, text = 'OUCH!') {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = 256;
-  canvas.height = 128;
+  ensurePools();
 
-  // Background bubble
-  ctx.fillStyle = text.includes('STREAK') ? '#00ff44' : '#ffff00';
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 6;
+  // Ouch bubbles need a larger canvas, so use comboPopupPool which has 512x128
+  // Actually, let's use a separate acquire from a small pool. The damageNumberPool
+  // canvas is 128x64 which is too small for the bubble. We'll draw on a bigger canvas.
+  // Use comboPopupPool temporarily for the bubble since it has 512x128 canvas.
+  comboPopupPool.acquire(position, (canvas, ctx) => {
+    // Background bubble
+    ctx.fillStyle = text.includes('STREAK') ? '#00ff44' : '#ffff00';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 6;
 
-  // Flashy comic bubble shape
-  ctx.beginPath();
-  ctx.moveTo(40, 60);
-  ctx.lineTo(20, 20); ctx.lineTo(80, 40);
-  ctx.lineTo(128, 10); ctx.lineTo(176, 40);
-  ctx.lineTo(236, 20); ctx.lineTo(216, 60);
-  ctx.lineTo(236, 100); ctx.lineTo(176, 80);
-  ctx.lineTo(128, 110); ctx.lineTo(80, 80);
-  ctx.lineTo(20, 100); ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+    // Flashy comic bubble shape
+    ctx.beginPath();
+    ctx.moveTo(40, 60);
+    ctx.lineTo(20, 20); ctx.lineTo(80, 40);
+    ctx.lineTo(128, 10); ctx.lineTo(176, 40);
+    ctx.lineTo(236, 20); ctx.lineTo(216, 60);
+    ctx.lineTo(236, 100); ctx.lineTo(176, 80);
+    ctx.lineTo(128, 110); ctx.lineTo(80, 80);
+    ctx.lineTo(20, 100); ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
 
-  ctx.font = 'bold 36px "Comic Sans MS", cursive, sans-serif';
-  if (text.length > 8) ctx.font = 'bold 24px "Comic Sans MS", cursive, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = text.includes('STREAK') ? '#003311' : '#ff0000';
-  ctx.fillText(text, 128, 64);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.premultiplyAlpha = false;
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.5, 0.75),
-    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, side: THREE.DoubleSide })
-  );
-  mesh.position.copy(position);
-  mesh.position.y += 1.0;
-  mesh.position.z += 0.5;
-  mesh.renderOrder = 999;
-  mesh.userData.createdAt = performance.now();
-  mesh.userData.lifetime = 800;
-  mesh.userData.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.5, 1.5, (Math.random() - 0.5) * 0.5);
-
-  sceneRef.add(mesh);
-  damageNumbers.push(mesh);
+    ctx.font = 'bold 36px "Comic Sans MS", cursive, sans-serif';
+    if (text.length > 8) ctx.font = 'bold 24px "Comic Sans MS", cursive, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = text.includes('STREAK') ? '#003311' : '#ff0000';
+    ctx.fillText(text, 256, 64);
+  }, {
+    width: 1.5, height: 0.75, lifetime: 800,
+    opacity: 1,
+    offsetY: 1.0,
+    offsetZ: 0.5,
+    renderOrder: 999,
+    velocity: new THREE.Vector3((Math.random() - 0.5) * 0.5, 1.5, (Math.random() - 0.5) * 0.5),
+    userData: { _isOuchBubble: true },
+  });
 }
 
 // ── CRIT Indicator ─────────────────────────────────────────
 
 export function spawnCritIndicator(position) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = 128;
-  canvas.height = 64;
+  ensurePools();
 
-  ctx.font = 'bold 36px Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  damageNumberPool.acquire(position, (canvas, ctx) => {
+    ctx.font = 'bold 36px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
 
-  // Glow effect
-  ctx.shadowColor = '#ffff00';
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = '#ffff00';
-  ctx.fillText('CRIT!', 64, 32);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-
-  const geometry = new THREE.PlaneGeometry(0.4, 0.2);
-  const mat = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
+    // Glow effect
+    ctx.shadowColor = '#ffff00';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = '#ffff00';
+    ctx.fillText('CRIT!', 64, 32);
+  }, {
+    width: 0.4, height: 0.2, lifetime: 1000,
     opacity: 1,
-    depthTest: false,
-    side: THREE.DoubleSide,
+    offsetY: 0.5,
+    offsetX: (Math.random() - 0.5) * 0.2,
+    renderOrder: 999,
+    velocity: new THREE.Vector3(0, 2, 0),
   });
-
-  const mesh = new THREE.Mesh(geometry, mat);
-  mesh.position.copy(position);
-  mesh.position.y += 0.5; // Above the damage number
-  mesh.position.x += (Math.random() - 0.5) * 0.2;
-
-  mesh.renderOrder = 999;
-  mesh.userData.createdAt = performance.now();
-  mesh.userData.lifetime = 1000; // 1 second
-  mesh.userData.velocity = new THREE.Vector3(0, 2, 0); // Float up faster
-
-  sceneRef.add(mesh);
-  damageNumbers.push(mesh);
 }
 
 export function updateDamageNumbers(dt, now) {
-  for (let i = damageNumbers.length - 1; i >= 0; i--) {
-    const s = damageNumbers[i];
-    const age = now - s.userData.createdAt;
-
-    if (age > s.userData.lifetime) {
-      sceneRef.remove(s);
-      s.material.map.dispose();
-      s.material.dispose();
-      damageNumbers.splice(i, 1);
-    } else {
-      s.position.addScaledVector(s.userData.velocity, dt);
-      s.userData.velocity.y -= dt * 1.5;  // gravity
-      // No fade - keep full opacity for performance
-    }
+  // Damage number pool uses gravity (set in defaults)
+  // Ouch bubbles are in comboPopupPool but need gravity-like animation too
+  if (damageNumberPool) damageNumberPool.update(dt, now);
+  // Update any ouch bubbles sitting in comboPopupPool (they use the pool's non-gravity update)
+  if (comboPopupPool) {
+    comboPopupPool.update(dt, now);
   }
 }
 
 // ── Combo Popups ────────────────────────────────────────────
-const comboPopups = [];
+// Uses comboPopupPool (updated in updateDamageNumbers)
 let lastComboValue = 1;
 
 export function spawnComboPopup(combo, cameraPos) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = 512;
-  canvas.height = 128;
+  ensurePools();
 
   const text = `${combo}X COMBO!`;
-  const fontSize = 72;
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
 
-  // Drop shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.8)';
-  ctx.fillText(text, 258, 66);
+  comboPopupPool.acquire(cameraPos, (canvas, ctx) => {
+    const fontSize = 72;
+    ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
 
-  // Main text - bright orange/yellow
-  ctx.fillStyle = '#ffaa00';
-  ctx.fillText(text, 256, 64);
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillText(text, 258, 66);
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  texture.premultiplyAlpha = false;
-
-  // Large, prominent display
-  const scale = 0.8;
-  const width = scale * 4;
-  const height = scale;
-
-  const geometry = new THREE.PlaneGeometry(width, height);
-  const mat = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
+    // Main text - bright orange/yellow
+    ctx.fillStyle = '#ffaa00';
+    ctx.fillText(text, 256, 64);
+  }, {
+    width: 3.2, height: 0.8, lifetime: 2000,
+    opacity: 1,
+    offsetY: 0.8,
+    offsetZ: -2.5,
+    renderOrder: 999,
+    velocity: new THREE.Vector3(0, 0.3, 0),
   });
-
-  const mesh = new THREE.Mesh(geometry, mat);
-
-  // Position in front of player, slightly up
-  mesh.position.copy(cameraPos);
-  mesh.position.y += 0.8;
-  mesh.position.z -= 2.5;
-
-  mesh.userData.createdAt = performance.now();
-  mesh.userData.lifetime = 2000;  // 2 seconds
-  mesh.userData.velocity = new THREE.Vector3(0, 0.3, 0);  // Float upward
-  mesh.renderOrder = 999;
-
-  sceneRef.add(mesh);
-  comboPopups.push(mesh);
 }
 
-function updateComboPopups(dt, now) {
-  for (let i = comboPopups.length - 1; i >= 0; i--) {
-    const popup = comboPopups[i];
-    const age = now - popup.userData.createdAt;
-
-    if (age > popup.userData.lifetime) {
-      sceneRef.remove(popup);
-      popup.material.map.dispose();
-      popup.material.dispose();
-      popup.geometry.dispose();
-      comboPopups.splice(i, 1);
-    } else {
-      popup.position.addScaledVector(popup.userData.velocity, dt);
-      // Fade out in last 0.5s
-      const fadeStart = popup.userData.lifetime - 500;
-      if (age > fadeStart) {
-        popup.material.opacity = 1 - (age - fadeStart) / 500;
-      }
-    }
-  }
-}
+// updateComboPopups is no longer needed - combo popups are updated
+// via comboPopupPool.update() inside updateDamageNumbers().
+// The fade-out-in-last-500ms behavior was in the old updateComboPopups
+// which was never called from main.js, so it was already not working.
 
 function checkComboIncrease(currentCombo, cameraPos, playSoundFn) {
   if (currentCombo > lastComboValue && currentCombo > 1) {
@@ -1731,7 +1838,8 @@ function checkComboIncrease(currentCombo, cameraPos, playSoundFn) {
 }
 
 // ── Kill Chain Popups (accuracy-based with quick deterioration) ────────
-const killChainPopups = [];
+// Uses killChainPool, but with custom animation (pop-in, hold, fade+shrink)
+// so we manage the active array manually.
 
 // Hurt effect state for miss penalty
 let accuracyHurtState = {
@@ -1756,127 +1864,95 @@ export function triggerAccuracyHurt() {
 }
 
 export function spawnKillChainPopup(multiplier, cameraPos) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = 512;
-  canvas.height = 256;
+  ensurePools();
 
   const text = `${multiplier}X`;
-  const fontSize = 140;
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  // Glow effect
-  ctx.shadowColor = multiplier >= 5 ? '#ff0088' : multiplier >= 3 ? '#ffaa00' : '#00ffff';
-  ctx.shadowBlur = 30;
-
-  // Drop shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.9)';
-  ctx.fillText(text, 258, 130);
-
-  // Main text - color based on multiplier level
-  let color = '#00ffff'; // Cyan for x2
-  if (multiplier >= 5) color = '#ff0088'; // Magenta for x5+
-  else if (multiplier >= 4) color = '#ff00ff'; // Purple for x4
-  else if (multiplier >= 3) color = '#ffaa00'; // Orange for x3
-
-  ctx.fillStyle = color;
-  ctx.fillText(text, 256, 128);
-
-  // Add "ACCURACY!" subtitle instead of "KILL CHAIN!"
-  ctx.font = 'bold 36px Arial, sans-serif';
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText('ACCURACY!', 256, 200);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  texture.premultiplyAlpha = false;
-
-  // Scale size based on multiplier: 2X smallest, 5X largest
-  // Linear interpolation: 2X=0.8, 3X=1.0, 4X=1.2, 5X=1.4
+  const lifetime = 600 + (multiplier - 2) * 200;
   const sizeScale = 0.6 + (multiplier - 2) * 0.3;
   const width = sizeScale * 2;
   const height = sizeScale;
+  const randomOffsetX = (Math.random() - 0.5) * 1.0;
+  const randomOffsetY = (Math.random() - 0.5) * 1.0;
 
-  const geometry = new THREE.PlaneGeometry(width, height);
-  const mat = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
+  killChainPool.acquire(cameraPos, (canvas, ctx) => {
+    const fontSize = 140;
+    ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Glow effect
+    ctx.shadowColor = multiplier >= 5 ? '#ff0088' : multiplier >= 3 ? '#ffaa00' : '#00ffff';
+    ctx.shadowBlur = 30;
+
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.9)';
+    ctx.fillText(text, 258, 130);
+
+    // Main text - color based on multiplier level
+    let color = '#00ffff';
+    if (multiplier >= 5) color = '#ff0088';
+    else if (multiplier >= 4) color = '#ff00ff';
+    else if (multiplier >= 3) color = '#ffaa00';
+
+    ctx.fillStyle = color;
+    ctx.fillText(text, 256, 128);
+
+    // Add "ACCURACY!" subtitle
+    ctx.font = 'bold 36px Arial, sans-serif';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('ACCURACY!', 256, 200);
+  }, {
+    width, height, lifetime, opacity: 1,
+    offsetX: randomOffsetX,
+    offsetY: 1.0 + randomOffsetY,
+    offsetZ: -6,
+    renderOrder: 999,
+    velocity: new THREE.Vector3(0, 0.15, 0),
+    userData: {
+      initialScale: 0.3,
+      targetScale: 1.0,
+      maxScale: 1.0,
+      fadeProgress: 0,
+      shrinkProgress: 0,
+      multiplier: multiplier,
+    },
   });
-
-  const mesh = new THREE.Mesh(geometry, mat);
-
-  // Position higher up (was y += 0.2, now y += 1.0)
-  // Add random offset ±0.5 units for variety
-  const randomOffsetX = (Math.random() - 0.5) * 1.0;  // ±0.5
-  const randomOffsetY = (Math.random() - 0.5) * 1.0;  // ±0.5
-  mesh.position.copy(cameraPos);
-  mesh.position.y += 1.0 + randomOffsetY;  // Higher position + random
-  mesh.position.x += randomOffsetX;
-  mesh.position.z -= 6;
-
-  // Lifetime varies by multiplier: 2X fastest shrink (shortest window), 5X slowest (longest)
-  // Linear: 2X=600ms, 3X=800ms, 4X=1000ms, 5X=1200ms
-  const lifetime = 600 + (multiplier - 2) * 200;
-
-  mesh.userData.createdAt = performance.now();
-  mesh.userData.lifetime = lifetime;
-  mesh.userData.initialScale = 0.3;  // Start smaller for pop-in effect
-  mesh.userData.targetScale = 1.0;
-  mesh.userData.maxScale = 1.0;
-  mesh.userData.velocity = new THREE.Vector3(0, 0.15, 0);  // Float upward slowly
-  mesh.userData.fadeProgress = 0;
-  mesh.userData.shrinkProgress = 0;
-  mesh.userData.multiplier = multiplier;  // Store for callback
-  mesh.renderOrder = 999;
-
-  sceneRef.add(mesh);
-  killChainPopups.push(mesh);
 }
 
 export function updateKillChainPopups(dt, now, onFadeComplete) {
+  if (!killChainPool) return;
+
   // Update hurt effect decay
   if (accuracyHurtState.active) {
     const hurtAge = now - accuracyHurtState.startTime;
-    const hurtDecayTime = 500;  // Hurt effect lasts 0.5s
+    const hurtDecayTime = 500;
     if (hurtAge > hurtDecayTime) {
       accuracyHurtState.active = false;
       accuracyHurtState.intensity = 0;
       accuracyHurtState.shrinkMultiplier = 1;
     } else {
       accuracyHurtState.intensity = 1 - (hurtAge / hurtDecayTime);
-      accuracyHurtState.shrinkMultiplier = 1 + (2 * accuracyHurtState.intensity);  // 1x to 3x
+      accuracyHurtState.shrinkMultiplier = 1 + (2 * accuracyHurtState.intensity);
     }
   }
 
-  for (let i = killChainPopups.length - 1; i >= 0; i--) {
-    const popup = killChainPopups[i];
-    const age = now - popup.userData.createdAt;
-    const lifetime = popup.userData.lifetime;
+  // Custom animation loop for kill chain popups (pop-in, hold, fade+shrink)
+  for (let i = killChainPool.active.length - 1; i >= 0; i--) {
+    const popup = killChainPool.active[i];
+    const ud = popup.userData;
+    const age = now - ud.createdAt;
+    const lifetime = ud.lifetime;
     const shrinkMultiplier = accuracyHurtState.shrinkMultiplier;
 
     if (age > lifetime) {
-      // Popup has fully faded - remove it
-      sceneRef.remove(popup);
-      popup.material.map.dispose();
-      popup.material.dispose();
-      popup.geometry.dispose();
-      killChainPopups.splice(i, 1);
+      // Return to pool instead of disposing
+      killChainPool.release(popup);
 
-      // Callback to reset accuracy bonus when popup fades completely
       if (onFadeComplete && typeof onFadeComplete === 'function') {
-        onFadeComplete(popup.userData.multiplier);
+        onFadeComplete(ud.multiplier);
       }
     } else {
-      // Animation phases:
-      // 0-150ms: Pop in (scale from 0.3 to 1.0)
-      // 150-400ms: Hold at full size
-      // 400-800ms: Fade out AND shrink (quick deterioration)
-
       const ageMs = age;
       const popInDuration = 150;
       const holdDuration = 250;
@@ -1884,34 +1960,25 @@ export function updateKillChainPopups(dt, now, onFadeComplete) {
       const fadeOutStart = popInDuration + holdDuration;
 
       if (ageMs < popInDuration) {
-        // Pop in animation
         const t = ageMs / popInDuration;
-        const easeOut = 1 - Math.pow(1 - t, 3);  // Ease out cubic
-        const scale = popup.userData.initialScale + (popup.userData.targetScale - popup.userData.initialScale) * easeOut;
+        const easeOut = 1 - Math.pow(1 - t, 3);
+        const scale = ud.initialScale + (ud.targetScale - ud.initialScale) * easeOut;
         popup.scale.setScalar(scale);
       } else if (ageMs < fadeOutStart) {
-        // Hold at full size
-        popup.scale.setScalar(popup.userData.targetScale);
+        popup.scale.setScalar(ud.targetScale);
       } else {
-        // Fade out AND shrink simultaneously
         const fadeProgress = (ageMs - fadeOutStart) / fadeOutDuration;
-
-        // Apply hurt multiplier for faster shrink
         const adjustedFadeProgress = Math.min(1, fadeProgress * shrinkMultiplier);
 
-        // Opacity fade (respects hurt speed)
         popup.material.opacity = 1 - adjustedFadeProgress;
 
-        // Scale shrink (respects hurt speed)
-        const shrinkScale = popup.userData.targetScale * (1 - adjustedFadeProgress * 0.7);
+        const shrinkScale = ud.targetScale * (1 - adjustedFadeProgress * 0.7);
         popup.scale.setScalar(Math.max(0.1, shrinkScale));
 
-        // Store fade progress for potential callbacks
-        popup.userData.fadeProgress = adjustedFadeProgress;
+        ud.fadeProgress = adjustedFadeProgress;
       }
 
-      // Float upward
-      popup.position.addScaledVector(popup.userData.velocity, dt);
+      popup.position.addScaledVector(ud.velocity, dt);
     }
   }
 }
@@ -2147,7 +2214,7 @@ export function updateTitleDebugIndicator() {
 export function showDebugMenu() {
   console.log('[debug] showDebugMenu called, debugBiomeOverride=', game.debugBiomeOverride);
   hideAll();
-  while (debugMenuGroup.children.length) debugMenuGroup.remove(debugMenuGroup.children[0]);
+  disposeGroupChildren(debugMenuGroup);
   debugToggleItems = [];
 
   debugMenuGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4);
@@ -2380,7 +2447,7 @@ export function getReadyScreenHit(raycaster) {
 
 export function showDebugJumpScreen(targetLevel) {
   hideAll();
-  while (readyGroup.children.length) readyGroup.remove(readyGroup.children[0]);
+  disposeGroupChildren(readyGroup);
   readyGroup.position.set(0, 1.6, -4);
   readyGroup.visible = true;
 
@@ -2416,7 +2483,7 @@ export function showDebugJumpScreen(targetLevel) {
 // ── Ready Screen ──────────────────────────────────────────
 export function showReadyScreen(level, playerPos) {
   hideAll();
-  while (readyGroup.children.length) readyGroup.remove(readyGroup.children[0]);
+  disposeGroupChildren(readyGroup);
 
   // Position in front of the player
   if (playerPos) {
@@ -2449,6 +2516,7 @@ export function showReadyScreen(level, playerPos) {
 }
 
 export function hideReadyScreen() {
+  disposeGroupChildren(readyGroup);
   readyGroup.visible = false;
 }
 
@@ -2525,8 +2593,8 @@ function updateLevelIntro(now) {
     }
 
     if (progress >= 1) {
-      // Clear and show "START!"
-      while (levelTextGroup.children.length) levelTextGroup.remove(levelTextGroup.children[0]);
+      // Clear and show "START!" with proper disposal
+      disposeGroupChildren(levelTextGroup);
 
       const startText = makeSprite('START!', {
         fontSize: 100, color: '#00ff00', glow: true, glowColor: '#00ff00', scale: 0.9,
@@ -2585,10 +2653,8 @@ export function showKillsRemainingAlert(remaining) {
   levelTextGroup.position.set(jitterX, 1.6 + jitterY + SCENE_Y_OFFSET, -4.5);
   levelTextGroup.visible = true;
 
-  // Clear any existing content
-  while (levelTextGroup.children.length) {
-    levelTextGroup.remove(levelTextGroup.children[0]);
-  }
+  // Clear any existing content with proper disposal
+  disposeGroupChildren(levelTextGroup);
 
   const alertText = makeSprite(`${remaining} KILLS REMAINING`, {
     fontSize: 60,
@@ -2607,10 +2673,8 @@ export function showBossAlert() {
   levelTextGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4.5);
   levelTextGroup.visible = true;
 
-  // Clear any existing content
-  while (levelTextGroup.children.length) {
-    levelTextGroup.remove(levelTextGroup.children[0]);
-  }
+  // Clear any existing content with proper disposal
+  disposeGroupChildren(levelTextGroup);
 
   // Main alert text
   const alertText = makeSprite('⚠ INCOMING BOSS ⚠', {
@@ -2637,9 +2701,7 @@ export function showFloatingMessage(text, options = {}) {
   floatingMessageText = text;
   floatingMessageSticky = !!options.sticky;
 
-  while (floatingMessageGroup.children.length) {
-    floatingMessageGroup.remove(floatingMessageGroup.children[0]);
-  }
+  disposeGroupChildren(floatingMessageGroup);
 
   const sprite = makeSprite(text, {
     fontSize: options.fontSize || 60,
@@ -2665,14 +2727,12 @@ export function showFloatingMessage(text, options = {}) {
 }
 
 export function hideFloatingMessage() {
+  disposeGroupChildren(floatingMessageGroup);
   floatingMessageGroup.visible = false;
   floatingMessageSprite = null;
   floatingMessageText = null;
   floatingMessageHideAt = null;
   floatingMessageSticky = false;
-  while (floatingMessageGroup.children.length) {
-    floatingMessageGroup.remove(floatingMessageGroup.children[0]);
-  }
 }
 
 export function updateFloatingMessage(now) {
@@ -2684,10 +2744,8 @@ export function updateFloatingMessage(now) {
 }
 
 export function hideBossAlert() {
+  disposeGroupChildren(levelTextGroup);
   levelTextGroup.visible = false;
-  while (levelTextGroup.children.length) {
-    levelTextGroup.remove(levelTextGroup.children[0]);
-  }
 }
 
 export function updateKillsAlert(now) {
@@ -2708,6 +2766,12 @@ export function hideKillsAlert() {
   killsAlertActive = false;
   levelTextGroup.visible = false;
   if (killsAlertMesh) {
+    if (killsAlertMesh.material) {
+      if (killsAlertMesh.material.map) killsAlertMesh.material.map.dispose();
+      killsAlertMesh.material.dispose();
+    }
+    if (killsAlertMesh.geometry) killsAlertMesh.geometry.dispose();
+    levelTextGroup.remove(killsAlertMesh);
     killsAlertMesh = null;
   }
 }
@@ -2832,7 +2896,7 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
   initNameEntryCharSprites();
 
   hideAll();
-  while (nameEntryGroup.children.length) nameEntryGroup.remove(nameEntryGroup.children[0]);
+  disposeGroupChildren(nameEntryGroup);
   nameEntrySlots = [];
   keyboardKeys = [];
   nameEntryActionMeshes = [];
@@ -3260,6 +3324,42 @@ function getScoreboardHeader(headerText) {
   return { main: headerText };
 }
 
+/**
+ * Generic helper to dispose all GPU resources (geometry, materials, textures)
+ * from a group's children before removing them. Prevents memory leaks.
+ */
+function disposeGroupChildren(group) {
+  if (!group) return;
+  group.traverse((child) => {
+    if (child.geometry) {
+      child.geometry.dispose();
+      child.geometry = null;
+    }
+    if (child.material) {
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((mat) => {
+        if (!mat) return;
+        if (mat.map) {
+          mat.map.dispose();
+          mat.map = null;
+        }
+        if (mat.alphaMap) {
+          mat.alphaMap.dispose();
+          mat.alphaMap = null;
+        }
+        mat.dispose();
+      });
+      child.material = null;
+    }
+  });
+  while (group.children.length > 0) {
+    group.remove(group.children[0]);
+  }
+}
+
+/**
+ * Dispose a single node's GPU resources. Used for scoreboard cleanup.
+ */
 function disposeScoreboardNode(root) {
   if (!root) return;
   root.traverse((child) => {
@@ -3650,7 +3750,7 @@ export function updateScoreboardScroll(delta) {
 
 export function showCountrySelect(countries, continents, initialContinent, playerPos, mode = 'country') {
   hideAll();
-  while (countrySelectGroup.children.length) countrySelectGroup.remove(countrySelectGroup.children[0]);
+  disposeGroupChildren(countrySelectGroup);
   continentTabs = [];
   countryItems = [];
   countrySelectContinent = initialContinent || 'North America';
@@ -4912,7 +5012,7 @@ function createResumeButton() {
  */
 export function showPauseCountdown(seconds) {
   // Clear and rebuild every time (same pattern as showReadyScreen)
-  while (pauseCountdownGroup.children.length) pauseCountdownGroup.remove(pauseCountdownGroup.children[0]);
+  disposeGroupChildren(pauseCountdownGroup);
   pauseCountdownInitialized = false;
   pauseCountdownHeader = null;
   pauseCountdownText = null;
@@ -4997,6 +5097,30 @@ function calculateAccuracy() {
   const hit = game.runStats.shotsHit;
   if (fired === 0) return 0;
   return Math.round((hit / fired) * 100);
+}
+
+// ── Cleanup functions (reset/level-complete hooks) ────────────────
+
+export function clearAllDamageNumbers() {
+  if (damageNumberPool) damageNumberPool.clearAll();
+  if (comboPopupPool) comboPopupPool.clearAll();  // Ouch bubbles too
+}
+
+export function clearAllComboPopups() {
+  if (comboPopupPool) comboPopupPool.clearAll();
+}
+
+export function clearAllKillChainPopups() {
+  if (killChainPool) killChainPool.clearAll();
+}
+
+export function clearFloatingMessage() {
+  disposeGroupChildren(floatingMessageGroup);
+  floatingMessageGroup.visible = false;
+  floatingMessageSprite = null;
+  floatingMessageText = null;
+  floatingMessageHideAt = null;
+  floatingMessageSticky = false;
 }
 
 // Export nameEntryGroup and pauseMenuGroup for use in other modules

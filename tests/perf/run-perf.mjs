@@ -11,6 +11,7 @@ import progressionRun from './scenarios/progression-run.js';
 import profileBuckets from './scenarios/profile-buckets.js';
 import combatProfileHighLevel from './scenarios/combat-profile-highlevel.js';
 import combatSpikeDiag from './scenarios/combat-spike-diag.js';
+import progressionStress from './scenarios/progression-stress.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
@@ -71,6 +72,11 @@ const SCENARIOS = {
     runner: combatSpikeDiag,
     defaults: { targetLevel: 14, spawnWaitMs: 8000, profileDurationMs: 20000, minimal: true, spikeThresholdMs: 50 },
     description: 'Combat spike diagnostic: per-frame timing, spike detection, slow-mo event correlation. Use --minimal=false for full visuals.',
+  },
+  'progression-stress': {
+    runner: progressionStress,
+    defaults: { startLevel: 1, endLevel: 20, killTimeoutMs: 60000, spikeThresholdMs: 50 },
+    description: 'Full playthrough stress test: plays through all 20 levels, kills enemies, clicks upgrades, captures per-level renderer stats to detect resource leaks.',
   },
 };
 
@@ -525,6 +531,12 @@ function selectScenarioOverrides(args) {
       spawnWaitMs: numberFromArg(args.spawnWaitMs, undefined),
       profileDurationMs: numberFromArg(args.profileDurationMs, undefined),
       minimal: 'minimal' in args ? coerceBoolean(args.minimal) : undefined,
+      spikeThresholdMs: numberFromArg(args.spikeThresholdMs, undefined),
+    },
+    'progression-stress': {
+      startLevel: numberFromArg(args.startLevel, undefined),
+      endLevel: numberFromArg(args.endLevel, undefined),
+      killTimeoutMs: numberFromArg(args.killTimeoutMs, undefined),
       spikeThresholdMs: numberFromArg(args.spikeThresholdMs, undefined),
     },
   };
