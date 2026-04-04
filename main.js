@@ -110,7 +110,7 @@ window.DEBUG_PROJECTILES = false;
 
 // ── Constants ──────────────────────────────────────────────
 const NEON_PINK = 0xff00ff;
-const NEON_CYAN = 0x00aaaa;  // Muted teal (not bright neon cyan)
+const NEON_CYAN = 0x00ffff;
 const DARK_BG = 0x0a0015;
 const SUN_CORE = 0xffaa00;
 const SUN_GLOW = 0xff6600;
@@ -193,7 +193,7 @@ const PROJECTILE_POOL_SIZE = 120;
 // Stable single-material projectile visuals. Keep the instanced system and simple,
 // visible projectile bodies. We can revisit a fancier blaster shader later.
 const PROJECTILE_BOLT = {
-  opacity: 0.75,
+  opacity: 0.7,
 };
 
 function createProjectileMaterial(colorHex) {
@@ -3100,8 +3100,9 @@ function createSparklingStars(theme) {
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         // FIX: Increased base size from 2.2 to 8.0 and distance scale from 200 to 800
         // Stars were ~0.2px at dome radius 2200, now ~3px minimum
-        float size = (8.0 * uPixelRatio + vTwinkle * 2.0) * (800.0 / -mvPosition.z);
-        gl_PointSize = max(size, 2.5);  // Minimum 2.5px for visibility
+        // 25% larger: 8.0→10.0, 2.0→2.5, 800→1000, 2.5→3.125
+        float size = (10.0 * uPixelRatio + vTwinkle * 2.5) * (1000.0 / -mvPosition.z);
+        gl_PointSize = max(size, 3.125);  // Minimum 3.125px for visibility
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -7468,6 +7469,15 @@ function completeLevel() {
   resetAllSlowMoState();
 
   game.state = State.LEVEL_COMPLETE;
+
+  // Kill all remaining enemies with explosions before clearing
+  const remaining = getEnemies();
+  for (let i = remaining.length - 1; i >= 0; i--) {
+    if (remaining[i] && remaining[i].hp > 0) {
+      destroyEnemy(i, false, false);
+    }
+  }
+
   clearAllEnemies();
 
   // PERFORMANCE: Clear all projectiles on level complete
@@ -8103,7 +8113,7 @@ function initProjectilePool() {
   if (instancedProjectiles['laser']) return;
 
   // ── Laser bolts (standard blaster) ──
-  const laserGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.0, 6);
+  const laserGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.0, 6);
   laserGeo.rotateX(Math.PI / 2);
   const laserMat = createProjectileMaterial(0x00ffff);
   registerPlayerProjectileMaterial(laserMat);
@@ -8127,9 +8137,23 @@ function initProjectilePool() {
   scene.add(buckIM);
   instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
 
-  // ── Seeker burst bolts ──
-  const seekerGeo = new THREE.SphereGeometry(0.06, 8, 8);
-  const seekerMat = createProjectileMaterial(0xff8800);
+  // ── Seeker burst bolts (sperm-like shape) ──
+  // Head: small bright sphere + Tail: tapered cone merged into one geometry
+  const seekerHeadGeo = new THREE.SphereGeometry(0.035, 8, 8);
+  const seekerTailGeo = new THREE.ConeGeometry(0.03, 0.18, 6);
+  seekerTailGeo.rotateZ(-Math.PI / 2); // Point tail behind
+  const seekerGeo = new THREE.BufferGeometry();
+  // Merge head at origin and tail behind it (cone tip at -0.09, base at 0.09)
+  seekerTailGeo.translate(-0.09, 0, 0); // Offset tail so base meets head center
+  THREE.BufferGeometryUtils.mergeGeometries
+    ? (function() {
+        const merged = THREE.BufferGeometryUtils.mergeGeometries([seekerHeadGeo, seekerTailGeo]);
+        seekerGeo.index = merged.index;
+        seekerGeo.attributes.position = merged.attributes.position;
+        seekerGeo.attributes.normal = merged.attributes.normal;
+      })()
+    : seekerGeo.copy(seekerHeadGeo); // Fallback if mergeGeometries unavailable
+  const seekerMat = createProjectileMaterial(0xffcc44);
   registerPlayerProjectileMaterial(seekerMat);
   const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
   seekerIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -8140,7 +8164,7 @@ function initProjectilePool() {
   instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 28, freeIndices: new Set() };
 
   // ── Plasma carbine darts ──
-  const plasmaGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 6);
+  const plasmaGeo = new THREE.CylinderGeometry(0.0375, 0.0375, 0.5, 6);
   plasmaGeo.rotateX(Math.PI / 2);
   const plasmaMat = createProjectileMaterial(0x00ff88);
   registerPlayerProjectileMaterial(plasmaMat);
@@ -9239,8 +9263,14 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   const isPlasmaCarbine = stats.mainWeaponId === 'plasma_carbine';
   const poolType = stats.homing ? 'seeker' : (isPlasmaCarbine ? 'plasma_carbine' : (isBuckshot ? 'buckshot' : 'laser'));
   
-  // Seeker color override: bright orange instead of controller-based cyan/pink
-  const projectileColor = stats.homing ? 0xff8800 : color;
+  // Color per weapon type and hand
+  // Plasma carbine: bright cyan-white (left) / bright pink-white (right)
+  // Seeker: use hand color (cyan/pink) instead of orange
+  // Standard blaster: uses NEON_CYAN/NEON_PINK from the 'color' variable
+  let projectileColor = color;
+  if (isPlasmaCarbine) {
+    projectileColor = controllerIndex === 0 ? 0xaaffff : 0xffaaff;
+  }
 
   // Debug logging for projectile investigation
   if (window.DEBUG_PROJECTILES) {
@@ -10549,6 +10579,10 @@ function render(timestamp) {
   // Fix 1.9: Profile desktop controls update
   if (!renderer.xr.isPresenting) {
     updateDesktopControls(dt);
+    // #9: Synthwave pre-VR camera too low — ensure standing eye height
+    if (currentTheme && currentTheme.customScene === 'synthwave_valley' && camera.position.y < 1.6) {
+      camera.position.y = 1.6;
+    }
   }
   _mark('desktop_controls'); // ── end: desktop controls update
 

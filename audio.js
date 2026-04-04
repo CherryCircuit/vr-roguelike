@@ -80,37 +80,26 @@ export function playShoothSound() {
   }
 }
 
-// ── Seeker Burst sound (file-backed burst/last-shot variants) ──────
-const seekerBurstAudio = {
-  burst: null,
-  last: null,
-};
-
-function getSeekerBurstAudio(isLastShot = false) {
-  const key = isLastShot ? 'last' : 'burst';
-  const src = isLastShot ? 'assets/audio/seeker_last.wav' : 'assets/audio/seeker_burst.wav';
-  if (!seekerBurstAudio[key]) {
-    const audio = new Audio(src);
-    audio.preload = 'auto';
-    audio.volume = 0.45;
-    seekerBurstAudio[key] = audio;
-  }
-  return seekerBurstAudio[key];
-}
-
+// ── Seeker Burst sound (synth pew via Web Audio API) ──────────────
 export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIndex = 0) {
   try {
-    getAudioContext();
-    const base = getSeekerBurstAudio(isLastShot);
-    const audio = base.cloneNode();
-    audio.volume = base.volume;
-    audio.currentTime = 0;
-    const playPromise = audio.play();
-    if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise.catch(() => {});
-    }
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const duration = 0.1;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(800, t);
+    osc.frequency.exponentialRampToValueAtTime(400, t + duration);
+    gain.gain.setValueAtTime(0.06, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + duration);
   } catch (e) {
-    // Ignore audio playback failures silently during locked or unsupported states
+    // Ignore audio failures silently
   }
 }
 

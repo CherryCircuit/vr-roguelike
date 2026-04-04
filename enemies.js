@@ -1479,8 +1479,7 @@ function spawnTrainEnemy(type, position, levelConfig) {
       pool.mesh.setMatrixAt(inst.instanceId, matrix);
       pool.mesh.setColorAt(inst.instanceId, _spiralSwimmerColorTmp.setHex(def.color));
     }
-    // Head segment (index 0): brighter white to mark the weak point
-    pool.mesh.setColorAt(instanceIds[0].instanceId, _spiralSwimmerColorTmp.setHex(0xffffff));
+    // Head segment (index 0): same color as tail, but larger (scale handled in update)
     pool.mesh.instanceMatrix.needsUpdate = true;
     if (pool.mesh.instanceColor) pool.mesh.instanceColor.needsUpdate = true;
 
@@ -2898,7 +2897,7 @@ export function updateEnemies(dt, now, playerPos) {
           const localZ = -i * e.voxelSize * 1.5;
 
           // Build matrix with local offset and world position
-          const headScale = i === 0 ? 1.3 : 1.0;
+          const headScale = i === 0 ? 1.25 : 1.0;
           const matrix = new THREE.Matrix4();
           matrix.makeTranslation(localX, localY, localZ);
           matrix.scale(new THREE.Vector3(headScale, headScale, headScale));

@@ -89,8 +89,8 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 vPosition = position; vElevation = position.y;`);
       shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>
 varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
-      shader.fragmentShader = shader.fragmentShader.replace('#include <emissive_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { } else { float distToLava = vElevation - lavaThreshold; float glowReflection = smoothstep(5.0, 0.0, distToLava); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; totalEmissiveRadiance = vec3(0.6, 0.1, 0.0) * glowReflection * pulse; } #include <emissive_fragment>`);
-      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.05, 0.05); vec3 lavaColorBright = vec3(1.0, 0.25, 0.2); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.7 + 0.3 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor, 0.9); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <emissive_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { } else { float distToLava = vElevation - lavaThreshold; float glowReflection = smoothstep(5.0, 0.0, distToLava); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; totalEmissiveRadiance = vec3(0.6, 0.1, 0.0) * glowReflection * pulse * 1.5; } #include <emissive_fragment>`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.45, 0.05); vec3 lavaColorBright = vec3(1.0, 0.7, 0.3); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.7 + 0.3 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor * 1.5, 0.9); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
       material.userData.shader = shader;
     }
   });
@@ -118,50 +118,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   group.add(flashPlane);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
-  // ========================================
-  // 2. JAGGED ROCKS (50 scattered) — INSTANCED
-  // ========================================
-  const rockGeo = new THREE.TetrahedronGeometry(1, 0);
-  const rockMat = new THREE.MeshLambertMaterial({
-    color: 0x1a1a1a,
-    flatShading: true
-  });
 
-  const rockCount = 50;
-  const rockMesh = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
-  const _rockDummy = new THREE.Object3D();
-  const _rockColor = new THREE.Color();
-  for (let i = 0; i < rockCount; i++) {
-    let x, z, riverX, distToRiver;
-    let attempts = 0;
-    do {
-      x = (Math.random() - 0.5) * 60;
-      z = (Math.random() - 0.5) * 100;
-      riverX = Math.sin(z * 0.03) * 15.0;
-      distToRiver = Math.abs(x - riverX);
-      attempts++;
-    } while (distToRiver < 8 && attempts < 20);
-
-    const scaleY = 0.5 + Math.random() * 3.5;
-    const scaleX = 0.5 + Math.random() * 1.5;
-    _rockDummy.position.set(x, floorY + 0.5, z);
-    _rockDummy.scale.set(scaleX, scaleY, scaleX);
-    _rockDummy.rotation.set(
-      Math.random() * Math.PI,
-      Math.random() * Math.PI * 2,
-      Math.random() * Math.PI
-    );
-    _rockDummy.updateMatrix();
-    rockMesh.setMatrixAt(i, _rockDummy.matrix);
-    // Slight color variation
-    _rockColor.setHex(0x1a1a1a).offsetHSL(0, 0, (Math.random() - 0.5) * 0.05);
-    rockMesh.setColorAt(i, _rockColor);
-  }
-  rockMesh.instanceMatrix.needsUpdate = true;
-  if (rockMesh.instanceColor) rockMesh.instanceColor.needsUpdate = true;
-  rockMesh.castShadow = true;
-  rockMesh.receiveShadow = true;
-  group.add(rockMesh);
 
   // ========================================
   // 3. DEAD TREES (20 procedural, simplified)
@@ -190,7 +147,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     let attempts = 0;
     do {
       x = (Math.random() - 0.5) * 60;
-      z = (Math.random() - 0.5) * 100;
+      z = -Math.abs((Math.random() - 0.5) * 100); // Force negative Z (in front)
       riverX = Math.sin(z * 0.03) * 15.0;
       distToRiver = Math.abs(x - riverX);
       attempts++;
@@ -397,7 +354,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     // Spawn from mountainsides (outside valleyWidth), accounting for terrain X shift
     const side = Math.random() > 0.5 ? 1 : -1;
     const x = side * (valleyWidth + 5 + Math.random() * 20) + 10.0;  // Account for terrain X shift
-    const z = (Math.random() - 0.5) * 80;
+    const z = -Math.abs((Math.random() - 0.5) * 80);  // Force negative Z (in front)
     const baseY = floorY + 5;
 
     for (let i = 0; i < particleCount; i++) {
@@ -453,14 +410,14 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   fCtx.fillRect(0, 0, 64, 64);
   const flameTexture = new THREE.CanvasTexture(flameCanvas);
 
-  // Pillar positions: spread around the arena at 30-70 units distance
+  // Pillar positions: spread in forward semicircle at 30-70 units distance
   const pillarDefs = [];
   for (let i = 0; i < PILLAR_COUNT; i++) {
-    const angle = (i / PILLAR_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
+    const angle = (Math.random() - 0.5) * Math.PI * 0.8; // Spread within forward arc (-60deg to +60deg)
     const dist = 35 + Math.random() * 40; // 35-75 units away
     pillarDefs.push({
-      x: Math.cos(angle) * dist + 10.0, // Account for terrain X shift
-      z: Math.sin(angle) * dist,
+      x: Math.sin(angle) * dist + 10.0,
+      z: -Math.abs(Math.cos(angle) * dist), // Force negative Z (in front)
       height: 12 + Math.random() * 10, // Pillar height 12-22 units
       radius: 1.5 + Math.random() * 1.5, // Base radius 1.5-3 units
       speed: 0.6 + Math.random() * 0.4 // Rise speed multiplier
@@ -551,14 +508,14 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     mGroup.add(new THREE.Mesh(farGlowGeo, farGlowMat));
     return mGroup;
   };
-  const moon1 = createMoon(10.5, 0xaa1111, 0xff2200);
-  moon1.position.set(20, 25, -100);
+  const moon1 = createMoon(15, 0xaa1111, 0xff2200);
+  moon1.position.set(20, 30, -160);
   group.add(moon1);
-  const moon2 = createMoon(7.5, 0x880000, 0xaa0000);
-  moon2.position.set(-40, 20, -90);
+  const moon2 = createMoon(11, 0x880000, 0xaa0000);
+  moon2.position.set(-50, 25, -160);
   group.add(moon2);
-  const moon3 = createMoon(5.4, 0x550000, 0x770000);
-  moon3.position.set(-20, 35, -95);
+  const moon3 = createMoon(8, 0x550000, 0x770000);
+  moon3.position.set(-30, 40, -160);
   group.add(moon3);
 
   // ========================================
@@ -619,6 +576,8 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       ashPos[i3 + 1] += ashVelocities[i3 + 1] * dt * 0.6;
       ashPos[i3 + 2] += ashVelocities[i3 + 2] * dt * 0.6;
       if (ashPos[i3 + 1] > 12) ashPos[i3 + 1] = 1;
+      if (ashPos[i3 + 1] < -10) ashPos[i3 + 1] = 1;
+      if (ashPos[i3 + 1] > 1000) ashPos[i3 + 1] = 10;
       if (ashPos[i3] > 40) ashPos[i3] = -40;
       if (ashPos[i3] < -40) ashPos[i3] = 40;
       if (ashPos[i3 + 2] > 40) ashPos[i3 + 2] = -40;
@@ -648,6 +607,12 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       p.y += p.vy;
       p.z += p.vz;
       p.vy -= 0.03; // Gravity
+
+      // Remove particles that go too far up or down
+      if (p.y < -10 || p.y > 1000) {
+        geyserParticles.splice(i, 1);
+        continue;
+      }
 
       const idx = activeCount * 3;
       geyserPos[idx] = p.x;

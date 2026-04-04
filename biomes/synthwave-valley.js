@@ -38,22 +38,22 @@ function buildTaperedTerrainGeo() {
 
   // X: dense center corridor, moderate mountain flanks, sparse far edges
   const xPos = piecewise([
-    [-1000, -600,  4],   // far left silhouette (fogged)
+    [-1200, -600,  4],   // far left silhouette (fogged)
     [-600,  -350,  8],   // left mountain body
     [-350,  -150, 12],   // left ridge transition
     [-150,   150, 45],   // center corridor — HIGH detail
     [ 150,   350, 12],   // right ridge transition
     [ 350,   600,  8],   // right mountain body
-    [ 600,  1000,  4],   // far right silhouette (fogged)
+    [ 600,  1200,  4],   // far right silhouette (fogged)
   ]);
 
   // Z: dense walking path + near mountains, sparse behind player
   const zPos = piecewise([
-    [-1000, -500, 12],   // far scenic backdrop
+    [-1200, -500, 12],   // far scenic backdrop
     [-500,  -100, 25],   // far mountains (ridgeline near z≈-260)
     [-100,   500, 40],   // walking corridor — HIGH detail
     [ 500,   750,  6],   // behind-player taper
-    [ 750,  1000,  3],   // far behind player — minimal
+    [ 750,  1200,  3],   // far behind player — minimal
   ]);
 
   const nx = xPos.length;   // ~94
@@ -122,7 +122,7 @@ export function buildSynthwaveValleyScene(group, deps) {
     // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
     // stable in stereo rendering and does not rely on manual clip-space math.
     vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ float worldY=vWorldPosition.y; float t1=smoothstep(0.0,550.0,worldY); float t2=smoothstep(0.0,950.0,worldY); float t3=smoothstep(0.0,1400.0,worldY); vec3 col=horizonColor; col=mix(col,glowColor,t1); col=mix(col,midColor,t2); col=mix(col,topColor,t3); col=pow(col,vec3(1.0/2.2)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ float worldY=vWorldPosition.y; float t1=smoothstep(0.0,350.0,worldY); float t2=smoothstep(0.0,600.0,worldY); float t3=smoothstep(0.0,1200.0,worldY); vec3 col=horizonColor; col=mix(col,glowColor,t1); col=mix(col,midColor,t2); col=mix(col,topColor,t3); col=pow(col,vec3(1.0/2.2)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
     depthWrite: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
@@ -179,7 +179,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   mountainTex.wrapT = THREE.ClampToEdgeWrapping;
   // 9003px width / 609px height ≈ 14.78 aspect.
   // With a 190-high cylinder, one full image repeat should span ~2808 world units.
-  const mountainRadius = 1550;
+  const mountainRadius = 1162;
   const mountainRepeatWidth = 2808;
   mountainTex.repeat.set((2 * Math.PI * mountainRadius) / mountainRepeatWidth, 1);
   // Offset texture so middle of PNG faces -Z (forward in XR)
@@ -301,6 +301,10 @@ export function buildSynthwaveValleyScene(group, deps) {
       vec3 cloudCol = baseColor * sunTint;
       cloudCol = pow(cloudCol, vec3(1.0 / 2.2));  // Gamma correct
 
+      // Soft edge fade at dome boundary
+      float edgeFade = smoothstep(0.0, 0.1, normalizedHeight) * smoothstep(1.0, 0.9, normalizedHeight);
+      cloudMask *= edgeFade;
+
       // FIX: Increase alpha for better visibility in VR
       float alpha = cloudMask * 0.85;
 
@@ -318,7 +322,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   `;
 
   // Lower cloud dome (closer to horizon)
-  const cloudDome1Geo = new THREE.SphereGeometry(2400, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.4);
+  const cloudDome1Geo = new THREE.SphereGeometry(2400, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.45);
   const cloudDome1Mat = new THREE.ShaderMaterial({
     uniforms: cloudUniforms,
     vertexShader: cloudVertexShader,
@@ -337,25 +341,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   group.add(cloudDome1);
   registerFadeMaterial(cloudDome1Mat);
 
-  // Higher cloud dome (more sparse, near zenith)
-  const cloudDome2Geo = new THREE.SphereGeometry(2600, 32, 16, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.5);
-  const cloudDome2Mat = new THREE.ShaderMaterial({
-    uniforms: { ...cloudUniforms, uCloudColor: { value: new THREE.Color(0xffd4b3) } },
-    vertexShader: cloudVertexShader,
-    fragmentShader: cloudFragmentShader,
-    side: THREE.BackSide,
-    transparent: true,
-    depthWrite: false,
-    depthTest: true,
-    fog: false,
-  });
-  const cloudDome2 = new THREE.Mesh(cloudDome2Geo, cloudDome2Mat);
-  cloudDome2.name = 'synthwave-cloud-dome-2';
-  cloudDome2.position.set(0, 0, -700);
-  cloudDome2.frustumCulled = false;
-  cloudDome2.renderOrder = -1;
-  group.add(cloudDome2);
-  registerFadeMaterial(cloudDome2Mat);
+
 
   // Sun + glow - flat planes (no billboard), using retro synthwave PNG
   const sunGroup = new THREE.Group();
@@ -445,7 +431,6 @@ export function buildSynthwaveValleyScene(group, deps) {
     const t = time;
     terrainUniforms.uTime.value = t * 0.001;
     cloudDome1Mat.uniforms.uTime.value = t * 0.0001;
-    cloudDome2Mat.uniforms.uTime.value = t * 0.00008;
   };
 
   // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
