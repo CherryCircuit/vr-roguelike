@@ -103,6 +103,89 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   terrain.position.z = 0.0;  // Player on flat valley floor
   group.add(terrain);
 
+  // ========================================
+  // DEDICATED LAVA RIVER PLANE
+  // ========================================
+  const riverWidth = 12;
+  const riverLength = 200;
+  const riverGeo = new THREE.PlaneGeometry(riverWidth, riverLength, 32, 64);
+  riverGeo.rotateX(-Math.PI / 2);
+
+  // Curve the plane to follow the river path
+  const riverPositions = riverGeo.attributes.position;
+  for (let i = 0; i < riverPositions.count; i++) {
+    const localX = riverPositions.getX(i);
+    const localZ = riverPositions.getZ(i);
+    // River follows sin(z * 0.03) * 15 + 10
+    const worldZ = localZ;
+    const riverCenterX = Math.sin(worldZ * 0.03) * 15.0 + 10.0;
+    riverPositions.setX(i, localX + riverCenterX);
+  }
+
+  const lavaRiverMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vPos;
+      void main() {
+        vUv = uv;
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      varying vec2 vUv;
+      varying vec3 vPos;
+      void main() {
+        // Flowing lava effect
+        float flow = vUv.y * 3.0 + uTime * 0.3;
+        float noise1 = sin(flow * 2.0 + vPos.x * 0.5) * 0.5 + 0.5;
+        float noise2 = sin(flow * 4.0 - vPos.z * 0.3 + 1.5) * 0.5 + 0.5;
+        float noise3 = cos(flow * 1.5 + vPos.x * 0.8 - vPos.z * 0.2) * 0.5 + 0.5;
+        float combined = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
+
+        // Lava colors: dark red base, bright orange-yellow hotspots
+        vec3 darkLava = vec3(0.6, 0.05, 0.0);
+        vec3 brightLava = vec3(1.0, 0.5, 0.0);
+        vec3 hotLava = vec3(1.0, 0.8, 0.2);
+
+        vec3 col = mix(darkLava, brightLava, combined);
+        // Add bright hotspots
+        float hotspot = pow(noise1, 3.0);
+        col = mix(col, hotLava, hotspot * 0.6);
+
+        // Edge fade (sides of river)
+        float edgeX = smoothstep(0.0, 0.15, vUv.x) * smoothstep(1.0, 0.85, vUv.x);
+        // Edge fade (ends of river)
+        float edgeZ = smoothstep(0.0, 0.05, vUv.y) * smoothstep(1.0, 0.95, vUv.y);
+        float alpha = edgeX * edgeZ * 0.9;
+
+        gl_FragColor = vec4(col * 1.2, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  const lavaRiver = new THREE.Mesh(riverGeo, lavaRiverMat);
+  lavaRiver.position.y = floorY + 0.1; // Just above the river bed
+  group.add(lavaRiver);
+
+  // Add subtle red point lights along the river for glow effect
+  const lavaLights = [];
+  for (let i = 0; i < 3; i++) {
+    const lz = (i - 1) * 60;
+    const lx = Math.sin(lz * 0.03) * 15.0 + 10.0;
+    const lavaLight = new THREE.PointLight(0xff3300, 2.0, 35);
+    lavaLight.position.set(lx, floorY + 3, lz);
+    group.add(lavaLight);
+    lavaLights.push(lavaLight);
+  }
+
   // Flash overlay plane for damage feedback
   const flashGeo = new THREE.PlaneGeometry(300, 300);
   const flashMat = new THREE.MeshBasicMaterial({
@@ -138,7 +221,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
         }
       });
       // Base scale correction for Blender export (models often export large)
-      model.scale.setScalar(0.5);
+      model.scale.setScalar(0.05);  // Reduced from 0.5 - GLB models are very large
       model.updateMatrixWorld(true);
 
       for (let i = 0; i < count; i++) {
@@ -158,7 +241,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
           riverX = Math.sin(z * 0.03) * 15.0;
           distToRiver = Math.abs(x - riverX);
           attempts++;
-        } while ((distToRiver < 8 || (x * x + z * z < 64)) && attempts < 30);
+        } while ((distToRiver < 8 || (x * x + z * z < 225)) && attempts < 30);  // 225 = 15^2 clearance
 
         const scale = 1.0 + Math.random() * 0.8; // 1.0x to 1.8x (on top of base 0.5x)
         clone.position.set(x, floorY - 0.3, z); // Bury roots slightly below ground
@@ -506,6 +589,9 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       material.userData.shader.uniforms.uTime.value = time;
     }
 
+    // Lava river shader animation
+    if (lavaRiverMat) lavaRiverMat.uniforms.uTime.value = time;
+
     // Star twinkle
     starMat.uniforms.uTime.value = time;
 
@@ -631,7 +717,8 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   };
 
   // Hellscape floor HUD height: group.position.y = 0.05
-  group.position.set(26.599, 0.05, -0.486);
+  // Shifted +Z by 130 so corridor is in front of player
+  group.position.set(26.599, 0.05, 129.514);
   group.rotation.y = 0.248; // yaw: 14.21°
 }
 

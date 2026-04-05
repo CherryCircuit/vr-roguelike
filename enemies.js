@@ -3211,13 +3211,13 @@ export function updateEnemies(dt, now, playerPos) {
           other.linkedDamageReduction = Math.max(other.linkedDamageReduction, e.linkDamageReduction);
           other.speed = other.baseSpeed * (1 + e.linkSpeedBonus);
 
-          if (e.conductorArcTimer <= 0) {
-            spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc, e.id);
-            // Track the last spawned arc's target for cleanup when buffed enemy dies
-            if (electricArcs.length > 0) {
-              electricArcs[electricArcs.length - 1].targetEnemyId = other.id;
-            }
-          }
+          // Lightning arc visual removed - conductor buffs without visible arcs
+          // if (e.conductorArcTimer <= 0) {
+          //   spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc, e.id);
+          //   if (electricArcs.length > 0) {
+          //     electricArcs[electricArcs.length - 1].targetEnemyId = other.id;
+          //   }
+          // }
 
           other.mesh.traverse(c => {
             if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
@@ -3267,6 +3267,8 @@ export function updateEnemies(dt, now, playerPos) {
           } else if (dist > e.phasePreferredDistMax) {
             e.mesh.position.addScaledVector(_dir, e.speed * 0.4 * speedMod * dt);
           }
+          // Keep phase wraith in front arc after movement
+          clampPositionToFrontArc(e.mesh.position, playerPos, e.phasePreferredDistMin, e.phasePreferredDistMax, 120);
         }
 
         if (e.phaseVanishTimer > 0) {
@@ -3673,8 +3675,8 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
       e.linkedEnemies = [];
 
       linkedRefs.forEach(ref => {
-        // Visual feedback: electric arc (short-lived, for death effect only)
-        spawnElectricArc(pos, ref.mesh.position.clone(), 0xff66cc, -1);
+        // Visual feedback removed - conductor death still damages linked enemies
+        // spawnElectricArc(pos, ref.mesh.position.clone(), 0xff66cc, -1);
         // Set hp to 0; the main update loop will call destroyEnemy on next iteration
         ref.hp = 0;
       });
@@ -3714,6 +3716,7 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
     if (e.isRanged) voxelCount = 5;
     if (e.isMimic) voxelCount = 4;
     if (e.isSpider) voxelCount = 3;
+    if (e.isPhase) voxelCount = Math.floor(Math.random() * 4) + 5; // 5-8 voxels for phase wraith
 
     // spawnVoxelExplosion(pos, color, voxelCount, type, isCritical, isOverkill)
     spawnVoxelExplosion(pos, color.getHex(), voxelCount, e.type, isCritical, isOverkill);

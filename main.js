@@ -8139,22 +8139,23 @@ function initProjectilePool() {
   scene.add(buckIM);
   instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
 
-  // ── Seeker burst bolts (sperm-like shape) ──
-  // Head: small bright sphere + Tail: tapered cone merged into one geometry
-  const seekerHeadGeo = new THREE.SphereGeometry(0.035, 8, 8);
-  const seekerTailGeo = new THREE.ConeGeometry(0.03, 0.18, 6);
-  seekerTailGeo.rotateZ(-Math.PI / 2); // Point tail behind
+  // ── Seeker burst bolts: semicircle front + tapered cone tail ──
+  // Shape: like <) — flat semicircle face pointing forward (-Z), cone tail behind (+Z)
+  const seekerFrontGeo = new THREE.SphereGeometry(0.04, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+  // Semicircle faces -Z (forward) by default since SphereGeometry opens toward +Y
+  seekerFrontGeo.rotateX(Math.PI / 2); // Rotate so flat face points -Z
+  const seekerTailGeo = new THREE.ConeGeometry(0.035, 0.16, 6);
+  seekerTailGeo.rotateX(Math.PI); // Flip cone so tip points +Z (behind)
+  seekerTailGeo.translate(0, 0, 0.08); // Move tail behind the front
   const seekerGeo = new THREE.BufferGeometry();
-  // Merge head at origin and tail behind it (cone tip at -0.09, base at 0.09)
-  seekerTailGeo.translate(-0.09, 0, 0); // Offset tail so base meets head center
   BufferGeometryUtils.mergeGeometries
     ? (function() {
-        const merged = BufferGeometryUtils.mergeGeometries([seekerHeadGeo, seekerTailGeo]);
+        const merged = BufferGeometryUtils.mergeGeometries([seekerFrontGeo, seekerTailGeo]);
         seekerGeo.index = merged.index;
         seekerGeo.attributes.position = merged.attributes.position;
         seekerGeo.attributes.normal = merged.attributes.normal;
       })()
-    : seekerGeo.copy(seekerHeadGeo); // Fallback if mergeGeometries unavailable
+    : seekerGeo.copy(seekerFrontGeo); // Fallback if mergeGeometries unavailable
   const seekerMat = createProjectileMaterial(0xffcc44);
   registerPlayerProjectileMaterial(seekerMat);
   const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
