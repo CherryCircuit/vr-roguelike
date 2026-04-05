@@ -2155,64 +2155,6 @@ export function getTitleButtonHit(raycaster) {
   return null;
 }
 
-// ── Run Diagnostics ──────────────────────────────────────
-function runDiagnostics() {
-  const results = [];
-  let allPassed = true;
-
-  // Check scene
-  if (!sceneRef) {
-    results.push('❌ Scene reference is missing');
-    allPassed = false;
-  } else if (sceneRef.children.length === 0) {
-    results.push('❌ Scene is empty (no objects)');
-    allPassed = false;
-  } else {
-    results.push(`✅ Scene has ${sceneRef.children.length} objects`);
-  }
-
-  // Check camera
-  if (!cameraRef) {
-    results.push('❌ Camera reference is missing');
-    allPassed = false;
-  } else {
-    results.push(`✅ Camera at (${cameraRef.position.x.toFixed(1)}, ${cameraRef.position.y.toFixed(1)}, ${cameraRef.position.z.toFixed(1)})`);
-  }
-
-  // Check groups visibility
-  if (!titleGroup.visible) {
-    results.push('⚠️ Title group is not visible (expected)');
-  } else {
-    results.push('✅ Title group is visible');
-  }
-
-  // Check UI groups are in scene
-  const groupsToCheck = [titleGroup, hudGroup, levelTextGroup, upgradeGroup, gameOverGroup];
-  groupsToCheck.forEach((g, i) => {
-    if (g) {
-      if (!sceneRef.children.includes(g)) {
-        results.push(`❌ Group ${i} is not in scene`);
-        allPassed = false;
-      } else {
-        results.push(`✅ Group ${i} is in scene`);
-      }
-    }
-  });
-
-  // Show results in console
-  console.log('=== DIAGNOSTICS RESULTS ===');
-  results.forEach(r => console.log(r));
-  console.log('===========================');
-
-  // Also show on the web page
-  if (typeof window !== 'undefined' && window.showWebError) {
-    const status = allPassed ? 'ALL DIAGNOSTICS PASSED' : 'SOME DIAGNOSTICS FAILED';
-    window.showWebError(status, results.join('\n'));
-  }
-
-  return allPassed;
-}
-
 /**
  * Update the title screen debug indicator when settings change
  */

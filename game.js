@@ -355,37 +355,6 @@ export function saveDreamState() {
   }
 }
 
-/**
- * Toggle performance monitor mode
- */
-function togglePerfMonitor() {
-  game.debugPerfMonitor = !game.debugPerfMonitor;
-  saveDebugSettings();
-  return game.debugPerfMonitor;
-}
-
-/**
- * Toggle FPS display
- */
-function toggleFPSDisplay() {
-  game.debugShowFPS = !game.debugShowFPS;
-  saveDebugSettings();
-  return game.debugShowFPS;
-}
-
-/**
- * Toggle debug position box
- */
-function togglePositionDisplay() {
-  game.debugShowPosition = !game.debugShowPosition;
-  // Sync with desktop DOM panel
-  if (typeof window !== 'undefined') {
-    window.debugPositionPanel = game.debugShowPosition;
-  }
-  saveDebugSettings();
-  return game.debugShowPosition;
-}
-
 export function getLevelConfig() {
   return LEVELS[game.level - 1];
 }
