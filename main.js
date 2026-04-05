@@ -7482,43 +7482,19 @@ function completeLevel() {
 
   game.state = State.LEVEL_COMPLETE;
 
-  // Kill all remaining enemies with explosions before clearing
+  // Kill all remaining enemies with explosions
+  // Cleanup is deferred to advanceLevelAfterUpgrade() so explosions are visible
   const remaining = getEnemies();
   for (let i = remaining.length - 1; i >= 0; i--) {
     if (remaining[i] && remaining[i].hp > 0) {
-      // Spawn visual explosion before destroying
       if (remaining[i].mesh && remaining[i].mesh.position) {
         spawnExplosionVisual(remaining[i].mesh.position, 0.5);
       }
       destroyEnemy(i, false, false);
     }
   }
-
-  clearAllEnemies();
-
-  // PERFORMANCE: Clear all projectiles on level complete
-  clearAllProjectiles();
-
-  // Clear all lightning beams
-  clearAllLightningBeams();
-
-  // Clear all conductor electric arcs
-  clearAllElectricArcs();
-  clearBossProjectiles();
-
-  // Clear all telegraph effects
-  clearAllTelegraphs();
-
-  // Clear all alt-weapon effects (grenades, mines, drones, etc.)
-  clearAllAltWeaponEffects();
-
-  // Clear HUD popup elements (damage numbers, combo/kill-chain popups, floating messages)
-  clearAllDamageNumbers();
-  clearAllComboPopups();
-  clearAllKillChainPopups();
-  clearFloatingMessage();
-
-  stopLightningSound();
+  // Note: clearAllEnemies() and other cleanup moved to advanceLevelAfterUpgrade()
+  // so the player can see the explosion visuals during the level-complete delay.
   game.justBossKill = game._levelConfig && game._levelConfig.isBoss;
   game.stateTimer = 2.0; // cooldown before upgrade screen
   levelFadeReady = false;
@@ -7909,6 +7885,20 @@ function selectUpgradeAndAdvance(upgrade, hand) {
 }
 
 function advanceLevelAfterUpgrade() {
+  // Deferred cleanup from level complete - explosions already played during LEVEL_COMPLETE state
+  clearAllEnemies();
+  clearAllProjectiles();
+  clearAllLightningBeams();
+  clearAllElectricArcs();
+  clearBossProjectiles();
+  clearAllTelegraphs();
+  clearAllAltWeaponEffects();
+  clearAllDamageNumbers();
+  clearAllComboPopups();
+  clearAllKillChainPopups();
+  clearFloatingMessage();
+  stopLightningSound();
+
   game.level++;
   game.kills = 0;
 
@@ -8153,23 +8143,21 @@ function initProjectilePool() {
   scene.add(buckIM);
   instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
 
-  // ── Seeker burst bolts: semicircle front + tapered cone tail ──
-  // Shape: like <) — flat semicircle face pointing forward (-Z), cone tail behind (+Z)
-  const seekerFrontGeo = new THREE.SphereGeometry(0.04, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
-  // Semicircle faces -Z (forward) by default since SphereGeometry opens toward +Y
-  seekerFrontGeo.rotateX(Math.PI / 2); // Rotate so flat face points -Z
-  const seekerTailGeo = new THREE.ConeGeometry(0.035, 0.16, 6);
-  seekerTailGeo.rotateX(Math.PI); // Flip cone so tip points +Z (behind)
-  seekerTailGeo.translate(0, 0, 0.08); // Move tail behind the front
-  const seekerGeo = new THREE.BufferGeometry();
-  BufferGeometryUtils.mergeGeometries
-    ? (function() {
-        const merged = BufferGeometryUtils.mergeGeometries([seekerFrontGeo, seekerTailGeo]);
-        seekerGeo.index = merged.index;
-        seekerGeo.attributes.position = merged.attributes.position;
-        seekerGeo.attributes.normal = merged.attributes.normal;
-      })()
-    : seekerGeo.copy(seekerFrontGeo); // Fallback if mergeGeometries unavailable
+  // ── Seeker burst bolts: tadpole/sperm shape via LatheGeometry ──
+  // Profile curve (radius at each Z position), revolved around Y axis, then rotated to point -Z
+  const seekerProfile = new THREE.CurvePath();
+  const seekerPts = [
+    new THREE.Vector2(0.0, 0.0),    // z=-0.06 tip of head
+    new THREE.Vector2(0.04, 0.02), // z=-0.04 widest head
+    new THREE.Vector2(0.02, 0.06), // z=0 neck
+    new THREE.Vector2(0.008, 0.11),// z=0.05 tail start
+    new THREE.Vector2(0.002, 0.21),// z=0.15 tail end
+  ];
+  const seekerCurve = new THREE.SplineCurve(seekerPts);
+  const seekerGeo = new THREE.LatheGeometry(seekerCurve.getPoints(20), 8, 0, Math.PI * 2);
+  // LatheGeometry revolves around Y axis: profile X=radius, Y=height
+  // Rotate so head points -Z (forward) and tail extends +Z
+  seekerGeo.rotateX(Math.PI / 2);
   const seekerMat = createProjectileMaterial(0xffcc44);
   registerPlayerProjectileMaterial(seekerMat);
   const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
@@ -10077,7 +10065,14 @@ function updateProjectiles(dt) {
       if (proj.userData.velocity.lengthSq() > 0.0001) {
         _projHomingQuatDir.set(0, 0, -1);
         _projHomingVelNorm.copy(proj.userData.velocity).normalize();
-        proj.quaternion.setFromUnitVectors(_projHomingQuatDir, _projHomingVelNorm);
+        const _seekDot = _projHomingQuatDir.dot(_projHomingVelNorm);
+        if (_seekDot > 0.9999) {
+          proj.quaternion.identity();
+        } else if (_seekDot < -0.9999) {
+          proj.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+        } else {
+          proj.quaternion.setFromUnitVectors(_projHomingQuatDir, _projHomingVelNorm);
+        }
       }
       updateSeekerProjectileVisual(proj, adjustedDt);
     }
