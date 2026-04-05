@@ -605,6 +605,8 @@ let debugPanelElement = null;
 let lookAtRaycaster = null;
 let currentLookTarget = null;
 let originalMaterials = new Map(); // Store original materials for highlight reset
+let debugLightsFrameCounter = 0;
+let debugLightsLastSceneLen = -1;
 
 function shouldShowDebugPositionPanel() {
   // Default OFF unless explicitly enabled through DEBUG menu checkbox
@@ -661,6 +663,24 @@ function showDebugPositionPanel() {
     <div id="debug-look-name" style="color: #00ff88; font-weight: bold;">Nothing</div>
     <div id="debug-look-type" style="color: #888888; font-size: 11px;">Type: -</div>
     <div id="debug-look-dist" style="color: #888888; font-size: 11px;">Distance: -</div>
+    <div id="debug-look-ox" style="color: #ff8800; font-size: 11px; margin-top: 2px;">OX: -</div>
+    <div id="debug-look-oy" style="color: #ff8800; font-size: 11px;">OY: -</div>
+    <div id="debug-look-oz" style="color: #ff8800; font-size: 11px;">OZ: -</div>
+    <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.15); color: #ff6666; font-size: 11px;">Adjust Position:</div>
+    <div style="display: flex; gap: 4px; margin-top: 4px; align-items: center;">
+      <input id="debug-adj-x" type="number" step="0.1" placeholder="X" style="width: 55px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,100,100,0.4); color: #ff8888; font-family: 'Courier New', monospace; font-size: 11px; padding: 3px 5px; border-radius: 3px; pointer-events: auto;">
+      <input id="debug-adj-y" type="number" step="0.1" placeholder="Y" style="width: 55px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,100,100,0.4); color: #ff8888; font-family: 'Courier New', monospace; font-size: 11px; padding: 3px 5px; border-radius: 3px; pointer-events: auto;">
+      <input id="debug-adj-z" type="number" step="0.1" placeholder="Z" style="width: 55px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,100,100,0.4); color: #ff8888; font-family: 'Courier New', monospace; font-size: 11px; padding: 3px 5px; border-radius: 3px; pointer-events: auto;">
+    </div>
+    <div style="display: flex; gap: 3px; margin-top: 4px; align-items: center;">
+      <span style="color: #ff6666; font-size: 10px;">Step:</span>
+      <button class="debug-step-btn" data-step="0.1" style="padding: 2px 6px; background: rgba(255,100,100,0.3); border: 1px solid rgba(255,100,100,0.5); color: #ff8888; border-radius: 3px; cursor: pointer; font-size: 10px; pointer-events: auto;">0.1</button>
+      <button class="debug-step-btn" data-step="1" style="padding: 2px 6px; background: rgba(255,100,100,0.15); border: 1px solid rgba(255,100,100,0.3); color: #ff8888; border-radius: 3px; cursor: pointer; font-size: 10px; pointer-events: auto;">1.0</button>
+      <button class="debug-step-btn" data-step="10" style="padding: 2px 6px; background: rgba(255,100,100,0.15); border: 1px solid rgba(255,100,100,0.3); color: #ff8888; border-radius: 3px; cursor: pointer; font-size: 10px; pointer-events: auto;">10</button>
+      <button id="debug-apply-pos" style="margin-left: auto; padding: 3px 8px; background: rgba(255,100,100,0.2); border: 1px solid rgba(255,100,100,0.5); color: #ff8888; border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 11px; pointer-events: auto;">Apply</button>
+    </div>
+    <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(0,255,255,0.3); color: #88aaff; font-size: 12px; font-weight: bold; cursor: pointer; pointer-events: auto;" id="debug-lights-toggle">LIGHTS ▼</div>
+    <div id="debug-lights-panel" style="display: none; margin-top: 4px;"></div>
     <div style="margin-top: 12px; font-size: 11px; color: #888888;">
       WASD: Move | Q/E: Up/Down<br>
       C: Copy to clipboard
@@ -686,6 +706,68 @@ function showDebugPositionPanel() {
     copyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       copyPositionToClipboard();
+    });
+  }
+
+  // Step size buttons
+  const stepBtns = debugPanelElement.querySelectorAll('.debug-step-btn');
+  const adjInputs = [
+    debugPanelElement.querySelector('#debug-adj-x'),
+    debugPanelElement.querySelector('#debug-adj-y'),
+    debugPanelElement.querySelector('#debug-adj-z'),
+  ];
+  stepBtns.forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const step = btn.getAttribute('data-step');
+      adjInputs.forEach((inp) => { if (inp) inp.step = step; });
+      stepBtns.forEach((b) => {
+        b.style.background = 'rgba(255,100,100,0.15)';
+        b.style.borderColor = 'rgba(255,100,100,0.3)';
+      });
+      btn.style.background = 'rgba(255,100,100,0.3)';
+      btn.style.borderColor = 'rgba(255,100,100,0.5)';
+    });
+  });
+
+  // Apply position button
+  const applyBtn = debugPanelElement.querySelector('#debug-apply-pos');
+  if (applyBtn) {
+    applyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const target = window._debugLookTarget;
+      if (!target) { console.warn('[debug] No object to move'); return; }
+      const xVal = adjInputs[0]?.value;
+      const yVal = adjInputs[1]?.value;
+      const zVal = adjInputs[2]?.value;
+      if (xVal === '' && yVal === '' && zVal === '') { console.warn('[debug] No values entered'); return; }
+      if (xVal !== '') target.position.x = parseFloat(xVal);
+      if (yVal !== '') target.position.y = parseFloat(yVal);
+      if (zVal !== '') target.position.z = parseFloat(zVal);
+      console.log(`[debug] Moved ${target.name || target.type} to (${target.position.x.toFixed(3)}, ${target.position.y.toFixed(3)}, ${target.position.z.toFixed(3)})`);
+    });
+  }
+
+  // Stop propagation on all inputs so game doesn't capture keystrokes
+  adjInputs.forEach((inp) => {
+    if (inp) {
+      inp.addEventListener('keydown', (e) => e.stopPropagation());
+      inp.addEventListener('mousedown', (e) => e.stopPropagation());
+      inp.addEventListener('focus', (e) => e.stopPropagation());
+    }
+  });
+
+  // Lights toggle
+  const lightsToggle = debugPanelElement.querySelector('#debug-lights-toggle');
+  if (lightsToggle) {
+    lightsToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const panel = debugPanelElement.querySelector('#debug-lights-panel');
+      if (!panel) return;
+      const isOpen = panel.style.display !== 'none';
+      panel.style.display = isOpen ? 'none' : 'block';
+      lightsToggle.textContent = isOpen ? 'LIGHTS ▼' : 'LIGHTS ▲';
+      debugLightsLastSceneLen = -1; // force rebuild
     });
   }
 }
@@ -838,6 +920,25 @@ function updateDebugPositionPanel() {
       if (lookTypeEl) lookTypeEl.textContent = `Type: ${geoType} (${obj.type})`;
       if (lookDistEl) lookDistEl.textContent = `Distance: ${validHit.distance.toFixed(2)}`;
 
+      // Object world position
+      const objWorldPos = new THREE.Vector3();
+      obj.getWorldPosition(objWorldPos);
+      const lookOXEl = debugPanelElement.querySelector('#debug-look-ox');
+      const lookOYEl = debugPanelElement.querySelector('#debug-look-oy');
+      const lookOZEl = debugPanelElement.querySelector('#debug-look-oz');
+      if (lookOXEl) lookOXEl.textContent = `OX: ${objWorldPos.x.toFixed(3)}`;
+      if (lookOYEl) lookOYEl.textContent = `OY: ${objWorldPos.y.toFixed(3)}`;
+      if (lookOZEl) lookOZEl.textContent = `OZ: ${objWorldPos.z.toFixed(3)}`;
+
+      // Store for apply button and pre-fill inputs
+      window._debugLookTarget = obj;
+      const adjX = debugPanelElement.querySelector('#debug-adj-x');
+      const adjY = debugPanelElement.querySelector('#debug-adj-y');
+      const adjZ = debugPanelElement.querySelector('#debug-adj-z');
+      if (adjX && document.activeElement !== adjX) adjX.value = objWorldPos.x.toFixed(3);
+      if (adjY && document.activeElement !== adjY) adjY.value = objWorldPos.y.toFixed(3);
+      if (adjZ && document.activeElement !== adjZ) adjZ.value = objWorldPos.z.toFixed(3);
+
       // Highlight the object
       currentLookTarget = obj;
       applyHighlight(obj);
@@ -846,6 +947,54 @@ function updateDebugPositionPanel() {
       if (lookNameEl) lookNameEl.textContent = 'Nothing';
       if (lookTypeEl) lookTypeEl.textContent = 'Type: -';
       if (lookDistEl) lookDistEl.textContent = 'Distance: -';
+      const lookOXEl = debugPanelElement.querySelector('#debug-look-ox');
+      const lookOYEl = debugPanelElement.querySelector('#debug-look-oy');
+      const lookOZEl = debugPanelElement.querySelector('#debug-look-oz');
+      if (lookOXEl) lookOXEl.textContent = 'OX: -';
+      if (lookOYEl) lookOYEl.textContent = 'OY: -';
+      if (lookOZEl) lookOZEl.textContent = 'OZ: -';
+      window._debugLookTarget = null;
+    }
+
+    // === BIOME LIGHTS PANEL ===
+    debugLightsFrameCounter++;
+    const lightsPanel = debugPanelElement.querySelector('#debug-lights-panel');
+    if (lightsPanel && lightsPanel.style.display !== 'none') {
+      const sceneLen = sceneRef.children.length;
+      if (sceneLen !== debugLightsLastSceneLen || debugLightsFrameCounter % 60 === 0) {
+        debugLightsLastSceneLen = sceneLen;
+        const lights = [];
+        sceneRef.traverse((child) => {
+          if (child.isLight) lights.push(child);
+        });
+        if (lights.length === 0) {
+          lightsPanel.innerHTML = '<div style="color: #555; font-size: 10px;">No lights found</div>';
+        } else {
+          lightsPanel.innerHTML = lights.map((light, i) => {
+            const name = light.name || light.type.replace('Light', '');
+            const color = light.color ? '#' + light.color.getHexString() : '#ffffff';
+            const intensity = light.intensity != null ? light.intensity.toFixed(2) : '0';
+            return `<div style="display: flex; align-items: center; gap: 4px; margin-bottom: 3px; font-size: 10px;">
+              <span style="display: inline-block; width: 10px; height: 10px; background: ${color}; border-radius: 2px; flex-shrink: 0;"></span>
+              <span style="color: #88aaff; min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${name}</span>
+              <input type="number" step="0.1" value="${intensity}" data-light-idx="${i}" style="width: 50px; background: rgba(0,0,0,0.5); border: 1px solid rgba(100,150,255,0.3); color: #aaccff; font-family: 'Courier New', monospace; font-size: 10px; padding: 2px 3px; border-radius: 2px; pointer-events: auto;">
+            </div>`;
+          }).join('');
+          // Attach intensity change handlers
+          lightsPanel.querySelectorAll('input[data-light-idx]').forEach((inp) => {
+            inp.addEventListener('input', (e) => {
+              e.stopPropagation();
+              const idx = parseInt(inp.getAttribute('data-light-idx'), 10);
+              const val = parseFloat(inp.value);
+              if (!isNaN(val) && lights[idx]) {
+                lights[idx].intensity = val;
+              }
+            });
+            inp.addEventListener('mousedown', (e) => e.stopPropagation());
+            inp.addEventListener('focus', (e) => e.stopPropagation());
+          });
+        }
+      }
     }
   }
 }

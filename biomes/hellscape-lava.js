@@ -170,7 +170,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   });
 
   const lavaRiver = new THREE.Mesh(riverGeo, lavaRiverMat);
-  lavaRiver.position.y = -2.25; // Just above riverbed at Y:-2.50
+  lavaRiver.position.y = -0.70; // World Y=-2.25 (group Y=-1.55, so -2.25-(-1.55)=-0.70)
   lavaRiver.position.z = 0.0;
   lavaRiver.frustumCulled = false; // Prevent disappearing when looking around
   lavaRiver.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 200); // Large bounding sphere to prevent culling
@@ -320,6 +320,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   });
 
   const sparks = new THREE.Points(sparkGeo, sparkMat);
+  sparks.name = "embers";
   group.add(sparks);
 
   // (Ash particles removed - were jittery dots in corridor, not visible from player position)
@@ -369,6 +370,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   });
 
   const geyserPoints = new THREE.Points(geyserGeo, geyserMat);
+  geyserPoints.name = "geysers";
   group.add(geyserPoints);
 
   // ========================================
@@ -472,6 +474,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     blending: THREE.AdditiveBlending
   });
 
+  flamePillarPoints.name = "flame-pillars";
   const flamePillarPoints = new THREE.Points(flamePillarGeo, flamePillarMat);
   group.add(flamePillarPoints);
 
