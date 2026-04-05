@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, loadDreamState, saveDreamState, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
@@ -8145,9 +8146,9 @@ function initProjectilePool() {
   const seekerGeo = new THREE.BufferGeometry();
   // Merge head at origin and tail behind it (cone tip at -0.09, base at 0.09)
   seekerTailGeo.translate(-0.09, 0, 0); // Offset tail so base meets head center
-  THREE.BufferGeometryUtils.mergeGeometries
+  BufferGeometryUtils.mergeGeometries
     ? (function() {
-        const merged = THREE.BufferGeometryUtils.mergeGeometries([seekerHeadGeo, seekerTailGeo]);
+        const merged = BufferGeometryUtils.mergeGeometries([seekerHeadGeo, seekerTailGeo]);
         seekerGeo.index = merged.index;
         seekerGeo.attributes.position = merged.attributes.position;
         seekerGeo.attributes.normal = merged.attributes.normal;
