@@ -98,9 +98,10 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
   const terrain = new THREE.Mesh(geometry, material);
   terrain.receiveShadow = true;
+  terrain.frustumCulled = false; // Prevent disappearing when looking down
   terrain.position.y = floorY;
   terrain.position.x = -10.0;  // Shift terrain left so player spawns on riverbank (not riverbed)
-  terrain.position.z = 0.0;  // Player on flat valley floor
+  terrain.position.z = -50.0;  // Shift forward so content is in front of player (negative Z)
   group.add(terrain);
 
   // ========================================
@@ -109,6 +110,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   const riverWidth = 12;
   const riverLength = 200;
   const riverGeo = new THREE.PlaneGeometry(riverWidth, riverLength, 32, 64);
+  riverGeo.frustumCulled = false; // Prevent culling before mesh creation
   riverGeo.rotateX(-Math.PI / 2);
 
   // Curve the plane to follow the river path
@@ -116,9 +118,9 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   for (let i = 0; i < riverPositions.count; i++) {
     const localX = riverPositions.getX(i);
     const localZ = riverPositions.getZ(i);
-    // River follows sin(z * 0.03) * 15 + 10
+    // River follows sin(z * 0.03) * 15 - 10 (matches terrain offset of -10)
     const worldZ = localZ;
-    const riverCenterX = Math.sin(worldZ * 0.03) * 15.0 + 10.0;
+    const riverCenterX = Math.sin(worldZ * 0.03) * 15.0 - 10.0;
     riverPositions.setX(i, localX + riverCenterX);
   }
 
@@ -173,13 +175,15 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
   const lavaRiver = new THREE.Mesh(riverGeo, lavaRiverMat);
   lavaRiver.position.y = floorY + 0.1; // Just above the river bed
+  lavaRiver.position.z = -50.0; // Match terrain Z offset
+  lavaRiver.frustumCulled = false; // Prevent disappearing when looking down
   group.add(lavaRiver);
 
   // Add subtle red point lights along the river for glow effect
   const lavaLights = [];
   for (let i = 0; i < 3; i++) {
-    const lz = (i - 1) * 60;
-    const lx = Math.sin(lz * 0.03) * 15.0 + 10.0;
+    const lz = (i - 1) * 60 - 50; // Shift to negative Z range
+    const lx = Math.sin(lz * 0.03) * 15.0 - 10.0; // Match terrain world-space river center
     const lavaLight = new THREE.PointLight(0xff3300, 2.0, 35);
     lavaLight.position.set(lx, floorY + 3, lz);
     group.add(lavaLight);
@@ -221,7 +225,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
         }
       });
       // Base scale correction for Blender export (models often export large)
-      model.scale.setScalar(0.05);  // Reduced from 0.5 - GLB models are very large
+      model.scale.setScalar(0.015);  // Reduced from 0.03 - trees were still too big (~50% smaller)
       model.updateMatrixWorld(true);
 
       for (let i = 0; i < count; i++) {
@@ -238,12 +242,12 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
             // 1-2 behind for VR folks who turn around
             z = Math.abs((Math.random() - 0.5) * 60);
           }
-          riverX = Math.sin(z * 0.03) * 15.0;
+          riverX = Math.sin(z * 0.03) * 15.0 - 10.0; // Match terrain world-space river center
           distToRiver = Math.abs(x - riverX);
           attempts++;
         } while ((distToRiver < 8 || (x * x + z * z < 225)) && attempts < 30);  // 225 = 15^2 clearance
 
-        const scale = 1.0 + Math.random() * 0.8; // 1.0x to 1.8x (on top of base 0.5x)
+        const scale = 0.5 + Math.random() * 0.9; // 0.5x to 1.4x (on top of base 0.015x = 0.0075x to 0.021x effective)
         clone.position.set(x, floorY - 0.3, z); // Bury roots slightly below ground
         clone.rotation.set(
           (Math.random() - 0.5) * 0.2, // slight X tilt
@@ -343,8 +347,8 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
   const initSpark = (idx) => {
     const i3 = idx * 3;
-    const z = (Math.random() - 0.5) * 100;
-    const riverX = Math.sin(z * 0.03) * 15.0 + 10.0;  // Account for terrain X shift
+    const z = (Math.random() - 0.5) * 100 - 50; // Bias toward negative Z (in front of player)
+    const riverX = Math.sin(z * 0.03) * 15.0 - 10.0;  // Match terrain world-space river center (sin - terrain.x = sin*15 - 10)
     sparkPositions[i3] = riverX + (Math.random() - 0.5) * 4;
     sparkPositions[i3 + 1] = floorY - 0.5 + Math.random() * 0.5;  // Account for terrain Y offset
     sparkPositions[i3 + 2] = z;
@@ -385,7 +389,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     const i3 = i * 3;
     ashPositions[i3] = (Math.random() - 0.5) * 80;
     ashPositions[i3 + 1] = 1 + Math.random() * 10;
-    ashPositions[i3 + 2] = (Math.random() - 0.5) * 80;
+    ashPositions[i3 + 2] = (Math.random() - 0.5) * 80 - 50; // Shift to negative Z range
     ashVelocities[i3] = (Math.random() - 0.5) * 0.02;
     ashVelocities[i3 + 1] = 0.01 + Math.random() * 0.015;
     ashVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
@@ -413,8 +417,9 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     const particleCount = 100;
     // Spawn from mountainsides (outside valleyWidth), accounting for terrain X shift
     const side = Math.random() > 0.5 ? 1 : -1;
-    const x = side * (valleyWidth + 5 + Math.random() * 20) + 10.0;  // Account for terrain X shift
-    const z = -Math.abs((Math.random() - 0.5) * 80);  // Force negative Z (in front)
+    // Mountainsides in group space (terrain.position.x = -10 shifts terrain)
+    const x = side * (valleyWidth + 5 + Math.random() * 20) - 10.0;
+    const z = -50 - Math.abs((Math.random() - 0.5) * 80);  // Negative Z, offset by terrain Z shift
     const baseY = floorY + 5;
 
     for (let i = 0; i < particleCount; i++) {
@@ -717,8 +722,8 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   };
 
   // Hellscape floor HUD height: group.position.y = 0.05
-  // Shifted +Z by 130 so corridor is in front of player
-  group.position.set(26.599, 0.05, 129.514);
+  // Shifted -Z so corridor is in front of player (player looks down -Z)
+  group.position.set(26.599, 0.05, -130.0);
   group.rotation.y = 0.248; // yaw: 14.21°
 }
 

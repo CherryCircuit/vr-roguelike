@@ -20,7 +20,7 @@ export function buildDesertNightScene(group, deps) {
   group.add(moonLight);
 
   // Point light for long moon-like shadows from cacti
-  const shadowLight = new THREE.PointLight(0xd4e5f7, 1.5, 100);
+  const shadowLight = new THREE.PointLight(0xd4e5f7, 4.0, 100);
   shadowLight.position.set(-45, 35, -60); // Same as moon position
   shadowLight.castShadow = true;
   shadowLight.shadow.mapSize.width = 1024;
@@ -38,7 +38,7 @@ export function buildDesertNightScene(group, deps) {
   group.add(hemiLight);
 
   // Front-fill light so cacti in front of player are visible as green
-  const frontFillLight = new THREE.PointLight(0xd4e5f7, 1.0, 40);
+  const frontFillLight = new THREE.PointLight(0xd4e5f7, 5.0, 50);
   frontFillLight.position.set(0, 8, -15);
   group.add(frontFillLight);
 
