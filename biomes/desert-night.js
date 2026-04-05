@@ -38,8 +38,8 @@ export function buildDesertNightScene(group, deps) {
   group.add(hemiLight);
 
   // Front-fill light so cacti in front of player are visible as green
-  const frontFillLight = new THREE.PointLight(0xd4e5f7, 5.0, 50);
-  frontFillLight.position.set(0, 8, -15);
+  const frontFillLight = new THREE.PointLight(0xaaffaa, 12.0, 60);
+  frontFillLight.position.set(0, 6, -10);
   group.add(frontFillLight);
 
   // Desert skydome mirrors the synthwave setup structurally, but uses moonlit sand tones

@@ -101,7 +101,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   terrain.frustumCulled = false; // Prevent disappearing when looking down
   terrain.position.y = floorY;
   terrain.position.x = -10.0;  // Shift terrain left so player spawns on riverbank (not riverbed)
-  terrain.position.z = -50.0;  // Shift forward so content is in front of player (negative Z)
+  terrain.position.z = 0.0;
   group.add(terrain);
 
   // ========================================
@@ -110,7 +110,6 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   const riverWidth = 12;
   const riverLength = 200;
   const riverGeo = new THREE.PlaneGeometry(riverWidth, riverLength, 32, 64);
-  riverGeo.frustumCulled = false; // Prevent culling before mesh creation
   riverGeo.rotateX(-Math.PI / 2);
 
   // Curve the plane to follow the river path
@@ -175,14 +174,17 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
   const lavaRiver = new THREE.Mesh(riverGeo, lavaRiverMat);
   lavaRiver.position.y = floorY + 0.1; // Just above the river bed
-  lavaRiver.position.z = -50.0; // Match terrain Z offset
-  lavaRiver.frustumCulled = false; // Prevent disappearing when looking down
+  lavaRiver.position.z = 0.0;
+  lavaRiver.frustumCulled = false; // Prevent disappearing when looking around
+  lavaRiver.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 200); // Large bounding sphere to prevent culling
+  lavaRiver.renderOrder = 1; // Render above terrain
+  lavaRiver.onBeforeRender = () => {}; // Force render every frame
   group.add(lavaRiver);
 
   // Add subtle red point lights along the river for glow effect
   const lavaLights = [];
   for (let i = 0; i < 3; i++) {
-    const lz = (i - 1) * 60 - 50; // Shift to negative Z range
+    const lz = (i - 1) * 60;
     const lx = Math.sin(lz * 0.03) * 15.0 - 10.0; // Match terrain world-space river center
     const lavaLight = new THREE.PointLight(0xff3300, 2.0, 35);
     lavaLight.position.set(lx, floorY + 3, lz);
@@ -225,7 +227,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
         }
       });
       // Base scale correction for Blender export (models often export large)
-      model.scale.setScalar(0.015);  // Reduced from 0.03 - trees were still too big (~50% smaller)
+      model.scale.setScalar(0.005);  // Trees max height should be ~13 world units
       model.updateMatrixWorld(true);
 
       for (let i = 0; i < count; i++) {
@@ -235,9 +237,9 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
         do {
           x = (Math.random() - 0.5) * 60;
           if (preferFront && i < count - 2) {
-            z = -Math.abs((Math.random() - 0.5) * 100); // In front (negative Z)
+            z = -(10 + Math.random() * 90); // Spread from z=-10 to z=-100 (corridor to suns)
           } else if (!preferFront && i < count - 1) {
-            z = -Math.abs((Math.random() - 0.5) * 100);
+            z = -(10 + Math.random() * 90);
           } else {
             // 1-2 behind for VR folks who turn around
             z = Math.abs((Math.random() - 0.5) * 60);
@@ -247,14 +249,21 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
           attempts++;
         } while ((distToRiver < 8 || (x * x + z * z < 225)) && attempts < 30);  // 225 = 15^2 clearance
 
-        const scale = 0.5 + Math.random() * 0.9; // 0.5x to 1.4x (on top of base 0.015x = 0.0075x to 0.021x effective)
+        const scale = 0.8 + Math.random() * 1.2; // 0.8x to 2.0x variation on top of base
         clone.position.set(x, floorY - 0.3, z); // Bury roots slightly below ground
         clone.rotation.set(
           (Math.random() - 0.5) * 0.2, // slight X tilt
           Math.random() * Math.PI * 2,    // full Y rotation
           (Math.random() - 0.5) * 0.2   // slight Z tilt
         );
-        clone.scale.setScalar(scale); // Multiplied with base 0.5x = 0.5x to 0.9x effective
+        clone.scale.setScalar(scale);
+        // Cap tree height at Y=13
+        clone.updateMatrixWorld(true);
+        const bbox = new THREE.Box3().setFromObject(clone);
+        if (bbox.max.y > 13) {
+          const shrinkFactor = 13 / bbox.max.y;
+          clone.scale.multiplyScalar(shrinkFactor);
+        }
         group.add(clone);
         treeMeshes.push(clone);
       }
@@ -389,7 +398,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     const i3 = i * 3;
     ashPositions[i3] = (Math.random() - 0.5) * 80;
     ashPositions[i3 + 1] = 1 + Math.random() * 10;
-    ashPositions[i3 + 2] = (Math.random() - 0.5) * 80 - 50; // Shift to negative Z range
+    ashPositions[i3 + 2] = (Math.random() - 0.5) * 80;
     ashVelocities[i3] = (Math.random() - 0.5) * 0.02;
     ashVelocities[i3 + 1] = 0.01 + Math.random() * 0.015;
     ashVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
@@ -419,7 +428,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     const side = Math.random() > 0.5 ? 1 : -1;
     // Mountainsides in group space (terrain.position.x = -10 shifts terrain)
     const x = side * (valleyWidth + 5 + Math.random() * 20) - 10.0;
-    const z = -50 - Math.abs((Math.random() - 0.5) * 80);  // Negative Z, offset by terrain Z shift
+    const z = -Math.abs((Math.random() - 0.5) * 80);
     const baseY = floorY + 5;
 
     for (let i = 0; i < particleCount; i++) {
@@ -723,7 +732,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
   // Hellscape floor HUD height: group.position.y = 0.05
   // Shifted -Z so corridor is in front of player (player looks down -Z)
-  group.position.set(26.599, 0.05, -130.0);
+  group.position.set(11.599, -1.55, -42.0);
   group.rotation.y = 0.248; // yaw: 14.21°
 }
 
