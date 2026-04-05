@@ -75,42 +75,11 @@ const PATTERNS = {
     '1',
     '1',
   ],
-  // shifter: [
-  //   '111',
-  //   '..1',
-  //   '111',
-  // ],
-  // bomber: [
-  //   '111',
-  //   '1.1',
-  //   '1.1',
-  // ],
-  // mimic: [
-  //   '1..',
-  //   '.1.',
-  //   '..1',
-  // ],
-  // spider: [
-  //   '1.1',
-  //   '111',
-  //   '1.1',
-  // ],
-  // totem: [
-  //   '.1.',
-  //   '.1.',
-  //   '.1.',
-  // ],
   wraith: [
     '1',
     '1',
     '1',
   ],
-  // colossus: [
-  //   '1111',
-  //   '1..1',
-  //   '1..1',
-  //   '1111',
-  // ],
 };
 
 function parsePattern(strings) {
@@ -211,10 +180,6 @@ const ENEMY_DEFS = {
 
   // ── New enemy types (v2.0) ─────────────────────────────────
   spiral_swimmer: { pattern: [[1]], voxelSize: 0.18, baseHp: 8, baseSpeed: 2.2, color: 0x00ffcc, depth: 1, scoreValue: 8, hitboxRadius: 0.3, telegraphType: 'twitch', isTrain: true, trainLength: 10 },
-  // geometry_shifter: { pattern: parsePattern(PATTERNS.shifter), voxelSize: 0.28, baseHp: 45, baseSpeed: 1.3, color: 0xff6600, depth: 1, scoreValue: 20, hitboxRadius: 0.55, telegraphType: 'scale', shapeShift: true },
-  // pulse_bomber: { pattern: parsePattern(PATTERNS.bomber), voxelSize: 0.32, baseHp: 55, baseSpeed: 0.6, color: 0x8800ff, depth: 1, scoreValue: 22, hitboxRadius: 0.7, telegraphType: 'glow', isRanged: true },
-  // clone_mimic: { pattern: parsePattern(PATTERNS.mimic), voxelSize: 0.26, baseHp: 35, baseSpeed: 1.8, color: 0xff00aa, depth: 1, scoreValue: 18, hitboxRadius: 0.5, telegraphType: 'flash', isMimic: true },
-  // spider_walker: { pattern: parsePattern(PATTERNS.spider), voxelSize: 0.22, baseHp: 25, baseSpeed: 2.8, color: 0xff4400, depth: 1, scoreValue: 12, hitboxRadius: 0.4, telegraphType: 'twitch', isSpider: true },
 
   // ── Part 2: Advanced enemies (v3.0) ─────────────────────────
   mirror_knight: {
@@ -235,38 +200,6 @@ const ENEMY_DEFS = {
     mirrorSpeedBoost: 0.35,
     mirrorImmuneDuration: 1.2,
   },
-  // portal_mantis: {
-  //   pattern: parsePattern([
-  //     '1.1',
-  //     '111',
-  //     '.1.',
-  //   ]),
-  //   voxelSize: 0.25,
-  //   baseHp: 40,
-  //   baseSpeed: 2.0,
-  //   color: 0x00ffaa,
-  //   depth: 1,
-  //   scoreValue: 24,
-  //   hitboxRadius: 0.5,
-  //   telegraphType: 'twitch',
-  //   isPortal: true,
-  //   portalCooldown: 4.0,
-  // },
-  // blackhole_totem: {
-  //   pattern: parsePattern(PATTERNS.totem),
-  //   voxelSize: 0.35,
-  //   baseHp: 20,
-  //   baseSpeed: 0,
-  //   color: 0x220033,
-  //   depth: 1,
-  //   scoreValue: 15,
-  //   hitboxRadius: 0.6,
-  //   telegraphType: 'glow',
-  //   isBlackhole: true,
-  //   gravityRadius: 5.0,
-  //   gravityStrength: 2.5,
-  //   deathExplosionDamage: 50,
-  // },
   conductor: {
     pattern: parsePattern([
       '1.1',
@@ -306,17 +239,6 @@ const ENEMY_DEFS = {
     phasePreferredDistMin: 5.5,
     phasePreferredDistMax: 9.5,
   },
-  // obsidian_colossus: {
-  //   pattern: parsePattern(PATTERNS.colossus),
-  //   voxelSize: 0.42,
-  //   baseHp: 260,
-  //   baseSpeed: 0.45,
-  //   color: 0x663300,
-  //   depth: 1,
-  //   scoreValue: 60,
-  //   hitboxRadius: 1.2,
-  //   telegraphType: 'scale',
-  // },
 };
 
 // ── Module state ───────────────────────────────────────────
@@ -1630,20 +1552,6 @@ export function updatePulseBomberRings(dt, now, playerPos) {
 }
 
 /**
- * Check if player was hit by any sonic rings.
- */
-function getPulseBomberRingHits() {
-  return pulseBomberRings.filter(r => r.hitPlayer);
-}
-
-/**
- * Clear hit flags on pulse bomber rings.
- */
-function clearPulseBomberRingHits() {
-  pulseBomberRings.forEach(r => r.hitPlayer = false);
-}
-
-/**
  * Spawn baby spiders from Spider Walker death.
  */
 function spawnBabySpiders(position, count = 3) {
@@ -1814,52 +1722,8 @@ function damageNearbyEnemies(position, damage, radius) {
   }
 }
 
-/**
- * Spawn electric arc effect (for Conductor chain overload).
- * @param {THREE.Vector3} fromPos - Start position
- * @param {THREE.Vector3} toPos - End position
- * @param {number} color - Arc color
- * @param {number} conductorId - Optional unique ID of conductor that spawned this arc
- */
-function spawnElectricArc(fromPos, toPos, color = 0xffcc00, conductorId = -1) {
-  // Create a simple line for the electric arc
-  const points = [];
-  const segments = 10;
-  for (let i = 0; i <= segments; i++) {
-    const t = i / segments;
-    const point = fromPos.clone().lerp(toPos, t);
-    // Add some randomness for electric effect
-    if (i > 0 && i < segments) {
-      point.x += (Math.random() - 0.5) * 0.3;
-      point.y += (Math.random() - 0.5) * 0.3;
-      point.z += (Math.random() - 0.5) * 0.3;
-    }
-    points.push(point);
-  }
-
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const material = new THREE.LineBasicMaterial({
-    color,
-    transparent: true,
-    opacity: 1.0,
-  });
-  const arc = new THREE.Line(geometry, material);
-
-  sceneRef.add(arc);
-
-  // Store for cleanup (track conductor index for cleanup when conductor dies)
-  // Also track target enemy for cleanup when buffed enemy dies
-  electricArcs.push({
-    mesh: arc,
-    createdAt: performance.now(),
-    lifetime: 200, // 0.2 seconds
-    conductorId: conductorId,
-    targetEnemyId: -1, // Set by caller if available
-  });
-}
 
 const electricArcs = [];
-
 /**
  * Clear all electric arcs spawned by a specific conductor.
  * Called when a conductor dies to immediately remove its buff visuals.
@@ -1895,37 +1759,9 @@ function clearTargetEnemyArcs(targetEnemyId) {
 }
 
 /**
- * Update electric arcs (fade out).
- */
-export function updateElectricArcs(dt, now) {
-  for (let i = electricArcs.length - 1; i >= 0; i--) {
-    const arc = electricArcs[i];
-    const age = now - arc.createdAt;
-
-    if (age > arc.lifetime) {
-      sceneRef.remove(arc.mesh);
-      arc.mesh.geometry.dispose();
-      arc.mesh.material.dispose();
-      electricArcs.splice(i, 1);
-      continue;
-    }
-
-    // Fade out
-    const progress = age / arc.lifetime;
-    arc.mesh.material.opacity = 1 - progress;
-  }
-}
-
-/**
  * Clear all electric arcs (for level transitions).
  */
 export function clearAllElectricArcs() {
-  for (let i = electricArcs.length - 1; i >= 0; i--) {
-    const arc = electricArcs[i];
-    sceneRef.remove(arc.mesh);
-    arc.mesh.geometry.dispose();
-    arc.mesh.material.dispose();
-  }
   electricArcs.length = 0;
 }
 
@@ -3214,14 +3050,6 @@ export function updateEnemies(dt, now, playerPos) {
           other.linkedDamageReduction = Math.max(other.linkedDamageReduction, e.linkDamageReduction);
           other.speed = other.baseSpeed * (1 + e.linkSpeedBonus);
 
-          // Lightning arc visual removed - conductor buffs without visible arcs
-          // if (e.conductorArcTimer <= 0) {
-          //   spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc, e.id);
-          //   if (electricArcs.length > 0) {
-          //     electricArcs[electricArcs.length - 1].targetEnemyId = other.id;
-          //   }
-          // }
-
           other.mesh.traverse(c => {
             if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
               setMaterialEmissiveSafe(c.material, _emissivePink, 0.35);
@@ -3379,10 +3207,6 @@ function updateStatusEffects(e, dt) {
       e.hp -= fireDmg;
       if (e.hp <= 0) e.hp = 0;
       e._lastDoT = { type: 'fire', damage: fireDmg };
-      // Spawn fire particles - commented out as window.spawnEffectParticle doesn't exist
-      // if (typeof window !== 'undefined' && window.spawnEffectParticle) {
-      //   window.spawnEffectParticle(e.mesh.position, 0xff4400);
-      // }
     }
     if (se.fire.remaining <= 0) { se.fire.stacks = 0; se.fire.tickTimer = 0; }
   }
@@ -3397,10 +3221,6 @@ function updateStatusEffects(e, dt) {
       e.hp -= shockDmg;
       if (e.hp <= 0) e.hp = 0;
       e._lastDoT = { type: 'shock', damage: shockDmg };
-      // Spawn shock particles - commented out as window.spawnEffectParticle doesn't exist
-      // if (typeof window !== 'undefined' && window.spawnEffectParticle) {
-      //   window.spawnEffectParticle(e.mesh.position, 0xffff44);
-      // }
     }
     if (se.shock.remaining <= 0) { se.shock.stacks = 0; se.shock.tickTimer = 0; }
   }
@@ -3413,10 +3233,6 @@ function updateStatusEffects(e, dt) {
       se.freeze.tickTimer = 0.5;
       // CHILL: NO damage, just slows
       e._lastDoT = { type: 'freeze', damage: 0 };
-      // Spawn freeze particles - commented out as window.spawnEffectParticle doesn't exist
-      // if (typeof window !== 'undefined' && window.spawnEffectParticle) {
-      //   window.spawnEffectParticle(e.mesh.position, 0x00ffff);
-      // }
     }
     if (se.freeze.remaining <= 0) { se.freeze.stacks = 0; se.freeze.tickTimer = 0; }
   }
@@ -3694,8 +3510,6 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
       e.linkedEnemies = [];
 
       linkedRefs.forEach(ref => {
-        // Visual feedback removed - conductor death still damages linked enemies
-        // spawnElectricArc(pos, ref.mesh.position.clone(), 0xff66cc, -1);
         // Set hp to 0; the main update loop will call destroyEnemy on next iteration
         ref.hp = 0;
       });

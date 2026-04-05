@@ -18,15 +18,15 @@ export function buildDesertNightScene(group, deps) {
   const moonLight = new THREE.DirectionalLight(0xd4e5f7, 2.34);
   moonLight.position.set(-30, 50, -30);
   moonLight.castShadow = true;
-  moonLight.shadow.mapSize.width = 1024;
-  moonLight.shadow.mapSize.height = 1024;
+  moonLight.shadow.mapSize.width = 512;
+  moonLight.shadow.mapSize.height = 512;
   moonLight.shadow.camera.near = 1;
   moonLight.shadow.camera.far = 200;
   moonLight.shadow.camera.left = -60;
   moonLight.shadow.camera.right = 60;
   moonLight.shadow.camera.top = 60;
   moonLight.shadow.camera.bottom = -60;
-  moonLight.shadow.bias = -0.002;
+  moonLight.shadow.bias = -0.003;
   group.add(moonLight);
 
   // Very dim ambient

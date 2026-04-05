@@ -435,12 +435,12 @@ function setupEventListeners() {
 
   // Click to request pointer lock
   document.addEventListener('click', (e) => {
-    if (!enabled || mouse.locked) return;
+    // Always check debug panel first - exit pointer lock if interacting with it
     if (e && e.target && e.target.closest && (e.target.closest('#debug-panel') || e.target.closest('#debug-toggle') || e.target.closest('#debug-position-panel'))) {
-      // Exit pointer lock so user can interact with debug panel
       if (document.pointerLockElement) document.exitPointerLock();
       return;
     }
+    if (!enabled || mouse.locked) return;
     document.body.requestPointerLock = document.body.requestPointerLock ||
       document.body.mozRequestPointerLock ||
       document.body.webkitRequestPointerLock;
@@ -616,7 +616,11 @@ let debugLightsLastSceneLen = -1;
 function shouldShowDebugPositionPanel() {
   // Default OFF unless explicitly enabled through DEBUG menu checkbox
   if (typeof window === 'undefined') return false;
-  return window.debugPositionPanel === true;
+  if (window.debugPositionPanel !== true) return false;
+  // Skip debug panel on Quest/VR browsers for performance
+  const ua = navigator.userAgent || '';
+  if (/Quest|OculusBrowser|Oculus/i.test(ua)) return false;
+  return true;
 }
 
 function syncDebugPositionPanelVisibility() {
@@ -705,17 +709,8 @@ function showDebugPositionPanel() {
   `;
   document.body.appendChild(debugPanelElement);
 
-  // Prevent pointer lock re-engagement when interacting with debug panel
-  // Use capture phase to intercept before window-level handlers
-  debugPanelElement.addEventListener('mousedown', (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (document.pointerLockElement) document.exitPointerLock();
-  }, true);  // capture phase
-  debugPanelElement.addEventListener('click', (e) => {
-    e.stopPropagation();
-  }, true);
-  debugPanelElement.addEventListener('keydown', (e) => e.stopPropagation(), true);
+  // Pointer lock is managed by the document click handler below which already
+  // checks for #debug-position-panel targets and exits pointer lock for them.
 
   // Add click handler for copy button
   const copyBtn = debugPanelElement.querySelector('#debug-copy-btn');

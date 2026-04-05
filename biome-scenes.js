@@ -36,7 +36,6 @@ export function rebuildBiomeScene(deps) {
     state,
     clearBiomeScene,
     registerFadeMaterial,
-    updateAuroraColors,
     cleanupLegacyShapeGeometry,
     assignBiomePlaneNames,
     refs,
@@ -59,8 +58,8 @@ export function rebuildBiomeScene(deps) {
   console.log('[debug] Building new biome scene for', biomeId);
   clearBiomeScene();
 
-  // Update aurora colors for new biome
-  updateAuroraColors(theme);
+  // Aurora colors removed with aurora system
+  // updateAuroraColors(theme);
 
   const biomeSceneGroup = new THREE.Group();
   biomeSceneGroup.name = `biome-scene-${biomeId}`;

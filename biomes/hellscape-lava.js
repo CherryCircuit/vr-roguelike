@@ -109,7 +109,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   // ========================================
   const riverWidth = 25;  // Wide enough to cover bank-to-bank (overflow hidden by terrain)
   const riverLength = 350;
-  const riverGeo = new THREE.PlaneGeometry(riverWidth, riverLength, 32, 64);
+  const riverGeo = new THREE.PlaneGeometry(riverWidth, riverLength, 16, 32);
   riverGeo.rotateX(-Math.PI / 2);
 
   // Curve the plane to follow the river path
@@ -269,7 +269,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   // ========================================
   // 5. LAVA EMBERS (400 rising from lava river, fade at Y:25)
   // ========================================
-  const sparkCount = 400;
+  const sparkCount = 100;
   const sparkPositions = new Float32Array(sparkCount * 3);
   const sparkVelocities = new Float32Array(sparkCount * 3);
   const sparkLifetimes = new Float32Array(sparkCount);
@@ -322,7 +322,18 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   // ========================================
   // 6. FLAME GEYSERS (periodic eruptions)
   // ========================================
-  const geyserParticles = [];
+  const MAX_GEYSER = 350;
+  const geyserData = {
+    x: new Float32Array(MAX_GEYSER),
+    y: new Float32Array(MAX_GEYSER),
+    z: new Float32Array(MAX_GEYSER),
+    vx: new Float32Array(MAX_GEYSER),
+    vy: new Float32Array(MAX_GEYSER),
+    vz: new Float32Array(MAX_GEYSER),
+    life: new Float32Array(MAX_GEYSER),
+    maxLife: new Float32Array(MAX_GEYSER),
+    active: new Uint8Array(MAX_GEYSER) // 0=inactive, 1=active
+  };
   let lastGeyserTime = 0;
   const geyserInterval = 5000; // 5 seconds
 
@@ -334,23 +345,25 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     const x = side * (valleyWidth + 5 + Math.random() * 20) - 10.0;
     const z = -Math.abs((Math.random() - 0.5) * 80);
     const baseY = floorY + 5;
-
-    for (let i = 0; i < particleCount; i++) {
-      geyserParticles.push({
-        x: x + (Math.random() - 0.5) * 2,
-        y: baseY,
-        z: z + (Math.random() - 0.5) * 2,
-        vx: (Math.random() - 0.5) * 0.1,
-        vy: 0.8 + Math.random() * 0.5, // Strong upward velocity
-        vz: (Math.random() - 0.5) * 0.1,
-        life: 0,
-        maxLife: 1.5 + Math.random() * 1.5
-      });
+    let added = 0;
+    for (let i = 0; i < MAX_GEYSER && added < particleCount; i++) {
+      if (!geyserData.active[i]) {
+        geyserData.active[i] = 1;
+        geyserData.x[i] = x + (Math.random() - 0.5) * 2;
+        geyserData.y[i] = baseY;
+        geyserData.z[i] = z + (Math.random() - 0.5) * 2;
+        geyserData.vx[i] = (Math.random() - 0.5) * 0.1;
+        geyserData.vy[i] = 0.8 + Math.random() * 0.5;
+        geyserData.vz[i] = (Math.random() - 0.5) * 0.1;
+        geyserData.life[i] = 0;
+        geyserData.maxLife[i] = 1.5 + Math.random() * 1.5;
+        added++;
+      }
     }
   };
 
   const geyserGeo = new THREE.BufferGeometry();
-  const geyserPositions = new Float32Array(350 * 3); // Max 350 particles (optimized from 500)
+  const geyserPositions = new Float32Array(MAX_GEYSER * 3);
   geyserGeo.setAttribute('position', new THREE.BufferAttribute(geyserPositions, 3));
   geyserGeo.setDrawRange(0, 0);
 
@@ -498,33 +511,24 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       lastGeyserTime = now;
     }
 
-    // Update geyser particles
-    const geyserPos = geyserGeo.attributes.position.array;
+    // Update geyser particles (ring buffer - no GC)
     let activeCount = 0;
-    for (let i = geyserParticles.length - 1; i >= 0; i--) {
-      const p = geyserParticles[i];
-      p.life += dt * 0.001;
-
-      if (p.life > p.maxLife) {
-        geyserParticles.splice(i, 1);
+    const geyserPos = geyserGeo.attributes.position.array;
+    for (let i = 0; i < MAX_GEYSER; i++) {
+      if (!geyserData.active[i]) continue;
+      geyserData.life[i] += dt * 0.001;
+      if (geyserData.life[i] > geyserData.maxLife[i] || geyserData.y[i] < -10 || geyserData.y[i] > 1000) {
+        geyserData.active[i] = 0;
         continue;
       }
-
-      p.x += p.vx;
-      p.y += p.vy;
-      p.z += p.vz;
-      p.vy -= 0.03; // Gravity
-
-      // Remove particles that go too far up or down
-      if (p.y < -10 || p.y > 1000) {
-        geyserParticles.splice(i, 1);
-        continue;
-      }
-
+      geyserData.x[i] += geyserData.vx[i];
+      geyserData.y[i] += geyserData.vy[i];
+      geyserData.z[i] += geyserData.vz[i];
+      geyserData.vy[i] -= 0.03;
       const idx = activeCount * 3;
-      geyserPos[idx] = p.x;
-      geyserPos[idx + 1] = p.y;
-      geyserPos[idx + 2] = p.z;
+      geyserPos[idx] = geyserData.x[i];
+      geyserPos[idx + 1] = geyserData.y[i];
+      geyserPos[idx + 2] = geyserData.z[i];
       activeCount++;
     }
     geyserGeo.setDrawRange(0, activeCount);

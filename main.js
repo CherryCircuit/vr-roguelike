@@ -8,7 +8,7 @@
 // Dependencies: game.js, weapons.js, audio.js, enemies.js,
 //   stasis.js, vfx.js, biome-scenes.js, boss-death-cinematic.js,
 //   hud.js, desktop-controls.js, scoreboard.js, scenery.js,
-//   dream-world.js, spatial-hash.js
+//   spatial-hash.js
 // ============================================================
 
 import * as THREE from 'three';
@@ -16,7 +16,7 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, loadDreamState, saveDreamState, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook } from './game.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
@@ -93,7 +93,6 @@ import {
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
 import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js';
-import { initDreamWorld, enterDreamWorld, exitDreamWorld, getDreamFogSettings, getDreamSpawnPosition, handleDreamProjectileHit, updateDreamWorld } from './dream-world.js';
 import { SpatialHash } from './spatial-hash.js';
 import { enableTelemetry, disableTelemetry, isTelemetryEnabled, setTelemetryHistoryMs, recordTelemetrySample, getTelemetrySnapshot } from './telemetry.js';
 
@@ -113,9 +112,6 @@ window.DEBUG_PROJECTILES = false;
 // ── Constants ──────────────────────────────────────────────
 const NEON_PINK = 0xff00ff;
 const NEON_CYAN = 0x00ffff;
-const DARK_BG = 0x0a0015;
-const SUN_CORE = 0xffaa00;
-const SUN_GLOW = 0xff6600;
 const MTN_DARK = 0x1a0033;
 const MTN_WIRE = 0x6600aa;
 
@@ -274,24 +270,12 @@ const blasterDisplays = [null, null];
 // Mountain visualizer references (for per-theme color updates)
 const mountainLines = [];
 
-// Environment refs for level-based scaling (sun, ominous horizon)
+// Environment refs for level-based scaling (sun, stars)
 let sunMeshRef = null;
 let sunGlowRef = null;
-let ominousRef = null;
 let gridHelper = null;
 let starsRef = null;
-let horizonRingRef = null;
-let horizonInnerRingRef = null;
-let auroraRef = null;
-let auroraCanvas = null;
-let auroraCtx = null;
 let atmosphereRef = null;
-let vhsRetroShellRef = null;
-let vhsRetroScanlineMatRef = null;
-let vhsRetroGlowMatRef = null;
-let vhsRetroNoiseMatRef = null;
-let vhsRetroScanlineTexRef = null;
-let vhsRetroNoiseTexRef = null;
 let currentTheme = null;
 let biomePropsGroup = null;
 let biomePropsBiome = null;
@@ -299,16 +283,6 @@ const biomePropFloaters = [];
 let biomeSceneGroup = null;
 let biomeSceneBiome = null;
 
-// Dream sequence trigger - DISABLED until player can collect upgrades in dreamworld
-// The dream sequence code and transition system remain intact, just hidden from players
-const DREAM_TRIGGER_ENABLED = false;
-
-let dreamTriggerMesh = null;
-let dreamTransition = null;
-let dreamFadeOverlay = null;
-let dreamReturnPosition = new THREE.Vector3();
-let dreamOriginalEnv = null;
-let dreamTrail = null;
 
 
 let environmentFade = 0;
@@ -341,16 +315,6 @@ const _uiHoverOrigins = [new THREE.Vector3(), new THREE.Vector3()];
 const _uiHoverQuats = [new THREE.Quaternion(), new THREE.Quaternion()];
 const _uiHoverDirs = [new THREE.Vector3(), new THREE.Vector3()];
 
-// Dream trigger hit-test temp vectors (avoid per-frame allocations in projectile loop)
-const _dreamPrevProjectilePos = new THREE.Vector3();
-const _dreamSegment = new THREE.Vector3();
-const _dreamToCenter = new THREE.Vector3();
-const _dreamClosestPoint = new THREE.Vector3();
-const _vhsPlayerPos = new THREE.Vector3();
-const _debugShellColor = new THREE.Color();
-const _debugShellGlowColor = new THREE.Color(0xff8ac1);
-const _debugShellWhite = new THREE.Color(0xffffff);
-const _debugShellHSL = { h: 0, s: 0, l: 0 };
 
 // Low health warning
 let lowHealthWarningActive = false;
@@ -1028,7 +992,6 @@ function init() {
 
   // Load debug settings from localStorage
   loadDebugSettings();
-  loadDreamState();
 
   // Sync desktop position panel with game state (may differ from HTML checkbox default)
   if (typeof window !== 'undefined') {
@@ -1360,17 +1323,6 @@ function getVisualTuning() {
   };
 }
 
-function getDebugShellColor(tuning) {
-  _debugShellColor.set(tuning.shellTint);
-  _debugShellColor.getHSL(_debugShellHSL);
-  _debugShellColor.setHSL(
-    _debugShellHSL.h,
-    Math.min(1, _debugShellHSL.s * tuning.shellSaturation),
-    _debugShellHSL.l
-  );
-  return _debugShellColor;
-}
-
 function registerPlayerProjectileMaterial(material) {
   if (!material) return;
   if (!material.userData) material.userData = {};
@@ -1429,18 +1381,6 @@ function applyVisualTuning(tuning = getVisualTuning()) {
 
   if (desktopEffectRefs.stereo) {
     desktopEffectRefs.stereo.eyeSeparation = tuning.stereoEyeSeparation;
-  }
-
-  // VR-safe shell tuning. This is the supported XR path for debug effects.
-  const shellColor = getDebugShellColor(tuning);
-  if (vhsRetroScanlineMatRef) {
-    vhsRetroScanlineMatRef.color.copy(shellColor).multiplyScalar(0.95 + tuning.glowStrength * 0.25);
-  }
-  if (vhsRetroGlowMatRef) {
-    vhsRetroGlowMatRef.color.copy(shellColor).lerp(_debugShellGlowColor, 0.35);
-  }
-  if (vhsRetroNoiseMatRef) {
-    vhsRetroNoiseMatRef.color.copy(shellColor).lerp(_debugShellWhite, 0.4);
   }
 }
 
@@ -1591,7 +1531,7 @@ function updateVRPauseButton(now) {
 
 // ============================================================
 // ENVIRONMENT CREATION
-// Sun, aurora, mountains, stars, horizon, VHS retro shell
+// Sun, mountains, stars, horizon
 // COUPLING: Updates scene directly, registers fade materials
 // ============================================================
 
@@ -1632,66 +1572,11 @@ function createEnvironment() {
   scene.add(floor);
   floor.matrixAutoUpdate = false;
 
-  // Horizon glow ring — a cylinder ring at the grid edge, visible from inside
-  // Provides the illusion of a glowing horizon all around the player
-  const horizonRadius = 60;  // At grid edge
-  const horizonHeight = 3;
-  const horizonSegments = 48;
-
-  // Create gradient texture for horizon glow (bright at bottom, fading up)
-  // EXACT synthwave colors: Horizon #FE9053 (orange) → Pink #E00186 → Purple #2C0051
-  const horizonCanvas = document.createElement('canvas');
-  horizonCanvas.width = 4;
-  horizonCanvas.height = 64;
-  const horizonCtx = horizonCanvas.getContext('2d');
-  const horizonGrad = horizonCtx.createLinearGradient(0, 64, 0, 0);
-  horizonGrad.addColorStop(0, '#FE9053');   // EXACT: Horizon orange at base
-  horizonGrad.addColorStop(0.4, '#E00186'); // EXACT: Mountain tips pink
-  horizonGrad.addColorStop(1.0, '#1A004A'); // EXACT: Dark purple at top
-  horizonCtx.fillStyle = horizonGrad;
-  horizonCtx.fillRect(0, 0, 4, 64);
-
-  // const horizonTexture = new THREE.CanvasTexture(horizonCanvas);
-  // const horizonGeo = new THREE.CylinderGeometry(horizonRadius, horizonRadius, horizonHeight, horizonSegments, 1, true);
-  // const horizonMat = new THREE.MeshBasicMaterial({
-  //   map: horizonTexture,
-  //   transparent: true,
-  //   side: THREE.BackSide,
-  //   depthWrite: false,
-  //   blending: THREE.AdditiveBlending,
-  // });
-  // horizonRingRef = new THREE.Mesh(horizonGeo, horizonMat);
-  // horizonRingRef.name = 'horizonRingRef';  // Debug panel name
-  // horizonRingRef.position.set(0, horizonHeight / 2 - 0.5, 0);
-  // horizonRingRef.renderOrder = -2;
-  // scene.add(horizonRingRef);
-  // registerFadeMaterial(horizonRingRef.material);
-
-  // Second brighter, shorter glow layer for intensity at ground level
-  // REMOVED: Was causing conflicts with synthwave scene
-  // const horizonInnerGeo = new THREE.CylinderGeometry(horizonRadius - 0.5, horizonRadius - 0.5, 1.5, horizonSegments, 1, true);
-  // const horizonInnerMat = new THREE.MeshBasicMaterial({
-  //   color: 0xFE9053,  // EXACT: Horizon orange
-  //   transparent: true,
-  //   opacity: 0.5,
-  //   side: THREE.BackSide,
-  //   depthWrite: false,
-  //   blending: THREE.AdditiveBlending,
-  // });
-  // horizonInnerRingRef = new THREE.Mesh(horizonInnerGeo, horizonInnerMat);
-  // horizonInnerRingRef.name = 'horizonInnerRingRef';  // Debug panel name
-  // horizonInnerRingRef.position.set(0, 0.25, 0);
-  // horizonInnerRingRef.renderOrder = -2;
-  // scene.add(horizonInnerRingRef);
-  // registerFadeMaterial(horizonInnerRingRef.material);
-
   createSun();
-  // createVHSRetroShell();  // REMOVED: Debug sphere for visual effects testing
   // Removed legacy flat ShapeGeometry mountain layers. They were stale overlays
   // that conflicted with the biome-specific terrain scenes.
   createStars();
   initAmbientParticles(scene);
-  createDreamTrigger();
 
   // NOTE: Lights removed — all materials are MeshBasicMaterial (unlit)
   // so lights have zero visual effect but cost GPU overhead.
@@ -1820,14 +1705,10 @@ function purgeBiomeForBossCinematic() {
   clearBiomeProps();
 
   if (gridHelper) gridHelper.visible = false;
-  if (horizonRingRef) horizonRingRef.visible = false;
-  if (horizonInnerRingRef) horizonInnerRingRef.visible = false;
   if (sunMeshRef) sunMeshRef.visible = false;
   if (sunGlowRef) sunGlowRef.visible = false;
   if (starsRef) starsRef.visible = false;
   if (atmosphereRef) atmosphereRef.visible = false;
-  if (auroraRef) auroraRef.visible = false;
-  if (vhsRetroShellRef) vhsRetroShellRef.visible = false;
   if (floorMaterial) floorMaterial.opacity = 0;
   applyEnvironmentFade(1);
   if (scene) {
@@ -2178,8 +2059,6 @@ function applyThemeForLevel(level) {
 
   const hideBaseEnv = !!theme.hideBaseEnv;
   if (gridHelper) gridHelper.visible = !hideBaseEnv;
-  if (horizonRingRef) horizonRingRef.visible = !hideBaseEnv;
-  if (horizonInnerRingRef) horizonInnerRingRef.visible = !hideBaseEnv;
   if (sunMeshRef) sunMeshRef.visible = !hideBaseEnv;
   if (atmosphereRef) atmosphereRef.visible = !hideBaseEnv;
   if (sunGlowRef) sunGlowRef.visible = !hideBaseEnv;
@@ -2247,16 +2126,6 @@ function applyThemeForLevel(level) {
     sunGlowRef.material.opacity = 0.24;
   }
 
-  if (horizonRingRef && horizonRingRef.material) {
-    const horizonColor = theme.horizonColor !== undefined ? theme.horizonColor : theme.sunGlowColor;
-    horizonRingRef.material.color.setHex(horizonColor);
-  }
-
-  if (horizonInnerRingRef && horizonInnerRingRef.material) {
-    const horizonInnerColor = theme.horizonInnerColor !== undefined ? theme.horizonInnerColor : theme.gridColor;
-    horizonInnerRingRef.material.color.setHex(horizonInnerColor);
-  }
-
   if (starsRef && starsRef.material) {
     if (starsRef.material.color) {
       starsRef.material.color.setHex(theme.starColor);
@@ -2273,288 +2142,8 @@ function applyThemeForLevel(level) {
 
   rebuildBiomeScene(getBiomeForLevel(level), theme);
   applyBiomeLighting(getBiomeForLevel(level));
-  
-  // Always update aurora colors for the current theme (not just customScene biomes)
-  updateAuroraColors(theme);
-  
-  // Make aurora visible for night/dark themes
-  if (auroraRef) {
-    const isDarkTheme = theme.hideBaseEnv || theme.skyColor === 0x000000 || 
-                        (theme.skyColor & 0xFFFFFF) < 0x222222;
-    auroraRef.visible = isDarkTheme || (theme.aurora !== undefined);
-  }
 
   applyEnvironmentFade(environmentFade);
-}
-
-function hideBaseEnvironment() {
-  if (!dreamOriginalEnv) return;
-  if (gridHelper) gridHelper.visible = false;
-  if (horizonRingRef) horizonRingRef.visible = false;
-  if (horizonInnerRingRef) horizonInnerRingRef.visible = false;
-  if (sunMeshRef) sunMeshRef.visible = false;
-  if (sunGlowRef) sunGlowRef.visible = false;
-  if (starsRef) starsRef.visible = false;
-  if (auroraRef) auroraRef.visible = false;
-  if (vhsRetroShellRef) vhsRetroShellRef.visible = false;
-  if (floorMaterial) floorMaterial.opacity = 0;
-  if (biomePropsGroup) biomePropsGroup.visible = false;
-  if (biomeSceneGroup) biomeSceneGroup.visible = false;
-}
-
-function restoreBaseEnvironment() {
-  if (!dreamOriginalEnv) return;
-  if (gridHelper) gridHelper.visible = dreamOriginalEnv.gridVisible;
-  if (horizonRingRef) horizonRingRef.visible = dreamOriginalEnv.horizonVisible;
-  if (horizonInnerRingRef) horizonInnerRingRef.visible = dreamOriginalEnv.horizonInnerVisible;
-  if (sunMeshRef) sunMeshRef.visible = dreamOriginalEnv.sunVisible;
-  if (sunGlowRef) sunGlowRef.visible = dreamOriginalEnv.sunGlowVisible;
-  if (starsRef) starsRef.visible = dreamOriginalEnv.starsVisible;
-  if (auroraRef) auroraRef.visible = dreamOriginalEnv.auroraVisible;
-  if (vhsRetroShellRef) vhsRetroShellRef.visible = dreamOriginalEnv.vhsRetroVisible !== false;
-  if (floorMaterial && typeof dreamOriginalEnv.floorOpacity === 'number') {
-    floorMaterial.opacity = dreamOriginalEnv.floorOpacity;
-  }
-  if (biomePropsGroup) biomePropsGroup.visible = dreamOriginalEnv.biomePropsVisible;
-  if (biomeSceneGroup) biomeSceneGroup.visible = dreamOriginalEnv.biomeSceneVisible;
-}
-
-function enterDreamWorldScene() {
-  if (game.inDreamWorld) return;
-  game.inDreamWorld = true;
-  dreamOriginalEnv = {
-    background: scene.background ? scene.background.clone() : new THREE.Color(0x000000),
-    gridVisible: gridHelper ? gridHelper.visible : true,
-    horizonVisible: horizonRingRef ? horizonRingRef.visible : true,
-    horizonInnerVisible: horizonInnerRingRef ? horizonInnerRingRef.visible : true,
-    sunVisible: sunMeshRef ? sunMeshRef.visible : true,
-    sunGlowVisible: sunGlowRef ? sunGlowRef.visible : true,
-    starsVisible: starsRef ? starsRef.visible : true,
-    auroraVisible: auroraRef ? auroraRef.visible : false,
-    vhsRetroVisible: vhsRetroShellRef ? vhsRetroShellRef.visible : true,
-    floorOpacity: floorMaterial ? floorMaterial.opacity : 1,
-    biomePropsVisible: biomePropsGroup ? biomePropsGroup.visible : true,
-    biomeSceneVisible: biomeSceneGroup ? biomeSceneGroup.visible : true,
-  };
-
-  clearAllEnemies();
-  clearBoss();
-  clearBossDebris();
-  clearBossProjectiles();
-  clearAllTelegraphs();
-  clearAllProjectiles();
-  clearAllAltWeaponEffects();
-
-  initDreamWorld(scene);
-  enterDreamWorld();
-
-  if (scene.background) scene.background.setHex(0x120018);
-  hideBaseEnvironment();
-
-  // Only modify camera position in desktop mode (in VR, WebXR controls camera)
-  if (!renderer.xr.isPresenting) {
-    camera.position.copy(getDreamSpawnPosition());
-  }
-  refreshDreamTriggerVisibility();
-}
-
-function exitDreamWorldScene() {
-  if (!game.inDreamWorld) return;
-  game.inDreamWorld = false;
-  exitDreamWorld();
-
-  if (dreamOriginalEnv) {
-    if (scene.background) scene.background.copy(dreamOriginalEnv.background);
-  }
-  restoreBaseEnvironment();
-  // Only modify camera position in desktop mode (in VR, WebXR controls camera)
-  if (!renderer.xr.isPresenting) {
-    camera.position.copy(dreamReturnPosition);
-  }
-  refreshDreamTriggerVisibility();
-}
-
-function startDreamFragmentTrail() {
-  if (!camera) return;
-  if (dreamTrail && dreamTrail.group) {
-    camera.remove(dreamTrail.group);
-  }
-
-  const count = 40;
-  const positions = new Float32Array(count * 3);
-  const offsets = [];
-  for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 0.1 + Math.random() * 0.2;
-    const height = (Math.random() - 0.5) * 0.3;
-    offsets.push({ angle, radius, height, speed: 0.6 + Math.random() * 0.6 });
-    positions[i * 3] = Math.cos(angle) * radius;
-    positions[i * 3 + 1] = height;
-    positions[i * 3 + 2] = Math.sin(angle) * radius - 0.6;
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.PointsMaterial({
-    color: 0xaa88ff,
-    size: 0.08,
-    transparent: true,
-    opacity: 0.75,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const points = new THREE.Points(geo, mat);
-  const group = new THREE.Group();
-  group.add(points);
-  group.position.set(0, 0.05, 0);
-  camera.add(group);
-
-  dreamTrail = {
-    group,
-    points,
-    geo,
-    offsets,
-    startedAt: performance.now(),
-    expiresAt: performance.now() + 30000,
-  };
-}
-
-function startEnvironmentFade(direction, duration, onComplete) {
-  environmentFadeState = {
-    direction,
-    duration,
-    timer: duration,
-    onComplete,
-  };
-}
-
-function createDreamTrigger() {
-  if (!scene || dreamTriggerMesh) return;
-
-  const triggerGroup = new THREE.Group();
-  triggerGroup.name = 'dream-secret-trigger';
-
-  const core = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.35, 1),
-    new THREE.MeshBasicMaterial({ color: 0xaa66ff, transparent: true, opacity: 0.9, depthWrite: false })
-  );
-  core.name = 'dream-trigger-core';
-  triggerGroup.add(core);
-
-  const glow = new THREE.Mesh(
-    new THREE.SphereGeometry(0.7, 12, 12),
-    new THREE.MeshBasicMaterial({
-      color: 0xcc88ff,
-      transparent: true,
-      opacity: 0.3,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    })
-  );
-  glow.name = 'dream-trigger-glow';
-  triggerGroup.add(glow);
-
-  triggerGroup.userData = {
-    radius: 0.85,
-    pulseBaseScale: 1,
-    glow,
-    core,
-    placedForRun: false,
-  };
-
-  scene.add(triggerGroup);
-  dreamTriggerMesh = triggerGroup;
-  placeDreamTriggerBehindPlayer(true);
-  refreshDreamTriggerVisibility();
-}
-
-function placeDreamTriggerBehindPlayer(force = false) {
-  if (!dreamTriggerMesh || !camera) return;
-  if (dreamTriggerMesh.userData.placedForRun && !force) return;
-
-  const playerPos = getAdjustedCameraPosition();
-  const facing = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-  facing.y = 0;
-  if (facing.lengthSq() < 0.0001) facing.set(0, 0, -1);
-  facing.normalize();
-
-  const behind = facing.clone().multiplyScalar(-8.0);
-  dreamTriggerMesh.position.set(
-    playerPos.x + behind.x,
-    Math.max(1.2, playerPos.y - 0.05),
-    playerPos.z + behind.z,
-  );
-  dreamTriggerMesh.lookAt(playerPos.x, dreamTriggerMesh.position.y, playerPos.z);
-  dreamTriggerMesh.userData.placedForRun = true;
-}
-
-function refreshDreamTriggerVisibility() {
-  if (!dreamTriggerMesh) return;
-  // Dream trigger disabled until player can collect upgrades in dreamworld
-  dreamTriggerMesh.visible = DREAM_TRIGGER_ENABLED && !game.inDreamWorld && !game.dreamCompleted;
-}
-
-function didProjectileHitDreamTrigger(previousPos, currentPos) {
-  if (!dreamTriggerMesh?.visible) return false;
-
-  const radius = dreamTriggerMesh.userData?.radius || 0.85;
-  const radiusSq = radius * radius;
-  const center = dreamTriggerMesh.position;
-
-  // Segment-vs-sphere test so fast projectiles cannot tunnel through the trigger.
-  _dreamSegment.subVectors(currentPos, previousPos);
-  const segmentLenSq = _dreamSegment.lengthSq();
-
-  if (segmentLenSq < 1e-6) {
-    return previousPos.distanceToSquared(center) <= radiusSq;
-  }
-
-  _dreamToCenter.subVectors(center, previousPos);
-  const t = THREE.MathUtils.clamp(_dreamToCenter.dot(_dreamSegment) / segmentLenSq, 0, 1);
-  _dreamClosestPoint.copy(previousPos).addScaledVector(_dreamSegment, t);
-  return _dreamClosestPoint.distanceToSquared(center) <= radiusSq;
-}
-
-function triggerDreamWorldFromSecret() {
-  if (game.inDreamWorld || dreamTransition) return;
-
-  dreamTransition = { state: 'entering' };
-  dreamReturnPosition.copy(getAdjustedCameraPosition());
-
-  // Fade through black so the secret transfer feels intentional in VR.
-  startEnvironmentFade('out', 0.45, () => {
-    enterDreamWorldScene();
-    refreshDreamTriggerVisibility();
-    startEnvironmentFade('in', 0.45, () => {
-      dreamTransition = null;
-    });
-  });
-}
-
-function completeDreamWorldRun() {
-  if (!game.dreamCompleted) {
-    game.dreamCompleted = true;
-    addUpgrade('dream_fragment', 'left');
-    addUpgrade('dream_fragment', 'right');
-    saveDreamState();
-    showFloatingMessage('DREAM FRAGMENT ACQUIRED', { color: '#cc88ff', duration: 3000 });
-  }
-
-  exitDreamWorldScene();
-  refreshDreamTriggerVisibility();
-}
-
-function updateDreamTriggerVisual(now) {
-  if (!dreamTriggerMesh?.visible) return;
-
-  const pulse = 1 + Math.sin(now * 0.0022) * 0.08;
-  dreamTriggerMesh.scale.setScalar(pulse);
-
-  const glow = dreamTriggerMesh.userData?.glow;
-  if (glow?.material) {
-    glow.material.opacity = 0.22 + (Math.sin(now * 0.0031) * 0.08 + 0.08);
-  }
 }
 
 function createSun() {
@@ -2645,365 +2234,47 @@ function createSun() {
   sunGlowRef = glow;
   registerFadeMaterial(sunGlowRef.material);
 
-  createOminousHorizon();
-  // createAurora(); // REMOVED: auroraRef cylinder deleted, using atmosphereRef only
   // Atmosphere: vertical gradient cylinder around player
   createAtmosphere();
 }
 
-/** Low-res aurora borealis on sky dome — performance friendly (small texture, single mesh) */
-function createAurora() {
-  const w = 32;
-  const h = 64;
-  auroraCanvas = document.createElement('canvas');
-  auroraCanvas.width = w;
-  auroraCanvas.height = h;
-  auroraCtx = auroraCanvas.getContext('2d');
-
-  // Default colors - much brighter and more visible
-  const defaultColors = [
-    'rgba(0,40,60,0)',
-    'rgba(0,255,200,0.25)',
-    'rgba(100,255,220,0.4)',
-    'rgba(0,200,255,0.3)',
-    'rgba(0,100,150,0.15)',
-    'rgba(0,40,80,0)',
-  ];
-  const grad = auroraCtx.createLinearGradient(0, 0, 0, h);
-  defaultColors.forEach((c, i) => grad.addColorStop(i / (defaultColors.length - 1), c));
-  auroraCtx.fillStyle = grad;
-  auroraCtx.fillRect(0, 0, w, h);
-
-  const tex = new THREE.CanvasTexture(auroraCanvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  // Taller cylinder for better visibility (height 45 instead of 25)
-  const geo = new THREE.CylinderGeometry(95, 95, 45, 32, 1, true);
-  const mat = new THREE.MeshBasicMaterial({
-    map: tex,
-    transparent: true,
-    opacity: 1.0,
-    side: THREE.BackSide,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.name = 'auroraRef';  // Debug panel name
-  mesh.position.set(0, 25 + SCENE_Y_OFFSET, 0);  // Raised from y=15 to y=25
-  mesh.renderOrder = -21;
-  scene.add(mesh);
-  auroraRef = mesh;
-  registerFadeMaterial(auroraRef.material);
-}
-
-/** Update aurora colors based on current biome theme */
-function updateAuroraColors(theme) {
-  if (!auroraCtx || !auroraRef || !auroraRef.material || !auroraRef.material.map) return;
-
-  // Use theme aurora colors if available, otherwise use bright defaults
-  // Boost opacity values to make aurora more visible
-  let colors = (theme && theme.aurora && theme.aurora.colors);
-  if (!colors) {
-    colors = [
-      'rgba(0,40,60,0)',
-      'rgba(0,255,200,0.25)',
-      'rgba(100,255,220,0.4)',
-      'rgba(0,200,255,0.3)',
-      'rgba(0,100,150,0.15)',
-      'rgba(0,40,80,0)',
-    ];
-  } else {
-    // Boost the alpha values in the theme colors for better visibility
-    colors = colors.map(c => {
-      // Parse rgba and boost alpha by 2.5x (capped at 0.5)
-      const match = c.match(/rgba?\((\d+),(\d+),(\d+),?([\d.]+)?\)/);
-      if (match) {
-        const r = match[1];
-        const g = match[2];
-        const b = match[3];
-        const a = match[4] ? Math.min(0.5, parseFloat(match[4]) * 2.5) : 1;
-        return `rgba(${r},${g},${b},${a.toFixed(2)})`;
-      }
-      return c;
-    });
-  }
-
-  const h = auroraCanvas.height;
-  auroraCtx.clearRect(0, 0, auroraCanvas.width, h);
-  const grad = auroraCtx.createLinearGradient(0, 0, 0, h);
-  colors.forEach((c, i) => grad.addColorStop(i / (colors.length - 1), c));
-  auroraCtx.fillStyle = grad;
-  auroraCtx.fillRect(0, 0, auroraCanvas.width, h);
-
-  auroraRef.material.map.needsUpdate = true;
-}
-
-/** Update aurora animation - subtle color shifting and movement */
-function updateAurora(dt, now) {
-  if (!auroraRef || !auroraRef.material || !auroraRef.material.map) return;
-  
-  // Slow rotation for aurora drift effect
-  auroraRef.rotation.y += dt * 0.02;
-  
-  // Subtle opacity pulsing - keep it visible (min 0.7, max 1.0)
-  const pulse = 0.85 + Math.sin(now * 0.0003) * 0.15;
-  auroraRef.material.opacity = pulse;
-}
-
-/** Dark ominous shape over the horizon; appears from level 10, large by level 16 */
-function createOminousHorizon() {
-  const geo = new THREE.PlaneGeometry(80, 50);
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0x0a0015,
-    transparent: true,
-    opacity: 0,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(0, 28, -95);
-  mesh.renderOrder = -12;
-  scene.add(mesh);
-  ominousRef = mesh;
-  registerFadeMaterial(ominousRef.material);
-}
-
 function createAtmosphere() {
   // 360-degree atmosphere gradient cylinder around the player
-  // Creates the illusion of being on a round planet with warm horizon glow
-  // #2 FIX: Increased height for taller gradient reach into the sky
   const segments = 48;
-  const radius = 92;  // Just behind mountains
-  const height = 54;  // 20% taller than 45
+  const radius = 92;
+  const height = 54;
 
-  // Create a canvas for the gradient texture
-  // Use full-opacity colors and control alpha separately in the gradient
   const canvas = document.createElement('canvas');
   canvas.width = 4;
   canvas.height = 256;
   const ctx = canvas.getContext('2d');
 
-  // #2 FIX: DRAMATICALLY brighter and taller gradient for maximum visibility
-  // EXACT synthwave colors: Horizon #FE9053 (orange) → Pink #E00186 → Dark purple #1A004A
-  const grad = ctx.createLinearGradient(0, 256, 0, 0);  // bottom to top
-  grad.addColorStop(0, 'rgba(255, 126, 49, 1.0)');       // #ff7e31 (lowest Y)
-  grad.addColorStop(0.4, 'rgba(243, 7, 135, 0.9)');      // #f30787 (40% height)
-  grad.addColorStop(0.75, 'rgba(113, 0, 110, 0.6)');     // #71006e (75% height)
-  grad.addColorStop(1.0, 'rgba(26, 0, 74, 0.0)');        // #1a004a (top, fade to transparent)
+  const grad = ctx.createLinearGradient(0, 256, 0, 0);
+  grad.addColorStop(0, 'rgba(255, 126, 49, 1.0)');
+  grad.addColorStop(0.4, 'rgba(243, 7, 135, 0.9)');
+  grad.addColorStop(0.75, 'rgba(113, 0, 110, 0.6)');
+  grad.addColorStop(1.0, 'rgba(26, 0, 74, 0.0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 4, 256);
 
   const atmTexture = new THREE.CanvasTexture(canvas);
   atmTexture.wrapS = THREE.RepeatWrapping;
 
-  // Create a cylinder geometry (open-ended, only the side)
   const cylGeo = new THREE.CylinderGeometry(radius, radius, height, segments, 1, true);
   const cylMat = new THREE.MeshBasicMaterial({
     map: atmTexture,
     transparent: true,
-    opacity: 1.0,  // #2 FIX: Increased from 0.8 to 1.0 for better visibility
-    side: THREE.BackSide,  // Visible from inside
+    opacity: 1.0,
+    side: THREE.BackSide,
     depthWrite: false,
   });
   const cylinder = new THREE.Mesh(cylGeo, cylMat);
-  cylinder.name = 'atmosphereRef';  // Debug panel name
-  cylinder.position.set(0, height / 2 - 2 + SCENE_Y_OFFSET, 0);  // Base near ground level (adjusted for new height)
+  cylinder.name = 'atmosphereRef';
+  cylinder.position.set(0, height / 2 - 2 + SCENE_Y_OFFSET, 0);
   cylinder.renderOrder = -13;
   scene.add(cylinder);
   atmosphereRef = cylinder;
   registerFadeMaterial(atmosphereRef.material);
-}
-
-function createVHSScanlineTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-
-  // Transparent base keeps the effect subtle in VR.
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  for (let y = 0; y < canvas.height; y += 2) {
-    const alpha = 0.06 + Math.random() * 0.045;
-    ctx.fillStyle = `rgba(210, 230, 255, ${alpha.toFixed(3)})`;
-    ctx.fillRect(0, y, canvas.width, 1);
-  }
-
-  // Add sparse tape-noise streaks for a light VHS feel.
-  for (let i = 0; i < 22; i++) {
-    const y = Math.floor(Math.random() * canvas.height);
-    const h = 1 + Math.floor(Math.random() * 2);
-    const alpha = 0.03 + Math.random() * 0.03;
-    ctx.fillStyle = `rgba(255, 200, 235, ${alpha.toFixed(3)})`;
-    ctx.fillRect(0, y, canvas.width, h);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(1, 2);
-  return texture;
-}
-
-function createVHSGlowTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 16;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-
-  const grad = ctx.createLinearGradient(0, 256, 0, 0);
-  grad.addColorStop(0.0, 'rgba(255, 120, 165, 0.18)');
-  grad.addColorStop(0.35, 'rgba(180, 130, 255, 0.10)');
-  grad.addColorStop(0.7, 'rgba(120, 180, 255, 0.04)');
-  grad.addColorStop(1.0, 'rgba(120, 180, 255, 0.0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  return texture;
-}
-
-function createVHSNoiseTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  const image = ctx.createImageData(canvas.width, canvas.height);
-  const data = image.data;
-
-  for (let i = 0; i < data.length; i += 4) {
-    const value = Math.floor(Math.random() * 255);
-    data[i] = value;
-    data[i + 1] = value;
-    data[i + 2] = value;
-    data[i + 3] = 255;
-  }
-
-  ctx.putImageData(image, 0, 0);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(3, 2);
-  return texture;
-}
-
-function createVHSRetroShell() {
-  if (!scene || vhsRetroShellRef) return;
-
-  // VR-CRITICAL: Keep this as geometry around the player, not a head-locked
-  // post-process. XR continues to render through renderer.render(scene, camera).
-  // The previous open cylinder was fragile from inside the head in VR. These
-  // layered spheres stay visible when looking up/down and avoid side-culling.
-  const shellGroup = new THREE.Group();
-  shellGroup.name = 'vhsRetroShellRef';
-
-  const radius = 80;
-  const segments = 40;
-  const rings = 28;
-
-  const scanlineGeo = new THREE.SphereGeometry(radius, segments, rings);
-  const scanlineTex = createVHSScanlineTexture();
-  const scanlineMat = new THREE.MeshBasicMaterial({
-    map: scanlineTex,
-    color: 0x99b8ff,
-    transparent: true,
-    opacity: 0.09,
-    side: THREE.DoubleSide,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const scanlineShell = new THREE.Mesh(scanlineGeo, scanlineMat);
-  scanlineShell.name = 'vhs-scanline-shell';
-  scanlineShell.renderOrder = 950;
-  shellGroup.add(scanlineShell);
-
-  const glowGeo = new THREE.SphereGeometry(radius - 1.2, segments, rings);
-  const glowTex = createVHSGlowTexture();
-  const glowMat = new THREE.MeshBasicMaterial({
-    map: glowTex,
-    color: 0xff7aa6,
-    transparent: true,
-    opacity: 0.06,
-    side: THREE.DoubleSide,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const glowShell = new THREE.Mesh(glowGeo, glowMat);
-  glowShell.name = 'vhs-glow-shell';
-  glowShell.renderOrder = 951;
-  shellGroup.add(glowShell);
-
-  const noiseGeo = new THREE.SphereGeometry(radius - 2.6, 28, 20);
-  const noiseTex = createVHSNoiseTexture();
-  const noiseMat = new THREE.MeshBasicMaterial({
-    map: noiseTex,
-    color: 0xcad6ff,
-    transparent: true,
-    opacity: 0.02,
-    side: THREE.DoubleSide,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const noiseShell = new THREE.Mesh(noiseGeo, noiseMat);
-  noiseShell.name = 'vhs-noise-shell';
-  noiseShell.renderOrder = 952;
-  shellGroup.add(noiseShell);
-
-  shellGroup.frustumCulled = false;
-  scene.add(shellGroup);
-
-  vhsRetroShellRef = shellGroup;
-  vhsRetroScanlineMatRef = scanlineMat;
-  vhsRetroGlowMatRef = glowMat;
-  vhsRetroNoiseMatRef = noiseMat;
-  vhsRetroScanlineTexRef = scanlineTex;
-  vhsRetroNoiseTexRef = noiseTex;
-
-  registerFadeMaterial(scanlineMat);
-  registerFadeMaterial(glowMat);
-  registerFadeMaterial(noiseMat);
-}
-
-function updateVHSRetroShell(now, tuning = getVisualTuning()) {
-  if (!vhsRetroShellRef || !camera) return;
-
-  camera.getWorldPosition(_vhsPlayerPos);
-  vhsRetroShellRef.position.copy(_vhsPlayerPos);
-
-  if (vhsRetroScanlineTexRef) {
-    const scanSpeed = 0.00002 + tuning.shellScanlineSpeed * 0.000045;
-    vhsRetroScanlineTexRef.offset.y = (now * scanSpeed) % 1;
-    vhsRetroScanlineTexRef.offset.x = Math.sin(now * 0.0001) * 0.01 * tuning.shellStrength;
-  }
-
-  if (vhsRetroNoiseTexRef) {
-    vhsRetroNoiseTexRef.offset.x = (now * 0.000037 * (0.4 + tuning.shellScanlineSpeed)) % 1;
-    vhsRetroNoiseTexRef.offset.y = (now * 0.000061 * (0.3 + tuning.shellScanlineSpeed)) % 1;
-  }
-
-  const fadeScale = 1 - environmentFade;
-  if (vhsRetroScanlineMatRef) {
-    const base = (vhsRetroScanlineMatRef.__fadeBase ?? 0.09) * tuning.shellStrength * (0.45 + tuning.glowStrength * 0.75);
-    const flicker = 0.95 + Math.sin(now * 0.0018) * 0.05;
-    vhsRetroScanlineMatRef.opacity = base * fadeScale * flicker;
-  }
-
-  if (vhsRetroGlowMatRef) {
-    const base = (vhsRetroGlowMatRef.__fadeBase ?? 0.06) * tuning.shellStrength * (0.25 + tuning.glowStrength * 0.85);
-    const pulse = 0.9 + Math.sin(now * 0.0011) * 0.1;
-    vhsRetroGlowMatRef.opacity = base * fadeScale * pulse;
-  }
-
-  if (vhsRetroNoiseMatRef) {
-    const base = (vhsRetroNoiseMatRef.__fadeBase ?? 0.02) * tuning.shellStrength * tuning.shellNoiseAmount * (0.3 + tuning.glowStrength * 0.7);
-    const shimmer = 0.7 + Math.sin(now * 0.0031) * 0.3;
-    vhsRetroNoiseMatRef.opacity = base * fadeScale * shimmer;
-  }
 }
 
 function createMountains() {
@@ -7299,12 +6570,6 @@ function beginGameplayFromReady() {
 
   // Stagger setup
   game.spawnTimer = 1.0;
-
-  if (dreamTriggerMesh) {
-    dreamTriggerMesh.userData.placedForRun = false;
-    placeDreamTriggerBehindPlayer(true);
-    refreshDreamTriggerVisibility();
-  }
 }
 
 function startReadyCountdown() {
@@ -7402,14 +6667,7 @@ function startGame() {
   }
 
   resetAllSlowMoState();
-  dreamTransition = null;
 
-  if (dreamTriggerMesh) {
-    dreamTriggerMesh.userData.placedForRun = false;
-    placeDreamTriggerBehindPlayer(true);
-    refreshDreamTriggerVisibility();
-  }
-  
   game.state = State.READY_SCREEN;
   game.level = 1;
   game._levelConfig = getLevelConfig();
@@ -10079,7 +9337,6 @@ function updateProjectiles(dt) {
 
     // Move projectile (apply stasis slow effect)
     const moveDistance = proj.userData.velocity.length() * adjustedDt;
-    _dreamPrevProjectilePos.copy(proj.position);
     proj.position.addScaledVector(proj.userData.velocity, adjustedDt);
 
     // Commit position to InstancedMesh (sync GPU buffer)
@@ -10089,36 +9346,6 @@ function updateProjectiles(dt) {
 
     // Check if projectile passes through nanite swarm and gains nanite damage
     checkProjectileNaniteInteraction(proj);
-
-    // Secret dream trigger: shoot the hidden object behind spawn to enter dream mode.
-    // Use segment-vs-sphere test so high-speed shots still register.
-    if (proj.userData.stats && !game.inDreamWorld && didProjectileHitDreamTrigger(_dreamPrevProjectilePos, proj.position)) {
-      markProjectileHit(proj);
-      resolveProjectileAccuracy(proj);
-      if (proj.userData.isPooled) {
-        returnProjectileToPool(proj);
-      } else {
-        scene.remove(proj);
-        disposeObject3D(proj);
-      }
-      projectiles.splice(i, 1);
-      triggerDreamWorldFromSecret();
-      continue;
-    }
-
-    // Dream-world interactions (torches can be lit by shooting them).
-    if (proj.userData.stats && game.inDreamWorld && handleDreamProjectileHit(proj)) {
-      markProjectileHit(proj);
-      resolveProjectileAccuracy(proj);
-      if (proj.userData.isPooled) {
-        returnProjectileToPool(proj);
-      } else {
-        scene.remove(proj);
-        disposeObject3D(proj);
-      }
-      projectiles.splice(i, 1);
-      continue;
-    }
 
     // Check collision with plasma orbs (player can shoot orbs to detonate early)
     if (checkPlasmaOrbDetonation(proj)) {
@@ -10630,14 +9857,7 @@ function render(timestamp) {
     // Prevents text/billboard elements from disappearing
     blasterDisplays.forEach(d => { if (d) d.visible = false; });  // Hidden during gameplay
 
-    if (!game.inDreamWorld) {
-      spawnEnemyWave(dt);
-    } else {
-      const dreamState = updateDreamWorld(now, dt, getAdjustedCameraPosition());
-      if (dreamState?.exit) {
-        completeDreamWorldRun();
-      }
-    }
+    spawnEnemyWave(dt);
 
     // Full-auto shooting / Lightning beams / Charge shots (VR controllers)
     for (let i = 0; i < 2; i++) {
@@ -11485,26 +10705,6 @@ function render(timestamp) {
     });
   }
 
-  // ── Environment: sun stays constant size (removed level scaling) ──
-  // Sun scaling removed - was old progression system
-  // Biomes will handle environment changes instead
-  
-  // Update aurora borealis animation
-  updateAurora(rawDt, now);
-  
-  // Ominous horizon disabled - flat plane looks like a black box in biome scenes
-  // if (ominousRef) {
-  //   if (game.level >= 10 && game.state === State.PLAYING) {
-  //     const t = Math.min(1, (game.level - 10) / 6);
-  //     ominousRef.visible = true;
-  //     ominousRef.material.opacity = 0.08 + t * 0.42;
-  //     ominousRef.scale.setScalar(0.5 + t * 1.2);
-  //   } else {
-  //     ominousRef.visible = false;
-  //   }
-  // }
-  if (ominousRef) ominousRef.visible = false;
-
   _mark('state_dispatch'); // ── end: state_dispatch (PLAYING/TITLE/PAUSE logic)
   // ── Universal updates ──
   updateProjectiles(dt);
@@ -11564,10 +10764,8 @@ function render(timestamp) {
   const visualTuning = (window.debugPerfMonitor || game.debugPerfMonitor) ? getVisualTuning() : null;
   if (visualTuning) {
     applyVisualTuning(visualTuning);
-    updateVHSRetroShell(now, visualTuning);
   }
-  updateDreamTriggerVisual(now);
-  _mark('visual_tuning'); // ── end: applyVisualTuning + updateVHSRetroShell + updateDreamTriggerVisual
+  _mark('visual_tuning'); // ── end: applyVisualTuning
 
   // Update pause countdown BEFORE any early-return render path so desktop debug
   // effects never freeze the countdown.
@@ -11703,8 +10901,6 @@ function collectGameplaySnapshot() {
     slowmoIntensity: game.slowmoIntensity,
     timeScale: game.timeScale,
     bulletTimeScale: timeScale,
-    inDreamWorld: game.inDreamWorld,
-    dreamCompleted: game.dreamCompleted,
     runStats: {
       timePlayed: game.runStats.timePlayed,
       shotsFired: game.runStats.shotsFired,
@@ -11747,7 +10943,6 @@ function rebuildBiomeScene(biomeId, theme) {
     state,
     clearBiomeScene,
     registerFadeMaterial,
-    updateAuroraColors,
     cleanupLegacyShapeGeometry,
     assignBiomePlaneNames,
     refs: {

@@ -103,28 +103,6 @@ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIn
   }
 }
 
-// ── Double Shot sound ──────────────────────────────────────
-function playDoubleShotSound() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  // Two quick pulses
-  for (let i = 0; i < 2; i++) {
-    const start = t + i * 0.05;
-    const duration = 0.06;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(800 + i * 200, start);
-    osc.frequency.exponentialRampToValueAtTime(100, start + duration);
-    gain.gain.setValueAtTime(0.1, start);
-    gain.gain.exponentialRampToValueAtTime(0.01, start + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(start);
-    osc.stop(start + duration);
-  }
-}
 
 // ── Charge Sound System (Mega Man style) ────────────────────────────────────────
 // Per-hand oscillators for charge feedback
@@ -850,66 +828,6 @@ export function playErrorSound() {
   osc.stop(ctx.currentTime + 0.2);
 }
 
-// ── Level transition sound ──────────────────────────────────
-// Based on sfxr parameters from issue #17:
-// wave_type: 2 (sawtooth), p_env_attack: 0.024, p_env_sustain: 0.134,
-// p_env_punch: 0.072, p_env_decay: 0.237, p_base_freq: 0.835,
-// p_arp_mod: 0.228, p_arp_speed: 0.653, p_hpf_freq: 0.997, sound_vol: 0.25
-//
-// Note: This sound is used for the TITLE → PLAYING transition (main menu to level 1).
-// Subsequent levels use LEVEL_INTRO sequence (issue #18) which doesn't require this transition.
-function playTransitionSound() {
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
-
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-
-  // Wave type: 2 = sawtooth
-  osc.type = 'sawtooth';
-
-  // Base frequency: p_base_freq 0.835 maps to ~835Hz
-  const baseFreq = 835;
-  osc.frequency.setValueAtTime(baseFreq, t);
-
-  // Envelope: ADSR with punch (from sfxr parameters)
-  const attack = 0.024;
-  const sustain = 0.134;
-  const punch = 0.072;
-  const decay = 0.237;
-  const totalDuration = attack + sustain + punch + decay;
-  const volume = 0.25;
-
-  // Attack (0 to full)
-  gain.gain.setValueAtTime(0, t);
-  gain.gain.linearRampToValueAtTime(volume, t + attack);
-
-  // Sustain with punch (hold, then quick dip and back)
-  gain.gain.setValueAtTime(volume, t + attack);
-  gain.gain.linearRampToValueAtTime(volume * 0.7, t + attack + punch / 2); // Dip
-  gain.gain.linearRampToValueAtTime(volume, t + attack + punch); // Back up
-
-  // Hold sustain
-  gain.gain.setValueAtTime(volume, t + attack + punch);
-
-  // Decay (fade to silence)
-  gain.gain.linearRampToValueAtTime(volume, t + attack + punch + sustain);
-  gain.gain.exponentialRampToValueAtTime(0.001, t + totalDuration);
-
-  // High-pass filter: p_hpf_freq 0.997 ≈ 19940Hz (basically full range)
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'highpass';
-  filter.frequency.setValueAtTime(19940, t);
-  filter.Q.setValueAtTime(0.5, t);
-
-  osc.connect(filter);
-  filter.connect(gain);
-  gain.connect(ctx.destination);
-
-  osc.start(t);
-  osc.stop(t + totalDuration);
-}
-
 // ── Buckshot fire (heavy mechanical thud) ──────────────────
 export function playBuckshotSound() {
   const ctx = getAudioContext();
@@ -1484,13 +1402,6 @@ export function fadeOutMusic(durationMs = 1200) {
   };
 
   requestAnimationFrame(step);
-}
-
-function setMusicVolume(vol) {
-  musicVolume = Math.max(0, Math.min(1, vol));
-  if (currentMusic) {
-    currentMusic.volume = musicVolume;
-  }
 }
 
 // 3-2-1 countdown beep — plays on the "3" of every game-start and unpause countdown.

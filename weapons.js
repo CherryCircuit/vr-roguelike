@@ -390,11 +390,6 @@ function shuffleArray(array) {
 /**
  * Get a random MAIN weapon (for level 1-2 guaranteed upgrade)
  */
-function getRandomMainWeapon() {
-  const keys = Object.keys(MAIN_WEAPONS);
-  return keys[Math.floor(Math.random() * keys.length)];
-}
-
 /**
  * Get MAIN weapon definition by ID
  */
