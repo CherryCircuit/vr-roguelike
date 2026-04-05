@@ -92,7 +92,7 @@ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIn
     osc.type = 'sine';
     osc.frequency.setValueAtTime(800, t);
     osc.frequency.exponentialRampToValueAtTime(400, t + duration);
-    gain.gain.setValueAtTime(0.06, t);
+    gain.gain.setValueAtTime(0.075, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
     osc.connect(gain);
     gain.connect(ctx.destination);
