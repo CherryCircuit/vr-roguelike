@@ -3106,6 +3106,18 @@ export function updateEnemies(dt, now, playerPos) {
           e.mesh.position.addScaledVector(mirrorDir, e.speed * speedMod * dt * phaseSpeed);
         }
 
+        // Clamp knight position to within 45 degrees from player's forward direction
+        const toEnemy = new THREE.Vector3().subVectors(e.mesh.position, playerPos);
+        toEnemy.y = 0;
+        const enemyAngle = Math.atan2(toEnemy.x, toEnemy.z);
+        const maxAngle = Math.PI / 4; // 45 degrees
+        if (Math.abs(enemyAngle) > maxAngle) {
+          const clampedAngle = Math.sign(enemyAngle) * maxAngle;
+          const dist = toEnemy.length();
+          e.mesh.position.x = playerPos.x + Math.sin(clampedAngle) * dist;
+          e.mesh.position.z = playerPos.z + Math.cos(clampedAngle) * dist;
+        }
+
         // Shield visual effect
         const reflectGlow = Math.sin(now * 0.003) * 0.2 + 0.5;
         for (const mat of e._cachedMaterials) {
