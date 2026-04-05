@@ -5,6 +5,7 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
 
 export function buildHellscapeLavaScene(group, deps) {
   const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
@@ -121,84 +122,57 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
 
   // ========================================
-  // 3. DEAD TREES (20 procedural, simplified)
-  // OPTIMIZED: Instanced trunks and branches. 2 draw calls instead of 40-60.
+  // 3. DEAD TREES (GLB models)
   // ========================================
-  const treeMat = new THREE.MeshLambertMaterial({
-    color: 0x0a0a0a,
-    flatShading: true
-  });
+  const gltfLoader = new GLTFLoader();
+  const treeMeshes = [];
 
-  const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 4, 5);
-  const branchGeo = new THREE.CylinderGeometry(0.06, 0.1, 2, 5);
+  function loadAndPlaceTree(url, count, preferFront) {
+    gltfLoader.load(url, (gltf) => {
+      const model = gltf.scene;
+      model.traverse((child) => {
+        if (child.isMesh) {
+          child.material = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
 
-  // Collect all tree transforms, then batch into instanced meshes
-  const treeCount = 20;
-  const maxTrunks = treeCount; // 1 trunk per tree
-  const maxBranches = treeCount * 3; // up to 3 branches per tree (forked = 2, snag = 0-1)
-  const trunkMesh = new THREE.InstancedMesh(trunkGeo, treeMat, maxTrunks);
-  const branchMesh = new THREE.InstancedMesh(branchGeo, treeMat, maxBranches);
-  let trunkIdx = 0;
-  let branchIdx = 0;
-  const _treeDummy = new THREE.Object3D();
+      for (let i = 0; i < count; i++) {
+        const clone = model.clone();
+        let x, z, riverX, distToRiver;
+        let attempts = 0;
+        do {
+          x = (Math.random() - 0.5) * 60;
+          if (preferFront && i < count - 2) {
+            z = -Math.abs((Math.random() - 0.5) * 100); // In front (negative Z)
+          } else if (!preferFront && i < count - 1) {
+            z = -Math.abs((Math.random() - 0.5) * 100);
+          } else {
+            // 1-2 behind for VR folks who turn around
+            z = Math.abs((Math.random() - 0.5) * 60);
+          }
+          riverX = Math.sin(z * 0.03) * 15.0;
+          distToRiver = Math.abs(x - riverX);
+          attempts++;
+        } while ((distToRiver < 8 || (x * x + z * z < 64)) && attempts < 30);
 
-  for (let i = 0; i < treeCount; i++) {
-    let x, z, riverX, distToRiver;
-    let attempts = 0;
-    do {
-      x = (Math.random() - 0.5) * 60;
-      z = -Math.abs((Math.random() - 0.5) * 100); // Force negative Z (in front)
-      riverX = Math.sin(z * 0.03) * 15.0;
-      distToRiver = Math.abs(x - riverX);
-      attempts++;
-    } while (distToRiver < 8 && attempts < 20);
-
-    const treeRotation = Math.random() * Math.PI * 2;
-    const treeScale = 0.8 + Math.random() * 0.6;
-    const isForked = Math.random() > 0.5;
-
-    // Trunk
-    _treeDummy.position.set(x, floorY + 2 * treeScale, z);
-    _treeDummy.rotation.set(0, treeRotation, isForked ? 0 : (Math.random() - 0.5) * 0.3);
-    _treeDummy.scale.setScalar(treeScale);
-    _treeDummy.updateMatrix();
-    trunkMesh.setMatrixAt(trunkIdx++, _treeDummy.matrix);
-
-    if (isForked) {
-      // 2 branches
-      for (let b = 0; b < 2; b++) {
-        _treeDummy.position.set(x, floorY + (3.5 + Math.random() * 0.5) * treeScale, z);
-        _treeDummy.rotation.set(
-          (b === 0 ? 1 : -1) * (0.4 + Math.random() * 0.4),
-          treeRotation + b * Math.PI + Math.random() * 0.5,
-          0
+        const scale = 0.8 + Math.random() * 0.7; // 0.8x to 1.5x
+        clone.position.set(x, floorY, z);
+        clone.rotation.set(
+          (Math.random() - 0.5) * 0.2, // slight X tilt
+          Math.random() * Math.PI * 2,    // full Y rotation
+          (Math.random() - 0.5) * 0.2   // slight Z tilt
         );
-        _treeDummy.scale.setScalar(treeScale);
-        _treeDummy.updateMatrix();
-        branchMesh.setMatrixAt(branchIdx++, _treeDummy.matrix);
+        clone.scale.setScalar(scale);
+        group.add(clone);
+        treeMeshes.push(clone);
       }
-    } else if (Math.random() > 0.5) {
-      // Twisted snag with optional small branch
-      _treeDummy.position.set(x, floorY + (2.5 + Math.random()) * treeScale, z);
-      _treeDummy.rotation.set(
-        (Math.random() > 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.4),
-        Math.random() * Math.PI * 2,
-        0
-      );
-      _treeDummy.scale.setScalar(treeScale * 0.7);
-      _treeDummy.updateMatrix();
-      branchMesh.setMatrixAt(branchIdx++, _treeDummy.matrix);
-    }
+    });
   }
 
-  trunkMesh.count = trunkIdx;
-  branchMesh.count = branchIdx;
-  trunkMesh.instanceMatrix.needsUpdate = true;
-  branchMesh.instanceMatrix.needsUpdate = true;
-  trunkMesh.castShadow = true;
-  trunkMesh.receiveShadow = true;
-  group.add(trunkMesh);
-  group.add(branchMesh);
+  loadAndPlaceTree('./assets/models/DeadTree1.glb', 9, true);
+  loadAndPlaceTree('./assets/models/DeadTree2.glb', 8, false);
 
   // ========================================
   // 4. TWINKLING STARS (1500 particles with red tint)
