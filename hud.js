@@ -4583,21 +4583,25 @@ function createBlasterSection(hand, panelX) {
   group.add(upgradesHeader);
   yPos -= 0.10;
 
-  // Upgrades list (exclude dream_fragment - it's a collectible, not an upgrade)
+  // Upgrades list - 2 columns (exclude dream_fragment - it's a collectible, not an upgrade)
   const upgrades = game.upgrades[hand] || {};
   const upgradeEntries = Object.entries(upgrades).filter(([id]) => id !== 'dream_fragment');
 
+  const colLeft = -0.48;
+  const colRight = 0.48;
+  const upgScale = 0.05;   // actual scale = 0.05 * 2.5 = 0.125
+  const upgRowHeight = 0.14; // must exceed sprite visual height (~0.125)
+
   if (upgradeEntries.length > 0) {
-    const upgRowHeight = 0.12;
     upgradeEntries.forEach(([id, count], index) => {
       const iconData = UPGRADE_ICONS[id] || { icon: '•', color: '#ffffff' };
       const displayName = id.replace(/_/g, ' ').toUpperCase();
-      const x = index % 2 === 0 ? -0.45 : 0.45;
+      const x = index % 2 === 0 ? colLeft : colRight;
       const row = Math.floor(index / 2);
       const upgradeText = makeSprite(`${iconData.icon} ${displayName} x${count}`, {
-        fontSize: scalePauseFont(24),
+        fontSize: scalePauseFont(22),
         color: iconData.color,
-        scale: scalePauseText(0.055),
+        scale: scalePauseText(upgScale),
         renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
       upgradeText.position.set(x, yPos - (row * upgRowHeight), 0.02);
@@ -4605,27 +4609,27 @@ function createBlasterSection(hand, panelX) {
       group.add(upgradeText);
     });
     const upgRows = Math.ceil(upgradeEntries.length / 2);
-    yPos -= (upgRows * upgRowHeight + 0.06);
+    yPos -= (upgRows * upgRowHeight + 0.10);  // extra gap after upgrades
   } else {
     const noUpgradesText = makeSprite('NO UPGRADES', {
-      fontSize: scalePauseFont(24),
+      fontSize: scalePauseFont(22),
       color: '#666666',
-      scale: scalePauseText(0.055),
+      scale: scalePauseText(upgScale),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     noUpgradesText.position.set(0, yPos, 0.02);
     noUpgradesText.userData = { isUpgradeSprite: true };
     group.add(noUpgradesText);
-    yPos -= 0.16;
+    yPos -= 0.18;
   }
 
   // Separator after upgrades
   const sep2 = createSeparator(1.8);
   sep2.position.set(0, yPos, 0.02);
   group.add(sep2);
-  yPos -= 0.08;
+  yPos -= 0.10;
 
-  // Stats: compact 2-column layout (left column: KILLS/SHOTS, right column: HITS/ACC)
+  // Stats: compact 2-column layout
   const handData = game.handStats[hand] || {};
   const stats = {
     kills: handData.kills ?? 0,
@@ -4642,35 +4646,34 @@ function createBlasterSection(hand, panelX) {
   ];
 
   // Render stats in 2 columns: left (KILLS, HITS) and right (SHOTS, ACC)
-  const colLeft = -0.45;
-  const colRight = 0.45;
-  const statRowHeight = 0.13;
+  const statScale = 0.055;  // actual = 0.055 * 2.5 = 0.1375
+  const statRowHeight = 0.15; // must exceed sprite visual height
   statLines.forEach((stat, index) => {
     const x = index % 2 === 0 ? colLeft : colRight;
     const row = Math.floor(index / 2);
     const statText = makeSprite(`${stat.label}: ${stat.value}`, {
-      fontSize: scalePauseFont(26),
+      fontSize: scalePauseFont(22),
       color: stat.color,
-      scale: scalePauseText(0.065),
+      scale: scalePauseText(statScale),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     statText.position.set(x, yPos - (row * statRowHeight), 0.02);
     statText.userData = { isStatSprite: true, hand, statKey: stat.label };
     group.add(statText);
   });
-  yPos -= (2 * statRowHeight + 0.06);
+  yPos -= (2 * statRowHeight + 0.10);
 
   // Separator after stats
   const sep3 = createSeparator(1.8);
   sep3.position.set(0, yPos, 0.02);
   group.add(sep3);
-  yPos -= 0.08;
+  yPos -= 0.10;
 
   // Enemies Killed section - compact two-column layout
   const enemiesHeader = makeSprite('[ENEMIES KILLED]', {
-    fontSize: scalePauseFont(24),
+    fontSize: scalePauseFont(22),
     color: '#888888',
-    scale: scalePauseText(0.06),
+    scale: scalePauseText(0.05),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
   enemiesHeader.position.set(0, yPos, 0.02);
@@ -4682,15 +4685,15 @@ function createBlasterSection(hand, panelX) {
   const enemyEntries = Object.entries(enemyKills).filter(([_, count]) => count > 0);
 
   if (enemyEntries.length > 0) {
-    const enemyRowHeight = 0.12;
+    const enemyRowHeight = 0.14;
     enemyEntries.forEach(([type, count], index) => {
       const icon = ENEMY_ICONS[type] || '💀';
       const x = index % 2 === 0 ? colLeft : colRight;
       const row = Math.floor(index / 2);
       const enemyText = makeSprite(`${icon} ${type.toUpperCase()} x${count}`, {
-        fontSize: scalePauseFont(24),
+        fontSize: scalePauseFont(22),
         color: '#ff6666',
-        scale: scalePauseText(0.06),
+        scale: scalePauseText(0.05),
         renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
       enemyText.position.set(x, yPos - (row * enemyRowHeight), 0.02);
@@ -4699,9 +4702,9 @@ function createBlasterSection(hand, panelX) {
     });
   } else {
     const noEnemiesText = makeSprite('NO ENEMIES', {
-      fontSize: scalePauseFont(24),
+      fontSize: scalePauseFont(22),
       color: '#666666',
-      scale: scalePauseText(0.06),
+      scale: scalePauseText(0.05),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     noEnemiesText.position.set(0, yPos, 0.02);
