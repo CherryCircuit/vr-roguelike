@@ -270,77 +270,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   loadAndPlaceTree('./assets/models/DeadTree1.glb', 9, true);
   loadAndPlaceTree('./assets/models/DeadTree2.glb', 8, false);
 
-  // ========================================
-  // 4. TWINKLING STARS (1500 particles with red tint)
-  // ========================================
-  const starCount = 1500;
-  const starPositions = new Float32Array(starCount * 3);
-  const starColors = new Float32Array(starCount * 3);
-  const starSizes = new Float32Array(starCount);
-  const starPhases = new Float32Array(starCount);
-
-  for (let i = 0; i < starCount; i++) {
-    const i3 = i * 3;
-    // Position in a dome
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.random() * Math.PI * 0.5; // Upper hemisphere
-    const r = 120 + Math.random() * 80;
-    starPositions[i3] = r * Math.sin(phi) * Math.cos(theta);
-    starPositions[i3 + 1] = r * Math.cos(phi) + 20;
-    starPositions[i3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-
-    // Red-tinted colors: mix between (0.6, 0.2, 0.2) and (1.0, 0.8, 0.8)
-    const colorMix = Math.random();
-    starColors[i3] = 0.6 + colorMix * 0.4;     // R
-    starColors[i3 + 1] = 0.2 + colorMix * 0.6; // G
-    starColors[i3 + 2] = 0.2 + colorMix * 0.6; // B
-
-    starSizes[i] = 0.5 + Math.random() * 1.5;
-    starPhases[i] = Math.random() * Math.PI * 2;
-  }
-
-  const starGeo = new THREE.BufferGeometry();
-  starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-  starGeo.setAttribute('aColor', new THREE.BufferAttribute(starColors, 3));
-  starGeo.setAttribute('aSize', new THREE.BufferAttribute(starSizes, 1));
-  starGeo.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
-
-  const starMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime: { value: 0 }
-    },
-    vertexShader: `
-      attribute vec3 aColor;
-      attribute float aSize;
-      attribute float aPhase;
-      varying vec3 vColor;
-      varying float vTwinkle;
-      uniform float uTime;
-      void main() {
-        vColor = aColor;
-        vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = aSize * (300.0 / -mvPosition.z) * vTwinkle;
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: `
-      varying vec3 vColor;
-      varying float vTwinkle;
-      void main() {
-        float dist = length(gl_PointCoord - vec2(0.5));
-        if (dist > 0.5) discard;
-        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-        gl_FragColor = vec4(vColor * vTwinkle, alpha);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-
-  const stars = new THREE.Points(starGeo, starMat);
-  group.add(stars);
+  // (Stars removed - jittery dots not visible from player distance)
 
   // ========================================
   // 5. LAVA EMBERS (400 rising from lava river, fade at Y:25)
@@ -622,8 +552,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     // Lava river shader animation
     if (lavaRiverMat) lavaRiverMat.uniforms.uTime.value = time;
 
-    // Star twinkle
-    starMat.uniforms.uTime.value = time;
+    // (Star twinkle removed)
 
     // Lava glow position animation (circle)
     lavaGlow.position.x = Math.sin(time * 0.3) * 15;
