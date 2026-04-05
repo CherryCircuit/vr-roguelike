@@ -4588,31 +4588,35 @@ function createBlasterSection(hand, panelX) {
   const upgradeEntries = Object.entries(upgrades).filter(([id]) => id !== 'dream_fragment');
 
   if (upgradeEntries.length > 0) {
+    const upgRowHeight = 0.12;
     upgradeEntries.forEach(([id, count], index) => {
       const iconData = UPGRADE_ICONS[id] || { icon: '•', color: '#ffffff' };
       const displayName = id.replace(/_/g, ' ').toUpperCase();
+      const x = index % 2 === 0 ? -0.45 : 0.45;
+      const row = Math.floor(index / 2);
       const upgradeText = makeSprite(`${iconData.icon} ${displayName} x${count}`, {
-        fontSize: scalePauseFont(28),
+        fontSize: scalePauseFont(24),
         color: iconData.color,
-        scale: scalePauseText(0.07),
+        scale: scalePauseText(0.055),
         renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
-      upgradeText.position.set(0, yPos - (index * 0.13), 0.02);
+      upgradeText.position.set(x, yPos - (row * upgRowHeight), 0.02);
       upgradeText.userData = { isUpgradeSprite: true };
       group.add(upgradeText);
     });
-    yPos -= (upgradeEntries.length * 0.13 + 0.06);
+    const upgRows = Math.ceil(upgradeEntries.length / 2);
+    yPos -= (upgRows * upgRowHeight + 0.06);
   } else {
     const noUpgradesText = makeSprite('NO UPGRADES', {
-      fontSize: scalePauseFont(28),
+      fontSize: scalePauseFont(24),
       color: '#666666',
-      scale: scalePauseText(0.07),
+      scale: scalePauseText(0.055),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     noUpgradesText.position.set(0, yPos, 0.02);
     noUpgradesText.userData = { isUpgradeSprite: true };
     group.add(noUpgradesText);
-    yPos -= 0.19;
+    yPos -= 0.16;
   }
 
   // Separator after upgrades
