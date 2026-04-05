@@ -108,7 +108,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   // DEDICATED LAVA RIVER PLANE
   // ========================================
   const riverWidth = 25;  // Wide enough to cover bank-to-bank (overflow hidden by terrain)
-  const riverLength = 200;
+  const riverLength = 350;
   const riverGeo = new THREE.PlaneGeometry(riverWidth, riverLength, 32, 64);
   riverGeo.rotateX(-Math.PI / 2);
 
@@ -213,7 +213,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   const gltfLoader = new GLTFLoader();
   const treeMeshes = [];
 
-  function loadAndPlaceTree(url, count, preferFront) {
+  function loadAndPlaceTree(url, positions) {
     gltfLoader.load(url, (gltf) => {
       const model = gltf.scene;
       model.traverse((child) => {
@@ -227,31 +227,14 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       model.scale.setScalar(0.005);  // Trees max height should be ~13 world units
       model.updateMatrixWorld(true);
 
-      for (let i = 0; i < count; i++) {
+      for (const pos of positions) {
         const clone = model.clone();
-        let x, z, riverX, distToRiver;
-        let attempts = 0;
-        do {
-          x = (Math.random() - 0.5) * 60;
-          if (preferFront && i < count - 2) {
-            z = -(10 + Math.random() * 90); // Spread from z=-10 to z=-100 (corridor to suns)
-          } else if (!preferFront && i < count - 1) {
-            z = -(10 + Math.random() * 90);
-          } else {
-            // 1-2 behind for VR folks who turn around
-            z = Math.abs((Math.random() - 0.5) * 60);
-          }
-          riverX = Math.sin(z * 0.03) * 15.0 - 10.0; // Match terrain world-space river center
-          distToRiver = Math.abs(x - riverX);
-          attempts++;
-        } while ((distToRiver < 8 || (x * x + (z + 42) * (z + 42) < 2500)) && attempts < 30);  // 2500 = 50^2 from player (world z=0 = group z=42)
-
-        const scale = 0.8 + Math.random() * 1.2; // 0.8x to 2.0x variation on top of base
-        clone.position.set(x, floorY - 0.3, z); // Bury roots slightly below ground
+        const scale = 0.8 + Math.random() * 1.2;
+        clone.position.set(pos.x, pos.y, pos.z);
         clone.rotation.set(
-          (Math.random() - 0.5) * 0.2, // slight X tilt
-          Math.random() * Math.PI * 2,    // full Y rotation
-          (Math.random() - 0.5) * 0.2   // slight Z tilt
+          (Math.random() - 0.5) * 0.2,
+          Math.random() * Math.PI * 2,
+          (Math.random() - 0.5) * 0.2
         );
         clone.scale.setScalar(scale);
         // Cap tree height at Y=13
@@ -267,8 +250,19 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     });
   }
 
-  loadAndPlaceTree('./assets/models/DeadTree1.glb', 9, true);
-  loadAndPlaceTree('./assets/models/DeadTree2.glb', 8, false);
+  // Fixed tree positions in group space (world pos - group.position)
+  // DeadTree1: 3 trees
+  loadAndPlaceTree('./assets/models/DeadTree1.glb', [
+    { x: -45.728, y: 0.321, z: -26.325 },
+    { x: -50.390, y: 1.176, z: -63.963 },
+    { x: 1.100,   y: 0.822, z: -29.656 },
+  ]);
+  // DeadTree2: 3 trees
+  loadAndPlaceTree('./assets/models/DeadTree2.glb', [
+    { x: -7.001,  y: 0.822, z: -56.803 },
+    { x: -15.371, y: 0.822, z: -117.774 },
+    { x: -50.590, y: 0.822, z: -118.265 },
+  ]);
 
   // (Stars removed - jittery dots not visible from player distance)
 
@@ -290,10 +284,10 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     sparkPositions[i3 + 1] = floorY - 2.5 + Math.random() * 0.5;  // Start at river level
     sparkPositions[i3 + 2] = z;
     sparkVelocities[i3] = (Math.random() - 0.5) * 0.01;  // Gentle horizontal drift
-    sparkVelocities[i3 + 1] = 0.02 + Math.random() * 0.04;  // Slow rise
+    sparkVelocities[i3 + 1] = 0.05 + Math.random() * 0.08;  // Rise toward Y:25
     sparkVelocities[i3 + 2] = (Math.random() - 0.5) * 0.01;
     sparkLifetimes[idx] = 0;
-    sparkMaxLifetimes[idx] = 6 + Math.random() * 8;  // Long life for slow rise to Y:25
+    sparkMaxLifetimes[idx] = 3 + Math.random() * 4;  // Cycle faster
     // Random warm color between orange-red and bright yellow
     const colorMix = Math.random();
     sparkColors[i3] = 1.0;  // R
@@ -479,6 +473,12 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     for (let i = 0; i < sparkCount; i++) {
       const i3 = i * 3;
       sparkLifetimes[i] += dt * 0.001;
+
+      // Kill embers that rise above Y:25
+      if (sparkPos[i3 + 1] > 25) {
+        initSpark(i);
+        continue;
+      }
 
       if (sparkLifetimes[i] > sparkMaxLifetimes[i]) {
         initSpark(i);

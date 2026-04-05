@@ -271,7 +271,7 @@ export function buildSynthwaveValleyScene(group, deps) {
       float lat = asin(n.y);  // -PI/2 to PI/2
 
       // 3D noise using sphere direction directly - inherently seamless
-      vec3 cloudP = n * 2.0 + vec3(uTime * 0.06, 0.0, uTime * 0.02);
+      vec3 cloudP = n * 2.0 + vec3(uTime * 0.3, 0.0, uTime * 0.1);
 
       // Layered FBM noise for cloud density
       float n1 = fbm3(cloudP);

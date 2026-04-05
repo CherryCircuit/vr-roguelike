@@ -12,7 +12,7 @@ export function buildAlienPlanetScene(group, deps) {
   const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
 
   // Ground (optimized: 32x32 segments, was 120x120)
-  const groundGeo = new THREE.PlaneGeometry(300, 300, 32, 32);
+  const groundGeo = new THREE.PlaneGeometry(345, 345, 32, 32);
   const groundPositions = groundGeo.attributes.position;
   for (let i = 0; i < groundPositions.count; i++) {
     const x = groundPositions.getX(i);
@@ -85,7 +85,7 @@ export function buildAlienPlanetScene(group, deps) {
   group.add(moonLight);
 
   // Green light - moved HIGH (y: 35) to not block view
-  const greenLight = new THREE.PointLight(0x44ffaa, 5, 80);
+  const greenLight = new THREE.PointLight(0x44ffaa, 8, 80);
   greenLight.position.set(0, 35, 0);
   group.add(greenLight);
 
@@ -161,7 +161,7 @@ export function buildAlienPlanetScene(group, deps) {
   // Mountains - single ring for FPS (was 2 rings = 24 mountains)
   for (let ring = 0; ring < 1; ring++) {
     const count = 14;  // Single ring of 14 mountains (was 8+16=24)
-    const radius = 40;
+    const radius = 60;  // Pushed 20 units farther from player
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2 + Math.random() * 0.3;
       const r = radius + (Math.random() - 0.5) * 10;
@@ -466,7 +466,7 @@ export function buildAlienPlanetScene(group, deps) {
     `,
     transparent: true,
     side: THREE.BackSide,
-    depthWrite: false,
+    depthWrite: true,
     depthTest: true,
     fog: false
   });
@@ -474,7 +474,7 @@ export function buildAlienPlanetScene(group, deps) {
   alienMtnCylinder.name = 'alien-mountain-wrap';
   alienMtnCylinder.position.set(-6.628, alienMtnHeight / 2, 13.926);  // Centered at world X:0 Z:0
   alienMtnCylinder.frustumCulled = false;
-  alienMtnCylinder.renderOrder = 0;
+  alienMtnCylinder.renderOrder = -1;
   group.add(alienMtnCylinder);
 
   // Animation update - OPTIMIZED: stagger updates to reduce per-frame cost
@@ -487,7 +487,7 @@ export function buildAlienPlanetScene(group, deps) {
     cityShaderMat.uniforms.uTime.value = time;
 
     // Green light pulse: every frame (cheap - single value)
-    greenLight.intensity = 5 + Math.sin(time * 2) * 0.3;
+    greenLight.intensity = 8 + Math.sin(time * 2) * 0.3;
 
     // REMOVED: Firefly drift animation - per-frame position updates were too expensive
     // Fireflies are now static for better FPS

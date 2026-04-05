@@ -706,11 +706,16 @@ function showDebugPositionPanel() {
   document.body.appendChild(debugPanelElement);
 
   // Prevent pointer lock re-engagement when interacting with debug panel
+  // Use capture phase to intercept before window-level handlers
   debugPanelElement.addEventListener('mousedown', (e) => {
     e.stopPropagation();
+    e.preventDefault();
     if (document.pointerLockElement) document.exitPointerLock();
-  });
-  debugPanelElement.addEventListener('keydown', (e) => e.stopPropagation());
+  }, true);  // capture phase
+  debugPanelElement.addEventListener('click', (e) => {
+    e.stopPropagation();
+  }, true);
+  debugPanelElement.addEventListener('keydown', (e) => e.stopPropagation(), true);
 
   // Add click handler for copy button
   const copyBtn = debugPanelElement.querySelector('#debug-copy-btn');
