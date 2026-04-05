@@ -1503,3 +1503,44 @@ export function playCountdown321() {
   countdown321Audio.currentTime = 0;
   countdown321Audio.play().catch(() => {});
 }
+
+// ── Phase Wraith charge-up telegraph ───────────────────────
+// Eerie rising tone played 1s before phase wraith spawns a swarm
+export function playPhaseWraithCharge() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'sine';
+  osc2.type = 'sawtooth';
+  filter.type = 'lowpass';
+
+  // Ghostly rising sweep - two oscillators beat against each other
+  osc.frequency.setValueAtTime(180, t);
+  osc.frequency.exponentialRampToValueAtTime(520, t + 0.8);
+  osc2.frequency.setValueAtTime(200, t);
+  osc2.frequency.exponentialRampToValueAtTime(560, t + 0.8);
+
+  filter.frequency.setValueAtTime(800, t);
+  filter.frequency.exponentialRampToValueAtTime(2000, t + 0.6);
+  filter.Q.setValueAtTime(8, t);
+
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.1, t + 0.15);
+  gain.gain.linearRampToValueAtTime(0.08, t + 0.5);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+
+  osc.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc2.start(t);
+  osc.stop(t + 0.9);
+  osc2.stop(t + 0.9);
+}

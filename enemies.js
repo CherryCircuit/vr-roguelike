@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getStasisSlowFactor } from './stasis.js';
-import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound } from './audio.js';
+import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound, playPhaseWraithCharge } from './audio.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
@@ -2798,6 +2798,9 @@ export function spawnEnemy(type, position, levelConfig) {
     phaseVanishTimer: 0,
     phaseReappearTimer: 0,
     phaseHidden: false,
+    phaseBaseY: position.y,
+    phaseChargeTimer: 0,
+    phaseCharging: false,
     phasePreferredDistMin: def.phasePreferredDistMin || 5.5,
     phasePreferredDistMax: def.phasePreferredDistMax || 9.5,
   };
@@ -3254,6 +3257,7 @@ export function updateEnemies(dt, now, playerPos) {
           );
           clampPositionToFrontArc(e.mesh.position, playerPos, e.phasePreferredDistMin, e.phasePreferredDistMax, 120);
           e.mesh.visible = true;
+          e.phaseBaseY = e.mesh.position.y;
           if (typeof window !== 'undefined' && window.playPhaseWraithAppear) {
             window.playPhaseWraithAppear();
           }
@@ -3280,9 +3284,21 @@ export function updateEnemies(dt, now, playerPos) {
           }
         }
 
+        // Floating bob animation - gentle hover oscillation
+        if (e.phaseBaseY === undefined || e.phaseBaseY === null) {
+          e.phaseBaseY = e.mesh.position.y;
+        }
+        e.mesh.position.y = e.phaseBaseY + Math.sin(now * 0.002 + e.id * 1.7) * 0.25;
+
+        // Charge-up telegraph before spawning swarm
+        if (e.phaseSpawnTimer <= 1.0 && e.phaseSpawnTimer > 0 && !e.phaseCharging) {
+          e.phaseCharging = true;
+          playPhaseWraithCharge();
+        }
         e.phaseSpawnTimer -= dt;
         if (e.phaseSpawnTimer <= 0) {
           e.phaseSpawnTimer = e.phaseSpawnCooldown;
+          e.phaseCharging = false;
           const spawnPos = e.mesh.position.clone();
           spawnPos.x += (Math.random() - 0.5) * 1.2;
           spawnPos.z += (Math.random() - 0.5) * 1.2;
@@ -3294,9 +3310,12 @@ export function updateEnemies(dt, now, playerPos) {
       }
 
       const targetOpacity = e.phaseHidden ? 0.05 : (e.phaseStunTimer > 0 ? 0.35 : 0.85);
+      // Charge-up pulsing emissive: ramps up during the last second before spawn
+      const chargeIntensity = (e.phaseCharging && !e.phaseHidden && e.phaseSpawnTimer > 0 && e.phaseSpawnTimer <= 1.0)
+        ? 0.5 + 0.5 * Math.sin(now * 0.015) : 0;
       for (const mat of e._cachedMaterials) {
         mat.opacity = targetOpacity;
-        setMaterialEmissiveSafe(mat, _emissiveViolet, e.phaseHidden ? 0.2 : 0.5);
+        setMaterialEmissiveSafe(mat, _emissiveViolet, e.phaseHidden ? 0.2 : (0.5 + chargeIntensity));
       }
     }
 
