@@ -886,6 +886,7 @@ function applyHighlight(obj) {
  */
 function clearHighlight(obj) {
   if (!obj) return;
+  if (!obj.material) return;
 
   const original = originalMaterials.get(obj);
   if (original) {

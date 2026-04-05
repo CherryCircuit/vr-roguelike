@@ -225,31 +225,37 @@ export function buildSynthwaveValleyScene(group, deps) {
     uniform vec3 uSkyColor;
     uniform vec3 uHorizonColor;
 
-    // Hash and noise functions for FBM
-    vec2 hash2(vec2 p) {
-      p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    // 3D hash and noise for seamless spherical cloud sampling
+    vec3 hash3(vec3 p) {
+      p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+               dot(p, vec3(269.5, 183.3, 246.1)),
+               dot(p, vec3(113.5, 271.9, 124.6)));
       return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
     }
 
-    float noise(vec2 p) {
-      vec2 i = floor(p);
-      vec2 f = fract(p);
-      vec2 u = f * f * (3.0 - 2.0 * f);
+    float noise3D(vec3 p) {
+      vec3 i = floor(p);
+      vec3 f = fract(p);
+      vec3 u = f * f * (3.0 - 2.0 * f);
       return mix(
-        mix(dot(hash2(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)),
-            dot(hash2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), u.x),
-        mix(dot(hash2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)),
-            dot(hash2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), u.x),
-        u.y
+        mix(mix(dot(hash3(i), f),
+                dot(hash3(i + vec3(1,0,0)), f - vec3(1,0,0)), u.x),
+            mix(dot(hash3(i + vec3(0,1,0)), f - vec3(0,1,0)),
+                dot(hash3(i + vec3(1,1,0)), f - vec3(1,1,0)), u.x), u.y),
+        mix(mix(dot(hash3(i + vec3(0,0,1)), f - vec3(0,0,1)),
+                dot(hash3(i + vec3(1,0,1)), f - vec3(1,0,1)), u.x),
+            mix(dot(hash3(i + vec3(0,1,1)), f - vec3(0,1,1)),
+                dot(hash3(i + vec3(1,1,1)), f - vec3(1,1,1)), u.x), u.y),
+        u.z
       );
     }
 
-    // 4-layer FBM (cheap, no raymarching)
-    float fbm(vec2 p) {
+    // 4-layer FBM with 3D noise (seamless on sphere)
+    float fbm3(vec3 p) {
       float value = 0.0;
       float amp = 0.5;
       for (int i = 0; i < 4; i++) {
-        value += amp * noise(p);
+        value += amp * noise3D(p);
         p *= 2.0;
         amp *= 0.5;
       }
@@ -257,22 +263,18 @@ export function buildSynthwaveValleyScene(group, deps) {
     }
 
     void main() {
-      // Spherical to lat/lon for cloud sampling
-      vec3 n = normalize(vWorldPos);
-      // FIX: Use proper spherical coordinates relative to dome center
-      // The dome is centered at (0, 0, -700), so offset the position
+      // Sample cloud noise directly on sphere normal (3D) - no seam possible
       vec3 relPos = vWorldPos - vec3(0.0, 0.0, -700.0);
-      n = normalize(relPos);
+      vec3 n = normalize(relPos);
       
       float lat = asin(n.y);  // -PI/2 to PI/2
-      float lon = atan(n.z, n.x);
 
-      // Very slow drift animation
-      vec2 cloudUV = vec2(lon * 0.8, lat * 1.5) + vec2(uTime * 0.008, 0.0);
+      // 3D noise using sphere direction directly - inherently seamless
+      vec3 cloudP = n * 2.0 + vec3(uTime * 0.008, 0.0, 0.0);
 
       // Layered FBM noise for cloud density
-      float n1 = fbm(cloudUV * 1.0);
-      float n2 = fbm(cloudUV * 2.5 + 10.0);
+      float n1 = fbm3(cloudP);
+      float n2 = fbm3(cloudP * 2.5 + vec3(10.0, 5.0, 3.0));
       float density = n1 * 0.6 + n2 * 0.4;
 
       // FIX: FBM returns [-1, 1], remap to [0, 1] so smoothstep works correctly

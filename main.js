@@ -2108,7 +2108,9 @@ function applyEnvironmentFade(fade) {
 
   if (scene && currentTheme) {
     const bg = new THREE.Color(currentTheme.skyColor).lerp(mixColor, environmentFade);
-    scene.background.copy(bg);
+    if (scene.background && scene.background.copy) {
+      scene.background.copy(bg);
+    }
   }
 
   environmentFadeTargets.forEach((material) => {
@@ -7484,6 +7486,10 @@ function completeLevel() {
   const remaining = getEnemies();
   for (let i = remaining.length - 1; i >= 0; i--) {
     if (remaining[i] && remaining[i].hp > 0) {
+      // Spawn visual explosion before destroying
+      if (remaining[i].mesh && remaining[i].mesh.position) {
+        spawnExplosionVisual(remaining[i].mesh.position, 0.5);
+      }
       destroyEnemy(i, false, false);
     }
   }
