@@ -122,7 +122,7 @@ export function buildSynthwaveValleyScene(group, deps) {
     // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
     // stable in stereo rendering and does not rely on manual clip-space math.
     vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ float worldY=vWorldPosition.y; float t1=smoothstep(0.0,350.0,worldY); float t2=smoothstep(0.0,600.0,worldY); float t3=smoothstep(0.0,1200.0,worldY); vec3 col=horizonColor; col=mix(col,glowColor,t1); col=mix(col,midColor,t2); col=mix(col,topColor,t3); col=pow(col,vec3(1.0/2.2)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ float worldY=vWorldPosition.y; float t1=smoothstep(0.0,437.0,worldY); float t2=smoothstep(0.0,750.0,worldY); float t3=smoothstep(0.0,1500.0,worldY); vec3 col=horizonColor; col=mix(col,glowColor,t1); col=mix(col,midColor,t2); col=mix(col,topColor,t3); col=pow(col,vec3(1.0/2.2)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
     depthWrite: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
@@ -194,6 +194,7 @@ export function buildSynthwaveValleyScene(group, deps) {
     depthWrite: false,
     depthTest: true,
     fog: false,
+    toneMapped: false,  // Show exact PNG colors
   });
   const mountainCylinder = new THREE.Mesh(mountainCylinderGeo, mountainCylinderMat);
   mountainCylinder.name = 'synthwave-mountain-wrap';
@@ -270,7 +271,7 @@ export function buildSynthwaveValleyScene(group, deps) {
       float lat = asin(n.y);  // -PI/2 to PI/2
 
       // 3D noise using sphere direction directly - inherently seamless
-      vec3 cloudP = n * 2.0 + vec3(uTime * 0.008, 0.0, 0.0);
+      vec3 cloudP = n * 2.0 + vec3(uTime * 0.06, 0.0, uTime * 0.02);
 
       // Layered FBM noise for cloud density
       float n1 = fbm3(cloudP);

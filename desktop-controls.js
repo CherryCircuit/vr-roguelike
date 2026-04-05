@@ -141,7 +141,10 @@ export function enable() {
     cameraRef.rotation.copy(player.rotation);
   }
 
-  // Request pointer lock for mouse look
+  // Request pointer lock for mouse look (but not if focus is in debug panel)
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#debug-position-panel')) {
+    return;
+  }
   document.body.requestPointerLock = document.body.requestPointerLock ||
     document.body.mozRequestPointerLock ||
     document.body.webkitRequestPointerLock;
@@ -434,6 +437,8 @@ function setupEventListeners() {
   document.addEventListener('click', (e) => {
     if (!enabled || mouse.locked) return;
     if (e && e.target && e.target.closest && (e.target.closest('#debug-panel') || e.target.closest('#debug-toggle') || e.target.closest('#debug-position-panel'))) {
+      // Exit pointer lock so user can interact with debug panel
+      if (document.pointerLockElement) document.exitPointerLock();
       return;
     }
     document.body.requestPointerLock = document.body.requestPointerLock ||
@@ -699,6 +704,13 @@ function showDebugPositionPanel() {
     ">Copy Position</button>
   `;
   document.body.appendChild(debugPanelElement);
+
+  // Prevent pointer lock re-engagement when interacting with debug panel
+  debugPanelElement.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+    if (document.pointerLockElement) document.exitPointerLock();
+  });
+  debugPanelElement.addEventListener('keydown', (e) => e.stopPropagation());
 
   // Add click handler for copy button
   const copyBtn = debugPanelElement.querySelector('#debug-copy-btn');
