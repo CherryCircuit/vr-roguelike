@@ -1315,6 +1315,8 @@ const musicTracks = {
   ]
 };
 
+const lastBossTrack = {};
+
 const bossTracks = {
   1: [
     'https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/B101_Level_05_Boss.mp3',
@@ -1437,11 +1439,20 @@ export function playBossMusic(tier) {
   const tracks = bossTracks[tier] ? [...bossTracks[tier]] : [];
   if (!tracks || tracks.length === 0) return;
 
-  const track = tracks[Math.floor(Math.random() * tracks.length)];
+  let track;
+  if (tracks.length === 1) {
+    track = tracks[0];
+  } else {
+    const last = lastBossTrack[tier];
+    const candidates = tracks.filter(t => t !== last);
+    track = candidates[Math.floor(Math.random() * candidates.length)];
+  }
+  lastBossTrack[tier] = track;
+
   currentPlaylist = [track];
   currentTrackIndex = 0;
 
-  console.log(`[music] Starting boss track (tier ${tier}): ${track}`);
+  console.log(`[music] Starting boss track (tier ${tier}): ${track.split('/').pop()}`);
   playNextTrack();
 }
 

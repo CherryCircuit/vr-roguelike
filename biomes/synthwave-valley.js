@@ -301,9 +301,10 @@ export function buildSynthwaveValleyScene(group, deps) {
       vec3 cloudCol = baseColor * sunTint;
       cloudCol = pow(cloudCol, vec3(1.0 / 2.2));  // Gamma correct
 
-      // Soft edge fade at dome boundary
-      float edgeFade = smoothstep(0.0, 0.1, normalizedHeight) * smoothstep(1.0, 0.9, normalizedHeight);
-      cloudMask *= edgeFade;
+      // Edge fade - stronger at bottom edge
+      float bottomFade = smoothstep(0.0, 0.15, normalizedHeight);
+      float topFade = smoothstep(1.0, 0.85, normalizedHeight);
+      cloudMask *= bottomFade * topFade;
 
       // FIX: Increase alpha for better visibility in VR
       float alpha = cloudMask * 0.85;
@@ -322,7 +323,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   `;
 
   // Lower cloud dome (closer to horizon)
-  const cloudDome1Geo = new THREE.SphereGeometry(2400, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.45);
+  const cloudDome1Geo = new THREE.SphereGeometry(2400, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.5);
   const cloudDome1Mat = new THREE.ShaderMaterial({
     uniforms: cloudUniforms,
     vertexShader: cloudVertexShader,

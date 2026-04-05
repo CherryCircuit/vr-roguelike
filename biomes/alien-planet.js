@@ -43,6 +43,26 @@ export function buildAlienPlanetScene(group, deps) {
   group.add(flashPlane);
   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
 
+  // Green-gradient skydome (similar structure to desert biome but green tones)
+  const skyGeo = new THREE.SphereGeometry(2200, 24, 18);
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: {
+      topColor: { value: new THREE.Color(0x020a04) },      // Deep dark green-black
+      midColor: { value: new THREE.Color(0x0a2a12) },       // Dark forest green
+      horizonColor: { value: new THREE.Color(0x1a4a1a) },   // Bright green horizon
+      glowColor: { value: new THREE.Color(0x22aa44) },      // Neon green glow band
+    },
+    vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ float worldY=vWorldPosition.y; float t1=smoothstep(-140.0,220.0,worldY); float t2=smoothstep(120.0,780.0,worldY); float t3=smoothstep(300.0,1200.0,worldY); vec3 col=horizonColor; col=mix(col,glowColor,t1); col=mix(col,midColor,t2); col=mix(col,topColor,t3); col=pow(col,vec3(1.0/2.2)); gl_FragColor=vec4(col*0.6,1.0); }`,
+    depthWrite: false,
+  });
+  const sky = new THREE.Mesh(skyGeo, skyMat);
+  sky.frustumCulled = false;
+  sky.renderOrder = -20;
+  group.add(sky);
+  registerFadeMaterial(skyMat);
+
   // Moon and glow
   const moonGeo = new THREE.IcosahedronGeometry(24, 1);
   const moonMat = new THREE.MeshBasicMaterial({ color: 0xddaaff, transparent: true, opacity: 0.95 });

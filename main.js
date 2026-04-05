@@ -3356,8 +3356,9 @@ function createBlasterDisplay(controllerIndex) {
       holoColor += vec4(r * scanlines, b * scanlines, r, 1.0) / 84.0;
       
       // Fresnel edge glow (view-dependent rim lighting)
+      // Use abs() so it looks the same from front and back
       vec3 viewDir = normalize(cameraPosition - vPositionW);
-      float fresnel = dot(viewDir, vNormalW) * (1.6 - uFresnelOpacity / 2.0);
+      float fresnel = abs(dot(viewDir, vNormalW)) * (1.6 - uFresnelOpacity / 2.0);
       fresnel = clamp(uFresnelAmount - fresnel, 0.0, uFresnelOpacity);
       
       // Subtle flicker for old-TV effect
@@ -3374,11 +3375,11 @@ function createBlasterDisplay(controllerIndex) {
     uniforms: {
       uTime: { value: 0.0 },
       uColor: { value: new THREE.Vector3(0.0, 0.84, 1.0) },  // Cyan to match game theme
-      uOpacity: { value: 0.85 },
+      uOpacity: { value: 0.45 },
       uScanlineSize: { value: 8.0 },
-      uSignalSpeed: { value: 1.0 },
+      uSignalSpeed: { value: 0.3 },
       uFresnelAmount: { value: 0.45 },
-      uFresnelOpacity: { value: 1.0 }
+      uFresnelOpacity: { value: 0.5 }
     },
     vertexShader: holoVertexShader,
     fragmentShader: holoFragmentShader,
