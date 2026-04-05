@@ -63,6 +63,123 @@ export function buildAlienPlanetScene(group, deps) {
   group.add(sky);
   registerFadeMaterial(skyMat);
 
+  // ── CLOUD DOME ──
+  // Dark procedural clouds for the alien planet atmosphere.
+  const cloudUniforms = {
+    uTime: { value: 0.0 },
+    uSunDir: { value: new THREE.Vector3(60, 80, -40).normalize() },
+    uCloudColor: { value: new THREE.Color(0x1a0a2a) },   // Very dark purple
+    uSkyColor: { value: new THREE.Color(0x020105) },      // Near black
+    uHorizonColor: { value: new THREE.Color(0x0a1a0f) },  // Dark green hint
+  };
+
+  const cloudFragmentShader = `
+    varying vec3 vWorldPos;
+    uniform float uTime;
+    uniform vec3 uSunDir;
+    uniform vec3 uCloudColor;
+    uniform vec3 uSkyColor;
+    uniform vec3 uHorizonColor;
+
+    vec3 hash3(vec3 p) {
+      p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+               dot(p, vec3(269.5, 183.3, 246.1)),
+               dot(p, vec3(113.5, 271.9, 124.6)));
+      return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+    }
+
+    float noise3D(vec3 p) {
+      vec3 i = floor(p);
+      vec3 f = fract(p);
+      vec3 u = f * f * (3.0 - 2.0 * f);
+      return mix(
+        mix(mix(dot(hash3(i), f),
+                dot(hash3(i + vec3(1,0,0)), f - vec3(1,0,0)), u.x),
+            mix(dot(hash3(i + vec3(0,1,0)), f - vec3(0,1,0)),
+                dot(hash3(i + vec3(1,1,0)), f - vec3(1,1,0)), u.x), u.y),
+        mix(mix(dot(hash3(i + vec3(0,0,1)), f - vec3(0,0,1)),
+                dot(hash3(i + vec3(1,0,1)), f - vec3(1,0,1)), u.x),
+            mix(dot(hash3(i + vec3(0,1,1)), f - vec3(0,1,1)),
+                dot(hash3(i + vec3(1,1,1)), f - vec3(1,1,1)), u.x), u.y),
+        u.z
+      );
+    }
+
+    float fbm3(vec3 p) {
+      float value = 0.0;
+      float amp = 0.5;
+      for (int i = 0; i < 4; i++) {
+        value += amp * noise3D(p);
+        p *= 2.0;
+        amp *= 0.5;
+      }
+      return value;
+    }
+
+    void main() {
+      vec3 relPos = vWorldPos;
+      vec3 n = normalize(relPos);
+      float lat = asin(n.y);
+
+      vec3 cloudP = n * 2.0 + vec3(uTime * 0.3, 0.0, uTime * 0.1);
+
+      float n1 = fbm3(cloudP);
+      float n2 = fbm3(cloudP * 2.5 + vec3(10.0, 5.0, 3.0));
+      float density = n1 * 0.6 + n2 * 0.4;
+      density = (density + 1.0) * 0.5;
+
+      float cloudMask = smoothstep(0.45, 0.75, density);
+
+      float normalizedHeight = (lat + 1.5708) / 3.1416;
+      float skyBand = smoothstep(0.15, 0.45, normalizedHeight) * smoothstep(0.92, 0.55, normalizedHeight);
+      cloudMask *= skyBand;
+
+      float sunFacing = max(0.0, dot(n, uSunDir));
+      vec3 sunTint = mix(vec3(1.0), vec3(1.2, 1.1, 0.9), sunFacing);
+
+      vec3 baseColor = mix(uHorizonColor, uCloudColor, smoothstep(0.0, 0.5, normalizedHeight));
+      baseColor = mix(baseColor, uSkyColor, smoothstep(0.5, 0.9, normalizedHeight));
+
+      vec3 cloudCol = baseColor * sunTint;
+      cloudCol = pow(cloudCol, vec3(1.0 / 2.2));
+
+      float bottomFade = smoothstep(0.0, 0.15, normalizedHeight);
+      float topFade = smoothstep(1.0, 0.85, normalizedHeight);
+      cloudMask *= bottomFade * topFade;
+
+      float alpha = cloudMask * 0.85;
+      gl_FragColor = vec4(cloudCol, alpha);
+    }
+  `;
+
+  const cloudVertexShader = `
+    varying vec3 vWorldPos;
+    void main() {
+      vec4 worldPos = modelMatrix * vec4(position, 1.0);
+      vWorldPos = worldPos.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+
+  const cloudGeo = new THREE.SphereGeometry(900, 32, 20);
+  const cloudMat = new THREE.ShaderMaterial({
+    uniforms: cloudUniforms,
+    vertexShader: cloudVertexShader,
+    fragmentShader: cloudFragmentShader,
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    fog: false,
+  });
+  const cloudDome = new THREE.Mesh(cloudGeo, cloudMat);
+  cloudDome.name = 'alien-planet-cloud-dome';
+  cloudDome.position.set(0, 0, 0);
+  cloudDome.frustumCulled = false;
+  cloudDome.renderOrder = -15;
+  group.add(cloudDome);
+  registerFadeMaterial(cloudMat);
+
   // Moon and glow
   const moonGeo = new THREE.IcosahedronGeometry(24, 1);
   const moonMat = new THREE.MeshBasicMaterial({ color: 0xddaaff, transparent: true, opacity: 0.95 });
@@ -485,6 +602,9 @@ export function buildAlienPlanetScene(group, deps) {
 
     // City shader: update every frame (cheap - just uniform)
     cityShaderMat.uniforms.uTime.value = time;
+
+    // Cloud dome: update every frame (cheap - just uniform)
+    cloudUniforms.uTime.value = time;
 
     // Green light pulse: every frame (cheap - single value)
     greenLight.intensity = 8 + Math.sin(time * 2) * 0.3;

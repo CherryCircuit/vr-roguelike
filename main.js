@@ -11492,18 +11492,18 @@ function render(timestamp) {
   // Update aurora borealis animation
   updateAurora(rawDt, now);
   
-  if (ominousRef) {
-    if (game.level >= 10 && game.state === State.PLAYING) {
-      const t = Math.min(1, (game.level - 10) / 6); // 0 at 10, 1 at 16
-      ominousRef.visible = true;
-      // Start very subtle (0.08) and ramp to 0.5 at level 16
-      // so it doesn't look like a black wall on first appearance
-      ominousRef.material.opacity = 0.08 + t * 0.42;
-      ominousRef.scale.setScalar(0.5 + t * 1.2);
-    } else {
-      ominousRef.visible = false;
-    }
-  }
+  // Ominous horizon disabled - flat plane looks like a black box in biome scenes
+  // if (ominousRef) {
+  //   if (game.level >= 10 && game.state === State.PLAYING) {
+  //     const t = Math.min(1, (game.level - 10) / 6);
+  //     ominousRef.visible = true;
+  //     ominousRef.material.opacity = 0.08 + t * 0.42;
+  //     ominousRef.scale.setScalar(0.5 + t * 1.2);
+  //   } else {
+  //     ominousRef.visible = false;
+  //   }
+  // }
+  if (ominousRef) ominousRef.visible = false;
 
   _mark('state_dispatch'); // ── end: state_dispatch (PLAYING/TITLE/PAUSE logic)
   // ── Universal updates ──

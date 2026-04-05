@@ -53,7 +53,8 @@ function buildTaperedTerrainGeo() {
     [-500,  -100, 25],   // far mountains (ridgeline near z≈-260)
     [-100,   500, 40],   // walking corridor — HIGH detail
     [ 500,   750,  6],   // behind-player taper
-    [ 750,  1200,  3],   // far behind player — minimal
+    [ 750,  1200,  4],   // behind player — sparse
+    [ 1200, 2000,  2],   // far behind player — reach mountain cylinder
   ]);
 
   const nx = xPos.length;   // ~94
