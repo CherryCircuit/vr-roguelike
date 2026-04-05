@@ -244,7 +244,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
           riverX = Math.sin(z * 0.03) * 15.0 - 10.0; // Match terrain world-space river center
           distToRiver = Math.abs(x - riverX);
           attempts++;
-        } while ((distToRiver < 8 || (x * x + z * z < 225)) && attempts < 30);  // 225 = 15^2 clearance
+        } while ((distToRiver < 8 || (x * x + (z + 42) * (z + 42) < 2500)) && attempts < 30);  // 2500 = 50^2 from player (world z=0 = group z=42)
 
         const scale = 0.8 + Math.random() * 1.2; // 0.8x to 2.0x variation on top of base
         clone.position.set(x, floorY - 0.3, z); // Bury roots slightly below ground
@@ -343,26 +343,32 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   group.add(stars);
 
   // ========================================
-  // 5. SPARK PARTICLES (150 rising from lava - optimized from 200)
+  // 5. LAVA EMBERS (400 rising from lava river, fade at Y:25)
   // ========================================
-  const sparkCount = 150;
+  const sparkCount = 400;
   const sparkPositions = new Float32Array(sparkCount * 3);
   const sparkVelocities = new Float32Array(sparkCount * 3);
   const sparkLifetimes = new Float32Array(sparkCount);
   const sparkMaxLifetimes = new Float32Array(sparkCount);
+  const sparkColors = new Float32Array(sparkCount * 3);
 
   const initSpark = (idx) => {
     const i3 = idx * 3;
     const z = (Math.random() - 0.5) * 100 - 50; // Bias toward negative Z (in front of player)
-    const riverX = Math.sin(z * 0.03) * 15.0 - 10.0;  // Match terrain world-space river center (sin - terrain.x = sin*15 - 10)
-    sparkPositions[i3] = riverX + (Math.random() - 0.5) * 4;
-    sparkPositions[i3 + 1] = floorY - 0.5 + Math.random() * 0.5;  // Account for terrain Y offset
+    const riverX = Math.sin(z * 0.03) * 15.0 - 10.0;  // Match terrain world-space river center
+    sparkPositions[i3] = riverX + (Math.random() - 0.5) * 8;
+    sparkPositions[i3 + 1] = floorY - 2.5 + Math.random() * 0.5;  // Start at river level
     sparkPositions[i3 + 2] = z;
-    sparkVelocities[i3] = (Math.random() - 0.5) * 0.02;
-    sparkVelocities[i3 + 1] = 0.03 + Math.random() * 0.05;
-    sparkVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
+    sparkVelocities[i3] = (Math.random() - 0.5) * 0.01;  // Gentle horizontal drift
+    sparkVelocities[i3 + 1] = 0.02 + Math.random() * 0.04;  // Slow rise
+    sparkVelocities[i3 + 2] = (Math.random() - 0.5) * 0.01;
     sparkLifetimes[idx] = 0;
-    sparkMaxLifetimes[idx] = 2 + Math.random() * 3;
+    sparkMaxLifetimes[idx] = 6 + Math.random() * 8;  // Long life for slow rise to Y:25
+    // Random warm color between orange-red and bright yellow
+    const colorMix = Math.random();
+    sparkColors[i3] = 1.0;  // R
+    sparkColors[i3 + 1] = 0.3 + colorMix * 0.5;  // G: 0.3-0.8
+    sparkColors[i3 + 2] = colorMix * 0.2;  // B: 0-0.2
   };
 
   for (let i = 0; i < sparkCount; i++) {
@@ -372,12 +378,13 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
   const sparkGeo = new THREE.BufferGeometry();
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+  sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkColors, 3));
 
   const sparkMat = new THREE.PointsMaterial({
-    color: 0xffaa00,
-    size: 0.3,
+    size: 0.2,
+    vertexColors: true,
     transparent: true,
-    opacity: 0.8,
+    opacity: 0.85,
     blending: THREE.AdditiveBlending,
     depthWrite: false
   });
@@ -385,32 +392,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   const sparks = new THREE.Points(sparkGeo, sparkMat);
   group.add(sparks);
 
-  // ========================================
-  // 5b. ASH PARTICLES (dark floating - optimized from 260)
-  // ========================================
-  const ashCount = 200;
-  const ashPositions = new Float32Array(ashCount * 3);
-  const ashVelocities = new Float32Array(ashCount * 3);
-  for (let i = 0; i < ashCount; i++) {
-    const i3 = i * 3;
-    ashPositions[i3] = (Math.random() - 0.5) * 80;
-    ashPositions[i3 + 1] = 1 + Math.random() * 10;
-    ashPositions[i3 + 2] = (Math.random() - 0.5) * 80;
-    ashVelocities[i3] = (Math.random() - 0.5) * 0.02;
-    ashVelocities[i3 + 1] = 0.01 + Math.random() * 0.015;
-    ashVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
-  }
-  const ashGeo = new THREE.BufferGeometry();
-  ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPositions, 3));
-  const ashMat = new THREE.PointsMaterial({
-    color: 0x2b2b2b,
-    size: 0.06,  // Smaller than alien particles (0.0875)
-    transparent: true,
-    opacity: 0.5,
-    depthWrite: false
-  });
-  const ash = new THREE.Points(ashGeo, ashMat);
-  group.add(ash);
+  // (Ash particles removed - were jittery dots in corridor, not visible from player position)
 
   // ========================================
   // 6. FLAME GEYSERS (periodic eruptions)
@@ -590,6 +572,43 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   group.add(moon3);
 
   // ========================================
+  // SKYDOME (subtle dark red atmosphere)
+  // ========================================
+  const skyDomeGeo = new THREE.SphereGeometry(2400, 32, 20);
+  const skyDomeMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    transparent: true,
+    uniforms: {},
+    vertexShader: `
+      varying float vNormalizedY;
+      void main() {
+        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        vNormalizedY = normalize(position).y; // -1 at bottom, +1 at top
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying float vNormalizedY;
+      void main() {
+        // Subtle dark red gradient
+        vec3 bottomColor = vec3(0.07, 0.0, 0.0);   // Very dark red at horizon
+        vec3 midColor = vec3(0.13, 0.02, 0.02);    // Slightly brighter mid
+        vec3 topColor = vec3(0.02, 0.0, 0.0);      // Near black at zenith
+        float t = vNormalizedY * 0.5 + 0.5; // Remap to 0-1
+        vec3 col = mix(bottomColor, midColor, smoothstep(0.0, 0.3, t));
+        col = mix(col, topColor, smoothstep(0.3, 0.8, t));
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `
+  });
+  const skyDome = new THREE.Mesh(skyDomeGeo, skyDomeMat);
+  skyDome.frustumCulled = false;
+  skyDome.renderOrder = -2;
+  group.add(skyDome);
+
+  // ========================================
   // ANIMATION UPDATE
   // ========================================
   group.userData.update = (now, dt) => {
@@ -642,22 +661,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     }
     sparkGeo.attributes.position.needsUpdate = true;
 
-    // Ash drift
-    const ashPos = ashGeo.attributes.position.array;
-    for (let i = 0; i < ashCount; i++) {
-      const i3 = i * 3;
-      ashPos[i3] += ashVelocities[i3] * dt * 0.6;
-      ashPos[i3 + 1] += ashVelocities[i3 + 1] * dt * 0.6;
-      ashPos[i3 + 2] += ashVelocities[i3 + 2] * dt * 0.6;
-      if (ashPos[i3 + 1] > 12) ashPos[i3 + 1] = 1;
-      if (ashPos[i3 + 1] < -10) ashPos[i3 + 1] = 1;
-      if (ashPos[i3 + 1] > 1000) ashPos[i3 + 1] = 10;
-      if (ashPos[i3] > 40) ashPos[i3] = -40;
-      if (ashPos[i3] < -40) ashPos[i3] = 40;
-      if (ashPos[i3 + 2] > 40) ashPos[i3 + 2] = -40;
-      if (ashPos[i3 + 2] < -40) ashPos[i3 + 2] = 40;
-    }
-    ashGeo.attributes.position.needsUpdate = true;
+    // (Ash drift removed)
 
     // Geyser trigger and update
     if (now - lastGeyserTime > geyserInterval) {
