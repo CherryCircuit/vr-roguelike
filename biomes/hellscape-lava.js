@@ -171,7 +171,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
   const lavaRiver = new THREE.Mesh(riverGeo, lavaRiverMat);
   lavaRiver.position.y = -0.70; // World Y=-2.25 (group Y=-1.55, so -2.25-(-1.55)=-0.70)
-  lavaRiver.position.z = 0.0;
+  lavaRiver.position.z = 3.0;   // Shift forward so world range covers z:-130 to z:61 (group z:-88 to z:103)
   lavaRiver.frustumCulled = false; // Prevent disappearing when looking around
   lavaRiver.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 200); // Large bounding sphere to prevent culling
   lavaRiver.renderOrder = 1; // Render above terrain
@@ -373,110 +373,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   geyserPoints.name = "geysers";
   group.add(geyserPoints);
 
-  // ========================================
-  // 7. FLAME PILLARS (distant fire columns)
-  // ========================================
-  const PILLAR_COUNT = 7;
-  const PARTICLES_PER_PILLAR = 28;
-  const TOTAL_FLAME_PILLAR_PARTICLES = PILLAR_COUNT * PARTICLES_PER_PILLAR;
-
-  // Canvas-drawn flame sprite texture (64x64, soft radial gradient)
-  const flameCanvas = document.createElement('canvas');
-  flameCanvas.width = 64;
-  flameCanvas.height = 64;
-  const fCtx = flameCanvas.getContext('2d');
-  const flameGrad = fCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  flameGrad.addColorStop(0, 'rgba(255,255,200,1.0)');
-  flameGrad.addColorStop(0.2, 'rgba(255,200,50,0.9)');
-  flameGrad.addColorStop(0.5, 'rgba(255,100,0,0.6)');
-  flameGrad.addColorStop(0.8, 'rgba(200,30,0,0.2)');
-  flameGrad.addColorStop(1, 'rgba(100,0,0,0.0)');
-  fCtx.fillStyle = flameGrad;
-  fCtx.fillRect(0, 0, 64, 64);
-  const flameTexture = new THREE.CanvasTexture(flameCanvas);
-
-  // Pillar positions: spread in forward semicircle at 30-70 units distance
-  const pillarDefs = [];
-  for (let i = 0; i < PILLAR_COUNT; i++) {
-    const angle = (Math.random() - 0.5) * Math.PI * 0.8; // Spread within forward arc (-60deg to +60deg)
-    const dist = 35 + Math.random() * 40; // 35-75 units away
-    pillarDefs.push({
-      x: Math.sin(angle) * dist + 10.0,
-      z: -Math.abs(Math.cos(angle) * dist), // Force negative Z (in front)
-      height: 12 + Math.random() * 10, // Pillar height 12-22 units
-      radius: 1.5 + Math.random() * 1.5, // Base radius 1.5-3 units
-      speed: 0.6 + Math.random() * 0.4 // Rise speed multiplier
-    });
-  }
-
-  // Particle arrays
-  const flamePositions = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES * 3);
-  const flameSizes = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES);
-  const flameParticleData = []; // Per-particle: { pillarIdx, t (0-1 life progress) }
-
-  const initFlameParticle = (idx) => {
-    const pillarIdx = idx % PILLAR_COUNT;
-    const pillar = pillarDefs[pillarIdx];
-    const i3 = idx * 3;
-    const angle = Math.random() * Math.PI * 2;
-    const r = Math.random() * pillar.radius;
-    const t = Math.random(); // Start at random height for stagger
-
-    flamePositions[i3] = pillar.x + Math.cos(angle) * r;
-    flamePositions[i3 + 1] = floorY + t * pillar.height;
-    flamePositions[i3 + 2] = pillar.z + Math.sin(angle) * r;
-    flameSizes[idx] = 1.0 + (1.0 - t) * 2.0; // Larger at base, smaller at top
-
-    if (!flameParticleData[idx]) {
-      flameParticleData[idx] = { pillarIdx, speed: 0.3 + Math.random() * 0.3 };
-    }
-    flameParticleData[idx].t = t;
-    flameParticleData[idx].pillarIdx = pillarIdx;
-  };
-
-  for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
-    initFlameParticle(i);
-  }
-
-  const flamePillarGeo = new THREE.BufferGeometry();
-  flamePillarGeo.setAttribute('position', new THREE.BufferAttribute(flamePositions, 3));
-  flamePillarGeo.setAttribute('aSize', new THREE.BufferAttribute(flameSizes, 1));
-
-  // Use ShaderMaterial for per-particle size with sizeAttenuation
-  const flamePillarMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTexture: { value: flameTexture },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
-    },
-    vertexShader: `
-      attribute float aSize;
-      varying float vAlpha;
-      uniform float uPixelRatio;
-      void main() {
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = aSize * uPixelRatio * (200.0 / -mvPosition.z);
-        gl_PointSize = clamp(gl_PointSize, 1.0, 64.0);
-        gl_Position = projectionMatrix * mvPosition;
-        // Fade particles that are very high (near top of pillar)
-        vAlpha = aSize / 3.0;
-      }
-    `,
-    fragmentShader: `
-      uniform sampler2D uTexture;
-      varying float vAlpha;
-      void main() {
-        vec4 texColor = texture2D(uTexture, gl_PointCoord);
-        gl_FragColor = vec4(texColor.rgb, texColor.a * vAlpha);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending
-  });
-
-  const flamePillarPoints = new THREE.Points(flamePillarGeo, flamePillarMat);
-  flamePillarPoints.name = "flame-pillars";
-  group.add(flamePillarPoints);
+  // (Flame pillars removed per Graeme's request)
 
   // ========================================
   // MOONS (existing)
@@ -633,34 +530,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     geyserGeo.setDrawRange(0, activeCount);
     geyserGeo.attributes.position.needsUpdate = true;
 
-    // Flame pillar animation
-    const fpPos = flamePillarGeo.attributes.position.array;
-    const fpSizes = flamePillarGeo.attributes.aSize.array;
-    for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
-      const pd = flameParticleData[i];
-      const pillar = pillarDefs[pd.pillarIdx];
-      const i3 = i * 3;
-      const dtSec = dt * 0.001;
-
-      // Advance particle up the pillar
-      pd.t += dtSec * pd.speed * pillar.speed / pillar.height;
-
-      if (pd.t >= 1.0) {
-        // Respawn at base
-        initFlameParticle(i);
-      } else {
-        // Slight horizontal drift as particle rises
-        const drift = (Math.random() - 0.5) * 0.05;
-        fpPos[i3] += drift;
-        fpPos[i3 + 1] += pd.speed * dtSec * pillar.speed;
-        fpPos[i3 + 2] += drift;
-
-        // Shrink as particle rises
-        fpSizes[i] = Math.max(0.3, (1.0 - pd.t) * 3.0);
-      }
-    }
-    flamePillarGeo.attributes.position.needsUpdate = true;
-    flamePillarGeo.attributes.aSize.needsUpdate = true;
+    // (Flame pillar animation removed)
   };
 
   // Hellscape floor HUD height: group.position.y = 0.05

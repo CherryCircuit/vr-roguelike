@@ -432,13 +432,16 @@ export function buildAlienPlanetScene(group, deps) {
   const alienMountainTex = new THREE.TextureLoader().load('assets/mountain_wrap.png');
   alienMountainTex.wrapS = THREE.RepeatWrapping;
   alienMountainTex.wrapT = THREE.ClampToEdgeWrapping;
-  const alienMtnRadius = 1162;
+  const alienMtnRadius = 148;  // Fits within 300x300 floor
   const alienMtnRepeatWidth = 2808;
   alienMountainTex.repeat.set((2 * Math.PI * alienMtnRadius) / alienMtnRepeatWidth, 1);
   const alienMtnRepeatCount = alienMountainTex.repeat.x;
   alienMountainTex.offset.x = 0.5 - (0.5 / alienMtnRepeatCount);
 
-  const alienMtnCylGeo = new THREE.CylinderGeometry(alienMtnRadius, alienMtnRadius, 190, 64, 1, true);
+  // Height proportional to keep PNG aspect: circumference / aspect_ratio
+  // circumference = 2*PI*148 ≈ 930, aspect = 14.78, so height ≈ 63
+  const alienMtnHeight = Math.round((2 * Math.PI * alienMtnRadius) / 14.78);
+  const alienMtnCylGeo = new THREE.CylinderGeometry(alienMtnRadius, alienMtnRadius, alienMtnHeight, 64, 1, true);
   const alienMtnCylMat = new THREE.ShaderMaterial({
     uniforms: {
       uTexture: { value: alienMountainTex }
@@ -469,7 +472,7 @@ export function buildAlienPlanetScene(group, deps) {
   });
   const alienMtnCylinder = new THREE.Mesh(alienMtnCylGeo, alienMtnCylMat);
   alienMtnCylinder.name = 'alien-mountain-wrap';
-  alienMtnCylinder.position.set(0, 95, 0);
+  alienMtnCylinder.position.set(-6.628, alienMtnHeight / 2, 13.926);  // Centered at world X:0 Z:0
   alienMtnCylinder.frustumCulled = false;
   alienMtnCylinder.renderOrder = 0;
   group.add(alienMtnCylinder);

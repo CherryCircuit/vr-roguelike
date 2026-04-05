@@ -14,20 +14,20 @@ export function buildDesertNightScene(group, deps) {
   const duneOutlineColor = 0xAB3A93;
 
   // === LIGHTING (CRITICAL) ===
-  // Pale moonlight
+  // Pale moonlight with shadows
   const moonLight = new THREE.DirectionalLight(0xd4e5f7, 2.34);
   moonLight.position.set(-30, 50, -30);
+  moonLight.castShadow = true;
+  moonLight.shadow.mapSize.width = 1024;
+  moonLight.shadow.mapSize.height = 1024;
+  moonLight.shadow.camera.near = 1;
+  moonLight.shadow.camera.far = 200;
+  moonLight.shadow.camera.left = -60;
+  moonLight.shadow.camera.right = 60;
+  moonLight.shadow.camera.top = 60;
+  moonLight.shadow.camera.bottom = -60;
+  moonLight.shadow.bias = -0.002;
   group.add(moonLight);
-
-  // Point light for long moon-like shadows from cacti
-  const shadowLight = new THREE.PointLight(0xd4e5f7, 4.0, 100);
-  shadowLight.position.set(-45, 35, -60); // Same as moon position
-  shadowLight.castShadow = true;
-  shadowLight.shadow.mapSize.width = 1024;
-  shadowLight.shadow.mapSize.height = 1024;
-  shadowLight.shadow.camera.near = 10;
-  shadowLight.shadow.camera.far = 100;
-  group.add(shadowLight);
 
   // Very dim ambient
   const ambientLight = new THREE.AmbientLight(0x1a2035, 0.15);
@@ -48,10 +48,10 @@ export function buildDesertNightScene(group, deps) {
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: {
-      topColor: { value: new THREE.Color(0x06080c) },
-      midColor: { value: new THREE.Color(0x151b2d) },
-      horizonColor: { value: new THREE.Color(0x3d2f2a) },
-      moonGlowColor: { value: new THREE.Color(0x6a6271) },
+      topColor: { value: new THREE.Color(0x08060c) },
+      midColor: { value: new THREE.Color(0x1d152d) },
+      horizonColor: { value: new THREE.Color(0x3d2a2f) },
+      moonGlowColor: { value: new THREE.Color(0x6a5271) },
     },
     vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 moonGlowColor; void main(){ float worldY=vWorldPosition.y; float t1=smoothstep(-140.0,220.0,worldY); float t2=smoothstep(120.0,780.0,worldY); float t3=smoothstep(300.0,1200.0,worldY); vec3 col=horizonColor; col=mix(col,moonGlowColor,t1); col=mix(col,midColor,t2); col=mix(col,topColor,t3); col=pow(col,vec3(1.0/2.2)); gl_FragColor=vec4(col*0.5,1.0); }`,
@@ -201,6 +201,7 @@ export function buildDesertNightScene(group, deps) {
       const hArm = new THREE.Mesh(cactusGeoCache[hArmKey], cactusArmMat);
       hArm.rotation.z = Math.PI / 2;
       hArm.position.set(side * armLength / 2, armY, 0);
+      hArm.castShadow = true;
       cactusGroup.add(hArm);
 
       // Vertical part (cached geometry)
@@ -211,6 +212,7 @@ export function buildDesertNightScene(group, deps) {
       }
       const vArm = new THREE.Mesh(cactusGeoCache[vArmKey], cactusArmMat);
       vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
+      vArm.castShadow = true;
       cactusGroup.add(vArm);
     }
 
