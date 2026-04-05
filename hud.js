@@ -4540,48 +4540,48 @@ function createSeparator(width = 1.8) {
  */
 function createBlasterSection(hand, panelX) {
   const group = new THREE.Group();
-  let yPos = 1.25;
+  let yPos = 1.3;
 
   // Title
   const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, {
-    fontSize: scalePauseFont(48),
+    fontSize: scalePauseFont(44),
     color: '#00ffff',
-    scale: scalePauseText(0.15),
+    scale: scalePauseText(0.13),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
   titleText.position.set(0, yPos, 0.02);
   group.add(titleText);
-  yPos -= 0.22;
+  yPos -= 0.20;
 
   // Weapon name
   const weaponId = game.mainWeapon[hand] || 'BLASTER';
   const weaponName = weaponId.replace(/_/g, ' ').toUpperCase();
   const weaponText = makeSprite(weaponName, {
-    fontSize: scalePauseFont(36),
+    fontSize: scalePauseFont(32),
     color: '#ffffff',
-    scale: scalePauseText(0.1),
+    scale: scalePauseText(0.08),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
   weaponText.position.set(0, yPos, 0.02);
   group.add(weaponText);
-  yPos -= 0.15;
+  yPos -= 0.10;
 
   // Separator after weapon name
   const sep1 = createSeparator(1.8);
   sep1.position.set(0, yPos, 0.02);
   group.add(sep1);
-  yPos -= 0.12;
+  yPos -= 0.08;
 
   // Upgrades header
   const upgradesHeader = makeSprite('[UPGRADES]', {
-    fontSize: scalePauseFont(28),
+    fontSize: scalePauseFont(24),
     color: '#888888',
-    scale: scalePauseText(0.08),
+    scale: scalePauseText(0.06),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
   upgradesHeader.position.set(0, yPos, 0.02);
   group.add(upgradesHeader);
-  yPos -= 0.15;
+  yPos -= 0.10;
 
   // Upgrades list (exclude dream_fragment - it's a collectible, not an upgrade)
   const upgrades = game.upgrades[hand] || {};
@@ -4592,47 +4592,36 @@ function createBlasterSection(hand, panelX) {
       const iconData = UPGRADE_ICONS[id] || { icon: '•', color: '#ffffff' };
       const displayName = id.replace(/_/g, ' ').toUpperCase();
       const upgradeText = makeSprite(`${iconData.icon} ${displayName} x${count}`, {
-        fontSize: scalePauseFont(32),
+        fontSize: scalePauseFont(28),
         color: iconData.color,
-        scale: scalePauseText(0.09),
+        scale: scalePauseText(0.07),
         renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
-      upgradeText.position.set(0, yPos - (index * 0.16), 0.02);
+      upgradeText.position.set(0, yPos - (index * 0.13), 0.02);
       upgradeText.userData = { isUpgradeSprite: true };
       group.add(upgradeText);
     });
-    yPos -= (upgradeEntries.length * 0.16 + 0.08);
+    yPos -= (upgradeEntries.length * 0.13 + 0.06);
   } else {
     const noUpgradesText = makeSprite('NO UPGRADES', {
-      fontSize: scalePauseFont(32),
+      fontSize: scalePauseFont(28),
       color: '#666666',
-      scale: scalePauseText(0.09),
+      scale: scalePauseText(0.07),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     noUpgradesText.position.set(0, yPos, 0.02);
     noUpgradesText.userData = { isUpgradeSprite: true };
     group.add(noUpgradesText);
-    yPos -= 0.32;
+    yPos -= 0.19;
   }
 
   // Separator after upgrades
   const sep2 = createSeparator(1.8);
   sep2.position.set(0, yPos, 0.02);
   group.add(sep2);
-  yPos -= 0.12;
+  yPos -= 0.08;
 
-  // Stats header
-  const statsHeader = makeSprite('[STATS]', {
-    fontSize: scalePauseFont(28),
-    color: '#888888',
-    scale: scalePauseText(0.08),
-    renderOrder: PAUSE_TEXT_RENDER_ORDER
-  });
-  statsHeader.position.set(0, yPos, 0.02);
-  group.add(statsHeader);
-  yPos -= 0.15;
-
-  // Stats for this hand: KILLS, SHOTS, HITS, ACCURACY
+  // Stats: compact 2-column layout (left column: KILLS/SHOTS, right column: HITS/ACC)
   const handData = game.handStats[hand] || {};
   const stats = {
     kills: handData.kills ?? 0,
@@ -4648,58 +4637,67 @@ function createBlasterSection(hand, panelX) {
     { label: 'ACC', value: `${accuracy}%`, color: accuracy >= 50 ? '#00ff00' : '#ff4444' },
   ];
 
+  // Render stats in 2 columns: left (KILLS, HITS) and right (SHOTS, ACC)
+  const colLeft = -0.45;
+  const colRight = 0.45;
+  const statRowHeight = 0.13;
   statLines.forEach((stat, index) => {
+    const x = index % 2 === 0 ? colLeft : colRight;
+    const row = Math.floor(index / 2);
     const statText = makeSprite(`${stat.label}: ${stat.value}`, {
-      fontSize: scalePauseFont(32),
+      fontSize: scalePauseFont(26),
       color: stat.color,
-      scale: scalePauseText(0.09),
+      scale: scalePauseText(0.065),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
-    statText.position.set(0, yPos - (index * 0.16), 0.02);
+    statText.position.set(x, yPos - (row * statRowHeight), 0.02);
     statText.userData = { isStatSprite: true, hand, statKey: stat.label };
     group.add(statText);
   });
-  yPos -= (statLines.length * 0.16 + 0.08);
+  yPos -= (2 * statRowHeight + 0.06);
 
   // Separator after stats
   const sep3 = createSeparator(1.8);
   sep3.position.set(0, yPos, 0.02);
   group.add(sep3);
-  yPos -= 0.12;
+  yPos -= 0.08;
 
-  // Enemies Killed section
+  // Enemies Killed section - compact two-column layout
   const enemiesHeader = makeSprite('[ENEMIES KILLED]', {
-    fontSize: scalePauseFont(28),
+    fontSize: scalePauseFont(24),
     color: '#888888',
-    scale: scalePauseText(0.08),
+    scale: scalePauseText(0.06),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
   enemiesHeader.position.set(0, yPos, 0.02);
   group.add(enemiesHeader);
-  yPos -= 0.15;
+  yPos -= 0.10;
 
-  // Enemy kills by type
+  // Enemy kills by type - 2 columns
   const enemyKills = handData.enemyKills || {};
   const enemyEntries = Object.entries(enemyKills).filter(([_, count]) => count > 0);
 
   if (enemyEntries.length > 0) {
+    const enemyRowHeight = 0.12;
     enemyEntries.forEach(([type, count], index) => {
       const icon = ENEMY_ICONS[type] || '💀';
+      const x = index % 2 === 0 ? colLeft : colRight;
+      const row = Math.floor(index / 2);
       const enemyText = makeSprite(`${icon} ${type.toUpperCase()} x${count}`, {
-        fontSize: scalePauseFont(28),
+        fontSize: scalePauseFont(24),
         color: '#ff6666',
-        scale: scalePauseText(0.08),
+        scale: scalePauseText(0.06),
         renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
-      enemyText.position.set(0, yPos - (index * 0.14), 0.02);
+      enemyText.position.set(x, yPos - (row * enemyRowHeight), 0.02);
       enemyText.userData = { isEnemyKillSprite: true };
       group.add(enemyText);
     });
   } else {
     const noEnemiesText = makeSprite('NO ENEMIES', {
-      fontSize: scalePauseFont(28),
+      fontSize: scalePauseFont(24),
       color: '#666666',
-      scale: scalePauseText(0.08),
+      scale: scalePauseText(0.06),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
     noEnemiesText.position.set(0, yPos, 0.02);
