@@ -3688,18 +3688,18 @@ function handleDesktopNameEntryClick() {
     game.state = State.SCOREBOARD;
     showScoreboard([], 'SUBMITTING...');
     const country = getStoredCountry() || '';
+    let submittedAt = null;
     submitScore(name, game.finalScore, game.finalLevel, country).then((data) => {
-      // Store the timestamp of the submitted score for highlighting
       if (data && data[0] && data[0].created_at) {
-        setLastSubmittedTimestamp(data[0].created_at);
+        submittedAt = data[0].created_at;
+        setLastSubmittedTimestamp(submittedAt);
       }
       return new Promise(resolve => setTimeout(resolve, 500));
     }).then(() => {
       return fetchTopScores();
     }).then(scores => {
-      // Find the page the submitted score is on and auto-navigate
-      if (lastSubmittedTimestamp) {
-        const idx = scores.findIndex(s => s.created_at === lastSubmittedTimestamp);
+      if (submittedAt) {
+        const idx = scores.findIndex(s => s.created_at === submittedAt);
         if (idx >= 0) {
           setLastSubmittedPageIndex(Math.floor(idx / 10));
         }
@@ -3906,16 +3906,23 @@ function handleNameEntryTrigger(controller) {
     game.state = State.SCOREBOARD;
     showScoreboard([], 'SUBMITTING...');
     const country = getStoredCountry() || '';
+    let submittedAt = null;
     submitScore(name, game.finalScore, game.finalLevel, country).then((data) => {
-      // Store the timestamp of the submitted score for highlighting
       if (data && data[0] && data[0].created_at) {
-        setLastSubmittedTimestamp(data[0].created_at);
+        submittedAt = data[0].created_at;
+        setLastSubmittedTimestamp(submittedAt);
       }
       // Small artificial delay to ensure DB indexing is finished for consistent read-after-write
       return new Promise(resolve => setTimeout(resolve, 500));
     }).then(() => {
       return fetchTopScores();
     }).then(scores => {
+      if (submittedAt) {
+        const idx = scores.findIndex(s => s.created_at === submittedAt);
+        if (idx >= 0) {
+          setLastSubmittedPageIndex(Math.floor(idx / 10));
+        }
+      }
       showScoreboard(scores, 'GLOBAL');
     }).catch(err => {
       console.error('[scoreboard] Detailed error in submission flow:', err);
