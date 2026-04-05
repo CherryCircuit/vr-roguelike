@@ -4435,7 +4435,7 @@ function createPauseMenu() {
 
   // Main panel - ONE dark see-through plane
   const panelWidth = 4.6;
-  const panelHeight = 3.2;  // Shorter since no separate stats section
+  const panelHeight = 3.6;  // Taller to fit blaster sections with enemies killed
 
   // Background panel - semi-transparent black, no depth interaction
   const panelGeo = new THREE.PlaneGeometry(panelWidth, panelHeight);
@@ -4463,13 +4463,13 @@ function createPauseMenu() {
 
   // Left blaster section (includes stats now)
   const leftSection = createBlasterSection('left');
-  leftSection.position.set(-1.25, 0.4, 0.02);
+  leftSection.position.set(-1.25, 0.2, 0.02);
   group.add(leftSection);
   pauseMenuElements.leftBlasterSection = leftSection;
 
   // Right blaster section (includes stats now)
   const rightSection = createBlasterSection('right');
-  rightSection.position.set(1.25, 0.4, 0.02);
+  rightSection.position.set(1.25, 0.2, 0.02);
   group.add(rightSection);
   pauseMenuElements.rightBlasterSection = rightSection;
 
@@ -4477,7 +4477,7 @@ function createPauseMenu() {
 
   // Resume button
   const resumeBtn = createResumeButton();
-  resumeBtn.position.set(0, -1.2, 0.03);
+  resumeBtn.position.set(0, -1.35, 0.03);
   group.add(resumeBtn);
   pauseMenuElements.resumeButton = resumeBtn;
 
@@ -4540,7 +4540,7 @@ function createSeparator(width = 1.8) {
  */
 function createBlasterSection(hand, panelX) {
   const group = new THREE.Group();
-  let yPos = 1.1;
+  let yPos = 1.25;
 
   // Title
   const titleText = makeSprite(`${hand.toUpperCase()} BLASTER`, {
@@ -4551,7 +4551,7 @@ function createBlasterSection(hand, panelX) {
   });
   titleText.position.set(0, yPos, 0.02);
   group.add(titleText);
-  yPos -= 0.35;
+  yPos -= 0.22;
 
   // Weapon name
   const weaponId = game.mainWeapon[hand] || 'BLASTER';
@@ -4564,13 +4564,13 @@ function createBlasterSection(hand, panelX) {
   });
   weaponText.position.set(0, yPos, 0.02);
   group.add(weaponText);
-  yPos -= 0.3;
+  yPos -= 0.15;
 
   // Separator after weapon name
   const sep1 = createSeparator(1.8);
   sep1.position.set(0, yPos, 0.02);
   group.add(sep1);
-  yPos -= 0.3;
+  yPos -= 0.12;
 
   // Upgrades header
   const upgradesHeader = makeSprite('[UPGRADES]', {
@@ -4581,7 +4581,7 @@ function createBlasterSection(hand, panelX) {
   });
   upgradesHeader.position.set(0, yPos, 0.02);
   group.add(upgradesHeader);
-  yPos -= 0.3;
+  yPos -= 0.15;
 
   // Upgrades list (exclude dream_fragment - it's a collectible, not an upgrade)
   const upgrades = game.upgrades[hand] || {};
@@ -4597,11 +4597,11 @@ function createBlasterSection(hand, panelX) {
         scale: scalePauseText(0.09),
         renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
-      upgradeText.position.set(0, yPos - (index * 0.22), 0.02);
+      upgradeText.position.set(0, yPos - (index * 0.16), 0.02);
       upgradeText.userData = { isUpgradeSprite: true };
       group.add(upgradeText);
     });
-    yPos -= (upgradeEntries.length * 0.22 + 0.2);
+    yPos -= (upgradeEntries.length * 0.16 + 0.08);
   } else {
     const noUpgradesText = makeSprite('NO UPGRADES', {
       fontSize: scalePauseFont(32),
@@ -4612,14 +4612,14 @@ function createBlasterSection(hand, panelX) {
     noUpgradesText.position.set(0, yPos, 0.02);
     noUpgradesText.userData = { isUpgradeSprite: true };
     group.add(noUpgradesText);
-    yPos -= 0.42;
+    yPos -= 0.32;
   }
 
   // Separator after upgrades
   const sep2 = createSeparator(1.8);
   sep2.position.set(0, yPos, 0.02);
   group.add(sep2);
-  yPos -= 0.3;
+  yPos -= 0.12;
 
   // Stats header
   const statsHeader = makeSprite('[STATS]', {
@@ -4630,7 +4630,7 @@ function createBlasterSection(hand, panelX) {
   });
   statsHeader.position.set(0, yPos, 0.02);
   group.add(statsHeader);
-  yPos -= 0.3;
+  yPos -= 0.15;
 
   // Stats for this hand: KILLS, SHOTS, HITS, ACCURACY
   const handData = game.handStats[hand] || {};
@@ -4655,17 +4655,17 @@ function createBlasterSection(hand, panelX) {
       scale: scalePauseText(0.09),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
-    statText.position.set(0, yPos - (index * 0.22), 0.02);
+    statText.position.set(0, yPos - (index * 0.16), 0.02);
     statText.userData = { isStatSprite: true, hand, statKey: stat.label };
     group.add(statText);
   });
-  yPos -= (statLines.length * 0.22 + 0.2);
+  yPos -= (statLines.length * 0.16 + 0.08);
 
   // Separator after stats
   const sep3 = createSeparator(1.8);
   sep3.position.set(0, yPos, 0.02);
   group.add(sep3);
-  yPos -= 0.3;
+  yPos -= 0.12;
 
   // Enemies Killed section
   const enemiesHeader = makeSprite('[ENEMIES KILLED]', {
@@ -4676,7 +4676,7 @@ function createBlasterSection(hand, panelX) {
   });
   enemiesHeader.position.set(0, yPos, 0.02);
   group.add(enemiesHeader);
-  yPos -= 0.3;
+  yPos -= 0.15;
 
   // Enemy kills by type
   const enemyKills = handData.enemyKills || {};
@@ -4691,7 +4691,7 @@ function createBlasterSection(hand, panelX) {
         scale: scalePauseText(0.08),
         renderOrder: PAUSE_TEXT_RENDER_ORDER
       });
-      enemyText.position.set(0, yPos - (index * 0.2), 0.02);
+      enemyText.position.set(0, yPos - (index * 0.14), 0.02);
       enemyText.userData = { isEnemyKillSprite: true };
       group.add(enemyText);
     });
