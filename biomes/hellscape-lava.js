@@ -137,6 +137,9 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
           child.receiveShadow = true;
         }
       });
+      // Base scale correction for Blender export (models often export large)
+      model.scale.setScalar(0.5);
+      model.updateMatrixWorld(true);
 
       for (let i = 0; i < count; i++) {
         const clone = model.clone();
@@ -157,14 +160,14 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
           attempts++;
         } while ((distToRiver < 8 || (x * x + z * z < 64)) && attempts < 30);
 
-        const scale = 0.8 + Math.random() * 0.7; // 0.8x to 1.5x
-        clone.position.set(x, floorY, z);
+        const scale = 1.0 + Math.random() * 0.8; // 1.0x to 1.8x (on top of base 0.5x)
+        clone.position.set(x, floorY - 0.3, z); // Bury roots slightly below ground
         clone.rotation.set(
           (Math.random() - 0.5) * 0.2, // slight X tilt
           Math.random() * Math.PI * 2,    // full Y rotation
           (Math.random() - 0.5) * 0.2   // slight Z tilt
         );
-        clone.scale.setScalar(scale);
+        clone.scale.setScalar(scale); // Multiplied with base 0.5x = 0.5x to 0.9x effective
         group.add(clone);
         treeMeshes.push(clone);
       }
