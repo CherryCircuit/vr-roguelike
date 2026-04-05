@@ -78,14 +78,14 @@ export function buildAlienPlanetScene(group, deps) {
   group.add(moonGlow);
 
   // Lighting - moonLight for ambient scene lighting (shadows DISABLED for FPS)
-  const moonLight = new THREE.DirectionalLight(0xcc88ff, 8.4);
+  const moonLight = new THREE.DirectionalLight(0xcc88ff, 35);
   moonLight.position.set(60, 80, -40);
   // SHADOWS DISABLED - major FPS cost in this biome
   moonLight.castShadow = false;
   group.add(moonLight);
 
   // Green light - moved HIGH (y: 35) to not block view
-  const greenLight = new THREE.PointLight(0x00ff66, 1.2, 80);
+  const greenLight = new THREE.PointLight(0x44ffaa, 5, 80);
   greenLight.position.set(0, 35, 0);
   group.add(greenLight);
 
@@ -428,6 +428,52 @@ export function buildAlienPlanetScene(group, deps) {
     group.add(createDistantMountain(x, z, 1.0 + Math.random() * 0.5));
   }
 
+  // Darkened mountain wrap cylinder (synthwave asset, very dark for silhouette backdrop)
+  const alienMountainTex = new THREE.TextureLoader().load('assets/mountain_wrap.png');
+  alienMountainTex.wrapS = THREE.RepeatWrapping;
+  alienMountainTex.wrapT = THREE.ClampToEdgeWrapping;
+  const alienMtnRadius = 1162;
+  const alienMtnRepeatWidth = 2808;
+  alienMountainTex.repeat.set((2 * Math.PI * alienMtnRadius) / alienMtnRepeatWidth, 1);
+  const alienMtnRepeatCount = alienMountainTex.repeat.x;
+  alienMountainTex.offset.x = 0.5 - (0.5 / alienMtnRepeatCount);
+
+  const alienMtnCylGeo = new THREE.CylinderGeometry(alienMtnRadius, alienMtnRadius, 190, 64, 1, true);
+  const alienMtnCylMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTexture: { value: alienMountainTex }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uTexture;
+      varying vec2 vUv;
+      void main() {
+        vec4 texColor = texture2D(uTexture, vUv);
+        float brightness = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+        // Keep mountains near-black, just enough shape to see silhouettes
+        vec3 darkColor = vec3(brightness * 0.08);
+        gl_FragColor = vec4(darkColor, texColor.a);
+      }
+    `,
+    transparent: true,
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: true,
+    fog: false
+  });
+  const alienMtnCylinder = new THREE.Mesh(alienMtnCylGeo, alienMtnCylMat);
+  alienMtnCylinder.name = 'alien-mountain-wrap';
+  alienMtnCylinder.position.set(0, 95, 0);
+  alienMtnCylinder.frustumCulled = false;
+  alienMtnCylinder.renderOrder = 0;
+  group.add(alienMtnCylinder);
+
   // Animation update - OPTIMIZED: stagger updates to reduce per-frame cost
   let frameCounter = 0;
   group.userData.update = (now, dt) => {
@@ -438,7 +484,7 @@ export function buildAlienPlanetScene(group, deps) {
     cityShaderMat.uniforms.uTime.value = time;
 
     // Green light pulse: every frame (cheap - single value)
-    greenLight.intensity = 1.2 + Math.sin(time * 2) * 0.3;
+    greenLight.intensity = 5 + Math.sin(time * 2) * 0.3;
 
     // REMOVED: Firefly drift animation - per-frame position updates were too expensive
     // Fireflies are now static for better FPS

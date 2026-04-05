@@ -280,8 +280,8 @@ export function buildSynthwaveValleyScene(group, deps) {
       // FIX: FBM returns [-1, 1], remap to [0, 1] so smoothstep works correctly
       density = (density + 1.0) * 0.5;
 
-      // Soft cloud shapes using smoothstep - wider threshold for more coverage
-      float cloudMask = smoothstep(0.25, 0.65, density);
+      // Soft cloud shapes - reduced density (threshold raised for ~50% fewer clouds)
+      float cloudMask = smoothstep(0.45, 0.75, density);
 
       // FIX: Adjust sky band to work with dome geometry
       // Lower dome covers phi 0 to 0.4*PI (0 to 72 degrees from top)

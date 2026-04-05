@@ -474,8 +474,8 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     blending: THREE.AdditiveBlending
   });
 
-  flamePillarPoints.name = "flame-pillars";
   const flamePillarPoints = new THREE.Points(flamePillarGeo, flamePillarMat);
+  flamePillarPoints.name = "flame-pillars";
   group.add(flamePillarPoints);
 
   // ========================================
