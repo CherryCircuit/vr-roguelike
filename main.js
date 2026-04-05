@@ -34,7 +34,8 @@ import {
   playChargeReadySound, playChargeFireSound,
   // Boss and name entry sounds
   playIncomingBossSound, playNoOneMakesItSound,
-  playProjectileWarningSound
+  playProjectileWarningSound,
+  playPhaseWraithCharge,
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,

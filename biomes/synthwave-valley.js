@@ -205,9 +205,10 @@ export function buildSynthwaveValleyScene(group, deps) {
   group.add(mountainCylinder);
   registerFadeMaterial(mountainCylinderMat);
 
-  // ── CLOUD DOMES ──
-  // Two inward-facing hemispheres with procedural cloud shader.
+  // ── CLOUD DOME ──
+  // Full inward-facing sphere with procedural cloud shader.
   // Cheap for WebXR: low layer count, no raymarching, soft alpha.
+  // Full sphere avoids visible seam at hemisphere edges.
   const cloudUniforms = {
     uTime: { value: 0.0 },
     uSunDir: { value: new THREE.Vector3(0, 0.3, -1).normalize() },
@@ -322,8 +323,8 @@ export function buildSynthwaveValleyScene(group, deps) {
     }
   `;
 
-  // Lower cloud dome (closer to horizon)
-  const cloudDome1Geo = new THREE.SphereGeometry(2400, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.5);
+  // Full sphere cloud dome - no visible seam edges
+  const cloudDome1Geo = new THREE.SphereGeometry(2400, 32, 20);
   const cloudDome1Mat = new THREE.ShaderMaterial({
     uniforms: cloudUniforms,
     vertexShader: cloudVertexShader,
