@@ -107,7 +107,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   // ========================================
   // DEDICATED LAVA RIVER PLANE
   // ========================================
-  const riverWidth = 12;
+  const riverWidth = 25;  // Wide enough to cover bank-to-bank (overflow hidden by terrain)
   const riverLength = 200;
   const riverGeo = new THREE.PlaneGeometry(riverWidth, riverLength, 32, 64);
   riverGeo.rotateX(-Math.PI / 2);
@@ -158,11 +158,8 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
         float hotspot = pow(noise1, 3.0);
         col = mix(col, hotLava, hotspot * 0.6);
 
-        // Edge fade (sides of river)
-        float edgeX = smoothstep(0.0, 0.15, vUv.x) * smoothstep(1.0, 0.85, vUv.x);
-        // Edge fade (ends of river)
-        float edgeZ = smoothstep(0.0, 0.05, vUv.y) * smoothstep(1.0, 0.95, vUv.y);
-        float alpha = edgeX * edgeZ * 0.9;
+        // No edge fade - solid bank-to-bank, overflow hidden by terrain walls
+        float alpha = 0.95;
 
         gl_FragColor = vec4(col * 1.2, alpha);
       }
@@ -173,7 +170,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   });
 
   const lavaRiver = new THREE.Mesh(riverGeo, lavaRiverMat);
-  lavaRiver.position.y = floorY + 0.1; // Just above the river bed
+  lavaRiver.position.y = -2.25; // Just above riverbed at Y:-2.50
   lavaRiver.position.z = 0.0;
   lavaRiver.frustumCulled = false; // Prevent disappearing when looking around
   lavaRiver.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 200); // Large bounding sphere to prevent culling
