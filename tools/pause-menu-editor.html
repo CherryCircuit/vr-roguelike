@@ -12,61 +12,61 @@
             overflow: hidden; display: flex; height: 100vh;
         }
         #sidebar {
-            width: 280px; background: #252525; padding: 16px;
+            width: 300px; background: #252525; padding: 16px;
             display: flex; flex-direction: column; border-right: 1px solid #333;
+            overflow-y: auto;
         }
         #viewport { flex: 1; position: relative; }
-        #toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        #toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
         button {
             background: #3a3a3a; border: 1px solid #555; color: #e0e0e0;
-            padding: 8px 16px; cursor: pointer; border-radius: 4px; font-size: 13px;
+            padding: 8px 14px; cursor: pointer; border-radius: 4px; font-size: 13px;
         }
         button:hover { background: #4a4a4a; border-color: #777; }
         button.primary { background: #0066cc; border-color: #0080ff; }
         button.primary:hover { background: #0077dd; }
-        button.danger { background: #662222; border-color: #883333; }
-        button.danger:hover { background: #883333; }
         #selection-info {
-            background: #2a2a2a; padding: 12px; border-radius: 4px; margin-bottom: 16px;
+            background: #2a2a2a; padding: 12px; border-radius: 4px; margin-bottom: 12px;
         }
         #selection-info h3 { font-size: 13px; color: #888; margin-bottom: 8px; }
-        #selected-name { font-size: 16px; font-weight: 600; color: #4af; margin-bottom: 12px; }
-        .coord-row { display: flex; gap: 8px; margin-bottom: 8px; }
-        .coord-input { flex: 1; }
-        .coord-input label { display: block; font-size: 11px; color: #888; margin-bottom: 2px; }
-        .coord-input input {
-            width: 100%; background: #333; border: 1px solid #444; color: #fff;
-            padding: 6px 8px; border-radius: 3px; font-size: 13px;
+        #selected-name { font-size: 15px; font-weight: 600; color: #4af; margin-bottom: 10px; }
+        .prop-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+        .prop-row label { font-size: 11px; color: #888; width: 14px; text-align: right; flex-shrink: 0; }
+        .prop-row input {
+            flex: 1; background: #333; border: 1px solid #444; color: #fff;
+            padding: 5px 7px; border-radius: 3px; font-size: 13px; min-width: 0;
         }
-        .coord-input input:focus { outline: none; border-color: #4af; }
+        .prop-row input:focus { outline: none; border-color: #4af; }
+        .prop-section { font-size: 11px; color: #666; margin: 6px 0 4px; font-weight: 600; text-transform: uppercase; }
         #elements-list {
             flex: 1; overflow-y: auto; background: #2a2a2a;
-            border-radius: 4px; padding: 8px;
+            border-radius: 4px; padding: 8px; min-height: 100px;
         }
-        #elements-list h3 { font-size: 13px; color: #888; margin-bottom: 8px; padding: 4px; }
+        #elements-list h3 { font-size: 13px; color: #888; margin-bottom: 6px; }
         .element-item {
-            padding: 8px 10px; cursor: pointer; border-radius: 3px;
-            font-size: 13px; margin-bottom: 2px;
+            padding: 5px 8px; cursor: pointer; border-radius: 3px;
+            font-size: 12px; margin-bottom: 1px;
             display: flex; justify-content: space-between; align-items: center;
         }
         .element-item:hover { background: #333; }
         .element-item.selected { background: #0066cc; }
-        .element-item .name { font-weight: 500; }
-        .element-item .pos { color: #888; font-size: 11px; }
+        .element-item .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .element-item .pos { color: #888; font-size: 10px; flex-shrink: 0; margin-left: 4px; }
         .element-item.selected .pos { color: #aac; }
+        .color-swatch {
+            display: inline-block; width: 10px; height: 10px;
+            border-radius: 2px; margin-right: 5px; vertical-align: middle; flex-shrink: 0;
+        }
         #canvas { width: 100%; height: 100%; }
         #instructions {
             position: absolute; bottom: 16px; left: 16px;
-            background: rgba(0,0,0,0.7); padding: 12px 16px;
-            border-radius: 4px; font-size: 12px; color: #aaa;
+            background: rgba(0,0,0,0.7); padding: 10px 14px;
+            border-radius: 4px; font-size: 11px; color: #aaa;
         }
         #instructions kbd {
-            background: #444; padding: 2px 6px; border-radius: 3px; font-family: monospace;
+            background: #444; padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 11px;
         }
-        .color-swatch {
-            display: inline-block; width: 12px; height: 12px;
-            border-radius: 2px; margin-right: 6px; vertical-align: middle;
-        }
+        .section-divider { border-top: 1px solid #333; margin: 8px 0; }
     </style>
 </head>
 <body>
@@ -76,21 +76,23 @@
             <button onclick="document.getElementById('importFile').click()">Import JSON</button>
             <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
             <button onclick="undo()">Undo</button>
+            <button onclick="resetAll()">Reset All</button>
         </div>
         
         <div id="selection-info">
             <h3>SELECTED ELEMENT</h3>
             <div id="selected-name">None</div>
-            <div class="coord-row">
-                <div class="coord-input"><label>X</label><input type="number" step="0.01" id="input-x" onchange="updatePositionFromInput()"></div>
-                <div class="coord-input"><label>Y</label><input type="number" step="0.01" id="input-y" onchange="updatePositionFromInput()"></div>
-                <div class="coord-input"><label>Z</label><input type="number" step="0.01" id="input-z" onchange="updatePositionFromInput()"></div>
-            </div>
-            <button onclick="resetSelectedPosition()">Reset Position</button>
+            <div class="prop-section">Position</div>
+            <div class="prop-row"><label>X</label><input type="number" step="0.01" id="input-x" onchange="updateFromInput()"></div>
+            <div class="prop-row"><label>Y</label><input type="number" step="0.01" id="input-y" onchange="updateFromInput()"></div>
+            <div class="prop-row"><label>Z</label><input type="number" step="0.01" id="input-z" onchange="updateFromInput()"></div>
+            <div class="prop-section">Scale</div>
+            <div class="prop-row"><label>W</label><input type="number" step="0.01" id="input-sw" onchange="updateFromInput()"></div>
+            <div class="prop-row"><label>H</label><input type="number" step="0.01" id="input-sh" onchange="updateFromInput()"></div>
         </div>
         
         <div id="elements-list">
-            <h3>ELEMENTS</h3>
+            <h3>ELEMENTS <span style="float:right;color:#666;font-size:11px">click to select</span></h3>
             <div id="elements-container"></div>
         </div>
     </div>
@@ -98,21 +100,15 @@
     <div id="viewport">
         <canvas id="canvas"></canvas>
         <div id="instructions">
-            <kbd>Click</kbd> Select &nbsp;|&nbsp; 
-            <kbd>Drag gizmo</kbd> Move on axis &nbsp;|&nbsp; 
-            <kbd>Right-drag</kbd> Orbit &nbsp;|&nbsp; 
-            <kbd>Scroll</kbd> Zoom &nbsp;|&nbsp;
-            <kbd>Ctrl+Z</kbd> Undo
+            <kbd>Click</kbd> Select &nbsp;|&nbsp; <kbd>Drag gizmo</kbd> Move &nbsp;|&nbsp; <kbd>Right-drag</kbd> Orbit &nbsp;|&nbsp; <kbd>Scroll</kbd> Zoom &nbsp;|&nbsp; <kbd>Ctrl+Z</kbd> Undo
         </div>
     </div>
 
     <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-        }
-    }
+    { "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }}
     </script>
     
     <script type="module">
@@ -120,310 +116,308 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { TransformControls } from 'three/addons/controls/TransformControls.js';
         
-        // Scene
         const canvas = document.getElementById('canvas');
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a1a);
-        
+        scene.background = new THREE.Color(0x111118);
         const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 200);
         camera.position.set(0, 0, 5);
-        
         const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         
-        // Controls
-        const orbitControls = new OrbitControls(camera, canvas);
-        orbitControls.enableDamping = true;
-        orbitControls.dampingFactor = 0.1;
+        const orbit = new OrbitControls(camera, canvas);
+        orbit.enableDamping = true; orbit.dampingFactor = 0.1;
         
-        const transformControls = new TransformControls(camera, canvas);
-        transformControls.setMode('translate');
-        scene.add(transformControls);
+        const tc = new TransformControls(camera, canvas);
+        tc.setMode('translate'); scene.add(tc);
+        tc.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; });
         
-        transformControls.addEventListener('dragging-changed', (event) => {
-            orbitControls.enabled = !event.value;
-        });
+        const grid = new THREE.GridHelper(12, 24, 0x333344, 0x222233);
+        grid.rotation.x = Math.PI / 2; scene.add(grid);
         
-        // Grid
-        const gridHelper = new THREE.GridHelper(10, 20, 0x444444, 0x333333);
-        gridHelper.rotation.x = Math.PI / 2;
-        scene.add(gridHelper);
+        // ── Element definitions matching the actual pause menu layout ──
+        // Layout structure (top to bottom):
+        //   LEFT BLASTER section (x≈-1.25)        RIGHT BLASTER section (x≈+1.25)
+        //   Stats section (centered, below blasters)
+        //   Resume button (bottom center)
         
-        // Elements
-        const elementDefs = [
-            { id: 'panel', name: 'Panel Background', color: 0x0a0015, width: 3.2, height: 2.8, x: 0, y: 0, z: 0 },
-            { id: 'left_blaster', name: 'Left Blaster', color: 0x2244aa, width: 1.2, height: 1.8, x: -1.25, y: 0.2, z: 0.02 },
-            { id: 'right_blaster', name: 'Right Blaster', color: 0x2244aa, width: 1.2, height: 1.8, x: 1.25, y: 0.2, z: 0.02 },
-            { id: 'resume_btn', name: 'Resume Button', color: 0x00aacc, width: 1.4, height: 0.4, x: 0, y: -1.35, z: 0.03 },
-            { id: 'border_top', name: 'Border Top', color: 0x00aacc, width: 3.3, height: 0.05, x: 0, y: 1.45, z: 0.01 },
-            { id: 'border_bottom', name: 'Border Bottom', color: 0x00aacc, width: 3.3, height: 0.05, x: 0, y: -1.45, z: 0.01 },
-            { id: 'border_left', name: 'Border Left', color: 0x00aacc, width: 0.05, height: 2.9, x: -1.65, y: 0, z: 0.01 },
-            { id: 'border_right', name: 'Border Right', color: 0x00aacc, width: 0.05, height: 2.9, x: 1.65, y: 0, z: 0.01 }
+        const defs = [
+            // ── Panel ──
+            { id:'panel', name:'Panel BG', color:0x0a0015, w:3.2, h:3.6, x:0, y:0, z:0 },
+            
+            // ── Left Blaster Section ──
+            { id:'lb_title', name:'LEFT BLASTER', color:0x00ffff, w:1.4, h:0.18, x:-1.25, y:1.3, z:0.02, fontSize:12 },
+            { id:'lb_weapon', name:'PLASMA CARBINE', color:0xffffff, w:1.2, h:0.12, x:-1.25, y:1.1, z:0.02, fontSize:10 },
+            { id:'lb_sep1', name:'L-Sep1', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:1.0, z:0.02 },
+            { id:'lb_upg_header', name:'[UPGRADES]', color:0x888888, w:1.0, h:0.1, x:-1.25, y:0.9, z:0.02, fontSize:9 },
+            { id:'lb_upg1', name:'🔥 RAPID FIRE x3', color:0xff8800, w:0.85, h:0.12, x:-1.48, y:0.76, z:0.02, fontSize:9 },
+            { id:'lb_upg2', name:'⚡ DAMAGE UP x2', color:0xffff00, w:0.85, h:0.12, x:-1.02, y:0.76, z:0.02, fontSize:9 },
+            { id:'lb_upg3', name:'🎯 HOMING x1', color:0x00ff00, w:0.85, h:0.12, x:-1.48, y:0.62, z:0.02, fontSize:9 },
+            { id:'lb_sep2', name:'L-Sep2', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:0.52, z:0.02 },
+            { id:'lb_enemy_header', name:'[ENEMIES]', color:0x888888, w:1.0, h:0.1, x:-1.25, y:0.42, z:0.02, fontSize:9 },
+            { id:'lb_enemy1', name:'👾 GRUNT x12', color:0xff6666, w:0.85, h:0.12, x:-1.48, y:0.28, z:0.02, fontSize:9 },
+            { id:'lb_enemy2', name:'🤖 TANK x5', color:0xff6666, w:0.85, h:0.12, x:-1.02, y:0.28, z:0.02, fontSize:9 },
+            { id:'lb_sep3', name:'L-Sep3', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:0.18, z:0.02 },
+            { id:'lb_kills', name:'KILLS: 24', color:0x00ffff, w:0.55, h:0.12, x:-1.58, y:0.04, z:0.02, fontSize:9 },
+            { id:'lb_shots', name:'SHOTS: 156', color:0x00ffff, w:0.55, h:0.12, x:-1.25, y:0.04, z:0.02, fontSize:9 },
+            { id:'lb_hits', name:'HITS: 89', color:0x00ffff, w:0.55, h:0.12, x:-0.92, y:0.04, z:0.02, fontSize:9 },
+            { id:'lb_acc', name:'ACC: 57%', color:0x00ffff, w:0.55, h:0.12, x:-1.25, y:-0.12, z:0.02, fontSize:9 },
+            
+            // ── Right Blaster Section ──
+            { id:'rb_title', name:'RIGHT BLASTER', color:0x00ffff, w:1.4, h:0.18, x:1.25, y:1.3, z:0.02, fontSize:12 },
+            { id:'rb_weapon', name:'BLASTER', color:0xffffff, w:1.2, h:0.12, x:1.25, y:1.1, z:0.02, fontSize:10 },
+            { id:'rb_sep1', name:'R-Sep1', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:1.0, z:0.02 },
+            { id:'rb_upg_header', name:'[UPGRADES]', color:0x888888, w:1.0, h:0.1, x:1.25, y:0.9, z:0.02, fontSize:9 },
+            { id:'rb_upg1', name:'🗡️ PIERCING x2', color:0xff0000, w:0.85, h:0.12, x:1.02, y:0.76, z:0.02, fontSize:9 },
+            { id:'rb_upg2', name:'💫 SPREAD SHOT x1', color:0x00ffff, w:0.85, h:0.12, x:1.48, y:0.76, z:0.02, fontSize:9 },
+            { id:'rb_sep2', name:'R-Sep2', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:0.52, z:0.02 },
+            { id:'rb_enemy_header', name:'[ENEMIES]', color:0x888888, w:1.0, h:0.1, x:1.25, y:0.42, z:0.02, fontSize:9 },
+            { id:'rb_enemy1', name:'💨 SPEEDER x8', color:0xff6666, w:0.85, h:0.12, x:1.02, y:0.28, z:0.02, fontSize:9 },
+            { id:'rb_enemy2', name:'🔫 SHOOTER x3', color:0xff6666, w:0.85, h:0.12, x:1.48, y:0.28, z:0.02, fontSize:9 },
+            { id:'rb_sep3', name:'R-Sep3', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:0.18, z:0.02 },
+            { id:'rb_kills', name:'KILLS: 18', color:0x00ffff, w:0.55, h:0.12, x:0.92, y:0.04, z:0.02, fontSize:9 },
+            { id:'rb_shots', name:'SHOTS: 94', color:0x00ffff, w:0.55, h:0.12, x:1.25, y:0.04, z:0.02, fontSize:9 },
+            { id:'rb_hits', name:'HITS: 61', color:0x00ffff, w:0.55, h:0.12, x:1.58, y:0.04, z:0.02, fontSize:9 },
+            { id:'rb_acc', name:'ACC: 65%', color:0x00ffff, w:0.55, h:0.12, x:1.25, y:-0.12, z:0.02, fontSize:9 },
+            
+            // ── Stats Section (centered) ──
+            { id:'stats_title', name:'RUN STATISTICS', color:0xff00ff, w:1.6, h:0.2, x:0, y:0.84, z:0.02, fontSize:13 },
+            { id:'stat_kills', name:'KILLS: 42', color:0x00ffff, w:1.2, h:0.14, x:0, y:0.44, z:0.02, fontSize:10 },
+            { id:'stat_shots', name:'SHOTS: 250', color:0x00ffff, w:1.2, h:0.14, x:0, y:0.20, z:0.02, fontSize:10 },
+            { id:'stat_hits', name:'HITS: 150', color:0x00ffff, w:1.2, h:0.14, x:0, y:-0.04, z:0.02, fontSize:10 },
+            { id:'stat_acc2', name:'ACCURACY: 60%', color:0x00ffff, w:1.2, h:0.14, x:-1.08, y:-0.34, z:0.02, fontSize:10 },
+            { id:'stat_streak', name:'STREAK: 7', color:0x00ffff, w:1.2, h:0.14, x:-1.08, y:-0.56, z:0.02, fontSize:10 },
+            { id:'stat_boss', name:'BOSS: 1', color:0x00ffff, w:1.2, h:0.14, x:-1.08, y:-0.78, z:0.02, fontSize:10 },
+            { id:'chart_area', name:'Chart Area', color:0x333344, w:1.7, h:0.9, x:1.1, y:-0.82, z:0.02 },
+            
+            // ── Resume Button ──
+            { id:'resume', name:'RESUME', color:0x00aacc, w:1.4, h:0.4, x:0, y:-1.55, z:0.03, fontSize:14 },
+            
+            // ── Borders ──
+            { id:'bdr_top', name:'Border Top', color:0x00ffff, w:3.3, h:0.04, x:0, y:1.8, z:0.01 },
+            { id:'bdr_bot', name:'Border Bottom', color:0x00ffff, w:3.3, h:0.04, x:0, y:-1.8, z:0.01 },
+            { id:'bdr_left', name:'Border Left', color:0x00ffff, w:0.04, h:3.6, x:-1.65, y:0, z:0.01 },
+            { id:'bdr_right', name:'Border Right', color:0x00ffff, w:0.04, h:3.6, x:1.65, y:0, z:0.01 },
         ];
         
-        const elements = {};
-        const initialPositions = {};
-        const meshToParent = new Map(); // maps hit mesh/child → parent element mesh
+        const els = {};
+        const initPos = {};
+        const initScale = {};
+        const labels = [];
         
-        // Create label as separate scene object (not child) to avoid raycasting issues
-        function createLabel(text, colorHex, parentMesh) {
+        function makeLabel(text, hex, parent) {
             if (!text) return;
             const c = document.createElement('canvas');
             const ctx = c.getContext('2d');
-            c.width = 256; c.height = 64;
-            ctx.fillStyle = 'rgba(0,0,0,0.7)';
-            ctx.fillRect(0, 0, c.width, c.height);
-            ctx.fillStyle = '#' + colorHex.toString(16).padStart(6, '0');
-            ctx.font = 'bold 20px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, c.width / 2, c.height / 2);
-            const texture = new THREE.CanvasTexture(c);
-            const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-            const sprite = new THREE.Sprite(mat);
-            sprite.scale.set(0.8, 0.2, 1);
-            sprite.renderOrder = 9999;
-            // Position relative to parent - update in animation loop
-            sprite.userData._parent = parentMesh;
-            sprite.userData._offsetY = parentMesh.userData.def.height / 2 + 0.15;
-            sprite.frustumCulled = false;
-            scene.add(sprite);
-            return sprite;
+            c.width = 512; c.height = 64;
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            const rr = 4;
+            ctx.beginPath();
+            ctx.roundRect(0, 0, c.width, c.height, rr);
+            ctx.fill();
+            const hexStr = '#' + hex.toString(16).padStart(6, '0');
+            ctx.fillStyle = hexStr;
+            const fs = parent.userData?.def?.fontSize || 10;
+            ctx.font = `bold ${fs * 3}px sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(text, c.width/2, c.height/2);
+            const tex = new THREE.CanvasTexture(c);
+            const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+            const sp = new THREE.Sprite(mat);
+            const aspect = c.width / c.height;
+            const labelH = 0.12;
+            sp.scale.set(labelH * aspect, labelH, 1);
+            sp.renderOrder = 9999; sp.frustumCulled = false;
+            sp.userData._parent = parent;
+            sp.userData._offY = (parent.userData?.def?.h || 0.1) / 2 + 0.08;
+            scene.add(sp);
+            return sp;
         }
         
-        const labels = [];
-        
-        // Create elements
-        elementDefs.forEach(def => {
-            const geometry = new THREE.PlaneGeometry(def.width, def.height);
-            const material = new THREE.MeshBasicMaterial({ 
-                color: def.color,
-                side: THREE.DoubleSide,
+        defs.forEach(d => {
+            const geo = new THREE.PlaneGeometry(d.w, d.h);
+            const mat = new THREE.MeshBasicMaterial({
+                color: d.color, side: THREE.DoubleSide,
                 transparent: true,
-                opacity: def.id === 'panel' ? 0.9 : 0.85
+                opacity: d.id === 'panel' ? 0.92 : (d.id.startsWith('bdr_') ? 0.8 : 0.78)
             });
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(def.x, def.y, def.z);
-            mesh.userData = { id: def.id, name: def.name, def, originalColor: def.color };
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(d.x, d.y, d.z);
+            mesh.userData = { id: d.id, name: d.name, def: d, origColor: d.color };
             mesh.frustumCulled = false;
-            
             scene.add(mesh);
-            elements[def.id] = mesh;
-            meshToParent.set(mesh, mesh);
-            initialPositions[def.id] = { x: def.x, y: def.y, z: def.z };
-            
-            const label = createLabel(def.name.toUpperCase(), def.color, mesh);
+            els[d.id] = mesh;
+            initPos[d.id] = { x: d.x, y: d.y, z: d.z };
+            initScale[d.id] = { w: d.w, h: d.h };
+            const label = makeLabel(d.name, d.id === 'panel' ? 0x444466 : d.color, mesh);
             if (label) labels.push(label);
         });
         
-        // Selection highlight
-        let selectedElement = null;
-        const OUTLINE_COLOR = 0x00ffff;
+        let sel = null;
+        const HIGHLIGHT = 0x00ffff;
         
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        
-        canvas.addEventListener('pointerdown', (event) => {
-            // Only handle left click
-            if (event.button !== 0) return;
-            
-            const rect = canvas.getBoundingClientRect();
-            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            
-            raycaster.setFromCamera(mouse, camera);
-            const meshes = Object.values(elements);
-            const intersects = raycaster.intersectObjects(meshes, false);
-            
-            if (intersects.length > 0) {
-                selectElement(intersects[0].object);
-            }
+        canvas.addEventListener('pointerdown', e => {
+            if (e.button !== 0) return;
+            const r = canvas.getBoundingClientRect();
+            const m = new THREE.Vector2(
+                ((e.clientX - r.left) / r.width) * 2 - 1,
+                -((e.clientY - r.top) / r.height) * 2 + 1
+            );
+            const rc = new THREE.Raycaster();
+            rc.setFromCamera(m, camera);
+            const hits = rc.intersectObjects(Object.values(els), false);
+            if (hits.length) select(hits[0].object);
         });
         
-        function selectElement(mesh) {
-            // Deselect previous
-            if (selectedElement) {
-                selectedElement.material.color.setHex(selectedElement.userData.originalColor);
-            }
-            
-            saveUndoState();
-            selectedElement = mesh;
-            mesh.material.color.setHex(OUTLINE_COLOR);
-            transformControls.attach(mesh);
-            
-            updateSelectionUI();
-            updateElementsList();
+        function select(mesh) {
+            if (sel) sel.material.color.setHex(sel.userData.origColor);
+            pushUndo();
+            sel = mesh;
+            mesh.material.color.setHex(HIGHLIGHT);
+            tc.attach(mesh);
+            updateUI();
+            updateList();
         }
         
-        function updateSelectionUI() {
-            if (!selectedElement) {
+        function updateUI() {
+            if (!sel) {
                 document.getElementById('selected-name').textContent = 'None';
-                document.getElementById('input-x').value = '';
-                document.getElementById('input-y').value = '';
-                document.getElementById('input-z').value = '';
+                ['x','y','z','sw','sh'].forEach(k => document.getElementById('input-'+k).value = '');
                 return;
             }
-            const pos = selectedElement.position;
-            document.getElementById('selected-name').textContent = selectedElement.userData.name;
-            document.getElementById('input-x').value = pos.x.toFixed(2);
-            document.getElementById('input-y').value = pos.y.toFixed(2);
-            document.getElementById('input-z').value = pos.z.toFixed(2);
+            document.getElementById('selected-name').textContent = sel.userData.name;
+            document.getElementById('input-x').value = sel.position.x.toFixed(3);
+            document.getElementById('input-y').value = sel.position.y.toFixed(3);
+            document.getElementById('input-z').value = sel.position.z.toFixed(3);
+            // Scale: read from geometry
+            const geo = sel.geometry;
+            const params = geo.parameters;
+            document.getElementById('input-sw').value = params.width.toFixed(3);
+            document.getElementById('input-sh').value = params.height.toFixed(3);
         }
         
-        window.updatePositionFromInput = function() {
-            if (!selectedElement) return;
-            saveUndoState();
-            selectedElement.position.x = parseFloat(document.getElementById('input-x').value) || 0;
-            selectedElement.position.y = parseFloat(document.getElementById('input-y').value) || 0;
-            selectedElement.position.z = parseFloat(document.getElementById('input-z').value) || 0;
-            updateElementsList();
+        window.updateFromInput = function() {
+            if (!sel) return;
+            pushUndo();
+            sel.position.x = parseFloat(document.getElementById('input-x').value) || 0;
+            sel.position.y = parseFloat(document.getElementById('input-y').value) || 0;
+            sel.position.z = parseFloat(document.getElementById('input-z').value) || 0;
+            const newW = parseFloat(document.getElementById('input-sw').value) || 0.1;
+            const newH = parseFloat(document.getElementById('input-sh').value) || 0.1;
+            // Replace geometry
+            sel.geometry.dispose();
+            sel.geometry = new THREE.PlaneGeometry(newW, newH);
+            updateList();
         };
         
-        window.resetSelectedPosition = function() {
-            if (!selectedElement) return;
-            saveUndoState();
-            const initial = initialPositions[selectedElement.userData.id];
-            selectedElement.position.set(initial.x, initial.y, initial.z);
-            updateSelectionUI();
-            updateElementsList();
-        };
-        
-        function updateElementsList() {
-            const container = document.getElementById('elements-container');
-            container.innerHTML = '';
-            elementDefs.forEach(def => {
-                const mesh = elements[def.id];
-                const pos = mesh.position;
-                const item = document.createElement('div');
-                item.className = 'element-item' + (selectedElement === mesh ? ' selected' : '');
-                item.innerHTML = `
-                    <span class="name"><span class="color-swatch" style="background:#${def.color.toString(16).padStart(6,'0')}"></span>${def.name}</span>
-                    <span class="pos">(${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})</span>
-                `;
-                item.onclick = () => selectElement(mesh);
-                container.appendChild(item);
+        function updateList() {
+            const c = document.getElementById('elements-container');
+            c.innerHTML = '';
+            defs.forEach(d => {
+                const m = els[d.id];
+                const p = m.position;
+                const div = document.createElement('div');
+                div.className = 'element-item' + (sel === m ? ' selected' : '');
+                div.innerHTML = `<span class="name"><span class="color-swatch" style="background:#${d.color.toString(16).padStart(6,'0')}"></span>${d.name}</span><span class="pos">(${p.x.toFixed(1)},${p.y.toFixed(1)})</span>`;
+                div.onclick = () => select(m);
+                c.appendChild(div);
             });
         }
         
-        // ── Undo System (20 states) ──
-        const undoStack = [];
+        // ── Undo ──
+        const undos = [];
         const MAX_UNDO = 20;
-        
-        function snapshotPositions() {
-            const snap = {};
-            Object.keys(elements).forEach(id => {
-                const p = elements[id].position;
-                snap[id] = { x: p.x, y: p.y, z: p.z };
+        function snap() {
+            const s = {};
+            Object.keys(els).forEach(id => {
+                const m = els[id];
+                s[id] = { x:m.position.x, y:m.position.y, z:m.position.z, w:m.geometry.parameters.width, h:m.geometry.parameters.height };
             });
-            return snap;
+            return s;
         }
-        
-        function saveUndoState() {
-            undoStack.push(snapshotPositions());
-            if (undoStack.length > MAX_UNDO) undoStack.shift();
-        }
-        
+        function pushUndo() { undos.push(snap()); if (undos.length > MAX_UNDO) undos.shift(); }
         window.undo = function() {
-            if (undoStack.length === 0) return;
-            const snap = undoStack.pop();
-            Object.keys(snap).forEach(id => {
-                if (elements[id]) {
-                    elements[id].position.set(snap[id].x, snap[id].y, snap[id].z);
-                }
+            if (!undos.length) return;
+            const s = undos.pop();
+            Object.keys(s).forEach(id => {
+                if (!els[id]) return;
+                els[id].position.set(s[id].x, s[id].y, s[id].z);
+                els[id].geometry.dispose();
+                els[id].geometry = new THREE.PlaneGeometry(s[id].w, s[id].h);
             });
-            updateSelectionUI();
-            updateElementsList();
+            updateUI(); updateList();
         };
-        
-        // Ctrl+Z keyboard shortcut
-        document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-                e.preventDefault();
-                window.undo();
-            }
+        window.resetAll = function() {
+            pushUndo();
+            Object.keys(els).forEach(id => {
+                els[id].position.set(initPos[id].x, initPos[id].y, initPos[id].z);
+                els[id].geometry.dispose();
+                els[id].geometry = new THREE.PlaneGeometry(initScale[id].w, initScale[id].h);
+            });
+            updateUI(); updateList();
+        };
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); window.undo(); }
         });
+        tc.addEventListener('mouseDown', () => pushUndo());
+        tc.addEventListener('objectChange', () => { updateUI(); updateList(); });
         
-        // Save undo on drag end
-        transformControls.addEventListener('mouseDown', () => {
-            saveUndoState();
-        });
-        
-        transformControls.addEventListener('objectChange', () => {
-            updateSelectionUI();
-            updateElementsList();
-        });
-        
-        // Export/Import
+        // ── Export / Import ──
         window.exportJSON = function() {
-            const data = {
-                editor: 'pause-menu',
-                elements: {},
-                exportedAt: new Date().toISOString()
-            };
-            Object.keys(elements).forEach(id => {
-                const pos = elements[id].position;
-                data.elements[id] = { x: parseFloat(pos.x.toFixed(3)), y: parseFloat(pos.y.toFixed(3)), z: parseFloat(pos.z.toFixed(3)) };
+            const data = { editor:'pause-menu', elements:{}, exportedAt: new Date().toISOString() };
+            Object.keys(els).forEach(id => {
+                const m = els[id];
+                data.elements[id] = {
+                    x:+m.position.x.toFixed(3), y:+m.position.y.toFixed(3), z:+m.position.z.toFixed(3),
+                    w:+m.geometry.parameters.width.toFixed(3), h:+m.geometry.parameters.height.toFixed(3)
+                };
             });
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
+            const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
             const a = document.createElement('a');
-            a.href = url; a.download = 'pause-menu-layout.json';
-            a.click(); URL.revokeObjectURL(url);
+            a.href = URL.createObjectURL(blob); a.download = 'pause-menu-layout.json'; a.click();
         };
-        
-        window.importJSON = function(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
+        window.importJSON = function(ev) {
+            const f = ev.target.files[0]; if(!f) return;
+            const r = new FileReader();
+            r.onload = e => {
                 try {
-                    const data = JSON.parse(e.target.result);
-                    if (data.elements) {
-                        saveUndoState();
-                        Object.keys(data.elements).forEach(id => {
-                            if (elements[id]) {
-                                const pos = data.elements[id];
-                                elements[id].position.set(pos.x, pos.y, pos.z);
+                    const d = JSON.parse(e.target.result);
+                    if(d.elements) {
+                        pushUndo();
+                        Object.keys(d.elements).forEach(id => {
+                            if(!els[id]) return;
+                            const p = d.elements[id];
+                            els[id].position.set(p.x, p.y, p.z);
+                            if(p.w && p.h) {
+                                els[id].geometry.dispose();
+                                els[id].geometry = new THREE.PlaneGeometry(p.w, p.h);
                             }
                         });
-                        updateSelectionUI();
-                        updateElementsList();
+                        updateUI(); updateList();
                     }
-                } catch (err) { alert('Invalid JSON file'); }
+                } catch(err) { alert('Invalid JSON'); }
             };
-            reader.readAsText(file);
-            event.target.value = '';
+            r.readAsText(f); ev.target.value='';
         };
         
-        // Resize
+        // ── Resize / Animate ──
         function resize() {
-            const container = document.getElementById('viewport');
-            camera.aspect = container.clientWidth / container.clientHeight;
+            const c = document.getElementById('viewport');
+            camera.aspect = c.clientWidth / c.clientHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setSize(c.clientWidth, c.clientHeight);
         }
-        window.addEventListener('resize', resize);
-        resize();
+        window.addEventListener('resize', resize); resize();
         
-        // Animate — keep labels tracking their parents
-        function animate() {
+        (function animate() {
             requestAnimationFrame(animate);
-            orbitControls.update();
-            
-            // Update label positions to follow their parent meshes
-            labels.forEach(label => {
-                const parent = label.userData._parent;
-                if (parent) {
-                    parent.getWorldPosition(label.position);
-                    label.position.y += label.userData._offsetY;
-                }
+            orbit.update();
+            labels.forEach(l => {
+                const p = l.userData._parent;
+                if (p) { p.getWorldPosition(l.position); l.position.y += l.userData._offY; }
             });
-            
             renderer.render(scene, camera);
-        }
-        
-        updateElementsList();
-        animate();
+        })();
+        updateList();
     </script>
 </body>
 </html>

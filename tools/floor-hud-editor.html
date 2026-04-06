@@ -81,10 +81,16 @@
         <div id="selection-info">
             <h3>SELECTED ELEMENT</h3>
             <div id="selected-name">None</div>
+            <div style="font-size:11px;color:#666;margin-bottom:4px;font-weight:600">POSITION</div>
             <div class="coord-row">
                 <div class="coord-input"><label>X</label><input type="number" step="0.01" id="input-x" onchange="updatePositionFromInput()"></div>
                 <div class="coord-input"><label>Y</label><input type="number" step="0.01" id="input-y" onchange="updatePositionFromInput()"></div>
                 <div class="coord-input"><label>Z</label><input type="number" step="0.01" id="input-z" onchange="updatePositionFromInput()"></div>
+            </div>
+            <div style="font-size:11px;color:#666;margin:6px 0 4px;font-weight:600">SCALE</div>
+            <div class="coord-row">
+                <div class="coord-input"><label>W</label><input type="number" step="0.01" id="input-sw" onchange="updatePositionFromInput()"></div>
+                <div class="coord-input"><label>H</label><input type="number" step="0.01" id="input-sh" onchange="updatePositionFromInput()"></div>
             </div>
             <button onclick="resetSelectedPosition()">Reset Position</button>
         </div>
@@ -272,6 +278,9 @@
             document.getElementById('input-x').value = pos.x.toFixed(2);
             document.getElementById('input-y').value = pos.y.toFixed(2);
             document.getElementById('input-z').value = pos.z.toFixed(2);
+            const geo = selectedElement.geometry;
+            document.getElementById('input-sw').value = geo.parameters.width.toFixed(3);
+            document.getElementById('input-sh').value = geo.parameters.height.toFixed(3);
         }
         
         window.updatePositionFromInput = function() {
@@ -280,6 +289,10 @@
             selectedElement.position.x = parseFloat(document.getElementById('input-x').value) || 0;
             selectedElement.position.y = parseFloat(document.getElementById('input-y').value) || 0;
             selectedElement.position.z = parseFloat(document.getElementById('input-z').value) || 0;
+            const newW = parseFloat(document.getElementById('input-sw').value) || 0.1;
+            const newH = parseFloat(document.getElementById('input-sh').value) || 0.1;
+            selectedElement.geometry.dispose();
+            selectedElement.geometry = new THREE.PlaneGeometry(newW, newH);
             updateElementsList();
         };
         
@@ -366,7 +379,7 @@
             };
             Object.keys(elements).forEach(id => {
                 const pos = elements[id].position;
-                data.elements[id] = { x: parseFloat(pos.x.toFixed(3)), y: parseFloat(pos.y.toFixed(3)), z: parseFloat(pos.z.toFixed(3)) };
+                data.elements[id] = { x: parseFloat(pos.x.toFixed(3)), y: parseFloat(pos.y.toFixed(3)), z: parseFloat(pos.z.toFixed(3)), w: +parseFloat(selectedElement.geometry.parameters.width.toFixed(3)), h: +parseFloat(selectedElement.geometry.parameters.height.toFixed(3)) };
             });
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
