@@ -12,61 +12,63 @@
             overflow: hidden; display: flex; height: 100vh;
         }
         #sidebar {
-            width: 280px; background: #252525; padding: 16px;
+            width: 300px; background: #252525; padding: 16px;
             display: flex; flex-direction: column; border-right: 1px solid #333;
+            overflow-y: auto;
         }
         #viewport { flex: 1; position: relative; }
-        #toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        #toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
         button {
             background: #3a3a3a; border: 1px solid #555; color: #e0e0e0;
-            padding: 8px 16px; cursor: pointer; border-radius: 4px; font-size: 13px;
+            padding: 8px 14px; cursor: pointer; border-radius: 4px; font-size: 13px;
         }
         button:hover { background: #4a4a4a; border-color: #777; }
         button.primary { background: #0066cc; border-color: #0080ff; }
         button.primary:hover { background: #0077dd; }
-        button.danger { background: #662222; border-color: #883333; }
-        button.danger:hover { background: #883333; }
         #selection-info {
-            background: #2a2a2a; padding: 12px; border-radius: 4px; margin-bottom: 16px;
+            background: #2a2a2a; padding: 12px; border-radius: 4px; margin-bottom: 12px;
         }
         #selection-info h3 { font-size: 13px; color: #888; margin-bottom: 8px; }
-        #selected-name { font-size: 16px; font-weight: 600; color: #4af; margin-bottom: 12px; }
-        .coord-row { display: flex; gap: 8px; margin-bottom: 8px; }
-        .coord-input { flex: 1; }
-        .coord-input label { display: block; font-size: 11px; color: #888; margin-bottom: 2px; }
-        .coord-input input {
-            width: 100%; background: #333; border: 1px solid #444; color: #fff;
-            padding: 6px 8px; border-radius: 3px; font-size: 13px;
+        #selected-name { font-size: 15px; font-weight: 600; color: #4af; margin-bottom: 10px; }
+        .prop-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+        .prop-row label { font-size: 11px; color: #888; width: 14px; text-align: right; flex-shrink: 0; }
+        .prop-row input, .prop-row select {
+            flex: 1; background: #333; border: 1px solid #444; color: #fff;
+            padding: 5px 7px; border-radius: 3px; font-size: 13px; min-width: 0;
         }
-        .coord-input input:focus { outline: none; border-color: #4af; }
+        .prop-row input:focus, .prop-row select:focus { outline: none; border-color: #4af; }
+        .prop-section { font-size: 11px; color: #666; margin: 6px 0 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
         #elements-list {
             flex: 1; overflow-y: auto; background: #2a2a2a;
-            border-radius: 4px; padding: 8px;
+            border-radius: 4px; padding: 8px; min-height: 100px;
         }
-        #elements-list h3 { font-size: 13px; color: #888; margin-bottom: 8px; padding: 4px; }
+        #elements-list h3 { font-size: 13px; color: #888; margin-bottom: 6px; }
         .element-item {
-            padding: 8px 10px; cursor: pointer; border-radius: 3px;
-            font-size: 13px; margin-bottom: 2px;
+            padding: 5px 8px; cursor: pointer; border-radius: 3px;
+            font-size: 12px; margin-bottom: 1px;
             display: flex; justify-content: space-between; align-items: center;
         }
         .element-item:hover { background: #333; }
         .element-item.selected { background: #0066cc; }
-        .element-item .name { font-weight: 500; }
-        .element-item .pos { color: #888; font-size: 11px; }
+        .element-item .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+        .element-item .pos { color: #888; font-size: 10px; flex-shrink: 0; margin-left: 4px; }
         .element-item.selected .pos { color: #aac; }
+        .color-swatch {
+            display: inline-block; width: 10px; height: 10px;
+            border-radius: 2px; margin-right: 5px; vertical-align: middle; flex-shrink: 0;
+        }
         #canvas { width: 100%; height: 100%; }
         #instructions {
             position: absolute; bottom: 16px; left: 16px;
-            background: rgba(0,0,0,0.7); padding: 12px 16px;
-            border-radius: 4px; font-size: 12px; color: #aaa;
+            background: rgba(0,0,0,0.7); padding: 10px 14px;
+            border-radius: 4px; font-size: 11px; color: #aaa;
         }
         #instructions kbd {
-            background: #444; padding: 2px 6px; border-radius: 3px; font-family: monospace;
+            background: #444; padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 11px;
         }
-        .color-swatch {
-            display: inline-block; width: 12px; height: 12px;
-            border-radius: 2px; margin-right: 6px; vertical-align: middle;
-        }
+        .align-btns { display: flex; gap: 4px; }
+        .align-btns button { padding: 4px 10px; font-size: 12px; }
+        .align-btns button.active { background: #0066cc; border-color: #0080ff; }
     </style>
 </head>
 <body>
@@ -76,23 +78,25 @@
             <button onclick="document.getElementById('importFile').click()">Import JSON</button>
             <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
             <button onclick="undo()">Undo</button>
+            <button onclick="resetAll()">Reset All</button>
         </div>
         
         <div id="selection-info">
             <h3>SELECTED ELEMENT</h3>
             <div id="selected-name">None</div>
-            <div style="font-size:11px;color:#666;margin-bottom:4px;font-weight:600">POSITION</div>
-            <div class="coord-row">
-                <div class="coord-input"><label>X</label><input type="number" step="0.01" id="input-x" onchange="updatePositionFromInput()"></div>
-                <div class="coord-input"><label>Y</label><input type="number" step="0.01" id="input-y" onchange="updatePositionFromInput()"></div>
-                <div class="coord-input"><label>Z</label><input type="number" step="0.01" id="input-z" onchange="updatePositionFromInput()"></div>
+            <div class="prop-section">Position</div>
+            <div class="prop-row"><label>X</label><input type="number" step="0.05" id="input-x" onchange="updateFromInput()"></div>
+            <div class="prop-row"><label>Y</label><input type="number" step="0.05" id="input-y" onchange="updateFromInput()"></div>
+            <div class="prop-row"><label>Z</label><input type="number" step="0.01" id="input-z" onchange="updateFromInput()"></div>
+            <div class="prop-section">Text Alignment</div>
+            <div class="align-btns">
+                <button id="align-left" onclick="setAlign('left')">Left ◀</button>
+                <button id="align-center" onclick="setAlign('center')">Center</button>
+                <button id="align-right" onclick="setAlign('right')">Right ▶</button>
             </div>
-            <div style="font-size:11px;color:#666;margin:6px 0 4px;font-weight:600">SCALE</div>
-            <div class="coord-row">
-                <div class="coord-input"><label>W</label><input type="number" step="0.01" id="input-sw" onchange="updatePositionFromInput()"></div>
-                <div class="coord-input"><label>H</label><input type="number" step="0.01" id="input-sh" onchange="updatePositionFromInput()"></div>
-            </div>
-            <button onclick="resetSelectedPosition()">Reset Position</button>
+            <div class="prop-section">Scale</div>
+            <div class="prop-row"><label>W</label><input type="number" step="0.01" id="input-sw" onchange="updateFromInput()"></div>
+            <div class="prop-row"><label>H</label><input type="number" step="0.01" id="input-sh" onchange="updateFromInput()"></div>
         </div>
         
         <div id="elements-list">
@@ -104,21 +108,15 @@
     <div id="viewport">
         <canvas id="canvas"></canvas>
         <div id="instructions">
-            <kbd>Click</kbd> Select &nbsp;|&nbsp; 
-            <kbd>Drag gizmo</kbd> Move on axis &nbsp;|&nbsp; 
-            <kbd>Right-drag</kbd> Orbit &nbsp;|&nbsp; 
-            <kbd>Scroll</kbd> Zoom &nbsp;|&nbsp;
-            <kbd>Ctrl+Z</kbd> Undo
+            <kbd>Click</kbd> Select &nbsp;|&nbsp; <kbd>Drag gizmo</kbd> Move &nbsp;|&nbsp; <kbd>Right-drag</kbd> Orbit &nbsp;|&nbsp; <kbd>Scroll</kbd> Zoom &nbsp;|&nbsp; <kbd>Ctrl+Z</kbd> Undo
         </div>
     </div>
 
     <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-        }
-    }
+    { "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }}
     </script>
     
     <script type="module">
@@ -126,320 +124,330 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { TransformControls } from 'three/addons/controls/TransformControls.js';
         
-        // Scene
         const canvas = document.getElementById('canvas');
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a1a);
-        
+        scene.background = new THREE.Color(0x111118);
         const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 200);
         camera.position.set(0, 3, 5);
-        
         const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         
-        // Controls
-        const orbitControls = new OrbitControls(camera, canvas);
-        orbitControls.enableDamping = true;
-        orbitControls.dampingFactor = 0.1;
-        orbitControls.target.set(0, 0, -3);
+        const orbit = new OrbitControls(camera, canvas);
+        orbit.enableDamping = true; orbit.dampingFactor = 0.1;
+        orbit.target.set(0, 0, -3);
         
-        const transformControls = new TransformControls(camera, canvas);
-        transformControls.setMode('translate');
-        scene.add(transformControls);
+        const tc = new TransformControls(camera, canvas);
+        tc.setMode('translate'); scene.add(tc);
+        tc.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; });
         
-        transformControls.addEventListener('dragging-changed', (event) => {
-            orbitControls.enabled = !event.value;
-        });
+        const grid = new THREE.GridHelper(10, 20, 0x444444, 0x333333);
+        scene.add(grid);
         
-        // Grid
-        const gridHelper = new THREE.GridHelper(10, 20, 0x444444, 0x333333);
-        scene.add(gridHelper);
-        
-        // HUD Group - tilted at -70° on X axis (-90° + 20° tilt)
+        // HUD Group - tilted at -70° on X axis (-90° + 20° tilt) matching in-game
         const hudGroup = new THREE.Group();
         hudGroup.position.set(0, 0.0, -3);
         hudGroup.rotation.x = -70 * Math.PI / 180;
         scene.add(hudGroup);
         
-        // Element definitions (positions relative to HUD center)
-        const elementDefs = [
-            { id: 'hud_bg', name: 'HUD Background', color: 0x111122, width: 3.0, height: 1.2, x: 0, y: 0, z: 0, opacity: 0.3, label: null },
-            { id: 'hearts', name: 'Lives Hearts', color: 0xcc3333, width: 0.8, height: 0.3, x: -1.1, y: 0.45, z: 0.01, label: 'LIVES' },
-            { id: 'score_title', name: 'Score Title', color: 0xcccc33, width: 0.6, height: 0.2, x: -0.15, y: 0.45, z: 0.01, label: 'SCORE' },
-            { id: 'score_num', name: 'Score Number', color: 0xcccc33, width: 0.5, height: 0.35, x: -0.15, y: 0.0, z: 0.01, label: '00000' },
-            { id: 'level', name: 'Level', color: 0x00cccc, width: 0.7, height: 0.2, x: 0.5, y: 0.45, z: 0.01, label: 'LEVEL 1' },
-            { id: 'kills', name: 'Kill Count', color: 0xffffff, width: 0.6, height: 0.25, x: 0.5, y: 0.0, z: 0.01, label: '0/0 KILLS' },
-            { id: 'nuke_icon', name: 'Nuke Icon', color: 0xcccc33, width: 0.35, height: 0.35, x: 0.9, y: 0.45, z: 0.01, label: 'NUKE' },
-            { id: 'nuke_count', name: 'Nuke Count', color: 0xcccc33, width: 0.35, height: 0.25, x: 1.3, y: 0.45, z: 0.01, label: 'x3' },
-            { id: 'combo_text', name: 'Combo Text', color: 0xff8800, width: 1.2, height: 0.2, x: 0, y: -0.23, z: 0.01, label: 'ACCURACY BONUS' },
-            { id: 'combo_bar', name: 'Combo Cooldown', color: 0xff8800, width: 0.8, height: 0.08, x: 0, y: -0.38, z: 0.01, label: 'COOLDOWN' },
-            { id: 'scanline', name: 'Scan Line', color: 0x33ff66, width: 2.8, height: 0.02, x: 0, y: 0, z: 0.02, label: 'SCAN' }
+        // ── Element definitions matching actual in-game sprites ──
+        // Each element has: display text, color, fontSize (for canvas), scale (game scale)
+        // The mesh is created with the SAME text rendering as makeSprite: centered text
+        // PLUS an alignment anchor offset
+        
+        const defs = [
+            { id:'hud_bg', name:'HUD Background', text:'', color:0x111122, w:3.0, h:1.2, x:0, y:0, z:0, opacity:0.3 },
+            { id:'hearts', name:'❤️ LIVES', text:'❤️❤️❤️', color:0xcc3333, fontSize:28, gameScale:0.45, x:-1.2, y:0.45, z:0.01 },
+            { id:'score_title', name:'SCORE title', text:'SCORE', color:0xcccc33, fontSize:72, gameScale:0.45, glow:true, x:-0.36, y:0.45, z:0.01 },
+            { id:'score_num', name:'Score number', text:'04200', color:0xcccc33, fontSize:75, gameScale:0.45, x:-0.36, y:0.1, z:0.01 },
+            { id:'level', name:'LEVEL title', text:'LEVEL 1', color:0x00cccc, fontSize:72, gameScale:0.45, glow:true, x:0.42, y:0.45, z:0.01 },
+            { id:'kills', name:'Kill count', text:'0/0', color:0xffffff, fontSize:75, gameScale:0.45, x:0.42, y:0.15, z:0.01 },
+            { id:'nuke_icon', name:'☢ Nuke', text:'☢', color:0xcccc33, fontSize:144, gameScale:0.45, glow:true, x:1.06, y:0.45, z:0.01 },
+            { id:'nuke_count', name:'Nuke count', text:'X3', color:0xcccc33, fontSize:72, gameScale:0.45, glow:true, x:1.44, y:0.45, z:0.01 },
+            { id:'combo_text', name:'ACCURACY BONUS', text:'1x', color:0xff8800, fontSize:40, gameScale:1.8, x:-1, y:0.15, z:0.01 },
+            { id:'combo_bar', name:'Combo cooldown bar', text:'', color:0xff8800, w:0.5, h:0.03, x:-1.2, y:-0.02, z:0.01, opacity:0.8 },
+            { id:'scanline', name:'Scan line', text:'', color:0x33ff66, w:2.8, h:0.02, x:0, y:0, z:0.02 },
         ];
         
-        const elements = {};
-        const initialPositions = {};
+        const els = {};
+        const initPos = {};
+        const initScale = {};
+        const initAlign = {};
         const labels = [];
         
-        // Create label as scene-level sprite (not child mesh) to avoid raycast interference
-        function createLabel(text, colorHex, parentMesh) {
-            if (!text) return;
+        // Create text mesh that matches game's makeSprite rendering
+        // Text is drawn centered on canvas, mesh is centered at position
+        // Then we apply alignment offset to shift the anchor point
+        function createTextMesh(def) {
+            const fontSize = def.fontSize || 48;
+            const scale = def.gameScale || 0.3;
+            const glowPad = def.glow ? 25 : 40;
+            
+            // Measure text to get aspect ratio (same as game)
             const c = document.createElement('canvas');
             const ctx = c.getContext('2d');
-            c.width = 256; c.height = 64;
-            ctx.fillStyle = 'rgba(0,0,0,0.7)';
-            ctx.fillRect(0, 0, c.width, c.height);
-            ctx.fillStyle = '#' + colorHex.toString(16).padStart(6, '0');
-            ctx.font = 'bold 20px sans-serif';
+            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+            const tw = Math.ceil(ctx.measureText(def.text).width) + glowPad * 2;
+            const th = Math.ceil(fontSize * 1.3) + glowPad * 2;
+            const aspect = tw / th;
+            
+            c.width = tw; c.height = th;
+            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(text, c.width / 2, c.height / 2);
+            ctx.clearRect(0, 0, tw, th);
+            
+            // Draw border/outline so element is visible
+            const hexStr = '#' + def.color.toString(16).padStart(6, '0');
+            ctx.strokeStyle = hexStr;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(2, 2, tw - 4, th - 4);
+            
+            if (def.glow) {
+                ctx.shadowColor = hexStr;
+                ctx.shadowBlur = 8;
+            }
+            
+            // Draw text
+            ctx.fillStyle = hexStr;
+            ctx.fillText(def.text, tw / 2, th / 2);
+            
+            // Draw crosshair at center to show anchor point
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(tw/2 - 6, th/2); ctx.lineTo(tw/2 + 6, th/2);
+            ctx.moveTo(tw/2, th/2 - 6); ctx.lineTo(tw/2, th/2 + 6);
+            ctx.stroke();
+            
             const texture = new THREE.CanvasTexture(c);
-            const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-            const sprite = new THREE.Sprite(mat);
-            sprite.scale.set(0.6, 0.15, 1);
-            sprite.renderOrder = 9999;
-            sprite.frustumCulled = false;
-            sprite.userData._parent = parentMesh;
-            sprite.userData._offsetY = parentMesh.userData.def.height / 2 + 0.1;
-            scene.add(sprite); // add to scene, not to mesh
-            return sprite;
+            const mat = new THREE.MeshBasicMaterial({
+                map: texture, transparent: true, side: THREE.DoubleSide,
+                depthTest: false, depthWrite: false,
+                opacity: def.opacity || 0.9
+            });
+            
+            const w = aspect * scale;
+            const h = scale;
+            const geo = new THREE.PlaneGeometry(w, h);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.frustumCulled = false;
+            mesh.renderOrder = 999;
+            
+            return { mesh, w, h };
         }
         
-        // Create elements
-        elementDefs.forEach(def => {
-            const geometry = new THREE.PlaneGeometry(def.width, def.height);
-            const material = new THREE.MeshBasicMaterial({ 
-                color: def.color,
-                side: THREE.DoubleSide,
-                transparent: true,
-                opacity: def.opacity || 0.85
+        function createPlainMesh(def) {
+            const geo = new THREE.PlaneGeometry(def.w, def.h);
+            const mat = new THREE.MeshBasicMaterial({
+                color: def.color, side: THREE.DoubleSide,
+                transparent: true, opacity: def.opacity || 0.8
             });
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(def.x, def.y, def.z);
-            mesh.userData = { id: def.id, name: def.name, def, originalColor: def.color };
+            const mesh = new THREE.Mesh(geo, mat);
             mesh.frustumCulled = false;
+            return { mesh, w: def.w, h: def.h };
+        }
+        
+        // Build all elements
+        defs.forEach(def => {
+            let result;
+            if (def.text) {
+                result = createTextMesh(def);
+            } else {
+                result = createPlainMesh(def);
+            }
+            
+            const mesh = result.mesh;
+            mesh.position.set(def.x, def.y, def.z);
+            mesh.userData = {
+                id: def.id, name: def.name, def,
+                origColor: def.color,
+                align: 'center', // default: position = center of text
+                textW: result.w, textH: result.h
+            };
             
             hudGroup.add(mesh);
-            elements[def.id] = mesh;
-            initialPositions[def.id] = { x: def.x, y: def.y, z: def.z };
-            
-            const label = createLabel(def.label, def.color, mesh);
-            if (label) labels.push(label);
+            els[def.id] = mesh;
+            initPos[def.id] = { x: def.x, y: def.y, z: def.z };
+            initScale[def.id] = { w: result.w, h: result.h };
+            initAlign[def.id] = 'center';
         });
         
-        // Selection
-        let selectedElement = null;
-        const OUTLINE_COLOR = 0x00ffff;
+        // ── Selection ──
+        let sel = null;
+        const HIGHLIGHT_COLOR = 0x00ffff;
         
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-        
-        canvas.addEventListener('pointerdown', (event) => {
-            if (event.button !== 0) return;
-            
-            const rect = canvas.getBoundingClientRect();
-            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            
-            raycaster.setFromCamera(mouse, camera);
-            const meshes = Object.values(elements);
-            // Use recursive=false to only hit the meshes themselves, not children
-            const intersects = raycaster.intersectObjects(meshes, false);
-            
-            if (intersects.length > 0) {
-                selectElement(intersects[0].object);
-            }
+        canvas.addEventListener('pointerdown', e => {
+            if (e.button !== 0) return;
+            const r = canvas.getBoundingClientRect();
+            const m = new THREE.Vector2(
+                ((e.clientX - r.left) / r.width) * 2 - 1,
+                -((e.clientY - r.top) / r.height) * 2 + 1
+            );
+            const rc = new THREE.Raycaster();
+            rc.setFromCamera(m, camera);
+            const hits = rc.intersectObjects(Object.values(els), false);
+            if (hits.length) select(hits[0].object);
         });
         
-        function selectElement(mesh) {
-            if (selectedElement) {
-                selectedElement.material.color.setHex(selectedElement.userData.originalColor);
-            }
-            
-            saveUndoState();
-            selectedElement = mesh;
-            mesh.material.color.setHex(OUTLINE_COLOR);
-            transformControls.attach(mesh);
-            
-            updateSelectionUI();
-            updateElementsList();
+        function select(mesh) {
+            if (sel) sel.material.color.setHex(sel.userData.origColor);
+            pushUndo();
+            sel = mesh;
+            mesh.material.color.setHex(HIGHLIGHT_COLOR);
+            tc.attach(mesh);
+            updateUI();
+            updateList();
         }
         
-        function updateSelectionUI() {
-            if (!selectedElement) {
+        function updateUI() {
+            if (!sel) {
                 document.getElementById('selected-name').textContent = 'None';
-                document.getElementById('input-x').value = '';
-                document.getElementById('input-y').value = '';
-                document.getElementById('input-z').value = '';
+                ['x','y','z','sw','sh'].forEach(k => document.getElementById('input-'+k).value = '');
+                document.querySelectorAll('.align-btns button').forEach(b => b.classList.remove('active'));
                 return;
             }
-            const pos = selectedElement.position;
-            document.getElementById('selected-name').textContent = selectedElement.userData.name;
-            document.getElementById('input-x').value = pos.x.toFixed(2);
-            document.getElementById('input-y').value = pos.y.toFixed(2);
-            document.getElementById('input-z').value = pos.z.toFixed(2);
-            const geo = selectedElement.geometry;
+            document.getElementById('selected-name').textContent = sel.userData.name;
+            document.getElementById('input-x').value = sel.position.x.toFixed(3);
+            document.getElementById('input-y').value = sel.position.y.toFixed(3);
+            document.getElementById('input-z').value = sel.position.z.toFixed(3);
+            const geo = sel.geometry;
             document.getElementById('input-sw').value = geo.parameters.width.toFixed(3);
             document.getElementById('input-sh').value = geo.parameters.height.toFixed(3);
+            
+            // Update alignment buttons
+            const align = sel.userData.align || 'center';
+            document.querySelectorAll('.align-btns button').forEach(b => b.classList.remove('active'));
+            document.getElementById('align-' + align).classList.add('active');
         }
         
-        window.updatePositionFromInput = function() {
-            if (!selectedElement) return;
-            saveUndoState();
-            selectedElement.position.x = parseFloat(document.getElementById('input-x').value) || 0;
-            selectedElement.position.y = parseFloat(document.getElementById('input-y').value) || 0;
-            selectedElement.position.z = parseFloat(document.getElementById('input-z').value) || 0;
+        window.setAlign = function(align) {
+            if (!sel) return;
+            pushUndo();
+            sel.userData.align = align;
+            // No position change needed — alignment just affects how the game interprets the position
+            updateUI();
+        };
+        
+        window.updateFromInput = function() {
+            if (!sel) return;
+            pushUndo();
+            sel.position.x = parseFloat(document.getElementById('input-x').value) || 0;
+            sel.position.y = parseFloat(document.getElementById('input-y').value) || 0;
+            sel.position.z = parseFloat(document.getElementById('input-z').value) || 0;
             const newW = parseFloat(document.getElementById('input-sw').value) || 0.1;
             const newH = parseFloat(document.getElementById('input-sh').value) || 0.1;
-            selectedElement.geometry.dispose();
-            selectedElement.geometry = new THREE.PlaneGeometry(newW, newH);
-            updateElementsList();
+            sel.geometry.dispose();
+            sel.geometry = new THREE.PlaneGeometry(newW, newH);
+            updateList();
         };
         
-        window.resetSelectedPosition = function() {
-            if (!selectedElement) return;
-            saveUndoState();
-            const initial = initialPositions[selectedElement.userData.id];
-            selectedElement.position.set(initial.x, initial.y, initial.z);
-            updateSelectionUI();
-            updateElementsList();
-        };
-        
-        function updateElementsList() {
-            const container = document.getElementById('elements-container');
-            container.innerHTML = '';
-            elementDefs.forEach(def => {
-                const mesh = elements[def.id];
-                const pos = mesh.position;
-                const item = document.createElement('div');
-                item.className = 'element-item' + (selectedElement === mesh ? ' selected' : '');
-                item.innerHTML = `
-                    <span class="name"><span class="color-swatch" style="background:#${def.color.toString(16).padStart(6,'0')}"></span>${def.name}</span>
-                    <span class="pos">(${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})</span>
-                `;
-                item.onclick = () => selectElement(mesh);
-                container.appendChild(item);
+        function updateList() {
+            const c = document.getElementById('elements-container');
+            c.innerHTML = '';
+            defs.forEach(d => {
+                const m = els[d.id];
+                const p = m.position;
+                const div = document.createElement('div');
+                div.className = 'element-item' + (sel === m ? ' selected' : '');
+                const alignIcon = {left:'◀', center:'◆', right:'▶'}[m.userData.align || 'center'];
+                div.innerHTML = `<span class="name"><span class="color-swatch" style="background:#${d.color.toString(16).padStart(6,'0')}"></span>${alignIcon} ${d.name}</span><span class="pos">(${p.x.toFixed(2)}, ${p.y.toFixed(2)})</span>`;
+                div.onclick = () => select(m);
+                c.appendChild(div);
             });
         }
         
-        // ── Undo System (20 states) ──
-        const undoStack = [];
+        // ── Undo ──
+        const undos = [];
         const MAX_UNDO = 20;
-        
-        function snapshotPositions() {
-            const snap = {};
-            Object.keys(elements).forEach(id => {
-                const p = elements[id].position;
-                snap[id] = { x: p.x, y: p.y, z: p.z };
+        function snap() {
+            const s = {};
+            Object.keys(els).forEach(id => {
+                const m = els[id];
+                s[id] = { x:m.position.x, y:m.position.y, z:m.position.z, w:m.geometry.parameters.width, h:m.geometry.parameters.height, align:m.userData.align };
             });
-            return snap;
+            return s;
         }
-        
-        function saveUndoState() {
-            undoStack.push(snapshotPositions());
-            if (undoStack.length > MAX_UNDO) undoStack.shift();
-        }
-        
+        function pushUndo() { undos.push(snap()); if (undos.length > MAX_UNDO) undos.shift(); }
         window.undo = function() {
-            if (undoStack.length === 0) return;
-            const snap = undoStack.pop();
-            Object.keys(snap).forEach(id => {
-                if (elements[id]) {
-                    elements[id].position.set(snap[id].x, snap[id].y, snap[id].z);
-                }
+            if (!undos.length) return;
+            const s = undos.pop();
+            Object.keys(s).forEach(id => {
+                if (!els[id]) return;
+                els[id].position.set(s[id].x, s[id].y, s[id].z);
+                els[id].userData.align = s[id].align;
+                els[id].geometry.dispose();
+                els[id].geometry = new THREE.PlaneGeometry(s[id].w, s[id].h);
             });
-            updateSelectionUI();
-            updateElementsList();
+            updateUI(); updateList();
         };
-        
-        document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-                e.preventDefault();
-                window.undo();
-            }
+        window.resetAll = function() {
+            pushUndo();
+            Object.keys(els).forEach(id => {
+                els[id].position.set(initPos[id].x, initPos[id].y, initPos[id].z);
+                els[id].userData.align = initAlign[id] || 'center';
+                els[id].geometry.dispose();
+                els[id].geometry = new THREE.PlaneGeometry(initScale[id].w, initScale[id].h);
+            });
+            updateUI(); updateList();
+        };
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); window.undo(); }
         });
+        tc.addEventListener('mouseDown', () => pushUndo());
+        tc.addEventListener('objectChange', () => { updateUI(); updateList(); });
         
-        transformControls.addEventListener('mouseDown', () => {
-            saveUndoState();
-        });
-        
-        transformControls.addEventListener('objectChange', () => {
-            updateSelectionUI();
-            updateElementsList();
-        });
-        
-        // Export/Import
+        // ── Export / Import ──
         window.exportJSON = function() {
-            const data = {
-                editor: 'floor-hud',
-                hudGroupPosition: { x: 0, y: 0, z: -3 },
-                hudGroupRotation: { x: -70, y: 0, z: 0 },
-                elements: {},
-                exportedAt: new Date().toISOString()
-            };
-            Object.keys(elements).forEach(id => {
-                const pos = elements[id].position;
-                data.elements[id] = { x: parseFloat(pos.x.toFixed(3)), y: parseFloat(pos.y.toFixed(3)), z: parseFloat(pos.z.toFixed(3)), w: +parseFloat(selectedElement.geometry.parameters.width.toFixed(3)), h: +parseFloat(selectedElement.geometry.parameters.height.toFixed(3)) };
+            const data = { editor:'floor-hud', hudGroupPosition:{x:0,y:0,z:-3}, hudGroupRotation:{x:-70,y:0,z:0}, elements:{}, exportedAt:new Date().toISOString() };
+            Object.keys(els).forEach(id => {
+                const m = els[id];
+                data.elements[id] = {
+                    x:+m.position.x.toFixed(3), y:+m.position.y.toFixed(3), z:+m.position.z.toFixed(3),
+                    w:+m.geometry.parameters.width.toFixed(3), h:+m.geometry.parameters.height.toFixed(3),
+                    align: m.userData.align || 'center'
+                };
             });
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
+            const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
             const a = document.createElement('a');
-            a.href = url; a.download = 'floor-hud-layout.json';
-            a.click(); URL.revokeObjectURL(url);
+            a.href = URL.createObjectURL(blob); a.download = 'floor-hud-layout.json'; a.click();
         };
-        
-        window.importJSON = function(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
+        window.importJSON = function(ev) {
+            const f = ev.target.files[0]; if(!f) return;
+            const r = new FileReader();
+            r.onload = e => {
                 try {
-                    const data = JSON.parse(e.target.result);
-                    if (data.elements) {
-                        saveUndoState();
-                        Object.keys(data.elements).forEach(id => {
-                            if (elements[id]) {
-                                const pos = data.elements[id];
-                                elements[id].position.set(pos.x, pos.y, pos.z);
-                            }
+                    const d = JSON.parse(e.target.result);
+                    if(d.elements) {
+                        pushUndo();
+                        Object.keys(d.elements).forEach(id => {
+                            if(!els[id]) return;
+                            const p = d.elements[id];
+                            els[id].position.set(p.x, p.y, p.z);
+                            if(p.align) els[id].userData.align = p.align;
+                            if(p.w && p.h) { els[id].geometry.dispose(); els[id].geometry = new THREE.PlaneGeometry(p.w, p.h); }
                         });
-                        updateSelectionUI();
-                        updateElementsList();
+                        updateUI(); updateList();
                     }
-                } catch (err) { alert('Invalid JSON file'); }
+                } catch(err) { alert('Invalid JSON'); }
             };
-            reader.readAsText(file);
-            event.target.value = '';
+            r.readAsText(f); ev.target.value='';
         };
         
-        // Resize
+        // ── Resize / Animate ──
         function resize() {
-            const container = document.getElementById('viewport');
-            camera.aspect = container.clientWidth / container.clientHeight;
+            const c = document.getElementById('viewport');
+            camera.aspect = c.clientWidth / c.clientHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setSize(c.clientWidth, c.clientHeight);
         }
-        window.addEventListener('resize', resize);
-        resize();
+        window.addEventListener('resize', resize); resize();
         
-        // Animate — labels follow parent world position
-        function animate() {
+        (function animate() {
             requestAnimationFrame(animate);
-            orbitControls.update();
-            
-            labels.forEach(label => {
-                const parent = label.userData._parent;
-                if (parent) {
-                    parent.getWorldPosition(label.position);
-                    label.position.y += label.userData._offsetY;
-                }
-            });
-            
+            orbit.update();
             renderer.render(scene, camera);
-        }
-        
-        updateElementsList();
-        animate();
+        })();
+        updateList();
     </script>
 </body>
 </html>
