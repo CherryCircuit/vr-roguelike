@@ -34,6 +34,12 @@ export class SpatialHash {
 
   query(x, z, radius) {
     const results = [];
+    return this.queryInto(results, x, z, radius);
+  }
+
+  // PERFORMANCE: Reusable query method that pushes into provided array
+  // Callers should clear the array before use: arr.length = 0
+  queryInto(targetArray, x, z, radius) {
     const minCx = Math.floor((x - radius) / this.cellSize);
     const maxCx = Math.floor((x + radius) / this.cellSize);
     const minCz = Math.floor((z - radius) / this.cellSize);
@@ -64,11 +70,11 @@ export class SpatialHash {
           const dx = objX - x;
           const dz = objZ - z;
           if (dx * dx + dz * dz <= rSq) {
-            results.push(obj);
+            targetArray.push(obj);
           }
         }
       }
     }
-    return results;
+    return targetArray;
   }
 }
