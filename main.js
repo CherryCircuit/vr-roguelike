@@ -535,12 +535,12 @@ const BIOME_LIGHTING = {
   },
   desert_night: {
     ambient: { color: 0x0a0a1a, intensity: 0.12 },
-    directional: { color: 0xaaccff, intensity: 0.6, position: [-40, 60, -30] },
+    directional: { color: 0xaaccff, intensity: 0.2, position: [-40, 60, -30] },
     point: { color: 0xddddff, intensity: 1.2, distance: 18 },
   },
   alien_planet: {
     ambient: { color: 0x0a1a0a, intensity: 0.1 },
-    directional: { color: 0x44ffaa, intensity: 0.5, position: [-30, 50, 40] },
+    directional: { color: 0x44ffaa, intensity: 3.0, position: [-30, 50, 40] },
     point: { color: 0x88ff88, intensity: 1.0, distance: 16 },
   },
   hellscape_lava: {
