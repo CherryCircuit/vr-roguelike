@@ -4975,6 +4975,21 @@ class SkullBoss extends Boss {
     this.moveDirection = new THREE.Vector3();
     this.moveSpeed = def.moveSpeed || 1.5;
     
+    // Shared ammo pool for hands (Part 2)
+    this.ammoPool = {
+      timer: 0,
+      baseFireRate: 1.2, // Base fire rate when 4 hands alive
+      shotsSinceReload: 0,
+      reloadTimer: 0,
+      reloading: false
+    };
+    
+    // Skull phase tracking (Part 3)
+    this.skullPhase = 0; // 0 = hand phase, 1/2/3 = skull phases
+    this.transitioning = false;
+    this.transitionTimer = 0;
+    this.transitionDuration = 3.0; // 3-second invuln between phases
+    
     // Build custom skull mesh
     this.buildSkullMesh();
     
@@ -5157,30 +5172,33 @@ class SkullBoss extends Boss {
       if (hand.alive) {
         aliveHands++;
         hand.update(dt, now, playerPos, this.mesh.position);
-        
-        // Hand shooting (Phase 1)
-        if (!this.headVulnerable && hand.shouldShoot(now)) {
-          this.fireHandProjectile(hand, playerPos);
-        }
       }
     });
     
     this.handsAlive = aliveHands;
     
-    // Phase transition: all hands destroyed
+    // Phase transition: all hands destroyed -> start skull phase 1
     if (this.handsAlive === 0 && !this.headVulnerable) {
       this.setHeadImmune(false);
-      this.phase = 2;
+      this.skullPhase = 1;
+      this.phase = 2; // Legacy phase tracking for health bar
       this.onPhaseChange(2);
       this.playGrowlSound();
     }
     
-    // Phase 2: Head attacks and movement
-    if (this.headVulnerable) {
-      this.updatePhase2(dt, now, playerPos);
-    } else {
-      // Phase 1: Stay mid-field, hands do the work
+    // HAND PHASE: Shared ammo pool shooting
+    if (!this.headVulnerable && this.handsAlive > 0) {
+      this.updateHandPhaseAmmo(dt, now, playerPos);
       this.constrainToMidfield(playerPos);
+    }
+    
+    // SKULL PHASE: 3-phase fight with transitions
+    if (this.headVulnerable) {
+      if (this.transitioning) {
+        this.updateTransition(dt, now, playerPos);
+      } else {
+        this.updateSkullPhase(dt, now, playerPos);
+      }
     }
     
     // Update head color based on damage
@@ -5190,17 +5208,80 @@ class SkullBoss extends Boss {
     this.mesh.lookAt(_look.copy(playerPos));
   }
   
-  updatePhase2(dt, now, playerPos) {
-    // Eye shooting
-    this.eyeTimer += dt;
-    if (this.eyeTimer >= this.eyeShootRate) {
-      this.eyeTimer = 0;
-      this.fireEyeProjectiles(playerPos);
+  // Part 2: Shared ammo pool for hands
+  updateHandPhaseAmmo(dt, now, playerPos) {
+    const pool = this.ammoPool;
+    
+    // Calculate fire rate based on alive hands (fewer hands = faster fire)
+    // 4 hands: 1.2s, 3 hands: 1.0s, 2 hands: 0.8s, 1 hand: 0.5s
+    const handCount = this.handsAlive;
+    let fireRate = pool.baseFireRate;
+    if (handCount === 3) fireRate = 1.0;
+    else if (handCount === 2) fireRate = 0.8;
+    else if (handCount === 1) fireRate = 0.5;
+    
+    // Handle reload mechanic for single hand
+    if (handCount === 1) {
+      if (pool.reloading) {
+        pool.reloadTimer += dt;
+        if (pool.reloadTimer >= 3.0) {
+          pool.reloading = false;
+          pool.reloadTimer = 0;
+          pool.shotsSinceReload = 0;
+        }
+        return; // Don't shoot while reloading
+      }
     }
     
-    // Erratic movement
+    pool.timer += dt;
+    if (pool.timer >= fireRate) {
+      pool.timer = 0;
+      
+      // Pick random alive hand to shoot
+      const aliveHands = this.hands.filter(h => h.alive);
+      if (aliveHands.length > 0) {
+        const randomHand = aliveHands[Math.floor(Math.random() * aliveHands.length)];
+        this.fireHandProjectile(randomHand, playerPos);
+        
+        // Track shots for reload mechanic
+        if (handCount === 1) {
+          pool.shotsSinceReload++;
+          if (pool.shotsSinceReload >= 4) {
+            pool.reloading = true;
+            pool.reloadTimer = 0;
+          }
+        }
+      }
+    }
+  }
+  
+  // Part 3: Skull phase logic with 3 phases and transitions
+  updateSkullPhase(dt, now, playerPos) {
+    // Determine current skull phase based on HP thresholds
+    const prevPhase = this.skullPhase;
+    this.skullPhase = this.hp > 1200 ? 1 : this.hp > 600 ? 2 : 3;
+    
+    // Check for phase transition
+    if (prevPhase !== this.skullPhase && prevPhase !== 0) {
+      // Enter transition (3-sec invuln)
+      this.startPhaseTransition(prevPhase, this.skullPhase);
+      return;
+    }
+    
+    // Phase-specific behavior
+    const phaseConfig = this.getSkullPhaseConfig();
+    
+    // Eye shooting with lobbed projectiles
+    this.eyeTimer += dt;
+    if (this.eyeTimer >= phaseConfig.shootRate) {
+      this.eyeTimer = 0;
+      this.fireLobbedEyeProjectiles(playerPos, phaseConfig.arcHeight);
+    }
+    
+    // Movement with phase-specific speed and erraticness
     this.moveTimer += dt;
-    if (this.moveTimer >= 2.0) {
+    const directionChangeInterval = phaseConfig.erraticness; // How often to change direction
+    if (this.moveTimer >= directionChangeInterval) {
       this.moveTimer = 0;
       // Random direction
       const angle = Math.random() * Math.PI * 2;
@@ -5208,10 +5289,103 @@ class SkullBoss extends Boss {
     }
     
     // Apply movement
-    this.mesh.position.addScaledVector(this.moveDirection, this.moveSpeed * dt);
+    this.mesh.position.addScaledVector(this.moveDirection, phaseConfig.moveSpeed * dt);
     
     // Keep in bounds
     this.constrainToMidfield(playerPos);
+  }
+  
+  getSkullPhaseConfig() {
+    // Return phase-specific configuration
+    switch (this.skullPhase) {
+      case 1: // 1800-1200 HP: Slow, predictable
+        return {
+          moveSpeed: 1.5,
+          shootRate: 1.2,
+          arcHeight: 3.5,
+          erraticness: 3.0 // Change direction every 3 seconds
+        };
+      case 2: // 1200-600 HP: Faster, more erratic
+        return {
+          moveSpeed: 2.5,
+          shootRate: 0.8,
+          arcHeight: 4.0,
+          erraticness: 1.5 // Change direction every 1.5 seconds
+        };
+      case 3: // 600-0 HP: Very fast, very erratic
+        return {
+          moveSpeed: 4.0,
+          shootRate: 0.5,
+          arcHeight: 4.5,
+          erraticness: 0.8 // Change direction every 0.8 seconds
+        };
+      default:
+        return {
+          moveSpeed: 1.5,
+          shootRate: 1.2,
+          arcHeight: 3.5,
+          erraticness: 3.0
+        };
+    }
+  }
+  
+  startPhaseTransition(fromPhase, toPhase) {
+    this.transitioning = true;
+    this.transitionTimer = 0;
+    this.transitionFromPhase = fromPhase;
+    this.transitionToPhase = toPhase;
+    
+    // Visual effects during transition
+    this.playGrowlSound();
+    
+    // Brighten eyes
+    if (this.leftEye) {
+      this.leftEye.material.color.setHex(0xff3333);
+      this.leftEye.material.opacity = 1.0;
+    }
+    if (this.rightEye) {
+      this.rightEye.material.color.setHex(0xff3333);
+      this.rightEye.material.opacity = 1.0;
+    }
+    
+    console.log(`[SkullBoss] Phase transition: ${fromPhase} -> ${toPhase} (3-sec invuln)`);
+  }
+  
+  updateTransition(dt, now, playerPos) {
+    this.transitionTimer += dt;
+    
+    // Stop movement and shooting during transition
+    // Pulsing scale effect
+    const pulse = 1.0 + 0.1 * Math.sin(this.transitionTimer * 8.0);
+    this.mesh.scale.setScalar(pulse);
+    
+    // Eye glow pulsing
+    const eyeGlow = 0.5 + 0.5 * Math.sin(this.transitionTimer * 6.0);
+    if (this.leftEye) {
+      this.leftEye.material.opacity = eyeGlow;
+    }
+    if (this.rightEye) {
+      this.rightEye.material.opacity = eyeGlow;
+    }
+    
+    // Transition complete
+    if (this.transitionTimer >= this.transitionDuration) {
+      this.transitioning = false;
+      this.mesh.scale.setScalar(1.0);
+      
+      // Set final eye state for new phase
+      const eyeOpacity = 0.8 + (this.transitionToPhase - 1) * 0.1; // Brighter in later phases
+      if (this.leftEye) {
+        this.leftEye.material.opacity = eyeOpacity;
+        this.leftEye.material.color.setHex(0xff0000);
+      }
+      if (this.rightEye) {
+        this.rightEye.material.opacity = eyeOpacity;
+        this.rightEye.material.color.setHex(0xff0000);
+      }
+      
+      console.log(`[SkullBoss] Transition complete, now in phase ${this.transitionToPhase}`);
+    }
   }
   
   constrainToMidfield(playerPos) {
@@ -5249,7 +5423,7 @@ class SkullBoss extends Boss {
   }
   
   fireEyeProjectiles(playerPos) {
-    // Fire from both eyes
+    // Fire from both eyes (used by hand phase if needed)
     const eyePositions = [
       this.leftEye.getWorldPosition(new THREE.Vector3()),
       this.rightEye.getWorldPosition(new THREE.Vector3()),
@@ -5264,6 +5438,29 @@ class SkullBoss extends Boss {
         if (typeof spawnBossProjectile === 'function') {
           spawnBossProjectile(eyePos, playerPos);
         }
+      });
+    }, 200);
+  }
+  
+  // Part 4: Lobbed projectiles for skull phase (arc trajectory)
+  fireLobbedEyeProjectiles(playerPos, arcHeight) {
+    const eyePositions = [
+      this.leftEye.getWorldPosition(new THREE.Vector3()),
+      this.rightEye.getWorldPosition(new THREE.Vector3()),
+    ];
+    
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.3, 0xff0000, this.mesh.position);
+    }
+    
+    // Stagger eye shots slightly so they don't fire at exact same time
+    setTimeout(() => {
+      eyePositions.forEach((eyePos, idx) => {
+        setTimeout(() => {
+          if (typeof spawnBossLobbedProjectile === 'function') {
+            spawnBossLobbedProjectile(eyePos, playerPos, arcHeight || 3.5);
+          }
+        }, idx * 100); // 100ms stagger between eyes
       });
     }, 200);
   }
@@ -5335,9 +5532,13 @@ class SkullBoss extends Boss {
       return { killed: false };
     }
     
-    // Head damage only in phase 2
+    // Head damage only when vulnerable
     if (!this.headVulnerable) {
-      // Head is immune
+      return { killed: false, immune: true };
+    }
+    
+    // Head immune during phase transitions
+    if (this.transitioning) {
       return { killed: false, immune: true };
     }
     
@@ -5347,12 +5548,7 @@ class SkullBoss extends Boss {
   
   onPhaseChange(newPhase) {
     super.onPhaseChange(newPhase);
-    
-    if (newPhase === 2) {
-      // All hands destroyed, head now vulnerable
-      this.eyeShootRate = this.def.eyeShootRate || 0.8;
-      this.moveSpeed = this.def.moveSpeed || 1.5;
-    }
+    // Phase config is now driven by getSkullPhaseConfig() based on HP thresholds
   }
 }
 
@@ -7761,16 +7957,16 @@ const BOSS_DEFS = {
     // Custom voxel skull - not using pattern, built in class
     pattern: [[1]], // Placeholder, actual skull built in SkullBoss class
     voxelSize: 0.25,
-    baseHp: 1200,
-    phases: 2, // Phase 1: hands, Phase 2: head vulnerable
+    baseHp: 1800, // 3 bars of 600 HP each
+    phases: 3, // Hand phase + 3 skull phases (total 4 phases, but only skull has health bars)
     color: 0xffffff, // Starts white, darkens to red
     scoreValue: 100,
     behavior: 'skull',
     hitboxRadius: 1.2,
     handHp: 150, // HP per hand
-    handShootRate: 1.5, // Base shoot rate per hand
-    eyeShootRate: 0.8, // Phase 2 eye shoot rate
-    moveSpeed: 1.5, // Phase 2 movement speed
+    handShootRate: 1.5, // Base shoot rate per hand (UNUSED now - shared ammo pool)
+    eyeShootRate: 0.8, // Skull phase base shoot rate
+    moveSpeed: 1.5, // Skull phase base movement speed
     weakPoints: false // Custom weak points (hands first, then head)
   },
 
@@ -8605,7 +8801,7 @@ export function clearBossProjectiles() {
   }
 }
 
-export function spawnBossProjectile(fromPos, targetPos) {
+export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeight = 3.5) {
   // Initialize pools if needed (called once on first spawn)
   initBossProjPools();
 
@@ -8616,26 +8812,67 @@ export function spawnBossProjectile(fromPos, targetPos) {
   // Play sound when boss fires projectile
   playEnemyProjectileSound();
 
-  // Calculate direction and speed
-  const dir = new THREE.Vector3().copy(targetPos).sub(fromPos).normalize();
-  const speed = 5.2;
+  let velocity;
+  let homingStrength;
+  let wiggleAmplitude;
+
+  if (lobbed) {
+    // Lobbed projectile: arc trajectory with gravity
+    // Calculate horizontal direction to target
+    const horizontalDir = new THREE.Vector3(
+      targetPos.x - fromPos.x,
+      0,
+      targetPos.z - fromPos.z
+    );
+    const horizontalDist = horizontalDir.length();
+    horizontalDir.normalize();
+
+    // Calculate time to reach target horizontally
+    const horizontalSpeed = 4.0;
+    const flightTime = horizontalDist / horizontalSpeed;
+
+    // Calculate initial upward velocity to reach arcHeight
+    // Using kinematic equation: h = v0*t - 0.5*g*t^2
+    // At peak (t/2): arcHeight = v0*(t/2) - 0.5*g*(t/2)^2
+    // Solving: v0 = (arcHeight + 0.5*g*(t/2)^2) / (t/2)
+    const gravity = 9.8;
+    const halfTime = flightTime / 2;
+    const initialUpSpeed = (arcHeight + 0.5 * gravity * halfTime * halfTime) / halfTime;
+
+    velocity = new THREE.Vector3(
+      horizontalDir.x * horizontalSpeed,
+      initialUpSpeed,
+      horizontalDir.z * horizontalSpeed
+    );
+    homingStrength = 0; // No homing for lobbed projectiles
+    wiggleAmplitude = 0;
+  } else {
+    // Straight-line homing projectile (original behavior)
+    const dir = new THREE.Vector3().copy(targetPos).sub(fromPos).normalize();
+    const speed = 5.2;
+    velocity = dir.multiplyScalar(speed);
+    homingStrength = 8.0;
+    wiggleAmplitude = 0.008;
+  }
 
   // Store per-instance data
   const data = {
     instanceIndex: idx,
     position: fromPos.clone(),
-    velocity: dir.multiplyScalar(speed),
+    velocity: velocity,
     createdAt: performance.now(),
-    lifetime: 3600,
-    homingStrength: 8.0,
+    lifetime: lobbed ? 6000 : 3600, // Lobbed projectiles live longer
+    homingStrength: homingStrength,
     wigglePhase: Math.random() * Math.PI * 2,
-    wiggleAmplitude: 0.008,
+    wiggleAmplitude: wiggleAmplitude,
     damage: 1,
     explosionDamage: 1,
     explosionRadius: 0.3,
     hitRadius: 0.45,
     glowPhase: Math.random() * Math.PI * 2,
     hitPlayer: false,
+    lobbed: lobbed,
+    gravity: lobbed ? 9.8 : 0,
   };
   bossProjData[idx] = data;
 
@@ -8665,7 +8902,14 @@ export function spawnBossProjectile(fromPos, targetPos) {
     hitRadius: data.hitRadius,
     wiggleAmplitude: data.wiggleAmplitude,
     hitPlayer: false,
+    lobbed: data.lobbed,
+    gravity: data.gravity,
   });
+}
+
+// Convenience wrapper for lobbed projectiles (skull phase eye shots)
+export function spawnBossLobbedProjectile(fromPos, targetPos, arcHeight = 3.5) {
+  return spawnBossProjectile(fromPos, targetPos, true, arcHeight);
 }
 
 export function updateBossProjectiles(dt, now, playerPos) {
@@ -8693,12 +8937,21 @@ export function updateBossProjectiles(dt, now, playerPos) {
 
     const slowFactor = getStasisSlowFactor(proj.mesh.position);
     const adjustedDt = dt * slowFactor;
-    const speed = proj.velocity.length();
-    _scratch.subVectors(playerPos, proj.mesh.position).normalize();
-    const desiredVelocity = _scratch.multiplyScalar(speed);
-    proj.velocity.lerp(desiredVelocity, Math.min(1, (proj.homingStrength || 2.5) * adjustedDt));
-    if (proj.velocity.lengthSq() > 0.0001) {
-      proj.velocity.setLength(speed);
+    
+    if (proj.lobbed) {
+      // Lobbed projectile: apply gravity, no homing
+      proj.velocity.y -= (proj.gravity || 9.8) * adjustedDt;
+      proj.mesh.position.addScaledVector(proj.velocity, adjustedDt);
+    } else {
+      // Homing projectile: steer toward player
+      const speed = proj.velocity.length();
+      _scratch.subVectors(playerPos, proj.mesh.position).normalize();
+      const desiredVelocity = _scratch.multiplyScalar(speed);
+      proj.velocity.lerp(desiredVelocity, Math.min(1, (proj.homingStrength || 2.5) * adjustedDt));
+      if (proj.velocity.lengthSq() > 0.0001) {
+        proj.velocity.setLength(speed);
+      }
+      proj.mesh.position.addScaledVector(proj.velocity, adjustedDt);
     }
 
     proj.wigglePhase = (proj.wigglePhase || 0) + adjustedDt * 7.0;
@@ -8709,8 +8962,20 @@ export function updateBossProjectiles(dt, now, playerPos) {
     const wiggleOffset = Math.sin(proj.wigglePhase) * (proj.wiggleAmplitude || 0.008);
     const pulse = 0.75 + Math.sin(age * 0.015 + (data.glowPhase || 0)) * 0.25;
 
-    proj.mesh.position.addScaledVector(proj.velocity, adjustedDt);
-    proj.mesh.position.addScaledVector(_scratch3, wiggleOffset);
+    // Only add wiggle and duplicate velocity for non-lobbed (homing) projectiles
+    if (!proj.lobbed) {
+      proj.mesh.position.addScaledVector(_scratch3, wiggleOffset);
+    }
+
+    // Despawn lobbed projectiles that fall below ground
+    if (proj.lobbed && proj.mesh.position.y < -2) {
+      if (typeof window !== 'undefined' && window.createExplosionAt) {
+        window.createExplosionAt(proj.mesh.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
+      }
+      releaseBossProjIndex(idx);
+      bossProjectiles.splice(i, 1);
+      continue;
+    }
 
     // Update instance matrices with pulsing scale
     const coreScale = 0.9 + pulse * 0.12;

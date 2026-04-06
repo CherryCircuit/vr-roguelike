@@ -10605,6 +10605,95 @@ function render(timestamp) {
   }
 
   // ── Boss alert sequence ──
+  // ── Skull Boss Spawn Cinematic (Level 5) ──
+  if (st === State.BOSS_ALERT && game.level === 5 && !game._skullCinematicInit) {
+    game._skullCinematicInit = true;
+    game._skullCinematicDuration = 3.0; // Matches BOSS_ALERT stateTimer
+    game._skullCinematicElapsed = 0;
+    
+    // Find sun group in biome scene
+    game._cinSunGroup = null;
+    game._cinSkyMat = null;
+    if (biomeSceneGroup) {
+      biomeSceneGroup.traverse(child => {
+        if (child.name === 'synthwave-sun-group') game._cinSunGroup = child;
+        if (child.material && child.material.uniforms && child.material.uniforms.topColor) {
+          game._cinSkyMat = child.material;
+        }
+      });
+    }
+    
+    // Store original values for restoration later
+    game._cinOrigSunY = game._cinSunGroup ? game._cinSunGroup.position.y : 270;
+    game._cinOrigAmbientIntensity = biomeAmbientLight ? biomeAmbientLight.intensity : 0.15;
+    game._cinOrigDirIntensity = biomeDirectionalLight ? biomeDirectionalLight.intensity : 0.8;
+    game._cinOrigSkyOpacity = game._cinSkyMat ? game._cinSkyMat.opacity : 1.0;
+    
+    // Store original terrain colors if available
+    game._cinOrigGridColor = null;
+    game._cinOrigBaseColor = null;
+    if (synthVisualRefs.terrainUniforms) {
+      game._cinOrigGridColor = synthVisualRefs.terrainUniforms.uGridColor.value.clone();
+      game._cinOrigBaseColor = synthVisualRefs.terrainUniforms.uBaseColor.value.clone();
+      game._cinOrigFogColor = synthVisualRefs.terrainUniforms.uFogColor.value.clone();
+    }
+    
+    console.log('[SkullBoss Cinematic] Starting spawn cinematic for level 5');
+  }
+  
+  // Update skull boss cinematic during BOSS_ALERT
+  if (st === State.BOSS_ALERT && game.level === 5 && game._skullCinematicInit) {
+    const elapsed = game._skullCinematicDuration - game.stateTimer;
+    const t = Math.min(1, elapsed / game._skullCinematicDuration); // 0 to 1 progress
+    
+    // 1. Move sun downward (-Y) below horizon
+    if (game._cinSunGroup) {
+      game._cinSunGroup.position.y = game._cinOrigSunY * (1 - t * 1.5);
+    }
+    
+    // 2. Dim scene lights to ~40%
+    const dimTarget = 0.4;
+    if (biomeAmbientLight) {
+      biomeAmbientLight.intensity = game._cinOrigAmbientIntensity * (1 - t * (1 - dimTarget));
+    }
+    if (biomeDirectionalLight) {
+      biomeDirectionalLight.intensity = game._cinOrigDirIntensity * (1 - t * (1 - dimTarget));
+    }
+    
+    // 3. Fade skydome opacity to 20%
+    if (game._cinSkyMat) {
+      game._cinSkyMat.opacity = game._cinOrigSkyOpacity * (1 - t * 0.8);
+    }
+    
+    // 4. Shift floor grid and base colors to locked red shades
+    if (synthVisualRefs.terrainUniforms && game._cinOrigGridColor) {
+      const redGrid = new THREE.Color(0x880000);  // Dark crimson grid
+      const redBase = new THREE.Color(0x1a0000);  // Very dark red base
+      const redFog = new THREE.Color(0x220000);   // Dark red fog
+      synthVisualRefs.terrainUniforms.uGridColor.value.copy(game._cinOrigGridColor).lerp(redGrid, t);
+      synthVisualRefs.terrainUniforms.uBaseColor.value.copy(game._cinOrigBaseColor).lerp(redBase, t);
+      synthVisualRefs.terrainUniforms.uFogColor.value.copy(game._cinOrigFogColor).lerp(redFog, t);
+    }
+    
+    // 5. Shift sun glow materials to red
+    if (synthVisualRefs.sunOuterGlowMat) {
+      synthVisualRefs.sunOuterGlowMat.color.lerp(new THREE.Color(0xff2200), t * 0.1);
+    }
+    if (synthVisualRefs.sunGlowMat) {
+      synthVisualRefs.sunGlowMat.color.lerp(new THREE.Color(0xff3300), t * 0.1);
+    }
+    if (synthVisualRefs.sunCoreMat) {
+      synthVisualRefs.sunCoreMat.color.lerp(new THREE.Color(0xff0000), t * 0.1);
+    }
+  }
+  
+  // Reset cinematic state when leaving BOSS_ALERT for level 5
+  if (st === State.PLAYING && game._skullCinematicInit && !game._skullCinematicCleaned) {
+    game._skullCinematicCleaned = true;
+    console.log('[SkullBoss Cinematic] Cinematic complete, boss fight in red environment');
+    // Don't restore original values - keep the red-shifted environment for the boss fight
+  }
+
   else if (st === State.BOSS_ALERT) {
     game.stateTimer -= clampedRawDt;  // Fix B: use clamped dt for game simulation
     
