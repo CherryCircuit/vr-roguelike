@@ -219,7 +219,10 @@ export function buildSynthwaveValleyScene(group, deps) {
     uHorizonColor: { value: new THREE.Color(0xFF8626) }, // Orange horizon
   };
 
+  // Quest-optimized cloud shader: 2D hash noise with UV coords instead of expensive 3D noise.
+  // Replaced 2× (3-octave 3D FBM) with 1× (2-octave 2D FBM). ~6x fewer ALU ops per pixel.
   const cloudFragmentShader = `
+    varying vec2 vUv;
     varying vec3 vWorldPos;
     uniform float uTime;
     uniform vec3 uSunDir;
@@ -227,76 +230,47 @@ export function buildSynthwaveValleyScene(group, deps) {
     uniform vec3 uSkyColor;
     uniform vec3 uHorizonColor;
 
-    // 3D hash and noise for seamless spherical cloud sampling
-    vec3 hash3(vec3 p) {
-      p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
-               dot(p, vec3(269.5, 183.3, 246.1)),
-               dot(p, vec3(113.5, 271.9, 124.6)));
-      return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+    // Cheap 2D hash noise (single sin-based hash, no 3D dot products)
+    float hash(vec2 p) {
+      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
     }
 
-    float noise3D(vec3 p) {
-      vec3 i = floor(p);
-      vec3 f = fract(p);
-      vec3 u = f * f * (3.0 - 2.0 * f);
-      return mix(
-        mix(mix(dot(hash3(i), f),
-                dot(hash3(i + vec3(1,0,0)), f - vec3(1,0,0)), u.x),
-            mix(dot(hash3(i + vec3(0,1,0)), f - vec3(0,1,0)),
-                dot(hash3(i + vec3(1,1,0)), f - vec3(1,1,0)), u.x), u.y),
-        mix(mix(dot(hash3(i + vec3(0,0,1)), f - vec3(0,0,1)),
-                dot(hash3(i + vec3(1,0,1)), f - vec3(1,0,1)), u.x),
-            mix(dot(hash3(i + vec3(0,1,1)), f - vec3(0,1,1)),
-                dot(hash3(i + vec3(1,1,1)), f - vec3(1,1,1)), u.x), u.y),
-        u.z
-      );
+    float noise2D(vec2 p) {
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      float a = hash(i);
+      float b = hash(i + vec2(1.0, 0.0));
+      float c = hash(i + vec2(0.0, 1.0));
+      float d = hash(i + vec2(1.0, 1.0));
+      return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
     }
 
-    // 4-layer FBM with 3D noise (seamless on sphere)
-    float fbm3(vec3 p) {
-      float value = 0.0;
-      float amp = 0.5;
-      for (int i = 0; i < 3; i++) {
-        value += amp * noise3D(p);
-        p *= 2.0;
-        amp *= 0.5;
-      }
-      return value;
+    // 2-octave FBM (was 3-octave, was called twice)
+    float fbm2(vec2 p) {
+      float v = noise2D(p) * 0.6;
+      v += noise2D(p * 2.0) * 0.4;
+      return v;
     }
 
     void main() {
-      // Sample cloud noise directly on sphere normal (3D) - no seam possible
-      vec3 relPos = vWorldPos - vec3(0.0, 0.0, -700.0);
-      vec3 n = normalize(relPos);
-      
-      float lat = asin(n.y);  // -PI/2 to PI/2
+      vec2 uv = vUv;
+      float normalizedHeight = uv.y;  // 0 at bottom, 1 at top
 
-      // 3D noise using sphere direction directly - inherently seamless
-      vec3 cloudP = n * 2.0 + vec3(uTime * 0.3, 0.0, uTime * 0.1);
+      // Animate UV for cloud drift (horizontal scroll)
+      vec2 cloudUV = uv * vec2(4.0, 2.0) + vec2(uTime * 0.02, uTime * 0.005);
 
-      // Layered FBM noise for cloud density
-      float n1 = fbm3(cloudP);
-      float n2 = fbm3(cloudP * 2.5 + vec3(10.0, 5.0, 3.0));
-      float density = n1 * 0.6 + n2 * 0.4;
+      float density = fbm2(cloudUV);
 
-      // FIX: FBM returns [-1, 1], remap to [0, 1] so smoothstep works correctly
-      density = (density + 1.0) * 0.5;
+      // Soft cloud shapes
+      float cloudMask = smoothstep(0.45, 0.7, density);
 
-      // Soft cloud shapes - reduced density (threshold raised for ~50% fewer clouds)
-      float cloudMask = smoothstep(0.45, 0.75, density);
-
-      // FIX: Adjust sky band to work with dome geometry
-      // Lower dome covers phi 0 to 0.4*PI (0 to 72 degrees from top)
-      // Higher dome covers phi 0.3*PI to 0.8*PI (54 to 144 degrees from top)
-      // Convert lat (in radians, -PI/2 to PI/2) to normalized height
-      float normalizedHeight = (lat + 1.5708) / 3.1416;  // 0 at bottom, 1 at top
-
-      // Clouds visible in mid-sky band (wider range for better coverage)
+      // Clouds visible in mid-sky band
       float skyBand = smoothstep(0.15, 0.45, normalizedHeight) * smoothstep(0.92, 0.55, normalizedHeight);
       cloudMask *= skyBand;
 
-      // Sun-facing tint: brighter on sun side
-      float sunFacing = max(0.0, dot(n, uSunDir));
+      // Approximate sun direction from UV for cheap tinting
+      float sunFacing = smoothstep(0.3, 0.7, uv.x);
       vec3 sunTint = mix(vec3(1.0), vec3(1.2, 1.1, 0.9), sunFacing);
 
       // Gradient from horizon to sky
@@ -304,23 +278,23 @@ export function buildSynthwaveValleyScene(group, deps) {
       baseColor = mix(baseColor, uSkyColor, smoothstep(0.5, 0.9, normalizedHeight));
 
       vec3 cloudCol = baseColor * sunTint;
-      cloudCol = pow(cloudCol, vec3(1.0 / 2.2));  // Gamma correct
+      cloudCol = pow(cloudCol, vec3(1.0 / 2.2));
 
-      // Edge fade - stronger at bottom edge
+      // Edge fade
       float bottomFade = smoothstep(0.0, 0.15, normalizedHeight);
       float topFade = smoothstep(1.0, 0.85, normalizedHeight);
       cloudMask *= bottomFade * topFade;
 
-      // FIX: Increase alpha for better visibility in VR
       float alpha = cloudMask * 0.85;
-
       gl_FragColor = vec4(cloudCol, alpha);
     }
   `;
 
   const cloudVertexShader = `
+    varying vec2 vUv;
     varying vec3 vWorldPos;
     void main() {
+      vUv = uv;
       vec4 worldPos = modelMatrix * vec4(position, 1.0);
       vWorldPos = worldPos.xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -328,7 +302,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   `;
 
   // Full sphere cloud dome - no visible seam edges
-  const cloudDome1Geo = new THREE.SphereGeometry(2400, 32, 20);
+  const cloudDome1Geo = new THREE.SphereGeometry(2400, 24, 12);
   const cloudDome1Mat = new THREE.ShaderMaterial({
     uniforms: cloudUniforms,
     vertexShader: cloudVertexShader,

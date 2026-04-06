@@ -1027,39 +1027,39 @@ function createHUDElements() {
   const heartsGeo = new THREE.PlaneGeometry(1.2, 0.24);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
-  heartsSprite.position.set(-1.5, 0.45, 0);  // Far left, top row (moved right from -1.8)
+  heartsSprite.position.set(-1.1, 0.45, 0);  // Left, top row (tighter spacing)
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
   // SCORE - center-left on floor with title above
   // Layout: Spread from hearts, number centered under SCORE title
   scoreSprite = makeSprite('0', { fontSize: 75, color: '#ffff00', shadow: true, scale: 0.45 });
-  scoreSprite.position.set(-0.2, 0.0, 0);  // Centered under SCORE title (gap tripled)
+  scoreSprite.position.set(-0.15, 0.0, 0);  // Centered under SCORE title
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
-  scoreTitleSprite.position.set(-0.2, 0.45, 0);  // Top row, aligned with score number below
+  scoreTitleSprite.position.set(-0.15, 0.45, 0);  // Top row, aligned with score number below
   hudGroup.add(scoreTitleSprite);
 
   // Kill counter — below LEVEL display
   // Layout: Center-right, below level
   killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 0.45 });
-  killCountSprite.position.set(0.7, 0.0, 0);  // Center-right, second row (gap tripled)
+  killCountSprite.position.set(0.5, 0.0, 0);  // Center-right, second row
   hudGroup.add(killCountSprite);
 
   // Level indicator — above kill counter
   // Layout: Center-right, top row
   levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 0.45 });
-  levelSprite.position.set(0.7, 0.45, 0);  // Center-right, top row
+  levelSprite.position.set(0.5, 0.45, 0);  // Center-right, top row
   hudGroup.add(levelSprite);
 
   // Nuke counter — far right, top row; emoji 2x size, count text normal
   nukeEmojiSprite = makeSprite('☢', { fontSize: 144, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
-  nukeEmojiSprite.position.set(1.2, 0.45, 0);  // Far right, top row (emoji, left)
+  nukeEmojiSprite.position.set(0.9, 0.45, 0);  // Far right, top row (emoji, left)
   hudGroup.add(nukeEmojiSprite);
   nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
-  nukeCountSprite.position.set(1.7, 0.45, 0);  // Far right, top row (count, right)
+  nukeCountSprite.position.set(1.3, 0.45, 0);  // Far right, top row (count, right)
   hudGroup.add(nukeCountSprite);
 
   // Accuracy bonus — center, just below main HUD row
