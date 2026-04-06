@@ -1128,45 +1128,45 @@ function createHUDElements() {
   const heartsGeo = new THREE.PlaneGeometry(1.2, 0.24);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
-  heartsSprite.position.set(-1.1, 0.45, 0);  // Left, top row (tighter spacing)
+  heartsSprite.position.set(-1.2, 0.45, 0);  // Left, top row
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
   // SCORE - center-left on floor with title above
   // Layout: Spread from hearts, number centered under SCORE title
   scoreSprite = makeSprite('0', { fontSize: 75, color: '#ffff00', shadow: true, scale: 0.45 });
-  scoreSprite.position.set(-0.15, 0.0, 0);  // Centered under SCORE title
+  scoreSprite.position.set(-0.36, 0.1, 0);  // Centered under SCORE title
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
-  scoreTitleSprite.position.set(-0.15, 0.45, 0);  // Top row, aligned with score number below
+  scoreTitleSprite.position.set(-0.36, 0.45, 0);  // Top row
   hudGroup.add(scoreTitleSprite);
 
   // Kill counter — below LEVEL display
   // Layout: Center-right, below level
   killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 0.45 });
-  killCountSprite.position.set(0.5, 0.0, 0);  // Center-right, second row
+  killCountSprite.position.set(0.42, 0.15, 0);  // Center-right, second row
   hudGroup.add(killCountSprite);
 
   // Level indicator — above kill counter
   // Layout: Center-right, top row
   levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 0.45 });
-  levelSprite.position.set(0.5, 0.45, 0);  // Center-right, top row
+  levelSprite.position.set(0.42, 0.45, 0);  // Center-right, top row
   hudGroup.add(levelSprite);
 
   // Nuke counter — far right, top row; emoji 2x size, count text normal
   nukeEmojiSprite = makeSprite('☢', { fontSize: 144, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
-  nukeEmojiSprite.position.set(0.9, 0.45, 0);  // Far right, top row (emoji, left)
+  nukeEmojiSprite.position.set(1.06, 0.45, 0);  // Far right, top row
   hudGroup.add(nukeEmojiSprite);
   nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
-  nukeCountSprite.position.set(1.3, 0.45, 0);  // Far right, top row (count, right)
+  nukeCountSprite.position.set(1.44, 0.45, 0);  // Far right, top row
   hudGroup.add(nukeCountSprite);
 
   // Accuracy bonus — center, just below main HUD row
   // Y=-0.45 keeps it close to the SCORE/LEVEL row (Y=0.3) without overlap
   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 1.8 });
-  comboSprite.position.set(0, -0.23, 0);  // Moved up closer to main HUD (gap halved)
+  comboSprite.position.set(-1, 0.15, 0);  // Left side, below hearts
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 
@@ -1174,7 +1174,7 @@ function createHUDElements() {
   const cooldownGeo = new THREE.PlaneGeometry(0.5, 0.03);
   const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
-  comboCooldownSprite.position.set(0, -0.38, 0);  // Below bonus text (moved up, gap halved)
+  comboCooldownSprite.position.set(-1.2, -0.02, 0);  // Left side, below combo text
   comboCooldownSprite.visible = false;
   hudGroup.add(comboCooldownSprite);
 }
