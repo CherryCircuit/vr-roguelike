@@ -172,6 +172,9 @@ class TextPopupPool {
     drawFn(ud.canvas, ud.ctx, ud.canvas.width, ud.canvas.height);
     mesh.material.map.needsUpdate = true;
 
+    // Store the draw function for potential updates
+    ud._drawFn = drawFn;
+
     // Use scale to adjust apparent size (geometry is fixed at pool creation)
     const w = opts.width || this.defaults.width || 1;
     const h = opts.height || this.defaults.height || 0.5;
@@ -223,6 +226,20 @@ class TextPopupPool {
       this._deactivate(mesh);
       this.pool.push(mesh);
     }
+  }
+
+  /**
+   * Update the text on an active mesh without re-acquiring.
+   * Used for damage number consolidation.
+   */
+  updateText(mesh, drawFn) {
+    const ud = mesh.userData;
+    ud.ctx.clearRect(0, 0, ud.canvas.width, ud.canvas.height);
+    ud.ctx.shadowColor = 'transparent';
+    ud.ctx.shadowBlur = 0;
+    drawFn(ud.canvas, ud.ctx, ud.canvas.width, ud.canvas.height);
+    mesh.material.map.needsUpdate = true;
+    ud._drawFn = drawFn;
   }
 
   update(dt, now, onExpire = null) {
@@ -280,9 +297,12 @@ let damageNumberPool = null;
 let comboPopupPool = null;
 let killChainPool = null;
 
+// Damage number consolidation: track active numbers by position key
+const activeDamageNumbers = new Map(); // positionKey -> { mesh, totalDamage, color, positionKey }
+
 function ensurePools() {
   if (damageNumberPool) return;
-  damageNumberPool = new TextPopupPool(sceneRef, 25, {
+  damageNumberPool = new TextPopupPool(sceneRef, 15, {
     canvasWidth: 128, canvasHeight: 64,
     width: 0.65, height: 0.325,
     gravity: true,
@@ -1790,14 +1810,72 @@ export function updateSpeedLines(intensity) {
 
 // ── Damage Numbers ─────────────────────────────────────────
 
+function makePositionKey(position) {
+  // Round position to nearest 0.5 to group hits on the same enemy
+  const x = Math.round(position.x * 2) / 2;
+  const y = Math.round(position.y * 2) / 2;
+  const z = Math.round(position.z * 2) / 2;
+  return `${x},${y},${z}`;
+}
+
 export function spawnDamageNumber(position, damage, color) {
   ensurePools();
 
+  const posKey = makePositionKey(position);
+  const existing = activeDamageNumbers.get(posKey);
+
+  if (existing) {
+    // Consolidate: add damage to existing number
+    existing.totalDamage += damage;
+    const totalDamage = existing.totalDamage;
+    const existingColor = existing.color;
+
+    const scale = (0.25 + Math.min(totalDamage / 100, 0.15)) * 1.3;
+    const width = scale * 2;
+    const height = scale;
+    existing.mesh.scale.set(width / 0.65, height / 0.325, 1);
+
+    damageNumberPool.updateText(existing.mesh, (canvas, ctx) => {
+      const fontSize = Math.min(48, 28 + totalDamage / 6);
+      ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Drop shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillText(Math.round(totalDamage).toString(), 66, 34);
+
+      // Main text
+      ctx.fillStyle = existingColor || '#ffffff';
+      ctx.fillText(Math.round(totalDamage).toString(), 64, 32);
+    });
+
+    // Reset lifetime to keep it visible while under fire
+    existing.mesh.userData.createdAt = performance.now();
+    existing.mesh.userData.lifetime = 600;
+
+    // Pulse effect: briefly scale up
+    const baseScaleX = width / 0.65;
+    const baseScaleY = height / 0.325;
+    existing.mesh.scale.set(baseScaleX * 1.3, baseScaleY * 1.3, 1);
+    setTimeout(() => {
+      if (existing.mesh.userData.active) {
+        existing.mesh.scale.set(baseScaleX, baseScaleY, 1);
+      }
+    }, 50);
+
+    // Slight upward bump
+    existing.mesh.position.y += 0.05;
+
+    return;
+  }
+
+  // No existing number: create new one
   const scale = (0.25 + Math.min(damage / 100, 0.15)) * 1.3;
   const width = scale * 2;
   const height = scale;
 
-  damageNumberPool.acquire(position, (canvas, ctx) => {
+  const mesh = damageNumberPool.acquire(position, (canvas, ctx) => {
     const fontSize = Math.min(48, 28 + damage / 6);
     ctx.font = `bold ${fontSize}px Arial, sans-serif`;
     ctx.textAlign = 'center';
@@ -1811,7 +1889,7 @@ export function spawnDamageNumber(position, damage, color) {
     ctx.fillStyle = color || '#ffffff';
     ctx.fillText(Math.round(damage).toString(), 64, 32);
   }, {
-    width, height, lifetime: 500,
+    width, height, lifetime: 600,
     offsetX: (Math.random() - 0.5) * 0.3,
     offsetY: Math.random() * 0.2,
     offsetZ: (Math.random() - 0.5) * 0.3,
@@ -1821,6 +1899,17 @@ export function spawnDamageNumber(position, damage, color) {
       (Math.random() - 0.5) * 0.5,
     ),
   });
+
+  if (mesh) {
+    // Track for consolidation
+    mesh.userData._positionKey = posKey;
+    activeDamageNumbers.set(posKey, {
+      mesh,
+      totalDamage: damage,
+      color: color || '#ffffff',
+      positionKey: posKey,
+    });
+  }
 }
 
 function spawnOuchBubble(position, text = 'OUCH!') {
@@ -1893,7 +1982,15 @@ export function spawnCritIndicator(position) {
 export function updateDamageNumbers(dt, now) {
   // Damage number pool uses gravity (set in defaults)
   // Ouch bubbles are in comboPopupPool but need gravity-like animation too
-  if (damageNumberPool) damageNumberPool.update(dt, now);
+  if (damageNumberPool) {
+    // Clean up expired consolidated damage numbers from the map
+    for (const [posKey, entry] of activeDamageNumbers) {
+      if (!entry.mesh.userData.active) {
+        activeDamageNumbers.delete(posKey);
+      }
+    }
+    damageNumberPool.update(dt, now);
+  }
   // Update any ouch bubbles sitting in comboPopupPool (they use the pool's non-gravity update)
   if (comboPopupPool) {
     comboPopupPool.update(dt, now);
