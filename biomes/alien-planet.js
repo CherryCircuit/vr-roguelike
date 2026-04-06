@@ -73,9 +73,7 @@ export function buildAlienPlanetScene(group, deps) {
     uHorizonColor: { value: new THREE.Color(0x0a1a0f) },  // Dark green hint
   };
 
-  // Quest-optimized cloud shader: 2D hash noise instead of expensive 3D FBM.
   const cloudFragmentShader = `
-    varying vec2 vUv;
     varying vec3 vWorldPos;
     uniform float uTime;
     uniform vec3 uSunDir;
@@ -83,40 +81,60 @@ export function buildAlienPlanetScene(group, deps) {
     uniform vec3 uSkyColor;
     uniform vec3 uHorizonColor;
 
-    float hash(vec2 p) {
-      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    vec3 hash3(vec3 p) {
+      p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+               dot(p, vec3(269.5, 183.3, 246.1)),
+               dot(p, vec3(113.5, 271.9, 124.6)));
+      return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
     }
 
-    float noise2D(vec2 p) {
-      vec2 i = floor(p);
-      vec2 f = fract(p);
-      vec2 u = f * f * (3.0 - 2.0 * f);
-      float a = hash(i);
-      float b = hash(i + vec2(1.0, 0.0));
-      float c = hash(i + vec2(0.0, 1.0));
-      float d = hash(i + vec2(1.0, 1.0));
-      return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    float noise3D(vec3 p) {
+      vec3 i = floor(p);
+      vec3 f = fract(p);
+      vec3 u = f * f * (3.0 - 2.0 * f);
+      return mix(
+        mix(mix(dot(hash3(i), f),
+                dot(hash3(i + vec3(1,0,0)), f - vec3(1,0,0)), u.x),
+            mix(dot(hash3(i + vec3(0,1,0)), f - vec3(0,1,0)),
+                dot(hash3(i + vec3(1,1,0)), f - vec3(1,1,0)), u.x), u.y),
+        mix(mix(dot(hash3(i + vec3(0,0,1)), f - vec3(0,0,1)),
+                dot(hash3(i + vec3(1,0,1)), f - vec3(1,0,1)), u.x),
+            mix(dot(hash3(i + vec3(0,1,1)), f - vec3(0,1,1)),
+                dot(hash3(i + vec3(1,1,1)), f - vec3(1,1,1)), u.x), u.y),
+        u.z
+      );
     }
 
-    float fbm2(vec2 p) {
-      float v = noise2D(p) * 0.6;
-      v += noise2D(p * 2.0) * 0.4;
-      return v;
+    float fbm3(vec3 p) {
+      float value = 0.0;
+      float amp = 0.5;
+      for (int i = 0; i < 3; i++) {
+        value += amp * noise3D(p);
+        p *= 2.0;
+        amp *= 0.5;
+      }
+      return value;
     }
 
     void main() {
-      vec2 uv = vUv;
-      float normalizedHeight = uv.y;
+      vec3 relPos = vWorldPos;
+      vec3 n = normalize(relPos);
+      float lat = asin(n.y);
 
-      vec2 cloudUV = uv * vec2(4.0, 2.0) + vec2(uTime * 0.02, uTime * 0.005);
-      float density = fbm2(cloudUV);
+      vec3 cloudP = n * 2.0 + vec3(uTime * 0.3, 0.0, uTime * 0.1);
 
-      float cloudMask = smoothstep(0.45, 0.7, density);
+      float n1 = fbm3(cloudP);
+      float n2 = fbm3(cloudP * 2.5 + vec3(10.0, 5.0, 3.0));
+      float density = n1 * 0.6 + n2 * 0.4;
+      density = (density + 1.0) * 0.5;
 
+      float cloudMask = smoothstep(0.45, 0.75, density);
+
+      float normalizedHeight = (lat + 1.5708) / 3.1416;
       float skyBand = smoothstep(0.15, 0.45, normalizedHeight) * smoothstep(0.92, 0.55, normalizedHeight);
       cloudMask *= skyBand;
 
-      float sunFacing = smoothstep(0.3, 0.7, uv.x);
+      float sunFacing = max(0.0, dot(n, uSunDir));
       vec3 sunTint = mix(vec3(1.0), vec3(1.2, 1.1, 0.9), sunFacing);
 
       vec3 baseColor = mix(uHorizonColor, uCloudColor, smoothstep(0.0, 0.5, normalizedHeight));
@@ -135,17 +153,15 @@ export function buildAlienPlanetScene(group, deps) {
   `;
 
   const cloudVertexShader = `
-    varying vec2 vUv;
     varying vec3 vWorldPos;
     void main() {
-      vUv = uv;
       vec4 worldPos = modelMatrix * vec4(position, 1.0);
       vWorldPos = worldPos.xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `;
 
-  const cloudGeo = new THREE.SphereGeometry(900, 24, 12);
+  const cloudGeo = new THREE.SphereGeometry(900, 32, 20);
   const cloudMat = new THREE.ShaderMaterial({
     uniforms: cloudUniforms,
     vertexShader: cloudVertexShader,
@@ -559,7 +575,6 @@ export function buildAlienPlanetScene(group, deps) {
       varying vec2 vUv;
       void main() {
         vec4 texColor = texture2D(uTexture, vUv);
-        if (texColor.a < 0.1) discard;
         float brightness = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
         // Keep mountains near-black, just enough shape to see silhouettes
         vec3 darkColor = vec3(brightness * 0.08);
@@ -589,7 +604,8 @@ export function buildAlienPlanetScene(group, deps) {
     cityShaderMat.uniforms.uTime.value = time;
 
     // Cloud dome: update every frame (cheap - just uniform)
-    cloudUniforms.uTime.value = time;
+    // Cloud animation disabled for Quest performance - static clouds
+    // cloudUniforms.uTime.value = time;
 
     // Green light pulse: every frame (cheap - single value)
     greenLight.intensity = 8 + Math.sin(time * 2) * 0.3;
