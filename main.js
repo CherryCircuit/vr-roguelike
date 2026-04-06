@@ -61,7 +61,7 @@ import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
   updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
-  hideGameOver, triggerHitFlash, updateHitFlash, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
+  hideGameOver, triggerHitFlash, updateHitFlash, updateSpeedLines, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar,
   getTitleButtonHit, showNameEntry, hideNameEntry, getNameEntryHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
@@ -103,6 +103,78 @@ window.hud = { setFPSVisible };
 
 // Debug flag for projectile firing investigation
 window.DEBUG_PROJECTILES = false;
+
+// ============================================================
+// MUZZLE FLASH EFFECT
+// Billboard sprite shown briefly on weapon fire.
+// Toggle with ENABLE_MUZZLE_FLASH.
+// ============================================================
+const ENABLE_MUZZLE_FLASH = true;
+
+let _muzzleFlashSprite = null;
+let _muzzleFlashTimer = 0;
+const MUZZLE_FLASH_DURATION = 50; // ms
+
+function createMuzzleFlashSprite() {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // Draw a bright hexagonal flash
+  const cx = size / 2, cy = size / 2, r = size * 0.4;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i - Math.PI / 2;
+    const x = cx + r * Math.cos(a);
+    const y = cy + r * Math.sin(a);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // Inner glow
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  grad.addColorStop(0, 'rgba(255,255,220,1)');
+  grad.addColorStop(0.5, 'rgba(255,255,150,0.8)');
+  grad.addColorStop(1, 'rgba(255,200,50,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({
+    map: texture,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+  });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.08, 0.08, 1);
+  sprite.visible = false;
+  scene.add(sprite);
+  return sprite;
+}
+
+function showMuzzleFlash(position, direction) {
+  if (!_muzzleFlashSprite) _muzzleFlashSprite = createMuzzleFlashSprite();
+  _muzzleFlashSprite.position.copy(position);
+  // Offset slightly forward along barrel direction
+  _muzzleFlashSprite.position.addScaledVector(direction, 0.05);
+  _muzzleFlashSprite.visible = true;
+  _muzzleFlashTimer = performance.now();
+}
+
+function updateMuzzleFlash() {
+  if (!_muzzleFlashSprite || !_muzzleFlashSprite.visible) return;
+  if (performance.now() - _muzzleFlashTimer > MUZZLE_FLASH_DURATION) {
+    _muzzleFlashSprite.visible = false;
+  }
+}
 
 // ============================================================
 // CONSTANTS & CONFIGURATION
@@ -7975,6 +8047,11 @@ function fireMainWeapon(controller, index) {
   controller.getWorldQuaternion(quat);
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
 
+  // Muzzle flash effect
+  if (ENABLE_MUZZLE_FLASH) {
+    showMuzzleFlash(origin, direction);
+  }
+
   // Debug logging for projectile investigation
   if (window.DEBUG_PROJECTILES) {
     const handLabel = index === 0 ? 'LEFT' : 'RIGHT';
@@ -10745,6 +10822,13 @@ function render(timestamp) {
     }
   });
   updateHitFlash(rawDt);  // Use rawDt so flash works during bullet-time
+  // Speed lines: intensity 0 (normal) to 1 (full slow-mo)
+  if (effectiveTimeScale < 0.99) {
+    updateSpeedLines(Math.min(1.0, (1.0 - effectiveTimeScale) / 0.8));
+  } else {
+    updateSpeedLines(0);
+  }
+  if (ENABLE_MUZZLE_FLASH) updateMuzzleFlash();
 
   // Nuke flash decay
   if (nukeFlash && nukeFlashTimer > 0) {

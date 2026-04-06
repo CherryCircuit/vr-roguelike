@@ -11,6 +11,67 @@ import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound, pl
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
 
+// ============================================================
+// ENEMY SPAWN WARP-IN EFFECT
+// Animate scale 0→1 with easeOutBack + emissive flash on spawn.
+// Toggle with ENABLE_SPAWN_WARP.
+// ============================================================
+const ENABLE_SPAWN_WARP = true;
+const SPAWN_WARP_DURATION = 200; // ms total scale-up
+const SPAWN_WARP_FLASH_PEAK = 50; // ms when emissive peaks
+
+function easeOutBack(t) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
+function applySpawnWarp(enemy) {
+  enemy.mesh.scale.setScalar(0);
+  enemy._warpStartTime = performance.now();
+  enemy._warpActive = true;
+}
+
+function updateSpawnWarp(enemy, now) {
+  if (!enemy._warpActive) return;
+  const elapsed = now - enemy._warpStartTime;
+  if (elapsed >= SPAWN_WARP_DURATION) {
+    enemy.mesh.scale.setScalar(1);
+    enemy._warpActive = false;
+    // Reset emissive on cached materials
+    const mats = enemy._cachedMaterials;
+    if (mats) {
+      for (let i = 0; i < mats.length; i++) {
+        mats[i].opacity = mats[i].userData && mats[i].userData._warpOrigOpacity != null
+          ? mats[i].userData._warpOrigOpacity : 0.7;
+      }
+    }
+    return;
+  }
+  const t = elapsed / SPAWN_WARP_DURATION;
+  const s = easeOutBack(t);
+  enemy.mesh.scale.setScalar(s);
+
+  // Emissive flash: peak at SPAWN_WARP_FLASH_PEAK, fade to 0 by end
+  const mats = enemy._cachedMaterials;
+  if (mats) {
+    let flashIntensity;
+    if (elapsed < SPAWN_WARP_FLASH_PEAK) {
+      flashIntensity = elapsed / SPAWN_WARP_FLASH_PEAK;
+    } else {
+      flashIntensity = 1 - (elapsed - SPAWN_WARP_FLASH_PEAK) / (SPAWN_WARP_DURATION - SPAWN_WARP_FLASH_PEAK);
+    }
+    for (let i = 0; i < mats.length; i++) {
+      const m = mats[i];
+      if (m.userData._warpOrigOpacity == null) {
+        m.userData._warpOrigOpacity = m.opacity;
+      }
+      // Boost opacity during flash (brighter)
+      m.opacity = m.userData._warpOrigOpacity + flashIntensity * (1 - m.userData._warpOrigOpacity);
+    }
+  }
+}
+
 // Function to set VFX reference (called from main.js after initialization)
 export function setVFXReference(vfxFunc) {
   spawnVoxelExplosion = vfxFunc;
@@ -1487,6 +1548,8 @@ function spawnTrainEnemy(type, position, levelConfig) {
     scatterTimer: 0,
   };
 
+  if (ENABLE_SPAWN_WARP) applySpawnWarp(enemy);
+
   activeEnemies.push(enemy);
   _enemyMeshesDirty = true;
   sceneRef.add(group);
@@ -1907,6 +1970,8 @@ function spawnGeometryShifterSplit(position, hp, scale) {
       wallNormal: new THREE.Vector3(0, 1, 0),
     };
 
+    if (ENABLE_SPAWN_WARP) applySpawnWarp(enemy);
+
     activeEnemies.push(enemy);
     _enemyMeshesDirty = true;
     sceneRef.add(group);
@@ -1986,6 +2051,8 @@ function spawnCloneMimicSplit(position) {
       latchDamageTimer: 0,
       wallNormal: new THREE.Vector3(0, 1, 0),
     };
+
+    if (ENABLE_SPAWN_WARP) applySpawnWarp(enemy);
 
     activeEnemies.push(enemy);
     _enemyMeshesDirty = true;
@@ -2649,6 +2716,8 @@ export function spawnEnemy(type, position, levelConfig) {
     }
   });
 
+  if (ENABLE_SPAWN_WARP) applySpawnWarp(enemy);
+
   activeEnemies.push(enemy);
   _enemyMeshesDirty = true;  // Invalidate cache
   sceneRef.add(group);
@@ -2678,6 +2747,11 @@ export function updateEnemies(dt, now, playerPos) {
 
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const e = activeEnemies[i];
+
+    // ── Spawn warp-in animation ──
+    if (ENABLE_SPAWN_WARP && e._warpActive) {
+      updateSpawnWarp(e, now);
+    }
 
     // ── Movement toward player ──
     _dir.copy(playerPos).sub(e.mesh.position);

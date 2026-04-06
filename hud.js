@@ -316,6 +316,11 @@ let upgradeChoices = [];
 let hitFlash = null;
 let hitFlashOpacity = 0;
 
+// Speed lines overlay (radial streaks during slow-mo)
+const ENABLE_SPEED_LINES = true;
+let speedLinesMesh = null;
+let speedLinesOpacity = 0;
+
 // Boss health bar (camera-attached, 3 segments for phases)
 let bossHealthGroup = null;
 let bossHealthBars = []; // 3 segments
@@ -720,6 +725,57 @@ export function initHUD(camera, scene) {
   hitFlash.frustumCulled = false;  // Prevent disappearing when looking around
   hitFlash.position.set(0, 0, -0.25);  // Very close to camera for full coverage
   camera.add(hitFlash);
+
+  // ── Speed Lines Overlay (radial streaks during slow-mo) ──
+  if (ENABLE_SPEED_LINES) {
+    const slCanvas = document.createElement('canvas');
+    slCanvas.width = 512;
+    slCanvas.height = 512;
+    const slCtx = slCanvas.getContext('2d');
+    // Draw radial streaks emanating from center
+    const cx = 256, cy = 256;
+    slCtx.clearRect(0, 0, 512, 512);
+    const numLines = 80;
+    for (let i = 0; i < numLines; i++) {
+      const angle = (i / numLines) * Math.PI * 2 + (Math.random() - 0.5) * 0.15;
+      const innerR = 60 + Math.random() * 40;
+      const outerR = 200 + Math.random() * 56;
+      const width = 1 + Math.random() * 2.5;
+      const alpha = 0.08 + Math.random() * 0.18;
+      slCtx.beginPath();
+      slCtx.moveTo(cx + Math.cos(angle) * innerR, cy + Math.sin(angle) * innerR);
+      slCtx.lineTo(cx + Math.cos(angle) * outerR, cy + Math.sin(angle) * outerR);
+      slCtx.strokeStyle = `rgba(200, 220, 255, ${alpha})`;
+      slCtx.lineWidth = width;
+      slCtx.stroke();
+    }
+    // Add a subtle radial gradient fade so center is clear and edges are streaky
+    const grad = slCtx.createRadialGradient(cx, cy, 50, cx, cy, 256);
+    grad.addColorStop(0, 'rgba(0,0,0,0.6)');
+    grad.addColorStop(0.4, 'rgba(0,0,0,0)');
+    slCtx.globalCompositeOperation = 'destination-out';
+    slCtx.fillStyle = grad;
+    slCtx.fillRect(0, 0, 512, 512);
+
+    const slTexture = new THREE.CanvasTexture(slCanvas);
+    speedLinesMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(6, 6),
+      new THREE.MeshBasicMaterial({
+        map: slTexture,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    speedLinesMesh.renderOrder = 998;
+    speedLinesMesh.visible = false;
+    speedLinesMesh.frustumCulled = false;
+    speedLinesMesh.position.set(0, 0, -0.26);
+    camera.add(speedLinesMesh);
+  }
 
   // ── FPS Counter (top left, attached to camera, more visible in VR) ──
   // Optimized: reuse canvas/texture to avoid creating/disposing every 250ms
@@ -1706,6 +1762,29 @@ export function updateHitFlash(dt) {
     hitFlashOpacity -= dt * 1.8;
   } else {
     hitFlash.visible = false;
+  }
+}
+
+// ── Speed Lines ────────────────────────────────────────────
+
+// intensity: 0.0 (normal speed) to 1.0 (full slow-mo). Call every frame.
+export function updateSpeedLines(intensity) {
+  if (!ENABLE_SPEED_LINES || !speedLinesMesh) return;
+  // Target opacity based on slowmo intensity
+  const target = intensity * 0.45;
+  // Smooth approach (fast in, fast out)
+  if (speedLinesOpacity < target) {
+    speedLinesOpacity = Math.min(speedLinesOpacity + 0.08, target);
+  } else {
+    speedLinesOpacity = Math.max(speedLinesOpacity - 0.12, target);
+  }
+  if (speedLinesOpacity > 0.001) {
+    speedLinesMesh.visible = true;
+    speedLinesMesh.material.opacity = speedLinesOpacity;
+    // Subtle rotation for dynamism
+    speedLinesMesh.rotation.z += 0.003;
+  } else {
+    speedLinesMesh.visible = false;
   }
 }
 
