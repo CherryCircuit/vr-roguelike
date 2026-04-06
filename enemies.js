@@ -11,6 +11,9 @@ import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound, pl
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
 
+// PERFORMANCE: Debug flag to disable console.log in hot paths on Quest
+const DEBUG = false;
+
 // ============================================================
 // ENEMY SPAWN WARP-IN EFFECT
 // Animate scale 0→1 with easeOutBack + emissive flash on spawn.
@@ -2104,6 +2107,11 @@ function getExplosionSprite() {
 const _dir = new THREE.Vector3();
 const _look = new THREE.Vector3();
 
+// PERFORMANCE: Additional scratch vectors for enemy AI hot paths
+const _enemyScratch1 = new THREE.Vector3();
+const _enemyScratch2 = new THREE.Vector3();
+const _enemyScratch3 = new THREE.Vector3();
+
 // Status effect text popups (glowing title text style, similar to damage numbers)
 const statusBubbles = [];
 
@@ -3005,7 +3013,8 @@ export function updateEnemies(dt, now, playerPos) {
           if (e.mirrorConfuseTimer <= 0) {
             e.mirrorConfused = false;
           } else {
-            const randDir = new THREE.Vector3(
+            // PERFORMANCE: Use pre-allocated vector instead of new THREE.Vector3()
+            const randDir = _enemyScratch1.set(
               Math.sin(now * 0.01 + i),
               0,
               Math.cos(now * 0.01 + i)
@@ -3014,13 +3023,15 @@ export function updateEnemies(dt, now, playerPos) {
           }
         } else {
           // Mirror player's horizontal movement (opposite direction)
-          const mirrorDir = _dir.clone();
+          // PERFORMANCE: Use pre-allocated vector instead of _dir.clone()
+          const mirrorDir = _enemyScratch1.copy(_dir);
           mirrorDir.x *= -1; // Opposite horizontal movement
           e.mesh.position.addScaledVector(mirrorDir, e.speed * speedMod * dt * phaseSpeed);
         }
 
         // Clamp knight position to within 45 degrees from player's forward direction
-        const toEnemy = new THREE.Vector3().subVectors(e.mesh.position, playerPos);
+        // PERFORMANCE: Use pre-allocated vector instead of new THREE.Vector3()
+        const toEnemy = _enemyScratch2.subVectors(e.mesh.position, playerPos);
         toEnemy.y = 0;
         const enemyAngle = Math.atan2(toEnemy.x, toEnemy.z);
         const maxAngle = Math.PI / 4; // 45 degrees
@@ -3100,7 +3111,8 @@ export function updateEnemies(dt, now, playerPos) {
         e.conductorStrafeDir *= -1;
       }
 
-      const perp = new THREE.Vector3(-_dir.z, 0, _dir.x).normalize();
+      // PERFORMANCE: Use pre-allocated vector instead of new THREE.Vector3()
+      const perp = _enemyScratch1.set(-_dir.z, 0, _dir.x).normalize();
       const holdDist = e.conductorHoldDistance || 6.5;
 
       if (dist < holdDist * 0.85) {
@@ -3150,12 +3162,15 @@ export function updateEnemies(dt, now, playerPos) {
           e.phaseReappearTimer = 0;
           const distTarget = e.phasePreferredDistMin + Math.random() * (e.phasePreferredDistMax - e.phasePreferredDistMin);
           const angle = (Math.random() - 0.5) * Math.PI * 0.8;
-          const baseDir = _dir.lengthSq() > 0.0001 ? _dir.clone() : new THREE.Vector3(0, 0, -1);
-          const spawnDir = baseDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+          // PERFORMANCE: Use pre-allocated vector instead of _dir.clone() or new THREE.Vector3
+          const baseDir = _dir.lengthSq() > 0.0001 ? _enemyScratch2.copy(_dir) : _enemyScratch2.set(0, 0, -1);
+          // Use another scratch for the axis to avoid allocation
+          _enemyScratch3.set(0, 1, 0);
+          baseDir.applyAxisAngle(_enemyScratch3, angle);
           e.mesh.position.set(
-            playerPos.x + spawnDir.x * distTarget,
+            playerPos.x + baseDir.x * distTarget,
             1.2 + Math.random() * 1.2,
-            playerPos.z + spawnDir.z * distTarget
+            playerPos.z + baseDir.z * distTarget
           );
           clampPositionToFrontArc(e.mesh.position, playerPos, e.phasePreferredDistMin, e.phasePreferredDistMax, 120);
           e.mesh.visible = true;
@@ -4911,7 +4926,7 @@ class SkullHand {
     const aliveHands = this.parentBoss.hands.filter(h => h.alive).length;
     const damageReduction = 1 - (aliveHands - 1) * 0.15; // 4 hands: 85%, 3: 70%, 2: 55%, 1: 40% damage taken
     const actualDamage = Math.round(amount * damageReduction);
-    console.log(`[SkullHand] Hand ${this.handIndex} takes ${actualDamage} damage (reduced from ${amount}, ${aliveHands} hands alive, ${(damageReduction * 100).toFixed(0)}% damage taken)`);
+    if (DEBUG) console.log(`[SkullHand] Hand ${this.handIndex} takes ${actualDamage} damage (reduced from ${amount}, ${aliveHands} hands alive, ${(damageReduction * 100).toFixed(0)}% damage taken)`);
     
     this.hp -= actualDamage;
     if (this.hp <= 0) {

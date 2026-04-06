@@ -565,6 +565,14 @@ let heartAnimationState = {
   shakeX: 0,        // Horizontal shake offset
 };
 
+// PERFORMANCE: Cache hearts canvas and texture to avoid recreating every frame
+let _heartsCanvas = null;
+let _heartsTexture = null;
+let _heartsPrevHealth = -1;
+let _heartsPrevMaxHealth = -1;
+let _heartsPrevHitFlash = 0;
+let _heartsPrevHealthGain = 0;
+
 // Holographic HUD effect state
 let holographicState = {
   glitchIntensity: 0,      // 0-1, triggered on player hit
@@ -637,10 +645,22 @@ function makeHeartsTexture(health, maxHealth, animParams = {}) {
   const heartW = 7 * pixSize;
   const heartH = 6 * pixSize;
   const gap = 6;
-  const canvas = document.createElement('canvas');
-  canvas.width = heartCount * (heartW + gap) + gap;
-  canvas.height = heartH + 10;
-  const ctx = canvas.getContext('2d');
+  const canvasWidth = heartCount * (heartW + gap) + gap;
+  const canvasHeight = heartH + 10;
+  
+  // PERFORMANCE: Reuse cached canvas instead of creating new one each frame
+  if (!_heartsCanvas) {
+    _heartsCanvas = document.createElement('canvas');
+  }
+  // Resize canvas if needed (maxHealth changed)
+  if (_heartsCanvas.width !== canvasWidth || _heartsCanvas.height !== canvasHeight) {
+    _heartsCanvas.width = canvasWidth;
+    _heartsCanvas.height = canvasHeight;
+  }
+  const ctx = _heartsCanvas.getContext('2d');
+  
+  // Clear canvas before redrawing
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
   
   // #23: Animation parameters
   const glowPhase = animParams.glowPhase || 0;
@@ -669,10 +689,15 @@ function makeHeartsTexture(health, maxHealth, animParams = {}) {
     drawHeart(ctx, gap + i * (heartW + gap) + offsetX, 5, pixSize, state, animState);
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  texture.premultiplyAlpha = false;
-  return { texture, aspect: canvas.width / canvas.height };
+  // PERFORMANCE: Reuse cached texture, only update when canvas content changes
+  if (!_heartsTexture) {
+    _heartsTexture = new THREE.CanvasTexture(_heartsCanvas);
+    _heartsTexture.minFilter = THREE.LinearFilter;
+    _heartsTexture.premultiplyAlpha = false;
+  } else {
+    _heartsTexture.needsUpdate = true;
+  }
+  return { texture: _heartsTexture, aspect: canvasWidth / canvasHeight };
 }
 // ── Public API ─────────────────────────────────────────────
 
@@ -1312,15 +1337,25 @@ export function updateHUD(gameState) {
   updateHolographicGlitch(now);
 
   // Hearts - proper aspect ratio with correct scale and animation
-  // Only rebuild geometry when maxHealth changes (aspect ratio changes)
-  const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth, heartAnimationState);
-  if (heartsSprite.material.map) heartsSprite.material.map.dispose();
-  heartsSprite.material.map = ht;
-  heartsSprite.material.needsUpdate = true;
-  // Cache geometry by maxHealth to avoid recreating on every frame
-  if (heartsSprite.userData._heartsMaxHP !== gameState.maxHealth) {
-    heartsSprite.userData._heartsMaxHP = gameState.maxHealth;
-    heartsSprite.geometry = getHudGeo(ha * 0.48, 0.48);
+  // PERFORMANCE: Only rebuild texture when health or animation state actually changes
+  const healthChanged = gameState.health !== _heartsPrevHealth || gameState.maxHealth !== _heartsPrevMaxHealth;
+  const animChanged = heartAnimationState.hitFlash !== _heartsPrevHitFlash || heartAnimationState.healthGain !== _heartsPrevHealthGain;
+  
+  if (healthChanged || animChanged) {
+    _heartsPrevHealth = gameState.health;
+    _heartsPrevMaxHealth = gameState.maxHealth;
+    _heartsPrevHitFlash = heartAnimationState.hitFlash;
+    _heartsPrevHealthGain = heartAnimationState.healthGain;
+    
+    const { texture: ht, aspect: ha } = makeHeartsTexture(gameState.health, gameState.maxHealth, heartAnimationState);
+    // PERFORMANCE: Don't dispose old texture - we're reusing the cached texture
+    heartsSprite.material.map = ht;
+    heartsSprite.material.needsUpdate = true;
+    // Cache geometry by maxHealth to avoid recreating on every frame
+    if (heartsSprite.userData._heartsMaxHP !== gameState.maxHealth) {
+      heartsSprite.userData._heartsMaxHP = gameState.maxHealth;
+      heartsSprite.geometry = getHudGeo(ha * 0.48, 0.48);
+    }
   }
 
   // Kill counter - #5: Moved up closer to LEVEL display

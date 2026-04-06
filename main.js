@@ -105,6 +105,9 @@ window.hud = { setFPSVisible };
 // Debug flag for projectile firing investigation
 window.DEBUG_PROJECTILES = false;
 
+// PERFORMANCE: Debug flag to disable console.log in hot paths on Quest
+const DEBUG = false;
+
 // ============================================================
 // MUZZLE FLASH EFFECT
 // Billboard sprite shown briefly on weapon fire.
@@ -7460,7 +7463,7 @@ function endGame(victory) {
 function triggerScreenShake(intensity, duration) {
   screenShakeIntensity = intensity;
   screenShakeTime = performance.now() + duration;
-  console.log(`[Shake] Intensity: ${intensity}, Duration: ${duration}ms`);
+  if (DEBUG) console.log(`[Shake] Intensity: ${intensity}, Duration: ${duration}ms`);
 }
 
 // ============================================================
@@ -7528,17 +7531,18 @@ function initProjectilePool() {
   instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 28, freeIndices: new Set() };
 
   // ── Plasma carbine darts ──
+  // PERFORMANCE: Bumped from 30 to 80 to support dual wield + fire rate upgrades
   const plasmaGeo = new THREE.CylinderGeometry(0.0375, 0.0375, 0.5, 6);
   plasmaGeo.rotateX(Math.PI / 2);
   const plasmaMat = createProjectileMaterial(0x00ff88);
   registerPlayerProjectileMaterial(plasmaMat);
-  const plasmaIM = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 30);
+  const plasmaIM = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 80);
   plasmaIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   plasmaIM.count = 0;
   plasmaIM.frustumCulled = false;
   plasmaIM.renderOrder = 950;
   scene.add(plasmaIM);
-  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, maxCount: 30, freeIndices: new Set() };
+  instancedProjectiles['plasma_carbine'] = { mesh: plasmaIM, maxCount: 80, freeIndices: new Set() };
 
   Object.keys(projectileInstanceData).forEach(poolType => {
     const maxCount = instancedProjectiles[poolType].maxCount;
@@ -7547,7 +7551,7 @@ function initProjectilePool() {
     }
   });
 
-  console.log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(20), seeker(28), plasma_carbine(30)');
+  console.log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(20), seeker(28), plasma_carbine(80)');
 }
 
 // PERFORMANCE: Acquire an instance slot from the InstancedMesh pool.
@@ -8137,22 +8141,22 @@ function fireMainWeapon(controller, index) {
  * without going through the projectile system.
  */
 function updateLightningBeam(controller, index, stats, dt) {
-  const origin = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  controller.getWorldPosition(origin);
-  controller.getWorldQuaternion(quat);
-  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  // PERFORMANCE: Use pre-allocated scratch vectors instead of new THREE.Vector3()
+  controller.getWorldPosition(_lightningOrigin);
+  controller.getWorldQuaternion(_lightningQuat);
+  _lightningDirCalc.set(0, 0, -1).applyQuaternion(_lightningQuat);
 
   // Find enemies within range using spatial hash (O(1) lookup)
   const enemies = getEnemies();  // Still needed for index lookup
-  const nearbyEnemies = enemySpatialHash.query(origin.x, origin.z, stats.lightningRange);
+  const nearbyEnemies = enemySpatialHash.query(_lightningOrigin.x, _lightningOrigin.z, stats.lightningRange);
   const targets = [];
   const maxChains = 2 + Math.floor(stats.lightningRange / 8);  // More chains with upgrades
 
   for (const e of nearbyEnemies) {
-    const dist = e.mesh.position.distanceTo(origin);
-    const toEnemy = e.mesh.position.clone().sub(origin).normalize();
-    const angle = toEnemy.dot(direction);
+    const dist = e.mesh.position.distanceTo(_lightningOrigin);
+    // PERFORMANCE: Use pre-allocated vector instead of clone()
+    _lightningToEnemy.copy(e.mesh.position).sub(_lightningOrigin).normalize();
+    const angle = _lightningToEnemy.dot(_lightningDirCalc);
 
     // Within range and roughly in front (45° cone)
     if (dist < stats.lightningRange && angle > 0.7) {
@@ -8176,7 +8180,9 @@ function updateLightningBeam(controller, index, stats, dt) {
       lightningBeams[index].traverse(c => {
         if (c.isMesh || c.isLine) {
           if (c.geometry) c.geometry.dispose();
-          if (c.material) c.material.dispose();
+          // PERFORMANCE: Don't dispose pooled material (_lightningMaterial)
+          // Only dispose non-pooled materials
+          if (c.material && c.material !== _lightningMaterial) c.material.dispose();
         }
       });
       scene.remove(lightningBeams[index]);
@@ -8185,12 +8191,13 @@ function updateLightningBeam(controller, index, stats, dt) {
     const beamGroup = new THREE.Group();
 
     // Draw zigzag lightning bolts to each target
-    let lastPos = origin.clone();
+    // PERFORMANCE: Use pre-allocated vector instead of clone()
+    _lightningLastPos.copy(_lightningOrigin);
     chainTargets.forEach(({ enemy }) => {
       const targetPos = enemy.mesh.position;
-      const bolt = createLightningBolt(lastPos, targetPos);
+      const bolt = createLightningBolt(_lightningLastPos, targetPos);
       beamGroup.add(bolt);
-      lastPos = targetPos.clone();
+      _lightningLastPos.copy(targetPos);
     });
 
     scene.add(beamGroup);
@@ -8258,7 +8265,8 @@ function updateLightningBeam(controller, index, stats, dt) {
       lightningBeams[index].traverse(c => {
         if (c.isMesh || c.isLine) {
           if (c.geometry) c.geometry.dispose();
-          if (c.material) c.material.dispose();
+          // PERFORMANCE: Don't dispose pooled material (_lightningMaterial)
+          if (c.material && c.material !== _lightningMaterial) c.material.dispose();
         }
       });
       scene.remove(lightningBeams[index]);
@@ -8273,7 +8281,23 @@ function updateLightningBeam(controller, index, stats, dt) {
 const _lightningDir = new THREE.Vector3();
 const _lightningPerp = new THREE.Vector3();
 
+// PERFORMANCE: Scratch vectors for updateLightningBeam hot path
+const _lightningOrigin = new THREE.Vector3();
+const _lightningQuat = new THREE.Quaternion();
+const _lightningDirCalc = new THREE.Vector3();
+const _lightningToEnemy = new THREE.Vector3();
+const _lightningLastPos = new THREE.Vector3();
+
+// PERFORMANCE: Pooled lightning material (reused across bolts)
+const _lightningMaterial = new THREE.LineBasicMaterial({
+  color: 0xffff44,
+  linewidth: 2,
+  transparent: true,
+  opacity: 0.9
+});
+
 // Create zigzag lightning bolt between two points
+// PERFORMANCE: Uses pooled _lightningMaterial to avoid material allocation per bolt
 function createLightningBolt(start, end) {
   const points = [start.clone()];
   const segments = 8;
@@ -8286,21 +8310,19 @@ function createLightningBolt(start, end) {
     // Random perpendicular offset
     _lightningDir.subVectors(end, start).normalize();
     _lightningPerp.set(-_lightningDir.z, 0, _lightningDir.x).normalize();
-    const offset = _lightningPerp.clone().multiplyScalar((Math.random() - 0.5) * zigzagAmount);
+    // PERFORMANCE: Multiply directly instead of clone+multiply
+    const offsetX = _lightningPerp.x * ((Math.random() - 0.5) * zigzagAmount);
+    const offsetZ = _lightningPerp.z * ((Math.random() - 0.5) * zigzagAmount);
+    mid.x += offsetX;
+    mid.z += offsetZ;
 
-    mid.add(offset);
     points.push(mid);
   }
   points.push(end.clone());
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const material = new THREE.LineBasicMaterial({
-    color: 0xffff44,
-    linewidth: 2,
-    transparent: true,
-    opacity: 0.9
-  });
-  return new THREE.Line(geometry, material);
+  // PERFORMANCE: Use pooled material instead of creating new one each call
+  return new THREE.Line(geometry, _lightningMaterial);
 }
 
 /**
@@ -8793,7 +8815,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
     // No red screen flash on crits - removed per user request
     // triggerHitFlash();
 
-    console.log(`[Impact] CRITICAL HIT! Damage: ${Math.round(damage)}, Freeze: ${freezeDuration}ms`);
+    if (DEBUG) console.log(`[Impact] CRITICAL HIT! Damage: ${Math.round(damage)}, Freeze: ${freezeDuration}ms`);
   }
 
   // Fire debuff increases damage taken
@@ -8891,7 +8913,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       // Vampiric healing
       if (stats.vampiricInterval > 0 && game.totalKills % stats.vampiricInterval === 0) {
         game.health = Math.min(game.maxHealth, game.health + 1);
-        console.log('[vampiric] Healed 1 HP');
+        if (DEBUG) console.log('[vampiric] Healed 1 HP');
         spawnHealthGainPopup(destroyData.position);  // Spawn +💖 popup at enemy position
         playHealSound();  // Play healing sound
       }
@@ -8936,7 +8958,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
 
     floorFlashing = true;
     floorFlashTimer = 1.0;
-    console.log('[boss] Shield reflected damage!');
+    if (DEBUG) console.log('[boss] Shield reflected damage!');
     if (dead) endGame(false);
     return;
   }
@@ -8945,7 +8967,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
   if (result.immune) {
     spawnDamageNumber(hitPoint, 0, '#aaaaaa');  // Show 0 damage in gray
     playTingSound();  // Metallic ping sound
-    console.log('[boss] Hit was immune!');
+    if (DEBUG) console.log('[boss] Hit was immune!');
     return;
   }
 
