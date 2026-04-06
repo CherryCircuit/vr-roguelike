@@ -2,6 +2,8 @@
 // Replaces expensive per-frame 3D FBM shader with a static texture.
 // Quest-friendly: zero per-frame GPU cost.
 
+import * as THREE from 'three';
+
 export function bakeCloudsToCanvas(opts) {
   const {
     width = 1024,
