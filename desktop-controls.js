@@ -753,10 +753,15 @@ function showDebugPositionPanel() {
       const yVal = adjInputs[1]?.value;
       const zVal = adjInputs[2]?.value;
       if (xVal === '' && yVal === '' && zVal === '') { console.warn('[debug] No values entered'); return; }
-      if (xVal !== '') target.position.x = parseFloat(xVal);
-      if (yVal !== '') target.position.y = parseFloat(yVal);
-      if (zVal !== '') target.position.z = parseFloat(zVal);
+      // Delta mode: add values to current position
+      if (xVal !== '') target.position.x += parseFloat(xVal) || 0;
+      if (yVal !== '') target.position.y += parseFloat(yVal) || 0;
+      if (zVal !== '') target.position.z += parseFloat(zVal) || 0;
       console.log(`[debug] Moved ${target.name || target.type} to (${target.position.x.toFixed(3)}, ${target.position.y.toFixed(3)}, ${target.position.z.toFixed(3)})`);
+      // Reset inputs to 0 after applying delta
+      if (adjInputs[0]) adjInputs[0].value = '0';
+      if (adjInputs[1]) adjInputs[1].value = '0';
+      if (adjInputs[2]) adjInputs[2].value = '0';
     });
   }
 
@@ -947,13 +952,21 @@ function updateDebugPositionPanel() {
       const adjX = debugPanelElement.querySelector('#debug-adj-x');
       const adjY = debugPanelElement.querySelector('#debug-adj-y');
       const adjZ = debugPanelElement.querySelector('#debug-adj-z');
-      if (adjX && document.activeElement !== adjX) adjX.value = objWorldPos.x.toFixed(3);
-      if (adjY && document.activeElement !== adjY) adjY.value = objWorldPos.y.toFixed(3);
-      if (adjZ && document.activeElement !== adjZ) adjZ.value = objWorldPos.z.toFixed(3);
+      // Delta mode: default inputs to 0 so user can type small offsets
+      if (adjX && document.activeElement !== adjX) adjX.value = '0';
+      if (adjY && document.activeElement !== adjY) adjY.value = '0';
+      if (adjZ && document.activeElement !== adjZ) adjZ.value = '0';
 
       // Highlight the object
       currentLookTarget = obj;
       applyHighlight(obj);
+      // Sync wireframe overlay position each frame
+      if (obj.userData._debugWireOverlay) {
+        const overlay = obj.userData._debugWireOverlay;
+        overlay.position.copy(obj.position);
+        overlay.rotation.copy(obj.rotation);
+        overlay.scale.copy(obj.scale);
+      }
     } else {
       // Nothing in view
       if (lookNameEl) lookNameEl.textContent = 'Nothing';
@@ -1038,6 +1051,21 @@ function applyHighlight(obj) {
     obj.material.color.setHex(0xffff88);
   }
 
+  // Add yellow wireframe overlay for visibility on all material types
+  if (!obj.userData._debugWireOverlay && obj.geometry) {
+    const wireGeo = new THREE.WireframeGeometry(obj.geometry);
+    const wireMat = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 });
+    const wireframe = new THREE.LineSegments(wireGeo, wireMat);
+    // Add to same parent and copy transform
+    if (obj.parent) {
+      obj.parent.add(wireframe);
+    }
+    wireframe.position.copy(obj.position);
+    wireframe.rotation.copy(obj.rotation);
+    wireframe.scale.copy(obj.scale);
+    obj.userData._debugWireOverlay = wireframe;
+  }
+
   // Mark as highlighted
   obj.userData._debugHighlighted = true;
 }
@@ -1047,6 +1075,16 @@ function applyHighlight(obj) {
  */
 function clearHighlight(obj) {
   if (!obj) return;
+
+  // Remove wireframe overlay
+  if (obj.userData._debugWireOverlay) {
+    const overlay = obj.userData._debugWireOverlay;
+    if (overlay.parent) overlay.parent.remove(overlay);
+    if (overlay.geometry) overlay.geometry.dispose();
+    if (overlay.material) overlay.material.dispose();
+    obj.userData._debugWireOverlay = null;
+  }
+
   if (!obj.material) return;
 
   const original = originalMaterials.get(obj);

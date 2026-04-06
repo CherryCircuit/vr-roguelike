@@ -85,7 +85,8 @@ let killCountSprite = null;
 let levelSprite = null;
 let scoreSprite = null;
 let scoreTitleSprite = null;
-let nukeSprite = null;
+let nukeEmojiSprite = null;
+let nukeCountSprite = null;
 let comboSprite = null;
 let comboCooldownSprite = null;
 let fpsSprite = null;
@@ -1033,7 +1034,7 @@ function createHUDElements() {
   // SCORE - center-left on floor with title above
   // Layout: Spread from hearts, number centered under SCORE title
   scoreSprite = makeSprite('0', { fontSize: 75, color: '#ffff00', shadow: true, scale: 0.45 });
-  scoreSprite.position.set(-0.2, 0.3, 0);  // Centered under SCORE title
+  scoreSprite.position.set(-0.2, 0.0, 0);  // Centered under SCORE title (gap tripled)
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
@@ -1044,7 +1045,7 @@ function createHUDElements() {
   // Kill counter — below LEVEL display
   // Layout: Center-right, below level
   killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 0.45 });
-  killCountSprite.position.set(0.7, 0.3, 0);  // Center-right, second row
+  killCountSprite.position.set(0.7, 0.0, 0);  // Center-right, second row (gap tripled)
   hudGroup.add(killCountSprite);
 
   // Level indicator — above kill counter
@@ -1053,15 +1054,18 @@ function createHUDElements() {
   levelSprite.position.set(0.7, 0.45, 0);  // Center-right, top row
   hudGroup.add(levelSprite);
 
-  // Nuke counter — far right, top row; same size as SCORE/LEVEL titles
-  nukeSprite = makeSprite('☢ X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
-  nukeSprite.position.set(1.5, 0.45, 0);  // Far right, top row
-  hudGroup.add(nukeSprite);
+  // Nuke counter — far right, top row; emoji 2x size, count text normal
+  nukeEmojiSprite = makeSprite('☢', { fontSize: 144, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
+  nukeEmojiSprite.position.set(1.2, 0.45, 0);  // Far right, top row (emoji, left)
+  hudGroup.add(nukeEmojiSprite);
+  nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
+  nukeCountSprite.position.set(1.7, 0.45, 0);  // Far right, top row (count, right)
+  hudGroup.add(nukeCountSprite);
 
   // Accuracy bonus — center, just below main HUD row
   // Y=-0.45 keeps it close to the SCORE/LEVEL row (Y=0.3) without overlap
   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 1.8 });
-  comboSprite.position.set(0, -0.45, 0);
+  comboSprite.position.set(0, -0.23, 0);  // Moved up closer to main HUD (gap halved)
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 
@@ -1069,7 +1073,7 @@ function createHUDElements() {
   const cooldownGeo = new THREE.PlaneGeometry(0.5, 0.03);
   const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
-  comboCooldownSprite.position.set(0, -0.6, 0);  // Below bonus text (moved from -1.0)
+  comboCooldownSprite.position.set(0, -0.38, 0);  // Below bonus text (moved up, gap halved)
   comboCooldownSprite.visible = false;
   hudGroup.add(comboCooldownSprite);
 }
@@ -1258,11 +1262,13 @@ export function updateHUD(gameState) {
 
   // Nuke counter - #6: Moved to x=1.4 (right) on top row, right of LEVEL display
   const nukeCount = gameState.nukes || 0;
-  if (nukeCount > 0 && nukeSprite) {
-    nukeSprite.visible = true;
-    updateSpriteText(nukeSprite, `☢ X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
-  } else if (nukeSprite) {
-    nukeSprite.visible = false;
+  if (nukeCount > 0 && nukeEmojiSprite) {
+    nukeEmojiSprite.visible = true;
+    nukeCountSprite.visible = true;
+    updateSpriteText(nukeCountSprite, `X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
+  } else if (nukeEmojiSprite) {
+    nukeEmojiSprite.visible = false;
+    nukeCountSprite.visible = false;
   }
 
   // Accuracy bonus - 200% larger with descriptive label
@@ -1422,7 +1428,7 @@ function createUpgradeCard(upgrade, position) {
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
-    opacity: 1.0,  // Increased from 0.85 by 30% (capped at 1.0)
+    opacity: 0.91,  // Match SKIP card transparency
     side: THREE.DoubleSide,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
@@ -1447,7 +1453,7 @@ function createUpgradeCard(upgrade, position) {
     glowColor: upgrade.color,
     scale: 0.24,
     depthTest: true,
-    maxWidth: 400,
+    maxWidth: 600,  // Increased from 400 to reduce 2-line wrapping
   });
   nameSprite.position.set(0, 0.55, 0.01);
   group.add(nameSprite);
@@ -1529,16 +1535,16 @@ function createSkipCard(position) {
     scale: 0.24,
     depthTest: true,
   });
-  nameSprite.position.set(0, 0.30, 0.01);
+  nameSprite.position.set(0, 0.48, 0.01);
   group.add(nameSprite);
 
   // Description
   const descSprite = makeSprite('Skip upgrades and gain full health.', {
-    fontSize: 60,
+    fontSize: 32,  // Match upgrade card description sizing
     color: '#88ffaa',
-    scale: 0.28,
+    scale: 0.36,
     depthTest: true,
-    maxWidth: 300,
+    maxWidth: 280,
   });
   descSprite.position.set(0, -0.02, 0.01);
   group.add(descSprite);
@@ -1548,7 +1554,7 @@ function createSkipCard(position) {
     new THREE.OctahedronGeometry(0.08, 0),
     new THREE.MeshBasicMaterial({ color: '#ff0044', wireframe: true }),
   );
-  iconMesh.position.set(0, -0.25, 0.05);
+  iconMesh.position.set(0, -0.42, 0.05);
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
 

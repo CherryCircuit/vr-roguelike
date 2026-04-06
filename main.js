@@ -275,6 +275,7 @@ let sunMeshRef = null;
 let sunGlowRef = null;
 let gridHelper = null;
 let starsRef = null;
+let starsBiomeId = null;
 let atmosphereRef = null;
 let currentTheme = null;
 let biomePropsGroup = null;
@@ -1983,6 +1984,15 @@ function rebuildBiomeProps(biomeId, theme) {
   }
 }
 
+function startEnvironmentFade(direction, duration, onComplete) {
+  environmentFadeState = {
+    direction,
+    duration,
+    timer: duration,
+    onComplete,
+  };
+}
+
 function applyEnvironmentFade(fade) {
   environmentFade = Math.max(0, Math.min(1, fade));
   const mixColor = new THREE.Color(0x000000);
@@ -2137,7 +2147,11 @@ function applyThemeForLevel(level) {
   }
 
   if (theme.starCount || theme.starHeight || theme.starSpread) {
-    rebuildStars(theme);
+    const biomeId = getBiomeForLevel(level);
+    if (biomeId !== starsBiomeId) {
+      rebuildStars(theme);
+      starsBiomeId = biomeId;
+    }
   }
 
   rebuildBiomeScene(getBiomeForLevel(level), theme);
@@ -2403,6 +2417,7 @@ function createSparklingStars(theme) {
   scene.add(stars);
   starsRef = stars;
   registerFadeMaterial(starsRef.material);
+  starsBiomeId = 'default';
 }
 
 function createStars() {
@@ -2463,6 +2478,7 @@ function rebuildStars(theme) {
   scene.add(stars);
   starsRef = stars;
   registerFadeMaterial(starsRef.material);
+  starsBiomeId = theme?.customScene || 'default';
 }
 
 // ============================================================
