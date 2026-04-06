@@ -5,167 +5,67 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pause Menu Layout Editor</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            overflow: hidden;
-            display: flex;
-            height: 100vh;
+            background: #1a1a1a; color: #e0e0e0;
+            overflow: hidden; display: flex; height: 100vh;
         }
         #sidebar {
-            width: 280px;
-            background: #252525;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            border-right: 1px solid #333;
+            width: 280px; background: #252525; padding: 16px;
+            display: flex; flex-direction: column; border-right: 1px solid #333;
         }
-        #viewport {
-            flex: 1;
-            position: relative;
-        }
-        #toolbar {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-        }
+        #viewport { flex: 1; position: relative; }
+        #toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
         button {
-            background: #3a3a3a;
-            border: 1px solid #555;
-            color: #e0e0e0;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 13px;
+            background: #3a3a3a; border: 1px solid #555; color: #e0e0e0;
+            padding: 8px 16px; cursor: pointer; border-radius: 4px; font-size: 13px;
         }
-        button:hover {
-            background: #4a4a4a;
-            border-color: #777;
-        }
-        button.primary {
-            background: #0066cc;
-            border-color: #0080ff;
-        }
-        button.primary:hover {
-            background: #0077dd;
-        }
+        button:hover { background: #4a4a4a; border-color: #777; }
+        button.primary { background: #0066cc; border-color: #0080ff; }
+        button.primary:hover { background: #0077dd; }
+        button.danger { background: #662222; border-color: #883333; }
+        button.danger:hover { background: #883333; }
         #selection-info {
-            background: #2a2a2a;
-            padding: 12px;
-            border-radius: 4px;
-            margin-bottom: 16px;
+            background: #2a2a2a; padding: 12px; border-radius: 4px; margin-bottom: 16px;
         }
-        #selection-info h3 {
-            font-size: 13px;
-            color: #888;
-            margin-bottom: 8px;
-        }
-        #selected-name {
-            font-size: 16px;
-            font-weight: 600;
-            color: #4af;
-            margin-bottom: 12px;
-        }
-        .coord-row {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 8px;
-        }
-        .coord-input {
-            flex: 1;
-        }
-        .coord-input label {
-            display: block;
-            font-size: 11px;
-            color: #888;
-            margin-bottom: 2px;
-        }
+        #selection-info h3 { font-size: 13px; color: #888; margin-bottom: 8px; }
+        #selected-name { font-size: 16px; font-weight: 600; color: #4af; margin-bottom: 12px; }
+        .coord-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .coord-input { flex: 1; }
+        .coord-input label { display: block; font-size: 11px; color: #888; margin-bottom: 2px; }
         .coord-input input {
-            width: 100%;
-            background: #333;
-            border: 1px solid #444;
-            color: #fff;
-            padding: 6px 8px;
-            border-radius: 3px;
-            font-size: 13px;
+            width: 100%; background: #333; border: 1px solid #444; color: #fff;
+            padding: 6px 8px; border-radius: 3px; font-size: 13px;
         }
-        .coord-input input:focus {
-            outline: none;
-            border-color: #4af;
-        }
+        .coord-input input:focus { outline: none; border-color: #4af; }
         #elements-list {
-            flex: 1;
-            overflow-y: auto;
-            background: #2a2a2a;
-            border-radius: 4px;
-            padding: 8px;
+            flex: 1; overflow-y: auto; background: #2a2a2a;
+            border-radius: 4px; padding: 8px;
         }
-        #elements-list h3 {
-            font-size: 13px;
-            color: #888;
-            margin-bottom: 8px;
-            padding: 4px;
-        }
+        #elements-list h3 { font-size: 13px; color: #888; margin-bottom: 8px; padding: 4px; }
         .element-item {
-            padding: 8px 10px;
-            cursor: pointer;
-            border-radius: 3px;
-            font-size: 13px;
-            margin-bottom: 2px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            padding: 8px 10px; cursor: pointer; border-radius: 3px;
+            font-size: 13px; margin-bottom: 2px;
+            display: flex; justify-content: space-between; align-items: center;
         }
-        .element-item:hover {
-            background: #333;
-        }
-        .element-item.selected {
-            background: #0066cc;
-        }
-        .element-item .name {
-            font-weight: 500;
-        }
-        .element-item .pos {
-            color: #888;
-            font-size: 11px;
-        }
-        .element-item.selected .pos {
-            color: #aac;
-        }
-        #canvas {
-            width: 100%;
-            height: 100%;
-        }
+        .element-item:hover { background: #333; }
+        .element-item.selected { background: #0066cc; }
+        .element-item .name { font-weight: 500; }
+        .element-item .pos { color: #888; font-size: 11px; }
+        .element-item.selected .pos { color: #aac; }
+        #canvas { width: 100%; height: 100%; }
         #instructions {
-            position: absolute;
-            bottom: 16px;
-            left: 16px;
-            background: rgba(0,0,0,0.7);
-            padding: 12px 16px;
-            border-radius: 4px;
-            font-size: 12px;
-            color: #aaa;
+            position: absolute; bottom: 16px; left: 16px;
+            background: rgba(0,0,0,0.7); padding: 12px 16px;
+            border-radius: 4px; font-size: 12px; color: #aaa;
         }
         #instructions kbd {
-            background: #444;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: monospace;
+            background: #444; padding: 2px 6px; border-radius: 3px; font-family: monospace;
         }
         .color-swatch {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border-radius: 2px;
-            margin-right: 6px;
-            vertical-align: middle;
+            display: inline-block; width: 12px; height: 12px;
+            border-radius: 2px; margin-right: 6px; vertical-align: middle;
         }
     </style>
 </head>
@@ -175,24 +75,16 @@
             <button class="primary" onclick="exportJSON()">Export JSON</button>
             <button onclick="document.getElementById('importFile').click()">Import JSON</button>
             <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+            <button onclick="undo()">Undo</button>
         </div>
         
         <div id="selection-info">
             <h3>SELECTED ELEMENT</h3>
             <div id="selected-name">None</div>
             <div class="coord-row">
-                <div class="coord-input">
-                    <label>X</label>
-                    <input type="number" step="0.01" id="input-x" onchange="updatePositionFromInput()">
-                </div>
-                <div class="coord-input">
-                    <label>Y</label>
-                    <input type="number" step="0.01" id="input-y" onchange="updatePositionFromInput()">
-                </div>
-                <div class="coord-input">
-                    <label>Z</label>
-                    <input type="number" step="0.01" id="input-z" onchange="updatePositionFromInput()">
-                </div>
+                <div class="coord-input"><label>X</label><input type="number" step="0.01" id="input-x" onchange="updatePositionFromInput()"></div>
+                <div class="coord-input"><label>Y</label><input type="number" step="0.01" id="input-y" onchange="updatePositionFromInput()"></div>
+                <div class="coord-input"><label>Z</label><input type="number" step="0.01" id="input-z" onchange="updatePositionFromInput()"></div>
             </div>
             <button onclick="resetSelectedPosition()">Reset Position</button>
         </div>
@@ -207,9 +99,10 @@
         <canvas id="canvas"></canvas>
         <div id="instructions">
             <kbd>Click</kbd> Select &nbsp;|&nbsp; 
-            <kbd>Drag</kbd> Move on axis &nbsp;|&nbsp; 
+            <kbd>Drag gizmo</kbd> Move on axis &nbsp;|&nbsp; 
             <kbd>Right-drag</kbd> Orbit &nbsp;|&nbsp; 
-            <kbd>Scroll</kbd> Zoom
+            <kbd>Scroll</kbd> Zoom &nbsp;|&nbsp;
+            <kbd>Ctrl+Z</kbd> Undo
         </div>
     </div>
 
@@ -227,12 +120,12 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { TransformControls } from 'three/addons/controls/TransformControls.js';
         
-        // Scene setup
+        // Scene
         const canvas = document.getElementById('canvas');
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a1a1a);
         
-        const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+        const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 200);
         camera.position.set(0, 0, 5);
         
         const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -251,23 +144,12 @@
             orbitControls.enabled = !event.value;
         });
         
-        transformControls.addEventListener('objectChange', () => {
-            updateSelectionUI();
-        });
-        
         // Grid
         const gridHelper = new THREE.GridHelper(10, 20, 0x444444, 0x333333);
         gridHelper.rotation.x = Math.PI / 2;
         scene.add(gridHelper);
         
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-        scene.add(ambientLight);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-        directionalLight.position.set(5, 5, 5);
-        scene.add(directionalLight);
-        
-        // Element definitions
+        // Elements
         const elementDefs = [
             { id: 'panel', name: 'Panel Background', color: 0x0a0015, width: 3.2, height: 2.8, x: 0, y: 0, z: 0 },
             { id: 'left_blaster', name: 'Left Blaster', color: 0x2244aa, width: 1.2, height: 1.8, x: -1.25, y: 0.2, z: 0.02 },
@@ -281,29 +163,35 @@
         
         const elements = {};
         const initialPositions = {};
+        const meshToParent = new Map(); // maps hit mesh/child → parent element mesh
         
-        // Create label sprite
-        function createLabel(text, color) {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = 256;
-            canvas.height = 64;
-            
+        // Create label as separate scene object (not child) to avoid raycasting issues
+        function createLabel(text, colorHex, parentMesh) {
+            if (!text) return;
+            const c = document.createElement('canvas');
+            const ctx = c.getContext('2d');
+            c.width = 256; c.height = 64;
             ctx.fillStyle = 'rgba(0,0,0,0.7)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
-            ctx.font = 'bold 24px sans-serif';
+            ctx.fillRect(0, 0, c.width, c.height);
+            ctx.fillStyle = '#' + colorHex.toString(16).padStart(6, '0');
+            ctx.font = 'bold 20px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-            
-            const texture = new THREE.CanvasTexture(canvas);
-            const material = new THREE.SpriteMaterial({ map: texture });
-            const sprite = new THREE.Sprite(material);
+            ctx.fillText(text, c.width / 2, c.height / 2);
+            const texture = new THREE.CanvasTexture(c);
+            const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+            const sprite = new THREE.Sprite(mat);
             sprite.scale.set(0.8, 0.2, 1);
+            sprite.renderOrder = 9999;
+            // Position relative to parent - update in animation loop
+            sprite.userData._parent = parentMesh;
+            sprite.userData._offsetY = parentMesh.userData.def.height / 2 + 0.15;
+            sprite.frustumCulled = false;
+            scene.add(sprite);
             return sprite;
         }
+        
+        const labels = [];
         
         // Create elements
         elementDefs.forEach(def => {
@@ -316,31 +204,36 @@
             });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.position.set(def.x, def.y, def.z);
-            mesh.userData = { id: def.id, name: def.name, def };
-            
-            // Add label
-            const label = createLabel(def.name.toUpperCase(), def.color);
-            label.position.y = def.height / 2 + 0.15;
-            mesh.add(label);
+            mesh.userData = { id: def.id, name: def.name, def, originalColor: def.color };
+            mesh.frustumCulled = false;
             
             scene.add(mesh);
             elements[def.id] = mesh;
+            meshToParent.set(mesh, mesh);
             initialPositions[def.id] = { x: def.x, y: def.y, z: def.z };
+            
+            const label = createLabel(def.name.toUpperCase(), def.color, mesh);
+            if (label) labels.push(label);
         });
         
-        // Selection
+        // Selection highlight
         let selectedElement = null;
+        const OUTLINE_COLOR = 0x00ffff;
+        
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         
-        canvas.addEventListener('click', (event) => {
+        canvas.addEventListener('pointerdown', (event) => {
+            // Only handle left click
+            if (event.button !== 0) return;
+            
             const rect = canvas.getBoundingClientRect();
             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             
             raycaster.setFromCamera(mouse, camera);
             const meshes = Object.values(elements);
-            const intersects = raycaster.intersectObjects(meshes);
+            const intersects = raycaster.intersectObjects(meshes, false);
             
             if (intersects.length > 0) {
                 selectElement(intersects[0].object);
@@ -348,12 +241,14 @@
         });
         
         function selectElement(mesh) {
+            // Deselect previous
             if (selectedElement) {
-                selectedElement.material.emissive = new THREE.Color(0x000000);
+                selectedElement.material.color.setHex(selectedElement.userData.originalColor);
             }
             
+            saveUndoState();
             selectedElement = mesh;
-            mesh.material.emissive = new THREE.Color(0x222222);
+            mesh.material.color.setHex(OUTLINE_COLOR);
             transformControls.attach(mesh);
             
             updateSelectionUI();
@@ -368,7 +263,6 @@
                 document.getElementById('input-z').value = '';
                 return;
             }
-            
             const pos = selectedElement.position;
             document.getElementById('selected-name').textContent = selectedElement.userData.name;
             document.getElementById('input-x').value = pos.x.toFixed(2);
@@ -378,7 +272,7 @@
         
         window.updatePositionFromInput = function() {
             if (!selectedElement) return;
-            
+            saveUndoState();
             selectedElement.position.x = parseFloat(document.getElementById('input-x').value) || 0;
             selectedElement.position.y = parseFloat(document.getElementById('input-y').value) || 0;
             selectedElement.position.z = parseFloat(document.getElementById('input-z').value) || 0;
@@ -387,7 +281,7 @@
         
         window.resetSelectedPosition = function() {
             if (!selectedElement) return;
-            
+            saveUndoState();
             const initial = initialPositions[selectedElement.userData.id];
             selectedElement.position.set(initial.x, initial.y, initial.z);
             updateSelectionUI();
@@ -397,11 +291,9 @@
         function updateElementsList() {
             const container = document.getElementById('elements-container');
             container.innerHTML = '';
-            
             elementDefs.forEach(def => {
                 const mesh = elements[def.id];
                 const pos = mesh.position;
-                
                 const item = document.createElement('div');
                 item.className = 'element-item' + (selectedElement === mesh ? ' selected' : '');
                 item.innerHTML = `
@@ -413,6 +305,54 @@
             });
         }
         
+        // ── Undo System (20 states) ──
+        const undoStack = [];
+        const MAX_UNDO = 20;
+        
+        function snapshotPositions() {
+            const snap = {};
+            Object.keys(elements).forEach(id => {
+                const p = elements[id].position;
+                snap[id] = { x: p.x, y: p.y, z: p.z };
+            });
+            return snap;
+        }
+        
+        function saveUndoState() {
+            undoStack.push(snapshotPositions());
+            if (undoStack.length > MAX_UNDO) undoStack.shift();
+        }
+        
+        window.undo = function() {
+            if (undoStack.length === 0) return;
+            const snap = undoStack.pop();
+            Object.keys(snap).forEach(id => {
+                if (elements[id]) {
+                    elements[id].position.set(snap[id].x, snap[id].y, snap[id].z);
+                }
+            });
+            updateSelectionUI();
+            updateElementsList();
+        };
+        
+        // Ctrl+Z keyboard shortcut
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                e.preventDefault();
+                window.undo();
+            }
+        });
+        
+        // Save undo on drag end
+        transformControls.addEventListener('mouseDown', () => {
+            saveUndoState();
+        });
+        
+        transformControls.addEventListener('objectChange', () => {
+            updateSelectionUI();
+            updateElementsList();
+        });
+        
         // Export/Import
         window.exportJSON = function() {
             const data = {
@@ -420,34 +360,26 @@
                 elements: {},
                 exportedAt: new Date().toISOString()
             };
-            
             Object.keys(elements).forEach(id => {
                 const pos = elements[id].position;
-                data.elements[id] = {
-                    x: parseFloat(pos.x.toFixed(3)),
-                    y: parseFloat(pos.y.toFixed(3)),
-                    z: parseFloat(pos.z.toFixed(3))
-                };
+                data.elements[id] = { x: parseFloat(pos.x.toFixed(3)), y: parseFloat(pos.y.toFixed(3)), z: parseFloat(pos.z.toFixed(3)) };
             });
-            
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
-            a.download = 'pause-menu-layout.json';
-            a.click();
-            URL.revokeObjectURL(url);
+            a.href = url; a.download = 'pause-menu-layout.json';
+            a.click(); URL.revokeObjectURL(url);
         };
         
         window.importJSON = function(event) {
             const file = event.target.files[0];
             if (!file) return;
-            
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
                     const data = JSON.parse(e.target.result);
                     if (data.elements) {
+                        saveUndoState();
                         Object.keys(data.elements).forEach(id => {
                             if (elements[id]) {
                                 const pos = data.elements[id];
@@ -457,32 +389,36 @@
                         updateSelectionUI();
                         updateElementsList();
                     }
-                } catch (err) {
-                    alert('Invalid JSON file');
-                }
+                } catch (err) { alert('Invalid JSON file'); }
             };
             reader.readAsText(file);
             event.target.value = '';
         };
         
-        // Resize handling
+        // Resize
         function resize() {
             const container = document.getElementById('viewport');
-            const width = container.clientWidth;
-            const height = container.clientHeight;
-            
-            camera.aspect = width / height;
+            camera.aspect = container.clientWidth / container.clientHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(width, height);
+            renderer.setSize(container.clientWidth, container.clientHeight);
         }
-        
         window.addEventListener('resize', resize);
         resize();
         
-        // Animation loop
+        // Animate — keep labels tracking their parents
         function animate() {
             requestAnimationFrame(animate);
             orbitControls.update();
+            
+            // Update label positions to follow their parent meshes
+            labels.forEach(label => {
+                const parent = label.userData._parent;
+                if (parent) {
+                    parent.getWorldPosition(label.position);
+                    label.position.y += label.userData._offsetY;
+                }
+            });
+            
             renderer.render(scene, camera);
         }
         
