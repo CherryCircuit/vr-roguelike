@@ -327,7 +327,6 @@ export function buildSynthwaveValleyScene(group, deps) {
     const t = time;
     terrainUniforms.uTime.value = t * 0.001;
     // Floor bloom removed — no _bloomMat to update.
-    }
     // Cloud animation disabled for Quest performance - static clouds
     // cloudDome1Mat.uniforms.uTime.value = t * 0.0001;
   };
