@@ -1744,14 +1744,14 @@ function spawnPhaseEcho(position) {
 /**
  * Update phase echoes (distraction ghosts).
  */
-function updatePhaseEchoes(dt, now) {
+export function updatePhaseEchoes(dt, now) {
   for (let i = phaseEchoes.length - 1; i >= 0; i--) {
     const echo = phaseEchoes[i];
     const age = now - echo.createdAt;
 
     if (age > echo.lifetime) {
       sceneRef.remove(echo.mesh);
-      echo.mesh.geometry.dispose();
+      // Don't dispose shared geometry from getGeo() - it's cached
       echo.mesh.material.dispose();
       phaseEchoes.splice(i, 1);
       continue;

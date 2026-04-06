@@ -41,6 +41,7 @@ import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
+  updatePhaseEchoes,
   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward, setBossSpawnForward,
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
@@ -3406,8 +3407,14 @@ function onTriggerRelease(index) {
     if (controllers[index]) controllers[index].userData.chargeReadySoundPlayed = false;
     chargeShotStartTime[index] = null;
   }
-  // Stop lightning beam when trigger released
+  // Stop lightning beam when trigger released (dispose to prevent GEO leak)
   if (lightningBeams[index]) {
+    lightningBeams[index].traverse(c => {
+      if (c.isMesh || c.isLine) {
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) c.material.dispose();
+      }
+    });
     scene.remove(lightningBeams[index]);
     lightningBeams[index] = null;
     stopLightningSound();
@@ -6890,6 +6897,12 @@ function clearAllProjectiles() {
 function clearAllLightningBeams() {
   for (let i = 0; i < lightningBeams.length; i++) {
     if (lightningBeams[i]) {
+      lightningBeams[i].traverse(c => {
+        if (c.isMesh || c.isLine) {
+          if (c.geometry) c.geometry.dispose();
+          if (c.material) c.material.dispose();
+        }
+      });
       scene.remove(lightningBeams[i]);
       lightningBeams[i] = null;
     }
@@ -8158,8 +8171,14 @@ function updateLightningBeam(controller, index, stats, dt) {
     // Start sound if not playing
     startLightningSound();
 
-    // Remove old beam group
+    // Remove old beam group (dispose geometry/material to prevent GEO leak)
     if (lightningBeams[index]) {
+      lightningBeams[index].traverse(c => {
+        if (c.isMesh || c.isLine) {
+          if (c.geometry) c.geometry.dispose();
+          if (c.material) c.material.dispose();
+        }
+      });
       scene.remove(lightningBeams[index]);
     }
 
@@ -8236,6 +8255,12 @@ function updateLightningBeam(controller, index, stats, dt) {
   } else {
     // No targets - clear beam and stop sound
     if (lightningBeams[index]) {
+      lightningBeams[index].traverse(c => {
+        if (c.isMesh || c.isLine) {
+          if (c.geometry) c.geometry.dispose();
+          if (c.material) c.material.dispose();
+        }
+      });
       scene.remove(lightningBeams[index]);
       lightningBeams[index] = null;
     }
@@ -10016,6 +10041,12 @@ function render(timestamp) {
         }
         chargeShotStartTime[i] = null;
         if (lightningBeams[i]) {
+          lightningBeams[i].traverse(c => {
+            if (c.isMesh || c.isLine) {
+              if (c.geometry) c.geometry.dispose();
+              if (c.material) c.material.dispose();
+            }
+          });
           scene.remove(lightningBeams[i]);
           lightningBeams[i] = null;
         }
@@ -10153,10 +10184,22 @@ function render(timestamp) {
         }
         // Clear lightning beams
         if (lightningBeams[0]) {
+          lightningBeams[0].traverse(c => {
+            if (c.isMesh || c.isLine) {
+              if (c.geometry) c.geometry.dispose();
+              if (c.material) c.material.dispose();
+            }
+          });
           scene.remove(lightningBeams[0]);
           lightningBeams[0] = null;
         }
         if (lightningBeams[1]) {
+          lightningBeams[1].traverse(c => {
+            if (c.isMesh || c.isLine) {
+              if (c.geometry) c.geometry.dispose();
+              if (c.material) c.material.dispose();
+            }
+          });
           scene.remove(lightningBeams[1]);
           lightningBeams[1] = null;
         }
@@ -10316,6 +10359,9 @@ function render(timestamp) {
 
     // Fix 1.9: Profile enemy updates
     const collisions = updateEnemies(dt, now, playerPos);
+
+    // Update phase echo ghosts (clean up expired echoes)
+    updatePhaseEchoes(dt, now);
 
     // Rebuild spatial hash for enemy proximity queries (O(1) lookups)
     // Skip entirely when no enemies exist to avoid per-frame overhead.
