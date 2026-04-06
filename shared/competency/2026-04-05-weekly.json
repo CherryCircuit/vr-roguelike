@@ -1,0 +1,207 @@
+{
+  "period": "2026-03-30 to 2026-04-05",
+  "generated_at": "2026-04-05T17:00:09.457609-07:00",
+  "days_with_data": 6,
+  "agents": {
+    "ampy": {
+      "sessions": 9,
+      "user_messages": 109,
+      "avg_tools_per_session": 5.7,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [],
+      "notes": []
+    },
+    "brother-bot": {
+      "sessions": 1,
+      "user_messages": 1,
+      "avg_tools_per_session": 4.0,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "underutilized"
+      ],
+      "notes": []
+    },
+    "codey": {
+      "sessions": 5,
+      "user_messages": 268,
+      "avg_tools_per_session": 10.6,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [],
+      "notes": []
+    },
+    "comfy": {
+      "sessions": 3,
+      "user_messages": 38,
+      "avg_tools_per_session": 5.3,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 1.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [],
+      "notes": []
+    },
+    "crafty": {
+      "sessions": 1,
+      "user_messages": 1,
+      "avg_tools_per_session": 1.0,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 0.0,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "low_engagement",
+        "underutilized"
+      ],
+      "notes": []
+    },
+    "durey": {
+      "sessions": 2,
+      "user_messages": 3,
+      "avg_tools_per_session": 0.0,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 0.5,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "low_engagement"
+      ],
+      "notes": []
+    },
+    "main": {
+      "sessions": 5,
+      "user_messages": 32,
+      "avg_tools_per_session": 3.0,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 0.6,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [],
+      "notes": []
+    },
+    "serena": {
+      "sessions": 5,
+      "user_messages": 32,
+      "avg_tools_per_session": 4.2,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 0.6,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [],
+      "notes": []
+    },
+    "unknown": {
+      "sessions": 24,
+      "user_messages": 61,
+      "avg_tools_per_session": 2.6,
+      "task_completion_rate": 1.0,
+      "engagement_rate": 0.29,
+      "corrections_detected": 0,
+      "trend": {
+        "completion": "new",
+        "engagement": "new",
+        "volume": "new"
+      },
+      "flags": [
+        "low_engagement",
+        "overloaded"
+      ],
+      "notes": []
+    }
+  },
+  "summary": {
+    "best_performing": "ampy",
+    "most_improved": null,
+    "needs_attention": [
+      "durey",
+      "unknown",
+      "crafty"
+    ],
+    "overall_health": "concerning"
+  },
+  "flags_total": [
+    {
+      "agent": "brother-bot",
+      "type": "underutilized",
+      "detail": "Only 1 session(s) this week",
+      "suggestion": "Consider if Brother-bot's role could be expanded or if tasks are being routed elsewhere"
+    },
+    {
+      "agent": "crafty",
+      "type": "low_engagement",
+      "detail": "Disengagement rate at 100% (0% engagement)",
+      "suggestion": "Check if Crafty is meeting user expectations"
+    },
+    {
+      "agent": "crafty",
+      "type": "underutilized",
+      "detail": "Only 1 session(s) this week",
+      "suggestion": "Consider if Crafty's role could be expanded or if tasks are being routed elsewhere"
+    },
+    {
+      "agent": "durey",
+      "type": "low_engagement",
+      "detail": "Disengagement rate at 50% (50% engagement)",
+      "suggestion": "Check if Durey is meeting user expectations"
+    },
+    {
+      "agent": "unknown",
+      "type": "low_engagement",
+      "detail": "Disengagement rate at 71% (29% engagement)",
+      "suggestion": "Check if Unknown is meeting user expectations"
+    },
+    {
+      "agent": "unknown",
+      "type": "overloaded",
+      "detail": "24 sessions this week (6x average)",
+      "suggestion": "Consider routing some tasks to other agents to reduce Unknown's load"
+    }
+  ],
+  "recommendations": [
+    "Best performing: \u26a1 ampy (100% completion)",
+    "Check if Crafty is meeting user expectations",
+    "Check if Durey is meeting user expectations",
+    "Check if Unknown is meeting user expectations",
+    "3 automation candidate(s) found in pattern analysis - review patterns report"
+  ]
+}
