@@ -172,6 +172,78 @@ export function buildSynthwaveValleyScene(group, deps) {
 
   synthVisualRefs.terrainUniforms = terrainUniforms;
 
+  // ── Floor Bloom Glow Plane (fake bloom on grid lines) ──
+  const ENABLE_FLOOR_BLOOM = true;
+  if (ENABLE_FLOOR_BLOOM) {
+    const bloomSizeX = 2400;
+    const bloomSizeZ = 3200;
+    const bloomGeo = new THREE.PlaneGeometry(bloomSizeX, bloomSizeZ);
+    // Match the grid shader logic but with softer, brighter output for fake bloom
+    const bloomMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uGridColor: { value: terrainUniforms.uGridColor.value.clone() },
+        uPulseColorA: { value: terrainUniforms.uPulseColorA.value.clone() },
+        uPulseColorB: { value: terrainUniforms.uPulseColorB.value.clone() },
+        uGlowIntensity: { value: getVisualTuning().glowStrength },
+        uTime: { value: 0.0 },
+      },
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -1.0,
+      polygonOffsetUnits: -1.0,
+      vertexShader: `
+        varying vec3 vObjPos;
+        void main() {
+          vObjPos = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uGridColor;
+        uniform vec3 uPulseColorA;
+        uniform vec3 uPulseColorB;
+        uniform float uGlowIntensity;
+        uniform float uTime;
+        varying vec3 vObjPos;
+        float gridLine(float coord, float width) {
+          float g = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+          return 1.0 - smoothstep(width, width + 1.0, g);
+        }
+        void main() {
+          float gridScale = 1.0 / 6.0;
+          float dist = length(vObjPos.xz);
+          // Wider lines for a soft glow effect
+          float lineW = 1.2 * smoothstep(600.0, 50.0, dist);
+          float gx = gridLine(vObjPos.x * gridScale, lineW);
+          float gz = gridLine(vObjPos.z * gridScale, lineW);
+          float grid = max(gx, gz);
+          // Same pulse animation as main terrain
+          float wave = 0.5 + 0.5 * sin(uTime * 1.8 + vObjPos.x * 0.018 + vObjPos.z * 0.012);
+          vec3 pulseColor = mix(uPulseColorA, uPulseColorB, wave);
+          vec3 col = mix(uGridColor, pulseColor, 0.7);
+          // Apply grid with soft falloff
+          float alpha = grid * uGlowIntensity * 0.15;
+          // Fade at edges
+          float edgeFade = smoothstep(600.0, 200.0, dist);
+          alpha *= edgeFade;
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
+    });
+    const bloomPlane = new THREE.Mesh(bloomGeo, bloomMat);
+    bloomPlane.name = 'synthwave-floor-bloom';
+    bloomPlane.rotation.x = -Math.PI / 2;
+    bloomPlane.position.set(terrain.position.x, terrain.position.y + 0.05, terrain.position.z);
+    bloomPlane.frustumCulled = false;
+    group.add(bloomPlane);
+    registerFadeMaterial(bloomMat);
+    // Store ref for time sync in group.userData.update
+    group.userData._bloomMat = bloomMat;
+  }
+
   // ── MOUNTAIN WRAP CYLINDER ──
   // Large open cylinder with mountain PNG on the inside, positioned IN FRONT of sun.
   // This creates a 360° panoramic mountain backdrop as distant horizon.
@@ -436,6 +508,9 @@ export function buildSynthwaveValleyScene(group, deps) {
   group.userData.update = (time) => {
     const t = time;
     terrainUniforms.uTime.value = t * 0.001;
+    if (ENABLE_FLOOR_BLOOM && group.userData._bloomMat) {
+      group.userData._bloomMat.uniforms.uTime.value = t * 0.001;
+    }
     // Cloud animation disabled for Quest performance - static clouds
     // cloudDome1Mat.uniforms.uTime.value = t * 0.0001;
   };
