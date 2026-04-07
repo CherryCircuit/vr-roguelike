@@ -924,14 +924,14 @@ function createHUDElements() {
   const heartsGeo = new THREE.PlaneGeometry(1.7875, 0.55);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
-  heartsSprite.position.set(-1.44 + (1.7875 / 2), 0.48, 0.01);  // Left-aligned: offset by half width so left edge at -1.44
+  heartsSprite.position.set(-2.3 + (1.7875 / 2), 0.56, 0.01);  // Left-aligned: offset by half width so left edge at -2.3 (v13)
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
   // SCORE - center-left on floor with title above
   // Layout: Spread from hearts, number centered under SCORE title
   scoreSprite = makeSprite('0', { fontSize: 72, color: '#ffff00', shadow: true, scale: 0.45 });
-  scoreSprite.position.set(0, 0.3, 0.01);  // Centered under SCORE title
+  scoreSprite.position.set(0, 0.32, 0.01);  // Centered under SCORE title (v13)
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
@@ -953,18 +953,18 @@ function createHUDElements() {
 
   // Nuke counter — far right, top row; emoji 2x size, count text normal
   nukeEmojiSprite = makeSprite('☢', { fontSize: 144, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.9 });
-  nukeEmojiSprite.position.set(1.8, 0.44, 0.01);  // Far right
+  nukeEmojiSprite.position.set(1.82, 0.5, 0.01);  // Far right (v13)
   hudGroup.add(nukeEmojiSprite);
   nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.35 });
-  nukeCountSprite.position.set(2.1, 0.44, 0.01);  // Far right
+  nukeCountSprite.position.set(2.12, 0.5, 0.01);  // Far right (v13)
   hudGroup.add(nukeCountSprite);
 
   // Accuracy bonus — center, just below main HUD row
   // Y=-0.45 keeps it close to the SCORE/LEVEL row (Y=0.3) without overlap
   // NOTE: combo_text uses center-aligned geometry; left-alignment would require
   // updating position each frame since text width varies with the accuracy multiplier.
-  comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 0.2 });
-  comboSprite.position.set(-1.88, 0.02, 0.01);  // Left side, below hearts
+  comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 0.25 });
+  comboSprite.position.set(-2.26, 0.1, 0.01);  // Left side, below hearts (v13)
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 
@@ -974,7 +974,7 @@ function createHUDElements() {
   cooldownGeo.translate(0.825, 0, 0); // shift right by half width for left-edge pivot
   const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
-  comboCooldownSprite.position.set(-1.42, 0.12, 0.01);  // Left side, below combo text
+  comboCooldownSprite.position.set(-1.377, 0.21, 0.01);  // Left side, below combo text (v13)
   comboCooldownSprite.visible = false;
   hudGroup.add(comboCooldownSprite);
 }
@@ -1188,7 +1188,7 @@ export function updateHUD(gameState) {
     comboSprite.visible = true;
     comboCooldownSprite.visible = true;
     const accuracyMult = (game.accuracyMultiplier || 1).toFixed(1);
-    updateSpriteText(comboSprite, `${accuracyMult}X ACCURACY BONUS`, { color: '#ff8800', scale: 0.2 });
+    updateSpriteText(comboSprite, `${accuracyMult}X ACCURACY BONUS`, { color: '#ff8800', scale: 0.25 });
 
     // Update bonus meter
     const remainingRatio = Math.max(0, Math.min(1, accuracyBonus / 100));
