@@ -847,7 +847,7 @@ export function initHUD(camera, scene) {
 
   // ── Boss health bar (top center, camera-attached, 3 segments) ──
   bossHealthGroup = new THREE.Group();
-  bossHealthGroup.position.set(0, 0.28, -0.5);
+  bossHealthGroup.position.set(0, 0.22, -0.8);
   bossHealthGroup.visible = false;
   const barWidth = 0.30;
   const barHeight = 0.04;
@@ -862,6 +862,8 @@ export function initHUD(camera, scene) {
 
   for (let i = 0; i < 3; i++) {
     const geo = new THREE.PlaneGeometry(barWidth, barHeight);
+    // Shift geometry so pivot is at left edge: bars shrink from left, not center
+    geo.translate(barWidth / 2, 0, 0);
     const mat = new THREE.MeshBasicMaterial({ color: 0xff0044, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
     const bar = new THREE.Mesh(geo, mat);
     bar.position.x = (i - 1) * (barWidth + gap);
@@ -1171,7 +1173,9 @@ function createHUDElements() {
   hudGroup.add(comboSprite);
 
   // Accuracy bonus meter bar — directly below combo text
+  // Geometry shifted so pivot is left edge: bar shrinks from left, not center
   const cooldownGeo = new THREE.PlaneGeometry(0.5, 0.03);
+  cooldownGeo.translate(0.25, 0, 0); // shift right by half width
   const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
   comboCooldownSprite.position.set(-1.2, -0.02, 0);  // Left side, below combo text
