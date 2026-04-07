@@ -155,14 +155,12 @@ class TextPopupPool {
 
   acquire(position, drawFn, opts = {}) {
     if (this.pool.length === 0) {
-      // Pool exhausted: steal oldest active mesh (swap-with-last, O(1))
+      // Pool exhausted: steal oldest active mesh (O(1) swap-with-last)
       if (this.active.length === 0) return null;
-      const stolen = this.active.shift();
-      // Fast path: swap last into position 0 to avoid O(n) shift
-      if (this.active.length > 0) {
-        this.active[0] = this.active[this.active.length - 1];
-        this.active.pop();
-      }
+      const stolen = this.active[0];
+      // Swap last element to position 0 instead of shift()
+      this.active[0] = this.active[this.active.length - 1];
+      this.active.pop();
       this._deactivate(stolen);
       this.pool.push(stolen);
     }
@@ -280,6 +278,8 @@ class TextPopupPool {
   _deactivate(mesh) {
     mesh.visible = false;
     mesh.userData.active = false;
+    mesh.userData._positionKey = null; // Clear consolidation tracking
+    mesh.userData._pulseDecay = 0;
     this.scene.remove(mesh);
     mesh.scale.set(1, 1, 1);
     // Reset material opacity so next acquire sets it fresh
@@ -1530,6 +1530,13 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   const skipCard = createSkipCard(positions[3]);
   upgradeGroup.add(skipCard);
   upgradeCards.push(skipCard);
+
+  // Staggered zoom-in animation: cards start small and scale up over 0.5s
+  upgradeCards.forEach((card, i) => {
+    card.scale.set(0.01, 0.01, 0.01); // Start tiny
+    card.userData._zoomStart = performance.now() + i * 80; // 80ms stagger per card
+    card.userData._zooming = true;
+  });
 }
 
 function createUpgradeCard(upgrade, position) {
@@ -4202,6 +4209,25 @@ export function updateHUDHover(raycasters) {
 
   // 2. Upgrade Cards
   if (upgradeGroup.visible) {
+    // Animate staggered zoom-in for cards
+    const now = performance.now();
+    upgradeCards.forEach(card => {
+      if (card.userData._zooming) {
+        const elapsed = now - (card.userData._zoomStart || 0);
+        if (elapsed < 0) {
+          // Not started yet
+        } else if (elapsed < 400) {
+          const t = elapsed / 400;
+          // Ease out cubic
+          const s = 1 - Math.pow(1 - t, 3);
+          card.scale.set(s, s, s);
+        } else {
+          card.scale.set(1, 1, 1);
+          card.userData._zooming = false;
+        }
+      }
+    });
+
     upgradeCards.forEach(card => {
       const mesh = card.children.find(c => c.userData.isUpgradeCard);
       if (mesh) hoverables.push(mesh);

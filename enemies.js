@@ -247,7 +247,7 @@ const ENEMY_DEFS = {
   },
 
   // ── New enemy types (v2.0) ─────────────────────────────────
-  spiral_swimmer: { pattern: [[1]], voxelSize: 0.18, baseHp: 8, baseSpeed: 2.2, color: 0x00ffcc, depth: 1, scoreValue: 8, hitboxRadius: 0.3, telegraphType: 'twitch', isTrain: true, trainLength: 10 },
+  spiral_swimmer: { pattern: [[1]], voxelSize: 0.18, baseHp: 8, baseSpeed: 2.2, color: 0x00ffcc, depth: 1, scoreValue: 8, hitboxRadius: 0.5, telegraphType: 'twitch', isTrain: true, trainLength: 10 },
 
   // ── Part 2: Advanced enemies (v3.0) ─────────────────────────
   mirror_knight: {
@@ -2797,10 +2797,8 @@ export function updateEnemies(dt, now, playerPos) {
     // Spiral Swimmer: corkscrew movement
     if (e.isTrain && !e.scattered) {
       e.spiralAngle += dt * 4; // Spiral speed
-      const spiralOffset = Math.sin(e.spiralAngle) * e.spiralRadius;
-      e.mesh.position.x += Math.cos(e.spiralAngle) * 0.3 * dt;
-      e.mesh.position.y += spiralOffset * 0.1 * dt;
-      // Keep within bounds
+      // Head moves straight toward player, NO lateral bobbing
+      // Keep within vertical bounds
       e.mesh.position.y = Math.max(0.5, Math.min(3.5, e.mesh.position.y));
 
       // Animate trailing voxels to follow in spiral (non-instanced fallback)
@@ -2822,8 +2820,8 @@ export function updateEnemies(dt, now, playerPos) {
           const localY = Math.cos(phase) * e.spiralRadius * 0.3;
           const localZ = -i * e.voxelSize * 1.5;
 
-          // Build matrix with local offset and world position
-          const headScale = i === 0 ? 1.25 : 1.0;
+          // Head is 1.8x larger for clear target, tail segments stay small
+          const headScale = i === 0 ? 1.8 : 1.0;
           _scratchMat4.makeTranslation(localX, localY, localZ);
           _scratchMat4.scale(_scratchScale.set(headScale, headScale, headScale));
           _scratchMat4.premultiply(_scratchMat4b.makeTranslation(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z));
@@ -8836,8 +8834,8 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
   let wiggleAmplitude;
 
   if (lobbed) {
-    // Lobbed projectile: arc trajectory with gravity
-    // Calculate horizontal direction to target
+    // Lobbed projectile: arc trajectory aimed at player position
+    // Calculate required speed to always reach the target
     const horizontalDir = new THREE.Vector3(
       targetPos.x - fromPos.x,
       0,
@@ -8846,14 +8844,16 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
     const horizontalDist = horizontalDir.length();
     horizontalDir.normalize();
 
-    // Calculate time to reach target horizontally
-    const horizontalSpeed = 4.0;
-    const flightTime = horizontalDist / horizontalSpeed;
+    // Use a flight time proportional to distance for consistent arcs
+    // Minimum flight time of 0.8s, scaling up with distance
+    const desiredFlightTime = Math.max(0.8, horizontalDist / 6.0);
+    const flightTime = desiredFlightTime;
+
+    // Calculate horizontal speed to cover distance in flight time
+    const horizontalSpeed = horizontalDist / flightTime;
 
     // Calculate initial upward velocity to reach arcHeight
-    // Using kinematic equation: h = v0*t - 0.5*g*t^2
     // At peak (t/2): arcHeight = v0*(t/2) - 0.5*g*(t/2)^2
-    // Solving: v0 = (arcHeight + 0.5*g*(t/2)^2) / (t/2)
     const gravity = 9.8;
     const halfTime = flightTime / 2;
     const initialUpSpeed = (arcHeight + 0.5 * gravity * halfTime * halfTime) / halfTime;
