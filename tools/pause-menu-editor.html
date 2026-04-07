@@ -3,421 +3,411 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pause Menu Layout Editor</title>
+    <title>Pause Menu Layout Editor v3</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1a1a1a; color: #e0e0e0;
-            overflow: hidden; display: flex; height: 100vh;
-        }
-        #sidebar {
-            width: 300px; background: #252525; padding: 16px;
-            display: flex; flex-direction: column; border-right: 1px solid #333;
-            overflow-y: auto;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a1a; color: #e0e0e0; overflow: hidden; display: flex; height: 100vh; }
+        #sidebar { width: 310px; background: #252525; padding: 12px; display: flex; flex-direction: column; border-right: 1px solid #333; overflow-y: auto; }
         #viewport { flex: 1; position: relative; }
-        #toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-        button {
-            background: #3a3a3a; border: 1px solid #555; color: #e0e0e0;
-            padding: 8px 14px; cursor: pointer; border-radius: 4px; font-size: 13px;
-        }
+        #toolbar { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+        button { background: #3a3a3a; border: 1px solid #555; color: #e0e0e0; padding: 6px 12px; cursor: pointer; border-radius: 4px; font-size: 12px; }
         button:hover { background: #4a4a4a; border-color: #777; }
         button.primary { background: #0066cc; border-color: #0080ff; }
         button.primary:hover { background: #0077dd; }
-        #selection-info {
-            background: #2a2a2a; padding: 12px; border-radius: 4px; margin-bottom: 12px;
-        }
-        #selection-info h3 { font-size: 13px; color: #888; margin-bottom: 8px; }
-        #selected-name { font-size: 15px; font-weight: 600; color: #4af; margin-bottom: 10px; }
-        .prop-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
-        .prop-row label { font-size: 11px; color: #888; width: 14px; text-align: right; flex-shrink: 0; }
-        .prop-row input {
-            flex: 1; background: #333; border: 1px solid #444; color: #fff;
-            padding: 5px 7px; border-radius: 3px; font-size: 13px; min-width: 0;
-        }
-        .prop-row input:focus { outline: none; border-color: #4af; }
-        .prop-section { font-size: 11px; color: #666; margin: 6px 0 4px; font-weight: 600; text-transform: uppercase; }
-        #elements-list {
-            flex: 1; overflow-y: auto; background: #2a2a2a;
-            border-radius: 4px; padding: 8px; min-height: 100px;
-        }
-        #elements-list h3 { font-size: 13px; color: #888; margin-bottom: 6px; }
-        .element-item {
-            padding: 5px 8px; cursor: pointer; border-radius: 3px;
-            font-size: 12px; margin-bottom: 1px;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        .element-item:hover { background: #333; }
-        .element-item.selected { background: #0066cc; }
-        .element-item .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .element-item .pos { color: #888; font-size: 10px; flex-shrink: 0; margin-left: 4px; }
-        .element-item.selected .pos { color: #aac; }
-        .color-swatch {
-            display: inline-block; width: 10px; height: 10px;
-            border-radius: 2px; margin-right: 5px; vertical-align: middle; flex-shrink: 0;
-        }
+        #sel-info { background: #2a2a2a; padding: 10px; border-radius: 4px; margin-bottom: 10px; }
+        #sel-info h3 { font-size: 12px; color: #888; margin-bottom: 6px; }
+        #sel-name { font-size: 14px; font-weight: 600; color: #4af; margin-bottom: 8px; }
+        .pr { display: flex; gap: 5px; margin-bottom: 5px; align-items: center; }
+        .pr label { font-size: 11px; color: #888; width: 42px; text-align: right; flex-shrink: 0; }
+        .pr input, .pr select { flex: 1; background: #333; border: 1px solid #444; color: #fff; padding: 4px 6px; border-radius: 3px; font-size: 12px; min-width: 0; }
+        .pr input:focus, .pr select:focus { outline: none; border-color: #4af; }
+        .sec { font-size: 10px; color: #555; margin: 6px 0 3px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; border-top: 1px solid #333; padding-top: 6px; }
+        .abtn { display: flex; gap: 3px; }
+        .abtn button { padding: 3px 8px; font-size: 11px; }
+        .abtn button.active { background: #0066cc; border-color: #0080ff; color: #fff; }
+        #elist { flex: 1; overflow-y: auto; background: #2a2a2a; border-radius: 4px; padding: 6px; min-height: 80px; }
+        #elist h3 { font-size: 12px; color: #888; margin-bottom: 4px; }
+        .ei { padding: 3px 7px; cursor: pointer; border-radius: 3px; font-size: 10px; margin-bottom: 1px; display: flex; justify-content: space-between; align-items: center; }
+        .ei:hover { background: #333; }
+        .ei.sel { background: #0066cc; }
+        .ei .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; }
+        .ei .p { color: #888; font-size: 9px; flex-shrink: 0; }
+        .ei.sel .p { color: #aac; }
+        .cs { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 3px; vertical-align: middle; flex-shrink: 0; }
         #canvas { width: 100%; height: 100%; }
-        #instructions {
-            position: absolute; bottom: 16px; left: 16px;
-            background: rgba(0,0,0,0.7); padding: 10px 14px;
-            border-radius: 4px; font-size: 11px; color: #aaa;
-        }
-        #instructions kbd {
-            background: #444; padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 11px;
-        }
-        .section-divider { border-top: 1px solid #333; margin: 8px 0; }
+        #inst { position: absolute; bottom: 12px; left: 12px; background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 4px; font-size: 10px; color: #aaa; }
+        #inst kbd { background: #444; padding: 1px 4px; border-radius: 2px; font-family: monospace; }
     </style>
 </head>
 <body>
     <div id="sidebar">
         <div id="toolbar">
-            <button class="primary" onclick="exportJSON()">Export JSON</button>
-            <button onclick="document.getElementById('importFile').click()">Import JSON</button>
-            <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+            <button class="primary" onclick="exportJSON()">Export</button>
+            <button onclick="document.getElementById('impF').click()">Import</button>
+            <input type="file" id="impF" accept=".json" style="display:none" onchange="importJSON(event)">
             <button onclick="undo()">Undo</button>
-            <button onclick="resetAll()">Reset All</button>
+            <button onclick="resetAll()">Reset</button>
         </div>
-        
-        <div id="selection-info">
-            <h3>SELECTED ELEMENT</h3>
-            <div id="selected-name">None</div>
-            <div class="prop-section">Position</div>
-            <div class="prop-row"><label>X</label><input type="number" step="0.01" id="input-x" onchange="updateFromInput()"></div>
-            <div class="prop-row"><label>Y</label><input type="number" step="0.01" id="input-y" onchange="updateFromInput()"></div>
-            <div class="prop-row"><label>Z</label><input type="number" step="0.01" id="input-z" onchange="updateFromInput()"></div>
-            <div class="prop-section">Scale</div>
-            <div class="prop-row"><label>W</label><input type="number" step="0.01" id="input-sw" onchange="updateFromInput()"></div>
-            <div class="prop-row"><label>H</label><input type="number" step="0.01" id="input-sh" onchange="updateFromInput()"></div>
+        <div id="sel-info">
+            <h3>SELECTED</h3>
+            <div id="sel-name">Click an element</div>
+            <div class="sec">Text Content</div>
+            <div class="pr"><label>Text</label><input type="text" id="inp-text" oninput="onTextInput()"></div>
+            <div class="sec">Position</div>
+            <div class="pr"><label>X</label><input type="number" step="0.02" id="inp-x" onchange="onNumInput()"></div>
+            <div class="pr"><label>Y</label><input type="number" step="0.02" id="inp-y" onchange="onNumInput()"></div>
+            <div class="pr"><label>Z</label><input type="number" step="0.01" id="inp-z" onchange="onNumInput()"></div>
+            <div class="sec">Size</div>
+            <div class="pr" id="row-scale"><label>Scale</label><input type="number" step="0.01" min="0.02" id="inp-scale" onchange="onNumInput()"></div>
+            <div class="pr" id="row-w" style="display:none"><label>Width</label><input type="number" step="0.05" id="inp-w" onchange="onNumInput()"></div>
+            <div class="pr" id="row-h" style="display:none"><label>Height</label><input type="number" step="0.05" id="inp-h" onchange="onNumInput()"></div>
+            <div class="sec">Alignment</div>
+            <div class="abtn">
+                <button id="al-left" onclick="setAlign('left')">◀ Left</button>
+                <button id="al-center" onclick="setAlign('center')">Center</button>
+                <button id="al-right" onclick="setAlign('right')">Right ▶</button>
+            </div>
         </div>
-        
-        <div id="elements-list">
-            <h3>ELEMENTS <span style="float:right;color:#666;font-size:11px">click to select</span></h3>
-            <div id="elements-container"></div>
-        </div>
+        <div id="elist"><h3>ELEMENTS</h3><div id="ec"></div></div>
     </div>
-    
     <div id="viewport">
         <canvas id="canvas"></canvas>
-        <div id="instructions">
-            <kbd>Click</kbd> Select &nbsp;|&nbsp; <kbd>Drag gizmo</kbd> Move &nbsp;|&nbsp; <kbd>Right-drag</kbd> Orbit &nbsp;|&nbsp; <kbd>Scroll</kbd> Zoom &nbsp;|&nbsp; <kbd>Ctrl+Z</kbd> Undo
-        </div>
+        <div id="inst"><kbd>Click</kbd> Select | <kbd>Gizmo</kbd> Move | <kbd>Right-drag</kbd> Orbit | <kbd>Scroll</kbd> Zoom | <kbd>Ctrl+Z</kbd> Undo</div>
     </div>
 
-    <script type="importmap">
-    { "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    }}
-    </script>
-    
+    <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }</script>
     <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { TransformControls } from 'three/addons/controls/TransformControls.js';
-        
-        const canvas = document.getElementById('canvas');
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111118);
-        const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 200);
-        camera.position.set(0, 0, 5);
-        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-        renderer.setPixelRatio(window.devicePixelRatio);
-        
-        const orbit = new OrbitControls(camera, canvas);
-        orbit.enableDamping = true; orbit.dampingFactor = 0.1;
-        
-        const tc = new TransformControls(camera, canvas);
-        tc.setMode('translate'); scene.add(tc);
-        tc.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; });
-        
-        const grid = new THREE.GridHelper(12, 24, 0x333344, 0x222233);
-        grid.rotation.x = Math.PI / 2; scene.add(grid);
-        
-        // ── Element definitions matching the actual pause menu layout ──
-        // Layout structure (top to bottom):
-        //   LEFT BLASTER section (x≈-1.25)        RIGHT BLASTER section (x≈+1.25)
-        //   Stats section (centered, below blasters)
-        //   Resume button (bottom center)
-        
-        const defs = [
-            // ── Panel ──
-            { id:'panel', name:'Panel BG', color:0x0a0015, w:3.2, h:3.6, x:0, y:0, z:0 },
-            
-            // ── Left Blaster Section ──
-            { id:'lb_title', name:'LEFT BLASTER', color:0x00ffff, w:1.4, h:0.18, x:-1.25, y:1.3, z:0.02, fontSize:12 },
-            { id:'lb_weapon', name:'PLASMA CARBINE', color:0xffffff, w:1.2, h:0.12, x:-1.25, y:1.1, z:0.02, fontSize:10 },
-            { id:'lb_sep1', name:'L-Sep1', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:1.0, z:0.02 },
-            { id:'lb_upg_header', name:'[UPGRADES]', color:0x888888, w:1.0, h:0.1, x:-1.25, y:0.9, z:0.02, fontSize:9 },
-            { id:'lb_upg1', name:'🔥 RAPID FIRE x3', color:0xff8800, w:0.85, h:0.12, x:-1.48, y:0.76, z:0.02, fontSize:9 },
-            { id:'lb_upg2', name:'⚡ DAMAGE UP x2', color:0xffff00, w:0.85, h:0.12, x:-1.02, y:0.76, z:0.02, fontSize:9 },
-            { id:'lb_upg3', name:'🎯 HOMING x1', color:0x00ff00, w:0.85, h:0.12, x:-1.48, y:0.62, z:0.02, fontSize:9 },
-            { id:'lb_sep2', name:'L-Sep2', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:0.52, z:0.02 },
-            { id:'lb_enemy_header', name:'[ENEMIES]', color:0x888888, w:1.0, h:0.1, x:-1.25, y:0.42, z:0.02, fontSize:9 },
-            { id:'lb_enemy1', name:'👾 GRUNT x12', color:0xff6666, w:0.85, h:0.12, x:-1.48, y:0.28, z:0.02, fontSize:9 },
-            { id:'lb_enemy2', name:'🤖 TANK x5', color:0xff6666, w:0.85, h:0.12, x:-1.02, y:0.28, z:0.02, fontSize:9 },
-            { id:'lb_sep3', name:'L-Sep3', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:0.18, z:0.02 },
-            { id:'lb_kills', name:'KILLS: 24', color:0x00ffff, w:0.55, h:0.12, x:-1.58, y:0.04, z:0.02, fontSize:9 },
-            { id:'lb_shots', name:'SHOTS: 156', color:0x00ffff, w:0.55, h:0.12, x:-1.25, y:0.04, z:0.02, fontSize:9 },
-            { id:'lb_hits', name:'HITS: 89', color:0x00ffff, w:0.55, h:0.12, x:-0.92, y:0.04, z:0.02, fontSize:9 },
-            { id:'lb_acc', name:'ACC: 57%', color:0x00ffff, w:0.55, h:0.12, x:-1.25, y:-0.12, z:0.02, fontSize:9 },
-            
-            // ── Right Blaster Section ──
-            { id:'rb_title', name:'RIGHT BLASTER', color:0x00ffff, w:1.4, h:0.18, x:1.25, y:1.3, z:0.02, fontSize:12 },
-            { id:'rb_weapon', name:'BLASTER', color:0xffffff, w:1.2, h:0.12, x:1.25, y:1.1, z:0.02, fontSize:10 },
-            { id:'rb_sep1', name:'R-Sep1', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:1.0, z:0.02 },
-            { id:'rb_upg_header', name:'[UPGRADES]', color:0x888888, w:1.0, h:0.1, x:1.25, y:0.9, z:0.02, fontSize:9 },
-            { id:'rb_upg1', name:'🗡️ PIERCING x2', color:0xff0000, w:0.85, h:0.12, x:1.02, y:0.76, z:0.02, fontSize:9 },
-            { id:'rb_upg2', name:'💫 SPREAD SHOT x1', color:0x00ffff, w:0.85, h:0.12, x:1.48, y:0.76, z:0.02, fontSize:9 },
-            { id:'rb_sep2', name:'R-Sep2', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:0.52, z:0.02 },
-            { id:'rb_enemy_header', name:'[ENEMIES]', color:0x888888, w:1.0, h:0.1, x:1.25, y:0.42, z:0.02, fontSize:9 },
-            { id:'rb_enemy1', name:'💨 SPEEDER x8', color:0xff6666, w:0.85, h:0.12, x:1.02, y:0.28, z:0.02, fontSize:9 },
-            { id:'rb_enemy2', name:'🔫 SHOOTER x3', color:0xff6666, w:0.85, h:0.12, x:1.48, y:0.28, z:0.02, fontSize:9 },
-            { id:'rb_sep3', name:'R-Sep3', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:0.18, z:0.02 },
-            { id:'rb_kills', name:'KILLS: 18', color:0x00ffff, w:0.55, h:0.12, x:0.92, y:0.04, z:0.02, fontSize:9 },
-            { id:'rb_shots', name:'SHOTS: 94', color:0x00ffff, w:0.55, h:0.12, x:1.25, y:0.04, z:0.02, fontSize:9 },
-            { id:'rb_hits', name:'HITS: 61', color:0x00ffff, w:0.55, h:0.12, x:1.58, y:0.04, z:0.02, fontSize:9 },
-            { id:'rb_acc', name:'ACC: 65%', color:0x00ffff, w:0.55, h:0.12, x:1.25, y:-0.12, z:0.02, fontSize:9 },
-            
-            // ── Stats Section (centered) ──
-            { id:'stats_title', name:'RUN STATISTICS', color:0xff00ff, w:1.6, h:0.2, x:0, y:0.84, z:0.02, fontSize:13 },
-            { id:'stat_kills', name:'KILLS: 42', color:0x00ffff, w:1.2, h:0.14, x:0, y:0.44, z:0.02, fontSize:10 },
-            { id:'stat_shots', name:'SHOTS: 250', color:0x00ffff, w:1.2, h:0.14, x:0, y:0.20, z:0.02, fontSize:10 },
-            { id:'stat_hits', name:'HITS: 150', color:0x00ffff, w:1.2, h:0.14, x:0, y:-0.04, z:0.02, fontSize:10 },
-            { id:'stat_acc2', name:'ACCURACY: 60%', color:0x00ffff, w:1.2, h:0.14, x:-1.08, y:-0.34, z:0.02, fontSize:10 },
-            { id:'stat_streak', name:'STREAK: 7', color:0x00ffff, w:1.2, h:0.14, x:-1.08, y:-0.56, z:0.02, fontSize:10 },
-            { id:'stat_boss', name:'BOSS: 1', color:0x00ffff, w:1.2, h:0.14, x:-1.08, y:-0.78, z:0.02, fontSize:10 },
-            { id:'chart_area', name:'Chart Area', color:0x333344, w:1.7, h:0.9, x:1.1, y:-0.82, z:0.02 },
-            
-            // ── Resume Button ──
-            { id:'resume', name:'RESUME', color:0x00aacc, w:1.4, h:0.4, x:0, y:-1.55, z:0.03, fontSize:14 },
-            
-            // ── Borders ──
-            { id:'bdr_top', name:'Border Top', color:0x00ffff, w:3.3, h:0.04, x:0, y:1.8, z:0.01 },
-            { id:'bdr_bot', name:'Border Bottom', color:0x00ffff, w:3.3, h:0.04, x:0, y:-1.8, z:0.01 },
-            { id:'bdr_left', name:'Border Left', color:0x00ffff, w:0.04, h:3.6, x:-1.65, y:0, z:0.01 },
-            { id:'bdr_right', name:'Border Right', color:0x00ffff, w:0.04, h:3.6, x:1.65, y:0, z:0.01 },
-        ];
-        
-        const els = {};
-        const initPos = {};
-        const initScale = {};
-        const labels = [];
-        
-        function makeLabel(text, hex, parent) {
-            if (!text) return;
-            const c = document.createElement('canvas');
-            const ctx = c.getContext('2d');
-            c.width = 512; c.height = 64;
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
-            const rr = 4;
-            ctx.beginPath();
-            ctx.roundRect(0, 0, c.width, c.height, rr);
-            ctx.fill();
-            const hexStr = '#' + hex.toString(16).padStart(6, '0');
-            ctx.fillStyle = hexStr;
-            const fs = parent.userData?.def?.fontSize || 10;
-            ctx.font = `bold ${fs * 3}px sans-serif`;
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(text, c.width/2, c.height/2);
-            const tex = new THREE.CanvasTexture(c);
-            const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
-            const sp = new THREE.Sprite(mat);
-            const aspect = c.width / c.height;
-            const labelH = 0.12;
-            sp.scale.set(labelH * aspect, labelH, 1);
-            sp.renderOrder = 9999; sp.frustumCulled = false;
-            sp.userData._parent = parent;
-            sp.userData._offY = (parent.userData?.def?.h || 0.1) / 2 + 0.08;
-            scene.add(sp);
-            return sp;
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+    const canvas = document.getElementById('canvas');
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(0x111118);
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 200);
+    camera.position.set(0, 0, 5);
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true }); renderer.setPixelRatio(window.devicePixelRatio);
+    const orbit = new OrbitControls(camera, canvas); orbit.enableDamping = true; orbit.dampingFactor = 0.1;
+    const tc = new TransformControls(camera, canvas); tc.setMode('translate'); scene.add(tc);
+    tc.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; });
+    const grid = new THREE.GridHelper(12, 24, 0x333344, 0x222233);
+    grid.rotation.x = Math.PI / 2; scene.add(grid);
+
+    // ── Element defs ──
+    // type: 'text' = makeSprite (editable, uniform scale), 'rect' = plain geometry (W/H)
+    const DEFS = [
+        // ── Panel ──
+        { id:'panel', name:'Panel BG', type:'rect', color:0x0a0015, w:3.2, h:3.6, x:0, y:0, z:0, opacity:0.92 },
+
+        // ── Left Blaster Section ──
+        { id:'lb_title', name:'LEFT BLASTER', type:'text', text:'LEFT BLASTER', color:0x00ffff, fontSize:36, scale:0.07, x:-1.25, y:1.3, z:0.02 },
+        { id:'lb_weapon', name:'PLASMA CARBINE', type:'text', text:'PLASMA CARBINE', color:0xffffff, fontSize:28, scale:0.06, x:-1.25, y:1.1, z:0.02 },
+        { id:'lb_sep1', name:'L-Sep1', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:1.0, z:0.02 },
+        { id:'lb_upg_header', name:'[UPGRADES]', type:'text', text:'[UPGRADES]', color:0x888888, fontSize:24, scale:0.05, x:-1.25, y:0.9, z:0.02 },
+        { id:'lb_upg1', name:'RAPID FIRE x3', type:'text', text:'🔥 RAPID FIRE x3', color:0xff8800, fontSize:24, scale:0.05, x:-1.48, y:0.76, z:0.02 },
+        { id:'lb_upg2', name:'DAMAGE UP x2', type:'text', text:'⚡ DAMAGE UP x2', color:0xffff00, fontSize:24, scale:0.05, x:-1.02, y:0.76, z:0.02 },
+        { id:'lb_upg3', name:'HOMING x1', type:'text', text:'🎯 HOMING x1', color:0x00ff00, fontSize:24, scale:0.05, x:-1.48, y:0.62, z:0.02 },
+        { id:'lb_sep2', name:'L-Sep2', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:0.52, z:0.02 },
+        { id:'lb_enemy_header', name:'[ENEMIES]', type:'text', text:'[ENEMIES]', color:0x888888, fontSize:24, scale:0.05, x:-1.25, y:0.42, z:0.02 },
+        { id:'lb_enemy1', name:'GRUNT x12', type:'text', text:'👾 GRUNT x12', color:0xff6666, fontSize:24, scale:0.05, x:-1.48, y:0.28, z:0.02 },
+        { id:'lb_enemy2', name:'TANK x5', type:'text', text:'🤖 TANK x5', color:0xff6666, fontSize:24, scale:0.05, x:-1.02, y:0.28, z:0.02 },
+        { id:'lb_sep3', name:'L-Sep3', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:0.18, z:0.02 },
+        { id:'lb_kills', name:'KILLS: 24', type:'text', text:'KILLS: 24', color:0x00ffff, fontSize:24, scale:0.045, x:-1.58, y:0.04, z:0.02 },
+        { id:'lb_shots', name:'SHOTS: 156', type:'text', text:'SHOTS: 156', color:0x00ffff, fontSize:24, scale:0.045, x:-1.25, y:0.04, z:0.02 },
+        { id:'lb_hits', name:'HITS: 89', type:'text', text:'HITS: 89', color:0x00ffff, fontSize:24, scale:0.045, x:-0.92, y:0.04, z:0.02 },
+        { id:'lb_acc', name:'ACC: 57%', type:'text', text:'ACC: 57%', color:0x00ffff, fontSize:24, scale:0.045, x:-1.25, y:-0.12, z:0.02 },
+
+        // ── Right Blaster Section ──
+        { id:'rb_title', name:'RIGHT BLASTER', type:'text', text:'RIGHT BLASTER', color:0x00ffff, fontSize:36, scale:0.07, x:1.25, y:1.3, z:0.02 },
+        { id:'rb_weapon', name:'BLASTER', type:'text', text:'BLASTER', color:0xffffff, fontSize:28, scale:0.06, x:1.25, y:1.1, z:0.02 },
+        { id:'rb_sep1', name:'R-Sep1', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:1.0, z:0.02 },
+        { id:'rb_upg_header', name:'[UPGRADES]', type:'text', text:'[UPGRADES]', color:0x888888, fontSize:24, scale:0.05, x:1.25, y:0.9, z:0.02 },
+        { id:'rb_upg1', name:'PIERCING x2', type:'text', text:'🗡️ PIERCING x2', color:0xff0000, fontSize:24, scale:0.05, x:1.02, y:0.76, z:0.02 },
+        { id:'rb_upg2', name:'SPREAD SHOT x1', type:'text', text:'💫 SPREAD SHOT x1', color:0x00ffff, fontSize:24, scale:0.05, x:1.48, y:0.76, z:0.02 },
+        { id:'rb_sep2', name:'R-Sep2', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:0.52, z:0.02 },
+        { id:'rb_enemy_header', name:'[ENEMIES]', type:'text', text:'[ENEMIES]', color:0x888888, fontSize:24, scale:0.05, x:1.25, y:0.42, z:0.02 },
+        { id:'rb_enemy1', name:'SPEEDER x8', type:'text', text:'💨 SPEEDER x8', color:0xff6666, fontSize:24, scale:0.05, x:1.02, y:0.28, z:0.02 },
+        { id:'rb_enemy2', name:'SHOOTER x3', type:'text', text:'🔫 SHOOTER x3', color:0xff6666, fontSize:24, scale:0.05, x:1.48, y:0.28, z:0.02 },
+        { id:'rb_sep3', name:'R-Sep3', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:0.18, z:0.02 },
+        { id:'rb_kills', name:'KILLS: 18', type:'text', text:'KILLS: 18', color:0x00ffff, fontSize:24, scale:0.045, x:0.92, y:0.04, z:0.02 },
+        { id:'rb_shots', name:'SHOTS: 94', type:'text', text:'SHOTS: 94', color:0x00ffff, fontSize:24, scale:0.045, x:1.25, y:0.04, z:0.02 },
+        { id:'rb_hits', name:'HITS: 61', type:'text', text:'HITS: 61', color:0x00ffff, fontSize:24, scale:0.045, x:1.58, y:0.04, z:0.02 },
+        { id:'rb_acc', name:'ACC: 65%', type:'text', text:'ACC: 65%', color:0x00ffff, fontSize:24, scale:0.045, x:1.25, y:-0.12, z:0.02 },
+
+        // ── Stats Section ──
+        { id:'stats_title', name:'RUN STATISTICS', type:'text', text:'RUN STATISTICS', color:0xff00ff, fontSize:36, scale:0.07, x:0, y:0.84, z:0.02 },
+        { id:'stat_kills', name:'KILLS: 42', type:'text', text:'KILLS: 42', color:0x00ffff, fontSize:28, scale:0.05, x:0, y:0.44, z:0.02 },
+        { id:'stat_shots', name:'SHOTS: 250', type:'text', text:'SHOTS: 250', color:0x00ffff, fontSize:28, scale:0.05, x:0, y:0.20, z:0.02 },
+        { id:'stat_hits', name:'HITS: 150', type:'text', text:'HITS: 150', color:0x00ffff, fontSize:28, scale:0.05, x:0, y:-0.04, z:0.02 },
+        { id:'stat_acc2', name:'ACCURACY: 60%', type:'text', text:'ACCURACY: 60%', color:0x00ffff, fontSize:28, scale:0.05, x:-1.08, y:-0.34, z:0.02 },
+        { id:'stat_streak', name:'STREAK: 7', type:'text', text:'STREAK: 7', color:0x00ffff, fontSize:28, scale:0.05, x:-1.08, y:-0.56, z:0.02 },
+        { id:'stat_boss', name:'BOSS: 1', type:'text', text:'BOSS: 1', color:0x00ffff, fontSize:28, scale:0.05, x:-1.08, y:-0.78, z:0.02 },
+        { id:'chart_area', name:'Chart Area', type:'rect', color:0x333344, w:1.7, h:0.9, x:1.1, y:-0.82, z:0.02, opacity:0.6 },
+
+        // ── Resume Button ──
+        { id:'resume', name:'RESUME', type:'text', text:'RESUME', color:0x00aacc, fontSize:40, scale:0.09, x:0, y:-1.55, z:0.03 },
+
+        // ── Borders ──
+        { id:'bdr_top', name:'Border Top', type:'rect', color:0x00ffff, w:3.3, h:0.04, x:0, y:1.8, z:0.01, opacity:0.8 },
+        { id:'bdr_bot', name:'Border Bottom', type:'rect', color:0x00ffff, w:3.3, h:0.04, x:0, y:-1.8, z:0.01, opacity:0.8 },
+        { id:'bdr_left', name:'Border Left', type:'rect', color:0x00ffff, w:0.04, h:3.6, x:-1.65, y:0, z:0.01, opacity:0.8 },
+        { id:'bdr_right', name:'Border Right', type:'rect', color:0x00ffff, w:0.04, h:3.6, x:1.65, y:0, z:0.01, opacity:0.8 },
+    ];
+
+    const els = {};
+    const INIT = {};
+
+    // ── Render text matching makeSprite ──
+    function renderTextMesh(text, fontSize, scale, colorHex, glow) {
+        const pad = glow ? 25 : 40;
+        const c = document.createElement('canvas');
+        const ctx = c.getContext('2d');
+        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+        const tw = Math.ceil(ctx.measureText(text).width) + pad * 2;
+        const th = Math.ceil(fontSize * 1.3) + pad * 2;
+        c.width = tw; c.height = th;
+        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.clearRect(0, 0, tw, th);
+        if (glow) { ctx.shadowColor = colorHex; ctx.shadowBlur = 8; }
+        ctx.fillStyle = colorHex;
+        ctx.fillText(text, tw / 2, th / 2);
+        ctx.shadowBlur = 0;
+        // Bounding box outline
+        ctx.strokeStyle = colorHex.length === 7 ? colorHex + '66' : 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = 1; ctx.strokeRect(3, 3, tw - 6, th - 6);
+        // Center crosshair
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(tw/2-5,th/2); ctx.lineTo(tw/2+5,th/2); ctx.moveTo(tw/2,th/2-5); ctx.lineTo(tw/2,th/2+5); ctx.stroke();
+        const tex = new THREE.CanvasTexture(c);
+        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false, depthWrite: false, opacity: 0.9 });
+        const w = (tw / th) * scale; const h = scale;
+        return { geo: new THREE.PlaneGeometry(w, h), mat, w, h };
+    }
+
+    // ── Build elements ──
+    function buildElement(def) {
+        let geo, mat;
+        if (def.type === 'text') {
+            const r = renderTextMesh(def.text, def.fontSize, def.scale, '#' + def.color.toString(16).padStart(6, '0'), def.glow);
+            geo = r.geo; mat = r.mat; def._w = r.w; def._h = r.h;
+        } else {
+            geo = new THREE.PlaneGeometry(def.w, def.h);
+            mat = new THREE.MeshBasicMaterial({ color: def.color, side: THREE.DoubleSide, transparent: true, opacity: def.opacity || 0.8 });
+            def._w = def.w; def._h = def.h;
         }
-        
-        defs.forEach(d => {
-            const geo = new THREE.PlaneGeometry(d.w, d.h);
-            const mat = new THREE.MeshBasicMaterial({
-                color: d.color, side: THREE.DoubleSide,
-                transparent: true,
-                opacity: d.id === 'panel' ? 0.92 : (d.id.startsWith('bdr_') ? 0.8 : 0.78)
-            });
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.set(d.x, d.y, d.z);
-            mesh.userData = { id: d.id, name: d.name, def: d, origColor: d.color };
-            mesh.frustumCulled = false;
-            scene.add(mesh);
-            els[d.id] = mesh;
-            initPos[d.id] = { x: d.x, y: d.y, z: d.z };
-            initScale[d.id] = { w: d.w, h: d.h };
-            const label = makeLabel(d.name, d.id === 'panel' ? 0x444466 : d.color, mesh);
-            if (label) labels.push(label);
-        });
-        
-        let sel = null;
-        const HIGHLIGHT = 0x00ffff;
-        
-        canvas.addEventListener('pointerdown', e => {
-            if (e.button !== 0) return;
-            const r = canvas.getBoundingClientRect();
-            const m = new THREE.Vector2(
-                ((e.clientX - r.left) / r.width) * 2 - 1,
-                -((e.clientY - r.top) / r.height) * 2 + 1
-            );
-            const rc = new THREE.Raycaster();
-            rc.setFromCamera(m, camera);
-            const hits = rc.intersectObjects(Object.values(els), false);
-            if (hits.length) select(hits[0].object);
-        });
-        
-        function select(mesh) {
-            if (sel) sel.material.color.setHex(sel.userData.origColor);
-            pushUndo();
-            sel = mesh;
-            mesh.material.color.setHex(HIGHLIGHT);
-            tc.attach(mesh);
-            updateUI();
-            updateList();
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(def.x, def.y, def.z);
+        mesh.frustumCulled = false; mesh.renderOrder = 999;
+        mesh.userData = { id: def.id, def, align: 'center', origColor: def.color };
+        scene.add(mesh);
+        els[def.id] = mesh;
+        INIT[def.id] = { x: def.x, y: def.y, z: def.z, text: def.text, scale: def.scale, w: def.w, h: def.h, align: 'center' };
+    }
+
+    DEFS.forEach(buildElement);
+
+    function rebuildMesh(id) {
+        const def = DEFS.find(d => d.id === id);
+        const mesh = els[id];
+        const pos = mesh.position.clone();
+        mesh.geometry.dispose();
+        if (mesh.material.map) mesh.material.map.dispose();
+        if (def.type === 'text') {
+            const r = renderTextMesh(def.text, def.fontSize, def.scale, '#' + def.color.toString(16).padStart(6, '0'), def.glow);
+            mesh.geometry = r.geo; mesh.material = r.mat; def._w = r.w; def._h = r.h;
         }
-        
-        function updateUI() {
-            if (!sel) {
-                document.getElementById('selected-name').textContent = 'None';
-                ['x','y','z','sw','sh'].forEach(k => document.getElementById('input-'+k).value = '');
-                return;
-            }
-            document.getElementById('selected-name').textContent = sel.userData.name;
-            document.getElementById('input-x').value = sel.position.x.toFixed(3);
-            document.getElementById('input-y').value = sel.position.y.toFixed(3);
-            document.getElementById('input-z').value = sel.position.z.toFixed(3);
-            // Scale: read from geometry
-            const geo = sel.geometry;
-            const params = geo.parameters;
-            document.getElementById('input-sw').value = params.width.toFixed(3);
-            document.getElementById('input-sh').value = params.height.toFixed(3);
+        mesh.position.copy(pos);
+    }
+
+    // ── Selection ──
+    let sel = null;
+    canvas.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        const r = canvas.getBoundingClientRect();
+        const m = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+        const rc = new THREE.Raycaster(); rc.setFromCamera(m, camera);
+        const hits = rc.intersectObjects(Object.values(els), false);
+        if (hits.length) doSelect(hits[0].object);
+    });
+
+    function doSelect(mesh) {
+        if (sel && sel.material.color) sel.material.color.setHex(sel.userData.origColor);
+        pushUndo();
+        sel = mesh;
+        if (sel.material.color) sel.material.color.setHex(0x00ffff);
+        tc.attach(mesh);
+        updateUI(); updateList();
+    }
+
+    function updateUI() {
+        if (!sel) {
+            document.getElementById('sel-name').textContent = 'Click an element';
+            ['inp-x','inp-y','inp-z','inp-scale','inp-w','inp-h','inp-text'].forEach(k => document.getElementById(k).value = '');
+            document.getElementById('inp-text').disabled = true;
+            document.querySelectorAll('.abtn button').forEach(b => b.classList.remove('active'));
+            document.getElementById('row-scale').style.display = '';
+            document.getElementById('row-w').style.display = 'none';
+            document.getElementById('row-h').style.display = 'none';
+            return;
         }
-        
-        window.updateFromInput = function() {
-            if (!sel) return;
-            pushUndo();
-            sel.position.x = parseFloat(document.getElementById('input-x').value) || 0;
-            sel.position.y = parseFloat(document.getElementById('input-y').value) || 0;
-            sel.position.z = parseFloat(document.getElementById('input-z').value) || 0;
-            const newW = parseFloat(document.getElementById('input-sw').value) || 0.1;
-            const newH = parseFloat(document.getElementById('input-sh').value) || 0.1;
-            // Replace geometry
-            sel.geometry.dispose();
-            sel.geometry = new THREE.PlaneGeometry(newW, newH);
-            updateList();
-        };
-        
-        function updateList() {
-            const c = document.getElementById('elements-container');
-            c.innerHTML = '';
-            defs.forEach(d => {
-                const m = els[d.id];
-                const p = m.position;
-                const div = document.createElement('div');
-                div.className = 'element-item' + (sel === m ? ' selected' : '');
-                div.innerHTML = `<span class="name"><span class="color-swatch" style="background:#${d.color.toString(16).padStart(6,'0')}"></span>${d.name}</span><span class="pos">(${p.x.toFixed(1)},${p.y.toFixed(1)})</span>`;
-                div.onclick = () => select(m);
-                c.appendChild(div);
-            });
+        const def = sel.userData.def;
+        document.getElementById('sel-name').textContent = def.name;
+        document.getElementById('inp-x').value = sel.position.x.toFixed(3);
+        document.getElementById('inp-y').value = sel.position.y.toFixed(3);
+        document.getElementById('inp-z').value = sel.position.z.toFixed(3);
+        const align = sel.userData.align || 'center';
+        document.querySelectorAll('.abtn button').forEach(b => b.classList.remove('active'));
+        document.getElementById('al-' + align).classList.add('active');
+
+        if (def.type === 'text') {
+            document.getElementById('inp-text').value = def.text;
+            document.getElementById('inp-text').disabled = false;
+            document.getElementById('inp-scale').value = def.scale.toFixed(4);
+            document.getElementById('row-scale').style.display = '';
+            document.getElementById('row-w').style.display = 'none';
+            document.getElementById('row-h').style.display = 'none';
+        } else {
+            document.getElementById('inp-text').value = '(rectangle)';
+            document.getElementById('inp-text').disabled = true;
+            document.getElementById('inp-w').value = def.w.toFixed(3);
+            document.getElementById('inp-h').value = def.h.toFixed(3);
+            document.getElementById('row-scale').style.display = 'none';
+            document.getElementById('row-w').style.display = '';
+            document.getElementById('row-h').style.display = '';
         }
-        
-        // ── Undo ──
-        const undos = [];
-        const MAX_UNDO = 20;
-        function snap() {
-            const s = {};
-            Object.keys(els).forEach(id => {
-                const m = els[id];
-                s[id] = { x:m.position.x, y:m.position.y, z:m.position.z, w:m.geometry.parameters.width, h:m.geometry.parameters.height };
-            });
-            return s;
-        }
-        function pushUndo() { undos.push(snap()); if (undos.length > MAX_UNDO) undos.shift(); }
-        window.undo = function() {
-            if (!undos.length) return;
-            const s = undos.pop();
-            Object.keys(s).forEach(id => {
-                if (!els[id]) return;
-                els[id].position.set(s[id].x, s[id].y, s[id].z);
-                els[id].geometry.dispose();
-                els[id].geometry = new THREE.PlaneGeometry(s[id].w, s[id].h);
-            });
-            updateUI(); updateList();
-        };
-        window.resetAll = function() {
-            pushUndo();
-            Object.keys(els).forEach(id => {
-                els[id].position.set(initPos[id].x, initPos[id].y, initPos[id].z);
-                els[id].geometry.dispose();
-                els[id].geometry = new THREE.PlaneGeometry(initScale[id].w, initScale[id].h);
-            });
-            updateUI(); updateList();
-        };
-        document.addEventListener('keydown', e => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); window.undo(); }
-        });
-        tc.addEventListener('mouseDown', () => pushUndo());
-        tc.addEventListener('objectChange', () => { updateUI(); updateList(); });
-        
-        // ── Export / Import ──
-        window.exportJSON = function() {
-            const data = { editor:'pause-menu', elements:{}, exportedAt: new Date().toISOString() };
-            Object.keys(els).forEach(id => {
-                const m = els[id];
-                data.elements[id] = {
-                    x:+m.position.x.toFixed(3), y:+m.position.y.toFixed(3), z:+m.position.z.toFixed(3),
-                    w:+m.geometry.parameters.width.toFixed(3), h:+m.geometry.parameters.height.toFixed(3)
-                };
-            });
-            const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob); a.download = 'pause-menu-layout.json'; a.click();
-        };
-        window.importJSON = function(ev) {
-            const f = ev.target.files[0]; if(!f) return;
-            const r = new FileReader();
-            r.onload = e => {
-                try {
-                    const d = JSON.parse(e.target.result);
-                    if(d.elements) {
-                        pushUndo();
-                        Object.keys(d.elements).forEach(id => {
-                            if(!els[id]) return;
-                            const p = d.elements[id];
-                            els[id].position.set(p.x, p.y, p.z);
-                            if(p.w && p.h) {
-                                els[id].geometry.dispose();
-                                els[id].geometry = new THREE.PlaneGeometry(p.w, p.h);
-                            }
-                        });
-                        updateUI(); updateList();
-                    }
-                } catch(err) { alert('Invalid JSON'); }
-            };
-            r.readAsText(f); ev.target.value='';
-        };
-        
-        // ── Resize / Animate ──
-        function resize() {
-            const c = document.getElementById('viewport');
-            camera.aspect = c.clientWidth / c.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(c.clientWidth, c.clientHeight);
-        }
-        window.addEventListener('resize', resize); resize();
-        
-        (function animate() {
-            requestAnimationFrame(animate);
-            orbit.update();
-            labels.forEach(l => {
-                const p = l.userData._parent;
-                if (p) { p.getWorldPosition(l.position); l.position.y += l.userData._offY; }
-            });
-            renderer.render(scene, camera);
-        })();
+    }
+
+    window.onTextInput = function() {
+        if (!sel) return;
+        const def = sel.userData.def;
+        if (def.type !== 'text') return;
+        pushUndo();
+        def.text = document.getElementById('inp-text').value || ' ';
+        rebuildMesh(def.id);
         updateList();
+    };
+
+    window.onNumInput = function() {
+        if (!sel) return;
+        pushUndo();
+        const def = sel.userData.def;
+        sel.position.x = parseFloat(document.getElementById('inp-x').value) || 0;
+        sel.position.y = parseFloat(document.getElementById('inp-y').value) || 0;
+        sel.position.z = parseFloat(document.getElementById('inp-z').value) || 0;
+        if (def.type === 'text') {
+            def.scale = parseFloat(document.getElementById('inp-scale').value) || 0.02;
+            rebuildMesh(def.id);
+        } else {
+            def.w = parseFloat(document.getElementById('inp-w').value) || 0.1;
+            def.h = parseFloat(document.getElementById('inp-h').value) || 0.1;
+            sel.geometry.dispose();
+            sel.geometry = new THREE.PlaneGeometry(def.w, def.h);
+        }
+        updateList();
+    };
+
+    window.setAlign = function(a) {
+        if (!sel) return;
+        pushUndo();
+        sel.userData.align = a;
+        updateUI(); updateList();
+    };
+
+    function updateList() {
+        const c = document.getElementById('ec'); c.innerHTML = '';
+        DEFS.forEach(d => {
+            const m = els[d.id]; const p = m.position;
+            const div = document.createElement('div');
+            div.className = 'ei' + (sel === m ? ' sel' : '');
+            const ai = { left:'◀', center:'◆', right:'▶' }[m.userData.align || 'center'];
+            div.innerHTML = `<span class="n"><span class="cs" style="background:#${d.color.toString(16).padStart(6,'0')}"></span>${ai} ${d.name}</span><span class="p">${p.x.toFixed(2)},${p.y.toFixed(2)}</span>`;
+            div.onclick = () => doSelect(m);
+            c.appendChild(div);
+        });
+    }
+
+    // ── Undo ──
+    const undos = []; const MAX_UNDO = 25;
+    function snap() {
+        const s = {};
+        Object.keys(els).forEach(id => {
+            const m = els[id]; const d = m.userData.def;
+            s[id] = { x: m.position.x, y: m.position.y, z: m.position.z, align: m.userData.align, text: d.text, scale: d.scale, w: d.w, h: d.h };
+        });
+        return s;
+    }
+    function pushUndo() { undos.push(snap()); if (undos.length > MAX_UNDO) undos.shift(); }
+    window.undo = function() {
+        if (!undos.length) return;
+        const s = undos.pop();
+        Object.keys(s).forEach(id => {
+            if (!els[id]) return;
+            const m = els[id]; const d = m.userData.def; const v = s[id];
+            m.position.set(v.x, v.y, v.z);
+            m.userData.align = v.align;
+            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; rebuildMesh(id); }
+            else { d.w = v.w; d.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
+        });
+        updateUI(); updateList();
+    };
+    window.resetAll = function() {
+        pushUndo();
+        Object.keys(els).forEach(id => {
+            const m = els[id]; const d = m.userData.def; const v = INIT[id];
+            m.position.set(v.x, v.y, v.z);
+            m.userData.align = v.align;
+            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; rebuildMesh(id); }
+            else { d.w = v.w; d.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
+        });
+        updateUI(); updateList();
+    };
+    document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); window.undo(); } });
+    tc.addEventListener('mouseDown', () => pushUndo());
+    tc.addEventListener('objectChange', () => { updateUI(); updateList(); });
+
+    // ── Export / Import ──
+    window.exportJSON = function() {
+        const data = { editor: 'pause-menu', elements: {}, exportedAt: new Date().toISOString() };
+        Object.keys(els).forEach(id => {
+            const m = els[id]; const d = m.userData.def;
+            data.elements[id] = {
+                x: +m.position.x.toFixed(3), y: +m.position.y.toFixed(3), z: +m.position.z.toFixed(3),
+                align: m.userData.align || 'center', type: d.type,
+            };
+            if (d.type === 'text') { data.elements[id].scale = +(d.scale.toFixed(4)); data.elements[id].text = d.text; }
+            if (d.type === 'rect') { data.elements[id].w = +(d.w.toFixed(3)); data.elements[id].h = +(d.h.toFixed(3)); }
+        });
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pause-menu-layout.json'; a.click();
+    };
+    window.importJSON = function(ev) {
+        const f = ev.target.files[0]; if (!f) return;
+        const r = new FileReader();
+        r.onload = e => {
+            try {
+                const d = JSON.parse(e.target.result);
+                if (d.elements) {
+                    pushUndo();
+                    Object.keys(d.elements).forEach(id => {
+                        if (!els[id]) return;
+                        const m = els[id]; const dd = m.userData.def; const v = d.elements[id];
+                        m.position.set(v.x, v.y, v.z);
+                        if (v.align) m.userData.align = v.align;
+                        if (dd.type === 'text' && v.text !== undefined) { dd.text = v.text; dd.scale = v.scale; rebuildMesh(id); }
+                        else if (dd.type === 'rect' && v.w) { dd.w = v.w; dd.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
+                    });
+                    updateUI(); updateList();
+                }
+            } catch (err) { alert('Invalid JSON'); }
+        };
+        r.readAsText(f); ev.target.value = '';
+    };
+
+    // ── Resize / Animate ──
+    function resize() { const c = document.getElementById('viewport'); camera.aspect = c.clientWidth / c.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(c.clientWidth, c.clientHeight); }
+    window.addEventListener('resize', resize); resize();
+    (function animate() { requestAnimationFrame(animate); orbit.update(); renderer.render(scene, camera); })();
+    updateList();
     </script>
 </body>
 </html>
