@@ -3,22 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Floor HUD Layout Editor v4</title>
+    <title>Floor HUD Layout Editor v5</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a1a; color: #e0e0e0; overflow: hidden; display: flex; height: 100vh; }
-        #sidebar { width: 310px; background: #252525; padding: 12px; display: flex; flex-direction: column; border-right: 1px solid #333; overflow-y: auto; }
+        #sidebar { width: 320px; background: #252525; padding: 12px; display: flex; flex-direction: column; border-right: 1px solid #333; overflow-y: auto; }
         #viewport { flex: 1; position: relative; }
         #toolbar { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
         button { background: #3a3a3a; border: 1px solid #555; color: #e0e0e0; padding: 6px 12px; cursor: pointer; border-radius: 4px; font-size: 12px; }
         button:hover { background: #4a4a4a; border-color: #777; }
         button.primary { background: #0066cc; border-color: #0080ff; }
         button.primary:hover { background: #0077dd; }
+        button.danger { background: #882222; border-color: #aa3333; }
+        button.danger:hover { background: #993333; }
         #sel-info { background: #2a2a2a; padding: 10px; border-radius: 4px; margin-bottom: 10px; }
         #sel-info h3 { font-size: 12px; color: #888; margin-bottom: 6px; }
         #sel-name { font-size: 14px; font-weight: 600; color: #4af; margin-bottom: 8px; }
         .pr { display: flex; gap: 5px; margin-bottom: 5px; align-items: center; }
-        .pr label { font-size: 11px; color: #888; width: 42px; text-align: right; flex-shrink: 0; }
+        .pr label { font-size: 11px; color: #888; width: 48px; text-align: right; flex-shrink: 0; }
         .pr input, .pr select { flex: 1; background: #333; border: 1px solid #444; color: #fff; padding: 4px 6px; border-radius: 3px; font-size: 12px; min-width: 0; }
         .pr input:focus, .pr select:focus { outline: none; border-color: #4af; }
         .sec { font-size: 10px; color: #555; margin: 6px 0 3px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; border-top: 1px solid #333; padding-top: 6px; }
@@ -30,13 +32,26 @@
         .ei { padding: 3px 7px; cursor: pointer; border-radius: 3px; font-size: 10px; margin-bottom: 1px; display: flex; justify-content: space-between; align-items: center; }
         .ei:hover { background: #333; }
         .ei.sel { background: #0066cc; }
-        .ei .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; }
+        .ei .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
         .ei .p { color: #888; font-size: 9px; flex-shrink: 0; }
         .cs { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 3px; vertical-align: middle; flex-shrink: 0; }
+        .eye-btn { background: none; border: none; color: #888; cursor: pointer; font-size: 13px; padding: 0 3px; line-height: 1; flex-shrink: 0; }
+        .eye-btn:hover { color: #fff; }
+        .eye-btn.hidden { color: #444; }
+        .group-hdr { padding: 3px 7px; font-size: 10px; font-weight: 700; color: #aaa; cursor: pointer; border-radius: 3px; margin-bottom: 1px; display: flex; align-items: center; gap: 4px; }
+        .group-hdr:hover { background: #333; }
+        .group-hdr .arrow { transition: transform 0.15s; font-size: 8px; }
+        .group-hdr .arrow.collapsed { transform: rotate(-90deg); }
+        .group-hdr .gname { flex: 1; cursor: text; outline: none; border: 1px solid transparent; padding: 0 2px; border-radius: 2px; }
+        .group-hdr .gname:hover { border-color: #555; }
+        .group-hdr .gname:focus { border-color: #4af; background: #333; }
+        .group-ei { padding-left: 20px; }
         #canvas { width: 100%; height: 100%; }
         #inst { position: absolute; bottom: 12px; left: 12px; background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 4px; font-size: 10px; color: #aaa; }
         #inst kbd { background: #444; padding: 1px 4px; border-radius: 2px; font-family: monospace; }
         .note { background: #332200; border: 1px solid #553300; padding: 6px 8px; border-radius: 4px; font-size: 10px; color: #cc9; margin-bottom: 8px; line-height: 1.4; }
+        #group-actions { display: none; margin-bottom: 6px; gap: 4px; }
+        #group-actions button { padding: 4px 10px; font-size: 11px; }
     </style>
 </head>
 <body>
@@ -48,11 +63,12 @@
             <button onclick="undo()">Undo</button>
             <button onclick="resetAll()">Reset</button>
         </div>
-        <div class="note">Elements render at exact in-game size. Text anchor is center by default. Use Align to shift where position points to.</div>
+        <div class="note">Elements render at exact in-game size. <kbd>Shift+Click</kbd> multi-select. Anchor controls scale origin.</div>
         <div class="pr" style="margin-bottom:8px"><input type="checkbox" id="showBounds" checked onchange="toggleBounds()" style="width:auto"><label style="width:auto;color:#aaa;font-size:11px;margin-left:4px">Show bounding boxes</label></div>
         <div id="sel-info">
             <h3>SELECTED</h3>
             <div id="sel-name">Click an element</div>
+            <div id="multi-sel-info" style="display:none;font-size:11px;color:#aaa;margin-bottom:6px;"></div>
             <div class="sec">Text Content</div>
             <div class="pr"><label>Text</label><input type="text" id="inp-text" oninput="onTextInput()"></div>
             <div class="sec">Position</div>
@@ -69,12 +85,30 @@
                 <button id="al-center" onclick="setAlign('center')">Center</button>
                 <button id="al-right" onclick="setAlign('right')">Right ▶</button>
             </div>
+            <div class="sec">Scale Anchor</div>
+            <div class="pr"><label>Anchor</label>
+                <select id="inp-anchor" onchange="onAnchorInput()">
+                    <option value="center">Center</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                    <option value="top">Top</option>
+                    <option value="bottom">Bottom</option>
+                    <option value="top-left">Top-Left</option>
+                    <option value="top-right">Top-Right</option>
+                    <option value="bottom-left">Bottom-Left</option>
+                    <option value="bottom-right">Bottom-Right</option>
+                </select>
+            </div>
+            <div id="group-actions">
+                <button class="primary" onclick="groupSelected()">Group</button>
+                <button class="danger" onclick="ungroupSelected()">Ungroup</button>
+            </div>
         </div>
         <div id="elist"><h3>ELEMENTS</h3><div id="ec"></div></div>
     </div>
     <div id="viewport">
         <canvas id="canvas"></canvas>
-        <div id="inst"><kbd>Click</kbd> Select | <kbd>Gizmo</kbd> Move | <kbd>Right-drag</kbd> Orbit | <kbd>Scroll</kbd> Zoom | <kbd>Ctrl+Z</kbd> Undo</div>
+        <div id="inst"><kbd>Click</kbd> Select | <kbd>Shift+Click</kbd> Multi | <kbd>Gizmo</kbd> Move | <kbd>Right-drag</kbd> Orbit | <kbd>Scroll</kbd> Zoom | <kbd>Ctrl+Z</kbd> Undo</div>
     </div>
 
     <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }</script>
@@ -98,8 +132,6 @@
     scene.add(hudGroup);
 
     // ── Element defs matching EXACT in-game parameters ──
-    // type: 'text' = makeSprite (fontSize + scale), 'rect' = PlaneGeometry(w,h)
-    // 'hearts' = special: PlaneGeometry(3.25, 1.0) with pixel heart texture (matching getHudGeo binning)
     const DEFS = [
         { id:'hearts', name:'Hearts (Lives)', type:'hearts', color:0xcc3333, scale:1.0, x:-1.52, y:0.46, z:0.01 },
         { id:'score_title', name:'SCORE title', type:'text', text:'SCORE', color:0xcccc33, fontSize:72, scale:0.45, glow:true, x:-0.18, y:0.45, z:0.01 },
@@ -115,8 +147,20 @@
     const els = {};
     const INIT = {};
 
+    // ── Visibility & anchor state (per element) ──
+    const elVisible = {};
+    const elAnchor = {};
+    DEFS.forEach(d => { elVisible[d.id] = true; elAnchor[d.id] = 'center'; });
+
+    // ── Groups: { groupName: [elementId, ...] } ──
+    let groups = {};
+    let groupCounter = 0;
+    const collapsedGroups = {};
+
+    // ── Multi-select ──
+    let selectedIds = []; // array of element IDs
+
     // ── Render text EXACTLY like makeSprite ──
-    // Same padding logic, same textAlign center, same aspect ratio calculation
     function renderTextMesh(text, fontSize, scale, colorHex, glow) {
         const showBounds = document.getElementById('showBounds')?.checked ?? true;
         const pad = glow ? 25 : 40;
@@ -135,11 +179,9 @@
         ctx.fillText(text, tw / 2, th / 2);
         ctx.shadowBlur = 0;
 
-        // Bounding box
         if (showBounds) {
             ctx.strokeStyle = colorHex.length === 7 ? colorHex + '55' : 'rgba(255,255,255,0.2)';
             ctx.lineWidth = 1; ctx.strokeRect(2, 2, tw - 4, th - 4);
-            // Center crosshair
             ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
             ctx.beginPath(); ctx.moveTo(tw/2-6,th/2); ctx.lineTo(tw/2+6,th/2); ctx.moveTo(tw/2,th/2-6); ctx.lineTo(tw/2,th/2+6); ctx.stroke();
         }
@@ -151,18 +193,15 @@
     }
 
     // ── Render pixel hearts matching EXACT in-game makeHeartsTexture ──
-    // Game: pixSize=8, heartW=7*pixSize=56, heartH=6*pixSize=48, gap=6
-    // 3 hearts: canvasWidth = 3*(56+6)+6 = 192, canvasHeight = 48+10 = 58
-    // aspect = 192/58 ≈ 3.31 → binned to 3.25 → geometry PlaneGeometry(3.25, 1.0)
     const HEART_PX = [[0,1,1,0,1,1,0],[1,1,1,1,1,1,1],[1,1,1,1,1,1,1],[0,1,1,1,1,1,0],[0,0,1,1,1,0,0],[0,0,0,1,0,0,0]];
     function renderHeartsTexture() {
         const heartCount = 3;
         const pixSize = 8;
-        const heartW = 7 * pixSize; // 56
-        const heartH = 6 * pixSize; // 48
+        const heartW = 7 * pixSize;
+        const heartH = 6 * pixSize;
         const gap = 6;
-        const canvasWidth = heartCount * (heartW + gap) + gap; // 192
-        const canvasHeight = heartH + 10; // 58
+        const canvasWidth = heartCount * (heartW + gap) + gap;
+        const canvasHeight = heartH + 10;
         const c = document.createElement('canvas');
         c.width = canvasWidth; c.height = canvasHeight;
         const ctx = c.getContext('2d');
@@ -175,7 +214,6 @@
                 ctx.fillRect(ox + px * pixSize, 5 + py * pixSize, pixSize, pixSize);
             }));
         }
-        // Bounding box
         ctx.strokeStyle = '#ff333355'; ctx.lineWidth = 1; ctx.strokeRect(0, 0, canvasWidth, canvasHeight);
         return new THREE.CanvasTexture(c);
     }
@@ -201,7 +239,7 @@
         mesh.userData = { id: def.id, def, align: 'center', origColor: def.color };
         hudGroup.add(mesh);
         els[def.id] = mesh;
-        INIT[def.id] = { x: def.x, y: def.y, z: def.z, text: def.text, scale: def.scale, w: def.w, h: def.h, align: 'center', type: def.type };
+        INIT[def.id] = { x: def.x, y: def.y, z: def.z, text: def.text, scale: def.scale, w: def.w, h: def.h, align: 'center', type: def.type, visible: true, anchor: 'center' };
     }
 
     DEFS.forEach(buildElement);
@@ -223,52 +261,144 @@
         mesh.position.copy(pos);
     }
 
-    // ── Selection ──
-    let sel = null;
+    // ── Helpers ──
+    function primarySelectedId() { return selectedIds.length === 1 ? selectedIds[0] : (selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null); }
+    function primaryMesh() { const id = primarySelectedId(); return id ? els[id] : null; }
+
+    function getGroupForId(id) {
+        for (const [name, members] of Object.entries(groups)) {
+            if (members.includes(id)) return name;
+        }
+        return null;
+    }
+
+    function getGroupMembers(id) {
+        const gName = getGroupForId(id);
+        if (!gName) return [id];
+        return groups[gName];
+    }
+
+    // ── Selection (multi-select with shift/ctrl) ──
+    let isShiftClick = false;
     canvas.addEventListener('pointerdown', e => {
         if (e.button !== 0) return;
         const r = canvas.getBoundingClientRect();
         const m = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
         const rc = new THREE.Raycaster(); rc.setFromCamera(m, camera);
-        const hits = rc.intersectObjects(Object.values(els), false);
-        if (hits.length) { doSelect(hits[0].object); } else { deselect(); }
+        // Only raycast visible elements
+        const visibleMeshes = Object.values(els).filter(mesh => elVisible[mesh.userData.id]);
+        const hits = rc.intersectObjects(visibleMeshes, false);
+        isShiftClick = e.shiftKey || e.ctrlKey || e.metaKey;
+        if (hits.length) {
+            const hitId = hits[0].object.userData.id;
+            if (isShiftClick) {
+                toggleSelect(hitId);
+            } else {
+                if (selectedIds.includes(hitId)) {
+                    // Already selected, keep selection (allow drag)
+                } else {
+                    doSelect(hitId);
+                }
+            }
+        } else if (!isShiftClick) {
+            deselect();
+        }
     });
 
-    function doSelect(mesh) {
-        if (sel && sel.material.color) sel.material.color.setHex(sel.userData.origColor);
+    function doSelect(id) {
+        clearHighlights();
         pushUndo();
-        sel = mesh;
-        if (sel.material.color) sel.material.color.setHex(0x00ffff);
-        tc.attach(mesh);
+        selectedIds = [id];
+        applyHighlights();
+        attachTransform();
+        updateUI(); updateList();
+    }
+
+    function toggleSelect(id) {
+        clearHighlights();
+        if (selectedIds.includes(id)) {
+            selectedIds = selectedIds.filter(s => s !== id);
+        } else {
+            selectedIds.push(id);
+        }
+        applyHighlights();
+        attachTransform();
         updateUI(); updateList();
     }
 
     function deselect() {
-        if (sel && sel.material.color) sel.material.color.setHex(sel.userData.origColor);
-        sel = null;
+        clearHighlights();
+        selectedIds = [];
         tc.detach();
         updateUI(); updateList();
     }
 
+    function clearHighlights() {
+        selectedIds.forEach(id => {
+            const mesh = els[id];
+            if (mesh && mesh.material.color) mesh.material.color.setHex(mesh.userData.origColor);
+        });
+    }
+
+    function applyHighlights() {
+        selectedIds.forEach(id => {
+            const mesh = els[id];
+            if (mesh && mesh.material.color) mesh.material.color.setHex(0x00ffff);
+        });
+    }
+
+    function attachTransform() {
+        const pm = primaryMesh();
+        if (pm) { tc.attach(pm); } else { tc.detach(); }
+    }
+
     function updateUI() {
-        if (!sel) {
+        const pm = primaryMesh();
+        const multi = document.getElementById('multi-sel-info');
+        const ga = document.getElementById('group-actions');
+
+        if (!pm) {
             document.getElementById('sel-name').textContent = 'Click an element';
+            multi.style.display = 'none';
+            ga.style.display = 'none';
             ['inp-x','inp-y','inp-z','inp-scale','inp-w','inp-h','inp-text'].forEach(k => document.getElementById(k).value = '');
             document.getElementById('inp-text').disabled = true;
+            document.getElementById('inp-anchor').value = 'center';
             document.querySelectorAll('.abtn button').forEach(b => b.classList.remove('active'));
             document.getElementById('row-scale').style.display = '';
             document.getElementById('row-w').style.display = 'none';
             document.getElementById('row-h').style.display = 'none';
             return;
         }
-        const def = sel.userData.def;
+
+        const def = pm.userData.def;
+        const pid = pm.userData.id;
+
+        if (selectedIds.length > 1) {
+            multi.style.display = '';
+            const gName = getGroupForId(pid);
+            if (gName) {
+                multi.textContent = `${selectedIds.length} selected · Group: ${gName}`;
+                ga.style.display = 'flex';
+            } else {
+                multi.textContent = `${selectedIds.length} selected (unrelated)`;
+                ga.style.display = 'flex';
+            }
+        } else {
+            multi.style.display = 'none';
+            ga.style.display = 'none';
+        }
+
         document.getElementById('sel-name').textContent = def.name;
-        document.getElementById('inp-x').value = sel.position.x.toFixed(3);
-        document.getElementById('inp-y').value = sel.position.y.toFixed(3);
-        document.getElementById('inp-z').value = sel.position.z.toFixed(3);
-        const align = sel.userData.align || 'center';
+        document.getElementById('inp-x').value = pm.position.x.toFixed(3);
+        document.getElementById('inp-y').value = pm.position.y.toFixed(3);
+        document.getElementById('inp-z').value = pm.position.z.toFixed(3);
+
+        const align = pm.userData.align || 'center';
         document.querySelectorAll('.abtn button').forEach(b => b.classList.remove('active'));
         document.getElementById('al-' + align).classList.add('active');
+
+        document.getElementById('inp-anchor').value = elAnchor[pid] || 'center';
 
         if (def.type === 'text') {
             document.getElementById('inp-text').value = def.text;
@@ -295,61 +425,305 @@
         }
     }
 
+    // ── Visibility toggle ──
+    window.toggleVisible = function(id, ev) {
+        if (ev) ev.stopPropagation();
+        pushUndo();
+        elVisible[id] = !elVisible[id];
+        const mesh = els[id];
+        mesh.visible = elVisible[id];
+        // Remove from selection if hidden
+        if (!elVisible[id] && selectedIds.includes(id)) {
+            selectedIds = selectedIds.filter(s => s !== id);
+            clearHighlights();
+            applyHighlights();
+            attachTransform();
+            updateUI();
+        }
+        updateList();
+    };
+
+    // ── Anchor-based scaling ──
+    function getAnchorOffset(anchor, w, h) {
+        // Returns {x, y} offset from center to the anchor point
+        const hw = w / 2, hh = h / 2;
+        switch (anchor) {
+            case 'left': return { x: -hw, y: 0 };
+            case 'right': return { x: hw, y: 0 };
+            case 'top': return { x: 0, y: hh };
+            case 'bottom': return { x: 0, y: -hh };
+            case 'top-left': return { x: -hw, y: hh };
+            case 'top-right': return { x: hw, y: hh };
+            case 'bottom-left': return { x: -hw, y: -hh };
+            case 'bottom-right': return { x: hw, y: -hh };
+            default: return { x: 0, y: 0 };
+        }
+    }
+
+    window.onAnchorInput = function() {
+        if (!primarySelectedId()) return;
+        const id = primarySelectedId();
+        elAnchor[id] = document.getElementById('inp-anchor').value;
+    };
+
+    function applyScaleWithAnchor(id, newScale) {
+        const mesh = els[id];
+        const def = mesh.userData.def;
+        const anchor = elAnchor[id] || 'center';
+
+        // Get current world size
+        const oldW = def._w || 1;
+        const oldH = def._h || 1;
+
+        // Calculate anchor point in world space
+        const oldOff = getAnchorOffset(anchor, oldW, oldH);
+        const anchorWorldX = mesh.position.x + oldOff.x;
+        const anchorWorldY = mesh.position.y + oldOff.y;
+
+        // Rebuild mesh with new scale
+        if (def.type === 'text') {
+            def.scale = newScale;
+            rebuildMesh(id);
+        } else if (def.type === 'hearts') {
+            def.scale = newScale;
+            const s = newScale;
+            mesh.geometry.dispose();
+            mesh.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s);
+            def._w = 3.25 * s; def._h = 1.0 * s;
+        } else {
+            // For rects, scale uniformly from current dimensions
+            const ratio = newScale / (def._w || 1);
+            def.w = def.w * ratio; def.h = def.h * ratio;
+            mesh.geometry.dispose();
+            mesh.geometry = new THREE.PlaneGeometry(def.w, def.h);
+            def._w = def.w; def._h = def.h;
+        }
+
+        // New size
+        const newW = def._w || 1;
+        const newH = def._h || 1;
+        const newOff = getAnchorOffset(anchor, newW, newH);
+
+        // Offset position so anchor point stays in place
+        mesh.position.x = anchorWorldX - newOff.x;
+        mesh.position.y = anchorWorldY - newOff.y;
+    }
+
+    function applyRectSizeWithAnchor(id, newW, newH) {
+        const mesh = els[id];
+        const def = mesh.userData.def;
+        const anchor = elAnchor[id] || 'center';
+
+        const oldW = def._w || def.w || 1;
+        const oldH = def._h || def.h || 1;
+        const oldOff = getAnchorOffset(anchor, oldW, oldH);
+        const anchorWorldX = mesh.position.x + oldOff.x;
+        const anchorWorldY = mesh.position.y + oldOff.y;
+
+        def.w = newW; def.h = newH;
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.PlaneGeometry(def.w, def.h);
+        def._w = def.w; def._h = def.h;
+
+        const nwOff = getAnchorOffset(anchor, def.w, def.h);
+        mesh.position.x = anchorWorldX - nwOff.x;
+        mesh.position.y = anchorWorldY - nwOff.y;
+    }
+
+    // ── Property inputs ──
     window.onTextInput = function() {
-        if (!sel) return;
-        const def = sel.userData.def;
+        if (!primarySelectedId()) return;
+        const id = primarySelectedId();
+        const def = els[id].userData.def;
         if (def.type !== 'text') return;
         pushUndo();
         def.text = document.getElementById('inp-text').value || ' ';
-        rebuildMesh(def.id);
+        rebuildMesh(id);
         updateList();
     };
 
     window.onNumInput = function() {
-        if (!sel) return;
+        if (!primarySelectedId()) return;
+        const id = primarySelectedId();
         pushUndo();
-        const def = sel.userData.def;
-        sel.position.x = parseFloat(document.getElementById('inp-x').value) || 0;
-        sel.position.y = parseFloat(document.getElementById('inp-y').value) || 0;
-        sel.position.z = parseFloat(document.getElementById('inp-z').value) || 0;
+        const mesh = els[id];
+        const def = mesh.userData.def;
+        mesh.position.x = parseFloat(document.getElementById('inp-x').value) || 0;
+        mesh.position.y = parseFloat(document.getElementById('inp-y').value) || 0;
+        mesh.position.z = parseFloat(document.getElementById('inp-z').value) || 0;
         if (def.type === 'text') {
-            def.scale = parseFloat(document.getElementById('inp-scale').value) || 0.02;
-            rebuildMesh(def.id);
+            const newScale = parseFloat(document.getElementById('inp-scale').value) || 0.02;
+            applyScaleWithAnchor(id, newScale);
         } else if (def.type === 'hearts') {
-            def.scale = parseFloat(document.getElementById('inp-scale').value) || 0.1;
-            const s = def.scale;
-            sel.geometry.dispose();
-            sel.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s);
+            const newScale = parseFloat(document.getElementById('inp-scale').value) || 0.1;
+            applyScaleWithAnchor(id, newScale);
         } else {
-            def.w = parseFloat(document.getElementById('inp-w').value) || 0.1;
-            def.h = parseFloat(document.getElementById('inp-h').value) || 0.1;
-            sel.geometry.dispose();
-            sel.geometry = new THREE.PlaneGeometry(def.w, def.h);
+            const newW = parseFloat(document.getElementById('inp-w').value) || 0.1;
+            const newH = parseFloat(document.getElementById('inp-h').value) || 0.1;
+            applyRectSizeWithAnchor(id, newW, newH);
         }
         updateList();
     };
 
     window.setAlign = function(a) {
-        if (!sel) return;
+        if (!primarySelectedId()) return;
         pushUndo();
-        sel.userData.align = a;
+        els[primarySelectedId()].userData.align = a;
         updateUI(); updateList();
     };
 
+    // ── Grouping ──
+    window.groupSelected = function() {
+        if (selectedIds.length < 2) return;
+        pushUndo();
+        groupCounter++;
+        const name = 'Group ' + groupCounter;
+        // Remove selected ids from any existing groups
+        for (const [gName, members] of Object.entries(groups)) {
+            groups[gName] = members.filter(m => !selectedIds.includes(m));
+            if (groups[gName].length === 0) delete groups[gName];
+        }
+        groups[name] = [...selectedIds];
+        updateUI(); updateList();
+    };
+
+    window.ungroupSelected = function() {
+        if (!primarySelectedId()) return;
+        pushUndo();
+        const id = primarySelectedId();
+        const gName = getGroupForId(id);
+        if (!gName) return;
+        delete groups[gName];
+        updateUI(); updateList();
+    };
+
+    window.renameGroup = function(oldName, newName) {
+        if (!newName || newName === oldName) return;
+        if (groups[newName]) return; // name conflict
+        pushUndo();
+        groups[newName] = groups[oldName];
+        delete groups[oldName];
+        updateList();
+    };
+
+    window.toggleGroupCollapse = function(name) {
+        collapsedGroups[name] = !collapsedGroups[name];
+        updateList();
+    };
+
+    // ── Element list rendering ──
     function updateList() {
         const c = document.getElementById('ec'); c.innerHTML = '';
+
+        // Track which elements are in a group so we only render them under their group
+        const groupedIds = new Set();
+        for (const members of Object.values(groups)) {
+            members.forEach(m => groupedIds.add(m));
+        }
+
+        // Render groups first
+        for (const [gName, members] of Object.entries(groups)) {
+            const hdr = document.createElement('div');
+            hdr.className = 'group-hdr';
+            const collapsed = collapsedGroups[gName];
+            const selCount = members.filter(m => selectedIds.includes(m)).length;
+            if (selCount === members.length && members.length > 0) hdr.style.background = '#005599';
+
+            hdr.innerHTML = `<span class="arrow ${collapsed ? 'collapsed' : ''}">▼</span><span class="gname" contenteditable="true" spellcheck="false">${gName}</span><span style="color:#666;font-size:9px">(${members.length})</span>`;
+            const nameSpan = hdr.querySelector('.gname');
+            nameSpan.addEventListener('blur', () => {
+                const newName = nameSpan.textContent.trim();
+                if (newName && newName !== gName) renameGroup(gName, newName);
+            });
+            nameSpan.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); nameSpan.blur(); } });
+            hdr.addEventListener('click', e => {
+                if (e.target === nameSpan) return;
+                toggleGroupCollapse(gName);
+            });
+            c.appendChild(hdr);
+
+            if (!collapsed) {
+                members.forEach(id => {
+                    if (!els[id]) return;
+                    const div = createElementListItem(id, true);
+                    c.appendChild(div);
+                });
+            }
+        }
+
+        // Render ungrouped elements
         DEFS.forEach(d => {
-            const m = els[d.id]; const p = m.position;
-            const div = document.createElement('div');
-            div.className = 'ei' + (sel === m ? ' sel' : '');
-            const ai = { left:'◀', center:'◆', right:'▶' }[m.userData.align || 'center'];
-            div.innerHTML = `<span class="n"><span class="cs" style="background:#${d.color.toString(16).padStart(6,'0')}"></span>${ai} ${d.name}</span><span class="p">${p.x.toFixed(2)},${p.y.toFixed(2)}</span>`;
-            div.onclick = () => doSelect(m);
+            if (groupedIds.has(d.id)) return;
+            const div = createElementListItem(d.id, false);
             c.appendChild(div);
         });
     }
 
-    // ── Undo ──
+    function createElementListItem(id, inGroup) {
+        const d = DEFS.find(dd => dd.id === id);
+        const m = els[id];
+        if (!d || !m) return document.createElement('div');
+        const p = m.position;
+        const div = document.createElement('div');
+        div.className = 'ei' + (inGroup ? ' group-ei' : '') + (selectedIds.includes(id) ? ' sel' : '');
+        if (!elVisible[id]) div.style.opacity = '0.4';
+        const ai = { left:'◀', center:'◆', right:'▶' }[m.userData.align || 'center'];
+        const eyeIcon = elVisible[id] ? '👁' : '👁‍🗨';
+        div.innerHTML = `<span class="eye-btn ${elVisible[id] ? '' : 'hidden'}" data-id="${id}">${eyeIcon}</span><span class="n"><span class="cs" style="background:#${d.color.toString(16).padStart(6,'0')}"></span>${ai} ${d.name}</span><span class="p">${p.x.toFixed(2)},${p.y.toFixed(2)}</span>`;
+        const eyeBtn = div.querySelector('.eye-btn');
+        eyeBtn.addEventListener('click', e => toggleVisible(id, e));
+        div.addEventListener('click', e => {
+            if (e.target === eyeBtn) return;
+            if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                clearHighlights();
+                if (selectedIds.includes(id)) {
+                    selectedIds = selectedIds.filter(s => s !== id);
+                } else {
+                    selectedIds.push(id);
+                }
+                applyHighlights();
+                attachTransform();
+                updateUI(); updateList();
+            } else {
+                doSelect(id);
+            }
+        });
+        return div;
+    }
+
+    // ── Group drag support ──
+    let dragStartPositions = null;
+    tc.addEventListener('mouseDown', () => {
+        pushUndo();
+        const pid = primarySelectedId();
+        if (!pid) return;
+        const members = getGroupMembers(pid);
+        dragStartPositions = {};
+        members.forEach(id => {
+            if (els[id]) dragStartPositions[id] = els[id].position.clone();
+        });
+    });
+    tc.addEventListener('objectChange', () => {
+        if (!dragStartPositions || !primarySelectedId()) { updateUI(); updateList(); return; }
+        const pid = primarySelectedId();
+        const mesh = els[pid];
+        const startPos = dragStartPositions[pid];
+        if (!startPos) { updateUI(); updateList(); return; }
+        const dx = mesh.position.x - startPos.x;
+        const dy = mesh.position.y - startPos.y;
+        const dz = mesh.position.z - startPos.z;
+        // Move all group members by the same delta
+        const members = getGroupMembers(pid);
+        members.forEach(id => {
+            if (id === pid || !dragStartPositions[id]) return;
+            const sp = dragStartPositions[id];
+            els[id].position.set(sp.x + dx, sp.y + dy, sp.z + dz);
+        });
+        updateUI(); updateList();
+    });
+    tc.addEventListener('mouseUp', () => { dragStartPositions = null; });
+
+    // ── Undo (includes visibility, anchor, groups) ──
     const undos = []; const MAX_UNDO = 25;
     function snap() {
         const s = {};
@@ -357,25 +731,59 @@
             const m = els[id]; const d = m.userData.def;
             s[id] = { x: m.position.x, y: m.position.y, z: m.position.z, align: m.userData.align, text: d.text, scale: d.scale, w: d.w, h: d.h };
         });
-        return s;
+        return { elements: s, visible: { ...elVisible }, anchor: { ...elAnchor }, groups: JSON.parse(JSON.stringify(groups)) };
     }
     function pushUndo() { undos.push(snap()); if (undos.length > MAX_UNDO) undos.shift(); }
-    window.undo = function() {
-        if (!undos.length) return;
-        const s = undos.pop();
-        Object.keys(s).forEach(id => {
+
+    function restoreSnapshot(snap) {
+        // Restore visibility
+        if (snap.visible) {
+            Object.keys(snap.visible).forEach(id => {
+                elVisible[id] = snap.visible[id];
+                if (els[id]) els[id].visible = elVisible[id];
+            });
+        }
+        // Restore anchor
+        if (snap.anchor) {
+            Object.keys(snap.anchor).forEach(id => { elAnchor[id] = snap.anchor[id]; });
+        }
+        // Restore groups
+        if (snap.groups) {
+            groups = JSON.parse(JSON.stringify(snap.groups));
+        }
+        // Restore element state
+        Object.keys(snap.elements).forEach(id => {
             if (!els[id]) return;
-            const m = els[id]; const d = m.userData.def; const v = s[id];
+            const m = els[id]; const d = m.userData.def; const v = snap.elements[id];
             m.position.set(v.x, v.y, v.z);
             m.userData.align = v.align;
             if (d.type === 'text') { d.text = v.text; d.scale = v.scale; rebuildMesh(id); }
             else if (d.type === 'hearts') { d.scale = v.scale || 1.0; const s = d.scale; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s); }
             else { d.w = v.w; d.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
         });
+        // Prune selectedIds that are now hidden
+        selectedIds = selectedIds.filter(id => elVisible[id]);
+        clearHighlights();
+        applyHighlights();
+        attachTransform();
         updateUI(); updateList();
+    }
+
+    window.undo = function() {
+        if (!undos.length) return;
+        restoreSnapshot(undos.pop());
     };
+
     window.resetAll = function() {
         pushUndo();
+        // Reset visibility
+        Object.keys(elVisible).forEach(id => { elVisible[id] = true; if (els[id]) els[id].visible = true; });
+        // Reset anchors
+        Object.keys(elAnchor).forEach(id => { elAnchor[id] = 'center'; });
+        // Reset groups
+        groups = {};
+        groupCounter = 0;
+        // Reset element positions
         Object.keys(els).forEach(id => {
             const m = els[id]; const d = m.userData.def; const v = INIT[id];
             m.position.set(v.x, v.y, v.z);
@@ -384,11 +792,11 @@
             else if (d.type === 'hearts') { d.scale = v.scale || 1.0; const s = d.scale; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s); }
             else { d.w = v.w; d.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
         });
+        selectedIds = [];
+        tc.detach();
         updateUI(); updateList();
     };
     document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); window.undo(); } });
-    tc.addEventListener('mouseDown', () => pushUndo());
-    tc.addEventListener('objectChange', () => { updateUI(); updateList(); });
 
     // ── Export / Import ──
     window.exportJSON = function() {
@@ -398,14 +806,25 @@
             data.elements[id] = {
                 x: +m.position.x.toFixed(3), y: +m.position.y.toFixed(3), z: +m.position.z.toFixed(3),
                 align: m.userData.align || 'center', type: d.type,
+                visible: elVisible[id] !== false,
+                anchor: elAnchor[id] || 'center',
             };
             if (d.type === 'text') { data.elements[id].scale = +(d.scale.toFixed(4)); data.elements[id].text = d.text; }
             else if (d.type === 'hearts') { data.elements[id].scale = +((d.scale || 1.0).toFixed(4)); }
             else { data.elements[id].w = +(d.w.toFixed(3)); data.elements[id].h = +(d.h.toFixed(3)); }
         });
+        // Export groups
+        const nonEmptyGroups = {};
+        for (const [name, members] of Object.entries(groups)) {
+            if (members.length > 0) nonEmptyGroups[name] = [...members];
+        }
+        if (Object.keys(nonEmptyGroups).length > 0) {
+            data.groups = nonEmptyGroups;
+        }
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'floor-hud-layout.json'; a.click();
     };
+
     window.importJSON = function(ev) {
         const f = ev.target.files[0]; if (!f) return;
         const r = new FileReader();
@@ -415,17 +834,38 @@
                 if (d.elements) {
                     pushUndo();
                     Object.keys(d.elements).forEach(id => {
-                        if (!els[id]) return; // silently skip unknown/removed element IDs (e.g. hud_bg, scanline)
+                        if (!els[id]) return;
                         const m = els[id]; const dd = m.userData.def; const v = d.elements[id];
                         m.position.set(v.x, v.y, v.z);
                         if (v.align) m.userData.align = v.align;
+                        if (v.visible === false) { elVisible[id] = false; m.visible = false; } else { elVisible[id] = true; m.visible = true; }
+                        if (v.anchor) elAnchor[id] = v.anchor;
                         if (dd.type === 'text' && v.text !== undefined) { dd.text = v.text; dd.scale = v.scale; rebuildMesh(id); }
                         else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; const s = dd.scale; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s); }
                         else if (v.w) { dd.w = v.w; dd.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
                     });
+                    // Restore groups
+                    if (d.groups) {
+                        groups = {};
+                        for (const [name, members] of Object.entries(d.groups)) {
+                            // Only include members that actually exist
+                            groups[name] = members.filter(m => els[m]);
+                            if (groups[name].length === 0) delete groups[name];
+                        }
+                        // Update groupCounter to avoid name collisions
+                        const existingNums = Object.keys(groups).map(n => {
+                            const m = n.match(/^Group (\d+)$/);
+                            return m ? parseInt(m[1]) : 0;
+                        });
+                        groupCounter = Math.max(groupCounter, ...existingNums);
+                    }
+                    selectedIds = selectedIds.filter(id => elVisible[id]);
+                    clearHighlights();
+                    applyHighlights();
+                    attachTransform();
                     updateUI(); updateList();
                 }
-            } catch (err) { alert('Invalid JSON'); }
+            } catch (err) { alert('Invalid JSON: ' + err.message); }
         };
         r.readAsText(f); ev.target.value = '';
     };
