@@ -687,7 +687,7 @@ export async function initHUD(camera, scene) {
     geo.translate(barWidth / 2, 0, 0);
     const mat = new THREE.MeshBasicMaterial({ color: 0xff0044, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
     const bar = new THREE.Mesh(geo, mat);
-    bar.position.x = (i - 1) * (barWidth + gap);
+    bar.position.x = (i - 1) * (barWidth + gap) - barWidth / 2;
     bar.renderOrder = 1000;
     bossHealthGroup.add(bar);
     bossHealthBars.push(bar);

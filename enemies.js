@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getStasisSlowFactor } from './stasis.js';
-import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound, playPhaseWraithCharge } from './audio.js';
+import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound, playPhaseWraithCharge, playSkullPhaseSound, playSkullHandGrowlSound, playSkullDeathKnell, playSkullLaughSound } from './audio.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
@@ -5279,7 +5279,7 @@ class SkullBoss extends Boss {
     this.skullPhase = this.hp > 1200 ? 1 : this.hp > 600 ? 2 : 3;
     
     // Check for phase transition
-    if (prevPhase !== this.skullPhase && prevPhase !== 0) {
+    if (prevPhase !== this.skullPhase) {
       // Enter transition (3-sec invuln)
       this.startPhaseTransition(prevPhase, this.skullPhase);
       return;
@@ -5354,6 +5354,7 @@ class SkullBoss extends Boss {
     
     // Visual effects during transition
     this.playGrowlSound();
+    playSkullPhaseSound();
     
     // Brighten eyes
     if (this.leftEye) {
@@ -5461,10 +5462,12 @@ class SkullBoss extends Boss {
   
   // Part 4: Lobbed projectiles for skull phase (arc trajectory)
   fireLobbedEyeProjectiles(playerPos, arcHeight) {
+    // Clone positions now to avoid stale references in setTimeout closures
     const eyePositions = [
       this.leftEye.getWorldPosition(new THREE.Vector3()),
       this.rightEye.getWorldPosition(new THREE.Vector3()),
     ];
+    const targetPos = playerPos.clone();
     
     if (this.telegraphing) {
       this.showTelegraph('projectile', 0.3, 0xff0000, this.mesh.position);
@@ -5475,7 +5478,7 @@ class SkullBoss extends Boss {
       eyePositions.forEach((eyePos, idx) => {
         setTimeout(() => {
           if (typeof spawnBossLobbedProjectile === 'function') {
-            spawnBossLobbedProjectile(eyePos, playerPos, arcHeight || 3.5);
+            spawnBossLobbedProjectile(eyePos, targetPos, arcHeight || 3.5);
           }
         }, idx * 100); // 100ms stagger between eyes
       });
@@ -5508,6 +5511,7 @@ class SkullBoss extends Boss {
     
     // Play growl
     this.playGrowlSound();
+    playSkullHandGrowlSound();
     
     // Speed up remaining hands
     const speedMultiplier = 1 + (4 - this.handsAlive) * 0.3;

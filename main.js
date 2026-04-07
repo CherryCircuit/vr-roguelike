@@ -36,6 +36,8 @@ import {
   playIncomingBossSound, playNoOneMakesItSound,
   playProjectileWarningSound,
   playPhaseWraithCharge,
+  // Skull boss sounds
+  playSkullDeathKnell, playSkullLaughSound,
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -1192,6 +1194,7 @@ function init() {
     resetAllSlowMoState,
     hideKillsAlert,
     unloadBiomeForBossCinematic: purgeBiomeForBossCinematic,
+    playSkullDeathKnell,
   });
 
   // Init subsystems
@@ -10304,6 +10307,12 @@ function render(timestamp) {
       const dead = damagePlayer(proj.damage || 1);
       triggerHitFlash(true);
       playDamageSound();
+
+      // Skull boss laugh when hitting player
+      const _skullBoss = getBoss();
+      if (_skullBoss && _skullBoss.def && _skullBoss.def.behavior === 'skull') {
+        playSkullLaughSound();
+      }
       cameraShake = 0.4;
       cameraShakeIntensity = 0.04;
       originalCameraPos.copy(camera.position);
@@ -10431,10 +10440,29 @@ function render(timestamp) {
     // Store original terrain colors if available
     game._cinOrigGridColor = null;
     game._cinOrigBaseColor = null;
+    game._cinOrigPulseA = null;
+    game._cinOrigPulseB = null;
     if (synthVisualRefs.terrainUniforms) {
       game._cinOrigGridColor = synthVisualRefs.terrainUniforms.uGridColor.value.clone();
       game._cinOrigBaseColor = synthVisualRefs.terrainUniforms.uBaseColor.value.clone();
       game._cinOrigFogColor = synthVisualRefs.terrainUniforms.uFogColor.value.clone();
+      game._cinOrigPulseA = synthVisualRefs.terrainUniforms.uPulseColorA.value.clone();
+      game._cinOrigPulseB = synthVisualRefs.terrainUniforms.uPulseColorB.value.clone();
+    }
+    
+    // Store original skydome gradient colors for red fade
+    game._cinOrigSkyTopColor = null;
+    game._cinOrigSkyMidColor = null;
+    game._cinOrigSkyHorizonColor = null;
+    game._cinOrigSkyGlowColor = null;
+    if (game._cinSkyMat && game._cinSkyMat.uniforms) {
+      const su = game._cinSkyMat.uniforms;
+      if (su.topColor) game._cinOrigSkyTopColor = su.topColor.value.clone();
+      if (su.midColor) game._cinOrigSkyMidColor = su.midColor.value.clone();
+      if (su.horizonColor) game._cinOrigSkyHorizonColor = su.horizonColor.value.clone();
+      if (su.glowColor) game._cinOrigSkyGlowColor = su.glowColor.value.clone();
+      // Also store moonGlowColor for desert biome
+      if (su.moonGlowColor) game._cinOrigSkyMoonGlowColor = su.moonGlowColor.value.clone();
     }
     
     _log('[SkullBoss Cinematic] Starting spawn cinematic for level 5');
@@ -10469,9 +10497,43 @@ function render(timestamp) {
       const redGrid = new THREE.Color(0x880000);  // Dark crimson grid
       const redBase = new THREE.Color(0x1a0000);  // Very dark red base
       const redFog = new THREE.Color(0x220000);   // Dark red fog
+      const redPulseA = new THREE.Color(0xcc0000); // Normal red (former pink)
+      const redPulseB = new THREE.Color(0x660000); // Dark red (former cyan)
       synthVisualRefs.terrainUniforms.uGridColor.value.copy(game._cinOrigGridColor).lerp(redGrid, t);
       synthVisualRefs.terrainUniforms.uBaseColor.value.copy(game._cinOrigBaseColor).lerp(redBase, t);
       synthVisualRefs.terrainUniforms.uFogColor.value.copy(game._cinOrigFogColor).lerp(redFog, t);
+      if (game._cinOrigPulseA) {
+        synthVisualRefs.terrainUniforms.uPulseColorA.value.copy(game._cinOrigPulseA).lerp(redPulseA, t);
+      }
+      if (game._cinOrigPulseB) {
+        synthVisualRefs.terrainUniforms.uPulseColorB.value.copy(game._cinOrigPulseB).lerp(redPulseB, t);
+      }
+    }
+    
+    // 4b. Fade skydome gradient to dark reds (~30% darker than original brightness)
+    if (game._cinSkyMat && game._cinSkyMat.uniforms) {
+      const su = game._cinSkyMat.uniforms;
+      // Target colors: red tones at ~70% of original brightness
+      const redTop = new THREE.Color(0x12000a);     // Dark red (was dark purple)
+      const redMid = new THREE.Color(0x32001a);     // Medium-dark red
+      const redHorizon = new THREE.Color(0x701a1a); // Reddish (was bright orange)
+      const redGlow = new THREE.Color(0x6a0020);    // Deep red (was pink)
+      const redMoonGlow = new THREE.Color(0x301020); // Dark red-purple (was moon purple)
+      if (su.topColor && game._cinOrigSkyTopColor) {
+        su.topColor.value.copy(game._cinOrigSkyTopColor).lerp(redTop, t);
+      }
+      if (su.midColor && game._cinOrigSkyMidColor) {
+        su.midColor.value.copy(game._cinOrigSkyMidColor).lerp(redMid, t);
+      }
+      if (su.horizonColor && game._cinOrigSkyHorizonColor) {
+        su.horizonColor.value.copy(game._cinOrigSkyHorizonColor).lerp(redHorizon, t);
+      }
+      if (su.glowColor && game._cinOrigSkyGlowColor) {
+        su.glowColor.value.copy(game._cinOrigSkyGlowColor).lerp(redGlow, t);
+      }
+      if (su.moonGlowColor && game._cinOrigSkyMoonGlowColor) {
+        su.moonGlowColor.value.copy(game._cinOrigSkyMoonGlowColor).lerp(redMoonGlow, t);
+      }
     }
     
     // 5. Shift sun glow materials to red
