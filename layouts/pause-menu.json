@@ -1,0 +1,28 @@
+{
+  "screen": "pause-menu",
+  "scale": 0.78,
+  "font_multiplier": 2.5,
+  "elements": {
+    "panel": {
+      "w": 4.6,
+      "h": 3.6
+    },
+    "left_blaster_section": {
+      "x": -1.25,
+      "y": 0.2,
+      "z": 0.02
+    },
+    "right_blaster_section": {
+      "x": 1.25,
+      "y": 0.2,
+      "z": 0.02
+    },
+    "resume_button": {
+      "x": 0,
+      "y": -1.35,
+      "z": 0.03,
+      "w": 1.55,
+      "h": 0.34
+    }
+  }
+}

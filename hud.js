@@ -71,6 +71,23 @@ export const pauseMenuGroup = new THREE.Group();  // Pause menu
 export const pauseCountdownGroup = new THREE.Group();  // 3-2-1 countdown overlay
 const floatingMessageGroup = new THREE.Group();
 
+// ── Layout Loading ──
+// Loads layout JSON from layouts/ directory. Falls back to hardcoded positions if fetch fails.
+const layoutCache = {};
+export async function loadLayout(screenName) {
+  if (layoutCache[screenName]) return layoutCache[screenName];
+  try {
+    const resp = await fetch(`layouts/${screenName}.json`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    layoutCache[screenName] = data;
+    return data;
+  } catch (e) {
+    // File not found or fetch not supported (e.g. file:// protocol)
+    return null;
+  }
+}
+
 // ── HUD Text Geometry Cache ───────────────────────────────────
 // Pool PlaneGeometry by aspect ratio bins to avoid GPU object churn
 // when HUD text changes frequently (score, kills, etc.)
@@ -493,7 +510,7 @@ function makeHeartsTexture(health, maxHealth, animParams = {}) {
 }
 // ── Public API ─────────────────────────────────────────────
 
-export function initHUD(camera, scene) {
+export async function initHUD(camera, scene) {
   sceneRef = scene;
   cameraRef = camera;
 
@@ -503,15 +520,24 @@ export function initHUD(camera, scene) {
   // #11: Load November font for scoreboard
   loadNovemberFont();
 
+  // Preload all layout files so they're cached for sync access
+  await Promise.all([
+    loadLayout('title-screen'),
+    loadLayout('game-over'),
+    loadLayout('upgrade-cards'),
+    loadLayout('ready-screen'),
+    loadLayout('scoreboard'),
+  ]);
+
   // ── Title Screen (world-space, fixed position) ──
-  createTitleScreen();
+  await createTitleScreen();
   titleGroup.position.set(0, 1.2, -3.5);  // Moved down for better centering
   titleGroup.rotation.set(0, 0, 0);
   titleGroup.visible = true;
   scene.add(titleGroup);
 
   // ── VR HUD (stationary on floor, Space Pirate Trainer style) ──
-  createHUDElements();
+  await createHUDElements();
   hudGroup.position.set(0, 0.0, -3);  // On floor, 3 feet in front of spawn; Y=0 to sit flush
   hudGroup.rotation.x = -Math.PI / 2 + 0.349;  // Face up + 20° tilt toward player (one-time static)
   scene.add(hudGroup);
@@ -699,7 +725,7 @@ export function updateBossHealthBar(hp, maxHp, phases = 3) {
 
 // ── Title Screen ───────────────────────────────────────────
 
-function createTitleScreen() {
+async function createTitleScreen() {
   // Big title: SPACEOMICIDE
   const titleSprite = makeSprite('SPACEOMICIDE', {
     fontSize: 70,
@@ -708,6 +734,7 @@ function createTitleScreen() {
     scale: 0.9,
   });
   titleSprite.position.set(0, 0.9, 0);  // Moved down for better centering
+  titleSprite.name = 'titleSprite';
   titleGroup.add(titleSprite);
 
   // Subtitle
@@ -718,6 +745,7 @@ function createTitleScreen() {
     scale: 0.3,
   });
   subSprite.position.set(0, 0.4, 0);  // Moved down for better centering
+  subSprite.name = 'subSprite';
   titleGroup.add(subSprite);
 
   // Blinking "Press Trigger to Begin"
@@ -728,11 +756,13 @@ function createTitleScreen() {
     scale: 0.25,
   });
   titleBlinkSprite.position.set(0, -0.2, 0);  // Moved down for better centering
+  titleBlinkSprite.name = 'titleBlinkSprite';
   titleGroup.add(titleBlinkSprite);
 
   // Scoreboard button
   const btnGroup = new THREE.Group();
   btnGroup.position.set(0, -0.8, 0);  // Moved down for better centering
+  btnGroup.name = 'btnGroup';
   const btnGeo = new THREE.PlaneGeometry(1.35, 0.3);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
@@ -758,6 +788,26 @@ function createTitleScreen() {
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
 
+  // Apply layout overrides
+  const layout = await loadLayout('title-screen');
+  if (layout?.elements) {
+    if (layout.elements.titleSprite) {
+      const _le = layout.elements.titleSprite;
+      titleSprite.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.subSprite) {
+      const _le = layout.elements.subSprite;
+      subSprite.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.titleBlinkSprite) {
+      const _le = layout.elements.titleBlinkSprite;
+      titleBlinkSprite.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.btnGroup) {
+      const _le = layout.elements.btnGroup;
+      btnGroup.position.set(_le.x, _le.y, _le.z);
+    }
+  }
 }
 
 export function showTitle() {
@@ -877,9 +927,12 @@ function createGlitchTexture(intensity) {
   return texture;
 }
 
-function createHUDElements() {
+async function createHUDElements() {
   hudGroup.visible = false;
   hudGroup.renderOrder = 999;
+
+  // Load layout from JSON (falls back to hardcoded values if missing)
+  const floorLayout = await loadLayout('floor-hud');
 
   // Floor-based HUD layout (Space Pirate Trainer style)
   // Increased by 200% (3x) for better visibility
@@ -925,6 +978,10 @@ function createHUDElements() {
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
   heartsSprite.position.set(-2.3 + (1.7875 / 2), 0.56, 0.01);  // Left-aligned: offset by half width so left edge at -2.3 (v13)
+  if (floorLayout?.elements?.hearts) {
+    const _le = floorLayout.elements.hearts;
+    heartsSprite.position.set(_le.x, _le.y, _le.z);
+  }
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
@@ -932,31 +989,55 @@ function createHUDElements() {
   // Layout: Spread from hearts, number centered under SCORE title
   scoreSprite = makeSprite('0', { fontSize: 72, color: '#ffff00', shadow: true, scale: 0.45 });
   scoreSprite.position.set(0, 0.32, 0.01);  // Centered under SCORE title (v13)
+  if (floorLayout?.elements?.score_num) {
+    const _le = floorLayout.elements.score_num;
+    scoreSprite.position.set(_le.x, _le.y, _le.z);
+  }
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
   scoreTitleSprite.position.set(0, 0.58, 0.01);  // Top row
+  if (floorLayout?.elements?.score_title) {
+    const _le = floorLayout.elements.score_title;
+    scoreTitleSprite.position.set(_le.x, _le.y, _le.z);
+  }
   hudGroup.add(scoreTitleSprite);
 
   // Kill counter — below LEVEL display
   // Layout: Center-right, below level
   killCountSprite = makeSprite('0/0', { fontSize: 72, color: '#ffffff', shadow: true, scale: 0.45 });
   killCountSprite.position.set(1.02, 0.3, 0.01);  // Center-right, second row
+  if (floorLayout?.elements?.kills) {
+    const _le = floorLayout.elements.kills;
+    killCountSprite.position.set(_le.x, _le.y, _le.z);
+  }
   hudGroup.add(killCountSprite);
 
   // Level indicator — above kill counter
   // Layout: Center-right, top row
   levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 0.45 });
   levelSprite.position.set(1.02, 0.58, 0.01);  // Center-right, top row
+  if (floorLayout?.elements?.level) {
+    const _le = floorLayout.elements.level;
+    levelSprite.position.set(_le.x, _le.y, _le.z);
+  }
   hudGroup.add(levelSprite);
 
   // Nuke counter — far right, top row; emoji 2x size, count text normal
   nukeEmojiSprite = makeSprite('☢', { fontSize: 144, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.9 });
   nukeEmojiSprite.position.set(1.82, 0.5, 0.01);  // Far right (v13)
+  if (floorLayout?.elements?.nuke_icon) {
+    const _le = floorLayout.elements.nuke_icon;
+    nukeEmojiSprite.position.set(_le.x, _le.y, _le.z);
+  }
   hudGroup.add(nukeEmojiSprite);
   nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.35 });
   nukeCountSprite.position.set(2.12, 0.5, 0.01);  // Far right (v13)
+  if (floorLayout?.elements?.nuke_count) {
+    const _le = floorLayout.elements.nuke_count;
+    nukeCountSprite.position.set(_le.x, _le.y, _le.z);
+  }
   hudGroup.add(nukeCountSprite);
 
   // Accuracy bonus — center, just below main HUD row
@@ -968,6 +1049,10 @@ function createHUDElements() {
   // Left-align: offset by half geometry width so left edge sits at x=-2.26
   const comboGeoW = comboSprite.geometry.parameters?.width || 1;
   comboSprite.position.x = -2.26 + comboGeoW / 2;  // Left side, below hearts (v13)
+  if (floorLayout?.elements?.combo_text) {
+    const _le = floorLayout.elements.combo_text;
+    comboSprite.position.set(_le.x, _le.y, _le.z);
+  }
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 
@@ -978,6 +1063,10 @@ function createHUDElements() {
   const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
   comboCooldownSprite.position.set(-2.202, 0.21, 0.01);  // Left side, below combo text (v13) - geo.translate handles left-edge pivot
+  if (floorLayout?.elements?.combo_bar) {
+    const _le = floorLayout.elements.combo_bar;
+    comboCooldownSprite.position.set(_le.x, _le.y, _le.z);
+  }
   comboCooldownSprite.visible = false;
   hudGroup.add(comboCooldownSprite);
 }
@@ -1294,6 +1383,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   const header = new THREE.Mesh(headerGeom, headerMat);
   header.renderOrder = 999;
   header.position.set(0, 1.05, 0);
+  header.name = 'header';
   upgradeGroup.add(header);
 
   // Cooldown text
@@ -1334,6 +1424,27 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
     card.userData._zoomStart = performance.now() + i * 80; // 80ms stagger per card
     card.userData._zooming = true;
   });
+
+  // Apply layout overrides (sync since preloaded)
+  const layout = layoutCache['upgrade-cards'];
+  if (layout?.elements) {
+    if (layout.elements.header) {
+      const _le = layout.elements.header;
+      header.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.cooldownSprite) {
+      const _le = layout.elements.cooldownSprite;
+      cooldownSprite.position.set(_le.x, _le.y, _le.z);
+    }
+    // Apply card positions from layout
+    for (let i = 0; i < 4; i++) {
+      const cardKey = `card${i}`;
+      if (layout.elements[cardKey] && upgradeCards[i]) {
+        const _le = layout.elements[cardKey];
+        upgradeCards[i].position.set(_le.x, _le.y, _le.z);
+      }
+    }
+  }
 }
 
 function createUpgradeCard(upgrade, position) {
@@ -1552,10 +1663,12 @@ export function showGameOver(score, playerPos) {
 
   const s1 = makeSprite('GAME OVER', { fontSize: 120, color: '#ff0044', glow: true, glowSize: 30, scale: 1.4 });
   s1.position.set(0, 1.2, 0);
+  s1.name = 'titleSprite';
   gameOverGroup.add(s1);
 
   const s2 = makeSprite(`SCORE: ${score}`, { fontSize: 60, color: '#ffff00', glow: true, scale: 0.7 });
   s2.position.set(0, 0.4, 0);
+  s2.name = 'scoreSprite';
   gameOverGroup.add(s2);
 
   const s3 = makeSprite('PRESS TRIGGER TO RESTART', { fontSize: 44, color: '#ffffff', scale: 0.5 });
@@ -1568,6 +1681,23 @@ export function showGameOver(score, playerPos) {
   gameOverGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
   gameOverGroup.position.z -= 5; // 5 feet in front of player
   gameOverGroup.visible = true;
+
+  // Apply layout overrides (sync since preloaded)
+  const layout = layoutCache['game-over'];
+  if (layout?.elements) {
+    if (layout.elements.titleSprite) {
+      const _le = layout.elements.titleSprite;
+      s1.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.scoreSprite) {
+      const _le = layout.elements.scoreSprite;
+      s2.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.restartSprite) {
+      const _le = layout.elements.restartSprite;
+      s3.position.set(_le.x, _le.y, _le.z);
+    }
+  }
 }
 
 export function showVictory(score, playerPos) {
@@ -1576,10 +1706,12 @@ export function showVictory(score, playerPos) {
 
   const s1 = makeSprite('VICTORY!', { fontSize: 120, color: '#ffff00', glow: true, glowSize: 30, scale: 1.5 });
   s1.position.set(0, 1.2, 0);
+  s1.name = 'titleSprite';
   gameOverGroup.add(s1);
 
   const s2 = makeSprite(`FINAL SCORE: ${score}`, { fontSize: 60, color: '#00ffff', glow: true, scale: 0.7 });
   s2.position.set(0, 0.4, 0);
+  s2.name = 'scoreSprite';
   gameOverGroup.add(s2);
 
   const s3 = makeSprite('PRESS TRIGGER TO RETURN', { fontSize: 44, color: '#ffffff', scale: 0.5 });
@@ -1592,6 +1724,23 @@ export function showVictory(score, playerPos) {
   gameOverGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
   gameOverGroup.position.z -= 5; // 5 feet in front of player
   gameOverGroup.visible = true;
+
+  // Apply layout overrides (sync since preloaded)
+  const layout = layoutCache['game-over'];
+  if (layout?.elements) {
+    if (layout.elements.titleSprite) {
+      const _le = layout.elements.titleSprite;
+      s1.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.scoreSprite) {
+      const _le = layout.elements.scoreSprite;
+      s2.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.restartSprite) {
+      const _le = layout.elements.restartSprite;
+      s3.position.set(_le.x, _le.y, _le.z);
+    }
+  }
 }
 
 export function updateEndScreen(now) {
@@ -2114,20 +2263,40 @@ export function showReadyScreen(level, playerPos) {
     fontSize: 70, color: '#ffff00', glow: true, scale: 0.6,
   });
   header.position.set(0, 0.8, 0);
+  header.name = 'header';
   readyGroup.add(header);
 
   const instruction = makeSprite('SHOOT TO BEGIN', {
     fontSize: 40, color: '#00ffff', scale: 0.4,
   });
   instruction.position.set(0, 0.4, 0);
+  instruction.name = 'instruction';
   readyGroup.add(instruction);
 
   readyCountdownSprite = makeSprite('3', {
     fontSize: 120, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.7,
   });
   readyCountdownSprite.position.set(0, -0.05, 0.01);
+  readyCountdownSprite.name = 'countdown';
   readyCountdownSprite.visible = false;
   readyGroup.add(readyCountdownSprite);
+
+  // Apply layout overrides (sync since preloaded)
+  const layout = layoutCache['ready-screen'];
+  if (layout?.elements) {
+    if (layout.elements.header) {
+      const _le = layout.elements.header;
+      header.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.instruction) {
+      const _le = layout.elements.instruction;
+      instruction.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.countdown) {
+      const _le = layout.elements.countdown;
+      readyCountdownSprite.position.set(_le.x, _le.y, _le.z);
+    }
+  }
 }
 
 export function hideReadyScreen() {
@@ -3051,32 +3220,39 @@ export function showScoreboard(scores, headerText, playerPos) {
     fontSize: 60, color: '#ffffff', glow: true, glowColor: '#ffffff', scale: 0.65,
   });
   mainHeader.position.set(0, 2.25, 0);
+  mainHeader.name = 'mainHeader';
   scoreboardGroup.add(mainHeader);
 
+  let subHeader = null;
   if (headerInfo.main !== 'LOADING') {
-    const subHeader = makeSprite('LEADERBOARD', {
+    subHeader = makeSprite('LEADERBOARD', {
       fontSize: 44, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.5,
     });
     subHeader.position.set(0, 1.95, 0);
+    subHeader.name = 'subHeader';
     scoreboardGroup.add(subHeader);
   }
 
   // Score list canvas
   renderScoreboardCanvas();
   scoreboardMesh.position.set(0, 0.45, 0);
+  scoreboardMesh.name = 'scoreboardMesh';
   scoreboardGroup.add(scoreboardMesh);
 
   // Buttons on right side
   const btnDefs = [
-    { label: 'COUNTRY', y: 1.2, action: 'country' },
-    { label: 'CONTINENT', y: 0.85, action: 'continent' },
-    { label: '⬅️ PREV PAGE', y: 0.1, action: 'page_prev' },
-    { label: 'NEXT PAGE ➡️', y: -0.25, action: 'page_next' },
+    { label: 'COUNTRY', y: 1.2, action: 'country', name: 'btnCountry' },
+    { label: 'CONTINENT', y: 0.85, action: 'continent', name: 'btnContinent' },
+    { label: '⬅️ PREV PAGE', y: 0.1, action: 'page_prev', name: 'btnPrevPage' },
+    { label: 'NEXT PAGE ➡️', y: -0.25, action: 'page_next', name: 'btnNextPage' },
   ];
 
+  const buttonGroups = {};
   for (const def of btnDefs) {
     const btnGroup = new THREE.Group();
     btnGroup.position.set(1.55, def.y, 0);
+    btnGroup.name = def.name;
+    buttonGroups[def.name] = btnGroup;
 
     const btnGeo = new THREE.PlaneGeometry(0.65, 0.3);
     const btnMat = new THREE.MeshBasicMaterial({
@@ -3101,6 +3277,7 @@ export function showScoreboard(scores, headerText, playerPos) {
   // BACK button bottom center
   const backGroup = new THREE.Group();
   backGroup.position.set(0, -1.0, 0);  // #5: Aligned with Country screen
+  backGroup.name = 'btnBack';
   const backGeo = new THREE.PlaneGeometry(0.9, 0.35);  // #5: Same size as Country
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
@@ -3116,6 +3293,34 @@ export function showScoreboard(scores, headerText, playerPos) {
   backTxt.position.set(0, 0, 0.01);
   backGroup.add(backTxt);
   scoreboardGroup.add(backGroup);
+
+  // Apply layout overrides (sync since preloaded)
+  const layout = layoutCache['scoreboard'];
+  if (layout?.elements) {
+    if (layout.elements.mainHeader) {
+      const _le = layout.elements.mainHeader;
+      mainHeader.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.subHeader && subHeader) {
+      const _le = layout.elements.subHeader;
+      subHeader.position.set(_le.x, _le.y, _le.z);
+    }
+    if (layout.elements.scoreboardMesh) {
+      const _le = layout.elements.scoreboardMesh;
+      scoreboardMesh.position.set(_le.x, _le.y, _le.z);
+    }
+    // Apply button positions
+    for (const [key, group] of Object.entries(buttonGroups)) {
+      if (layout.elements[key]) {
+        const _le = layout.elements[key];
+        group.position.set(_le.x, _le.y, _le.z);
+      }
+    }
+    if (layout.elements.btnBack) {
+      const _le = layout.elements.btnBack;
+      backGroup.position.set(_le.x, _le.y, _le.z);
+    }
+  }
 }
 
 // #11: Helper function to draw text with letter spacing and drop shadow

@@ -1,0 +1,43 @@
+{
+  "screen": "upgrade-cards",
+  "elements": {
+    "header": {
+      "x": 0,
+      "y": 1.05,
+      "z": 0,
+      "scale": 0.4,
+      "align": "center"
+    },
+    "cooldownSprite": {
+      "x": 0,
+      "y": 0.8,
+      "z": 0,
+      "scale": 0.3,
+      "align": "center"
+    },
+    "card0": {
+      "x": -2.25,
+      "y": 0,
+      "z": 0,
+      "align": "center"
+    },
+    "card1": {
+      "x": -0.75,
+      "y": 0,
+      "z": 0,
+      "align": "center"
+    },
+    "card2": {
+      "x": 0.75,
+      "y": 0,
+      "z": 0,
+      "align": "center"
+    },
+    "card3": {
+      "x": 2.25,
+      "y": 0,
+      "z": 0,
+      "align": "center"
+    }
+  }
+}
