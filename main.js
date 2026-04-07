@@ -2694,6 +2694,7 @@ function createBlasterDisplay(controllerIndex) {
     uniform float uSignalSpeed;
     uniform float uFresnelAmount;
     uniform float uFresnelOpacity;
+    uniform float uFlickerIntensity;
 
     varying vec2 vUv;
     varying vec3 vPositionW;
@@ -2733,8 +2734,8 @@ function createBlasterDisplay(controllerIndex) {
       float fresnel = abs(dot(viewDir, vNormalW)) * (1.6 - uFresnelOpacity / 2.0);
       fresnel = clamp(uFresnelAmount - fresnel, 0.0, uFresnelOpacity);
       
-      // Subtle flicker for old-TV effect
-      float blink = flicker(0.6 - uSignalSpeed, uTime * uSignalSpeed * 0.02);
+      // Subtle flicker for old-TV effect (much gentler than before)
+      float blink = mix(1.0, flicker(0.85, uTime * uSignalSpeed * 0.02), uFlickerIntensity);
       
       // Final composition
       vec3 finalColor = holoColor.rgb * blink + fresnel;
@@ -2751,7 +2752,8 @@ function createBlasterDisplay(controllerIndex) {
       uScanlineSize: { value: 8.0 },
       uSignalSpeed: { value: 0.3 },
       uFresnelAmount: { value: 0.45 },
-      uFresnelOpacity: { value: 0.5 }
+      uFresnelOpacity: { value: 0.5 },
+      uFlickerIntensity: { value: 0.08 }  // Subtle, not harsh
     },
     vertexShader: holoVertexShader,
     fragmentShader: holoFragmentShader,
@@ -7489,7 +7491,7 @@ function initProjectilePool() {
   // ── Laser bolts (standard blaster) ──
   const laserGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.0, 6);
   laserGeo.rotateX(Math.PI / 2);
-  const laserMat = createProjectileMaterial(0x00ffff);
+  const laserMat = createProjectileMaterial(0xffffff);
   registerPlayerProjectileMaterial(laserMat);
   const laserIM = new THREE.InstancedMesh(laserGeo, laserMat, 120);
   laserIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -7503,23 +7505,23 @@ function initProjectilePool() {
   const buckGeo = new THREE.SphereGeometry(0.05, 6, 6);
   const buckMat = createProjectileMaterial(0xffffff);
   registerPlayerProjectileMaterial(buckMat);
-  const buckIM = new THREE.InstancedMesh(buckGeo, buckMat, 20);
+  const buckIM = new THREE.InstancedMesh(buckGeo, buckMat, 40);
   buckIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   buckIM.count = 0;
   buckIM.frustumCulled = false;
   buckIM.renderOrder = 950;
   scene.add(buckIM);
-  instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 20, freeIndices: new Set() };
+  instancedProjectiles['buckshot'] = { mesh: buckIM, maxCount: 40, freeIndices: new Set() };
 
   // ── Seeker burst bolts: tadpole/sperm shape via LatheGeometry ──
   // Profile curve (radius at each Z position), revolved around Y axis, then rotated to point -Z
   const seekerProfile = new THREE.CurvePath();
   const seekerPts = [
     new THREE.Vector2(0.0, 0.0),    // z=-0.06 tip of head
-    new THREE.Vector2(0.04, 0.02), // z=-0.04 widest head
-    new THREE.Vector2(0.02, 0.06), // z=0 neck
-    new THREE.Vector2(0.008, 0.11),// z=0.05 tail start
-    new THREE.Vector2(0.002, 0.21),// z=0.15 tail end
+    new THREE.Vector2(0.06, 0.03),  // z=-0.04 widest head (1.5x)
+    new THREE.Vector2(0.03, 0.09), // z=0 neck
+    new THREE.Vector2(0.012, 0.165),// z=0.05 tail start
+    new THREE.Vector2(0.003, 0.315),// z=0.15 tail end
   ];
   const seekerCurve = new THREE.SplineCurve(seekerPts);
   const seekerGeo = new THREE.LatheGeometry(seekerCurve.getPoints(20), 8, 0, Math.PI * 2);
@@ -7557,7 +7559,7 @@ function initProjectilePool() {
     }
   });
 
-  _log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(20), seeker(28), plasma_carbine(80)');
+  _log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(40), seeker(28), plasma_carbine(80)');
 }
 
 // PERFORMANCE: Acquire an instance slot from the InstancedMesh pool.
