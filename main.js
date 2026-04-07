@@ -96,6 +96,10 @@ import {
 import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js';
 import { SpatialHash } from './spatial-hash.js';
 import { enableTelemetry, disableTelemetry, isTelemetryEnabled, setTelemetryHistoryMs, recordTelemetrySample, getTelemetrySnapshot } from './telemetry.js';
+import {
+  initVoxelDebris, spawnVoxelExplosion, updateVoxelPhysics,
+  voxelPool, activeVoxels
+} from './voxel-debris.js';
 
 // Expose game state to window for debugging/testing
 window.State = State;
@@ -306,11 +310,7 @@ const _projQuaternion = new THREE.Quaternion();
 const _projScale = new THREE.Vector3(1, 1, 1);
 const _projColor = new THREE.Color();
 
-// PHYSICS DEATH SYSTEM: Voxel pool for death explosions
-const voxelPool = [];
-const activeVoxels = [];
-const VOXEL_POOL_SIZE = 50;
-const MAX_ACTIVE_VOXELS = 25;  // Cap for performance (reduced from 200)
+// voxelPool and activeVoxels now imported from voxel-debris.js
 
 // Weapon firing cooldowns (per controller)
 const weaponCooldowns = [0, 0];
@@ -1221,7 +1221,7 @@ function init() {
   initProjectilePool();
   
   // PHYSICS DEATH SYSTEM: Initialize voxel pool
-  initVoxelPool();
+  initVoxelDebris(scene, triggerScreenShake, playExplosionSound);
   
   // Set voxel explosion reference for enemies.js (same module instance as import)
   setVFXReference(spawnVoxelExplosion);
@@ -7810,237 +7810,6 @@ function updateHostileProjectileVisual(proj, now) {
 // ============================================================
 // VOXEL PHYSICS DEATH SYSTEM
 // Pooled voxels for enemy death explosions
-// HOT PATH: updateVoxelPhysics() called every frame
-// COUPLING: voxelPool, activeVoxels arrays, scene.add/remove
-// ============================================================
-
-// Pre-allocated temp vectors to avoid per-kill GC
-const _deathVel = new THREE.Vector3();
-const _spriteVel = new THREE.Vector3();
-
-/**
- * Initialize voxel pool for physics-based death explosions
- */
-function initVoxelPool() {
-  const voxelGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);  // 40% smaller death voxels
-  
-  for (let i = 0; i < VOXEL_POOL_SIZE; i++) {
-    const material = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 1.0,
-    });
-    const voxel = new THREE.Mesh(voxelGeo, material);
-    voxel.visible = false;
-    voxel.userData.isPooledVoxel = true;
-    scene.add(voxel);
-    voxelPool.push(voxel);
-  }
-  
-  _log(`[physics-death] Voxel pool initialized: ${voxelPool.length} voxels`);
-}
-
-/**
- * Get a voxel from the pool or return null if exhausted
- */
-function getPooledVoxel() {
-  for (const voxel of voxelPool) {
-    if (!voxel.visible) {
-      return voxel;
-    }
-  }
-  return null; // Pool exhausted
-}
-
-/**
- * Return voxel to pool
- */
-function returnVoxelToPool(voxel) {
-  voxel.visible = false;
-  voxel.userData.velocity = null;
-  voxel.userData.createdAt = undefined;
-  voxel.userData.lifetime = undefined;
-  voxel.userData.isGold = undefined;
-  voxel.material.opacity = 1.0;
-  voxel.scale.set(1, 1, 1);
-}
-
-/**
- * Spawn voxel explosion at position with physics
- * @param {THREE.Vector3} position - Center of explosion
- * @param {number} color - Hex color of voxels
- * @param {number} voxelCount - Number of voxels to spawn
- * @param {string} enemyType - Type of enemy for death pattern
- * @param {boolean} isCritical - Whether this was a critical kill (gold particles)
- * @param {boolean} isOverkill - Whether this was an overkill (double voxels)
- */
-function spawnVoxelExplosion(position, color, voxelCount, enemyType = 'basic', isCritical = false, isOverkill = false) {
-  // Double voxels for overkill
-  if (isOverkill) {
-    voxelCount *= 2;
-  }
-  
-  // Cap at 10 voxels per enemy to prevent spam
-  voxelCount = Math.min(voxelCount, 8);
-  
-  // Make room by removing oldest voxels if at cap
-  while (activeVoxels.length >= MAX_ACTIVE_VOXELS && activeVoxels.length > 0) {
-    const oldest = activeVoxels.shift();
-    returnVoxelToPool(oldest);
-  }
-  
-  // Calculate available space in pool
-  const availableVoxels = MAX_ACTIVE_VOXELS - activeVoxels.length;
-  voxelCount = Math.min(voxelCount, availableVoxels);
-  
-  // Enemy-specific death patterns
-  const pattern = getDeathPattern(enemyType);
-  
-  for (let i = 0; i < voxelCount; i++) {
-    const voxel = getPooledVoxel();
-    if (!voxel) break; // Pool exhausted
-    
-    // Set position (slightly randomized around center)
-    voxel.position.copy(position);
-    voxel.position.x += (Math.random() - 0.5) * 0.3;
-    voxel.position.y += (Math.random() - 0.5) * 0.3;
-    voxel.position.z += (Math.random() - 0.5) * 0.3;
-    
-    // Keep death voxels matched to the enemy's original color.
-    voxel.material.color.setHex(color);
-    voxel.material.opacity = 1.0;
-    
-    // Calculate velocity based on pattern
-    const velocity = pattern.calculateVelocity(i, voxelCount);
-    
-    // Initialize voxel physics data
-    voxel.userData.velocity = velocity;
-    voxel.userData.createdAt = performance.now();
-    voxel.userData.lifetime = 2000 + Math.random() * 1000; // 2-3 seconds
-    voxel.userData.isGold = isCritical;
-    voxel.visible = true;
-    
-    activeVoxels.push(voxel);
-  }
-  
-  // Screen shake for critical kills
-  if (isCritical) {
-    triggerScreenShake(0.3, 200);
-  }
-  
-  // LOUDER explosion for overkill
-  if (isOverkill) {
-    playExplosionSound();
-    playExplosionSound(); // Double sound
-  }
-}
-
-/**
- * Get death pattern for enemy type
- */
-function getDeathPattern(enemyType) {
-  const patterns = {
-    basic: {
-      calculateVelocity: (i, total) => {
-        return _deathVel.set(
-          (Math.random() - 0.5) * 6,
-          Math.random() * 4 + 2,
-          (Math.random() - 0.5) * 6
-        ).clone();
-      }
-    },
-    tank: {
-      calculateVelocity: (i, total) => {
-        return _deathVel.set(
-          (Math.random() - 0.5) * 2,
-          Math.random() * 2 + 1,
-          (Math.random() - 0.5) * 2
-        ).clone();
-      }
-    },
-    fast: {
-      calculateVelocity: (i, total) => {
-        return _deathVel.set(
-          (Math.random() - 0.5) * 10,
-          Math.random() * 6 + 3,
-          (Math.random() - 0.5) * 10
-        ).clone();
-      }
-    },
-    swarm: {
-      calculateVelocity: (i, total) => {
-        return _deathVel.set(
-          (Math.random() - 0.5) * 8,
-          Math.random() * 5 + 2,
-          (Math.random() - 0.5) * 8
-        ).clone();
-      }
-    },
-    boss: {
-      calculateVelocity: (i, total) => {
-        const angle = (i / total) * Math.PI * 2;
-        const speed = 8 + Math.random() * 4;
-        return _deathVel.set(
-          Math.cos(angle) * speed,
-          Math.random() * 8 + 4,
-          Math.sin(angle) * speed
-        ).clone();
-      }
-    }
-  };
-  
-  return patterns[enemyType] || patterns.basic;
-}
-
-/**
- * Update voxel physics (gravity, bounce, fade)
- */
-function updateVoxelPhysics(dt, now) {
-  const gravity = -9.8;
-  const bounceCoefficient = 0.3;
-  const floorY = 0;  // Fixed: use 0 for reliable floor collision (was -0.01 from floorMaterial)
-  
-  for (let i = activeVoxels.length - 1; i >= 0; i--) {
-    const voxel = activeVoxels[i];
-    const age = now - voxel.userData.createdAt;
-    
-    // Remove expired voxels
-    if (age > voxel.userData.lifetime) {
-      returnVoxelToPool(voxel);
-      activeVoxels.splice(i, 1);
-      continue;
-    }
-    
-    // Apply gravity
-    voxel.userData.velocity.y += gravity * dt;
-    
-    // Update position
-    voxel.position.addScaledVector(voxel.userData.velocity, dt);
-    
-    // Floor collision with bounce
-    if (voxel.position.y <= floorY) {
-      voxel.position.y = floorY;
-      voxel.userData.velocity.y *= -bounceCoefficient;
-      
-      // Apply friction on bounce
-      voxel.userData.velocity.x *= 0.8;
-      voxel.userData.velocity.z *= 0.8;
-    }
-    
-    // Fade out in last 0.5 seconds
-    const fadeStart = voxel.userData.lifetime - 500;
-    if (age > fadeStart) {
-      const fadeProgress = (age - fadeStart) / 500;
-      voxel.material.opacity = 1 - fadeProgress;
-    }
-    
-    // Rotate voxels for visual effect
-    voxel.rotation.x += dt * 2;
-    voxel.rotation.y += dt * 3;
-  }
-}
-
-// ============================================================
 // MAIN WEAPON FIRING
 // fireMainWeapon, lightning beams, charge shots, plasma carbine
 // HOT PATH: Called every frame when trigger held during PLAYING
