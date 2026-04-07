@@ -251,13 +251,25 @@
     function rebuildMesh(id) {
         const def = DEFS.find(d => d.id === id);
         const mesh = els[id];
+        if (!def || !mesh) return;
+        const align = mesh.userData.align || 'center';
         const pos = mesh.position.clone();
         mesh.geometry.dispose();
         if (mesh.material.map) { mesh.material.map.dispose(); }
         if (def.type === 'text') {
             const r = renderTextMesh(def.text, def.fontSize, def.scale, '#' + def.color.toString(16).padStart(6, '0'), def.glow);
             mesh.geometry = r.geo; mesh.material = r.mat; def._w = r.w; def._h = r.h;
+        } else if (def.type === 'hearts') {
+            const s = def.scale || 1.0;
+            mesh.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s);
+            def._w = 3.25 * s; def._h = 1.0 * s;
+        } else {
+            mesh.geometry = new THREE.PlaneGeometry(def.w, def.h);
+            def._w = def.w; def._h = def.h;
         }
+        // Apply alignment: translate geometry so mesh.position is the edge
+        if (align === 'left') mesh.geometry.translate((def._w || 1) / 2, 0, 0);
+        else if (align === 'right') mesh.geometry.translate(-(def._w || 1) / 2, 0, 0);
         mesh.position.copy(pos);
     }
 
@@ -444,19 +456,22 @@
     };
 
     // ── Anchor-based scaling ──
-    function getAnchorOffset(anchor, w, h) {
-        // Returns {x, y} offset from center to the anchor point
+    function getAnchorOffset(anchor, w, h, align = 'center') {
+        // Returns {x, y} offset from mesh.position to the anchor point.
+        // For left-aligned elements, the visual center is shifted right by hw,
+        // so anchors must account for the alignment offset.
         const hw = w / 2, hh = h / 2;
+        const cx = align === 'left' ? hw : align === 'right' ? -hw : 0;
         switch (anchor) {
-            case 'left': return { x: -hw, y: 0 };
-            case 'right': return { x: hw, y: 0 };
-            case 'top': return { x: 0, y: hh };
-            case 'bottom': return { x: 0, y: -hh };
-            case 'top-left': return { x: -hw, y: hh };
-            case 'top-right': return { x: hw, y: hh };
-            case 'bottom-left': return { x: -hw, y: -hh };
-            case 'bottom-right': return { x: hw, y: -hh };
-            default: return { x: 0, y: 0 };
+            case 'left': return { x: -hw + cx, y: 0 };
+            case 'right': return { x: hw + cx, y: 0 };
+            case 'top': return { x: cx, y: hh };
+            case 'bottom': return { x: cx, y: -hh };
+            case 'top-left': return { x: -hw + cx, y: hh };
+            case 'top-right': return { x: hw + cx, y: hh };
+            case 'bottom-left': return { x: -hw + cx, y: -hh };
+            case 'bottom-right': return { x: hw + cx, y: -hh };
+            default: return { x: cx, y: 0 };
         }
     }
 
@@ -470,13 +485,14 @@
         const mesh = els[id];
         const def = mesh.userData.def;
         const anchor = elAnchor[id] || 'center';
+        const align = mesh.userData.align || 'center';
 
         // Get current world size
         const oldW = def._w || 1;
         const oldH = def._h || 1;
 
         // Calculate anchor point in world space
-        const oldOff = getAnchorOffset(anchor, oldW, oldH);
+        const oldOff = getAnchorOffset(anchor, oldW, oldH, align);
         const anchorWorldX = mesh.position.x + oldOff.x;
         const anchorWorldY = mesh.position.y + oldOff.y;
 
@@ -490,6 +506,8 @@
             mesh.geometry.dispose();
             mesh.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s);
             def._w = 3.25 * s; def._h = 1.0 * s;
+            if (align === 'left') mesh.geometry.translate(3.25 * s / 2, 0, 0);
+            else if (align === 'right') mesh.geometry.translate(-3.25 * s / 2, 0, 0);
         } else {
             // For rects, scale uniformly from current dimensions
             const ratio = newScale / (def._w || 1);
@@ -497,12 +515,14 @@
             mesh.geometry.dispose();
             mesh.geometry = new THREE.PlaneGeometry(def.w, def.h);
             def._w = def.w; def._h = def.h;
+            if (align === 'left') mesh.geometry.translate(def.w / 2, 0, 0);
+            else if (align === 'right') mesh.geometry.translate(-def.w / 2, 0, 0);
         }
 
         // New size
         const newW = def._w || 1;
         const newH = def._h || 1;
-        const newOff = getAnchorOffset(anchor, newW, newH);
+        const newOff = getAnchorOffset(anchor, newW, newH, align);
 
         // Offset position so anchor point stays in place
         mesh.position.x = anchorWorldX - newOff.x;
@@ -513,10 +533,11 @@
         const mesh = els[id];
         const def = mesh.userData.def;
         const anchor = elAnchor[id] || 'center';
+        const align = mesh.userData.align || 'center';
 
         const oldW = def._w || def.w || 1;
         const oldH = def._h || def.h || 1;
-        const oldOff = getAnchorOffset(anchor, oldW, oldH);
+        const oldOff = getAnchorOffset(anchor, oldW, oldH, align);
         const anchorWorldX = mesh.position.x + oldOff.x;
         const anchorWorldY = mesh.position.y + oldOff.y;
 
@@ -524,8 +545,10 @@
         mesh.geometry.dispose();
         mesh.geometry = new THREE.PlaneGeometry(def.w, def.h);
         def._w = def.w; def._h = def.h;
+        if (align === 'left') mesh.geometry.translate(def.w / 2, 0, 0);
+        else if (align === 'right') mesh.geometry.translate(-def.w / 2, 0, 0);
 
-        const nwOff = getAnchorOffset(anchor, def.w, def.h);
+        const nwOff = getAnchorOffset(anchor, def.w, def.h, align);
         mesh.position.x = anchorWorldX - nwOff.x;
         mesh.position.y = anchorWorldY - nwOff.y;
     }
@@ -568,7 +591,9 @@
     window.setAlign = function(a) {
         if (!primarySelectedId()) return;
         pushUndo();
-        els[primarySelectedId()].userData.align = a;
+        const id = primarySelectedId();
+        els[id].userData.align = a;
+        rebuildMesh(id); // Rebuild geometry to apply alignment translation
         updateUI(); updateList();
     };
 
@@ -757,9 +782,10 @@
             const m = els[id]; const d = m.userData.def; const v = snap.elements[id];
             m.position.set(v.x, v.y, v.z);
             m.userData.align = v.align;
-            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; rebuildMesh(id); }
-            else if (d.type === 'hearts') { d.scale = v.scale || 1.0; const s = d.scale; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s); }
-            else { d.w = v.w; d.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
+            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; }
+            else if (d.type === 'hearts') { d.scale = v.scale || 1.0; }
+            else { d.w = v.w; d.h = v.h; }
+            rebuildMesh(id);
         });
         // Prune selectedIds that are now hidden
         selectedIds = selectedIds.filter(id => elVisible[id]);
@@ -788,9 +814,10 @@
             const m = els[id]; const d = m.userData.def; const v = INIT[id];
             m.position.set(v.x, v.y, v.z);
             m.userData.align = v.align;
-            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; rebuildMesh(id); }
-            else if (d.type === 'hearts') { d.scale = v.scale || 1.0; const s = d.scale; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s); }
-            else { d.w = v.w; d.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
+            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; }
+            else if (d.type === 'hearts') { d.scale = v.scale || 1.0; }
+            else { d.w = v.w; d.h = v.h; }
+            rebuildMesh(id);
         });
         selectedIds = [];
         tc.detach();
@@ -840,9 +867,10 @@
                         if (v.align) m.userData.align = v.align;
                         if (v.visible === false) { elVisible[id] = false; m.visible = false; } else { elVisible[id] = true; m.visible = true; }
                         if (v.anchor) elAnchor[id] = v.anchor;
-                        if (dd.type === 'text' && v.text !== undefined) { dd.text = v.text; dd.scale = v.scale; rebuildMesh(id); }
-                        else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; const s = dd.scale; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s); }
-                        else if (v.w) { dd.w = v.w; dd.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
+                        if (dd.type === 'text' && v.text !== undefined) { dd.text = v.text; dd.scale = v.scale; }
+                        else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; }
+                        else if (v.w) { dd.w = v.w; dd.h = v.h; }
+                        rebuildMesh(id);
                     });
                     // Restore groups
                     if (d.groups) {
