@@ -99,10 +99,10 @@
 
     // ── Element defs matching EXACT in-game parameters ──
     // type: 'text' = makeSprite (fontSize + scale), 'rect' = PlaneGeometry(w,h)
-    // 'hearts' = special: PlaneGeometry(1.2, 0.24) with pixel heart texture
+    // 'hearts' = special: PlaneGeometry(3.25, 1.0) with pixel heart texture (matching getHudGeo binning)
     const DEFS = [
         { id:'hud_bg', name:'HUD Background', type:'rect', color:0x111122, w:4.7, h:1, x:0, y:0.26, z:0, opacity:0.3 },
-        { id:'hearts', name:'Hearts (Lives)', type:'hearts', color:0xcc3333, w:1.9, h:0.35, x:-1.34, y:0.45, z:0.01 },
+        { id:'hearts', name:'Hearts (Lives)', type:'hearts', color:0xcc3333, w:3.25, h:1.0, x:-1.486, y:0.52, z:0.01 },
         { id:'score_title', name:'SCORE title', type:'text', text:'SCORE', color:0xcccc33, fontSize:72, scale:0.45, glow:true, x:-0.42, y:0.45, z:0.01 },
         { id:'score_num', name:'Score number', type:'text', text:'100000', color:0xcccc33, fontSize:75, scale:0.45, x:-0.42, y:0.2, z:0.01 },
         { id:'level', name:'LEVEL', type:'text', text:'LEVEL 20', color:0x00cccc, fontSize:72, scale:0.45, glow:true, x:0.76, y:0.45, z:0.01 },
@@ -152,23 +152,33 @@
         return { geo: new THREE.PlaneGeometry(w, h), mat, w, h };
     }
 
-    // ── Render pixel hearts on a 1.2×0.24 plane matching in-game ──
+    // ── Render pixel hearts matching EXACT in-game makeHeartsTexture ──
+    // Game: pixSize=8, heartW=7*pixSize=56, heartH=6*pixSize=48, gap=6
+    // 3 hearts: canvasWidth = 3*(56+6)+6 = 192, canvasHeight = 48+10 = 58
+    // aspect = 192/58 ≈ 3.31 → binned to 3.25 → geometry PlaneGeometry(3.25, 1.0)
     const HEART_PX = [[0,1,1,0,1,1,0],[1,1,1,1,1,1,1],[1,1,1,1,1,1,1],[0,1,1,1,1,1,0],[0,0,1,1,1,0,0],[0,0,0,1,0,0,0]];
     function renderHeartsTexture() {
+        const heartCount = 3;
+        const pixSize = 8;
+        const heartW = 7 * pixSize; // 56
+        const heartH = 6 * pixSize; // 48
+        const gap = 6;
+        const canvasWidth = heartCount * (heartW + gap) + gap; // 192
+        const canvasHeight = heartH + 10; // 58
         const c = document.createElement('canvas');
-        c.width = 240; c.height = 48;
+        c.width = canvasWidth; c.height = canvasHeight;
         const ctx = c.getContext('2d');
-        ctx.clearRect(0, 0, 240, 48);
-        const ps = 6, heartW = 7 * ps, gap = 12;
-        for (let h = 0; h < 3; h++) {
-            const ox = 8 + h * (heartW + gap);
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        for (let h = 0; h < heartCount; h++) {
+            const ox = gap + h * (heartW + gap);
             HEART_PX.forEach((row, py) => row.forEach((on, px) => {
                 if (!on) return;
                 ctx.fillStyle = '#ff3333';
-                ctx.fillRect(ox + px * ps, 6 + py * ps, ps, ps);
+                ctx.fillRect(ox + px * pixSize, 5 + py * pixSize, pixSize, pixSize);
             }));
         }
-        ctx.strokeStyle = '#ff333355'; ctx.lineWidth = 1; ctx.strokeRect(0, 0, 240, 48);
+        // Bounding box
+        ctx.strokeStyle = '#ff333355'; ctx.lineWidth = 1; ctx.strokeRect(0, 0, canvasWidth, canvasHeight);
         return new THREE.CanvasTexture(c);
     }
 
