@@ -50,7 +50,7 @@ export function buildDesertNightScene(group, deps) {
     uniforms: {
       topColor: { value: new THREE.Color(0x08060c) },
       midColor: { value: new THREE.Color(0x1d152d) },
-      horizonColor: { value: new THREE.Color(0x3d2a2f) },
+      horizonColor: { value: new THREE.Color(0x4a2035) },
       moonGlowColor: { value: new THREE.Color(0x6a5271) },
     },
     vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,

@@ -1455,3 +1455,157 @@ export function playPhaseWraithCharge() {
   osc.stop(t + 0.9);
   osc2.stop(t + 0.9);
 }
+
+// ── Skull Boss: Phase Transition "Angry Distortion" ────────────
+// Sawtooth sweep down with bitcrusher-like gain modulation
+export function playSkullPhaseSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Main sawtooth sweep 800Hz -> 100Hz
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(800, t);
+  osc.frequency.exponentialRampToValueAtTime(100, t + 0.5);
+
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
+
+  // Bitcrusher: LFO modulates gain on/off at ~30Hz
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  lfo.type = 'square';
+  lfo.frequency.setValueAtTime(30, t);
+  lfoGain.gain.setValueAtTime(0.18, t);
+  lfoGain.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
+
+  lfo.connect(lfoGain);
+  lfoGain.connect(gain.gain);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  lfo.start(t);
+  osc.stop(t + 0.6);
+  lfo.stop(t + 0.6);
+}
+
+// ── Skull Boss: Hit Player "Laugh" ───────────────────────────
+// Square wave rapid C4-C5 alternation for "ha-ha" effect
+export function playSkullLaughSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'square';
+
+  // 4 "ha" pulses: alternate C4 (262Hz) and C5 (523Hz)
+  const haDuration = 0.1;
+  for (let i = 0; i < 4; i++) {
+    const freq = i % 2 === 0 ? 262 : 523;
+    osc.frequency.setValueAtTime(freq, t + i * haDuration);
+    gain.gain.setValueAtTime(0.15, t + i * haDuration);
+    gain.gain.setValueAtTime(0.01, t + i * haDuration + haDuration * 0.7);
+  }
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + 0.4);
+}
+
+// ── Skull Boss: Hand Lost Growl ───────────────────────────────
+// Low sawtooth with FM noise
+export function playSkullHandGrowlSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(80, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.3);
+
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+
+  // FM noise: modulate frequency with another oscillator
+  const modOsc = ctx.createOscillator();
+  const modGain = ctx.createGain();
+  modOsc.type = 'sine';
+  modOsc.frequency.setValueAtTime(120, t);
+  modGain.gain.setValueAtTime(30, t);
+  modGain.gain.exponentialRampToValueAtTime(5, t + 0.3);
+
+  modOsc.connect(modGain);
+  modGain.connect(osc.frequency);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  modOsc.start(t);
+  osc.stop(t + 0.3);
+  modOsc.stop(t + 0.3);
+}
+
+// ── Skull Boss: Death Knell ───────────────────────────────────
+// Dramatic 2.5s sweep with arpeggios and rumble
+export function playSkullDeathKnell() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Layer 1: High square wave sweep 600Hz -> 40Hz over 2s
+  const osc1 = ctx.createOscillator();
+  const gain1 = ctx.createGain();
+  osc1.type = 'square';
+  osc1.frequency.setValueAtTime(600, t);
+  osc1.frequency.exponentialRampToValueAtTime(40, t + 2.0);
+  gain1.gain.setValueAtTime(0.15, t);
+  gain1.gain.exponentialRampToValueAtTime(0.01, t + 2.0);
+  osc1.connect(gain1);
+  gain1.connect(ctx.destination);
+  osc1.start(t);
+  osc1.stop(t + 2.5);
+
+  // Layer 2: Rapid arpeggios (minor chord: C, Eb, G) that slow down
+  const arpeggioNotes = [261.63, 311.13, 392.00]; // C4, Eb4, G4
+  const osc2 = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.type = 'square';
+  gain2.gain.setValueAtTime(0.1, t);
+  gain2.gain.exponentialRampToValueAtTime(0.01, t + 2.0);
+
+  // Start fast, slow down: note intervals increase
+  let noteTime = t;
+  for (let i = 0; i < 16; i++) {
+    const freq = arpeggioNotes[i % 3];
+    const interval = 0.06 + i * 0.015; // 60ms -> ~285ms
+    osc2.frequency.setValueAtTime(freq, noteTime);
+    noteTime += interval;
+    if (noteTime > t + 2.0) break;
+  }
+  osc2.connect(gain2);
+  gain2.connect(ctx.destination);
+  osc2.start(t);
+  osc2.stop(t + 2.5);
+
+  // Layer 3: Final low rumble (0.5s, starting at t+2.0)
+  const osc3 = ctx.createOscillator();
+  const gain3 = ctx.createGain();
+  osc3.type = 'sawtooth';
+  osc3.frequency.setValueAtTime(50, t + 2.0);
+  osc3.frequency.exponentialRampToValueAtTime(20, t + 2.5);
+  gain3.gain.setValueAtTime(0.0, t);
+  gain3.gain.setValueAtTime(0.2, t + 2.0);
+  gain3.gain.exponentialRampToValueAtTime(0.01, t + 2.5);
+  osc3.connect(gain3);
+  gain3.connect(ctx.destination);
+  osc3.start(t);
+  osc3.stop(t + 2.5);
+}

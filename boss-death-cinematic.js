@@ -166,6 +166,10 @@ export function startBossDeathCinematic(boss) {
   if (typeof window !== 'undefined' && window.playBossDeath) {
     window.playBossDeath();
   }
+  // Play skull boss death knell if applicable
+  if (deps.playSkullDeathKnell && boss && boss.def && boss.def.behavior === 'skull') {
+    deps.playSkullDeathKnell();
+  }
   if (deps.stopMusic) deps.stopMusic();
   if (deps.playExplosionSound) deps.playExplosionSound();
   if (deps.hideBossHealthBar) deps.hideBossHealthBar();
