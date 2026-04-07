@@ -1131,7 +1131,7 @@ function createHUDElements() {
   const heartsGeo = new THREE.PlaneGeometry(1.7875, 0.55);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
-  heartsSprite.position.set(-1.44, 0.48, 0.01);  // Left, top row
+  heartsSprite.position.set(-1.44 + (1.7875 / 2), 0.48, 0.01);  // Left-aligned: offset by half width so left edge at -1.44
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
@@ -1168,6 +1168,8 @@ function createHUDElements() {
 
   // Accuracy bonus — center, just below main HUD row
   // Y=-0.45 keeps it close to the SCORE/LEVEL row (Y=0.3) without overlap
+  // NOTE: combo_text uses center-aligned geometry; left-alignment would require
+  // updating position each frame since text width varies with the accuracy multiplier.
   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 0.2 });
   comboSprite.position.set(-1.88, 0.02, 0.01);  // Left side, below hearts
   comboSprite.visible = false;
