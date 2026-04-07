@@ -3856,4 +3856,4 @@ export function clearFloatingMessage() {
 }
 
 // Export nameEntryGroup and pauseMenuGroup for use in other modules
-export { nameEntryGroup, pauseMenuGroup, pauseCountdownGroup };
+export { nameEntryGroup };
