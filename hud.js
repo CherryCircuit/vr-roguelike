@@ -1771,6 +1771,7 @@ export function triggerHitFlash(includeHoloGlitch = false) {
 }
 
 export function updateHitFlash(dt) {
+  if (!hitFlash) return; // Guard: initHUD is async, render may start before hitFlash is created
   if (hitFlashOpacity > 0) {
     hitFlash.visible = true;
     hitFlash.material.opacity = hitFlashOpacity;
