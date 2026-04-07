@@ -1137,7 +1137,7 @@ function createHUDElements() {
 
   // SCORE - center-left on floor with title above
   // Layout: Spread from hearts, number centered under SCORE title
-  scoreSprite = makeSprite('0', { fontSize: 75, color: '#ffff00', shadow: true, scale: 0.45 });
+  scoreSprite = makeSprite('0', { fontSize: 72, color: '#ffff00', shadow: true, scale: 0.45 });
   scoreSprite.position.set(-0.06, 0.22, 0.01);  // Centered under SCORE title
   hudGroup.add(scoreSprite);
 
@@ -1148,7 +1148,7 @@ function createHUDElements() {
 
   // Kill counter — below LEVEL display
   // Layout: Center-right, below level
-  killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 0.45 });
+  killCountSprite = makeSprite('0/0', { fontSize: 72, color: '#ffffff', shadow: true, scale: 0.45 });
   killCountSprite.position.set(1.04, 0.22, 0.01);  // Center-right, second row
   hudGroup.add(killCountSprite);
 
@@ -1367,14 +1367,14 @@ export function updateHUD(gameState) {
   // #6: Moved left to x=0.5 (center-right) to be closer to SCORE display
   const cfg = gameState._levelConfig;
   const killTarget = cfg ? cfg.killTarget : 0;
-  updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.45 });
+  updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { fontSize: 72, color: '#ffffff', scale: 0.45 });
 
   // Level - #6: Moved left to x=0.5 (center-right) closer to SCORE display
   // #7: Scale 0.45 matches SCORE title for perfect alignment
-  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.45 });
+  updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { fontSize: 72, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.45 });
 
   // Score - #4: fontSize:75 scale:0.45 matches kill counter for consistency
-  updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.45 });
+  updateSpriteText(scoreSprite, `${gameState.score}`, { fontSize: 72, color: '#ffff00', scale: 0.45 });
 
   // Nuke counter - #6: Moved to x=1.4 (right) on top row, right of LEVEL display
   const nukeCount = gameState.nukes || 0;
