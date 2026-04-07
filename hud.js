@@ -155,9 +155,14 @@ class TextPopupPool {
 
   acquire(position, drawFn, opts = {}) {
     if (this.pool.length === 0) {
-      // Pool exhausted: steal oldest active mesh
+      // Pool exhausted: steal oldest active mesh (swap-with-last, O(1))
       if (this.active.length === 0) return null;
       const stolen = this.active.shift();
+      // Fast path: swap last into position 0 to avoid O(n) shift
+      if (this.active.length > 0) {
+        this.active[0] = this.active[this.active.length - 1];
+        this.active.pop();
+      }
       this._deactivate(stolen);
       this.pool.push(stolen);
     }
@@ -1127,10 +1132,10 @@ function createHUDElements() {
   // Lives (hearts) - left side on floor
   // #19: Hearts aligned with TOP of SCORE and LEVEL X titles
   // Layout: Spread horizontally to avoid overlap
-  const heartsGeo = new THREE.PlaneGeometry(1.9, 0.35);
+  const heartsGeo = new THREE.PlaneGeometry(0.95, 0.5);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
-  heartsSprite.position.set(-1.34, 0.45, 0);  // Left, top row
+  heartsSprite.position.set(-1.486, 0.52, 0);  // Left, top row
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
@@ -1358,7 +1363,7 @@ export function updateHUD(gameState) {
     // Cache geometry by maxHealth to avoid recreating on every frame
     if (heartsSprite.userData._heartsMaxHP !== gameState.maxHealth) {
       heartsSprite.userData._heartsMaxHP = gameState.maxHealth;
-      heartsSprite.geometry = getHudGeo(ha * 0.7, 0.7);
+      heartsSprite.geometry = getHudGeo(ha * 1.0, 1.0);
     }
   }
 
@@ -1862,6 +1867,7 @@ export function spawnDamageNumber(position, damage, color) {
 
   const posKey = makePositionKey(position);
   const existing = activeDamageNumbers.get(posKey);
+  const now = performance.now();
 
   if (existing) {
     // Consolidate: add damage to existing number
@@ -1872,47 +1878,49 @@ export function spawnDamageNumber(position, damage, color) {
     const scale = (0.25 + Math.min(totalDamage / 100, 0.15)) * 1.3;
     const width = scale * 2;
     const height = scale;
-    existing.mesh.scale.set(width / 0.65, height / 0.325, 1);
-
-    damageNumberPool.updateText(existing.mesh, (canvas, ctx) => {
-      const fontSize = Math.min(48, 28 + totalDamage / 6);
-      ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      // Drop shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.fillText(Math.round(totalDamage).toString(), 66, 34);
-
-      // Main text
-      ctx.fillStyle = existingColor || '#ffffff';
-      ctx.fillText(Math.round(totalDamage).toString(), 64, 32);
-    });
-
-    // Reset lifetime to keep it visible while under fire
-    existing.mesh.userData.createdAt = performance.now();
-    existing.mesh.userData.lifetime = 600;
-
-    // Pulse effect: briefly scale up
     const baseScaleX = width / 0.65;
     const baseScaleY = height / 0.325;
+
+    // Reset lifetime to keep it visible while under fire
+    existing.mesh.userData.createdAt = now;
+    existing.mesh.userData.lifetime = 600;
+
+    // Pulse effect: set scale up, decay handled in updateDamageNumbers
     existing.mesh.scale.set(baseScaleX * 1.3, baseScaleY * 1.3, 1);
-    setTimeout(() => {
-      if (existing.mesh.userData.active) {
-        existing.mesh.scale.set(baseScaleX, baseScaleY, 1);
-      }
-    }, 50);
+    existing.mesh.userData._pulseDecay = now + 50; // decay time for pulse
+    existing.mesh.userData._baseScaleX = baseScaleX;
+    existing.mesh.userData._baseScaleY = baseScaleY;
 
     // Slight upward bump
     existing.mesh.position.y += 0.05;
+
+    // Throttle canvas redraws to max ~10/sec per number (100ms interval)
+    if (!existing._lastRedraw || now - existing._lastRedraw >= 100) {
+      existing._lastRedraw = now;
+      existing.mesh.scale.set(baseScaleX, baseScaleY, 1);
+      damageNumberPool.updateText(existing.mesh, (canvas, ctx) => {
+        const fontSize = Math.min(48, 28 + totalDamage / 6);
+        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Drop shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillText(Math.round(totalDamage).toString(), 66, 34);
+
+        // Main text
+        ctx.fillStyle = existingColor || '#ffffff';
+        ctx.fillText(Math.round(totalDamage).toString(), 64, 32);
+      });
+    }
 
     return;
   }
 
   // No existing number: create new one
-  const scale = (0.25 + Math.min(damage / 100, 0.15)) * 1.3;
-  const width = scale * 2;
-  const height = scale;
+  const dmgScale = (0.25 + Math.min(damage / 100, 0.15)) * 1.3;
+  const dmgW = dmgScale * 2;
+  const dmgH = dmgScale;
 
   const mesh = damageNumberPool.acquire(position, (canvas, ctx) => {
     const fontSize = Math.min(48, 28 + damage / 6);
@@ -1928,7 +1936,7 @@ export function spawnDamageNumber(position, damage, color) {
     ctx.fillStyle = color || '#ffffff';
     ctx.fillText(Math.round(damage).toString(), 64, 32);
   }, {
-    width, height, lifetime: 600,
+    width: dmgW, height: dmgH, lifetime: 600,
     offsetX: (Math.random() - 0.5) * 0.3,
     offsetY: Math.random() * 0.2,
     offsetZ: (Math.random() - 0.5) * 0.3,
@@ -1947,6 +1955,7 @@ export function spawnDamageNumber(position, damage, color) {
       totalDamage: damage,
       color: color || '#ffffff',
       positionKey: posKey,
+      _lastRedraw: now,
     });
   }
 }
@@ -2022,6 +2031,15 @@ export function updateDamageNumbers(dt, now) {
   // Damage number pool uses gravity (set in defaults)
   // Ouch bubbles are in comboPopupPool but need gravity-like animation too
   if (damageNumberPool) {
+    // Decay pulse effects on consolidated damage numbers (replaces setTimeout)
+    for (const entry of activeDamageNumbers.values()) {
+      const ud = entry.mesh.userData;
+      if (ud._pulseDecay && now >= ud._pulseDecay && ud._baseScaleX) {
+        ud._pulseDecay = 0;
+        entry.mesh.scale.set(ud._baseScaleX, ud._baseScaleY, 1);
+      }
+    }
+
     // Clean up expired consolidated damage numbers from the map
     for (const [posKey, entry] of activeDamageNumbers) {
       if (!entry.mesh.userData.active) {
