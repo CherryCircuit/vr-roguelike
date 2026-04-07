@@ -16,6 +16,8 @@
         button.primary:hover { background: #0077dd; }
         button.danger { background: #882222; border-color: #aa3333; }
         button.danger:hover { background: #993333; }
+        button.save { background: #228833; border-color: #33aa44; }
+        button.save:hover { background: #33aa44; }
         .pr { display: flex; gap: 5px; margin-bottom: 5px; align-items: center; }
         .pr label { font-size: 11px; color: #888; width: 48px; text-align: right; flex-shrink: 0; }
         .pr input, .pr select { flex: 1; background: #333; border: 1px solid #444; color: #fff; padding: 4px 6px; border-radius: 3px; font-size: 12px; min-width: 0; }
@@ -32,7 +34,7 @@
         .ei { padding: 3px 7px; cursor: pointer; border-radius: 3px; font-size: 10px; margin-bottom: 1px; display: flex; justify-content: space-between; align-items: center; }
         .ei:hover { background: #333; }
         .ei.sel { background: #0066cc; }
-        .ei .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+        .ei .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; text-align: left; flex-shrink: 1; }
         .ei .p { color: #888; font-size: 9px; flex-shrink: 0; }
         .ei.sel .p { color: #aac; }
         .cs { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 3px; vertical-align: middle; flex-shrink: 0; }
@@ -43,7 +45,7 @@
         .group-hdr:hover { background: #333; }
         .group-hdr .arrow { transition: transform 0.15s; font-size: 8px; }
         .group-hdr .arrow.collapsed { transform: rotate(-90deg); }
-        .group-hdr .gname { flex: 1; cursor: text; outline: none; border: 1px solid transparent; padding: 0 2px; border-radius: 2px; }
+        .group-hdr .gname { flex: 1; cursor: text; outline: none; border: 1px solid transparent; padding: 0 2px; border-radius: 2px; text-align: left; }
         .group-hdr .gname:hover { border-color: #555; }
         .group-hdr .gname:focus { border-color: #4af; background: #333; }
         .group-ei { padding-left: 20px; }
@@ -74,6 +76,7 @@
         </div>
         <div id="toolbar">
             <button class="primary" onclick="exportJSON()">Export</button>
+            <button class="save" onclick="saveLayout()" title="Saves to layouts/{screen}.json - drop into game's layouts/ folder">SAVE</button>
             <button onclick="document.getElementById('impF').click()">Import</button>
             <input type="file" id="impF" accept=".json" style="display:none" onchange="importJSON(event)">
             <button onclick="undo()">Undo</button>
@@ -262,7 +265,7 @@
             cameraTarget: [0, 0, 0],
             useHudGroup: false,
             gridRotation: Math.PI / 2,
-            hasGroups: false,
+            hasGroups: true,
             hasAnchors: false,
             hasVisibility: false,
             label: 'Pause Menu',
@@ -275,7 +278,7 @@
             cameraTarget: [0, 0, 0],
             useHudGroup: false,
             gridRotation: Math.PI / 2,
-            hasGroups: false,
+            hasGroups: true,
             hasAnchors: false,
             hasVisibility: false,
             label: 'Title Screen',
@@ -288,7 +291,7 @@
             cameraTarget: [0, 0, 0],
             useHudGroup: false,
             gridRotation: Math.PI / 2,
-            hasGroups: false,
+            hasGroups: true,
             hasAnchors: false,
             hasVisibility: false,
             label: 'Game Over',
@@ -301,7 +304,7 @@
             cameraTarget: [0, 0, 0],
             useHudGroup: false,
             gridRotation: Math.PI / 2,
-            hasGroups: false,
+            hasGroups: true,
             hasAnchors: false,
             hasVisibility: false,
             label: 'Upgrade Cards',
@@ -314,7 +317,7 @@
             cameraTarget: [0, 0, 0],
             useHudGroup: false,
             gridRotation: Math.PI / 2,
-            hasGroups: false,
+            hasGroups: true,
             hasAnchors: false,
             hasVisibility: false,
             label: 'Ready Screen',
@@ -776,19 +779,13 @@
 
         if (selectedIds.length > 1) {
             multi.style.display = '';
-            if (cfg.hasGroups) {
-                const gName = getGroupForId(pid);
-                if (gName) {
-                    multi.textContent = `${selectedIds.length} selected \u00b7 Group: ${gName}`;
-                    ga.style.display = 'flex';
-                } else {
-                    multi.textContent = `${selectedIds.length} selected (unrelated)`;
-                    ga.style.display = 'flex';
-                }
+            const gName = getGroupForId(pid);
+            if (gName) {
+                multi.textContent = `${selectedIds.length} selected \u00b7 Group: ${gName}`;
             } else {
-                multi.textContent = `${selectedIds.length} selected`;
-                ga.style.display = 'none';
+                multi.textContent = `${selectedIds.length} selected (unrelated)`;
             }
+            ga.style.display = 'flex';
         } else {
             multi.style.display = 'none';
             ga.style.display = 'none';
@@ -808,25 +805,48 @@
         if (def.type === 'text') {
             document.getElementById('inp-text').value = def.text;
             document.getElementById('inp-text').disabled = false;
-            document.getElementById('inp-scale').value = def.scale.toFixed(4);
-            document.getElementById('row-scale').style.display = '';
-            document.getElementById('row-w').style.display = 'none';
-            document.getElementById('row-h').style.display = 'none';
+            if (selectedIds.length > 1) {
+                // Multi-select: always show Scale with primary's value
+                document.getElementById('inp-scale').value = def.scale.toFixed(4);
+                document.getElementById('row-scale').style.display = '';
+                document.getElementById('row-w').style.display = 'none';
+                document.getElementById('row-h').style.display = 'none';
+            } else {
+                document.getElementById('inp-scale').value = def.scale.toFixed(4);
+                document.getElementById('row-scale').style.display = '';
+                document.getElementById('row-w').style.display = 'none';
+                document.getElementById('row-h').style.display = 'none';
+            }
         } else if (def.type === 'hearts') {
             document.getElementById('inp-text').value = '(3 hearts)';
             document.getElementById('inp-text').disabled = true;
-            document.getElementById('inp-scale').value = (def.scale || 1.0).toFixed(4);
-            document.getElementById('row-scale').style.display = '';
-            document.getElementById('row-w').style.display = 'none';
-            document.getElementById('row-h').style.display = 'none';
+            if (selectedIds.length > 1) {
+                document.getElementById('inp-scale').value = (def.scale || 1.0).toFixed(4);
+                document.getElementById('row-scale').style.display = '';
+                document.getElementById('row-w').style.display = 'none';
+                document.getElementById('row-h').style.display = 'none';
+            } else {
+                document.getElementById('inp-scale').value = (def.scale || 1.0).toFixed(4);
+                document.getElementById('row-scale').style.display = '';
+                document.getElementById('row-w').style.display = 'none';
+                document.getElementById('row-h').style.display = 'none';
+            }
         } else {
             document.getElementById('inp-text').value = '(rectangle)';
             document.getElementById('inp-text').disabled = true;
-            document.getElementById('inp-w').value = def.w.toFixed(3);
-            document.getElementById('inp-h').value = def.h.toFixed(3);
-            document.getElementById('row-scale').style.display = 'none';
-            document.getElementById('row-w').style.display = '';
-            document.getElementById('row-h').style.display = '';
+            if (selectedIds.length > 1) {
+                // Multi-select rect: show Scale (1.0) instead of w/h
+                document.getElementById('inp-scale').value = '1.0000';
+                document.getElementById('row-scale').style.display = '';
+                document.getElementById('row-w').style.display = 'none';
+                document.getElementById('row-h').style.display = 'none';
+            } else {
+                document.getElementById('inp-w').value = def.w.toFixed(3);
+                document.getElementById('inp-h').value = def.h.toFixed(3);
+                document.getElementById('row-scale').style.display = 'none';
+                document.getElementById('row-w').style.display = '';
+                document.getElementById('row-h').style.display = '';
+            }
         }
     }
 
@@ -879,33 +899,37 @@
         }
 
         // Handle scale/size changes for primary
-        if (def.type === 'text' || def.type === 'hearts') {
+        if (selectedIds.length > 1) {
+            // Multi-select: always use Scale input, apply ratio to all types
             const newScale = parseFloat(document.getElementById('inp-scale').value) || 0.02;
-            if (selectedIds.length > 1 && def.type === 'text') {
-                // Apply same scale to all selected text elements
-                selectedIds.forEach(id => {
-                    const d2 = els[id]?.userData.def;
-                    if (d2 && d2.type === 'text') {
-                        applyScaleWithAnchor(id, newScale);
-                    }
-                });
+            let oldScale;
+            if (def.type === 'text' || def.type === 'hearts') {
+                oldScale = def.scale || 1.0;
             } else {
-                applyScaleWithAnchor(pid, newScale);
+                oldScale = 1.0; // rects start at 1.0 scale
             }
+            const ratio = newScale / oldScale;
+            selectedIds.forEach(id => {
+                const d2 = els[id]?.userData.def;
+                if (!d2) return;
+                if (d2.type === 'text' || d2.type === 'hearts') {
+                    // Apply scale directly
+                    const targetScale = (d2.scale || 1.0) * ratio;
+                    applyScaleWithAnchor(id, targetScale);
+                } else if (d2.type === 'rect') {
+                    // Multiply w/h by ratio
+                    const newW = d2.w * ratio;
+                    const newH = d2.h * ratio;
+                    applyRectSizeWithAnchor(id, newW, newH);
+                }
+            });
+        } else if (def.type === 'text' || def.type === 'hearts') {
+            const newScale = parseFloat(document.getElementById('inp-scale').value) || 0.02;
+            applyScaleWithAnchor(pid, newScale);
         } else if (def.type === 'rect') {
             const newW = parseFloat(document.getElementById('inp-w').value) || 0.1;
             const newH = parseFloat(document.getElementById('inp-h').value) || 0.1;
-            if (selectedIds.length > 1) {
-                // Apply same w/h to all selected rect elements
-                selectedIds.forEach(id => {
-                    const d2 = els[id]?.userData.def;
-                    if (d2 && d2.type === 'rect') {
-                        applyRectSizeWithAnchor(id, newW, newH);
-                    }
-                });
-            } else {
-                applyRectSizeWithAnchor(pid, newW, newH);
-            }
+            applyRectSizeWithAnchor(pid, newW, newH);
         }
         updateList();
         autoSave();
@@ -1261,7 +1285,7 @@
                 else if (v.w) { dd.w = v.w; dd.h = v.h; }
                 rebuildMesh(id);
             });
-            if (d.groups && SCREEN_CONFIGS[screenId].hasGroups) {
+            if (d.groups) {
                 groups = {};
                 for (const [name, members] of Object.entries(d.groups)) {
                     groups[name] = members.filter(m => els[m]);
@@ -1313,15 +1337,23 @@
             }
         });
         // Export groups
-        if (cfg.hasGroups) {
-            const nonEmptyGroups = {};
-            for (const [name, members] of Object.entries(groups)) {
-                if (members.length > 0) nonEmptyGroups[name] = [...members];
-            }
-            if (Object.keys(nonEmptyGroups).length > 0) data.groups = nonEmptyGroups;
+        const nonEmptyGroups = {};
+        for (const [name, members] of Object.entries(groups)) {
+            if (members.length > 0) nonEmptyGroups[name] = [...members];
         }
+        if (Object.keys(nonEmptyGroups).length > 0) data.groups = nonEmptyGroups;
         return data;
     }
+
+    window.saveLayout = function() {
+        const cfg = SCREEN_CONFIGS[currentScreen];
+        const data = buildExportData();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = currentScreen + '.json';
+        a.click();
+    };
 
     window.exportJSON = function() {
         const cfg = SCREEN_CONFIGS[currentScreen];
@@ -1355,7 +1387,7 @@
                     else if (v.w) { dd.w = v.w; dd.h = v.h; }
                     rebuildMesh(id);
                 });
-                if (d.groups && SCREEN_CONFIGS[currentScreen].hasGroups) {
+                if (d.groups) {
                     groups = {};
                     for (const [name, members] of Object.entries(d.groups)) {
                         groups[name] = members.filter(m => els[m]);
