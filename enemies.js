@@ -13,6 +13,7 @@ let spawnVoxelExplosion = null;
 
 // PERFORMANCE: Debug flag to disable console.log in hot paths on Quest
 const DEBUG = false;
+const _log = DEBUG ? console.log.bind(console) : () => {};
 
 // ============================================================
 // ENEMY SPAWN WARP-IN EFFECT
@@ -112,6 +113,9 @@ const _emissiveBlack = new THREE.Color(0x000000);
 const _emissiveWhite = new THREE.Color(0xffffff);
 const _emissiveAmber = new THREE.Color(0xffaa00);
 const _scratchColor = new THREE.Color();
+const _scratchMat4 = new THREE.Matrix4();
+const _scratchMat4b = new THREE.Matrix4();
+const _scratchScale = new THREE.Vector3();
 const _explosionSpriteVel = new THREE.Vector3();
 
 // ── Voxel patterns (simplified for performance) ───────────
@@ -2737,6 +2741,7 @@ export function spawnEnemy(type, position, levelConfig) {
  * Returns array of enemy indices that reached the player.
  */
 export function updateEnemies(dt, now, playerPos) {
+  _enemyCacheDirty = true; // invalidate cache at frame start
   const collisions = [];
   const _dirtyPools = new Set();  // Collect pools that need GPU buffer sync
 
@@ -2819,11 +2824,10 @@ export function updateEnemies(dt, now, playerPos) {
 
           // Build matrix with local offset and world position
           const headScale = i === 0 ? 1.25 : 1.0;
-          const matrix = new THREE.Matrix4();
-          matrix.makeTranslation(localX, localY, localZ);
-          matrix.scale(new THREE.Vector3(headScale, headScale, headScale));
-          matrix.premultiply(new THREE.Matrix4().makeTranslation(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z));
-          pool.mesh.setMatrixAt(iid, matrix);
+          _scratchMat4.makeTranslation(localX, localY, localZ);
+          _scratchMat4.scale(_scratchScale.set(headScale, headScale, headScale));
+          _scratchMat4.premultiply(_scratchMat4b.makeTranslation(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z));
+          pool.mesh.setMatrixAt(iid, _scratchMat4);
         }
         _dirtyPools.add(pool);
       }
@@ -4308,7 +4312,7 @@ class Boss {
 
   onPhaseChange(newPhase) {
     // Called when boss transitions to a new phase
-    console.log(`[Boss] ${this.def.name} transitioning to Phase ${newPhase}`);
+    _log(`[Boss] ${this.def.name} transitioning to Phase ${newPhase}`);
 
     // Play phase change effect
     if (this.telegraphing) {
@@ -4832,7 +4836,7 @@ class SkullHand {
     this.maxHp = Math.round(baseHp * 0.67 * hpMultiplier); // Start at 67% of base, scale up
     this.hp = this.maxHp;
     this.alive = true;
-    console.log(`[SkullHand] Hand ${handIndex} created with ${this.hp}/${this.maxHp} HP (handsDestroyed: ${handsDestroyed})`);
+    _log(`[SkullHand] Hand ${handIndex} created with ${this.hp}/${this.maxHp} HP (handsDestroyed: ${handsDestroyed})`);
     
     this.shootTimer = 0;
     this.shootRate = parentBoss.def.handShootRate || 1.5;
@@ -5363,7 +5367,7 @@ class SkullBoss extends Boss {
       this.rightEye.material.opacity = 1.0;
     }
     
-    console.log(`[SkullBoss] Phase transition: ${fromPhase} -> ${toPhase} (3-sec invuln)`);
+    _log(`[SkullBoss] Phase transition: ${fromPhase} -> ${toPhase} (3-sec invuln)`);
   }
   
   updateTransition(dt, now, playerPos) {
@@ -5399,7 +5403,7 @@ class SkullBoss extends Boss {
         this.rightEye.material.color.setHex(0xff0000);
       }
       
-      console.log(`[SkullBoss] Transition complete, now in phase ${this.transitionToPhase}`);
+      _log(`[SkullBoss] Transition complete, now in phase ${this.transitionToPhase}`);
     }
   }
   
@@ -5523,7 +5527,7 @@ class SkullBoss extends Boss {
         hand.maxHp = Math.round(hand.maxHp * hpIncreaseMultiplier);
         // Also heal them a bit
         hand.hp = Math.min(hand.hp + 30, hand.maxHp);
-        console.log(`[SkullBoss] Hand ${hand.handIndex} HP increased: ${oldMax} -> ${hand.maxHp}, now at ${hand.hp}/${hand.maxHp}`);
+        _log(`[SkullBoss] Hand ${hand.handIndex} HP increased: ${oldMax} -> ${hand.maxHp}, now at ${hand.hp}/${hand.maxHp}`);
       }
     });
     
@@ -8530,7 +8534,7 @@ export function spawnBossDebris(boss) {
     bossDebris.push(debris);
   }
 
-  console.log(`[boss] Spawned ${bossDebris.length} debris voxels`);
+  _log(`[boss] Spawned ${bossDebris.length} debris voxels`);
 }
 
 export function updateBossDebris(dt, now, biomeFloorY = 0.05) {
@@ -8752,7 +8756,7 @@ function initBossProjPools() {
     bossProjData.push(null);
   }
 
-  console.log('[performance] Boss projectile InstancedMesh pools initialized (50 instances, 2 draw calls)');
+  _log('[performance] Boss projectile InstancedMesh pools initialized (50 instances, 2 draw calls)');
 }
 
 function acquireBossProjIndex() {
@@ -9117,12 +9121,33 @@ export function getSpawnPosition(airSpawns, verticalAngle = 0, distanceRange = n
 }
 
 /** Get all fast enemies (for proximity alerts) */
+// Cached arrays for fast/swarm enemy lookups (avoid filter() allocation every frame)
+let _cachedFastEnemies = [];
+let _cachedSwarmEnemies = [];
+let _enemyCacheDirty = true;
+
+export function invalidateEnemyCache() { _enemyCacheDirty = true; }
+
+function refreshEnemyCache() {
+  if (!_enemyCacheDirty) return;
+  _cachedFastEnemies.length = 0;
+  _cachedSwarmEnemies.length = 0;
+  for (let i = 0; i < activeEnemies.length; i++) {
+    const e = activeEnemies[i];
+    if (e.type === 'fast') _cachedFastEnemies.push(e);
+    else if (e.type === 'swarm') _cachedSwarmEnemies.push(e);
+  }
+  _enemyCacheDirty = false;
+}
+
 export function getFastEnemies() {
-  return activeEnemies.filter(e => e.type === 'fast');
+  refreshEnemyCache();
+  return _cachedFastEnemies;
 }
 
 /** Get all swarm enemies (for proximity alerts) */
 export function getSwarmEnemies() {
-  return activeEnemies.filter(e => e.type === 'swarm');
+  refreshEnemyCache();
+  return _cachedSwarmEnemies;
 }
 

@@ -20,8 +20,8 @@ export function buildHellscapeLavaScene(group, deps) {
   const moonLight = new THREE.DirectionalLight(0xff3333, 2.5);
   moonLight.position.set(20, 30, -100);
   moonLight.castShadow = true;
-  moonLight.shadow.mapSize.width = 2048;
-  moonLight.shadow.mapSize.height = 2048;
+  moonLight.shadow.mapSize.width = 512;
+  moonLight.shadow.mapSize.height = 512;
   moonLight.shadow.camera.near = 0.5;
   moonLight.shadow.camera.far = 500;
   moonLight.shadow.camera.left = -100;
@@ -44,7 +44,7 @@ export function buildHellscapeLavaScene(group, deps) {
   // ========================================
   // OPTIMIZED: Reduced from 200x200 (40,401 verts) to 100x100 (10,201 verts)
   // Visual impact: Slightly less smooth terrain, but acceptable for hellscape
-  const geometry = new THREE.PlaneGeometry(300, 300, 100, 100);
+  const geometry = new THREE.PlaneGeometry(300, 300, 50, 50);
   geometry.rotateX(-Math.PI / 2);
   const positions = geometry.attributes.position;
   for (let i = 0; i < positions.count; i++) {
@@ -180,8 +180,8 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
   // Add subtle red point lights along the river for glow effect
   const lavaLights = [];
-  for (let i = 0; i < 3; i++) {
-    const lz = (i - 1) * 60;
+  for (let i = 0; i < 2; i++) {
+    const lz = (i - 0.5) * 60;
     const lx = Math.sin(lz * 0.03) * 15.0 - 10.0; // Match terrain world-space river center
     const lavaLight = new THREE.PointLight(0xff3300, 2.0, 35);
     lavaLight.position.set(lx, floorY + 3, lz);

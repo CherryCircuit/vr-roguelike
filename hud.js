@@ -342,7 +342,7 @@ let hitFlash = null;
 let hitFlashOpacity = 0;
 
 // Speed lines overlay (radial streaks during slow-mo)
-const ENABLE_SPEED_LINES = true;
+const ENABLE_SPEED_LINES = false; // Disabled: no visible effect on Quest, wastes a draw call
 let speedLinesMesh = null;
 let speedLinesOpacity = 0;
 
