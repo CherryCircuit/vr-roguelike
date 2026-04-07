@@ -964,7 +964,10 @@ function createHUDElements() {
   // NOTE: combo_text uses center-aligned geometry; left-alignment would require
   // updating position each frame since text width varies with the accuracy multiplier.
   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 0.25 });
-  comboSprite.position.set(-2.26, 0.1, 0.01);  // Left side, below hearts (v13)
+  comboSprite.position.set(-2.26, 0.1, 0.01);
+  // Left-align: offset by half geometry width so left edge sits at x=-2.26
+  const comboGeoW = comboSprite.geometry.parameters?.width || 1;
+  comboSprite.position.x = -2.26 + comboGeoW / 2;  // Left side, below hearts (v13)
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 
@@ -974,7 +977,7 @@ function createHUDElements() {
   cooldownGeo.translate(0.825, 0, 0); // shift right by half width for left-edge pivot
   const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
-  comboCooldownSprite.position.set(-1.377, 0.21, 0.01);  // Left side, below combo text (v13)
+  comboCooldownSprite.position.set(-2.202, 0.21, 0.01);  // Left side, below combo text (v13) - geo.translate handles left-edge pivot
   comboCooldownSprite.visible = false;
   hudGroup.add(comboCooldownSprite);
 }
@@ -1189,6 +1192,9 @@ export function updateHUD(gameState) {
     comboCooldownSprite.visible = true;
     const accuracyMult = (game.accuracyMultiplier || 1).toFixed(1);
     updateSpriteText(comboSprite, `${accuracyMult}X ACCURACY BONUS`, { color: '#ff8800', scale: 0.25 });
+    // Left-align: re-apply offset after text change (width varies with multiplier)
+    const cw = comboSprite.geometry.parameters?.width || 1;
+    comboSprite.position.x = -2.26 + cw / 2;
 
     // Update bonus meter
     const remainingRatio = Math.max(0, Math.min(1, accuracyBonus / 100));
