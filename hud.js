@@ -1167,7 +1167,7 @@ function createHUDElements() {
 
   // Accuracy bonus — center, just below main HUD row
   // Y=-0.45 keeps it close to the SCORE/LEVEL row (Y=0.3) without overlap
-  comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 0.14 });
+  comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 0.18 });
   comboSprite.position.set(-1.56, 0.22, 0);  // Left side, below hearts
   comboSprite.visible = false;
   hudGroup.add(comboSprite);

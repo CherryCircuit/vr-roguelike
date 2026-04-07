@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Floor HUD Layout Editor v3</title>
+    <title>Floor HUD Layout Editor v4</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a1a; color: #e0e0e0; overflow: hidden; display: flex; height: 100vh; }
@@ -27,16 +27,16 @@
         .abtn button.active { background: #0066cc; border-color: #0080ff; color: #fff; }
         #elist { flex: 1; overflow-y: auto; background: #2a2a2a; border-radius: 4px; padding: 6px; min-height: 80px; }
         #elist h3 { font-size: 12px; color: #888; margin-bottom: 4px; }
-        .ei { padding: 4px 7px; cursor: pointer; border-radius: 3px; font-size: 11px; margin-bottom: 1px; display: flex; justify-content: space-between; align-items: center; }
+        .ei { padding: 3px 7px; cursor: pointer; border-radius: 3px; font-size: 10px; margin-bottom: 1px; display: flex; justify-content: space-between; align-items: center; }
         .ei:hover { background: #333; }
         .ei.sel { background: #0066cc; }
-        .ei .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        .ei .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; }
         .ei .p { color: #888; font-size: 9px; flex-shrink: 0; }
-        .ei.sel .p { color: #aac; }
-        .cs { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: middle; flex-shrink: 0; }
+        .cs { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 3px; vertical-align: middle; flex-shrink: 0; }
         #canvas { width: 100%; height: 100%; }
         #inst { position: absolute; bottom: 12px; left: 12px; background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 4px; font-size: 10px; color: #aaa; }
         #inst kbd { background: #444; padding: 1px 4px; border-radius: 2px; font-family: monospace; }
+        .note { background: #332200; border: 1px solid #553300; padding: 6px 8px; border-radius: 4px; font-size: 10px; color: #cc9; margin-bottom: 8px; line-height: 1.4; }
     </style>
 </head>
 <body>
@@ -48,6 +48,7 @@
             <button onclick="undo()">Undo</button>
             <button onclick="resetAll()">Reset</button>
         </div>
+        <div class="note">Elements render at exact in-game size. Text anchor is center by default. Use Align to shift where position points to.</div>
         <div id="sel-info">
             <h3>SELECTED</h3>
             <div id="sel-name">Click an element</div>
@@ -58,7 +59,7 @@
             <div class="pr"><label>Y</label><input type="number" step="0.02" id="inp-y" onchange="onNumInput()"></div>
             <div class="pr"><label>Z</label><input type="number" step="0.01" id="inp-z" onchange="onNumInput()"></div>
             <div class="sec">Size</div>
-            <div class="pr" id="row-scale"><label>Scale</label><input type="number" step="0.01" min="0.05" id="inp-scale" onchange="onNumInput()"></div>
+            <div class="pr" id="row-scale"><label>Scale</label><input type="number" step="0.01" min="0.02" id="inp-scale" onchange="onNumInput()"></div>
             <div class="pr" id="row-w" style="display:none"><label>Width</label><input type="number" step="0.05" id="inp-w" onchange="onNumInput()"></div>
             <div class="pr" id="row-h" style="display:none"><label>Height</label><input type="number" step="0.05" id="inp-h" onchange="onNumInput()"></div>
             <div class="sec">Alignment</div>
@@ -91,32 +92,32 @@
     tc.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; });
     scene.add(new THREE.GridHelper(10, 20, 0x444444, 0x333333));
 
-    // HUD group matching in-game tilt
     const hudGroup = new THREE.Group();
     hudGroup.position.set(0, 0, -3); hudGroup.rotation.x = -70 * Math.PI / 180;
     scene.add(hudGroup);
 
-    // ── Element defs ──
-    // type: 'text' = makeSprite (editable text, uniform scale), 'rect' = plain geometry (W/H), 'hearts' = pixel hearts
+    // ── Element defs matching EXACT in-game parameters ──
+    // type: 'text' = makeSprite (fontSize + scale), 'rect' = PlaneGeometry(w,h)
+    // 'hearts' = special: PlaneGeometry(1.2, 0.24) with pixel heart texture
     const DEFS = [
-        { id:'hud_bg', name:'HUD Background', type:'rect', color:0x111122, w:3.0, h:1.2, x:0, y:0, z:0, opacity:0.3 },
-        { id:'hearts', name:'Hearts (Lives)', type:'hearts', color:0xcc3333, x:-1.2, y:0.45, z:0.01 },
-        { id:'score_title', name:'SCORE title', type:'text', text:'SCORE', color:0xcccc33, fontSize:72, scale:0.45, glow:true, x:-0.36, y:0.45, z:0.01 },
-        { id:'score_num', name:'Score number', type:'text', text:'04200', color:0xcccc33, fontSize:75, scale:0.45, x:-0.36, y:0.1, z:0.01 },
-        { id:'level', name:'LEVEL', type:'text', text:'LEVEL 1', color:0x00cccc, fontSize:72, scale:0.45, glow:true, x:0.42, y:0.45, z:0.01 },
-        { id:'kills', name:'Kill count', type:'text', text:'0/0', color:0xffffff, fontSize:75, scale:0.45, x:0.42, y:0.15, z:0.01 },
-        { id:'nuke_icon', name:'☢ Nuke', type:'text', text:'☢', color:0xcccc33, fontSize:144, scale:0.45, glow:true, x:1.06, y:0.45, z:0.01 },
-        { id:'nuke_count', name:'Nuke count', type:'text', text:'X3', color:0xcccc33, fontSize:72, scale:0.45, glow:true, x:1.44, y:0.45, z:0.01 },
-        { id:'combo_text', name:'Combo/Accuracy', type:'text', text:'1X ACCURACY BONUS', color:0xff8800, fontSize:40, scale:0.1, x:-1, y:0.15, z:0.01 },
-        { id:'combo_bar', name:'Cooldown bar', type:'rect', color:0xff8800, w:0.5, h:0.03, x:-1.2, y:-0.02, z:0.01, opacity:0.8 },
-        { id:'scanline', name:'Scan line', type:'rect', color:0x33ff66, w:2.8, h:0.015, x:0, y:0, z:0.02, opacity:0.5 },
+        { id:'hud_bg', name:'HUD Background', type:'rect', color:0x111122, w:4, h:1, x:0, y:0.26, z:0, opacity:0.3 },
+        { id:'hearts', name:'Hearts (Lives)', type:'hearts', color:0xcc3333, w:1.2, h:0.24, x:-1.48, y:0.45, z:0.01 },
+        { id:'score_title', name:'SCORE title', type:'text', text:'SCORE', color:0xcccc33, fontSize:72, scale:0.45, glow:true, x:-0.5, y:0.45, z:0.01 },
+        { id:'score_num', name:'Score number', type:'text', text:'100000', color:0xcccc33, fontSize:75, scale:0.45, x:-0.5, y:0.2, z:0.01 },
+        { id:'level', name:'LEVEL', type:'text', text:'LEVEL 20', color:0x00cccc, fontSize:72, scale:0.45, glow:true, x:0.69, y:0.45, z:0.01 },
+        { id:'kills', name:'Kill count', type:'text', text:'123/123', color:0xffffff, fontSize:75, scale:0.45, x:0.682, y:0.2, z:0.01 },
+        { id:'nuke_icon', name:'☢ Nuke', type:'text', text:'☢', color:0xcccc33, fontSize:144, scale:0.8, glow:true, x:1.514, y:0.34, z:0.01 },
+        { id:'nuke_count', name:'Nuke count', type:'text', text:'X3', color:0xcccc33, fontSize:72, scale:0.35, glow:true, x:1.795, y:0.34, z:0.01 },
+        { id:'combo_text', name:'Accuracy Bonus', type:'text', text:'4.5X ACCURACY BONUS', color:0xff8800, fontSize:40, scale:0.18, x:-1.56, y:0.22, z:0.01 },
+        { id:'combo_bar', name:'Cooldown bar', type:'rect', color:0xff8800, w:0.55, h:0.05, x:-1.54, y:0.16, z:0.01, opacity:0.8 },
+        { id:'scanline', name:'Scan line', type:'rect', color:0x33ff66, w:4, h:0.015, x:0, y:0, z:0.02, opacity:0.5 },
     ];
 
     const els = {};
     const INIT = {};
-    const labels = [];
 
-    // ── Render text matching makeSprite ──
+    // ── Render text EXACTLY like makeSprite ──
+    // Same padding logic, same textAlign center, same aspect ratio calculation
     function renderTextMesh(text, fontSize, scale, colorHex, glow) {
         const pad = glow ? 25 : 40;
         const c = document.createElement('canvas');
@@ -129,66 +130,53 @@
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.clearRect(0, 0, tw, th);
 
-        if (glow) { ctx.shadowColor = colorHex; ctx.shadowBlur = 8; }
+        if (glow) { ctx.shadowColor = colorHex; ctx.shadowBlur = 15; }
         ctx.fillStyle = colorHex;
         ctx.fillText(text, tw / 2, th / 2);
-
-        // Bounding box outline
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = colorHex.replace(')', ',0.4)').replace('rgb', 'rgba');
-        if (!ctx.strokeStyle.includes('rgba')) ctx.strokeStyle = colorHex + '66';
-        ctx.lineWidth = 1; ctx.strokeRect(3, 3, tw - 6, th - 6);
 
+        // Bounding box
+        ctx.strokeStyle = colorHex.length === 7 ? colorHex + '55' : 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = 1; ctx.strokeRect(2, 2, tw - 4, th - 4);
         // Center crosshair
         ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(tw/2-5,th/2); ctx.lineTo(tw/2+5,th/2); ctx.moveTo(tw/2,th/2-5); ctx.lineTo(tw/2,th/2+5); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(tw/2-6,th/2); ctx.lineTo(tw/2+6,th/2); ctx.moveTo(tw/2,th/2-6); ctx.lineTo(tw/2,th/2+6); ctx.stroke();
 
         const tex = new THREE.CanvasTexture(c);
         const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false, depthWrite: false, opacity: 0.9 });
-        const w = (tw / th) * scale;
-        const h = scale;
+        const w = (tw / th) * scale; const h = scale;
         return { geo: new THREE.PlaneGeometry(w, h), mat, w, h };
     }
 
-    // ── Render pixel hearts matching game ──
+    // ── Render pixel hearts on a 1.2×0.24 plane matching in-game ──
     const HEART_PX = [[0,1,1,0,1,1,0],[1,1,1,1,1,1,1],[1,1,1,1,1,1,1],[0,1,1,1,1,1,0],[0,0,1,1,1,0,0],[0,0,0,1,0,0,0]];
-    function renderHeartsMesh(numHearts, heartSize) {
+    function renderHeartsTexture() {
         const c = document.createElement('canvas');
-        const ps = 4; // pixel size
-        const heartW = 7 * ps, heartH = 6 * ps, gap = 3;
-        c.width = numHearts * heartW + (numHearts - 1) * gap + 8;
-        c.height = heartH + 8;
+        c.width = 240; c.height = 48;
         const ctx = c.getContext('2d');
-        ctx.clearRect(0, 0, c.width, c.height);
-        for (let h = 0; h < numHearts; h++) {
-            const ox = 4 + h * (heartW + gap);
-            const oy = 4;
+        ctx.clearRect(0, 0, 240, 48);
+        const ps = 6, heartW = 7 * ps, gap = 12;
+        for (let h = 0; h < 3; h++) {
+            const ox = 8 + h * (heartW + gap);
             HEART_PX.forEach((row, py) => row.forEach((on, px) => {
                 if (!on) return;
-                ctx.fillStyle = h < numHearts ? '#ff3333' : '#333333';
-                ctx.fillRect(ox + px * ps, oy + py * ps, ps, ps);
+                ctx.fillStyle = '#ff3333';
+                ctx.fillRect(ox + px * ps, 6 + py * ps, ps, ps);
             }));
         }
-        // Border
-        ctx.strokeStyle = '#ff333366'; ctx.lineWidth = 1; ctx.strokeRect(1, 1, c.width - 2, c.height - 2);
-        const tex = new THREE.CanvasTexture(c);
-        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
-        const aspect = c.width / c.height;
-        const w = aspect * heartSize, h = heartSize;
-        return { geo: new THREE.PlaneGeometry(w, h), mat, w, h };
+        ctx.strokeStyle = '#ff333355'; ctx.lineWidth = 1; ctx.strokeRect(0, 0, 240, 48);
+        return new THREE.CanvasTexture(c);
     }
 
-    // ── Build elements ──
     function buildElement(def) {
         let geo, mat;
         if (def.type === 'text') {
             const r = renderTextMesh(def.text, def.fontSize, def.scale, '#' + def.color.toString(16).padStart(6, '0'), def.glow);
-            geo = r.geo; mat = r.mat;
-            def._w = r.w; def._h = r.h;
+            geo = r.geo; mat = r.mat; def._w = r.w; def._h = r.h;
         } else if (def.type === 'hearts') {
-            const r = renderHeartsMesh(3, 0.24);
-            geo = r.geo; mat = r.mat;
-            def._w = r.w; def._h = r.h; def.scale = 0.24;
+            geo = new THREE.PlaneGeometry(def.w, def.h);
+            mat = new THREE.MeshBasicMaterial({ map: renderHeartsTexture(), transparent: true, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
+            def._w = def.w; def._h = def.h;
         } else {
             geo = new THREE.PlaneGeometry(def.w, def.h);
             mat = new THREE.MeshBasicMaterial({ color: def.color, side: THREE.DoubleSide, transparent: true, opacity: def.opacity || 0.8 });
@@ -205,22 +193,15 @@
 
     DEFS.forEach(buildElement);
 
-    // ── Rebuild a text/hearts element (when text or scale changes) ──
     function rebuildMesh(id) {
         const def = DEFS.find(d => d.id === id);
         const mesh = els[id];
         const pos = mesh.position.clone();
         mesh.geometry.dispose();
         if (mesh.material.map) { mesh.material.map.dispose(); }
-
         if (def.type === 'text') {
             const r = renderTextMesh(def.text, def.fontSize, def.scale, '#' + def.color.toString(16).padStart(6, '0'), def.glow);
-            mesh.geometry = r.geo; mesh.material = r.mat;
-            def._w = r.w; def._h = r.h;
-        } else if (def.type === 'hearts') {
-            const r = renderHeartsMesh(3, def.scale);
-            mesh.geometry = r.geo; mesh.material = r.mat;
-            def._w = r.w; def._h = r.h;
+            mesh.geometry = r.geo; mesh.material = r.mat; def._w = r.w; def._h = r.h;
         }
         mesh.position.copy(pos);
     }
@@ -237,9 +218,7 @@
     });
 
     function doSelect(mesh) {
-        if (sel) {
-            if (sel.material.color) sel.material.color.setHex(sel.userData.origColor);
-        }
+        if (sel && sel.material.color) sel.material.color.setHex(sel.userData.origColor);
         pushUndo();
         sel = mesh;
         if (sel.material.color) sel.material.color.setHex(0x00ffff);
@@ -270,19 +249,12 @@
         if (def.type === 'text') {
             document.getElementById('inp-text').value = def.text;
             document.getElementById('inp-text').disabled = false;
-            document.getElementById('inp-scale').value = def.scale.toFixed(3);
-            document.getElementById('row-scale').style.display = '';
-            document.getElementById('row-w').style.display = 'none';
-            document.getElementById('row-h').style.display = 'none';
-        } else if (def.type === 'hearts') {
-            document.getElementById('inp-text').value = '(3 hearts)';
-            document.getElementById('inp-text').disabled = true;
-            document.getElementById('inp-scale').value = def.scale.toFixed(3);
+            document.getElementById('inp-scale').value = def.scale.toFixed(4);
             document.getElementById('row-scale').style.display = '';
             document.getElementById('row-w').style.display = 'none';
             document.getElementById('row-h').style.display = 'none';
         } else {
-            document.getElementById('inp-text').value = '(rectangle)';
+            document.getElementById('inp-text').value = def.type === 'hearts' ? '(3 hearts)' : '(rectangle)';
             document.getElementById('inp-text').disabled = true;
             document.getElementById('inp-w').value = def.w.toFixed(3);
             document.getElementById('inp-h').value = def.h.toFixed(3);
@@ -309,8 +281,8 @@
         sel.position.x = parseFloat(document.getElementById('inp-x').value) || 0;
         sel.position.y = parseFloat(document.getElementById('inp-y').value) || 0;
         sel.position.z = parseFloat(document.getElementById('inp-z').value) || 0;
-        if (def.type === 'text' || def.type === 'hearts') {
-            def.scale = parseFloat(document.getElementById('inp-scale').value) || 0.1;
+        if (def.type === 'text') {
+            def.scale = parseFloat(document.getElementById('inp-scale').value) || 0.02;
             rebuildMesh(def.id);
         } else {
             def.w = parseFloat(document.getElementById('inp-w').value) || 0.1;
@@ -361,7 +333,6 @@
             m.position.set(v.x, v.y, v.z);
             m.userData.align = v.align;
             if (d.type === 'text') { d.text = v.text; d.scale = v.scale; rebuildMesh(id); }
-            else if (d.type === 'hearts') { d.scale = v.scale; rebuildMesh(id); }
             else { d.w = v.w; d.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
         });
         updateUI(); updateList();
@@ -373,7 +344,6 @@
             m.position.set(v.x, v.y, v.z);
             m.userData.align = v.align;
             if (d.type === 'text') { d.text = v.text; d.scale = v.scale; rebuildMesh(id); }
-            else if (d.type === 'hearts') { d.scale = v.scale; rebuildMesh(id); }
             else { d.w = v.w; d.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
         });
         updateUI(); updateList();
@@ -389,12 +359,10 @@
             const m = els[id]; const d = m.userData.def;
             data.elements[id] = {
                 x: +m.position.x.toFixed(3), y: +m.position.y.toFixed(3), z: +m.position.z.toFixed(3),
-                align: m.userData.align || 'center',
-                type: d.type,
+                align: m.userData.align || 'center', type: d.type,
             };
-            if (d.type === 'text' || d.type === 'hearts') data.elements[id].scale = +(d.scale.toFixed(3));
-            if (d.type === 'text') data.elements[id].text = d.text;
-            if (d.type === 'rect') { data.elements[id].w = +(d.w.toFixed(3)); data.elements[id].h = +(d.h.toFixed(3)); }
+            if (d.type === 'text') { data.elements[id].scale = +(d.scale.toFixed(4)); data.elements[id].text = d.text; }
+            else { data.elements[id].w = +(d.w.toFixed(3)); data.elements[id].h = +(d.h.toFixed(3)); }
         });
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'floor-hud-layout.json'; a.click();
@@ -412,9 +380,8 @@
                         const m = els[id]; const dd = m.userData.def; const v = d.elements[id];
                         m.position.set(v.x, v.y, v.z);
                         if (v.align) m.userData.align = v.align;
-                        if (dd.type === 'text' && v.text) { dd.text = v.text; dd.scale = v.scale; rebuildMesh(id); }
-                        else if (dd.type === 'hearts' && v.scale) { dd.scale = v.scale; rebuildMesh(id); }
-                        else if (dd.type === 'rect' && v.w) { dd.w = v.w; dd.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
+                        if (dd.type === 'text' && v.text !== undefined) { dd.text = v.text; dd.scale = v.scale; rebuildMesh(id); }
+                        else if (dd.type !== 'text' && v.w) { dd.w = v.w; dd.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
                     });
                     updateUI(); updateList();
                 }
