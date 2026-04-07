@@ -1128,7 +1128,7 @@ function createHUDElements() {
   // Lives (hearts) - left side on floor
   // #19: Hearts aligned with TOP of SCORE and LEVEL X titles
   // Layout: Spread horizontally to avoid overlap
-  const heartsGeo = new THREE.PlaneGeometry(0.95, 0.5);
+  const heartsGeo = new THREE.PlaneGeometry(1.55, 0.45);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
   heartsSprite.position.set(-1.52, 0.46, 0.01);  // Left, top row
@@ -1162,7 +1162,7 @@ function createHUDElements() {
   nukeEmojiSprite = makeSprite('☢', { fontSize: 144, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.9 });
   nukeEmojiSprite.position.set(1.8, 0.34, 0.01);  // Far right
   hudGroup.add(nukeEmojiSprite);
-  nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
+  nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.35 });
   nukeCountSprite.position.set(2.1, 0.34, 0.01);  // Far right
   hudGroup.add(nukeCountSprite);
 
@@ -1359,7 +1359,7 @@ export function updateHUD(gameState) {
     // Cache geometry by maxHealth to avoid recreating on every frame
     if (heartsSprite.userData._heartsMaxHP !== gameState.maxHealth) {
       heartsSprite.userData._heartsMaxHP = gameState.maxHealth;
-      heartsSprite.geometry = getHudGeo(ha * 1.0, 1.0);
+      heartsSprite.geometry = getHudGeo(1.55, 0.45);
     }
   }
 
@@ -1381,7 +1381,7 @@ export function updateHUD(gameState) {
   if (nukeCount > 0 && nukeEmojiSprite) {
     nukeEmojiSprite.visible = true;
     nukeCountSprite.visible = true;
-    updateSpriteText(nukeCountSprite, `X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
+    updateSpriteText(nukeCountSprite, `X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.35 });
   } else if (nukeEmojiSprite) {
     nukeEmojiSprite.visible = false;
     nukeCountSprite.visible = false;

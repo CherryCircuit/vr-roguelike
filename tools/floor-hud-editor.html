@@ -101,7 +101,7 @@
     // type: 'text' = makeSprite (fontSize + scale), 'rect' = PlaneGeometry(w,h)
     // 'hearts' = special: PlaneGeometry(3.25, 1.0) with pixel heart texture (matching getHudGeo binning)
     const DEFS = [
-        { id:'hearts', name:'Hearts (Lives)', type:'hearts', color:0xcc3333, w:3.25, h:1.0, x:-1.52, y:0.46, z:0.01 },
+        { id:'hearts', name:'Hearts (Lives)', type:'hearts', color:0xcc3333, scale:1.0, x:-1.52, y:0.46, z:0.01 },
         { id:'score_title', name:'SCORE title', type:'text', text:'SCORE', color:0xcccc33, fontSize:72, scale:0.45, glow:true, x:-0.18, y:0.45, z:0.01 },
         { id:'score_num', name:'Score number', type:'text', text:'100000', color:0xcccc33, fontSize:75, scale:0.45, x:-0.18, y:0.2, z:0.01 },
         { id:'level', name:'LEVEL', type:'text', text:'LEVEL 20', color:0x00cccc, fontSize:72, scale:0.45, glow:true, x:0.88, y:0.45, z:0.01 },
@@ -186,9 +186,10 @@
             const r = renderTextMesh(def.text, def.fontSize, def.scale, '#' + def.color.toString(16).padStart(6, '0'), def.glow);
             geo = r.geo; mat = r.mat; def._w = r.w; def._h = r.h;
         } else if (def.type === 'hearts') {
-            geo = new THREE.PlaneGeometry(def.w, def.h);
+            const s = def.scale || 1.0;
+            geo = new THREE.PlaneGeometry(3.25 * s, 1.0 * s);
             mat = new THREE.MeshBasicMaterial({ map: renderHeartsTexture(), transparent: true, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
-            def._w = def.w; def._h = def.h;
+            def._w = 3.25 * s; def._h = 1.0 * s;
         } else {
             geo = new THREE.PlaneGeometry(def.w, def.h);
             mat = new THREE.MeshBasicMaterial({ color: def.color, side: THREE.DoubleSide, transparent: true, opacity: def.opacity || 0.8 });
@@ -200,7 +201,7 @@
         mesh.userData = { id: def.id, def, align: 'center', origColor: def.color };
         hudGroup.add(mesh);
         els[def.id] = mesh;
-        INIT[def.id] = { x: def.x, y: def.y, z: def.z, text: def.text, scale: def.scale, w: def.w, h: def.h, align: 'center' };
+        INIT[def.id] = { x: def.x, y: def.y, z: def.z, text: def.text, scale: def.scale, w: def.w, h: def.h, align: 'center', type: def.type };
     }
 
     DEFS.forEach(buildElement);
@@ -276,8 +277,15 @@
             document.getElementById('row-scale').style.display = '';
             document.getElementById('row-w').style.display = 'none';
             document.getElementById('row-h').style.display = 'none';
+        } else if (def.type === 'hearts') {
+            document.getElementById('inp-text').value = '(3 hearts)';
+            document.getElementById('inp-text').disabled = true;
+            document.getElementById('inp-scale').value = (def.scale || 1.0).toFixed(4);
+            document.getElementById('row-scale').style.display = '';
+            document.getElementById('row-w').style.display = 'none';
+            document.getElementById('row-h').style.display = 'none';
         } else {
-            document.getElementById('inp-text').value = def.type === 'hearts' ? '(3 hearts)' : '(rectangle)';
+            document.getElementById('inp-text').value = '(rectangle)';
             document.getElementById('inp-text').disabled = true;
             document.getElementById('inp-w').value = def.w.toFixed(3);
             document.getElementById('inp-h').value = def.h.toFixed(3);
@@ -307,6 +315,11 @@
         if (def.type === 'text') {
             def.scale = parseFloat(document.getElementById('inp-scale').value) || 0.02;
             rebuildMesh(def.id);
+        } else if (def.type === 'hearts') {
+            def.scale = parseFloat(document.getElementById('inp-scale').value) || 0.1;
+            const s = def.scale;
+            sel.geometry.dispose();
+            sel.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s);
         } else {
             def.w = parseFloat(document.getElementById('inp-w').value) || 0.1;
             def.h = parseFloat(document.getElementById('inp-h').value) || 0.1;
@@ -356,6 +369,7 @@
             m.position.set(v.x, v.y, v.z);
             m.userData.align = v.align;
             if (d.type === 'text') { d.text = v.text; d.scale = v.scale; rebuildMesh(id); }
+            else if (d.type === 'hearts') { d.scale = v.scale || 1.0; const s = d.scale; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s); }
             else { d.w = v.w; d.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
         });
         updateUI(); updateList();
@@ -367,6 +381,7 @@
             m.position.set(v.x, v.y, v.z);
             m.userData.align = v.align;
             if (d.type === 'text') { d.text = v.text; d.scale = v.scale; rebuildMesh(id); }
+            else if (d.type === 'hearts') { d.scale = v.scale || 1.0; const s = d.scale; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s); }
             else { d.w = v.w; d.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
         });
         updateUI(); updateList();
@@ -385,6 +400,7 @@
                 align: m.userData.align || 'center', type: d.type,
             };
             if (d.type === 'text') { data.elements[id].scale = +(d.scale.toFixed(4)); data.elements[id].text = d.text; }
+            else if (d.type === 'hearts') { data.elements[id].scale = +((d.scale || 1.0).toFixed(4)); }
             else { data.elements[id].w = +(d.w.toFixed(3)); data.elements[id].h = +(d.h.toFixed(3)); }
         });
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -399,12 +415,13 @@
                 if (d.elements) {
                     pushUndo();
                     Object.keys(d.elements).forEach(id => {
-                        if (!els[id]) return;
+                        if (!els[id]) return; // silently skip unknown/removed element IDs (e.g. hud_bg, scanline)
                         const m = els[id]; const dd = m.userData.def; const v = d.elements[id];
                         m.position.set(v.x, v.y, v.z);
                         if (v.align) m.userData.align = v.align;
                         if (dd.type === 'text' && v.text !== undefined) { dd.text = v.text; dd.scale = v.scale; rebuildMesh(id); }
-                        else if (dd.type !== 'text' && v.w) { dd.w = v.w; dd.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
+                        else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; const s = dd.scale; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s); }
+                        else if (v.w) { dd.w = v.w; dd.h = v.h; m.geometry.dispose(); m.geometry = new THREE.PlaneGeometry(v.w, v.h); }
                     });
                     updateUI(); updateList();
                 }
