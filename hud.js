@@ -1096,7 +1096,7 @@ function createHUDElements() {
 
   // HOLOGRAPHIC BASE - HUD background panel
   const hudBgGeo = new THREE.PlaneGeometry(4.7, 1.0);
-  const hudBgMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
+  const hudBgMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.0, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   const hudBg = new THREE.Mesh(hudBgGeo, hudBgMat);
   hudBg.position.set(0, 0.26, 0);
   hudBg.renderOrder = 997;
@@ -1104,7 +1104,7 @@ function createHUDElements() {
 
   // Scanline accent bar (subtle separator)
   const scanLineAccentGeo = new THREE.PlaneGeometry(4.7, 0.015);
-  const scanLineAccentMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
+  const scanLineAccentMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.0, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   const scanLineAccent = new THREE.Mesh(scanLineAccentGeo, scanLineAccentMat);
   scanLineAccent.position.set(0, -0.06, 0.02);
   scanLineAccent.renderOrder = 998;
@@ -1179,7 +1179,7 @@ function createHUDElements() {
   nukeEmojiSprite = makeSprite('☢', { fontSize: 144, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.9 });
   nukeEmojiSprite.position.set(1.8, 0.34, 0.01);  // Far right
   hudGroup.add(nukeEmojiSprite);
-  nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.35 });
+  nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.45 });
   nukeCountSprite.position.set(2.1, 0.34, 0.01);  // Far right
   hudGroup.add(nukeCountSprite);
 
@@ -1410,7 +1410,7 @@ export function updateHUD(gameState) {
     comboSprite.visible = true;
     comboCooldownSprite.visible = true;
     const accuracyMult = (game.accuracyMultiplier || 1).toFixed(1);
-    updateSpriteText(comboSprite, `${accuracyMult}X ACCURACY BONUS`, { color: '#ff8800', scale: 0.18 });
+    updateSpriteText(comboSprite, `${accuracyMult}X ACCURACY BONUS`, { color: '#ff8800', scale: 0.2 });
 
     // Update bonus meter
     const remainingRatio = Math.max(0, Math.min(1, accuracyBonus / 100));
