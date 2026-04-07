@@ -1,0 +1,32 @@
+{
+  "screen": "title-screen",
+  "elements": {
+    "titleSprite": {
+      "x": 0,
+      "y": 0.9,
+      "z": 0,
+      "scale": 0.9,
+      "align": "center"
+    },
+    "subSprite": {
+      "x": 0,
+      "y": 0.4,
+      "z": 0,
+      "scale": 0.3,
+      "align": "center"
+    },
+    "titleBlinkSprite": {
+      "x": 0,
+      "y": -0.2,
+      "z": 0,
+      "scale": 0.25,
+      "align": "center"
+    },
+    "btnGroup": {
+      "x": 0,
+      "y": -0.8,
+      "z": 0,
+      "align": "center"
+    }
+  }
+}

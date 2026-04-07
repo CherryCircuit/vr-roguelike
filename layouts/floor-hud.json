@@ -1,0 +1,69 @@
+{
+  "screen": "floor-hud",
+  "elements": {
+    "hearts": {
+      "x": -1.40625,
+      "y": 0.56,
+      "z": 0.01,
+      "scale": 1.0,
+      "align": "left"
+    },
+    "score_title": {
+      "x": 0,
+      "y": 0.58,
+      "z": 0.01,
+      "scale": 0.45,
+      "align": "center"
+    },
+    "score_num": {
+      "x": 0,
+      "y": 0.32,
+      "z": 0.01,
+      "scale": 0.45,
+      "align": "center"
+    },
+    "level": {
+      "x": 1.02,
+      "y": 0.58,
+      "z": 0.01,
+      "scale": 0.45,
+      "align": "center"
+    },
+    "kills": {
+      "x": 1.02,
+      "y": 0.3,
+      "z": 0.01,
+      "scale": 0.45,
+      "align": "center"
+    },
+    "nuke_icon": {
+      "x": 1.82,
+      "y": 0.5,
+      "z": 0.01,
+      "scale": 0.9,
+      "align": "center"
+    },
+    "nuke_count": {
+      "x": 2.12,
+      "y": 0.5,
+      "z": 0.01,
+      "scale": 0.35,
+      "align": "center"
+    },
+    "combo_text": {
+      "x": -2.26,
+      "y": 0.1,
+      "z": 0.01,
+      "scale": 0.25,
+      "align": "left"
+    },
+    "combo_bar": {
+      "x": -2.202,
+      "y": 0.21,
+      "z": 0.01,
+      "w": 1.65,
+      "h": 0.05,
+      "align": "left"
+    }
+  }
+}

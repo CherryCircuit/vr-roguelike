@@ -1,0 +1,1484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layout Editor - Floor HUD</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a1a; color: #e0e0e0; overflow: hidden; display: flex; height: 100vh; }
+        #sidebar { width: 320px; background: #252525; padding: 12px; display: flex; flex-direction: column; border-right: 1px solid #333; overflow-y: auto; }
+        #viewport { flex: 1; position: relative; }
+        #toolbar { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+        button { background: #3a3a3a; border: 1px solid #555; color: #e0e0e0; padding: 6px 12px; cursor: pointer; border-radius: 4px; font-size: 12px; }
+        button:hover { background: #4a4a4a; border-color: #777; }
+        button.primary { background: #0066cc; border-color: #0080ff; }
+        button.primary:hover { background: #0077dd; }
+        button.danger { background: #882222; border-color: #aa3333; }
+        button.danger:hover { background: #993333; }
+        .pr { display: flex; gap: 5px; margin-bottom: 5px; align-items: center; }
+        .pr label { font-size: 11px; color: #888; width: 48px; text-align: right; flex-shrink: 0; }
+        .pr input, .pr select { flex: 1; background: #333; border: 1px solid #444; color: #fff; padding: 4px 6px; border-radius: 3px; font-size: 12px; min-width: 0; }
+        .pr input:focus, .pr select:focus { outline: none; border-color: #4af; }
+        .sec { font-size: 10px; color: #555; margin: 6px 0 3px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; border-top: 1px solid #333; padding-top: 6px; }
+        .abtn { display: flex; gap: 3px; }
+        .abtn button { padding: 3px 8px; font-size: 11px; }
+        .abtn button.active { background: #0066cc; border-color: #0080ff; color: #fff; }
+        #sel-info { background: #2a2a2a; padding: 10px; border-radius: 4px; margin-bottom: 10px; }
+        #sel-info h3 { font-size: 12px; color: #888; margin-bottom: 6px; }
+        #sel-name { font-size: 14px; font-weight: 600; color: #4af; margin-bottom: 8px; }
+        #elist { flex: 1; overflow-y: auto; background: #2a2a2a; border-radius: 4px; padding: 6px; min-height: 80px; }
+        #elist h3 { font-size: 12px; color: #888; margin-bottom: 4px; }
+        .ei { padding: 3px 7px; cursor: pointer; border-radius: 3px; font-size: 10px; margin-bottom: 1px; display: flex; justify-content: space-between; align-items: center; }
+        .ei:hover { background: #333; }
+        .ei.sel { background: #0066cc; }
+        .ei .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+        .ei .p { color: #888; font-size: 9px; flex-shrink: 0; }
+        .ei.sel .p { color: #aac; }
+        .cs { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 3px; vertical-align: middle; flex-shrink: 0; }
+        .eye-btn { background: none; border: none; color: #888; cursor: pointer; font-size: 13px; padding: 0 3px; line-height: 1; flex-shrink: 0; }
+        .eye-btn:hover { color: #fff; }
+        .eye-btn.hidden { color: #444; }
+        .group-hdr { padding: 3px 7px; font-size: 10px; font-weight: 700; color: #aaa; cursor: pointer; border-radius: 3px; margin-bottom: 1px; display: flex; align-items: center; gap: 4px; }
+        .group-hdr:hover { background: #333; }
+        .group-hdr .arrow { transition: transform 0.15s; font-size: 8px; }
+        .group-hdr .arrow.collapsed { transform: rotate(-90deg); }
+        .group-hdr .gname { flex: 1; cursor: text; outline: none; border: 1px solid transparent; padding: 0 2px; border-radius: 2px; }
+        .group-hdr .gname:hover { border-color: #555; }
+        .group-hdr .gname:focus { border-color: #4af; background: #333; }
+        .group-ei { padding-left: 20px; }
+        .note { background: #332200; border: 1px solid #553300; padding: 6px 8px; border-radius: 4px; font-size: 10px; color: #cc9; margin-bottom: 8px; line-height: 1.4; }
+        #canvas { width: 100%; height: 100%; }
+        #inst { position: absolute; bottom: 12px; left: 12px; background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 4px; font-size: 10px; color: #aaa; }
+        #inst kbd { background: #444; padding: 1px 4px; border-radius: 2px; font-family: monospace; }
+        #screen-selector { margin-bottom: 8px; }
+        #screen-selector select { width: 100%; background: #333; border: 1px solid #444; color: #fff; padding: 6px 8px; border-radius: 4px; font-size: 13px; cursor: pointer; }
+        #screen-selector select:focus { outline: none; border-color: #4af; }
+        #multi-sel-info { display: none; font-size: 11px; color: #aaa; margin-bottom: 6px; }
+        #group-actions { display: none; margin-bottom: 6px; gap: 4px; }
+        #group-actions button { padding: 4px 10px; font-size: 11px; }
+        #anchor-section { display: none; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div id="screen-selector">
+            <select id="screen-select" onchange="switchScreen(this.value)">
+                <option value="floor-hud">Floor HUD</option>
+                <option value="pause-menu">Pause Menu</option>
+                <option value="title-screen">Title Screen</option>
+                <option value="game-over">Game Over</option>
+                <option value="upgrade-cards">Upgrade Cards</option>
+                <option value="ready-screen">Ready Screen</option>
+            </select>
+        </div>
+        <div id="toolbar">
+            <button class="primary" onclick="exportJSON()">Export</button>
+            <button onclick="document.getElementById('impF').click()">Import</button>
+            <input type="file" id="impF" accept=".json" style="display:none" onchange="importJSON(event)">
+            <button onclick="undo()">Undo</button>
+            <button class="danger" onclick="resetAll()">Reset</button>
+        </div>
+        <div class="note" id="note-text"><kbd>Shift+Click</kbd> multi-select. Anchor controls scale origin. Elements render at exact in-game size.</div>
+        <div class="pr" style="margin-bottom:8px"><input type="checkbox" id="showBounds" checked onchange="toggleBounds()" style="width:auto"><label style="width:auto;color:#aaa;font-size:11px;margin-left:4px">Show bounding boxes</label></div>
+        <div id="sel-info">
+            <h3>SELECTED</h3>
+            <div id="sel-name">Click an element</div>
+            <div id="multi-sel-info"></div>
+            <div class="sec">Text Content</div>
+            <div class="pr"><label>Text</label><input type="text" id="inp-text" oninput="onTextInput()"></div>
+            <div class="sec">Position</div>
+            <div class="pr"><label>X</label><input type="number" step="0.02" id="inp-x" onchange="onNumInput()"></div>
+            <div class="pr"><label>Y</label><input type="number" step="0.02" id="inp-y" onchange="onNumInput()"></div>
+            <div class="pr"><label>Z</label><input type="number" step="0.01" id="inp-z" onchange="onNumInput()"></div>
+            <div class="sec">Size</div>
+            <div class="pr" id="row-scale"><label>Scale</label><input type="number" step="0.01" min="0.02" id="inp-scale" onchange="onNumInput()"></div>
+            <div class="pr" id="row-w" style="display:none"><label>Width</label><input type="number" step="0.05" id="inp-w" onchange="onNumInput()"></div>
+            <div class="pr" id="row-h" style="display:none"><label>Height</label><input type="number" step="0.05" id="inp-h" onchange="onNumInput()"></div>
+            <div class="sec">Alignment</div>
+            <div class="abtn">
+                <button id="al-left" onclick="setAlign('left')">&#9664; Left</button>
+                <button id="al-center" onclick="setAlign('center')">Center</button>
+                <button id="al-right" onclick="setAlign('right')">Right &#9654;</button>
+            </div>
+            <div id="anchor-section">
+                <div class="sec">Scale Anchor</div>
+                <div class="pr"><label>Anchor</label>
+                    <select id="inp-anchor" onchange="onAnchorInput()">
+                        <option value="center">Center</option>
+                        <option value="left">Left</option>
+                        <option value="right">Right</option>
+                        <option value="top">Top</option>
+                        <option value="bottom">Bottom</option>
+                        <option value="top-left">Top-Left</option>
+                        <option value="top-right">Top-Right</option>
+                        <option value="bottom-left">Bottom-Left</option>
+                        <option value="bottom-right">Bottom-Right</option>
+                    </select>
+                </div>
+            </div>
+            <div id="group-actions">
+                <button class="primary" onclick="groupSelected()">Group</button>
+                <button class="danger" onclick="ungroupSelected()">Ungroup</button>
+            </div>
+        </div>
+        <div id="elist"><h3>ELEMENTS</h3><div id="ec"></div></div>
+    </div>
+    <div id="viewport">
+        <canvas id="canvas"></canvas>
+        <div id="inst"><kbd>Click</kbd> Select | <kbd>Shift+Click</kbd> Multi | <kbd>Gizmo</kbd> Move | <kbd>Right-drag</kbd> Orbit | <kbd>Scroll</kbd> Zoom | <kbd>Ctrl+Z</kbd> Undo</div>
+    </div>
+
+    <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }</script>
+    <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+    // ══════════════════════════════════════════════════
+    //  SCREEN DEFINITIONS
+    // ══════════════════════════════════════════════════
+
+    const FLOOR_HUD_DEFS = [
+        { id:'hearts', name:'Hearts (Lives)', type:'hearts', color:0xcc3333, scale:1.0, x:-1.52, y:0.46, z:0.01 },
+        { id:'score_title', name:'SCORE title', type:'text', text:'SCORE', color:0xcccc33, fontSize:72, scale:0.45, glow:true, x:-0.18, y:0.45, z:0.01 },
+        { id:'score_num', name:'Score number', type:'text', text:'100000', color:0xcccc33, fontSize:72, scale:0.45, x:-0.18, y:0.2, z:0.01 },
+        { id:'level', name:'LEVEL', type:'text', text:'LEVEL 20', color:0x00cccc, fontSize:72, scale:0.45, glow:true, x:0.88, y:0.45, z:0.01 },
+        { id:'kills', name:'Kill count', type:'text', text:'123/123', color:0xffffff, fontSize:72, scale:0.45, x:0.88, y:0.2, z:0.01 },
+        { id:'nuke_icon', name:'☢ Nuke', type:'text', text:'☢', color:0xcccc33, fontSize:144, scale:0.9, glow:true, x:1.8, y:0.34, z:0.01 },
+        { id:'nuke_count', name:'Nuke count', type:'text', text:'X3', color:0xcccc33, fontSize:72, scale:0.45, glow:true, x:2.1, y:0.34, z:0.01 },
+        { id:'combo_text', name:'Accuracy Bonus', type:'text', text:'4.5X ACCURACY BONUS', color:0xff8800, fontSize:40, scale:0.2, x:-1.86, y:0.06, z:0.01 },
+        { id:'combo_bar', name:'Cooldown bar', type:'rect', color:0xff8800, w:1.25, h:0.05, x:-1.6, y:0.16, z:0.01, opacity:0.8 },
+    ];
+
+    const PAUSE_MENU_DEFS = [
+        { id:'panel', name:'Panel BG', type:'rect', color:0x0a0015, w:3.2, h:3.6, x:0, y:0, z:0, opacity:0.92 },
+        { id:'lb_title', name:'LEFT BLASTER', type:'text', text:'LEFT BLASTER', color:0x00ffff, fontSize:36, scale:0.07, x:-1.25, y:1.3, z:0.02 },
+        { id:'lb_weapon', name:'PLASMA CARBINE', type:'text', text:'PLASMA CARBINE', color:0xffffff, fontSize:28, scale:0.06, x:-1.25, y:1.1, z:0.02 },
+        { id:'lb_sep1', name:'L-Sep1', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:1.0, z:0.02 },
+        { id:'lb_upg_header', name:'[UPGRADES]', type:'text', text:'[UPGRADES]', color:0x888888, fontSize:24, scale:0.05, x:-1.25, y:0.9, z:0.02 },
+        { id:'lb_upg1', name:'RAPID FIRE x3', type:'text', text:'🔥 RAPID FIRE x3', color:0xff8800, fontSize:24, scale:0.05, x:-1.48, y:0.76, z:0.02 },
+        { id:'lb_upg2', name:'DAMAGE UP x2', type:'text', text:'⚡ DAMAGE UP x2', color:0xffff00, fontSize:24, scale:0.05, x:-1.02, y:0.76, z:0.02 },
+        { id:'lb_upg3', name:'HOMING x1', type:'text', text:'🎯 HOMING x1', color:0x00ff00, fontSize:24, scale:0.05, x:-1.48, y:0.62, z:0.02 },
+        { id:'lb_sep2', name:'L-Sep2', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:0.52, z:0.02 },
+        { id:'lb_enemy_header', name:'[ENEMIES]', type:'text', text:'[ENEMIES]', color:0x888888, fontSize:24, scale:0.05, x:-1.25, y:0.42, z:0.02 },
+        { id:'lb_enemy1', name:'GRUNT x12', type:'text', text:'👾 GRUNT x12', color:0xff6666, fontSize:24, scale:0.05, x:-1.48, y:0.28, z:0.02 },
+        { id:'lb_enemy2', name:'TANK x5', type:'text', text:'🤖 TANK x5', color:0xff6666, fontSize:24, scale:0.05, x:-1.02, y:0.28, z:0.02 },
+        { id:'lb_sep3', name:'L-Sep3', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:0.18, z:0.02 },
+        { id:'lb_kills', name:'KILLS: 24', type:'text', text:'KILLS: 24', color:0x00ffff, fontSize:24, scale:0.045, x:-1.58, y:0.04, z:0.02 },
+        { id:'lb_shots', name:'SHOTS: 156', type:'text', text:'SHOTS: 156', color:0x00ffff, fontSize:24, scale:0.045, x:-1.25, y:0.04, z:0.02 },
+        { id:'lb_hits', name:'HITS: 89', type:'text', text:'HITS: 89', color:0x00ffff, fontSize:24, scale:0.045, x:-0.92, y:0.04, z:0.02 },
+        { id:'lb_acc', name:'ACC: 57%', type:'text', text:'ACC: 57%', color:0x00ffff, fontSize:24, scale:0.045, x:-1.25, y:-0.12, z:0.02 },
+        { id:'rb_title', name:'RIGHT BLASTER', type:'text', text:'RIGHT BLASTER', color:0x00ffff, fontSize:36, scale:0.07, x:1.25, y:1.3, z:0.02 },
+        { id:'rb_weapon', name:'BLASTER', type:'text', text:'BLASTER', color:0xffffff, fontSize:28, scale:0.06, x:1.25, y:1.1, z:0.02 },
+        { id:'rb_sep1', name:'R-Sep1', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:1.0, z:0.02 },
+        { id:'rb_upg_header', name:'[UPGRADES]', type:'text', text:'[UPGRADES]', color:0x888888, fontSize:24, scale:0.05, x:1.25, y:0.9, z:0.02 },
+        { id:'rb_upg1', name:'PIERCING x2', type:'text', text:'🗡️ PIERCING x2', color:0xff0000, fontSize:24, scale:0.05, x:1.02, y:0.76, z:0.02 },
+        { id:'rb_upg2', name:'SPREAD SHOT x1', type:'text', text:'💫 SPREAD SHOT x1', color:0x00ffff, fontSize:24, scale:0.05, x:1.48, y:0.76, z:0.02 },
+        { id:'rb_sep2', name:'R-Sep2', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:0.52, z:0.02 },
+        { id:'rb_enemy_header', name:'[ENEMIES]', type:'text', text:'[ENEMIES]', color:0x888888, fontSize:24, scale:0.05, x:1.25, y:0.42, z:0.02 },
+        { id:'rb_enemy1', name:'SPEEDER x8', type:'text', text:'💨 SPEEDER x8', color:0xff6666, fontSize:24, scale:0.05, x:1.02, y:0.28, z:0.02 },
+        { id:'rb_enemy2', name:'SHOOTER x3', type:'text', text:'🔫 SHOOTER x3', color:0xff6666, fontSize:24, scale:0.05, x:1.48, y:0.28, z:0.02 },
+        { id:'rb_sep3', name:'R-Sep3', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:0.18, z:0.02 },
+        { id:'rb_kills', name:'KILLS: 18', type:'text', text:'KILLS: 18', color:0x00ffff, fontSize:24, scale:0.045, x:0.92, y:0.04, z:0.02 },
+        { id:'rb_shots', name:'SHOTS: 94', type:'text', text:'SHOTS: 94', color:0x00ffff, fontSize:24, scale:0.045, x:1.25, y:0.04, z:0.02 },
+        { id:'rb_hits', name:'HITS: 61', type:'text', text:'HITS: 61', color:0x00ffff, fontSize:24, scale:0.045, x:1.58, y:0.04, z:0.02 },
+        { id:'rb_acc', name:'ACC: 65%', type:'text', text:'ACC: 65%', color:0x00ffff, fontSize:24, scale:0.045, x:1.25, y:-0.12, z:0.02 },
+        { id:'stats_title', name:'RUN STATISTICS', type:'text', text:'RUN STATISTICS', color:0xff00ff, fontSize:36, scale:0.07, x:0, y:0.84, z:0.02 },
+        { id:'stat_kills', name:'KILLS: 42', type:'text', text:'KILLS: 42', color:0x00ffff, fontSize:28, scale:0.05, x:0, y:0.44, z:0.02 },
+        { id:'stat_shots', name:'SHOTS: 250', type:'text', text:'SHOTS: 250', color:0x00ffff, fontSize:28, scale:0.05, x:0, y:0.20, z:0.02 },
+        { id:'stat_hits', name:'HITS: 150', type:'text', text:'HITS: 150', color:0x00ffff, fontSize:28, scale:0.05, x:0, y:-0.04, z:0.02 },
+        { id:'stat_acc2', name:'ACCURACY: 60%', type:'text', text:'ACCURACY: 60%', color:0x00ffff, fontSize:28, scale:0.05, x:-1.08, y:-0.34, z:0.02 },
+        { id:'stat_streak', name:'STREAK: 7', type:'text', text:'STREAK: 7', color:0x00ffff, fontSize:28, scale:0.05, x:-1.08, y:-0.56, z:0.02 },
+        { id:'stat_boss', name:'BOSS: 1', type:'text', text:'BOSS: 1', color:0x00ffff, fontSize:28, scale:0.05, x:-1.08, y:-0.78, z:0.02 },
+        { id:'chart_area', name:'Chart Area', type:'rect', color:0x333344, w:1.7, h:0.9, x:1.1, y:-0.82, z:0.02, opacity:0.6 },
+        { id:'resume', name:'RESUME', type:'text', text:'RESUME', color:0x00aacc, fontSize:40, scale:0.09, x:0, y:-1.55, z:0.03 },
+        { id:'bdr_top', name:'Border Top', type:'rect', color:0x00ffff, w:3.3, h:0.04, x:0, y:1.8, z:0.01, opacity:0.8 },
+        { id:'bdr_bot', name:'Border Bottom', type:'rect', color:0x00ffff, w:3.3, h:0.04, x:0, y:-1.8, z:0.01, opacity:0.8 },
+        { id:'bdr_left', name:'Border Left', type:'rect', color:0x00ffff, w:0.04, h:3.6, x:-1.65, y:0, z:0.01, opacity:0.8 },
+        { id:'bdr_right', name:'Border Right', type:'rect', color:0x00ffff, w:0.04, h:3.6, x:1.65, y:0, z:0.01, opacity:0.8 },
+    ];
+
+    const TITLE_SCREEN_DEFS = [
+      { id:'title', name:'SPACEOMICIDE', type:'text', text:'SPACEOMICIDE', color:0x00ffff, fontSize:70, scale:0.9, glow:true, x:0, y:0.9, z:0 },
+      { id:'subtitle', name:'VR ROGUELIKE BLASTER', type:'text', text:'VR ROGUELIKE BLASTER', color:0xff00ff, fontSize:24, scale:0.3, glow:true, x:0, y:0.4, z:0 },
+      { id:'blink_text', name:'PRESS TRIGGER TO BEGIN', type:'text', text:'PRESS TRIGGER TO BEGIN', color:0xffffff, fontSize:26, scale:0.25, glow:true, x:0, y:-0.2, z:0 },
+      { id:'scoreboard_btn_bg', name:'Scoreboard Button BG', type:'rect', color:0x110033, w:1.35, h:0.3, x:0, y:-0.8, z:0, opacity:0.85 },
+      { id:'scoreboard_btn_border', name:'Scoreboard Button Border', type:'rect', color:0xffff00, w:1.35, h:0.3, x:0, y:-0.8, z:0.005, opacity:1.0 },
+      { id:'scoreboard_btn_text', name:'SCOREBOARD', type:'text', text:'SCOREBOARD', color:0xffff00, fontSize:48, scale:0.16, glow:true, x:0, y:-0.8, z:0.01 },
+    ];
+
+    const GAME_OVER_DEFS = [
+      { id:'game_over_title', name:'GAME OVER', type:'text', text:'GAME OVER', color:0xff0044, fontSize:120, scale:1.4, glow:true, x:0, y:1.2, z:0 },
+      { id:'score_text', name:'SCORE: 42000', type:'text', text:'SCORE: 42000', color:0xffff00, fontSize:60, scale:0.7, glow:true, x:0, y:0.4, z:0 },
+      { id:'restart_text', name:'PRESS TRIGGER TO RESTART', type:'text', text:'PRESS TRIGGER TO RESTART', color:0xffffff, fontSize:44, scale:0.5, x:0, y:-0.3, z:0 },
+    ];
+
+    const UPGRADE_CARDS_DEFS = [
+      { id:'header', name:'CHOOSE UPGRADE / LEFT BLASTER', type:'text', text:'CHOOSE UPGRADE\nLEFT BLASTER', color:0x00ffff, fontSize:48, scale:0.4, glow:true, x:0, y:1.05, z:0 },
+      { id:'cooldown', name:'Cooldown WAIT...', type:'text', text:'WAIT...', color:0xffff00, fontSize:36, scale:0.3, x:0, y:0.8, z:0 },
+      // Card 1 (upgrade)
+      { id:'card1_bg', name:'Card 1 BG', type:'rect', color:0x110033, w:1.2, h:1.5, x:-2.25, y:0, z:0, opacity:0.91 },
+      { id:'card1_name', name:'Card 1 Name', type:'text', text:'RAPID FIRE', color:0x00ffff, fontSize:45, scale:0.24, glow:true, x:-2.25, y:0.55, z:0.01 },
+      { id:'card1_desc', name:'Card 1 Desc', type:'text', text:'+20% fire rate', color:0xcccccc, fontSize:32, scale:0.36, x:-2.25, y:0.15, z:0.01 },
+      // Card 2 (upgrade)
+      { id:'card2_bg', name:'Card 2 BG', type:'rect', color:0x110033, w:1.2, h:1.5, x:-0.75, y:0, z:0, opacity:0.91 },
+      { id:'card2_name', name:'Card 2 Name', type:'text', text:'DAMAGE UP', color:0xff8800, fontSize:45, scale:0.24, glow:true, x:-0.75, y:0.55, z:0.01 },
+      { id:'card2_desc', name:'Card 2 Desc', type:'text', text:'+15% damage', color:0xcccccc, fontSize:32, scale:0.36, x:-0.75, y:0.15, z:0.01 },
+      // Card 3 (upgrade)
+      { id:'card3_bg', name:'Card 3 BG', type:'rect', color:0x110033, w:1.2, h:1.5, x:0.75, y:0, z:0, opacity:0.91 },
+      { id:'card3_name', name:'Card 3 Name', type:'text', text:'HOMING', color:0x00ff00, fontSize:45, scale:0.24, glow:true, x:0.75, y:0.55, z:0.01 },
+      { id:'card3_desc', name:'Card 3 Desc', type:'text', text:'Shots seek enemies', color:0xcccccc, fontSize:32, scale:0.36, x:0.75, y:0.15, z:0.01 },
+      // Skip card
+      { id:'skip_bg', name:'Skip Card BG', type:'rect', color:0x220044, w:1.0, h:1.3, x:2.25, y:0, z:0, opacity:0.91 },
+      { id:'skip_name', name:'SKIP', type:'text', text:'SKIP', color:0x00ff88, fontSize:45, scale:0.24, glow:true, x:2.25, y:0.48, z:0.01 },
+    ];
+
+    const READY_SCREEN_DEFS = [
+      { id:'header', name:'READY?', type:'text', text:'READY?', color:0xffff00, fontSize:70, scale:0.6, glow:true, x:0, y:0.8, z:0 },
+      { id:'instruction', name:'SHOOT TO BEGIN', type:'text', text:'SHOOT TO BEGIN', color:0x00ffff, fontSize:40, scale:0.4, x:0, y:0.4, z:0 },
+      { id:'countdown', name:'Countdown (3)', type:'text', text:'3', color:0xffffff, fontSize:120, scale:0.7, glow:true, x:0, y:-0.05, z:0.01 },
+    ];
+
+    const SCREEN_CONFIGS = {
+        'floor-hud': {
+            defs: FLOOR_HUD_DEFS,
+            cameraPos: [0, 3, 5],
+            cameraTarget: [0, 0, -3],
+            useHudGroup: true,
+            hudGroupPos: [0, 0, -3],
+            hudGroupRotX: -70 * Math.PI / 180,
+            gridRotation: null,
+            hasGroups: true,
+            hasAnchors: true,
+            hasVisibility: true,
+            label: 'Floor HUD',
+            exportName: 'floor-hud-layout.json',
+            exportEditor: 'floor-hud',
+        },
+        'pause-menu': {
+            defs: PAUSE_MENU_DEFS,
+            cameraPos: [0, 0, 5],
+            cameraTarget: [0, 0, 0],
+            useHudGroup: false,
+            gridRotation: Math.PI / 2,
+            hasGroups: false,
+            hasAnchors: false,
+            hasVisibility: false,
+            label: 'Pause Menu',
+            exportName: 'pause-menu-layout.json',
+            exportEditor: 'pause-menu',
+        },
+        'title-screen': {
+            defs: TITLE_SCREEN_DEFS,
+            cameraPos: [0, 0, 5],
+            cameraTarget: [0, 0, 0],
+            useHudGroup: false,
+            gridRotation: Math.PI / 2,
+            hasGroups: false,
+            hasAnchors: false,
+            hasVisibility: false,
+            label: 'Title Screen',
+            exportName: 'title-screen-layout.json',
+            exportEditor: 'title-screen',
+        },
+        'game-over': {
+            defs: GAME_OVER_DEFS,
+            cameraPos: [0, 0, 5],
+            cameraTarget: [0, 0, 0],
+            useHudGroup: false,
+            gridRotation: Math.PI / 2,
+            hasGroups: false,
+            hasAnchors: false,
+            hasVisibility: false,
+            label: 'Game Over',
+            exportName: 'game-over-layout.json',
+            exportEditor: 'game-over',
+        },
+        'upgrade-cards': {
+            defs: UPGRADE_CARDS_DEFS,
+            cameraPos: [0, 0, 5],
+            cameraTarget: [0, 0, 0],
+            useHudGroup: false,
+            gridRotation: Math.PI / 2,
+            hasGroups: false,
+            hasAnchors: false,
+            hasVisibility: false,
+            label: 'Upgrade Cards',
+            exportName: 'upgrade-cards-layout.json',
+            exportEditor: 'upgrade-cards',
+        },
+        'ready-screen': {
+            defs: READY_SCREEN_DEFS,
+            cameraPos: [0, 0, 5],
+            cameraTarget: [0, 0, 0],
+            useHudGroup: false,
+            gridRotation: Math.PI / 2,
+            hasGroups: false,
+            hasAnchors: false,
+            hasVisibility: false,
+            label: 'Ready Screen',
+            exportName: 'ready-screen-layout.json',
+            exportEditor: 'ready-screen',
+        },
+    };
+
+    // ══════════════════════════════════════════════════
+    //  THREE.JS SETUP
+    // ══════════════════════════════════════════════════
+
+    const canvas = document.getElementById('canvas');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111118);
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 200);
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    const orbit = new OrbitControls(camera, canvas);
+    orbit.enableDamping = true;
+    orbit.dampingFactor = 0.1;
+
+    const tc = new TransformControls(camera, canvas);
+    tc.setMode('translate');
+    scene.add(tc);
+    tc.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; });
+
+    const grid = new THREE.GridHelper(10, 20, 0x444444, 0x333333);
+    scene.add(grid);
+
+    const hudGroup = new THREE.Group();
+    scene.add(hudGroup);
+
+    // ══════════════════════════════════════════════════
+    //  STATE
+    // ══════════════════════════════════════════════════
+
+    let currentScreen = 'floor-hud';
+    let DEFS = [];
+    let els = {};
+    let INIT = {};
+    let elVisible = {};
+    let elAnchor = {};
+    let groups = {};
+    let groupCounter = 0;
+    let collapsedGroups = {};
+    let selectedIds = [];
+    let undos = [];
+    const MAX_UNDO = 25;
+
+    // Drag handle guard
+    let isDragging = false;
+    let dragEndDebounce = false;
+
+    // Drag group support
+    let dragStartPositions = null;
+
+    // ══════════════════════════════════════════════════
+    //  HEARTS TEXTURE (Pixel Art)
+    // ══════════════════════════════════════════════════
+
+    const HEART_PX = [
+        [0,1,1,0,1,1,0],[1,1,1,1,1,1,1],[1,1,1,1,1,1,1],
+        [0,1,1,1,1,1,0],[0,0,1,1,1,0,0],[0,0,0,1,0,0,0]
+    ];
+
+    function renderHeartsTexture() {
+        const heartCount = 3, pixSize = 8, heartW = 7 * pixSize, heartH = 6 * pixSize, gap = 6;
+        const cw = heartCount * (heartW + gap) + gap, ch = heartH + 10;
+        const c = document.createElement('canvas');
+        c.width = cw; c.height = ch;
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, cw, ch);
+        for (let h = 0; h < heartCount; h++) {
+            const ox = gap + h * (heartW + gap);
+            HEART_PX.forEach((row, py) => row.forEach((on, px) => {
+                if (!on) return;
+                ctx.fillStyle = '#ff3333';
+                ctx.fillRect(ox + px * pixSize, 5 + py * pixSize, pixSize, pixSize);
+            }));
+        }
+        const showBounds = document.getElementById('showBounds')?.checked ?? true;
+        if (showBounds) {
+            ctx.strokeStyle = '#ff333355'; ctx.lineWidth = 1; ctx.strokeRect(0, 0, cw, ch);
+        }
+        return new THREE.CanvasTexture(c);
+    }
+
+    // ══════════════════════════════════════════════════
+    //  TEXT RENDERING (matches makeSprite exactly)
+    // ══════════════════════════════════════════════════
+
+    function renderTextMesh(text, fontSize, scale, colorHex, glow) {
+        const showBounds = document.getElementById('showBounds')?.checked ?? true;
+        const pad = glow ? 25 : 40;
+        const c = document.createElement('canvas');
+        const ctx = c.getContext('2d');
+        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+        const tw = Math.ceil(ctx.measureText(text).width) + pad * 2;
+        const th = Math.ceil(fontSize * 1.3) + pad * 2;
+        c.width = tw; c.height = th;
+        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.clearRect(0, 0, tw, th);
+        if (glow) { ctx.shadowColor = colorHex; ctx.shadowBlur = 15; }
+        ctx.fillStyle = colorHex;
+        ctx.fillText(text, tw / 2, th / 2);
+        ctx.shadowBlur = 0;
+        if (showBounds) {
+            ctx.strokeStyle = colorHex.length === 7 ? colorHex + '55' : 'rgba(255,255,255,0.2)';
+            ctx.lineWidth = 1; ctx.strokeRect(2, 2, tw - 4, th - 4);
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(tw/2-6,th/2); ctx.lineTo(tw/2+6,th/2);
+            ctx.moveTo(tw/2,th/2-6); ctx.lineTo(tw/2,th/2+6); ctx.stroke();
+        }
+        const tex = new THREE.CanvasTexture(c);
+        const mat = new THREE.MeshBasicMaterial({
+            map: tex, transparent: true, side: THREE.DoubleSide,
+            depthTest: false, depthWrite: false, opacity: 0.9
+        });
+        const w = (tw / th) * scale, h = scale;
+        return { geo: new THREE.PlaneGeometry(w, h), mat, w, h };
+    }
+
+    // ══════════════════════════════════════════════════
+    //  BUILD / REBUILD ELEMENTS
+    // ══════════════════════════════════════════════════
+
+    function getContainer() {
+        return SCREEN_CONFIGS[currentScreen].useHudGroup ? hudGroup : scene;
+    }
+
+    function buildElement(def) {
+        let geo, mat;
+        if (def.type === 'text') {
+            const r = renderTextMesh(def.text, def.fontSize, def.scale,
+                '#' + def.color.toString(16).padStart(6, '0'), def.glow);
+            geo = r.geo; mat = r.mat; def._w = r.w; def._h = r.h;
+        } else if (def.type === 'hearts') {
+            const s = def.scale || 1.0;
+            geo = new THREE.PlaneGeometry(3.25 * s, 1.0 * s);
+            mat = new THREE.MeshBasicMaterial({
+                map: renderHeartsTexture(), transparent: true,
+                side: THREE.DoubleSide, depthTest: false, depthWrite: false
+            });
+            def._w = 3.25 * s; def._h = 1.0 * s;
+        } else {
+            geo = new THREE.PlaneGeometry(def.w, def.h);
+            mat = new THREE.MeshBasicMaterial({
+                color: def.color, side: THREE.DoubleSide,
+                transparent: true, opacity: def.opacity || 0.8
+            });
+            def._w = def.w; def._h = def.h;
+        }
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(def.x, def.y, def.z);
+        mesh.frustumCulled = false;
+        mesh.renderOrder = 999;
+        mesh.userData = { id: def.id, def, align: 'center', origColor: def.color };
+        getContainer().add(mesh);
+        els[def.id] = mesh;
+        INIT[def.id] = {
+            x: def.x, y: def.y, z: def.z, text: def.text, scale: def.scale,
+            w: def.w, h: def.h, align: 'center', type: def.type, visible: true, anchor: 'center'
+        };
+    }
+
+    function rebuildMesh(id) {
+        const def = DEFS.find(d => d.id === id);
+        const mesh = els[id];
+        if (!def || !mesh) return;
+        const align = mesh.userData.align || 'center';
+        const pos = mesh.position.clone();
+        mesh.geometry.dispose();
+        if (mesh.material.map) mesh.material.map.dispose();
+        if (def.type === 'text') {
+            const r = renderTextMesh(def.text, def.fontSize, def.scale,
+                '#' + def.color.toString(16).padStart(6, '0'), def.glow);
+            mesh.geometry = r.geo; mesh.material = r.mat; def._w = r.w; def._h = r.h;
+        } else if (def.type === 'hearts') {
+            const s = def.scale || 1.0;
+            mesh.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s);
+            mesh.material.map?.dispose();
+            mesh.material.map = renderHeartsTexture();
+            def._w = 3.25 * s; def._h = 1.0 * s;
+        } else {
+            mesh.geometry = new THREE.PlaneGeometry(def.w, def.h);
+            def._w = def.w; def._h = def.h;
+        }
+        // Apply alignment offset
+        if (align === 'left') mesh.geometry.translate((def._w || 1) / 2, 0, 0);
+        else if (align === 'right') mesh.geometry.translate(-(def._w || 1) / 2, 0, 0);
+        mesh.position.copy(pos);
+    }
+
+    function rebuildAllTextMeshes() {
+        DEFS.filter(d => d.type === 'text').forEach(d => rebuildMesh(d.id));
+        DEFS.filter(d => d.type === 'hearts').forEach(d => rebuildMesh(d.id));
+    }
+
+    window.toggleBounds = function() { rebuildAllTextMeshes(); };
+
+    // ══════════════════════════════════════════════════
+    //  ANCHOR HELPERS
+    // ══════════════════════════════════════════════════
+
+    function getAnchorOffset(anchor, w, h, align) {
+        const hw = w / 2, hh = h / 2;
+        const cx = align === 'left' ? hw : align === 'right' ? -hw : 0;
+        switch (anchor) {
+            case 'left': return { x: -hw + cx, y: 0 };
+            case 'right': return { x: hw + cx, y: 0 };
+            case 'top': return { x: cx, y: hh };
+            case 'bottom': return { x: cx, y: -hh };
+            case 'top-left': return { x: -hw + cx, y: hh };
+            case 'top-right': return { x: hw + cx, y: hh };
+            case 'bottom-left': return { x: -hw + cx, y: -hh };
+            case 'bottom-right': return { x: hw + cx, y: -hh };
+            default: return { x: cx, y: 0 };
+        }
+    }
+
+    function applyScaleWithAnchor(id, newScale) {
+        const mesh = els[id], def = mesh.userData.def;
+        const anchor = elAnchor[id] || 'center', align = mesh.userData.align || 'center';
+        const oldW = def._w || 1, oldH = def._h || 1;
+        const oldOff = getAnchorOffset(anchor, oldW, oldH, align);
+        const anchorWorldX = mesh.position.x + oldOff.x;
+        const anchorWorldY = mesh.position.y + oldOff.y;
+        if (def.type === 'text') {
+            def.scale = newScale;
+            rebuildMesh(id);
+        } else if (def.type === 'hearts') {
+            def.scale = newScale;
+            const s = newScale;
+            mesh.geometry.dispose();
+            mesh.geometry = new THREE.PlaneGeometry(3.25 * s, 1.0 * s);
+            def._w = 3.25 * s; def._h = 1.0 * s;
+            if (align === 'left') mesh.geometry.translate(3.25 * s / 2, 0, 0);
+            else if (align === 'right') mesh.geometry.translate(-3.25 * s / 2, 0, 0);
+        } else {
+            const ratio = newScale / (def._w || 1);
+            def.w = def.w * ratio; def.h = def.h * ratio;
+            mesh.geometry.dispose();
+            mesh.geometry = new THREE.PlaneGeometry(def.w, def.h);
+            def._w = def.w; def._h = def.h;
+            if (align === 'left') mesh.geometry.translate(def.w / 2, 0, 0);
+            else if (align === 'right') mesh.geometry.translate(-def.w / 2, 0, 0);
+        }
+        const newW = def._w || 1, newH = def._h || 1;
+        const newOff = getAnchorOffset(anchor, newW, newH, align);
+        mesh.position.x = anchorWorldX - newOff.x;
+        mesh.position.y = anchorWorldY - newOff.y;
+    }
+
+    function applyRectSizeWithAnchor(id, newW, newH) {
+        const mesh = els[id], def = mesh.userData.def;
+        const anchor = elAnchor[id] || 'center', align = mesh.userData.align || 'center';
+        const oldW = def._w || def.w || 1, oldH = def._h || def.h || 1;
+        const oldOff = getAnchorOffset(anchor, oldW, oldH, align);
+        const axW = mesh.position.x + oldOff.x, axY = mesh.position.y + oldOff.y;
+        def.w = newW; def.h = newH;
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.PlaneGeometry(def.w, def.h);
+        def._w = def.w; def._h = def.h;
+        if (align === 'left') mesh.geometry.translate(def.w / 2, 0, 0);
+        else if (align === 'right') mesh.geometry.translate(-def.w / 2, 0, 0);
+        const nwOff = getAnchorOffset(anchor, def.w, def.h, align);
+        mesh.position.x = axW - nwOff.x;
+        mesh.position.y = axY - nwOff.y;
+    }
+
+    // ══════════════════════════════════════════════════
+    //  GROUP HELPERS
+    // ══════════════════════════════════════════════════
+
+    function getGroupForId(id) {
+        for (const [name, members] of Object.entries(groups)) {
+            if (members.includes(id)) return name;
+        }
+        return null;
+    }
+
+    function getGroupMembers(id) {
+        const gName = getGroupForId(id);
+        if (!gName) return [id];
+        return groups[gName];
+    }
+
+    // ══════════════════════════════════════════════════
+    //  SELECTION (multi-select with shift/ctrl)
+    // ══════════════════════════════════════════════════
+
+    function primarySelectedId() {
+        return selectedIds.length === 1 ? selectedIds[0] :
+            (selectedIds.length > 0 ? selectedIds[selectedIds.length - 1] : null);
+    }
+    function primaryMesh() {
+        const id = primarySelectedId();
+        return id ? els[id] : null;
+    }
+
+    canvas.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        // Guard: ignore clicks during or right after drag handle use
+        if (isDragging || dragEndDebounce) return;
+
+        const r = canvas.getBoundingClientRect();
+        const m = new THREE.Vector2(
+            ((e.clientX - r.left) / r.width) * 2 - 1,
+            -((e.clientY - r.top) / r.height) * 2 + 1
+        );
+        const rc = new THREE.Raycaster();
+        rc.setFromCamera(m, camera);
+        // Only raycast visible elements (if screen supports visibility)
+        const visibleMeshes = Object.values(els).filter(mesh => {
+            if (SCREEN_CONFIGS[currentScreen].hasVisibility) return elVisible[mesh.userData.id];
+            return true;
+        });
+        const hits = rc.intersectObjects(visibleMeshes, false);
+        const isShift = e.shiftKey || e.ctrlKey || e.metaKey;
+        if (hits.length) {
+            const hitId = hits[0].object.userData.id;
+            if (isShift) {
+                toggleSelect(hitId);
+            } else {
+                if (!selectedIds.includes(hitId)) {
+                    doSelect(hitId);
+                }
+            }
+        } else if (!isShift) {
+            deselect();
+        }
+    });
+
+    function doSelect(id) {
+        clearHighlights();
+        pushUndo();
+        selectedIds = [id];
+        applyHighlights();
+        attachTransform();
+        updateUI(); updateList();
+    }
+
+    function toggleSelect(id) {
+        clearHighlights();
+        if (selectedIds.includes(id)) {
+            selectedIds = selectedIds.filter(s => s !== id);
+        } else {
+            selectedIds.push(id);
+        }
+        applyHighlights();
+        attachTransform();
+        updateUI(); updateList();
+    }
+
+    function deselect() {
+        clearHighlights();
+        selectedIds = [];
+        tc.detach();
+        updateUI(); updateList();
+    }
+
+    function clearHighlights() {
+        selectedIds.forEach(id => {
+            const mesh = els[id];
+            if (mesh && mesh.material.color) mesh.material.color.setHex(mesh.userData.origColor);
+        });
+    }
+
+    function applyHighlights() {
+        selectedIds.forEach(id => {
+            const mesh = els[id];
+            if (mesh && mesh.material.color) mesh.material.color.setHex(0x00ffff);
+        });
+    }
+
+    function attachTransform() {
+        const pm = primaryMesh();
+        if (pm) tc.attach(pm); else tc.detach();
+    }
+
+    // ══════════════════════════════════════════════════
+    //  DRAG HANDLE RELIABILITY FIX
+    // ══════════════════════════════════════════════════
+
+    tc.addEventListener('mouseDown', () => {
+        isDragging = true;
+        pushUndo();
+        // Set up group drag tracking
+        const pid = primarySelectedId();
+        if (!pid) return;
+        const members = getGroupMembers(pid);
+        dragStartPositions = {};
+        members.forEach(id => {
+            if (els[id]) dragStartPositions[id] = els[id].position.clone();
+        });
+    });
+
+    tc.addEventListener('objectChange', () => {
+        if (!dragStartPositions || !primarySelectedId()) { updateUI(); updateList(); return; }
+        const pid = primarySelectedId();
+        const mesh = els[pid];
+        const startPos = dragStartPositions[pid];
+        if (!startPos) { updateUI(); updateList(); return; }
+        const dx = mesh.position.x - startPos.x;
+        const dy = mesh.position.y - startPos.y;
+        const dz = mesh.position.z - startPos.z;
+        // Move all group/multi-selected members by the same delta
+        const members = getGroupMembers(pid);
+        members.forEach(id => {
+            if (id === pid || !dragStartPositions[id]) return;
+            const sp = dragStartPositions[id];
+            els[id].position.set(sp.x + dx, sp.y + dy, sp.z + dz);
+        });
+        updateUI(); updateList();
+    });
+
+    tc.addEventListener('mouseUp', () => {
+        isDragging = false;
+        dragStartPositions = null;
+        // Debounce: ignore the next click event (mouseup triggers false pointerdown)
+        dragEndDebounce = true;
+        setTimeout(() => { dragEndDebounce = false; }, 100);
+    });
+
+    // ══════════════════════════════════════════════════
+    //  UI UPDATE
+    // ══════════════════════════════════════════════════
+
+    function updateUI() {
+        const pm = primaryMesh();
+        const multi = document.getElementById('multi-sel-info');
+        const ga = document.getElementById('group-actions');
+        const anchorSec = document.getElementById('anchor-section');
+        const cfg = SCREEN_CONFIGS[currentScreen];
+
+        // Show/hide anchor section based on screen config
+        anchorSec.style.display = cfg.hasAnchors ? '' : 'none';
+
+        if (!pm) {
+            document.getElementById('sel-name').textContent = 'Click an element';
+            multi.style.display = 'none';
+            ga.style.display = 'none';
+            ['inp-x','inp-y','inp-z','inp-scale','inp-w','inp-h','inp-text'].forEach(k =>
+                document.getElementById(k).value = '');
+            document.getElementById('inp-text').disabled = true;
+            document.getElementById('inp-anchor').value = 'center';
+            document.querySelectorAll('.abtn button').forEach(b => b.classList.remove('active'));
+            document.getElementById('row-scale').style.display = '';
+            document.getElementById('row-w').style.display = 'none';
+            document.getElementById('row-h').style.display = 'none';
+            return;
+        }
+
+        const def = pm.userData.def;
+        const pid = pm.userData.id;
+
+        if (selectedIds.length > 1) {
+            multi.style.display = '';
+            if (cfg.hasGroups) {
+                const gName = getGroupForId(pid);
+                if (gName) {
+                    multi.textContent = `${selectedIds.length} selected \u00b7 Group: ${gName}`;
+                    ga.style.display = 'flex';
+                } else {
+                    multi.textContent = `${selectedIds.length} selected (unrelated)`;
+                    ga.style.display = 'flex';
+                }
+            } else {
+                multi.textContent = `${selectedIds.length} selected`;
+                ga.style.display = 'none';
+            }
+        } else {
+            multi.style.display = 'none';
+            ga.style.display = 'none';
+        }
+
+        document.getElementById('sel-name').textContent = def.name;
+        document.getElementById('inp-x').value = pm.position.x.toFixed(3);
+        document.getElementById('inp-y').value = pm.position.y.toFixed(3);
+        document.getElementById('inp-z').value = pm.position.z.toFixed(3);
+
+        const align = pm.userData.align || 'center';
+        document.querySelectorAll('.abtn button').forEach(b => b.classList.remove('active'));
+        document.getElementById('al-' + align)?.classList.add('active');
+
+        document.getElementById('inp-anchor').value = elAnchor[pid] || 'center';
+
+        if (def.type === 'text') {
+            document.getElementById('inp-text').value = def.text;
+            document.getElementById('inp-text').disabled = false;
+            document.getElementById('inp-scale').value = def.scale.toFixed(4);
+            document.getElementById('row-scale').style.display = '';
+            document.getElementById('row-w').style.display = 'none';
+            document.getElementById('row-h').style.display = 'none';
+        } else if (def.type === 'hearts') {
+            document.getElementById('inp-text').value = '(3 hearts)';
+            document.getElementById('inp-text').disabled = true;
+            document.getElementById('inp-scale').value = (def.scale || 1.0).toFixed(4);
+            document.getElementById('row-scale').style.display = '';
+            document.getElementById('row-w').style.display = 'none';
+            document.getElementById('row-h').style.display = 'none';
+        } else {
+            document.getElementById('inp-text').value = '(rectangle)';
+            document.getElementById('inp-text').disabled = true;
+            document.getElementById('inp-w').value = def.w.toFixed(3);
+            document.getElementById('inp-h').value = def.h.toFixed(3);
+            document.getElementById('row-scale').style.display = 'none';
+            document.getElementById('row-w').style.display = '';
+            document.getElementById('row-h').style.display = '';
+        }
+    }
+
+    // ══════════════════════════════════════════════════
+    //  PROPERTY INPUTS (with multi-select delta fix)
+    // ══════════════════════════════════════════════════
+
+    window.onTextInput = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        const def = els[pid].userData.def;
+        if (def.type !== 'text') return;
+        pushUndo();
+        def.text = document.getElementById('inp-text').value || ' ';
+        rebuildMesh(pid);
+        updateList();
+        autoSave();
+    };
+
+    window.onNumInput = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        pushUndo();
+        const mesh = els[pid];
+        const def = mesh.userData.def;
+
+        // Read new values from inputs
+        const newX = parseFloat(document.getElementById('inp-x').value) || 0;
+        const newY = parseFloat(document.getElementById('inp-y').value) || 0;
+        const newZ = parseFloat(document.getElementById('inp-z').value) || 0;
+
+        // Calculate deltas from primary element's current position
+        const dx = newX - mesh.position.x;
+        const dy = newY - mesh.position.y;
+        const dz = newZ - mesh.position.z;
+
+        // Apply delta to ALL selected elements
+        if (selectedIds.length > 1) {
+            selectedIds.forEach(id => {
+                const m = els[id];
+                if (!m) return;
+                m.position.x += dx;
+                m.position.y += dy;
+                m.position.z += dz;
+            });
+        } else {
+            mesh.position.x = newX;
+            mesh.position.y = newY;
+            mesh.position.z = newZ;
+        }
+
+        // Handle scale/size changes for primary
+        if (def.type === 'text' || def.type === 'hearts') {
+            const newScale = parseFloat(document.getElementById('inp-scale').value) || 0.02;
+            if (selectedIds.length > 1 && def.type === 'text') {
+                // Apply same scale to all selected text elements
+                selectedIds.forEach(id => {
+                    const d2 = els[id]?.userData.def;
+                    if (d2 && d2.type === 'text') {
+                        applyScaleWithAnchor(id, newScale);
+                    }
+                });
+            } else {
+                applyScaleWithAnchor(pid, newScale);
+            }
+        } else if (def.type === 'rect') {
+            const newW = parseFloat(document.getElementById('inp-w').value) || 0.1;
+            const newH = parseFloat(document.getElementById('inp-h').value) || 0.1;
+            if (selectedIds.length > 1) {
+                // Apply same w/h to all selected rect elements
+                selectedIds.forEach(id => {
+                    const d2 = els[id]?.userData.def;
+                    if (d2 && d2.type === 'rect') {
+                        applyRectSizeWithAnchor(id, newW, newH);
+                    }
+                });
+            } else {
+                applyRectSizeWithAnchor(pid, newW, newH);
+            }
+        }
+        updateList();
+        autoSave();
+    };
+
+    window.setAlign = function(a) {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        pushUndo();
+        els[pid].userData.align = a;
+        rebuildMesh(pid);
+        updateUI(); updateList();
+        autoSave();
+    };
+
+    window.onAnchorInput = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        elAnchor[pid] = document.getElementById('inp-anchor').value;
+        autoSave();
+    };
+
+    // ══════════════════════════════════════════════════
+    //  VISIBILITY TOGGLES
+    // ══════════════════════════════════════════════════
+
+    window.toggleVisible = function(id, ev) {
+        if (ev) ev.stopPropagation();
+        pushUndo();
+        elVisible[id] = !elVisible[id];
+        els[id].visible = elVisible[id];
+        if (!elVisible[id] && selectedIds.includes(id)) {
+            selectedIds = selectedIds.filter(s => s !== id);
+            clearHighlights(); applyHighlights(); attachTransform(); updateUI();
+        }
+        updateList(); autoSave();
+    };
+
+    // ══════════════════════════════════════════════════
+    //  GROUPING (Floor HUD only)
+    // ══════════════════════════════════════════════════
+
+    window.groupSelected = function() {
+        if (selectedIds.length < 2) return;
+        pushUndo();
+        groupCounter++;
+        const name = 'Group ' + groupCounter;
+        for (const [gName, members] of Object.entries(groups)) {
+            groups[gName] = members.filter(m => !selectedIds.includes(m));
+            if (groups[gName].length === 0) delete groups[gName];
+        }
+        groups[name] = [...selectedIds];
+        updateUI(); updateList(); autoSave();
+    };
+
+    window.ungroupSelected = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        pushUndo();
+        const gName = getGroupForId(pid);
+        if (!gName) return;
+        delete groups[gName];
+        updateUI(); updateList(); autoSave();
+    };
+
+    window.renameGroup = function(oldName, newName) {
+        if (!newName || newName === oldName || groups[newName]) return;
+        pushUndo();
+        groups[newName] = groups[oldName];
+        delete groups[oldName];
+        updateList(); autoSave();
+    };
+
+    window.toggleGroupCollapse = function(name) {
+        collapsedGroups[name] = !collapsedGroups[name];
+        updateList();
+    };
+
+    window.selectGroup = function(gName) {
+        const members = groups[gName];
+        if (!members || members.length === 0) return;
+        pushUndo();
+        clearHighlights();
+        selectedIds = [...members];
+        applyHighlights(); attachTransform();
+        updateUI(); updateList();
+    };
+
+    window.toggleGroupVisibility = function(gName) {
+        const members = groups[gName];
+        if (!members || members.length === 0) return;
+        const allVisible = members.every(m => elVisible[m]);
+        pushUndo();
+        members.forEach(id => {
+            elVisible[id] = !allVisible;
+            if (els[id]) els[id].visible = elVisible[id];
+        });
+        if (!allVisible) {
+            selectedIds = selectedIds.filter(id => elVisible[id]);
+            clearHighlights(); applyHighlights(); attachTransform(); updateUI();
+        }
+        updateList(); autoSave();
+    };
+
+    // ══════════════════════════════════════════════════
+    //  ELEMENT LIST
+    // ══════════════════════════════════════════════════
+
+    function updateList() {
+        const c = document.getElementById('ec');
+        c.innerHTML = '';
+        const cfg = SCREEN_CONFIGS[currentScreen];
+
+        // Track grouped elements
+        const groupedIds = new Set();
+        if (cfg.hasGroups) {
+            for (const members of Object.values(groups)) {
+                members.forEach(m => groupedIds.add(m));
+            }
+        }
+
+        // Render groups first
+        if (cfg.hasGroups) {
+            for (const [gName, members] of Object.entries(groups)) {
+                const hdr = document.createElement('div');
+                hdr.className = 'group-hdr';
+                const collapsed = collapsedGroups[gName];
+                const selCount = members.filter(m => selectedIds.includes(m)).length;
+                if (selCount === members.length && members.length > 0) hdr.style.background = '#005599';
+
+                const allVisible = members.every(m => elVisible[m]);
+                const groupEyeClass = allVisible ? '' : 'hidden';
+                const groupEyeIcon = allVisible ? '\u{1F441}' : '\u{1F441}\u200D\u{1F5E8}';
+
+                hdr.innerHTML = `<span class="arrow ${collapsed ? 'collapsed' : ''}">\u25BC</span>` +
+                    `<span class="gname" contenteditable="true" spellcheck="false">${gName}</span>` +
+                    `<span class="eye-btn ${groupEyeClass}" title="Toggle group visibility">${groupEyeIcon}</span>` +
+                    `<span class="group-sel-btn" title="Select all members" style="cursor:pointer;color:#4af;font-size:11px;padding:0 2px">\u25A3</span>` +
+                    `<span style="color:#666;font-size:9px">(${members.length})</span>`;
+
+                const nameSpan = hdr.querySelector('.gname');
+                nameSpan.addEventListener('blur', () => {
+                    const nn = nameSpan.textContent.trim();
+                    if (nn && nn !== gName) renameGroup(gName, nn);
+                });
+                nameSpan.addEventListener('keydown', e => {
+                    if (e.key === 'Enter') { e.preventDefault(); nameSpan.blur(); }
+                });
+                hdr.addEventListener('click', e => {
+                    if (e.target === nameSpan) return;
+                    const eyeBtn = hdr.querySelector('.eye-btn');
+                    const selBtn = hdr.querySelector('.group-sel-btn');
+                    if (e.target === eyeBtn || eyeBtn.contains(e.target)) {
+                        e.stopPropagation();
+                        toggleGroupVisibility(gName);
+                        return;
+                    }
+                    if (e.target === selBtn || selBtn.contains(e.target)) {
+                        e.stopPropagation();
+                        selectGroup(gName);
+                        return;
+                    }
+                    toggleGroupCollapse(gName);
+                });
+                c.appendChild(hdr);
+
+                if (!collapsed) {
+                    members.forEach(id => {
+                        if (!els[id]) return;
+                        c.appendChild(createElementListItem(id, true));
+                    });
+                }
+            }
+        }
+
+        // Render ungrouped elements
+        DEFS.forEach(d => {
+            if (groupedIds.has(d.id)) return;
+            c.appendChild(createElementListItem(d.id, false));
+        });
+    }
+
+    function createElementListItem(id, inGroup) {
+        const d = DEFS.find(dd => dd.id === id);
+        const m = els[id];
+        if (!d || !m) return document.createElement('div');
+        const p = m.position;
+        const div = document.createElement('div');
+        const cfg = SCREEN_CONFIGS[currentScreen];
+        div.className = 'ei' + (inGroup ? ' group-ei' : '') + (selectedIds.includes(id) ? ' sel' : '');
+
+        if (cfg.hasVisibility && !elVisible[id]) div.style.opacity = '0.4';
+
+        const ai = { left:'\u25C0', center:'\u25C6', right:'\u25B6' }[m.userData.align || 'center'];
+        const eyeIcon = elVisible[id] ? '\u{1F441}' : '\u{1F441}\u200D\u{1F5E8}';
+
+        let html = '';
+        if (cfg.hasVisibility) {
+            html += `<span class="eye-btn ${elVisible[id] ? '' : 'hidden'}" data-id="${id}">${eyeIcon}</span>`;
+        }
+        html += `<span class="n"><span class="cs" style="background:#${d.color.toString(16).padStart(6,'0')}"></span>${ai} ${d.name}</span>`;
+        html += `<span class="p">${p.x.toFixed(2)},${p.y.toFixed(2)}</span>`;
+        div.innerHTML = html;
+
+        if (cfg.hasVisibility) {
+            const eyeBtn = div.querySelector('.eye-btn');
+            eyeBtn.addEventListener('click', e => toggleVisible(id, e));
+        }
+        div.addEventListener('click', e => {
+            const eyeBtn = div.querySelector('.eye-btn');
+            if (eyeBtn && e.target === eyeBtn) return;
+            if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                clearHighlights();
+                if (selectedIds.includes(id)) {
+                    selectedIds = selectedIds.filter(s => s !== id);
+                } else {
+                    selectedIds.push(id);
+                }
+                applyHighlights(); attachTransform();
+                updateUI(); updateList();
+            } else {
+                doSelect(id);
+            }
+        });
+        return div;
+    }
+
+    // ══════════════════════════════════════════════════
+    //  UNDO SYSTEM
+    // ══════════════════════════════════════════════════
+
+    function snap() {
+        const s = {};
+        Object.keys(els).forEach(id => {
+            const m = els[id], d = m.userData.def;
+            s[id] = {
+                x: m.position.x, y: m.position.y, z: m.position.z,
+                align: m.userData.align, text: d.text, scale: d.scale, w: d.w, h: d.h
+            };
+        });
+        return {
+            elements: s,
+            visible: { ...elVisible },
+            anchor: { ...elAnchor },
+            groups: JSON.parse(JSON.stringify(groups))
+        };
+    }
+
+    function pushUndo() {
+        undos.push(snap());
+        if (undos.length > MAX_UNDO) undos.shift();
+    }
+
+    function restoreSnapshot(sn) {
+        if (sn.visible) {
+            Object.keys(sn.visible).forEach(id => {
+                elVisible[id] = sn.visible[id];
+                if (els[id]) els[id].visible = elVisible[id];
+            });
+        }
+        if (sn.anchor) {
+            Object.keys(sn.anchor).forEach(id => { elAnchor[id] = sn.anchor[id]; });
+        }
+        if (sn.groups) {
+            groups = JSON.parse(JSON.stringify(sn.groups));
+        }
+        Object.keys(sn.elements).forEach(id => {
+            if (!els[id]) return;
+            const m = els[id], d = m.userData.def, v = sn.elements[id];
+            m.position.set(v.x, v.y, v.z);
+            m.userData.align = v.align;
+            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; }
+            else if (d.type === 'hearts') { d.scale = v.scale || 1.0; }
+            else { d.w = v.w; d.h = v.h; }
+            rebuildMesh(id);
+        });
+        selectedIds = selectedIds.filter(id => {
+            if (SCREEN_CONFIGS[currentScreen].hasVisibility) return elVisible[id];
+            return true;
+        });
+        clearHighlights(); applyHighlights(); attachTransform();
+        updateUI(); updateList();
+    }
+
+    window.undo = function() {
+        if (!undos.length) return;
+        restoreSnapshot(undos.pop());
+        autoSave();
+    };
+
+    // ══════════════════════════════════════════════════
+    //  RESET
+    // ══════════════════════════════════════════════════
+
+    window.resetAll = function() {
+        pushUndo();
+        Object.keys(elVisible).forEach(id => {
+            elVisible[id] = true; if (els[id]) els[id].visible = true;
+        });
+        Object.keys(elAnchor).forEach(id => { elAnchor[id] = 'center'; });
+        groups = {}; groupCounter = 0; collapsedGroups = {};
+        Object.keys(els).forEach(id => {
+            const m = els[id], d = m.userData.def, v = INIT[id];
+            m.position.set(v.x, v.y, v.z);
+            m.userData.align = v.align;
+            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; }
+            else if (d.type === 'hearts') { d.scale = v.scale || 1.0; }
+            else { d.w = v.w; d.h = v.h; }
+            rebuildMesh(id);
+        });
+        selectedIds = [];
+        tc.detach();
+        updateUI(); updateList();
+        // Clear localStorage for this screen
+        localStorage.removeItem('layout-editor:' + currentScreen);
+    };
+
+    document.addEventListener('keydown', e => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); window.undo(); }
+    });
+
+    // ══════════════════════════════════════════════════
+    //  AUTO-SAVE / AUTO-LOAD
+    // ══════════════════════════════════════════════════
+
+    function autoSave() {
+        const key = 'layout-editor:' + currentScreen;
+        const data = buildExportData();
+        try {
+            localStorage.setItem(key, JSON.stringify(data));
+        } catch (err) {
+            // localStorage full or unavailable, silently fail
+        }
+    }
+
+    function autoLoad(screenId) {
+        const key = 'layout-editor:' + screenId;
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) return false;
+            const d = JSON.parse(raw);
+            if (!d.elements) return false;
+            Object.keys(d.elements).forEach(id => {
+                if (!els[id]) return;
+                const m = els[id], dd = m.userData.def, v = d.elements[id];
+                m.position.set(v.x, v.y, v.z);
+                if (v.align) m.userData.align = v.align;
+                if (v.visible === false) { elVisible[id] = false; m.visible = false; }
+                else { elVisible[id] = true; m.visible = true; }
+                if (v.anchor) elAnchor[id] = v.anchor;
+                if (dd.type === 'text' && v.text !== undefined) { dd.text = v.text; dd.scale = v.scale; }
+                else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; }
+                else if (v.w) { dd.w = v.w; dd.h = v.h; }
+                rebuildMesh(id);
+            });
+            if (d.groups && SCREEN_CONFIGS[screenId].hasGroups) {
+                groups = {};
+                for (const [name, members] of Object.entries(d.groups)) {
+                    groups[name] = members.filter(m => els[m]);
+                    if (groups[name].length === 0) delete groups[name];
+                }
+                const existingNums = Object.keys(groups).map(n => {
+                    const match = n.match(/^Group (\d+)$/);
+                    return match ? parseInt(match[1]) : 0;
+                });
+                groupCounter = Math.max(groupCounter, ...existingNums);
+            }
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    // ══════════════════════════════════════════════════
+    //  EXPORT / IMPORT
+    // ══════════════════════════════════════════════════
+
+    function buildExportData() {
+        const cfg = SCREEN_CONFIGS[currentScreen];
+        const data = {
+            screen: currentScreen,
+            elements: {},
+            exportedAt: new Date().toISOString()
+        };
+        if (cfg.useHudGroup) {
+            data.hudGroupPosition = { x: 0, y: 0, z: -3 };
+            data.hudGroupRotation = { x: -70, y: 0, z: 0 };
+        }
+        Object.keys(els).forEach(id => {
+            const m = els[id], d = m.userData.def;
+            data.elements[id] = {
+                x: +m.position.x.toFixed(3), y: +m.position.y.toFixed(3),
+                z: +m.position.z.toFixed(3), align: m.userData.align || 'center',
+                type: d.type, visible: elVisible[id] !== false,
+                anchor: elAnchor[id] || 'center',
+            };
+            if (d.type === 'text') {
+                data.elements[id].scale = +(d.scale.toFixed(4));
+                data.elements[id].text = d.text;
+            } else if (d.type === 'hearts') {
+                data.elements[id].scale = +((d.scale || 1.0).toFixed(4));
+            } else {
+                data.elements[id].w = +(d.w.toFixed(3));
+                data.elements[id].h = +(d.h.toFixed(3));
+            }
+        });
+        // Export groups
+        if (cfg.hasGroups) {
+            const nonEmptyGroups = {};
+            for (const [name, members] of Object.entries(groups)) {
+                if (members.length > 0) nonEmptyGroups[name] = [...members];
+            }
+            if (Object.keys(nonEmptyGroups).length > 0) data.groups = nonEmptyGroups;
+        }
+        return data;
+    }
+
+    window.exportJSON = function() {
+        const cfg = SCREEN_CONFIGS[currentScreen];
+        const data = buildExportData();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = cfg.exportName;
+        a.click();
+    };
+
+    window.importJSON = function(ev) {
+        const f = ev.target.files[0];
+        if (!f) return;
+        const r = new FileReader();
+        r.onload = e => {
+            try {
+                const d = JSON.parse(e.target.result);
+                if (!d.elements) throw new Error('No elements found');
+                pushUndo();
+                Object.keys(d.elements).forEach(id => {
+                    if (!els[id]) return;
+                    const m = els[id], dd = m.userData.def, v = d.elements[id];
+                    m.position.set(v.x, v.y, v.z);
+                    if (v.align) m.userData.align = v.align;
+                    if (v.visible === false) { elVisible[id] = false; m.visible = false; }
+                    else { elVisible[id] = true; m.visible = true; }
+                    if (v.anchor) elAnchor[id] = v.anchor;
+                    if (dd.type === 'text' && v.text !== undefined) { dd.text = v.text; dd.scale = v.scale; }
+                    else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; }
+                    else if (v.w) { dd.w = v.w; dd.h = v.h; }
+                    rebuildMesh(id);
+                });
+                if (d.groups && SCREEN_CONFIGS[currentScreen].hasGroups) {
+                    groups = {};
+                    for (const [name, members] of Object.entries(d.groups)) {
+                        groups[name] = members.filter(m => els[m]);
+                        if (groups[name].length === 0) delete groups[name];
+                    }
+                    const existingNums = Object.keys(groups).map(n => {
+                        const match = n.match(/^Group (\d+)$/);
+                        return match ? parseInt(match[1]) : 0;
+                    });
+                    groupCounter = Math.max(groupCounter, ...existingNums);
+                }
+                selectedIds = selectedIds.filter(id => {
+                    if (SCREEN_CONFIGS[currentScreen].hasVisibility) return elVisible[id];
+                    return true;
+                });
+                clearHighlights(); applyHighlights(); attachTransform();
+                updateUI(); updateList();
+                autoSave();
+            } catch (err) { alert('Invalid JSON: ' + err.message); }
+        };
+        r.readAsText(f); ev.target.value = '';
+    };
+
+    // ══════════════════════════════════════════════════
+    //  SCREEN SWITCHING
+    // ══════════════════════════════════════════════════
+
+    function clearScreen() {
+        // Detach transform controls
+        tc.detach();
+        // Remove all element meshes from their containers
+        Object.values(els).forEach(mesh => {
+            mesh.geometry.dispose();
+            if (mesh.material.map) mesh.material.map.dispose();
+            mesh.material.dispose();
+            mesh.parent?.remove(mesh);
+        });
+        // Remove hudGroup children
+        while (hudGroup.children.length > 0) {
+            const child = hudGroup.children[0];
+            child.geometry?.dispose();
+            if (child.material?.map) child.material.map.dispose();
+            child.material?.dispose();
+            hudGroup.remove(child);
+        }
+        els = {}; INIT = {}; elVisible = {}; elAnchor = {};
+        groups = {}; groupCounter = 0; collapsedGroups = {};
+        selectedIds = []; undos = [];
+    }
+
+    window.switchScreen = function(screenId) {
+        if (!SCREEN_CONFIGS[screenId]) return;
+        // Auto-save current screen before switching
+        if (Object.keys(els).length > 0) autoSave();
+
+        clearScreen();
+        currentScreen = screenId;
+        const cfg = SCREEN_CONFIGS[screenId];
+
+        // Set up scene for this screen
+        camera.position.set(...cfg.cameraPos);
+        orbit.target.set(...cfg.cameraTarget);
+        orbit.update();
+
+        // Configure grid
+        grid.rotation.set(0, 0, 0);
+        if (cfg.gridRotation) grid.rotation.x = cfg.gridRotation;
+
+        // Configure hudGroup
+        hudGroup.position.set(0, 0, 0);
+        hudGroup.rotation.set(0, 0, 0);
+        hudGroup.visible = false;
+        if (cfg.useHudGroup) {
+            hudGroup.position.set(...cfg.hudGroupPos);
+            hudGroup.rotation.x = cfg.hudGroupRotX;
+            hudGroup.visible = true;
+        }
+
+        // Set up DEFS
+        // Deep clone defs so mutations don't affect originals
+        DEFS = cfg.defs.map(d => ({ ...d }));
+        DEFS.forEach(d => {
+            elVisible[d.id] = true;
+            elAnchor[d.id] = 'center';
+            buildElement(d);
+        });
+
+        // Try to auto-load saved state
+        autoLoad(screenId);
+
+        // Update UI
+        document.title = 'Layout Editor - ' + cfg.label;
+        document.getElementById('note-text').innerHTML =
+            cfg.hasAnchors
+                ? '<kbd>Shift+Click</kbd> multi-select. Anchor controls scale origin. Elements render at exact in-game size.'
+                : 'Elements render at exact in-game size. <kbd>Click</kbd> select, <kbd>Gizmo</kbd> move.';
+        updateUI(); updateList();
+    };
+
+    // ══════════════════════════════════════════════════
+    //  RESIZE / ANIMATE
+    // ══════════════════════════════════════════════════
+
+    function resize() {
+        const vp = document.getElementById('viewport');
+        camera.aspect = vp.clientWidth / vp.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(vp.clientWidth, vp.clientHeight);
+    }
+    window.addEventListener('resize', resize);
+
+    (function animate() {
+        requestAnimationFrame(animate);
+        orbit.update();
+        renderer.render(scene, camera);
+    })();
+
+    // ══════════════════════════════════════════════════
+    //  INITIALIZE
+    // ══════════════════════════════════════════════════
+
+    window.switchScreen('floor-hud');
+    resize();
+    </script>
+</body>
+</html>

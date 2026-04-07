@@ -7,7 +7,8 @@ import { game } from './game.js';
 import {
   makeSprite, updateSpriteText, disposeGroupChildren,
   hudGroup, cameraRef,
-  pauseMenuGroup, pauseCountdownGroup
+  pauseMenuGroup, pauseCountdownGroup,
+  loadLayout
 } from './hud.js';
 
 let pauseMenuElements = {
@@ -26,6 +27,17 @@ let pauseMenuAnimation = {
   chartAnimation: 0,
   numbersAnimated: false,
 };
+
+// Layout loaded from JSON (cached by loadLayout)
+let pauseMenuLayout = null;
+let pauseMenuLayoutLoaded = false;
+async function ensurePauseLayout() {
+  if (!pauseMenuLayoutLoaded) {
+    pauseMenuLayout = await loadLayout('pause-menu');
+    pauseMenuLayoutLoaded = true;
+  }
+  return pauseMenuLayout;
+}
 
 let pauseCountdownHeader = null;
 let pauseCountdownText = null;
@@ -145,7 +157,7 @@ export function showPauseMenu() {
     return;
   }
 
-  createPauseMenu();
+  createPauseMenu(); // async, but fire-and-forget is fine - layout loads lazily
 }
 
 /**
@@ -195,7 +207,8 @@ export function updatePauseMenu(now) {
 /**
  * Create the pause menu UI
  */
-function createPauseMenu() {
+async function createPauseMenu() {
+  await ensurePauseLayout();
   const group = pauseMenuGroup;
 
   // Main panel - ONE dark see-through plane
@@ -229,18 +242,33 @@ function createPauseMenu() {
   // Left blaster section (includes stats now)
   const leftSection = createBlasterSection('left');
   leftSection.position.set(-1.25, 0.2, 0.02);
+  // Apply layout override if loaded
+  if (pauseMenuLayout?.elements?.left_blaster_section) {
+    const pos = pauseMenuLayout.elements.left_blaster_section;
+    leftSection.position.set(pos.x, pos.y, pos.z ?? 0.02);
+  }
   group.add(leftSection);
   pauseMenuElements.leftBlasterSection = leftSection;
 
   // Right blaster section (includes stats now)
   const rightSection = createBlasterSection('right');
   rightSection.position.set(1.25, 0.2, 0.02);
+  // Apply layout override if loaded
+  if (pauseMenuLayout?.elements?.right_blaster_section) {
+    const pos = pauseMenuLayout.elements.right_blaster_section;
+    rightSection.position.set(pos.x, pos.y, pos.z ?? 0.02);
+  }
   group.add(rightSection);
   pauseMenuElements.rightBlasterSection = rightSection;
 
   // Resume button
   const resumeBtn = createResumeButton();
   resumeBtn.position.set(0, -1.35, 0.03);
+  // Apply layout override if loaded
+  if (pauseMenuLayout?.elements?.resume_button) {
+    const pos = pauseMenuLayout.elements.resume_button;
+    resumeBtn.position.set(pos.x, pos.y, pos.z ?? 0.03);
+  }
   group.add(resumeBtn);
   pauseMenuElements.resumeButton = resumeBtn;
 
