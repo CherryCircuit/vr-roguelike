@@ -636,6 +636,40 @@
         updateList();
     };
 
+    // ── Select all members of a group ──
+    window.selectGroup = function(gName) {
+        const members = groups[gName];
+        if (!members || members.length === 0) return;
+        pushUndo();
+        clearHighlights();
+        selectedIds = [...members];
+        applyHighlights();
+        attachTransform();
+        updateUI(); updateList();
+    };
+
+    // ── Toggle visibility of all members in a group ──
+    window.toggleGroupVisibility = function(gName) {
+        const members = groups[gName];
+        if (!members || members.length === 0) return;
+        // If all visible, hide all; otherwise show all
+        const allVisible = members.every(m => elVisible[m]);
+        pushUndo();
+        members.forEach(id => {
+            elVisible[id] = !allVisible;
+            if (els[id]) els[id].visible = elVisible[id];
+        });
+        // Remove hidden elements from selection
+        if (!allVisible) {
+            selectedIds = selectedIds.filter(id => elVisible[id]);
+            clearHighlights();
+            applyHighlights();
+            attachTransform();
+            updateUI();
+        }
+        updateList();
+    };
+
     // ── Element list rendering ──
     function updateList() {
         const c = document.getElementById('ec'); c.innerHTML = '';
@@ -654,7 +688,13 @@
             const selCount = members.filter(m => selectedIds.includes(m)).length;
             if (selCount === members.length && members.length > 0) hdr.style.background = '#005599';
 
-            hdr.innerHTML = `<span class="arrow ${collapsed ? 'collapsed' : ''}">▼</span><span class="gname" contenteditable="true" spellcheck="false">${gName}</span><span style="color:#666;font-size:9px">(${members.length})</span>`;
+            // Compute combined visibility state for group eye icon
+            const allVisible = members.every(m => elVisible[m]);
+            const anyVisible = members.some(m => elVisible[m]);
+            const groupEyeClass = allVisible ? '' : 'hidden';
+            const groupEyeIcon = allVisible ? '👁' : '👁‍🗨';
+
+            hdr.innerHTML = `<span class="arrow ${collapsed ? 'collapsed' : ''}">▼</span><span class="gname" contenteditable="true" spellcheck="false">${gName}</span><span class="eye-btn ${groupEyeClass}" title="Toggle group visibility">${groupEyeIcon}</span><span class="group-sel-btn" title="Select all members" style="cursor:pointer;color:#4af;font-size:11px;padding:0 2px">▣</span><span style="color:#666;font-size:9px">(${members.length})</span>`;
             const nameSpan = hdr.querySelector('.gname');
             nameSpan.addEventListener('blur', () => {
                 const newName = nameSpan.textContent.trim();
@@ -663,6 +703,18 @@
             nameSpan.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); nameSpan.blur(); } });
             hdr.addEventListener('click', e => {
                 if (e.target === nameSpan) return;
+                const eyeBtn = hdr.querySelector('.eye-btn');
+                const selBtn = hdr.querySelector('.group-sel-btn');
+                if (e.target === eyeBtn || eyeBtn.contains(e.target)) {
+                    e.stopPropagation();
+                    toggleGroupVisibility(gName);
+                    return;
+                }
+                if (e.target === selBtn || selBtn.contains(e.target)) {
+                    e.stopPropagation();
+                    selectGroup(gName);
+                    return;
+                }
                 toggleGroupCollapse(gName);
             });
             c.appendChild(hdr);
