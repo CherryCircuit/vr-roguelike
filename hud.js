@@ -1127,48 +1127,48 @@ function createHUDElements() {
   // Lives (hearts) - left side on floor
   // #19: Hearts aligned with TOP of SCORE and LEVEL X titles
   // Layout: Spread horizontally to avoid overlap
-  const heartsGeo = new THREE.PlaneGeometry(1.2, 0.24);
+  const heartsGeo = new THREE.PlaneGeometry(1.9, 0.35);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
-  heartsSprite.position.set(-1.48, 0.45, 0);  // Left, top row
+  heartsSprite.position.set(-1.34, 0.45, 0);  // Left, top row
   heartsSprite.renderOrder = 999;
   hudGroup.add(heartsSprite);
 
   // SCORE - center-left on floor with title above
   // Layout: Spread from hearts, number centered under SCORE title
   scoreSprite = makeSprite('0', { fontSize: 75, color: '#ffff00', shadow: true, scale: 0.45 });
-  scoreSprite.position.set(-0.5, 0.2, 0);  // Centered under SCORE title
+  scoreSprite.position.set(-0.42, 0.2, 0);  // Centered under SCORE title
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
-  scoreTitleSprite.position.set(-0.5, 0.45, 0);  // Top row
+  scoreTitleSprite.position.set(-0.42, 0.45, 0);  // Top row
   hudGroup.add(scoreTitleSprite);
 
   // Kill counter — below LEVEL display
   // Layout: Center-right, below level
   killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 0.45 });
-  killCountSprite.position.set(0.682, 0.2, 0);  // Center-right, second row
+  killCountSprite.position.set(0.8, 0.2, 0);  // Center-right, second row
   hudGroup.add(killCountSprite);
 
   // Level indicator — above kill counter
   // Layout: Center-right, top row
   levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 0.45 });
-  levelSprite.position.set(0.69, 0.45, 0);  // Center-right, top row
+  levelSprite.position.set(0.76, 0.45, 0);  // Center-right, top row
   hudGroup.add(levelSprite);
 
   // Nuke counter — far right, top row; emoji 2x size, count text normal
   nukeEmojiSprite = makeSprite('☢', { fontSize: 144, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.8 });
-  nukeEmojiSprite.position.set(1.514, 0.34, 0);  // Far right
+  nukeEmojiSprite.position.set(1.62, 0.34, 0);  // Far right
   hudGroup.add(nukeEmojiSprite);
   nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.35 });
-  nukeCountSprite.position.set(1.795, 0.34, 0);  // Far right
+  nukeCountSprite.position.set(1.9, 0.34, 0);  // Far right
   hudGroup.add(nukeCountSprite);
 
   // Accuracy bonus — center, just below main HUD row
   // Y=-0.45 keeps it close to the SCORE/LEVEL row (Y=0.3) without overlap
   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 0.18 });
-  comboSprite.position.set(-1.56, 0.22, 0);  // Left side, below hearts
+  comboSprite.position.set(-1.54, 0.22, 0);  // Left side, below hearts
   comboSprite.visible = false;
   hudGroup.add(comboSprite);
 
@@ -1178,7 +1178,7 @@ function createHUDElements() {
   cooldownGeo.translate(0.275, 0, 0); // shift right by half width
   const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
-  comboCooldownSprite.position.set(-1.54, 0.16, 0);  // Left side, below combo text
+  comboCooldownSprite.position.set(-1.59, 0.16, 0);  // Left side, below combo text
   comboCooldownSprite.visible = false;
   hudGroup.add(comboCooldownSprite);
 }
@@ -1358,7 +1358,7 @@ export function updateHUD(gameState) {
     // Cache geometry by maxHealth to avoid recreating on every frame
     if (heartsSprite.userData._heartsMaxHP !== gameState.maxHealth) {
       heartsSprite.userData._heartsMaxHP = gameState.maxHealth;
-      heartsSprite.geometry = getHudGeo(ha * 0.48, 0.48);
+      heartsSprite.geometry = getHudGeo(ha * 0.7, 0.7);
     }
   }
 
