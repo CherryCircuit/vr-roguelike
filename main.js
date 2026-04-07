@@ -108,6 +108,12 @@ window.DEBUG_PROJECTILES = false;
 // PERFORMANCE: Debug flag to disable console.log in hot paths on Quest
 const DEBUG = false;
 
+// PERFORMANCE: All non-critical console.log calls are wrapped with this.
+// When DEBUG=false, the function body is empty and V8 inlines it away (zero cost).
+// When DEBUG=true, logs go through normally.
+const _log = DEBUG ? console.log.bind(console) : () => {};
+const _warn = DEBUG ? console.warn.bind(console) : () => {};
+
 // ============================================================
 // MUZZLE FLASH EFFECT
 // Billboard sprite shown briefly on weapon fire.
@@ -487,7 +493,7 @@ function markAccuracyHit(shotId, hand) {
   if (newThreshold > oldThreshold && newThreshold >= 2) {
     spawnKillChainPopup(newThreshold, camera.position);
     playComboSound(newThreshold);
-    console.log(`[accuracy] ${newThreshold}x accuracy bonus!`);
+    _log(`[accuracy] ${newThreshold}x accuracy bonus!`);
   }
 
   prevAccuracyMultiplier = newMultiplier;
@@ -648,7 +654,7 @@ function applyBiomeLighting(biome) {
   biomePointLight.color.setHex(config.point.color);
   biomePointLight.intensity = config.point.intensity;
   biomePointLight.distance = config.point.distance;
-  console.log('[lighting] Applied lighting for biome:', biome);
+  _log('[lighting] Applied lighting for biome:', biome);
 }
 
 // ── Progression automation helpers (test hooks) ─────────────────────────
@@ -1065,7 +1071,7 @@ init();
 // ============================================================
 
 function init() {
-  console.log('[SPACEOMICIDE] Initialising...');
+  _log('[SPACEOMICIDE] Initialising...');
 
   // Load debug settings from localStorage
   loadDebugSettings();
@@ -1125,7 +1131,7 @@ function init() {
   biomePointLight.position.set(0, 2, 0);
   biomePointLight.castShadow = false;
   scene.add(biomePointLight);
-  console.log('[lighting] Biome lights initialized');
+  _log('[lighting] Biome lights initialized');
 
   // VR Button - disable foveated rendering to remove visible quality boxes
   const vrButton = VRButton.createButton(renderer, {
@@ -1138,14 +1144,14 @@ function init() {
 
   // Disable foveated rendering (removes visible quality boxes in Quest VR)
   renderer.xr.addEventListener('sessionstart', () => {
-    console.log('[vr] Session started - disabling foveation');
+    _log('[vr] Session started - disabling foveation');
     renderer.xr.setFoveation(0);
     // Camera is added directly to scene - VR hands work correctly now
   });
 
   // No camera rig reset needed - camera is direct child of scene
   renderer.xr.addEventListener('sessionend', () => {
-    console.log('[vr] Session ended');
+    _log('[vr] Session ended');
   });
 
     // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
@@ -1219,7 +1225,7 @@ function init() {
   
   // Set voxel explosion reference for enemies.js (same module instance as import)
   setVFXReference(spawnVoxelExplosion);
-  console.log('[physics-death] Voxel explosion reference set');
+  _log('[physics-death] Voxel explosion reference set');
 
   // Set up stasis field reference for shared access
   setActiveStasisFields(activeStasisFields);
@@ -1348,7 +1354,7 @@ function init() {
   // Start menu music
   playMusic('menu');
 
-  console.log('[init] SPACEOMICIDE ready — pull trigger at title screen to start');
+  _log('[init] SPACEOMICIDE ready — pull trigger at title screen to start');
 }
 
 function initDesktopStereoEffects() {
@@ -1519,7 +1525,7 @@ function cleanupLegacyShapeGeometry(targetGroup) {
   staleMeshes.forEach((mesh, idx) => {
     if (mesh.parent) mesh.parent.remove(mesh);
     disposeObject3D(mesh);
-    console.log(`[biome] Removed stale ShapeGeometry legacy mountain at world origin (${idx + 1}/${staleMeshes.length})`);
+    _log(`[biome] Removed stale ShapeGeometry legacy mountain at world origin (${idx + 1}/${staleMeshes.length})`);
   });
 }
 
@@ -2138,7 +2144,7 @@ function updateSunTexture(colors) {
 function applyThemeForLevel(level) {
   const theme = getThemeForLevel(level);
   const biome = getBiomeForLevel(level);
-  console.log('[debug] applyThemeForLevel: level=', level, 'biome=', biome, 'theme=', theme?.name);
+  _log('[debug] applyThemeForLevel: level=', level, 'biome=', biome, 'theme=', theme?.name);
   if (!theme || !scene) return;
 
   currentTheme = theme;
@@ -2581,7 +2587,7 @@ function setupControllers() {
     }
     
     controller.addEventListener('connected', (e) => {
-      console.log(`[controller] ${i} connected — ${e.data.handedness}`);
+      _log(`[controller] ${i} connected — ${e.data.handedness}`);
       const display = blasterDisplays[i];
       if (display) {
         display.userData.hand = controller.userData.handedness;
@@ -2589,7 +2595,7 @@ function setupControllers() {
       }
     });
     controller.addEventListener('disconnected', () => {
-      console.log(`[controller] ${i} disconnected`);
+      _log(`[controller] ${i} disconnected`);
     });
 
     controller.add(createControllerVisual(i));
@@ -3043,7 +3049,7 @@ function handleDesktopNameEntryClick() {
   if (result && result.action === 'submit') {
     const name = result.name.trim();
     if (!isNameClean(name)) {
-      console.log('[scoreboard] Name rejected by profanity filter');
+      _log('[scoreboard] Name rejected by profanity filter');
       return;
     }
     setStoredName(name);
@@ -3190,15 +3196,15 @@ function handleDesktopPauseClick() {
 }
 
 function handleDesktopDebugMenuClick() {
-  console.log('[debug] handleDesktopDebugMenuClick called');
+  _log('[debug] handleDesktopDebugMenuClick called');
   const raycaster = getAimRaycaster();
   if (!raycaster) {
-    console.log('[debug] No raycaster available');
+    _log('[debug] No raycaster available');
     return;
   }
 
   const result = getDebugMenuHit(raycaster);
-  console.log('[debug] getDebugMenuHit result:', result);
+  _log('[debug] getDebugMenuHit result:', result);
   if (result && result.action === 'back') {
     playMenuClick();
     saveDebugSettings();
@@ -3209,7 +3215,7 @@ function handleDesktopDebugMenuClick() {
     return;
   }
   if (result && result.action === 'biome_next') {
-    console.log('[debug] biome_next action detected, calling cycleDebugBiomeWithFade');
+    _log('[debug] biome_next action detected, calling cycleDebugBiomeWithFade');
     playMenuClick();
     cycleDebugBiomeWithFade();
   }
@@ -3261,7 +3267,7 @@ function handleNameEntryTrigger(controller) {
   if (result && result.action === 'submit') {
     const name = result.name.trim();
     if (!isNameClean(name)) {
-      console.log('[scoreboard] Name rejected by profanity filter');
+      _log('[scoreboard] Name rejected by profanity filter');
       return;
     }
     setStoredName(name);
@@ -3485,7 +3491,7 @@ function activateNuke() {
     }
   }
 
-  console.log(`[nuke] Activated! Killed ${killed} enemies. ${game.nukes} remaining.`);
+  _log(`[nuke] Activated! Killed ${killed} enemies. ${game.nukes} remaining.`);
   return true;
 }
 
@@ -3547,7 +3553,7 @@ function fireAltWeapon(controller, index) {
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
   
   // Execute ALT weapon specific logic
-  console.log(`[ALT weapon] Firing ${altWeaponId} from ${hand} hand`);
+  _log(`[ALT weapon] Firing ${altWeaponId} from ${hand} hand`);
   
   switch (altWeaponId) {
     case 'shield':
@@ -3652,7 +3658,7 @@ function fireShield(controller, index, hand, altWeapon) {
   };
   activeShields.push(shieldData);
   
-  console.log(`[Shield] Activated for ${altWeapon.duration / 1000}s at ${hand} hand`);
+  _log(`[Shield] Activated for ${altWeapon.duration / 1000}s at ${hand} hand`);
   playShoothSound();
 }
 
@@ -3666,7 +3672,7 @@ function updateShields(now) {
       shield.mesh.geometry.dispose();
       shield.mesh.material.dispose();
       activeShields.splice(i, 1);
-      console.log('[Shield] Expired');
+      _log('[Shield] Expired');
       continue;
     }
     
@@ -3751,7 +3757,7 @@ function spawnLaserMinesPassively(playerPos, now, dt) {
         laserMineSpawnCooldown = 5000; // 5 second cooldown between spawns
         playerStillnessStartTime = null;
 
-        console.log(`[Laser Mine] Spawned ${mineCount} passive mines around player`);
+        _log(`[Laser Mine] Spawned ${mineCount} passive mines around player`);
       }
     }
   } else {
@@ -3841,7 +3847,7 @@ function spawnSingleLaserMine(position, hand, altWeapon) {
 // Legacy function - no longer triggered by squeeze, kept for compatibility
 function fireLaserMine(controller, index, hand, altWeapon) {
   // Laser mines are now passive - no trigger-based firing
-  console.log('[Laser Mine] Passive weapon - use spawnLaserMinesPassively()');
+  _log('[Laser Mine] Passive weapon - use spawnLaserMinesPassively()');
 }
 
 function updateLaserMines(now, dt) {
@@ -3878,7 +3884,7 @@ function updateLaserMines(now, dt) {
       mine.isArmed = true;
       mine.mesh.material.opacity = 1.0;
       mine.mesh.material.color.setHex(0xcc44ff);  // Brighter purple when armed
-      console.log('[Laser Mine] Armed');
+      _log('[Laser Mine] Armed');
     }
 
     // Check for auto-detonation
@@ -3931,7 +3937,7 @@ function updateLaserMines(now, dt) {
         mine.glowMesh.material.dispose();
       }
       activeLaserMines.splice(i, 1);
-      console.log('[Laser Mine] Cleaned up');
+      _log('[Laser Mine] Cleaned up');
     }
   }
 }
@@ -3978,7 +3984,7 @@ function triggerLaserMine(mine, nearestEnemy, allEnemies) {
         if (enemyIndex >= 0) {
           hitEnemy(enemyIndex, mine.damage);
           spawnDamageNumber(e.mesh.position, mine.damage, '#ff0000');
-          console.log(`[Laser Mine] Hit enemy for ${mine.damage} damage`);
+          _log(`[Laser Mine] Hit enemy for ${mine.damage} damage`);
         }
       }
     }
@@ -4004,7 +4010,7 @@ function fireDecoy(origin, hand, altWeapon) {
     destroyDecoy(oldest, false);
   }
 
-  console.log(`[ALT] Decoy deployed at ${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}`);
+  _log(`[ALT] Decoy deployed at ${origin.x.toFixed(2)}, ${origin.y.toFixed(2)}, ${origin.z.toFixed(2)}`);
 
   // Create holographic copy of player (simple sphere for now)
   const decoyGroup = new THREE.Group();
@@ -4138,7 +4144,7 @@ function destroyDecoy(decoy, explode) {
     const targetCount = decoy.targetingEnemies.size;
     const totalDamage = decoy.explosionDamage + (targetCount * decoy.explosionDamagePerTarget);
 
-    console.log(`[Decoy] Destroyed! Targets: ${targetCount}, Total damage: ${totalDamage}`);
+    _log(`[Decoy] Destroyed! Targets: ${targetCount}, Total damage: ${totalDamage}`);
 
     // Damage nearby enemies
     const enemies = getEnemies();
@@ -4190,7 +4196,7 @@ function fireBlackHole(origin, direction, hand, altWeapon) {
     oldest.mesh.material.dispose();
   }
 
-  console.log(`[ALT] Black hole mine thrown from ${hand} hand`);
+  _log(`[ALT] Black hole mine thrown from ${hand} hand`);
 
   // Create mine projectile
   const mineGeo = new THREE.SphereGeometry(0.15, 8, 8);
@@ -4258,7 +4264,7 @@ function updateMinesAndBlackHoles(dt, now, playerPos) {
     if (!mine.armed && age >= mine.armTime) {
       mine.armed = true;
       mine.mesh.material.color.setHex(0xff00ff);  // Change color when armed
-      console.log('[Mine] Armed!');
+      _log('[Mine] Armed!');
     }
 
     // Check for proximity trigger (if armed)
@@ -4364,7 +4370,7 @@ function updateMinesAndBlackHoles(dt, now, playerPos) {
 }
 
 function triggerBlackHole(mine, mineIndex) {
-  console.log('[Black Hole] Triggered!');
+  _log('[Black Hole] Triggered!');
 
   // Remove mine
   scene.remove(mine.mesh);
@@ -4474,7 +4480,7 @@ function triggerBlackHole(mine, mineIndex) {
 }
 
 function destroyBlackHole(bh) {
-  console.log('[Black Hole] Collapsed!');
+  _log('[Black Hole] Collapsed!');
 
   // Apply stun to affected enemies
   const enemies = getEnemies();
@@ -4520,7 +4526,7 @@ function fireNaniteSwarm(origin, hand, altWeapon) {
       const swarm = activeNaniteSwarms[existingIndex];
       destroyNaniteSwarm(swarm);
       activeNaniteSwarms.splice(existingIndex, 1);
-      console.log('[Nanite Swarm] Recalled early from', hand, 'hand');
+      _log('[Nanite Swarm] Recalled early from', hand, 'hand');
     } else {
       // Remove oldest swarm
       const oldest = activeNaniteSwarms.shift();
@@ -4528,7 +4534,7 @@ function fireNaniteSwarm(origin, hand, altWeapon) {
     }
   }
 
-  console.log(`[ALT] Nanite Swarm deployed from ${hand} hand`);
+  _log(`[ALT] Nanite Swarm deployed from ${hand} hand`);
 
   // Create golden shimmering cloud at player position
   const swarmGroup = new THREE.Group();
@@ -4626,7 +4632,7 @@ function updateNaniteSwarms(now, dt, playerPos) {
     if (age >= swarm.duration) {
       destroyNaniteSwarm(swarm);
       activeNaniteSwarms.splice(i, 1);
-      console.log('[Nanite Swarm] Expired');
+      _log('[Nanite Swarm] Expired');
       continue;
     }
 
@@ -4730,7 +4736,7 @@ function updateNaniteSwarms(now, dt, playerPos) {
 }
 
 function destroyNaniteSwarm(swarm) {
-  console.log('[Nanite Swarm] Destroyed');
+  _log('[Nanite Swarm] Destroyed');
 
   // Clear reveal effect from enemies
   const enemies = getEnemies();
@@ -4781,14 +4787,14 @@ function fireTetherHarpoon(origin, direction, hand, altWeapon) {
   const hits = _uiRaycaster.intersectObjects(enemyMeshes, true);
 
   if (hits.length === 0) {
-    console.log('[Tether Harpoon] No target in range');
+    _log('[Tether Harpoon] No target in range');
     return;  // No target
   }
 
   // Find the enemy from the hit mesh
   const result = getEnemyByMesh(hits[0].object);
   if (!result || result.index === undefined) {
-    console.log('[Tether Harpoon] Hit but no enemy found');
+    _log('[Tether Harpoon] Hit but no enemy found');
     return;
   }
 
@@ -4798,7 +4804,7 @@ function fireTetherHarpoon(origin, direction, hand, altWeapon) {
   // Check if this enemy is already tethered
   const alreadyTethered = activeTethers.some(t => t.enemyIndex === enemyIndex);
   if (alreadyTethered) {
-    console.log('[Tether Harpoon] Enemy already tethered');
+    _log('[Tether Harpoon] Enemy already tethered');
     return;
   }
 
@@ -4808,7 +4814,7 @@ function fireTetherHarpoon(origin, direction, hand, altWeapon) {
     destroyTether(oldest);
   }
 
-  console.log(`[Tether Harpoon] Connected to enemy ${enemyIndex}!`);
+  _log(`[Tether Harpoon] Connected to enemy ${enemyIndex}!`);
 
   // Create green energy rope visual
   const tetherGroup = new THREE.Group();
@@ -5006,7 +5012,7 @@ function destroyTether(tether) {
     if (child.geometry) child.geometry.dispose();
     if (child.material) child.material.dispose();
   });
-  console.log('[Tether Harpoon] Tether destroyed');
+  _log('[Tether Harpoon] Tether destroyed');
 }
 
 // ============================================================
@@ -5019,7 +5025,7 @@ function destroyTether(tether) {
  * Damages enemies in dash path
  */
 function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
-  console.log(`[Phase Dash] Teleporting ${hand} hand`);
+  _log(`[Phase Dash] Teleporting ${hand} hand`);
 
   const dashDistance = altWeapon.dashDistance || 5;
   const afterimageDamage = altWeapon.afterimageDamage || 40;
@@ -5039,9 +5045,9 @@ function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
   // Teleport player (desktop only - in VR, WebXR controls camera position)
   if (!renderer.xr.isPresenting) {
     camera.position.copy(destination);
-    console.log(`[Phase Dash] Teleported from (${oldPosition.x.toFixed(2)}, ${oldPosition.y.toFixed(2)}, ${oldPosition.z.toFixed(2)}) to (${destination.x.toFixed(2)}, ${destination.y.toFixed(2)}, ${destination.z.toFixed(2)})`);
+    _log(`[Phase Dash] Teleported from (${oldPosition.x.toFixed(2)}, ${oldPosition.y.toFixed(2)}, ${oldPosition.z.toFixed(2)}) to (${destination.x.toFixed(2)}, ${destination.y.toFixed(2)}, ${destination.z.toFixed(2)})`);
   } else {
-    console.log(`[Phase Dash] VR mode - teleport visual only (WebXR controls camera)`);
+    _log(`[Phase Dash] VR mode - teleport visual only (WebXR controls camera)`);
   }
 
   // Create blue ghostly afterimage at old position
@@ -5132,7 +5138,7 @@ function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
         const dashDamage = Math.round(afterimageDamage * 0.5);  // Half damage during dash
         const result = hitEnemy(enemyIndex, dashDamage);
         spawnDamageNumber(enemyPos, dashDamage, '#4488ff');
-        console.log(`[Phase Dash] Hit enemy for ${dashDamage} damage`);
+        _log(`[Phase Dash] Hit enemy for ${dashDamage} damage`);
 
         if (result.killed) {
           const destroyData = destroyEnemy(enemyIndex);
@@ -5184,7 +5190,7 @@ function updatePhaseDashAfterimages(now, dt) {
           const damage = Math.round(afterimage.damage * damageMultiplier);
           const result = hitEnemy(enemyIndex, damage);
           spawnDamageNumber(e.mesh.position, damage, '#88ccff');
-          console.log(`[Phase Dash] Afterimage exploded for ${damage} damage`);
+          _log(`[Phase Dash] Afterimage exploded for ${damage} damage`);
 
           if (result.killed) {
             const destroyData = destroyEnemy(enemyIndex);
@@ -5210,7 +5216,7 @@ function updatePhaseDashAfterimages(now, dt) {
         if (child.material) child.material.dispose();
       });
       activePhaseDashAfterimages.splice(i, 1);
-      console.log('[Phase Dash] Afterimage detonated');
+      _log('[Phase Dash] Afterimage detonated');
     }
   }
 }
@@ -5232,7 +5238,7 @@ function fireReflectorDrone(origin, hand, altWeapon) {
       const drone = activeReflectorDrones[existingIndex];
       destroyReflectorDrone(drone);
       activeReflectorDrones.splice(existingIndex, 1);
-      console.log('[Reflector Drone] Recalled early from', hand, 'hand');
+      _log('[Reflector Drone] Recalled early from', hand, 'hand');
     } else {
       // Remove oldest drone
       const oldest = activeReflectorDrones.shift();
@@ -5240,7 +5246,7 @@ function fireReflectorDrone(origin, hand, altWeapon) {
     }
   }
 
-  console.log(`[ALT] Reflector Drone deployed from ${hand} hand`);
+  _log(`[ALT] Reflector Drone deployed from ${hand} hand`);
 
   // Create hexagonal drone
   const droneGroup = new THREE.Group();
@@ -5353,7 +5359,7 @@ function updateReflectorDrones(now, dt, playerPos) {
     // Check if expired
     if (age >= drone.duration || drone.health <= 0) {
       if (drone.health <= 0) {
-        console.log('[Reflector Drone] Destroyed!');
+        _log('[Reflector Drone] Destroyed!');
         spawnExplosionVisual(drone.mesh.position, 0.5);
         playExplosionSound();
       }
@@ -5422,7 +5428,7 @@ function checkReflectorDroneReflection(projPos, isBossProjectile = false) {
 
       if (Math.random() < reflectChance) {
         // Reflect the projectile!
-        console.log(`[Reflector Drone] Reflected projectile! (${drone.overcharged ? '100%' : '50%'} chance)`);
+        _log(`[Reflector Drone] Reflected projectile! (${drone.overcharged ? '100%' : '50%'} chance)`);
         spawnExplosionVisual(projPos, 0.3);
         playHitSound();
         drone.lastReflectTime = performance.now();
@@ -5453,7 +5459,7 @@ function checkPlayerProjectileHitsDrone(projPos, projControllerIndex) {
       drone.overcharged = true;
       drone.health -= 10;  // 10 damage per shot
 
-      console.log(`[Reflector Drone] Overcharged! Health: ${drone.health}/${drone.maxHealth}`);
+      _log(`[Reflector Drone] Overcharged! Health: ${drone.health}/${drone.maxHealth}`);
 
       // Visual feedback
       drone.hexMat.color.setHex(0xff6600);  // Flash orange
@@ -5523,7 +5529,7 @@ function spawnReflectedProjectile(origin) {
   scene.add(reflectedProj);
   projectiles.push(reflectedProj);
 
-  console.log('[Reflector Drone] Spawned reflected projectile');
+  _log('[Reflector Drone] Spawned reflected projectile');
 }
 
 /**
@@ -5535,7 +5541,7 @@ function destroyReflectorDrone(drone) {
     if (child.geometry) child.geometry.dispose();
     if (child.material) child.material.dispose();
   });
-  console.log('[Reflector Drone] Destroyed');
+  _log('[Reflector Drone] Destroyed');
 }
 
 // ============================================================
@@ -5601,7 +5607,7 @@ function fireStasisField(origin, direction, hand, altWeapon) {
     particles,
   });
 
-  console.log(`[Stasis Field] Created at (${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)}) for ${altWeapon.duration / 1000}s`);
+  _log(`[Stasis Field] Created at (${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)}) for ${altWeapon.duration / 1000}s`);
 }
 
 function updateStasisFields(now, dt) {
@@ -5684,7 +5690,7 @@ function firePlasmaOrb(origin, direction, hand, altWeapon) {
     lastTrailUpdate: performance.now(),
   });
 
-  console.log(`[Plasma Orb] Fired from ${hand} hand, damage: ${altWeapon.damage}`);
+  _log(`[Plasma Orb] Fired from ${hand} hand, damage: ${altWeapon.damage}`);
 }
 
 function updatePlasmaOrbs(now, dt) {
@@ -5836,7 +5842,7 @@ function detonatePlasmaOrb(orb, enemyIndex) {
     activePlasmaOrbs.splice(index, 1);
   }
 
-  console.log('[Plasma Orb] Detonated!');
+  _log('[Plasma Orb] Detonated!');
 }
 
 // Check if player projectiles can detonate plasma orbs
@@ -5850,7 +5856,7 @@ function checkPlasmaOrbDetonation(proj) {
       // Detonate orb with smaller AOE (early detonation)
       orb.aoeRadius *= 0.6; // 60% of normal radius
       detonatePlasmaOrb(orb, undefined);
-      console.log('[Plasma Orb] Detonated early by player shot!');
+      _log('[Plasma Orb] Detonated early by player shot!');
       return true;
     }
   }
@@ -5871,7 +5877,7 @@ function fireGrenade(origin, direction, hand, altWeapon) {
     destroyGrenade(oldest);
   }
 
-  console.log(`[Grenade] Thrown from ${hand} hand`);
+  _log(`[Grenade] Thrown from ${hand} hand`);
 
   // Create grenade mesh (small red sphere)
   const grenadeGeo = new THREE.SphereGeometry(0.1, 8, 8);
@@ -5944,7 +5950,7 @@ function updateGrenades(dt, now) {
 }
 
 function detonateGrenade(grenade, index) {
-  console.log('[Grenade] Detonated!');
+  _log('[Grenade] Detonated!');
 
   // AOE damage to enemies using spatial hash
   const enemies = getEnemies();  // Still needed for index lookup
@@ -6017,7 +6023,7 @@ function fireProximityMine(origin, hand, altWeapon) {
     if (idx >= 0) activeProximityMines.splice(idx, 1);
   }
 
-  console.log(`[Mine] Placed from ${hand} hand`);
+  _log(`[Mine] Placed from ${hand} hand`);
 
   // Create mine mesh (orange icosahedron)
   const mineGeo = new THREE.IcosahedronGeometry(0.12, 0);
@@ -6080,7 +6086,7 @@ function updateProximityMines(now, dt) {
     if (!mine.isArmed && now >= mine.armedAt) {
       mine.isArmed = true;
       mine.mesh.material.color.setHex(0xffcc00); // Brighter when armed
-      console.log('[Mine] Armed!');
+      _log('[Mine] Armed!');
     }
 
     // Not armed yet - skip proximity check
@@ -6099,7 +6105,7 @@ function updateProximityMines(now, dt) {
 }
 
 function detonateProximityMine(mine, index) {
-  console.log('[Mine] Detonated!');
+  _log('[Mine] Detonated!');
 
   // AOE damage to enemies using spatial hash
   const enemies = getEnemies();  // Still needed for index lookup
@@ -6176,7 +6182,7 @@ function fireAttackDrone(origin, hand, altWeapon) {
     if (idx >= 0) activeAttackDrones.splice(idx, 1);
   }
 
-  console.log(`[Drone] Deployed from ${hand} hand`);
+  _log(`[Drone] Deployed from ${hand} hand`);
 
   // Create drone mesh (green hexagon)
   const droneGroup = new THREE.Group();
@@ -6260,7 +6266,7 @@ function updateAttackDrones(now, dt, playerPos) {
     if (now >= drone.expiresAt) {
       destroyAttackDrone(drone);
       activeAttackDrones.splice(i, 1);
-      console.log('[Drone] Expired');
+      _log('[Drone] Expired');
       continue;
     }
 
@@ -6344,7 +6350,7 @@ function destroyAttackDrone(drone) {
 // ============================================================
 
 function fireEMP(origin, hand, altWeapon) {
-  console.log(`[EMP] Activated from ${hand} hand`);
+  _log(`[EMP] Activated from ${hand} hand`);
 
   const range = altWeapon.range || 5;
   const duration = altWeapon.duration || 3000;
@@ -6466,7 +6472,7 @@ function updateEMPVisuals(now, dt) {
 // ============================================================
 
 function fireTeleport(origin, direction, hand, altWeapon) {
-  console.log(`[Teleport] Activated from ${hand} hand`);
+  _log(`[Teleport] Activated from ${hand} hand`);
 
   const range = altWeapon.range || 10;
   const playerPos = camera.position.clone();
@@ -6492,9 +6498,9 @@ function fireTeleport(origin, direction, hand, altWeapon) {
   // Teleport player (desktop only - in VR, WebXR controls camera position)
   if (!renderer.xr.isPresenting) {
     camera.position.copy(destination);
-    console.log(`[Teleport] Moved from (${playerPos.x.toFixed(2)}, ${playerPos.y.toFixed(2)}, ${playerPos.z.toFixed(2)}) to (${destination.x.toFixed(2)}, ${destination.y.toFixed(2)}, ${destination.z.toFixed(2)})`);
+    _log(`[Teleport] Moved from (${playerPos.x.toFixed(2)}, ${playerPos.y.toFixed(2)}, ${playerPos.z.toFixed(2)}) to (${destination.x.toFixed(2)}, ${destination.y.toFixed(2)}, ${destination.z.toFixed(2)})`);
   } else {
-    console.log(`[Teleport] VR mode - teleport visual only (WebXR controls camera)`);
+    _log(`[Teleport] VR mode - teleport visual only (WebXR controls camera)`);
   }
 
   // Create visual effect at end position
@@ -6558,7 +6564,7 @@ function updateTeleportEffects(now, dt) {
 //  GAME STATE TRANSITIONS
 // ============================================================
 function debugJumpToLevel(targetLevel) {
-  console.log('[debug] Jump to level ' + targetLevel);
+  _log('[debug] Jump to level ' + targetLevel);
   hideTitle();
   resetGame();
   game.state = State.READY_SCREEN;
@@ -6590,62 +6596,62 @@ function cycleDebugBiome() {
   const current = game.debugBiomeOverride;
   let next = null;
 
-  console.log('[debug] cycleDebugBiome: current=', current);
+  _log('[debug] cycleDebugBiome: current=', current);
 
   if (!current) {
     // Start with first biome in cycle
     next = debugBiomeCycle[0];
-    console.log('[debug] No current biome, starting with:', next);
+    _log('[debug] No current biome, starting with:', next);
   } else {
     const index = debugBiomeCycle.indexOf(current);
-    console.log('[debug] Current biome index:', index);
+    _log('[debug] Current biome index:', index);
     if (index === -1) {
       // If current biome is not in cycle, start from beginning
       next = debugBiomeCycle[0];
-      console.log('[debug] Biome not in cycle, resetting to:', next);
+      _log('[debug] Biome not in cycle, resetting to:', next);
     } else if (index === debugBiomeCycle.length - 1) {
       // Wrap around to first biome
       next = debugBiomeCycle[0];
-      console.log('[debug] End of cycle, wrapping to:', next);
+      _log('[debug] End of cycle, wrapping to:', next);
     } else {
       // Move to next biome in cycle
       next = debugBiomeCycle[index + 1];
-      console.log('[debug] Moving to next biome:', next);
+      _log('[debug] Moving to next biome:', next);
     }
   }
 
   game.debugBiomeOverride = next;
   saveDebugSettings();
-  console.log('[debug] Biome override set to', next || 'auto');
+  _log('[debug] Biome override set to', next || 'auto');
   return next;
 }
 
 function cycleDebugBiomeWithFade() {
-  console.log('[debug] cycleDebugBiomeWithFade called, environmentFadeState:', environmentFadeState);
+  _log('[debug] cycleDebugBiomeWithFade called, environmentFadeState:', environmentFadeState);
   if (environmentFadeState) {
-    console.log('[debug] Fade already in progress, skipping');
+    _log('[debug] Fade already in progress, skipping');
     return;
   }
   if (!game.level || game.level < 1) {
-    console.log('[debug] Setting level to 1 for biome cycle');
+    _log('[debug] Setting level to 1 for biome cycle');
     game.level = 1;
     game._levelConfig = getLevelConfig();
   }
   // Fade durations are in SECONDS (0.3s = 300ms fade)
-  console.log('[debug] Starting fade out...');
+  _log('[debug] Starting fade out...');
   startEnvironmentFade('out', 0.3, () => {
-    console.log('[debug] Fade out complete, cycling biome...');
+    _log('[debug] Fade out complete, cycling biome...');
     cycleDebugBiome();
-    console.log('[debug] Applying theme for level', game.level);
+    _log('[debug] Applying theme for level', game.level);
     applyThemeForLevel(game.level);
-    console.log('[debug] Starting fade in...');
+    _log('[debug] Starting fade in...');
     startEnvironmentFade('in', 0.3);
     showDebugMenu();
   });
 }
 
 window.debugCycleBiomeWithFade = () => {
-  console.log('[debug] Next biome requested');
+  _log('[debug] Next biome requested');
   cycleDebugBiomeWithFade();
 };
 
@@ -6738,7 +6744,7 @@ function captureLevelSpawnForward() {
 }
 
 function startGame() {
-  console.log('[game] Starting new game');
+  _log('[game] Starting new game');
   hideTitle();
 
   // Clean up any leftover boss minions from previous run
@@ -6756,11 +6762,11 @@ function startGame() {
   
   if (seed !== null) {
     // Start game with seed
-    console.log(`[seed] Using seed: ${seed}, tier: ${tier}`);
+    _log(`[seed] Using seed: ${seed}, tier: ${tier}`);
     startGameWithSeed(seed, tier);
   } else {
     // Start game without seed (random)
-    console.log('[seed] No seed set, using random seed');
+    _log('[seed] No seed set, using random seed');
     resetGame();
   }
 
@@ -6825,7 +6831,7 @@ function resetAllSlowMoState() {
 function completeLevel() {
   if (isBossDeathCinematicActive()) return;
 
-  console.log(`[game] Level ${game.level} complete`);
+  _log(`[game] Level ${game.level} complete`);
 
   // Hide kills remaining alert if showing
   hideKillsAlert();
@@ -6858,7 +6864,7 @@ function completeLevel() {
   // If the boss death overlay is still active, the environment is already fully
   // faded to black. Skip the fade-out animation to prevent a pop-back flash.
   if (isBossDeathOverlayActive()) {
-    console.log('[game] Boss death overlay active, skipping environment fade-out');
+    _log('[game] Boss death overlay active, skipping environment fade-out');
     levelFadeReady = true;
   } else if (shouldFade) {
     startEnvironmentFade('out', 0.8, () => {
@@ -7118,7 +7124,7 @@ function clearAllAltWeaponEffects() {
   }
   activeVoxels.length = 0;
 
-  console.log('[cleanup] Cleared all alt-weapon effects and visuals');
+  _log('[cleanup] Cleared all alt-weapon effects and visuals');
 }
 
 // Register clearAllAltWeaponEffects as a resetGame() hook so voxels/effects
@@ -7149,7 +7155,7 @@ registerResetHook(() => {
 });
 
 function showUpgradeScreen() {
-  console.log('[game] Showing upgrade selection');
+  _log('[game] Showing upgrade selection');
   game.state = State.UPGRADE_SELECT;
   hideLevelComplete();
   resetHoloGlitch();
@@ -7167,7 +7173,7 @@ function showUpgradeScreen() {
   // Check if this is the level 1→2 transition where player chooses MAIN weapon
   if (needsMainWeaponChoice()) {
     // Show MAIN weapon selection (all except Standard Blaster - it's the default)
-    console.log('[game] Level 1→2: Showing MAIN weapon selection');
+    _log('[game] Level 1→2: Showing MAIN weapon selection');
     const mainWeaponOptions = Object.values(MAIN_WEAPONS).filter(w => w.id !== 'standard_blaster');
     pendingUpgrades = mainWeaponOptions;
     showUpgradeCards(pendingUpgrades, getAdjustedCameraPosition(), hand);
@@ -7183,13 +7189,13 @@ function showUpgradeScreen() {
   // Check if MAIN weapon is already locked for this hand
   if (game.mainWeaponLocked[hand]) {
     // Show upgrades filtered by equipped MAIN weapon
-    console.log(`[game] Showing upgrades for ${hand} hand (${mainWeaponId})`);
+    _log(`[game] Showing upgrades for ${hand} hand (${mainWeaponId})`);
     pendingUpgrades = game.justBossKill ? 
       getRandomSpecialUpgrades(3, mainWeaponId) : 
       getRandomUpgrades(3, mainWeaponId);
   } else {
     // MAIN weapon not locked yet - show all upgrades (shouldn't happen after level 2)
-    console.log(`[game] WARNING: MAIN weapon not locked for ${hand} hand at level ${game.level}`);
+    _log(`[game] WARNING: MAIN weapon not locked for ${hand} hand at level ${game.level}`);
     pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3, mainWeaponId) : getRandomUpgrades(3, mainWeaponId);
   }
 
@@ -7213,24 +7219,24 @@ function finalizeUpgradeSelection() {
 }
 
 function selectUpgradeAndAdvance(upgrade, hand) {
-  console.log(`[game] Selected: ${upgrade.name} for ${hand} hand`);
+  _log(`[game] Selected: ${upgrade.name} for ${hand} hand`);
 
   if (upgrade?.id === 'SKIP') {
     game.health = game.maxHealth;
-    console.log('[game] Skipped upgrade, health restored to full');
+    _log('[game] Skipped upgrade, health restored to full');
     finalizeUpgradeSelection();
     return;
   }
 
   if (upgrade?.type === 'main') {
-    console.log(`[game] Selected MAIN weapon: ${upgrade.id} for ${hand} hand`);
+    _log(`[game] Selected MAIN weapon: ${upgrade.id} for ${hand} hand`);
     setMainWeapon(upgrade.id, hand);
     finalizeUpgradeSelection();
     return;
   }
 
   if (upgrade?.type === 'alt') {
-    console.log(`[game] Selected ALT weapon: ${upgrade.id} for ${hand} hand`);
+    _log(`[game] Selected ALT weapon: ${upgrade.id} for ${hand} hand`);
     setAltWeapon(upgrade.id, hand);
     finalizeUpgradeSelection();
     return;
@@ -7240,7 +7246,7 @@ function selectUpgradeAndAdvance(upgrade, hand) {
 
   if (upgrade?.id === 'extra_nuke') {
     game.nukes = (game.nukes || 0) + 1;
-    console.log(`[nuke] Extra nuke granted. Total: ${game.nukes}`);
+    _log(`[nuke] Extra nuke granted. Total: ${game.nukes}`);
   }
 
   finalizeUpgradeSelection();
@@ -7282,7 +7288,7 @@ function advanceLevelAfterUpgrade() {
       playBossAlertSound();
       showBossAlert();
       playIncomingBossSound();
-      console.log(`[game] Boss alert for level ${game.level} - boss music started`);
+      _log(`[game] Boss alert for level ${game.level} - boss music started`);
       
       // Hide blaster displays during alert
       blasterDisplays.forEach(d => { if (d) d.visible = false; });
@@ -7291,7 +7297,7 @@ function advanceLevelAfterUpgrade() {
     }
     // After boss kill with biome transition, show ready screen with countdown
     else if (game.justBossKill && shouldFade) {
-      console.log('[game] Boss killed with biome transition, showing ready screen');
+      _log('[game] Boss killed with biome transition, showing ready screen');
       game.state = State.READY_SCREEN;
       applyEnvironmentFade(1);
 
@@ -7420,7 +7426,7 @@ function updatePauseCountdown(now) {
 }
 
 function endGame(victory) {
-  console.log(`[game] Game ${victory ? 'won' : 'over'} — score: ${game.score}`);
+  _log(`[game] Game ${victory ? 'won' : 'over'} — score: ${game.score}`);
   resetAllSlowMoState();
   game.state = victory ? State.VICTORY : State.GAME_OVER;
   game.finalScore = game.score;
@@ -7551,7 +7557,7 @@ function initProjectilePool() {
     }
   });
 
-  console.log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(20), seeker(28), plasma_carbine(80)');
+  _log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(20), seeker(28), plasma_carbine(80)');
 }
 
 // PERFORMANCE: Acquire an instance slot from the InstancedMesh pool.
@@ -7829,7 +7835,7 @@ function initVoxelPool() {
     voxelPool.push(voxel);
   }
   
-  console.log(`[physics-death] Voxel pool initialized: ${voxelPool.length} voxels`);
+  _log(`[physics-death] Voxel pool initialized: ${voxelPool.length} voxels`);
 }
 
 /**
@@ -9909,7 +9915,7 @@ function render(timestamp) {
   // PERFORMANCE: Log stats every 5 seconds in debug mode
   if (typeof window !== 'undefined' && window.debugPerfMonitor && frameCount % 300 === 0) {
     const instancedCounts = Object.entries(instancedProjectiles).map(([t, p]) => `${t}:${p.mesh.count}/${p.maxCount}`).join(', ');
-    console.log(`[PERF] Projectiles: ${projectiles.length}/${MAX_PROJECTILES}, ` +
+    _log(`[PERF] Projectiles: ${projectiles.length}/${MAX_PROJECTILES}, ` +
                 `InstancedMesh: {${instancedCounts}}, ` +
                 `Explosions: ${explosionVisuals.length}`);
   }
@@ -9921,7 +9927,7 @@ function render(timestamp) {
     if (remaining <= 0) {
       game.slowmoActive = false;
       game.timeScale = 1.0;
-      console.log('[slow-mo] Death sequence ended');
+      _log('[slow-mo] Death sequence ended');
     } else {
       game.timeScale = game.slowmoIntensity;
     }
@@ -10277,7 +10283,7 @@ function render(timestamp) {
         slowMoSoundPlayed = false;
         timeScale = 1.0;
         setSlowMoQuality(false);  // Fix A: restore GPU quality when slow-mo ends
-        console.log('[bullet-time] ENDED');
+        _log('[bullet-time] ENDED');
       } else {
         timeScale = 0.2;
       }
@@ -10300,7 +10306,7 @@ function render(timestamp) {
         slowMoRampOut = true;
         slowMoRampOutTimer = SLOW_MO_RAMP_OUT_DURATION;
         playSlowMoReverseSound();
-        console.log('[bullet-time] RAMP OUT — enemies cleared');
+        _log('[bullet-time] RAMP OUT — enemies cleared');
       } else {
         // Check for nearby enemies
         let anyNear = false;
@@ -10331,7 +10337,7 @@ function render(timestamp) {
           slowMoRampOut = true;
           slowMoRampOutTimer = SLOW_MO_RAMP_OUT_DURATION;
           playSlowMoReverseSound();
-          console.log('[bullet-time] RAMP OUT — enemies cleared');
+          _log('[bullet-time] RAMP OUT — enemies cleared');
         }
       }
     }
@@ -10344,7 +10350,7 @@ function render(timestamp) {
         if (dist < SLOW_MO_TRIGGER_DIST) {
           slowMoActive = true;
           slowMoDuration = 2.5;
-          console.log('[bullet-time] ACTIVATED!');
+          _log('[bullet-time] ACTIVATED!');
           break;
         }
       }
@@ -10355,7 +10361,7 @@ function render(timestamp) {
           if (dist < SLOW_MO_TRIGGER_DIST) {
             slowMoActive = true;
             slowMoDuration = 2.5;
-            console.log('[bullet-time] ACTIVATED!');
+            _log('[bullet-time] ACTIVATED!');
             break;
           }
         }
@@ -10367,7 +10373,7 @@ function render(timestamp) {
           if (dist < SLOW_MO_TRIGGER_DIST) {
             slowMoActive = true;
             slowMoDuration = 2.5;
-            console.log('[bullet-time] ACTIVATED!');
+            _log('[bullet-time] ACTIVATED!');
             break;
           }
         }
@@ -10409,7 +10415,7 @@ function render(timestamp) {
 
       // Check if boss was killed
       if (boss.hp <= 0) {
-        console.log(`[boss] Boss defeated!`);
+        _log(`[boss] Boss defeated!`);
         startBossDeathCinematic(boss);
       }
     } else {
@@ -10441,7 +10447,7 @@ function render(timestamp) {
       window._timeScale = 1.0;
       window._wasCloseEnemy = false;
       timeScale = 1.0;
-      console.log(`[damage] Player hit! Health: ${game.health}`);
+      _log(`[damage] Player hit! Health: ${game.health}`);
       if (dead) {
         endGame(false);
       }
@@ -10660,7 +10666,7 @@ function render(timestamp) {
       game._cinOrigFogColor = synthVisualRefs.terrainUniforms.uFogColor.value.clone();
     }
     
-    console.log('[SkullBoss Cinematic] Starting spawn cinematic for level 5');
+    _log('[SkullBoss Cinematic] Starting spawn cinematic for level 5');
   }
   
   // Update skull boss cinematic during BOSS_ALERT
@@ -10712,7 +10718,7 @@ function render(timestamp) {
   // Reset cinematic state when leaving BOSS_ALERT for level 5
   if (st === State.PLAYING && game._skullCinematicInit && !game._skullCinematicCleaned) {
     game._skullCinematicCleaned = true;
-    console.log('[SkullBoss Cinematic] Cinematic complete, boss fight in red environment');
+    _log('[SkullBoss Cinematic] Cinematic complete, boss fight in red environment');
     // Don't restore original values - keep the red-shifted environment for the boss fight
   }
 
@@ -10732,7 +10738,7 @@ function render(timestamp) {
       game.state = State.PLAYING;
       showHUD();
       // Boss music already started in advanceLevelAfterUpgrade
-      console.log(`[game] Boss fight starting at level ${game.level}`);
+      _log(`[game] Boss fight starting at level ${game.level}`);
     }
   }
 
