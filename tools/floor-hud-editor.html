@@ -49,6 +49,7 @@
             <button onclick="resetAll()">Reset</button>
         </div>
         <div class="note">Elements render at exact in-game size. Text anchor is center by default. Use Align to shift where position points to.</div>
+        <div class="pr" style="margin-bottom:8px"><input type="checkbox" id="showBounds" checked onchange="toggleBounds()" style="width:auto"><label style="width:auto;color:#aaa;font-size:11px;margin-left:4px">Show bounding boxes</label></div>
         <div id="sel-info">
             <h3>SELECTED</h3>
             <div id="sel-name">Click an element</div>
@@ -119,6 +120,7 @@
     // ── Render text EXACTLY like makeSprite ──
     // Same padding logic, same textAlign center, same aspect ratio calculation
     function renderTextMesh(text, fontSize, scale, colorHex, glow) {
+        const showBounds = document.getElementById('showBounds')?.checked ?? true;
         const pad = glow ? 25 : 40;
         const c = document.createElement('canvas');
         const ctx = c.getContext('2d');
@@ -136,11 +138,13 @@
         ctx.shadowBlur = 0;
 
         // Bounding box
-        ctx.strokeStyle = colorHex.length === 7 ? colorHex + '55' : 'rgba(255,255,255,0.2)';
-        ctx.lineWidth = 1; ctx.strokeRect(2, 2, tw - 4, th - 4);
-        // Center crosshair
-        ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(tw/2-6,th/2); ctx.lineTo(tw/2+6,th/2); ctx.moveTo(tw/2,th/2-6); ctx.lineTo(tw/2,th/2+6); ctx.stroke();
+        if (showBounds) {
+            ctx.strokeStyle = colorHex.length === 7 ? colorHex + '55' : 'rgba(255,255,255,0.2)';
+            ctx.lineWidth = 1; ctx.strokeRect(2, 2, tw - 4, th - 4);
+            // Center crosshair
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(tw/2-6,th/2); ctx.lineTo(tw/2+6,th/2); ctx.moveTo(tw/2,th/2-6); ctx.lineTo(tw/2,th/2+6); ctx.stroke();
+        }
 
         const tex = new THREE.CanvasTexture(c);
         const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false, depthWrite: false, opacity: 0.9 });
@@ -193,6 +197,10 @@
 
     DEFS.forEach(buildElement);
 
+    window.toggleBounds = function() {
+        DEFS.filter(d => d.type === 'text').forEach(d => rebuildMesh(d.id));
+    };
+
     function rebuildMesh(id) {
         const def = DEFS.find(d => d.id === id);
         const mesh = els[id];
@@ -214,7 +222,7 @@
         const m = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
         const rc = new THREE.Raycaster(); rc.setFromCamera(m, camera);
         const hits = rc.intersectObjects(Object.values(els), false);
-        if (hits.length) doSelect(hits[0].object);
+        if (hits.length) { doSelect(hits[0].object); } else { deselect(); }
     });
 
     function doSelect(mesh) {
@@ -223,6 +231,13 @@
         sel = mesh;
         if (sel.material.color) sel.material.color.setHex(0x00ffff);
         tc.attach(mesh);
+        updateUI(); updateList();
+    }
+
+    function deselect() {
+        if (sel && sel.material.color) sel.material.color.setHex(sel.userData.origColor);
+        sel = null;
+        tc.detach();
         updateUI(); updateList();
     }
 
