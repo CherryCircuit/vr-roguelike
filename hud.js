@@ -56,13 +56,10 @@ const floatingMessageGroup = new THREE.Group();
 const hudGeoCache = {};
 
 function getHudGeo(width, height) {
-  // Bin to nearest 0.25 aspect ratio for cache efficiency
-  const ar = width / height;
-  const binnedAr = Math.round(ar * 4) / 4;
-  const binnedW = binnedAr * height;
-  const key = `${binnedW.toFixed(2)}x${height.toFixed(2)}`;
+  // Exact dimensions (no binning) to match editor rendering
+  const key = `${width.toFixed(4)}x${height.toFixed(4)}`;
   if (!hudGeoCache[key]) {
-    hudGeoCache[key] = new THREE.PlaneGeometry(binnedW, height);
+    hudGeoCache[key] = new THREE.PlaneGeometry(width, height);
   }
   return hudGeoCache[key];
 }
@@ -1094,21 +1091,7 @@ function createHUDElements() {
   // Floor-based HUD layout (Space Pirate Trainer style)
   // Increased by 200% (3x) for better visibility
 
-  // HOLOGRAPHIC BASE - HUD background panel
-  const hudBgGeo = new THREE.PlaneGeometry(4.7, 1.0);
-  const hudBgMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.0, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
-  const hudBg = new THREE.Mesh(hudBgGeo, hudBgMat);
-  hudBg.position.set(0, 0.26, 0);
-  hudBg.renderOrder = 997;
-  hudGroup.add(hudBg);
-
-  // Scanline accent bar (subtle separator)
-  const scanLineAccentGeo = new THREE.PlaneGeometry(4.7, 0.015);
-  const scanLineAccentMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.0, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
-  const scanLineAccent = new THREE.Mesh(scanLineAccentGeo, scanLineAccentMat);
-  scanLineAccent.position.set(0, -0.06, 0.02);
-  scanLineAccent.renderOrder = 998;
-  hudGroup.add(scanLineAccent);
+  // HOLOGRAPHIC BASE - no background box (glitch/scanline overlays are separate below)
 
   // HOLOGRAPHIC SCAN LINES OVERLAY - very subtle, minimal idle effect
   const scanLineGeo = new THREE.PlaneGeometry(4.8, 2.0);
