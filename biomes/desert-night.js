@@ -26,7 +26,7 @@ export function buildDesertNightScene(group, deps) {
   moonLight.shadow.camera.right = 60;
   moonLight.shadow.camera.top = 60;
   moonLight.shadow.camera.bottom = -60;
-  moonLight.shadow.bias = -0.003;
+  moonLight.shadow.bias = -0.0005;
   group.add(moonLight);
 
   // Very dim ambient
@@ -38,7 +38,7 @@ export function buildDesertNightScene(group, deps) {
   group.add(hemiLight);
 
   // Front-fill light - moonlit blue over player position
-  const frontFillLight = new THREE.PointLight(0xe0f4ff, 200, 60);
+  const frontFillLight = new THREE.PointLight(0xe0f4ff, 120, 60);
   frontFillLight.position.set(2.12, 6, 4.82);  // Centered over player (world origin)
   group.add(frontFillLight);
 
@@ -48,10 +48,10 @@ export function buildDesertNightScene(group, deps) {
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: {
-      topColor: { value: new THREE.Color(0x08060c) },
-      midColor: { value: new THREE.Color(0x1d152d) },
-      horizonColor: { value: new THREE.Color(0x4a2035) },
-      moonGlowColor: { value: new THREE.Color(0x6a5271) },
+      topColor: { value: new THREE.Color(0x0c0610) },
+      midColor: { value: new THREE.Color(0x2a1230) },
+      horizonColor: { value: new THREE.Color(0x6a1848) },
+      moonGlowColor: { value: new THREE.Color(0x8a4068) },
     },
     vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 moonGlowColor; void main(){ float worldY=vWorldPosition.y; float t1=smoothstep(-140.0,220.0,worldY); float t2=smoothstep(120.0,780.0,worldY); float t3=smoothstep(300.0,1200.0,worldY); vec3 col=horizonColor; col=mix(col,moonGlowColor,t1); col=mix(col,midColor,t2); col=mix(col,topColor,t3); col=pow(col,vec3(1.0/2.2)); gl_FragColor=vec4(col*0.5,1.0); }`,
@@ -159,8 +159,15 @@ export function buildDesertNightScene(group, deps) {
   // Shared materials to avoid per-segment allocation
   const cactusBodyMat = new THREE.MeshLambertMaterial({ color: 0x1a3d20, flatShading: true });
   const cactusArmMat = new THREE.MeshLambertMaterial({ color: 0x2d5535, flatShading: true });
+  const cactusOutlineMat = new THREE.LineBasicMaterial({
+    color: duneOutlineColor,
+    transparent: true,
+    opacity: 0.7,
+    depthWrite: false,
+  });
   registerFadeMaterial(cactusBodyMat);
   registerFadeMaterial(cactusArmMat);
+  registerFadeMaterial(cactusOutlineMat);
 
   // Shared cylinder geometries (4 radial segments instead of 5)
   const cactusGeoCache = {};
@@ -183,6 +190,13 @@ export function buildDesertNightScene(group, deps) {
       segment.castShadow = true;  // Cacti cast shadows
       segment.receiveShadow = true;
       cactusGroup.add(segment);
+      // Pink edge outline matching dune crests
+      const segOutline = new THREE.LineSegments(
+        new THREE.EdgesGeometry(cactusGeoCache[geoKey], 14),
+        cactusOutlineMat
+      );
+      segOutline.position.copy(segment.position);
+      cactusGroup.add(segOutline);
       currentY += segmentHeight;
     }
 
@@ -203,6 +217,13 @@ export function buildDesertNightScene(group, deps) {
       hArm.position.set(side * armLength / 2, armY, 0);
       hArm.castShadow = true;
       cactusGroup.add(hArm);
+      const hArmOutline = new THREE.LineSegments(
+        new THREE.EdgesGeometry(cactusGeoCache[hArmKey], 14),
+        cactusOutlineMat
+      );
+      hArmOutline.position.copy(hArm.position);
+      hArmOutline.rotation.copy(hArm.rotation);
+      cactusGroup.add(hArmOutline);
 
       // Vertical part (cached geometry)
       const vArmHeight = 0.5 + Math.random() * 0.5;
@@ -214,6 +235,12 @@ export function buildDesertNightScene(group, deps) {
       vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
       vArm.castShadow = true;
       cactusGroup.add(vArm);
+      const vArmOutline = new THREE.LineSegments(
+        new THREE.EdgesGeometry(cactusGeoCache[vArmKey], 14),
+        cactusOutlineMat
+      );
+      vArmOutline.position.copy(vArm.position);
+      cactusGroup.add(vArmOutline);
     }
 
     return cactusGroup;

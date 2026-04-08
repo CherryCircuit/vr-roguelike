@@ -12,21 +12,81 @@ export function buildAlienPlanetScene(group, deps) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
 
-  // Ground (optimized: 32x32 segments, was 120x120)
-  const groundGeo = new THREE.PlaneGeometry(345, 345, 32, 32);
+  // Fix 6: Ground with noise-based color variation for visual interest (Quest-friendly)
+  // Uses a simple ShaderMaterial with cheap hash-based noise instead of flat MeshLambertMaterial
+  const groundGeo = new THREE.PlaneGeometry(345, 345, 48, 48);
   const groundPositions = groundGeo.attributes.position;
   for (let i = 0; i < groundPositions.count; i++) {
     const x = groundPositions.getX(i);
     const y = groundPositions.getY(i);
-    groundPositions.setZ(i, Math.sin(x * 0.03) * Math.cos(y * 0.03) * 0.3);
+    // Subtle vertex displacement for terrain undulation
+    groundPositions.setZ(i, Math.sin(x * 0.03) * Math.cos(y * 0.03) * 0.3
+      + Math.sin(x * 0.07 + 1.5) * Math.cos(y * 0.05 + 0.8) * 0.15);
   }
   groundGeo.computeVertexNormals();
-  const groundMat = new THREE.MeshLambertMaterial({ color: 0x0a0510, flatShading: true });
+  const groundMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uBaseColor: { value: new THREE.Color(0x0a0510) },
+      uLightDir: { value: new THREE.Vector3(0.3, 1.0, 0.2).normalize() },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vWorldPos;
+      void main() {
+        vUv = uv;
+        vNormal = normalize(normalMatrix * normal);
+        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        vWorldPos = worldPos.xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uBaseColor;
+      uniform vec3 uLightDir;
+      varying vec2 vUv;
+      varying vec3 vNormal;
+      varying vec3 vWorldPos;
+      // Cheap hash-based noise for ground variation
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+      float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
+      void main() {
+        // World-space noise for color variation
+        float n = noise(vWorldPos.xz * 0.04) * 0.6 + noise(vWorldPos.xz * 0.1) * 0.4;
+        // Subtle color bands: dark purple to dark green
+        vec3 color1 = vec3(0.04, 0.02, 0.06);  // Dark purple
+        vec3 color2 = vec3(0.02, 0.05, 0.03);  // Dark green
+        vec3 color3 = vec3(0.03, 0.02, 0.04);  // Mid purple
+        vec3 baseColor = mix(color1, color2, smoothstep(0.3, 0.7, n));
+        baseColor = mix(baseColor, color3, smoothstep(0.4, 0.6, noise(vWorldPos.xz * 0.02 + 5.0)));
+        // Simple diffuse lighting
+        float diffuse = max(dot(vNormal, uLightDir), 0.0) * 0.4 + 0.6;
+        // Subtle grid pattern for texture
+        vec2 gridUV = fract(vWorldPos.xz * 0.5);
+        float gridLine = step(0.96, gridUV.x) + step(0.96, gridUV.y);
+        baseColor += vec3(0.0, 0.02, 0.01) * gridLine;
+        gl_FragColor = vec4(baseColor * diffuse, 1.0);
+      }
+    `,
+    depthWrite: true,
+  });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = floorY;
   ground.frustumCulled = false;
   group.add(ground);
+  registerFadeMaterial(groundMat);
 
   // Flash overlay plane for damage feedback (Issue 2: 320x320 for full floor coverage)
   const flashGeo = new THREE.PlaneGeometry(320, 320);
@@ -65,11 +125,12 @@ export function buildAlienPlanetScene(group, deps) {
   registerFadeMaterial(skyMat);
 
   // ── CLOUD DOME (baked to texture for Quest performance) ──
+  // Fix 3: Dark clouds - very low color values for near-black storm clouds
   const cloudTex = bakeCloudsToCanvas({
     width: 1024, height: 512,
-    horizonColor: [0.039, 0.102, 0.059],  // #0a1a0f
-    cloudColor: [0.102, 0.039, 0.165],    // #1a0a2a
-    skyColor: [0.008, 0.004, 0.02],       // #020105
+    horizonColor: [0.005, 0.008, 0.005],  // Near-black dark green
+    cloudColor: [0.008, 0.003, 0.012],    // Near-black dark purple
+    skyColor: [0.002, 0.001, 0.004],      // Almost black
     sunDir: [60, 80, -40],
     seed: 99,
   });
@@ -90,23 +151,30 @@ export function buildAlienPlanetScene(group, deps) {
   group.add(cloudDome);
   registerFadeMaterial(cloudMat);
 
-  // Moon and glow
+  // Fix 4: Moon moved to new position with compensated scale for same apparent size
+  // Old pos: (60, 80, -40), D1 ≈ 107.7
+  // New pos: (167.604, 179.058, -259.910), D2 ≈ 357.4
+  // Scale factor = D2/D1 ≈ 3.317
+  const moonTargetPos = new THREE.Vector3(167.604, 179.058, -259.910);
+  const moonScaleFactor = 3.317;
   const moonGeo = new THREE.IcosahedronGeometry(24, 1);
   const moonMat = new THREE.MeshBasicMaterial({ color: 0xddaaff, transparent: true, opacity: 0.95 });
   const moon = new THREE.Mesh(moonGeo, moonMat);
-  moon.position.set(60, 80, -40);
-  moon.frustumCulled = false; // Fix disappearing when looking up
+  moon.position.copy(moonTargetPos);
+  moon.scale.setScalar(moonScaleFactor);
+  moon.frustumCulled = false;
   group.add(moon);
   const moonGlowGeo = new THREE.IcosahedronGeometry(36, 1);
   const moonGlowMat = new THREE.MeshBasicMaterial({ color: 0xaa66ff, transparent: true, opacity: 0.15, side: THREE.BackSide });
   const moonGlow = new THREE.Mesh(moonGlowGeo, moonGlowMat);
-  moonGlow.position.copy(moon.position);
-  moonGlow.frustumCulled = false; // Fix disappearing when looking up
+  moonGlow.position.copy(moonTargetPos);
+  moonGlow.scale.setScalar(moonScaleFactor);
+  moonGlow.frustumCulled = false;
   group.add(moonGlow);
 
   // Lighting - moonLight for ambient scene lighting (shadows DISABLED for FPS)
   const moonLight = new THREE.DirectionalLight(0xcc88ff, 35);
-  moonLight.position.set(60, 80, -40);
+  moonLight.position.copy(moonTargetPos);
   // SHADOWS DISABLED - major FPS cost in this biome
   moonLight.castShadow = false;
   group.add(moonLight);
@@ -370,15 +438,16 @@ export function buildAlienPlanetScene(group, deps) {
   // River sparkles removed along with river mesh
 
   // Instanced city - FAR on horizon (was too close at 55-100)
+  // Fix 5: Building lights now animate colors via slow sine wave modulation
   const cityShaderMat = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
-      uMoonDir: { value: new THREE.Vector3(60, 80, -40).normalize() },
+      uMoonDir: { value: new THREE.Vector3(167.604, 179.058, -259.910).normalize() },
       uMoonColor: { value: new THREE.Color(0xcc88ff) },
       uBaseColor: { value: new THREE.Color(0x0a0a15) }
     },
     vertexShader: `varying vec2 vUv; varying vec3 vNormal; varying vec3 vWorldPos; void main(){ vUv=uv; vNormal=normalize(normalMatrix*normal); vec4 worldPos=modelMatrix*instanceMatrix*vec4(position,1.0); vWorldPos=worldPos.xyz; gl_Position=projectionMatrix*viewMatrix*worldPos; }`,
-    fragmentShader: `uniform float uTime; uniform vec3 uMoonDir; uniform vec3 uMoonColor; uniform vec3 uBaseColor; varying vec2 vUv; varying vec3 vNormal; float rand(vec2 co){ return fract(sin(dot(co, vec2(12.9898,78.233)))*43758.5453);} void main(){ float moonLight=max(dot(vNormal,uMoonDir),0.0); vec3 finalColor=uBaseColor*(0.2+moonLight*0.8)*uMoonColor; vec2 uv=vUv; float numWindowsX=6.0; float numWindowsY=15.0; vec2 grid=floor(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); vec2 gridUv=fract(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); float windowMask=step(0.15,gridUv.x)*step(gridUv.x,0.85)*step(0.1,gridUv.y)*step(gridUv.y,0.9); float r=rand(grid); float isLit=step(0.5,r); if(windowMask>0.5 && isLit>0.5){ vec3 windowColor=mix(vec3(0.0,1.0,0.5), vec3(0.5,0.0,1.0), rand(grid*0.5)); float flicker=0.9+0.1*sin(uTime*2.0+rand(grid)*10.0); finalColor=windowColor*flicker*1.5; } gl_FragColor=vec4(finalColor,1.0); }`
+    fragmentShader: `uniform float uTime; uniform vec3 uMoonDir; uniform vec3 uMoonColor; uniform vec3 uBaseColor; varying vec2 vUv; varying vec3 vNormal; float rand(vec2 co){ return fract(sin(dot(co, vec2(12.9898,78.233)))*43758.5453);} void main(){ float moonLight=max(dot(vNormal,uMoonDir),0.0); vec3 finalColor=uBaseColor*(0.2+moonLight*0.8)*uMoonColor; vec2 uv=vUv; float numWindowsX=6.0; float numWindowsY=15.0; vec2 grid=floor(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); vec2 gridUv=fract(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); float windowMask=step(0.15,gridUv.x)*step(gridUv.x,0.85)*step(0.1,gridUv.y)*step(gridUv.y,0.9); float r=rand(grid); float isLit=step(0.5,r); if(windowMask>0.5 && isLit>0.5){ float colorShift=sin(uTime*0.3+rand(grid)*6.283)*0.5+0.5; vec3 windowColor=mix(vec3(0.0,1.0,0.5),vec3(0.5,0.0,1.0),colorShift); vec3 accentColor=mix(vec3(1.0,0.2,0.4),vec3(0.2,0.8,1.0),sin(uTime*0.15+rand(grid*1.3)*6.283)*0.5+0.5); windowColor=mix(windowColor,accentColor,step(0.7,rand(grid*2.1))); float flicker=0.9+0.1*sin(uTime*2.0+rand(grid)*10.0); finalColor=windowColor*flicker*1.5; } gl_FragColor=vec4(finalColor,1.0); }`
   });
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
   const cylinderGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
@@ -467,6 +536,7 @@ export function buildAlienPlanetScene(group, deps) {
 
   // Height proportional to keep PNG aspect: circumference / aspect_ratio
   // circumference = 2*PI*148 ≈ 930, aspect = 14.78, so height ≈ 63
+  // Fix 1: Reduced to 50% height (scaled Y by 0.5)
   const alienMtnHeight = Math.round((2 * Math.PI * alienMtnRadius) / 14.78);
   const alienMtnCylGeo = new THREE.CylinderGeometry(alienMtnRadius, alienMtnRadius, alienMtnHeight, 64, 1, true);
   const alienMtnCylMat = new THREE.ShaderMaterial({
@@ -485,13 +555,15 @@ export function buildAlienPlanetScene(group, deps) {
       varying vec2 vUv;
       void main() {
         vec4 texColor = texture2D(uTexture, vUv);
+        // Fix 2: Discard near-transparent pixels so they don't occlude objects behind
+        if (texColor.a < 0.3) discard;
         float brightness = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
         // Keep mountains near-black, just enough shape to see silhouettes
         vec3 darkColor = vec3(brightness * 0.08);
-        gl_FragColor = vec4(darkColor, texColor.a);
+        gl_FragColor = vec4(darkColor, 1.0);
       }
     `,
-    transparent: true,
+    transparent: false,
     side: THREE.BackSide,
     depthWrite: true,
     depthTest: true,
@@ -499,7 +571,9 @@ export function buildAlienPlanetScene(group, deps) {
   });
   const alienMtnCylinder = new THREE.Mesh(alienMtnCylGeo, alienMtnCylMat);
   alienMtnCylinder.name = 'alien-mountain-wrap';
-  alienMtnCylinder.position.set(-6.628, alienMtnHeight / 2, 13.926);  // Centered at world X:0 Z:0
+  // Fix 1: Position at 50% height (half of original alienMtnHeight/2)
+  alienMtnCylinder.position.set(-6.628, alienMtnHeight / 4, 13.926);
+  alienMtnCylinder.scale.y = 0.5;  // Fix 1: 50% height, maintains XZ proportions
   alienMtnCylinder.frustumCulled = false;
   alienMtnCylinder.renderOrder = -1;
   group.add(alienMtnCylinder);
