@@ -75,8 +75,7 @@ const countrySelectGroup = new THREE.Group();
 countrySelectGroup.name = 'country-select';
 const readyGroup = new THREE.Group();
 readyGroup.name = 'ready-screen';
-const debugMenuGroup = new THREE.Group();
-debugMenuGroup.name = 'debug-menu';
+// Debug menu group removed — in-game 3D debug menu deleted (Needle audit cleanup)
 export const pauseMenuGroup = new THREE.Group();
 pauseMenuGroup.name = 'pause-menu';
 export const pauseCountdownGroup = new THREE.Group();
@@ -147,7 +146,7 @@ let fpsCtx = null;
 let fpsTexture = null;
 
 // Debug menu state
-let debugToggleItems = [];
+// debugToggleItems removed with debug menu
 
 
 // Upgrade card meshes (for raycasting)
@@ -549,7 +548,7 @@ export async function initHUD(camera, scene) {
   floatingMessageGroup.position.set(0, 0.1, -0.8);
   camera.add(floatingMessageGroup);
 
-  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup, debugMenuGroup].forEach(g => {
+  [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup].forEach(g => {
     g.visible = false;
     g.rotation.set(0, 0, 0);
     scene.add(g);
@@ -565,7 +564,7 @@ export async function initHUD(camera, scene) {
   [
     titleGroup, hudGroup, floatingMessageGroup, levelTextGroup, upgradeGroup,
     gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup,
-    readyGroup, debugMenuGroup, pauseMenuGroup, pauseCountdownGroup
+    readyGroup, pauseMenuGroup, pauseCountdownGroup
   ].forEach(g => { if (g) g.frustumCulled = false; });
 
   // Countdown still follows camera so player can see it
@@ -588,6 +587,7 @@ export async function initHUD(camera, scene) {
       blending: THREE.AdditiveBlending,  // Makes flash visible even on bright backgrounds
     }),
   );
+  hitFlash.name = 'hit-flash';
   hitFlash.renderOrder = 999;
   hitFlash.visible = false;
   hitFlash.frustumCulled = false;  // Prevent disappearing when looking around
@@ -638,6 +638,7 @@ export async function initHUD(camera, scene) {
         blending: THREE.AdditiveBlending,
       }),
     );
+    speedLinesMesh.name = 'speed-lines';
     speedLinesMesh.renderOrder = 998;
     speedLinesMesh.visible = false;
     speedLinesMesh.frustumCulled = false;
@@ -663,6 +664,7 @@ export async function initHUD(camera, scene) {
     side: THREE.DoubleSide,
   });
   fpsSprite = new THREE.Mesh(fpsGeo, fpsMat);
+  fpsSprite.name = 'fps-counter';
   fpsSprite.position.set(-0.15, 0.12, -0.5);  // Moved closer to center
   fpsSprite.renderOrder = 1001;
   fpsSprite.frustumCulled = false;  // Prevent disappearing when looking around
@@ -1744,7 +1746,7 @@ function hideAll() {
   scoreboardGroup.visible = false;
   countrySelectGroup.visible = false;
   readyGroup.visible = false;
-  debugMenuGroup.visible = false;  // Hide debug menu
+  // Debug menu group removed
   // Floor HUD shouldn't necessarily disappear during everything
   // Specifically don't hide it if we want it visible during upgrades
 }
@@ -1785,229 +1787,7 @@ export function updateTitleDebugIndicator() {
   }
 }
 
-// ── Debug Menu Screen ──────────────────────────────────────
-
-/**
- * Show the debug menu with toggle options for FPS monitor settings
- */
-export function showDebugMenu() {
-  console.log('[debug] showDebugMenu called, debugBiomeOverride=', game.debugBiomeOverride);
-  hideAll();
-  disposeGroupChildren(debugMenuGroup);
-  debugToggleItems = [];
-
-  debugMenuGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4);
-  debugMenuGroup.visible = true;
-
-  // Header
-  const header = makeSprite('DEBUG MENU', {
-    fontSize: 60, color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.6,
-  });
-  header.position.set(0, 1.4, 0);
-  debugMenuGroup.add(header);
-
-  const biomeLabel = game.debugBiomeOverride
-    ? game.debugBiomeOverride.replace(/_/g, ' ').toUpperCase()
-    : 'AUTO';
-
-  // Toggle and action options
-  const options = [
-    {
-      id: 'fps',
-      type: 'toggle',
-      label: 'FPS COUNTER',
-      getState: () => game.debugShowFPS,
-      toggle: () => { game.debugShowFPS = !game.debugShowFPS; }
-    },
-    {
-      id: 'position',
-      type: 'toggle',
-      label: 'POSITION BOX',
-      getState: () => game.debugShowPosition,
-      toggle: () => {
-        game.debugShowPosition = !game.debugShowPosition;
-        // Sync with desktop DOM panel so both stay in lock-step
-        if (typeof window !== 'undefined') {
-          window.debugPositionPanel = game.debugShowPosition;
-        }
-      }
-    },
-    {
-      id: 'perf',
-      type: 'toggle',
-      label: 'PERF MONITOR',
-      getState: () => game.debugPerfMonitor,
-      toggle: () => { game.debugPerfMonitor = !game.debugPerfMonitor; }
-    },
-    {
-      id: 'biome',
-      type: 'action',
-      label: 'BIOME',
-      action: 'biome_next',
-      getStatus: () => biomeLabel,
-    },
-  ];
-
-  const startY = 0.8;
-  const itemHeight = 0.35;
-  const itemWidth = 1.8;
-
-  options.forEach((opt, i) => {
-    const y = startY - i * itemHeight;
-    const isToggle = opt.type === 'toggle';
-    const isOn = isToggle ? opt.getState() : true;
-
-    // Background
-    const itemGroup = new THREE.Group();
-    itemGroup.position.set(0, y, 0);
-
-    const bgGeo = new THREE.PlaneGeometry(itemWidth, 0.28);
-    const bgMat = new THREE.MeshBasicMaterial({
-      color: isToggle ? (isOn ? 0x003322 : 0x221133) : 0x112233,
-      transparent: true,
-      opacity: 0.9,
-      side: THREE.DoubleSide,
-    });
-    const bgMesh = new THREE.Mesh(bgGeo, bgMat);
-    if (isToggle) {
-      bgMesh.userData.debugToggle = opt.id;
-    } else {
-      bgMesh.userData.debugAction = opt.action;
-    }
-    itemGroup.add(bgMesh);
-
-    // Border
-    itemGroup.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(bgGeo),
-      new THREE.LineBasicMaterial({ color: isToggle ? (isOn ? 0x00ff88 : 0x888888) : 0x00ffff })
-    ));
-
-    // Label
-    const label = makeSprite(opt.label, {
-      fontSize: 28, color: '#ffffff', scale: 0.18,
-    });
-    label.position.set(-0.3, 0, 0.01);
-    itemGroup.add(label);
-
-    // Status indicator (ON/OFF or current biome)
-    const statusText = isToggle ? (isOn ? 'ON' : 'OFF') : opt.getStatus();
-    const statusColor = isToggle ? (isOn ? '#00ff88' : '#ff4444') : '#00ffff';
-    const status = makeSprite(statusText, {
-      fontSize: 28, color: statusColor, glow: isToggle ? isOn : true, glowColor: statusColor, scale: 0.15,
-    });
-    status.position.set(0.6, 0, 0.01);
-    status.userData.isStatusLabel = true;
-    itemGroup.add(status);
-
-    debugMenuGroup.add(itemGroup);
-    if (isToggle) {
-      debugToggleItems.push({ group: itemGroup, mesh: bgMesh, option: opt });
-    }
-  });
-
-  // Instructions
-  const instructions = makeSprite('CLICK TO TOGGLE OR CYCLE', {
-    fontSize: 24, color: '#888888', scale: 0.15,
-  });
-  instructions.position.set(0, -0.65, 0);
-  debugMenuGroup.add(instructions);
-
-  // BACK button
-  const backGroup = new THREE.Group();
-  backGroup.position.set(0, -1.05, 0);
-  const backGeo = new THREE.PlaneGeometry(0.8, 0.28);
-  const backMat = new THREE.MeshBasicMaterial({
-    color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
-  });
-  const backMesh = new THREE.Mesh(backGeo, backMat);
-  backMesh.userData.debugAction = 'back';
-  backGroup.add(backMesh);
-  backGroup.add(new THREE.LineSegments(
-    new THREE.EdgesGeometry(backGeo),
-    new THREE.LineBasicMaterial({ color: 0xff4444 })
-  ));
-  const backTxt = makeSprite('BACK', { fontSize: 28, color: '#ff4444', scale: 0.15 });
-  backTxt.position.set(0, 0, 0.01);
-  backGroup.add(backTxt);
-  debugMenuGroup.add(backGroup);
-
-  sceneRef.add(debugMenuGroup);
-}
-
-export function hideDebugMenu() {
-  debugMenuGroup.visible = false;
-  if (sceneRef && debugMenuGroup.parent === sceneRef) {
-    sceneRef.remove(debugMenuGroup);
-  }
-}
-
-/**
- * Handle raycast hits on debug menu
- */
-export function getDebugMenuHit(raycaster) {
-  if (!debugMenuGroup.visible) return null;
-
-  // Check toggle items
-  const toggleMeshes = debugToggleItems.map(t => t.mesh);
-  let hits = raycaster.intersectObjects(toggleMeshes, false);
-  if (hits.length > 0) {
-    const toggleId = hits[0].object.userData.debugToggle;
-    const item = debugToggleItems.find(t => t.option.id === toggleId);
-    if (item) {
-      // Toggle the state
-      item.option.toggle();
-      
-      // Save settings
-      if (typeof window !== 'undefined') {
-        // Import and call saveDebugSettings from game.js
-        import('./game.js').then(module => {
-          if (module.saveDebugSettings) module.saveDebugSettings();
-        });
-      }
-      
-      // Update visuals
-      const isOn = item.option.getState();
-      item.mesh.material.color.setHex(isOn ? 0x003322 : 0x221133);
-      
-      // Update border
-      const border = item.group.children.find(c => c.type === 'LineSegments');
-      if (border) {
-        border.material.color.setHex(isOn ? 0x00ff88 : 0x888888);
-      }
-      
-      // Update status label
-      const statusLabel = item.group.children.find(c => c.userData && c.userData.isStatusLabel);
-      if (statusLabel) {
-        const statusText = isOn ? 'ON' : 'OFF';
-        const statusColor = isOn ? '#00ff88' : '#ff4444';
-        const { texture, aspect } = makeTextTexture(statusText, { fontSize: 28, color: statusColor, glow: isOn, glowColor: statusColor });
-        if (statusLabel.material.map) statusLabel.material.map.dispose();
-        statusLabel.material.map = texture;
-        statusLabel.material.needsUpdate = true;
-        statusLabel.scale.set(aspect * 0.15, 0.15, 1);
-      }
-    }
-    return null;  // Don't change state, just toggle
-  }
-
-  // Check action buttons (like NEXT BIOME)
-  const actionMeshes = [];
-  debugMenuGroup.traverse(c => {
-    if (c.userData && c.userData.debugAction) {
-      console.log('[debug-hud] Found action mesh:', c.userData.debugAction);
-      actionMeshes.push(c);
-    }
-  });
-  console.log('[debug-hud] Total action meshes:', actionMeshes.length);
-  hits = raycaster.intersectObjects(actionMeshes, false);
-  console.log('[debug-hud] Action hits:', hits.length);
-  if (hits.length > 0) {
-    console.log('[debug-hud] Hit action:', hits[0].object.userData.debugAction);
-    return { action: hits[0].object.userData.debugAction };
-  }
-
-  return null;
-}
+// ── Debug Menu Screen (DELETED — in-game 3D debug menu removed, Needle audit cleanup) ──
 
 export function getDebugJumpHit(raycaster) {
   return getReadyScreenHit(raycaster);

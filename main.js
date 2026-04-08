@@ -70,7 +70,7 @@ import {
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
-  showDebugMenu, hideDebugMenu, getDebugMenuHit, showReadyScreen, hideReadyScreen, updateReadyCountdownText, updateTitleDebugIndicator,
+  showReadyScreen, hideReadyScreen, updateReadyCountdownText, updateTitleDebugIndicator,
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown, hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
   updateHUDHover,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, showBossAlert, hideBossAlert,
@@ -2338,20 +2338,28 @@ function getHandForController(controllerIndex) {
 
 // [CORE] Create controller visual model
 function createControllerVisual(index) {
+  const hand = index === 0 ? 'left' : 'right';
   const color = index === 0 ? NEON_CYAN : NEON_PINK;
   const group = new THREE.Group();
+  group.name = `controller-visual-${hand}`;
 
-  group.add(new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color })));
-  group.add(new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 16), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 })));
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color }));
+  core.name = `controller-core-${hand}`;
+  group.add(core);
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 16), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
+  glow.name = `controller-glow-${hand}`;
+  group.add(glow);
 
   // Aim line extending forward
   const aimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -10)]);
-  group.add(new THREE.Line(aimGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 })));
+  const aimLine = new THREE.Line(aimGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 }));
+  aimLine.name = `controller-aim-${hand}`;
+  group.add(aimLine);
 
   // Create holographic display (initially hidden)
   const display = createBlasterDisplay(index);
   display.visible = false;
-  display.name = 'blasterDisplay';
+  display.name = `blaster-display-${hand}`;
   group.add(display);
   blasterDisplays[index] = display;
 
@@ -2374,6 +2382,7 @@ function createControllerVisual(index) {
 function createBlasterDisplay(controllerIndex) {
   const group = new THREE.Group();
   const hand = getHandForController(controllerIndex);
+  group.name = `blaster-display-group-${hand}`;
 
   // ═══════════════════════════════════════════════════════════════
   // HOLOGRAM SHADER - Single draw call replaces 8 scan line meshes
@@ -2570,8 +2579,6 @@ function onTriggerPress(controller, index) {
     handleCountrySelectTrigger(controller);
   } else if (st === State.READY_SCREEN) {
     handleReadyScreenTrigger(controller);
-  } else if (st === State.DEBUG_MENU) {
-    handleDebugMenuTrigger(controller);
   } else if (st === State.PAUSED) {
     handlePauseTrigger(controller);
   }
@@ -2612,13 +2619,6 @@ function handleTitleTrigger(controller) {
     });
     return;
   }
-  if (btnHit === 'debug_menu') {
-    playMenuClick();
-    game.state = State.DEBUG_MENU;
-    hideTitle();
-    showDebugMenu();
-    return;
-  }
   playMenuClick();
   startGame();
 }
@@ -2646,8 +2646,6 @@ function handleDesktopClick() {
     handleDesktopCountrySelectClick();
   } else if (st === State.READY_SCREEN) {
     handleDesktopReadyScreenClick();
-  } else if (st === State.DEBUG_MENU) {
-    handleDesktopDebugMenuClick();
   } else if (st === State.PAUSED) {
     handleDesktopPauseClick();
   }
@@ -2672,13 +2670,6 @@ function handleDesktopTitleClick() {
     fetchTopScores().then(scores => {
       showScoreboard(scores, 'GLOBAL');
     });
-    return;
-  }
-  if (btnHit === 'debug_menu') {
-    playMenuClick();
-    game.state = State.DEBUG_MENU;
-    hideTitle();
-    showDebugMenu();
     return;
   }
   playMenuClick();
@@ -2871,32 +2862,7 @@ function handleDesktopPauseClick() {
   }
 }
 
-// [DEBUG] Desktop click handler for debug menu
-function handleDesktopDebugMenuClick() {
-  _log('[debug] handleDesktopDebugMenuClick called');
-  const raycaster = getAimRaycaster();
-  if (!raycaster) {
-    _log('[debug] No raycaster available');
-    return;
-  }
-
-  const result = getDebugMenuHit(raycaster);
-  _log('[debug] getDebugMenuHit result:', result);
-  if (result && result.action === 'back') {
-    playMenuClick();
-    saveDebugSettings();
-    hideDebugMenu();
-    resetGame();
-    showTitle();
-    updateTitleDebugIndicator();
-    return;
-  }
-  if (result && result.action === 'biome_next') {
-    _log('[debug] biome_next action detected, calling cycleDebugBiomeWithFade');
-    playMenuClick();
-    cycleDebugBiomeWithFade();
-  }
-}
+// [DEBUG] Desktop click handler for debug menu (REMOVED — 3D debug menu deleted)
 
 // [CORE] Handle game over screen VR trigger
 function handleGameOverTrigger(controller) {
@@ -6160,7 +6126,6 @@ function cycleDebugBiomeWithFade() {
     applyThemeForLevel(game.level);
     _log('[debug] Starting fade in...');
     startEnvironmentFade('in', 0.3);
-    showDebugMenu();
   });
 }
 
@@ -6226,32 +6191,7 @@ function handleReadyScreenTrigger(controller) {
   startReadyCountdown();
 }
 
-// [DEBUG] Handle VR controller input in debug menu state
-function handleDebugMenuTrigger(controller) {
-  const origin = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  controller.getWorldPosition(origin);
-  controller.getWorldQuaternion(quat);
-  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-  _uiRaycaster.set(origin, direction, 0, 10);
-
-  const result = getDebugMenuHit(_uiRaycaster);
-  if (result && result.action === 'back') {
-    playMenuClick();
-    saveDebugSettings();  // Save settings before leaving
-    hideDebugMenu();
-    resetGame();
-    showTitle();
-    updateTitleDebugIndicator();  // Update the indicator on title screen
-    return;
-  }
-  if (result && result.action === 'biome_next') {
-    playMenuClick();
-    cycleDebugBiomeWithFade();  // Use the fade version for VR too
-    return;
-  }
-  // Toggle clicks are handled in getDebugMenuHit with visual updates
-}
+// [DEBUG] Handle VR controller input in debug menu state (REMOVED — 3D debug menu deleted)
 
 // ============================================================
 // GAME FLOW & STATE MANAGEMENT
