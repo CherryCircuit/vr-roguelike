@@ -51,8 +51,7 @@ const player = {
 };
 
 // Debug movement settings (for desktop no-clip mode)
-const maxMoveSpeed = 300.0; // Peak debug travel speed for biome fly-throughs.
-const moveRampRate = -Math.log(0.05) / 3; // 95% of max speed at 3 seconds (~1.0).
+const maxMoveSpeed = 30.0; // Peak debug travel speed (tuned for precision).
 const friction = 10.0; // damping factor
 const acceleration = 30.0; // acceleration factor
 let debugMode = false; // debug movement disabled by default (Fix 1.1: avoid per-frame Vector3 allocations)
@@ -301,8 +300,16 @@ export function update(dt) {
       for (const key of activeKeys) {
         if (keys[key]) longestHold = Math.max(longestHold, keyHoldDurations[key]);
       }
-      // Exponential approach gives fine control on short taps without removing fast traversal.
-      return speedCap * (1 - Math.exp(-longestHold * moveRampRate));
+      if (longestHold < 0.1) return 0; // dead zone to prevent jitter
+
+      // Phase 1 (0.1–1s): linear ramp from 0 to ~3 u/s (fine nudge control)
+      // Phase 2 (1–5s): exponential ramp from ~3 to 30 u/s (fast traversal)
+      if (longestHold < 1.0) {
+        return 3.0 * (longestHold - 0.1) / 0.9;
+      }
+      const t = longestHold - 1.0;
+      const expRamp = 1 - Math.exp(-t * 1.0);
+      return 3.0 + (speedCap - 3.0) * expRamp;
     };
 
     // Normalize horizontal movement if any
@@ -858,6 +865,17 @@ function updateDebugPositionPanel() {
       }
       if (isCameraChild) continue;
       
+      // Skip debug wireframe overlays to prevent self-highlighting loop
+      let isDebugOverlay = obj.userData?._isDebugWireframe;
+      if (!isDebugOverlay) {
+        let p = obj.parent;
+        while (p && p !== sceneRef) {
+          if (p.userData?._isDebugWireframe) { isDebugOverlay = true; break; }
+          p = p.parent;
+        }
+      }
+      if (isDebugOverlay) continue;
+
       // This is a valid scene object
       validHit = hit;
       validObj = obj;
@@ -1056,6 +1074,7 @@ function applyHighlight(obj) {
     const wireGeo = new THREE.WireframeGeometry(obj.geometry);
     const wireMat = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 });
     const wireframe = new THREE.LineSegments(wireGeo, wireMat);
+    wireframe.userData._isDebugWireframe = true; // tag so raycaster skips it
     // Add to same parent and copy transform
     if (obj.parent) {
       obj.parent.add(wireframe);

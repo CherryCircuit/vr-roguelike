@@ -9899,7 +9899,7 @@ function render(timestamp) {
 
       // Skull boss laugh when hitting player
       const _skullBoss = getBoss();
-      if (_skullBoss && _skullBoss.def && _skullBoss.def.behavior === 'skull') {
+      if (_skullBoss && _skullBoss.def && (_skullBoss.def.behavior === 'skull' || _skullBoss.def.behavior === 'minotaur')) {
         playSkullLaughSound();
       }
       cameraShake = 0.4;

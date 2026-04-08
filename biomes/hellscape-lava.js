@@ -97,6 +97,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   });
 
   const terrain = new THREE.Mesh(geometry, material);
+  terrain.name = 'hellscape-terrain';
   terrain.receiveShadow = true;
   terrain.frustumCulled = false; // Prevent disappearing when looking down
   terrain.position.y = floorY;
@@ -170,6 +171,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   });
 
   const lavaRiver = new THREE.Mesh(riverGeo, lavaRiverMat);
+  lavaRiver.name = 'hellscape-lava-river';
   lavaRiver.position.y = -0.70; // World Y=-2.25 (group Y=-1.55, so -2.25-(-1.55)=-0.70)
   lavaRiver.position.z = 3.0;   // Shift forward so world range covers z:-130 to z:61 (group z:-88 to z:103)
   lavaRiver.frustumCulled = false; // Prevent disappearing when looking around
@@ -199,6 +201,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     side: THREE.DoubleSide
   });
   const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+  flashPlane.name = 'hellscape-flash-overlay';
   flashPlane.rotation.x = -Math.PI / 2;
   flashPlane.position.y = floorY + 0.05;
   flashPlane.frustumCulled = false;
@@ -385,26 +388,33 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   // ========================================
   // MOONS (existing)
   // ========================================
-  const createMoon = (size, color, glowColor) => {
+  const createMoon = (size, color, glowColor, moonIndex) => {
     const mGroup = new THREE.Group();
+    mGroup.name = `hellscape-moon-group-${moonIndex}`;
     const moonGeo = new THREE.IcosahedronGeometry(size, 2);
     const moonMat = new THREE.MeshBasicMaterial({ color });
-    mGroup.add(new THREE.Mesh(moonGeo, moonMat));
+    const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+    moonMesh.name = `hellscape-moon-${moonIndex}`;
+    mGroup.add(moonMesh);
     const glowGeo = new THREE.IcosahedronGeometry(size * 1.2, 2);
     const glowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.3 });
-    mGroup.add(new THREE.Mesh(glowGeo, glowMat));
+    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+    glowMesh.name = `hellscape-moon-${moonIndex}-glow`;
+    mGroup.add(glowMesh);
     const farGlowGeo = new THREE.IcosahedronGeometry(size * 1.5, 2);
     const farGlowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.1 });
-    mGroup.add(new THREE.Mesh(farGlowGeo, farGlowMat));
+    const farGlowMesh = new THREE.Mesh(farGlowGeo, farGlowMat);
+    farGlowMesh.name = `hellscape-moon-${moonIndex}-far-glow`;
+    mGroup.add(farGlowMesh);
     return mGroup;
   };
-  const moon1 = createMoon(15, 0xaa1111, 0xff2200);
+  const moon1 = createMoon(15, 0xaa1111, 0xff2200, 1);
   moon1.position.set(20, 30, -160);
   group.add(moon1);
-  const moon2 = createMoon(11, 0x880000, 0xaa0000);
+  const moon2 = createMoon(11, 0x880000, 0xaa0000, 2);
   moon2.position.set(-50, 25, -160);
   group.add(moon2);
-  const moon3 = createMoon(8, 0x550000, 0x770000);
+  const moon3 = createMoon(8, 0x550000, 0x770000, 3);
   moon3.position.set(-30, 40, -160);
   group.add(moon3);
 
@@ -441,6 +451,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     `
   });
   const skyDome = new THREE.Mesh(skyDomeGeo, skyDomeMat);
+  skyDome.name = 'hellscape-skydome';
   skyDome.frustumCulled = false;
   skyDome.renderOrder = -2;
   group.add(skyDome);

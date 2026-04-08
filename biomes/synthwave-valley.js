@@ -128,6 +128,7 @@ export function buildSynthwaveValleyScene(group, deps) {
     depthWrite: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
+  sky.name = 'synthwave-skydome';
   sky.frustumCulled = false;
   sky.renderOrder = -20;  // Draw before sun (which is at -3 to -1)
   group.add(sky);
