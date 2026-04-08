@@ -254,6 +254,26 @@ function disposeMesh(obj, removeFromParent = true) {
 }
 
 // ============================================================
+// MATERIAL FACTORY
+// Creates MeshBasicMaterial with sensible defaults.
+// Reduces boilerplate for common transparent/glow materials.
+// ============================================================
+function basicMat(color, opts = {}) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: opts.transparent ?? false,
+    opacity: opts.opacity ?? 1,
+    side: opts.side ?? THREE.FrontSide,
+    depthTest: opts.depthTest ?? true,
+    depthWrite: opts.depthWrite ?? true,
+    blending: opts.blending ?? THREE.NormalBlending,
+    fog: opts.fog ?? true,
+    map: opts.map ?? null,
+    ...opts
+  });
+}
+
+// ============================================================
 // MODULE STATE
 // Scene, camera, renderer, controller state, pools, queues
 // COUPLING: Many functions reference these globals directly
@@ -312,8 +332,7 @@ const PROJECTILE_BOLT = {
 };
 
 function createProjectileMaterial(colorHex) {
-  const material = new THREE.MeshBasicMaterial({
-    color: colorHex,
+  const material = basicMat(colorHex, {
     transparent: true,
     opacity: PROJECTILE_BOLT.opacity,
     depthWrite: false,
@@ -1291,8 +1310,7 @@ function init() {
 
   // Nuke flash overlay (white screen flash on nuke activation)
   const nukeFlashGeo = new THREE.PlaneGeometry(10, 10);
-  const nukeFlashMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+  const nukeFlashMat = basicMat(0xffffff, {
     transparent: true,
     opacity: 0,
     depthTest: false,
@@ -3700,8 +3718,7 @@ function fireShield(controller, index, hand, altWeapon) {
   
   // Create blue translucent sphere around player
   const shieldGeo = new THREE.SphereGeometry(1.2, 24, 24);
-  const shieldMat = new THREE.MeshBasicMaterial({
-    color: 0x4488ff,
+  const shieldMat = basicMat(0x4488ff, {
     transparent: true,
     opacity: 0.4,
     side: THREE.DoubleSide,
@@ -3856,8 +3873,7 @@ function spawnSingleLaserMine(position, hand, altWeapon) {
 
   // Create purple icosahedron mine
   const mineGeo = new THREE.IcosahedronGeometry(0.12, 0);
-  const mineMat = new THREE.MeshBasicMaterial({
-    color: 0xaa00ff,  // Purple
+  const mineMat = basicMat(0xaa00ff, {
     transparent: true,
     opacity: 0.9,
   });
@@ -3868,8 +3884,7 @@ function spawnSingleLaserMine(position, hand, altWeapon) {
 
   // Add outer glow sphere
   const glowGeo = new THREE.SphereGeometry(0.2, 12, 12);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xaa00ff,
+  const glowMat = basicMat(0xaa00ff, {
     transparent: true,
     opacity: 0.3,
     side: THREE.BackSide,
@@ -4068,8 +4083,7 @@ function fireDecoy(origin, hand, altWeapon) {
 
   // Body - glitchy semi-transparent sphere
   const bodyGeo = new THREE.SphereGeometry(0.4, 12, 12);
-  const bodyMat = new THREE.MeshBasicMaterial({
-    color: 0x00ffaa,
+  const bodyMat = basicMat(0x00ffaa, {
     transparent: true,
     opacity: 0.6,
     wireframe: true,
@@ -4098,8 +4112,7 @@ function fireDecoy(origin, hand, altWeapon) {
 
   // Outer glow
   const glowGeo = new THREE.SphereGeometry(0.6, 12, 12);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0x00ffaa,
+  const glowMat = basicMat(0x00ffaa, {
     transparent: true,
     opacity: 0.2,
     side: THREE.BackSide,
@@ -4237,8 +4250,7 @@ function fireBlackHole(origin, direction, hand, altWeapon) {
 
   // Create mine projectile
   const mineGeo = new THREE.SphereGeometry(0.15, 8, 8);
-  const mineMat = new THREE.MeshBasicMaterial({
-    color: 0x8800ff,
+  const mineMat = basicMat(0x8800ff, {
     transparent: true,
     opacity: 0.9,
   });
@@ -4246,8 +4258,7 @@ function fireBlackHole(origin, direction, hand, altWeapon) {
 
   // Add glow
   const glowGeo = new THREE.SphereGeometry(0.25, 8, 8);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0x8800ff,
+  const glowMat = basicMat(0x8800ff, {
     transparent: true,
     opacity: 0.3,
     side: THREE.BackSide,
@@ -4416,8 +4427,7 @@ function triggerBlackHole(mine, mineIndex) {
 
   // Core - dark sphere
   const coreGeo = new THREE.SphereGeometry(0.3, 16, 16);
-  const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x110022,
+  const coreMat = basicMat(0x110022, {
     transparent: true,
     opacity: 0.9,
   });
@@ -4426,8 +4436,7 @@ function triggerBlackHole(mine, mineIndex) {
 
   // Outer ring - purple vortex
   const ringGeo = new THREE.RingGeometry(0.4, 1.5, 32);
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: 0x8800ff,
+  const ringMat = basicMat(0x8800ff, {
     transparent: true,
     opacity: 0.6,
     side: THREE.DoubleSide,
@@ -4438,8 +4447,7 @@ function triggerBlackHole(mine, mineIndex) {
 
   // Inner spinning ring
   const innerRingGeo = new THREE.RingGeometry(0.3, 0.5, 16);
-  const innerRingMat = new THREE.MeshBasicMaterial({
-    color: 0xaa44ff,
+  const innerRingMat = basicMat(0xaa44ff, {
     transparent: true,
     opacity: 0.8,
     side: THREE.DoubleSide,
@@ -4471,8 +4479,7 @@ function triggerBlackHole(mine, mineIndex) {
 
   // Event horizon glow
   const glowGeo = new THREE.SphereGeometry(1.8, 16, 16);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0x4400aa,
+  const glowMat = basicMat(0x4400aa, {
     transparent: true,
     opacity: 0.3,
     side: THREE.BackSide,
@@ -4565,8 +4572,7 @@ function fireNaniteSwarm(origin, hand, altWeapon) {
 
   // Core sphere - golden glow
   const coreGeo = new THREE.SphereGeometry(0.2, 12, 12);
-  const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xffd700,  // Gold
+  const coreMat = basicMat(0xffd700, {
     transparent: true,
     opacity: 0.4,
     blending: THREE.AdditiveBlending,
@@ -4576,8 +4582,7 @@ function fireNaniteSwarm(origin, hand, altWeapon) {
 
   // Outer glow sphere
   const glowGeo = new THREE.SphereGeometry(altWeapon.radius || 3.0, 24, 24);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xffaa00,
+  const glowMat = basicMat(0xffaa00, {
     transparent: true,
     opacity: 0.15,
     side: THREE.BackSide,
@@ -4591,8 +4596,7 @@ function fireNaniteSwarm(origin, hand, altWeapon) {
   const particles = [];
   for (let i = 0; i < particleCount; i++) {
     const particleGeo = new THREE.SphereGeometry(0.03, 4, 4);
-    const particleMat = new THREE.MeshBasicMaterial({
-      color: 0xffff00,
+    const particleMat = basicMat(0xffff00, {
       transparent: true,
       opacity: 0.8,
       blending: THREE.AdditiveBlending,
@@ -4848,8 +4852,7 @@ function fireTetherHarpoon(origin, direction, hand, altWeapon) {
   const particles = [];
   for (let i = 0; i < particleCount; i++) {
     const particleGeo = new THREE.SphereGeometry(0.03, 4, 4);
-    const particleMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffaa,
+    const particleMat = basicMat(0x00ffaa, {
       transparent: true,
       opacity: 0.7,
     });
@@ -5044,8 +5047,7 @@ function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
 
   // Main afterimage shell (semi-transparent sphere)
   const shellGeo = new THREE.SphereGeometry(0.4, 16, 16);
-  const shellMat = new THREE.MeshBasicMaterial({
-    color: 0x4488ff,  // Blue
+  const shellMat = basicMat(0x4488ff, {
     transparent: true,
     opacity: 0.6,
     side: THREE.DoubleSide,
@@ -5060,8 +5062,7 @@ function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
   const pixels = [];
   for (let i = 0; i < pixelCount; i++) {
     const pixelGeo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
-    const pixelMat = new THREE.MeshBasicMaterial({
-      color: 0x88ccff,
+    const pixelMat = basicMat(0x88ccff, {
       transparent: true,
       opacity: 0.7,
     });
@@ -5233,8 +5234,7 @@ function fireReflectorDrone(origin, hand, altWeapon) {
   hexShape.closePath();
 
   const hexGeo = new THREE.ShapeGeometry(hexShape);
-  const hexMat = new THREE.MeshBasicMaterial({
-    color: 0x00ffcc,
+  const hexMat = basicMat(0x00ffcc, {
     transparent: true,
     opacity: 0.9,
     side: THREE.DoubleSide,
@@ -5245,8 +5245,7 @@ function fireReflectorDrone(origin, hand, altWeapon) {
 
   // Inner glow core
   const coreGeo = new THREE.SphereGeometry(0.08, 8, 8);
-  const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x00ffcc,
+  const coreMat = basicMat(0x00ffcc, {
     transparent: true,
     opacity: 0.8,
   });
@@ -5255,8 +5254,7 @@ function fireReflectorDrone(origin, hand, altWeapon) {
 
   // Shimmering shield effect (semi-transparent sphere)
   const shieldGeo = new THREE.SphereGeometry(0.4, 16, 16);
-  const shieldMat = new THREE.MeshBasicMaterial({
-    color: 0x00ffcc,
+  const shieldMat = basicMat(0x00ffcc, {
     transparent: true,
     opacity: 0.2,
     side: THREE.BackSide,
@@ -5271,8 +5269,7 @@ function fireReflectorDrone(origin, hand, altWeapon) {
   const particles = [];
   for (let i = 0; i < particleCount; i++) {
     const particleGeo = new THREE.SphereGeometry(0.02, 4, 4);
-    const particleMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffaa,
+    const particleMat = basicMat(0x00ffaa, {
       transparent: true,
       opacity: 0.7,
     });
@@ -5483,8 +5480,7 @@ function spawnReflectedProjectile(origin) {
     .normalize();
 
   const reflectedGeo = new THREE.SphereGeometry(0.05, 8, 8);
-  const reflectedMat = new THREE.MeshBasicMaterial({
-    color: 0x00ffcc,
+  const reflectedMat = basicMat(0x00ffcc, {
     transparent: true,
     opacity: 0.9,
   });
@@ -5519,8 +5515,7 @@ function fireStasisField(origin, direction, hand, altWeapon) {
   // Create visual sphere (blue translucent)
   const radius = altWeapon.radius || 3.0;
   const geometry = new THREE.SphereGeometry(radius, 24, 24);
-  const material = new THREE.MeshBasicMaterial({
-    color: 0x4488ff,
+  const material = basicMat(0x4488ff, {
     transparent: true,
     opacity: 0.3,
     side: THREE.BackSide,
@@ -5536,8 +5531,7 @@ function fireStasisField(origin, direction, hand, altWeapon) {
   const particles = [];
   for (let i = 0; i < particleCount; i++) {
     const particleGeo = new THREE.SphereGeometry(0.05, 4, 4);
-    const particleMat = new THREE.MeshBasicMaterial({
-      color: 0x88ccff,
+    const particleMat = basicMat(0x88ccff, {
       transparent: true,
       opacity: 0.6,
       blending: THREE.AdditiveBlending,
@@ -5607,8 +5601,7 @@ function updateStasisFields(now, dt) {
 function firePlasmaOrb(origin, direction, hand, altWeapon) {
   // Create plasma orb
   const geometry = new THREE.SphereGeometry(0.15, 16, 16);
-  const material = new THREE.MeshBasicMaterial({
-    color: 0xaa44ff,
+  const material = basicMat(0xaa44ff, {
     transparent: true,
     opacity: 0.8,
     blending: THREE.AdditiveBlending,
@@ -5622,8 +5615,7 @@ function firePlasmaOrb(origin, direction, hand, altWeapon) {
   const trailParticles = [];
   for (let i = 0; i < trailLength; i++) {
     const trailGeo = new THREE.SphereGeometry(0.08, 8, 8);
-    const trailMat = new THREE.MeshBasicMaterial({
-      color: 0xcc66ff,
+    const trailMat = basicMat(0xcc66ff, {
       transparent: true,
       opacity: 0.5 - (i * 0.05),
       blending: THREE.AdditiveBlending,
@@ -5821,8 +5813,7 @@ function fireGrenade(origin, direction, hand, altWeapon) {
 
   // Create grenade mesh (small red sphere)
   const grenadeGeo = new THREE.SphereGeometry(0.1, 8, 8);
-  const grenadeMat = new THREE.MeshBasicMaterial({
-    color: 0xff4444,
+  const grenadeMat = basicMat(0xff4444, {
     transparent: true,
     opacity: 0.9,
   });
@@ -5830,8 +5821,7 @@ function fireGrenade(origin, direction, hand, altWeapon) {
 
   // Add glow
   const glowGeo = new THREE.SphereGeometry(0.15, 8, 8);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xff4444,
+  const glowMat = basicMat(0xff4444, {
     transparent: true,
     opacity: 0.3,
     side: THREE.BackSide,
@@ -5944,8 +5934,7 @@ function fireProximityMine(origin, hand, altWeapon) {
 
   // Create mine mesh (orange icosahedron)
   const mineGeo = new THREE.IcosahedronGeometry(0.12, 0);
-  const mineMat = new THREE.MeshBasicMaterial({
-    color: 0xffaa00,
+  const mineMat = basicMat(0xffaa00, {
     transparent: true,
     opacity: 0.9,
   });
@@ -5953,8 +5942,7 @@ function fireProximityMine(origin, hand, altWeapon) {
 
   // Add glow
   const glowGeo = new THREE.SphereGeometry(0.2, 8, 8);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xffaa00,
+  const glowMat = basicMat(0xffaa00, {
     transparent: true,
     opacity: 0.3,
     side: THREE.BackSide,
@@ -6089,8 +6077,7 @@ function fireAttackDrone(origin, hand, altWeapon) {
   hexShape.closePath();
 
   const hexGeo = new THREE.ShapeGeometry(hexShape);
-  const hexMat = new THREE.MeshBasicMaterial({
-    color: 0x88ff88,
+  const hexMat = basicMat(0x88ff88, {
     transparent: true,
     opacity: 0.9,
     side: THREE.DoubleSide,
@@ -6101,8 +6088,7 @@ function fireAttackDrone(origin, hand, altWeapon) {
 
   // Core glow
   const coreGeo = new THREE.SphereGeometry(0.06, 8, 8);
-  const coreMat = new THREE.MeshBasicMaterial({
-    color: 0x88ff88,
+  const coreMat = basicMat(0x88ff88, {
     transparent: true,
     opacity: 0.8,
   });
@@ -6111,8 +6097,7 @@ function fireAttackDrone(origin, hand, altWeapon) {
 
   // Outer glow
   const glowGeo = new THREE.SphereGeometry(0.25, 12, 12);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0x88ff88,
+  const glowMat = basicMat(0x88ff88, {
     transparent: true,
     opacity: 0.2,
     side: THREE.BackSide,
@@ -6197,8 +6182,7 @@ function updateAttackDrones(now, dt, playerPos) {
 
         // Create small projectile
         const projGeo = new THREE.SphereGeometry(0.04, 6, 6);
-        const projMat = new THREE.MeshBasicMaterial({
-          color: 0x88ff88,
+        const projMat = basicMat(0x88ff88, {
           transparent: true,
           opacity: 0.8,
         });
@@ -6243,8 +6227,7 @@ function fireEMP(origin, hand, altWeapon) {
 
   // Create expanding ring effect
   const ringGeo = new THREE.RingGeometry(0.1, range, 32);
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: 0x00ffff,
+  const ringMat = basicMat(0x00ffff, {
     transparent: true,
     opacity: 0.6,
     side: THREE.DoubleSide,
@@ -6347,8 +6330,7 @@ function fireTeleport(origin, direction, hand, altWeapon) {
 
   // Create visual effect at start position
   const startEffectGeo = new THREE.SphereGeometry(0.5, 16, 16);
-  const startEffectMat = new THREE.MeshBasicMaterial({
-    color: 0xaa00ff,
+  const startEffectMat = basicMat(0xaa00ff, {
     transparent: true,
     opacity: 0.5,
     blending: THREE.AdditiveBlending,
@@ -6367,8 +6349,7 @@ function fireTeleport(origin, direction, hand, altWeapon) {
 
   // Create visual effect at end position
   const endEffectGeo = new THREE.SphereGeometry(0.5, 16, 16);
-  const endEffectMat = new THREE.MeshBasicMaterial({
-    color: 0xaa00ff,
+  const endEffectMat = basicMat(0xaa00ff, {
     transparent: true,
     opacity: 0.5,
     blending: THREE.AdditiveBlending,
@@ -7714,16 +7695,12 @@ function updateLightningBeam(controller, index, stats, dt) {
     startLightningSound();
 
     // Remove old beam group (dispose geometry/material to prevent GEO leak)
+    // PERFORMANCE: Null pooled material so disposeMesh doesn't dispose it
     if (lightningBeams[index]) {
       lightningBeams[index].traverse(c => {
-        if (c.isMesh || c.isLine) {
-          if (c.geometry) c.geometry.dispose();
-          // PERFORMANCE: Don't dispose pooled material (_lightningMaterial)
-          // Only dispose non-pooled materials
-          if (c.material && c.material !== _lightningMaterial) c.material.dispose();
-        }
+        if (c.material === _lightningMaterial) c.material = null;
       });
-      scene.remove(lightningBeams[index]);
+      disposeMesh(lightningBeams[index]);
     }
 
     const beamGroup = new THREE.Group();
@@ -7775,15 +7752,12 @@ function updateLightningBeam(controller, index, stats, dt) {
     }
   } else {
     // No targets - clear beam and stop sound
+    // PERFORMANCE: Null pooled material so disposeMesh doesn't dispose it
     if (lightningBeams[index]) {
       lightningBeams[index].traverse(c => {
-        if (c.isMesh || c.isLine) {
-          if (c.geometry) c.geometry.dispose();
-          // PERFORMANCE: Don't dispose pooled material (_lightningMaterial)
-          if (c.material && c.material !== _lightningMaterial) c.material.dispose();
-        }
+        if (c.material === _lightningMaterial) c.material = null;
       });
-      scene.remove(lightningBeams[index]);
+      disposeMesh(lightningBeams[index]);
       lightningBeams[index] = null;
     }
     stopLightningSound();
@@ -7883,8 +7857,7 @@ function updateChargeVisuals(controller, index, progress) {
   if (!chargeGlowSpheres[index]) {
     // Main glow sphere at controller tip
     const glowGeo = new THREE.SphereGeometry(0.05, 16, 16);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
+    const glowMat = basicMat(0x00ffff, {
       transparent: true,
       opacity: 0.1,
       blending: THREE.AdditiveBlending,
@@ -7900,8 +7873,7 @@ function updateChargeVisuals(controller, index, progress) {
     const particleCount = 8;
     for (let i = 0; i < particleCount; i++) {
       const particleGeo = new THREE.SphereGeometry(0.015, 8, 8);
-      const particleMat = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
+      const particleMat = basicMat(0x00ffff, {
         transparent: true,
         opacity: 0.5,
         blending: THREE.AdditiveBlending,
@@ -8112,8 +8084,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   // what's behind the beam. Critical for desert biome where additive-only beams vanish.
   const coreWidth = visualBeamWidth * 0.4; // 40% of outer glow width
   const coreGeo = new THREE.CylinderGeometry(coreWidth, coreWidth * 0.15, range, 6);
-  const coreMat = new THREE.MeshBasicMaterial({
-    color: beamColor,
+  const coreMat = basicMat(beamColor, {
     transparent: true,
     opacity: 0.9, // High opacity for visibility
     side: THREE.DoubleSide,
@@ -8135,8 +8106,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   // OUTER GLOW: Additive blending for neon aesthetic
   // This creates the signature glow effect but alone can vanish against bright terrain
   const beamGeo = new THREE.CylinderGeometry(visualBeamWidth, visualBeamWidth * 0.1, range, 8); // Tapers toward horizon
-  const beamMat = new THREE.MeshBasicMaterial({
-    color: beamColor,
+  const beamMat = basicMat(beamColor, {
     transparent: true,
     opacity: 0.7,
     side: THREE.DoubleSide,
@@ -8488,8 +8458,7 @@ function spawnExplosionVisual(center, radius) {
 
   const duration = 350; // ms
   const geo = new THREE.SphereGeometry(radius * 0.3, 12, 12);
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0xff8800,
+  const mat = basicMat(0xff8800, {
     transparent: true,
     opacity: 0.7,
     side: THREE.BackSide,
@@ -8573,8 +8542,7 @@ if (typeof window !== 'undefined') {
   window.createBossShockwave = function(position, radius, damage) {
     // Visual shockwave ring
     const ringGeo = new THREE.RingGeometry(0.5, radius, 32);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x886644,
+    const ringMat = basicMat(0x886644, {
       transparent: true,
       opacity: 0.8,
       side: THREE.DoubleSide
@@ -8593,8 +8561,7 @@ if (typeof window !== 'undefined') {
     for (let i = 0; i < debrisCount; i++) {
       const angle = (i / debrisCount) * Math.PI * 2;
       const debrisGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
-      const debrisMat = new THREE.MeshBasicMaterial({
-        color: 0x886644,
+      const debrisMat = basicMat(0x886644, {
         transparent: true,
         opacity: 0.9
       });
@@ -8636,8 +8603,7 @@ if (typeof window !== 'undefined') {
   // Create shootable decoy for Holo Phantom
   window.createHoloDecoy = function(position, explosionDamage, explosionRadius) {
     const decoyGeo = new THREE.SphereGeometry(0.4, 8, 8);
-    const decoyMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
+    const decoyMat = basicMat(0x00ffff, {
       transparent: true,
       opacity: 0.7
     });
@@ -8657,8 +8623,7 @@ if (typeof window !== 'undefined') {
   window.fireBossPulse = function(fromPos, targetPos, damage) {
     const direction = targetPos.clone().sub(fromPos).normalize();
     const pulseGeo = new THREE.SphereGeometry(0.3, 8, 8);
-    const pulseMat = new THREE.MeshBasicMaterial({
-      color: 0xff0088,
+    const pulseMat = basicMat(0xff0088, {
       transparent: true,
       opacity: 0.9
     });
@@ -8677,8 +8642,7 @@ if (typeof window !== 'undefined') {
   // Create shield for Pulse Emitter
   window.createBossShield = function(position, radius) {
     const shieldGeo = new THREE.SphereGeometry(radius, 16, 16);
-    const shieldMat = new THREE.MeshBasicMaterial({
-      color: 0xff0088,
+    const shieldMat = basicMat(0xff0088, {
       transparent: true,
       opacity: 0.3,
       side: THREE.DoubleSide
@@ -8696,8 +8660,7 @@ if (typeof window !== 'undefined') {
   // Create toxic pool for Rust Serpent
   window.createToxicPool = function(position, radius, damage) {
     const poolGeo = new THREE.CircleGeometry(radius, 32);
-    const poolMat = new THREE.MeshBasicMaterial({
-      color: 0xcc4400,
+    const poolMat = basicMat(0xcc4400, {
       transparent: true,
       opacity: 0.6,
       side: THREE.DoubleSide
@@ -8724,8 +8687,7 @@ if (typeof window !== 'undefined') {
     // Also create a projectile that can be shot down
     const direction = targetPos.clone().sub(fromPos).normalize();
     const lightningGeo = new THREE.SphereGeometry(0.25, 6, 6);
-    const lightningMat = new THREE.MeshBasicMaterial({
-      color: 0xffff00,
+    const lightningMat = basicMat(0xffff00, {
       transparent: true,
       opacity: 0.95
     });
