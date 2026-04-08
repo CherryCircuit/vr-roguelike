@@ -2781,99 +2781,60 @@ function createBlasterDisplay(controllerIndex) {
   // HOLOGRAM SHADER - Single draw call replaces 8 scan line meshes
   // ═══════════════════════════════════════════════════════════════
   
-  // Vertex shader: compute world-space position and normals for Fresnel effect
   const holoVertexShader = `
     varying vec2 vUv;
-    varying vec3 vPositionW;
-    varying vec4 vPos;
-    varying vec3 vNormalW;
 
     void main() {
       vUv = uv;
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      vPos = projectionMatrix * mvPosition;
-      vPositionW = (modelMatrix * vec4(position, 1.0)).xyz;
-      vNormalW = normalize(mat3(modelMatrix) * normal);
-      gl_Position = vPos;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `;
 
-  // Fragment shader: scan lines, Fresnel glow, flicker - all in one pass
   const holoFragmentShader = `
     uniform float uTime;
     uniform vec3 uColor;
     uniform float uOpacity;
-    uniform float uScanlineSize;
-    uniform float uSignalSpeed;
-    uniform float uFresnelAmount;
-    uniform float uFresnelOpacity;
-    uniform float uFlickerIntensity;
 
     varying vec2 vUv;
-    varying vec3 vPositionW;
-    varying vec4 vPos;
-    varying vec3 vNormalW;
-
-    float flicker(float amt, float time) {
-      return clamp(fract(cos(time) * 43758.5453123), amt, 1.0);
-    }
-    float random(float a, float b) {
-      return fract(cos(dot(vec2(a,b), vec2(12.9898,78.233))) * 43758.5453);
-    }
 
     void main() {
-      // Screen-space coordinates for scanlines
-      vec2 vCoords = vPos.xy / vPos.w;
-      vCoords = vCoords * 0.5 + 0.5;
-      vec2 myUV = fract(vCoords);
-      
-      // Base hologram color with vertical gradient
-      vec4 holoColor = vec4(uColor, mix(1.0, vUv.y, 0.5));
-      
-      // Animated scanlines
-      float scanlines = 10.0;
-      scanlines += 20.0 * sin(uTime * uSignalSpeed * 20.8 - myUV.y * 60.0 * uScanlineSize);
-      scanlines *= smoothstep(1.3 * cos(uTime * uSignalSpeed + myUV.y * uScanlineSize), 0.78, 0.9);
-      scanlines *= max(0.25, sin(uTime * uSignalSpeed) * 1.0);
-      
-      // Random noise offsets for glitch effect
-      float r = random(vUv.x, vUv.y);
-      float b = random(vUv.y * 0.9, vUv.y * 0.2);
-      holoColor += vec4(r * scanlines, b * scanlines, r, 1.0) / 84.0;
-      
-      // Fresnel edge glow (view-dependent rim lighting)
-      // Use abs() so it looks the same from front and back
-      vec3 viewDir = normalize(cameraPosition - vPositionW);
-      float fresnel = abs(dot(viewDir, vNormalW)) * (1.6 - uFresnelOpacity / 2.0);
-      fresnel = clamp(uFresnelAmount - fresnel, 0.0, uFresnelOpacity);
-      
-      // Subtle flicker for old-TV effect (much gentler than before)
-      float blink = mix(1.0, flicker(0.85, uTime * uSignalSpeed * 0.02), uFlickerIntensity);
-      
-      // Final composition
-      vec3 finalColor = holoColor.rgb * blink + fresnel;
-      gl_FragColor = vec4(finalColor, uOpacity);
+      vec2 uv = vUv;
+
+      // Edge glow: bright at edges, dark at center
+      float distX = abs(uv.x - 0.5) * 2.0;
+      float distY = abs(uv.y - 0.5) * 2.0;
+      float edge = max(distX, distY);
+      float glow = smoothstep(0.0, 1.0, edge);
+
+      // Core color: bright cyan at edges, dark blue at center
+      vec3 edgeColor = uColor;
+      vec3 coreColor = uColor * 0.2;
+      vec3 color = mix(coreColor, edgeColor, glow);
+
+      // Animated scanlines scrolling downward
+      float scanline = sin(uv.y * 80.0 + uTime * 2.0) * 0.5 + 0.5;
+      scanline = smoothstep(0.3, 0.7, scanline);
+      color += uColor * scanline * 0.15;
+
+      // Opacity: mostly transparent at center, more visible at edges
+      float alpha = glow * 0.6 + 0.05;
+
+      gl_FragColor = vec4(color, alpha * uOpacity);
     }
   `;
 
-  // Create shader material with hologram effect uniforms
   const holoMaterial = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0.0 },
-      uColor: { value: new THREE.Vector3(0.0, 0.84, 1.0) },  // Cyan to match game theme
-      uOpacity: { value: 0.45 },
-      uScanlineSize: { value: 8.0 },
-      uSignalSpeed: { value: 0.3 },
-      uFresnelAmount: { value: 0.45 },
-      uFresnelOpacity: { value: 0.5 },
-      uFlickerIntensity: { value: 0.08 }  // Subtle, not harsh
+      uColor: { value: new THREE.Vector3(0.0, 0.84, 1.0) },
+      uOpacity: { value: 0.45 }
     },
     vertexShader: holoVertexShader,
     fragmentShader: holoFragmentShader,
     transparent: true,
     side: THREE.DoubleSide,
     depthWrite: false,
-    blending: THREE.AdditiveBlending
+    blending: THREE.NormalBlending
   });
 
   // Single plane with hologram shader replaces 8 scan line meshes
