@@ -267,19 +267,9 @@ export function buildSynthwaveValleyScene(group, deps) {
 
   // DIMMER, YELLOWISH glow (not bright white)
   const sunGlowTex = makeRadial('rgba(255,230,150,0.7)', 'rgba(254,151,83,0.4)');
-  const sunOuterGlowTex = makeRadial('rgba(254,180,100,0.3)', 'rgba(224,1,134,0.1)');
 
-  // Outer massive glow - much dimmer, yellowish-orange tint
-  // FIX: Enable depthTest so mountain cylinder can occlude the sun
-  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffcc88, transparent: true, opacity: 0.15, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(875, 875), sunOuterGlowMat);
-  sunOuterGlow.name = 'synthwave-sun-outer-glow';
-  sunOuterGlow.userData.planeName = 'synthwave-sun-outer-glow';
-  sunOuterGlow.frustumCulled = false;
-  sunOuterGlow.renderOrder = -3;
-  sunGroup.add(sunOuterGlow);
-  registerFadeMaterial(sunOuterGlowMat);
-  synthVisualRefs.sunOuterGlowMat = sunOuterGlowMat;
+  // Outer glow DELETED (Needle audit cleanup) — was synthwave-sun-outer-glow
+  // synthVisualRefs.sunOuterGlowMat stays null
 
   // Main glow - dimmer, yellowish
   // FIX: Enable depthTest so mountain cylinder can occlude the sun

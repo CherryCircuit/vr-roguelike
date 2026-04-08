@@ -360,6 +360,7 @@ export function initAmbientParticles(scene) {
   });
 
   const points = new THREE.Points(geo, mat);
+  points.name = 'ambient-particles-primary';
   scene.add(points);
 
   ambientParticles = points;
@@ -387,6 +388,7 @@ export function initAmbientParticles(scene) {
   });
 
   const secondaryPoints = new THREE.Points(secondaryGeoInstance, secondaryMat);
+  secondaryPoints.name = 'ambient-particles-secondary';
   scene.add(secondaryPoints);
 
   secondaryParticles = secondaryPoints;
