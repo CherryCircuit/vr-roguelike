@@ -783,14 +783,17 @@ async function createTitleScreen() {
     if (layout.elements.titleSprite) {
       const _le = layout.elements.titleSprite;
       titleSprite.position.set(_le.x, _le.y, _le.z);
+      if (_le.scale != null) titleSprite.scale.setScalar(_le.scale);
     }
     if (layout.elements.subSprite) {
       const _le = layout.elements.subSprite;
       subSprite.position.set(_le.x, _le.y, _le.z);
+      if (_le.scale != null) subSprite.scale.setScalar(_le.scale);
     }
     if (layout.elements.titleBlinkSprite) {
       const _le = layout.elements.titleBlinkSprite;
       titleBlinkSprite.position.set(_le.x, _le.y, _le.z);
+      if (_le.scale != null) titleBlinkSprite.scale.setScalar(_le.scale);
     }
     if (layout.elements.btnGroup) {
       const _le = layout.elements.btnGroup;

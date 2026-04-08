@@ -200,8 +200,6 @@ function updateMuzzleFlash() {
 // ── Constants ──────────────────────────────────────────────
 const NEON_PINK = 0xff00ff;
 const NEON_CYAN = 0x00ffff;
-const MTN_DARK = 0x1a0033;
-const MTN_WIRE = 0x6600aa;
 
 // VR camera height fix: Shift entire scene down so XR camera at ~0.875m appears 1.6m above floor
 const SCENE_Y_OFFSET = -0.725;
@@ -417,9 +415,6 @@ const chargeParticleSystems = [null, null];
 // Holographic blaster displays (per controller)
 const blasterDisplays = [null, null];
 
-// Mountain visualizer references (for per-theme color updates)
-const mountainLines = [];
-
 // Environment refs for level-based scaling (sun, stars)
 let sunMeshRef = null;
 let sunGlowRef = null;
@@ -427,9 +422,6 @@ let starsRef = null;
 let starsBiomeId = null;
 let atmosphereRef = null;
 let currentTheme = null;
-let biomePropsGroup = null;
-let biomePropsBiome = null;
-const biomePropFloaters = [];
 let biomeSceneGroup = null;
 let biomeSceneBiome = null;
 
@@ -1854,15 +1846,6 @@ function setMaterialEmissiveSafe(material, color, intensity = 1) {
   if (Object.prototype.hasOwnProperty.call(material, 'emissiveIntensity')) delete material.emissiveIntensity;
 }
 
-// ── Biome Props ───────────────────────────────────────────
-function clearBiomeProps() {
-  if (!biomePropsGroup) return;
-  disposeObject3D(biomePropsGroup);
-  biomePropsGroup = null;
-  biomePropsBiome = null;
-  biomePropFloaters.length = 0;
-}
-
 function clearBiomeScene() {
   if (!biomeSceneGroup) return;
   disposeObject3D(biomeSceneGroup);
@@ -1883,7 +1866,6 @@ function purgeBiomeForBossCinematic() {
   // Drop the current biome geometry while the screen is black so upgrades
   // appear on a clean slate before the next biome loads.
   clearBiomeScene();
-  clearBiomeProps();
 
   if (sunMeshRef) sunMeshRef.visible = false;
   if (sunGlowRef) sunGlowRef.visible = false;
@@ -1917,181 +1899,12 @@ function disposeObject3D(obj) {
 }
 
 function updateBiomeProps(now, dt) {
-  if (!biomePropsGroup && !biomeSceneGroup) return;
-  if (biomePropsGroup && biomePropsGroup.userData && typeof biomePropsGroup.userData.update === 'function') {
-    biomePropsGroup.userData.update(now, dt);
-  }
-  if (biomeSceneGroup && biomeSceneGroup.userData && typeof biomeSceneGroup.userData.update === 'function') {
+  if (!biomeSceneGroup) return;
+  if (biomeSceneGroup.userData && typeof biomeSceneGroup.userData.update === 'function') {
     biomeSceneGroup.userData.update(now, dt);
   }
   if (starsRef && starsRef.userData && typeof starsRef.userData.update === 'function') {
     starsRef.userData.update(now, dt);
-  }
-  biomePropFloaters.forEach((floater) => {
-    const { mesh, baseY, amp, speed, phase, rotateSpeed } = floater;
-    mesh.position.y = baseY + Math.sin(now * speed + phase) * amp;
-    mesh.rotation.y += rotateSpeed * dt;
-  });
-}
-
-function rebuildBiomeProps(biomeId, theme) {
-  if (!scene || !theme || !biomeId) return;
-  if (biomePropsGroup && biomePropsBiome === biomeId) return;
-
-  clearBiomeProps();
-
-  if (theme.hideBaseEnv) {
-    return;
-  }
-
-  biomePropsGroup = new THREE.Group();
-  biomePropsGroup.name = `biome-props-${biomeId}`;
-  scene.add(biomePropsGroup);
-  biomePropsBiome = biomeId;
-
-  const primary = new THREE.Color(theme.mountainWire);
-  const secondary = new THREE.Color(theme.gridColor);
-  const accent = new THREE.Color(theme.sunGlowColor);
-
-  const makeMat = (color, options = {}) => {
-    const mat = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: options.opacity ?? 0.75,
-      blending: options.blending ?? THREE.AdditiveBlending,
-      depthWrite: false,
-      wireframe: options.wireframe ?? false,
-    });
-    registerFadeMaterial(mat);
-    return mat;
-  };
-
-  const addFloatingPlatform = (mesh, baseY, amp, speed, rotateSpeed) => {
-    biomePropFloaters.push({
-      mesh,
-      baseY,
-      amp,
-      speed,
-      phase: Math.random() * Math.PI * 2,
-      rotateSpeed,
-    });
-  };
-
-  const addSidePillars = ({
-    count,
-    radiusTop,
-    radiusBottom,
-    height,
-    xOffset,
-    zStart,
-    zStep,
-    material,
-    segments = 10,
-    tilt = 0,
-  }) => {
-    const geo = new THREE.CylinderGeometry(radiusTop, radiusBottom, 1, segments, 1);
-    for (let i = 0; i < count; i++) {
-      const z = zStart + i * zStep;
-      [-1, 1].forEach((side) => {
-        const pillar = new THREE.Mesh(geo, material);
-        pillar.name = `pillar_${i}_${side > 0 ? 'right' : 'left'}`;
-        pillar.scale.set(1, height, 1);
-        pillar.position.set(side * xOffset, height * 0.5 + SCENE_Y_OFFSET, z);
-        pillar.rotation.z = tilt * side;
-        biomePropsGroup.add(pillar);
-      });
-    }
-  };
-
-  const addArches = ({
-    count,
-    radius,
-    tube,
-    y,
-    zStart,
-    zStep,
-    material,
-    tilt = 0,
-  }) => {
-    const geo = new THREE.TorusGeometry(1, tube, 10, 32, Math.PI);
-    for (let i = 0; i < count; i++) {
-      const z = zStart + i * zStep;
-      const arch = new THREE.Mesh(geo, material);
-      arch.name = `arch_${i}`;
-      arch.userData.sceneryName = 'arch';
-      arch.scale.set(radius, radius, radius);
-      arch.position.set(0, y + SCENE_Y_OFFSET, z);
-      arch.rotation.x = Math.PI;
-      arch.rotation.z = tilt * (i % 2 === 0 ? 1 : -1);
-      biomePropsGroup.add(arch);
-    }
-  };
-
-  const addRectArches = ({
-    count,
-    width,
-    height,
-    depth,
-    thickness,
-    y,
-    zStart,
-    zStep,
-    material,
-  }) => {
-    const legGeo = new THREE.BoxGeometry(thickness, height, depth);
-    const topGeo = new THREE.BoxGeometry(width + thickness * 2, thickness, depth);
-    for (let i = 0; i < count; i++) {
-      const z = zStart + i * zStep;
-      const left = new THREE.Mesh(legGeo, material);
-      const right = new THREE.Mesh(legGeo, material);
-      const top = new THREE.Mesh(topGeo, material);
-      left.name = `rect_arch_${i}_left`;
-      right.name = `rect_arch_${i}_right`;
-      top.name = `rect_arch_${i}_top`;
-      left.position.set(-width * 0.5, y + height * 0.5 + SCENE_Y_OFFSET, z);
-      right.position.set(width * 0.5, y + height * 0.5 + SCENE_Y_OFFSET, z);
-      top.position.set(0, y + height + thickness * 0.5 + SCENE_Y_OFFSET, z);
-      biomePropsGroup.add(left, right, top);
-    }
-  };
-
-  const addPlatforms = ({
-    count,
-    size,
-    thickness,
-    y,
-    zStart,
-    zStep,
-    xSpread,
-    material,
-    platformType = 'box',
-  }) => {
-    const geo = platformType === 'disc'
-      ? new THREE.CylinderGeometry(1, 1, thickness, 10, 1)
-      : platformType === 'hex'
-      ? new THREE.CylinderGeometry(1, 1, thickness, 6, 1)
-      : new THREE.BoxGeometry(1, thickness, 1);
-
-    for (let i = 0; i < count; i++) {
-      const z = zStart + i * zStep;
-      const x = (Math.random() - 0.5) * xSpread;
-      const platform = new THREE.Mesh(geo, material);
-      platform.name = `platform_${platformType}_${i}`;
-      platform.scale.set(size, 1, size);
-      platform.position.set(x, y + SCENE_Y_OFFSET, z);
-      platform.rotation.y = Math.random() * Math.PI * 2;
-      biomePropsGroup.add(platform);
-      addFloatingPlatform(platform, y + SCENE_Y_OFFSET, 0.35 + Math.random() * 0.25, 0.001 + Math.random() * 0.0015, 0.15 + Math.random() * 0.25);
-    }
-  };
-
-  switch (biomeId) {
-    default: {
-      addSidePillars({ count: 4, radiusTop: 0.55, radiusBottom: 0.75, height: 9.5, xOffset: 13, zStart: -16, zStep: -20, material: makeMat(primary, { opacity: 0.7 }) });
-      addArches({ count: 2, radius: 7, tube: 0.16, y: 6.5, zStart: -36, zStep: -26, material: makeMat(secondary, { opacity: 0.55 }) });
-      addPlatforms({ count: 3, size: 4.8, thickness: 0.25, y: 3.8, zStart: -20, zStep: -22, xSpread: 11, material: makeMat(accent, { opacity: 0.6 }) });
-      break;
-    }
   }
 }
 
@@ -2121,55 +1934,6 @@ function applyEnvironmentFade(fade) {
   });
 }
 
-function updateSunTexture(colors) {
-  if (!sunMeshRef || !sunMeshRef.material || !sunMeshRef.material.map) return;
-  if (!colors || colors.length < 2) return; // Need at least 2 colors for gradient
-
-  const canvas = sunMeshRef.material.map.image;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, 512, 512);
-
-  const grad = ctx.createLinearGradient(256, 30, 256, 482);
-  colors.forEach((c, i) => {
-    const stop = i / (colors.length - 1);
-    if (isFinite(stop)) grad.addColorStop(stop, c);
-  });
-
-  ctx.beginPath();
-  ctx.arc(256, 256, 248, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  ctx.shadowColor = colors[0];
-  ctx.shadowBlur = 20;
-  ctx.beginPath();
-  ctx.arc(256, 256, 248, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  ctx.globalCompositeOperation = 'destination-out';
-  const bandDefs = [
-    { y: 0.90, h: 0.065 },
-    { y: 0.82, h: 0.050 },
-    { y: 0.75, h: 0.038 },
-    { y: 0.69, h: 0.028 },
-    { y: 0.64, h: 0.020 },
-    { y: 0.60, h: 0.013 },
-    { y: 0.57, h: 0.008 },
-    { y: 0.54, h: 0.004 },
-  ];
-  for (const b of bandDefs) {
-    const cy = b.y * 512;
-    const ch = b.h * 512;
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, cy - ch / 2, 512, ch);
-  }
-  ctx.globalCompositeOperation = 'source-over';
-
-  sunMeshRef.material.map.needsUpdate = true;
-}
-
 function applyThemeForLevel(level) {
   const theme = getThemeForLevel(level);
   const biome = getBiomeForLevel(level);
@@ -2178,76 +1942,24 @@ function applyThemeForLevel(level) {
 
   currentTheme = theme;
 
+  // Toggle base environment visibility for custom biomes that provide their own scene
   const hideBaseEnv = !!theme.hideBaseEnv;
   if (sunMeshRef) sunMeshRef.visible = !hideBaseEnv;
   if (atmosphereRef) atmosphereRef.visible = !hideBaseEnv;
   if (sunGlowRef) sunGlowRef.visible = !hideBaseEnv;
   if (starsRef) starsRef.visible = theme.keepStars ? true : !hideBaseEnv;
 
-  rebuildBiomeProps(getBiomeForLevel(level), theme);
-
+  // Floor handling for base theme fallback
   if (floorMaterial) {
-    const floorColor = theme.floorColor !== undefined ? theme.floorColor : theme.mountainFill;
+    const floorColor = theme.floorColor !== undefined ? theme.floorColor : 0x000000;
     floorBaseColor.setHex(floorColor);
     floorMaterial.color.copy(floorBaseColor);
     floorMaterial.opacity = theme.hideBaseEnv ? 0 : 1;
     floorMaterial.__fadeBase = floorMaterial.opacity;
   }
 
-  const mountainScale = theme.mountainScale !== undefined ? theme.mountainScale : 1;
-  mountainLines.forEach((layer) => {
-    if (layer.fillMesh) {
-      layer.fillMesh.visible = !hideBaseEnv;
-    }
-    if (layer.fillMesh && layer.fillMesh.material) {
-      layer.fillMesh.material.color.setHex(theme.mountainFill);
-      layer.fillMesh.material.__fadeBase = 1;
-      layer.fillMesh.scale.set(1, mountainScale, 1);
-    }
-    if (layer.line) {
-      layer.line.visible = !hideBaseEnv;
-    }
-    if (layer.line && layer.line.material) {
-      layer.line.material.color.setHex(theme.mountainWire);
-      layer.line.material.opacity = theme.mountainWireOpacity;
-      layer.line.material.__fadeBase = theme.mountainWireOpacity;
-      layer.line.material.transparent = true;
-      layer.line.scale.set(1, mountainScale, 1);
-    }
-  });
-
-  updateSunTexture(theme.sunColors);
-
-  const sunScale = theme.sunScale !== undefined ? theme.sunScale : 1;
-  if (sunMeshRef) sunMeshRef.scale.set(sunScale, sunScale, sunScale);
-  if (sunGlowRef) sunGlowRef.scale.set(sunScale, sunScale, sunScale);
-
-  if (sunGlowRef && sunGlowRef.material) {
-    sunGlowRef.material.color.setHex(theme.sunGlowColor);
-    // Keep the reduced bloom level after theme refreshes instead of snapping back brighter.
-    sunGlowRef.material.opacity = 0.24;
-  }
-
-  if (starsRef && starsRef.material) {
-    if (starsRef.material.color) {
-      starsRef.material.color.setHex(theme.starColor);
-    } else if (starsRef.material.uniforms && starsRef.material.uniforms.uColor) {
-      starsRef.material.uniforms.uColor.value.setHex(theme.starColor);
-    }
-    const starSize = theme.starSize !== undefined ? theme.starSize : 0.5;
-    starsRef.material.size = starSize;
-  }
-
-  if (theme.starCount || theme.starHeight || theme.starSpread) {
-    const biomeId = getBiomeForLevel(level);
-    if (biomeId !== starsBiomeId) {
-      rebuildStars(theme);
-      starsBiomeId = biomeId;
-    }
-  }
-
-  rebuildBiomeScene(getBiomeForLevel(level), theme);
-  applyBiomeLighting(getBiomeForLevel(level));
+  rebuildBiomeScene(biome, theme);
+  applyBiomeLighting(biome);
 
   applyEnvironmentFade(environmentFade);
 }
@@ -2381,50 +2093,6 @@ function createAtmosphere() {
   scene.add(cylinder);
   atmosphereRef = cylinder;
   registerFadeMaterial(atmosphereRef.material);
-}
-
-function createMountains() {
-  const layers = [
-    { z: -85, color: 0x0d001a, peaks: generatePeaks(12, 6, 20), layerIndex: 0 },
-    { z: -75, color: MTN_DARK, peaks: generatePeaks(10, 4, 14), layerIndex: 1 },
-  ];
-  layers.forEach(({ z, color, peaks, layerIndex }) => {
-    const shape = new THREE.Shape();
-    shape.moveTo(-100, 0);
-    peaks.forEach(([x, y]) => shape.lineTo(x, y));
-    shape.lineTo(100, 0);
-    shape.closePath();
-
-    const fillMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
-    fillMesh.position.set(0, 0, z);
-    fillMesh.renderOrder = -5;  // Draw after foreground, before sun
-    fillMesh.matrixAutoUpdate = false;
-    scene.add(fillMesh);
-    registerFadeMaterial(fillMesh.material);
-
-    const edgePoints = [new THREE.Vector3(-100, 0, z)];
-    peaks.forEach(([x, y]) => edgePoints.push(new THREE.Vector3(x, y, z)));
-    edgePoints.push(new THREE.Vector3(100, 0, z));
-    const geometry = new THREE.BufferGeometry().setFromPoints(edgePoints);
-    const edgeLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.5 }));
-    edgeLine.matrixAutoUpdate = false;
-    scene.add(edgeLine);
-    registerFadeMaterial(edgeLine.material);
-
-    // Store for theme color updates
-    mountainLines[layerIndex] = { line: edgeLine, geometry, z, fillMesh };
-  });
-}
-
-function generatePeaks(count, minH, maxH) {
-  const peaks = [];
-  const step = 200 / (count + 1);
-  for (let i = 1; i <= count; i++) {
-    const x = -100 + i * step + (Math.random() - 0.5) * step * 0.6;
-    const y = minH + Math.random() * (maxH - minH);
-    peaks.push([x, y]);
-  }
-  return peaks;
 }
 
 function createSparklingStars(theme) {
