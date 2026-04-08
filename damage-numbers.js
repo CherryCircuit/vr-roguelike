@@ -341,8 +341,8 @@ export function spawnDamageNumber(position, damage, color) {
     // Slight upward bump
     existing.mesh.position.y += 0.05;
 
-    // Throttle canvas redraws to max ~5/sec per number (200ms interval)
-    if (!existing._lastRedraw || now - existing._lastRedraw >= 200) {
+    // Throttle canvas redraws to max ~2.5/sec per number (400ms interval)
+    if (!existing._lastRedraw || now - existing._lastRedraw >= 400) {
       existing._lastRedraw = now;
       existing.mesh.scale.set(baseScaleX, baseScaleY, 1);
       const drawFn = getNumberDrawFn(totalDamage, existingColor);

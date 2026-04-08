@@ -320,7 +320,11 @@ export function playChargeFireSound(progress = 0) {
 }
 
 // ── Enemy hit sound — heavily randomized ───────────────────
+let lastHitSound = 0;
 export function playHitSound() {
+  const now = performance.now();
+  if (now - lastHitSound < 30) return; // 30ms throttle
+  lastHitSound = now;
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
@@ -369,7 +373,11 @@ function getExplosionBuffer() {
   return explosionBuffer;
 }
 
+let lastExplosionSound = 0;
 export function playExplosionSound() {
+  const now = performance.now();
+  if (now - lastExplosionSound < 30) return; // 30ms throttle
+  lastExplosionSound = now;
   const ctx = getAudioContext();
   const t = ctx.currentTime;
   const noise = ctx.createBufferSource();

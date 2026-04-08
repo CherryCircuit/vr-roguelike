@@ -75,7 +75,7 @@ import {
   updateHUDHover,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, showBossAlert, hideBossAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
-  updateHolographicGlitch, resetHoloGlitch,
+  resetHoloGlitch,
   showFloatingMessage, hideFloatingMessage, updateFloatingMessage,
   clearAllDamageNumbers, clearAllComboPopups, clearAllKillChainPopups, clearFloatingMessage,
   nameEntryGroup,
@@ -369,8 +369,26 @@ const weaponCooldowns = [0, 0];
 const BIG_BOOM_COOLDOWN_MS = 2750;
 const lastExplodingShotTime = [0, 0];
 
-// Explosion visuals (short-lived expanding spheres)
-const explosionVisuals = [];
+// Explosion visuals - pooled for Quest performance (pre-allocated geometry)
+const EXPLOSION_POOL_SIZE = 8;
+const explosionPool = [];
+const explosionVisuals = []; // still used for non-pooled (charge beams, toxic pools)
+let _explosionGeo = null; // shared unit sphere, created once
+
+function initExplosionPool(scene) {
+  _explosionGeo = new THREE.SphereGeometry(1, 12, 12); // unit sphere, scaled per-use
+  for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
+    const mat = basicMat(0xff8800, {
+      transparent: true, opacity: 0.7, side: THREE.BackSide,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const mesh = new THREE.Mesh(_explosionGeo, mat);
+    mesh.visible = false;
+    mesh.renderOrder = 900;
+    scene.add(mesh);
+    explosionPool.push({ mesh, active: false, createdAt: 0, duration: 0, radius: 0 });
+  }
+}
 
 // Lightning beam state (per controller)
 const lightningBeams = [null, null];
@@ -1196,6 +1214,9 @@ function init() {
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 5000);
   camera.rotation.set(0, 0, 0);
   scene.add(camera);
+
+  // Pre-allocate explosion visual pool for Quest perf
+  initExplosionPool(scene);
 
   // Camera position is controlled by WebXR in VR mode, desktop mode sets it elsewhere
 
@@ -8448,34 +8469,43 @@ function spawnExplosionVisual(center, radius) {
   // Bigger shake for explosions
   triggerScreenShake(0.3, 300); // 0.3 shake for 300ms
 
-  // PERFORMANCE: Cap explosion visuals to prevent accumulation
-  const MAX_EXPLOSION_VISUALS = 15;
-  if (explosionVisuals.length >= MAX_EXPLOSION_VISUALS) {
-    // Remove oldest explosion visual
-    const oldest = explosionVisuals.shift();
-    disposeMesh(oldest);
+  // PERFORMANCE: Use pooled explosion meshes instead of allocating new geometry each call
+  let entry = null;
+  for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
+    if (!explosionPool[i].active) { entry = explosionPool[i]; break; }
   }
+  if (!entry) return; // All busy, skip (avoids accumulation)
 
   const duration = 350; // ms
-  const geo = new THREE.SphereGeometry(radius * 0.3, 12, 12);
-  const mat = basicMat(0xff8800, {
-    transparent: true,
-    opacity: 0.7,
-    side: THREE.BackSide,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.copy(center);
-  mesh.renderOrder = 900;
-  mesh.userData.createdAt = performance.now();
-  mesh.userData.duration = duration;
-  mesh.userData.radius = radius;
-  scene.add(mesh);
-  explosionVisuals.push(mesh);
+  entry.active = true;
+  entry.createdAt = performance.now();
+  entry.duration = duration;
+  entry.radius = radius;
+  entry.mesh.visible = true;
+  entry.mesh.position.copy(center);
+  entry.mesh.scale.setScalar(radius * 0.3);
+  // Reset material opacity for pooled mesh
+  entry.mesh.material.opacity = 0.7;
 }
 
 function updateExplosionVisuals(dt, now) {
+  // Update pooled explosion visuals
+  for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
+    const entry = explosionPool[i];
+    if (!entry.active) continue;
+    const age = now - entry.createdAt;
+    if (age > entry.duration) {
+      entry.active = false;
+      entry.mesh.visible = false;
+    } else {
+      const t = age / entry.duration;
+      const scale = 1 + t * 2.5;
+      entry.mesh.scale.setScalar(entry.radius * 0.3 * scale);
+      entry.mesh.material.opacity = 0.7 * (1 - t);
+    }
+  }
+
+  // Update non-pooled explosion visuals (charge beams, toxic pools, boss shields)
   for (let i = explosionVisuals.length - 1; i >= 0; i--) {
     const m = explosionVisuals[i];
     const age = now - m.userData.createdAt;
@@ -10163,7 +10193,7 @@ function render(timestamp) {
   // ── Name entry hover is handled by the unified updateHUDHover below ──
 
   if (st !== State.PLAYING) {
-    updateHolographicGlitch(now);
+    // (holographic glitch update removed)
   }
 
   // ── Unified UI hover detection for all menu states ──
