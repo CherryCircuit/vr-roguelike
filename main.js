@@ -103,20 +103,18 @@ import {
   voxelPool, activeVoxels
 } from './voxel-debris.js';
 
-// Expose game state to window for debugging/testing
+// [DEBUG] Expose game state to window for debugging/testing
 window.State = State;
 window.game = game;
 window.hud = { setFPSVisible };
 
-// Debug flag for projectile firing investigation
+// [DEBUG] Flag for projectile firing investigation (toggled at runtime)
 window.DEBUG_PROJECTILES = false;
 
-// PERFORMANCE: Debug flag to disable console.log in hot paths on Quest
+// [DEBUG] Debug flag to disable console.log in hot paths on Quest
 const DEBUG = false;
 
-// PERFORMANCE: All non-critical console.log calls are wrapped with this.
-// When DEBUG=false, the function body is empty and V8 inlines it away (zero cost).
-// When DEBUG=true, logs go through normally.
+// [DEBUG] Conditional logging helpers. When DEBUG=false, V8 inlines to zero cost.
 const _log = DEBUG ? console.log.bind(console) : () => {};
 const _warn = DEBUG ? console.warn.bind(console) : () => {};
 
@@ -131,6 +129,7 @@ let _muzzleFlashSprite = null;
 let _muzzleFlashTimer = 0;
 const MUZZLE_FLASH_DURATION = 50; // ms
 
+// [CORE] Muzzle flash sprite creation
 function createMuzzleFlashSprite() {
   const size = 64;
   const canvas = document.createElement('canvas');
@@ -176,6 +175,7 @@ function createMuzzleFlashSprite() {
   return sprite;
 }
 
+// [CORE] Show muzzle flash at weapon position
 function showMuzzleFlash(position, direction) {
   if (!_muzzleFlashSprite) _muzzleFlashSprite = createMuzzleFlashSprite();
   _muzzleFlashSprite.position.copy(position);
@@ -185,6 +185,7 @@ function showMuzzleFlash(position, direction) {
   _muzzleFlashTimer = performance.now();
 }
 
+// [CORE] Update muzzle flash visibility timer
 function updateMuzzleFlash() {
   if (!_muzzleFlashSprite || !_muzzleFlashSprite.visible) return;
   if (performance.now() - _muzzleFlashTimer > MUZZLE_FLASH_DURATION) {
@@ -228,7 +229,8 @@ function getCountryDisplayLabel() {
 // Use for any Three.js mesh/group that is no longer needed.
 // For objects with textures (biome scenes), prefer disposeObject3D().
 // ============================================================
-function disposeMesh(obj, removeFromParent = true) {
+// [CORE] Dispose mesh and remove from parent
+function disposeMesh(obj, removeFromParent) {
   if (!obj) return;
   // Dispose children recursively
   if (obj.children) {
@@ -256,7 +258,8 @@ function disposeMesh(obj, removeFromParent = true) {
 // Creates MeshBasicMaterial with sensible defaults.
 // Reduces boilerplate for common transparent/glow materials.
 // ============================================================
-function basicMat(color, opts = {}) {
+// [CORE] Create basic colored material
+function basicMat(color, opts) {
   return new THREE.MeshBasicMaterial({
     color,
     transparent: opts.transparent ?? false,
@@ -329,6 +332,7 @@ const PROJECTILE_BOLT = {
   opacity: 0.7,
 };
 
+// [CORE] Create reusable projectile material
 function createProjectileMaterial(colorHex) {
   const material = basicMat(colorHex, {
     transparent: true,
@@ -373,6 +377,7 @@ const explosionPool = [];
 const explosionVisuals = []; // still used for non-pooled (charge beams, toxic pools)
 let _explosionGeo = null; // shared unit sphere, created once
 
+// [CORE] Initialize explosion visual pool
 function initExplosionPool(scene) {
   _explosionGeo = new THREE.SphereGeometry(1, 12, 12); // unit sphere, scaled per-use
   for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
@@ -499,6 +504,7 @@ let _slowMoOriginalBg = null;
  * Only applies when NOT in VR mode (VR has its own render pipeline).
  * @param {boolean} enabled - true to reduce quality, false to restore
  */
+// [CORE] Slow-motion quality reduction for performance
 function setSlowMoQuality(enabled) {
   // Skip entirely in VR mode
   if (renderer.xr.isPresenting) return;
@@ -521,6 +527,7 @@ function setSlowMoQuality(enabled) {
 let killsAlertShownThisLevel = false;
 let killsAlertTriggerKill = null;
 
+// [CORE] Check kills remaining and show alert
 function checkKillsAlert() {
   if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
     const remaining = game._levelConfig ? game._levelConfig.killTarget - game.kills : 0;
@@ -530,6 +537,7 @@ function checkKillsAlert() {
   }
 }
 
+// [CORE] Handle enemy killed event: score, effects, progression
 function handleEnemyKilled(enemyIndex, opts = {}) {
   const { isCritical, overkill, skipChain = true, skipLevelComplete = false, killsWithoutHit } = opts;
   const destroyData = destroyEnemy(enemyIndex, isCritical, overkill);
@@ -583,6 +591,7 @@ function handleEnemyKilled(enemyIndex, opts = {}) {
 let accuracyShotId = 0;
 const accuracyShots = new Map();
 
+// [CORE] Accuracy tracking: start shot
 function startAccuracyShot(pelletCount, hand) {
   const shotId = ++accuracyShotId;
   accuracyShots.set(shotId, { remaining: pelletCount, hit: false, hand });
@@ -593,6 +602,7 @@ function startAccuracyShot(pelletCount, hand) {
 // Track previous accuracy multiplier for popup triggers
 let prevAccuracyMultiplier = 1;
 
+// [CORE] Accuracy tracking: mark hit
 function markAccuracyHit(shotId, hand) {
   const shot = accuracyShots.get(shotId);
   if (!shot || shot.hit) return;
@@ -616,6 +626,7 @@ function markAccuracyHit(shotId, hand) {
   prevAccuracyMultiplier = newMultiplier;
 }
 
+// [CORE] Accuracy tracking: resolve shot and apply bonus
 function resolveAccuracyPellet(shotId) {
   const shot = accuracyShots.get(shotId);
   if (!shot) return;
@@ -649,6 +660,7 @@ let _cachedScanlinesEl = null;
 // Returns the WORLD position of the camera (including camera rig offset)
 // In VR mode, the camera rig adds a height offset, so we need to get the world position
 // to ensure enemies target the correct height.
+// [CORE] Get camera position adjusted for VR/desktop
 function getAdjustedCameraPosition() {
   camera.getWorldPosition(_adjustedCameraPosScratch);
   return _adjustedCameraPosScratch;
@@ -690,7 +702,7 @@ const MAX_REFLECTOR_DRONES = 2;
 
 // ── Bootstrap ──────────────────────────────────────────────
 
-// Visual tuning defaults for debug sliders in index.html.
+// [DEBUG] Visual tuning defaults for debug sliders in index.html.
 const VISUAL_TUNING_DEFAULTS = {
   glowStrength: 1.0,
   smokeStrength: 1.0,
@@ -704,7 +716,7 @@ const VISUAL_TUNING_DEFAULTS = {
   stereoEyeSeparation: 0.064,
 };
 
-// References that let debug visual tuning affect synthwave valley elements.
+// [DEBUG] References that let debug visual tuning affect synthwave valley elements.
 const synthVisualRefs = {
   terrainUniforms: null,
   sunOuterGlowMat: null,
@@ -712,10 +724,10 @@ const synthVisualRefs = {
   sunCoreMat: null,
 };
 
-// Player projectile materials that should respond to visual tuning sliders.
+// [DEBUG] Player projectile materials that should respond to visual tuning sliders.
 const playerProjectileMaterials = new Set();
 
-// Desktop-only post-style helpers. XR continues to use renderer.render(scene, camera).
+// [DEBUG] Desktop-only post-processing helpers. XR uses renderer.render(scene, camera).
 const desktopEffectRefs = {
   anaglyph: null,
   stereo: null,
@@ -756,6 +768,7 @@ const BIOME_LIGHTING = {
 
 const AVAILABLE_BIOMES = Object.keys(BIOME_LIGHTING).filter((key) => key !== 'default');
 
+// [CORE] Apply biome-specific lighting configuration
 function applyBiomeLighting(biome) {
   if (!biomeAmbientLight || !biomeDirectionalLight || !biomePointLight) {
     console.warn('[lighting] Lights not initialized yet');
@@ -774,7 +787,7 @@ function applyBiomeLighting(biome) {
   _log('[lighting] Applied lighting for biome:', biome);
 }
 
-// ── Progression automation helpers (test hooks) ─────────────────────────
+// [DEBUG] Progression automation helpers (test hooks for headless/Puppeteer)
 const PROGRESSION_AUTO_STRATEGIES = ['first-card', 'last-card', 'random', 'skip'];
 let progressionAutoStrategy = 'first-card';
 
@@ -1187,13 +1200,14 @@ init();
 //  INITIALISATION
 // ============================================================
 
+// [CORE] Main initialization entry point
 function init() {
   _log('[SPACEOMICIDE] Initialising...');
 
-  // Load debug settings from localStorage
+  // [DEBUG] Load debug settings from localStorage
   loadDebugSettings();
 
-  // Sync desktop position panel with game state (may differ from HTML checkbox default)
+  // [DEBUG] Sync desktop position panel with game state
   if (typeof window !== 'undefined') {
     window.debugPositionPanel = game.debugShowPosition;
   }
@@ -1213,15 +1227,14 @@ function init() {
 
   // Renderer — optimized for Quest performance
   renderer = new THREE.WebGLRenderer({
-    antialias: !navigator.webdriver,  // Disable AA in headless/Puppeteer
+    antialias: !navigator.webdriver,  // [DEBUG] Disable AA in headless/Puppeteer
     alpha: true,
     powerPreference: 'high-performance'
   });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));  // Cap at 1.5 — DPR 2 quadruples pixel count
   renderer.xr.enabled = true;
-  // Fix 1.8: Disable shadows by default (catastrophic perf in SwiftShader/headless)
-  // Only enable for real devices (not webdriver) with high quality tier
+  // [DEBUG] Disable shadows in headless/Puppeteer mode
   const enableShadows = !navigator.webdriver && (window.devicePixelRatio >= 2 || window.matchMedia?.('(min-width: 1200px)')?.matches);
   renderer.shadowMap.enabled = enableShadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1350,14 +1363,14 @@ function init() {
   // Set up stasis field reference for shared access
   setActiveStasisFields(activeStasisFields);
 
-  // Desktop controls for non-VR playtesting
+  // [DEBUG] Desktop controls for non-VR playtesting
   initDesktopControls(scene, camera, renderer);
 
-  // Set up pause callback for ESC key
+  // [DEBUG] Set up pause/nuke callbacks for keyboard shortcuts
   setOnPauseCallback(togglePause);
   setOnNukeCallback(activateNuke);
 
-  // Test helpers for automation
+  // [DEBUG] Test helpers exposed to window.__test for automation/Puppeteer
   window.__test = window.__test || {};
   window.__test.getEnemies = getEnemies;
   window.__test.getEnemyCount = getEnemyCount;
@@ -1366,6 +1379,7 @@ function init() {
   window.__test.getScene = () => scene;
   window.__test.activateNuke = activateNuke;
   window.__test.getNukeCount = () => game.nukes;
+  // [DEBUG] Telemetry bridge for test/automation access
   const telemetryBridge = {
     enable: (options = {}) => enableTelemetry(options),
     disable: () => disableTelemetry(),
@@ -1386,7 +1400,7 @@ function init() {
   perfTarget.collect = telemetryBridge.collect;
   window.__perf = perfTarget;
 
-  // ── Frame profiler API (debug/test only) ──
+  // [DEBUG] Frame profiler API (debug/test only)
   // Enable:  window.__perf.startProfileBuckets()
   // Read:    window.__perf._profileBuckets
   // Reset:   window.__perf.startProfileBuckets()  (call again)
@@ -1408,12 +1422,13 @@ function init() {
     return report;
   };
 
+  // [DEBUG] Progression API for headless automation
   const progressionAPI = createProgressionAPI();
   window.__test.progression = progressionAPI;
   perfTarget.progression = progressionAPI;
   window.__progression = progressionAPI;
 
-  // Test hook: deterministic single-shot at a chosen enemy for headless runs.
+  // [DEBUG] Test hook: deterministic single-shot at a chosen enemy for headless runs.
   // Params: enemyIndex (number), options { distance, hp, snapToCamera }.
   // Returns true if a projectile was fired.
   window.__test.fireAtEnemy = (enemyIndex, options = {}) => {
@@ -1477,6 +1492,7 @@ function init() {
   _log('[init] SPACEOMICIDE ready — pull trigger at title screen to start');
 }
 
+// [DEBUG] Desktop-only stereo/anaglyph post-processing
 function initDesktopStereoEffects() {
   if (!renderer) return;
 
@@ -1492,6 +1508,7 @@ function initDesktopStereoEffects() {
   resizeDesktopStereoEffects();
 }
 
+// [DEBUG] Resize desktop stereo effects on window resize
 function resizeDesktopStereoEffects() {
   if (desktopEffectRefs.anaglyph) {
     desktopEffectRefs.anaglyph.setSize(window.innerWidth, window.innerHeight);
@@ -1501,12 +1518,14 @@ function resizeDesktopStereoEffects() {
   }
 }
 
+// [DEBUG] Clamp debug slider values to safe ranges
 function clampDebugValue(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
 }
 
+// [DEBUG] Read visual tuning parameters from window.debug* sliders
 function getVisualTuning() {
   if (typeof window === 'undefined') {
     return { ...VISUAL_TUNING_DEFAULTS };
@@ -1526,6 +1545,7 @@ function getVisualTuning() {
   };
 }
 
+// [DEBUG] Register projectile material for visual tuning glow adjustment
 function registerPlayerProjectileMaterial(material) {
   if (!material) return;
   if (!material.userData) material.userData = {};
@@ -1538,6 +1558,7 @@ function registerPlayerProjectileMaterial(material) {
   playerProjectileMaterials.add(material);
 }
 
+// [DEBUG] Apply visual tuning slider values to materials and effects
 function applyVisualTuning(tuning = getVisualTuning()) {
 
   if (synthVisualRefs.terrainUniforms) {
@@ -1587,6 +1608,7 @@ function applyVisualTuning(tuning = getVisualTuning()) {
   }
 }
 
+// [DEBUG] Determine desktop render mode (normal/anaglyph/stereo)
 function getDesktopRenderMode(tuning) {
   if (renderer?.xr?.isPresenting) return 'normal';
   if (tuning.renderMode === 'anaglyph' || tuning.renderMode === 'stereo') {
@@ -1595,6 +1617,7 @@ function getDesktopRenderMode(tuning) {
   return 'normal';
 }
 
+// [DEBUG] Render desktop-only debug stereo/anaglyph effects
 function renderDesktopDebugEffect(tuning) {
   const mode = getDesktopRenderMode(tuning);
   if (mode === 'normal') return false;
@@ -1616,6 +1639,7 @@ function renderDesktopDebugEffect(tuning) {
   return false;
 }
 
+// [CORE] Cleanup legacy ShapeGeometry mountains
 function cleanupLegacyShapeGeometry(targetGroup) {
   if (!targetGroup) return;
 
@@ -1648,6 +1672,7 @@ function cleanupLegacyShapeGeometry(targetGroup) {
   });
 }
 
+// [CORE] Biome mesh name sanitization
 function sanitizeBiomeMeshName(name) {
   return String(name || '')
     .toLowerCase()
@@ -1656,6 +1681,7 @@ function sanitizeBiomeMeshName(name) {
     .replace(/^-|-$/g, '');
 }
 
+// [CORE] Assign biome-specific names to floor planes
 function assignBiomePlaneNames(targetGroup, biomeId) {
   if (!targetGroup) return;
 
@@ -1691,6 +1717,7 @@ function assignBiomePlaneNames(targetGroup, biomeId) {
   });
 }
 
+// [CORE] Update VR pause button state
 function updateVRPauseButton(now) {
   const session = renderer?.xr?.getSession?.();
   if (!session) {
@@ -1737,6 +1764,7 @@ function updateVRPauseButton(now) {
 // COUPLING: Updates scene directly, registers fade materials
 // ============================================================
 
+// [CORE] Create initial game environment (floor, sky, lighting)
 function createEnvironment() {
   const floorGeo = new THREE.PlaneGeometry(200, 200);
   const floorMat = new THREE.MeshBasicMaterial({
@@ -1772,6 +1800,7 @@ function createEnvironment() {
   // If PBR materials are added later, re-add lights here.
 }
 
+// [CORE] Register material for environment fade
 function registerFadeMaterial(material) {
   if (!material) return;
   // Prevent unbounded growth across level rebuilds.
@@ -1782,12 +1811,14 @@ function registerFadeMaterial(material) {
   environmentFadeTargets.push(material);
 }
 
+// [CORE] Unregister material from fade system
 function unregisterFadeMaterial(material) {
   if (!material) return;
   const idx = environmentFadeTargets.indexOf(material);
   if (idx !== -1) environmentFadeTargets.splice(idx, 1);
 }
 
+// [CORE] Unregister all fade materials for an object
 function unregisterFadeMaterialsForObject(obj) {
   if (!obj || typeof obj.traverse !== 'function') return;
   obj.traverse((child) => {
@@ -1797,6 +1828,7 @@ function unregisterFadeMaterialsForObject(obj) {
   });
 }
 
+// [CORE] Deep dispose material and textures
 function disposeMaterialDeep(material) {
   if (!material) return;
   if (Array.isArray(material)) {
@@ -1829,7 +1861,8 @@ function disposeMaterialDeep(material) {
   if (typeof material.dispose === 'function') material.dispose();
 }
 
-function setMaterialEmissiveSafe(material, color, intensity = 1) {
+// [CORE] Safely set material emissive color
+function setMaterialEmissiveSafe(material, color, intensity) {
   if (!material) return;
   if (Array.isArray(material)) {
     material.forEach((m) => setMaterialEmissiveSafe(m, color, intensity));
@@ -1846,6 +1879,7 @@ function setMaterialEmissiveSafe(material, color, intensity = 1) {
   if (Object.prototype.hasOwnProperty.call(material, 'emissiveIntensity')) delete material.emissiveIntensity;
 }
 
+// [CORE] Clear current biome scene
 function clearBiomeScene() {
   if (!biomeSceneGroup) return;
   disposeObject3D(biomeSceneGroup);
@@ -1859,6 +1893,7 @@ function clearBiomeScene() {
   synthVisualRefs.sunCoreMat = null;
 }
 
+// [CORE] Purge biome geometry for boss cinematic
 function purgeBiomeForBossCinematic() {
   if (biomeClearedForBossCinematic) return;
   biomeClearedForBossCinematic = true;
@@ -1881,6 +1916,7 @@ function purgeBiomeForBossCinematic() {
   }
 }
 
+// [CORE] Deep dispose Object3D and children
 function disposeObject3D(obj) {
   if (!obj) return;
   // Guard: only traverse if obj is a THREE.Object3D (proxy objects from InstancedMesh pools don't have .traverse)
@@ -1897,6 +1933,7 @@ function disposeObject3D(obj) {
   if (obj.parent) obj.parent.remove(obj);
 }
 
+// [CORE] Update biome props (animated scenery)
 function updateBiomeProps(now, dt) {
   if (!biomeSceneGroup) return;
   if (biomeSceneGroup.userData && typeof biomeSceneGroup.userData.update === 'function') {
@@ -1907,6 +1944,7 @@ function updateBiomeProps(now, dt) {
   }
 }
 
+// [CORE] Start environment fade (in or out)
 function startEnvironmentFade(direction, duration, onComplete) {
   environmentFadeState = {
     direction,
@@ -1916,6 +1954,7 @@ function startEnvironmentFade(direction, duration, onComplete) {
   };
 }
 
+// [CORE] Apply current environment fade to registered materials
 function applyEnvironmentFade(fade) {
   environmentFade = Math.max(0, Math.min(1, fade));
   const mixColor = new THREE.Color(0x000000);
@@ -1933,6 +1972,7 @@ function applyEnvironmentFade(fade) {
   });
 }
 
+// [CORE] Apply theme and rebuild biome for a level
 function applyThemeForLevel(level) {
   const theme = getThemeForLevel(level);
   const biome = getBiomeForLevel(level);
@@ -1969,6 +2009,7 @@ function applyThemeForLevel(level) {
   applyEnvironmentFade(environmentFade);
 }
 
+// [CORE] Create sun mesh and glow for biome scene
 function createSun() {
   // TODO: Replace canvas-generated sun with a hand-crafted PNG texture for best quality.
   // To swap: load a transparent PNG with `new THREE.TextureLoader().load('sun.png', tex => { ... })`
@@ -2059,6 +2100,7 @@ function createSun() {
 
 }
 
+// [CORE] Create sparkling star particles
 function createSparklingStars(theme) {
   const count = theme.starCount || 800;
   // FIX: Stars should be on a dome/hemisphere, not a clumped box
@@ -2144,6 +2186,7 @@ function createSparklingStars(theme) {
   starsBiomeId = 'default';
 }
 
+// [CORE] Create background stars
 function createStars() {
   const theme = currentTheme || {};
   if (theme.customScene === 'synthwave_valley') {
@@ -2171,6 +2214,7 @@ function createStars() {
   registerFadeMaterial(starsRef.material);
 }
 
+// [CORE] Rebuild stars with new theme colors
 function rebuildStars(theme) {
   if (!scene) return;
   if (starsRef) {
@@ -2209,6 +2253,7 @@ function rebuildStars(theme) {
 // HOT PATH: onTriggerPress called every frame when trigger held
 // COUPLING: Directly calls fireMainWeapon, fireAltWeapon
 // ============================================================
+// [CORE] VR controller setup and event binding
 function setupControllers() {
   for (let i = 0; i < 2; i++) {
     const controller = renderer.xr.getController(i);
@@ -2257,6 +2302,7 @@ function setupControllers() {
  * Get the actual hand ('left' or 'right') for a controller index
  * Uses controller handedness if available, falls back to index-based mapping
  */
+// [CORE] Get hand assignment for controller index
 function getHandForController(controllerIndex) {
   const controller = controllers[controllerIndex];
   if (controller && controller.userData.handedness) {
@@ -2267,6 +2313,7 @@ function getHandForController(controllerIndex) {
   return controllerIndex === 0 ? 'left' : 'right';
 }
 
+// [CORE] Create controller visual model
 function createControllerVisual(index) {
   const color = index === 0 ? NEON_CYAN : NEON_PINK;
   const group = new THREE.Group();
@@ -2300,6 +2347,7 @@ function createControllerVisual(index) {
  * 
  * Text sprites are cached and only rebuilt when weapon/upgrades change.
  */
+// [CORE] Create blaster HUD display on controller
 function createBlasterDisplay(controllerIndex) {
   const group = new THREE.Group();
   const hand = getHandForController(controllerIndex);
@@ -2404,6 +2452,7 @@ function createBlasterDisplay(controllerIndex) {
  * The hologram shader animation (scan lines, glow) is handled separately by
  * updating the uTime uniform in the render loop - no texture updates needed.
  */
+// [CORE] Update blaster display text and ammo
 function updateBlasterDisplay(display, controllerIndex) {
   if (!display || !display.visible) return;
 
@@ -2476,6 +2525,7 @@ function updateBlasterDisplay(display, controllerIndex) {
 // Scoreboard flow context
 var scoreboardFromGameOver = false;  // true = came from game over, false = came from title
 
+// [CORE] Handle VR/desktop controller trigger press
 function onTriggerPress(controller, index) {
   const st = game.state;
 
@@ -2551,7 +2601,7 @@ function handleTitleTrigger(controller) {
 }
 
 // ── Desktop Controls Handlers ───────────────────────────────
-
+// [DEBUG] Desktop mouse click handlers for non-VR playtesting
 function handleDesktopClick() {
   if (!isDesktopEnabled()) return;
 
@@ -2798,6 +2848,7 @@ function handleDesktopPauseClick() {
   }
 }
 
+// [DEBUG] Desktop click handler for debug menu
 function handleDesktopDebugMenuClick() {
   _log('[debug] handleDesktopDebugMenuClick called');
   const raycaster = getAimRaycaster();
@@ -2824,6 +2875,7 @@ function handleDesktopDebugMenuClick() {
   }
 }
 
+// [CORE] Handle game over screen VR trigger
 function handleGameOverTrigger(controller) {
   // Skip scoreboard if score is zero
   if (game.score <= 0) {
@@ -2850,6 +2902,7 @@ function handleGameOverTrigger(controller) {
   }
 }
 
+// [CORE] Handle name entry VR trigger
 function handleNameEntryTrigger(controller) {
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -2905,6 +2958,7 @@ function handleNameEntryTrigger(controller) {
   }
 }
 
+// [CORE] Handle scoreboard VR trigger
 function handleScoreboardTrigger(controller) {
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -2941,6 +2995,7 @@ function handleScoreboardTrigger(controller) {
   }
 }
 
+// [CORE] Handle country select VR trigger
 function handleCountrySelectTrigger(controller) {
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -3004,6 +3059,7 @@ function handleCountrySelectTrigger(controller) {
   }
 }
 
+// [CORE] Handle trigger release (stop firing)
 function onTriggerRelease(index) {
   // Charge shot: fire beam on release
   if (chargeShotStartTime[index] !== null) {
@@ -3035,6 +3091,7 @@ function onTriggerRelease(index) {
 let lastNukeTime = 0;
 const NUKE_COOLDOWN = 500;
 
+// [CORE] Nuke activation: kill all enemies
 function activateNuke() {
   if (game.state !== State.PLAYING) return false;
   if (!game.nukes || game.nukes <= 0) return false;
@@ -3094,6 +3151,7 @@ function activateNuke() {
 // proximity mines, attack drones, EMP, teleport
 // COUPLING: Updates scene, activeShields/activeLaserMines/etc arrays
 // ============================================================
+// [CORE] Handle squeeze press (alt weapon fire)
 function onSqueezePress(controller, index) {
   const st = game.state;
   
@@ -3106,6 +3164,7 @@ function onSqueezePress(controller, index) {
   }
 }
 
+// [CORE] Handle squeeze release
 function onSqueezeRelease(index) {
   // Currently no release logic needed for ALT weapons
   // Could add charge-up ALT weapons in future
@@ -3114,6 +3173,7 @@ function onSqueezeRelease(index) {
 // ============================================================
 //  ALT WEAPON FIRING
 // ============================================================
+// [CORE] Fire alt weapon based on type dispatch
 function fireAltWeapon(controller, index) {
   const hand = getHandForController(index);
   const altWeaponId = game.altWeapon[hand];
@@ -3221,6 +3281,7 @@ function fireAltWeapon(controller, index) {
 // ============================================================
 //  SHIELD ALT WEAPON
 // ============================================================
+// [CORE] Shield weapon system
 function fireShield(controller, index, hand, altWeapon) {
   // Get player camera position (shield surrounds player)
   const playerPos = camera.position.clone();
@@ -3254,6 +3315,7 @@ function fireShield(controller, index, hand, altWeapon) {
   playShoothSound();
 }
 
+// [CORE] Update active shields
 function updateShields(now) {
   for (let i = activeShields.length - 1; i >= 0; i--) {
     const shield = activeShields[i];
@@ -3291,6 +3353,7 @@ function updateShields(now) {
  * Spawn laser mines around player when standing still for 2+ seconds
  * This is called from the update loop, not from trigger press
  */
+// [CORE] Laser mine passive spawning
 function spawnLaserMinesPassively(playerPos, now, dt) {
   // Check if player has laser mine equipped in either hand
   const leftAlt = game.altWeapon.left;
@@ -3429,11 +3492,13 @@ function spawnSingleLaserMine(position, hand, altWeapon) {
 }
 
 // Legacy function - no longer triggered by squeeze, kept for compatibility
+// [CORE] Fire laser mine alt weapon
 function fireLaserMine(controller, index, hand, altWeapon) {
   // Laser mines are now passive - no trigger-based firing
   _log('[Laser Mine] Passive weapon - use spawnLaserMinesPassively()');
 }
 
+// [CORE] Update laser mines (arming, targeting, detonating)
 function updateLaserMines(now, dt) {
   const enemies = getEnemies();
 
@@ -3520,6 +3585,7 @@ function updateLaserMines(now, dt) {
   }
 }
 
+// [CORE] Trigger laser mine explosion
 function triggerLaserMine(mine, nearestEnemy, allEnemies) {
   mine.triggered = true;
   mine.triggeredAt = performance.now();
@@ -3580,6 +3646,7 @@ function triggerLaserMine(mine, nearestEnemy, allEnemies) {
 //  DECOY HOLOGRAM IMPLEMENTATION
 // ============================================================
 
+// [CORE] Decoy weapon system
 function fireDecoy(origin, hand, altWeapon) {
   // Limit active decoys
   if (activeDecoys.length >= MAX_DECOYS) {
@@ -3658,6 +3725,7 @@ function fireDecoy(origin, hand, altWeapon) {
   playShoothSound();
 }
 
+// [CORE] Update decoy targets and animations
 function updateDecoys(dt, now, playerPos) {
   for (let i = activeDecoys.length - 1; i >= 0; i--) {
     const decoy = activeDecoys[i];
@@ -3716,6 +3784,7 @@ function updateDecoys(dt, now, playerPos) {
   }
 }
 
+// [CORE] Destroy decoy with optional explosion
 function destroyDecoy(decoy, explode) {
   if (explode) {
     // Calculate explosion damage based on enemies targeting it
@@ -3752,6 +3821,7 @@ function destroyDecoy(decoy, explode) {
 //  BLACK HOLE (SINGULARITY MINE) IMPLEMENTATION
 // ============================================================
 
+// [CORE] Black hole weapon system
 function fireBlackHole(origin, direction, hand, altWeapon) {
   // Limit active mines
   if (activeMines.length >= MAX_MINES) {
@@ -3808,6 +3878,7 @@ function fireBlackHole(origin, direction, hand, altWeapon) {
 // Pooled temp vector for black hole pull (per-enemy per-frame)
 const _bhPullToCenter = new THREE.Vector3();
 
+// [CORE] Update mines and black holes
 function updateMinesAndBlackHoles(dt, now, playerPos) {
   // Update mines (projectiles that haven't triggered yet)
   for (let i = activeMines.length - 1; i >= 0; i--) {
@@ -3925,6 +3996,7 @@ function updateMinesAndBlackHoles(dt, now, playerPos) {
   }
 }
 
+// [CORE] Trigger black hole collapse
 function triggerBlackHole(mine, mineIndex) {
   _log('[Black Hole] Triggered!');
 
@@ -4032,6 +4104,7 @@ function triggerBlackHole(mine, mineIndex) {
   triggerScreenShake(0.4, 300);
 }
 
+// [CORE] Destroy black hole and cleanup
 function destroyBlackHole(bh) {
   _log('[Black Hole] Collapsed!');
 
@@ -4066,6 +4139,7 @@ function destroyBlackHole(bh) {
 //  NANITE SWARM IMPLEMENTATION
 // ============================================================
 
+// [CORE] Nanite swarm weapon system
 function fireNaniteSwarm(origin, hand, altWeapon) {
   // Limit active swarms
   if (activeNaniteSwarms.length >= MAX_NANITE_SWARMS) {
@@ -4173,6 +4247,7 @@ function fireNaniteSwarm(origin, hand, altWeapon) {
   playShoothSound();
 }
 
+// [CORE] Update nanite swarms
 function updateNaniteSwarms(now, dt, playerPos) {
   for (let i = activeNaniteSwarms.length - 1; i >= 0; i--) {
     const swarm = activeNaniteSwarms[i];
@@ -4264,6 +4339,7 @@ function updateNaniteSwarms(now, dt, playerPos) {
   }
 }
 
+// [CORE] Destroy nanite swarm
 function destroyNaniteSwarm(swarm) {
   _log('[Nanite Swarm] Destroyed');
 
@@ -4283,6 +4359,7 @@ function destroyNaniteSwarm(swarm) {
 }
 
 // Check if projectile passes through nanite swarm and add damage
+// [CORE] Check projectile-nanite interaction
 function checkProjectileNaniteInteraction(proj) {
   for (const swarm of activeNaniteSwarms) {
     const dist = proj.position.distanceTo(swarm.position);
@@ -4305,6 +4382,7 @@ function checkProjectileNaniteInteraction(proj) {
 //  TETHER HARPOON IMPLEMENTATION
 // ============================================================
 
+// [CORE] Tether harpoon weapon system
 function fireTetherHarpoon(origin, direction, hand, altWeapon) {
   // Raycast to find enemy within range
   _uiRaycaster.set(origin, direction, 0, altWeapon.range);
@@ -4412,6 +4490,7 @@ function fireTetherHarpoon(origin, direction, hand, altWeapon) {
   playShoothSound();
 }
 
+// [CORE] Update active tethers
 function updateTethers(dt, now, playerPos) {
   const enemies = getEnemies();
 
@@ -4525,6 +4604,7 @@ function updateTethers(dt, now, playerPos) {
   }
 }
 
+// [CORE] Destroy tether and cleanup
 function destroyTether(tether) {
   disposeMesh(tether.mesh);
   _log('[Tether Harpoon] Tether destroyed');
@@ -4539,6 +4619,7 @@ function destroyTether(tether) {
  * Leaves explosive afterimage that detonates after 1 second
  * Damages enemies in dash path
  */
+// [CORE] Phase dash weapon system
 function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
   _log(`[Phase Dash] Teleporting ${hand} hand`);
 
@@ -4667,6 +4748,7 @@ function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
  * Update Phase Dash afterimages
  * Handles pixel dissolution and detonation
  */
+// [CORE] Update phase dash afterimages
 function updatePhaseDashAfterimages(now, dt) {
   for (let i = activePhaseDashAfterimages.length - 1; i >= 0; i--) {
     const afterimage = activePhaseDashAfterimages[i];
@@ -4723,6 +4805,7 @@ function updatePhaseDashAfterimages(now, dt) {
  * Fire Reflector Drone - spawns orbiting drone that reflects enemy projectiles
  * Overcharge: player can shoot the drone for 100% reflect but drone takes damage
  */
+// [CORE] Reflector drone weapon system
 function fireReflectorDrone(origin, hand, altWeapon) {
   // Limit active drones
   if (activeReflectorDrones.length >= MAX_REFLECTOR_DRONES) {
@@ -4844,6 +4927,7 @@ function fireReflectorDrone(origin, hand, altWeapon) {
 /**
  * Update Reflector Drones - orbit player, check for projectile reflection
  */
+// [CORE] Update reflector drones
 function updateReflectorDrones(now, dt, playerPos) {
   for (let i = activeReflectorDrones.length - 1; i >= 0; i--) {
     const drone = activeReflectorDrones[i];
@@ -4912,6 +4996,7 @@ function updateReflectorDrones(now, dt, playerPos) {
  * Check if enemy projectile should be reflected by a drone
  * @returns {boolean} true if projectile was reflected
  */
+// [CORE] Check reflector drone projectile reflection
 function checkReflectorDroneReflection(projPos, isBossProjectile = false) {
   for (const drone of activeReflectorDrones) {
     const dist = projPos.distanceTo(drone.mesh.position);
@@ -4937,6 +5022,7 @@ function checkReflectorDroneReflection(projPos, isBossProjectile = false) {
  * Check if player projectile hits a drone (overcharge mechanic)
  * @returns {boolean} true if drone was hit
  */
+// [CORE] Check player projectile hits drone
 function checkPlayerProjectileHitsDrone(projPos, projControllerIndex) {
   for (let i = 0; i < activeReflectorDrones.length; i++) {
     const drone = activeReflectorDrones[i];
@@ -4972,6 +5058,7 @@ function checkPlayerProjectileHitsDrone(projPos, projControllerIndex) {
 /**
  * Spawn a reflected projectile from drone position
  */
+// [CORE] Spawn reflected projectile from drone
 function spawnReflectedProjectile(origin) {
   // Find nearest enemy
   const enemies = getEnemies();
@@ -5028,6 +5115,7 @@ function spawnReflectedProjectile(origin) {
 /**
  * Destroy a reflector drone
  */
+// [CORE] Destroy reflector drone
 function destroyReflectorDrone(drone) {
   disposeMesh(drone.mesh);
   _log('[Reflector Drone] Destroyed');
@@ -5036,6 +5124,7 @@ function destroyReflectorDrone(drone) {
 // ============================================================
 //  STASIS FIELD
 // ============================================================
+// [CORE] Stasis field weapon system
 function fireStasisField(origin, direction, hand, altWeapon) {
   // Create stasis field at target location
   const targetPosition = origin.clone().addScaledVector(direction, 8); // 8 units forward
@@ -5099,6 +5188,7 @@ function fireStasisField(origin, direction, hand, altWeapon) {
   _log(`[Stasis Field] Created at (${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)}) for ${altWeapon.duration / 1000}s`);
 }
 
+// [CORE] Update stasis fields
 function updateStasisFields(now, dt) {
   for (let i = activeStasisFields.length - 1; i >= 0; i--) {
     const field = activeStasisFields[i];
@@ -5128,6 +5218,7 @@ function updateStasisFields(now, dt) {
 // ============================================================
 //  PLASMA ORB
 // ============================================================
+// [CORE] Plasma orb weapon system
 function firePlasmaOrb(origin, direction, hand, altWeapon) {
   // Create plasma orb
   const geometry = new THREE.SphereGeometry(0.15, 16, 16);
@@ -5180,6 +5271,7 @@ function firePlasmaOrb(origin, direction, hand, altWeapon) {
   _log(`[Plasma Orb] Fired from ${hand} hand, damage: ${altWeapon.damage}`);
 }
 
+// [CORE] Update plasma orbs
 function updatePlasmaOrbs(now, dt) {
   const enemies = getEnemies();  // Still needed for index lookup
   for (let i = activePlasmaOrbs.length - 1; i >= 0; i--) {
@@ -5263,6 +5355,7 @@ function updatePlasmaOrbs(now, dt) {
   }
 }
 
+// [CORE] Detonate plasma orb
 function detonatePlasmaOrb(orb, enemyIndex) {
   // Apply damage to enemy
   if (enemyIndex !== undefined) {
@@ -5310,6 +5403,7 @@ function detonatePlasmaOrb(orb, enemyIndex) {
 }
 
 // Check if player projectiles can detonate plasma orbs
+// [CORE] Check plasma orb detonation on projectile hit
 function checkPlasmaOrbDetonation(proj) {
   for (let i = activePlasmaOrbs.length - 1; i >= 0; i--) {
     const orb = activePlasmaOrbs[i];
@@ -5334,6 +5428,7 @@ function checkPlasmaOrbDetonation(proj) {
 const activeGrenades = [];
 const MAX_GRENADES = 5;
 
+// [CORE] Grenade weapon system
 function fireGrenade(origin, direction, hand, altWeapon) {
   // Limit active grenades
   if (activeGrenades.length >= MAX_GRENADES) {
@@ -5382,6 +5477,7 @@ function fireGrenade(origin, direction, hand, altWeapon) {
   playShoothSound();
 }
 
+// [CORE] Update grenades (physics, arming)
 function updateGrenades(dt, now) {
   for (let i = activeGrenades.length - 1; i >= 0; i--) {
     const grenade = activeGrenades[i];
@@ -5413,6 +5509,7 @@ function updateGrenades(dt, now) {
   }
 }
 
+// [CORE] Detonate grenade
 function detonateGrenade(grenade, index) {
   _log('[Grenade] Detonated!');
 
@@ -5442,6 +5539,7 @@ function detonateGrenade(grenade, index) {
   activeGrenades.splice(index, 1);
 }
 
+// [CORE] Destroy grenade mesh
 function destroyGrenade(grenade) {
   disposeMesh(grenade.mesh);
 }
@@ -5453,6 +5551,7 @@ function destroyGrenade(grenade) {
 const activeProximityMines = [];
 const MAX_PROXIMITY_MINES = 3;
 
+// [CORE] Proximity mine weapon system
 function fireProximityMine(origin, hand, altWeapon) {
   // Limit active mines per hand
   const handMines = activeProximityMines.filter(m => m.hand === hand);
@@ -5508,6 +5607,7 @@ function fireProximityMine(origin, hand, altWeapon) {
   playShoothSound();
 }
 
+// [CORE] Update proximity mines
 function updateProximityMines(now, dt) {
   for (let i = activeProximityMines.length - 1; i >= 0; i--) {
     const mine = activeProximityMines[i];
@@ -5544,6 +5644,7 @@ function updateProximityMines(now, dt) {
   }
 }
 
+// [CORE] Detonate proximity mine
 function detonateProximityMine(mine, index) {
   _log('[Mine] Detonated!');
 
@@ -5573,6 +5674,7 @@ function detonateProximityMine(mine, index) {
   activeProximityMines.splice(index, 1);
 }
 
+// [CORE] Destroy proximity mine
 function destroyProximityMine(mine) {
   disposeMesh(mine.mesh);
 }
@@ -5584,6 +5686,7 @@ function destroyProximityMine(mine) {
 const activeAttackDrones = [];
 const MAX_ATTACK_DRONES = 2;
 
+// [CORE] Attack drone weapon system
 function fireAttackDrone(origin, hand, altWeapon) {
   // Limit active drones
   const handDrones = activeAttackDrones.filter(d => d.hand === hand);
@@ -5668,6 +5771,7 @@ function fireAttackDrone(origin, hand, altWeapon) {
   playShoothSound();
 }
 
+// [CORE] Update attack drones (targeting, firing)
 function updateAttackDrones(now, dt, playerPos) {
   for (let i = activeAttackDrones.length - 1; i >= 0; i--) {
     const drone = activeAttackDrones[i];
@@ -5748,6 +5852,7 @@ function updateAttackDrones(now, dt, playerPos) {
   }
 }
 
+// [CORE] Destroy attack drone
 function destroyAttackDrone(drone) {
   disposeMesh(drone.mesh);
 }
@@ -5756,6 +5861,7 @@ function destroyAttackDrone(drone) {
 //  EMP - Area effect that stuns/shocks enemies
 // ============================================================
 
+// [CORE] EMP weapon system
 function fireEMP(origin, hand, altWeapon) {
   _log(`[EMP] Activated from ${hand} hand`);
 
@@ -5830,6 +5936,7 @@ function fireEMP(origin, hand, altWeapon) {
 
 const activeEMPVisuals = [];
 
+// [CORE] Update EMP visuals
 function updateEMPVisuals(now, dt) {
   for (let i = activeEMPVisuals.length - 1; i >= 0; i--) {
     const emp = activeEMPVisuals[i];
@@ -5854,6 +5961,7 @@ function updateEMPVisuals(now, dt) {
 //  TELEPORT - Instant movement to target location
 // ============================================================
 
+// [CORE] Teleport weapon system
 function fireTeleport(origin, direction, hand, altWeapon) {
   _log(`[Teleport] Activated from ${hand} hand`);
 
@@ -5915,6 +6023,7 @@ function fireTeleport(origin, direction, hand, altWeapon) {
 
 const activeTeleportEffects = [];
 
+// [CORE] Update teleport effects
 function updateTeleportEffects(now, dt) {
   for (let i = activeTeleportEffects.length - 1; i >= 0; i--) {
     const effect = activeTeleportEffects[i];
@@ -5942,6 +6051,7 @@ function updateTeleportEffects(now, dt) {
 // ============================================================
 //  GAME STATE TRANSITIONS
 // ============================================================
+// [DEBUG] Jump to a specific level for testing (skips progression)
 function debugJumpToLevel(targetLevel) {
   _log('[debug] Jump to level ' + targetLevel);
   hideTitle();
@@ -5969,6 +6079,7 @@ function debugJumpToLevel(targetLevel) {
   resetReadyCountdown();
 }
 
+// [DEBUG] Cycle through biomes for testing: synthwave > desert > alien > hellscape
 function cycleDebugBiome() {
   // #9 FIX: Cycle through specific biomes: SYNTHWAVE > DESERT > ALIEN PLANET > HELLSCAPE > SYNTHWAVE
   const debugBiomeCycle = ['synthwave_valley', 'desert_night', 'alien_planet', 'hellscape_lava'];
@@ -6005,6 +6116,7 @@ function cycleDebugBiome() {
   return next;
 }
 
+// [DEBUG] Cycle biome with visual fade transition (used by debug menu)
 function cycleDebugBiomeWithFade() {
   _log('[debug] cycleDebugBiomeWithFade called, environmentFadeState:', environmentFadeState);
   if (environmentFadeState) {
@@ -6029,11 +6141,13 @@ function cycleDebugBiomeWithFade() {
   });
 }
 
+// [DEBUG] Expose biome cycling to window for console automation
 window.debugCycleBiomeWithFade = () => {
   _log('[debug] Next biome requested');
   cycleDebugBiomeWithFade();
 };
 
+// [CORE] Reset ready countdown timer
 function resetReadyCountdown() {
   readyCountdownActive = false;
   readyCountdownStartTime = 0;
@@ -6041,6 +6155,7 @@ function resetReadyCountdown() {
   updateReadyCountdownText(null);
 }
 
+// [CORE] Begin gameplay from ready screen
 function beginGameplayFromReady() {
   readyCountdownActive = false;
   updateReadyCountdownText(null);
@@ -6055,6 +6170,7 @@ function beginGameplayFromReady() {
   game.spawnTimer = 1.0;
 }
 
+// [CORE] Start ready countdown before gameplay
 function startReadyCountdown() {
   if (readyCountdownActive) return;
   readyCountdownActive = true;
@@ -6064,6 +6180,7 @@ function startReadyCountdown() {
   playCountdown321();  // 321 sound triggers on the "3"
 }
 
+// [CORE] Update ready countdown display
 function updateReadyCountdown(now) {
   if (!readyCountdownActive) return;
   const elapsed = (now - readyCountdownStartTime) / 1000;
@@ -6079,12 +6196,14 @@ function updateReadyCountdown(now) {
   }
 }
 
+// [CORE] Handle ready screen VR trigger
 function handleReadyScreenTrigger(controller) {
   if (readyCountdownActive) return;
   playMenuClick();
   startReadyCountdown();
 }
 
+// [DEBUG] Handle VR controller input in debug menu state
 function handleDebugMenuTrigger(controller) {
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -6116,12 +6235,14 @@ function handleDebugMenuTrigger(controller) {
 // startGame, completeLevel, togglePause, endGame, debug jump
 // COUPLING: Transitions game.state, calls HUD show/hide, audio
 // ============================================================
+// [CORE] Capture level spawn forward direction for boss alignment
 function captureLevelSpawnForward() {
   _levelSpawnForward.copy(DEFAULT_LEVEL_SPAWN_FORWARD);
   setBossSpawnForward(_levelSpawnForward);
   biomeClearedForBossCinematic = false;
 }
 
+// [CORE] Start new game
 function startGame() {
   _log('[game] Starting new game');
   hideTitle();
@@ -6180,6 +6301,7 @@ function startGame() {
   playMusic('levels1to5');
 }
 
+// [CORE] Check if level needs biome transition fade
 function shouldFadeForBiomeTransition(level) {
   if (level >= 20) return false;
   const currentBiome = getBiomeForLevel(level);
@@ -6187,6 +6309,7 @@ function shouldFadeForBiomeTransition(level) {
   return currentBiome !== nextBiome;
 }
 
+// [CORE] Reset all slow-motion state
 function resetAllSlowMoState() {
   slowMoActive = false;
   slowMoDuration = 0;
@@ -6207,6 +6330,7 @@ function resetAllSlowMoState() {
 
 // Boss death cinematic functions are now in boss-death-cinematic.js (imported at top)
 
+// [CORE] Complete current level, show upgrade/victory
 function completeLevel() {
   if (isBossDeathCinematicActive()) return;
 
@@ -6261,6 +6385,7 @@ function completeLevel() {
 }
 
 // PERFORMANCE: Clear all active projectiles and return them to pool
+// [CORE] Clear all projectiles from scene
 function clearAllProjectiles() {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const proj = projectiles[i];
@@ -6281,6 +6406,7 @@ function clearAllProjectiles() {
 }
 
 // Clear all lightning gun beams
+// [CORE] Clear all lightning beam visuals
 function clearAllLightningBeams() {
   for (let i = 0; i < lightningBeams.length; i++) {
     if (lightningBeams[i]) {
@@ -6293,6 +6419,7 @@ function clearAllLightningBeams() {
 
 // Clear all alt-weapon effects (grenades, mines, decoys, drones, etc.)
 // Called during level transitions to prevent geometry/material accumulation
+// [CORE] Clear all alt weapon effects (shields, mines, drones, etc.)
 function clearAllAltWeaponEffects() {
   // Clear active shields
   for (let i = activeShields.length - 1; i >= 0; i--) {
@@ -6449,6 +6576,7 @@ registerResetHook(() => {
   }
 });
 
+// [CORE] Show upgrade selection screen
 function showUpgradeScreen() {
   _log('[game] Showing upgrade selection');
   game.state = State.UPGRADE_SELECT;
@@ -6501,11 +6629,13 @@ function showUpgradeScreen() {
   blasterDisplays.forEach(d => { if (d) d.userData.needsUpdate = true; });
 }
 
+// [CORE] Clear pending upgrade state
 function clearPendingUpgradeState() {
   pendingUpgrades = [];
   pendingUpgradeHand = null;
 }
 
+// [CORE] Finalize upgrade selection and advance
 function finalizeUpgradeSelection() {
   clearPendingUpgradeState();
   playUpgradeSound();
@@ -6513,6 +6643,7 @@ function finalizeUpgradeSelection() {
   advanceLevelAfterUpgrade();
 }
 
+// [CORE] Select upgrade and advance to next level
 function selectUpgradeAndAdvance(upgrade, hand) {
   _log(`[game] Selected: ${upgrade.name} for ${hand} hand`);
 
@@ -6547,6 +6678,7 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   finalizeUpgradeSelection();
 }
 
+// [CORE] Advance to next level after upgrade selection
 function advanceLevelAfterUpgrade() {
   // Deferred cleanup from level complete - explosions already played during LEVEL_COMPLETE state
   clearAllEnemies();
@@ -6666,6 +6798,7 @@ function advanceLevelAfterUpgrade() {
 }
 
 // ── Pause System ───────────────────────────────────────────
+// [CORE] Toggle game pause
 function togglePause() {
   if (game.state === State.PLAYING) {
     game.state = State.PAUSED;
@@ -6679,6 +6812,7 @@ function togglePause() {
   }
 }
 
+// [CORE] Start pause countdown before resuming
 function startPauseCountdown() {
   if (pauseCountdownActive) return;
   hidePauseMenu();
@@ -6691,6 +6825,7 @@ function startPauseCountdown() {
   playCountdown321();  // 321 sound triggers on the "3"
 }
 
+// [CORE] Update pause countdown display
 function updatePauseCountdown(now) {
   if (!pauseCountdownActive) return;
   const elapsed = (now - pauseCountdownStartTime) / 1000;
@@ -6720,6 +6855,7 @@ function updatePauseCountdown(now) {
   }
 }
 
+// [CORE] End game (victory or game over)
 function endGame(victory) {
   _log(`[game] Game ${victory ? 'won' : 'over'} — score: ${game.score}`);
   resetAllSlowMoState();
@@ -6761,6 +6897,7 @@ function endGame(victory) {
 // ============================================================
 
 // Screen shake trigger function
+// [CORE] Trigger screen shake effect
 function triggerScreenShake(intensity, duration) {
   screenShakeIntensity = intensity;
   screenShakeTime = performance.now() + duration;
@@ -6778,6 +6915,7 @@ function triggerScreenShake(intensity, duration) {
 // One InstancedMesh per projectile type = minimal draw calls.
 // Each instance is positioned via setMatrixAt(), colored via setColorAt().
 // TWIN-MESH: Core mesh + Fresnel glow mesh for visibility.
+// [CORE] Initialize instanced mesh projectile pools
 function initProjectilePool() {
   if (instancedProjectiles['laser']) return;
 
@@ -6858,6 +6996,7 @@ function initProjectilePool() {
 
 // PERFORMANCE: Acquire an instance slot from the InstancedMesh pool.
 // Returns { index, pool } or null if pool exhausted.
+// [CORE] Get a pooled projectile from the instanced mesh pool
 function getPooledProjectile(poolType, color) {
   const pool = instancedProjectiles[poolType];
   if (!pool) return null;
@@ -6901,6 +7040,7 @@ function getPooledProjectile(poolType, color) {
 // Create a proxy object that mimics THREE.Mesh for projectile compatibility.
 // The proxy tracks position/rotation in the parallel data array and syncs
 // to the InstancedMesh via commitProjectileInstance().
+// [CORE] Create projectile proxy for instanced rendering
 function createProjectileProxy(poolType, instanceIndex, color) {
   const pool = instancedProjectiles[poolType];
   const data = projectileInstanceData[poolType][instanceIndex];
@@ -6963,6 +7103,7 @@ function createProjectileProxy(poolType, instanceIndex, color) {
   return proxy;
 }
 
+// [CORE] Commit projectile instance transform to instanced mesh
 function commitProjectileInstance(poolType, instanceIndex, matrix) {
   const pool = instancedProjectiles[poolType];
   if (!pool) return;
@@ -6971,6 +7112,7 @@ function commitProjectileInstance(poolType, instanceIndex, matrix) {
 }
 
 // PERFORMANCE: Return projectile instance to pool (deactivate)
+// [CORE] Return projectile to pool for reuse
 function returnProjectileToPool(proj) {
   if (!proj || !proj.userData) return;
 
@@ -7021,11 +7163,13 @@ function returnProjectileToPool(proj) {
   }
 }
 
+// [CORE] Check if projectile is hostile (boss projectile)
 function isHostileProjectile(proj) {
   return !!(proj && proj.userData && (proj.userData.isBossProjectile || (proj.userData.damage && !proj.userData.stats)));
 }
 
-function triggerHostileProjectileExplosion(position, radius = 0.35, damage = 0) {
+// [CORE] Trigger hostile projectile explosion effect
+function triggerHostileProjectileExplosion(position, radius, damage) {
   const blastPos = position.clone();
   spawnExplosionVisual(blastPos, radius);
   if (typeof window !== 'undefined' && typeof window.createExplosionAt === 'function' && damage > 0) {
@@ -7033,12 +7177,14 @@ function triggerHostileProjectileExplosion(position, radius = 0.35, damage = 0) 
   }
 }
 
+// [CORE] Spawn boss projectile destruction VFX
 function spawnBossProjectileDestructionFX(position) {
   spawnExplosionVisual(position.clone(), 0.22);
   // Yellow bits matching projectile color, capped at 3 per projectile death
   spawnVoxelExplosion(position.clone(), 0xffff00, 3, 'basic', false, false);
 }
 
+// [CORE] Update seeker projectile visual (homing curve)
 function updateSeekerProjectileVisual(proj, dt) {
   if (!proj || !proj.children || proj.children.length < 2) return;
   proj.userData.tailPhase = (proj.userData.tailPhase || Math.random() * Math.PI * 2) + dt * (proj.userData.tailSpeed || 18);
@@ -7054,6 +7200,7 @@ function updateSeekerProjectileVisual(proj, dt) {
   }
 }
 
+// [CORE] Find nearest enemy target for seeker projectile
 function findSeekerTarget(proj) {
   const homingRange = proj.userData.homingRange || 0;
   if (homingRange <= 0) return null;
@@ -7082,6 +7229,7 @@ function findSeekerTarget(proj) {
   return nearestTarget;
 }
 
+// [CORE] Update hostile projectile visual effects
 function updateHostileProjectileVisual(proj, now) {
   if (!proj) return;
   const pulse = 0.75 + Math.sin(now * 0.012 + (proj.userData.glowPhase || 0)) * 0.25;
@@ -7109,6 +7257,7 @@ function updateHostileProjectileVisual(proj, now) {
 // HOT PATH: Called every frame when trigger held during PLAYING
 // COUPLING: weaponCooldowns, chargeShotStartTime, projectiles[]
 // ============================================================
+// [CORE] Fire main weapon (pistol, shotgun, etc.)
 function fireMainWeapon(controller, index) {
   const now = performance.now();
   const hand = getHandForController(index);
@@ -7140,7 +7289,7 @@ function fireMainWeapon(controller, index) {
     showMuzzleFlash(origin, direction);
   }
 
-  // Debug logging for projectile investigation
+  // [DEBUG] Projectile investigation logging in fireMainWeapon
   if (window.DEBUG_PROJECTILES) {
     const handLabel = index === 0 ? 'LEFT' : 'RIGHT';
   }
@@ -7211,6 +7360,7 @@ function fireMainWeapon(controller, index) {
  * on lightningTickInterval. This keeps lightning weapons feel like hold-to-fire beams
  * without going through the projectile system.
  */
+// [CORE] Update lightning beam weapon (continuous beam)
 function updateLightningBeam(controller, index, stats, dt) {
   // PERFORMANCE: Use pre-allocated scratch vectors instead of new THREE.Vector3()
   controller.getWorldPosition(_lightningOrigin);
@@ -7338,6 +7488,7 @@ const _lightningMaterial = new THREE.LineBasicMaterial({
 
 // Create zigzag lightning bolt between two points
 // PERFORMANCE: Uses pooled _lightningMaterial to avoid material allocation per bolt
+// [CORE] Create lightning bolt visual between two points
 function createLightningBolt(start, end) {
   const points = [start.clone()];
   const segments = 8;
@@ -7370,6 +7521,7 @@ function createLightningBolt(start, end) {
  * @param {number} t - charge time in seconds
  * @returns {number} damage value
  */
+// [CORE] Charge cannon damage calculation
 function chargeTimeToDamage(t) {
   // Clamp to max time
   const clampedT = Math.min(t, CHARGE_SHOT_MAX_TIME);
@@ -7388,6 +7540,7 @@ function chargeTimeToDamage(t) {
  * Get charge progress (0-1) for visual effects
  * Uses the same curve as damage for consistent feedback
  */
+// [CORE] Charge cannon progress calculation
 function chargeTimeToProgress(t) {
   const clampedT = Math.min(t, CHARGE_SHOT_MAX_TIME);
   const k = 2.0;
@@ -7402,6 +7555,7 @@ function chargeTimeToProgress(t) {
  * @param {number} index - Controller index (0=left, 1=right)
  * @param {number} progress - Charge progress from 0 to 1
  */
+// [CORE] Update charge cannon visual effects
 function updateChargeVisuals(controller, index, progress) {
   if (!controller || typeof controller.add !== 'function') return;
 
@@ -7497,6 +7651,7 @@ function updateChargeVisuals(controller, index, progress) {
  * Hide and clean up charge visual effects
  * @param {number} index - Controller index (0=left, 1=right)
  */
+// [CORE] Hide charge cannon visual effects
 function hideChargeVisuals(index) {
   if (chargeGlowSpheres[index]) {
     chargeGlowSpheres[index].visible = false;
@@ -7512,6 +7667,7 @@ const _ptsAp = new THREE.Vector3();
 const _ptsProj = new THREE.Vector3();
 
 /** Distance from point to line segment (a to b) */
+// [CORE] Point-to-line-segment distance calculation
 function pointToSegmentDist(p, a, b) {
   _ptsAb.subVectors(b, a);
   _ptsAp.subVectors(p, a);
@@ -7527,6 +7683,7 @@ const _chargeBeamOrigin = new THREE.Vector3();
 const _chargeBeamQuat = new THREE.Quaternion();
 const _chargeBeamDir = new THREE.Vector3(0, 0, -1);
 
+// [CORE] Fire charge beam weapon
 function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   if (chargeTimeSec < CHARGE_SHOT_MIN_FIRE) return; // minimum charge to fire
 
@@ -7680,6 +7837,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   explosionVisuals.push(beamMesh);
 }
 
+// [CORE] Spawn a projectile with given parameters
 function spawnProjectile(origin, direction, controllerIndex, stats, shotId, options = {}) {
   // PERFORMANCE: Recycle oldest projectile when at cap to keep fire continuous
   if (projectiles.length >= MAX_PROJECTILES) {
@@ -7707,7 +7865,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
     projectileColor = controllerIndex === 0 ? 0xaaffff : 0xffaaff;
   }
 
-  // Debug logging for projectile investigation
+  // [DEBUG] Projectile investigation logging in spawnProjectile
   if (window.DEBUG_PROJECTILES) {
     const handLabel = controllerIndex === 0 ? 'LEFT' : 'RIGHT';
   }
@@ -7794,6 +7952,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
 }
 
 // Process seeker burst queue - fires queued shots at their scheduled time
+// [CORE] Process seeker burst queue
 function processSeekerBurstQueue(now) {
   if (seekerBurstQueue.length === 0) return;
   
@@ -7813,11 +7972,13 @@ function processSeekerBurstQueue(now) {
 //  SLOW-MO DEATH CAMERA
 // ============================================================
 
+// [CORE] Linear interpolation helper
 function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
-function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExploding = false, hitWeakPoint = false, hitInfo = {}) {
+// [CORE] Handle projectile hit on enemy
+function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExploding, hitWeakPoint, hitInfo) {
   // Calculate damage
   let damage = stats.damage;
 
@@ -7916,6 +8077,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
   }
 }
 
+// [CORE] Handle projectile hit on boss
 function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
   let damage = stats.damage;
   if (stats.critChance > 0 && Math.random() < stats.critChance) {
@@ -7976,6 +8138,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
   }
 }
 
+// [CORE] Handle area-of-effect damage
 function handleAOE(center, radius, damage, controllerIndex) {
   const enemies = getEnemies();
   enemies.forEach((e, i) => {
@@ -7995,6 +8158,7 @@ function handleAOE(center, radius, damage, controllerIndex) {
 }
 
 /** Spawn a short-lived visible explosion (expanding sphere) at center. */
+// [CORE] Spawn explosion visual at position
 function spawnExplosionVisual(center, radius) {
   // Play explosion sound
   playExplosionSound();
@@ -8021,6 +8185,7 @@ function spawnExplosionVisual(center, radius) {
   entry.mesh.material.opacity = 0.7;
 }
 
+// [CORE] Update explosion visual animations
 function updateExplosionVisuals(dt, now) {
   // Update pooled explosion visuals
   for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
@@ -8271,6 +8436,7 @@ if (typeof window !== 'undefined') {
   };
 }
 
+// [CORE] Handle ricochet projectile bounce
 function handleRicochet(fromPoint, stats, bounceCount, controllerIndex) {
   if (bounceCount >= stats.ricochetBounces) return;
 
@@ -8292,12 +8458,14 @@ function handleRicochet(fromPoint, stats, bounceCount, controllerIndex) {
   }
 }
 
+// [CORE] Mark projectile as having scored a hit
 function markProjectileHit(proj) {
   if (!proj?.userData?.shotId) return;
   proj.userData.hitConfirmed = true;
   markAccuracyHit(proj.userData.shotId);
 }
 
+// [CORE] Resolve projectile accuracy tracking
 function resolveProjectileAccuracy(proj) {
   if (!proj?.userData?.shotId) return;
   resolveAccuracyPellet(proj.userData.shotId);
@@ -8320,6 +8488,7 @@ const _projectileNearbyMeshes = [];
 // COUPLING: projectiles[], instancedProjectiles, enemies spatial hash
 // RISK: Changes here affect hit detection, game feel, performance
 // ============================================================
+// [CORE] Update all projectiles (movement, collision, lifetime)
 function updateProjectiles(dt) {
   const now = performance.now();
 
@@ -8739,6 +8908,7 @@ function updateProjectiles(dt) {
   }
 }
 
+// [CORE] Handle VR upgrade card selection
 function selectUpgrade(controller) {
   if (upgradeSelectionCooldown > 0) return;
 
@@ -8761,6 +8931,7 @@ function selectUpgrade(controller) {
 // Called every frame during PLAYING state
 // COUPLING: game._levelConfig, getBoss/spawnBoss, enemies.js
 // ============================================================
+// [CORE] Spawn enemy wave based on level config
 function spawnEnemyWave(dt) {
   if (game.state !== State.PLAYING) return;
 
@@ -8816,6 +8987,7 @@ function spawnEnemyWave(dt) {
   }
 }
 
+// [CORE] Update fast enemy proximity alerts
 function updateFastEnemyAlerts(dt, playerPos) {
   const fastEnemies = getFastEnemies();
   fastEnemies.forEach(e => {
@@ -8868,6 +9040,7 @@ function updateFastEnemyAlerts(dt, playerPos) {
 // COUPLING: Reads/writes game.state, calls ALL update functions
 // RISK: Any change here affects frame timing, game feel, audio sync
 // ============================================================
+// [CORE] Main render loop (called every frame)
 function render(timestamp) {
   frameCount++;
   const now = timestamp || performance.now();
@@ -9995,6 +10168,7 @@ function render(timestamp) {
 // ============================================================
 //  PERFORMANCE TELEMETRY SUPPORT
 // ============================================================
+// [CORE] Check if telemetry sample should be collected
 function shouldCollectTelemetrySample() {
   if (!renderer) return false;
   // Always sample at 1/6 rate (every 6th frame) even when enabled,
@@ -10006,6 +10180,7 @@ function shouldCollectTelemetrySample() {
   return false;
 }
 
+// [CORE] Record telemetry sample if conditions are met
 function maybeRecordTelemetry(now, rawDt, scaledDt) {
   if (!shouldCollectTelemetrySample()) return false;
   recordTelemetrySample({
@@ -10022,6 +10197,7 @@ function maybeRecordTelemetry(now, rawDt, scaledDt) {
   return true;
 }
 
+// [CORE] Collect renderer statistics
 function collectRendererStats() {
   if (!renderer || !renderer.info) return null;
   const info = renderer.info;
@@ -10036,6 +10212,7 @@ function collectRendererStats() {
   };
 }
 
+// [CORE] Collect heap memory statistics
 function collectHeapStats() {
   if (typeof performance === 'undefined' || !performance.memory) return null;
   const { usedJSHeapSize, totalJSHeapSize, jsHeapSizeLimit } = performance.memory;
@@ -10050,6 +10227,7 @@ function collectHeapStats() {
   };
 }
 
+// [CORE] Collect runtime object counts
 function collectRuntimeCounts() {
   const instancedStats = {};
   Object.entries(instancedProjectiles).forEach(([key, pool]) => {
@@ -10091,6 +10269,7 @@ function collectRuntimeCounts() {
   };
 }
 
+// [CORE] Collect gameplay state snapshot
 function collectGameplaySnapshot() {
   const levelConfig = getLevelConfig();
   return {
@@ -10120,6 +10299,7 @@ function collectGameplaySnapshot() {
 // ============================================================
 //  WINDOW RESIZE
 // ============================================================
+// [CORE] Handle window resize
 function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -10134,6 +10314,7 @@ function onWindowResize() {
 // ============================================================
 
 // Wrapper that delegates to biome-scenes.js module
+// [CORE] Rebuild biome scene from biome-scenes module
 function rebuildBiomeScene(biomeId, theme) {
   // State object that the module can update
   const state = {
@@ -10162,6 +10343,7 @@ function rebuildBiomeScene(biomeId, theme) {
 }
 
 // Get physics floor Y for current biome (matches visual floor HUD height)
+// [CORE] Get biome floor Y coordinate
 function getBiomeFloorY() {
   return getBiomeFloorYModule(biomeSceneBiome, SCENE_Y_OFFSET);
 }
