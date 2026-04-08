@@ -5275,15 +5275,19 @@ class SkullBoss extends Boss {
   // Part 3: Skull phase logic with 3 phases and transitions
   updateSkullPhase(dt, now, playerPos) {
     // Determine current skull phase based on HP thresholds
-    const prevPhase = this.skullPhase;
-    this.skullPhase = this.hp > 1200 ? 1 : this.hp > 600 ? 2 : 3;
+    // Force re-evaluation every frame so large damage chunks can't skip phases
+    const newPhase = this.hp > 1200 ? 1 : this.hp > 600 ? 2 : 3;
     
     // Check for phase transition
-    if (prevPhase !== this.skullPhase) {
+    if (newPhase !== this.skullPhase && !this.transitioning) {
       // Enter transition (3-sec invuln)
-      this.startPhaseTransition(prevPhase, this.skullPhase);
+      this.startPhaseTransition(this.skullPhase, newPhase);
+      this.skullPhase = newPhase;
       return;
     }
+    
+    // If transitioning, don't run normal phase behavior
+    if (this.transitioning) return;
     
     // Phase-specific behavior
     const phaseConfig = this.getSkullPhaseConfig();
@@ -5319,28 +5323,28 @@ class SkullBoss extends Boss {
         return {
           moveSpeed: 1.5,
           shootRate: 1.2,
-          arcHeight: 3.5,
+          arcHeight: 2.0,
           erraticness: 3.0 // Change direction every 3 seconds
         };
       case 2: // 1200-600 HP: Faster, more erratic
         return {
           moveSpeed: 2.5,
           shootRate: 0.8,
-          arcHeight: 4.0,
+          arcHeight: 2.5,
           erraticness: 1.5 // Change direction every 1.5 seconds
         };
       case 3: // 600-0 HP: Very fast, very erratic
         return {
           moveSpeed: 4.0,
           shootRate: 0.5,
-          arcHeight: 4.5,
+          arcHeight: 3.0,
           erraticness: 0.8 // Change direction every 0.8 seconds
         };
       default:
         return {
           moveSpeed: 1.5,
           shootRate: 1.2,
-          arcHeight: 3.5,
+          arcHeight: 2.0,
           erraticness: 3.0
         };
     }
@@ -5462,27 +5466,21 @@ class SkullBoss extends Boss {
   
   // Part 4: Lobbed projectiles for skull phase (arc trajectory)
   fireLobbedEyeProjectiles(playerPos, arcHeight) {
-    // Clone positions now to avoid stale references in setTimeout closures
-    const eyePositions = [
-      this.leftEye.getWorldPosition(new THREE.Vector3()),
-      this.rightEye.getWorldPosition(new THREE.Vector3()),
-    ];
-    const targetPos = playerPos.clone();
-    
+    // Show telegraph briefly before firing
     if (this.telegraphing) {
       this.showTelegraph('projectile', 0.3, 0xff0000, this.mesh.position);
     }
     
-    // Stagger eye shots slightly so they don't fire at exact same time
-    setTimeout(() => {
-      eyePositions.forEach((eyePos, idx) => {
-        setTimeout(() => {
-          if (typeof spawnBossLobbedProjectile === 'function') {
-            spawnBossLobbedProjectile(eyePos, targetPos, arcHeight || 3.5);
-          }
-        }, idx * 100); // 100ms stagger between eyes
-      });
-    }, 200);
+    // Fire immediately from current eye positions (no setTimeout delay)
+    // This prevents the boss from moving between aiming and firing
+    const leftPos = this.leftEye.getWorldPosition(new THREE.Vector3());
+    const rightPos = this.rightEye.getWorldPosition(new THREE.Vector3());
+    const targetPos = playerPos.clone();
+    
+    if (typeof spawnBossLobbedProjectile === 'function') {
+      spawnBossLobbedProjectile(leftPos, targetPos, arcHeight || 2.0);
+      spawnBossLobbedProjectile(rightPos, targetPos, arcHeight || 2.0);
+    }
   }
   
   playGrowlSound() {

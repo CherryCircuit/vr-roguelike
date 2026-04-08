@@ -213,6 +213,55 @@ let _triggerHitFlash = null;
 // Damage number consolidation: track active numbers by position key
 const activeDamageNumbers = new Map(); // positionKey -> { mesh, totalDamage, color, positionKey }
 
+// Number texture cache: avoids redundant canvas fillText for repeated values
+// Key: "value|color", Value: { canvas, texture }
+const _numberTexCache = new Map();
+const NUMBER_CACHE_MAX = 200;
+
+function getNumberDrawFn(value, color) {
+  const rounded = Math.round(value);
+  const cacheKey = `${rounded}|${color}`;
+
+  // Check cache first
+  const cached = _numberTexCache.get(cacheKey);
+  if (cached) {
+    // Return a drawFn that just stamps the cached canvas
+    return (canvas, ctx, w, h) => {
+      ctx.drawImage(cached.canvas, 0, 0);
+    };
+  }
+
+  // Render and cache
+  const fontSize = Math.min(48, 28 + value / 6);
+  const text = rounded.toString();
+
+  // Pre-render to offscreen canvas
+  const offscreen = document.createElement('canvas');
+  offscreen.width = 128;
+  offscreen.height = 64;
+  const offCtx = offscreen.getContext('2d');
+  offCtx.font = `bold ${fontSize}px Arial, sans-serif`;
+  offCtx.textAlign = 'center';
+  offCtx.textBaseline = 'middle';
+
+  // Drop shadow (offset by 2px)
+  offCtx.fillStyle = 'rgba(0,0,0,0.7)';
+  offCtx.fillText(text, 66, 34);
+
+  // Main text
+  offCtx.fillStyle = color;
+  offCtx.fillText(text, 64, 32);
+
+  // Cache it
+  if (_numberTexCache.size < NUMBER_CACHE_MAX) {
+    _numberTexCache.set(cacheKey, { canvas: offscreen });
+  }
+
+  return (canvas, ctx, w, h) => {
+    ctx.drawImage(offscreen, 0, 0);
+  };
+}
+
 /**
  * Initialize damage number pools. Call once after scene is available.
  */
@@ -247,6 +296,7 @@ export function disposePools() {
   if (damageNumberPool) { damageNumberPool.dispose(); damageNumberPool = null; }
   if (comboPopupPool) { comboPopupPool.dispose(); comboPopupPool = null; }
   if (killChainPool) { killChainPool.dispose(); killChainPool = null; }
+  _numberTexCache.clear();
 }
 
 // ── Damage Numbers ─────────────────────────────────────────
@@ -291,24 +341,12 @@ export function spawnDamageNumber(position, damage, color) {
     // Slight upward bump
     existing.mesh.position.y += 0.05;
 
-    // Throttle canvas redraws to max ~10/sec per number (100ms interval)
-    if (!existing._lastRedraw || now - existing._lastRedraw >= 100) {
+    // Throttle canvas redraws to max ~5/sec per number (200ms interval)
+    if (!existing._lastRedraw || now - existing._lastRedraw >= 200) {
       existing._lastRedraw = now;
       existing.mesh.scale.set(baseScaleX, baseScaleY, 1);
-      damageNumberPool.updateText(existing.mesh, (canvas, ctx) => {
-        const fontSize = Math.min(48, 28 + totalDamage / 6);
-        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        // Drop shadow
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillText(Math.round(totalDamage).toString(), 66, 34);
-
-        // Main text
-        ctx.fillStyle = existingColor || '#ffffff';
-        ctx.fillText(Math.round(totalDamage).toString(), 64, 32);
-      });
+      const drawFn = getNumberDrawFn(totalDamage, existingColor);
+      damageNumberPool.updateText(existing.mesh, drawFn);
     }
 
     return;
@@ -319,20 +357,7 @@ export function spawnDamageNumber(position, damage, color) {
   const dmgW = dmgScale * 2;
   const dmgH = dmgScale;
 
-  const mesh = damageNumberPool.acquire(position, (canvas, ctx) => {
-    const fontSize = Math.min(48, 28 + damage / 6);
-    ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    // Drop shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillText(Math.round(damage).toString(), 66, 34);
-
-    // Main text
-    ctx.fillStyle = color || '#ffffff';
-    ctx.fillText(Math.round(damage).toString(), 64, 32);
-  }, {
+  const mesh = damageNumberPool.acquire(position, getNumberDrawFn(damage, color || '#ffffff'), {
     width: dmgW, height: dmgH, lifetime: 600,
     offsetX: (Math.random() - 0.5) * 0.3,
     offsetY: Math.random() * 0.2,
