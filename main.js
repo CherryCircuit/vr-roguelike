@@ -423,7 +423,6 @@ const mountainLines = [];
 // Environment refs for level-based scaling (sun, stars)
 let sunMeshRef = null;
 let sunGlowRef = null;
-let gridHelper = null;
 let starsRef = null;
 let starsBiomeId = null;
 let atmosphereRef = null;
@@ -1747,24 +1746,11 @@ function updateVRPauseButton(now) {
 // ============================================================
 
 function createEnvironment() {
-  // Grid floor - reduced size to cut ugly distant static
-  gridHelper = new THREE.GridHelper(120, 48, NEON_PINK, 0xff0088);
-  if (Array.isArray(gridHelper.material)) {
-    gridHelper.material.forEach(m => { m.transparent = true; m.opacity = 0.85; registerFadeMaterial(m); });
-  } else {
-    gridHelper.material.transparent = true;
-    gridHelper.material.opacity = 0.85;
-    registerFadeMaterial(gridHelper.material);
-  }
-  gridHelper.frustumCulled = false;
-  scene.add(gridHelper);
-  gridHelper.matrixAutoUpdate = false;
-
   const floorGeo = new THREE.PlaneGeometry(200, 200);
   const floorMat = new THREE.MeshBasicMaterial({
     color: floorBaseColor,
-    depthWrite: false,  // Prevent depth buffer conflicts with grid and biome terrains
-    polygonOffset: true,  // Prevent z-fighting with GridHelper at y=0
+    depthWrite: false,  // Prevent depth buffer conflicts with biome terrains
+    polygonOffset: true,  // Prevent z-fighting with biome terrains at y=0
     polygonOffsetFactor: 1.0,
     polygonOffsetUnits: 4.0,
   });
@@ -1899,7 +1885,6 @@ function purgeBiomeForBossCinematic() {
   clearBiomeScene();
   clearBiomeProps();
 
-  if (gridHelper) gridHelper.visible = false;
   if (sunMeshRef) sunMeshRef.visible = false;
   if (sunGlowRef) sunGlowRef.visible = false;
   if (starsRef) starsRef.visible = false;
@@ -2265,31 +2250,12 @@ function applyThemeForLevel(level) {
   currentTheme = theme;
 
   const hideBaseEnv = !!theme.hideBaseEnv;
-  if (gridHelper) gridHelper.visible = !hideBaseEnv;
   if (sunMeshRef) sunMeshRef.visible = !hideBaseEnv;
   if (atmosphereRef) atmosphereRef.visible = !hideBaseEnv;
   if (sunGlowRef) sunGlowRef.visible = !hideBaseEnv;
   if (starsRef) starsRef.visible = theme.keepStars ? true : !hideBaseEnv;
 
   rebuildBiomeProps(getBiomeForLevel(level), theme);
-
-  if (gridHelper) {
-    const updateGridMat = (mat) => {
-      mat.color.setHex(theme.gridColor);
-      mat.opacity = theme.gridOpacity;
-      mat.__fadeBase = theme.gridOpacity;
-      mat.transparent = true;
-    };
-
-    if (Array.isArray(gridHelper.material)) {
-      gridHelper.material.forEach(updateGridMat);
-    } else {
-      updateGridMat(gridHelper.material);
-    }
-
-    const gridScale = theme.gridScale !== undefined ? theme.gridScale : 1;
-    gridHelper.scale.set(gridScale, 1, gridScale);
-  }
 
   if (floorMaterial) {
     const floorColor = theme.floorColor !== undefined ? theme.floorColor : theme.mountainFill;
@@ -10299,15 +10265,6 @@ function render(timestamp) {
           item.material.opacity = 0;
         }
       });
-      // Reset grid colors
-      if (gridHelper && gridHelper.visible) {
-        const resetGridMat = (m) => { m.color.setHex(NEON_PINK); };
-        if (Array.isArray(gridHelper.material)) {
-          gridHelper.material.forEach(resetGridMat);
-        } else {
-          resetGridMat(gridHelper.material);
-        }
-      }
     } else {
       // Lerp from bright red back to base color over 1 second
       const t = floorFlashTimer / 1.0;  // 1s flash duration
@@ -10321,18 +10278,6 @@ function render(timestamp) {
           item.material.opacity = flashIntensity * 0.4;  // Max 40% opacity
         }
       });
-      // Flash grid to red
-      if (gridHelper && gridHelper.visible) {
-        const flashGridMat = (m) => {
-          const baseColor = new THREE.Color(NEON_PINK);
-          m.color.lerpColors(baseColor, flashColor, t);
-        };
-        if (Array.isArray(gridHelper.material)) {
-          gridHelper.material.forEach(flashGridMat);
-        } else {
-          flashGridMat(gridHelper.material);
-        }
-      }
     }
   }
 
