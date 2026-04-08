@@ -191,22 +191,10 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     lavaLights.push(lavaLight);
   }
 
-  // Flash overlay plane for damage feedback
-  const flashGeo = new THREE.PlaneGeometry(300, 300);
-  const flashMat = new THREE.MeshBasicMaterial({
-    color: 0xff0000,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    side: THREE.DoubleSide
-  });
-  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
-  flashPlane.name = 'hellscape-flash-overlay';
-  flashPlane.rotation.x = -Math.PI / 2;
-  flashPlane.position.y = floorY + 0.05;
-  flashPlane.frustumCulled = false;
-  group.add(flashPlane);
-  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
+  // =======================================
+  // 3. DEAD TREES (GLB models)
+  // =======================================
+
 
 
 
