@@ -62,17 +62,27 @@ titleGroup.name = 'title-screen';
 export const hudGroup = new THREE.Group();
 hudGroup.name = 'floor-hud';
 const levelTextGroup = new THREE.Group();
+levelTextGroup.name = 'level-text';
 const upgradeGroup = new THREE.Group();
 upgradeGroup.name = 'upgrade-cards';
 const gameOverGroup = new THREE.Group();
+gameOverGroup.name = 'game-over';
 const nameEntryGroup = new THREE.Group();
+nameEntryGroup.name = 'name-entry';
 const scoreboardGroup = new THREE.Group();
+scoreboardGroup.name = 'scoreboard';
 const countrySelectGroup = new THREE.Group();
+countrySelectGroup.name = 'country-select';
 const readyGroup = new THREE.Group();
-const debugMenuGroup = new THREE.Group();  // DEBUG menu
-export const pauseMenuGroup = new THREE.Group();  // Pause menu
-export const pauseCountdownGroup = new THREE.Group();  // 3-2-1 countdown overlay
+readyGroup.name = 'ready-screen';
+const debugMenuGroup = new THREE.Group();
+debugMenuGroup.name = 'debug-menu';
+export const pauseMenuGroup = new THREE.Group();
+pauseMenuGroup.name = 'pause-menu';
+export const pauseCountdownGroup = new THREE.Group();
+pauseCountdownGroup.name = 'pause-countdown';
 const floatingMessageGroup = new THREE.Group();
+floatingMessageGroup.name = 'floating-message';
 
 // ── Layout Loading ──
 // Loads layout JSON from layouts/ directory. Falls back to hardcoded positions if fetch fails.

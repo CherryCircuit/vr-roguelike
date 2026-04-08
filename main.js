@@ -1781,6 +1781,7 @@ function createEnvironment() {
   floorMaterial.userData.floorHeight = -0.01;
   registerFadeMaterial(floorMaterial);
   const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.name = 'floor';
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01 + SCENE_Y_OFFSET;
   floor.frustumCulled = false;
@@ -2078,6 +2079,7 @@ function createSun() {
   });
   // Position so the lower ~40% of the sun dips below the horizon
   const sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), sunMat);
+  sunMesh.name = 'base-sun';
   sunMesh.position.set(0, 12 + SCENE_Y_OFFSET, -89);
   sunMesh.renderOrder = -10;
   scene.add(sunMesh);
@@ -2095,6 +2097,7 @@ function createSun() {
     depthWrite: false,
   });
   const glow = new THREE.Mesh(new THREE.CircleGeometry(35, 32), glowMat);
+  glow.name = 'base-sun-glow';
   glow.position.set(0, 12 + SCENE_Y_OFFSET, -89.5);
   glow.renderOrder = -11;
   scene.add(glow);
@@ -2105,6 +2108,13 @@ function createSun() {
 
 // [CORE] Create sparkling star particles
 function createSparklingStars(theme) {
+  // Dispose any existing stars to prevent scene leaks
+  if (starsRef) {
+    if (starsRef.parent) starsRef.parent.remove(starsRef);
+    starsRef.geometry.dispose();
+    starsRef.material.dispose();
+    starsRef = null;
+  }
   const count = theme.starCount || 800;
   // FIX: Stars should be on a dome/hemisphere, not a clumped box
   // Dome radius should be inside the sky sphere (2800 radius) so stars are visible
@@ -2179,6 +2189,7 @@ function createSparklingStars(theme) {
     blending: THREE.AdditiveBlending
   });
   const stars = new THREE.Points(geo, mat);
+  stars.name = 'sparkling-stars';
   stars.renderOrder = 10;  // Render after skydome (-20) and sun (-3 to -1)
   stars.userData.update = (now) => {
     mat.uniforms.uTime.value = now * 0.001;
@@ -2196,6 +2207,13 @@ function createStars() {
     createSparklingStars(theme);
     return;
   }
+  // Dispose any existing stars to prevent scene leaks
+  if (starsRef) {
+    if (starsRef.parent) starsRef.parent.remove(starsRef);
+    starsRef.geometry.dispose();
+    starsRef.material.dispose();
+    starsRef = null;
+  }
   const count = theme.starCount || 800;
   const spread = theme.starSpread || 300;
   const height = theme.starHeight || 80;
@@ -2211,6 +2229,7 @@ function createStars() {
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
   const stars = new THREE.Points(geo, mat);
+  stars.name = 'stars-near';
   stars.renderOrder = 10;  // Render after skydome (-20) and sun (-3 to -1)
   scene.add(stars);
   starsRef = stars;
@@ -2243,6 +2262,7 @@ function rebuildStars(theme) {
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   const mat = new THREE.PointsMaterial({ color: theme.starColor || 0xffffff, size: theme.starSize || 0.5 });
   const stars = new THREE.Points(geo, mat);
+  stars.name = 'stars-default';
   stars.renderOrder = 10;  // Render after skydome (-20) and sun (-3 to -1)
   scene.add(stars);
   starsRef = stars;
