@@ -30,14 +30,9 @@ export function buildHellscapeLavaScene(group, deps) {
   moonLight.shadow.camera.bottom = -100;
   group.add(moonLight);
 
-  // Very dim ambient
-  const ambientLight = new THREE.AmbientLight(0x220505, 0.1);
-  group.add(ambientLight);
+  // Ambient light removed (moonLight provides sufficient illumination)
 
-  // Lava glow point light (will animate)
-  const lavaGlow = new THREE.PointLight(0xff3300, 2.5, 60);
-  lavaGlow.position.set(0, 5, 0);
-  group.add(lavaGlow);
+  // Lava glow point light removed (lava river shader provides glow)
 
   // ========================================
   // TERRAIN (existing logic)
@@ -180,16 +175,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   lavaRiver.onBeforeRender = () => {}; // Force render every frame
   group.add(lavaRiver);
 
-  // Add subtle red point lights along the river for glow effect
-  const lavaLights = [];
-  for (let i = 0; i < 2; i++) {
-    const lz = (i - 0.5) * 60;
-    const lx = Math.sin(lz * 0.03) * 15.0 - 10.0; // Match terrain world-space river center
-    const lavaLight = new THREE.PointLight(0xff3300, 2.0, 35);
-    lavaLight.position.set(lx, floorY + 3, lz);
-    group.add(lavaLight);
-    lavaLights.push(lavaLight);
-  }
+  // Lava river point lights removed
 
   // =======================================
   // 3. DEAD TREES (GLB models)
@@ -376,9 +362,22 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   // (Flame pillars removed per Graeme's request)
 
   // ========================================
-  // MOONS (existing)
+  // MOONS with fake glow (canvas radial gradient)
   // ========================================
-  const createMoon = (size, color, glowColor, moonIndex) => {
+  const makeRadial = (inner, outer) => {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(256,256,0,256,256,256);
+    g.addColorStop(0.0, inner);
+    g.addColorStop(0.35, inner);
+    g.addColorStop(0.6, outer);
+    g.addColorStop(1.0, 'rgba(255,34,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
+    return new THREE.CanvasTexture(c);
+  };
+
+  const createMoonWithGlow = (size, color, glowInner, glowOuter, moonIndex) => {
     const mGroup = new THREE.Group();
     mGroup.name = `hellscape-moon-group-${moonIndex}`;
     const moonGeo = new THREE.IcosahedronGeometry(size, 2);
@@ -386,25 +385,23 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     const moonMesh = new THREE.Mesh(moonGeo, moonMat);
     moonMesh.name = `hellscape-moon-${moonIndex}`;
     mGroup.add(moonMesh);
-    const glowGeo = new THREE.IcosahedronGeometry(size * 1.2, 2);
-    const glowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.3 });
-    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-    glowMesh.name = `hellscape-moon-${moonIndex}-glow`;
+    // Fake glow via canvas radial gradient
+    const glowTex = makeRadial(glowInner, glowOuter);
+    const glowMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+    const glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(size * 4, size * 4), glowMat);
+    glowMesh.name = `hellscape-moon-${moonIndex}-fake-glow`;
+    glowMesh.frustumCulled = false;
     mGroup.add(glowMesh);
-    const farGlowGeo = new THREE.IcosahedronGeometry(size * 1.5, 2);
-    const farGlowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.1 });
-    const farGlowMesh = new THREE.Mesh(farGlowGeo, farGlowMat);
-    farGlowMesh.name = `hellscape-moon-${moonIndex}-far-glow`;
-    mGroup.add(farGlowMesh);
+    registerFadeMaterial(glowMat);
     return mGroup;
   };
-  const moon1 = createMoon(15, 0xaa1111, 0xff2200, 1);
+  const moon1 = createMoonWithGlow(15, 0xaa1111, 'rgba(255,100,30,0.7)', 'rgba(255,34,0,0.3)', 1);
   moon1.position.set(20, 30, -160);
   group.add(moon1);
-  const moon2 = createMoon(11, 0x880000, 0xaa0000, 2);
+  const moon2 = createMoonWithGlow(11, 0x880000, 'rgba(200,50,20,0.6)', 'rgba(170,0,0,0.25)', 2);
   moon2.position.set(-50, 25, -160);
   group.add(moon2);
-  const moon3 = createMoon(8, 0x550000, 0x770000, 3);
+  const moon3 = createMoonWithGlow(8, 0x550000, 'rgba(170,40,10,0.5)', 'rgba(120,0,0,0.2)', 3);
   moon3.position.set(-30, 40, -160);
   group.add(moon3);
 
@@ -462,13 +459,9 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
     // (Star twinkle removed)
 
-    // Lava glow position animation (circle)
-    lavaGlow.position.x = Math.sin(time * 0.3) * 15;
-    lavaGlow.position.z = Math.cos(time * 0.3) * 20;
-    lavaGlow.position.y = 5 + Math.sin(time * 0.5) * 2;
+    // Lava glow animation removed (lava river shader handles glow)
 
-    // Lava glow intensity pulse
-    lavaGlow.intensity = 2.0 + Math.sin(time * 2) * 0.5;
+    // Lava glow intensity pulse removed
 
     // Update spark particles - continuously spawn from lava river
     const sparkPos = sparkGeo.attributes.position.array;

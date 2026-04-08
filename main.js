@@ -1244,9 +1244,11 @@ function init() {
 
   // ── Biome Lighting System Init ───────────────────────────────────
   biomeAmbientLight = new THREE.AmbientLight(0x110022, 0.15);
+  biomeAmbientLight.name = 'ambient-light';
   scene.add(biomeAmbientLight);
 
   biomeDirectionalLight = new THREE.DirectionalLight(0xff8844, 0.8);
+  biomeDirectionalLight.name = 'directional-light';
   biomeDirectionalLight.position.set(50, 100, 50);
   biomeDirectionalLight.castShadow = true;
   biomeDirectionalLight.shadow.mapSize.set(256, 256);
@@ -1261,6 +1263,7 @@ function init() {
   scene.add(biomeDirectionalLight);
 
   biomePointLight = new THREE.PointLight(0xffeedd, 1.5, 20, 2);
+  biomePointLight.name = 'point-light';
   biomePointLight.position.set(0, 2, 0);
   biomePointLight.castShadow = false;
   scene.add(biomePointLight);

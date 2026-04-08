@@ -339,19 +339,26 @@ export function buildDesertNightScene(group, deps) {
   moon.name = 'desert-moon';
   moonGroup.add(moon);
   registerFadeMaterial(moonMaterial);
-  const innerGlowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 });
-  const innerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(9.5, 2), innerGlowMat);
-  innerGlow.name = 'desert-moon-inner-glow';
-  const outerGlowMat = new THREE.MeshBasicMaterial({ color: 0xd4e5f7, transparent: true, opacity: 0.12 });
-  const outerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 2), outerGlowMat);
-  outerGlow.name = 'desert-moon-outer-glow';
-  const farGlowMat = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.06 });
-  const farGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(18, 2), farGlowMat);
-  farGlow.name = 'desert-moon-far-glow';
-  moonGroup.add(innerGlow, outerGlow, farGlow);
-  registerFadeMaterial(innerGlowMat);
-  registerFadeMaterial(outerGlowMat);
-  registerFadeMaterial(farGlowMat);
+  // Fake glow via canvas radial gradient (same pattern as synthwave-valley sun glow)
+  const makeRadial = (inner, outer) => {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(256,256,0,256,256,256);
+    g.addColorStop(0.0, inner);
+    g.addColorStop(0.35, inner);
+    g.addColorStop(0.6, outer);
+    g.addColorStop(1.0, 'rgba(170,200,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
+    return new THREE.CanvasTexture(c);
+  };
+  const moonGlowTex = makeRadial('rgba(220,230,255,0.6)', 'rgba(180,200,240,0.25)');
+  const moonGlowMat = new THREE.MeshBasicMaterial({ map: moonGlowTex, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const moonGlow = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), moonGlowMat);
+  moonGlow.name = 'desert-moon-fake-glow';
+  moonGlow.frustumCulled = false;
+  moonGroup.add(moonGlow);
+  registerFadeMaterial(moonGlowMat);
   moonGroup.position.set(-45, 35, -60);
   group.add(moonGroup);
 

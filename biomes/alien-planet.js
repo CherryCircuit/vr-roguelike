@@ -450,37 +450,7 @@ export function buildAlienPlanetScene(group, deps) {
     group.add(critterGroup);
   }
 
-  // Fireflies - 25 particles with gentle drift (reduced from 60 for FPS)
-  // AGGRESSIVE: Only spawn in front of player (negative Z)
-  const fireflyPositions = [];
-  const fireflyGeo = new THREE.BufferGeometry();
-  fireflyGeo.name = 'biome-alien-fireflies';
-
-  for (let i = 0; i < 25; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 4 + Math.random() * 35;
-    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 3;
-    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 3;
-    const y = 0.5 + Math.random() * 3;  // Float above ground
-
-    // AGGRESSIVE: Skip fireflies behind player (positive Z)
-    if (z > 0) continue;
-
-    fireflyPositions.push(x, y, z);
-  }
-
-  fireflyGeo.setAttribute('position', new THREE.Float32BufferAttribute(fireflyPositions, 3));
-  const fireflyMat = new THREE.PointsMaterial({
-    color: 0x44ff88,
-    size: 0.12,
-    transparent: true,
-    opacity: 0.9,
-    sizeAttenuation: true
-  });
-  const fireflies = new THREE.Points(fireflyGeo, fireflyMat);
-  fireflies.name = 'biome-alien-fireflies';
-  fireflies.frustumCulled = false; // Fix disappearing when looking up
-  group.add(fireflies);
+  // Fireflies removed (replaced with fake glow pattern)
 
   // River sparkles removed along with river mesh
 
@@ -651,8 +621,7 @@ export function buildAlienPlanetScene(group, deps) {
     // Green light pulse: every frame (cheap - single value)
     greenLight.intensity = 8 + Math.sin(time * 2) * 0.3;
 
-    // REMOVED: Firefly drift animation - per-frame position updates were too expensive
-    // Fireflies are now static for better FPS
+    // Fireflies removed - no animation needed
 
     // REMOVED: Plant sway animation - per-frame rotation was too expensive
     // Plants are now static for better FPS

@@ -58,9 +58,12 @@ let sceneRef;
 export let cameraRef;
 
 const titleGroup = new THREE.Group();
+titleGroup.name = 'title-screen';
 export const hudGroup = new THREE.Group();
+hudGroup.name = 'floor-hud';
 const levelTextGroup = new THREE.Group();
 const upgradeGroup = new THREE.Group();
+upgradeGroup.name = 'upgrade-cards';
 const gameOverGroup = new THREE.Group();
 const nameEntryGroup = new THREE.Group();
 const scoreboardGroup = new THREE.Group();
@@ -657,6 +660,7 @@ export async function initHUD(camera, scene) {
 
   // ── Boss health bar (top center, camera-attached, 3 segments) ──
   bossHealthGroup = new THREE.Group();
+  bossHealthGroup.name = 'boss-health-bar';
   bossHealthGroup.position.set(0, 0.22, -0.8);
   bossHealthGroup.visible = false;
   const barWidth = 0.30;
@@ -668,6 +672,7 @@ export async function initHUD(camera, scene) {
   const bgMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
   const bgBar = new THREE.Mesh(bgGeo, bgMat);
   bgBar.renderOrder = 999;
+  bgBar.name = 'boss-health-bar-bg';
   bossHealthGroup.add(bgBar);
 
   for (let i = 0; i < 3; i++) {
@@ -677,6 +682,7 @@ export async function initHUD(camera, scene) {
     const mat = new THREE.MeshBasicMaterial({ color: 0xff0044, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
     const bar = new THREE.Mesh(geo, mat);
     bar.position.x = (i - 1) * (barWidth + gap) - barWidth / 2;
+    bar.name = `boss-health-bar-seg-${i}`;
     bar.renderOrder = 1000;
     bossHealthGroup.add(bar);
     bossHealthBars.push(bar);
@@ -847,6 +853,7 @@ async function createHUDElements() {
     heartsSprite.position.set(_le.x, _le.y, _le.z);
   }
   heartsSprite.renderOrder = 999;
+  heartsSprite.name = 'floor-hud-hearts';
   hudGroup.add(heartsSprite);
 
   // SCORE - center-left on floor with title above
@@ -857,6 +864,7 @@ async function createHUDElements() {
     const _le = floorLayout.elements.score_num;
     scoreSprite.position.set(_le.x, _le.y, _le.z);
   }
+  scoreSprite.name = 'floor-hud-score';
   hudGroup.add(scoreSprite);
 
   // SCORE title - above score in yellow same style as level
@@ -866,6 +874,7 @@ async function createHUDElements() {
     const _le = floorLayout.elements.score_title;
     scoreTitleSprite.position.set(_le.x, _le.y, _le.z);
   }
+  scoreTitleSprite.name = 'floor-hud-score-title';
   hudGroup.add(scoreTitleSprite);
 
   // Kill counter — below LEVEL display
@@ -876,6 +885,7 @@ async function createHUDElements() {
     const _le = floorLayout.elements.kills;
     killCountSprite.position.set(_le.x, _le.y, _le.z);
   }
+  killCountSprite.name = 'floor-hud-kills';
   hudGroup.add(killCountSprite);
 
   // Level indicator — above kill counter
@@ -886,6 +896,7 @@ async function createHUDElements() {
     const _le = floorLayout.elements.level;
     levelSprite.position.set(_le.x, _le.y, _le.z);
   }
+  levelSprite.name = 'floor-hud-level';
   hudGroup.add(levelSprite);
 
   // Nuke counter — far right, top row; emoji 2x size, count text normal
@@ -895,6 +906,7 @@ async function createHUDElements() {
     const _le = floorLayout.elements.nuke_icon;
     nukeEmojiSprite.position.set(_le.x, _le.y, _le.z);
   }
+  nukeEmojiSprite.name = 'floor-hud-nuke-icon';
   hudGroup.add(nukeEmojiSprite);
   nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.35 });
   nukeCountSprite.position.set(2.12, 0.5, 0.01);  // Far right (v13)
@@ -902,6 +914,7 @@ async function createHUDElements() {
     const _le = floorLayout.elements.nuke_count;
     nukeCountSprite.position.set(_le.x, _le.y, _le.z);
   }
+  nukeCountSprite.name = 'floor-hud-nuke-count';
   hudGroup.add(nukeCountSprite);
 
   // Accuracy bonus — center, just below main HUD row
@@ -918,6 +931,7 @@ async function createHUDElements() {
     comboSprite.position.set(_le.x, _le.y, _le.z);
   }
   comboSprite.visible = false;
+  comboSprite.name = 'floor-hud-combo-text';
   hudGroup.add(comboSprite);
 
   // Accuracy bonus meter bar — directly below combo text
@@ -932,6 +946,7 @@ async function createHUDElements() {
     comboCooldownSprite.position.set(_le.x, _le.y, _le.z);
   }
   comboCooldownSprite.visible = false;
+  comboCooldownSprite.name = 'floor-hud-combo-bar';
   hudGroup.add(comboCooldownSprite);
 }
 
@@ -1173,13 +1188,13 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   const header = new THREE.Mesh(headerGeom, headerMat);
   header.renderOrder = 999;
   header.position.set(0, 1.05, 0);
-  header.name = 'header';
+  header.name = 'upgrade-cards-header';
   upgradeGroup.add(header);
 
   // Cooldown text
   const cooldownSprite = makeSprite('WAIT...', { fontSize: 36, color: '#ffff00', scale: 0.3 });
   cooldownSprite.position.set(0, 0.8, 0);
-  cooldownSprite.name = 'cooldown';
+  cooldownSprite.name = 'upgrade-cards-cooldown';
   upgradeGroup.add(cooldownSprite);
 
   // Shuffle upgrades so cards are random each time
@@ -1199,12 +1214,14 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   // Limit to first 3 upgrades only
   shuffledUpgrades.slice(0, 3).forEach((upg, i) => {
     const card = createUpgradeCard(upg, positions[i]);
+    card.name = `upgrade-card-${i}`;
     upgradeGroup.add(card);
     upgradeCards.push(card);
   });
 
   // Add SKIP card as 4th option
   const skipCard = createSkipCard(positions[3]);
+  skipCard.name = 'upgrade-card-3';
   upgradeGroup.add(skipCard);
   upgradeCards.push(skipCard);
 
