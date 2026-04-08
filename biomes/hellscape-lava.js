@@ -292,6 +292,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   }
 
   const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.name = 'biome-hellscape-embers';
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
   sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkColors, 3));
 
@@ -305,7 +306,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   });
 
   const sparks = new THREE.Points(sparkGeo, sparkMat);
-  sparks.name = "embers";
+  sparks.name = "biome-hellscape-embers";
   group.add(sparks);
 
   // (Ash particles removed - were jittery dots in corridor, not visible from player position)
@@ -354,6 +355,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   };
 
   const geyserGeo = new THREE.BufferGeometry();
+  geyserGeo.name = 'biome-hellscape-geysers';
   const geyserPositions = new Float32Array(MAX_GEYSER * 3);
   geyserGeo.setAttribute('position', new THREE.BufferAttribute(geyserPositions, 3));
   geyserGeo.setDrawRange(0, 0);
@@ -368,7 +370,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   });
 
   const geyserPoints = new THREE.Points(geyserGeo, geyserMat);
-  geyserPoints.name = "geysers";
+  geyserPoints.name = "biome-hellscape-geysers";
   group.add(geyserPoints);
 
   // (Flame pillars removed per Graeme's request)

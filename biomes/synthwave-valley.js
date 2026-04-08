@@ -87,6 +87,7 @@ function buildTaperedTerrainGeo() {
   }
 
   const geo = new THREE.BufferGeometry();
+  geo.name = 'biome-synthwave-tapered-terrain';
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setIndex(indices);
   // Shader is purely position-based (no normals/UVs used), skip computeVertexNormals

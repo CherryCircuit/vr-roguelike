@@ -454,6 +454,7 @@ export function buildAlienPlanetScene(group, deps) {
   // AGGRESSIVE: Only spawn in front of player (negative Z)
   const fireflyPositions = [];
   const fireflyGeo = new THREE.BufferGeometry();
+  fireflyGeo.name = 'biome-alien-fireflies';
 
   for (let i = 0; i < 25; i++) {
     const angle = Math.random() * Math.PI * 2;
@@ -477,7 +478,7 @@ export function buildAlienPlanetScene(group, deps) {
     sizeAttenuation: true
   });
   const fireflies = new THREE.Points(fireflyGeo, fireflyMat);
-  fireflies.name = 'alien-fireflies';
+  fireflies.name = 'biome-alien-fireflies';
   fireflies.frustumCulled = false; // Fix disappearing when looking up
   group.add(fireflies);
 
