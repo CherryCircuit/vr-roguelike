@@ -93,6 +93,7 @@ export function buildAlienPlanetScene(group, deps) {
     depthWrite: true,
   });
   const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.name = 'alien-ground-plane';
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = floorY;
   ground.frustumCulled = false;
@@ -109,6 +110,7 @@ export function buildAlienPlanetScene(group, deps) {
     side: THREE.DoubleSide
   });
   const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+  flashPlane.name = 'alien-flash-overlay';
   flashPlane.rotation.x = -Math.PI / 2;
   flashPlane.position.y = floorY + 0.1;
   flashPlane.frustumCulled = false;
@@ -130,6 +132,7 @@ export function buildAlienPlanetScene(group, deps) {
     depthWrite: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
+  sky.name = 'alien-skydome';
   sky.frustumCulled = false;
   sky.renderOrder = -20;
   group.add(sky);
@@ -171,6 +174,7 @@ export function buildAlienPlanetScene(group, deps) {
   const moonGeo = new THREE.IcosahedronGeometry(24, 1);
   const moonMat = new THREE.MeshBasicMaterial({ color: 0xddaaff, transparent: true, opacity: 0.95 });
   const moon = new THREE.Mesh(moonGeo, moonMat);
+  moon.name = 'alien-moon';
   moon.position.copy(moonTargetPos);
   moon.scale.setScalar(moonScaleFactor);
   moon.frustumCulled = false;
@@ -178,6 +182,7 @@ export function buildAlienPlanetScene(group, deps) {
   const moonGlowGeo = new THREE.IcosahedronGeometry(36, 1);
   const moonGlowMat = new THREE.MeshBasicMaterial({ color: 0xaa66ff, transparent: true, opacity: 0.15, side: THREE.BackSide });
   const moonGlow = new THREE.Mesh(moonGlowGeo, moonGlowMat);
+  moonGlow.name = 'alien-moon-glow';
   moonGlow.position.copy(moonTargetPos);
   moonGlow.scale.setScalar(moonScaleFactor);
   moonGlow.frustumCulled = false;
@@ -242,14 +247,16 @@ export function buildAlienPlanetScene(group, deps) {
   });
 
   // Mountains - 3 rings of procedural jagged mountains
-  const createMountain = (x, z, scale) => {
+  const createMountain = (x, z, scale, mountainIndex) => {
     const peakCount = 1 + Math.floor(Math.random() * 3);
     const mountainGroup = new THREE.Group();
+    mountainGroup.name = `alien-mountain-${mountainIndex ?? 'x'}`;
     for (let p = 0; p < peakCount; p++) {
       const height = (12 + Math.random() * 18) * scale;
       const radius = Math.max(2.5, (2 + Math.random() * 3) * scale);
       const peakGeo = new THREE.ConeGeometry(radius, height, 6);
       const peak = new THREE.Mesh(peakGeo, sharedMountainMat);
+      peak.name = `alien-mountain-${mountainIndex ?? 'x'}-peak-${p}`;
       peak.position.set(
         (Math.random() - 0.5) * 4 * scale,
         height / 2,
@@ -273,25 +280,30 @@ export function buildAlienPlanetScene(group, deps) {
       const r = radius + (Math.random() - 0.5) * 10;
       const x = Math.cos(angle) * r;
       const z = Math.sin(angle) * r;
-      group.add(createMountain(x, z, 1.2 + Math.random() * 0.6));
+      const mtn = createMountain(x, z, 1.2 + Math.random() * 0.6, i);
+      mtn.name = `alien-mountain-${i}`;
+      group.add(mtn);
     }
   }
 
   // Alien Plants - 3 types along river (removed fern type - too expensive with 40-72 meshes)
   const alienPlants = [];
 
-  const createAlienPlant = (x, z, type) => {
+  const createAlienPlant = (x, z, type, plantIndex) => {
     const plantGroup = new THREE.Group();
+    plantGroup.name = `alien-plant-${plantIndex}-${['spire', 'crystal', 'mushroom'][type]}`;
 
     if (type === 0) {
       // Glowing Spire - tall thin cone with glowing orb on top (shared mat/geo)
       const height = 3 + Math.random() * 5;
       const spireGeo = new THREE.ConeGeometry(0.2, height, 4);
       const spire = new THREE.Mesh(spireGeo, sharedSpireMat);
+      spire.name = `alien-spire-${plantIndex}`;
       spire.position.y = height / 2;
       plantGroup.add(spire);
 
       const orb = new THREE.Mesh(sharedOrbGeo, sharedOrbMat);
+      orb.name = `alien-spire-orb-${plantIndex}`;
       orb.position.y = height + 0.2;
       plantGroup.add(orb);
 
@@ -301,6 +313,7 @@ export function buildAlienPlanetScene(group, deps) {
         const height = 0.8 + Math.random() * 1.2;
         const crystalGeo = new THREE.ConeGeometry(0.15, height, 3);
         const crystal = new THREE.Mesh(crystalGeo, sharedCrystalMat);
+        crystal.name = `alien-crystal-${plantIndex}-${c}`;
         crystal.position.set(
           (Math.random() - 0.5) * 0.4,
           height / 2,
@@ -319,10 +332,12 @@ export function buildAlienPlanetScene(group, deps) {
       const stemHeight = 0.5 + Math.random() * 0.5;
       const stemGeo = new THREE.CylinderGeometry(0.1, 0.15, stemHeight, 6);
       const stem = new THREE.Mesh(stemGeo, sharedStemMat);
+      stem.name = `alien-mushroom-stem-${plantIndex}`;
       stem.position.y = stemHeight / 2;
       plantGroup.add(stem);
 
       const cap = new THREE.Mesh(sharedCapGeo, sharedCapMat);
+      cap.name = `alien-mushroom-cap-${plantIndex}`;
       cap.position.y = stemHeight;
       plantGroup.add(cap);
     }
@@ -332,6 +347,7 @@ export function buildAlienPlanetScene(group, deps) {
   };
 
   // Place 15 plants along river with random offsets (reduced for FPS)
+  let plantCounter = 0;
   for (let i = 0; i < 15; i++) {
     const t = Math.random();
     const riverT = t * 59;
@@ -359,7 +375,8 @@ export function buildAlienPlanetScene(group, deps) {
     }
 
     const plantType = Math.floor(Math.random() * 3);  // Only 3 types (removed fern)
-    const plant = createAlienPlant(x, z, plantType);
+    const plant = createAlienPlant(x, z, plantType, plantCounter);
+    plantCounter++;
     // Shadow casting disabled for FPS
     alienPlants.push(plant);
     group.add(plant);
@@ -384,7 +401,8 @@ export function buildAlienPlanetScene(group, deps) {
     }
 
     const plantType = Math.floor(Math.random() * 3);  // Only 3 types (removed fern)
-    const plant = createAlienPlant(x, z, plantType);
+    const plant = createAlienPlant(x, z, plantType, plantCounter);
+    plantCounter++;
     alienPlants.push(plant);
     group.add(plant);
   }
@@ -403,11 +421,14 @@ export function buildAlienPlanetScene(group, deps) {
     if (z > 0) continue;
 
     const critterGroup = new THREE.Group();
+    critterGroup.name = `alien-critter-${i}`;
     const body = new THREE.Mesh(critterGeo, sharedCritterBodyMat);
+    body.name = `alien-critter-${i}-body`;
     body.position.y = 0.2;
     critterGroup.add(body);
 
     const glow = new THREE.Mesh(critterGlowGeo, sharedCritterGlowMat);
+    glow.name = `alien-critter-${i}-glow`;
     glow.position.y = 0.2;
     critterGroup.add(glow);
 
@@ -443,6 +464,7 @@ export function buildAlienPlanetScene(group, deps) {
     sizeAttenuation: true
   });
   const fireflies = new THREE.Points(fireflyGeo, fireflyMat);
+  fireflies.name = 'alien-fireflies';
   fireflies.frustumCulled = false; // Fix disappearing when looking up
   group.add(fireflies);
 
@@ -468,6 +490,7 @@ export function buildAlienPlanetScene(group, deps) {
 
   const generateCityLayer = (geometry, count, minDist, maxDist, minHeight, maxHeight) => {
     const mesh = new THREE.InstancedMesh(geometry, cityShaderMat, count);
+    mesh.name = `alien-city-${count}`;
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = minDist + Math.random() * (maxDist - minDist);
@@ -483,14 +506,21 @@ export function buildAlienPlanetScene(group, deps) {
   };
 
   // Far background city on horizon (REDUCED for FPS: was 100+80+60=240, now 30+25+20=75)
-  cityMeshes.push(generateCityLayer(boxGeo, 30, 120, 150, 30, 60));
-  cityMeshes.push(generateCityLayer(cylinderGeo, 25, 140, 180, 40, 80));
-  cityMeshes.push(generateCityLayer(coneGeo, 20, 160, 200, 50, 100));
+  const cityLayer1 = generateCityLayer(boxGeo, 30, 120, 150, 30, 60);
+  cityLayer1.name = 'alien-city-boxes';
+  cityMeshes.push(cityLayer1);
+  const cityLayer2 = generateCityLayer(cylinderGeo, 25, 140, 180, 40, 80);
+  cityLayer2.name = 'alien-city-cylinders';
+  cityMeshes.push(cityLayer2);
+  const cityLayer3 = generateCityLayer(coneGeo, 20, 160, 200, 50, 100);
+  cityLayer3.name = 'alien-city-cones';
+  cityMeshes.push(cityLayer3);
   cityMeshes.forEach((mesh) => group.add(mesh));
 
   // Mega towers - far on horizon (REDUCED for FPS: was 10)
   const megaGeo = new THREE.CylinderGeometry(1, 1.5, 1, 5);
   const megaMesh = new THREE.InstancedMesh(megaGeo, cityShaderMat, 5);
+  megaMesh.name = 'alien-mega-towers';
   for (let i = 0; i < 5; i++) {
     const angle = (i / 5) * Math.PI * 2;
     const dist = 160 + Math.random() * 20;
@@ -504,14 +534,16 @@ export function buildAlienPlanetScene(group, deps) {
   group.add(megaMesh);
 
   // Issue 7: Distant low-poly mountains at ~100 units (alien planet colors)
-  const createDistantMountain = (x, z, scale) => {
+  const createDistantMountain = (x, z, scale, mtnIdx) => {
     const peakCount = 1 + Math.floor(Math.random() * 2);
     const mountainGroup = new THREE.Group();
+    mountainGroup.name = `alien-distant-mountain-${mtnIdx}`;
     for (let p = 0; p < peakCount; p++) {
       const height = (30 + Math.random() * 50) * scale;
       const radius = Math.max(6, (6 + Math.random() * 10) * scale);
       const peakGeo = new THREE.ConeGeometry(radius, height, 6);
       const peak = new THREE.Mesh(peakGeo, sharedDistantMountainMat);
+      peak.name = `alien-distant-mountain-${mtnIdx}-peak-${p}`;
       peak.position.set(
         (Math.random() - 0.5) * 6 * scale,
         height / 2,
@@ -532,7 +564,7 @@ export function buildAlienPlanetScene(group, deps) {
     const r = distantMountainRadius + (Math.random() - 0.5) * 20;
     const x = Math.cos(angle) * r;
     const z = Math.sin(angle) * r;
-    group.add(createDistantMountain(x, z, 1.0 + Math.random() * 0.5));
+    group.add(createDistantMountain(x, z, 1.0 + Math.random() * 0.5, i));
   }
 
   // Darkened mountain wrap cylinder (synthwave asset, very dark for silhouette backdrop)

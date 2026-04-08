@@ -58,12 +58,13 @@ export function buildDesertNightScene(group, deps) {
     depthWrite: false,
   });
   const sky = new THREE.Mesh(skyGeo, skyMat);
+  sky.name = 'desert-skydome';
   sky.frustumCulled = false;
   sky.renderOrder = -20;
   group.add(sky);
   registerFadeMaterial(skyMat);
 
-  const buildDunePanel = ({ width, depth, segmentsX, segmentsZ, centerX, centerZ, flatRadius, mountainStart }) => {
+  const buildDunePanel = ({ width, depth, segmentsX, segmentsZ, centerX, centerZ, flatRadius, mountainStart }, panelIndex) => {
     const geometry = new THREE.PlaneGeometry(width, depth, segmentsX, segmentsZ);
     geometry.rotateX(-Math.PI / 2);
     const positions = geometry.attributes.position;
@@ -105,6 +106,7 @@ export function buildDesertNightScene(group, deps) {
 
     const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
     const terrain = new THREE.Mesh(geometry, material);
+    terrain.name = `desert-dune-panel-${panelIndex}`;
     terrain.position.set(centerX, floorY, centerZ);
     terrain.frustumCulled = false;
     terrain.receiveShadow = true;
@@ -121,6 +123,7 @@ export function buildDesertNightScene(group, deps) {
         depthWrite: false,
       })
     );
+    outline.name = `desert-dune-outline-${panelIndex}`;
     outline.position.copy(terrain.position);
     outline.frustumCulled = false;
     group.add(outline);
@@ -136,7 +139,7 @@ export function buildDesertNightScene(group, deps) {
     { width: 40, depth: 110, segmentsX: 12, segmentsZ: 28, centerX: 58, centerZ: -8, flatRadius: 6.0, mountainStart: 12.0 },
     // { width: 72, depth: 28, segmentsX: 20, segmentsZ: 8, centerX: 0, centerZ: 56, flatRadius: 6.0, mountainStart: 12.0 },  // Removed: never seen by player
   ];
-  dunePanels.forEach(buildDunePanel);
+  dunePanels.forEach((panel, idx) => buildDunePanel(panel, idx));
 
   // Flash overlay plane for damage feedback (entire sand floor turns red)
   // Only cover the playable center after culling rear dune rows to avoid red flashes on removed geometry.
@@ -149,6 +152,7 @@ export function buildDesertNightScene(group, deps) {
     side: THREE.DoubleSide
   });
   const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+  flashPlane.name = 'desert-flash-overlay';
   flashPlane.rotation.x = -Math.PI / 2;
   flashPlane.position.y = floorY + 0.02; // Very close to terrain surface
   flashPlane.frustumCulled = false;
@@ -172,8 +176,9 @@ export function buildDesertNightScene(group, deps) {
   // Shared cylinder geometries (4 radial segments instead of 5)
   const cactusGeoCache = {};
 
-  const createCactus = (height) => {
+  const createCactus = (height, cactusIndex) => {
     const cactusGroup = new THREE.Group();
+    cactusGroup.name = `desert-cactus-${cactusIndex}`;
     const segments = 2 + Math.floor(Math.random() * 2); // 2-3 segments (was 3-4)
     let currentY = 0;
     const segmentHeight = height / segments;
@@ -186,6 +191,7 @@ export function buildDesertNightScene(group, deps) {
         cactusGeoCache[geoKey] = new THREE.CylinderGeometry(radius * 0.9, radius, segmentHeight, 4);
       }
       const segment = new THREE.Mesh(cactusGeoCache[geoKey], cactusBodyMat);
+      segment.name = `desert-cactus-${cactusIndex}-body-${i}`;
       segment.position.y = currentY + segmentHeight / 2;
       segment.castShadow = true;  // Cacti cast shadows
       segment.receiveShadow = true;
@@ -195,6 +201,7 @@ export function buildDesertNightScene(group, deps) {
         new THREE.EdgesGeometry(cactusGeoCache[geoKey], 14),
         cactusOutlineMat
       );
+      segOutline.name = `desert-cactus-${cactusIndex}-body-outline-${i}`;
       segOutline.position.copy(segment.position);
       cactusGroup.add(segOutline);
       currentY += segmentHeight;
@@ -213,6 +220,7 @@ export function buildDesertNightScene(group, deps) {
         cactusGeoCache[hArmKey] = new THREE.CylinderGeometry(0.08, 0.1, armLength, 4);
       }
       const hArm = new THREE.Mesh(cactusGeoCache[hArmKey], cactusArmMat);
+      hArm.name = `desert-cactus-${cactusIndex}-arm-h-${a}`;
       hArm.rotation.z = Math.PI / 2;
       hArm.position.set(side * armLength / 2, armY, 0);
       hArm.castShadow = true;
@@ -221,6 +229,7 @@ export function buildDesertNightScene(group, deps) {
         new THREE.EdgesGeometry(cactusGeoCache[hArmKey], 14),
         cactusOutlineMat
       );
+      hArmOutline.name = `desert-cactus-${cactusIndex}-arm-h-outline-${a}`;
       hArmOutline.position.copy(hArm.position);
       hArmOutline.rotation.copy(hArm.rotation);
       cactusGroup.add(hArmOutline);
@@ -232,6 +241,7 @@ export function buildDesertNightScene(group, deps) {
         cactusGeoCache[vArmKey] = new THREE.CylinderGeometry(0.06, 0.08, vArmHeight, 4);
       }
       const vArm = new THREE.Mesh(cactusGeoCache[vArmKey], cactusArmMat);
+      vArm.name = `desert-cactus-${cactusIndex}-arm-v-${a}`;
       vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
       vArm.castShadow = true;
       cactusGroup.add(vArm);
@@ -239,6 +249,7 @@ export function buildDesertNightScene(group, deps) {
         new THREE.EdgesGeometry(cactusGeoCache[vArmKey], 14),
         cactusOutlineMat
       );
+      vArmOutline.name = `desert-cactus-${cactusIndex}-arm-v-outline-${a}`;
       vArmOutline.position.copy(vArm.position);
       cactusGroup.add(vArmOutline);
     }
@@ -258,8 +269,8 @@ export function buildDesertNightScene(group, deps) {
     { x: -5, z: -9, h: 2.4 },
   ];
 
-  cactusPositions.forEach(pos => {
-    const cactus = createCactus(pos.h);
+  cactusPositions.forEach((pos, idx) => {
+    const cactus = createCactus(pos.h, idx);
     cactus.position.set(pos.x, floorY, pos.z);
     cactus.rotation.y = Math.random() * Math.PI * 2;
     group.add(cactus);
@@ -321,6 +332,7 @@ export function buildDesertNightScene(group, deps) {
   });
 
   const stars = new THREE.Points(starGeometry, starMaterial);
+  stars.name = 'desert-stars';
   stars.frustumCulled = false; // Fix disappearing when looking up
   stars.renderOrder = 999;
   group.add(stars);
@@ -330,17 +342,22 @@ export function buildDesertNightScene(group, deps) {
 
   // Moon
   const moonGroup = new THREE.Group();
+  moonGroup.name = 'desert-moon-group';
   const moonGeometry = new THREE.IcosahedronGeometry(8, 2);
   const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xfffef8 });
   const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+  moon.name = 'desert-moon';
   moonGroup.add(moon);
   registerFadeMaterial(moonMaterial);
   const innerGlowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 });
   const innerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(9.5, 2), innerGlowMat);
+  innerGlow.name = 'desert-moon-inner-glow';
   const outerGlowMat = new THREE.MeshBasicMaterial({ color: 0xd4e5f7, transparent: true, opacity: 0.12 });
   const outerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 2), outerGlowMat);
+  outerGlow.name = 'desert-moon-outer-glow';
   const farGlowMat = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.06 });
   const farGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(18, 2), farGlowMat);
+  farGlow.name = 'desert-moon-far-glow';
   moonGroup.add(innerGlow, outerGlow, farGlow);
   registerFadeMaterial(innerGlowMat);
   registerFadeMaterial(outerGlowMat);

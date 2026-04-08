@@ -7672,6 +7672,19 @@ class MinotaurBoss extends Boss {
     this.shardTimer = 0;
     this.shardRate = def.shardRate || 0.6;
 
+    // Phase system (3-phase fight modeled after Skull Boss)
+    this.skullPhase = 0; // 0 = initial, 1/2/3 = phases
+    this.transitioning = false;
+    this.transitionTimer = 0;
+    this.transitionDuration = 3.0;
+    this.transitionFromPhase = 0;
+    this.transitionToPhase = 0;
+
+    // Movement state (horizontal XZ plane only)
+    this.moveTimer = 0;
+    this.moveDirection = new THREE.Vector3();
+    this.fixedY = 1.5;
+
     // Create horns
     this.createHorns();
   }
@@ -7707,60 +7720,197 @@ class MinotaurBoss extends Boss {
   }
 
   updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
+    // Check for phase transitions based on HP
+    const newPhase = this.hp > 1267 ? 1 : this.hp > 634 ? 2 : 3;
+
+    if (this.skullPhase === 0) {
+      // First frame: enter phase 1
+      this.skullPhase = 1;
+      this.onMinotaurPhaseChange(1);
+    } else if (newPhase !== this.skullPhase && !this.transitioning) {
+      this.startPhaseTransition(this.skullPhase, newPhase);
+      this.skullPhase = newPhase;
+      return;
+    }
+
+    if (this.transitioning) {
+      this.updateTransition(dt, now, playerPos);
+      return;
+    }
+
+    const phaseConfig = this.getMinotaurPhaseConfig();
 
     if (this.isCharging) {
-      // Charging - move fast in charge direction
+      // Charging: move fast in horizontal charge direction
       this.chargeTimer -= dt;
       if (this.chargeTimer <= 0) {
         this.isCharging = false;
-
-        // Ground slam at end of charge
         this.groundSlam(playerPos);
       } else {
-        this.mesh.position.addScaledVector(this.chargeDirection, (8 + this.phase * 2) * dt);
+        this.mesh.position.addScaledVector(this.chargeDirection, phaseConfig.chargeSpeed * dt);
       }
     } else {
       // Normal behavior
       this.chargeTimer -= dt;
       if (this.chargeTimer <= 0) {
-        this.chargeTimer = this.chargeDuration / this.phase;
+        this.chargeTimer = this.chargeDuration / this.skullPhase;
         this.startCharge(playerPos);
       }
 
       // Horn shards
       this.shardTimer -= dt;
       if (this.shardTimer <= 0) {
-        this.shardTimer = this.shardRate / this.phase;
+        this.shardTimer = phaseConfig.shardRate;
         this.fireHornShards(playerPos);
       }
 
       // Ground slam
       this.slamTimer -= dt;
       if (this.slamTimer <= 0) {
-        this.slamTimer = this.slamRate / this.phase;
+        this.slamTimer = phaseConfig.slamRate;
         this.groundSlam(playerPos);
       }
 
-      // Slow movement toward player
-      const speed = 0.6 + this.phase * 0.15;
-      this.mesh.position.addScaledVector(dirToPlayer, speed * dt);
-
-      // Keep distance
-      const dist = this.mesh.position.distanceTo(playerPos);
-      if (dist < 5) {
-        this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.8 * dt);
-      } else if (dist > 14) {
-        this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
+      // Random horizontal movement (not toward player)
+      this.moveTimer += dt;
+      if (this.moveTimer >= phaseConfig.erraticness) {
+        this.moveTimer = 0;
+        const angle = Math.random() * Math.PI * 2;
+        this.moveDirection.set(Math.sin(angle), 0, Math.cos(angle));
       }
+      this.mesh.position.addScaledVector(this.moveDirection, phaseConfig.moveSpeed * dt);
     }
 
-    this.mesh.lookAt(_look.copy(playerPos));
+    this.constrainToMidfield(playerPos);
+    this.mesh.position.y = this.fixedY;
+    this.mesh.lookAt(_look.copy(playerPos).setY(this.fixedY));
+  }
+
+  getMinotaurPhaseConfig() {
+    switch (this.skullPhase) {
+      case 1: // 1900-1267 HP: Moderate speed, moderate attacks
+        return {
+          moveSpeed: 1.2,
+          chargeSpeed: 6.0,
+          shardRate: 0.7,
+          slamRate: 5.0,
+          erraticness: 3.0
+        };
+      case 2: // 1267-634 HP: Faster, more aggressive
+        return {
+          moveSpeed: 2.2,
+          chargeSpeed: 9.0,
+          shardRate: 0.5,
+          slamRate: 3.5,
+          erraticness: 1.5
+        };
+      case 3: // 634-0 HP: Very fast, relentless
+        return {
+          moveSpeed: 3.5,
+          chargeSpeed: 12.0,
+          shardRate: 0.35,
+          slamRate: 2.5,
+          erraticness: 0.8
+        };
+      default:
+        return {
+          moveSpeed: 1.2,
+          chargeSpeed: 6.0,
+          shardRate: 0.7,
+          slamRate: 5.0,
+          erraticness: 3.0
+        };
+    }
+  }
+
+  startPhaseTransition(fromPhase, toPhase) {
+    this.transitioning = true;
+    this.transitionTimer = 0;
+    this.transitionFromPhase = fromPhase;
+    this.transitionToPhase = toPhase;
+
+    // Sound effects
+    playSkullPhaseSound();
+    playSkullHandGrowlSound();
+
+    _log(`[MinotaurBoss] Phase transition: ${fromPhase} -> ${toPhase} (3-sec invuln)`);
+  }
+
+  updateTransition(dt, now, playerPos) {
+    this.transitionTimer += dt;
+
+    // Stop movement and attacking during transition
+    // Pulsing scale effect
+    const pulse = 1.0 + 0.15 * Math.sin(this.transitionTimer * 8.0);
+    this.mesh.scale.setScalar(pulse);
+
+    // Horn glow pulsing
+    const hornGlow = 0.4 + 0.6 * Math.abs(Math.sin(this.transitionTimer * 6.0));
+    this.hornShards.forEach(hornGroup => {
+      hornGroup.traverse(child => {
+        if (child.isMesh && child.material) {
+          child.material.opacity = hornGlow;
+        }
+      });
+    });
+
+    // Transition complete
+    if (this.transitionTimer >= this.transitionDuration) {
+      this.transitioning = false;
+      this.mesh.scale.setScalar(1.0);
+
+      // Reset horn opacity
+      this.hornShards.forEach(hornGroup => {
+        hornGroup.traverse(child => {
+          if (child.isMesh && child.material) {
+            child.material.opacity = 0.9;
+          }
+        });
+      });
+
+      this.onMinotaurPhaseChange(this.transitionToPhase);
+      _log(`[MinotaurBoss] Transition complete, now in phase ${this.transitionToPhase}`);
+    }
+  }
+
+  constrainToMidfield(playerPos) {
+    // Stay in a fixed arena, mid-field from player
+    const dist = this.mesh.position.distanceTo(playerPos);
+
+    // Stay between 6 and 14 units from player
+    if (dist < 6) {
+      const awayDir = this.mesh.position.clone().sub(playerPos).normalize();
+      awayDir.y = 0;
+      if (awayDir.lengthSq() > 0) awayDir.normalize();
+      this.mesh.position.addScaledVector(awayDir, (6 - dist));
+    } else if (dist > 14) {
+      const towardDir = playerPos.clone().sub(this.mesh.position).normalize();
+      towardDir.y = 0;
+      if (towardDir.lengthSq() > 0) towardDir.normalize();
+      this.mesh.position.addScaledVector(towardDir, (dist - 14));
+    }
+
+    // Keep in play area bounds
+    const bound = 15;
+    this.mesh.position.x = Math.max(-bound, Math.min(bound, this.mesh.position.x));
+    this.mesh.position.z = Math.max(-bound, Math.min(bound, this.mesh.position.z));
+    this.mesh.position.y = this.fixedY;
+  }
+
+  onMinotaurPhaseChange(newPhase) {
+    const config = this.getMinotaurPhaseConfig();
+    this.shardRate = config.shardRate;
+    this.slamRate = config.slamRate;
+    this.chargeDuration = newPhase === 3 ? 1.5 : newPhase === 2 ? 2.0 : 2.5;
+    _log(`[MinotaurBoss] Phase ${newPhase} config applied: speed=${config.moveSpeed}, chargeSpeed=${config.chargeSpeed}`);
   }
 
   startCharge(playerPos) {
     this.isCharging = true;
-    this.chargeDirection = playerPos.clone().sub(this.mesh.position).normalize();
+    // Horizontal-only charge direction (XZ plane)
+    this.chargeDirection = playerPos.clone().sub(this.mesh.position);
+    this.chargeDirection.y = 0;
+    this.chargeDirection.normalize();
 
     // Telegraph charge
     if (this.telegraphing) {
@@ -7779,7 +7929,7 @@ class MinotaurBoss extends Boss {
     }
 
     // Fire shockwave projectiles in all directions
-    const shardCount = 8 + this.phase * 2;
+    const shardCount = 8 + this.skullPhase * 2;
     for (let i = 0; i < shardCount; i++) {
       const angle = (i / shardCount) * Math.PI * 2;
       const targetPos = new THREE.Vector3(
@@ -7822,6 +7972,11 @@ class MinotaurBoss extends Boss {
   }
 
   takeDamage(amount, hitInfo = {}) {
+    // Immune during phase transitions
+    if (this.transitioning) {
+      return { killed: false, immune: true };
+    }
+
     let damageTaken = amount;
 
     // Minotaur takes reduced damage while charging
@@ -7833,19 +7988,8 @@ class MinotaurBoss extends Boss {
   }
 
   onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: faster charge, more shards
-    if (newPhase >= 2) {
-      this.chargeDuration = 2.0;
-      this.shardRate = 0.5;
-      this.slamRate = 4.0;
-    }
-    // Phase 3+: even faster
-    if (newPhase >= 3) {
-      this.chargeDuration = 1.5;
-      this.shardRate = 0.4;
-      this.slamRate = 3.0;
-    }
+    // Phase changes are handled by the skullPhase system
+    // This is kept for Boss base class compatibility
   }
 }
 
@@ -8837,28 +8981,41 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
 
   if (lobbed) {
     // Lobbed projectile: arc trajectory aimed at player position
-    // Calculate required speed to always reach the target
     const horizontalDir = new THREE.Vector3(
       targetPos.x - fromPos.x,
       0,
       targetPos.z - fromPos.z
     );
     const horizontalDist = horizontalDir.length();
-    horizontalDir.normalize();
+    if (horizontalDist > 0.001) horizontalDir.normalize();
 
-    // Use a flight time proportional to distance for consistent arcs
-    // Minimum flight time of 0.8s, scaling up with distance
-    const desiredFlightTime = Math.max(0.8, horizontalDist / 6.0);
-    const flightTime = desiredFlightTime;
-
-    // Calculate horizontal speed to cover distance in flight time
-    const horizontalSpeed = horizontalDist / flightTime;
-
-    // Calculate initial upward velocity to reach arcHeight
-    // At peak (t/2): arcHeight = v0*(t/2) - 0.5*g*(t/2)^2
     const gravity = 9.8;
-    const halfTime = flightTime / 2;
-    const initialUpSpeed = (arcHeight + 0.5 * gravity * halfTime * halfTime) / halfTime;
+    const heightDiff = targetPos.y - fromPos.y;
+
+    // Start with flight time proportional to horizontal distance
+    let flightTime = Math.max(0.8, horizontalDist / 6.0);
+
+    // Compute v0y so the projectile lands at targetPos.y at flightTime
+    // y(T) = fromPos.y + v0y*T - 0.5*g*T^2 = targetPos.y
+    // v0y = (heightDiff + 0.5*g*T^2) / T
+    let initialUpSpeed = (heightDiff + 0.5 * gravity * flightTime * flightTime) / flightTime;
+
+    // Ensure the arc peaks at least arcHeight above the launch position
+    // Peak above launch = v0y^2 / (2*g)
+    const peakAboveLaunch = (initialUpSpeed * initialUpSpeed) / (2 * gravity);
+    if (peakAboveLaunch < arcHeight) {
+      // Need a higher arc: increase flightTime so v0y produces >= arcHeight above launch
+      const minV0y = Math.sqrt(2 * gravity * arcHeight);
+      // Solve: minV0y = (heightDiff + 0.5*g*T^2) / T  =>  0.5*g*T^2 - minV0y*T + heightDiff = 0
+      const disc = minV0y * minV0y - 2 * gravity * heightDiff;
+      flightTime = disc >= 0
+        ? (minV0y + Math.sqrt(disc)) / gravity
+        : minV0y * 2 / gravity; // fallback for extreme cases
+      flightTime = Math.max(flightTime, 0.8);
+      initialUpSpeed = (heightDiff + 0.5 * gravity * flightTime * flightTime) / flightTime;
+    }
+
+    const horizontalSpeed = flightTime > 0.001 ? horizontalDist / flightTime : 0;
 
     velocity = new THREE.Vector3(
       horizontalDir.x * horizontalSpeed,
