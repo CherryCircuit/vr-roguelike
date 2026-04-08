@@ -113,22 +113,7 @@ export function buildAlienPlanetScene(group, deps) {
   group.add(farGround);
   registerFadeMaterial(farGroundMat);
 
-  // Flash overlay plane for damage feedback (Issue 2: 320x320 for full floor coverage)
-  const flashGeo = new THREE.PlaneGeometry(320, 320);
-  const flashMat = new THREE.MeshBasicMaterial({
-    color: 0xff0000,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    side: THREE.DoubleSide
-  });
-  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
-  flashPlane.name = 'alien-flash-overlay';
-  flashPlane.rotation.x = -Math.PI / 2;
-  flashPlane.position.y = floorY + 0.1;
-  flashPlane.frustumCulled = false;
-  group.add(flashPlane);
-  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
+  // Flash overlay removed
 
   // Green-gradient skydome (similar structure to desert biome but green tones)
   const skyGeo = new THREE.SphereGeometry(2200, 24, 18);
@@ -192,14 +177,28 @@ export function buildAlienPlanetScene(group, deps) {
   moon.scale.setScalar(moonScaleFactor);
   moon.frustumCulled = false;
   group.add(moon);
-  const moonGlowGeo = new THREE.IcosahedronGeometry(36, 1);
-  const moonGlowMat = new THREE.MeshBasicMaterial({ color: 0xaa66ff, transparent: true, opacity: 0.15, side: THREE.BackSide });
-  const moonGlow = new THREE.Mesh(moonGlowGeo, moonGlowMat);
+  // Fake glow via canvas radial gradient (same pattern as synthwave-valley)
+  const makeRadial = (inner, outer) => {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(256,256,0,256,256,256);
+    g.addColorStop(0.0, inner);
+    g.addColorStop(0.35, inner);
+    g.addColorStop(0.6, outer);
+    g.addColorStop(1.0, 'rgba(0,255,180,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
+    return new THREE.CanvasTexture(c);
+  };
+  const moonGlowTex = makeRadial('rgba(100,255,200,0.6)', 'rgba(80,200,255,0.25)');
+  const moonGlowMat = new THREE.MeshBasicMaterial({ map: moonGlowTex, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const moonGlow = new THREE.Mesh(new THREE.PlaneGeometry(150, 150), moonGlowMat);
   moonGlow.name = 'alien-moon-glow';
   moonGlow.position.copy(moonTargetPos);
   moonGlow.scale.setScalar(moonScaleFactor);
   moonGlow.frustumCulled = false;
   group.add(moonGlow);
+  registerFadeMaterial(moonGlowMat);
 
   // Lighting - moonLight for ambient scene lighting (shadows DISABLED for FPS)
   const moonLight = new THREE.DirectionalLight(0xcc88ff, 35);
