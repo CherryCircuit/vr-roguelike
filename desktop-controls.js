@@ -51,7 +51,7 @@ const player = {
 };
 
 // Debug movement settings (for desktop no-clip mode)
-const maxMoveSpeed = 30.0; // Peak debug travel speed (tuned for precision).
+const maxMoveSpeed = 90.0; // Peak debug travel speed (tuned for precision).
 const friction = 10.0; // damping factor
 const acceleration = 30.0; // acceleration factor
 let debugMode = false; // debug movement disabled by default (Fix 1.1: avoid per-frame Vector3 allocations)
@@ -295,36 +295,38 @@ export function update(dt) {
       player.isMoving = true;
     }
 
-    const getRampSpeed = (activeKeys, speedCap) => {
-      let longestHold = 0;
-      for (const key of activeKeys) {
-        if (keys[key]) longestHold = Math.max(longestHold, keyHoldDurations[key]);
-      }
-      if (longestHold < 0.1) return 0; // dead zone to prevent jitter
+    // Compute global max hold across ALL movement keys so pressing a new direction
+    // mid-stride inherits the already-ramped speed instead of starting from zero.
+    const globalMaxHold = Math.max(
+      ...Object.entries(keys)
+        .filter(([k]) => ['w','a','s','d','q','e'].includes(k))
+        .map(([k, v]) => v ? keyHoldDurations[k] : 0)
+    );
 
-      // Phase 1 (0.1–1s): linear ramp from 0 to ~3 u/s (fine nudge control)
-      // Phase 2 (1–5s): exponential ramp from ~3 to 30 u/s (fast traversal)
-      if (longestHold < 1.0) {
-        return 3.0 * (longestHold - 0.1) / 0.9;
+    const getRampSpeed = (speedCap) => {
+      if (globalMaxHold < 0.1) return 0; // dead zone to prevent jitter
+
+      // Phase 1 (0.1–0.8s): linear ramp from 0 to 5 u/s (fine nudge control)
+      // Phase 2 (0.8–2.0s): exponential ramp from 5 to speedCap (fast traversal)
+      if (globalMaxHold < 0.8) {
+        return 5.0 * (globalMaxHold - 0.1) / 0.7;
       }
-      const t = longestHold - 1.0;
-      const expRamp = 1 - Math.exp(-t * 1.0);
-      return 3.0 + (speedCap - 3.0) * expRamp;
+      const t = globalMaxHold - 0.8;
+      const expRamp = 1 - Math.exp(-t * 1.8); // reaches ~90% of speedCap by 2s
+      return 5.0 + (speedCap - 5.0) * expRamp;
     };
 
     // Normalize horizontal movement if any
     if (_moveDir.lengthSq() > 0) {
       _horizontal.set(_moveDir.x, 0, _moveDir.z);
       if (_horizontal.lengthSq() > 0) {
-        // Use the longest-held horizontal key so strafing/diagonal motion ramps smoothly.
-        const horizontalSpeed = getRampSpeed(['w', 'a', 's', 'd'], maxMoveSpeed);
+        const horizontalSpeed = getRampSpeed(maxMoveSpeed);
         _horizontal.normalize().multiplyScalar(horizontalSpeed);
       }
 
       // Apply vertical speed
       if (_moveDir.y !== 0) {
-        // Q/E share the same exponential ramp as WASD so free-fly motion feels consistent.
-        _moveDir.y *= getRampSpeed(['q', 'e'], maxMoveSpeed);
+        _moveDir.y *= getRampSpeed(maxMoveSpeed);
       } else {
         _moveDir.y = 0;
       }

@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getStasisSlowFactor } from './stasis.js';
-import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound, playPhaseWraithCharge, playSkullPhaseSound, playSkullHandGrowlSound, playSkullDeathKnell, playSkullLaughSound } from './audio.js';
+import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound, playBossProjectileFiredSound, playBossProjectileAlertSound, playPhaseWraithCharge, playSkullPhaseSound, playSkullHandGrowlSound, playSkullDeathKnell, playSkullLaughSound } from './audio.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
@@ -5570,209 +5570,6 @@ class SkullBoss extends Boss {
     // Phase config is now driven by getSkullPhaseConfig() based on HP thresholds
   }
 }
-
-// ── TELEPORTING BOSS (DODGER) ───────────────────────────────
-class DodgerBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // Dodger-specific state
-    this.state = 'hidden';
-    this.teleportTimer = 0;
-    this.chargeTimer = 0;
-    this.chargeActive = false;
-    this.stunTimer = 0;
-    this.hasFirstAppeared = false;
-    this.firstAppearanceFront = true;
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-
-    // Initialize state machine if not set
-    if (this.state === 'idle') {
-      this.state = 'hidden';
-    }
-
-    // Update state machine
-    this.updateDodgerState(dt, now, playerPos, dirToPlayer);
-
-    // Always face player when visible
-    if (this.state !== 'hidden' && this.state !== 'hiding') {
-      this.mesh.lookAt(_look.copy(playerPos));
-
-      // Visual effects based on state
-      this.updateVisualEffects(now);
-    }
-  }
-
-  updateDodgerState(dt, now, playerPos, dirToPlayer) {
-    switch (this.state) {
-      case 'hidden':
-        this.teleportTimer -= dt;
-        if (this.teleportTimer <= 0) {
-          this.state = 'appearing';
-          this.showTelegraph('teleport', 0.5, 0xff00ff);
-
-          // Determine teleport angle based on health
-          const healthRatio = this.hp / this.maxHp;
-          let maxAngleDeg;
-          if (healthRatio > 0.66) {
-            maxAngleDeg = 50;
-          } else if (healthRatio > 0.33) {
-            maxAngleDeg = 80;
-          } else {
-            maxAngleDeg = 120;
-          }
-
-          // First appearance: always directly in front
-          let angle;
-          if (!this.hasFirstAppeared || this.firstAppearanceFront) {
-            angle = 0;
-            this.firstAppearanceFront = false;
-          } else {
-            const halfAngleRad = (maxAngleDeg * Math.PI / 180) / 2;
-            angle = (Math.random() - 0.5) * 2 * halfAngleRad;
-          }
-
-          // Calculate position
-          const distance = 8 + Math.random() * 4;
-          this.mesh.position.set(
-            Math.sin(angle) * distance,
-            1.5,
-            -Math.cos(angle) * distance
-          );
-
-          // Return true for reappear sound
-          if (typeof window !== 'undefined' && window.playBossTeleportReappear) {
-            window.playBossTeleportReappear();
-          }
-
-          this.hasFirstAppeared = true;
-          this.state = 'charging';
-          this.chargeTimer = 1.5;
-        }
-        return;
-
-      case 'appearing':
-        this.state = 'charging';
-        this.chargeTimer = 1.5;
-        return;
-
-      case 'charging':
-        this.chargeTimer -= dt;
-        if (this.chargeTimer <= 0 && !this.chargeHasExploded) {
-          this.chargeHasExploded = true;
-
-          const distToPlayer = this.mesh.position.distanceTo(playerPos);
-          if (distToPlayer < 3) {
-            // Player hit!
-            this.state = 'hidden';
-            this.teleportTimer = 3;
-
-            if (typeof window !== 'undefined' && window.playBossExplosion) {
-              window.playBossExplosion();
-            }
-
-            // Return explosion damage
-            this.lastExplosionHitPlayer = true;
-          } else {
-            // Missed
-            this.state = 'normal';
-            this.hideTimer = 4 + Math.random() * 2;
-
-            if (typeof window !== 'undefined' && window.playBossExplosion) {
-              window.playBossExplosion();
-            }
-          }
-        }
-        return;
-
-      case 'stunned':
-        this.stunTimer -= dt;
-        if (this.stunTimer <= 0) {
-          this.state = 'hidden';
-          this.teleportTimer = 2;
-        }
-        return;
-
-      case 'normal':
-        this.hideTimer -= dt;
-
-        // Move erratically
-        this.dodgeTimer = (this.dodgeTimer || 0) - dt;
-        if (this.dodgeTimer <= 0) {
-          this.dodgeTimer = 0.4 / this.phase;
-          const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
-          const randomDir = Math.random() < 0.5 ? 1 : -1;
-          this.dodgeDir = perp.multiplyScalar(randomDir);
-        }
-
-        const approachSpeed = 0.2 + this.phase * 0.1;
-        const dodgeSpeed = 1.0 + this.phase * 0.4;
-        this.mesh.position.addScaledVector(dirToPlayer, approachSpeed * dt);
-        if (this.dodgeDir) {
-          this.mesh.position.addScaledVector(this.dodgeDir, dodgeSpeed * dt);
-        }
-
-        if (this.hideTimer <= 0) {
-          this.state = 'hiding';
-        }
-        return;
-
-      case 'hiding':
-        this.state = 'hidden';
-        this.teleportTimer = 1.5 + Math.random() * 1.5;
-        return;
-    }
-  }
-
-  updateVisualEffects(now) {
-    // Charging: pulsing effect
-    if (this.state === 'charging') {
-      const pulse = 1 + Math.sin(now * 0.01) * 0.1;
-      this.mesh.scale.set(pulse, pulse, pulse);
-    } else {
-      this.mesh.scale.set(1, 1, 1);
-    }
-
-    // Stunned: shake effect
-    if (this.state === 'stunned') {
-      this.mesh.position.x += (Math.random() - 0.5) * 0.05;
-      this.mesh.position.y += (Math.random() - 0.5) * 0.05;
-    }
-
-    // Hidden: invisible
-    if (this.state === 'hidden') {
-      this.mesh.visible = false;
-    } else {
-      this.mesh.visible = true;
-    }
-  }
-
-  takeDamage(amount, hitInfo = {}) {
-    const result = super.takeDamage(amount, hitInfo);
-
-    // DODGER: stun when hit during charge
-    if (result.phaseChanged && hitInfo.isBody) {
-      this.state = 'stunned';
-      this.stunTimer = 2;
-
-      if (typeof window !== 'undefined' && window.playBossStunned) {
-        window.playBossStunned();
-      }
-    }
-
-    return result;
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Update dodger parameters based on phase
-    this.dodgeTimer = 0.4 / newPhase;
-  }
-}
-
 // ── HUNTER BOSS (Redmond "Hunter" Breakenridge) ─────────────
 class HunterBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
@@ -5894,643 +5691,6 @@ class HunterBoss extends Boss {
     if (newPhase >= 3) {
       this.rifleFireRate = 2.0;
       this.droneFireRate = 1.0;
-    }
-  }
-}
-
-// ── DJ BOSS (DJ Drax) ─────────────────────────────────────
-class DJBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // DJ-specific state
-    this.beatTimer = 0;
-    this.beatRate = def.beatRate || 0.6;
-    this.fanSpawnTimer = 0;
-    this.fanSpawnRate = def.fanSpawnRate || 4.0;
-    this.speakerPulsePhase = 0;
-    this.speakers = [];
-
-    // Create speaker stacks
-    this.createSpeakers();
-  }
-
-  createSpeakers() {
-    const speakerPositions = [
-      { x: -0.8, y: 0.5, z: -0.3 },
-      { x: 0.8, y: 0.5, z: -0.3 },
-      { x: -0.8, y: -0.5, z: -0.3 },
-      { x: 0.8, y: -0.5, z: -0.3 },
-    ];
-
-    speakerPositions.forEach((pos, idx) => {
-      const speakerGroup = new THREE.Group();
-      const geo = getGeo(0.25);
-      const speakerMat = new THREE.MeshBasicMaterial({
-        color: 0x8800ff,
-        transparent: true,
-        opacity: 0.9
-      });
-
-      // Speaker body
-      for (let i = 0; i < 2; i++) {
-        const cube = new THREE.Mesh(geo, speakerMat.clone());
-        cube.position.set(pos.x, pos.y + i * 0.25, pos.z);
-        speakerGroup.add(cube);
-      }
-
-      speakerGroup.userData.isWeakPoint = true;
-      speakerGroup.userData.isBossSpeaker = true;
-      speakerGroup.userData.speakerIndex = idx;
-
-      this.mesh.add(speakerGroup);
-      this.speakers.push(speakerGroup);
-      this.weakPoints.push(speakerGroup);
-    });
-
-    // Add DJ booth
-    const boothGeo = getGeo(0.3);
-    const boothMat = new THREE.MeshBasicMaterial({
-      color: 0x4400aa,
-      transparent: true,
-      opacity: 0.85
-    });
-    const booth = new THREE.Mesh(boothGeo, boothMat);
-    booth.position.set(0, 0, 0.5);
-    booth.userData.isBossBody = true;
-    this.mesh.add(booth);
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    // Beat system
-    this.beatTimer -= dt;
-    if (this.beatTimer <= 0) {
-      this.beatTimer = this.beatRate / (1 + (this.phase - 1) * 0.3);
-      this.speakerPulsePhase = 1.0;
-      
-      // Telegraph fan spawn on every 3rd beat
-      this.beatCounter = (this.beatCounter || 0) + 1;
-      if (this.beatCounter % 3 === 0 && this.telegraphing) {
-        this.showTelegraph('minion', 0.8, 0xff00ff);
-      }
-    }
-
-    // Fan minion spawning
-    this.fanSpawnTimer -= dt;
-    if (this.fanSpawnTimer <= 0) {
-      this.fanSpawnTimer = this.fanSpawnRate / this.phase;
-      this.spawnFanMinion(playerPos);
-    }
-
-    // Animate speakers
-    this.speakerPulsePhase = Math.max(0, this.speakerPulsePhase - dt * 4);
-    this.speakers.forEach((speaker, idx) => {
-      const offset = idx * Math.PI / 2;
-      const pulse = 1 + Math.sin(this.speakerPulsePhase * Math.PI * 2 + offset) * 0.3 * this.speakerPulsePhase;
-      speaker.scale.setScalar(pulse);
-    });
-
-    // Slight movement to the beat
-    const beatOffset = Math.sin(now * 0.01) * 0.1;
-    this.mesh.position.y = 1.5 + beatOffset;
-
-    this.mesh.lookAt(_look.copy(playerPos));
-  }
-
-  spawnFanMinion(playerPos) {
-    const angle = Math.random() * Math.PI * 2;
-    const distance = 6 + Math.random() * 3;
-    const spawnPos = new THREE.Vector3(
-      Math.cos(angle) * distance,
-      1.5 + Math.random() * 1,
-      Math.sin(angle) * distance
-    );
-
-    this.spawnMinion(spawnPos, playerPos, 'swarm');
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: faster beat, spawn 2 fans
-    if (newPhase >= 2) {
-      this.beatRate = 0.5;
-      this.fanSpawnRate = 3.0;
-    }
-    // Phase 3+: even faster, spawn 3 fans
-    if (newPhase >= 3) {
-      this.beatRate = 0.4;
-      this.fanSpawnRate = 2.0;
-    }
-  }
-}
-
-// ── STARFIGHTER BOSS (Captain Kestrel) ─────────────────────
-class StarfighterBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // Starfighter-specific state
-    this.cannonFireTimer = 0;
-    this.cannonFireRate = def.cannonFireRate || 2.0;
-    this.missileTimer = 0;
-    this.missileRate = def.missileRate || 5.0;
-    this.attackPattern = 0;
-    this.patternTimer = 0;
-    this.strafing = false;
-    this.strafeDir = 1;
-
-    // Add wings
-    this.createWings();
-  }
-
-  createWings() {
-    const wingGeo = getGeo(0.25);
-    const wingMat = new THREE.MeshBasicMaterial({
-      color: 0x00aaff,
-      transparent: true,
-      opacity: 0.9
-    });
-
-    // Left wing
-    const leftWing = new THREE.Group();
-    for (let i = 0; i < 3; i++) {
-      const cube = new THREE.Mesh(wingGeo, wingMat.clone());
-      cube.position.set(-0.4 - i * 0.25, 0, i * 0.1);
-      leftWing.add(cube);
-    }
-    this.mesh.add(leftWing);
-
-    // Right wing
-    const rightWing = new THREE.Group();
-    for (let i = 0; i < 3; i++) {
-      const cube = new THREE.Mesh(wingGeo, wingMat.clone());
-      cube.position.set(0.4 + i * 0.25, 0, i * 0.1);
-      rightWing.add(cube);
-    }
-    this.mesh.add(rightWing);
-
-    // Cockpit (weak point)
-    const cockpitGeo = getGeo(0.2);
-    const cockpitMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.95
-    });
-    const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
-    cockpit.position.set(0, 0, 0.5);
-    cockpit.userData.isWeakPoint = true;
-    cockpit.userData.isBossCockpit = true;
-    this.mesh.add(cockpit);
-    this.weakPoints.push(cockpit);
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-
-    // Pattern management
-    this.patternTimer -= dt;
-    if (this.patternTimer <= 0) {
-      this.patternTimer = 3 + Math.random() * 2;
-      this.attackPattern = (this.attackPattern + 1) % 3;
-      this.strafing = Math.random() < 0.5;
-      this.strafeDir = Math.random() < 0.5 ? 1 : -1;
-    }
-
-    // Twin cannons
-    this.cannonFireTimer -= dt;
-    if (this.cannonFireTimer <= 0) {
-      this.cannonFireTimer = this.cannonFireRate / this.phase;
-
-      if (this.attackPattern === 0 || this.attackPattern === 1) {
-        // Spread shot
-        const leftOffset = new THREE.Vector3(-0.3, 0, 0);
-        const rightOffset = new THREE.Vector3(0.3, 0, 0);
-        leftOffset.applyQuaternion(this.mesh.quaternion);
-        rightOffset.applyQuaternion(this.mesh.quaternion);
-
-        if (this.telegraphing) {
-          this.showTelegraph('projectile', 0.3, 0x00aaff, this.mesh.position.clone().add(leftOffset), dirToPlayer);
-        }
-        setTimeout(() => {
-          if (typeof spawnBossProjectile === 'function') {
-            spawnBossProjectile(this.mesh.position.clone().add(leftOffset), playerPos);
-          }
-        }, 300);
-
-        setTimeout(() => {
-          if (typeof spawnBossProjectile === 'function') {
-            spawnBossProjectile(this.mesh.position.clone().add(rightOffset), playerPos);
-          }
-        }, 350);
-      }
-    }
-
-    // Missiles
-    this.missileTimer -= dt;
-    if (this.missileTimer <= 0) {
-      this.missileTimer = this.missileRate / this.phase;
-
-      if (this.attackPattern === 1 || this.attackPattern === 2) {
-        if (this.telegraphing) {
-          this.showTelegraph('projectile', 0.8, 0xff0000, this.mesh.position.clone(), dirToPlayer);
-        }
-        setTimeout(() => {
-          // Spawn 3 missiles in a spread
-          for (let i = -1; i <= 1; i++) {
-            const offset = new THREE.Vector3(i * 0.5, 0, 0);
-            offset.applyQuaternion(this.mesh.quaternion);
-            if (typeof spawnBossProjectile === 'function') {
-              spawnBossProjectile(this.mesh.position.clone().add(offset), playerPos);
-            }
-          }
-        }, 800);
-      }
-    }
-
-    // Movement
-    if (this.strafing) {
-      const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
-      this.mesh.position.addScaledVector(perp, (2.0 + this.phase * 0.4) * this.strafeDir * dt);
-    } else {
-      this.mesh.position.addScaledVector(dirToPlayer, (0.6 + this.phase * 0.2) * dt);
-    }
-
-    const dist = this.mesh.position.distanceTo(playerPos);
-    if (dist < 7) {
-      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 1.5 * dt);
-    } else if (dist > 14) {
-      this.mesh.position.addScaledVector(dirToPlayer, 1 * dt);
-    }
-
-    // Banking animation
-    this.mesh.rotation.z = Math.sin(now * 0.003) * 0.2 * this.strafeDir;
-
-    this.mesh.lookAt(_look.copy(playerPos));
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: faster fire rate
-    if (newPhase >= 2) {
-      this.cannonFireRate = 1.5;
-      this.missileRate = 4.0;
-    }
-    // Phase 3+: even faster
-    if (newPhase >= 3) {
-      this.cannonFireRate = 1.0;
-      this.missileRate = 3.0;
-    }
-  }
-}
-
-// ── SCIENTIST BOSS (Dr. Aster) ──────────────────────────────
-class ScientistBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // Scientist-specific state
-    this.compilerActive = true;
-    this.minionSpawnTimer = 0;
-    this.minionSpawnRate = def.minionSpawnRate || 5.0;
-    this.orbitingData = [];
-    this.compilationTimer = 0;
-    this.shieldActive = false;
-
-    // Create compiler cube
-    this.createCompiler();
-  }
-
-  createCompiler() {
-    const compilerGroup = new THREE.Group();
-    const geo = getGeo(0.2);
-    const compilerMat = new THREE.MeshBasicMaterial({
-      color: 0xff00ff,
-      transparent: true,
-      opacity: 0.9
-    });
-
-    // 3x3x3 cube
-    for (let x = 0; x < 3; x++) {
-      for (let y = 0; y < 3; y++) {
-        for (let z = 0; z < 3; z++) {
-          const cube = new THREE.Mesh(geo, compilerMat.clone());
-          cube.position.set(
-            (x - 1) * 0.2,
-            (y - 1) * 0.2,
-            (z - 1) * 0.2
-          );
-          cube.userData.isCompiler = true;
-          compilerGroup.add(cube);
-        }
-      }
-    }
-
-    compilerGroup.userData.isWeakPoint = true;
-    compilerGroup.userData.isBossCompiler = true;
-    this.compilerMesh = compilerGroup;
-    this.mesh.add(compilerGroup);
-    this.weakPoints.push(compilerGroup);
-
-    // Orbiting data packets
-    for (let i = 0; i < 4; i++) {
-      const dataGeo = getGeo(0.08);
-      const dataMat = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
-        transparent: true,
-        opacity: 0.95
-      });
-      const dataCube = new THREE.Mesh(dataGeo, dataMat);
-      const angle = (i / 4) * Math.PI * 2;
-      dataCube.position.set(
-        Math.cos(angle) * 1.0,
-        Math.sin(angle) * 0.5,
-        Math.sin(angle) * 1.0
-      );
-      dataCube.userData.angle = angle;
-      dataCube.userData.isBossData = true;
-      this.orbitingData.push(dataCube);
-      this.mesh.add(dataCube);
-    }
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    // Animate compiler cube
-    this.compilerMesh.rotation.y += dt * (1 + this.phase * 0.5);
-    this.compilerMesh.rotation.x += dt * 0.5;
-
-    // Animate orbiting data
-    this.orbitingData.forEach((data, idx) => {
-      data.userData.angle += (1 + this.phase * 0.3) * dt;
-      const angle = data.userData.angle;
-      const radius = 1.2 + Math.sin(now * 0.002 + idx) * 0.3;
-      data.position.set(
-        Math.cos(angle) * radius,
-        Math.sin(angle * 2) * 0.5,
-        Math.sin(angle) * radius
-      );
-      data.rotation.x += dt * 2;
-      data.rotation.y += dt * 2;
-    });
-
-    // Data projectile firing from orbiting data cubes
-    this.dataFireTimer = (this.dataFireTimer || 0) + dt;
-    const dataFireRate = 3.0 / this.phase;
-    if (this.dataFireTimer >= dataFireRate) {
-      this.dataFireTimer = 0;
-      // Fire from a random orbiting data cube position
-      const dataCube = this.orbitingData[Math.floor(Math.random() * this.orbitingData.length)];
-      if (dataCube) {
-        const worldPos = new THREE.Vector3();
-        dataCube.getWorldPosition(worldPos);
-        if (this.telegraphing) {
-          this.showTelegraph('projectile', 0.35, 0xff00ff);
-        }
-        setTimeout(() => {
-          if (typeof spawnBossProjectile === 'function') {
-            spawnBossProjectile(worldPos, playerPos);
-          }
-        }, 200);
-      }
-    }
-
-    // Compiler burst: fires a spread of projectiles from the compiler
-    this.compilerBurstTimer = (this.compilerBurstTimer || 0) + dt;
-    const burstRate = 5.0 / this.phase;
-    if (this.compilerBurstTimer >= burstRate) {
-      this.compilerBurstTimer = 0;
-      if (this.telegraphing) {
-        this.showTelegraph('charge', 0.6, 0x00ffff);
-      }
-      const bossPos = this.mesh.position.clone();
-      setTimeout(() => {
-        // Fire 3 projectiles in a spread
-        for (let s = -1; s <= 1; s++) {
-          const target = playerPos.clone();
-          target.x += s * 0.8;
-          target.y += (Math.random() - 0.5) * 0.4;
-          if (typeof spawnBossProjectile === 'function') {
-            spawnBossProjectile(bossPos, target);
-          }
-        }
-      }, 350);
-    }
-
-    // Compilation timer (spawns minions)
-    this.compilationTimer += dt;
-    const compileThreshold = this.minionSpawnRate / this.phase;
-
-    if (this.compilationTimer >= compileThreshold && this.telegraphing) {
-      this.showTelegraph('minion', 0.6, 0xff00ff);
-    }
-
-    if (this.compilationTimer >= compileThreshold) {
-      this.compilationTimer = 0;
-      this.spawnCompiledMinion(playerPos);
-    }
-
-    // Slow drift toward player
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-    this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
-
-    // Maintain distance
-    const dist = this.mesh.position.distanceTo(playerPos);
-    if (dist < 8) {
-      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.5 * dt);
-    }
-
-    this.mesh.lookAt(_look.copy(playerPos));
-  }
-
-  spawnCompiledMinion(playerPos) {
-    const angle = Math.random() * Math.PI * 2;
-    const distance = 7 + Math.random() * 3;
-    const spawnPos = new THREE.Vector3(
-      Math.cos(angle) * distance,
-      1.5,
-      Math.sin(angle) * distance
-    );
-
-    // Mix of basic and fast enemies
-    const minionType = Math.random() < 0.6 ? 'basic' : 'fast';
-    this.spawnMinion(spawnPos, playerPos, minionType);
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: more data packets
-    if (newPhase >= 2) {
-      this.minionSpawnRate = 4.0;
-    }
-    // Phase 3+: even faster compilation
-    if (newPhase >= 3) {
-      this.minionSpawnRate = 3.0;
-    }
-  }
-}
-
-// ── MONK BOSS (Sunflare Seraph) ─────────────────────────────
-class MonkBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // Monk-specific state
-    this.sunNodes = [];
-    this.nodeOrbitSpeed = 1.0;
-    this.meditationTimer = 0;
-    this.meditationDuration = def.meditationDuration || 3.0;
-    this.isMeditating = false;
-    this.auraPulse = 0;
-
-    // Create sun nodes
-    this.createSunNodes();
-  }
-
-  createSunNodes() {
-    const nodeCount = 5;
-    const geo = getGeo(0.2);
-    const nodeMat = new THREE.MeshBasicMaterial({
-      color: 0xffdd00,
-      transparent: true,
-      opacity: 0.95
-    });
-
-    for (let i = 0; i < nodeCount; i++) {
-      const nodeGroup = new THREE.Group();
-      const angle = (i / nodeCount) * Math.PI * 2;
-
-      // Sun node (2x2 pattern)
-      for (let r = 0; r < 2; r++) {
-        for (let c = 0; c < 2; c++) {
-          const cube = new THREE.Mesh(geo, nodeMat.clone());
-          cube.position.set(c * 0.2, r * 0.2, 0);
-          nodeGroup.add(cube);
-        }
-      }
-
-      nodeGroup.userData.isWeakPoint = true;
-      nodeGroup.userData.isBossSunNode = true;
-      nodeGroup.userData.nodeIndex = i;
-      nodeGroup.userData.angle = angle;
-
-      this.sunNodes.push(nodeGroup);
-      this.mesh.add(nodeGroup);
-      this.weakPoints.push(nodeGroup);
-    }
-
-    // Central body (monk)
-    const bodyGeo = getGeo(0.3);
-    const bodyMat = new THREE.MeshBasicMaterial({
-      color: 0xffaa00,
-      transparent: true,
-      opacity: 0.85
-    });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.userData.isBossBody = true;
-    this.mesh.add(body);
-
-    // Aura ring
-    const auraGeo = new THREE.RingGeometry(0.8, 1.0, 32);
-    const auraMat = new THREE.MeshBasicMaterial({
-      color: 0xffaa00,
-      transparent: true,
-      opacity: 0.5,
-      side: THREE.DoubleSide
-    });
-    this.auraMesh = new THREE.Mesh(auraGeo, auraMat);
-    this.auraMesh.rotation.x = -Math.PI / 2;
-    this.mesh.add(this.auraMesh);
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    // Update sun node orbits
-    this.sunNodes.forEach((node, idx) => {
-      node.userData.angle += this.nodeOrbitSpeed * dt * (1 + (this.phase - 1) * 0.5);
-      const angle = node.userData.angle;
-      const radius = 1.5 + Math.sin(now * 0.001 + idx) * 0.4;
-      const height = Math.sin(angle * 3) * 0.5;
-
-      node.position.set(
-        Math.cos(angle) * radius,
-        height,
-        Math.sin(angle) * radius
-      );
-
-      // Node rotation
-      node.rotation.y += dt * 2;
-      node.rotation.x += dt;
-    });
-
-    // Meditation cycle
-    if (this.isMeditating) {
-      this.meditationTimer -= dt;
-      if (this.meditationTimer <= 0) {
-        this.isMeditating = false;
-        this.meditationTimer = this.meditationDuration * (1 + (this.phase - 1) * 0.3);
-      }
-    } else {
-      this.meditationTimer -= dt;
-      if (this.meditationTimer <= 0) {
-        this.isMeditating = true;
-        // Telegraph meditation burst
-        if (this.telegraphing) {
-          this.showTelegraph('charge', 1.0, 0xffdd00);
-        }
-        setTimeout(() => this.fireMeditationBurst(playerPos), 1000);
-      }
-    }
-
-    // Aura pulse
-    this.auraPulse += dt * (2 + this.phase);
-    const pulseScale = 1 + Math.sin(this.auraPulse) * 0.3;
-    this.auraMesh.scale.setScalar(pulseScale);
-    this.auraMesh.material.opacity = 0.3 + Math.sin(this.auraPulse) * 0.2;
-
-    // Slow movement
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-    if (!this.isMeditating) {
-      this.mesh.position.addScaledVector(dirToPlayer, 0.2 * dt);
-    }
-
-    // Maintain distance
-    const dist = this.mesh.position.distanceTo(playerPos);
-    if (dist < 6) {
-      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.8 * dt);
-    } else if (dist > 10) {
-      this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
-    }
-
-    this.mesh.lookAt(_look.copy(playerPos));
-    this.mesh.rotation.y += dt * 0.5;
-  }
-
-  fireMeditationBurst(playerPos) {
-    // Fire projectiles from each sun node
-    this.sunNodes.forEach(node => {
-      const nodeWorldPos = node.getWorldPosition(new THREE.Vector3());
-      const dir = playerPos.clone().sub(nodeWorldPos).normalize();
-
-      if (typeof spawnBossProjectile === 'function') {
-        spawnBossProjectile(nodeWorldPos, playerPos);
-      }
-    });
-
-    // Central burst
-    if (typeof spawnBossProjectile === 'function') {
-      spawnBossProjectile(this.mesh.position.clone(), playerPos);
-    }
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: faster orbit
-    if (newPhase >= 2) {
-      this.nodeOrbitSpeed = 1.5;
-      this.meditationDuration = 2.5;
-    }
-    // Phase 3+: even faster
-    if (newPhase >= 3) {
-      this.nodeOrbitSpeed = 2.0;
-      this.meditationDuration = 2.0;
     }
   }
 }
@@ -7029,633 +6189,6 @@ class TrainBoss extends Boss {
   }
 }
 
-// ── OUTLAW BOSS (Theodore "Shady" Breakenridge) ───────────
-class OutlawBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // Outlaw-specific state
-    this.vanishTimer = 0;
-    this.vanishDuration = def.vanishDuration || 2.0;
-    this.shadowBulletTimer = 0;
-    this.shadowBulletRate = def.shadowBulletRate || 0.8;
-    this.isVanished = false;
-    this.reappearPosition = null;
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-
-    // Vanish cycle
-    if (!this.isVanished) {
-      this.vanishTimer -= dt;
-      if (this.vanishTimer <= 0) {
-        this.vanish(now, playerPos);
-        return;
-      }
-
-      // Fire shadow bullets
-      this.shadowBulletTimer -= dt;
-      if (this.shadowBulletTimer <= 0) {
-        this.shadowBulletTimer = this.shadowBulletRate / this.phase;
-        this.fireShadowBullets(playerPos);
-      }
-
-      // Move toward player
-      const speed = 0.8 + this.phase * 0.2;
-      this.mesh.position.addScaledVector(dirToPlayer, speed * dt);
-
-      // Keep distance
-      const dist = this.mesh.position.distanceTo(playerPos);
-      if (dist < 6) {
-        this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 1 * dt);
-      } else if (dist > 12) {
-        this.mesh.position.addScaledVector(dirToPlayer, 0.5 * dt);
-      }
-
-      // Visible - show mesh
-      this.mesh.visible = true;
-
-    } else {
-      // Vanished - invisible, moving to reappear position
-      this.mesh.visible = false;
-
-      // Move to reappear position
-      if (this.reappearPosition) {
-        const dirToReappear = this.reappearPosition.clone().sub(this.mesh.position);
-        const distToReappear = dirToReappear.length();
-        if (distToReappear > 0.1) {
-          dirToReappear.normalize();
-          this.mesh.position.addScaledVector(dirToReappear, 8 * dt);
-        }
-
-        this.vanishTimer -= dt;
-        if (this.vanishTimer <= 0) {
-          this.reappear();
-        }
-      }
-    }
-
-    this.mesh.lookAt(_look.copy(playerPos));
-  }
-
-  vanish(now, playerPos) {
-    this.isVanished = true;
-    this.vanishTimer = this.vanishDuration / this.phase;
-
-    // Telegraph vanish
-    if (this.telegraphing) {
-      this.showTelegraph('teleport', 0.5, 0x8800ff);
-    }
-
-    // Choose reappear position (behind or flanking player)
-    const angle = Math.random() * Math.PI * 2;
-    const distance = 6 + Math.random() * 3;
-    this.reappearPosition = new THREE.Vector3(
-      Math.sin(angle) * distance,
-      1.5,
-      Math.cos(angle) * distance
-    );
-
-    if (typeof window !== 'undefined' && window.playBossTeleportReappear) {
-      window.playBossTeleportReappear();
-    }
-  }
-
-  reappear() {
-    this.isVanished = false;
-    this.mesh.position.copy(this.reappearPosition);
-    this.vanishTimer = 4 + Math.random() * 2;
-
-    // Telegraph ambush attack
-    if (this.telegraphing) {
-      this.showTelegraph('charge', 0.6, 0x8800ff);
-    }
-
-    // Fire burst of shadow bullets
-    setTimeout(() => {
-      if (typeof window !== 'undefined' && window.updateBossHealthBar) {
-        // Boss is back
-      }
-    }, 600);
-  }
-
-  fireShadowBullets(playerPos) {
-    if (this.telegraphing) {
-      this.showTelegraph('projectile', 0.3, 0x440088);
-    }
-
-    // Fire multiple shadow bullets in a spread
-    const bulletCount = 2 + this.phase;
-    for (let i = 0; i < bulletCount; i++) {
-      setTimeout(() => {
-        if (typeof spawnBossProjectile === 'function') {
-          spawnBossProjectile(this.mesh.position.clone(), playerPos);
-        }
-      }, i * 100);
-    }
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: faster vanish cycle
-    if (newPhase >= 2) {
-      this.vanishDuration = 1.5;
-      this.shadowBulletRate = 0.6;
-    }
-    // Phase 3+: even faster
-    if (newPhase >= 3) {
-      this.vanishDuration = 1.0;
-      this.shadowBulletRate = 0.5;
-    }
-  }
-}
-
-// ── COMMANDER BOSS (Commander Halcyon) ────────────────────
-class CommanderBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // Commander-specific state
-    this.shieldTiles = [];
-    this.shieldOrbitAngle = 0;
-    this.shieldOrbitSpeed = 1.0;
-    this.laserTimer = 0;
-    this.laserRate = def.laserRate || 1.5;
-    this.shieldActive = true;
-
-    // Create shield tiles
-    this.createShieldTiles();
-  }
-
-  createShieldTiles() {
-    const tileCount = 6;
-    const geo = getGeo(0.2);
-    const tileMat = new THREE.MeshBasicMaterial({
-      color: 0x00aaff,
-      transparent: true,
-      opacity: 0.7
-    });
-
-    for (let i = 0; i < tileCount; i++) {
-      const tileGroup = new THREE.Group();
-      const angle = (i / tileCount) * Math.PI * 2;
-
-      // Shield tile (2x1 pattern)
-      for (let r = 0; r < 2; r++) {
-        const cube = new THREE.Mesh(geo, tileMat.clone());
-        cube.position.set(0, r * 0.2, 0);
-        tileGroup.add(cube);
-      }
-
-      tileGroup.userData.isShieldTile = true;
-      tileGroup.userData.tileIndex = i;
-      tileGroup.userData.angle = angle;
-
-      this.shieldTiles.push(tileGroup);
-      this.mesh.add(tileGroup);
-    }
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-
-    // Update shield orbit
-    this.shieldOrbitAngle += this.shieldOrbitSpeed * dt * (1 + (this.phase - 1) * 0.3);
-
-    this.shieldTiles.forEach((tile, idx) => {
-      const baseAngle = tile.userData.angle;
-      const orbitRadius = 2.0 + Math.sin(now * 0.002 + idx) * 0.3;
-      const angle = baseAngle + this.shieldOrbitAngle;
-
-      tile.position.set(
-        Math.cos(angle) * orbitRadius,
-        Math.sin(angle * 2) * 0.5,
-        Math.sin(angle) * orbitRadius
-      );
-
-      // Tile rotation
-      tile.rotation.y += dt;
-      tile.rotation.x += dt * 0.5;
-    });
-
-    // Laser fire
-    this.laserTimer -= dt;
-    if (this.laserTimer <= 0) {
-      this.laserTimer = this.laserRate / this.phase;
-      this.fireLaser(playerPos);
-    }
-
-    // Slow movement
-    const speed = 0.4 + this.phase * 0.1;
-    this.mesh.position.addScaledVector(dirToPlayer, speed * dt);
-
-    // Keep distance
-    const dist = this.mesh.position.distanceTo(playerPos);
-    if (dist < 7) {
-      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.8 * dt);
-    } else if (dist > 14) {
-      this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
-    }
-
-    this.mesh.lookAt(_look.copy(playerPos));
-  }
-
-  fireLaser(playerPos) {
-    if (this.telegraphing) {
-      this.showTelegraph('projectile', 0.5, 0x00aaff);
-    }
-
-    // Fire laser from shield tiles
-    const activeTiles = this.shieldTiles.slice(0, 2 + this.phase);
-    activeTiles.forEach((tile, idx) => {
-      setTimeout(() => {
-        if (typeof spawnBossProjectile === 'function') {
-          const tileWorldPos = tile.getWorldPosition(new THREE.Vector3());
-          spawnBossProjectile(tileWorldPos, playerPos);
-        }
-      }, idx * 150);
-    });
-  }
-
-  takeDamage(amount, hitInfo = {}) {
-    // Shield absorbs some damage
-    let damageTaken = amount;
-    if (this.shieldActive && !hitInfo.bypassShield) {
-      damageTaken = amount * 0.6;
-      if (Math.random() < 0.1 * this.phase) {
-        // Shield breaks temporarily
-        this.shieldActive = false;
-        setTimeout(() => { this.shieldActive = true; }, 2000);
-      }
-    }
-
-    return super.takeDamage(damageTaken, hitInfo);
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: faster shield orbit
-    if (newPhase >= 2) {
-      this.shieldOrbitSpeed = 1.5;
-      this.laserRate = 1.2;
-    }
-    // Phase 3+: even faster
-    if (newPhase >= 3) {
-      this.shieldOrbitSpeed = 2.0;
-      this.laserRate = 1.0;
-    }
-  }
-}
-
-// ── DIVA BOSS (Madame Coda) ───────────────────────────────
-class DivaBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // Diva-specific state
-    this.microphones = [];
-    this.beamTimer = 0;
-    this.beamRate = def.beamRate || 1.2;
-    this.performanceTimer = 0;
-    this.performanceDuration = def.performanceDuration || 3.0;
-
-    // Create microphone turrets
-    this.createMicrophones();
-  }
-
-  createMicrophones() {
-    const micPositions = [
-      { x: -1.2, y: 0.3, z: 0.2 },
-      { x: 1.2, y: 0.3, z: 0.2 },
-      { x: 0, y: 0.8, z: 0.3 },
-    ];
-
-    micPositions.forEach((pos, idx) => {
-      const micGroup = new THREE.Group();
-      const geo = getGeo(0.15);
-      const micMat = new THREE.MeshBasicMaterial({
-        color: 0xff00ff,
-        transparent: true,
-        opacity: 0.9
-      });
-
-      // Microphone stand
-      for (let i = 0; i < 3; i++) {
-        const cube = new THREE.Mesh(geo, micMat.clone());
-        cube.position.set(pos.x + i * 0.05, pos.y + i * 0.15, pos.z);
-        micGroup.add(cube);
-      }
-
-      // Mic head (weak point)
-      const headGeo = getGeo(0.12);
-      const headMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.95
-      });
-      const head = new THREE.Mesh(headGeo, headMat);
-      head.position.set(pos.x + 0.1, pos.y + 0.45, pos.z);
-      head.userData.isWeakPoint = true;
-      head.userData.isMicrophone = true;
-      micGroup.add(head);
-      this.weakPoints.push(head);
-
-      micGroup.userData.microphoneIndex = idx;
-      this.microphones.push(micGroup);
-      this.mesh.add(micGroup);
-    });
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-
-    // Performance cycle
-    this.performanceTimer -= dt;
-    if (this.performanceTimer <= 0) {
-      this.performanceTimer = this.performanceDuration / this.phase;
-
-      // Telegraph performance
-      if (this.telegraphing) {
-        this.showTelegraph('charge', 0.8, 0xff00ff);
-      }
-
-      // Fire all microphones
-      setTimeout(() => this.fireAllMicrophones(playerPos), 800);
-    }
-
-    // Beam fire
-    this.beamTimer -= dt;
-    if (this.beamTimer <= 0) {
-      this.beamTimer = this.beamRate / this.phase;
-
-      // Random microphone fires
-      const activeMics = this.microphones.filter(mic => mic.children[3] && mic.children[3].userData.isWeakPoint);
-      if (activeMics.length > 0) {
-        const mic = activeMics[Math.floor(Math.random() * activeMics.length)];
-        this.fireMicrophoneBeam(mic, playerPos);
-      }
-    }
-
-    // Animate microphones
-    this.microphones.forEach((mic, idx) => {
-      const offset = idx * Math.PI / 2;
-      mic.rotation.y = Math.sin(now * 0.002 + offset) * 0.3;
-      mic.position.y += Math.sin(now * 0.003 + idx) * 0.002;
-    });
-
-    // Slight movement
-    this.mesh.position.addScaledVector(dirToPlayer, 0.3 * dt);
-
-    // Maintain distance
-    const dist = this.mesh.position.distanceTo(playerPos);
-    if (dist < 6) {
-      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.6 * dt);
-    } else if (dist > 12) {
-      this.mesh.position.addScaledVector(dirToPlayer, 0.2 * dt);
-    }
-
-    this.mesh.lookAt(_look.copy(playerPos));
-  }
-
-  fireMicrophoneBeam(mic, playerPos) {
-    if (this.telegraphing) {
-      const micPos = mic.getWorldPosition(new THREE.Vector3());
-      this.showTelegraph('projectile', 0.4, 0xff00ff, micPos);
-    }
-
-    setTimeout(() => {
-      if (typeof spawnBossProjectile === 'function') {
-        const micPos = mic.getWorldPosition(new THREE.Vector3());
-        spawnBossProjectile(micPos, playerPos);
-      }
-    }, 400);
-  }
-
-  fireAllMicrophones(playerPos) {
-    this.microphones.forEach((mic, idx) => {
-      setTimeout(() => {
-        if (mic.children[3] && mic.children[3].userData.isWeakPoint) {
-          this.fireMicrophoneBeam(mic, playerPos);
-        }
-      }, idx * 100);
-    });
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: faster performance cycle
-    if (newPhase >= 2) {
-      this.beamRate = 1.0;
-      this.performanceDuration = 2.5;
-    }
-    // Phase 3+: even faster
-    if (newPhase >= 3) {
-      this.beamRate = 0.8;
-      this.performanceDuration = 2.0;
-    }
-  }
-}
-
-// ── TWIN GLITCH UNITS BOSS ───────────────────────────────
-class TwinGlitchBoss extends Boss {
-  constructor(def, levelConfig, sceneRef, telegraphing) {
-    super(def, levelConfig, sceneRef, telegraphing);
-
-    // Twin-specific state
-    this.sisters = [];
-    this.vulnerabilitySwapTimer = 0;
-    this.vulnerabilitySwapRate = def.vulnerabilitySwapRate || 4.0;
-    this.activeSisterIndex = 0; // Which sister is vulnerable
-    this.glitchTimer = 0;
-
-    // Create twin sisters
-    this.createSisters();
-  }
-
-  createSisters() {
-    const sisterData = [
-      { xOffset: -1.5, color: 0x00ffff, name: 'Glitch-Sister-Alpha' },
-      { xOffset: 1.5, color: 0xff00ff, name: 'Glitch-Sister-Beta' }
-    ];
-
-    sisterData.forEach((data, idx) => {
-      const sisterGroup = new THREE.Group();
-      const geo = getGeo(0.25);
-      const sisterMat = new THREE.MeshBasicMaterial({
-        color: data.color,
-        transparent: true,
-        opacity: 0.9
-      });
-
-      // Sister body (3x3 pattern)
-      for (let r = 0; r < 3; r++) {
-        for (let c = 0; c < 3; c++) {
-          const cube = new THREE.Mesh(geo, sisterMat.clone());
-          cube.position.set(c * 0.25, r * 0.25, 0);
-          cube.userData.sisterIndex = idx;
-          sisterGroup.add(cube);
-        }
-      }
-
-      // Core (weak point, only vulnerable when active)
-      const coreGeo = getGeo(0.18);
-      const coreMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.95
-      });
-      const core = new THREE.Mesh(coreGeo, coreMat);
-      core.position.set(0.375, 0.375, 0.2);
-      core.userData.isWeakPoint = true;
-      core.userData.isSisterCore = true;
-      core.userData.sisterIndex = idx;
-      sisterGroup.add(core);
-      this.weakPoints.push(core);
-
-      sisterGroup.userData.sisterIndex = idx;
-      sisterGroup.userData.sisterData = data;
-
-      this.sisters.push({
-        group: sisterGroup,
-        data: data,
-        positionOffset: new THREE.Vector3(data.xOffset, 0, 0)
-      });
-
-      this.mesh.add(sisterGroup);
-    });
-
-    // Initial vulnerability
-    this.updateVulnerability();
-  }
-
-  updateBehavior(dt, now, playerPos) {
-    const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-
-    // Vulnerability swap
-    this.vulnerabilitySwapTimer -= dt;
-    if (this.vulnerabilitySwapTimer <= 0) {
-      this.vulnerabilitySwapTimer = this.vulnerabilitySwapRate / this.phase;
-      this.swapVulnerability();
-    }
-
-    // Glitch effect
-    this.glitchTimer += dt;
-    if (this.glitchTimer > 0.1) {
-      this.glitchTimer = 0;
-      this.applyGlitchEffect();
-    }
-
-    // Animate sisters
-    this.sisters.forEach((sister, idx) => {
-      const isActive = idx === this.activeSisterIndex;
-
-      // Orbit around center
-      const orbitSpeed = 0.5 + this.phase * 0.2;
-      const orbitAngle = now * orbitSpeed * (idx === 0 ? 1 : -1);
-      const orbitRadius = 1.5 + Math.sin(now * 0.001) * 0.3;
-
-      sister.group.position.set(
-        Math.cos(orbitAngle) * orbitRadius,
-        Math.sin(now * 0.002 + idx) * 0.5,
-        Math.sin(orbitAngle) * orbitRadius
-      );
-
-      // Sister rotation
-      sister.group.rotation.y += dt * (1 + this.phase * 0.3);
-
-      // Visual feedback for vulnerability
-      sister.group.traverse(c => {
-        if (c.userData.isSisterCore) {
-          c.material.opacity = isActive ? 0.95 : 0.3;
-          c.material.color.setHex(isActive ? 0xffffff : sister.data.color);
-        }
-      });
-    });
-
-    // Projectile fire from active sister
-    this.beamTimer = (this.beamTimer || 0) - dt;
-    if (this.beamTimer <= 0) {
-      this.beamTimer = 1.5 / this.phase;
-      this.fireFromActiveSister(playerPos);
-    }
-
-    // Slow movement
-    this.mesh.position.addScaledVector(dirToPlayer, 0.25 * dt);
-
-    // Keep distance
-    const dist = this.mesh.position.distanceTo(playerPos);
-    if (dist < 7) {
-      this.mesh.position.addScaledVector(dirToPlayer.clone().negate(), 0.5 * dt);
-    } else if (dist > 14) {
-      this.mesh.position.addScaledVector(dirToPlayer, 0.2 * dt);
-    }
-
-    this.mesh.lookAt(_look.copy(playerPos));
-  }
-
-  swapVulnerability() {
-    // Telegraph swap
-    if (this.telegraphing) {
-      this.showTelegraph('teleport', 0.4, 0x00ffff);
-    }
-
-    this.activeSisterIndex = (this.activeSisterIndex + 1) % 2;
-    this.updateVulnerability();
-  }
-
-  updateVulnerability() {
-    this.sisters.forEach((sister, idx) => {
-      sister.group.userData.isVulnerable = (idx === this.activeSisterIndex);
-    });
-  }
-
-  applyGlitchEffect() {
-    // Random position jitter
-    this.sisters.forEach((sister, idx) => {
-      sister.group.position.x += (Math.random() - 0.5) * 0.05;
-      sister.group.position.y += (Math.random() - 0.5) * 0.05;
-    });
-  }
-
-  fireFromActiveSister(playerPos) {
-    const activeSister = this.sisters[this.activeSisterIndex];
-    const sisterPos = activeSister.group.getWorldPosition(new THREE.Vector3());
-
-    if (this.telegraphing) {
-      this.showTelegraph('projectile', 0.3, 0x00ffff, sisterPos);
-    }
-
-    setTimeout(() => {
-      if (typeof spawnBossProjectile === 'function') {
-        spawnBossProjectile(sisterPos, playerPos);
-      }
-    }, 300);
-  }
-
-  takeDamage(amount, hitInfo = {}) {
-    // Check if hitting vulnerable sister
-    if (hitInfo.sisterIndex !== undefined && hitInfo.sisterIndex !== this.activeSisterIndex) {
-      // Hitting invulnerable sister - minimal damage
-      return super.takeDamage(amount * 0.1, hitInfo);
-    }
-
-    return super.takeDamage(amount, hitInfo);
-  }
-
-  onPhaseChange(newPhase) {
-    super.onPhaseChange(newPhase);
-    // Phase 2+: faster vulnerability swap
-    if (newPhase >= 2) {
-      this.vulnerabilitySwapRate = 3.0;
-    }
-    // Phase 3+: even faster
-    if (newPhase >= 3) {
-      this.vulnerabilitySwapRate = 2.0;
-    }
-  }
-}
-
 // ── NEON MINOTAUR BOSS ─────────────────────────────────────
 class MinotaurBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
@@ -8002,6 +6535,832 @@ const BOSS_SKULL_PATTERN = [
   [0, 1, 0, 1, 0],
 ];
 
+// ── THE PRISM BOSS (Level 10) ─────────────────────────────────
+class PrismBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // Phase system state (same pattern as MinotaurBoss)
+    this.skullPhase = 0;
+    this.transitioning = false;
+    this.transitionTimer = 0;
+    this.transitionDuration = 3.0;
+    this.transitionFromPhase = 0;
+    this.transitionToPhase = 0;
+    this.moveTimer = 0;
+    this.moveDirection = new THREE.Vector3();
+    this.fixedY = 1.5;
+
+    // Phase 1 state
+    this.facets = [];
+    this.vulnerableFacetIndex = 0;
+    this.facetRotateTimer = 0;
+    this.facetRotateRate = 4.0;
+    this.healAmount = 15;
+    this.facetHps = [350, 350, 350, 350];
+    this.facetsDestroyed = 0;
+
+    // Phase 2 state
+    this.shards = [];
+    this.coreShardIndex = 0;
+    this.coreSwapTimer = 0;
+    this.coreSwapRate = 5.0;
+    this.mergeTimer = 0;
+    this.mergeRate = 12.0;
+    this.isMerged = false;
+    this.mergeCooldownTimer = 0;
+    this.shootTimer = 0;
+
+    // Phase 3 state
+    this.healChargeTimer = 0;
+    this.healChargeRate = 15.0;
+    this.isHealCharging = false;
+    this.healChargeDuration = 5.0;
+    this.healChargeProgress = 0;
+    this.healWeakPoints = [];
+    this.weakPointsHit = 0;
+    this.healAttempts = 0;
+    this.phase3ShootTimer = 0;
+
+    // Build custom visuals
+    this.buildPrismMesh();
+    this.buildFacets();
+  }
+
+  buildPrismMesh() {
+    // Clear default mesh children
+    while (this.mesh.children.length > 0) {
+      this.mesh.remove(this.mesh.children[0]);
+    }
+
+    this.prismBody = new THREE.Group();
+    const geo = getGeo(0.25);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff44ff, transparent: true, opacity: 0.4
+    });
+
+    // Octahedron: 2 top, 4 middle, 2 bottom
+    const positions = [
+      [0, 0.75, 0], [0, 0.5, 0],           // top
+      [-0.25, 0.25, 0], [0.25, 0.25, 0],    // middle upper
+      [-0.25, -0.25, 0], [0.25, -0.25, 0],  // middle lower
+      [0, -0.5, 0], [0, -0.75, 0]           // bottom
+    ];
+
+    positions.forEach(pos => {
+      const cube = new THREE.Mesh(geo, mat.clone());
+      cube.position.set(pos[0], pos[1], pos[2]);
+      cube.userData.isBossBody = true;
+      this.prismBody.add(cube);
+    });
+
+    this.mesh.add(this.prismBody);
+  }
+
+  buildFacets() {
+    const facetColors = [0xff2222, 0x2222ff, 0x22ff22, 0xffff22];
+    // Position facets on 4 faces of the prism (front, back, left, right)
+    const facetPositions = [
+      [0, 0, 0.35],   // front
+      [0, 0, -0.35],  // back
+      [0.35, 0, 0],   // right
+      [-0.35, 0, 0]   // left
+    ];
+    const facetRotations = [
+      [0, 0, 0],
+      [0, Math.PI, 0],
+      [0, Math.PI / 2, 0],
+      [0, -Math.PI / 2, 0]
+    ];
+
+    const geo = getGeo(0.18);
+
+    for (let i = 0; i < 4; i++) {
+      const facetGroup = new THREE.Group();
+      const mat = new THREE.MeshBasicMaterial({
+        color: facetColors[i], transparent: true, opacity: 0.9
+      });
+
+      // Flat pattern of 6 cubes (2 rows x 3 cols)
+      const offsets = [
+        [-0.1, 0.1, 0], [0, 0.1, 0], [0.1, 0.1, 0],
+        [-0.1, -0.1, 0], [0, -0.1, 0], [0.1, -0.1, 0]
+      ];
+
+      offsets.forEach(off => {
+        const cube = new THREE.Mesh(geo, mat.clone());
+        cube.position.set(off[0], off[1], off[2]);
+        cube.userData.isFacet = true;
+        cube.userData.facetIndex = i;
+        facetGroup.add(cube);
+      });
+
+      facetGroup.position.set(facetPositions[i][0], facetPositions[i][1], facetPositions[i][2]);
+      facetGroup.rotation.set(facetRotations[i][0], facetRotations[i][1], facetRotations[i][2]);
+      facetGroup.userData.isFacet = true;
+      facetGroup.userData.facetIndex = i;
+
+      this.facets.push(facetGroup);
+      this.mesh.add(facetGroup);
+    }
+
+    // Mark first facet as vulnerable
+    this.updateVulnerableFacet(0);
+  }
+
+  updateVulnerableFacet(newIndex) {
+    // Remove weak point from old facet
+    if (this.facets[this.vulnerableFacetIndex]) {
+      this.facets[this.vulnerableFacetIndex].traverse(child => {
+        child.userData.isWeakPoint = false;
+      });
+      // Remove glow
+      const oldGlow = this.facets[this.vulnerableFacetIndex].getObjectByName('facetGlow');
+      if (oldGlow) this.facets[this.vulnerableFacetIndex].remove(oldGlow);
+    }
+
+    this.vulnerableFacetIndex = newIndex;
+
+    // Add weak point and glow to new facet
+    const facet = this.facets[newIndex];
+    if (facet) {
+      facet.traverse(child => {
+        child.userData.isWeakPoint = true;
+      });
+
+      // White glow outline
+      const glowGeo = getGeo(0.22);
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.6
+      });
+      const glow = new THREE.Mesh(glowGeo, glowMat);
+      glow.name = 'facetGlow';
+      glow.position.set(0, 0, 0.02);
+      facet.add(glow);
+    }
+  }
+
+  // ── PHASE 1: Learn the Angles ───────────────────────────
+  initPhase1() {
+    this.skullPhase = 1;
+    this.phase = 1;
+    this.facetRotateTimer = 0;
+    this.shootTimer = 0;
+    _log('[PrismBoss] Entering Phase 1: Learn the Angles');
+  }
+
+  updatePhase1(dt, now, playerPos) {
+    const config = this.getPrismPhaseConfig();
+
+    // Facet rotation timer
+    this.facetRotateTimer += dt;
+    if (this.facetRotateTimer >= this.facetRotateRate) {
+      this.facetRotateTimer = 0;
+      // Pick a new vulnerable facet (different from current)
+      let newIdx;
+      do {
+        newIdx = Math.floor(Math.random() * 4);
+      } while (newIdx === this.vulnerableFacetIndex && this.facetsDestroyed < 3);
+      this.updateVulnerableFacet(newIdx);
+    }
+
+    // Fire projectiles from non-vulnerable facets
+    this.shootTimer -= dt;
+    if (this.shootTimer <= 0) {
+      this.shootTimer = config.shootRate;
+      this.firePhase1Projectiles(playerPos);
+    }
+
+    // Movement: slow horizontal drift
+    this.moveTimer += dt;
+    if (this.moveTimer >= config.erraticness) {
+      this.moveTimer = 0;
+      const angle = Math.random() * Math.PI * 2;
+      this.moveDirection.set(Math.sin(angle), 0, Math.cos(angle));
+    }
+    this.mesh.position.addScaledVector(this.moveDirection, config.moveSpeed * dt);
+
+    this.constrainToMidfield(playerPos);
+    this.mesh.position.y = this.fixedY;
+  }
+
+  firePhase1Projectiles(playerPos) {
+    for (let i = 0; i < 4; i++) {
+      if (i === this.vulnerableFacetIndex) continue;
+      if (!this.facets[i] || !this.facets[i].visible) continue;
+
+      // Fire from this non-vulnerable facet
+      const facetPos = this.facets[i].getWorldPosition(new THREE.Vector3());
+      if (this.telegraphing) {
+        this.showTelegraph('projectile', 0.3, 0xff44ff, facetPos);
+      }
+
+      const facetIdx = i;
+      setTimeout(() => {
+        if (typeof spawnBossProjectile === 'function') {
+          spawnBossProjectile(facetPos, playerPos.clone());
+        }
+      }, 300);
+    }
+  }
+
+  // ── PHASE 2: The Split ──────────────────────────────────
+  initPhase2() {
+    this.skullPhase = 2;
+    this.phase = 2;
+    this.shootTimer = 0;
+    this.coreSwapTimer = 0;
+    this.mergeTimer = 0;
+    this.isMerged = false;
+    this.mergeCooldownTimer = 3.0; // Small delay before first merge
+
+    // Hide prism body and facets
+    if (this.prismBody) this.prismBody.visible = false;
+    this.facets.forEach(f => { if (f) f.visible = false; });
+
+    // Create shards
+    this.createShards();
+    _log('[PrismBoss] Entering Phase 2: The Split');
+  }
+
+  createShards() {
+    const shardColors = [0xff2222, 0x2222ff, 0x22ff22];
+    const orbitRadii = [2.0, 3.5, 5.0];
+    const orbitSpeeds = [1.2, 0.8, 0.5];
+    const orbitHeights = [0, 1.5, -1.0];
+
+    for (let i = 0; i < 3; i++) {
+      const shard = new THREE.Group();
+      const geo = getGeo(0.2);
+      const mat = new THREE.MeshBasicMaterial({
+        color: shardColors[i], transparent: true, opacity: 0.8
+      });
+      for (let j = 0; j < 4; j++) {
+        const cube = new THREE.Mesh(geo, mat.clone());
+        cube.position.set(
+          (j % 2) * 0.2 - 0.1,
+          Math.floor(j / 2) * 0.2,
+          0
+        );
+        shard.add(cube);
+      }
+
+      // Core indicator (white dot)
+      const coreGeo = new THREE.SphereGeometry(0.08, 6, 6);
+      const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      core.visible = (i === 0);
+      core.userData.isWeakPoint = (i === 0);
+      core.userData.isPrismCore = true;
+      shard.add(core);
+
+      shard.userData.shardIndex = i;
+      shard.userData.orbitRadius = orbitRadii[i];
+      shard.userData.orbitSpeed = orbitSpeeds[i];
+      shard.userData.orbitHeight = orbitHeights[i];
+      shard.userData.angle = (i / 3) * Math.PI * 2;
+
+      this.shards.push(shard);
+      this.mesh.add(shard);
+    }
+  }
+
+  updatePhase2(dt, now, playerPos) {
+    const config = this.getPrismPhaseConfig();
+
+    // Check HP threshold for Phase 3
+    if (this.hp <= this.maxHp / 3) {
+      this.startPhaseTransition(2, 3);
+      this.skullPhase = 3;
+      return;
+    }
+
+    // Core swap timer
+    this.coreSwapTimer += dt;
+    if (this.coreSwapTimer >= this.coreSwapRate) {
+      this.coreSwapTimer = 0;
+      this.swapCore();
+    }
+
+    // Merge/split cycle
+    this.mergeCooldownTimer -= dt;
+    this.mergeTimer += dt;
+    if (!this.isMerged && this.mergeTimer >= this.mergeRate && this.mergeCooldownTimer <= 0) {
+      this.startMerge();
+    }
+
+    if (this.isMerged) {
+      // During merge: invulnerable, fire ring of projectiles
+      this.mergeTimer += dt;
+      // Merge lasts 3 seconds
+      if (this.mergeTimer >= this.mergeRate + 3.0) {
+        this.endMerge();
+      }
+      return;
+    }
+
+    // Update shard positions (orbiting)
+    this.shards.forEach(shard => {
+      shard.userData.angle += shard.userData.orbitSpeed * dt;
+      const a = shard.userData.angle;
+      const r = shard.userData.orbitRadius;
+      shard.position.set(
+        Math.cos(a) * r,
+        shard.userData.orbitHeight,
+        Math.sin(a) * r
+      );
+      shard.lookAt(_look.copy(playerPos).setY(shard.userData.orbitHeight));
+    });
+
+    // Shooting
+    this.shootTimer -= dt;
+    if (this.shootTimer <= 0) {
+      this.shootTimer = config.shootRate;
+      this.fireShardProjectiles(playerPos);
+    }
+
+    // Movement
+    this.moveTimer += dt;
+    if (this.moveTimer >= config.erraticness) {
+      this.moveTimer = 0;
+      const angle = Math.random() * Math.PI * 2;
+      this.moveDirection.set(Math.sin(angle), 0, Math.cos(angle));
+    }
+    this.mesh.position.addScaledVector(this.moveDirection, config.moveSpeed * dt);
+    this.constrainToMidfield(playerPos);
+    this.mesh.position.y = this.fixedY;
+  }
+
+  swapCore() {
+    // Remove core from old shard
+    this.shards.forEach(shard => {
+      shard.traverse(child => {
+        if (child.userData.isPrismCore) {
+          child.visible = false;
+          child.userData.isWeakPoint = false;
+        }
+      });
+    });
+
+    // Pick new core shard (different from current)
+    let newIdx;
+    do {
+      newIdx = Math.floor(Math.random() * 3);
+    } while (newIdx === this.coreShardIndex);
+    this.coreShardIndex = newIdx;
+
+    // Flash telegraph
+    if (this.telegraphing) {
+      this.showTelegraph('teleport', 0.3, 0xffffff);
+    }
+
+    // Enable core on new shard
+    this.shards[newIdx].traverse(child => {
+      if (child.userData.isPrismCore) {
+        child.visible = true;
+        child.userData.isWeakPoint = true;
+      }
+    });
+  }
+
+  startMerge() {
+    this.isMerged = true;
+    this.mergeTimer = this.mergeRate; // Lock timer at merge start
+
+    // Telegraph merge
+    if (this.telegraphing) {
+      this.showTelegraph('charge', 1.0, 0xff44ff);
+    }
+    playSkullHandGrowlSound();
+
+    // Move shards to center
+    this.shards.forEach(shard => {
+      shard.position.set(0, 0, 0);
+    });
+
+    // Fire ring of 8 projectiles outward after short delay
+    setTimeout(() => {
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        const targetPos = new THREE.Vector3(
+          this.mesh.position.x + Math.cos(angle) * 10,
+          this.mesh.position.y,
+          this.mesh.position.z + Math.sin(angle) * 10
+        );
+        if (typeof spawnBossProjectile === 'function') {
+          spawnBossProjectile(this.mesh.position.clone(), targetPos);
+        }
+      }
+    }, 1500);
+  }
+
+  endMerge() {
+    this.isMerged = false;
+    this.mergeTimer = 0;
+    this.mergeCooldownTimer = 3.0;
+  }
+
+  fireShardProjectiles(playerPos) {
+    const config = this.getPrismPhaseConfig();
+    this.shards.forEach((shard, idx) => {
+      if (!shard.visible && shard.parent) return;
+      const shardPos = shard.getWorldPosition(new THREE.Vector3());
+
+      if (this.telegraphing) {
+        this.showTelegraph('projectile', 0.2, 0xff44ff, shardPos);
+      }
+
+      setTimeout(() => {
+        if (typeof spawnBossProjectile !== 'function') return;
+
+        if (idx === 0) {
+          // Inner: rapid single shot
+          spawnBossProjectile(shardPos, playerPos.clone());
+        } else if (idx === 1) {
+          // Middle: 3-shot spread
+          for (let s = -1; s <= 1; s++) {
+            const target = playerPos.clone();
+            target.x += s * 0.5;
+            target.y += s * 0.2;
+            spawnBossProjectile(shardPos, target);
+          }
+        } else {
+          // Outer: slow big shot (just fires one aimed at player)
+          spawnBossProjectile(shardPos, playerPos.clone());
+        }
+      }, 200);
+    });
+  }
+
+  // ── PHASE 3: Overload ───────────────────────────────────
+  initPhase3() {
+    this.skullPhase = 3;
+    this.phase = 3;
+    this.isHealCharging = false;
+    this.healChargeTimer = 0;
+    this.phase3ShootTimer = 0;
+
+    // Show prism body again (damaged look - darker color)
+    if (this.prismBody) {
+      this.prismBody.visible = true;
+      this.prismBody.traverse(child => {
+        if (child.isMesh && child.material) {
+          child.material.color.setHex(0x881188);
+          child.material.opacity = 0.6;
+        }
+      });
+    }
+
+    // Hide shards
+    this.shards.forEach(shard => {
+      shard.traverse(child => {
+        if (child.userData.isPrismCore) {
+          child.visible = true;
+          child.userData.isWeakPoint = true;
+        }
+      });
+    });
+
+    _log('[PrismBoss] Entering Phase 3: Overload');
+  }
+
+  updatePhase3(dt, now, playerPos) {
+    const config = this.getPrismPhaseConfig();
+
+    // Continuous projectile fire (increasing rate based on heal attempts)
+    let shootRate = config.shootRate;
+    if (this.healAttempts >= 1) shootRate *= 0.85;
+    if (this.healAttempts >= 2) shootRate *= 0.85;
+    if (this.healAttempts >= 3) shootRate *= 0.8;
+
+    this.phase3ShootTimer -= dt;
+    if (this.phase3ShootTimer <= 0 && !this.isHealCharging) {
+      this.phase3ShootTimer = shootRate;
+      this.firePhase3Projectiles(playerPos);
+    }
+
+    // Heal charge mechanic
+    if (!this.isHealCharging) {
+      this.healChargeTimer += dt;
+      if (this.healChargeTimer >= this.healChargeRate) {
+        this.startHealCharge();
+      }
+    } else {
+      this.healChargeProgress += dt;
+      // Update heal weak point orbits
+      this.healWeakPoints.forEach((wp, idx) => {
+        if (!wp.parent) return;
+        wp.userData.angle += (1.5 + idx * 0.5) * dt;
+        const r = 1.5 + idx * 0.3;
+        wp.position.set(
+          Math.cos(wp.userData.angle) * r,
+          0.5 + idx * 0.4,
+          Math.sin(wp.userData.angle) * r
+        );
+      });
+
+      // Check if all weak points hit
+      if (this.weakPointsHit >= 3) {
+        this.cancelHealCharge();
+      } else if (this.healChargeProgress >= this.healChargeDuration) {
+        // Timer expired: boss heals
+        this.completeHealCharge();
+      }
+    }
+
+    // Movement
+    this.moveTimer += dt;
+    if (this.moveTimer >= config.erraticness) {
+      this.moveTimer = 0;
+      const angle = Math.random() * Math.PI * 2;
+      this.moveDirection.set(Math.sin(angle), 0, Math.cos(angle));
+    }
+    this.mesh.position.addScaledVector(this.moveDirection, config.moveSpeed * dt);
+    this.constrainToMidfield(playerPos);
+    this.mesh.position.y = this.fixedY;
+  }
+
+  firePhase3Projectiles(playerPos) {
+    const bossPos = this.mesh.position.clone();
+
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.2, 0xff44ff, bossPos);
+    }
+
+    setTimeout(() => {
+      if (typeof spawnBossProjectile !== 'function') return;
+      spawnBossProjectile(bossPos, playerPos.clone());
+
+      // Spread shots after heal attempt 2
+      if (this.healAttempts >= 2) {
+        for (let s = -1; s <= 1; s += 2) {
+          const target = playerPos.clone();
+          target.x += s * 0.6;
+          target.y += s * 0.2;
+          spawnBossProjectile(bossPos, target);
+        }
+      }
+    }, 200);
+  }
+
+  startHealCharge() {
+    this.isHealCharging = true;
+    this.healChargeProgress = 0;
+    this.weakPointsHit = 0;
+    this.healWeakPoints = [];
+
+    // Telegraph
+    if (this.telegraphing) {
+      this.showTelegraph('charge', 0.5, 0x00ff00);
+    }
+    playSkullPhaseSound();
+
+    // Spawn 3 orbiting weak points
+    for (let i = 0; i < 3; i++) {
+      const wpGeo = new THREE.SphereGeometry(0.15, 8, 8);
+      const wpMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff, emissive: 0xffffff
+      });
+      // MeshBasicMaterial doesn't have emissive in practice, but we set color bright
+      const wp = new THREE.Mesh(wpGeo, wpMat);
+      wp.userData.isWeakPoint = true;
+      wp.userData.isHealWeakPoint = true;
+      wp.userData.healWeakPointIndex = i;
+      wp.userData.angle = (i / 3) * Math.PI * 2;
+
+      this.healWeakPoints.push(wp);
+      this.weakPoints.push(wp);
+      this.mesh.add(wp);
+    }
+
+    _log('[PrismBoss] Heal charge started! Hit the 3 weak points!');
+  }
+
+  cancelHealCharge() {
+    this.isHealCharging = false;
+    this.healChargeTimer = 0;
+    playSkullHandGrowlSound();
+    this.cleanupHealWeakPoints();
+    _log('[PrismBoss] Heal charge cancelled! All weak points hit.');
+  }
+
+  completeHealCharge() {
+    this.isHealCharging = false;
+    this.healChargeTimer = 0;
+    this.healAttempts++;
+
+    // Heal 25% HP
+    const healAmount = Math.floor(this.maxHp * 0.25);
+    this.hp = Math.min(this.maxHp, this.hp + healAmount);
+    playSkullPhaseSound();
+    this.cleanupHealWeakPoints();
+
+    // Update health bar
+    if (typeof updateBossHealthBar === 'function') {
+      updateBossHealthBar(this.hp, this.maxHp, this.phases);
+    }
+
+    _log(`[PrismBoss] Heal complete! +${healAmount} HP. Attempt #${this.healAttempts}`);
+  }
+
+  cleanupHealWeakPoints() {
+    this.healWeakPoints.forEach(wp => {
+      // Remove from weakPoints array
+      const wpIdx = this.weakPoints.indexOf(wp);
+      if (wpIdx !== -1) this.weakPoints.splice(wpIdx, 1);
+      // Remove from scene
+      if (wp.parent) wp.parent.remove(wp);
+      if (wp.geometry) wp.geometry.dispose();
+      if (wp.material) wp.material.dispose();
+    });
+    this.healWeakPoints = [];
+  }
+
+  onHealWeakPointHit(wp) {
+    this.weakPointsHit++;
+    playSkullHandGrowlSound();
+
+    // Remove this weak point
+    const idx = this.healWeakPoints.indexOf(wp);
+    if (idx !== -1) this.healWeakPoints.splice(idx, 1);
+    const wpIdx = this.weakPoints.indexOf(wp);
+    if (wpIdx !== -1) this.weakPoints.splice(wpIdx, 1);
+    if (wp.parent) wp.parent.remove(wp);
+    if (wp.geometry) wp.geometry.dispose();
+    if (wp.material) wp.material.dispose();
+  }
+
+  // ── PHASE TRANSITIONS ────────────────────────────────────
+  startPhaseTransition(fromPhase, toPhase) {
+    this.transitioning = true;
+    this.transitionTimer = 0;
+    this.transitionFromPhase = fromPhase;
+    this.transitionToPhase = toPhase;
+
+    playSkullPhaseSound();
+    playSkullHandGrowlSound();
+
+    // Clean up shards if leaving phase 2
+    if (fromPhase === 2) {
+      this.shards.forEach(shard => {
+        if (shard.parent) shard.parent.remove(shard);
+        shard.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+      });
+      this.shards = [];
+    }
+
+    _log(`[PrismBoss] Phase transition: ${fromPhase} -> ${toPhase}`);
+  }
+
+  updateTransition(dt, now, playerPos) {
+    this.transitionTimer += dt;
+
+    // Pulsing scale effect
+    const pulse = 1.0 + 0.15 * Math.sin(this.transitionTimer * 8.0);
+    this.mesh.scale.setScalar(pulse);
+
+    // Body glow pulsing
+    if (this.prismBody) {
+      const glow = 0.2 + 0.6 * Math.abs(Math.sin(this.transitionTimer * 6.0));
+      this.prismBody.traverse(child => {
+        if (child.isMesh && child.material) {
+          child.material.opacity = glow;
+        }
+      });
+    }
+
+    // Transition complete
+    if (this.transitionTimer >= this.transitionDuration) {
+      this.transitioning = false;
+      this.mesh.scale.setScalar(1.0);
+
+      // Reset body opacity
+      if (this.prismBody) {
+        this.prismBody.traverse(child => {
+          if (child.isMesh && child.material) {
+            child.material.opacity = 0.4;
+          }
+        });
+      }
+
+      // Enter new phase
+      if (this.transitionToPhase === 1) this.initPhase1();
+      else if (this.transitionToPhase === 2) this.initPhase2();
+      else if (this.transitionToPhase === 3) this.initPhase3();
+
+      _log(`[PrismBoss] Transition complete, now in phase ${this.transitionToPhase}`);
+    }
+  }
+
+  getPrismPhaseConfig() {
+    switch (this.skullPhase) {
+      case 1:
+        return { moveSpeed: 1.0, shootRate: 1.5, erraticness: 3.0, facetRotateRate: 4.0 };
+      case 2:
+        return { moveSpeed: 1.5, shootRate: 1.0, erraticness: 2.0, coreSwapRate: 5.0, mergeRate: 12.0 };
+      case 3:
+        return { moveSpeed: 2.0, shootRate: 0.7, erraticness: 1.5, healChargeRate: 15.0, healChargeDuration: 5.0 };
+      default:
+        return { moveSpeed: 1.0, shootRate: 1.5, erraticness: 3.0 };
+    }
+  }
+
+  constrainToMidfield(playerPos) {
+    const dist = this.mesh.position.distanceTo(playerPos);
+    if (dist < 6) {
+      const awayDir = this.mesh.position.clone().sub(playerPos).normalize();
+      awayDir.y = 0;
+      if (awayDir.lengthSq() > 0) awayDir.normalize();
+      this.mesh.position.addScaledVector(awayDir, (6 - dist));
+    } else if (dist > 14) {
+      const towardDir = playerPos.clone().sub(this.mesh.position).normalize();
+      towardDir.y = 0;
+      if (towardDir.lengthSq() > 0) towardDir.normalize();
+      this.mesh.position.addScaledVector(towardDir, (dist - 14));
+    }
+    const bound = 15;
+    this.mesh.position.x = Math.max(-bound, Math.min(bound, this.mesh.position.x));
+    this.mesh.position.z = Math.max(-bound, Math.min(bound, this.mesh.position.z));
+    this.mesh.position.y = this.fixedY;
+  }
+
+  // ── UPDATE LOOP ──────────────────────────────────────────
+  updateBehavior(dt, now, playerPos) {
+    if (this.transitioning) {
+      this.updateTransition(dt, now, playerPos);
+      this.mesh.lookAt(_look.copy(playerPos).setY(this.fixedY));
+      return;
+    }
+
+    switch (this.skullPhase) {
+      case 0: this.initPhase1(); break;
+      case 1: this.updatePhase1(dt, now, playerPos); break;
+      case 2: this.updatePhase2(dt, now, playerPos); break;
+      case 3: this.updatePhase3(dt, now, playerPos); break;
+    }
+
+    this.mesh.lookAt(_look.copy(playerPos).setY(this.fixedY));
+  }
+
+  takeDamage(amount, hitInfo = {}) {
+    // Immune during phase transitions
+    if (this.transitioning) return { killed: false, immune: true };
+
+    // Phase 1: facet targeting
+    if (this.skullPhase === 1 && hitInfo.facetIndex !== undefined) {
+      if (hitInfo.facetIndex !== this.vulnerableFacetIndex) {
+        // Wrong facet: heal boss
+        this.hp = Math.min(this.maxHp, this.hp + this.healAmount);
+        playSkullHandGrowlSound();
+        return { killed: false, healed: true };
+      }
+      // Right facet: damage it
+      const facetIdx = hitInfo.facetIndex;
+      this.facetHps[facetIdx] -= amount;
+      if (this.facetHps[facetIdx] <= 0 && this.facets[facetIdx]) {
+        if (this.facets[facetIdx].visible) {
+          this.facets[facetIdx].visible = false;
+          this.facetsDestroyed++;
+          playSkullHandGrowlSound();
+          if (this.facetsDestroyed >= 2) {
+            this.startPhaseTransition(1, 2);
+            this.skullPhase = 2;
+          }
+        }
+      }
+      return { killed: false, facetDamaged: true };
+    }
+
+    // Phase 2: damage goes to boss HP (merge = immune)
+    if (this.skullPhase === 2 && this.isMerged) {
+      return { killed: false, immune: true };
+    }
+
+    // Phase 3: check if hitting heal weak points
+    if (this.skullPhase === 3 && this.isHealCharging) {
+      // Check if the hit was on a heal weak point
+      if (hitInfo.isHealWeakPoint) {
+        // Find the matching weak point
+        const wpIndex = hitInfo.healWeakPointIndex;
+        if (wpIndex !== undefined && this.healWeakPoints[wpIndex]) {
+          this.onHealWeakPointHit(this.healWeakPoints[wpIndex]);
+        }
+        return { killed: false, healWeakPointHit: true };
+      }
+    }
+
+    // Default: standard damage
+    return super.takeDamage(amount, hitInfo);
+  }
+
+  onPhaseChange(newPhase) {
+    // Phase changes are handled by skullPhase system
+  }
+}
+
 const BOSS_DEFS = {
   // Teleporting boss (Level 5)
   // Level 5 bosses (Tier 1 - INTRO)
@@ -8133,183 +7492,23 @@ const BOSS_DEFS = {
     weakPoints: false // Custom weak points (hands first, then head)
   },
 
-  // Level 10 bosses (Tier 2 - HARDER)
-  hunter_breakenridge: {
-    name: 'Redmond "Hunter" Breakenridge',
-    pattern: [
-      [0, 0, 1, 0, 0],
-      [0, 1, 1, 1, 0],
-      [1, 1, 1, 1, 1],
-      [0, 1, 1, 1, 0],
-      [0, 0, 1, 0, 0],
-    ],
-    voxelSize: 0.35,
-    baseHp: 1200,
+  // The Prism (Level 10, replaces tier 2 pool)
+  the_prism: {
+    name: 'The Prism',
+    pattern: [[1]],
+    voxelSize: 0.25,
+    baseHp: 1400,
     phases: 3,
-    color: 0xff6600,
+    color: 0xff44ff,
     scoreValue: 200,
-    behavior: 'hunter',
-    hitboxRadius: 0.6,
-    rifleFireRate: 2.5,
-    droneFireRate: 1.5,
-    weakPoints: false  // Custom weak points (drone)
-  },
-
-  dj_drax: {
-    name: 'DJ Drax',
-    pattern: [
-      [1, 1, 1],
-      [1, 1, 1],
-    ],
-    voxelSize: 0.3,
-    baseHp: 1300,
-    phases: 3,
-    color: 0x8800ff,
-    scoreValue: 200,
-    behavior: 'dj',
-    hitboxRadius: 0.7,
-    beatRate: 0.6,
-    fanSpawnRate: 4.0,
-    weakPoints: false  // Custom weak points (speakers)
-  },
-
-  captain_kestrel: {
-    name: 'Captain Kestrel',
-    pattern: [
-      [0, 0, 1, 0, 0],
-      [0, 1, 1, 1, 0],
-      [1, 1, 1, 1, 1],
-      [0, 1, 1, 1, 0],
-      [0, 0, 1, 0, 0],
-    ],
-    voxelSize: 0.3,
-    baseHp: 1150,
-    phases: 3,
-    color: 0x00aaff,
-    scoreValue: 200,
-    behavior: 'starfighter',
-    hitboxRadius: 0.65,
-    cannonFireRate: 2.0,
-    missileRate: 5.0,
-    weakPoints: false  // Custom weak points (cockpit)
-  },
-
-  dr_aster: {
-    name: 'Dr. Aster',
-    pattern: [
-      [0, 1, 0],
-      [1, 1, 1],
-      [0, 1, 0],
-    ],
-    voxelSize: 0.35,
-    baseHp: 1100,
-    phases: 3,
-    color: 0xff00ff,
-    scoreValue: 200,
-    behavior: 'scientist',
-    hitboxRadius: 0.55,
-    minionSpawnRate: 5.0,
-    weakPoints: false  // Custom weak points (compiler)
-  },
-
-  sunflare_seraph: {
-    name: 'Sunflare Seraph',
-    pattern: [
-      [0, 0, 1, 0, 0],
-      [0, 1, 1, 1, 0],
-      [1, 1, 1, 1, 1],
-      [0, 1, 1, 1, 0],
-      [0, 0, 1, 0, 0],
-    ],
-    voxelSize: 0.3,
-    baseHp: 1250,
-    phases: 3,
-    color: 0xffdd00,
-    scoreValue: 200,
-    behavior: 'monk',
-    hitboxRadius: 0.7,
-    meditationDuration: 3.0,
-    weakPoints: false  // Custom weak points (sun nodes)
-  },
-
-  // Level 15 bosses (Tier 3 - TOUGH)
-  theodore_breakenridge: {
-    name: 'Theodore "Shady" Breakenridge',
-    pattern: [
-      [0, 0, 1, 0, 0],
-      [0, 1, 1, 1, 0],
-      [1, 1, 1, 1, 1],
-      [0, 1, 1, 1, 0],
-      [0, 0, 1, 0, 0],
-    ],
-    voxelSize: 0.4,
-    baseHp: 1800,
-    phases: 3,
-    color: 0x8800ff,
-    scoreValue: 400,
-    behavior: 'outlaw',
-    hitboxRadius: 0.7,
-    vanishDuration: 2.0,
-    shadowBulletRate: 0.8,
+    behavior: 'prism',
+    hitboxRadius: 1.0,
+    contactDamage: 1,
+    contactCooldown: 1200,
     weakPoints: true
   },
 
-  commander_halcyon: {
-    name: 'Commander Halcyon',
-    pattern: [
-      [0, 0, 1, 0, 0],
-      [0, 1, 1, 1, 0],
-      [1, 1, 1, 1, 1],
-      [0, 1, 1, 1, 0],
-      [0, 0, 1, 0, 0],
-    ],
-    voxelSize: 0.38,
-    baseHp: 1750,
-    phases: 3,
-    color: 0x00aaff,
-    scoreValue: 400,
-    behavior: 'commander',
-    hitboxRadius: 0.75,
-    laserRate: 1.5,
-    weakPoints: false
-  },
-
-  madame_coda: {
-    name: 'Madame Coda',
-    pattern: [
-      [1, 1, 1],
-      [1, 1, 1],
-      [1, 1, 1],
-    ],
-    voxelSize: 0.32,
-    baseHp: 1700,
-    phases: 3,
-    color: 0xff00ff,
-    scoreValue: 400,
-    behavior: 'diva',
-    hitboxRadius: 0.7,
-    beamRate: 1.2,
-    performanceDuration: 3.0,
-    weakPoints: false
-  },
-
-  twin_glitch: {
-    name: 'Twin Glitch Units',
-    pattern: [
-      [1, 1],
-      [1, 1],
-    ],
-    voxelSize: 0.25,
-    baseHp: 1600,
-    phases: 3,
-    color: 0x00ffff,
-    scoreValue: 400,
-    behavior: 'twin_glitch',
-    hitboxRadius: 1.2,
-    vulnerabilitySwapRate: 4.0,
-    weakPoints: false
-  },
-
+  // Level 15 boss (Tier 3)
   neon_minotaur: {
     name: 'Neon Minotaur',
     pattern: [
@@ -8434,8 +7633,8 @@ const BOSS_DEFS = {
 // ── BOSS POOL MANAGEMENT ─────────────────────────────────────
 const BOSS_POOLS = {
   1: ['skull_boss'], // Tier 1 (Level 5) - Skull Boss only
-  2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'], // Tier 2 (Level 10) - harder bosses
-  3: ['theodore_breakenridge', 'commander_halcyon', 'madame_coda', 'twin_glitch', 'neon_minotaur'], // Tier 3 (Level 15) - TOUGH bosses
+  2: ['the_prism'], // Tier 2 (Level 10) - The Prism only
+  3: ['neon_minotaur'], // Tier 3 (Level 15) - Neon Minotaur only
   4: ['walter_breakenridge', 'kernel_monolith', 'synth_kraken', 'afterimage_seraphim', 'sun_eater_train'], // Tier 4 (Level 20) - final bosses
 };
 
@@ -8465,9 +7664,6 @@ export function spawnBoss(bossId, levelConfig, camera) {
   // Create appropriate boss class based on behavior
   let boss;
   switch (def.behavior) {
-    case 'dodger':
-      boss = new DodgerBoss(def, levelConfig, sceneRef, telegraphingSystem);
-      break;
     // Level 5 bosses (Tier 1)
     case 'golem':
       boss = new ScrapGolemBoss(def, levelConfig, sceneRef, telegraphingSystem);
@@ -8488,34 +7684,13 @@ export function spawnBoss(bossId, levelConfig, camera) {
       boss = new SkullBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
     // Level 10 bosses
+    case 'prism':
+      boss = new PrismBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
     case 'hunter':
       boss = new HunterBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
-    case 'dj':
-      boss = new DJBoss(def, levelConfig, sceneRef, telegraphingSystem);
-      break;
-    case 'starfighter':
-      boss = new StarfighterBoss(def, levelConfig, sceneRef, telegraphingSystem);
-      break;
-    case 'scientist':
-      boss = new ScientistBoss(def, levelConfig, sceneRef, telegraphingSystem);
-      break;
-    case 'monk':
-      boss = new MonkBoss(def, levelConfig, sceneRef, telegraphingSystem);
-      break;
     // Level 15 bosses
-    case 'outlaw':
-      boss = new OutlawBoss(def, levelConfig, sceneRef, telegraphingSystem);
-      break;
-    case 'commander':
-      boss = new CommanderBoss(def, levelConfig, sceneRef, telegraphingSystem);
-      break;
-    case 'diva':
-      boss = new DivaBoss(def, levelConfig, sceneRef, telegraphingSystem);
-      break;
-    case 'twin_glitch':
-      boss = new TwinGlitchBoss(def, levelConfig, sceneRef, telegraphingSystem);
-      break;
     case 'minotaur':
       boss = new MinotaurBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
@@ -8849,7 +8024,6 @@ export function updateBossMinions(dt, playerPos) {
 const BOSS_PROJ_POOL_SIZE = 50;
 
 let bossProjCorePool = null;   // InstancedMesh for core spheres (red)
-let bossProjGlowPool = null;   // InstancedMesh for glow spheres (pink, transparent)
 let bossProjFreeIndices = [];  // Available instance indices
 const bossProjData = [];       // Per-instance data (parallel to instance indices)
 const _bossProjMatrix = new THREE.Matrix4();
@@ -8860,39 +8034,21 @@ const _unitScale = new THREE.Vector3(1, 1, 1);  // Unit scale for initial spawn
 function initBossProjPools() {
   if (bossProjCorePool || !sceneRef) return;
 
-  // Enemy projectiles: make them match the "swarm" voxel vibe, but bright yellow.
-  // Box geometry reads way better in VR than tiny spheres.
-  const coreGeo = new THREE.BoxGeometry(0.13, 0.13, 0.13);
+  // Boss projectiles: red spheres (core only, no glow to avoid depth artifacts)
+  const coreGeo = new THREE.SphereGeometry(0.12, 8, 8);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xffff00,
+    color: 0xff2200,
     transparent: true,
     opacity: 0.95,
     depthWrite: false,
-    depthTest: false,
   });
   bossProjCorePool = new THREE.InstancedMesh(coreGeo, coreMat, BOSS_PROJ_POOL_SIZE);
   bossProjCorePool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   bossProjCorePool.count = 0;
   bossProjCorePool.frustumCulled = false;
   bossProjCorePool.renderOrder = 999;
+  bossProjCorePool.visible = true;  // Ensure visible on init
   sceneRef.add(bossProjCorePool);
-
-  // Glow voxel (larger, transparent yellow with additive blending)
-  const glowGeo = new THREE.BoxGeometry(0.26, 0.26, 0.26);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xffee55,
-    transparent: true,
-    opacity: 0.55,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    depthTest: false,
-  });
-  bossProjGlowPool = new THREE.InstancedMesh(glowGeo, glowMat, BOSS_PROJ_POOL_SIZE);
-  bossProjGlowPool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  bossProjGlowPool.count = 0;
-  bossProjGlowPool.frustumCulled = false;
-  bossProjGlowPool.renderOrder = 998;
-  sceneRef.add(bossProjGlowPool);
 
   // Initialize free indices (all available)
   for (let i = 0; i < BOSS_PROJ_POOL_SIZE; i++) {
@@ -8900,7 +8056,7 @@ function initBossProjPools() {
     bossProjData.push(null);
   }
 
-  _log('[performance] Boss projectile InstancedMesh pools initialized (50 instances, 2 draw calls)');
+  _log('[performance] Boss projectile InstancedMesh pool initialized (50 instances, 1 draw call)');
 }
 
 function acquireBossProjIndex() {
@@ -8913,7 +8069,6 @@ function acquireBossProjIndex() {
   // Expand visible count if needed
   if (idx >= bossProjCorePool.count) {
     bossProjCorePool.count = idx + 1;
-    bossProjGlowPool.count = idx + 1;
   }
 
   return idx;
@@ -8925,9 +8080,7 @@ export function releaseBossProjIndex(idx) {
   // Hide instance by scaling to 0
   _bossProjMatrix.makeScale(0, 0, 0);
   bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
-  bossProjGlowPool.setMatrixAt(idx, _bossProjMatrix);
   bossProjCorePool.instanceMatrix.needsUpdate = true;
-  bossProjGlowPool.instanceMatrix.needsUpdate = true;
 
   bossProjData[idx] = null;
   bossProjFreeIndices.push(idx);
@@ -8949,11 +8102,8 @@ export function clearBossProjectiles() {
   // (releasing scales them to 0, but count must also be reset)
   if (bossProjCorePool) {
     bossProjCorePool.count = 0;
+    bossProjCorePool.visible = false;  // Hide pool between levels
     bossProjCorePool.instanceMatrix.needsUpdate = true;
-  }
-  if (bossProjGlowPool) {
-    bossProjGlowPool.count = 0;
-    bossProjGlowPool.instanceMatrix.needsUpdate = true;
   }
 
   // Reset free indices to initial state
@@ -8965,6 +8115,9 @@ export function clearBossProjectiles() {
 }
 
 export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeight = 3.5) {
+  // Don't spawn if no active boss (prevents leaked projectiles during transitions)
+  if (!activeBoss) return;
+
   // Initialize pools if needed (called once on first spawn)
   initBossProjPools();
 
@@ -8973,7 +8126,7 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
   if (idx < 0) return; // Pool exhausted
 
   // Play sound when boss fires projectile
-  playEnemyProjectileSound();
+  playBossProjectileFiredSound();
 
   let velocity;
   let homingStrength;
@@ -9047,7 +8200,6 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
     explosionDamage: 1,
     explosionRadius: 0.3,
     hitRadius: 0.45,
-    glowPhase: Math.random() * Math.PI * 2,
     hitPlayer: false,
     lobbed: lobbed,
     gravity: lobbed ? 9.8 : 0,
@@ -9057,9 +8209,7 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
   // Set initial matrix (position + unit scale)
   _bossProjMatrix.compose(fromPos, _identityQuat, _unitScale);
   bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
-  bossProjGlowPool.setMatrixAt(idx, _bossProjMatrix);
   bossProjCorePool.instanceMatrix.needsUpdate = true;
-  bossProjGlowPool.instanceMatrix.needsUpdate = true;
 
   // Create lightweight proxy for compatibility with getBossProjectiles()
   const proxy = {
@@ -9138,9 +8288,8 @@ export function updateBossProjectiles(dt, now, playerPos) {
     if (_scratch3.lengthSq() < 0.0001) _scratch3.set(1, 0, 0);
     _scratch3.normalize();
     const wiggleOffset = Math.sin(proj.wigglePhase) * (proj.wiggleAmplitude || 0.008);
-    const pulse = 0.75 + Math.sin(age * 0.015 + (data.glowPhase || 0)) * 0.25;
 
-    // Only add wiggle and duplicate velocity for non-lobbed (homing) projectiles
+    // Only add wiggle for non-lobbed (homing) projectiles
     if (!proj.lobbed) {
       proj.mesh.position.addScaledVector(_scratch3, wiggleOffset);
     }
@@ -9155,23 +8304,19 @@ export function updateBossProjectiles(dt, now, playerPos) {
       continue;
     }
 
-    // Update instance matrices with pulsing scale
-    const coreScale = 0.9 + pulse * 0.12;
-    const glowScale = 0.95 + pulse * 0.25;
-
-    _bossProjScale.set(coreScale, coreScale, coreScale);
+    // Update instance matrix
+    _bossProjScale.set(1, 1, 1);
     _bossProjMatrix.compose(proj.mesh.position, _identityQuat, _bossProjScale);
     bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
 
-    _bossProjScale.set(glowScale, glowScale, glowScale);
-    _bossProjMatrix.compose(proj.mesh.position, _identityQuat, _bossProjScale);
-    bossProjGlowPool.setMatrixAt(idx, _bossProjMatrix);
-
-    // Proximity warning - play sound when projectile gets close (only once per projectile)
+    // Proximity alert (Geiger-counter style) - plays at increasing rate as projectile gets closer
     const distToPlayer = proj.mesh.position.distanceTo(playerPos);
-    if (distToPlayer < 4.0 && !proj.warned) {
-      playProjectileWarningSound();
-      proj.warned = true;
+    if (distToPlayer < 8) {
+      const alertInterval = 200 + (distToPlayer / 8) * 600; // 200ms at closest, 800ms at edge
+      if (now - (proj._lastAlertTime || 0) > alertInterval) {
+        playBossProjectileAlertSound();
+        proj._lastAlertTime = now;
+      }
     }
 
     if (distToPlayer < (proj.hitRadius || 0.45)) {
@@ -9182,9 +8327,8 @@ export function updateBossProjectiles(dt, now, playerPos) {
     }
   }
 
-  // Mark buffers for GPU update
+  // Mark buffer for GPU update
   bossProjCorePool.instanceMatrix.needsUpdate = true;
-  bossProjGlowPool.instanceMatrix.needsUpdate = true;
 }
 
 export function getBossProjectiles() {
