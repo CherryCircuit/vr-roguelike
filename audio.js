@@ -529,6 +529,81 @@ export function playEnemyProjectileSound() {
   osc2.stop(t + 0.12);
 }
 
+// ── Boss projectile fired sound (beefier than regular enemy shots) ──
+export function playBossProjectileFiredSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const osc3 = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc1.type = 'sine';
+  osc2.type = 'triangle';
+  osc3.type = 'sawtooth';
+  filter.type = 'lowpass';
+
+  // Low bass punch + rising mid tone for dramatic boss shot
+  osc1.frequency.setValueAtTime(120, t);
+  osc1.frequency.exponentialRampToValueAtTime(60, t + 0.25);
+  osc2.frequency.setValueAtTime(300, t);
+  osc2.frequency.exponentialRampToValueAtTime(500, t + 0.15);
+  osc2.frequency.exponentialRampToValueAtTime(200, t + 0.25);
+  osc3.frequency.setValueAtTime(150, t);
+  osc3.frequency.exponentialRampToValueAtTime(80, t + 0.3);
+
+  filter.frequency.setValueAtTime(800, t);
+  filter.Q.setValueAtTime(3, t);
+
+  gain.gain.setValueAtTime(0.35, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+
+  osc1.connect(filter);
+  osc2.connect(filter);
+  osc3.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc1.start(t);
+  osc2.start(t);
+  osc3.start(t);
+  osc1.stop(t + 0.3);
+  osc2.stop(t + 0.3);
+  osc3.stop(t + 0.3);
+}
+
+// ── Boss projectile proximity alert (Geiger-counter style) ──
+export function playBossProjectileAlertSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'square';
+  filter.type = 'highpass';
+
+  // Short, sharp warning click
+  osc.frequency.setValueAtTime(1200, t);
+  osc.frequency.exponentialRampToValueAtTime(800, t + 0.04);
+
+  filter.frequency.setValueAtTime(600, t);
+  filter.Q.setValueAtTime(8, t);
+
+  gain.gain.setValueAtTime(0.12, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(t);
+  osc.stop(t + 0.05);
+}
+
 // ── Enemy projectile proximity warning ───────────────────────
 export function playProjectileWarningSound() {
   const ctx = getAudioContext();

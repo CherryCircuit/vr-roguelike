@@ -12,23 +12,23 @@ export function buildAlienPlanetScene(group, deps) {
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
 
-  // Fix 6: Ground with noise-based color variation for visual interest (Quest-friendly)
+  // Ground plane split into LOD: near (high-detail with shader) + far (simple flat)
   // Uses a simple ShaderMaterial with cheap hash-based noise instead of flat MeshLambertMaterial
-  const groundGeo = new THREE.PlaneGeometry(345, 345, 96, 96);
-  const groundPositions = groundGeo.attributes.position;
-  // Seeded pseudo-random for consistent terrain across reloads
+  // Near ground plane (70-unit radius): high-detail with vertex height + shader
+  const nearSize = 140;
+  const nearGeo = new THREE.PlaneGeometry(nearSize, nearSize, 96, 96);
+  const nearPositions = nearGeo.attributes.position;
   let _seed = 42;
   const srand = () => { _seed = (_seed * 16807 + 0) % 2147483647; return (_seed - 1) / 2147483646; };
-  for (let i = 0; i < groundPositions.count; i++) {
-    const x = groundPositions.getX(i);
-    const y = groundPositions.getY(i);
+  for (let i = 0; i < nearPositions.count; i++) {
+    const x = nearPositions.getX(i);
+    const y = nearPositions.getY(i);
     const dist = Math.sqrt(x * x + y * y);
     const rawHeight = srand() * 0.7;
-    // Flat combat area: within 20m of origin, clamp to 0-0.2
     const maxHeight = dist < 20 ? 0.2 : 0.7;
-    groundPositions.setZ(i, Math.min(rawHeight, maxHeight));
+    nearPositions.setZ(i, Math.min(rawHeight, maxHeight));
   }
-  groundGeo.computeVertexNormals();
+  nearGeo.computeVertexNormals();
   const groundMat = new THREE.ShaderMaterial({
     uniforms: {
       uBaseColor: { value: new THREE.Color(0x0a0510) },
@@ -92,13 +92,26 @@ export function buildAlienPlanetScene(group, deps) {
     `,
     depthWrite: true,
   });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.name = 'alien-ground-plane';
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = floorY;
-  ground.frustumCulled = false;
-  group.add(ground);
+  const nearGround = new THREE.Mesh(nearGeo, groundMat);
+  nearGround.name = 'alien-ground-plane-near';
+  nearGround.rotation.x = -Math.PI / 2;
+  nearGround.position.y = floorY;
+  nearGround.frustumCulled = false;
+  group.add(nearGround);
   registerFadeMaterial(groundMat);
+
+  // Far ground plane (extends from near edge to scene boundary): simple flat quad
+  const farGroundMat = new THREE.MeshLambertMaterial({ color: 0x0a0510 });
+  const farGround = new THREE.Mesh(
+    new THREE.PlaneGeometry(345, 345, 4, 4),
+    farGroundMat
+  );
+  farGround.name = 'alien-ground-plane-far';
+  farGround.rotation.x = -Math.PI / 2;
+  farGround.position.y = floorY - 0.01; // Slightly below near plane to avoid z-fight
+  farGround.frustumCulled = false;
+  group.add(farGround);
+  registerFadeMaterial(farGroundMat);
 
   // Flash overlay plane for damage feedback (Issue 2: 320x320 for full floor coverage)
   const flashGeo = new THREE.PlaneGeometry(320, 320);

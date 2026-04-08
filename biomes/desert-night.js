@@ -113,9 +113,25 @@ export function buildDesertNightScene(group, deps) {
     group.add(terrain);
     registerFadeMaterial(material);
 
-    // Outline the dune crests with a saturated pink so the desert keeps a stylized neon read.
-    const outline = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geometry, 14),
+    // Clean perimeter outline — only the outer edge, no internal triangulation diagonals.
+    // PlaneGeometry(sx+1) x (sz+1) vertex grid, after rotateX(-PI/2):
+    //   row 0 = +Z edge, row sz = -Z edge, col 0 = -X edge, col sx = +X edge
+    const cols = segmentsX + 1;
+    const rows = segmentsZ + 1;
+    const perimeterVerts = [];
+    // Bottom row (row 0): col 0..cols-1
+    for (let c = 0; c < cols; c++) perimeterVerts.push(positions.getX(c), positions.getY(c), positions.getZ(c));
+    // Right column (col cols-1): row 1..rows-1
+    for (let r = 1; r < rows; r++) { const i = r * cols + (cols - 1); perimeterVerts.push(positions.getX(i), positions.getY(i), positions.getZ(i)); }
+    // Top row (row rows-1): col cols-2..0 (reversed)
+    for (let c = cols - 2; c >= 0; c--) { const i = (rows - 1) * cols + c; perimeterVerts.push(positions.getX(i), positions.getY(i), positions.getZ(i)); }
+    // Left column (col 0): row rows-2..1 (reversed)
+    for (let r = rows - 2; r >= 1; r--) { const i = r * cols; perimeterVerts.push(positions.getX(i), positions.getY(i), positions.getZ(i)); }
+
+    const outlineGeo = new THREE.BufferGeometry();
+    outlineGeo.setAttribute('position', new THREE.Float32BufferAttribute(perimeterVerts, 3));
+    const outline = new THREE.LineLoop(
+      outlineGeo,
       new THREE.LineBasicMaterial({
         color: duneOutlineColor,
         transparent: true,
@@ -136,28 +152,11 @@ export function buildDesertNightScene(group, deps) {
     { width: 96, depth: 96, segmentsX: 36, segmentsZ: 36, centerX: 0, centerZ: 0, flatRadius: 12.0, mountainStart: 18.0 },
     { width: 92, depth: 42, segmentsX: 26, segmentsZ: 12, centerX: 0, centerZ: -58, flatRadius: 8.0, mountainStart: 14.0 },
     { width: 40, depth: 110, segmentsX: 12, segmentsZ: 28, centerX: -58, centerZ: -8, flatRadius: 6.0, mountainStart: 12.0 },
-    { width: 40, depth: 110, segmentsX: 12, segmentsZ: 28, centerX: 58, centerZ: -8, flatRadius: 6.0, mountainStart: 12.0 },
     // { width: 72, depth: 28, segmentsX: 20, segmentsZ: 8, centerX: 0, centerZ: 56, flatRadius: 6.0, mountainStart: 12.0 },  // Removed: never seen by player
   ];
   dunePanels.forEach((panel, idx) => buildDunePanel(panel, idx));
 
-  // Flash overlay plane for damage feedback (entire sand floor turns red)
-  // Only cover the playable center after culling rear dune rows to avoid red flashes on removed geometry.
-  const flashGeo = new THREE.PlaneGeometry(96, 96);
-  const flashMat = new THREE.MeshBasicMaterial({
-    color: 0xff0000,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    side: THREE.DoubleSide
-  });
-  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
-  flashPlane.name = 'desert-flash-overlay';
-  flashPlane.rotation.x = -Math.PI / 2;
-  flashPlane.position.y = floorY + 0.02; // Very close to terrain surface
-  flashPlane.frustumCulled = false;
-  group.add(flashPlane);
-  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
+  // Flash overlay removed — biomeTerrainMaterials overlay entries must also be removed.
 
   // === CACTUSES (8 procedural, simplified for perf) ===
   // Shared materials to avoid per-segment allocation

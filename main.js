@@ -6840,6 +6840,12 @@ function clearAllAltWeaponEffects() {
   }
   explosionVisuals.length = 0;
 
+  // Deactivate all pooled explosion spheres (level transition safety)
+  for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
+    explosionPool[i].active = false;
+    explosionPool[i].mesh.visible = false;
+  }
+
   // Clear active voxels
   for (let i = activeVoxels.length - 1; i >= 0; i--) {
     const voxel = activeVoxels[i];
@@ -8758,7 +8764,7 @@ function updateProjectiles(dt) {
 
     // Skip projectiles with missing data (safety check)
     if (!proj.userData || !proj.userData.stats) {
-      // Check if this is a hostile projectile
+      // Check if this is a hostile projectile (moving)
       if (proj.userData && proj.userData.damage && proj.userData.direction) {
         const age = now - proj.userData.createdAt;
         if (age > proj.userData.duration) {
@@ -8804,6 +8810,20 @@ function updateProjectiles(dt) {
         }
 
         continue;
+      }
+
+      // Check if this is a stationary boss projectile (decoy, shield, etc.) with duration
+      if (proj.userData && proj.userData.isBossProjectile && proj.userData.duration && proj.userData.createdAt) {
+        const age = now - proj.userData.createdAt;
+        if (age > proj.userData.duration) {
+          // Explode if it's a decoy
+          if (proj.userData.isDecoy && typeof window !== 'undefined' && window.createExplosionAt) {
+            window.createExplosionAt(proj.position.clone(), proj.userData.explosionRadius, proj.userData.explosionDamage);
+          }
+          disposeObject3D(proj);
+          projectiles.splice(i, 1);
+          continue;
+        }
       }
       
       resolveProjectileAccuracy(proj);
@@ -9899,7 +9919,7 @@ function render(timestamp) {
 
       // Skull boss laugh when hitting player
       const _skullBoss = getBoss();
-      if (_skullBoss && _skullBoss.def && (_skullBoss.def.behavior === 'skull' || _skullBoss.def.behavior === 'minotaur')) {
+      if (_skullBoss && _skullBoss.def && (_skullBoss.def.behavior === 'skull' || _skullBoss.def.behavior === 'minotaur' || _skullBoss.def.behavior === 'prism')) {
         playSkullLaughSound();
       }
       cameraShake = 0.4;
@@ -10342,7 +10362,10 @@ function render(timestamp) {
   if (activePlasmaOrbs.length > 0) updatePlasmaOrbs(now, dt);
   updateExplosions(dt, now);
   updateVFX(dt);
-  if (explosionVisuals.length > 0) updateExplosionVisuals(dt, now);
+  // Always update: handles both pooled explosions and non-pooled visuals.
+  // Was gated on explosionVisuals.length > 0, which caused pooled spheres
+  // to freeze visible when no non-pooled effects existed (level transition bug).
+  updateExplosionVisuals(dt, now);
   updateDamageNumbers(dt, now);
   updateStatusBubbles(dt, now);
   updateBossDebris(dt, now, getBiomeFloorY());  // Boss debris physics with biome-aware floor

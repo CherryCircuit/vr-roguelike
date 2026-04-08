@@ -364,7 +364,7 @@ function createBlasterSection(hand, panelX) {
   yPos -= 0.08;
 
   // Upgrades header
-  const upgradesHeader = makeSprite('[UPGRADES]', {
+  const upgradesHeader = makeSprite('UPGRADES', {
     fontSize: scalePauseFont(24),
     color: '#888888',
     scale: scalePauseText(0.06),
@@ -461,7 +461,7 @@ function createBlasterSection(hand, panelX) {
   yPos -= 0.10;
 
   // Enemies Killed section - compact two-column layout
-  const enemiesHeader = makeSprite('[ENEMIES KILLED]', {
+  const enemiesHeader = makeSprite('ENEMIES', {
     fontSize: scalePauseFont(22),
     color: '#888888',
     scale: scalePauseText(0.05),
@@ -521,13 +521,13 @@ function createStatsSection() {
   group.add(bg);
 
   // Title
-  const titleText = makeSprite('RUN STATISTICS', {
+  const titleText = makeSprite('RUN TOTALS', {
     fontSize: scalePauseFont(48),
     color: '#ff00ff',
     scale: scalePauseText(0.15),
     renderOrder: PAUSE_TEXT_RENDER_ORDER
   });
-  titleText.position.set(0, 0.84, 0.02);
+  titleText.position.set(0, -1.336, 0.02);
   group.add(titleText);
 
   // KILLS/SHOTS/HITS centered under the blaster sections
@@ -544,7 +544,7 @@ function createStatsSection() {
       scale: scalePauseText(0.1),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
-    text.position.set(0, 0.44 - (index * 0.24), 0.02);
+    text.position.set(0, -1.316 - (index * 0.24), 0.02);
     text.userData = { isPauseStatText: true };
     group.add(text);
   });
@@ -563,7 +563,7 @@ function createStatsSection() {
       scale: scalePauseText(0.1),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
-    text.position.set(-1.08, -0.34 - (index * 0.22), 0.02);
+    text.position.set(-1.08, -1.54 - (index * 0.22), 0.02);
     text.userData = { isPauseStatText: true };
     group.add(text);
   });
@@ -702,7 +702,7 @@ function updateStatsSectionText() {
       scale: scalePauseText(0.1),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
-    text.position.set(0, 0.44 - (index * 0.24), 0.03);
+    text.position.set(0, -1.316 - (index * 0.24), 0.03);
     text.userData = { isPauseStatText: true };
     section.add(text);
   });
@@ -721,7 +721,7 @@ function updateStatsSectionText() {
       scale: scalePauseText(0.1),
       renderOrder: PAUSE_TEXT_RENDER_ORDER
     });
-    text.position.set(-1.08, -0.34 - (index * 0.22), 0.03);
+    text.position.set(-1.08, -1.54 - (index * 0.22), 0.03);
     text.userData = { isPauseStatText: true };
     section.add(text);
   });
