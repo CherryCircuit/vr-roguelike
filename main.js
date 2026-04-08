@@ -1613,7 +1613,6 @@ function cleanupLegacyShapeGeometry(targetGroup) {
   });
 
   staleMeshes.forEach((mesh, idx) => {
-    if (mesh.parent) mesh.parent.remove(mesh);
     disposeObject3D(mesh);
     _log(`[biome] Removed stale ShapeGeometry legacy mountain at world origin (${idx + 1}/${staleMeshes.length})`);
   });
@@ -1833,15 +1832,7 @@ function setMaterialEmissiveSafe(material, color, intensity = 1) {
 // ── Biome Props ───────────────────────────────────────────
 function clearBiomeProps() {
   if (!biomePropsGroup) return;
-  scene.remove(biomePropsGroup);
-
-  // Prevent stale materials from keeping the old biome scene alive.
-  unregisterFadeMaterialsForObject(biomePropsGroup);
-
-  biomePropsGroup.traverse((child) => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) disposeMaterialDeep(child.material);
-  });
+  disposeObject3D(biomePropsGroup);
   biomePropsGroup = null;
   biomePropsBiome = null;
   biomePropFloaters.length = 0;
@@ -1849,15 +1840,7 @@ function clearBiomeProps() {
 
 function clearBiomeScene() {
   if (!biomeSceneGroup) return;
-  scene.remove(biomeSceneGroup);
-
-  // Prevent stale materials from keeping the old biome scene alive.
-  unregisterFadeMaterialsForObject(biomeSceneGroup);
-
-  biomeSceneGroup.traverse((child) => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) disposeMaterialDeep(child.material);
-  });
+  disposeObject3D(biomeSceneGroup);
   biomeSceneGroup = null;
   biomeSceneBiome = null;
   biomeTerrainMaterials = [];  // Clear terrain flash references
@@ -1904,6 +1887,9 @@ function disposeObject3D(obj) {
     if (child.geometry) child.geometry.dispose();
     if (child.material) disposeMaterialDeep(child.material);
   });
+
+  // Remove from parent (scene or group). Safe to call even if already removed.
+  if (obj.parent) obj.parent.remove(obj);
 }
 
 function updateBiomeProps(now, dt) {
@@ -3508,13 +3494,7 @@ function onTriggerRelease(index) {
   }
   // Stop lightning beam when trigger released (dispose to prevent GEO leak)
   if (lightningBeams[index]) {
-    lightningBeams[index].traverse(c => {
-      if (c.isMesh || c.isLine) {
-        if (c.geometry) c.geometry.dispose();
-        if (c.material) c.material.dispose();
-      }
-    });
-    scene.remove(lightningBeams[index]);
+    disposeMesh(lightningBeams[index]);
     lightningBeams[index] = null;
     stopLightningSound();
   }
@@ -6766,7 +6746,6 @@ function clearAllProjectiles() {
     if (proj?.userData?.isPooled) {
       returnProjectileToPool(proj);
     } else {
-      scene.remove(proj);
       // Many hostile/boss helper projectiles allocate unique geo/mat per shot.
       // Remove and dispose so GPU resources do not accumulate across levels.
       disposeObject3D(proj);
@@ -8504,9 +8483,7 @@ function spawnExplosionVisual(center, radius) {
   if (explosionVisuals.length >= MAX_EXPLOSION_VISUALS) {
     // Remove oldest explosion visual
     const oldest = explosionVisuals.shift();
-    scene.remove(oldest);
-    oldest.geometry.dispose();
-    oldest.material.dispose();
+    disposeMesh(oldest);
   }
 
   const duration = 350; // ms
@@ -8534,9 +8511,7 @@ function updateExplosionVisuals(dt, now) {
     const m = explosionVisuals[i];
     const age = now - m.userData.createdAt;
     if (age > m.userData.duration) {
-      scene.remove(m);
-      m.geometry.dispose();
-      m.material.dispose();
+      disposeMesh(m);
       explosionVisuals.splice(i, 1);
     } else {
       const t = age / m.userData.duration;
@@ -8835,7 +8810,6 @@ function updateProjectiles(dt) {
         const age = now - proj.userData.createdAt;
         if (age > proj.userData.duration) {
           triggerHostileProjectileExplosion(proj.position, 0.3, 0);
-          scene.remove(proj);
           disposeObject3D(proj);
           projectiles.splice(i, 1);
           continue;
@@ -8871,7 +8845,6 @@ function updateProjectiles(dt) {
             damagePlayer(proj.userData.damage);
           }
           triggerHostileProjectileExplosion(proj.position, 0.4, 0);
-          scene.remove(proj);
           disposeObject3D(proj);
           projectiles.splice(i, 1);
           continue;
@@ -8884,7 +8857,6 @@ function updateProjectiles(dt) {
       if (proj.userData?.isPooled) {
         returnProjectileToPool(proj);
       } else {
-        scene.remove(proj);
         disposeObject3D(proj);
       }
       projectiles.splice(i, 1);
@@ -8899,7 +8871,6 @@ function updateProjectiles(dt) {
       if (proj.userData.isPooled) {
         returnProjectileToPool(proj);
       } else {
-        scene.remove(proj);
         disposeObject3D(proj);
       }
       projectiles.splice(i, 1);
@@ -8967,7 +8938,6 @@ function updateProjectiles(dt) {
       if (proj.userData.isPooled) {
         returnProjectileToPool(proj);
       } else {
-        scene.remove(proj);
         disposeObject3D(proj);
       }
       projectiles.splice(i, 1);
@@ -8981,7 +8951,6 @@ function updateProjectiles(dt) {
       if (proj.userData.isPooled) {
         returnProjectileToPool(proj);
       } else {
-        scene.remove(proj);
         disposeObject3D(proj);
       }
       projectiles.splice(i, 1);
@@ -9062,7 +9031,6 @@ function updateProjectiles(dt) {
           if (proj.userData.isPooled) {
             returnProjectileToPool(proj);
           } else {
-            scene.remove(proj);
             disposeObject3D(proj);
           }
           projectiles.splice(i, 1);
@@ -9105,7 +9073,6 @@ function updateProjectiles(dt) {
           if (proj.userData.isPooled) {
             returnProjectileToPool(proj);
           } else {
-            scene.remove(proj);
             disposeObject3D(proj);
           }
           projectiles.splice(i, 1);
@@ -9122,7 +9089,6 @@ function updateProjectiles(dt) {
             if (proj.userData.isPooled) {
               returnProjectileToPool(proj);
             } else {
-              scene.remove(proj);
               disposeObject3D(proj);
             }
             projectiles.splice(i, 1);
@@ -9151,7 +9117,6 @@ function updateProjectiles(dt) {
               if (proj.userData.isPooled) {
                 returnProjectileToPool(proj);
               } else {
-                scene.remove(proj);
                 disposeObject3D(proj);
               }
               projectiles.splice(i, 1);
@@ -9178,7 +9143,6 @@ function updateProjectiles(dt) {
               window.createExplosionAt(bossProj.position.clone(), bossProj.userData.explosionRadius, bossProj.userData.explosionDamage);
             }
             
-            scene.remove(bossProj);
             disposeObject3D(bossProj);
             projectiles.splice(j, 1);
             
@@ -9189,7 +9153,6 @@ function updateProjectiles(dt) {
               if (proj.userData.isPooled) {
                 returnProjectileToPool(proj);
               } else {
-                scene.remove(proj);
                 disposeObject3D(proj);
               }
               projectiles.splice(i, 1);
@@ -9209,7 +9172,6 @@ function updateProjectiles(dt) {
             if (dist < 1.0) { // Larger radius for area effects
               // Destroy the visual
               spawnExplosionVisual(visual.position.clone(), 0.3);
-              scene.remove(visual);
               disposeObject3D(visual);
               explosionVisuals.splice(k, 1);
               markProjectileHit(proj);
@@ -9220,7 +9182,6 @@ function updateProjectiles(dt) {
                 if (proj.userData.isPooled) {
                   returnProjectileToPool(proj);
                 } else {
-                  scene.remove(proj);
                   disposeObject3D(proj);
                 }
                 projectiles.splice(i, 1);
@@ -9536,13 +9497,7 @@ function render(timestamp) {
         }
         chargeShotStartTime[i] = null;
         if (lightningBeams[i]) {
-          lightningBeams[i].traverse(c => {
-            if (c.isMesh || c.isLine) {
-              if (c.geometry) c.geometry.dispose();
-              if (c.material) c.material.dispose();
-            }
-          });
-          scene.remove(lightningBeams[i]);
+          disposeMesh(lightningBeams[i]);
           lightningBeams[i] = null;
         }
         // Clean up plasma carbine spin state
@@ -9679,23 +9634,11 @@ function render(timestamp) {
         }
         // Clear lightning beams
         if (lightningBeams[0]) {
-          lightningBeams[0].traverse(c => {
-            if (c.isMesh || c.isLine) {
-              if (c.geometry) c.geometry.dispose();
-              if (c.material) c.material.dispose();
-            }
-          });
-          scene.remove(lightningBeams[0]);
+          disposeMesh(lightningBeams[0]);
           lightningBeams[0] = null;
         }
         if (lightningBeams[1]) {
-          lightningBeams[1].traverse(c => {
-            if (c.isMesh || c.isLine) {
-              if (c.geometry) c.geometry.dispose();
-              if (c.material) c.material.dispose();
-            }
-          });
-          scene.remove(lightningBeams[1]);
+          disposeMesh(lightningBeams[1]);
           lightningBeams[1] = null;
         }
         // Clear plasma carbine spin state
