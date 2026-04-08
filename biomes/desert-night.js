@@ -129,6 +129,7 @@ export function buildDesertNightScene(group, deps) {
     for (let r = rows - 2; r >= 1; r--) { const i = r * cols; perimeterVerts.push(positions.getX(i), positions.getY(i), positions.getZ(i)); }
 
     const outlineGeo = new THREE.BufferGeometry();
+    outlineGeo.name = `biome-desert-dune-outline-geo-${panelIndex}`;
     outlineGeo.setAttribute('position', new THREE.Float32BufferAttribute(perimeterVerts, 3));
     const outline = new THREE.LineLoop(
       outlineGeo,
@@ -196,11 +197,13 @@ export function buildDesertNightScene(group, deps) {
       segment.receiveShadow = true;
       cactusGroup.add(segment);
       // Pink edge outline matching dune crests
+      const segEdgeGeo = new THREE.EdgesGeometry(cactusGeoCache[geoKey], 14);
+      segEdgeGeo.name = `biome-desert-cactus-${cactusIndex}-body-edges-${i}`;
       const segOutline = new THREE.LineSegments(
-        new THREE.EdgesGeometry(cactusGeoCache[geoKey], 14),
+        segEdgeGeo,
         cactusOutlineMat
       );
-      segOutline.name = `desert-cactus-${cactusIndex}-body-outline-${i}`;
+      segOutline.name = `biome-desert-cactus-${cactusIndex}-body-outline-${i}`;
       segOutline.position.copy(segment.position);
       cactusGroup.add(segOutline);
       currentY += segmentHeight;
@@ -224,11 +227,13 @@ export function buildDesertNightScene(group, deps) {
       hArm.position.set(side * armLength / 2, armY, 0);
       hArm.castShadow = true;
       cactusGroup.add(hArm);
+      const hArmEdgeGeo = new THREE.EdgesGeometry(cactusGeoCache[hArmKey], 14);
+      hArmEdgeGeo.name = `biome-desert-cactus-${cactusIndex}-arm-h-edges-${a}`;
       const hArmOutline = new THREE.LineSegments(
-        new THREE.EdgesGeometry(cactusGeoCache[hArmKey], 14),
+        hArmEdgeGeo,
         cactusOutlineMat
       );
-      hArmOutline.name = `desert-cactus-${cactusIndex}-arm-h-outline-${a}`;
+      hArmOutline.name = `biome-desert-cactus-${cactusIndex}-arm-h-outline-${a}`;
       hArmOutline.position.copy(hArm.position);
       hArmOutline.rotation.copy(hArm.rotation);
       cactusGroup.add(hArmOutline);
@@ -244,11 +249,13 @@ export function buildDesertNightScene(group, deps) {
       vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
       vArm.castShadow = true;
       cactusGroup.add(vArm);
+      const vArmEdgeGeo = new THREE.EdgesGeometry(cactusGeoCache[vArmKey], 14);
+      vArmEdgeGeo.name = `biome-desert-cactus-${cactusIndex}-arm-v-edges-${a}`;
       const vArmOutline = new THREE.LineSegments(
-        new THREE.EdgesGeometry(cactusGeoCache[vArmKey], 14),
+        vArmEdgeGeo,
         cactusOutlineMat
       );
-      vArmOutline.name = `desert-cactus-${cactusIndex}-arm-v-outline-${a}`;
+      vArmOutline.name = `biome-desert-cactus-${cactusIndex}-arm-v-outline-${a}`;
       vArmOutline.position.copy(vArm.position);
       cactusGroup.add(vArmOutline);
     }
@@ -293,6 +300,7 @@ export function buildDesertNightScene(group, deps) {
   }
 
   const starGeometry = new THREE.BufferGeometry();
+  starGeometry.name = 'biome-desert-stars';
   starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
   starGeometry.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
 
@@ -331,7 +339,7 @@ export function buildDesertNightScene(group, deps) {
   });
 
   const stars = new THREE.Points(starGeometry, starMaterial);
-  stars.name = 'desert-stars';
+  stars.name = 'biome-desert-stars';
   stars.frustumCulled = false; // Fix disappearing when looking up
   stars.renderOrder = 999;
   group.add(stars);
