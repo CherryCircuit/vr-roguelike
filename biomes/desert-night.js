@@ -113,26 +113,9 @@ export function buildDesertNightScene(group, deps) {
     group.add(terrain);
     registerFadeMaterial(material);
 
-    // Clean perimeter outline — only the outer edge, no internal triangulation diagonals.
-    // PlaneGeometry(sx+1) x (sz+1) vertex grid, after rotateX(-PI/2):
-    //   row 0 = +Z edge, row sz = -Z edge, col 0 = -X edge, col sx = +X edge
-    const cols = segmentsX + 1;
-    const rows = segmentsZ + 1;
-    const perimeterVerts = [];
-    // Bottom row (row 0): col 0..cols-1
-    for (let c = 0; c < cols; c++) perimeterVerts.push(positions.getX(c), positions.getY(c), positions.getZ(c));
-    // Right column (col cols-1): row 1..rows-1
-    for (let r = 1; r < rows; r++) { const i = r * cols + (cols - 1); perimeterVerts.push(positions.getX(i), positions.getY(i), positions.getZ(i)); }
-    // Top row (row rows-1): col cols-2..0 (reversed)
-    for (let c = cols - 2; c >= 0; c--) { const i = (rows - 1) * cols + c; perimeterVerts.push(positions.getX(i), positions.getY(i), positions.getZ(i)); }
-    // Left column (col 0): row rows-2..1 (reversed)
-    for (let r = rows - 2; r >= 1; r--) { const i = r * cols; perimeterVerts.push(positions.getX(i), positions.getY(i), positions.getZ(i)); }
-
-    const outlineGeo = new THREE.BufferGeometry();
-    outlineGeo.name = `biome-desert-dune-outline-geo-${panelIndex}`;
-    outlineGeo.setAttribute('position', new THREE.Float32BufferAttribute(perimeterVerts, 3));
-    const outline = new THREE.LineLoop(
-      outlineGeo,
+    // Outline the dune crests with a saturated pink so the desert keeps a stylized neon read.
+    const outline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geometry, 14),
       new THREE.LineBasicMaterial({
         color: duneOutlineColor,
         transparent: true,

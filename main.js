@@ -381,6 +381,7 @@ function initExplosionPool(scene) {
       depthWrite: false, blending: THREE.AdditiveBlending,
     });
     const mesh = new THREE.Mesh(_explosionGeo, mat);
+    mesh.name = `explosion-pool-${i}`;
     mesh.visible = false;
     mesh.renderOrder = 900;
     scene.add(mesh);
@@ -1955,6 +1956,13 @@ function applyThemeForLevel(level) {
     floorMaterial.__fadeBase = floorMaterial.opacity;
   }
 
+  // Rebuild stars when biome changes (sparkling stars for synthwave, simple stars for others)
+  const biomeId = getBiomeForLevel(level);
+  if (biomeId !== starsBiomeId) {
+    rebuildStars(theme);
+    starsBiomeId = biomeId;
+  }
+
   rebuildBiomeScene(biome, theme);
   applyBiomeLighting(biome);
 
@@ -3227,6 +3235,7 @@ function fireShield(controller, index, hand, altWeapon) {
     blending: THREE.AdditiveBlending,
   });
   const shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+    shieldMesh.name = 'shield-energy';
   shieldMesh.position.copy(playerPos);
   shieldMesh.renderOrder = 500;
   scene.add(shieldMesh);
@@ -3391,9 +3400,11 @@ function spawnSingleLaserMine(position, hand, altWeapon) {
     side: THREE.BackSide,
   });
   const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  glowMesh.name = 'laser-mine-glow';
   glowMesh.position.copy(position);
   glowMesh.renderOrder = 399;
   scene.add(glowMesh);
+    glowMesh.name = 'laser-mine-glow';
 
   const now = performance.now();
 
@@ -3590,6 +3601,7 @@ function fireDecoy(origin, hand, altWeapon) {
     wireframe: true,
   });
   const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.name = 'decoy-body';
   decoyGroup.add(body);
 
   // Static overlay - glitchy particles
@@ -3620,6 +3632,7 @@ function fireDecoy(origin, hand, altWeapon) {
   });
   const glow = new THREE.Mesh(glowGeo, glowMat);
   decoyGroup.add(glow);
+    glow.name = 'decoy-glow';
 
   decoyGroup.position.copy(origin);
   decoyGroup.position.y = Math.max(0.5, origin.y);  // Ensure above ground
@@ -3756,6 +3769,7 @@ function fireBlackHole(origin, direction, hand, altWeapon) {
     opacity: 0.9,
   });
   const mine = new THREE.Mesh(mineGeo, mineMat);
+    mine.name = 'black-hole-mine';
 
   // Add glow
   const glowGeo = new THREE.SphereGeometry(0.25, 8, 8);
@@ -3765,6 +3779,7 @@ function fireBlackHole(origin, direction, hand, altWeapon) {
     side: THREE.BackSide,
   });
   const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.name = 'black-hole-mine';
   mine.add(glow);
 
   mine.position.copy(origin);
@@ -3933,6 +3948,7 @@ function triggerBlackHole(mine, mineIndex) {
     opacity: 0.9,
   });
   const core = new THREE.Mesh(coreGeo, coreMat);
+  core.name = 'black-hole-core';
   bhGroup.add(core);
 
   // Outer ring - purple vortex
@@ -3943,6 +3959,7 @@ function triggerBlackHole(mine, mineIndex) {
     side: THREE.DoubleSide,
   });
   const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.name = 'black-hole-core';
   ring.rotation.x = Math.PI / 2;
   bhGroup.add(ring);
 
@@ -3986,6 +4003,7 @@ function triggerBlackHole(mine, mineIndex) {
     side: THREE.BackSide,
   });
   const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.name = 'black-hole-mine-glow';
   bhGroup.add(glow);
 
   bhGroup.position.copy(mine.mesh.position);
@@ -4079,6 +4097,7 @@ function fireNaniteSwarm(origin, hand, altWeapon) {
     blending: THREE.AdditiveBlending,
   });
   const core = new THREE.Mesh(coreGeo, coreMat);
+  core.name = 'nanite-swarm-core';
   swarmGroup.add(core);
 
   // Outer glow sphere
@@ -4090,6 +4109,7 @@ function fireNaniteSwarm(origin, hand, altWeapon) {
     blending: THREE.AdditiveBlending,
   });
   const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.name = 'nanite-swarm-core';
   swarmGroup.add(glow);
 
   // Glitter particles - golden sparkles
@@ -4103,6 +4123,7 @@ function fireNaniteSwarm(origin, hand, altWeapon) {
       blending: THREE.AdditiveBlending,
     });
     const particle = new THREE.Mesh(particleGeo, particleMat);
+    particle.name = 'nanite-swarm-particle';
 
     // Random position within sphere
     const theta = Math.random() * Math.PI * 2;
@@ -4358,6 +4379,7 @@ function fireTetherHarpoon(origin, direction, hand, altWeapon) {
       opacity: 0.7,
     });
     const particle = new THREE.Mesh(particleGeo, particleMat);
+    particle.name = 'tether-particle';
     particle.userData.offset = i / particleCount;
     particle.userData.speed = 1 + Math.random();
     tetherGroup.add(particle);
@@ -4556,6 +4578,7 @@ function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
     blending: THREE.AdditiveBlending,
   });
   const shell = new THREE.Mesh(shellGeo, shellMat);
+    shell.name = 'phase-dash-shell';
   afterimageGroup.add(shell);
 
   // Pixel dissolution effect (small cubes)
@@ -4751,6 +4774,7 @@ function fireReflectorDrone(origin, hand, altWeapon) {
     opacity: 0.8,
   });
   const core = new THREE.Mesh(coreGeo, coreMat);
+  core.name = 'reflector-drone-core';
   droneGroup.add(core);
 
   // Shimmering shield effect (semi-transparent sphere)
@@ -4763,6 +4787,7 @@ function fireReflectorDrone(origin, hand, altWeapon) {
     depthWrite: false,
   });
   const shield = new THREE.Mesh(shieldGeo, shieldMat);
+  shield.name = 'reflector-drone-core';
   droneGroup.add(shield);
 
   // Orbiting particles
@@ -4775,6 +4800,7 @@ function fireReflectorDrone(origin, hand, altWeapon) {
       opacity: 0.7,
     });
     const particle = new THREE.Mesh(particleGeo, particleMat);
+    particle.name = 'reflector-drone-particle';
     particle.userData.orbitAngle = (i / particleCount) * Math.PI * 2;
     particle.userData.orbitRadius = 0.25;
     droneGroup.add(particle);
@@ -4986,6 +5012,7 @@ function spawnReflectedProjectile(origin) {
     opacity: 0.9,
   });
   const reflectedProj = new THREE.Mesh(reflectedGeo, reflectedMat);
+    reflectedProj.name = 'reflected-projectile';
   reflectedProj.position.copy(origin);
   reflectedProj.userData.velocity = direction.clone().multiplyScalar(30);
   reflectedProj.userData.createdAt = performance.now();
@@ -5024,6 +5051,7 @@ function fireStasisField(origin, direction, hand, altWeapon) {
     blending: THREE.AdditiveBlending,
   });
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'stasis-field';
   mesh.position.copy(targetPosition);
   scene.add(mesh);
 
@@ -5038,6 +5066,7 @@ function fireStasisField(origin, direction, hand, altWeapon) {
       blending: THREE.AdditiveBlending,
     });
     const particle = new THREE.Mesh(particleGeo, particleMat);
+    particle.name = 'stasis-field-particle';
 
     // Random position on sphere surface
     const theta = Math.random() * Math.PI * 2;
@@ -5109,6 +5138,7 @@ function firePlasmaOrb(origin, direction, hand, altWeapon) {
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(origin);
+    mesh.name = 'stasis-field';
   scene.add(mesh);
 
   // Add glow trail (smaller trailing spheres)
@@ -5122,6 +5152,7 @@ function firePlasmaOrb(origin, direction, hand, altWeapon) {
       blending: THREE.AdditiveBlending,
     });
     const trail = new THREE.Mesh(trailGeo, trailMat);
+    trail.name = 'plasma-trail';
     trail.position.copy(origin);
     trail.visible = false;
     scene.add(trail);
@@ -5319,6 +5350,7 @@ function fireGrenade(origin, direction, hand, altWeapon) {
     opacity: 0.9,
   });
   const grenade = new THREE.Mesh(grenadeGeo, grenadeMat);
+    grenade.name = 'grenade';
 
   // Add glow
   const glowGeo = new THREE.SphereGeometry(0.15, 8, 8);
@@ -5328,6 +5360,7 @@ function fireGrenade(origin, direction, hand, altWeapon) {
     side: THREE.BackSide,
   });
   const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.name = 'grenade';
   grenade.add(glow);
 
   grenade.position.copy(origin);
@@ -5449,6 +5482,7 @@ function fireProximityMine(origin, hand, altWeapon) {
     side: THREE.BackSide,
   });
   const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.name = 'proximity-mine-glow';
   mine.add(glow);
 
   // Place at ground level
@@ -5594,6 +5628,7 @@ function fireAttackDrone(origin, hand, altWeapon) {
     opacity: 0.8,
   });
   const core = new THREE.Mesh(coreGeo, coreMat);
+  core.name = 'attack-drone-core';
   droneGroup.add(core);
 
   // Outer glow
@@ -5604,6 +5639,7 @@ function fireAttackDrone(origin, hand, altWeapon) {
     side: THREE.BackSide,
   });
   const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.name = 'attack-drone-core';
   droneGroup.add(glow);
 
   // Position at player location
@@ -5688,6 +5724,7 @@ function updateAttackDrones(now, dt, playerPos) {
           opacity: 0.8,
         });
         const proj = new THREE.Mesh(projGeo, projMat);
+        proj.name = 'drone-projectile';
         proj.position.copy(drone.mesh.position);
         proj.userData.velocity = direction.clone().multiplyScalar(25);
         proj.userData.createdAt = now;
@@ -5837,6 +5874,7 @@ function fireTeleport(origin, direction, hand, altWeapon) {
     blending: THREE.AdditiveBlending,
   });
   const startEffect = new THREE.Mesh(startEffectGeo, startEffectMat);
+    startEffect.name = 'teleport-start-effect';
   startEffect.position.copy(playerPos);
   scene.add(startEffect);
 
@@ -5856,6 +5894,7 @@ function fireTeleport(origin, direction, hand, altWeapon) {
     blending: THREE.AdditiveBlending,
   });
   const endEffect = new THREE.Mesh(endEffectGeo, endEffectMat);
+    endEffect.name = 'teleport-end-effect';
   endEffect.position.copy(destination);
   scene.add(endEffect);
 
@@ -6359,11 +6398,16 @@ function clearAllAltWeaponEffects() {
   }
   explosionVisuals.length = 0;
 
-  // Deactivate all pooled explosion spheres (level transition safety)
-  for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
-    explosionPool[i].active = false;
-    explosionPool[i].mesh.visible = false;
+  // Remove explosion pool meshes from scene and clear pool, then reinitialize
+  for (let i = 0; i < explosionPool.length; i++) {
+    if (explosionPool[i].mesh.parent) {
+      explosionPool[i].mesh.parent.remove(explosionPool[i].mesh);
+    }
+    disposeMesh(explosionPool[i].mesh);
   }
+  explosionPool.length = 0;
+  // Reinitialize pool with fresh meshes for the new level
+  if (scene) initExplosionPool(scene);
 
   // Clear active voxels
   for (let i = activeVoxels.length - 1; i >= 0; i--) {
@@ -6755,6 +6799,7 @@ function initProjectilePool() {
   const buckMat = createProjectileMaterial(0xffffff);
   registerPlayerProjectileMaterial(buckMat);
   const buckIM = new THREE.InstancedMesh(buckGeo, buckMat, 40);
+  buckIM.name = 'buckshot-instanced';
   buckIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   buckIM.count = 0;
   buckIM.frustumCulled = false;
@@ -7371,6 +7416,7 @@ function updateChargeVisuals(controller, index, progress) {
       depthWrite: false,
     });
     const glowSphere = new THREE.Mesh(glowGeo, glowMat);
+    glowSphere.name = 'charge-glow-sphere';
     glowSphere.position.set(0, 0, -0.1);  // In front of controller
     controller.add(glowSphere);
     chargeGlowSpheres[index] = glowSphere;
@@ -7387,6 +7433,7 @@ function updateChargeVisuals(controller, index, progress) {
         depthWrite: false,
       });
       const particle = new THREE.Mesh(particleGeo, particleMat);
+      particle.name = 'charge-particle';
       particle.userData.orbitAngle = (i / particleCount) * Math.PI * 2;
       particle.userData.orbitRadius = 0.08;
       particleGroup.add(particle);
@@ -8124,6 +8171,7 @@ if (typeof window !== 'undefined') {
       opacity: 0.7
     });
     const decoy = new THREE.Mesh(decoyGeo, decoyMat);
+    decoy.name = 'boss-decoy';
     decoy.position.copy(position);
     decoy.userData.isBossProjectile = true;
     decoy.userData.isDecoy = true;
@@ -8144,6 +8192,7 @@ if (typeof window !== 'undefined') {
       opacity: 0.9
     });
     const pulse = new THREE.Mesh(pulseGeo, pulseMat);
+    pulse.name = 'boss-pulse';
     pulse.position.copy(fromPos);
     pulse.userData.direction = direction;
     pulse.userData.speed = 15;
@@ -8165,6 +8214,7 @@ if (typeof window !== 'undefined') {
     });
     const shield = new THREE.Mesh(shieldGeo, shieldMat);
     shield.position.copy(position);
+    shield.name = 'boss-shield';
     shield.userData.isBossShield = true;
     shield.userData.isBossProjectile = true; // Can be shot down
     shield.userData.createdAt = performance.now();
@@ -8208,6 +8258,7 @@ if (typeof window !== 'undefined') {
       opacity: 0.95
     });
     const lightning = new THREE.Mesh(lightningGeo, lightningMat);
+    lightning.name = 'boss-lightning-proj';
     lightning.position.copy(fromPos);
     lightning.userData.direction = direction;
     lightning.userData.speed = 20;
