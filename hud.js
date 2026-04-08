@@ -382,14 +382,7 @@ let _heartsPrevMaxHealth = -1;
 let _heartsPrevHitFlash = 0;
 let _heartsPrevHealthGain = 0;
 
-// Holographic HUD effect state
-let holographicState = {
-  glitchIntensity: 0,      // 0-1, triggered on player hit
-  glitchStartTime: 0,
-};
-
-// Single holographic overlay mesh (ShaderMaterial: edge glow + animated scanlines)
-let holoMesh = null;
+// (holographicState and holoMesh removed - floor HUD hologram shader was never wanted)
 
 function drawHeart(ctx, x, y, pixSize, state, animState = {}) {
   // state: 'full', 'half', 'empty'
@@ -823,73 +816,7 @@ export function updateTitle(now) {
 
 // ── VR HUD (hearts, kill counter, level, score) ────────────
 
-// ── Holographic Shader ──────────────────────────────────────────
-// Single ShaderMaterial replaces the old scanline texture + glitch texture approach.
-// Edge glow: bright cyan at edges, fading to darker blue, barely opaque at center.
-// Animated scanlines: horizontal lines scrolling downward via uniform.
-// Glitch on hit: opacity flash via uniform (no per-frame texture creation).
-
-const holoVertexShader = `
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const holoFragmentShader = `
-  precision mediump float;
-  varying vec2 vUv;
-  uniform float uTime;       // seconds (for scanline scroll)
-  uniform float uGlitch;     // 0-1 glitch intensity flash
-
-  void main() {
-    vec2 uv = vUv;
-
-    // Edge brightness: bright cyan at edges, darker blue at center
-    // distance from center, 0 at center, ~1.0 at mid-edges
-    float dx = abs(uv.x - 0.5) * 2.0;
-    float dy = abs(uv.y - 0.5) * 2.0;
-    float edgeDist = max(dx, dy); // box-shaped edge distance
-    float edge = smoothstep(0.3, 1.0, edgeDist);
-
-    // Color: dark blue center -> bright cyan edges
-    vec3 darkBlue = vec3(0.0, 0.08, 0.25);
-    vec3 brightCyan = vec3(0.0, 0.9, 1.0);
-    vec3 col = mix(darkBlue, brightCyan, edge);
-
-    // Scanlines: horizontal lines scrolling downward
-    float scanY = uv.y + uTime * 0.15; // slow downward scroll
-    float scanline = sin(scanY * 80.0) * 0.5 + 0.5;
-    scanline = smoothstep(0.3, 0.7, scanline); // sharpen slightly
-    col += brightCyan * scanline * 0.15; // subtle scanline highlight
-
-    // Opacity: barely visible at center, brighter at edges
-    float baseAlpha = mix(0.02, 0.25, edge);
-
-    // Glitch flash: spike the opacity and brightness
-    baseAlpha += uGlitch * 0.6;
-    col += vec3(uGlitch * 0.3); // whiten during glitch
-
-    gl_FragColor = vec4(col, baseAlpha);
-  }
-`;
-
-function createHoloShaderMaterial() {
-  return new THREE.ShaderMaterial({
-    vertexShader: holoVertexShader,
-    fragmentShader: holoFragmentShader,
-    uniforms: {
-      uTime: { value: 0.0 },
-      uGlitch: { value: 0.0 },
-    },
-    transparent: true,
-    depthTest: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending,
-  });
-}
+// (holoVertexShader, holoFragmentShader, createHoloShaderMaterial removed)
 
 async function createHUDElements() {
   hudGroup.visible = false;
@@ -903,14 +830,7 @@ async function createHUDElements() {
 
   // HOLOGRAPHIC BASE - no background box (glitch/scanline overlays are separate below)
 
-  // HOLOGRAPHIC OVERLAY - single ShaderMaterial with edge glow + animated scanlines
-  // Replaces the old dual-mesh system (scanline texture + per-frame glitch texture creation)
-  const holoGeo = new THREE.PlaneGeometry(4.8, 2.0);
-  const holoMat = createHoloShaderMaterial();
-  holoMesh = new THREE.Mesh(holoGeo, holoMat);
-  holoMesh.position.set(0, 0.001, 0);
-  holoMesh.renderOrder = 998;
-  hudGroup.add(holoMesh);
+  // (holoMesh removed - hologram shader overlay was never wanted)
 
   // Lives (hearts) - left side on floor
   // #19: Hearts aligned with TOP of SCORE and LEVEL X titles
@@ -1026,54 +946,17 @@ export function triggerHeartHitAnimation() {
   heartAnimationState.shakeX = 0;
 }
 
-// Holographic glitch effect trigger
-export function triggerHoloGlitch() {
-  holographicState.glitchIntensity = 1.0;
-  holographicState.glitchStartTime = performance.now();
-}
+// (triggerHoloGlitch removed)
 
 export function resetHoloGlitch() {
-  holographicState.glitchIntensity = 0;
-  if (holoMesh) {
-    holoMesh.material.uniforms.uGlitch.value = 0.0;
-  }
+  // Hologram mesh removed, but keep HUD position reset for safety
   if (hudGroup) {
     hudGroup.position.x = 0;
     hudGroup.position.z = -3;
   }
 }
 
-export function updateHolographicGlitch(now) {
-  if (!holoMesh) return;
-
-  // Update scanline scroll (time-based uniform, no texture offset needed)
-  holoMesh.material.uniforms.uTime.value = now * 0.001;
-
-  // Decay glitch effect
-  if (holographicState.glitchIntensity > 0) {
-    const glitchAge = now - holographicState.glitchStartTime;
-    const glitchDuration = 500; // 500ms glitch flash
-    if (glitchAge > glitchDuration) {
-      holographicState.glitchIntensity = 0;
-    } else {
-      holographicState.glitchIntensity = Math.max(0, 1 - (glitchAge / glitchDuration));
-    }
-
-    // Update glitch uniform (just a float, no texture creation)
-    holoMesh.material.uniforms.uGlitch.value = holographicState.glitchIntensity;
-
-    // Shake the HUD group during glitch
-    const shakeX = (Math.random() - 0.5) * 0.08 * holographicState.glitchIntensity;
-    const shakeZ = (Math.random() - 0.5) * 0.05 * holographicState.glitchIntensity;
-    hudGroup.position.x = shakeX;
-    hudGroup.position.z = -3 + shakeZ;
-  } else {
-    holoMesh.material.uniforms.uGlitch.value = 0.0;
-    // Ensure HUD position is reset
-    hudGroup.position.x = 0;
-    hudGroup.position.z = -3;
-  }
-}
+// (updateHolographicGlitch removed - hologram shader stripped)
 
 export function triggerHealthGainAnimation() {
   heartAnimationState.healthGain = 1.0;
@@ -1130,8 +1013,7 @@ export function updateHUD(gameState) {
     if (heartAnimationState.healthGain < 0) heartAnimationState.healthGain = 0;
   }
 
-  // === HOLOGRAPHIC EFFECTS ===
-  updateHolographicGlitch(now);
+  // (holographic update removed)
 
   // Hearts - proper aspect ratio with correct scale and animation
   // PERFORMANCE: Only rebuild texture when health or animation state actually changes
@@ -1669,10 +1551,7 @@ export function triggerHitFlash(includeHoloGlitch = false) {
   // Additive blending makes this visible even on bright/colored backgrounds
   hitFlashOpacity = 0.9;
 
-  // HUD glitch should only happen when the player takes damage.
-  if (includeHoloGlitch) {
-    triggerHoloGlitch();
-  }
+  // (holo glitch removed - was never wanted on floor HUD)
 }
 
 export function updateHitFlash(dt) {
