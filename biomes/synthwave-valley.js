@@ -181,6 +181,9 @@ export function buildSynthwaveValleyScene(group, deps) {
   const mountainTex = new THREE.TextureLoader().load('assets/mountain_wrap.png');
   mountainTex.wrapS = THREE.RepeatWrapping;
   mountainTex.wrapT = THREE.ClampToEdgeWrapping;
+  // FIX: Ensure PNG colors display exactly as-is, no fading/washing
+  mountainTex.colorSpace = THREE.SRGBColorSpace;  // Treat as sRGB (PNG standard)
+  mountainTex.premultiplyAlpha = false;  // Avoid color washing from premultiplied alpha
   // 9003px width / 609px height ≈ 14.78 aspect.
   // With a 190-high cylinder, one full image repeat should span ~2808 world units.
   const mountainRadius = 1162;
@@ -193,12 +196,14 @@ export function buildSynthwaveValleyScene(group, deps) {
   const mountainCylinderGeo = new THREE.CylinderGeometry(mountainRadius, mountainRadius, 190, 64, 1, true);
   const mountainCylinderMat = new THREE.MeshBasicMaterial({
     map: mountainTex,
+    color: 0xffffff,       // No tint - show raw PNG colors
     transparent: true,
     side: THREE.BackSide,  // Visible from inside
     depthWrite: false,
     depthTest: true,
-    fog: false,
-    toneMapped: false,  // Show exact PNG colors
+    fog: false,            // Not affected by scene fog
+    toneMapped: false,     // Show exact PNG colors, no tone mapping
+    blending: THREE.NormalBlending,  // Standard alpha blending
   });
   const mountainCylinder = new THREE.Mesh(mountainCylinderGeo, mountainCylinderMat);
   mountainCylinder.name = 'synthwave-mountain-wrap';
