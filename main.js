@@ -225,6 +225,35 @@ function getCountryDisplayLabel() {
 }
 
 // ============================================================
+// DISPOSE HELPER
+// Recursively disposes geometry + material and removes from parent.
+// Use for any Three.js mesh/group that is no longer needed.
+// For objects with textures (biome scenes), prefer disposeObject3D().
+// ============================================================
+function disposeMesh(obj, removeFromParent = true) {
+  if (!obj) return;
+  // Dispose children recursively
+  if (obj.children) {
+    for (let i = obj.children.length - 1; i >= 0; i--) {
+      disposeMesh(obj.children[i], false);
+    }
+  }
+  // Dispose own geometry and material
+  if (obj.geometry) obj.geometry.dispose();
+  if (obj.material) {
+    if (Array.isArray(obj.material)) {
+      obj.material.forEach(m => m.dispose());
+    } else {
+      obj.material.dispose();
+    }
+  }
+  // Remove from parent (scene or group)
+  if (removeFromParent && obj.parent) {
+    obj.parent.remove(obj);
+  }
+}
+
+// ============================================================
 // MODULE STATE
 // Scene, camera, renderer, controller state, pools, queues
 // COUPLING: Many functions reference these globals directly
@@ -2593,9 +2622,7 @@ function createStars() {
 function rebuildStars(theme) {
   if (!scene) return;
   if (starsRef) {
-    scene.remove(starsRef);
-    if (starsRef.geometry) starsRef.geometry.dispose();
-    if (starsRef.material) starsRef.material.dispose();
+    disposeMesh(starsRef);
     starsRef = null;
   }
   if (theme.customScene === 'synthwave_valley') {
@@ -3726,9 +3753,7 @@ function updateShields(now) {
     
     // Check if expired
     if (now >= shield.expiresAt) {
-      scene.remove(shield.mesh);
-      shield.mesh.geometry.dispose();
-      shield.mesh.material.dispose();
+      disposeMesh(shield.mesh);
       activeShields.splice(i, 1);
       _log('[Shield] Expired');
       continue;
@@ -3837,19 +3862,13 @@ function spawnSingleLaserMine(position, hand, altWeapon) {
     // Remove oldest mine
     const oldest = handMines[0];
     if (oldest.mesh) {
-      scene.remove(oldest.mesh);
-      oldest.mesh.geometry.dispose();
-      oldest.mesh.material.dispose();
+      disposeMesh(oldest.mesh);
     }
     if (oldest.glowMesh) {
-      scene.remove(oldest.glowMesh);
-      oldest.glowMesh.geometry.dispose();
-      oldest.glowMesh.material.dispose();
+      disposeMesh(oldest.glowMesh);
     }
     if (oldest.laserMesh) {
-      scene.remove(oldest.laserMesh);
-      oldest.laserMesh.geometry.dispose();
-      oldest.laserMesh.material.dispose();
+      disposeMesh(oldest.laserMesh);
     }
     const idx = activeLaserMines.indexOf(oldest);
     if (idx >= 0) activeLaserMines.splice(idx, 1);
@@ -3978,21 +3997,15 @@ function updateLaserMines(now, dt) {
     if (mine.triggered && mine.triggeredAt && now - mine.triggeredAt > 500) {
       // Remove laser visual after 500ms
       if (mine.laserMesh) {
-        scene.remove(mine.laserMesh);
-        mine.laserMesh.geometry.dispose();
-        mine.laserMesh.material.dispose();
+        disposeMesh(mine.laserMesh);
         mine.laserMesh = null;
       }
       // Remove mine visuals
       if (mine.mesh) {
-        scene.remove(mine.mesh);
-        mine.mesh.geometry.dispose();
-        mine.mesh.material.dispose();
+        disposeMesh(mine.mesh);
       }
       if (mine.glowMesh) {
-        scene.remove(mine.glowMesh);
-        mine.glowMesh.geometry.dispose();
-        mine.glowMesh.material.dispose();
+        disposeMesh(mine.glowMesh);
       }
       activeLaserMines.splice(i, 1);
       _log('[Laser Mine] Cleaned up');
@@ -4225,11 +4238,7 @@ function destroyDecoy(decoy, explode) {
   }
 
   // Clean up mesh
-  scene.remove(decoy.mesh);
-  decoy.mesh.children.forEach(child => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) child.material.dispose();
-  });
+  disposeMesh(decoy.mesh);
 }
 
 // ============================================================
@@ -4241,9 +4250,7 @@ function fireBlackHole(origin, direction, hand, altWeapon) {
   if (activeMines.length >= MAX_MINES) {
     // Remove oldest mine
     const oldest = activeMines.shift();
-    scene.remove(oldest.mesh);
-    oldest.mesh.geometry.dispose();
-    oldest.mesh.material.dispose();
+    disposeMesh(oldest.mesh);
   }
 
   _log(`[ALT] Black hole mine thrown from ${hand} hand`);
@@ -4415,9 +4422,7 @@ function triggerBlackHole(mine, mineIndex) {
   _log('[Black Hole] Triggered!');
 
   // Remove mine
-  scene.remove(mine.mesh);
-  mine.mesh.geometry.dispose();
-  mine.mesh.material.dispose();
+  disposeMesh(mine.mesh);
   activeMines.splice(mineIndex, 1);
 
   // Limit active black holes
@@ -4547,11 +4552,8 @@ function destroyBlackHole(bh) {
   spawnExplosionVisual(bh.position, 1.5);
 
   // Clean up mesh
-  scene.remove(bh.mesh);
-  bh.mesh.children.forEach(child => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) child.material.dispose();
-  });
+  // Clean up mesh
+  disposeMesh(bh.mesh);
 }
 
 // ============================================================
@@ -4771,11 +4773,7 @@ function destroyNaniteSwarm(swarm) {
   });
 
   // Remove mesh
-  scene.remove(swarm.mesh);
-  swarm.mesh.children.forEach(child => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) child.material.dispose();
-  });
+  disposeMesh(swarm.mesh);
 }
 
 // Check if projectile passes through nanite swarm and add damage
@@ -5022,11 +5020,7 @@ function updateTethers(dt, now, playerPos) {
 }
 
 function destroyTether(tether) {
-  scene.remove(tether.mesh);
-  tether.mesh.children.forEach(child => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) child.material.dispose();
-  });
+  disposeMesh(tether.mesh);
   _log('[Tether Harpoon] Tether destroyed');
 }
 
@@ -5209,11 +5203,7 @@ function updatePhaseDashAfterimages(now, dt) {
       triggerScreenShake(0.3, 300);
 
       // Clean up afterimage
-      scene.remove(afterimage.mesh);
-      afterimage.mesh.children.forEach(child => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
-      });
+      disposeMesh(afterimage.mesh);
       activePhaseDashAfterimages.splice(i, 1);
       _log('[Phase Dash] Afterimage detonated');
     }
@@ -5535,11 +5525,7 @@ function spawnReflectedProjectile(origin) {
  * Destroy a reflector drone
  */
 function destroyReflectorDrone(drone) {
-  scene.remove(drone.mesh);
-  drone.mesh.children.forEach(child => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) child.material.dispose();
-  });
+  disposeMesh(drone.mesh);
   _log('[Reflector Drone] Destroyed');
 }
 
@@ -5615,9 +5601,7 @@ function updateStasisFields(now, dt) {
 
     // Remove expired fields
     if (now > field.expiresAt) {
-      scene.remove(field.mesh);
-      field.mesh.geometry.dispose();
-      field.mesh.material.dispose();
+      disposeMesh(field.mesh);
       activeStasisFields.splice(i, 1);
       continue;
     }
@@ -5701,13 +5685,9 @@ function updatePlasmaOrbs(now, dt) {
     if (now > orb.expiresAt) {
       // Remove trail particles
       orb.trailParticles.forEach(t => {
-        scene.remove(t.mesh);
-        t.mesh.geometry.dispose();
-        t.mesh.material.dispose();
+        disposeMesh(t.mesh);
       });
-      scene.remove(orb.mesh);
-      orb.mesh.geometry.dispose();
-      orb.mesh.material.dispose();
+      disposeMesh(orb.mesh);
       activePlasmaOrbs.splice(i, 1);
       continue;
     }
@@ -5812,13 +5792,9 @@ function detonatePlasmaOrb(orb, enemyIndex) {
 
   // Remove orb and trail
   orb.trailParticles.forEach(t => {
-    scene.remove(t.mesh);
-    t.mesh.geometry.dispose();
-    t.mesh.material.dispose();
+    disposeMesh(t.mesh);
   });
-  scene.remove(orb.mesh);
-  orb.mesh.geometry.dispose();
-  orb.mesh.material.dispose();
+  disposeMesh(orb.mesh);
 
   // Remove from active array
   const index = activePlasmaOrbs.indexOf(orb);
@@ -5963,9 +5939,7 @@ function detonateGrenade(grenade, index) {
 }
 
 function destroyGrenade(grenade) {
-  scene.remove(grenade.mesh);
-  grenade.mesh.geometry.dispose();
-  grenade.mesh.material.dispose();
+  disposeMesh(grenade.mesh);
 }
 
 // ============================================================
@@ -6097,14 +6071,7 @@ function detonateProximityMine(mine, index) {
 }
 
 function destroyProximityMine(mine) {
-  scene.remove(mine.mesh);
-  // Dispose all children (glow mesh) to prevent geometry/material leak
-  mine.mesh.children.forEach(child => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) child.material.dispose();
-  });
-  mine.mesh.geometry.dispose();
-  mine.mesh.material.dispose();
+  disposeMesh(mine.mesh);
 }
 
 // ============================================================
@@ -6280,11 +6247,7 @@ function updateAttackDrones(now, dt, playerPos) {
 }
 
 function destroyAttackDrone(drone) {
-  scene.remove(drone.mesh);
-  drone.mesh.children.forEach(child => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) child.material.dispose();
-  });
+  disposeMesh(drone.mesh);
 }
 
 // ============================================================
