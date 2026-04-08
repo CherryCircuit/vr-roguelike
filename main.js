@@ -6343,9 +6343,7 @@ function updateEMPVisuals(now, dt) {
 
     // Remove when done
     if (age >= 500) {
-      scene.remove(emp.ring);
-      emp.ring.geometry.dispose();
-      emp.ring.material.dispose();
+      disposeMesh(emp.ring);
       activeEMPVisuals.splice(i, 1);
     }
   }
@@ -6433,12 +6431,8 @@ function updateTeleportEffects(now, dt) {
 
     // Remove when done
     if (age >= effect.duration) {
-      scene.remove(effect.startEffect);
-      scene.remove(effect.endEffect);
-      effect.startEffect.geometry.dispose();
-      effect.startEffect.material.dispose();
-      effect.endEffect.geometry.dispose();
-      effect.endEffect.material.dispose();
+      disposeMesh(effect.startEffect);
+      disposeMesh(effect.endEffect);
       activeTeleportEffects.splice(i, 1);
     }
   }
@@ -6790,13 +6784,7 @@ function clearAllProjectiles() {
 function clearAllLightningBeams() {
   for (let i = 0; i < lightningBeams.length; i++) {
     if (lightningBeams[i]) {
-      lightningBeams[i].traverse(c => {
-        if (c.isMesh || c.isLine) {
-          if (c.geometry) c.geometry.dispose();
-          if (c.material) c.material.dispose();
-        }
-      });
-      scene.remove(lightningBeams[i]);
+      disposeMesh(lightningBeams[i]);
       lightningBeams[i] = null;
     }
   }
@@ -6808,193 +6796,105 @@ function clearAllLightningBeams() {
 function clearAllAltWeaponEffects() {
   // Clear active shields
   for (let i = activeShields.length - 1; i >= 0; i--) {
-    const shield = activeShields[i];
-    scene.remove(shield.mesh);
-    shield.mesh.geometry.dispose();
-    shield.mesh.material.dispose();
+    disposeMesh(activeShields[i].mesh);
   }
   activeShields.length = 0;
 
   // Clear active laser mines
   for (let i = activeLaserMines.length - 1; i >= 0; i--) {
     const mine = activeLaserMines[i];
-    if (mine.mesh) {
-      scene.remove(mine.mesh);
-      mine.mesh.children.forEach(child => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
-      });
-      if (mine.mesh.geometry) mine.mesh.geometry.dispose();
-      if (mine.mesh.material) mine.mesh.material.dispose();
-    }
+    if (mine.mesh) disposeMesh(mine.mesh);
   }
   activeLaserMines.length = 0;
 
   // Clear active decoys
   for (let i = activeDecoys.length - 1; i >= 0; i--) {
-    const decoy = activeDecoys[i];
-    scene.remove(decoy.mesh);
-    decoy.mesh.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
+    disposeMesh(activeDecoys[i].mesh);
   }
   activeDecoys.length = 0;
 
   // Clear active black holes
   for (let i = activeBlackHoles.length - 1; i >= 0; i--) {
-    const bh = activeBlackHoles[i];
-    scene.remove(bh.mesh);
-    bh.mesh.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
+    disposeMesh(activeBlackHoles[i].mesh);
   }
   activeBlackHoles.length = 0;
 
   // Clear active mines (black hole mines)
   for (let i = activeMines.length - 1; i >= 0; i--) {
-    const mine = activeMines[i];
-    if (mine.mesh) {
-      scene.remove(mine.mesh);
-      mine.mesh.children.forEach(child => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
-      });
-    }
+    if (activeMines[i].mesh) disposeMesh(activeMines[i].mesh);
   }
   activeMines.length = 0;
 
   // Clear active tethers
   for (let i = activeTethers.length - 1; i >= 0; i--) {
-    const tether = activeTethers[i];
-    scene.remove(tether.mesh);
-    tether.mesh.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
+    disposeMesh(activeTethers[i].mesh);
   }
   activeTethers.length = 0;
 
   // Clear active nanite swarms
   for (let i = activeNaniteSwarms.length - 1; i >= 0; i--) {
-    const swarm = activeNaniteSwarms[i];
-    scene.remove(swarm.mesh);
-    swarm.mesh.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
+    disposeMesh(activeNaniteSwarms[i].mesh);
   }
   activeNaniteSwarms.length = 0;
 
   // Clear active reflector drones
   for (let i = activeReflectorDrones.length - 1; i >= 0; i--) {
-    const drone = activeReflectorDrones[i];
-    scene.remove(drone.mesh);
-    drone.mesh.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
+    disposeMesh(activeReflectorDrones[i].mesh);
   }
   activeReflectorDrones.length = 0;
 
   // Clear active grenades
   for (let i = activeGrenades.length - 1; i >= 0; i--) {
-    const grenade = activeGrenades[i];
-    scene.remove(grenade.mesh);
-    grenade.mesh.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
-    grenade.mesh.geometry.dispose();
-    grenade.mesh.material.dispose();
+    disposeMesh(activeGrenades[i].mesh);
   }
   activeGrenades.length = 0;
 
   // Clear active proximity mines
   for (let i = activeProximityMines.length - 1; i >= 0; i--) {
-    const mine = activeProximityMines[i];
-    scene.remove(mine.mesh);
-    mine.mesh.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
-    mine.mesh.geometry.dispose();
-    mine.mesh.material.dispose();
+    disposeMesh(activeProximityMines[i].mesh);
   }
   activeProximityMines.length = 0;
 
   // Clear active attack drones
   for (let i = activeAttackDrones.length - 1; i >= 0; i--) {
-    const drone = activeAttackDrones[i];
-    scene.remove(drone.mesh);
-    drone.mesh.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
+    disposeMesh(activeAttackDrones[i].mesh);
   }
   activeAttackDrones.length = 0;
 
   // Clear active plasma orbs
   for (let i = activePlasmaOrbs.length - 1; i >= 0; i--) {
-    const orb = activePlasmaOrbs[i];
-    orb.trailParticles.forEach(t => {
-      scene.remove(t.mesh);
-      t.mesh.geometry.dispose();
-      t.mesh.material.dispose();
-    });
-    scene.remove(orb.mesh);
-    orb.mesh.geometry.dispose();
-    orb.mesh.material.dispose();
+    activePlasmaOrbs[i].trailParticles.forEach(t => disposeMesh(t.mesh));
+    disposeMesh(activePlasmaOrbs[i].mesh);
   }
   activePlasmaOrbs.length = 0;
 
   // Clear active phase dash afterimages
   for (let i = activePhaseDashAfterimages.length - 1; i >= 0; i--) {
-    const afterimage = activePhaseDashAfterimages[i];
-    scene.remove(afterimage.mesh);
-    afterimage.mesh.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
+    disposeMesh(activePhaseDashAfterimages[i].mesh);
   }
   activePhaseDashAfterimages.length = 0;
 
   // Clear active stasis fields
   for (let i = activeStasisFields.length - 1; i >= 0; i--) {
-    const field = activeStasisFields[i];
-    scene.remove(field.mesh);
-    field.mesh.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
+    disposeMesh(activeStasisFields[i].mesh);
   }
   activeStasisFields.length = 0;
 
   // Clear active EMP visuals
   for (let i = activeEMPVisuals.length - 1; i >= 0; i--) {
-    const emp = activeEMPVisuals[i];
-    scene.remove(emp.mesh);
-    if (emp.mesh.geometry) emp.mesh.geometry.dispose();
-    if (emp.mesh.material) emp.mesh.material.dispose();
+    disposeMesh(activeEMPVisuals[i].mesh);
   }
   activeEMPVisuals.length = 0;
 
   // Clear active teleport effects
   for (let i = activeTeleportEffects.length - 1; i >= 0; i--) {
-    const effect = activeTeleportEffects[i];
-    scene.remove(effect.mesh);
-    if (effect.mesh.geometry) effect.mesh.geometry.dispose();
-    if (effect.mesh.material) effect.mesh.material.dispose();
+    disposeMesh(activeTeleportEffects[i].mesh);
   }
   activeTeleportEffects.length = 0;
 
   // Clear explosion visuals (toxic pools, boss shields, etc.)
   for (let i = explosionVisuals.length - 1; i >= 0; i--) {
-    const visual = explosionVisuals[i];
-    scene.remove(visual);
-    if (visual.geometry) visual.geometry.dispose();
-    if (visual.material) visual.material.dispose();
+    disposeMesh(explosionVisuals[i]);
   }
   explosionVisuals.length = 0;
 
