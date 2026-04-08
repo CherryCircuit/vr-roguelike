@@ -4169,6 +4169,13 @@ function destroyDecoy(decoy, explode) {
             trackKill();
             addScore(destroyData.scoreValue);
             updateHUD(game);
+            // Check for kills remaining alert
+            if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+              const remaining = (game._levelConfig ? game._levelConfig.killTarget : 0) - game.kills;
+              if (typeof showKillsRemainingAlert === 'function') showKillsRemainingAlert(remaining);
+              if (typeof playKillsAlertSound === 'function') playKillsAlertSound(remaining);
+              killsAlertShownThisLevel = true;
+            }
           }
         }
       }
@@ -4367,6 +4374,13 @@ function updateMinesAndBlackHoles(dt, now, playerPos) {
             trackKill();
             addScore(destroyData.scoreValue);
             updateHUD(game);
+            // Check for kills remaining alert
+            if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+              const remaining = (game._levelConfig ? game._levelConfig.killTarget : 0) - game.kills;
+              if (typeof showKillsRemainingAlert === 'function') showKillsRemainingAlert(remaining);
+              if (typeof playKillsAlertSound === 'function') playKillsAlertSound(remaining);
+              killsAlertShownThisLevel = true;
+            }
           }
         }
       });
@@ -4989,6 +5003,13 @@ function updateTethers(dt, now, playerPos) {
               trackKill();
               addScore(destroyData.scoreValue);
               updateHUD(game);
+              // Check for kills remaining alert
+              if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+                const remaining = (game._levelConfig ? game._levelConfig.killTarget : 0) - game.kills;
+                if (typeof showKillsRemainingAlert === 'function') showKillsRemainingAlert(remaining);
+                if (typeof playKillsAlertSound === 'function') playKillsAlertSound(remaining);
+                killsAlertShownThisLevel = true;
+              }
             }
             destroyTether(tether);
             activeTethers.splice(i, 1);
@@ -5152,6 +5173,13 @@ function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
             trackKill();
             addScore(destroyData.scoreValue);
             updateHUD(game);
+            // Check for kills remaining alert
+            if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+              const remaining = (game._levelConfig ? game._levelConfig.killTarget : 0) - game.kills;
+              if (typeof showKillsRemainingAlert === 'function') showKillsRemainingAlert(remaining);
+              if (typeof playKillsAlertSound === 'function') playKillsAlertSound(remaining);
+              killsAlertShownThisLevel = true;
+            }
           }
         }
       }
@@ -5204,6 +5232,13 @@ function updatePhaseDashAfterimages(now, dt) {
               trackKill();
               addScore(destroyData.scoreValue);
               updateHUD(game);
+              // Check for kills remaining alert
+              if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+                const remaining = (game._levelConfig ? game._levelConfig.killTarget : 0) - game.kills;
+                if (typeof showKillsRemainingAlert === 'function') showKillsRemainingAlert(remaining);
+                if (typeof playKillsAlertSound === 'function') playKillsAlertSound(remaining);
+                killsAlertShownThisLevel = true;
+              }
             }
           }
         }
@@ -5802,6 +5837,14 @@ function detonatePlasmaOrb(orb, enemyIndex) {
 
         // Update HUD
         updateHUD(game);
+
+        // Check for kills remaining alert
+        if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+          const remaining = (game._levelConfig ? game._levelConfig.killTarget : 0) - game.kills;
+          if (typeof showKillsRemainingAlert === 'function') showKillsRemainingAlert(remaining);
+          if (typeof playKillsAlertSound === 'function') playKillsAlertSound(remaining);
+          killsAlertShownThisLevel = true;
+        }
 
         // Check level complete
         const cfg = game._levelConfig;
@@ -8647,6 +8690,14 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
       // Update HUD immediately to show correct kill count before level complete check
       updateHUD(game);
 
+      // Check for kills remaining alert
+      if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+        const remaining = game._levelConfig ? game._levelConfig.killTarget - game.kills : 0;
+        if (typeof showKillsRemainingAlert === 'function') showKillsRemainingAlert(remaining);
+        if (typeof playKillsAlertSound === 'function') playKillsAlertSound(remaining);
+        killsAlertShownThisLevel = true;
+      }
+
       // KILL CHAIN SYSTEM
       const now = performance.now();
 
@@ -10343,6 +10394,14 @@ function render(timestamp) {
 
             // Update HUD immediately to show correct kill count before level complete check
             updateHUD(game);
+
+            // Check for kills remaining alert
+            if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+              const remaining = game._levelConfig ? game._levelConfig.killTarget - game.kills : 0;
+              if (typeof showKillsRemainingAlert === 'function') showKillsRemainingAlert(remaining);
+              if (typeof playKillsAlertSound === 'function') playKillsAlertSound(remaining);
+              killsAlertShownThisLevel = true;
+            }
 
             // KILL CHAIN SYSTEM (same as handleHit)
             const now = performance.now();

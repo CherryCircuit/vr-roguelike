@@ -14,14 +14,19 @@ export function buildAlienPlanetScene(group, deps) {
 
   // Fix 6: Ground with noise-based color variation for visual interest (Quest-friendly)
   // Uses a simple ShaderMaterial with cheap hash-based noise instead of flat MeshLambertMaterial
-  const groundGeo = new THREE.PlaneGeometry(345, 345, 48, 48);
+  const groundGeo = new THREE.PlaneGeometry(345, 345, 96, 96);
   const groundPositions = groundGeo.attributes.position;
+  // Seeded pseudo-random for consistent terrain across reloads
+  let _seed = 42;
+  const srand = () => { _seed = (_seed * 16807 + 0) % 2147483647; return (_seed - 1) / 2147483646; };
   for (let i = 0; i < groundPositions.count; i++) {
     const x = groundPositions.getX(i);
     const y = groundPositions.getY(i);
-    // Subtle vertex displacement for terrain undulation
-    groundPositions.setZ(i, Math.sin(x * 0.03) * Math.cos(y * 0.03) * 0.3
-      + Math.sin(x * 0.07 + 1.5) * Math.cos(y * 0.05 + 0.8) * 0.15);
+    const dist = Math.sqrt(x * x + y * y);
+    const rawHeight = srand() * 0.7;
+    // Flat combat area: within 20m of origin, clamp to 0-0.2
+    const maxHeight = dist < 20 ? 0.2 : 0.7;
+    groundPositions.setZ(i, Math.min(rawHeight, maxHeight));
   }
   groundGeo.computeVertexNormals();
   const groundMat = new THREE.ShaderMaterial({
@@ -72,10 +77,16 @@ export function buildAlienPlanetScene(group, deps) {
         baseColor = mix(baseColor, color3, smoothstep(0.4, 0.6, noise(vWorldPos.xz * 0.02 + 5.0)));
         // Simple diffuse lighting
         float diffuse = max(dot(vNormal, uLightDir), 0.0) * 0.4 + 0.6;
-        // Subtle grid pattern for texture
-        vec2 gridUV = fract(vWorldPos.xz * 0.5);
-        float gridLine = step(0.96, gridUV.x) + step(0.96, gridUV.y);
-        baseColor += vec3(0.0, 0.02, 0.01) * gridLine;
+        // Noise-based ground texture: layered noise for organic alien ground look
+        float detail1 = noise(vWorldPos.xz * 0.15);
+        float detail2 = noise(vWorldPos.xz * 0.4 + 3.7);
+        float detail = detail1 * 0.6 + detail2 * 0.4;
+        // Mix in subtle color variation: mossy green and deep purple patches
+        vec3 patchColor = mix(vec3(0.03, 0.06, 0.02), vec3(0.05, 0.02, 0.07), detail);
+        baseColor = mix(baseColor, patchColor, 0.35);
+        // Sparse bright speckles (alien mineral deposits)
+        float speckle = smoothstep(0.82, 0.88, noise(vWorldPos.xz * 1.2 + 7.0));
+        baseColor += vec3(0.0, 0.08, 0.04) * speckle;
         gl_FragColor = vec4(baseColor * diffuse, 1.0);
       }
     `,
@@ -447,7 +458,7 @@ export function buildAlienPlanetScene(group, deps) {
       uBaseColor: { value: new THREE.Color(0x0a0a15) }
     },
     vertexShader: `varying vec2 vUv; varying vec3 vNormal; varying vec3 vWorldPos; void main(){ vUv=uv; vNormal=normalize(normalMatrix*normal); vec4 worldPos=modelMatrix*instanceMatrix*vec4(position,1.0); vWorldPos=worldPos.xyz; gl_Position=projectionMatrix*viewMatrix*worldPos; }`,
-    fragmentShader: `uniform float uTime; uniform vec3 uMoonDir; uniform vec3 uMoonColor; uniform vec3 uBaseColor; varying vec2 vUv; varying vec3 vNormal; float rand(vec2 co){ return fract(sin(dot(co, vec2(12.9898,78.233)))*43758.5453);} void main(){ float moonLight=max(dot(vNormal,uMoonDir),0.0); vec3 finalColor=uBaseColor*(0.2+moonLight*0.8)*uMoonColor; vec2 uv=vUv; float numWindowsX=6.0; float numWindowsY=15.0; vec2 grid=floor(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); vec2 gridUv=fract(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); float windowMask=step(0.15,gridUv.x)*step(gridUv.x,0.85)*step(0.1,gridUv.y)*step(gridUv.y,0.9); float r=rand(grid); float isLit=step(0.5,r); if(windowMask>0.5 && isLit>0.5){ float colorShift=sin(uTime*0.3+rand(grid)*6.283)*0.5+0.5; vec3 windowColor=mix(vec3(0.0,1.0,0.5),vec3(0.5,0.0,1.0),colorShift); vec3 accentColor=mix(vec3(1.0,0.2,0.4),vec3(0.2,0.8,1.0),sin(uTime*0.15+rand(grid*1.3)*6.283)*0.5+0.5); windowColor=mix(windowColor,accentColor,step(0.7,rand(grid*2.1))); float flicker=0.9+0.1*sin(uTime*2.0+rand(grid)*10.0); finalColor=windowColor*flicker*1.5; } gl_FragColor=vec4(finalColor,1.0); }`
+    fragmentShader: `uniform float uTime; uniform vec3 uMoonDir; uniform vec3 uMoonColor; uniform vec3 uBaseColor; varying vec2 vUv; varying vec3 vNormal; float rand(vec2 co){ return fract(sin(dot(co, vec2(12.9898,78.233)))*43758.5453);} void main(){ float moonLight=max(dot(vNormal,uMoonDir),0.0); vec3 finalColor=uBaseColor*(0.2+moonLight*0.8)*uMoonColor; vec2 uv=vUv; float numWindowsX=6.0; float numWindowsY=15.0; vec2 grid=floor(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); vec2 gridUv=fract(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); float windowMask=smoothstep(0.12,0.18,gridUv.x)*smoothstep(0.18,0.12,1.0-gridUv.x)*smoothstep(0.08,0.13,gridUv.y)*smoothstep(0.13,0.08,1.0-gridUv.y); float r=rand(grid); float isLit=step(0.5,r); if(windowMask>0.5 && isLit>0.5){ float colorShift=sin(uTime*0.3+rand(grid)*6.283)*0.5+0.5; vec3 windowColor=mix(vec3(0.0,1.0,0.5),vec3(0.5,0.0,1.0),colorShift); vec3 accentColor=mix(vec3(1.0,0.2,0.4),vec3(0.2,0.8,1.0),sin(uTime*0.15+rand(grid*1.3)*6.283)*0.5+0.5); windowColor=mix(windowColor,accentColor,step(0.7,rand(grid*2.1))); float flicker=0.9+0.1*sin(uTime*2.0+rand(grid)*10.0); finalColor=windowColor*flicker*1.5; } gl_FragColor=vec4(finalColor,1.0); }`
   });
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
   const cylinderGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);

@@ -386,14 +386,10 @@ let _heartsPrevHealthGain = 0;
 let holographicState = {
   glitchIntensity: 0,      // 0-1, triggered on player hit
   glitchStartTime: 0,
-  scanLineOffset: 0,       // Animated scan line position
-  flickerPhase: 0,         // Subtle flicker animation
-  colorShift: 0,           // Color distortion during glitch
 };
 
-// Holographic overlay mesh (scan lines)
-let holoScanLineMesh = null;
-let holoGlitchMesh = null;
+// Single holographic overlay mesh (ShaderMaterial: edge glow + animated scanlines)
+let holoMesh = null;
 
 function drawHeart(ctx, x, y, pixSize, state, animState = {}) {
   // state: 'full', 'half', 'empty'
@@ -671,11 +667,11 @@ export async function initHUD(camera, scene) {
   bossHealthGroup.position.set(0, 0.22, -0.8);
   bossHealthGroup.visible = false;
   const barWidth = 0.30;
-  const barHeight = 0.04;
+  const barHeight = 0.03;
   const gap = 0.014;
 
   // Background bar for contrast (dark strip behind the health segments)
-  const bgGeo = new THREE.PlaneGeometry(barWidth * 3 + gap * 4, barHeight + 0.01);
+  const bgGeo = new THREE.PlaneGeometry(barWidth * 3 + gap * 4, barHeight + 0.008);
   const bgMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
   const bgBar = new THREE.Mesh(bgGeo, bgMat);
   bgBar.renderOrder = 999;
@@ -827,104 +823,72 @@ export function updateTitle(now) {
 
 // ── VR HUD (hearts, kill counter, level, score) ────────────
 
-// Create holographic scan line texture - subtle floor projection effect
-function createHoloScanLineTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
+// ── Holographic Shader ──────────────────────────────────────────
+// Single ShaderMaterial replaces the old scanline texture + glitch texture approach.
+// Edge glow: bright cyan at edges, fading to darker blue, barely opaque at center.
+// Animated scanlines: horizontal lines scrolling downward via uniform.
+// Glitch on hit: opacity flash via uniform (no per-frame texture creation).
 
-  // Transparent background
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Draw very subtle horizontal scan lines with gaps
-  ctx.fillStyle = 'rgba(0, 255, 255, 0.06)';  // Much more subtle
-  const lineSpacing = 8;  // Wider spacing
-  for (let y = 0; y < canvas.height; y += lineSpacing) {
-    ctx.fillRect(0, y, canvas.width, 1);
+const holoVertexShader = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
+`;
 
-  // Minimal noise for authentic hologram look
-  ctx.fillStyle = 'rgba(0, 255, 255, 0.03)';
-  for (let i = 0; i < 50; i++) {  // Fewer dots
-    const x = Math.random() * canvas.width;
-    const y = Math.random() * canvas.height;
-    ctx.fillRect(x, y, 1, 1);  // Smaller dots
+const holoFragmentShader = `
+  precision mediump float;
+  varying vec2 vUv;
+  uniform float uTime;       // seconds (for scanline scroll)
+  uniform float uGlitch;     // 0-1 glitch intensity flash
+
+  void main() {
+    vec2 uv = vUv;
+
+    // Edge brightness: bright cyan at edges, darker blue at center
+    // distance from center, 0 at center, ~1.0 at mid-edges
+    float dx = abs(uv.x - 0.5) * 2.0;
+    float dy = abs(uv.y - 0.5) * 2.0;
+    float edgeDist = max(dx, dy); // box-shaped edge distance
+    float edge = smoothstep(0.3, 1.0, edgeDist);
+
+    // Color: dark blue center -> bright cyan edges
+    vec3 darkBlue = vec3(0.0, 0.08, 0.25);
+    vec3 brightCyan = vec3(0.0, 0.9, 1.0);
+    vec3 col = mix(darkBlue, brightCyan, edge);
+
+    // Scanlines: horizontal lines scrolling downward
+    float scanY = uv.y + uTime * 0.15; // slow downward scroll
+    float scanline = sin(scanY * 80.0) * 0.5 + 0.5;
+    scanline = smoothstep(0.3, 0.7, scanline); // sharpen slightly
+    col += brightCyan * scanline * 0.15; // subtle scanline highlight
+
+    // Opacity: barely visible at center, brighter at edges
+    float baseAlpha = mix(0.02, 0.25, edge);
+
+    // Glitch flash: spike the opacity and brightness
+    baseAlpha += uGlitch * 0.6;
+    col += vec3(uGlitch * 0.3); // whiten during glitch
+
+    gl_FragColor = vec4(col, baseAlpha);
   }
+`;
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.minFilter = THREE.LinearFilter;
-  return texture;
-}
-
-// Create glitch overlay texture with dramatic color separation
-function createGlitchTexture(intensity) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (intensity > 0) {
-    // Heavy horizontal glitch bars with RGB separation
-    const barCount = Math.floor(intensity * 20);
-    for (let i = 0; i < barCount; i++) {
-      const y = Math.random() * canvas.height;
-      const h = Math.random() * 30 + 3;
-      const offset = (Math.random() - 0.5) * intensity * 80;
-
-      // Red channel offset
-      ctx.fillStyle = `rgba(255, 0, 50, ${0.4 * intensity})`;
-      ctx.fillRect(offset - 15, y, canvas.width + 30, h);
-
-      // Cyan channel offset (opposite direction)
-      ctx.fillStyle = `rgba(0, 255, 255, ${0.4 * intensity})`;
-      ctx.fillRect(15 - offset, y, canvas.width + 30, h);
-
-      // White center for digital corruption look
-      ctx.fillStyle = `rgba(255, 255, 255, ${0.2 * intensity})`;
-      ctx.fillRect(0, y, canvas.width, h / 2);
-    }
-
-    // Random noise blocks (digital artifacts)
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.3 * intensity})`;
-    for (let i = 0; i < 80 * intensity; i++) {
-      const x = Math.random() * canvas.width;
-      const y = Math.random() * canvas.height;
-      const w = Math.random() * 50 + 5;
-      const h = Math.random() * 8 + 2;
-      ctx.fillRect(x, y, w, h);
-    }
-
-    // Vertical tear lines
-    ctx.strokeStyle = `rgba(0, 255, 255, ${0.5 * intensity})`;
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 5 * intensity; i++) {
-      const x = Math.random() * canvas.width;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x + (Math.random() - 0.5) * 20, canvas.height);
-      ctx.stroke();
-    }
-
-    // Random colored blocks
-    const colors = ['#ff0066', '#00ffff', '#ffff00', '#ff00ff'];
-    for (let i = 0; i < 15 * intensity; i++) {
-      ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
-      ctx.globalAlpha = 0.3 * intensity;
-      const x = Math.random() * canvas.width;
-      const y = Math.random() * canvas.height;
-      ctx.fillRect(x, y, Math.random() * 40, Math.random() * 10);
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  return texture;
+function createHoloShaderMaterial() {
+  return new THREE.ShaderMaterial({
+    vertexShader: holoVertexShader,
+    fragmentShader: holoFragmentShader,
+    uniforms: {
+      uTime: { value: 0.0 },
+      uGlitch: { value: 0.0 },
+    },
+    transparent: true,
+    depthTest: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+  });
 }
 
 async function createHUDElements() {
@@ -939,37 +903,14 @@ async function createHUDElements() {
 
   // HOLOGRAPHIC BASE - no background box (glitch/scanline overlays are separate below)
 
-  // HOLOGRAPHIC SCAN LINES OVERLAY - very subtle, minimal idle effect
-  const scanLineGeo = new THREE.PlaneGeometry(4.8, 2.0);
-  const scanLineTexture = createHoloScanLineTexture();
-  const scanLineMat = new THREE.MeshBasicMaterial({
-    map: scanLineTexture,
-    transparent: true,
-    opacity: 0.08,  // Very subtle idle effect
-    depthTest: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending,
-  });
-  holoScanLineMesh = new THREE.Mesh(scanLineGeo, scanLineMat);
-  holoScanLineMesh.position.set(0, -0.001, 0);
-  holoScanLineMesh.renderOrder = 998;
-  hudGroup.add(holoScanLineMesh);
-
-  // GLITCH OVERLAY (initially invisible, only shows on player hit)
-  const glitchGeo = new THREE.PlaneGeometry(4.8, 2.0);
-  const glitchMat = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending,
-  });
-  holoGlitchMesh = new THREE.Mesh(glitchGeo, glitchMat);
-  holoGlitchMesh.position.set(0, 0.001, 0);
-  holoGlitchMesh.renderOrder = 1000;
-  hudGroup.add(holoGlitchMesh);
+  // HOLOGRAPHIC OVERLAY - single ShaderMaterial with edge glow + animated scanlines
+  // Replaces the old dual-mesh system (scanline texture + per-frame glitch texture creation)
+  const holoGeo = new THREE.PlaneGeometry(4.8, 2.0);
+  const holoMat = createHoloShaderMaterial();
+  holoMesh = new THREE.Mesh(holoGeo, holoMat);
+  holoMesh.position.set(0, 0.001, 0);
+  holoMesh.renderOrder = 998;
+  hudGroup.add(holoMesh);
 
   // Lives (hearts) - left side on floor
   // #19: Hearts aligned with TOP of SCORE and LEVEL X titles
@@ -1089,84 +1030,48 @@ export function triggerHeartHitAnimation() {
 export function triggerHoloGlitch() {
   holographicState.glitchIntensity = 1.0;
   holographicState.glitchStartTime = performance.now();
-  holographicState.colorShift = 1.0;
 }
 
 export function resetHoloGlitch() {
   holographicState.glitchIntensity = 0;
-  holographicState.colorShift = 0;
-  if (holoGlitchMesh) {
-    holoGlitchMesh.material.opacity = 0;
+  if (holoMesh) {
+    holoMesh.material.uniforms.uGlitch.value = 0.0;
   }
   if (hudGroup) {
     hudGroup.position.x = 0;
     hudGroup.position.z = -3;
   }
-  if (holoScanLineMesh) {
-    holoScanLineMesh.position.x = 0;
-  }
 }
 
 export function updateHolographicGlitch(now) {
-  // Update scan line animation (moving downward)
-  holographicState.scanLineOffset = (now * 0.0005) % 1;
-  if (holoScanLineMesh && holoScanLineMesh.material.map) {
-    holoScanLineMesh.material.map.offset.y = holographicState.scanLineOffset;
-  }
+  if (!holoMesh) return;
 
-  // REMOVED: Random idle flicker - HUD should ONLY glitch when player takes damage
-  // Keep scan lines stable when no damage
-  if (holoScanLineMesh) {
-    holoScanLineMesh.material.opacity = 0.08;
-  }
+  // Update scanline scroll (time-based uniform, no texture offset needed)
+  holoMesh.material.uniforms.uTime.value = now * 0.001;
 
   // Decay glitch effect
   if (holographicState.glitchIntensity > 0) {
     const glitchAge = now - holographicState.glitchStartTime;
-    const glitchDuration = 600; // 600ms glitch duration for noticeable effect
+    const glitchDuration = 500; // 500ms glitch flash
     if (glitchAge > glitchDuration) {
       holographicState.glitchIntensity = 0;
-      holographicState.colorShift = 0;
     } else {
       holographicState.glitchIntensity = Math.max(0, 1 - (glitchAge / glitchDuration));
     }
 
-    // Update glitch overlay
-    if (holoGlitchMesh) {
-      if (holographicState.glitchIntensity > 0.05) {
-        const glitchTexture = createGlitchTexture(holographicState.glitchIntensity);
-        if (holoGlitchMesh.material.map) holoGlitchMesh.material.map.dispose();
-        holoGlitchMesh.material.map = glitchTexture;
-        holoGlitchMesh.material.opacity = holographicState.glitchIntensity * 0.9;
-        holoGlitchMesh.material.needsUpdate = true;
+    // Update glitch uniform (just a float, no texture creation)
+    holoMesh.material.uniforms.uGlitch.value = holographicState.glitchIntensity;
 
-        // Shake the entire HUD group during glitch
-        const shakeX = (Math.random() - 0.5) * 0.08 * holographicState.glitchIntensity;
-        const shakeZ = (Math.random() - 0.5) * 0.05 * holographicState.glitchIntensity;
-        hudGroup.position.x = shakeX;
-        hudGroup.position.z = -3 + shakeZ;
-
-        // Also shake the scan lines for extra effect
-        if (holoScanLineMesh) {
-          holoScanLineMesh.position.x = shakeX * 0.5;
-        }
-      } else {
-        holoGlitchMesh.material.opacity = 0;
-        // Reset HUD position
-        hudGroup.position.x = 0;
-        hudGroup.position.z = -3;
-        if (holoScanLineMesh) {
-          holoScanLineMesh.position.x = 0;
-        }
-      }
-    }
+    // Shake the HUD group during glitch
+    const shakeX = (Math.random() - 0.5) * 0.08 * holographicState.glitchIntensity;
+    const shakeZ = (Math.random() - 0.5) * 0.05 * holographicState.glitchIntensity;
+    hudGroup.position.x = shakeX;
+    hudGroup.position.z = -3 + shakeZ;
   } else {
+    holoMesh.material.uniforms.uGlitch.value = 0.0;
     // Ensure HUD position is reset
     hudGroup.position.x = 0;
     hudGroup.position.z = -3;
-    if (holoScanLineMesh) {
-      holoScanLineMesh.position.x = 0;
-    }
   }
 }
 
@@ -3929,6 +3834,14 @@ export function updateHUDHover(raycasters) {
     // We want to scale the Group for the best visual effect.
     if (obj.parent && obj.parent.type === 'Group') {
       target = obj.parent;
+    }
+
+    // CRITICAL: For zooming cards - immediately complete zoom on hover
+    // This prevents cards from getting stuck at small scale if hovered during zoom animation
+    if (target.userData._zooming) {
+      target.scale.set(1, 1, 1);
+      target.userData._zooming = false;
+      target.userData._baseScale = new THREE.Vector3(1, 1, 1);
     }
 
     if (hoveredObjs.has(obj)) {
