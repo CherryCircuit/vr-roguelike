@@ -420,7 +420,6 @@ let sunMeshRef = null;
 let sunGlowRef = null;
 let starsRef = null;
 let starsBiomeId = null;
-let atmosphereRef = null;
 let currentTheme = null;
 let biomeSceneGroup = null;
 let biomeSceneBiome = null;
@@ -1870,7 +1869,6 @@ function purgeBiomeForBossCinematic() {
   if (sunMeshRef) sunMeshRef.visible = false;
   if (sunGlowRef) sunGlowRef.visible = false;
   if (starsRef) starsRef.visible = false;
-  if (atmosphereRef) atmosphereRef.visible = false;
   if (floorMaterial) floorMaterial.opacity = 0;
   applyEnvironmentFade(1);
   if (scene) {
@@ -1945,7 +1943,6 @@ function applyThemeForLevel(level) {
   // Toggle base environment visibility for custom biomes that provide their own scene
   const hideBaseEnv = !!theme.hideBaseEnv;
   if (sunMeshRef) sunMeshRef.visible = !hideBaseEnv;
-  if (atmosphereRef) atmosphereRef.visible = !hideBaseEnv;
   if (sunGlowRef) sunGlowRef.visible = !hideBaseEnv;
   if (starsRef) starsRef.visible = theme.keepStars ? true : !hideBaseEnv;
 
@@ -2052,47 +2049,6 @@ function createSun() {
   sunGlowRef = glow;
   registerFadeMaterial(sunGlowRef.material);
 
-  // Atmosphere: vertical gradient cylinder around player
-  createAtmosphere();
-}
-
-function createAtmosphere() {
-  // 360-degree atmosphere gradient cylinder around the player
-  const segments = 48;
-  const radius = 92;
-  const height = 54;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 4;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-
-  const grad = ctx.createLinearGradient(0, 256, 0, 0);
-  grad.addColorStop(0, 'rgba(255, 126, 49, 1.0)');
-  grad.addColorStop(0.4, 'rgba(243, 7, 135, 0.9)');
-  grad.addColorStop(0.75, 'rgba(113, 0, 110, 0.6)');
-  grad.addColorStop(1.0, 'rgba(26, 0, 74, 0.0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 4, 256);
-
-  const atmTexture = new THREE.CanvasTexture(canvas);
-  atmTexture.wrapS = THREE.RepeatWrapping;
-
-  const cylGeo = new THREE.CylinderGeometry(radius, radius, height, segments, 1, true);
-  const cylMat = new THREE.MeshBasicMaterial({
-    map: atmTexture,
-    transparent: true,
-    opacity: 1.0,
-    side: THREE.BackSide,
-    depthWrite: false,
-  });
-  const cylinder = new THREE.Mesh(cylGeo, cylMat);
-  cylinder.name = 'atmosphereRef';
-  cylinder.position.set(0, height / 2 - 2 + SCENE_Y_OFFSET, 0);
-  cylinder.renderOrder = -13;
-  scene.add(cylinder);
-  atmosphereRef = cylinder;
-  registerFadeMaterial(atmosphereRef.material);
 }
 
 function createSparklingStars(theme) {
