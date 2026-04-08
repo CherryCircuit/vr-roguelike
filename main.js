@@ -465,7 +465,61 @@ let killsAlertShownThisLevel = false;
 let killsAlertTriggerKill = null;
 
 function checkKillsAlert() {
+  if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
+    const remaining = game._levelConfig ? game._levelConfig.killTarget - game.kills : 0;
+    if (typeof showKillsRemainingAlert === 'function') showKillsRemainingAlert(remaining);
+    if (typeof playKillsAlertSound === 'function') playKillsAlertSound(remaining);
+    killsAlertShownThisLevel = true;
+  }
+}
+
+function handleEnemyKilled(enemyIndex, opts = {}) {
+  const { isCritical, overkill, skipChain = true, skipLevelComplete = false, killsWithoutHit } = opts;
+  const destroyData = destroyEnemy(enemyIndex, isCritical, overkill);
+  if (!destroyData) return null;
+
+  game.kills++;
+  trackKill();
+  if (killsWithoutHit) game.killsWithoutHit++;
+  addScore(destroyData.scoreValue);
+  updateHUD(game);
   checkKillsAlert();
+
+  // Kill chain system (direct projectile hits and DoT kills only)
+  if (!skipChain) {
+    const now = performance.now();
+    // Check combo timeout
+    if (now - game.lastKillTime > game.comboResetTime) {
+      game.comboCount = 0;
+      game.comboMultiplier = 1;
+    }
+    // Increment combo
+    game.comboCount++;
+    game.lastKillTime = now;
+    // Calculate multiplier based on streak (for internal use)
+    if (game.comboCount >= 5) {
+      game.comboMultiplier = 5;
+    } else if (game.comboCount >= 4) {
+      game.comboMultiplier = 4;
+    } else if (game.comboCount >= 3) {
+      game.comboMultiplier = 3;
+    } else if (game.comboCount >= 2) {
+      game.comboMultiplier = 2;
+    }
+
+    // Second alert check after chain updates
+    checkKillsAlert();
+  }
+
+  // Level complete check
+  if (!skipLevelComplete) {
+    const cfg = game._levelConfig;
+    if (cfg && game.kills >= cfg.killTarget) {
+      completeLevel();
+    }
+  }
+
+  return destroyData;
 }
 
 // Accuracy bonus shot tracking
@@ -4161,17 +4215,7 @@ function destroyDecoy(decoy, explode) {
         spawnDamageNumber(e.mesh.position, damage, '#00ffaa');
         playExplosionSound();
 
-        if (result.killed) {
-          const destroyData = destroyEnemy(idx);
-          if (destroyData) {
-            game.kills++;
-            trackKill();
-            addScore(destroyData.scoreValue);
-            updateHUD(game);
-            // Check for kills remaining alert
-            checkKillsAlert();
-          }
-        }
+        handleEnemyKilled(idx);
       }
     });
 
@@ -4361,17 +4405,7 @@ function updateMinesAndBlackHoles(dt, now, playerPos) {
         spawnDamageNumber(enemy.mesh.position, damage, '#8800ff');
         playHitSound();
 
-        if (result.killed) {
-          const destroyData = destroyEnemy(index);
-          if (destroyData) {
-            game.kills++;
-            trackKill();
-            addScore(destroyData.scoreValue);
-            updateHUD(game);
-            // Check for kills remaining alert
-            checkKillsAlert();
-          }
-        }
+        handleEnemyKilled(index);
       });
     }
   }
@@ -4701,23 +4735,7 @@ function updateNaniteSwarms(now, dt, playerPos) {
           }
 
           // Check if killed by DoT
-          if (result.killed) {
-            const destroyData = destroyEnemy(index);
-            if (destroyData) {
-              game.kills++;
-              trackKill();
-              addScore(destroyData.scoreValue);
-              updateHUD(game);
-
-              // Check for kills remaining alert
-              const cfg = game._levelConfig;
-              checkKillsAlert();
-
-              if (cfg && game.kills >= cfg.killTarget) {
-                completeLevel();
-              }
-            }
-          }
+          handleEnemyKilled(index);
         }
       });
     }
@@ -4981,15 +4999,7 @@ function updateTethers(dt, now, playerPos) {
 
           // Check if killed
           if (enemy.hp <= 0) {
-            const destroyData = destroyEnemy(tether.enemyIndex);
-            if (destroyData) {
-              game.kills++;
-              trackKill();
-              addScore(destroyData.scoreValue);
-              updateHUD(game);
-              // Check for kills remaining alert
-              checkKillsAlert();
-            }
+            handleEnemyKilled(tether.enemyIndex);
             destroyTether(tether);
             activeTethers.splice(i, 1);
             break;
@@ -5145,17 +5155,7 @@ function firePhaseDash(controller, index, hand, altWeapon, origin, direction) {
         spawnDamageNumber(enemyPos, dashDamage, '#4488ff');
         _log(`[Phase Dash] Hit enemy for ${dashDamage} damage`);
 
-        if (result.killed) {
-          const destroyData = destroyEnemy(enemyIndex);
-          if (destroyData) {
-            game.kills++;
-            trackKill();
-            addScore(destroyData.scoreValue);
-            updateHUD(game);
-            // Check for kills remaining alert
-            checkKillsAlert();
-          }
-        }
+        handleEnemyKilled(enemyIndex);
       }
     }
   });
@@ -5199,17 +5199,7 @@ function updatePhaseDashAfterimages(now, dt) {
           spawnDamageNumber(e.mesh.position, damage, '#88ccff');
           _log(`[Phase Dash] Afterimage exploded for ${damage} damage`);
 
-          if (result.killed) {
-            const destroyData = destroyEnemy(enemyIndex);
-            if (destroyData) {
-              game.kills++;
-              trackKill();
-              addScore(destroyData.scoreValue);
-              updateHUD(game);
-              // Check for kills remaining alert
-              checkKillsAlert();
-            }
-          }
+          handleEnemyKilled(enemyIndex);
         }
       }
 
@@ -5797,25 +5787,7 @@ function detonatePlasmaOrb(orb, enemyIndex) {
 
     if (result.killed) {
       playExplosionSound();
-      const destroyData = destroyEnemy(enemyIndex);
-      if (destroyData) {
-        game.kills++;
-        trackKill();
-        game.killsWithoutHit++;
-        addScore(destroyData.scoreValue);
-
-        // Update HUD
-        updateHUD(game);
-
-        // Check for kills remaining alert
-        checkKillsAlert();
-
-        // Check level complete
-        const cfg = game._levelConfig;
-        if (cfg && game.kills >= cfg.killTarget) {
-          completeLevel();
-        }
-      }
+      handleEnemyKilled(enemyIndex, { killsWithoutHit: true });
     }
   }
 
@@ -5976,23 +5948,7 @@ function detonateGrenade(grenade, index) {
       const result = hitEnemy(i, damage);
       spawnDamageNumber(e.mesh.position, damage, '#ff4444');
 
-      if (result.killed) {
-        const destroyData = destroyEnemy(i);
-        if (destroyData) {
-          game.kills++;
-          trackKill();
-          addScore(destroyData.scoreValue);
-          updateHUD(game);
-
-          // Check for kills remaining alert
-          const cfg = game._levelConfig;
-          checkKillsAlert();
-
-          if (cfg && game.kills >= cfg.killTarget) {
-            completeLevel();
-          }
-        }
-      }
+      handleEnemyKilled(i);
     }
   }
 
@@ -6126,23 +6082,7 @@ function detonateProximityMine(mine, index) {
       const result = hitEnemy(i, damage);
       spawnDamageNumber(e.mesh.position, damage, '#ffaa00');
 
-      if (result.killed) {
-        const destroyData = destroyEnemy(i);
-        if (destroyData) {
-          game.kills++;
-          trackKill();
-          addScore(destroyData.scoreValue);
-          updateHUD(game);
-
-          const cfg = game._levelConfig;
-          // Check for kills remaining alert
-          checkKillsAlert();
-
-          if (cfg && game.kills >= cfg.killTarget) {
-            completeLevel();
-          }
-        }
-      }
+      handleEnemyKilled(i);
     }
   }
 
@@ -6403,23 +6343,7 @@ function fireEMP(origin, hand, altWeapon) {
       const result = hitEnemy(i, empDamage);
       spawnDamageNumber(e.mesh.position, empDamage, '#00ffff');
 
-      if (result.killed) {
-        const destroyData = destroyEnemy(i);
-        if (destroyData) {
-          game.kills++;
-          trackKill();
-          addScore(destroyData.scoreValue);
-          updateHUD(game);
-
-          const cfg = game._levelConfig;
-          // Check for kills remaining alert
-          checkKillsAlert();
-
-          if (cfg && game.kills >= cfg.killTarget) {
-            completeLevel();
-          }
-        }
-      }
+      handleEnemyKilled(i);
     }
   });
 
@@ -8003,26 +7927,7 @@ function updateLightningBeam(controller, index, stats, dt) {
 
         if (result.killed) {
           playExplosionSound();
-          const destroyData = destroyEnemy(enemyIndex);
-          if (destroyData) {
-            game.kills++;
-            trackKill();
-            game.killsWithoutHit++;
-            addScore(destroyData.scoreValue);
-
-            // Update HUD immediately to show correct kill count before level complete check
-            updateHUD(game);
-
-            const cfg = game._levelConfig;
-
-            // Check for kills remaining alert
-            checkKillsAlert();
-
-            // Check level complete
-            if (cfg && game.kills >= cfg.killTarget) {
-              completeLevel();
-            }
-          }
+          handleEnemyKilled(enemyIndex, { killsWithoutHit: true });
         }
       });
     }
@@ -8618,48 +8523,8 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
   // If killed
   if (result.killed) {
     playExplosionSound();
-    const destroyData = destroyEnemy(enemyIndex, isCritical, result.overkill > 0);
+    const destroyData = handleEnemyKilled(enemyIndex, { isCritical, overkill: result.overkill > 0, killsWithoutHit: true, skipChain: false });
     if (destroyData) {
-      game.kills++;
-      trackKill();
-      game.killsWithoutHit++;
-      addScore(destroyData.scoreValue);
-
-      // Update HUD immediately to show correct kill count before level complete check
-      updateHUD(game);
-
-      // Check for kills remaining alert
-      checkKillsAlert();
-
-      // KILL CHAIN SYSTEM
-      const now = performance.now();
-
-      // Check combo timeout
-      if (now - game.lastKillTime > game.comboResetTime) {
-        game.comboCount = 0;
-        game.comboMultiplier = 1;
-      }
-
-      // Increment combo (for internal tracking, but popups are now accuracy-based)
-      game.comboCount++;
-      game.lastKillTime = now;
-
-      // Calculate multiplier based on streak (for internal use)
-      if (game.comboCount >= 5) {
-        game.comboMultiplier = 5;
-      } else if (game.comboCount >= 4) {
-        game.comboMultiplier = 4;
-      } else if (game.comboCount >= 3) {
-        game.comboMultiplier = 3;
-      } else if (game.comboCount >= 2) {
-        game.comboMultiplier = 2;
-      }
-
-      // NOTE: Popups are now accuracy-based, not kill-chain based
-      // Accuracy popups are triggered in markAccuracyHit() when multiplier increases
-
-      const cfg = game._levelConfig;
-
       // Track kills for hand stats
       if (controllerIndex !== undefined) {
         const hand = getHandForController(controllerIndex);
@@ -8680,14 +8545,6 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
         if (DEBUG) console.log('[vampiric] Healed 1 HP');
         spawnHealthGainPopup(destroyData.position);  // Spawn +💖 popup at enemy position
         playHealSound();  // Play healing sound
-      }
-
-      // Check for kills remaining alert
-      checkKillsAlert();
-
-      // Check level complete
-      if (cfg && game.kills >= cfg.killTarget) {
-        completeLevel();
       }
     }
   }
@@ -10307,55 +10164,7 @@ function render(timestamp) {
         delete e._lastDoT;
 
         if (e.hp <= 0) {
-          const destroyData = destroyEnemy(i);
-          if (destroyData) {
-            game.kills++;
-            trackKill();
-            game.killsWithoutHit++;
-            addScore(destroyData.scoreValue);
-
-            // Update HUD immediately to show correct kill count before level complete check
-            updateHUD(game);
-
-            // Check for kills remaining alert
-            checkKillsAlert();
-
-            // KILL CHAIN SYSTEM (same as handleHit)
-            const now = performance.now();
-
-            // Check combo timeout
-            if (now - game.lastKillTime > game.comboResetTime) {
-              game.comboCount = 0;
-              game.comboMultiplier = 1;
-            }
-
-            // Increment combo
-            game.comboCount++;
-            game.lastKillTime = now;
-
-            // Calculate multiplier based on streak (for internal use)
-            if (game.comboCount >= 5) {
-              game.comboMultiplier = 5;
-            } else if (game.comboCount >= 4) {
-              game.comboMultiplier = 4;
-            } else if (game.comboCount >= 3) {
-              game.comboMultiplier = 3;
-            } else if (game.comboCount >= 2) {
-              game.comboMultiplier = 2;
-            }
-
-            // NOTE: Popups are now accuracy-based, not kill-chain based
-            // Accuracy popups are triggered in markAccuracyHit() when multiplier increases
-
-            const cfg = game._levelConfig;
-
-            // Check for kills remaining alert
-            checkKillsAlert();
-
-            if (cfg && game.kills >= cfg.killTarget) {
-              completeLevel();
-            }
-          }
+          handleEnemyKilled(i, { killsWithoutHit: true, skipChain: false });
         }
       }
     });
