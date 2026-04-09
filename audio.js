@@ -709,39 +709,115 @@ export function playProjectileWarningSound() {
 
 // ── Heal Sound (Vampiric/Health Pickup) ─────────────────────
 export function playHealSound() {
-  // Pleasant ascending chime when player gains health
+  // Bright triumphant level-up sound when player gains health
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
   const osc = ctx.createOscillator();
   const osc2 = ctx.createOscillator();
+  const osc3 = ctx.createOscillator();
   const gain = ctx.createGain();
 
   osc.type = 'sine';
   osc2.type = 'triangle';
+  osc3.type = 'sine';
 
-  // Two-note ascending arpeggio: healing feel
-  osc.frequency.setValueAtTime(523, t);  // C5
-  osc.frequency.setValueAtTime(659, t + 0.08);  // E5
-  osc.frequency.setValueAtTime(784, t + 0.16);  // G5
+  // Fast ascending arpeggio - bright and triumphant
+  osc.frequency.setValueAtTime(880, t);      // A5
+  osc.frequency.setValueAtTime(1109, t + 0.05); // C#6
+  osc.frequency.setValueAtTime(1319, t + 0.10); // E6
+  osc.frequency.setValueAtTime(1760, t + 0.15); // A6
 
-  osc2.frequency.setValueAtTime(659, t);  // E5 (harmony)
-  osc2.frequency.setValueAtTime(784, t + 0.08);  // G5
-  osc2.frequency.setValueAtTime(988, t + 0.16);  // B5
+  osc2.frequency.setValueAtTime(1109, t);    // C#6
+  osc2.frequency.setValueAtTime(1319, t + 0.05); // E6
+  osc2.frequency.setValueAtTime(1760, t + 0.10); // A6
+  osc2.frequency.setValueAtTime(2093, t + 0.15); // C#7
 
-  gain.gain.setValueAtTime(0.2, t);
-  gain.gain.linearRampToValueAtTime(0.15, t + 0.08);
-  gain.gain.linearRampToValueAtTime(0.1, t + 0.16);
-  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  // Shimmer/sparkle - high frequency sine with fast vibrato
+  osc3.frequency.setValueAtTime(3520, t);    // A7
+  osc3.frequency.setValueAtTime(3951, t + 0.05); // B7
+  osc3.frequency.setValueAtTime(4186, t + 0.10); // C8
+  osc3.frequency.setValueAtTime(3520, t + 0.15); // A7
+
+  gain.gain.setValueAtTime(0.18, t);
+  gain.gain.linearRampToValueAtTime(0.22, t + 0.08);
+  gain.gain.linearRampToValueAtTime(0.12, t + 0.18);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
 
   osc.connect(gain);
   osc2.connect(gain);
+  osc3.connect(gain);
   gain.connect(getSfxOutput());
 
   osc.start(t);
   osc2.start(t);
-  osc.stop(t + 0.35);
-  osc2.stop(t + 0.35);
+  osc3.start(t);
+  osc.stop(t + 0.45);
+  osc2.stop(t + 0.45);
+  osc3.stop(t + 0.45);
+}
+
+// ── Level complete victory fanfare ──────────────────────────────
+export function playLevelCompleteSound() {
+  // Triumphant ascending major chord arpeggio with sparkle
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Main arpeggio oscillators (sine + triangle for bright timbre)
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc1.type = 'sine';
+  osc2.type = 'triangle';
+
+  // C major arpeggio ascending: C4 -> E4 -> G4 -> C5 -> E5 -> G5 -> C6
+  const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50];
+  const noteDuration = 0.08; // 80ms per note
+
+  // Schedule arpeggio on both oscillators
+  for (let i = 0; i < notes.length; i++) {
+    const noteTime = t + i * noteDuration;
+    osc1.frequency.setValueAtTime(notes[i], noteTime);
+    osc2.frequency.setValueAtTime(notes[i], noteTime);
+  }
+
+  // Volume envelope - swell then decay
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(0.25, t + 0.1);
+  gain.gain.setValueAtTime(0.25, t + 0.4);
+  gain.gain.linearRampToValueAtTime(0.15, t + 0.5);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.65);
+
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(getSfxOutput());
+
+  osc1.start(t);
+  osc2.start(t);
+  osc1.stop(t + 0.65);
+  osc2.stop(t + 0.65);
+
+  // Sparkle/shimmer at the end (quick high-frequency burst)
+  const sparkleOsc = ctx.createOscillator();
+  const sparkleGain = ctx.createGain();
+  sparkleOsc.type = 'sine';
+
+  // Quick descending sparkles: C7 -> B6 -> A6 -> G6
+  const sparkleNotes = [2093.00, 1975.53, 1760.00, 1567.98];
+  for (let i = 0; i < sparkleNotes.length; i++) {
+    sparkleOsc.frequency.setValueAtTime(sparkleNotes[i], t + 0.55 + i * 0.04);
+  }
+
+  sparkleGain.gain.setValueAtTime(0, t + 0.55);
+  sparkleGain.gain.linearRampToValueAtTime(0.15, t + 0.6);
+  sparkleGain.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
+
+  sparkleOsc.connect(sparkleGain);
+  sparkleGain.connect(getSfxOutput());
+
+  sparkleOsc.start(t + 0.55);
+  sparkleOsc.stop(t + 0.75);
 }
 
 // ── Fast enemy spawn alert ─────────────────────────────────
