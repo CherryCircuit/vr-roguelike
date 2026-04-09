@@ -1991,10 +1991,10 @@ function applyThemeForLevel(level) {
   const hideBaseEnv = !!theme.hideBaseEnv;
   if (hideBaseEnv) {
     // Dispose and remove base environment objects
-    if (sunMeshRef) { disposeMesh(sunMeshRef); sunMeshRef = null; }
-    if (sunGlowRef) { disposeMesh(sunGlowRef); sunGlowRef = null; }
-    if (starsRef && !theme.keepStars) { disposeMesh(starsRef); starsRef = null; }
-    if (floorRef) { disposeMesh(floorRef); floorRef = null; floorMaterial = null; }
+    if (sunMeshRef) { disposeMesh(sunMeshRef, true); sunMeshRef = null; }
+    if (sunGlowRef) { disposeMesh(sunGlowRef, true); sunGlowRef = null; }
+    if (starsRef) { disposeMesh(starsRef, true); starsRef = null; }
+    if (floorRef) { disposeMesh(floorRef, true); floorRef = null; floorMaterial = null; }
     if (biomeAmbientLight) { scene.remove(biomeAmbientLight); biomeAmbientLight.dispose(); biomeAmbientLight = null; }
     if (biomeDirectionalLight) { scene.remove(biomeDirectionalLight); biomeDirectionalLight = null; }
     if (biomePointLight) { scene.remove(biomePointLight); biomePointLight.dispose(); biomePointLight = null; }
