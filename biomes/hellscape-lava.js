@@ -246,11 +246,9 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
   // ========================================
   // 5. LAVA EMBERS (400 rising from lava river, fade at Y:25)
   // ========================================
-  const sparkCount = 100;
+  const sparkCount = 400;
   const sparkPositions = new Float32Array(sparkCount * 3);
   const sparkVelocities = new Float32Array(sparkCount * 3);
-  const sparkLifetimes = new Float32Array(sparkCount);
-  const sparkMaxLifetimes = new Float32Array(sparkCount);
   const sparkColors = new Float32Array(sparkCount * 3);
 
   const initSpark = (idx) => {
@@ -258,106 +256,65 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     const z = (Math.random() - 0.5) * 100 - 50; // Bias toward negative Z (in front of player)
     const riverX = Math.sin(z * 0.03) * 15.0 - 10.0;  // Match terrain world-space river center
     sparkPositions[i3] = riverX + (Math.random() - 0.5) * 8;
-    sparkPositions[i3 + 1] = floorY - 2.5 + Math.random() * 0.5;  // Start at river level
+    sparkPositions[i3 + 1] = -2.5 + Math.random() * 0.5;  // Start at river level
     sparkPositions[i3 + 2] = z;
     sparkVelocities[i3] = (Math.random() - 0.5) * 0.01;  // Gentle horizontal drift
-    sparkVelocities[i3 + 1] = 0.05 + Math.random() * 0.08;  // Rise toward Y:25
+    sparkVelocities[i3 + 1] = 0.02 + Math.random() * 0.04;  // Very slow dreamy rise
     sparkVelocities[i3 + 2] = (Math.random() - 0.5) * 0.01;
-    sparkLifetimes[idx] = 0;
-    sparkMaxLifetimes[idx] = 3 + Math.random() * 4;  // Cycle faster
-    // Random warm color between orange-red and bright yellow
+    // Color: mix of orange-red (0xff4400) and bright yellow (0xffaa00)
     const colorMix = Math.random();
-    sparkColors[i3] = 1.0;  // R
-    sparkColors[i3 + 1] = 0.3 + colorMix * 0.5;  // G: 0.3-0.8
-    sparkColors[i3 + 2] = colorMix * 0.2;  // B: 0-0.2
+    sparkColors[i3] = 1.0;  // R: always 1.0
+    sparkColors[i3 + 1] = 0.27 + colorMix * 0.39;  // G: 0.27 (red-ish) to 0.67 (yellow-ish)
+    sparkColors[i3 + 2] = colorMix * 0.0;  // B: 0
   };
 
   for (let i = 0; i < sparkCount; i++) {
     initSpark(i);
-    sparkLifetimes[i] = Math.random() * sparkMaxLifetimes[i]; // Stagger initial lifetimes
+    // Stagger initial heights so they don't all start at the bottom
+    sparkPositions[i * 3 + 1] = -2.5 + Math.random() * 27.5;
   }
 
   const sparkGeo = new THREE.BufferGeometry();
   sparkGeo.name = 'biome-hellscape-embers';
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
-  sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkColors, 3));
+  sparkGeo.setAttribute('aColor', new THREE.BufferAttribute(sparkColors, 3));
 
-  const sparkMat = new THREE.PointsMaterial({
-    size: 0.2,
-    vertexColors: true,
+  const sparkMat = new THREE.ShaderMaterial({
+    uniforms: {},
+    vertexShader: `
+      attribute vec3 aColor;
+      varying vec3 vColor;
+      varying float vAlpha;
+      void main() {
+        vColor = aColor;
+        float height = position.y;
+        vAlpha = 1.0 - smoothstep(15.0, 25.0, height);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = (0.15 + vAlpha * 0.15) * (300.0 / -mvPosition.z);
+        gl_PointSize = clamp(gl_PointSize, 1.0, 6.0);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      varying float vAlpha;
+      void main() {
+        float dist = length(gl_PointCoord - vec2(0.5));
+        if (dist > 0.5) discard;
+        float alpha = (1.0 - smoothstep(0.0, 0.5, dist)) * vAlpha;
+        gl_FragColor = vec4(vColor, alpha);
+      }
+    `,
     transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
   });
 
   const sparks = new THREE.Points(sparkGeo, sparkMat);
-  sparks.name = "biome-hellscape-embers";
+  sparks.name = 'biome-hellscape-embers';
   group.add(sparks);
 
-  // (Ash particles removed - were jittery dots in corridor, not visible from player position)
 
-  // ========================================
-  // 6. FLAME GEYSERS (periodic eruptions)
-  // ========================================
-  const MAX_GEYSER = 350;
-  const geyserData = {
-    x: new Float32Array(MAX_GEYSER),
-    y: new Float32Array(MAX_GEYSER),
-    z: new Float32Array(MAX_GEYSER),
-    vx: new Float32Array(MAX_GEYSER),
-    vy: new Float32Array(MAX_GEYSER),
-    vz: new Float32Array(MAX_GEYSER),
-    life: new Float32Array(MAX_GEYSER),
-    maxLife: new Float32Array(MAX_GEYSER),
-    active: new Uint8Array(MAX_GEYSER) // 0=inactive, 1=active
-  };
-  let lastGeyserTime = 0;
-  const geyserInterval = 5000; // 5 seconds
-
-  const createGeyserBurst = (now) => {
-    const particleCount = 100;
-    // Spawn from mountainsides (outside valleyWidth), accounting for terrain X shift
-    const side = Math.random() > 0.5 ? 1 : -1;
-    // Mountainsides in group space (terrain.position.x = -10 shifts terrain)
-    const x = side * (valleyWidth + 5 + Math.random() * 20) - 10.0;
-    const z = -Math.abs((Math.random() - 0.5) * 80);
-    const baseY = floorY + 5;
-    let added = 0;
-    for (let i = 0; i < MAX_GEYSER && added < particleCount; i++) {
-      if (!geyserData.active[i]) {
-        geyserData.active[i] = 1;
-        geyserData.x[i] = x + (Math.random() - 0.5) * 2;
-        geyserData.y[i] = baseY;
-        geyserData.z[i] = z + (Math.random() - 0.5) * 2;
-        geyserData.vx[i] = (Math.random() - 0.5) * 0.1;
-        geyserData.vy[i] = 0.8 + Math.random() * 0.5;
-        geyserData.vz[i] = (Math.random() - 0.5) * 0.1;
-        geyserData.life[i] = 0;
-        geyserData.maxLife[i] = 1.5 + Math.random() * 1.5;
-        added++;
-      }
-    }
-  };
-
-  const geyserGeo = new THREE.BufferGeometry();
-  geyserGeo.name = 'biome-hellscape-geysers';
-  const geyserPositions = new Float32Array(MAX_GEYSER * 3);
-  geyserGeo.setAttribute('position', new THREE.BufferAttribute(geyserPositions, 3));
-  geyserGeo.setDrawRange(0, 0);
-
-  const geyserMat = new THREE.PointsMaterial({
-    color: 0xff6600,
-    size: 0.4,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-
-  const geyserPoints = new THREE.Points(geyserGeo, geyserMat);
-  geyserPoints.name = "biome-hellscape-geysers";
-  group.add(geyserPoints);
 
   // (Flame pillars removed per Graeme's request)
 
@@ -413,7 +370,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
-    transparent: true,
+    transparent: false,
     uniforms: {},
     vertexShader: `
       varying float vNormalizedY;
@@ -463,70 +420,19 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
     // Lava glow intensity pulse removed
 
-    // Update spark particles - continuously spawn from lava river
+    // Update lava embers - rise slowly, respawn at river level when above Y:25
     const sparkPos = sparkGeo.attributes.position.array;
-
-    // Continuously spawn 8-12 new sparks each frame from random positions along the river
-    // (optimized spawn rate for performance)
-    const sparksToSpawn = 8 + Math.floor(Math.random() * 5);  // Was 6 + Math.floor(Math.random() * 4)
-    for (let s = 0; s < sparksToSpawn; s++) {
-      const randomIdx = Math.floor(Math.random() * sparkCount);
-      // Only respawn if lifetime is mostly elapsed or just starting fresh
-      if (sparkLifetimes[randomIdx] > sparkMaxLifetimes[randomIdx] * 0.8) {
-        initSpark(randomIdx);
-      }
-    }
-
     for (let i = 0; i < sparkCount; i++) {
       const i3 = i * 3;
-      sparkLifetimes[i] += dt * 0.001;
-
-      // Kill embers that rise above Y:25
+      sparkPos[i3] += sparkVelocities[i3];
+      sparkPos[i3 + 1] += sparkVelocities[i3 + 1];
+      sparkPos[i3 + 2] += sparkVelocities[i3 + 2];
+      // Respawn at river level when too high
       if (sparkPos[i3 + 1] > 25) {
         initSpark(i);
-        continue;
-      }
-
-      if (sparkLifetimes[i] > sparkMaxLifetimes[i]) {
-        initSpark(i);
-      } else {
-        sparkPos[i3] += sparkVelocities[i3];
-        sparkPos[i3 + 1] += sparkVelocities[i3 + 1];
-        sparkPos[i3 + 2] += sparkVelocities[i3 + 2];
       }
     }
     sparkGeo.attributes.position.needsUpdate = true;
-
-    // (Ash drift removed)
-
-    // Geyser trigger and update
-    if (now - lastGeyserTime > geyserInterval) {
-      createGeyserBurst(now);
-      lastGeyserTime = now;
-    }
-
-    // Update geyser particles (ring buffer - no GC)
-    let activeCount = 0;
-    const geyserPos = geyserGeo.attributes.position.array;
-    for (let i = 0; i < MAX_GEYSER; i++) {
-      if (!geyserData.active[i]) continue;
-      geyserData.life[i] += dt * 0.001;
-      if (geyserData.life[i] > geyserData.maxLife[i] || geyserData.y[i] < -10 || geyserData.y[i] > 1000) {
-        geyserData.active[i] = 0;
-        continue;
-      }
-      geyserData.x[i] += geyserData.vx[i];
-      geyserData.y[i] += geyserData.vy[i];
-      geyserData.z[i] += geyserData.vz[i];
-      geyserData.vy[i] -= 0.03;
-      const idx = activeCount * 3;
-      geyserPos[idx] = geyserData.x[i];
-      geyserPos[idx + 1] = geyserData.y[i];
-      geyserPos[idx + 2] = geyserData.z[i];
-      activeCount++;
-    }
-    geyserGeo.setDrawRange(0, activeCount);
-    geyserGeo.attributes.position.needsUpdate = true;
 
     // (Flame pillar animation removed)
   };

@@ -1137,6 +1137,7 @@ export function playKillsAlertSound(remaining = null) {
 
 // ── Incoming boss alert sound ──────────────────────────────────
 export function playIncomingBossSound() {
+  if (!shouldStreamRemoteAudio()) return;
   const audio = new Audio('https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_incoming-boss.mp3');
   audio.volume = 0.5;
   audio.play().catch(err => console.warn('[audio] Failed to play incoming boss clip:', err));
@@ -1368,6 +1369,7 @@ function playNextTrack() {
   if (currentPlaylist.length === 0) return;
 
   const track = currentPlaylist[currentTrackIndex];
+  const token = musicFadeToken; // capture so error handler can detect stale calls
   console.log(`[music] Playing track ${currentTrackIndex + 1}/${currentPlaylist.length}: ${track}`);
 
   const ctx = getAudioContext();
@@ -1383,10 +1385,16 @@ function playNextTrack() {
     playNextTrack();
   });
 
-  // Handle loading errors
+  // Handle loading errors — guard against infinite recursion if all tracks fail
+  let errorRetries = 0;
   currentMusic.addEventListener('error', (e) => {
     console.warn(`[music] Failed to load: ${track}`, e);
-    // Skip to next track on error
+    if (token !== musicFadeToken) return; // stale, stop was already called
+    if (++errorRetries >= currentPlaylist.length) {
+      console.warn('[music] All tracks failed to load, stopping playlist');
+      stopCurrentMusic();
+      return;
+    }
     currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
     playNextTrack();
   });
