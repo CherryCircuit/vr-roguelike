@@ -5280,7 +5280,9 @@ class SkullBoss extends Boss {
   updateSkullPhase(dt, now, playerPos) {
     // Determine current skull phase based on HP thresholds
     // Force re-evaluation every frame so large damage chunks can't skip phases
-    const newPhase = this.hp > 1200 ? 1 : this.hp > 600 ? 2 : 3;
+    const phaseThreshold2 = this.maxHp * (2 / 3);
+    const phaseThreshold1 = this.maxHp * (1 / 3);
+    const newPhase = this.hp > phaseThreshold2 ? 1 : this.hp > phaseThreshold1 ? 2 : 3;
     
     // Check for phase transition
     if (newPhase !== this.skullPhase && !this.transitioning) {
@@ -8043,17 +8045,18 @@ function initBossProjPools() {
   // Boss projectiles: red spheres (core only, no glow to avoid depth artifacts)
   const coreGeo = new THREE.SphereGeometry(0.12, 8, 8);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xff2200,
+    color: 0xff0000,
     transparent: true,
-    opacity: 0.95,
+    opacity: 0.75,
     depthWrite: false,
+    depthTest: true,
   });
   bossProjCorePool = new THREE.InstancedMesh(coreGeo, coreMat, BOSS_PROJ_POOL_SIZE);
   bossProjCorePool.name = 'boss-projectile-pool';
   bossProjCorePool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   bossProjCorePool.count = 0;
   bossProjCorePool.frustumCulled = false;
-  bossProjCorePool.renderOrder = 999;
+  bossProjCorePool.renderOrder = 10;
   bossProjCorePool.visible = true;  // Ensure visible on init
   sceneRef.add(bossProjCorePool);
 
