@@ -58,3 +58,8 @@ When Graeme says "wrap up", "save session", or "end session":
 4. **Confirm**: Brief summary of what was saved so Graeme knows it stuck
 
 Keep the wrap-up concise. 1-2 minutes max, not a dissertation.
+
+## Formatting for Telegram
+
+- **No markdown tables.** Telegram breaks table formatting with word wrap on mobile. Always use bullet lists instead.
+- This applies to ALL agents in ALL Telegram chats.
