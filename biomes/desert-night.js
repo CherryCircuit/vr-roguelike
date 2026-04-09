@@ -178,6 +178,7 @@ export function buildDesertNightScene(group, deps) {
       segment.position.y = currentY + segmentHeight / 2;
       segment.castShadow = true;  // Cacti cast shadows
       segment.receiveShadow = true;
+      segment.frustumCulled = false; // Fix #9: prevent cacti from disappearing when looking up
       cactusGroup.add(segment);
       // Pink edge outline matching dune crests
       const segEdgeGeo = new THREE.EdgesGeometry(cactusGeoCache[geoKey], 14);
@@ -188,6 +189,7 @@ export function buildDesertNightScene(group, deps) {
       );
       segOutline.name = `biome-desert-cactus-${cactusIndex}-body-outline-${i}`;
       segOutline.position.copy(segment.position);
+      segOutline.frustumCulled = false; // Fix #9: prevent cactus outlines from disappearing
       cactusGroup.add(segOutline);
       currentY += segmentHeight;
     }
@@ -209,6 +211,7 @@ export function buildDesertNightScene(group, deps) {
       hArm.rotation.z = Math.PI / 2;
       hArm.position.set(side * armLength / 2, armY, 0);
       hArm.castShadow = true;
+      hArm.frustumCulled = false; // Fix #9: prevent cactus arms from disappearing
       cactusGroup.add(hArm);
       const hArmEdgeGeo = new THREE.EdgesGeometry(cactusGeoCache[hArmKey], 14);
       hArmEdgeGeo.name = `biome-desert-cactus-${cactusIndex}-arm-h-edges-${a}`;
@@ -219,6 +222,7 @@ export function buildDesertNightScene(group, deps) {
       hArmOutline.name = `biome-desert-cactus-${cactusIndex}-arm-h-outline-${a}`;
       hArmOutline.position.copy(hArm.position);
       hArmOutline.rotation.copy(hArm.rotation);
+      hArmOutline.frustumCulled = false; // Fix #9: prevent arm outlines from disappearing
       cactusGroup.add(hArmOutline);
 
       // Vertical part (cached geometry)
@@ -231,6 +235,7 @@ export function buildDesertNightScene(group, deps) {
       vArm.name = `desert-cactus-${cactusIndex}-arm-v-${a}`;
       vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
       vArm.castShadow = true;
+      vArm.frustumCulled = false; // Fix #9: prevent vertical cactus arms from disappearing
       cactusGroup.add(vArm);
       const vArmEdgeGeo = new THREE.EdgesGeometry(cactusGeoCache[vArmKey], 14);
       vArmEdgeGeo.name = `biome-desert-cactus-${cactusIndex}-arm-v-edges-${a}`;
@@ -240,6 +245,7 @@ export function buildDesertNightScene(group, deps) {
       );
       vArmOutline.name = `biome-desert-cactus-${cactusIndex}-arm-v-outline-${a}`;
       vArmOutline.position.copy(vArm.position);
+      vArmOutline.frustumCulled = false; // Fix #9: prevent vertical arm outlines from disappearing
       cactusGroup.add(vArmOutline);
     }
 
@@ -334,9 +340,10 @@ export function buildDesertNightScene(group, deps) {
   const moonGroup = new THREE.Group();
   moonGroup.name = 'desert-moon-group';
   const moonGeometry = new THREE.IcosahedronGeometry(8, 2);
-  const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xfffef8 });
+  const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xaaaaaa });
   const moon = new THREE.Mesh(moonGeometry, moonMaterial);
   moon.name = 'desert-moon';
+  moon.frustumCulled = false; // Fix #9: prevent disappearing when looking up
   moonGroup.add(moon);
   registerFadeMaterial(moonMaterial);
   // Fake glow via canvas radial gradient (same pattern as synthwave-valley sun glow)
@@ -357,6 +364,7 @@ export function buildDesertNightScene(group, deps) {
   const moonGlow = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), moonGlowMat);
   moonGlow.name = 'desert-moon-fake-glow';
   moonGlow.frustumCulled = false;
+  moonGlow.lookAt(0, 0, 0); // Fix #7: face player position when created
   moonGroup.add(moonGlow);
   registerFadeMaterial(moonGlowMat);
   moonGroup.position.set(-45, 35, -60);

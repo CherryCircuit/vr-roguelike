@@ -50,7 +50,7 @@ function getEnemyTypes(level) {
   if (level >= 13) types.push('jelly');
   if (level >= 14) types.push('conductor');
   if (level >= 16) types.push('mirror_knight');
-  if (level >= 17) types.push('phase_wraith');
+  if (level >= 17) types.push('mortar');
   return types;
 }
 

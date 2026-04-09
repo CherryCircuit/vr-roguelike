@@ -166,8 +166,8 @@ export function startBossDeathCinematic(boss) {
   if (typeof window !== 'undefined' && window.playBossDeath) {
     window.playBossDeath();
   }
-  // Play skull boss death knell if applicable
-  if (deps.playSkullDeathKnell && boss && boss.def && boss.def.behavior === 'skull') {
+  // Play death knell for all bosses
+  if (deps.playSkullDeathKnell) {
     deps.playSkullDeathKnell();
   }
   if (deps.stopMusic) deps.stopMusic();

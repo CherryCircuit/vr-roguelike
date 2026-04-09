@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getStasisSlowFactor } from './stasis.js';
-import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound, playBossProjectileFiredSound, playBossProjectileAlertSound, playPhaseWraithCharge, playSkullPhaseSound, playSkullHandGrowlSound, playSkullDeathKnell, playSkullLaughSound } from './audio.js';
+import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound, playBossProjectileFiredSound, playBossProjectileAlertSound, playPhaseWraithCharge as playMortarCharge, playSkullPhaseSound, playSkullHandGrowlSound, playSkullDeathKnell, playSkullLaughSound } from './audio.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
@@ -109,6 +109,7 @@ const _emissiveGreen = new THREE.Color(0x00ffaa);
 const _emissivePurple = new THREE.Color(0x220033);
 const _emissivePink = new THREE.Color(0xff66cc);
 const _emissiveViolet = new THREE.Color(0x8844ff);
+const _emissiveRed = new THREE.Color(0xff0000);
 const _emissiveBlack = new THREE.Color(0x000000);
 const _emissiveWhite = new THREE.Color(0xffffff);
 const _emissiveAmber = new THREE.Color(0xffaa00);
@@ -143,10 +144,11 @@ const PATTERNS = {
     '1',
     '1',
   ],
-  wraith: [
-    '1',
-    '1',
-    '1',
+  mortar: [
+    '.1.',
+    '1.1',
+    '.1.',
+    '.1.',
   ],
 };
 
@@ -289,23 +291,23 @@ const ENEMY_DEFS = {
     conductorHoldDistance: 6.5,
     conductorArcCooldown: 0.25,
   },
-  phase_wraith: {
-    pattern: parsePattern(PATTERNS.wraith),
-    voxelSize: 0.22,
-    baseHp: 130,
-    baseSpeed: 1.6,
-    color: 0x8844ff,
+  mortar: {
+    pattern: parsePattern(PATTERNS.mortar),
+    voxelSize: 0.24,
+    baseHp: 30,
+    baseSpeed: 0.6,
+    color: 0xff0000,
     depth: 1,
     scoreValue: 28,
     hitboxRadius: 0.45,
     telegraphType: 'flash',
-    isPhase: true,
-    phaseStunDuration: 0.35,
-    phaseVanishDelay: 0.5,
-    phaseReappearDelay: 1.2,
-    phaseSpawnCooldown: 6.0,
-    phasePreferredDistMin: 5.5,
-    phasePreferredDistMax: 9.5,
+    isMortar: true,
+    mortarTelegraphDuration: 2.0,
+    mortarAttackCooldown: 4.0,
+    mortarArcHeight: 2.0,
+    mortarStrafeSpeed: 0.8,
+    mortarPreferredDistMin: 8.0,
+    mortarPreferredDistMax: 14.0,
   },
 };
 
@@ -1080,21 +1082,21 @@ function releaseAllConductorInstances() {
   if (window?.debugInstancing) console.log('[conductor-instance] All slots released (clearAllEnemies)');
 }
 
-// ── Phase Wraith enemy InstancedMesh pool ───────────────────
-// One InstancedMesh for all 'phase_wraith' enemies = 1 draw call instead of N.
-const MAX_PHASE_WRAITH_INSTANCES = 15;
-const phaseWraithInstancePool = {
+// ── Mortar enemy InstancedMesh pool ───────────────────
+// One InstancedMesh for all 'mortar' enemies = 1 draw call instead of N.
+const MAX_MORTAR_INSTANCES = 15;
+const mortarInstancePool = {
   mesh: null,
   freeIndices: new Set(),
   initialized: false,
 };
-const _phaseWraithDummyMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
-const _phaseWraithColorTmp = new THREE.Color();
+const _mortarDummyMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+const _mortarColorTmp = new THREE.Color();
 
-function initPhaseWraithInstancePool() {
-  if (phaseWraithInstancePool.initialized || !sceneRef) return;
+function initMortarInstancePool() {
+  if (mortarInstancePool.initialized || !sceneRef) return;
 
-  const def = ENEMY_DEFS.phase_wraith;
+  const def = ENEMY_DEFS.mortar;
   const geo = getGeo(def.voxelSize);
   const rows = def.pattern.length;
   const cols = def.pattern[0].length;
@@ -1118,81 +1120,81 @@ function initPhaseWraithInstancePool() {
     }
   }
 
-  let phaseWraithGeo;
+  let mortarGeo;
   if (geometries.length > 0) {
-    phaseWraithGeo = mergeGeometries(geometries);
+    mortarGeo = mergeGeometries(geometries);
     geometries.forEach(g => g.dispose());
   }
-  if (!phaseWraithGeo) {
-    console.warn('[phase_wraith-instance] Failed to build merged geometry, falling back to box');
-    phaseWraithGeo = new THREE.BoxGeometry(def.voxelSize, def.voxelSize, def.voxelSize);
+  if (!mortarGeo) {
+    console.warn('[mortar-instance] Failed to build merged geometry, falling back to box');
+    mortarGeo = new THREE.BoxGeometry(def.voxelSize, def.voxelSize, def.voxelSize);
   }
 
-  const phaseWraithMat = new THREE.MeshBasicMaterial({
+  const mortarMat = new THREE.MeshBasicMaterial({
     transparent: true,
     opacity: 0.7,
     depthWrite: false,
     fog: false,
   });
 
-  const im = new THREE.InstancedMesh(phaseWraithGeo, phaseWraithMat, MAX_PHASE_WRAITH_INSTANCES);
+  const im = new THREE.InstancedMesh(mortarGeo, mortarMat, MAX_MORTAR_INSTANCES);
   im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   im.renderOrder = 10;
   im.count = 0;
   im.frustumCulled = false;
 
-  for (let i = 0; i < MAX_PHASE_WRAITH_INSTANCES; i++) {
-    im.setMatrixAt(i, _phaseWraithDummyMatrix);
+  for (let i = 0; i < MAX_MORTAR_INSTANCES; i++) {
+    im.setMatrixAt(i, _mortarDummyMatrix);
   }
   im.instanceMatrix.needsUpdate = true;
 
   sceneRef.add(im);
-  phaseWraithInstancePool.mesh = im;
-  phaseWraithInstancePool.initialized = true;
+  mortarInstancePool.mesh = im;
+  mortarInstancePool.initialized = true;
 
-  if (window?.debugInstancing) console.log(`[phase_wraith-instance] Pool initialized: ${MAX_PHASE_WRAITH_INSTANCES} slots`);
+  if (window?.debugInstancing) console.log(`[mortar-instance] Pool initialized: ${MAX_MORTAR_INSTANCES} slots`);
 }
 
-function acquirePhaseWraithInstance() {
-  if (!phaseWraithInstancePool.initialized) return null;
-  const pool = phaseWraithInstancePool;
+function acquireMortarInstance() {
+  if (!mortarInstancePool.initialized) return null;
+  const pool = mortarInstancePool;
 
   let instanceId;
   if (pool.freeIndices.size > 0) {
     instanceId = pool.freeIndices.values().next().value;
     pool.freeIndices.delete(instanceId);
-  } else if (pool.mesh.count < MAX_PHASE_WRAITH_INSTANCES) {
+  } else if (pool.mesh.count < MAX_MORTAR_INSTANCES) {
     instanceId = pool.mesh.count;
     pool.mesh.count = instanceId + 1;
   } else {
-    if (window?.debugInstancing) console.warn('[phase_wraith-instance] Pool exhausted! Falling back to individual mesh.');
+    if (window?.debugInstancing) console.warn('[mortar-instance] Pool exhausted! Falling back to individual mesh.');
     return null;
   }
 
   return { instanceId, pool };
 }
 
-function releasePhaseWraithInstance(instanceId) {
-  if (!phaseWraithInstancePool.initialized) return;
-  const pool = phaseWraithInstancePool;
+function releaseMortarInstance(instanceId) {
+  if (!mortarInstancePool.initialized) return;
+  const pool = mortarInstancePool;
 
-  pool.mesh.setMatrixAt(instanceId, _phaseWraithDummyMatrix);
+  pool.mesh.setMatrixAt(instanceId, _mortarDummyMatrix);
   pool.mesh.instanceMatrix.needsUpdate = true;
   pool.freeIndices.add(instanceId);
 }
 
-function releaseAllPhaseWraithInstances() {
-  if (!phaseWraithInstancePool.initialized) return;
-  const pool = phaseWraithInstancePool;
+function releaseAllMortarInstances() {
+  if (!mortarInstancePool.initialized) return;
+  const pool = mortarInstancePool;
 
   for (let i = 0; i < pool.mesh.count; i++) {
-    pool.mesh.setMatrixAt(i, _phaseWraithDummyMatrix);
+    pool.mesh.setMatrixAt(i, _mortarDummyMatrix);
   }
   pool.mesh.instanceMatrix.needsUpdate = true;
   pool.mesh.count = 0;
   pool.freeIndices.clear();
 
-  if (window?.debugInstancing) console.log('[phase_wraith-instance] All slots released (clearAllEnemies)');
+  if (window?.debugInstancing) console.log('[mortar-instance] All slots released (clearAllEnemies)');
 }
 
 // ── Mirror Knight enemy InstancedMesh pool ──────────────────
@@ -2320,8 +2322,8 @@ export function initEnemies(scene) {
   // Initialize conductor enemy InstancedMesh pool
   initConductorInstancePool();
 
-  // Initialize phase_wraith enemy InstancedMesh pool
-  initPhaseWraithInstancePool();
+  // Initialize mortar enemy InstancedMesh pool
+  initMortarInstancePool();
 
   // Initialize mirror_knight enemy InstancedMesh pool
   initMirrorKnightInstancePool();
@@ -2483,12 +2485,12 @@ export function spawnEnemy(type, position, levelConfig) {
     // If pool exhausted, fall through to normal path
   }
 
-  // ── Phase Wraith enemy InstancedMesh path ──
-  let useInstancedPhaseWraith = false;
-  if (type === 'phase_wraith') {
-    const instance = acquirePhaseWraithInstance();
+  // ── Mortar enemy InstancedMesh path ──
+  let useInstancedMortar = false;
+  if (type === 'mortar') {
+    const instance = acquireMortarInstance();
     if (instance) {
-      useInstancedPhaseWraith = true;
+      useInstancedMortar = true;
       group.userData.instanceId = instance.instanceId;
       group.userData.instancePool = instance.pool;
 
@@ -2499,7 +2501,7 @@ export function spawnEnemy(type, position, levelConfig) {
       instance.pool.mesh.instanceMatrix.needsUpdate = true;
 
       // Set initial instance color
-      instance.pool.mesh.setColorAt(instance.instanceId, _phaseWraithColorTmp.setHex(def.color));
+      instance.pool.mesh.setColorAt(instance.instanceId, _mortarColorTmp.setHex(def.color));
       if (instance.pool.mesh.instanceColor) instance.pool.mesh.instanceColor.needsUpdate = true;
     }
     // If pool exhausted, fall through to normal path
@@ -2530,7 +2532,7 @@ export function spawnEnemy(type, position, levelConfig) {
   // For non-instanced basic/fast/swarm/tank and all other non-tank, non-jelly enemies,
   // merge voxel geometries into a single mesh
   const useInstanced = useInstancedBasic || useInstancedFast || useInstancedSwarm || useInstancedTank ||
-                       useInstancedConductor || useInstancedPhaseWraith || useInstancedMirrorKnight;
+                       useInstancedConductor || useInstancedMortar || useInstancedMirrorKnight;
   if (!useInstanced && !isTank && !def.isJelly) {
     const geometries = [];
     for (let d = 0; d < def.depth; d++) {
@@ -2718,6 +2720,19 @@ export function spawnEnemy(type, position, levelConfig) {
     phaseCharging: false,
     phasePreferredDistMin: def.phasePreferredDistMin || 5.5,
     phasePreferredDistMax: def.phasePreferredDistMax || 9.5,
+
+    isMortar: def.isMortar || false,
+    mortarTelegraphDuration: def.mortarTelegraphDuration || 2.0,
+    mortarAttackCooldown: def.mortarAttackCooldown || 4.0,
+    mortarAttackTimer: def.mortarAttackCooldown ? def.mortarAttackCooldown * 0.5 : 2.0,
+    mortarArcHeight: def.mortarArcHeight || 2.0,
+    mortarStrafeSpeed: def.mortarStrafeSpeed || 0.8,
+    mortarPreferredDistMin: def.mortarPreferredDistMin || 8.0,
+    mortarPreferredDistMax: def.mortarPreferredDistMax || 14.0,
+    mortarStrafeDir: Math.random() < 0.5 ? -1 : 1,
+    mortarTelegraphTimer: 0,
+    mortarTelegraphing: false,
+    mortarTelegraphParticles: [],
   };
 
   // Cache material references to avoid traverse() in the update hot path
@@ -2780,7 +2795,7 @@ export function updateEnemies(dt, now, playerPos) {
     const stasisSlow = getStasisSlowFactor(e.mesh.position);
     speedMod *= stasisSlow;
 
-    if (!e.isMirror && !e.isConductor && !e.isPhase) {
+    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar) {
       e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
     }
 
@@ -3155,89 +3170,101 @@ export function updateEnemies(dt, now, playerPos) {
       }
     }
 
-    // Phase Wraith: appears midfield, spawns swarm, blinks out when shot
-    if (e.isPhase) {
-      if (e.phaseHidden) {
-        e.phaseReappearTimer -= dt;
-        if (e.phaseReappearTimer <= 0) {
-          e.phaseHidden = false;
-          e.phaseReappearTimer = 0;
-          const distTarget = e.phasePreferredDistMin + Math.random() * (e.phasePreferredDistMax - e.phasePreferredDistMin);
-          const angle = (Math.random() - 0.5) * Math.PI * 0.8;
-          // PERFORMANCE: Use pre-allocated vector instead of _dir.clone() or new THREE.Vector3
-          const baseDir = _dir.lengthSq() > 0.0001 ? _enemyScratch2.copy(_dir) : _enemyScratch2.set(0, 0, -1);
-          // Use another scratch for the axis to avoid allocation
-          _enemyScratch3.set(0, 1, 0);
-          baseDir.applyAxisAngle(_enemyScratch3, angle);
-          e.mesh.position.set(
-            playerPos.x + baseDir.x * distTarget,
-            1.2 + Math.random() * 1.2,
-            playerPos.z + baseDir.z * distTarget
-          );
-          clampPositionToFrontArc(e.mesh.position, playerPos, e.phasePreferredDistMin, e.phasePreferredDistMax, 120);
-          e.mesh.visible = true;
-          e.phaseBaseY = e.mesh.position.y;
-          if (typeof window !== 'undefined' && window.playPhaseWraithAppear) {
-            window.playPhaseWraithAppear();
-          }
-        }
-      } else {
-        if (e.phaseStunTimer > 0) {
-          e.phaseStunTimer -= dt;
-        } else {
-          if (dist < e.phasePreferredDistMin) {
-            e.mesh.position.addScaledVector(_dir, -e.speed * 0.4 * speedMod * dt);
-          } else if (dist > e.phasePreferredDistMax) {
-            e.mesh.position.addScaledVector(_dir, e.speed * 0.4 * speedMod * dt);
-          }
-          // Keep phase wraith in front arc after movement
-          clampPositionToFrontArc(e.mesh.position, playerPos, e.phasePreferredDistMin, e.phasePreferredDistMax, 120);
-        }
+    // Mortar: slow strafing enemy that telegraphs and lobs projectiles
+    if (e.isMortar) {
+      // Slow horizontal strafe left and right
+      const strafeAmount = e.mortarStrafeSpeed * e.mortarStrafeDir * speedMod * dt;
+      // Strafe perpendicular to direction toward player
+      _enemyScratch2.set(-_dir.z, 0, _dir.x); // perpendicular to forward
+      e.mesh.position.addScaledVector(_enemyScratch2, strafeAmount);
 
-        if (e.phaseVanishTimer > 0) {
-          e.phaseVanishTimer -= dt;
-          if (e.phaseVanishTimer <= 0) {
-            e.phaseHidden = true;
-            e.phaseReappearTimer = e.phaseReappearDelay;
-            e.mesh.visible = false;
-          }
-        }
+      // Reverse direction periodically via sine wave
+      e.mortarStrafeDir = Math.sign(Math.sin(now * 0.001 + e.id * 2.3));
+      if (e.mortarStrafeDir === 0) e.mortarStrafeDir = 1;
 
-        // Floating bob animation - gentle hover oscillation
-        if (e.phaseBaseY === undefined || e.phaseBaseY === null) {
-          e.phaseBaseY = e.mesh.position.y;
-        }
-        e.mesh.position.y = e.phaseBaseY + Math.sin(now * 0.002 + e.id * 1.7) * 0.25;
-
-        // Charge-up telegraph before spawning swarm
-        if (e.phaseSpawnTimer <= 1.0 && e.phaseSpawnTimer > 0 && !e.phaseCharging) {
-          e.phaseCharging = true;
-          playPhaseWraithCharge();
-        }
-        e.phaseSpawnTimer -= dt;
-        if (e.phaseSpawnTimer <= 0) {
-          e.phaseSpawnTimer = e.phaseSpawnCooldown;
-          e.phaseCharging = false;
-          const spawnPos = e.mesh.position.clone();
-          spawnPos.x += (Math.random() - 0.5) * 1.2;
-          spawnPos.z += (Math.random() - 0.5) * 1.2;
-          spawnEnemy('swarm', spawnPos, e.levelConfig);
-          if (typeof window !== 'undefined' && window.playPhaseWraithSpawn) {
-            window.playPhaseWraithSpawn();
-          }
-        }
+      // Maintain distance in preferred range
+      if (dist < e.mortarPreferredDistMin) {
+        e.mesh.position.addScaledVector(_dir, -e.speed * 0.5 * speedMod * dt);
+      } else if (dist > e.mortarPreferredDistMax) {
+        e.mesh.position.addScaledVector(_dir, e.speed * 0.5 * speedMod * dt);
       }
 
-      const targetOpacity = e.phaseHidden ? 0.05 : (e.phaseStunTimer > 0 ? 0.35 : 0.85);
-      // Charge-up pulsing emissive: ramps up during the last second before spawn
-      const chargeIntensity = (e.phaseCharging && !e.phaseHidden && e.phaseSpawnTimer > 0 && e.phaseSpawnTimer <= 1.0)
-        ? 0.5 + 0.5 * Math.sin(now * 0.015) : 0;
-      for (const mat of e._cachedMaterials) {
-        mat.opacity = targetOpacity;
-        setMaterialEmissiveSafe(mat, _emissiveViolet, e.phaseHidden ? 0.2 : (0.5 + chargeIntensity));
+      // Keep mortar in front arc
+      clampPositionToFrontArc(e.mesh.position, playerPos, e.mortarPreferredDistMin, e.mortarPreferredDistMax, 120);
+
+      // Attack cycle: telegraph then fire lobbed projectile
+      e.mortarAttackTimer -= dt;
+
+      if (e.mortarAttackTimer <= e.mortarTelegraphDuration && !e.mortarTelegraphing) {
+        // Start telegraph
+        e.mortarTelegraphing = true;
+        e.mortarTelegraphTimer = e.mortarTelegraphDuration;
+        playMortarCharge(); // Charge-up sound during telegraph
+      }
+
+      if (e.mortarTelegraphing) {
+        e.mortarTelegraphTimer -= dt;
+
+        // Telegraph visual: energy sucking particles
+        const telegraphProgress = 1.0 - (e.mortarTelegraphTimer / e.mortarTelegraphDuration);
+        const pulseIntensity = 0.3 + 0.7 * telegraphProgress * (0.5 + 0.5 * Math.sin(now * 0.02));
+
+        for (const mat of e._cachedMaterials) {
+          mat.opacity = 0.7 + 0.3 * telegraphProgress;
+          setMaterialEmissiveSafe(mat, _emissiveRed, pulseIntensity);
+        }
+
+        // Spawn energy-gathering particles during telegraph
+        if (e.mortarTelegraphParticles.length < 8 && Math.random() < 0.3) {
+          const particleOffset = new THREE.Vector3(
+            (Math.random() - 0.5) * 2.0,
+            (Math.random() - 0.5) * 2.0,
+            (Math.random() - 0.5) * 2.0
+          );
+          const particle = {
+            pos: e.mesh.position.clone().add(particleOffset),
+            vel: e.mesh.position.clone().sub(e.mesh.position.clone().add(particleOffset)).normalize().multiplyScalar(2.0),
+            life: 0.5 + Math.random() * 0.5,
+            maxLife: 0.5 + Math.random() * 0.5,
+          };
+          e.mortarTelegraphParticles.push(particle);
+        }
+
+        // Update telegraph particles (suck toward mortar)
+        for (let pi = e.mortarTelegraphParticles.length - 1; pi >= 0; pi--) {
+          const p = e.mortarTelegraphParticles[pi];
+          p.life -= dt;
+          const toCenter = e.mesh.position.clone().sub(p.pos);
+          p.vel.add(toCenter.normalize().multiplyScalar(8.0 * dt));
+          p.pos.add(p.vel.clone().multiplyScalar(dt));
+          if (p.life <= 0) {
+            e.mortarTelegraphParticles.splice(pi, 1);
+          }
+        }
+
+        // Fire when telegraph completes
+        if (e.mortarTelegraphTimer <= 0) {
+          e.mortarTelegraphing = false;
+          e.mortarAttackTimer = e.mortarAttackCooldown;
+          e.mortarTelegraphParticles.length = 0;
+
+          // Fire lobbed projectile at player
+          const fromPos = e.mesh.position.clone();
+          fromPos.y += 0.5; // Fire from slightly above the mortar
+          const targetPos = playerPos.clone();
+          spawnMortarProjectile(fromPos, targetPos, e.mortarArcHeight);
+          playBossProjectileFiredSound(); // Skull Boss lob shot sound
+        }
+      } else {
+        // Idle visual
+        for (const mat of e._cachedMaterials) {
+          mat.opacity = 0.7;
+          setMaterialEmissiveSafe(mat, _emissiveRed, 0.2 + 0.1 * Math.sin(now * 0.003 + e.id));
+        }
       }
     }
 
+    // Phase Wraith legacy support (removed, replaced by Mortar)
     if (e.isPhase && e.phaseHidden) {
       continue;
     }
@@ -3507,9 +3534,9 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
     releaseConductorInstance(e.mesh.userData.instanceId);
   }
 
-  // Release InstancedMesh slot for phase_wraith enemies
-  if (e.type === 'phase_wraith' && e.mesh.userData.instanceId !== undefined) {
-    releasePhaseWraithInstance(e.mesh.userData.instanceId);
+  // Release InstancedMesh slot for mortar enemies
+  if (e.type === 'mortar' && e.mesh.userData.instanceId !== undefined) {
+    releaseMortarInstance(e.mesh.userData.instanceId);
   }
 
   // Release InstancedMesh slot for mirror_knight enemies
@@ -3642,6 +3669,17 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
     if (e.isSpider) voxelCount = 3;
     if (e.isPhase) voxelCount = Math.floor(Math.random() * 4) + 5; // 5-8 voxels for phase wraith
 
+    // Mini-boss types get higher cap (conductor, mirror knight, phase wraith, etc.)
+    const isMiniboss = e.isConductor || e.isMirror || e.isPhase || e.isMortar || e.isBlackhole;
+    if (isMiniboss) {
+      voxelCount = Math.max(voxelCount, 6); // At least 6 for mini-bosses
+    }
+
+    // Cap by tier: regular 8, mini-boss 15, absolute ceiling 25
+    const tierCap = isMiniboss ? 15 : 8;
+    voxelCount = Math.min(voxelCount, tierCap);
+    voxelCount = Math.min(voxelCount, MAX_DEBRIS); // Absolute ceiling
+
     // spawnVoxelExplosion(pos, color, voxelCount, type, isCritical, isOverkill)
     spawnVoxelExplosion(pos, color.getHex(), voxelCount, e.type, isCritical, isOverkill);
   }
@@ -3720,8 +3758,8 @@ export function clearAllEnemies() {
   // Release all conductor enemy InstancedMesh slots
   releaseAllConductorInstances();
 
-  // Release all phase_wraith enemy InstancedMesh slots
-  releaseAllPhaseWraithInstances();
+  // Release all mortar enemy InstancedMesh slots
+  releaseAllMortarInstances();
 
   // Release all mirror_knight enemy InstancedMesh slots
   releaseAllMirrorKnightInstances();
@@ -4907,6 +4945,10 @@ class SkullHand {
     // Bobbing animation
     this.group.position.y += Math.sin(now * 0.003 + this.handIndex) * 0.15;
     
+    // Horizontal oscillating animation (slow left/right sway)
+    const horizontalPhase = this.handIndex % 2 === 0 ? 0 : Math.PI; // Alternate phase for top/bottom hands
+    this.group.position.x += Math.sin(now * 0.002 + horizontalPhase) * 0.5;
+    
     // Rotate to face player (world direction)
     this.group.getWorldPosition(_scratch);
     _scratch2.copy(playerPos).sub(_scratch);
@@ -4945,10 +4987,10 @@ class SkullHand {
   }
   
   destroy() {
-    // Explosion effect at world position
+    // Explosion effect at world position (3 voxels per turret/hand)
     if (spawnVoxelExplosion) {
       const worldPos = this.group.getWorldPosition(new THREE.Vector3());
-      spawnVoxelExplosion(worldPos, 0xffffff, 12);
+      spawnVoxelExplosion(worldPos, 0xffffff, 3, 'basic', false, false);
     }
     
     // Remove from parent (boss mesh)
@@ -5157,10 +5199,10 @@ class SkullBoss extends Boss {
   createHands() {
     // Create 4 hands positioned around the skull
     const handOffsets = [
-      new THREE.Vector3(-2.5, 0.3, 0.5),   // Left top
-      new THREE.Vector3(-2.5, -0.5, 0.5),  // Left bottom
-      new THREE.Vector3(2.5, 0.3, 0.5),    // Right top
-      new THREE.Vector3(2.5, -0.5, 0.5),   // Right bottom
+      new THREE.Vector3(-4.5, 0.3, 0.5),   // Left top
+      new THREE.Vector3(-4.5, -0.5, 0.5),  // Left bottom
+      new THREE.Vector3(4.5, 0.3, 0.5),    // Right top
+      new THREE.Vector3(4.5, -0.5, 0.5),   // Right bottom
     ];
     
     handOffsets.forEach((offset, idx) => {
@@ -5329,21 +5371,21 @@ class SkullBoss extends Boss {
         return {
           moveSpeed: 1.5,
           shootRate: 1.2,
-          arcHeight: 2.0,
+          arcHeight: 1.0,
           erraticness: 3.0 // Change direction every 3 seconds
         };
       case 2: // 1200-600 HP: Faster, more erratic
         return {
           moveSpeed: 2.5,
           shootRate: 0.8,
-          arcHeight: 2.5,
+          arcHeight: 1.5,
           erraticness: 1.5 // Change direction every 1.5 seconds
         };
       case 3: // 600-0 HP: Very fast, very erratic
         return {
           moveSpeed: 4.0,
           shootRate: 0.5,
-          arcHeight: 3.0,
+          arcHeight: 2.0,
           erraticness: 0.8 // Change direction every 0.8 seconds
         };
       default:
@@ -6220,8 +6262,8 @@ class MinotaurBoss extends Boss {
     this.transitionToPhase = 0;
 
     // Movement state (horizontal XZ plane only)
-    this.moveTimer = 0;
-    this.moveDirection = new THREE.Vector3();
+    this.moveTimer = 10; // Trigger immediate direction pick on first frame
+    this.moveDirection = new THREE.Vector3(1, 0, 0);
     this.fixedY = 1.5;
 
     // Create horns
@@ -6260,7 +6302,10 @@ class MinotaurBoss extends Boss {
 
   updateBehavior(dt, now, playerPos) {
     // Check for phase transitions based on HP
-    const newPhase = this.hp > 1267 ? 1 : this.hp > 634 ? 2 : 3;
+    // Dynamic phase thresholds based on maxHp fractions
+    const phaseThreshold2 = this.maxHp * (2 / 3);
+    const phaseThreshold1 = this.maxHp * (1 / 3);
+    const newPhase = this.hp > phaseThreshold2 ? 1 : this.hp > phaseThreshold1 ? 2 : 3;
 
     if (this.skullPhase === 0) {
       // First frame: enter phase 1
@@ -6310,12 +6355,27 @@ class MinotaurBoss extends Boss {
         this.groundSlam(playerPos);
       }
 
-      // Random horizontal movement (not toward player)
+      // Fast horizontal dodging: direction flips on timer
       this.moveTimer += dt;
       if (this.moveTimer >= phaseConfig.erraticness) {
         this.moveTimer = 0;
-        const angle = Math.random() * Math.PI * 2;
-        this.moveDirection.set(Math.sin(angle), 0, Math.cos(angle));
+        // Pick a new direction perpendicular to the boss→player line
+        // for strafing/dodge-feel, with some randomness
+        const toPlayer = new THREE.Vector3().subVectors(playerPos, this.mesh.position);
+        toPlayer.y = 0;
+        if (toPlayer.lengthSq() > 0.01) toPlayer.normalize();
+        // Perpendicular direction (left or right of player)
+        const perp = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
+        // Flip or randomize direction
+        const side = this.moveDirection.dot(perp) < 0 ? 1 : -1;
+        if (Math.random() < 0.3) {
+          // Occasionally dodge directly toward/away
+          const angle = Math.random() * Math.PI * 2;
+          this.moveDirection.set(Math.sin(angle), 0, Math.cos(angle));
+        } else {
+          // Strafe perpendicular
+          this.moveDirection.copy(perp).multiplyScalar(side);
+        }
       }
       this.mesh.position.addScaledVector(this.moveDirection, phaseConfig.moveSpeed * dt);
     }
@@ -6327,37 +6387,37 @@ class MinotaurBoss extends Boss {
 
   getMinotaurPhaseConfig() {
     switch (this.skullPhase) {
-      case 1: // 1900-1267 HP: Moderate speed, moderate attacks
+      case 1: // Phase 1: Fast lateral dodging
         return {
-          moveSpeed: 1.2,
-          chargeSpeed: 6.0,
+          moveSpeed: 6.0,
+          chargeSpeed: 8.0,
           shardRate: 0.7,
           slamRate: 5.0,
-          erraticness: 3.0
+          erraticness: 0.8
         };
-      case 2: // 1267-634 HP: Faster, more aggressive
+      case 2: // Phase 2: Faster, more aggressive
         return {
-          moveSpeed: 2.2,
-          chargeSpeed: 9.0,
+          moveSpeed: 9.0,
+          chargeSpeed: 12.0,
           shardRate: 0.5,
           slamRate: 3.5,
-          erraticness: 1.5
+          erraticness: 0.5
         };
-      case 3: // 634-0 HP: Very fast, relentless
+      case 3: // Phase 3: Very fast, relentless
         return {
-          moveSpeed: 3.5,
-          chargeSpeed: 12.0,
+          moveSpeed: 13.0,
+          chargeSpeed: 16.0,
           shardRate: 0.35,
           slamRate: 2.5,
-          erraticness: 0.8
+          erraticness: 0.3
         };
       default:
         return {
-          moveSpeed: 1.2,
-          chargeSpeed: 6.0,
+          moveSpeed: 6.0,
+          chargeSpeed: 8.0,
           shardRate: 0.7,
           slamRate: 5.0,
-          erraticness: 3.0
+          erraticness: 0.8
         };
     }
   }
@@ -6835,13 +6895,6 @@ class PrismBoss extends Boss {
   updatePhase2(dt, now, playerPos) {
     const config = this.getPrismPhaseConfig();
 
-    // Check HP threshold for Phase 3
-    if (this.hp <= this.maxHp / 3) {
-      this.startPhaseTransition(2, 3);
-      this.skullPhase = 3;
-      return;
-    }
-
     // Core swap timer
     this.coreSwapTimer += dt;
     if (this.coreSwapTimer >= this.coreSwapRate) {
@@ -6857,9 +6910,8 @@ class PrismBoss extends Boss {
     }
 
     if (this.isMerged) {
-      // During merge: invulnerable, fire ring of projectiles
-      this.mergeTimer += dt;
-      // Merge lasts 3 seconds
+      // During merge: invulnerable, merge lasts 3 seconds from startMerge
+      // mergeTimer was reset to this.mergeRate in startMerge, so check for +3.0
       if (this.mergeTimer >= this.mergeRate + 3.0) {
         this.endMerge();
       }
@@ -7318,49 +7370,88 @@ class PrismBoss extends Boss {
     if (this.transitioning) return { killed: false, immune: true };
 
     // Phase 1: facet targeting
-    if (this.skullPhase === 1 && hitInfo.facetIndex !== undefined) {
-      if (hitInfo.facetIndex !== this.vulnerableFacetIndex) {
+    if (this.skullPhase === 1) {
+      if (hitInfo.facetIndex !== undefined && hitInfo.facetIndex !== this.vulnerableFacetIndex) {
         // Wrong facet: heal boss
         this.hp = Math.min(this.maxHp, this.hp + this.healAmount);
         playSkullHandGrowlSound();
         return { killed: false, healed: true };
       }
-      // Right facet: damage it
-      const facetIdx = hitInfo.facetIndex;
-      this.facetHps[facetIdx] -= amount;
-      if (this.facetHps[facetIdx] <= 0 && this.facets[facetIdx]) {
-        if (this.facets[facetIdx].visible) {
-          this.facets[facetIdx].visible = false;
-          this.facetsDestroyed++;
-          playSkullHandGrowlSound();
-          if (this.facetsDestroyed >= 2) {
-            this.startPhaseTransition(1, 2);
-            this.skullPhase = 2;
+      // Right facet (or non-facet body hit): damage facet + reduce boss HP
+      if (hitInfo.facetIndex === this.vulnerableFacetIndex) {
+        const facetIdx = hitInfo.facetIndex;
+        this.facetHps[facetIdx] -= amount;
+        if (this.facetHps[facetIdx] <= 0 && this.facets[facetIdx]) {
+          if (this.facets[facetIdx].visible) {
+            this.facets[facetIdx].visible = false;
+            this.facetsDestroyed++;
+            playSkullHandGrowlSound();
           }
         }
+      }
+      // Always reduce boss HP in Phase 1 (so health bar depletes)
+      this.hp -= amount;
+      if (this.hp < 0) this.hp = 0;
+
+      // Phase 1 -> 2 transition when enough facets destroyed OR HP drops below 2/3
+      const hpThreshold23 = this.maxHp * (2 / 3);
+      if (this.facetsDestroyed >= 2 || this.hp <= hpThreshold23) {
+        this.startPhaseTransition(1, 2);
+        this.skullPhase = 2;
+      }
+
+      if (this.hp <= 0) {
+        return { killed: true };
       }
       return { killed: false, facetDamaged: true };
     }
 
     // Phase 2: damage goes to boss HP (merge = immune)
-    if (this.skullPhase === 2 && this.isMerged) {
-      return { killed: false, immune: true };
+    if (this.skullPhase === 2) {
+      if (this.isMerged) {
+        return { killed: false, immune: true };
+      }
+      // Apply damage to boss HP
+      this.hp -= amount;
+      if (this.hp < 0) this.hp = 0;
+
+      // Phase 2 -> 3 transition when HP drops below 1/3
+      const hpThreshold13 = this.maxHp * (1 / 3);
+      if (this.hp > 0 && this.hp <= hpThreshold13) {
+        this.startPhaseTransition(2, 3);
+        this.skullPhase = 3;
+      }
+
+      if (this.hp <= 0) {
+        return { killed: true };
+      }
+      return { killed: false };
     }
 
     // Phase 3: check if hitting heal weak points
     if (this.skullPhase === 3 && this.isHealCharging) {
-      // Check if the hit was on a heal weak point
       if (hitInfo.isHealWeakPoint) {
-        // Find the matching weak point
+        // Find the matching weak point by healWeakPointIndex (not array index)
         const wpIndex = hitInfo.healWeakPointIndex;
-        if (wpIndex !== undefined && this.healWeakPoints[wpIndex]) {
-          this.onHealWeakPointHit(this.healWeakPoints[wpIndex]);
+        const wp = this.healWeakPoints.find(w => w.userData.healWeakPointIndex === wpIndex);
+        if (wp) {
+          this.onHealWeakPointHit(wp);
         }
         return { killed: false, healWeakPointHit: true };
       }
     }
 
-    // Default: standard damage
+    // Phase 3 default: standard damage to boss HP
+    if (this.skullPhase === 3) {
+      this.hp -= amount;
+      if (this.hp < 0) this.hp = 0;
+      if (this.hp <= 0) {
+        return { killed: true };
+      }
+      return { killed: false };
+    }
+
+    // Fallback
     return super.takeDamage(amount, hitInfo);
   }
 
@@ -8042,12 +8133,12 @@ const _unitScale = new THREE.Vector3(1, 1, 1);  // Unit scale for initial spawn
 function initBossProjPools() {
   if (bossProjCorePool || !sceneRef) return;
 
-  // Boss projectiles: red spheres (core only, no glow to avoid depth artifacts)
-  const coreGeo = new THREE.SphereGeometry(0.12, 8, 8);
+  // Boss projectiles: bright red-orange spheres (core only, no glow to avoid depth artifacts)
+  const coreGeo = new THREE.SphereGeometry(0.18, 8, 8);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xff0000,
+    color: 0xff4400,
     transparent: true,
-    opacity: 0.75,
+    opacity: 0.9,
     depthWrite: false,
     depthTest: true,
   });
@@ -8130,6 +8221,11 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
 
   // Initialize pools if needed (called once on first spawn)
   initBossProjPools();
+
+  // Ensure pool is visible (clearBossProjectiles hides it between levels)
+  if (bossProjCorePool && !bossProjCorePool.visible) {
+    bossProjCorePool.visible = true;
+  }
 
   // Acquire an instance slot
   const idx = acquireBossProjIndex();
@@ -8248,6 +8344,101 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
 // Convenience wrapper for lobbed projectiles (skull phase eye shots)
 export function spawnBossLobbedProjectile(fromPos, targetPos, arcHeight = 3.5) {
   return spawnBossProjectile(fromPos, targetPos, true, arcHeight);
+}
+
+// Mortar enemy lobbed projectile (works without active boss)
+export function spawnMortarProjectile(fromPos, targetPos, arcHeight = 2.0) {
+  // Initialize pools if needed
+  initBossProjPools();
+
+  if (bossProjCorePool && !bossProjCorePool.visible) {
+    bossProjCorePool.visible = true;
+  }
+
+  const idx = acquireBossProjIndex();
+  if (idx < 0) return;
+
+  // Lobbed trajectory calculation
+  const horizontalDir = new THREE.Vector3(
+    targetPos.x - fromPos.x,
+    0,
+    targetPos.z - fromPos.z
+  );
+  const horizontalDist = horizontalDir.length();
+  if (horizontalDist > 0.001) horizontalDir.normalize();
+
+  const gravity = 9.8;
+  const heightDiff = targetPos.y - fromPos.y;
+  let flightTime = Math.max(0.8, horizontalDist / 6.0);
+  let initialUpSpeed = (heightDiff + 0.5 * gravity * flightTime * flightTime) / flightTime;
+
+  const peakAboveLaunch = (initialUpSpeed * initialUpSpeed) / (2 * gravity);
+  if (peakAboveLaunch < arcHeight) {
+    const minV0y = Math.sqrt(2 * gravity * arcHeight);
+    const a = 0.5 * gravity;
+    const b = -heightDiff;
+    const c = -(minV0y * minV0y) / (2 * gravity);
+    const discriminant = b * b - 4 * a * c;
+    if (discriminant >= 0) {
+      const t1 = (-b + Math.sqrt(discriminant)) / (2 * a);
+      const t2 = (-b - Math.sqrt(discriminant)) / (2 * a);
+      flightTime = Math.max(t1, t2);
+      if (flightTime <= 0) flightTime = Math.min(t1, t2);
+      if (flightTime <= 0) flightTime = horizontalDist / 6.0;
+    }
+    initialUpSpeed = (heightDiff + 0.5 * gravity * flightTime * flightTime) / flightTime;
+  }
+
+  const velocity = new THREE.Vector3(
+    horizontalDir.x * (horizontalDist / flightTime),
+    initialUpSpeed,
+    horizontalDir.z * (horizontalDist / flightTime)
+  );
+
+  const data = bossProjData[idx];
+  if (!data) return;
+
+  data.position.copy(fromPos);
+  data.velocity.copy(velocity);
+  data.homingStrength = 0;
+  data.wigglePhase = 0;
+  data.wiggleAmplitude = 0;
+  data.damage = 1;
+  data.explosionDamage = 0;
+  data.explosionRadius = 0.3;
+  data.hitRadius = 0.3;
+  data.lobbed = true;
+  data.gravity = gravity;
+
+  _bossProjMatrix.compose(fromPos, _identityQuat, _unitScale);
+  bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
+  bossProjCorePool.instanceMatrix.needsUpdate = true;
+
+  // Set color to red for mortar projectiles
+  bossProjCorePool.setColorAt(idx, _mortarColorTmp.setHex(0xff0000));
+  if (bossProjCorePool.instanceColor) bossProjCorePool.instanceColor.needsUpdate = true;
+
+  const proxy = {
+    position: data.position,
+    userData: { isBossProjectile: true, isMortarProjectile: true },
+  };
+  bossProjectiles.push({
+    _instIdx: idx,
+    mesh: proxy,
+    createdAt: performance.now(),
+    lifetime: 6000,
+    velocity: data.velocity,
+    homingStrength: 0,
+    wigglePhase: 0,
+    damage: 1,
+    explosionDamage: 0,
+    explosionRadius: 0.3,
+    hitRadius: 0.3,
+    wiggleAmplitude: 0,
+    hitPlayer: false,
+    lobbed: true,
+    gravity: gravity,
+  });
 }
 
 export function updateBossProjectiles(dt, now, playerPos) {

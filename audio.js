@@ -19,8 +19,76 @@ function shouldStreamRemoteAudio() {
 function getAudioContext() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Create SFX master gain node for volume control
+    sfxMasterGain = audioCtx.createGain();
+    sfxMasterGain.gain.value = sfxVolume;
+    sfxMasterGain.connect(audioCtx.destination);
   }
   return audioCtx;
+}
+
+// ── Volume Settings (persisted to localStorage) ──────────
+const SETTINGS_KEY = 'vr-roguelike-settings';
+let sfxMasterGain = null;
+let sfxVolume = 1.0;   // 0-1, default 100%
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (typeof s.musicVolume === 'number') {
+        musicVolume = s.musicVolume / 100;
+      }
+      if (typeof s.sfxVolume === 'number') {
+        sfxVolume = s.sfxVolume / 100;
+      }
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      musicVolume: Math.round(musicVolume * 100),
+      sfxVolume: Math.round(sfxVolume * 100),
+    }));
+  } catch (e) { /* ignore */ }
+}
+
+// loadSettings() is called after musicVolume is declared below
+
+export function getMusicVolume() {
+  return Math.round(musicVolume * 100);
+}
+
+export function getSFXVolume() {
+  return Math.round(sfxVolume * 100);
+}
+
+export function setMusicVolume(pct) {
+  pct = Math.max(0, Math.min(100, Math.round(pct / 5) * 5));
+  musicVolume = pct / 100;
+  if (currentMusic) {
+    currentMusic.volume = musicVolume;
+  }
+  saveSettings();
+  return pct;
+}
+
+export function setSFXVolume(pct) {
+  pct = Math.max(0, Math.min(100, Math.round(pct / 5) * 5));
+  sfxVolume = pct / 100;
+  if (sfxMasterGain) {
+    sfxMasterGain.gain.value = sfxVolume;
+  }
+  saveSettings();
+  return pct;
+}
+
+// Returns the master SFX gain node (or destination if not yet created)
+function getSfxOutput() {
+  return sfxMasterGain || getAudioContext().destination;
 }
 
 function resumeAudioContext() {
@@ -60,7 +128,7 @@ export function playShoothSound() {
   gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
   osc.start(t);
   osc.stop(t + duration);
 
@@ -74,7 +142,7 @@ export function playShoothSound() {
     gain2.gain.setValueAtTime(0.06, t);
     gain2.gain.exponentialRampToValueAtTime(0.01, t + duration);
     osc2.connect(gain2);
-    gain2.connect(ctx.destination);
+    gain2.connect(getSfxOutput());
     osc2.start(t);
     osc2.stop(t + duration);
   }
@@ -95,7 +163,7 @@ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIn
     gain.gain.setValueAtTime(0.075, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(getSfxOutput());
     osc.start(t);
     osc.stop(t + duration);
   } catch (e) {
@@ -156,7 +224,7 @@ export function startChargeSound(handIndex = 0) {
   // Main oscillator path
   mainOsc.connect(filter);
   filter.connect(mainGain);
-  mainGain.connect(ctx.destination);
+  mainGain.connect(getSfxOutput());
 
   // Start oscillators
   mainOsc.start(t);
@@ -267,7 +335,7 @@ export function playChargeReadySound(handIndex = 0) {
   gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc.stop(t + 0.3);
@@ -295,7 +363,7 @@ export function playChargeFireSound(progress = 0) {
   gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
   osc.start(t);
   osc.stop(t + 0.3);
 
@@ -315,7 +383,7 @@ export function playChargeFireSound(progress = 0) {
   noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
 
   noise.connect(noiseGain);
-  noiseGain.connect(ctx.destination);
+  noiseGain.connect(getSfxOutput());
   noise.start(t);
 }
 
@@ -351,7 +419,7 @@ export function playHitSound() {
 
   osc.connect(filter);
   filter.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc.stop(t + duration);
@@ -401,7 +469,7 @@ export function playExplosionSound() {
 
   noise.connect(filter);
   filter.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   noise.start(t);
   noise.stop(t + duration);
@@ -416,7 +484,7 @@ export function playExplosionSound() {
     oscGain.gain.setValueAtTime(0.1, t);
     oscGain.gain.exponentialRampToValueAtTime(0.01, t + duration * 0.8);
     osc.connect(oscGain);
-    oscGain.connect(ctx.destination);
+    oscGain.connect(getSfxOutput());
     osc.start(t);
     osc.stop(t + duration);
   }
@@ -453,7 +521,7 @@ export function playDamageSound() {
 
   noise.connect(noiseFilter);
   noiseFilter.connect(noiseGain);
-  noiseGain.connect(ctx.destination);
+  noiseGain.connect(getSfxOutput());
 
   noise.start(t);
   noise.stop(t + 0.22);
@@ -469,7 +537,7 @@ export function playDamageSound() {
   thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.2); // Extended decay
 
   thumpOsc.connect(thumpGain);
-  thumpGain.connect(ctx.destination);
+  thumpGain.connect(getSfxOutput());
 
   thumpOsc.start(t);
   thumpOsc.stop(t + 0.2);
@@ -485,7 +553,7 @@ export function playDamageSound() {
   crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08); // Extended decay
 
   crackOsc.connect(crackGain);
-  crackGain.connect(ctx.destination);
+  crackGain.connect(getSfxOutput());
 
   crackOsc.start(t);
   crackOsc.stop(t + 0.08);
@@ -521,7 +589,7 @@ export function playEnemyProjectileSound() {
   osc.connect(filter);
   osc2.connect(filter);
   filter.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc2.start(t);
@@ -564,7 +632,7 @@ export function playBossProjectileFiredSound() {
   osc2.connect(filter);
   osc3.connect(filter);
   filter.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc1.start(t);
   osc2.start(t);
@@ -598,7 +666,7 @@ export function playBossProjectileAlertSound() {
 
   osc.connect(filter);
   filter.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc.stop(t + 0.05);
@@ -633,7 +701,7 @@ export function playProjectileWarningSound() {
 
   osc.connect(filter);
   filter.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc.stop(t + 0.16);
@@ -668,7 +736,7 @@ export function playHealSound() {
 
   osc.connect(gain);
   osc2.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc2.start(t);
@@ -691,7 +759,7 @@ export function playFastEnemySpawn() {
   gain.gain.setValueAtTime(0, ctx.currentTime + 0.15);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.15);
@@ -712,10 +780,43 @@ export function playSwarmEnemySpawn() {
   gain.gain.setValueAtTime(0, ctx.currentTime + 0.1);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.1);
+}
+
+// ── Mortar enemy spawn alert (low rumble + ping) ──────────
+export function playMortarEnemySpawn() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sawtooth';
+  osc2.type = 'sine';
+
+  // Low rumble descending + high ping
+  osc.frequency.setValueAtTime(300, t);
+  osc.frequency.exponentialRampToValueAtTime(100, t + 0.2);
+  osc2.frequency.setValueAtTime(800, t);
+  osc2.frequency.setValueAtTime(1000, t + 0.05);
+  osc2.frequency.setValueAtTime(600, t + 0.1);
+
+  gain.gain.setValueAtTime(0.2, t);
+  gain.gain.setValueAtTime(0.15, t + 0.1);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+
+  osc.connect(gain);
+  osc2.connect(gain);
+  gain.connect(getSfxOutput());
+
+  osc.start(t);
+  osc2.start(t);
+  osc.stop(t + 0.3);
+  osc2.stop(t + 0.3);
 }
 
 // ── Swarm proximity alert (more aggressive) ────────────────
@@ -735,7 +836,7 @@ export function playSwarmProximityAlert(pan, intensity) {
 
   osc.connect(gain);
   gain.connect(panner);
-  panner.connect(ctx.destination);
+  panner.connect(getSfxOutput());
 
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.08);
@@ -758,7 +859,7 @@ export function playProximityAlert(pan, intensity) {
 
   osc.connect(gain);
   gain.connect(panner);
-  panner.connect(ctx.destination);
+  panner.connect(getSfxOutput());
 
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.1);
@@ -778,7 +879,7 @@ export function playBasicEnemySpawn() {
   gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
   osc.start();
   osc.stop(ctx.currentTime + 0.1);
 }
@@ -802,7 +903,7 @@ export function playTankEnemySpawn() {
 
   osc.connect(filter);
   filter.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
   osc.start();
   osc.stop(ctx.currentTime + 0.3);
 }
@@ -825,7 +926,7 @@ export function playBossSpawn() {
     gain.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(getSfxOutput());
     osc.start(t);
     osc.stop(t + 1.5);
   });
@@ -851,7 +952,7 @@ export function playBossAlertSound() {
     gain.gain.exponentialRampToValueAtTime(0.01, beepTime + 0.35);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(getSfxOutput());
     osc.start(beepTime);
     osc.stop(beepTime + 0.35);
   }
@@ -871,7 +972,7 @@ export function playMenuClick() {
   gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
   osc.start();
   osc.stop(ctx.currentTime + 0.04);
 }
@@ -887,7 +988,7 @@ export function playMenuHoverSound() {
   gain.gain.setValueAtTime(0.12, t);
   gain.gain.exponentialRampToValueAtTime(0.01, t + 0.04);
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
   osc.start(t);
   osc.stop(t + 0.04);
 }
@@ -906,7 +1007,7 @@ export function playErrorSound() {
   gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
   osc.start();
   osc.stop(ctx.currentTime + 0.2);
 }
@@ -925,7 +1026,7 @@ export function playBuckshotSound() {
   gain.gain.setValueAtTime(0.3, t);
   gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
   osc.start(t);
   osc.stop(t + 0.15);
 
@@ -938,7 +1039,7 @@ export function playBuckshotSound() {
   gain2.gain.setValueAtTime(0.08, t);
   gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
   osc2.connect(gain2);
-  gain2.connect(ctx.destination);
+  gain2.connect(getSfxOutput());
   osc2.start(t);
   osc2.stop(t + 0.05);
 }
@@ -958,7 +1059,7 @@ export function playUpgradeSound() {
   gain.gain.setValueAtTime(0, ctx.currentTime + 0.15);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.15);
@@ -989,7 +1090,7 @@ export function playTingSound() {
 
   osc.connect(gain);
   osc2.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc2.start(t);
@@ -1013,7 +1114,7 @@ export function playComboSound(multiplier) {
       gain.gain.setValueAtTime(0.08, t);
       gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(getSfxOutput());
       osc.start(t + i * 0.05);
       osc.stop(t + 0.5);
     });
@@ -1027,7 +1128,7 @@ export function playComboSound(multiplier) {
       gain.gain.setValueAtTime(0.12, t);
       gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(getSfxOutput());
       osc.start(t + i * 0.06);
       osc.stop(t + 0.3);
     });
@@ -1042,7 +1143,7 @@ export function playComboSound(multiplier) {
     gain.gain.setValueAtTime(0.15, t);
     gain.gain.exponentialRampToValueAtTime(0.01, t + 0.25);
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(getSfxOutput());
     osc.start(t);
     osc.stop(t + 0.25);
   } else {
@@ -1055,7 +1156,7 @@ export function playComboSound(multiplier) {
     gain.gain.setValueAtTime(0.12, t);
     gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(getSfxOutput());
     osc.start(t);
     osc.stop(t + 0.15);
   }
@@ -1075,7 +1176,7 @@ export function playSlowMoSound() {
   gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.8);
@@ -1097,7 +1198,7 @@ export function playSlowMoReverseSound() {
   gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc.stop(t + 0.5);
@@ -1107,7 +1208,7 @@ export function playSlowMoReverseSound() {
 export function playKillsAlertSound(remaining = null) {
   if (remaining === 5 || remaining === 10 || remaining === 15 || remaining === 20) {
     const audio = new Audio(`https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_${remaining}-kills-remaining.mp3`);
-    audio.volume = 0.5;
+    audio.volume = 0.5 * sfxVolume;
     audio.play().catch(err => {
       console.warn('[audio] Failed to play kills remaining clip:', err);
     });
@@ -1129,7 +1230,7 @@ export function playKillsAlertSound(remaining = null) {
   gain.gain.exponentialRampToValueAtTime(0.001, t + 0.47);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc.stop(t + 0.47);
@@ -1139,14 +1240,14 @@ export function playKillsAlertSound(remaining = null) {
 export function playIncomingBossSound() {
   if (!shouldStreamRemoteAudio()) return;
   const audio = new Audio('https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_incoming-boss.mp3');
-  audio.volume = 0.5;
+  audio.volume = 0.5 * sfxVolume;
   audio.play().catch(err => console.warn('[audio] Failed to play incoming boss clip:', err));
 }
 
 // ── No one makes it to level 20 sound ──────────────────────────
 export function playNoOneMakesItSound() {
   const audio = new Audio('https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_no-one-makes-it-to-level-20.mp3');
-  audio.volume = 0.5;
+  audio.volume = 0.5 * sfxVolume;
   audio.play().catch(err => console.warn('[audio] Failed to play name entry clip:', err));
 }
 
@@ -1180,7 +1281,7 @@ export function startLowHealthWarningSound() {
   lowHealthLfoGain.connect(lowHealthGain.gain);
 
   lowHealthOsc.connect(lowHealthGain);
-  lowHealthGain.connect(ctx.destination);
+  lowHealthGain.connect(getSfxOutput());
 
   lowHealthOsc.start(t);
   lowHealthLfo.start(t);
@@ -1229,7 +1330,7 @@ export function startLightningSound() {
   
   // Connect: source -> gain -> destination
   lightningSource.connect(lightningGain);
-  lightningGain.connect(ctx.destination);
+  lightningGain.connect(getSfxOutput());
   
   // Start playback
   lightningAudio.play().catch(err => {
@@ -1267,7 +1368,9 @@ export function stopLightningSound() {
 
 // ── Music System ───────────────────────────────────────────
 let currentMusic = null;
-let musicVolume = 0.33;  // Increased by 10% (was 0.3)
+let musicVolume = 0.33;
+// Apply saved settings now that musicVolume is declared
+loadSettings();
 let currentPlaylist = [];
 let currentTrackIndex = 0;
 let loopPlaylist = true;  // Controls whether playlist loops (false for game over)
@@ -1501,7 +1604,7 @@ export function playCountdown321() {
   if (!countdown321Audio) {
     countdown321Audio = new Audio('mnt/project/music/sfx_321.m4a');
   }
-  countdown321Audio.volume = 0.5;
+  countdown321Audio.volume = 0.5 * sfxVolume;
   countdown321Audio.currentTime = 0;
   countdown321Audio.play().catch(() => {});
 }
@@ -1539,7 +1642,7 @@ export function playPhaseWraithCharge() {
   osc.connect(filter);
   osc2.connect(filter);
   filter.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc2.start(t);
@@ -1575,7 +1678,7 @@ export function playSkullPhaseSound() {
   lfoGain.connect(gain.gain);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   lfo.start(t);
@@ -1604,7 +1707,7 @@ export function playSkullLaughSound() {
   gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   osc.stop(t + 0.4);
@@ -1637,7 +1740,7 @@ export function playSkullHandGrowlSound() {
   modGain.connect(osc.frequency);
 
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(getSfxOutput());
 
   osc.start(t);
   modOsc.start(t);
@@ -1660,7 +1763,7 @@ export function playSkullDeathKnell() {
   gain1.gain.setValueAtTime(0.15, t);
   gain1.gain.exponentialRampToValueAtTime(0.01, t + 2.0);
   osc1.connect(gain1);
-  gain1.connect(ctx.destination);
+  gain1.connect(getSfxOutput());
   osc1.start(t);
   osc1.stop(t + 2.5);
 
@@ -1682,7 +1785,7 @@ export function playSkullDeathKnell() {
     if (noteTime > t + 2.0) break;
   }
   osc2.connect(gain2);
-  gain2.connect(ctx.destination);
+  gain2.connect(getSfxOutput());
   osc2.start(t);
   osc2.stop(t + 2.5);
 
@@ -1696,7 +1799,7 @@ export function playSkullDeathKnell() {
   gain3.gain.setValueAtTime(0.2, t + 2.0);
   gain3.gain.exponentialRampToValueAtTime(0.01, t + 2.5);
   osc3.connect(gain3);
-  gain3.connect(ctx.destination);
+  gain3.connect(getSfxOutput());
   osc3.start(t);
   osc3.stop(t + 2.5);
 }
