@@ -328,9 +328,16 @@ export function spawnDamageNumber(position, damage, color) {
     const baseScaleX = width / 0.65;
     const baseScaleY = height / 0.325;
 
-    // Reset lifetime to keep it visible while under fire
+    // Reset lifetime to keep it visible while under fire (500ms wait as specified)
     existing.mesh.userData.createdAt = now;
-    existing.mesh.userData.lifetime = 600;
+    existing.mesh.userData.lifetime = 500;
+
+    // Reset velocity to keep the number airborne longer when damage is added
+    existing.mesh.userData.velocity.set(
+      (Math.random() - 0.5) * 0.3,
+      0.6 + Math.random() * 0.3,  // Fresh upward velocity
+      (Math.random() - 0.5) * 0.3
+    );
 
     // Pulse effect: set scale up, decay handled in updateDamageNumbers
     existing.mesh.scale.set(baseScaleX * 1.3, baseScaleY * 1.3, 1);
@@ -358,7 +365,7 @@ export function spawnDamageNumber(position, damage, color) {
   const dmgH = dmgScale;
 
   const mesh = damageNumberPool.acquire(position, getNumberDrawFn(damage, color || '#ffffff'), {
-    width: dmgW, height: dmgH, lifetime: 600,
+    width: dmgW, height: dmgH, lifetime: 500,
     offsetX: (Math.random() - 0.5) * 0.3,
     offsetY: Math.random() * 0.2,
     offsetZ: (Math.random() - 0.5) * 0.3,

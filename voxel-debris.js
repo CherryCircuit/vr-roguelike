@@ -10,7 +10,7 @@ export const voxelPool = [];
 export const activeVoxels = [];
 
 const VOXEL_POOL_SIZE = 50;
-const MAX_ACTIVE_VOXELS = 25;  // Cap for performance (reduced from 200)
+const MAX_ACTIVE_VOXELS = 35;  // Absolute cap for performance (increased to accommodate boss turret deaths)
 
 // Temp vector for death pattern velocity calculation
 const _deathVel = new THREE.Vector3();
@@ -61,11 +61,13 @@ export function returnVoxelToPool(voxel) {
 export function spawnVoxelExplosion(position, color, voxelCount, enemyType = 'basic', isCritical = false, isOverkill = false) {
   // Double voxels for overkill
   if (isOverkill) {
-    voxelCount *= 2;
+    voxelCount = Math.ceil(voxelCount * 1.5);  // 1.5x instead of 2x to reduce spam
   }
   
-  // Cap at 8 voxels per enemy to prevent spam
-  voxelCount = Math.min(voxelCount, 8);
+  // Safety cap: callers (enemies.js) already enforce tier-based limits,
+  // but this catches any unexpected callers or overflow from overkill doubling.
+  // Regular enemies: 8, any caller that passes more gets capped here.
+  voxelCount = Math.min(voxelCount, 15);
   
   // Make room by removing oldest voxels if at cap
   while (activeVoxels.length >= MAX_ACTIVE_VOXELS && activeVoxels.length > 0) {

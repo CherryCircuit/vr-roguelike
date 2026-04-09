@@ -18,6 +18,10 @@ import {
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown,
   hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit
 } from './pause-menu.js';
+import {
+  settingsGroup, showSettings, hideSettings, isSettingsVisible,
+  getSettingsHit, executeSettingsAction, getPreviousMenu
+} from './settings-menu.js';
 
 // Re-export so main.js imports still work
 export {
@@ -26,7 +30,9 @@ export {
   triggerAccuracyHurt, clearAllDamageNumbers, clearAllComboPopups,
   clearAllKillChainPopups,
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown,
-  hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit
+  hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
+  showSettings, hideSettings, isSettingsVisible, getSettingsHit,
+  executeSettingsAction, getPreviousMenu, settingsGroup
 };
 
 // VR camera height fix: Shift entire scene down so XR camera at ~0.875m appears 1.6m above floor
@@ -171,6 +177,7 @@ let titleBlinkSprite = null;
 
 // Title scoreboard button
 let titleScoreboardBtn = null;
+let titleSettingsBtn = null;
 
 // Title diagnostics button
 let titleDiagBtn = null;
@@ -559,12 +566,17 @@ export async function initHUD(camera, scene) {
   pauseMenuGroup.rotation.set(0, 0, 0);
   scene.add(pauseMenuGroup);
 
+  // Settings menu in 3D world space
+  settingsGroup.visible = false;
+  settingsGroup.rotation.set(0, 0, 0);
+  scene.add(settingsGroup);
+
   // Disable frustum culling on all UI groups to prevent disappearing when looking around
   // UI elements have unreliable bounding boxes/spheres that cause false culling
   [
     titleGroup, hudGroup, floatingMessageGroup, levelTextGroup, upgradeGroup,
     gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup,
-    readyGroup, pauseMenuGroup, pauseCountdownGroup
+    readyGroup, pauseMenuGroup, pauseCountdownGroup, settingsGroup
   ].forEach(g => { if (g) g.frustumCulled = false; });
 
   // Countdown still follows camera so player can see it
@@ -794,6 +806,37 @@ async function createTitleScreen() {
   btnGroup.add(btnText);
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
+
+  // ── Settings gear button (next to SCOREBOARD) ──
+  const settingsBtnGroup = new THREE.Group();
+  settingsBtnGroup.position.set(1.05, -0.8, 0); // Right of SCOREBOARD button
+  settingsBtnGroup.name = 'settingsBtnGroup';
+  const settingsBtnGeo = new THREE.PlaneGeometry(0.4, 0.3);
+  const settingsBtnMat = new THREE.MeshBasicMaterial({
+    color: 0x110033,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+  });
+  const settingsBtnMesh = new THREE.Mesh(settingsBtnGeo, settingsBtnMat);
+  settingsBtnMesh.userData.isTitleSettingsBtn = true;
+  settingsBtnMesh.userData.borderColor = 0x00ffff;
+  settingsBtnGroup.add(settingsBtnMesh);
+  settingsBtnGroup.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(settingsBtnGeo),
+    new THREE.LineBasicMaterial({ color: 0x00ffff })
+  ));
+  const settingsBtnText = makeSprite('\u2699', {
+    fontSize: 48,
+    color: '#00ffff',
+    glow: true,
+    glowColor: '#00ffff',
+    scale: 0.16,
+  });
+  settingsBtnText.position.set(0, 0, 0.01);
+  settingsBtnGroup.add(settingsBtnText);
+  titleGroup.add(settingsBtnGroup);
+  titleSettingsBtn = settingsBtnMesh;
 
   // Apply layout overrides
   const layout = await loadLayout('title-screen');
@@ -1225,7 +1268,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
 
   // Limit to first 3 upgrades only
   shuffledUpgrades.slice(0, 3).forEach((upg, i) => {
-    const card = createUpgradeCard(upg, positions[i]);
+    const card = createUpgradeCard(upg, positions[i], hand);
     card.name = `upgrade-card-${i}`;
     upgradeGroup.add(card);
     upgradeCards.push(card);
@@ -1266,7 +1309,121 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   }
 }
 
-function createUpgradeCard(upgrade, position) {
+// Helper function to generate "before → after" text for stackable upgrades
+function getUpgradeTotalText(upgrade, hand) {
+  const currentCount = game.upgrades[hand][upgrade.id] || 0;
+  const nextCount = currentCount + 1;
+  
+  // Non-stackable upgrades - no total shown
+  const nonStackable = [
+    'piercing', 'focused_frenzy', 'duck_hunt', 'its_electric', 'tesla_coil',
+    'quick_charge', 'excess_heat', 'death_ray', 'hold_together'
+  ];
+  if (nonStackable.includes(upgrade.id)) {
+    return null;
+  }
+  
+  // Generate appropriate format based on upgrade type
+  switch (upgrade.id) {
+    case 'scope':
+    case 'mega_scope':
+      // Damage: +10 per scope, +25 per mega_scope
+      const dmgPerStack = upgrade.id === 'mega_scope' ? 25 : 10;
+      const dmgPerMega = (game.upgrades[hand]['mega_scope'] || 0) * 25;
+      const dmgPerScope = (game.upgrades[hand]['scope'] || 0) * 10;
+      const currentDmg = dmgPerScope + dmgPerMega;
+      const nextDmg = currentDmg + dmgPerStack;
+      return `(+${currentDmg} → +${nextDmg})`;
+    
+    case 'barrel':
+    case 'turbo_barrel':
+      // Fire rate: +15% per barrel, +30% per turbo_barrel
+      const firePerStack = upgrade.id === 'turbo_barrel' ? 30 : 15;
+      const firePerBarrel = (game.upgrades[hand]['barrel'] || 0) * 15;
+      const firePerTurbo = (game.upgrades[hand]['turbo_barrel'] || 0) * 30;
+      const currentFire = firePerBarrel + firePerTurbo;
+      const nextFire = currentFire + firePerStack;
+      return `(+${currentFire}% → +${nextFire}%)`;
+    
+    case 'double_shot':
+    case 'triple_shot':
+      // Projectile count: +1 per double_shot, +2 per triple_shot
+      const shotPerDouble = (game.upgrades[hand]['double_shot'] || 0) * 1;
+      const shotPerTriple = (game.upgrades[hand]['triple_shot'] || 0) * 2;
+      const currentShots = shotPerDouble + shotPerTriple;
+      const addedShots = upgrade.id === 'triple_shot' ? 2 : 1;
+      const nextShots = currentShots + addedShots;
+      return `(${currentShots} → ${nextShots})`;
+    
+    case 'critical':
+    case 'super_crit':
+      // Crit chance: +15% per critical, +25% per super_crit
+      const critPerStack = upgrade.id === 'super_crit' ? 25 : 15;
+      const critPerCrit = (game.upgrades[hand]['critical'] || 0) * 15;
+      const critPerSuper = (game.upgrades[hand]['super_crit'] || 0) * 25;
+      const currentCrit = critPerCrit + critPerSuper;
+      const nextCrit = Math.min(currentCrit + critPerStack, 90); // Max 90%
+      return `(${currentCrit}% → ${nextCrit}%)`;
+    
+    case 'vampiric':
+      // Heal every 5 kills
+      const currentVamp = 6 - Math.min(currentCount, 4);
+      const nextVamp = 6 - Math.min(nextCount, 4);
+      return `(Heal every ${currentVamp} kills → ${nextVamp} kills)`;
+    
+    case 'life_steal':
+      // Heal every 3 kills per stack (2x better than vampiric)
+      const currentLife = Math.max(3 - (game.upgrades[hand]['vampiric'] || 0), 1);
+      const nextLife = Math.max(3 - (game.upgrades[hand]['vampiric'] || 0) - 1, 1);
+      return `(Heal every ${currentLife} kills → ${nextLife} kills)`;
+    
+    case 'shock':
+    case 'fire':
+    case 'freeze':
+      // Status effect stacks
+      return `(${currentCount} → ${nextCount} stacks)`;
+    
+    case 'ricochet':
+      // Ricochet: bounce damage starts at 50%, +25% per stack
+      const ricochetDmg = 50 + (currentCount * 25);
+      const nextRicochetDmg = ricochetDmg + 25;
+      return `(Ricochet @ ${ricochetDmg}% → ${nextRicochetDmg}% damage)`;
+    
+    case 'extra_nuke':
+      // Nuke charges
+      const currentNukes = game.nukes || 0;
+      const nextNukes = currentNukes + 1;
+      return `(${currentNukes} → ${nextNukes} charges)`;
+    
+    case 'overcharge':
+      // 20% damage multiplier per stack
+      const currentOvercharge = (currentCount * 20);
+      const nextOvercharge = (nextCount * 20);
+      return `(+${currentOvercharge}% → +${nextOvercharge}% damage)`;
+    
+    case 'mega_boom':
+      // AOE + explosion damage
+      return `(${currentCount} → ${nextCount} stacks)`;
+    
+    case 'buckshot_gentlemen':
+      // Buckshot: +4 pellets per stack
+      const currentBuckshots = currentCount * 4;
+      const nextBuckshots = nextCount * 4;
+      return `(+${currentBuckshots} → +${nextBuckshots} pellets)`;
+    
+    case 'gimme_more':
+      // Seeker Burst: +2 homing shots per stack
+      const currentGimme = currentCount * 2;
+      const nextGimme = nextCount * 2;
+      return `(+${currentGimme} → +${nextGimme} shots)`;
+    
+    default:
+      // Generic fallback for any other stackable upgrade
+      return `(${currentCount} → ${nextCount})`;
+  }
+}
+
+function createUpgradeCard(upgrade, position, hand) {
   const group = new THREE.Group();
   // Add null check for position - provide default if undefined
   if (position && typeof position.x === 'number') {
@@ -1322,6 +1479,20 @@ function createUpgradeCard(upgrade, position) {
   });
   descSprite.position.set(0, 0.15, 0.01);  // Moved up (was -0.05)
   group.add(descSprite);
+
+  // Running total text for stackable upgrades
+  const totalText = getUpgradeTotalText(upgrade, hand);
+  if (totalText) {
+    const totalSprite = makeSprite(totalText, {
+      fontSize: 24,
+      color: '#88ff88',  // Light green for the before/after text
+      scale: 0.14,
+      depthTest: true,
+      maxWidth: 300,
+    });
+    totalSprite.position.set(0, -0.05, 0.01);
+    group.add(totalSprite);
+  }
 
   // Side-grade note (different color) when present
   if (upgrade.sideGradeNote) {
@@ -1432,7 +1603,7 @@ export function updateUpgradeCards(now, cooldownRemaining) {
   });
 
   // Update cooldown text
-  const cd = upgradeGroup.getObjectByName('cooldown');
+  const cd = upgradeGroup.getObjectByName('upgrade-cards-cooldown');
   if (cd) {
     if (cooldownRemaining > 0) {
       cd.visible = true;
@@ -1766,6 +1937,12 @@ export function getTitleButtonHit(raycaster) {
   if (titleScoreboardBtn) {
     const hits = raycaster.intersectObject(titleScoreboardBtn, false);
     if (hits.length > 0) return 'scoreboard';
+  }
+
+  // Check settings button
+  if (titleSettingsBtn) {
+    const hits = raycaster.intersectObject(titleSettingsBtn, false);
+    if (hits.length > 0) return 'settings';
   }
 
   return null;

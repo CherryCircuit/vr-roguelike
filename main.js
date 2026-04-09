@@ -20,7 +20,7 @@ import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdFor
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound,
-  playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn,
+  playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
   playBossSpawn, playBossAlertSound, playMenuClick, playErrorSound, playBuckshotSound,
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound, playComboSound,
@@ -35,7 +35,7 @@ import {
   // Boss and name entry sounds
   playIncomingBossSound, playNoOneMakesItSound,
   playProjectileWarningSound,
-  playPhaseWraithCharge,
+  playPhaseWraithCharge as playMortarCharge,
   // Skull boss sounds
   playSkullDeathKnell, playSkullLaughSound,
 } from './audio.js';
@@ -72,6 +72,7 @@ import {
   showDebugJumpScreen, getDebugJumpHit,
   showReadyScreen, hideReadyScreen, updateReadyCountdownText, updateTitleDebugIndicator,
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown, hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
+  showSettings, hideSettings, isSettingsVisible, getSettingsHit, executeSettingsAction, getPreviousMenu,
   updateHUDHover,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, showBossAlert, hideBossAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
@@ -207,6 +208,70 @@ const SCENE_Y_OFFSET = -0.725;
 
 const LASER_RANGE = 50;
 const LASER_DURATION = 250;
+
+// ============================================================
+// FRAME PROFILER
+// Lightweight profiler that tracks which systems are running each frame
+// ============================================================
+const profiler = {
+  enabled: false,
+  marks: {},
+  currentFrame: {},
+  stats: { slowFrames: 0, worstFrame: 0, worstLabel: '', systemTotals: {} },
+  frameStart() { if (!this.enabled) return; this.currentFrame = {}; this._frameT0 = performance.now(); },
+  mark(label) { if (!this.enabled) return; this.currentFrame[label] = { start: performance.now() }; },
+  end(label) {
+    if (!this.enabled || !this.currentFrame[label]) return;
+    const ms = performance.now() - this.currentFrame[label].start;
+    this.currentFrame[label].ms = ms;
+    this.stats.systemTotals[label] = (this.stats.systemTotals[label] || 0) + ms;
+  },
+  frameEnd() {
+    if (!this.enabled) return;
+    const total = performance.now() - this._frameT0;
+    if (total > 20) { // >20ms = below 50fps
+      this.stats.slowFrames++;
+      if (total > this.stats.worstFrame) {
+        this.stats.worstFrame = total;
+        // Find the slowest system
+        let worstLabel = '';
+        let worstTime = 0;
+        for (const [label, data] of Object.entries(this.currentFrame)) {
+          if (data.ms > worstTime) {
+            worstTime = data.ms;
+            worstLabel = label;
+          }
+        }
+        this.stats.worstLabel = worstLabel;
+      }
+      const parts = Object.entries(this.currentFrame)
+        .filter(([k,v]) => v.ms > 1)
+        .sort((a,b) => b[1].ms - a[1].ms)
+        .map(([k,v]) => `${k}(${v.ms.toFixed(1)}ms)`)
+        .join(', ');
+      console.log(`[PERF] Slow frame: ${total.toFixed(1)}ms — ${parts || 'unknown'}`);
+    }
+  },
+  getStats() {
+    return {
+      enabled: this.enabled,
+      slowFrames: this.stats.slowFrames,
+      worstFrame: this.stats.worstFrame.toFixed(1) + 'ms',
+      worstLabel: this.stats.worstLabel,
+      systemTotals: Object.fromEntries(
+        Object.entries(this.stats.systemTotals).map(([k, v]) => [k, v.toFixed(1) + 'ms'])
+      )
+    };
+  },
+  reset() {
+    this.stats = { slowFrames: 0, worstFrame: 0, worstLabel: '', systemTotals: {} };
+  }
+};
+
+// Export profiler for use in other modules
+if (typeof window !== 'undefined') {
+  window.frameProfiler = profiler;
+}
 
 function getCountryDisplayLabel() {
   const code = getStoredCountry();
@@ -526,6 +591,19 @@ function setSlowMoQuality(enabled) {
 // Kills remaining alert state
 let killsAlertShownThisLevel = false;
 let killsAlertTriggerKill = null;
+
+// [CORE] Setup kills remaining alert for current level
+function setupKillsAlert() {
+  killsAlertShownThisLevel = false;
+  const cfg = game._levelConfig;
+  if (cfg && !cfg.isBoss) {
+    const threshold = game.level >= 16 ? 20 : game.level >= 11 ? 15 : game.level >= 6 ? 10 : 5;
+    killsAlertTriggerKill = cfg.killTarget - threshold;
+    if (killsAlertTriggerKill <= 0) killsAlertTriggerKill = null;
+  } else {
+    killsAlertTriggerKill = null;
+  }
+}
 
 // [CORE] Check kills remaining and show alert
 function checkKillsAlert() {
@@ -1237,12 +1315,55 @@ function init() {
     _log('[vr] Session started - disabling foveation');
     renderer.xr.setFoveation(0);
     // Camera is added directly to scene - VR hands work correctly now
+    // Validate controller handedness on session start
+    validateControllerHandedness();
   });
+
+  /**
+   * Validate controller handedness after Quest sleep/wake.
+   * If controllers swapped (e.g., right controller now shows as left),
+   * re-map the controller references to match actual handedness.
+   */
+  function validateControllerHandedness() {
+    const session = renderer.xr.getSession();
+    if (!session) return;
+
+    const inputSources = session.inputSources;
+    if (inputSources.length < 2) return;
+
+    // Check if handedness matches our expected mapping
+    const expectedLeft = inputSources[0]?.handedness === 'left';
+    const expectedRight = inputSources[1]?.handedness === 'right';
+
+    // If mapping doesn't match, swap controllers
+    if (expectedLeft && !expectedRight) {
+      // Controller 0 is right, controller 1 is left - swap them
+      _log('[controller] Controller swap detected - swapping controllers 0 and 1');
+      const temp = controllers[0];
+      controllers[0] = controllers[1];
+      controllers[1] = temp;
+
+      // Swap trigger pressed state
+      const tempTrigger = controllerTriggerPressed[0];
+      controllerTriggerPressed[0] = controllerTriggerPressed[1];
+      controllerTriggerPressed[1] = tempTrigger;
+    }
+  }
 
   // No camera rig reset needed - camera is direct child of scene
   renderer.xr.addEventListener('sessionend', () => {
     _log('[vr] Session ended');
   });
+
+  // Listen for controller changes (e.g., Quest sleep/wake causing hand swap)
+  if (renderer.xr.getSession) {
+    const session = renderer.xr.getSession();
+    if (session && session.inputSourcesChange) {
+      session.inputSourcesChange.addEventListener('inputsourceschange', () => {
+        validateControllerHandedness();
+      });
+    }
+  }
 
     // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
   // Desktop controls will auto-enable if VR isn't available
@@ -1829,6 +1950,17 @@ function purgeBiomeForBossCinematic() {
   // Drop the current biome geometry while the screen is black so upgrades
   // appear on a clean slate before the next biome loads.
   clearBiomeScene();
+
+  // Stars are added directly to scene (not biomeSceneGroup), so they must
+  // be cleaned up separately. Without this, old star particles leak into
+  // the upgrade card screen and accumulate across biome transitions (#4, #8, #20).
+  if (starsRef) {
+    unregisterFadeMaterial(starsRef.material);
+    disposeMesh(starsRef, true);
+    starsRef = null;
+    starsBiomeId = null;
+  }
+
   if (floorMaterial) floorMaterial.opacity = 0;
   applyEnvironmentFade(1);
   if (scene) {
@@ -1971,7 +2103,8 @@ function createSparklingStars(theme) {
     uniforms: {
       uTime: { value: 0 },
       uColor: { value: tint },
-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+      uOpacity: { value: 1.0 }
     },
     vertexShader: `
       attribute float aPhase;
@@ -1991,12 +2124,13 @@ function createSparklingStars(theme) {
     `,
     fragmentShader: `
       uniform vec3 uColor;
+      uniform float uOpacity;
       varying float vTwinkle;
       void main() {
         float dist = length(gl_PointCoord - vec2(0.5));
         if (dist > 0.5) discard;
         float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-        gl_FragColor = vec4(uColor * (0.7 + vTwinkle * 0.4), alpha * vTwinkle);
+        gl_FragColor = vec4(uColor * (0.7 + vTwinkle * 0.4), alpha * vTwinkle * uOpacity);
       }
     `,
     transparent: true,
@@ -2008,11 +2142,13 @@ function createSparklingStars(theme) {
   stars.renderOrder = 10;  // Render after skydome (-20) and sun (-3 to -1)
   stars.userData.update = (now) => {
     mat.uniforms.uTime.value = now * 0.001;
+    // Sync material.opacity (set by fade system) to shader uniform
+    mat.uniforms.uOpacity.value = mat.opacity;
   };
   scene.add(stars);
   starsRef = stars;
   registerFadeMaterial(starsRef.material);
-  starsBiomeId = 'default';
+  // NOTE: Do NOT set starsBiomeId here — applyThemeForLevel() owns that.
 }
 
 // [CORE] Create background stars
@@ -2023,6 +2159,7 @@ function createSparklingStars(theme) {
 function rebuildStars(theme) {
   if (!scene) return;
   if (starsRef) {
+    unregisterFadeMaterial(starsRef.material);
     disposeMesh(starsRef, true);
     starsRef = null;
   }
@@ -2327,7 +2464,11 @@ function onTriggerPress(controller, index) {
   const st = game.state;
 
   if (st === State.TITLE) {
-    handleTitleTrigger(controller);
+    if (isSettingsVisible()) {
+      handleSettingsTrigger(controller);
+    } else {
+      handleTitleTrigger(controller);
+    }
   } else if (st === State.PLAYING) {
     fireMainWeapon(controller, index);  // Changed from shootWeapon
   } else if (st === State.UPGRADE_SELECT) {
@@ -2345,7 +2486,11 @@ function onTriggerPress(controller, index) {
   } else if (st === State.READY_SCREEN) {
     handleReadyScreenTrigger(controller);
   } else if (st === State.PAUSED) {
-    handlePauseTrigger(controller);
+    if (isSettingsVisible()) {
+      handleSettingsTrigger(controller);
+    } else {
+      handlePauseTrigger(controller);
+    }
   }
 }
 
@@ -2358,9 +2503,42 @@ function handlePauseTrigger(controller) {
   _uiRaycaster.set(origin, direction, 0, 20);
 
   // Require an explicit pause-menu button hit so desktop and VR share the same resume path.
-  if (getPauseMenuHit(_uiRaycaster) === 'resume') {
+  const pauseHit = getPauseMenuHit(_uiRaycaster);
+  if (pauseHit === 'resume') {
     playMenuClick();
     startPauseCountdown();
+  } else if (pauseHit === 'settings') {
+    playMenuClick();
+    showSettings('pause');
+  } else if (pauseHit === 'perf') {
+    playMenuClick();
+    // Toggle profiler
+    if (typeof window !== 'undefined' && window.frameProfiler) {
+      window.frameProfiler.enabled = !window.frameProfiler.enabled;
+      console.log(`[PERF] Profiler ${window.frameProfiler.enabled ? 'ENABLED' : 'DISABLED'}`);
+      // Rebuild pause menu to update button text
+      import('./pause-menu.js').then(m => {
+        m.hidePauseMenu();
+        m.showPauseMenu();
+      });
+    }
+  }
+}
+
+function handleSettingsTrigger(controller) {
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  _uiRaycaster.set(origin, direction, 0, 20);
+
+  const action = getSettingsHit(_uiRaycaster);
+  if (!action) return;
+
+  const shouldClose = executeSettingsAction(action);
+  if (shouldClose) {
+    hideSettings();
   }
 }
 
@@ -2384,6 +2562,11 @@ function handleTitleTrigger(controller) {
     });
     return;
   }
+  if (btnHit === 'settings') {
+    playMenuClick();
+    showSettings('title');
+    return;
+  }
   playMenuClick();
   startGame();
 }
@@ -2396,7 +2579,11 @@ function handleDesktopClick() {
   const st = game.state;
 
   if (st === State.TITLE) {
-    handleDesktopTitleClick();
+    if (isSettingsVisible()) {
+      handleDesktopSettingsClick();
+    } else {
+      handleDesktopTitleClick();
+    }
   } else if (st === State.UPGRADE_SELECT) {
     handleDesktopUpgradeSelectClick();
   } else if (st === State.GAME_OVER || st === State.VICTORY) {
@@ -2412,7 +2599,11 @@ function handleDesktopClick() {
   } else if (st === State.READY_SCREEN) {
     handleDesktopReadyScreenClick();
   } else if (st === State.PAUSED) {
-    handleDesktopPauseClick();
+    if (isSettingsVisible()) {
+      handleDesktopSettingsClick();
+    } else {
+      handleDesktopPauseClick();
+    }
   }
 }
 
@@ -2435,6 +2626,11 @@ function handleDesktopTitleClick() {
     fetchTopScores().then(scores => {
       showScoreboard(scores, 'GLOBAL');
     });
+    return;
+  }
+  if (btnHit === 'settings') {
+    playMenuClick();
+    showSettings('title');
     return;
   }
   playMenuClick();
@@ -2621,9 +2817,38 @@ function handleDesktopReadyScreenClick() {
 function handleDesktopPauseClick() {
   const raycaster = getAimRaycaster();
   // Match VR behavior: desktop pause only resumes when the button is actually selected.
-  if (raycaster && getPauseMenuHit(raycaster) === 'resume') {
+  const pauseHit = getPauseMenuHit(raycaster);
+  if (pauseHit === 'resume') {
     playMenuClick();
     startPauseCountdown();
+  } else if (pauseHit === 'settings') {
+    playMenuClick();
+    showSettings('pause');
+  } else if (pauseHit === 'perf') {
+    playMenuClick();
+    // Toggle profiler
+    if (typeof window !== 'undefined' && window.frameProfiler) {
+      window.frameProfiler.enabled = !window.frameProfiler.enabled;
+      console.log(`[PERF] Profiler ${window.frameProfiler.enabled ? 'ENABLED' : 'DISABLED'}`);
+      // Rebuild pause menu to update button text
+      import('./pause-menu.js').then(m => {
+        m.hidePauseMenu();
+        m.showPauseMenu();
+      });
+    }
+  }
+}
+
+function handleDesktopSettingsClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+
+  const action = getSettingsHit(raycaster);
+  if (!action) return;
+
+  const shouldClose = executeSettingsAction(action);
+  if (shouldClose) {
+    hideSettings();
   }
 }
 
@@ -6013,15 +6238,7 @@ function startGame() {
   resetReadyCountdown();
 
   // Setup kills remaining alert for level 1
-  killsAlertShownThisLevel = false;
-  const cfg = game._levelConfig;
-  if (cfg && !cfg.isBoss) {
-    const threshold = game.level >= 16 ? 20 : game.level >= 11 ? 15 : game.level >= 6 ? 10 : 5;
-    killsAlertTriggerKill = cfg.killTarget - threshold;
-    if (killsAlertTriggerKill <= 0) killsAlertTriggerKill = null;
-  } else {
-    killsAlertTriggerKill = null;
-  }
+  setupKillsAlert();
 
   // Hide blaster displays during gameplay
   blasterDisplays.forEach(d => { if (d) d.visible = false; });
@@ -6318,6 +6535,12 @@ function showUpgradeScreen() {
   // Stop lightning sound during upgrade screen
   stopLightningSound();
 
+  // Fade out music before boss fights (levels 4→5 and 9→10)
+  if ([4, 9].includes(game.level)) {
+    _log('[game] Fading out music before boss fight');
+    fadeOutMusic(1200);
+  }
+
   // Get the hand for this upgrade
   const hand = getNextUpgradeHand();
   pendingUpgradeHand = hand;
@@ -6468,6 +6691,9 @@ function advanceLevelAfterUpgrade() {
       showReadyScreen(game.level, getAdjustedCameraPosition());
       resetReadyCountdown();
 
+      // Setup kills remaining alert for the new level
+      setupKillsAlert();
+
       if (game.level === 6) {
         playMusic('levels6to10');
       } else if (game.level === 11) {
@@ -6503,15 +6729,7 @@ function advanceLevelAfterUpgrade() {
       blasterDisplays.forEach(d => { if (d) d.visible = false; });
 
       // Setup kills remaining alert
-      killsAlertShownThisLevel = false;
-      const cfg = game._levelConfig;
-      if (cfg && !cfg.isBoss) {
-        const threshold = game.level >= 16 ? 20 : game.level >= 11 ? 15 : game.level >= 6 ? 10 : 5;
-        killsAlertTriggerKill = cfg.killTarget - threshold;
-        if (killsAlertTriggerKill <= 0) killsAlertTriggerKill = null;
-      } else {
-        killsAlertTriggerKill = null;
-      }
+      setupKillsAlert();
 
       if (game.level === 6) {
         playMusic('levels6to10');
@@ -6564,6 +6782,10 @@ function updatePauseCountdown(now) {
     pauseCountdown = 0;
     hidePauseCountdown();
     game.state = State.PLAYING;
+    // Validate controller handedness after resuming from pause (Quest sleep/wake)
+    if (renderer.xr.isPresenting) {
+      validateControllerHandedness();
+    }
     // Re-request pointer lock when resuming (suppress error if user just exited)
     if (!renderer.xr.isPresenting && isDesktopEnabled()) {
       try {
@@ -6691,13 +6913,13 @@ function initProjectilePool() {
   seekerGeo.rotateX(Math.PI / 2);
   const seekerMat = createProjectileMaterial(0xffffff);
   registerPlayerProjectileMaterial(seekerMat);
-  const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
+  const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 60);
   seekerIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   seekerIM.count = 0;
   seekerIM.frustumCulled = false;
   seekerIM.renderOrder = 950;
   scene.add(seekerIM);
-  instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 28, freeIndices: new Set() };
+  instancedProjectiles['seeker'] = { mesh: seekerIM, maxCount: 60, freeIndices: new Set() };
 
   // ── Plasma carbine darts ──
   // PERFORMANCE: Bumped from 30 to 80 to support dual wield + fire rate upgrades
@@ -6909,8 +7131,8 @@ function triggerHostileProjectileExplosion(position, radius, damage) {
 // [CORE] Spawn boss projectile destruction VFX
 function spawnBossProjectileDestructionFX(position) {
   spawnExplosionVisual(position.clone(), 0.22);
-  // Yellow bits matching projectile color, capped at 3 per projectile death
-  spawnVoxelExplosion(position.clone(), 0xffff00, 3, 'basic', false, false);
+  // Red bits matching projectile color, capped at 3 per projectile death
+  spawnVoxelExplosion(position.clone(), 0xff0000, 3, 'basic', false, false);
 }
 
 // [CORE] Update seeker projectile visual (homing curve)
@@ -7648,7 +7870,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   mesh.userData.stats = stats;
   mesh.userData.controllerIndex = controllerIndex;
   mesh.userData.isExploding = isExploding;
-  mesh.userData.lifetime = 3000;
+  mesh.userData.lifetime = 1500;
   mesh.userData.createdAt = performance.now();
   mesh.userData.hitEnemies = new Set();
   mesh.userData.shotId = shotId;
@@ -7725,7 +7947,7 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
   }
 
   // Impact freeze for critical hits or weak points
-  const isCritical = damage > 30 || hitWeakPoint;
+  const isCritical = isCrit;
   if (isCritical) {
     // Freeze frame briefly (0.1s visual pause)
     const freezeDuration = 100; // 0.1 seconds
@@ -7809,13 +8031,33 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
 }
 
 // [CORE] Handle projectile hit on boss
-function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex) {
+function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex, hitObject) {
   let damage = stats.damage;
   if (stats.critChance > 0 && Math.random() < stats.critChance) {
     damage *= (stats.critMultiplier || 2);
     trackCrit();
   }
-  const result = hitBoss(damage, { handIndex });
+
+  // Extract facet/shard/weak point info from hit object for PrismBoss
+  const bossHitInfo = { handIndex };
+  if (hitObject && hitObject.userData) {
+    if (hitObject.userData.facetIndex !== undefined) bossHitInfo.facetIndex = hitObject.userData.facetIndex;
+    if (hitObject.userData.isWeakPoint) bossHitInfo.isWeakPoint = true;
+    if (hitObject.userData.isHealWeakPoint) bossHitInfo.isHealWeakPoint = true;
+    if (hitObject.userData.healWeakPointIndex !== undefined) bossHitInfo.healWeakPointIndex = hitObject.userData.healWeakPointIndex;
+    if (hitObject.userData.isPrismCore) bossHitInfo.isPrismCore = true;
+  }
+  // Walk up to find facet info on parent groups
+  let walk = hitObject;
+  while (walk && bossHitInfo.facetIndex === undefined) {
+    if (walk.userData && walk.userData.facetIndex !== undefined) {
+      bossHitInfo.facetIndex = walk.userData.facetIndex;
+      break;
+    }
+    walk = walk.parent;
+  }
+
+  const result = hitBoss(damage, bossHitInfo);
 
   // Shield reflection: damage player instead of boss
   if (result.shieldReflected) {
@@ -8468,7 +8710,7 @@ function updateProjectiles(dt) {
       const result = getEnemyByMesh(hits[0].object);
       if (result && result.boss) {
         markProjectileHit(proj);
-        handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex, result.handIndex);
+        handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex, result.handIndex, hits[0].object);
         if (!proj.userData.stats?.piercing) {
           resolveProjectileAccuracy(proj);
           if (proj.userData.isPooled) {
@@ -8676,6 +8918,7 @@ function spawnEnemyWave(dt) {
       if (bossId) {
         spawnBoss(bossId, cfg);
         playBossSpawn();
+        playSkullLaughSound(); // Universal boss intro/taunt
         playBossMusic(getBossTier(game.level));
       }
     }
@@ -8711,6 +8954,8 @@ function spawnEnemyWave(dt) {
         playSwarmEnemySpawn();
       } else if (type === 'tank') {
         playTankEnemySpawn();
+      } else if (type === 'mortar') {
+        playMortarEnemySpawn();
       } else {
         playBasicEnemySpawn();
       }
@@ -8781,6 +9026,9 @@ function render(timestamp) {
   const clampedRawDt = Math.min(rawDt, MAX_FRAME_DT);
   lastTime = now;
 
+  // Frame profiler: start timing
+  profiler.frameStart();
+
   // ── Frame profiler (debug/test only) ──
   const _prof = (typeof window !== 'undefined' && window.__perf && window.__perf._profileBuckets) ? window.__perf._profileBuckets : null;
   let _lastMark = _prof ? performance.now() : 0;
@@ -8821,10 +9069,12 @@ function render(timestamp) {
   _mark('pre_ambient'); // ── end: timeScale + slowmo logic
   const dt = clampedRawDt * effectiveTimeScale;  // Fix B: use clamped dt for game simulation
 
+  profiler.mark('scenery');
   if (currentTheme) {
     updateAmbientParticles(rawDt, currentTheme, getAdjustedCameraPosition());
   }
   updateBiomeProps(now, rawDt);
+  profiler.end('scenery');
   _mark('ambient_biome'); // ── end: ambient particles + biome props
 
   // Process seeker burst queue (burst fire timing)
@@ -9237,7 +9487,9 @@ function render(timestamp) {
     }
 
     // Fix 1.9: Profile enemy updates
+    profiler.mark('enemies');
     const collisions = updateEnemies(dt, now, playerPos);
+    profiler.end('enemies');
 
     // Update phase echo ghosts (clean up expired echoes)
     updatePhaseEchoes(dt, now);
@@ -9257,6 +9509,7 @@ function render(timestamp) {
     _mark('enemy_update'); // ── end: enemy updates + spatial hash
 
     // Fix 1.9: Profile boss updates
+    profiler.mark('boss');
     const boss = getBoss();
     if (boss) {
       updateBoss(dt, now, playerPos);
@@ -9272,6 +9525,7 @@ function render(timestamp) {
     } else {
       hideBossHealthBar();
     }
+    profiler.end('boss');
     _mark('boss_update'); // ── end: boss updates + minions + health bar
 
     // Fix 1.9: Profile player collision handling
@@ -9440,11 +9694,11 @@ function render(timestamp) {
   }
 
   // ── Boss alert sequence ──
-  // ── Skull Boss Spawn Cinematic (Level 5) ──
-  if (st === State.BOSS_ALERT && game.level === 5 && !game._skullCinematicInit) {
-    game._skullCinematicInit = true;
-    game._skullCinematicDuration = 3.0; // Matches BOSS_ALERT stateTimer
-    game._skullCinematicElapsed = 0;
+  // ── Universal Boss Spawn Cinematic (All boss levels) ──
+  if (st === State.BOSS_ALERT && game._levelConfig && game._levelConfig.isBoss && !game._bossCinematicInit) {
+    game._bossCinematicInit = true;
+    game._bossCinematicDuration = 3.0; // Matches BOSS_ALERT stateTimer
+    game._bossCinematicElapsed = 0;
     
     // Find sun group in biome scene
     game._cinSunGroup = null;
@@ -9492,13 +9746,13 @@ function render(timestamp) {
       if (su.moonGlowColor) game._cinOrigSkyMoonGlowColor = su.moonGlowColor.value.clone();
     }
     
-    _log('[SkullBoss Cinematic] Starting spawn cinematic for level 5');
+    _log(`[Boss Cinematic] Starting spawn cinematic for level ${game.level}`);
   }
   
-  // Update skull boss cinematic during BOSS_ALERT
-  if (st === State.BOSS_ALERT && game.level === 5 && game._skullCinematicInit) {
-    const elapsed = game._skullCinematicDuration - game.stateTimer;
-    const t = Math.min(1, elapsed / game._skullCinematicDuration); // 0 to 1 progress
+  // Update boss cinematic during BOSS_ALERT
+  if (st === State.BOSS_ALERT && game._levelConfig && game._levelConfig.isBoss && game._bossCinematicInit) {
+    const elapsed = game._bossCinematicDuration - game.stateTimer;
+    const t = Math.min(1, elapsed / game._bossCinematicDuration); // 0 to 1 progress
     
     // 1. Move sun downward (-Y) below horizon
     if (game._cinSunGroup) {
@@ -9570,10 +9824,10 @@ function render(timestamp) {
     }
   }
   
-  // Reset cinematic state when leaving BOSS_ALERT for level 5
-  if (st === State.PLAYING && game._skullCinematicInit && !game._skullCinematicCleaned) {
-    game._skullCinematicCleaned = true;
-    _log('[SkullBoss Cinematic] Cinematic complete, boss fight in red environment');
+  // Reset cinematic state when leaving BOSS_ALERT for boss levels
+  if (st === State.PLAYING && game._bossCinematicInit && !game._bossCinematicCleaned) {
+    game._bossCinematicCleaned = true;
+    _log(`[Boss Cinematic] Cinematic complete for level ${game.level}, boss fight in red environment`);
     // Don't restore original values - keep the red-shifted environment for the boss fight
   }
 
@@ -9797,8 +10051,12 @@ function render(timestamp) {
 
   _mark('state_dispatch'); // ── end: state_dispatch (PLAYING/TITLE/PAUSE logic)
   // ── Universal updates ──
+  profiler.mark('projectiles');
   updateProjectiles(dt);
+  profiler.end('projectiles');
+  profiler.mark('voxelDebris');
   updateVoxelPhysics(dt, now);  // PHYSICS DEATH SYSTEM
+  profiler.end('voxelDebris');
   if (activeShields.length > 0) updateShields(now);
   if (activeStasisFields.length > 0) updateStasisFields(now, dt);
   if (activePlasmaOrbs.length > 0) updatePlasmaOrbs(now, dt);
@@ -9808,7 +10066,9 @@ function render(timestamp) {
   // Was gated on explosionVisuals.length > 0, which caused pooled spheres
   // to freeze visible when no non-pooled effects existed (level transition bug).
   updateExplosionVisuals(dt, now);
+  profiler.mark('damageNumbers');
   updateDamageNumbers(dt, now);
+  profiler.end('damageNumbers');
   updateStatusBubbles(dt, now);
   updateBossDebris(dt, now, getBiomeFloorY());  // Boss debris physics with biome-aware floor
   // Update accuracy popups with fade-complete callback to reset bonus
@@ -9878,11 +10138,13 @@ function render(timestamp) {
   // Fix 1.4: visualTuning may be null when debug mode is off
   if (!renderer.xr.isPresenting && visualTuning && renderDesktopDebugEffect(visualTuning)) {
     _mark('render_gpu'); _mark('total');
+    profiler.frameEnd();
     return;
   }
 
   renderer.render(scene, camera);
   _mark('render_gpu'); _mark('total');
+  profiler.frameEnd();
 }
 
 // ============================================================

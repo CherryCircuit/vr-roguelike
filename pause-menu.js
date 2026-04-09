@@ -18,6 +18,8 @@ let pauseMenuElements = {
   statsSection: null,
   chartCanvas: null,
   resumeButton: null,
+  perfButton: null,
+  settingsButton: null,
 };
 
 let pauseMenuAnimation = {
@@ -271,6 +273,18 @@ async function createPauseMenu() {
   }
   group.add(resumeBtn);
   pauseMenuElements.resumeButton = resumeBtn;
+
+  // PERF profiler toggle button
+  const perfBtn = createPerfButton();
+  perfBtn.position.set(0, -1.75, 0.03);
+  group.add(perfBtn);
+  pauseMenuElements.perfButton = perfBtn;
+
+  // Settings gear button
+  const settingsBtn = createPauseSettingsButton();
+  settingsBtn.position.set(0, -2.1, 0.03);
+  group.add(settingsBtn);
+  pauseMenuElements.settingsButton = settingsBtn;
 
   // Initialize animation
   pauseMenuAnimation.startTime = performance.now();
@@ -774,6 +788,59 @@ function updateSectionStats(section, hand) {
 /**
  * Create resume button
  */
+/**
+ * Create settings gear button for pause menu
+ */
+function createPauseSettingsButton() {
+  const group = new THREE.Group();
+
+  const btnGeo = new THREE.PlaneGeometry(1.55, 0.34);
+  const btnMat = new THREE.MeshBasicMaterial({
+    color: 0x110033,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const btnMesh = new THREE.Mesh(btnGeo, btnMat);
+  btnMesh.userData.isPauseSettingsBtn = true;
+  group.add(btnMesh);
+
+  const btnBorder = new THREE.LineSegments(
+    new THREE.EdgesGeometry(btnGeo),
+    new THREE.LineBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 1.0,
+      depthTest: false,
+      depthWrite: false,
+    })
+  );
+  btnBorder.renderOrder = PAUSE_TEXT_RENDER_ORDER;
+  group.add(btnBorder);
+
+  const text = makeSprite('SETTINGS', {
+    fontSize: scalePauseFont(42),
+    color: '#00ffff',
+    glow: true,
+    glowColor: '#00ffff',
+    scale: scalePauseText(0.14),
+    renderOrder: PAUSE_TEXT_RENDER_ORDER
+  });
+  text.position.set(0, 0, 0.02);
+  group.add(text);
+
+  // Store button data for raycasting
+  group.userData = {
+    isPauseSettingsBtn: true,
+    width: 2.0,
+    height: 0.5
+  };
+
+  return group;
+}
+
 function createResumeButton() {
   const group = new THREE.Group();
 
@@ -818,6 +885,60 @@ function createResumeButton() {
   // Store button data for raycasting (hitbox is larger than text)
   group.userData = {
     isResumeButton: true,
+    width: 2.0,
+    height: 0.5
+  };
+
+  return group;
+}
+
+function createPerfButton() {
+  const group = new THREE.Group();
+
+  const btnGeo = new THREE.PlaneGeometry(1.55, 0.34);
+  const btnMat = new THREE.MeshBasicMaterial({
+    color: 0x110033,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const btnMesh = new THREE.Mesh(btnGeo, btnMat);
+  btnMesh.userData.isPerfButton = true;
+  group.add(btnMesh);
+
+  const btnBorder = new THREE.LineSegments(
+    new THREE.EdgesGeometry(btnGeo),
+    new THREE.LineBasicMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 1.0,
+      depthTest: false,
+      depthWrite: false,
+    })
+  );
+  btnBorder.renderOrder = PAUSE_TEXT_RENDER_ORDER;
+  group.add(btnBorder);
+
+  // Get current profiler state
+  const profilerEnabled = (typeof window !== 'undefined' && window.frameProfiler && window.frameProfiler.enabled) || false;
+  const perfText = profilerEnabled ? 'PERF: ON' : 'PERF: OFF';
+
+  const text = makeSprite(perfText, {
+    fontSize: scalePauseFont(42),
+    color: profilerEnabled ? '#00ff00' : '#666666',
+    glow: true,
+    glowColor: profilerEnabled ? '#00ff00' : '#666666',
+    scale: scalePauseText(0.14),
+    renderOrder: PAUSE_TEXT_RENDER_ORDER
+  });
+  text.position.set(0, 0, 0.02);
+  group.add(text);
+
+  // Store button data for raycasting
+  group.userData = {
+    isPerfButton: true,
     width: 2.0,
     height: 0.5
   };
@@ -896,12 +1017,18 @@ export function getPauseMenuHit(raycaster) {
 
   for (const intersect of intersects) {
     let obj = intersect.object;
-    while (obj && !obj.userData.isResumeButton) {
+    while (obj && !obj.userData.isResumeButton && !obj.userData.isPerfButton && !obj.userData.isPauseSettingsBtn) {
       obj = obj.parent;
     }
 
     if (obj && obj.userData.isResumeButton) {
       return 'resume';
+    }
+    if (obj && obj.userData.isPerfButton) {
+      return 'perf';
+    }
+    if (obj && obj.userData.isPauseSettingsBtn) {
+      return 'settings';
     }
   }
 
