@@ -2218,19 +2218,20 @@ function spawnStatusEffectBubble(position, effectType, stacks) {
   }
 }
 
-/**
- * Spawn a health gain popup (white + with pixel half-heart) at enemy position when VAMPIRE triggers.
- */
-export function spawnHealthGainPopup(position) {
+// ── Health gain popup pool (avoid texture churn from vampire triggers) ──
+const HEALTH_POPUP_POOL_SIZE = 5;
+const healthPopupPool = [];  // Pre-created sprites ready for reuse
+const healthPopupActive = []; // Currently animating
+
+// Pre-draw the static +heart texture once
+function createHealthPopupTexture() {
   const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
   canvas.width = 256;
   canvas.height = 128;
-
-  // Transparent canvas (no background)
+  const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Pixel heart pattern (7x6 grid from HUD)
+  // Pixel heart pattern (7x6 grid, half-heart: columns 0-3)
   const HEART_PIXELS = [
     [0, 1, 1, 0, 1, 1, 0],
     [1, 1, 1, 1, 1, 1, 1],
@@ -2239,12 +2240,9 @@ export function spawnHealthGainPopup(position) {
     [0, 0, 1, 1, 1, 0, 0],
     [0, 0, 0, 1, 0, 0, 0],
   ];
-
   const pixelSize = 8;
   const heartX = 140;
   const heartY = canvas.height / 2 - (6 * pixelSize) / 2;
-
-  // Draw half-heart (left side only: columns 0-3)
   ctx.fillStyle = '#ff0044';
   for (let row = 0; row < 6; row++) {
     for (let col = 0; col < 4; col++) {
@@ -2265,31 +2263,80 @@ export function spawnHealthGainPopup(position) {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
+  return texture;
+}
 
-  const material = new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
-    depthTest: false,
-  });
+let _sharedHealthTexture = null;
 
-  const mesh = new THREE.Sprite(material);
+function initHealthPopupPool() {
+  if (healthPopupPool.length > 0) return;
+  if (!_sharedHealthTexture) _sharedHealthTexture = createHealthPopupTexture();
+  for (let i = 0; i < HEALTH_POPUP_POOL_SIZE; i++) {
+    const material = new THREE.SpriteMaterial({
+      map: _sharedHealthTexture,
+      transparent: true,
+      depthTest: false,
+    });
+    const mesh = new THREE.Sprite(material);
+    mesh.visible = false;
+    mesh.renderOrder = 997;
+    mesh.scale.set(0.6, 0.3, 1);
+    mesh.userData = { createdAt: 0, lifetime: 1000, velocity: new THREE.Vector3() };
+    healthPopupPool.push(mesh);
+    if (sceneRef) sceneRef.add(mesh);
+  }
+}
+
+/**
+ * Spawn a health gain popup (white + with pixel half-heart) at enemy position when VAMPIRE triggers.
+ * Uses object pool to avoid creating new textures/sprites each trigger.
+ */
+export function spawnHealthGainPopup(position) {
+  initHealthPopupPool();
+
+  // Grab from pool (or steal oldest active if pool exhausted)
+  let mesh = healthPopupPool.pop();
+  if (!mesh) {
+    // Pool empty - recycle the oldest active popup
+    mesh = healthPopupActive.shift();
+    if (!mesh) return; // Safety
+  }
+
   mesh.position.copy(position);
-  mesh.position.y += 0.3;  // Slightly above enemy
-  mesh.scale.set(0.6, 0.3, 1);
-  mesh.renderOrder = 997;
+  mesh.position.y += 0.3;
+  mesh.material.opacity = 1;
+  mesh.visible = true;
   mesh.userData.createdAt = performance.now();
   mesh.userData.lifetime = 1000;
-  mesh.userData.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.3, 1.2, (Math.random() - 0.5) * 0.3);
+  mesh.userData.velocity.set(
+    (Math.random() - 0.5) * 0.3, 1.2, (Math.random() - 0.5) * 0.3
+  );
 
-  sceneRef.add(mesh);
-  statusBubbles.push(mesh);
+  healthPopupActive.push(mesh);
 
-  // Cap total to prevent perf issues
-  while (statusBubbles.length > 20) {
-    const old = statusBubbles.shift();
-    sceneRef.remove(old);
-    old.material.map.dispose();
-    old.material.dispose();
+  // Remove from legacy statusBubbles if present
+  const sbIdx = statusBubbles.indexOf(mesh);
+  if (sbIdx >= 0) statusBubbles.splice(sbIdx, 1);
+}
+
+// Update pooled health popups (called from updateStatusBubbles)
+export function updateHealthPopups(dt, now) {
+  for (let i = healthPopupActive.length - 1; i >= 0; i--) {
+    const mesh = healthPopupActive[i];
+    const age = now - mesh.userData.createdAt;
+
+    if (age > mesh.userData.lifetime) {
+      // Return to pool
+      mesh.visible = false;
+      healthPopupActive.splice(i, 1);
+      healthPopupPool.push(mesh);
+    } else {
+      // Animate: float up + fade
+      mesh.position.addScaledVector(mesh.userData.velocity, dt);
+      const progress = age / mesh.userData.lifetime;
+      mesh.material.opacity = 1 - progress;
+      mesh.userData.velocity.y -= dt * 0.5; // Gentle deceleration
+    }
   }
 }
 
@@ -2297,6 +2344,9 @@ export function spawnHealthGainPopup(position) {
  * Update status effect bubbles (animate and remove expired).
  */
 export function updateStatusBubbles(dt, now) {
+  // Update pooled health popups
+  updateHealthPopups(dt, now);
+
   for (let i = statusBubbles.length - 1; i >= 0; i--) {
     const b = statusBubbles[i];
     const age = now - b.userData.createdAt;
