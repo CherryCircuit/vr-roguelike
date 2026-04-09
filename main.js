@@ -95,7 +95,7 @@ import {
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
-import { getThemeForLevel, initAmbientParticles, updateAmbientParticles } from './scenery.js';
+import { getThemeForLevel, initAmbientParticles, updateAmbientParticles, setAmbientParticlesVisible } from './scenery.js';
 import { SpatialHash } from './spatial-hash.js';
 import { enableTelemetry, disableTelemetry, isTelemetryEnabled, setTelemetryHistoryMs, recordTelemetrySample, getTelemetrySnapshot } from './telemetry.js';
 import {
@@ -442,6 +442,7 @@ let levelFadeReady = false;
 
 // Floor damage flash
 let floorMaterial = null;
+let floorRef = null;
 let floorBaseColor = new THREE.Color(0x220044);
 let floorFlashTimer = 0;
 let floorFlashing = false;
@@ -1792,6 +1793,7 @@ function createEnvironment() {
   floor.geometry.boundingSphere.center.set(0, 0, 0);
   scene.add(floor);
   floor.matrixAutoUpdate = false;
+  floorRef = floor;
 
   createSun();
   // Removed legacy flat ShapeGeometry mountain layers. They were stale overlays
@@ -1990,6 +1992,12 @@ function applyThemeForLevel(level) {
   if (sunMeshRef) sunMeshRef.visible = !hideBaseEnv;
   if (sunGlowRef) sunGlowRef.visible = !hideBaseEnv;
   if (starsRef) starsRef.visible = theme.keepStars ? true : !hideBaseEnv;
+  if (floorRef) floorRef.visible = !hideBaseEnv;
+  if (biomeAmbientLight) biomeAmbientLight.visible = !hideBaseEnv;
+  if (biomeDirectionalLight) biomeDirectionalLight.visible = !hideBaseEnv;
+  if (biomePointLight) biomePointLight.visible = !hideBaseEnv;
+  // Hide ambient particles for custom biomes (they provide their own atmosphere)
+  setAmbientParticlesVisible(!hideBaseEnv);
 
   // Floor handling for base theme fallback
   if (floorMaterial) {

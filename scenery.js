@@ -397,6 +397,11 @@ export function initAmbientParticles(scene) {
   console.log('[scenery] Initialized ambient particles (60 primary, 30 secondary)');
 }
 
+export function setAmbientParticlesVisible(visible) {
+  if (ambientParticles) ambientParticles.visible = visible;
+  if (secondaryParticles) secondaryParticles.visible = visible;
+}
+
 export function updateAmbientParticles(dt, theme, playerPos) {
   const smokeStrengthRaw = typeof window !== 'undefined' ? Number(window.debugSmokeStrength) : NaN;
   const smokeStrength = Number.isFinite(smokeStrengthRaw)
