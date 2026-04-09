@@ -353,6 +353,30 @@ let currentBiomeLightingConfig = null;
 // floorHUDDebugMarker removed - was debug white plane
 const controllers = [];
 const controllerTriggerPressed = [false, false];
+
+/**
+ * Validate controller handedness after Quest sleep/wake.
+ * If controllers swapped (e.g., right controller now shows as left),
+ * re-map the controller references to match actual handedness.
+ */
+function validateControllerHandedness() {
+  const session = renderer.xr ? renderer.xr.getSession() : null;
+  if (!session) return;
+  const inputSources = session.inputSources;
+  if (inputSources.length < 2) return;
+  const expectedLeft = inputSources[0]?.handedness === 'left';
+  const expectedRight = inputSources[1]?.handedness === 'right';
+  if (expectedLeft && !expectedRight) {
+    _log('[controller] Controller swap detected - swapping controllers 0 and 1');
+    const temp = controllers[0];
+    controllers[0] = controllers[1];
+    controllers[1] = temp;
+    const tempTrigger = controllerTriggerPressed[0];
+    controllerTriggerPressed[0] = controllerTriggerPressed[1];
+    controllerTriggerPressed[1] = tempTrigger;
+  }
+}
+
 const projectiles = [];
 let lastTime = 0;
 let frameCount = 0;  // For staggering updates
@@ -1318,37 +1342,6 @@ function init() {
     // Validate controller handedness on session start
     validateControllerHandedness();
   });
-
-  /**
-   * Validate controller handedness after Quest sleep/wake.
-   * If controllers swapped (e.g., right controller now shows as left),
-   * re-map the controller references to match actual handedness.
-   */
-  function validateControllerHandedness() {
-    const session = renderer.xr.getSession();
-    if (!session) return;
-
-    const inputSources = session.inputSources;
-    if (inputSources.length < 2) return;
-
-    // Check if handedness matches our expected mapping
-    const expectedLeft = inputSources[0]?.handedness === 'left';
-    const expectedRight = inputSources[1]?.handedness === 'right';
-
-    // If mapping doesn't match, swap controllers
-    if (expectedLeft && !expectedRight) {
-      // Controller 0 is right, controller 1 is left - swap them
-      _log('[controller] Controller swap detected - swapping controllers 0 and 1');
-      const temp = controllers[0];
-      controllers[0] = controllers[1];
-      controllers[1] = temp;
-
-      // Swap trigger pressed state
-      const tempTrigger = controllerTriggerPressed[0];
-      controllerTriggerPressed[0] = controllerTriggerPressed[1];
-      controllerTriggerPressed[1] = tempTrigger;
-    }
-  }
 
   // No camera rig reset needed - camera is direct child of scene
   renderer.xr.addEventListener('sessionend', () => {
