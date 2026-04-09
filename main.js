@@ -95,7 +95,7 @@ import {
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
-import { getThemeForLevel, initAmbientParticles, updateAmbientParticles, setAmbientParticlesVisible } from './scenery.js';
+import { getThemeForLevel, initAmbientParticles, updateAmbientParticles, removeAmbientParticles } from './scenery.js';
 import { SpatialHash } from './spatial-hash.js';
 import { enableTelemetry, disableTelemetry, isTelemetryEnabled, setTelemetryHistoryMs, recordTelemetrySample, getTelemetrySnapshot } from './telemetry.js';
 import {
@@ -1987,25 +1987,27 @@ function applyThemeForLevel(level) {
 
   currentTheme = theme;
 
-  // Toggle base environment visibility for custom biomes that provide their own scene
+  // Remove base environment for custom biomes that provide their own scene
   const hideBaseEnv = !!theme.hideBaseEnv;
-  if (sunMeshRef) sunMeshRef.visible = !hideBaseEnv;
-  if (sunGlowRef) sunGlowRef.visible = !hideBaseEnv;
-  if (starsRef) starsRef.visible = theme.keepStars ? true : !hideBaseEnv;
-  if (floorRef) floorRef.visible = !hideBaseEnv;
-  if (biomeAmbientLight) biomeAmbientLight.visible = !hideBaseEnv;
-  if (biomeDirectionalLight) biomeDirectionalLight.visible = !hideBaseEnv;
-  if (biomePointLight) biomePointLight.visible = !hideBaseEnv;
-  // Hide ambient particles for custom biomes (they provide their own atmosphere)
-  setAmbientParticlesVisible(!hideBaseEnv);
-
-  // Floor handling for base theme fallback
-  if (floorMaterial) {
-    const floorColor = theme.floorColor !== undefined ? theme.floorColor : 0x000000;
-    floorBaseColor.setHex(floorColor);
-    floorMaterial.color.copy(floorBaseColor);
-    floorMaterial.opacity = theme.hideBaseEnv ? 0 : 1;
-    floorMaterial.__fadeBase = floorMaterial.opacity;
+  if (hideBaseEnv) {
+    // Dispose and remove base environment objects
+    if (sunMeshRef) { disposeMesh(sunMeshRef); sunMeshRef = null; }
+    if (sunGlowRef) { disposeMesh(sunGlowRef); sunGlowRef = null; }
+    if (starsRef && !theme.keepStars) { disposeMesh(starsRef); starsRef = null; }
+    if (floorRef) { disposeMesh(floorRef); floorRef = null; floorMaterial = null; }
+    if (biomeAmbientLight) { scene.remove(biomeAmbientLight); biomeAmbientLight.dispose(); biomeAmbientLight = null; }
+    if (biomeDirectionalLight) { scene.remove(biomeDirectionalLight); biomeDirectionalLight = null; }
+    if (biomePointLight) { scene.remove(biomePointLight); biomePointLight.dispose(); biomePointLight = null; }
+    removeAmbientParticles(scene);
+  } else {
+    // Floor handling for base theme fallback
+    if (floorMaterial) {
+      const floorColor = theme.floorColor !== undefined ? theme.floorColor : 0x000000;
+      floorBaseColor.setHex(floorColor);
+      floorMaterial.color.copy(floorBaseColor);
+      floorMaterial.opacity = 1;
+      floorMaterial.__fadeBase = 1;
+    }
   }
 
   // Rebuild stars when biome changes (sparkling stars for synthwave, simple stars for others)

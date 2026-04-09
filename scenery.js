@@ -397,9 +397,19 @@ export function initAmbientParticles(scene) {
   console.log('[scenery] Initialized ambient particles (60 primary, 30 secondary)');
 }
 
-export function setAmbientParticlesVisible(visible) {
-  if (ambientParticles) ambientParticles.visible = visible;
-  if (secondaryParticles) secondaryParticles.visible = visible;
+export function removeAmbientParticles(scene) {
+  if (ambientParticles) {
+    scene.remove(ambientParticles);
+    ambientParticles.geometry.dispose();
+    ambientParticles.material.dispose();
+    ambientParticles = null;
+  }
+  if (secondaryParticles) {
+    scene.remove(secondaryParticles);
+    secondaryParticles.geometry.dispose();
+    secondaryParticles.material.dispose();
+    secondaryParticles = null;
+  }
 }
 
 export function updateAmbientParticles(dt, theme, playerPos) {
