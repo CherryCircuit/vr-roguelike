@@ -2219,7 +2219,7 @@ function spawnStatusEffectBubble(position, effectType, stacks) {
 }
 
 /**
- * Spawn a health gain popup (+💖) at enemy position when VAMPIRE triggers.
+ * Spawn a health gain popup (white + with pixel half-heart) at enemy position when VAMPIRE triggers.
  */
 export function spawnHealthGainPopup(position) {
   const canvas = document.createElement('canvas');
@@ -2227,18 +2227,41 @@ export function spawnHealthGainPopup(position) {
   canvas.width = 256;
   canvas.height = 128;
 
-  // Green background with heart
-  ctx.fillStyle = '#00ff88';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Transparent canvas (no background)
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Text: green +💖
-  ctx.font = 'bold 64px Arial';
+  // Pixel heart pattern (7x6 grid from HUD)
+  const HEART_PIXELS = [
+    [0, 1, 1, 0, 1, 1, 0],
+    [1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1],
+    [0, 1, 1, 1, 1, 1, 0],
+    [0, 0, 1, 1, 1, 0, 0],
+    [0, 0, 0, 1, 0, 0, 0],
+  ];
+
+  const pixelSize = 8;
+  const heartX = 140;
+  const heartY = canvas.height / 2 - (6 * pixelSize) / 2;
+
+  // Draw half-heart (left side only: columns 0-3)
+  ctx.fillStyle = '#ff0044';
+  for (let row = 0; row < 6; row++) {
+    for (let col = 0; col < 4; col++) {
+      if (HEART_PIXELS[row][col]) {
+        ctx.fillRect(heartX + col * pixelSize, heartY + row * pixelSize, pixelSize, pixelSize);
+      }
+    }
+  }
+
+  // White + on the left
+  ctx.font = 'bold 72px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#00ff88';
-  ctx.shadowColor = '#004422';
-  ctx.shadowBlur = 8;
-  ctx.fillText('+💖', canvas.width / 2, canvas.height / 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = '#000000';
+  ctx.shadowBlur = 4;
+  ctx.fillText('+', 60, canvas.height / 2);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;

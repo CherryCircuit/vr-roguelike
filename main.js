@@ -27,7 +27,7 @@ import {
   startLightningSound, stopLightningSound,
   startLowHealthWarningSound, stopLowHealthWarningSound,
   playMusic, playBossMusic, stopMusic, fadeOutMusic,
-  playKillsAlertSound, playTingSound, playSeekerBurstSound, playHealSound,
+  playKillsAlertSound, playTingSound, playSeekerBurstSound, playHealSound, playLevelCompleteSound,
   playCountdown321,
   // Charge cannon sounds
   startChargeSound, updateChargeSound, stopChargeSound,
@@ -6292,6 +6292,9 @@ function completeLevel() {
   resetAllSlowMoState();
 
   game.state = State.LEVEL_COMPLETE;
+
+  // Play victory fanfare
+  playLevelCompleteSound();
 
   // Kill all remaining enemies with explosions
   // Cleanup is deferred to advanceLevelAfterUpgrade() so explosions are visible
