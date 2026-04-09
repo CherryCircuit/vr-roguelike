@@ -2126,96 +2126,91 @@ const statusBubbles = [];
  * Task #4: Replaced comic bubble icons with large glowing text for VR readability.
  * Colors: Fire=#ff3300, Freeze=#88ccff, Shock=#ffdd00
  */
-function spawnStatusEffectBubble(position, effectType, stacks) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = 256;
-  canvas.height = 128;
+// ── Status effect bubble pool (FIRE/SHOCK/CHILL) ──
+const STATUS_BUBBLE_POOL_SIZE = 8;
+const statusBubblePool = [];
+const statusBubbleActive = [];
 
-  // Determine color and text based on effect type
-  // Task #4: Use specified glowing colors for each effect
+function initStatusBubblePool() {
+  if (statusBubblePool.length > 0) return;
+  for (let i = 0; i < STATUS_BUBBLE_POOL_SIZE; i++) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.premultiplyAlpha = false;
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.5), material);
+    mesh.visible = false;
+    mesh.renderOrder = 998;
+    mesh.userData = { createdAt: 0, lifetime: 800, velocity: new THREE.Vector3() };
+    statusBubblePool.push({ mesh, canvas, ctx: canvas.getContext('2d'), texture });
+    if (sceneRef) sceneRef.add(mesh);
+  }
+}
+
+function spawnStatusEffectBubble(position, effectType, stacks) {
+  initStatusBubblePool();
+
+  // Grab from pool
+  let entry = statusBubblePool.pop();
+  if (!entry) {
+    // Pool exhausted - recycle oldest active
+    entry = statusBubbleActive.shift();
+    if (!entry) return;
+  }
+
+  const { mesh, canvas, ctx, texture } = entry;
+
+  // Determine color and text
   let glowColor, text;
   switch (effectType) {
-    case 'fire':
-      glowColor = '#ff3300';  // Hot red
-      text = stacks > 1 ? `FIRE x${stacks}!` : 'FIRE!';
-      break;
-    case 'shock':
-      glowColor = '#ffdd00';  // Electric yellow
-      text = stacks > 1 ? `SHOCK x${stacks}!` : 'SHOCK!';
-      break;
-    case 'freeze':
-      glowColor = '#88ccff';  // Icy blue
-      text = stacks > 1 ? `CHILL x${stacks}!` : 'CHILL!';
-      break;
-    default:
-      glowColor = '#ffffff';
-      text = 'EFFECT!';
+    case 'fire': glowColor = '#ff3300'; text = stacks > 1 ? `FIRE x${stacks}!` : 'FIRE!'; break;
+    case 'shock': glowColor = '#ffdd00'; text = stacks > 1 ? `SHOCK x${stacks}!` : 'SHOCK!'; break;
+    case 'freeze': glowColor = '#88ccff'; text = stacks > 1 ? `CHILL x${stacks}!` : 'CHILL!'; break;
+    default: glowColor = '#ffffff'; text = 'EFFECT!';
   }
 
-  // Large font for VR readability
-  const fontSize = 56;
-  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  // Redraw canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = 'bold 56px Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-
-  // Glow effect (similar to damage numbers)
   ctx.shadowColor = glowColor;
   ctx.shadowBlur = 20;
-
-  // Drop shadow for depth
   ctx.fillStyle = 'rgba(0,0,0,0.8)';
   ctx.fillText(text, 130, 66);
-
-  // Main glowing text
   ctx.fillStyle = glowColor;
   ctx.fillText(text, 128, 64);
+  texture.needsUpdate = true;
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  texture.premultiplyAlpha = false;
-
-  // Larger scale for VR readability (similar to damage numbers)
+  // Scale for VR readability
   const scale = 0.5;
-  const width = scale * 2;
-  const height = scale;
-
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(width, height),
-    new THREE.MeshBasicMaterial({ 
-      map: texture, 
-      transparent: true, 
-      opacity: 0.95,
-      depthTest: false, 
-      side: THREE.DoubleSide 
-    })
-  );
-  
-  // Position at enemy, pop up effect
+  mesh.scale.set(scale * 2, scale, 1);
+  mesh.material.opacity = 0.95;
   mesh.position.copy(position);
-  mesh.position.y += 1.2;  // Above enemy
+  mesh.position.y += 1.2;
   mesh.position.x += (Math.random() - 0.5) * 0.3;
   mesh.position.z += (Math.random() - 0.5) * 0.3;
-  
-  mesh.renderOrder = 998;
+  mesh.visible = true;
   mesh.userData.createdAt = performance.now();
   mesh.userData.lifetime = 800;
-  mesh.userData.velocity = new THREE.Vector3(
-    (Math.random() - 0.5) * 0.5,
-    1.2,  // Float up
-    (Math.random() - 0.5) * 0.5
+  mesh.userData.velocity.set(
+    (Math.random() - 0.5) * 0.5, 1.2, (Math.random() - 0.5) * 0.5
   );
 
-  sceneRef.add(mesh);
-  statusBubbles.push(mesh);
+  statusBubbleActive.push(entry);
 
-  // Cap total to prevent perf issues
-  while (statusBubbles.length > 20) {
-    const old = statusBubbles.shift();
-    sceneRef.remove(old);
-    old.material.map.dispose();
-    old.material.dispose();
-  }
+  // Remove from legacy statusBubbles if present
+  const sbIdx = statusBubbles.indexOf(mesh);
+  if (sbIdx >= 0) statusBubbles.splice(sbIdx, 1);
 }
 
 // ── Health gain popup pool (avoid texture churn from vampire triggers) ──
@@ -2347,6 +2342,23 @@ export function updateStatusBubbles(dt, now) {
   // Update pooled health popups
   updateHealthPopups(dt, now);
 
+  // Update pooled status effect bubbles (FIRE/SHOCK/CHILL)
+  for (let i = statusBubbleActive.length - 1; i >= 0; i--) {
+    const entry = statusBubbleActive[i];
+    const b = entry.mesh;
+    const age = now - b.userData.createdAt;
+    if (age > b.userData.lifetime) {
+      b.visible = false;
+      statusBubbleActive.splice(i, 1);
+      statusBubblePool.push(entry);
+    } else {
+      b.position.addScaledVector(b.userData.velocity, dt);
+      b.userData.velocity.y -= 3 * dt;
+      b.material.opacity = 0.95 * (1 - age / b.userData.lifetime);
+    }
+  }
+
+  // Legacy status bubbles (non-pooled, for any remaining callers)
   for (let i = statusBubbles.length - 1; i >= 0; i--) {
     const b = statusBubbles[i];
     const age = now - b.userData.createdAt;
