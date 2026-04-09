@@ -3911,6 +3911,7 @@ class TelegraphingSystem {
           wireframe: false
         });
         effect.mesh = new THREE.Mesh(projGeo, projMat);
+        effect.mesh.name = 'boss-attack-projectile';
         if (position) {
           effect.mesh.position.copy(position);
         } else if (this.camera) {
@@ -3932,6 +3933,7 @@ class TelegraphingSystem {
           opacity: 0.6
         });
         effect.mesh = new THREE.Mesh(chargeGeo, chargeMat);
+        effect.mesh.name = 'boss-attack-charge';
         effect.mesh.scale.set(0.1, 0.1, 0.1);
         if (this.camera) {
           effect.mesh.position.set(
@@ -3951,6 +3953,7 @@ class TelegraphingSystem {
           opacity: 0.7
         });
         effect.mesh = new THREE.Mesh(minionGeo, minionMat);
+        effect.mesh.name = 'boss-attack-minion';
         if (this.camera) {
           effect.mesh.position.set(
             this.camera.position.x,
@@ -3983,6 +3986,7 @@ class TelegraphingSystem {
           opacity: 0.6
         });
         effect.mesh = new THREE.Mesh(meleeGeo, meleeMat);
+        effect.mesh.name = 'boss-attack-melee';
         break;
     }
   }
@@ -6809,6 +6813,7 @@ class PrismBoss extends Boss {
       const coreGeo = new THREE.SphereGeometry(0.08, 6, 6);
       const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
       const core = new THREE.Mesh(coreGeo, coreMat);
+      core.name = 'prism-weak-point-core';
       core.visible = (i === 0);
       core.userData.isWeakPoint = (i === 0);
       core.userData.isPrismCore = true;
@@ -7123,6 +7128,7 @@ class PrismBoss extends Boss {
       });
       // MeshBasicMaterial doesn't have emissive in practice, but we set color bright
       const wp = new THREE.Mesh(wpGeo, wpMat);
+      wp.name = 'prism-heal-weak-point';
       wp.userData.isWeakPoint = true;
       wp.userData.isHealWeakPoint = true;
       wp.userData.healWeakPointIndex = i;
@@ -8043,6 +8049,7 @@ function initBossProjPools() {
     depthWrite: false,
   });
   bossProjCorePool = new THREE.InstancedMesh(coreGeo, coreMat, BOSS_PROJ_POOL_SIZE);
+  bossProjCorePool.name = 'boss-projectile-pool';
   bossProjCorePool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   bossProjCorePool.count = 0;
   bossProjCorePool.frustumCulled = false;

@@ -61,7 +61,7 @@ export function bakeCloudsToCanvas(opts) {
 
   for (let py = 0; py < height; py++) {
     // normalizedHeight: 0 at bottom, 1 at top
-    const normalizedHeight = py / height;
+    const normalizedHeight = py / (height - 1);
 
     // Sky band mask (mid-sky only)
     const skyBandLow = smoothstep(0.15, 0.45, normalizedHeight);

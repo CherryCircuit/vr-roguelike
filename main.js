@@ -282,9 +282,7 @@ function basicMat(color, opts) {
 
 // ── Module State ───────────────────────────────────────────
 let scene, camera, renderer;
-let biomeAmbientLight = null;
-let biomeDirectionalLight = null;
-let biomePointLight = null;
+// Base lights removed — all biomes provide their own lighting
 let currentBiomeLightingConfig = null;
 // Camera added directly to scene (no rig - VR hands need direct camera)
 // floorHUDDebugMarker removed - was debug white plane
@@ -380,6 +378,7 @@ let _explosionGeo = null; // shared unit sphere, created once
 // [CORE] Initialize explosion visual pool
 function initExplosionPool(scene) {
   _explosionGeo = new THREE.SphereGeometry(1, 12, 12); // unit sphere, scaled per-use
+  _explosionGeo.name = 'explosion-pool-geo';
   for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
     const mat = basicMat(0xff8800, {
       transparent: true, opacity: 0.7, side: THREE.BackSide,
@@ -422,8 +421,7 @@ const chargeParticleSystems = [null, null];
 const blasterDisplays = [null, null];
 
 // Environment refs for level-based scaling (sun, stars)
-let sunMeshRef = null;
-let sunGlowRef = null;
+// Base sun/glow refs removed — no base environment exists
 let starsRef = null;
 let starsBiomeId = null;
 let currentTheme = null;
@@ -441,6 +439,7 @@ const environmentFadeTargets = [];
 let levelFadeReady = false;
 
 // Floor damage flash
+// Floor refs removed — no base floor exists, biomes provide their own terrain
 let floorMaterial = null;
 let floorRef = null;
 let floorBaseColor = new THREE.Color(0x220044);
@@ -760,32 +759,13 @@ const BIOME_LIGHTING = {
     directional: { color: 0xff2222, intensity: 0.7, position: [20, 40, -50] },
     point: { color: 0xff4444, intensity: 1.3, distance: 15 },
   },
-  default: {
-    ambient: { color: 0x110022, intensity: 0.15 },
-    directional: { color: 0xff8844, intensity: 0.6, position: [50, 80, 30] },
-    point: { color: 0xffeedd, intensity: 1.0, distance: 18 },
-  },
 };
+// BIOME_LIGHTING removed — all biomes provide their own lighting
+const AVAILABLE_BIOMES = ['synthwave_valley', 'desert_night', 'alien_planet', 'hellscape_lava'];
 
-const AVAILABLE_BIOMES = Object.keys(BIOME_LIGHTING).filter((key) => key !== 'default');
-
-// [CORE] Apply biome-specific lighting configuration
+// applyBiomeLighting — stubbed, all biomes provide their own lighting
 function applyBiomeLighting(biome) {
-  if (!biomeAmbientLight || !biomeDirectionalLight || !biomePointLight) {
-    console.warn('[lighting] Lights not initialized yet');
-    return;
-  }
-  const config = BIOME_LIGHTING[biome] || BIOME_LIGHTING.default;
-  currentBiomeLightingConfig = config;
-  biomeAmbientLight.color.setHex(config.ambient.color);
-  biomeAmbientLight.intensity = config.ambient.intensity;
-  biomeDirectionalLight.color.setHex(config.directional.color);
-  biomeDirectionalLight.intensity = config.directional.intensity;
-  biomeDirectionalLight.position.set(config.directional.position[0], config.directional.position[1], config.directional.position[2]);
-  biomePointLight.color.setHex(config.point.color);
-  biomePointLight.intensity = config.point.intensity;
-  biomePointLight.distance = config.point.distance;
-  _log('[lighting] Applied lighting for biome:', biome);
+  // No base lights exist. Biome scenes handle their own lighting.
 }
 
 // [DEBUG] Progression automation helpers (test hooks for headless/Puppeteer)
@@ -1243,34 +1223,7 @@ function init() {
   renderer.toneMapping = THREE.NoToneMapping;
   document.body.appendChild(renderer.domElement);
 
-  // ── Biome Lighting System Init ───────────────────────────────────
-  biomeAmbientLight = new THREE.AmbientLight(0x110022, 0.15);
-  biomeAmbientLight.name = 'ambient-light';
-  scene.add(biomeAmbientLight);
-
-  biomeDirectionalLight = new THREE.DirectionalLight(0xff8844, 0.8);
-  biomeDirectionalLight.name = 'directional-light';
-  biomeDirectionalLight.position.set(50, 100, 50);
-  biomeDirectionalLight.castShadow = true;
-  biomeDirectionalLight.shadow.mapSize.set(256, 256);
-  biomeDirectionalLight.shadow.bias = -0.01;
-  biomeDirectionalLight.shadow.normalBias = 0;
-  biomeDirectionalLight.shadow.camera.near = 10;
-  biomeDirectionalLight.shadow.camera.far = 200;
-  biomeDirectionalLight.shadow.camera.left = -50;
-  biomeDirectionalLight.shadow.camera.right = 50;
-  biomeDirectionalLight.shadow.camera.top = 50;
-  biomeDirectionalLight.shadow.camera.bottom = -50;
-  scene.add(biomeDirectionalLight);
-
-  biomePointLight = new THREE.PointLight(0xffeedd, 1.5, 20, 2);
-  biomePointLight.name = 'point-light';
-  biomePointLight.position.set(0, 2, 0);
-  biomePointLight.castShadow = false;
-  scene.add(biomePointLight);
-  _log('[lighting] Biome lights initialized');
-
-  // VR Button - disable foveated rendering to remove visible quality boxes
+    // VR Button - disable foveated rendering to remove visible quality boxes
   const vrButton = VRButton.createButton(renderer, {
     optionalFeatures: ['local-floor', 'bounded-floor'],
   });
@@ -1768,42 +1721,11 @@ function updateVRPauseButton(now) {
 // COUPLING: Updates scene directly, registers fade materials
 // ============================================================
 
-// [CORE] Create initial game environment (floor, sky, lighting)
+// [CORE] Create initial game environment
+// Base floor/sun/stars/lights REMOVED — all 4 biomes are custom scenes with hideBaseEnv:true
+// Each biome provides its own terrain, sky, lighting, and atmosphere.
 function createEnvironment() {
-  const floorGeo = new THREE.PlaneGeometry(200, 200);
-  const floorMat = new THREE.MeshBasicMaterial({
-    color: floorBaseColor,
-    depthWrite: false,  // Prevent depth buffer conflicts with biome terrains
-    polygonOffset: true,  // Prevent z-fighting with biome terrains at y=0
-    polygonOffsetFactor: 1.0,
-    polygonOffsetUnits: 4.0,
-  });
-  floorMaterial = floorMat;  // Store reference for damage flash
-  floorMaterial.userData.floorHeight = -0.01;
-  registerFadeMaterial(floorMaterial);
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.name = 'floor';
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -0.01 + SCENE_Y_OFFSET;
-  floor.frustumCulled = false;
-  floor.renderOrder = -1;  // Render before other transparent objects
-  // Ensure floor is always visible by setting a large bounding sphere
-  floor.geometry.computeBoundingSphere();
-  floor.geometry.boundingSphere.radius = 150;
-  floor.geometry.boundingSphere.center.set(0, 0, 0);
-  scene.add(floor);
-  floor.matrixAutoUpdate = false;
-  floorRef = floor;
-
-  createSun();
-  // Removed legacy flat ShapeGeometry mountain layers. They were stale overlays
-  // that conflicted with the biome-specific terrain scenes.
-  createStars();
-  initAmbientParticles(scene);
-
-  // NOTE: Lights removed — all materials are MeshBasicMaterial (unlit)
-  // so lights have zero visual effect but cost GPU overhead.
-  // If PBR materials are added later, re-add lights here.
+  // No base environment needed — biomes provide everything
 }
 
 // [CORE] Register material for environment fade
@@ -1987,30 +1909,7 @@ function applyThemeForLevel(level) {
 
   currentTheme = theme;
 
-  // Remove base environment for custom biomes that provide their own scene
-  const hideBaseEnv = !!theme.hideBaseEnv;
-  if (hideBaseEnv) {
-    // Dispose and remove base environment objects
-    if (sunMeshRef) { disposeMesh(sunMeshRef, true); sunMeshRef = null; }
-    if (sunGlowRef) { disposeMesh(sunGlowRef, true); sunGlowRef = null; }
-    if (starsRef) { disposeMesh(starsRef, true); starsRef = null; }
-    if (floorRef) { disposeMesh(floorRef, true); floorRef = null; floorMaterial = null; }
-    if (biomeAmbientLight) { scene.remove(biomeAmbientLight); biomeAmbientLight.dispose(); biomeAmbientLight = null; }
-    if (biomeDirectionalLight) { scene.remove(biomeDirectionalLight); biomeDirectionalLight = null; }
-    if (biomePointLight) { scene.remove(biomePointLight); biomePointLight.dispose(); biomePointLight = null; }
-    removeAmbientParticles(scene);
-  } else {
-    // Floor handling for base theme fallback
-    if (floorMaterial) {
-      const floorColor = theme.floorColor !== undefined ? theme.floorColor : 0x000000;
-      floorBaseColor.setHex(floorColor);
-      floorMaterial.color.copy(floorBaseColor);
-      floorMaterial.opacity = 1;
-      floorMaterial.__fadeBase = 1;
-    }
-  }
-
-  // Rebuild stars when biome changes (sparkling stars for synthwave, simple stars for others)
+  // Rebuild stars when biome changes
   const biomeId = getBiomeForLevel(level);
   if (biomeId !== starsBiomeId) {
     rebuildStars(theme);
@@ -2024,97 +1923,7 @@ function applyThemeForLevel(level) {
 }
 
 // [CORE] Create sun mesh and glow for biome scene
-function createSun() {
-  // TODO: Replace canvas-generated sun with a hand-crafted PNG texture for best quality.
-  // To swap: load a transparent PNG with `new THREE.TextureLoader().load('sun.png', tex => { ... })`
-  // and apply it to the sunMat below. The PNG should be a circle with horizontal cutout bands.
-
-  // Generate synthwave sun as a canvas texture with built-in cutout bands
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-
-  // FIXED: Use radial gradient for bright center to dimmer edges (like reference image)
-  // Combined with vertical gradient for top-to-bottom color variation
-  const sunGrad = ctx.createRadialGradient(256, 256, 0, 256, 256, 248);
-  sunGrad.addColorStop(0, '#ffffff');    // Bright white center
-  sunGrad.addColorStop(0.2, '#ffff99');  // Bright yellow
-  sunGrad.addColorStop(0.4, '#ffcc66');  // Orange-yellow
-  sunGrad.addColorStop(0.6, '#ff9933');  // Orange
-  sunGrad.addColorStop(0.8, '#ff6600');  // Red-orange
-  sunGrad.addColorStop(1.0, '#ff4400');  // Red at edges
-
-  ctx.beginPath();
-  ctx.arc(256, 256, 248, 0, Math.PI * 2);
-  ctx.fillStyle = sunGrad;
-  ctx.fill();
-
-  // Outer glow baked into texture for visibility
-  ctx.shadowColor = '#ffaa00';  // Orange glow
-  ctx.shadowBlur = 40;          // Large glow radius
-  ctx.beginPath();
-  ctx.arc(256, 256, 248, 0, Math.PI * 2);
-  ctx.fillStyle = sunGrad;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  // Cut horizontal bands in the lower half — thick at bottom, thin toward center
-  // Classic retrowave sun: bands only below the equator
-  ctx.globalCompositeOperation = 'destination-out';
-  const bandDefs = [
-    { y: 0.90, h: 0.065 },  // Bottom: thickest
-    { y: 0.82, h: 0.050 },
-    { y: 0.75, h: 0.038 },
-    { y: 0.69, h: 0.028 },
-    { y: 0.64, h: 0.020 },
-    { y: 0.60, h: 0.013 },
-    { y: 0.57, h: 0.008 },
-    { y: 0.54, h: 0.004 },  // Center: thinnest
-  ];
-  for (const b of bandDefs) {
-    const cy = b.y * 512;
-    const ch = b.h * 512;
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, cy - ch / 2, 512, ch);
-  }
-  ctx.globalCompositeOperation = 'source-over';
-
-  const sunTexture = new THREE.CanvasTexture(canvas);
-  const sunMat = new THREE.MeshBasicMaterial({
-    map: sunTexture,
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  // Position so the lower ~40% of the sun dips below the horizon
-  const sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(32, 32), sunMat);
-  sunMesh.name = 'base-sun';
-  sunMesh.position.set(0, 12 + SCENE_Y_OFFSET, -89);
-  sunMesh.renderOrder = -10;
-  scene.add(sunMesh);
-  sunMeshRef = sunMesh;
-  registerFadeMaterial(sunMeshRef.material);
-
-  // Outer glow behind sun (additive for bloom effect)
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xffaa00,        // Orange glow (matching sun gradient)
-    side: THREE.DoubleSide,
-    transparent: true,
-    // Tone down the legacy synth halo so it does not wash out the rest of the skyline.
-    opacity: 0.24,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const glow = new THREE.Mesh(new THREE.CircleGeometry(35, 32), glowMat);
-  glow.name = 'base-sun-glow';
-  glow.position.set(0, 12 + SCENE_Y_OFFSET, -89.5);
-  glow.renderOrder = -11;
-  scene.add(glow);
-  sunGlowRef = glow;
-  registerFadeMaterial(sunGlowRef.material);
-
-}
+// createSun() REMOVED — base environment deleted, biomes provide their own sun/moon
 
 // [CORE] Create sparkling star particles
 function createSparklingStars(theme) {
@@ -2211,73 +2020,23 @@ function createSparklingStars(theme) {
 }
 
 // [CORE] Create background stars
-function createStars() {
-  const theme = currentTheme || {};
-  if (theme.customScene === 'synthwave_valley') {
-    createSparklingStars(theme);
-    return;
-  }
-  // Dispose any existing stars to prevent scene leaks
-  if (starsRef) {
-    if (starsRef.parent) starsRef.parent.remove(starsRef);
-    starsRef.geometry.dispose();
-    starsRef.material.dispose();
-    starsRef = null;
-  }
-  const count = theme.starCount || 800;
-  const spread = theme.starSpread || 300;
-  const height = theme.starHeight || 80;
-  const base = theme.starBase || 10;
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    const i3 = i * 3;
-    positions[i3] = (Math.random() - 0.5) * spread;
-    positions[i3 + 1] = Math.random() * height + base;
-    positions[i3 + 2] = (Math.random() - 0.5) * spread;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
-  const stars = new THREE.Points(geo, mat);
-  stars.name = 'stars-near';
-  stars.renderOrder = 10;  // Render after skydome (-20) and sun (-3 to -1)
-  scene.add(stars);
-  starsRef = stars;
-  registerFadeMaterial(starsRef.material);
-}
+// createStars() REMOVED — base environment deleted, biomes provide their own stars
+// rebuildStars() REMOVED — was for non-custom biomes only
 
-// [CORE] Rebuild stars with new theme colors
+// [CORE] Rebuild stars on biome change
 function rebuildStars(theme) {
   if (!scene) return;
   if (starsRef) {
-    disposeMesh(starsRef);
+    disposeMesh(starsRef, true);
     starsRef = null;
   }
-  if (theme.customScene === 'synthwave_valley') {
+  // All biomes are custom scenes now — create their specific stars
+  if (theme.customScene) {
     createSparklingStars(theme);
     return;
   }
-  const count = theme.starCount || 800;
-  const spread = theme.starSpread || 300;
-  const height = theme.starHeight || 80;
-  const base = theme.starBase || 10;
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    const i3 = i * 3;
-    positions[i3] = (Math.random() - 0.5) * spread;
-    positions[i3 + 1] = Math.random() * height + base;
-    positions[i3 + 2] = (Math.random() - 0.5) * spread;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.PointsMaterial({ color: theme.starColor || 0xffffff, size: theme.starSize || 0.5 });
-  const stars = new THREE.Points(geo, mat);
-  stars.name = 'stars-default';
-  stars.renderOrder = 10;  // Render after skydome (-20) and sun (-3 to -1)
-  scene.add(stars);
-  starsRef = stars;
-  registerFadeMaterial(starsRef.material);
-  starsBiomeId = theme?.customScene || 'default';
+  // Fallback (should never happen)
+  console.warn('[stars] No customScene for theme:', theme?.name);
 }
 
 // ============================================================
@@ -3287,6 +3046,7 @@ function fireShield(controller, index, hand, altWeapon) {
   
   // Create blue translucent sphere around player
   const shieldGeo = new THREE.SphereGeometry(1.2, 24, 24);
+  shieldGeo.name = 'shield-sphere';
   const shieldMat = basicMat(0x4488ff, {
     transparent: true,
     opacity: 0.4,
@@ -3466,7 +3226,6 @@ function spawnSingleLaserMine(position, hand, altWeapon) {
   glowMesh.position.copy(position);
   glowMesh.renderOrder = 399;
   scene.add(glowMesh);
-    glowMesh.name = 'laser-mine-glow';
 
   const now = performance.now();
 
@@ -4014,6 +3773,7 @@ function triggerBlackHole(mine, mineIndex) {
 
   // Core - dark sphere
   const coreGeo = new THREE.SphereGeometry(0.3, 16, 16);
+  coreGeo.name = 'black-hole-core-geo';
   const coreMat = basicMat(0x110022, {
     transparent: true,
     opacity: 0.9,
@@ -6683,8 +6443,8 @@ function advanceLevelAfterUpgrade() {
       game.state = State.BOSS_ALERT;
       game.stateTimer = 3.0; // 3 second alert sequence
       // Start boss music immediately at alert screen
-      const bossCategory = `boss${game.level}`;
-      playMusic(bossCategory);
+      const bossTier = getBossTier(game.level);
+      playBossMusic(bossTier);
       playBossAlertSound();
       showBossAlert();
       playIncomingBossSound();
@@ -9069,12 +8829,6 @@ function render(timestamp) {
   updateBiomeProps(now, rawDt);
   _mark('ambient_biome'); // ── end: ambient particles + biome props
 
-  // Update player-following point light
-  if (biomePointLight && camera) {
-    biomePointLight.position.copy(camera.position);
-    biomePointLight.position.y += 0.5;
-  }
-
   // Process seeker burst queue (burst fire timing)
   processSeekerBurstQueue(now);
 
@@ -9708,8 +9462,8 @@ function render(timestamp) {
     
     // Store original values for restoration later
     game._cinOrigSunY = game._cinSunGroup ? game._cinSunGroup.position.y : 270;
-    game._cinOrigAmbientIntensity = biomeAmbientLight ? biomeAmbientLight.intensity : 0.15;
-    game._cinOrigDirIntensity = biomeDirectionalLight ? biomeDirectionalLight.intensity : 0.8;
+    game._cinOrigAmbientIntensity = 0.15;
+    game._cinOrigDirIntensity = 0.8;
     game._cinOrigSkyOpacity = game._cinSkyMat ? game._cinSkyMat.opacity : 1.0;
     
     // Store original terrain colors if available
@@ -9755,12 +9509,7 @@ function render(timestamp) {
     
     // 2. Dim scene lights to ~40%
     const dimTarget = 0.4;
-    if (biomeAmbientLight) {
-      biomeAmbientLight.intensity = game._cinOrigAmbientIntensity * (1 - t * (1 - dimTarget));
-    }
-    if (biomeDirectionalLight) {
-      biomeDirectionalLight.intensity = game._cinOrigDirIntensity * (1 - t * (1 - dimTarget));
-    }
+
     
     // 3. Fade skydome opacity to 20%
     if (game._cinSkyMat) {

@@ -64,10 +64,10 @@ export function getBossTier(level) {
 const BOSS_POOLS = {
   // Level 5: Skull Boss
   1: ['skull_boss'],
-  // Level 10: Medium bosses
-  2: ['hunter_breakenridge', 'dj_drax', 'captain_kestrel', 'dr_aster', 'sunflare_seraph'],
-  // Level 15: Hard bosses
-  3: ['theodore_breakenridge', 'commander_halcyon', 'madame_coda', 'twin_glitch', 'neon_minotaur'],
+  // Level 10: The Prism
+  2: ['the_prism'],
+  // Level 15: Neon Minotaur
+  3: ['neon_minotaur'],
   // Level 20: Final bosses
   4: ['walter_breakenridge', 'kernel_monolith', 'synth_kraken', 'afterimage_seraphim', 'sun_eater_train'],
 };
