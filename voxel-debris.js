@@ -64,7 +64,7 @@ export function spawnVoxelExplosion(position, color, voxelCount, enemyType = 'ba
     voxelCount *= 2;
   }
   
-  // Cap at 10 voxels per enemy to prevent spam
+  // Cap at 8 voxels per enemy to prevent spam
   voxelCount = Math.min(voxelCount, 8);
   
   // Make room by removing oldest voxels if at cap

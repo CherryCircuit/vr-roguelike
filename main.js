@@ -1829,10 +1829,6 @@ function purgeBiomeForBossCinematic() {
   // Drop the current biome geometry while the screen is black so upgrades
   // appear on a clean slate before the next biome loads.
   clearBiomeScene();
-
-  if (sunMeshRef) sunMeshRef.visible = false;
-  if (sunGlowRef) sunGlowRef.visible = false;
-  if (starsRef) starsRef.visible = false;
   if (floorMaterial) floorMaterial.opacity = 0;
   applyEnvironmentFade(1);
   if (scene) {
@@ -6693,7 +6689,7 @@ function initProjectilePool() {
   // LatheGeometry revolves around Y axis: profile X=radius, Y=height
   // Rotate so head points -Z (forward) and tail extends +Z
   seekerGeo.rotateX(Math.PI / 2);
-  const seekerMat = createProjectileMaterial(0xffcc44);
+  const seekerMat = createProjectileMaterial(0xffffff);
   registerPlayerProjectileMaterial(seekerMat);
   const seekerIM = new THREE.InstancedMesh(seekerGeo, seekerMat, 28);
   seekerIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -6707,7 +6703,7 @@ function initProjectilePool() {
   // PERFORMANCE: Bumped from 30 to 80 to support dual wield + fire rate upgrades
   const plasmaGeo = new THREE.CylinderGeometry(0.0375, 0.0375, 0.5, 6);
   plasmaGeo.rotateX(Math.PI / 2);
-  const plasmaMat = createProjectileMaterial(0x00ff88);
+  const plasmaMat = createProjectileMaterial(0xffffff);
   registerPlayerProjectileMaterial(plasmaMat);
   const plasmaIM = new THREE.InstancedMesh(plasmaGeo, plasmaMat, 80);
   plasmaIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -7030,7 +7026,9 @@ function fireMainWeapon(controller, index) {
   // Fire projectile(s)
   const count = stats.projectileCount;
   const shotId = startAccuracyShot(count, hand);
-  const isBuckshot = stats.spreadAngle > 0 && !stats.homing;
+  // Use same threshold as spawnProjectile to prevent plasma carbine from being treated as buckshot
+  const BUCKSHOT_SPREAD_THRESHOLD = 0.087; // ~5 degrees
+  const isBuckshot = (stats.spreadAngle || 0) > BUCKSHOT_SPREAD_THRESHOLD && !stats.homing;
 
   // Calculate perpendicular offset axis for multi-shot
   const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
