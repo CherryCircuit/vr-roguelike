@@ -68,8 +68,8 @@ const BOSS_POOLS = {
   2: ['the_prism'],
   // Level 15: Neon Minotaur
   3: ['neon_minotaur'],
-  // Level 20: Final bosses
-  4: ['walter_breakenridge', 'kernel_monolith', 'synth_kraken', 'afterimage_seraphim', 'sun_eater_train'],
+  // Level 20: Authored final boss
+  4: ['eclipse_engine'],
 };
 
 export function getRandomBossIdForLevel(level) {
