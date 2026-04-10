@@ -38,6 +38,8 @@ import {
   playPhaseWraithCharge as playMortarCharge,
   // Skull boss sounds
   playSkullDeathKnell, playSkullLaughSound,
+  // Final boss sounds
+  playFinalBossAwakenSound, playFinalBossVictorySting,
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -1398,6 +1400,8 @@ function init() {
     hideKillsAlert,
     unloadBiomeForBossCinematic: purgeBiomeForBossCinematic,
     playSkullDeathKnell,
+    showFloatingMessage,
+    playFinalBossVictorySting,
   });
 
   // Init subsystems
@@ -6662,7 +6666,10 @@ function advanceLevelAfterUpgrade() {
       const bossTier = getBossTier(game.level);
       playBossMusic(bossTier);
       playBossAlertSound();
-      showBossAlert();
+      showBossAlert(
+        game.level >= 20 ? '⚠ FINAL BOSS ⚠' : '⚠ INCOMING BOSS ⚠',
+        game.level >= 20 ? 'ECLIPSE ENGINE' : ''
+      );
       playIncomingBossSound();
       _log(`[game] Boss alert for level ${game.level} - boss music started`);
       
@@ -8043,12 +8050,34 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex, hitObj
     if (hitObject.userData.isHealWeakPoint) bossHitInfo.isHealWeakPoint = true;
     if (hitObject.userData.healWeakPointIndex !== undefined) bossHitInfo.healWeakPointIndex = hitObject.userData.healWeakPointIndex;
     if (hitObject.userData.isPrismCore) bossHitInfo.isPrismCore = true;
+    if (hitObject.userData.eclipseNodeId !== undefined) bossHitInfo.eclipseNodeId = hitObject.userData.eclipseNodeId;
+    if (hitObject.userData.eclipseNodeType) bossHitInfo.eclipseNodeType = hitObject.userData.eclipseNodeType;
+    if (hitObject.userData.isEclipseHeart) bossHitInfo.isEclipseHeart = true;
   }
   // Walk up to find facet info on parent groups
   let walk = hitObject;
-  while (walk && bossHitInfo.facetIndex === undefined) {
-    if (walk.userData && walk.userData.facetIndex !== undefined) {
+  while (walk && (
+    bossHitInfo.facetIndex === undefined
+    || bossHitInfo.eclipseNodeId === undefined
+    || bossHitInfo.eclipseNodeType === undefined
+  )) {
+    if (walk.userData && walk.userData.facetIndex !== undefined && bossHitInfo.facetIndex === undefined) {
       bossHitInfo.facetIndex = walk.userData.facetIndex;
+    }
+    if (walk.userData && walk.userData.eclipseNodeId !== undefined && bossHitInfo.eclipseNodeId === undefined) {
+      bossHitInfo.eclipseNodeId = walk.userData.eclipseNodeId;
+    }
+    if (walk.userData && walk.userData.eclipseNodeType && bossHitInfo.eclipseNodeType === undefined) {
+      bossHitInfo.eclipseNodeType = walk.userData.eclipseNodeType;
+    }
+    if (walk.userData && walk.userData.isEclipseHeart) {
+      bossHitInfo.isEclipseHeart = true;
+    }
+    if (
+      bossHitInfo.facetIndex !== undefined
+      && bossHitInfo.eclipseNodeId !== undefined
+      && bossHitInfo.eclipseNodeType !== undefined
+    ) {
       break;
     }
     walk = walk.parent;
@@ -8915,7 +8944,11 @@ function spawnEnemyWave(dt) {
       if (bossId) {
         spawnBoss(bossId, cfg);
         playBossSpawn();
-        playSkullLaughSound(); // Universal boss intro/taunt
+        if (bossId === 'eclipse_engine') {
+          playFinalBossAwakenSound();
+        } else {
+          playSkullLaughSound(); // Legacy boss intro/taunt
+        }
         playBossMusic(getBossTier(game.level));
       }
     }

@@ -2224,7 +2224,7 @@ export function showKillsRemainingAlert(remaining) {
   killsAlertMesh = alertText;
 }
 
-export function showBossAlert() {
+export function showBossAlert(text = '⚠ INCOMING BOSS ⚠', subtitle = '') {
   // Position in front of player (VR-friendly)
   levelTextGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4.5);
   levelTextGroup.visible = true;
@@ -2233,7 +2233,7 @@ export function showBossAlert() {
   disposeGroupChildren(levelTextGroup);
 
   // Main alert text
-  const alertText = makeSprite('⚠ INCOMING BOSS ⚠', {
+  const alertText = makeSprite(text, {
     fontSize: 72,
     color: '#ff0000',
     glow: true,
@@ -2242,6 +2242,18 @@ export function showBossAlert() {
   });
   alertText.position.set(0, 0, 0);
   levelTextGroup.add(alertText);
+
+  if (subtitle) {
+    const subtitleText = makeSprite(subtitle, {
+      fontSize: 42,
+      color: '#ffd966',
+      glow: true,
+      glowColor: '#ff6600',
+      scale: 0.42,
+    });
+    subtitleText.position.set(0, -0.42, 0);
+    levelTextGroup.add(subtitleText);
+  }
 }
 
 export function showFloatingMessage(text, options = {}) {

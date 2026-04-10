@@ -24,6 +24,8 @@ let bossDeathCinematic = {
   explosionTimer: 0,
   bossPos: new THREE.Vector3(),
   wasFinalBoss: false,
+  finalSequenceStyle: null,
+  finalMessageShown: false,
 };
 
 // External dependencies (injected via init)
@@ -44,6 +46,8 @@ let deps = {
   resetAllSlowMoState: null,
   hideKillsAlert: null,
   unloadBiomeForBossCinematic: null,
+  showFloatingMessage: null,
+  playFinalBossVictorySting: null,
 };
 
 /**
@@ -146,6 +150,8 @@ export function startBossDeathCinematic(boss) {
   bossDeathCinematic.explosionTimer = 0;
   bossDeathCinematic.bossPos.copy(boss.mesh.position);
   bossDeathCinematic.wasFinalBoss = deps.game && deps.game.level >= 20;
+  bossDeathCinematic.finalSequenceStyle = boss?.def?.finalSequence || null;
+  bossDeathCinematic.finalMessageShown = false;
   bossDeathFreezeTimer = BOSS_DEATH_FREEZE;
 
   // Ensure overlays exist and are properly initialized
@@ -176,6 +182,10 @@ export function startBossDeathCinematic(boss) {
   if (deps.clearBoss) deps.clearBoss();
   if (deps.clearAllTelegraphs) deps.clearAllTelegraphs();
 
+  if (bossDeathCinematic.wasFinalBoss && deps.playFinalBossVictorySting) {
+    deps.playFinalBossVictorySting();
+  }
+
   if (deps.game && deps.State) {
     deps.game.state = deps.State.BOSS_DEATH_CINEMATIC;
   }
@@ -191,6 +201,8 @@ export function finishBossDeathCinematic() {
   bossDeathCinematic.active = false;
   bossDeathCinematic.timer = 0;
   bossDeathCinematic.explosionTimer = 0;
+  bossDeathCinematic.finalSequenceStyle = null;
+  bossDeathCinematic.finalMessageShown = false;
 
   // Hide white overlay (done with), but KEEP black overlay visible.
   // The black overlay prevents any pop-back of the old biome scene.
@@ -250,11 +262,16 @@ export function updateBossDeathCinematic(rawDt) {
 
   bossDeathCinematic.timer += rawDt;
   const t = bossDeathCinematic.timer;
+  const isFinalSequence = bossDeathCinematic.wasFinalBoss && bossDeathCinematic.finalSequenceStyle === 'eclipse-collapse';
+  const explosionTime = isFinalSequence ? 1.35 : BOSS_DEATH_EXPLOSION_TIME;
+  const whiteFade = isFinalSequence ? 0.55 : BOSS_DEATH_WHITE_FADE;
+  const blackFade = isFinalSequence ? 0.72 : BOSS_DEATH_BLACK_FADE;
+  const explosionInterval = isFinalSequence ? 0.08 : BOSS_DEATH_EXPLOSION_INTERVAL;
   const explosionStart = BOSS_DEATH_FREEZE;
-  const explosionEnd = explosionStart + BOSS_DEATH_EXPLOSION_TIME;
+  const explosionEnd = explosionStart + explosionTime;
   const whiteStart = explosionEnd;
-  const whiteEnd = whiteStart + BOSS_DEATH_WHITE_FADE;
-  const blackEnd = whiteEnd + BOSS_DEATH_BLACK_FADE;
+  const whiteEnd = whiteStart + whiteFade;
+  const blackEnd = whiteEnd + blackFade;
 
   if (t >= explosionStart && t <= explosionEnd) {
     bossDeathCinematic.explosionTimer -= rawDt;
@@ -267,7 +284,7 @@ export function updateBossDeathCinematic(rawDt) {
       const explosionPos = bossDeathCinematic.bossPos.clone().add(offset);
       if (deps.spawnExplosionVisual) deps.spawnExplosionVisual(explosionPos, 0.7 + Math.random() * 0.8);
       if (deps.playExplosionSound) deps.playExplosionSound();  // Play explosion sound for each boss death explosion
-      bossDeathCinematic.explosionTimer = BOSS_DEATH_EXPLOSION_INTERVAL;
+      bossDeathCinematic.explosionTimer = explosionInterval;
     }
   }
 
@@ -275,7 +292,7 @@ export function updateBossDeathCinematic(rawDt) {
   let blackOpacity = 0;
   let envFade = 0;  // Environment fade synced with black overlay
   if (t >= whiteStart && t < whiteEnd) {
-    whiteOpacity = (t - whiteStart) / BOSS_DEATH_WHITE_FADE;
+    whiteOpacity = (t - whiteStart) / whiteFade;
   } else if (t >= whiteEnd && t < blackEnd) {
     // Crossfade: keep white at full opacity, fade black in ON TOP of white.
     // This prevents ShaderMaterial elements (stars, sky) from bleeding through
@@ -289,10 +306,30 @@ export function updateBossDeathCinematic(rawDt) {
     envFade = 1;  // Full fade
   }
 
+  if (isFinalSequence && t >= whiteStart && !bossDeathCinematic.finalMessageShown) {
+    bossDeathCinematic.finalMessageShown = true;
+    if (deps.showFloatingMessage) {
+      deps.showFloatingMessage('ECLIPSE COLLAPSED', {
+        duration: 2200,
+        fontSize: 70,
+        color: '#fff4c7',
+        glowColor: '#ff9a3d',
+        scale: 0.52,
+        offsetY: 0.1,
+        offsetZ: -1.0,
+      });
+    }
+  }
+
   // Apply environment fade - ALL scene elements fade to black
   if (deps.applyEnvironmentFade) deps.applyEnvironmentFade(envFade);
 
   if (bossDeathWhiteOverlay) {
+    if (isFinalSequence && bossDeathWhiteOverlay.material?.color) {
+      bossDeathWhiteOverlay.material.color.setHex(0xfff0c4);
+    } else if (bossDeathWhiteOverlay.material?.color) {
+      bossDeathWhiteOverlay.material.color.setHex(0xffffff);
+    }
     bossDeathWhiteOverlay.visible = whiteOpacity > 0;
     bossDeathWhiteOverlay.material.opacity = Math.min(1, Math.max(0, whiteOpacity));
   }

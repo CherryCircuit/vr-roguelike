@@ -1034,6 +1034,142 @@ export function playBossAlertSound() {
   }
 }
 
+// ── Final boss custom SFX ──────────────────────────────────
+// These sounds are intentionally short and layered so the fight feels distinct
+// without touching the music system or creating long CPU-heavy synth graphs.
+export function playFinalBossAwakenSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  [70, 105, 140].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    osc.type = i === 1 ? 'sawtooth' : 'triangle';
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.8, t + 0.9);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(420 + i * 180, t);
+    filter.frequency.exponentialRampToValueAtTime(1600 + i * 220, t + 0.7);
+
+    gain.gain.setValueAtTime(0.0, t);
+    gain.gain.linearRampToValueAtTime(0.09, t + 0.12);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(getSfxOutput());
+
+    osc.start(t);
+    osc.stop(t + 1.0);
+  });
+}
+
+export function playFinalBossSealBreakSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  [960, 720, 540].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 0 ? 'triangle' : 'sine';
+    osc.frequency.setValueAtTime(freq, t + i * 0.04);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.55, t + 0.28 + i * 0.02);
+
+    gain.gain.setValueAtTime(0.08, t + i * 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.32 + i * 0.04);
+
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.04);
+    osc.stop(t + 0.36 + i * 0.04);
+  });
+}
+
+export function playFinalBossChargeSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'sawtooth';
+  osc2.type = 'square';
+  osc.frequency.setValueAtTime(110, t);
+  osc.frequency.exponentialRampToValueAtTime(260, t + 1.1);
+  osc2.frequency.setValueAtTime(55, t);
+  osc2.frequency.exponentialRampToValueAtTime(96, t + 1.1);
+
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(180, t);
+  filter.frequency.exponentialRampToValueAtTime(1100, t + 0.9);
+  filter.Q.setValueAtTime(4.5, t);
+
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.14, t + 0.2);
+  gain.gain.linearRampToValueAtTime(0.1, t + 0.8);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+
+  osc.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gain);
+  gain.connect(getSfxOutput());
+
+  osc.start(t);
+  osc2.start(t);
+  osc.stop(t + 1.2);
+  osc2.stop(t + 1.2);
+}
+
+export function playFinalBossAscendSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  [180, 270, 360].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 0 ? 'square' : 'sawtooth';
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 2.4, t + 0.9);
+
+    gain.gain.setValueAtTime(0.0, t);
+    gain.gain.linearRampToValueAtTime(0.08, t + 0.16);
+    gain.gain.linearRampToValueAtTime(0.12, t + 0.45);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t);
+    osc.stop(t + 1.4);
+  });
+}
+
+export function playFinalBossVictorySting() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  [440, 554.37, 659.25].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 2 ? 'triangle' : 'sine';
+    osc.frequency.setValueAtTime(freq, t + i * 0.08);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.08, t + 0.75 + i * 0.04);
+
+    gain.gain.setValueAtTime(0.0, t + i * 0.08);
+    gain.gain.linearRampToValueAtTime(0.08, t + i * 0.08 + 0.06);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.1 + i * 0.05);
+
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.08);
+    osc.stop(t + 1.15 + i * 0.05);
+  });
+}
+
 // ── Menu / UI Interaction ──────────────────────────────────
 export function playMenuClick() {
   const ctx = getAudioContext();

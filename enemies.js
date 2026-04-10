@@ -6,7 +6,13 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getStasisSlowFactor } from './stasis.js';
-import { playTingSound, playEnemyProjectileSound, playProjectileWarningSound, playBossProjectileFiredSound, playBossProjectileAlertSound, playPhaseWraithCharge as playMortarCharge, playSkullPhaseSound, playSkullHandGrowlSound, playSkullDeathKnell, playSkullLaughSound } from './audio.js';
+import {
+  playTingSound, playEnemyProjectileSound, playProjectileWarningSound,
+  playBossProjectileFiredSound, playBossProjectileAlertSound,
+  playPhaseWraithCharge as playMortarCharge,
+  playSkullPhaseSound, playSkullHandGrowlSound, playSkullDeathKnell, playSkullLaughSound,
+  playFinalBossSealBreakSound, playFinalBossChargeSound, playFinalBossAscendSound,
+} from './audio.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
@@ -3990,7 +3996,7 @@ class TelegraphingSystem {
   }
 
   // Start a telegraphing effect (visual warning)
-  // type: 'projectile', 'charge', 'minion', 'melee', 'teleport'
+  // type: 'projectile', 'charge', 'minion', 'melee', 'teleport', 'pulse', 'shockwave'
   // duration: how long the telegraph lasts
   // color: visual color for the effect
   start(type, duration, color, position = null, direction = null) {
@@ -4048,7 +4054,7 @@ class TelegraphingSystem {
         break;
 
       case 'charge':
-        // Large expanding sphere from player
+        // Large expanding sphere from boss or player
         const chargeGeo = new THREE.SphereGeometry(0.1, 16, 16);
         const chargeMat = new THREE.MeshBasicMaterial({
           color: effect.color,
@@ -4058,7 +4064,9 @@ class TelegraphingSystem {
         effect.mesh = new THREE.Mesh(chargeGeo, chargeMat);
         effect.mesh.name = 'boss-attack-charge';
         effect.mesh.scale.set(0.1, 0.1, 0.1);
-        if (this.camera) {
+        if (position) {
+          effect.mesh.position.copy(position);
+        } else if (this.camera) {
           effect.mesh.position.set(
             this.camera.position.x,
             this.camera.position.y + 0.5,
@@ -4098,6 +4106,9 @@ class TelegraphingSystem {
         effect.mesh = new THREE.Mesh(eyeGeo, eyeMat);
         effect.mesh.rotation.x = -Math.PI / 2;
         effect.data.spinSpeed = 0.1;
+        if (position) {
+          effect.mesh.position.copy(position);
+        }
         break;
 
       case 'melee':
@@ -4110,6 +4121,45 @@ class TelegraphingSystem {
         });
         effect.mesh = new THREE.Mesh(meleeGeo, meleeMat);
         effect.mesh.name = 'boss-attack-melee';
+        if (position) {
+          effect.mesh.position.copy(position);
+        }
+        break;
+
+      case 'pulse':
+        // VR-safe ring pulse centered on the attack origin.
+        const pulseGeo = new THREE.RingGeometry(0.5, 0.75, 40);
+        const pulseMat = new THREE.MeshBasicMaterial({
+          color: effect.color,
+          transparent: true,
+          opacity: 0.65,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        effect.mesh = new THREE.Mesh(pulseGeo, pulseMat);
+        effect.mesh.rotation.x = -Math.PI / 2;
+        effect.mesh.name = 'boss-attack-pulse';
+        if (position) {
+          effect.mesh.position.copy(position);
+        }
+        break;
+
+      case 'shockwave':
+        // Ground ring that expands outward to communicate an arena-wide burst.
+        const shockwaveGeo = new THREE.RingGeometry(0.7, 1.0, 48);
+        const shockwaveMat = new THREE.MeshBasicMaterial({
+          color: effect.color,
+          transparent: true,
+          opacity: 0.75,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        effect.mesh = new THREE.Mesh(shockwaveGeo, shockwaveMat);
+        effect.mesh.rotation.x = -Math.PI / 2;
+        effect.mesh.name = 'boss-attack-shockwave';
+        if (position) {
+          effect.mesh.position.copy(position);
+        }
         break;
     }
   }
@@ -4166,6 +4216,23 @@ class TelegraphingSystem {
             effect.mesh.scale.setScalar(0.2 + progress * 2);
             effect.mesh.material.opacity = 0.6 * (1 - progress);
             effect.mesh.rotation.y += dt * 2;
+          }
+          break;
+
+        case 'pulse':
+          if (effect.mesh) {
+            const progress = elapsed / effect.duration;
+            effect.mesh.scale.setScalar(0.75 + progress * 2.5);
+            effect.mesh.material.opacity = 0.65 * (1 - progress);
+            effect.mesh.rotation.z += dt * 0.8;
+          }
+          break;
+
+        case 'shockwave':
+          if (effect.mesh) {
+            const progress = elapsed / effect.duration;
+            effect.mesh.scale.setScalar(0.8 + progress * 7.5);
+            effect.mesh.material.opacity = 0.75 * (1 - progress);
           }
           break;
       }
@@ -7584,6 +7651,975 @@ class PrismBoss extends Boss {
   }
 }
 
+// ── ECLIPSE ENGINE (Final Boss, Level 20) ───────────────────
+class EclipseEngineBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    // VR-CRITICAL: The final fight uses explicit state instead of many loose
+    // timers so phase gating, invulnerability windows, and cleanup stay robust.
+    this.fixedY = 1.9;
+    this.moveTimer = 0;
+    this.moveDirection = new THREE.Vector3(1, 0, 0);
+    this.behaviorTimer = 0;
+    this.volleyTimer = 0;
+    this.coreShotTimer = 0;
+    this.transitioning = false;
+    this.transitionTimer = 0;
+    this.transitionDuration = 2.5;
+    this.pendingPhaseTransition = 0;
+
+    this.phase2Threshold = this.maxHp * (2 / 3);
+    this.phase3Threshold = this.maxHp * (1 / 3);
+    this.lastStandThreshold = this.maxHp * 0.12;
+
+    this.coreExposed = false;
+    this.windowTimer = 0;
+    this.windowDuration = 0;
+    this.windowDamageBudget = 0;
+    this.windowDamageTaken = 0;
+    this.forceCloseWindow = false;
+    this.lastStand = false;
+
+    this.sealNodes = [];
+    this.anchorNodes = [];
+    this.crownEmitters = [];
+    this.finalEmitters = [];
+    this.shellMeshes = [];
+    this.heartMeshes = [];
+    this.crownMeshes = [];
+    this.ascensionMeshes = [];
+
+    this.visualSpin = 0;
+    this.visualPulse = 0;
+    this.currentScale = 1;
+    this.targetScale = 1;
+
+    this.phase1VolleyIndex = 0;
+    this.phase2PatternIndex = 0;
+    this.phase2CycleTimer = 0;
+    this.phase2InterruptTimer = 0;
+    this.phase2ShockwaveIndex = 0;
+    this.phase3ArmorTimer = 0;
+    this.phase3PatternIndex = 0;
+    this.phase3ShockwaveTimer = 0;
+
+    this.buildEclipseMesh();
+    this.enterPhase1();
+  }
+
+  createVoxelCluster(positions, size, color, opacity, userData = {}, collectInto = null) {
+    const group = new THREE.Group();
+    const geo = getGeo(size);
+
+    positions.forEach((pos) => {
+      const cube = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          fog: false,
+        }),
+      );
+      cube.position.set(pos[0], pos[1], pos[2]);
+      Object.assign(cube.userData, userData);
+      group.add(cube);
+      if (collectInto) collectInto.push(cube);
+    });
+
+    return group;
+  }
+
+  buildEclipseMesh() {
+    while (this.mesh.children.length > 0) {
+      const child = this.mesh.children[0];
+      this.mesh.remove(child);
+      child.traverse?.((part) => {
+        if (part.geometry) part.geometry.dispose();
+        if (part.material) part.material.dispose();
+      });
+    }
+
+    this.shellGroup = this.createVoxelCluster([
+      [0, 0.72, 0],
+      [0.28, 0.46, 0],
+      [-0.28, 0.46, 0],
+      [0.54, 0.18, 0],
+      [-0.54, 0.18, 0],
+      [0.54, -0.18, 0],
+      [-0.54, -0.18, 0],
+      [0.28, -0.46, 0],
+      [-0.28, -0.46, 0],
+      [0, -0.72, 0],
+      [0, 0.18, 0.2],
+      [0, -0.18, 0.2],
+      [0.18, 0, 0.2],
+      [-0.18, 0, 0.2],
+    ], 0.22, 0x33ccff, 0.88, { isBossBody: true }, this.shellMeshes);
+    this.mesh.add(this.shellGroup);
+
+    this.heartGroup = this.createVoxelCluster([
+      [0, 0, 0.34],
+      [0.18, 0, 0.24],
+      [-0.18, 0, 0.24],
+      [0, 0.18, 0.2],
+      [0, -0.18, 0.2],
+    ], 0.18, 0xffffff, 0.92, { isEclipseHeart: true }, this.heartMeshes);
+    this.heartGroup.position.z = 0.04;
+    this.mesh.add(this.heartGroup);
+
+    this.crownGroup = new THREE.Group();
+    const crownOffsets = [
+      { pos: [1.35, 0, 0], rotY: 0 },
+      { pos: [-1.35, 0, 0], rotY: Math.PI },
+      { pos: [0, 0, 1.35], rotY: Math.PI / 2 },
+      { pos: [0, 0, -1.35], rotY: -Math.PI / 2 },
+    ];
+    crownOffsets.forEach((cfg, idx) => {
+      const arm = this.createVoxelCluster([
+        [0, 0, 0],
+        [0.24, 0.18, 0],
+        [0.24, -0.18, 0],
+        [0.52, 0, 0],
+      ], 0.16, 0x66ffff, 0.7, { isBossBody: true }, this.crownMeshes);
+      arm.position.set(cfg.pos[0], cfg.pos[1], cfg.pos[2]);
+      arm.rotation.y = cfg.rotY;
+
+      const tip = new THREE.Mesh(
+        getGeo(0.18),
+        new THREE.MeshBasicMaterial({
+          color: 0xffaa55,
+          transparent: true,
+          opacity: 0.88,
+          depthWrite: false,
+          fog: false,
+        }),
+      );
+      tip.position.set(0.78, 0, 0);
+      tip.userData.isBossBody = true;
+      arm.add(tip);
+      this.crownEmitters[idx] = tip;
+      this.crownMeshes.push(tip);
+      this.crownGroup.add(arm);
+    });
+    this.mesh.add(this.crownGroup);
+
+    this.ascensionGroup = new THREE.Group();
+    this.ascensionGroup.visible = false;
+    const ascensionOffsets = [
+      { pos: [1.95, 0.55, 0], rotY: 0 },
+      { pos: [-1.95, 0.55, 0], rotY: Math.PI },
+      { pos: [0, 0.55, 1.95], rotY: Math.PI / 2 },
+      { pos: [0, 0.55, -1.95], rotY: -Math.PI / 2 },
+    ];
+    ascensionOffsets.forEach((cfg, idx) => {
+      const spike = this.createVoxelCluster([
+        [0, 0, 0],
+        [0.28, 0.18, 0],
+        [0.56, 0.05, 0],
+        [0.84, -0.08, 0],
+      ], 0.18, 0xff8844, 0.82, { isBossBody: true }, this.ascensionMeshes);
+      spike.position.set(cfg.pos[0], cfg.pos[1], cfg.pos[2]);
+      spike.rotation.y = cfg.rotY;
+
+      const tip = new THREE.Mesh(
+        getGeo(0.2),
+        new THREE.MeshBasicMaterial({
+          color: 0xfff2b0,
+          transparent: true,
+          opacity: 0.92,
+          depthWrite: false,
+          fog: false,
+        }),
+      );
+      tip.position.set(1.08, -0.12, 0);
+      tip.userData.isBossBody = true;
+      spike.add(tip);
+      this.finalEmitters[idx] = tip;
+      this.ascensionMeshes.push(tip);
+      this.ascensionGroup.add(spike);
+    });
+    this.mesh.add(this.ascensionGroup);
+
+    const hitbox = new THREE.Mesh(
+      getHitboxGeo(3.2, 3.2, 3.2),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    );
+    hitbox.userData.isBossHitbox = true;
+    this.mesh.add(hitbox);
+  }
+
+  createWeakNode(id, type, color) {
+    const group = new THREE.Group();
+    group.name = `eclipse-${type}-${id}`;
+    group.userData.eclipseNodeId = id;
+    group.userData.eclipseNodeType = type;
+
+    const geo = getGeo(type === 'anchor' ? 0.18 : 0.16);
+    const positions = [
+      [0, 0, 0.14],
+      [0.18, 0, 0],
+      [-0.18, 0, 0],
+      [0, 0.18, 0],
+      [0, -0.18, 0],
+    ];
+
+    positions.forEach((pos, idx) => {
+      const cube = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          color: idx === 0 ? 0xffffff : color,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+          fog: false,
+        }),
+      );
+      cube.position.set(pos[0], pos[1], pos[2]);
+      cube.userData.isWeakPoint = true;
+      cube.userData.eclipseNodeId = id;
+      cube.userData.eclipseNodeType = type;
+      group.add(cube);
+    });
+
+    return group;
+  }
+
+  setHeartExposed(exposed) {
+    this.coreExposed = exposed;
+    this.heartMeshes.forEach((mesh) => {
+      mesh.userData.isWeakPoint = exposed;
+    });
+  }
+
+  clearWeakNodes(nodes) {
+    if (!nodes || nodes.length === 0) return;
+    nodes.forEach((node) => {
+      node.active = false;
+      if (node.group?.parent) node.group.parent.remove(node.group);
+      node.group?.traverse((part) => {
+        if (part.geometry) part.geometry.dispose();
+        if (part.material) part.material.dispose();
+      });
+      node.group = null;
+    });
+    nodes.length = 0;
+  }
+
+  enterPhase1() {
+    this.phase = 1;
+    this.state = 'phase1_sealed';
+    this.fixedY = 1.9;
+    this.targetScale = 1.0;
+    this.volleyTimer = 0.9;
+    this.behaviorTimer = 3.1;
+    this.windowTimer = 0;
+    this.windowDamageBudget = 0;
+    this.windowDamageTaken = 0;
+    this.forceCloseWindow = false;
+    this.setHeartExposed(false);
+    this.clearWeakNodes(this.anchorNodes);
+    this.spawnPhase1Seals();
+  }
+
+  enterPhase2() {
+    this.phase = 2;
+    this.state = 'phase2_pattern';
+    this.fixedY = 2.05;
+    this.targetScale = 1.12;
+    this.phase2CycleTimer = 0;
+    this.phase2InterruptTimer = 0;
+    this.phase2ShockwaveIndex = 0;
+    this.phase2PatternIndex = 0;
+    this.volleyTimer = 1.0;
+    this.windowTimer = 0;
+    this.forceCloseWindow = false;
+    this.setHeartExposed(false);
+    this.clearWeakNodes(this.sealNodes);
+    this.clearWeakNodes(this.anchorNodes);
+  }
+
+  enterPhase3() {
+    this.phase = 3;
+    this.state = 'phase3_armor';
+    this.fixedY = 2.25;
+    this.targetScale = 1.65;
+    this.phase3ArmorTimer = 0;
+    this.phase3PatternIndex = 0;
+    this.phase3ShockwaveTimer = 0;
+    this.volleyTimer = 1.0;
+    this.phase3ShockwaveTimer = 2.8;
+    this.windowTimer = 0;
+    this.forceCloseWindow = false;
+    this.lastStand = false;
+    this.setHeartExposed(false);
+    this.clearWeakNodes(this.sealNodes);
+    this.clearWeakNodes(this.anchorNodes);
+    if (this.ascensionGroup) this.ascensionGroup.visible = true;
+  }
+
+  spawnPhase1Seals() {
+    this.clearWeakNodes(this.sealNodes);
+    const configs = [
+      { angle: 0.2, radius: 2.55, height: 0.45, speed: 0.95 },
+      { angle: Math.PI * 0.9, radius: 2.8, height: -0.4, speed: -0.8 },
+      { angle: Math.PI * 1.6, radius: 2.4, height: 0.05, speed: 1.15 },
+    ];
+
+    configs.forEach((cfg, idx) => {
+      const group = this.createWeakNode(idx, 'seal', 0x59f7ff);
+      group.position.set(Math.cos(cfg.angle) * cfg.radius, cfg.height, Math.sin(cfg.angle) * cfg.radius);
+      this.mesh.add(group);
+      this.sealNodes.push({
+        id: idx,
+        type: 'seal',
+        hp: 85,
+        angle: cfg.angle,
+        radius: cfg.radius,
+        height: cfg.height,
+        speed: cfg.speed,
+        active: true,
+        group,
+      });
+    });
+  }
+
+  spawnPhase2Anchors() {
+    this.clearWeakNodes(this.anchorNodes);
+    const configs = [
+      { offset: new THREE.Vector3(-3.2, 0.55, 0.35), bob: 0 },
+      { offset: new THREE.Vector3(3.2, -0.3, -0.35), bob: Math.PI },
+    ];
+
+    configs.forEach((cfg, idx) => {
+      const group = this.createWeakNode(idx, 'anchor', 0xff9966);
+      group.position.copy(cfg.offset);
+      this.mesh.add(group);
+      this.anchorNodes.push({
+        id: idx,
+        type: 'anchor',
+        hp: 110,
+        offset: cfg.offset.clone(),
+        bob: cfg.bob,
+        active: true,
+        group,
+      });
+    });
+  }
+
+  startPhaseTransition(newPhase) {
+    if (this.transitioning || newPhase <= this.phase) return;
+
+    this.transitioning = true;
+    this.transitionTimer = 0;
+    this.pendingPhaseTransition = newPhase;
+    this.state = 'transition';
+    this.windowTimer = 0;
+    this.forceCloseWindow = false;
+    this.setHeartExposed(false);
+    this.clearWeakNodes(this.sealNodes);
+    this.clearWeakNodes(this.anchorNodes);
+    playFinalBossAscendSound();
+
+    if (this.telegraphing) {
+      this.telegraphing.start('teleport', 0.7, 0xffaa44, this.mesh.position.clone());
+      this.telegraphing.start('pulse', 0.9, 0xffcc77, this.mesh.position.clone());
+    }
+  }
+
+  beginCoreWindow(duration, budgetRatio) {
+    this.windowDuration = duration;
+    this.windowTimer = duration;
+    this.windowDamageBudget = budgetRatio === Infinity ? Infinity : this.maxHp * budgetRatio;
+    this.windowDamageTaken = 0;
+    this.forceCloseWindow = false;
+    this.coreShotTimer = 0.7;
+    this.setHeartExposed(true);
+  }
+
+  resolveExposure() {
+    this.windowTimer = 0;
+    this.windowDuration = 0;
+    this.windowDamageBudget = 0;
+    this.windowDamageTaken = 0;
+    this.forceCloseWindow = false;
+    this.setHeartExposed(false);
+
+    if (this.pendingPhaseTransition > this.phase) {
+      this.startPhaseTransition(this.pendingPhaseTransition);
+      return;
+    }
+
+    if (this.phase === 1) {
+      this.state = 'phase1_sealed';
+      this.spawnPhase1Seals();
+      this.volleyTimer = 0;
+      this.behaviorTimer = 0;
+    } else if (this.phase === 2) {
+      this.state = 'phase2_pattern';
+      this.phase2CycleTimer = 0;
+      this.phase2InterruptTimer = 0;
+      this.phase2ShockwaveIndex = 0;
+      this.volleyTimer = 0;
+    } else if (this.phase === 3 && !this.lastStand) {
+      this.state = 'phase3_armor';
+      this.phase3ArmorTimer = 0;
+      this.phase3ShockwaveTimer = 0;
+      this.volleyTimer = 0;
+    }
+  }
+
+  enterLastStand() {
+    if (this.lastStand) return;
+    this.lastStand = true;
+    this.state = 'phase3_laststand';
+    this.targetScale = 1.82;
+    this.setHeartExposed(true);
+    this.windowTimer = 999;
+    this.windowDamageBudget = Infinity;
+    this.windowDamageTaken = 0;
+    this.forceCloseWindow = false;
+    this.volleyTimer = 0.95;
+    this.phase3ShockwaveTimer = 2.1;
+    playFinalBossAscendSound();
+
+    if (this.telegraphing) {
+      this.telegraphing.start('pulse', 0.8, 0xffe7aa, this.mesh.position.clone());
+      this.telegraphing.start('shockwave', 1.0, 0xff5c33, this.mesh.position.clone());
+    }
+  }
+
+  updateSealNodes(dt, now, playerPos) {
+    this.sealNodes.forEach((node) => {
+      if (!node.active || !node.group?.parent) return;
+      node.angle += node.speed * dt;
+      node.group.position.set(
+        Math.cos(node.angle) * node.radius,
+        node.height + Math.sin(now * 0.003 + node.id) * 0.18,
+        Math.sin(node.angle) * node.radius,
+      );
+      node.group.lookAt(playerPos);
+    });
+  }
+
+  updateAnchorNodes(dt, now, playerPos) {
+    this.anchorNodes.forEach((node) => {
+      if (!node.active || !node.group?.parent) return;
+      node.group.position.set(
+        node.offset.x,
+        node.offset.y + Math.sin(now * 0.004 + node.bob) * 0.25,
+        node.offset.z + Math.sin(now * 0.0025 + node.bob) * 0.18,
+      );
+      node.group.lookAt(playerPos);
+    });
+  }
+
+  fireFanFromOrigins(origins, playerPos, shotCount, spreadX, delayMs, color) {
+    if (!origins || origins.length === 0) return;
+    const expectedPhase = this.phase;
+    const expectedState = this.state;
+    origins.forEach((origin) => {
+      if (this.telegraphing) {
+        this.telegraphing.start('projectile', delayMs / 1000, color, origin.clone());
+      }
+    });
+
+    const targets = [];
+    if (shotCount <= 1) {
+      targets.push(playerPos.clone());
+    } else {
+      for (let i = 0; i < shotCount; i++) {
+        const offset = shotCount === 1 ? 0 : (i / (shotCount - 1) - 0.5);
+        const target = playerPos.clone();
+        target.x += offset * spreadX;
+        target.y += Math.abs(offset) * 0.12;
+        targets.push(target);
+      }
+    }
+
+    this.later(delayMs, () => {
+      if (this.phase !== expectedPhase || this.state !== expectedState) return;
+      origins.forEach((origin) => {
+        targets.forEach((target) => {
+          spawnBossProjectile(origin.clone(), target.clone());
+        });
+      });
+    });
+  }
+
+  fireRadialBurst(projectileCount, radius, waveCount = 1, waveSpacingMs = 140, color = 0xff6633) {
+    const origin = this.mesh.position.clone();
+    const expectedPhase = this.phase;
+    const expectedState = this.state;
+    if (this.telegraphing) {
+      this.telegraphing.start('shockwave', 0.7, color, origin.clone());
+    }
+
+    for (let wave = 0; wave < waveCount; wave++) {
+      this.later(wave * waveSpacingMs, () => {
+        if (this.phase !== expectedPhase || this.state !== expectedState) return;
+        for (let i = 0; i < projectileCount; i++) {
+          const angle = (i / projectileCount) * Math.PI * 2 + wave * 0.12;
+          const target = new THREE.Vector3(
+            origin.x + Math.cos(angle) * radius,
+            origin.y,
+            origin.z + Math.sin(angle) * radius,
+          );
+          spawnBossProjectile(origin.clone(), target);
+        }
+      });
+    }
+  }
+
+  fireMeasuredHeartShot(playerPos, spreadX = 0) {
+    const origin = this.heartGroup.getWorldPosition(new THREE.Vector3());
+    const expectedPhase = this.phase;
+    const expectedState = this.state;
+    const target = playerPos.clone();
+    if (spreadX !== 0) target.x += spreadX;
+    this.showTelegraph('projectile', 0.24, 0xfff0b2, origin);
+    this.later(240, () => {
+      if (this.phase !== expectedPhase || this.state !== expectedState) return;
+      spawnBossProjectile(origin.clone(), target);
+    });
+  }
+
+  firePhase1Volley(playerPos) {
+    const activeSeals = this.sealNodes.filter(node => node.active && node.group?.parent);
+    if (activeSeals.length === 0) return;
+
+    const node = activeSeals[this.phase1VolleyIndex % activeSeals.length];
+    this.phase1VolleyIndex++;
+    const origin = node.group.getWorldPosition(new THREE.Vector3());
+    const shotCount = activeSeals.length >= 2 ? 3 : 2;
+    const spread = activeSeals.length >= 2 ? 0.8 : 0.45;
+    this.fireFanFromOrigins([origin], playerPos, shotCount, spread, 360, 0x59f7ff);
+  }
+
+  fireCrownCrossfire(playerPos, shotCount = 3, spreadX = 1.1, color = 0xff9933) {
+    const origins = this.crownEmitters
+      .slice(0, 4)
+      .map((emitter) => emitter?.getWorldPosition(new THREE.Vector3()))
+      .filter(Boolean);
+    if (origins.length === 0) return;
+    this.fireFanFromOrigins(origins.slice(0, 2), playerPos, shotCount, spreadX, 340, color);
+  }
+
+  firePhase3Volley(playerPos) {
+    const emitters = (this.finalEmitters.length > 0 ? this.finalEmitters : this.crownEmitters)
+      .map((emitter) => emitter?.getWorldPosition(new THREE.Vector3()))
+      .filter(Boolean);
+    if (emitters.length === 0) return;
+    this.fireFanFromOrigins(emitters.slice(0, 2), playerPos, 3, 1.35, 320, 0xffd27a);
+  }
+
+  startAnchorInterrupt() {
+    this.state = 'phase2_interrupt';
+    this.phase2InterruptTimer = 0;
+    this.phase2ShockwaveIndex = 0;
+    this.setHeartExposed(false);
+    this.spawnPhase2Anchors();
+    playFinalBossChargeSound();
+
+    if (this.telegraphing) {
+      this.telegraphing.start('charge', 1.0, 0xff8844, this.mesh.position.clone());
+      this.telegraphing.start('pulse', 1.25, 0xffb266, this.mesh.position.clone());
+      this.telegraphing.start('shockwave', 1.7, 0xff5522, this.mesh.position.clone());
+    }
+  }
+
+  resolveAnchorInterrupt(interrupted) {
+    if (this.state !== 'phase2_interrupt') return;
+
+    this.clearWeakNodes(this.anchorNodes);
+    this.state = 'phase2_exposed';
+    this.phase2CycleTimer = 0;
+    this.phase2InterruptTimer = 0;
+    this.phase2ShockwaveIndex = 0;
+
+    if (interrupted) {
+      playFinalBossSealBreakSound();
+      this.beginCoreWindow(8.0, 0.11);
+    } else {
+      this.beginCoreWindow(4.6, 0.06);
+    }
+  }
+
+  updateMovement(dt, playerPos) {
+    const changeCadence = this.phase === 1 ? 2.4 : this.phase === 2 ? 2.0 : 1.45;
+    this.moveTimer += dt;
+    if (this.moveTimer >= changeCadence) {
+      this.moveTimer = 0;
+      _scratch.copy(this.mesh.position).sub(playerPos);
+      _scratch.y = 0;
+      if (_scratch.lengthSq() < 0.0001) {
+        _scratch.set(0, 0, 1);
+      } else {
+        _scratch.normalize();
+      }
+      _scratch2.set(-_scratch.z, 0, _scratch.x).normalize();
+      const tangentSign = Math.random() < 0.5 ? -1 : 1;
+      this.moveDirection.copy(_scratch2.multiplyScalar(tangentSign)).addScaledVector(_scratch, this.coreExposed ? -0.12 : 0.08);
+      if (this.moveDirection.lengthSq() < 0.0001) {
+        this.moveDirection.set(tangentSign, 0, 0);
+      } else {
+        this.moveDirection.normalize();
+      }
+    }
+
+    const speed = this.transitioning
+      ? 0
+      : this.phase === 1
+        ? (this.coreExposed ? 0.5 : 0.9)
+        : this.phase === 2
+          ? (this.coreExposed ? 0.65 : 1.05)
+          : (this.coreExposed || this.lastStand ? 0.85 : 1.2);
+    this.mesh.position.addScaledVector(this.moveDirection, speed * dt);
+    this.mesh.position.y += (this.fixedY - this.mesh.position.y) * Math.min(1, dt * 4);
+  }
+
+  updateVisualState(dt) {
+    this.visualSpin += dt * (this.phase === 3 ? 1.25 : 0.8);
+    this.visualPulse += dt * (this.transitioning ? 5.0 : this.phase === 3 ? 3.8 : 2.6);
+    this.currentScale += (this.targetScale - this.currentScale) * Math.min(1, dt * 2.6);
+
+    const pulseAmp = this.transitioning ? 0.12 : this.phase === 3 ? 0.07 : 0.04;
+    const pulse = 1 + Math.sin(this.visualPulse) * pulseAmp;
+    this.mesh.scale.setScalar(this.currentScale * pulse);
+
+    if (this.crownGroup) this.crownGroup.rotation.y = this.visualSpin;
+    if (this.ascensionGroup) this.ascensionGroup.rotation.y = -this.visualSpin * 0.8;
+
+    const damageRatio = 1 - (this.hp / this.maxHp);
+    const shellColor = this.transitioning
+      ? 0xffc766
+      : this.phase === 1
+        ? 0x33ccff
+        : this.phase === 2
+          ? 0xff8844
+          : 0xff5533;
+    const heartColor = this.coreExposed || this.lastStand ? 0xfff2c2 : this.phase === 3 ? 0xffaa55 : 0xff6688;
+    const heartOpacity = this.coreExposed || this.lastStand ? 0.96 : 0.34;
+
+    this.shellMeshes.forEach((mesh) => {
+      mesh.material.color.setHex(shellColor);
+      mesh.material.opacity = Math.max(0.35, 0.88 - damageRatio * 0.28);
+    });
+    this.crownMeshes.forEach((mesh) => {
+      mesh.material.color.setHex(this.phase >= 2 ? 0xffaa55 : 0x66ffff);
+      mesh.material.opacity = this.phase === 3 ? 0.82 : 0.68;
+    });
+    this.ascensionMeshes.forEach((mesh) => {
+      mesh.material.color.setHex(this.lastStand ? 0xfff0b2 : 0xff8844);
+      mesh.material.opacity = this.phase === 3 ? 0.84 : 0.0;
+    });
+    this.heartMeshes.forEach((mesh) => {
+      mesh.material.color.setHex(heartColor);
+      mesh.material.opacity = heartOpacity;
+    });
+
+    const heartScale = this.coreExposed || this.lastStand
+      ? 1.15 + Math.sin(this.visualPulse * 1.35) * 0.14
+      : 0.92 + Math.sin(this.visualPulse * 0.7) * 0.04;
+    if (this.heartGroup) this.heartGroup.scale.setScalar(heartScale);
+  }
+
+  updatePhase1(dt, now, playerPos) {
+    this.updateSealNodes(dt, now, playerPos);
+
+    if (this.coreExposed) {
+      this.windowTimer -= dt;
+      this.coreShotTimer -= dt;
+      if (this.coreShotTimer <= 0) {
+        this.coreShotTimer = 1.7;
+        this.fireMeasuredHeartShot(playerPos);
+      }
+      if (this.forceCloseWindow || this.windowTimer <= 0) {
+        this.resolveExposure();
+      }
+      return;
+    }
+
+    this.volleyTimer -= dt;
+    if (this.volleyTimer <= 0) {
+      this.volleyTimer = 1.25;
+      this.firePhase1Volley(playerPos);
+    }
+
+    this.behaviorTimer -= dt;
+    if (this.behaviorTimer <= 0) {
+      this.behaviorTimer = 5.2;
+      this.fireFanFromOrigins([this.mesh.position.clone()], playerPos, 3, 0.95, 420, 0x88f2ff);
+    }
+  }
+
+  updatePhase2(dt, now, playerPos) {
+    if (this.state === 'phase2_interrupt') {
+      this.phase2InterruptTimer += dt;
+      this.updateAnchorNodes(dt, now, playerPos);
+
+      if (this.anchorNodes.every(node => !node.active) && this.anchorNodes.length > 0) {
+        this.resolveAnchorInterrupt(true);
+        return;
+      }
+
+      if (this.phase2ShockwaveIndex === 0 && this.phase2InterruptTimer >= 1.15) {
+        this.phase2ShockwaveIndex = 1;
+        this.fireRadialBurst(9, 10.5, 1, 0, 0xff6633);
+      }
+      if (this.phase2ShockwaveIndex === 1 && this.phase2InterruptTimer >= 2.2) {
+        this.phase2ShockwaveIndex = 2;
+        this.fireRadialBurst(10, 11.5, 1, 0, 0xff8844);
+      }
+      if (this.phase2InterruptTimer >= 3.25) {
+        this.resolveAnchorInterrupt(false);
+      }
+      return;
+    }
+
+    if (this.coreExposed) {
+      this.windowTimer -= dt;
+      this.coreShotTimer -= dt;
+      if (this.coreShotTimer <= 0) {
+        this.coreShotTimer = 1.45;
+        this.fireMeasuredHeartShot(playerPos, this.phase2PatternIndex % 2 === 0 ? -0.4 : 0.4);
+        this.phase2PatternIndex++;
+      }
+      if (this.forceCloseWindow || this.windowTimer <= 0) {
+        this.resolveExposure();
+      }
+      return;
+    }
+
+    this.phase2CycleTimer += dt;
+    this.volleyTimer -= dt;
+    if (this.volleyTimer <= 0) {
+      this.volleyTimer = 1.55;
+      if (this.phase2PatternIndex % 2 === 0) {
+        this.fireCrownCrossfire(playerPos, 3, 1.0, 0xffaa55);
+      } else {
+        this.fireFanFromOrigins([this.mesh.position.clone()], playerPos, 5, 1.4, 420, 0xff8844);
+      }
+      this.phase2PatternIndex++;
+    }
+
+    if (this.phase2CycleTimer >= 6.0) {
+      this.startAnchorInterrupt();
+    }
+  }
+
+  updatePhase3(dt, now, playerPos) {
+    if (this.lastStand) {
+      this.volleyTimer -= dt;
+      this.phase3ShockwaveTimer -= dt;
+      if (this.volleyTimer <= 0) {
+        this.volleyTimer = 1.15;
+        this.firePhase3Volley(playerPos);
+      }
+      if (this.phase3ShockwaveTimer <= 0) {
+        this.phase3ShockwaveTimer = 3.6;
+        this.fireRadialBurst(11, 12.0, 2, 170, 0xff6a33);
+      }
+      return;
+    }
+
+    if (this.coreExposed) {
+      this.windowTimer -= dt;
+      this.coreShotTimer -= dt;
+      if (this.coreShotTimer <= 0) {
+        this.coreShotTimer = 1.2;
+        this.fireMeasuredHeartShot(playerPos);
+      }
+      if (this.forceCloseWindow || this.windowTimer <= 0) {
+        this.resolveExposure();
+      }
+      return;
+    }
+
+    this.phase3ArmorTimer += dt;
+    this.volleyTimer -= dt;
+    this.phase3ShockwaveTimer -= dt;
+
+    if (this.volleyTimer <= 0) {
+      this.volleyTimer = 1.35;
+      this.firePhase3Volley(playerPos);
+    }
+    if (this.phase3ShockwaveTimer <= 0) {
+      this.phase3ShockwaveTimer = 3.9;
+      this.fireRadialBurst(10, 11.5, 1, 0, 0xff7a33);
+    }
+
+    if (this.phase3ArmorTimer >= 6.2) {
+      playFinalBossSealBreakSound();
+      this.state = 'phase3_exposed';
+      this.beginCoreWindow(6.25, 0.08);
+    }
+  }
+
+  updateTransition(dt) {
+    this.transitionTimer += dt;
+    if (this.pendingPhaseTransition === 3) {
+      this.targetScale = 1.55;
+    }
+
+    if (this.transitionTimer >= this.transitionDuration) {
+      this.transitioning = false;
+      const nextPhase = this.pendingPhaseTransition;
+      this.pendingPhaseTransition = 0;
+
+      if (nextPhase === 2) this.enterPhase2();
+      else if (nextPhase === 3) this.enterPhase3();
+      this.onPhaseChange(this.phase);
+    }
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    this.updateVisualState(dt);
+
+    if (this.transitioning) {
+      this.updateTransition(dt);
+      this.mesh.lookAt(_look.copy(playerPos).setY(this.fixedY));
+      return;
+    }
+
+    this.updateMovement(dt, playerPos);
+
+    if (this.phase === 1) this.updatePhase1(dt, now, playerPos);
+    else if (this.phase === 2) this.updatePhase2(dt, now, playerPos);
+    else this.updatePhase3(dt, now, playerPos);
+
+    this.mesh.lookAt(_look.copy(playerPos).setY(this.fixedY));
+  }
+
+  damageWeakNode(hitInfo, amount) {
+    const nodePool = hitInfo.eclipseNodeType === 'seal' ? this.sealNodes
+      : hitInfo.eclipseNodeType === 'anchor' ? this.anchorNodes
+      : null;
+    if (!nodePool) return { killed: false, immune: true };
+
+    const node = nodePool.find(candidate => candidate.id === hitInfo.eclipseNodeId && candidate.active);
+    if (!node) return { killed: false, immune: true };
+
+    node.hp -= amount;
+    if (node.hp > 0) {
+      return { killed: false };
+    }
+
+    node.active = false;
+    const nodePos = node.group.getWorldPosition(new THREE.Vector3());
+    playFinalBossSealBreakSound();
+    if (this.telegraphing) {
+      this.telegraphing.start('pulse', 0.35, 0xffffff, nodePos);
+    }
+    if (node.group.parent) node.group.parent.remove(node.group);
+    node.group.traverse((part) => {
+      if (part.geometry) part.geometry.dispose();
+      if (part.material) part.material.dispose();
+    });
+    node.group = null;
+
+    if (nodePool === this.sealNodes && this.sealNodes.every(candidate => !candidate.active)) {
+      this.state = 'phase1_exposed';
+      this.beginCoreWindow(7.2, 0.12);
+    }
+
+    if (nodePool === this.anchorNodes && this.anchorNodes.every(candidate => !candidate.active)) {
+      this.resolveAnchorInterrupt(true);
+    }
+
+    return { killed: false };
+  }
+
+  applyBossDamage(amount, hitInfo = {}) {
+    let actualDamage = amount;
+    if (hitInfo.isWeakPoint || hitInfo.isEclipseHeart) {
+      actualDamage *= 1.25;
+    }
+    if (hitInfo.isChargeCannon) {
+      actualDamage = Math.min(actualDamage, 160);
+    }
+
+    const phaseFloor = this.phase === 1
+      ? this.phase2Threshold
+      : this.phase === 2
+        ? this.phase3Threshold
+        : 0;
+    const budgetRemaining = this.windowDamageBudget === Infinity
+      ? Infinity
+      : Math.max(0, this.windowDamageBudget - this.windowDamageTaken);
+    const phaseRemaining = this.phase < 3 ? Math.max(0, this.hp - phaseFloor) : actualDamage;
+    const damageToApply = Math.min(actualDamage, budgetRemaining, phaseRemaining);
+
+    if (damageToApply <= 0) {
+      if (this.phase === 1 && this.hp <= this.phase2Threshold + 0.001) {
+        this.pendingPhaseTransition = 2;
+        this.forceCloseWindow = true;
+      }
+      if (this.phase === 2 && this.hp <= this.phase3Threshold + 0.001) {
+        this.pendingPhaseTransition = 3;
+        this.forceCloseWindow = true;
+      }
+      return { killed: false, immune: true };
+    }
+
+    this.hp -= damageToApply;
+    if (this.hp < 0) this.hp = 0;
+    this.windowDamageTaken += damageToApply;
+
+    if (this.windowDamageBudget !== Infinity && this.windowDamageTaken >= this.windowDamageBudget - 0.001) {
+      this.forceCloseWindow = true;
+    }
+
+    if (this.phase === 1 && this.hp <= this.phase2Threshold + 0.001) {
+      this.hp = this.phase2Threshold;
+      this.pendingPhaseTransition = 2;
+      this.forceCloseWindow = true;
+    } else if (this.phase === 2 && this.hp <= this.phase3Threshold + 0.001) {
+      this.hp = this.phase3Threshold;
+      this.pendingPhaseTransition = 3;
+      this.forceCloseWindow = true;
+    } else if (this.phase === 3 && !this.lastStand && this.hp <= this.lastStandThreshold) {
+      this.enterLastStand();
+    }
+
+    return { killed: this.hp <= 0 };
+  }
+
+  takeDamage(amount, hitInfo = {}) {
+    if (this.transitioning) {
+      return { killed: false, immune: true };
+    }
+
+    if (hitInfo.eclipseNodeId !== undefined && hitInfo.eclipseNodeType) {
+      return this.damageWeakNode(hitInfo, amount);
+    }
+
+    if (!this.coreExposed && !this.lastStand) {
+      return { killed: false, immune: true };
+    }
+
+    return this.applyBossDamage(amount, hitInfo);
+  }
+
+  onPhaseChange(newPhase) {
+    if (this.telegraphing) {
+      this.telegraphing.start('teleport', 0.65, 0xffbb66, this.mesh.position.clone());
+      this.telegraphing.start('pulse', 0.8, 0xffe2a8, this.mesh.position.clone());
+    }
+    if (newPhase === 3 && this.ascensionGroup) {
+      this.ascensionGroup.visible = true;
+    }
+  }
+
+  destroy() {
+    this.clearWeakNodes(this.sealNodes);
+    this.clearWeakNodes(this.anchorNodes);
+    super.destroy();
+  }
+}
+
 const BOSS_DEFS = {
   // Teleporting boss (Level 5)
   // Level 5 bosses (Tier 1 - INTRO)
@@ -7850,6 +8886,20 @@ const BOSS_DEFS = {
     behavior: 'train',
     hitboxRadius: 1.3,
     projectileRate: 2.0
+  },
+
+  eclipse_engine: {
+    name: 'Eclipse Engine',
+    pattern: [[1]],
+    voxelSize: 0.22,
+    baseHp: 2100,
+    phases: 3,
+    color: 0x33ccff,
+    scoreValue: 800,
+    behavior: 'eclipse',
+    hitboxRadius: 1.6,
+    weakPoints: false,
+    finalSequence: 'eclipse-collapse',
   }
 };
 
@@ -7858,7 +8908,7 @@ const BOSS_POOLS = {
   1: ['skull_boss'], // Tier 1 (Level 5) - Skull Boss only
   2: ['the_prism'], // Tier 2 (Level 10) - The Prism only
   3: ['neon_minotaur'], // Tier 3 (Level 15) - Neon Minotaur only
-  4: ['walter_breakenridge', 'kernel_monolith', 'synth_kraken', 'afterimage_seraphim', 'sun_eater_train'], // Tier 4 (Level 20) - final bosses
+  4: ['eclipse_engine'], // Tier 4 (Level 20) - authored final boss
 };
 
 // ── GLOBAL BOSS STATE ─────────────────────────────────────────
@@ -7932,6 +8982,9 @@ export function spawnBoss(bossId, levelConfig, camera) {
       break;
     case 'train':
       boss = new TrainBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'eclipse':
+      boss = new EclipseEngineBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
     default:
       boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
@@ -8778,4 +9831,3 @@ export function getSwarmEnemies() {
   refreshEnemyCache();
   return _cachedSwarmEnemies;
 }
-
