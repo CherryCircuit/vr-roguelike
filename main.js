@@ -1318,8 +1318,9 @@ function init() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));  // Cap at 1.5 — DPR 2 quadruples pixel count
   renderer.xr.enabled = true;
   // [DEBUG] Disable shadows in headless/Puppeteer mode
-  const enableShadows = !navigator.webdriver && (window.devicePixelRatio >= 2 || window.matchMedia?.('(min-width: 1200px)')?.matches);
-  renderer.shadowMap.enabled = enableShadows;
+  const enableDesktopShadows = !navigator.webdriver && (window.devicePixelRatio >= 2 || window.matchMedia?.('(min-width: 1200px)')?.matches);
+  const isQuest = /OculusBrowser|Meta Quest/i.test(navigator.userAgent);
+  renderer.shadowMap.enabled = !isQuest && enableDesktopShadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   // No tone mapping — we use MeshBasicMaterial so ACES adds shader cost with no benefit
   renderer.toneMapping = THREE.NoToneMapping;
@@ -1336,8 +1337,8 @@ function init() {
 
   // Disable foveated rendering (removes visible quality boxes in Quest VR)
   renderer.xr.addEventListener('sessionstart', () => {
-    _log('[vr] Session started - disabling foveation');
-    renderer.xr.setFoveation(0);
+    const isQuest = /OculusBrowser|Meta Quest/i.test(navigator.userAgent);
+    renderer.xr.setFoveation(isQuest ? 0.4 : 0.2);
     // Camera is added directly to scene - VR hands work correctly now
     // Validate controller handedness on session start
     validateControllerHandedness();
@@ -10014,15 +10015,15 @@ function render(timestamp) {
       });
     } else {
       // Lerp from bright red back to base color over 1 second
-      const t = floorFlashTimer / 1.0;  // 1s flash duration
+      const t = floorFlashTimer / 0.3;  // 0.3s flash duration (VR comfort)
       const flashIntensity = t;  // 0 to 1, fading out
       const flashColor = new THREE.Color(0xff0000);
       // Flash terrain materials
       biomeTerrainMaterials.forEach(item => {
         if (item.type === 'shader') {
-          item.material.uniforms.uFlashIntensity.value = flashIntensity * 0.5;  // Max 50% red
+          item.material.uniforms.uFlashIntensity.value = flashIntensity * 0.2;  // Max 20% red (VR comfort)
         } else {
-          item.material.opacity = flashIntensity * 0.4;  // Max 40% opacity
+          item.material.opacity = flashIntensity * 0.2;  // Max 20% opacity (VR comfort)
         }
       });
     }

@@ -4257,6 +4257,20 @@ class Boss {
     this.frontArc = def.frontArc || 120;
     this.minDistance = def.minDistance || 6;
     this.maxDistance = def.maxDistance || 18;
+
+    // Timer ownership for safe cancellation on destroy/phase change
+    this._timers = new Set();
+    this._destroyed = false;
+  }
+
+  /** Schedule a callback that auto-cancels if the boss is destroyed. */
+  later(ms, fn) {
+    const id = setTimeout(() => {
+      this._timers.delete(id);
+      if (!this._destroyed) fn();
+    }, ms);
+    this._timers.add(id);
+    return id;
   }
 
   buildMesh(def) {
@@ -4474,6 +4488,10 @@ class Boss {
   }
 
   destroy() {
+    this._destroyed = true;
+    this._timers.forEach(clearTimeout);
+    this._timers.clear();
+
     this.sceneRef.remove(this.mesh);
     this.mesh.traverse(c => {
       if (c.geometry) c.geometry.dispose();
@@ -4524,11 +4542,11 @@ class ScrapGolemBoss extends Boss {
     }
     
     // Create shockwave after delay
-    setTimeout(() => {
+    this.later(600, () => {
       if (typeof window !== 'undefined' && window.createBossShockwave) {
         window.createBossShockwave(this.mesh.position.clone(), 5, 15 + this.phase * 5);
       }
-    }, 600);
+    });
   }
 
   spawnScrapMinion() {
@@ -4617,7 +4635,7 @@ class HoloPhantomBoss extends Boss {
     this.state = 'teleporting';
     this.mesh.visible = false;
     
-    setTimeout(() => {
+    this.later(400, () => {
       const angle = Math.random() * Math.PI * 2;
       const dist = 6 + Math.random() * 4;
       this.mesh.position.set(
@@ -4627,7 +4645,7 @@ class HoloPhantomBoss extends Boss {
       );
       this.mesh.visible = true;
       this.state = 'visible';
-    }, 400);
+    });
   }
 
   onProjectileFire(playerPos) {
@@ -4635,7 +4653,7 @@ class HoloPhantomBoss extends Boss {
       this.showTelegraph('projectile', 0.35, 0x00ffff);
     }
 
-    setTimeout(() => {
+    this.later(200, () => {
       const spread = 0.4;
       const leftTarget = playerPos.clone();
       leftTarget.x -= spread;
@@ -4645,7 +4663,7 @@ class HoloPhantomBoss extends Boss {
         spawnBossProjectile(this.mesh.position.clone(), leftTarget);
         spawnBossProjectile(this.mesh.position.clone(), rightTarget);
       }
-    }, 200);
+    });
   }
 
   onPhaseChange(newPhase) {
@@ -4702,11 +4720,11 @@ class PulseEmitterBoss extends Boss {
     }
     
     // Fire pulse wave
-    setTimeout(() => {
+    this.later(400, () => {
       if (typeof window !== 'undefined' && window.fireBossPulse) {
         window.fireBossPulse(this.mesh.position.clone(), playerPos.clone(), 20 + this.phase * 10);
       }
-    }, 400);
+    });
   }
 
   activateShield() {
@@ -4724,7 +4742,7 @@ class PulseEmitterBoss extends Boss {
       window.createBossShield(this.mesh.position.clone(), 2);
     }
     
-    setTimeout(() => {
+    this.later(this.shieldDuration * 1000, () => {
       this.shieldActive = false;
       
       // Safely reset emissiveIntensity on all child meshes with materials
@@ -4733,7 +4751,7 @@ class PulseEmitterBoss extends Boss {
           setMaterialEmissiveSafe(c.material, _emissiveWhite, 0.3);
         }
       });
-    }, this.shieldDuration * 1000);
+    });
   }
 
   onProjectileFire(playerPos) {
@@ -4742,7 +4760,7 @@ class PulseEmitterBoss extends Boss {
       this.showTelegraph('projectile', 0.4, 0xff0088);
     }
 
-    setTimeout(() => {
+    this.later(200, () => {
       const shots = 5;
       for (let i = 0; i < shots; i++) {
         const angle = (i / shots) * Math.PI * 2;
@@ -4755,7 +4773,7 @@ class PulseEmitterBoss extends Boss {
           spawnBossProjectile(this.mesh.position.clone(), target);
         }
       }
-    }, 200);
+    });
   }
 
   onPhaseChange(newPhase) {
@@ -4814,7 +4832,7 @@ class RustSerpentBoss extends Boss {
       this.showTelegraph('projectile', 0.35, 0xcc4400);
     }
 
-    setTimeout(() => {
+    this.later(200, () => {
       const spread = 0.6;
       const target = playerPos.clone();
       target.x += (Math.random() - 0.5) * spread;
@@ -4822,7 +4840,7 @@ class RustSerpentBoss extends Boss {
       if (typeof spawnBossProjectile === 'function') {
         spawnBossProjectile(this.mesh.position.clone(), target);
       }
-    }, 200);
+    });
   }
 
   onPhaseChange(newPhase) {
@@ -4888,11 +4906,11 @@ class StaticWispBoss extends Boss {
     }
 
     // Fire lightning bolt (rebalanced: 2-4 damage instead of 15-31 insta-kill)
-    setTimeout(() => {
+    this.later(300, () => {
       if (typeof window !== 'undefined' && window.fireBossLightning) {
         window.fireBossLightning(this.mesh.position.clone(), playerPos.clone(), 1 + this.phase);
       }
-    }, 300);
+    });
   }
 
   teleport(playerPos) {
@@ -4902,7 +4920,7 @@ class StaticWispBoss extends Boss {
     
     this.mesh.visible = false;
     
-    setTimeout(() => {
+    this.later(300, () => {
       const angle = Math.random() * Math.PI * 2;
       const dist = 5 + Math.random() * 5;
       this.mesh.position.set(
@@ -4911,7 +4929,7 @@ class StaticWispBoss extends Boss {
         playerPos.z + Math.sin(angle) * dist
       );
       this.mesh.visible = true;
-    }, 300);
+    });
   }
 
   onProjectileFire(playerPos) {
@@ -4919,7 +4937,7 @@ class StaticWispBoss extends Boss {
       this.showTelegraph('projectile', 0.35, 0xffff00);
     }
 
-    setTimeout(() => {
+    this.later(200, () => {
       const spread = 0.5;
       const target = playerPos.clone();
       target.x += (Math.random() - 0.5) * spread;
@@ -4927,7 +4945,7 @@ class StaticWispBoss extends Boss {
       if (typeof spawnBossProjectile === 'function') {
         spawnBossProjectile(this.mesh.position.clone(), target);
       }
-    }, 200);
+    });
   }
 
   onPhaseChange(newPhase) {
@@ -5568,13 +5586,13 @@ class SkullBoss extends Boss {
       this.showTelegraph('projectile', 0.25, 0xff0000, hand.getPosition());
     }
     
-    setTimeout(() => {
+    this.later(150, () => {
       // Cancel if hand was destroyed during telegraph delay
       if (!hand.alive) return;
       if (typeof spawnBossProjectile === 'function') {
         spawnBossProjectile(hand.getPosition(), playerPos);
       }
-    }, 150);
+    });
   }
   
   fireEyeProjectiles(playerPos) {
@@ -5588,7 +5606,7 @@ class SkullBoss extends Boss {
       this.showTelegraph('projectile', 0.3, 0xff0000, this.mesh.position);
     }
     
-    setTimeout(() => {
+    this.later(200, () => {
       eyePositions.forEach(eyePos => {
         if (typeof spawnBossProjectile === 'function') {
           spawnBossProjectile(eyePos, playerPos);
@@ -5768,7 +5786,7 @@ class HunterBoss extends Boss {
       if (this.telegraphing) {
         this.showTelegraph('projectile', 0.4, 0xff6600, this.mesh.position.clone(), dirToPlayer);
       }
-      setTimeout(() => this.fireProjectile(playerPos), 400);
+      this.later(400, () => this.fireProjectile(playerPos));
     }
 
     // Drone fire (from drone position)
@@ -5780,11 +5798,11 @@ class HunterBoss extends Boss {
       if (this.telegraphing) {
         this.showTelegraph('projectile', 0.3, 0xffaa00, droneWorldPos, droneDir);
       }
-      setTimeout(() => {
+      this.later(300, () => {
         if (typeof spawnBossProjectile === 'function') {
           spawnBossProjectile(droneWorldPos, playerPos);
         }
-      }, 300);
+      });
     }
 
     // Movement pattern
@@ -5879,13 +5897,18 @@ class WalterBoss extends Boss {
       // Spawn new holograms
       for (let i = 0; i < hologramCount; i++) {
         const angle = (i / hologramCount) * Math.PI * 2;
+        const hologramMesh = this.mesh.clone(true);
+        hologramMesh.traverse((c) => {
+          if (!c.isMesh) return;
+          c.material = c.material.clone();
+          c.material.transparent = true;
+          c.material.opacity = 0.4;
+        });
         const hologram = {
-          mesh: this.mesh.clone(),
+          mesh: hologramMesh,
           angle: angle,
           distance: 3 + Math.random() * 2
         };
-        hologram.mesh.material = hologram.mesh.material.clone();
-        hologram.mesh.material.opacity = 0.4;
         this.sceneRef.add(hologram.mesh);
         this.holograms.push(hologram);
       }
@@ -5899,7 +5922,11 @@ class WalterBoss extends Boss {
       h.mesh.position.copy(this.mesh.position);
       h.mesh.position.x += Math.cos(h.angle) * h.distance;
       h.mesh.position.z += Math.sin(h.angle) * h.distance;
-      h.mesh.material.opacity = 0.3 + Math.sin(now * 0.003 + i) * 0.2;
+      const opacity = 0.3 + Math.sin(now * 0.003 + i) * 0.2;
+      h.mesh.traverse((c) => {
+        if (!c.isMesh) return;
+        c.material.opacity = opacity;
+      });
     });
   }
 
@@ -6306,17 +6333,29 @@ class TrainBoss extends Boss {
     }
   }
 
+  // Compute world-space center of voxels belonging to a given car (1-based)
+  getCarCenter(carNum) {
+    const carVoxels = this.mesh.children.filter(
+      c => c.userData && c.userData.isBossBody && c.userData.car === carNum
+    );
+    if (carVoxels.length === 0) return this.mesh.position.clone();
+    const center = new THREE.Vector3();
+    for (const v of carVoxels) {
+      v.getWorldPosition(_enemyScratch3);
+      center.add(_enemyScratch3);
+    }
+    center.divideScalar(carVoxels.length);
+    return center;
+  }
+
   onProjectileFire(playerPos) {
     if (this.phase >= 4) {
-      // All cars fire
-      for (let i = 0; i < 3; i++) {
-        const offset = new THREE.Vector3(
-          (i - 1) * 0.8,
-          0,
-          0
-        );
-        const pos = this.mesh.position.clone().add(offset);
-        this.fireProjectile(playerPos);
+      // All cars fire from their own positions
+      for (let carNum = 1; carNum <= 3; carNum++) {
+        const carPos = this.getCarCenter(carNum);
+        if (typeof spawnBossProjectile === 'function') {
+          spawnBossProjectile(carPos, playerPos);
+        }
       }
     }
   }
@@ -6622,11 +6661,11 @@ class MinotaurBoss extends Boss {
         this.mesh.position.z + Math.sin(angle) * 10
       );
 
-      setTimeout(() => {
+      this.later(i * 50, () => {
         if (typeof spawnBossProjectile === 'function') {
           spawnBossProjectile(this.mesh.position.clone(), targetPos);
         }
-      }, i * 50);
+      });
     }
 
     if (typeof window !== 'undefined' && window.playBossExplosion) {
@@ -6643,7 +6682,7 @@ class MinotaurBoss extends Boss {
         this.showTelegraph('projectile', 0.2, 0xff0088, hornPos);
       }
 
-      setTimeout(() => {
+      this.later(200, () => {
         if (typeof spawnBossProjectile === 'function') {
           // Add some spread
           const spread = (idx === 0 ? -1 : 1) * 0.3;
@@ -6651,7 +6690,7 @@ class MinotaurBoss extends Boss {
           target.x += spread;
           spawnBossProjectile(hornPos, target);
         }
-      }, 200);
+      });
     });
   }
 
@@ -6907,11 +6946,11 @@ class PrismBoss extends Boss {
       }
 
       const facetIdx = i;
-      setTimeout(() => {
+      this.later(300, () => {
         if (typeof spawnBossProjectile === 'function') {
           spawnBossProjectile(facetPos, playerPos.clone());
         }
-      }, 300);
+      });
     }
   }
 
@@ -7083,7 +7122,7 @@ class PrismBoss extends Boss {
     });
 
     // Fire ring of 8 projectiles outward after short delay
-    setTimeout(() => {
+    this.later(1500, () => {
       for (let i = 0; i < 8; i++) {
         const angle = (i / 8) * Math.PI * 2;
         const targetPos = new THREE.Vector3(
@@ -7095,7 +7134,7 @@ class PrismBoss extends Boss {
           spawnBossProjectile(this.mesh.position.clone(), targetPos);
         }
       }
-    }, 1500);
+    });
   }
 
   endMerge() {
@@ -7114,7 +7153,7 @@ class PrismBoss extends Boss {
         this.showTelegraph('projectile', 0.2, 0xff44ff, shardPos);
       }
 
-      setTimeout(() => {
+      this.later(200, () => {
         if (typeof spawnBossProjectile !== 'function') return;
 
         if (idx === 0) {
@@ -7132,7 +7171,7 @@ class PrismBoss extends Boss {
           // Outer: slow big shot (just fires one aimed at player)
           spawnBossProjectile(shardPos, playerPos.clone());
         }
-      }, 200);
+      });
     });
   }
 
@@ -7231,7 +7270,7 @@ class PrismBoss extends Boss {
       this.showTelegraph('projectile', 0.2, 0xff44ff, bossPos);
     }
 
-    setTimeout(() => {
+    this.later(200, () => {
       if (typeof spawnBossProjectile !== 'function') return;
       spawnBossProjectile(bossPos, playerPos.clone());
 
@@ -7244,7 +7283,7 @@ class PrismBoss extends Boss {
           spawnBossProjectile(bossPos, target);
         }
       }
-    }, 200);
+    });
   }
 
   startHealCharge() {
