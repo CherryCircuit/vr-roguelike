@@ -596,7 +596,7 @@ export async function initHUD(camera, scene) {
       depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,  // Makes flash visible even on bright backgrounds
+      blending: THREE.NormalBlending,  // Less harsh than additive for VR comfort
     }),
   );
   hitFlash.name = 'hit-flash';
@@ -1752,7 +1752,7 @@ export function hideGameOver() {
 export function triggerHitFlash(includeHoloGlitch = false) {
   // High initial opacity for maximum visibility
   // Additive blending makes this visible even on bright/colored backgrounds
-  hitFlashOpacity = 0.9;
+  hitFlashOpacity = 0.35;
 
   // (holo glitch removed - was never wanted on floor HUD)
 }
@@ -1764,7 +1764,7 @@ export function updateHitFlash(dt) {
     hitFlash.material.opacity = hitFlashOpacity;
     // Quick fade but not instant - 0.5s total duration
     // Fast enough to not linger, slow enough to be seen
-    hitFlashOpacity -= dt * 1.8;
+    hitFlashOpacity -= dt * 3.6;
   } else {
     hitFlash.visible = false;
   }
