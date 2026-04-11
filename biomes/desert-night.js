@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 
 export function buildDesertNightScene(group, deps) {
-  const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
+  const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials, synthVisualRefs } = deps;
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight;
   const sceneColor = 0x06080c;
@@ -375,6 +375,13 @@ export function buildDesertNightScene(group, deps) {
   group.position.set(-2.12, -0.20, -4.82);  // Moved 5 units +X and +Z
 
 
+
+  // === Store refs for boss cinematic red tinting ===
+  if (synthVisualRefs) {
+    synthVisualRefs.desertSkyMat = skyMat;
+    synthVisualRefs.desertMoonMat = moonMaterial;
+    synthVisualRefs.desertMoonGlowMat = moonGlowMat;
+  }
 
   // === ANIMATION UPDATE ===
   group.userData.update = (now, dt) => {

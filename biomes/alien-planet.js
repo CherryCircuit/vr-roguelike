@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { bakeCloudsToCanvas } from '../bake-clouds.js';
 
 export function buildAlienPlanetScene(group, deps) {
-  const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
+  const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials, synthVisualRefs } = deps;
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
   const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
 
@@ -625,6 +625,13 @@ export function buildAlienPlanetScene(group, deps) {
     // REMOVED: Plant sway animation - per-frame rotation was too expensive
     // Plants are now static for better FPS
   };
+
+  // === Store refs for boss cinematic red tinting ===
+  if (synthVisualRefs) {
+    synthVisualRefs.alienSkyMat = skyMat;
+    synthVisualRefs.alienCityShaderMat = cityShaderMat;
+    synthVisualRefs.alienGreenLight = greenLight;
+  }
 
   group.rotation.y = -0.062; // yaw: 3.55°
 

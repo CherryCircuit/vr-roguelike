@@ -4338,6 +4338,13 @@ class Boss {
     this.mesh.userData.isBoss = true;
     this.sceneRef.add(this.mesh);
 
+    // Rise animation: spawn below floor, animate upward
+    this._riseAnimActive = true;
+    this._riseAnimStart = performance.now();
+    this._riseAnimDuration = 2000; // 2 seconds
+    this._riseTargetY = this.mesh.position.y;
+    this.mesh.position.y -= 4.0; // Start 4 units below target
+
     // Behavior state
     this.state = 'idle';
     this.stateTimer = 0;
@@ -4506,6 +4513,20 @@ class Boss {
   }
 
   update(dt, now, playerPos) {
+    // Rise animation on spawn
+    if (this._riseAnimActive) {
+      const elapsed = performance.now() - this._riseAnimStart;
+      const t = Math.min(1, elapsed / this._riseAnimDuration);
+      // Ease-out cubic
+      const ease = 1 - Math.pow(1 - t, 3);
+      this.mesh.position.y = this._riseTargetY - 4.0 + ease * 4.0;
+      if (t >= 1) {
+        this._riseAnimActive = false;
+        this.mesh.position.y = this._riseTargetY;
+      }
+      return; // Skip normal behavior during rise
+    }
+
     // Update cooldowns
     if (this.telegraphCooldown > 0) {
       this.telegraphCooldown -= dt;
@@ -5294,115 +5315,102 @@ class SkullBoss extends Boss {
     const skullGroup = new THREE.Group();
     skullGroup.renderOrder = 10;
     const geo = getGeo(0.25);
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.9,
-      depthWrite: false,
-      fog: false,
-    });
 
-    // Skull top (dome)
-    const domePositions = [
-      // Top row (smaller)
-      [-0.25, 0.75, 0],
-      [0, 0.85, 0],
-      [0.25, 0.75, 0],
-      // Upper middle
-      [-0.5, 0.6, 0],
-      [-0.25, 0.65, 0],
-      [0, 0.7, 0],
-      [0.25, 0.65, 0],
-      [0.5, 0.6, 0],
-      // Middle (widest)
-      [-0.6, 0.35, 0],
-      [-0.35, 0.45, 0],
-      [-0.1, 0.5, 0],
-      [0.1, 0.5, 0],
-      [0.35, 0.45, 0],
-      [0.6, 0.35, 0],
+    // NECRO pixel art: 9 wide × 7 tall, flat front-facing
+    // Colors: 🟨=#F2E8D5 🟧=#D8B08A 🟫=#9C6B3C ⬛️=#2B1F1A 🟥=#C1121F 🟪=#6A2C70 🟦=#3A506B 🟩=#5A7D4D ⬜️=blank
+    const COLORS = {
+      bone_highlight: 0xF2E8D5,  // 🟨 top bone highlight
+      bone_mid: 0xD8B08A,        // 🟧 warm mid-tone bone
+      bone_base: 0x9C6B3C,       // 🟫 base bone color
+      shadow: 0x2B1F1A,          // ⬛️ deep shadow
+      eye_glow: 0xC1121F,        // 🟥 core eye glow
+      eye_falloff: 0x6A2C70,     // 🟪 subsurface glow
+      cool_shadow: 0x3A506B,     // 🟦 cool shadow under skull
+      decay_tint: 0x5A7D4D,      // 🟩 subtle decay tint near jaw
+    };
+
+    // Grid definition: row index → array of [col, color_key]
+    // 0 = blank, 1=🟨, 2=🟧, 3=🟫, 4=⬛, 5=🟥, 6=🟪, 7=🟦, 8=🟩
+    const GRID = [
+      // Row 0: ⬜️⬜️🟫🟫🟫🟫🟫⬜️⬜️
+      [3,3,3,3,3],  // cols 2-6
+      // Row 1: ⬜️🟫🟨🟨🟨🟨🟨🟫⬜️
+      [1,1,1,1,1,1],  // cols 1-6 (with 🟫 borders)
+      // Row 2: 🟫🟨🟨🟧🟧🟨🟨🟨🟫
+      [3,1,1,2,2,1,1,1,3],
+      // Row 3: 🟫⬛️⬛️🟧🟧🟧⬛️⬛️🟫
+      [3,4,4,2,2,2,4,4,3],
+      // Row 4: 🟫⬛️🟥🟪🟧🟪🟥⬛️🟫
+      [3,4,5,6,2,6,5,4,3],
+      // Row 5: ⬜️🟫⬛️🟦🟦🟦⬛️🟫⬜️
+      [3,4,7,7,7,4,3],  // cols 1-7
+      // Row 6: ⬜️⬜️🟫🟩⬛️🟩🟫⬜️⬜️
+      [3,8,4,8,3],  // cols 2-6
     ];
 
-    domePositions.forEach(pos => {
-      const cube = new THREE.Mesh(geo, mat.clone());
-      cube.position.set(pos[0], pos[1], pos[2]);
-      cube.userData.isSkullBody = true;
-      skullGroup.add(cube);
+    // Column offsets per row (where the grid starts)
+    const COL_OFFSETS = [2, 1, 0, 0, 0, 1, 2];
+
+    // Color key map
+    const COLOR_MAP = {
+      1: COLORS.bone_highlight,
+      2: COLORS.bone_mid,
+      3: COLORS.bone_base,
+      4: COLORS.shadow,
+      5: COLORS.eye_glow,
+      6: COLORS.eye_falloff,
+      7: COLORS.cool_shadow,
+      8: COLORS.decay_tint,
+    };
+
+    // Center the grid: 9 wide, 7 tall. Offset so center is at (0,0)
+    const gridW = 9;
+    const gridH = 7;
+    const voxelSize = 0.25;
+    const halfW = (gridW - 1) * voxelSize / 2;
+    const halfH = (gridH - 1) * voxelSize / 2;
+
+    let eyeCount = 0;
+    const skullVoxels = [];
+
+    GRID.forEach((row, rowIdx) => {
+      const colOffset = COL_OFFSETS[rowIdx];
+      row.forEach((cell, cellIdx) => {
+        const col = colOffset + cellIdx;
+        const colorHex = COLOR_MAP[cell];
+        if (!colorHex) return;
+
+        const mat = new THREE.MeshBasicMaterial({
+          color: colorHex,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+          fog: false,
+        });
+        const cube = new THREE.Mesh(geo, mat);
+        cube.position.set(
+          col * voxelSize - halfW,
+          (gridH - 1 - rowIdx) * voxelSize - halfH,
+          0
+        );
+
+        // Mark eyes
+        if (cell === 5) {  // eye_glow
+          cube.userData.isEye = true;
+          cube.userData.eyeIndex = eyeCount;
+          if (eyeCount === 0) this.leftEye = cube;
+          else this.rightEye = cube;
+          eyeCount++;
+        } else {
+          cube.userData.isSkullBody = true;
+          skullVoxels.push(cube);
+        }
+
+        skullGroup.add(cube);
+      });
     });
 
-    // Eye sockets (empty spaces, with red glowing eyes inside)
-    const eyeGeo = getGeo(0.15);
-    const eyeMat = new THREE.MeshBasicMaterial({
-      color: 0xff0000,
-      transparent: true,
-      opacity: 0.8,
-      depthWrite: false,
-      fog: false,
-    });
-
-    const leftEye = new THREE.Mesh(eyeGeo, eyeMat.clone());
-    leftEye.position.set(-0.3, 0.2, 0.1);
-    leftEye.userData.isEye = true;
-    leftEye.userData.eyeIndex = 0;
-    skullGroup.add(leftEye);
-    this.leftEye = leftEye;
-
-    const rightEye = new THREE.Mesh(eyeGeo, eyeMat.clone());
-    rightEye.position.set(0.3, 0.2, 0.1);
-    rightEye.userData.isEye = true;
-    rightEye.userData.eyeIndex = 1;
-    skullGroup.add(rightEye);
-    this.rightEye = rightEye;
-
-    // Nose cavity (bridge)
-    const nosePositions = [
-      [0, 0.05, 0.05],
-      [0, -0.1, 0],
-    ];
-    nosePositions.forEach(pos => {
-      const cube = new THREE.Mesh(geo, mat.clone());
-      cube.position.set(pos[0], pos[1], pos[2]);
-      cube.userData.isSkullBody = true;
-      skullGroup.add(cube);
-    });
-
-    // Jaw/teeth
-    const jawPositions = [
-      [-0.4, -0.25, 0],
-      [-0.2, -0.3, 0],
-      [0, -0.32, 0],
-      [0.2, -0.3, 0],
-      [0.4, -0.25, 0],
-      // Lower jaw
-      [-0.35, -0.45, 0],
-      [-0.15, -0.5, 0],
-      [0.05, -0.52, 0],
-      [0.25, -0.5, 0],
-      [0.45, -0.45, 0],
-    ];
-    jawPositions.forEach(pos => {
-      const cube = new THREE.Mesh(geo, mat.clone());
-      cube.position.set(pos[0], pos[1], pos[2]);
-      cube.userData.isSkullBody = true;
-      skullGroup.add(cube);
-    });
-
-    // Cheekbones
-    const cheekPositions = [
-      [-0.7, 0.1, 0],
-      [0.7, 0.1, 0],
-      [-0.6, -0.05, 0],
-      [0.6, -0.05, 0],
-    ];
-    cheekPositions.forEach(pos => {
-      const cube = new THREE.Mesh(geo, mat.clone());
-      cube.position.set(pos[0], pos[1], pos[2]);
-      cube.userData.isSkullBody = true;
-      skullGroup.add(cube);
-    });
-
-    // Store skull voxels for color updates
-    this.skullVoxels = skullGroup.children.filter(c => c.userData.isSkullBody);
+    this.skullVoxels = skullVoxels;
 
     this.mesh.add(skullGroup);
     this.skullGroup = skullGroup;
@@ -6533,6 +6541,108 @@ class MinotaurBoss extends Boss {
 
     // Create horns
     this.createHorns();
+    this.buildFaceMesh();
+  }
+
+  buildFaceMesh() {
+    // Clear default mesh children (built from pattern)
+    while (this.mesh.children.length > 0) {
+      const child = this.mesh.children[0];
+      this.mesh.remove(child);
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    }
+
+    const faceGroup = new THREE.Group();
+    faceGroup.renderOrder = 10;
+    const geo = getGeo(0.25);
+
+    // BLOOD MINOTAUR pixel art: 8 wide × 7 tall, flat front-facing
+    const COLORS = {
+      horn: 0xeee6d7,    // 🟨
+      dark_face: 0x361500, // 🟫
+      light_face: 0x9c3d01, // 🟧
+      eye: 0xd70200,       // 🟥
+    };
+
+    // Grid: 0=blank, 1=🟨, 2=🟫, 3=🟧, 4=🟥
+    const GRID = [
+      // Row 0: 🟨⬜️⬜️⬜️⬜️⬜️⬜️🟨
+      [1, 0, 0, 0, 0, 0, 0, 1],
+      // Row 1: 🟨⬜️⬜️⬜️⬜️⬜️⬜️🟨
+      [1, 0, 0, 0, 0, 0, 0, 1],
+      // Row 2: 🟨🟨🟫🟧🟧🟫🟨🟨
+      [1, 1, 2, 3, 3, 2, 1, 1],
+      // Row 3: 🟫🟫🟧🟧🟧🟧🟫🟫
+      [2, 2, 3, 3, 3, 3, 2, 2],
+      // Row 4: ⬜️🟫🟥🟫🟫🟥🟫⬜️
+      [0, 2, 4, 2, 2, 4, 2, 0],
+      // Row 5: ⬜️⬜️🟫🟧🟧🟫⬜️⬜️
+      [0, 0, 2, 3, 3, 2, 0, 0],
+      // Row 6: ⬜️⬜️🟫🟫🟫🟫⬜️⬜️
+      [0, 0, 2, 2, 2, 2, 0, 0],
+    ];
+
+    const COLOR_MAP = {
+      1: COLORS.horn,
+      2: COLORS.dark_face,
+      3: COLORS.light_face,
+      4: COLORS.eye,
+    };
+
+    const gridW = 8;
+    const gridH = 7;
+    const voxelSize = 0.25;
+    const halfW = (gridW - 1) * voxelSize / 2;
+    const halfH = (gridH - 1) * voxelSize / 2;
+
+    let eyeCount = 0;
+    const faceVoxels = [];
+
+    GRID.forEach((row, rowIdx) => {
+      row.forEach((cell, colIdx) => {
+        if (cell === 0) return;
+        const colorHex = COLOR_MAP[cell];
+        if (!colorHex) return;
+
+        const mat = new THREE.MeshBasicMaterial({
+          color: colorHex,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+          fog: false,
+        });
+        const cube = new THREE.Mesh(geo, mat);
+        cube.position.set(
+          colIdx * voxelSize - halfW,
+          (gridH - 1 - rowIdx) * voxelSize - halfH,
+          0
+        );
+
+        if (cell === 4) {  // eye
+          cube.userData.isEye = true;
+          cube.userData.eyeIndex = eyeCount;
+          if (eyeCount === 0) this.leftEye = cube;
+          else this.rightEye = cube;
+          eyeCount++;
+        } else {
+          cube.userData.isFaceBody = true;
+          faceVoxels.push(cube);
+        }
+
+        faceGroup.add(cube);
+      });
+    });
+
+    this.faceVoxels = faceVoxels;
+    this.mesh.add(faceGroup);
+    this.faceGroup = faceGroup;
+
+    // Keep existing hitbox
+    const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+    const hitbox = new THREE.Mesh(getHitboxGeo(2.0, 2.0, 2.0), hitboxMat);
+    hitbox.userData.isBossHitbox = true;
+    this.mesh.add(hitbox);
   }
 
   createHorns() {
@@ -6545,7 +6655,7 @@ class MinotaurBoss extends Boss {
       const hornGroup = new THREE.Group();
       const geo = getGeo(0.15);
       const hornMat = new THREE.MeshBasicMaterial({
-        color: 0xff0088,
+        color: 0xeee6d7,
         transparent: true,
         opacity: 0.9
       });
@@ -9565,7 +9675,7 @@ const BOSS_DEFS = {
 
   // ── SKULL BOSS (Level 5) ─────────────────────────────────────
   skull_boss: {
-    name: 'Skull Boss',
+    name: 'NECRO',
     // Custom voxel skull - not using pattern, built in class
     pattern: [[1]], // Placeholder, actual skull built in SkullBoss class
     voxelSize: 0.25,
@@ -9600,18 +9710,12 @@ const BOSS_DEFS = {
 
   // Level 15 boss (Tier 3)
   neon_minotaur: {
-    name: 'Neon Minotaur',
-    pattern: [
-      [0, 0, 1, 0, 0],
-      [0, 1, 1, 1, 0],
-      [1, 1, 1, 1, 1],
-      [0, 1, 1, 1, 0],
-      [0, 0, 1, 0, 0],
-    ],
-    voxelSize: 0.42,
+    name: 'BLOOD MINOTAUR',
+    pattern: [[1]],
+    voxelSize: 0.25,
     baseHp: 1900,
     phases: 3,
-    color: 0xff0088,
+    color: 0xd70200,
     scoreValue: 400,
     behavior: 'minotaur',
     hitboxRadius: 0.8,
@@ -9762,6 +9866,15 @@ export function setCameraRef(camera) {
 /**
  * Spawn a boss of the given type
  */
+export function getBossNameForLevel(level) {
+  const tier = getBossTier(level);
+  if (tier === 0) return '';
+  const pool = BOSS_POOLS[tier];
+  const bossId = pool[0]; // single boss per tier currently
+  const def = BOSS_DEFS[bossId];
+  return def ? def.name : '';
+}
+
 export function spawnBoss(bossId, levelConfig, camera) {
   const def = BOSS_DEFS[bossId];
   if (!def || !sceneRef) return null;
