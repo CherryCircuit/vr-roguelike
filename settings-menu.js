@@ -94,7 +94,7 @@ function buildSettingsPanel() {
     color: '#00ffff',
     glow: true,
     glowColor: '#00ffff',
-    scale: 0.14,
+    scale: 0.4,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
   title.position.set(0, 0.75, 0.02);
@@ -105,28 +105,28 @@ function buildSettingsPanel() {
   const col2X = 0.7;  // SFX column center
 
   // ── MUSIC label ──
-  const musicLabel = makeSprite('MUSIC', {
+  const musicLabel = makeSprite('MUSIC VOLUME', {
     fontSize: SETTINGS_LABEL_FONT_SIZE,
     color: '#aaaaff',
-    scale: SETTINGS_LABEL_SCALE,
+    scale: 0.4,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
-  musicLabel.position.set(colX, 0.38, 0.02);
+  musicLabel.position.set(colX, 0.44, 0.02);
   settingsGroup.add(musicLabel);
 
   // ── SFX label ──
-  const sfxLabel = makeSprite('SFX', {
+  const sfxLabel = makeSprite('SOUND EFFECTS VOLUME', {
     fontSize: SETTINGS_LABEL_FONT_SIZE,
     color: '#aaaaff',
-    scale: SETTINGS_LABEL_SCALE,
+    scale: 0.4,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
-  sfxLabel.position.set(col2X, 0.38, 0.02);
+  sfxLabel.position.set(col2X, 0.44, 0.02);
   settingsGroup.add(sfxLabel);
 
   // ── Music UP button ──
   const mUp = makeBtn('▲', 0.5, 0.28, 0x00ffff, 36, 0.13);
-  mUp.group.position.set(colX, 0.15, 0.02);
+  mUp.group.position.set(colX, 0.18, 0.02);
   mUp.mesh.userData.isSettingsBtn = true;
   mUp.mesh.userData.settingsAction = 'musicUp';
   musicUpBtn = mUp.mesh;
@@ -154,7 +154,7 @@ function buildSettingsPanel() {
 
   // ── SFX UP button ──
   const sUp = makeBtn('▲', 0.5, 0.28, 0x00ffff, 36, 0.13);
-  sUp.group.position.set(col2X, 0.15, 0.02);
+  sUp.group.position.set(col2X, 0.18, 0.02);
   sUp.mesh.userData.isSettingsBtn = true;
   sUp.mesh.userData.settingsAction = 'sfxUp';
   sfxUpBtn = sUp.mesh;
@@ -193,7 +193,7 @@ function buildSettingsPanel() {
 
   // ── BACK button ──
   const back = makeBtn('BACK', 1.2, 0.3, 0xffff00, 38, 0.12);
-  back.group.position.set(0, -0.7, 0.02);
+  back.group.position.set(0, -0.72, 0.02);
   back.mesh.userData.isSettingsBtn = true;
   back.mesh.userData.settingsAction = 'back';
   backBtn = back.mesh;
