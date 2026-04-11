@@ -6478,10 +6478,6 @@ class MinotaurBoss extends Boss {
 
     // Minotaur-specific state
     this.hornShards = [];
-    this.chargeTimer = 0;
-    this.chargeDuration = def.chargeDuration || 2.5;
-    this.isCharging = false;
-    this.chargeDirection = null;
     this.slamTimer = 0;
     this.slamRate = def.slamRate || 5.0;
     this.shardTimer = 0;
@@ -6495,10 +6491,21 @@ class MinotaurBoss extends Boss {
     this.transitionFromPhase = 0;
     this.transitionToPhase = 0;
 
-    // Movement state (horizontal XZ plane only)
-    this.moveTimer = 10; // Trigger immediate direction pick on first frame
-    this.moveDirection = new THREE.Vector3(1, 0, 0);
-    this.fixedY = 1.5;
+    // Lunge-based movement state
+    this.lungePhase = 'idle'; // 'idle' | 'lunging' | 'recovery'
+    this.lungeTimer = 0;
+    this.lungeDuration = 2.0;
+    this.lungeRecoveryTime = 0.8;
+    this.lungeStartAngle = 0;
+    this.lungeEndAngle = 0;
+    this.lungeStartY = 1.5;
+    this.lungeEndY = 1.5;
+    this.lungeStartDist = 10;
+    this.lungeEndDist = 10;
+    this.lungeCount = 0;
+    this.currentY = 1.5;
+    this.lungeDirection = 1; // 1 = left-to-right, -1 = right-to-left
+    this.shardFiredThisLunge = false;
 
     // Create horns
     this.createHorns();
@@ -6536,13 +6543,11 @@ class MinotaurBoss extends Boss {
 
   updateBehavior(dt, now, playerPos) {
     // Check for phase transitions based on HP
-    // Dynamic phase thresholds based on maxHp fractions
     const phaseThreshold2 = this.maxHp * (2 / 3);
     const phaseThreshold1 = this.maxHp * (1 / 3);
     const newPhase = this.hp > phaseThreshold2 ? 1 : this.hp > phaseThreshold1 ? 2 : 3;
 
     if (this.skullPhase === 0) {
-      // First frame: enter phase 1
       this.skullPhase = 1;
       this.onMinotaurPhaseChange(1);
     } else if (newPhase !== this.skullPhase && !this.transitioning) {
@@ -6558,101 +6563,146 @@ class MinotaurBoss extends Boss {
 
     const phaseConfig = this.getMinotaurPhaseConfig();
 
-    if (this.isCharging) {
-      // Charging: move fast in horizontal charge direction
-      this.chargeTimer -= dt;
-      if (this.chargeTimer <= 0) {
-        this.isCharging = false;
-        this.groundSlam(playerPos);
-      } else {
-        this.mesh.position.addScaledVector(this.chargeDirection, phaseConfig.chargeSpeed * dt);
-      }
-    } else {
-      // Normal behavior
-      this.chargeTimer -= dt;
-      if (this.chargeTimer <= 0) {
-        this.chargeTimer = this.chargeDuration / this.skullPhase;
-        this.startCharge(playerPos);
-      }
-
-      // Horn shards
-      this.shardTimer -= dt;
-      if (this.shardTimer <= 0) {
-        this.shardTimer = phaseConfig.shardRate;
-        this.fireHornShards(playerPos);
-      }
-
-      // Ground slam
-      this.slamTimer -= dt;
-      if (this.slamTimer <= 0) {
-        this.slamTimer = phaseConfig.slamRate;
-        this.groundSlam(playerPos);
-      }
-
-      // Fast horizontal dodging: direction flips on timer
-      this.moveTimer += dt;
-      if (this.moveTimer >= phaseConfig.erraticness) {
-        this.moveTimer = 0;
-        // Pick a new direction perpendicular to the boss→player line
-        // for strafing/dodge-feel, with some randomness
-        const toPlayer = new THREE.Vector3().subVectors(playerPos, this.mesh.position);
-        toPlayer.y = 0;
-        if (toPlayer.lengthSq() > 0.01) toPlayer.normalize();
-        // Perpendicular direction (left or right of player)
-        const perp = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
-        // Flip or randomize direction
-        const side = this.moveDirection.dot(perp) < 0 ? 1 : -1;
-        if (Math.random() < 0.3) {
-          // Occasionally dodge directly toward/away
-          const angle = Math.random() * Math.PI * 2;
-          this.moveDirection.set(Math.sin(angle), 0, Math.cos(angle));
-        } else {
-          // Strafe perpendicular
-          this.moveDirection.copy(perp).multiplyScalar(side);
-        }
-      }
-      this.mesh.position.addScaledVector(this.moveDirection, phaseConfig.moveSpeed * dt);
+    // Ground slam on timer (independent of lunges)
+    this.slamTimer -= dt;
+    if (this.slamTimer <= 0) {
+      this.slamTimer = this.slamRate;
+      this.groundSlam(playerPos);
     }
 
-    this.constrainToMidfield(playerPos);
-    this.mesh.position.y = this.fixedY;
-    this.mesh.lookAt(_look.copy(playerPos).setY(this.fixedY));
+    // Lunge state machine
+    switch (this.lungePhase) {
+      case 'idle':
+        this.startLunge(playerPos, phaseConfig);
+        break;
+
+      case 'lunging':
+        this.updateLunge(dt, playerPos, phaseConfig);
+        break;
+
+      case 'recovery':
+        this.lungeTimer -= dt;
+        if (this.lungeTimer <= 0) {
+          this.lungePhase = 'idle';
+        }
+        break;
+    }
+
+    this.mesh.lookAt(_look.copy(playerPos).setY(this.mesh.position.y));
+  }
+
+  startLunge(playerPos, phaseConfig) {
+    this.lungePhase = 'lunging';
+    this.lungeTimer = 0;
+    this.lungeDuration = phaseConfig.lungeDuration;
+    this.lungeRecoveryTime = phaseConfig.recoveryTime;
+    this.shardFiredThisLunge = false;
+
+    // Alternate direction each lunge
+    this.lungeDirection *= -1;
+
+    // Set start/end angles (radians)
+    if (this.lungeDirection > 0) {
+      this.lungeStartAngle = -70 * Math.PI / 180;
+      this.lungeEndAngle = 70 * Math.PI / 180;
+    } else {
+      this.lungeStartAngle = 70 * Math.PI / 180;
+      this.lungeEndAngle = -70 * Math.PI / 180;
+    }
+
+    // Y-axis logic for diagonal lunges
+    const diagonalEvery = phaseConfig.diagonalEvery;
+    const isDiagonalLunge = diagonalEvery < Infinity &&
+      (this.lungeCount + 1) % diagonalEvery === 0;
+
+    this.lungeStartY = this.currentY;
+    if (isDiagonalLunge) {
+      // Toggle Y between ground (1.5) and air (10)
+      this.lungeEndY = this.currentY < 5 ? 10 : 1.5;
+    } else {
+      this.lungeEndY = this.currentY;
+    }
+
+    // Distance logic: pick new end distance
+    const currentDist = this.getCurrentDist(playerPos);
+    this.lungeStartDist = currentDist;
+    let newDist;
+    if (currentDist <= 7) {
+      // Too close, must move away
+      newDist = 7 + Math.random() * 7; // 7-14
+    } else if (currentDist >= 13) {
+      // Too far, must move closer
+      newDist = 6 + Math.random() * 7; // 6-13
+    } else {
+      // 50/50 closer or farther
+      if (Math.random() < 0.5) {
+        newDist = 6 + Math.random() * (currentDist - 6);
+      } else {
+        newDist = currentDist + Math.random() * (14 - currentDist);
+      }
+    }
+    this.lungeEndDist = Math.max(6, Math.min(14, newDist));
+  }
+
+  updateLunge(dt, playerPos, phaseConfig) {
+    this.lungeTimer += dt;
+    const t = Math.min(this.lungeTimer / this.lungeDuration, 1.0);
+
+    // Ease-out interpolation: easeOut = 1 - (1-t)^2 = 2t - t^2
+    // This gives fast movement at start, slow at end
+    const easedT = 1 - (1 - t) * (1 - t);
+
+    // Interpolate angle
+    const currentAngle = this.lungeStartAngle + (this.lungeEndAngle - this.lungeStartAngle) * easedT;
+
+    // Interpolate distance
+    const currentDist = this.lungeStartDist + (this.lungeEndDist - this.lungeStartDist) * easedT;
+
+    // Interpolate Y
+    const currentY = this.lungeStartY + (this.lungeEndY - this.lungeStartY) * easedT;
+    this.currentY = currentY;
+
+    // Compute position relative to player
+    this.mesh.position.x = playerPos.x + Math.cos(currentAngle) * currentDist;
+    this.mesh.position.z = playerPos.z + Math.sin(currentAngle) * currentDist;
+    this.mesh.position.y = currentY;
+
+    // Fire projectiles during the fast part (first 30% of lunge)
+    if (t < 0.3 && !this.shardFiredThisLunge) {
+      this.shardFiredThisLunge = true;
+      const burstCount = this.skullPhase >= 2 ? 2 : 1;
+      for (let b = 0; b < burstCount; b++) {
+        this.later(b * 150, () => {
+          this.fireHornShards(playerPos);
+        });
+      }
+    }
+
+    // Lunge complete
+    if (t >= 1.0) {
+      this.lungeCount++;
+      this.currentY = this.lungeEndY;
+      this.lungePhase = 'recovery';
+      this.lungeTimer = this.lungeRecoveryTime;
+    }
+  }
+
+  getCurrentDist(playerPos) {
+    const dx = this.mesh.position.x - playerPos.x;
+    const dz = this.mesh.position.z - playerPos.z;
+    return Math.sqrt(dx * dx + dz * dz);
   }
 
   getMinotaurPhaseConfig() {
     switch (this.skullPhase) {
-      case 1: // Phase 1: Fast lateral dodging
-        return {
-          moveSpeed: 6.0,
-          chargeSpeed: 8.0,
-          shardRate: 0.7,
-          slamRate: 5.0,
-          erraticness: 0.8
-        };
-      case 2: // Phase 2: Faster, more aggressive
-        return {
-          moveSpeed: 9.0,
-          chargeSpeed: 12.0,
-          shardRate: 0.5,
-          slamRate: 3.5,
-          erraticness: 0.5
-        };
-      case 3: // Phase 3: Very fast, relentless
-        return {
-          moveSpeed: 13.0,
-          chargeSpeed: 16.0,
-          shardRate: 0.35,
-          slamRate: 2.5,
-          erraticness: 0.3
-        };
+      case 1:
+        return { lungeDuration: 2.0, recoveryTime: 0.8, diagonalEvery: Infinity, shardRate: 0.7 };
+      case 2:
+        return { lungeDuration: 1.4, recoveryTime: 0.5, diagonalEvery: 3, shardRate: 0.5 };
+      case 3:
+        return { lungeDuration: 1.0, recoveryTime: 0.3, diagonalEvery: 2, shardRate: 0.35 };
       default:
-        return {
-          moveSpeed: 6.0,
-          chargeSpeed: 8.0,
-          shardRate: 0.7,
-          slamRate: 5.0,
-          erraticness: 0.8
-        };
+        return { lungeDuration: 2.0, recoveryTime: 0.8, diagonalEvery: Infinity, shardRate: 0.7 };
     }
   }
 
@@ -6707,53 +6757,20 @@ class MinotaurBoss extends Boss {
   }
 
   constrainToMidfield(playerPos) {
-    // Stay in a fixed arena, mid-field from player
-    const dist = this.mesh.position.distanceTo(playerPos);
-
-    // Stay between 6 and 14 units from player
-    if (dist < 6) {
-      const awayDir = this.mesh.position.clone().sub(playerPos).normalize();
-      awayDir.y = 0;
-      if (awayDir.lengthSq() > 0) awayDir.normalize();
-      this.mesh.position.addScaledVector(awayDir, (6 - dist));
-    } else if (dist > 14) {
-      const towardDir = playerPos.clone().sub(this.mesh.position).normalize();
-      towardDir.y = 0;
-      if (towardDir.lengthSq() > 0) towardDir.normalize();
-      this.mesh.position.addScaledVector(towardDir, (dist - 14));
-    }
-
-    // Keep in play area bounds
+    // Legacy constraint - kept for compatibility but lunges handle positioning
     const bound = 15;
     this.mesh.position.x = Math.max(-bound, Math.min(bound, this.mesh.position.x));
     this.mesh.position.z = Math.max(-bound, Math.min(bound, this.mesh.position.z));
-    this.mesh.position.y = this.fixedY;
   }
 
   onMinotaurPhaseChange(newPhase) {
     const config = this.getMinotaurPhaseConfig();
     this.shardRate = config.shardRate;
-    this.slamRate = config.slamRate;
-    this.chargeDuration = newPhase === 3 ? 1.5 : newPhase === 2 ? 2.0 : 2.5;
-    _log(`[MinotaurBoss] Phase ${newPhase} config applied: speed=${config.moveSpeed}, chargeSpeed=${config.chargeSpeed}`);
+    this.slamRate = newPhase === 3 ? 2.5 : newPhase === 2 ? 3.5 : 5.0;
+    _log(`[MinotaurBoss] Phase ${newPhase} config applied: lungeDur=${config.lungeDuration}s, recovery=${config.recoveryTime}s, diagEvery=${config.diagonalEvery}`);
   }
 
-  startCharge(playerPos) {
-    this.isCharging = true;
-    // Horizontal-only charge direction (XZ plane)
-    this.chargeDirection = playerPos.clone().sub(this.mesh.position);
-    this.chargeDirection.y = 0;
-    this.chargeDirection.normalize();
 
-    // Telegraph charge
-    if (this.telegraphing) {
-      this.showTelegraph('charge', 0.8, 0xff0088);
-    }
-
-    if (typeof window !== 'undefined' && window.playBossAttackSound) {
-      window.playBossAttackSound('charge', 0.8);
-    }
-  }
 
   groundSlam(playerPos) {
     // Telegraph slam
@@ -6810,11 +6827,13 @@ class MinotaurBoss extends Boss {
       return { killed: false, immune: true };
     }
 
+    // Minotaur takes reduced damage during the fast part of a lunge
     let damageTaken = amount;
-
-    // Minotaur takes reduced damage while charging
-    if (this.isCharging) {
-      damageTaken = amount * 0.4;
+    if (this.lungePhase === 'lunging') {
+      const t = Math.min(this.lungeTimer / this.lungeDuration, 1.0);
+      if (t < 0.3) {
+        damageTaken = amount * 0.4;
+      }
     }
 
     return super.takeDamage(damageTaken, hitInfo);
