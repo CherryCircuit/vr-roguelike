@@ -3,29 +3,36 @@
   "elements": {
     "titleSprite": {
       "x": 0,
-      "y": 0.9,
+      "y": 0.932,
       "z": 0,
-      "scale": 0.9,
+      "scale": 1.0,
       "align": "center"
     },
     "subSprite": {
       "x": 0,
-      "y": 0.4,
+      "y": 0.5,
       "z": 0,
-      "scale": 0.3,
+      "scale": 0.7,
       "align": "center"
     },
     "titleBlinkSprite": {
       "x": 0,
-      "y": -0.2,
+      "y": -0.065,
       "z": 0,
-      "scale": 0.25,
+      "scale": 0.5,
       "align": "center"
     },
     "btnGroup": {
-      "x": 0,
-      "y": -0.8,
+      "x": -0.36,
+      "y": -0.68,
       "z": 0,
+      "align": "center"
+    },
+    "settingsBtnGroup": {
+      "x": 0.82,
+      "y": -0.68,
+      "z": 0,
+      "scale": 0.5,
       "align": "center"
     }
   }

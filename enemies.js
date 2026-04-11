@@ -6502,15 +6502,12 @@ class MinotaurBoss extends Boss {
     this.lungeTimer = 0;
     this.lungeDuration = 2.0;
     this.lungeRecoveryTime = 0.8;
-    this.lungeStartAngle = 0;
-    this.lungeEndAngle = 0;
-    this.lungeStartY = 1.5;
-    this.lungeEndY = 1.5;
-    this.lungeStartDist = 10;
-    this.lungeEndDist = 10;
+    this.lungeStartPos = new THREE.Vector3();
+    this.lungeEndPos = new THREE.Vector3();
     this.lungeCount = 0;
     this.currentY = 1.5;
-    this.lungeDirection = 1; // 1 = left-to-right, -1 = right-to-left
+    this.lungeDirection = 1; // 1 = moving right, -1 = moving left
+    this.lungeSide = 1;     // 1 = right side, -1 = left side (alternates)
     this.shardFiredThisLunge = false;
 
     // Create horns
@@ -6604,74 +6601,51 @@ class MinotaurBoss extends Boss {
     this.lungeRecoveryTime = phaseConfig.recoveryTime;
     this.shardFiredThisLunge = false;
 
-    // Alternate direction each lunge
-    this.lungeDirection *= -1;
+    // Alternate side: left of player, then right of player, repeat
+    this.lungeSide *= -1;
 
-    // Set start/end angles (radians)
-    if (this.lungeDirection > 0) {
-      this.lungeStartAngle = -70 * Math.PI / 180;
-      this.lungeEndAngle = 70 * Math.PI / 180;
-    } else {
-      this.lungeStartAngle = 70 * Math.PI / 180;
-      this.lungeEndAngle = -70 * Math.PI / 180;
+    // Calculate player's forward direction (horizontal only)
+    const fwd = new THREE.Vector3(0, 0, -1);
+    if (typeof cameraRef !== 'undefined' && cameraRef) {
+      fwd.set(0, 0, -1).applyQuaternion(cameraRef.quaternion);
+      fwd.y = 0;
+      fwd.normalize();
     }
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x); // perpendicular right
 
-    // Y-axis logic for diagonal lunges
+    // Start position: current position
+    this.lungeStartPos.copy(this.mesh.position);
+
+    // End position: opposite side of player
+    const lateralDist = 8; // How far left/right from player
+    const fwdDist = 6;     // How far in front of player
+    const endBase = playerPos.clone().add(fwd.clone().multiplyScalar(fwdDist));
+    const lateralOffset = right.clone().multiplyScalar(this.lungeSide * lateralDist);
+    endBase.add(lateralOffset);
+
+    // Y logic for diagonal lunges
     const diagonalEvery = phaseConfig.diagonalEvery;
     const isDiagonalLunge = diagonalEvery < Infinity &&
       (this.lungeCount + 1) % diagonalEvery === 0;
 
-    this.lungeStartY = this.currentY;
+    this.lungeEndPos.copy(endBase);
     if (isDiagonalLunge) {
-      // Toggle Y between ground (1.5) and air (10)
-      this.lungeEndY = this.currentY < 5 ? 10 : 1.5;
+      this.lungeEndPos.y = this.currentY < 4 ? 5 : 1.5;
     } else {
-      this.lungeEndY = this.currentY;
+      this.lungeEndPos.y = this.currentY;
     }
-
-    // Distance logic: pick new end distance
-    const currentDist = this.getCurrentDist(playerPos);
-    this.lungeStartDist = currentDist;
-    let newDist;
-    if (currentDist <= 7) {
-      // Too close, must move away
-      newDist = 7 + Math.random() * 7; // 7-14
-    } else if (currentDist >= 13) {
-      // Too far, must move closer
-      newDist = 6 + Math.random() * 7; // 6-13
-    } else {
-      // 50/50 closer or farther
-      if (Math.random() < 0.5) {
-        newDist = 6 + Math.random() * (currentDist - 6);
-      } else {
-        newDist = currentDist + Math.random() * (14 - currentDist);
-      }
-    }
-    this.lungeEndDist = Math.max(6, Math.min(14, newDist));
   }
 
   updateLunge(dt, playerPos, phaseConfig) {
     this.lungeTimer += dt;
     const t = Math.min(this.lungeTimer / this.lungeDuration, 1.0);
 
-    // Ease-out interpolation: easeOut = 1 - (1-t)^2 = 2t - t^2
-    // This gives fast movement at start, slow at end
+    // Ease-out interpolation
     const easedT = 1 - (1 - t) * (1 - t);
 
-    // Interpolate angle
-    const currentAngle = this.lungeStartAngle + (this.lungeEndAngle - this.lungeStartAngle) * easedT;
-
-    // Interpolate distance
-    const currentDist = this.lungeStartDist + (this.lungeEndDist - this.lungeStartDist) * easedT;
-
-    // Interpolate Y
-    const currentY = this.lungeStartY + (this.lungeEndY - this.lungeStartY) * easedT;
-    this.currentY = currentY;
-
-    // Compute position relative to player
-    this.mesh.position.x = playerPos.x + Math.cos(currentAngle) * currentDist;
-    this.mesh.position.z = playerPos.z + Math.sin(currentAngle) * currentDist;
-    this.mesh.position.y = currentY;
+    // Interpolate position directly
+    this.mesh.position.lerpVectors(this.lungeStartPos, this.lungeEndPos, easedT);
+    this.currentY = this.mesh.position.y;
 
     // Fire projectiles during the fast part (first 30% of lunge)
     if (t < 0.3 && !this.shardFiredThisLunge) {
@@ -6687,7 +6661,7 @@ class MinotaurBoss extends Boss {
     // Lunge complete
     if (t >= 1.0) {
       this.lungeCount++;
-      this.currentY = this.lungeEndY;
+      this.currentY = this.lungeEndPos.y;
       this.lungePhase = 'recovery';
       this.lungeTimer = this.lungeRecoveryTime;
     }

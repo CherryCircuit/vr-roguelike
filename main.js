@@ -6516,8 +6516,8 @@ function showUpgradeScreen() {
   // Stop lightning sound during upgrade screen
   stopLightningSound();
 
-  // Fade out music before boss fights (levels 4→5 and 9→10)
-  if ([4, 9].includes(game.level)) {
+  // Fade out music before boss fights (levels 4→5, 9→10, 14→15, 19→20)
+  if ([4, 9, 14, 19].includes(game.level)) {
     _log('[game] Fading out music before boss fight');
     fadeOutMusic(1200);
   }
@@ -8929,7 +8929,7 @@ function spawnEnemyWave(dt) {
         } else {
           playSkullLaughSound(); // Legacy boss intro/taunt
         }
-        playBossMusic(getBossTier(game.level));
+        // Note: boss music already started during BOSS_ALERT, don't restart here
       }
     }
     return;
