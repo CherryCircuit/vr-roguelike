@@ -2283,7 +2283,7 @@ function initHealthPopupPool() {
     const mesh = new THREE.Sprite(material);
     mesh.visible = false;
     mesh.renderOrder = 997;
-    mesh.scale.set(0.6, 0.3, 1);
+    mesh.scale.set(0.9, 0.45, 1);
     mesh.userData = { createdAt: 0, lifetime: 1000, velocity: new THREE.Vector3() };
     healthPopupPool.push(mesh);
     if (sceneRef) sceneRef.add(mesh);
