@@ -46,7 +46,7 @@ import {
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   updatePhaseEchoes,
-  getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
+  getBoss, spawnBoss, getBossNameForLevel, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward, setBossSpawnForward,
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
   releaseBossProjIndex, clearBossMinions,
@@ -827,6 +827,14 @@ const synthVisualRefs = {
   sunGlowMat: null,
   sunCoreMat: null,
   mountainCylMat: null,
+  // Desert biome refs (Prism Boss cinematic)
+  desertSkyMat: null,
+  desertMoonMat: null,
+  desertMoonGlowMat: null,
+  // Alien biome refs (Minotaur cinematic)
+  alienSkyMat: null,
+  alienCityShaderMat: null,
+  alienGreenLight: null,
 };
 
 // [DEBUG] Player projectile materials that should respond to visual tuning sliders.
@@ -1944,6 +1952,12 @@ function clearBiomeScene() {
   synthVisualRefs.sunGlowMat = null;
   synthVisualRefs.sunCoreMat = null;
   synthVisualRefs.mountainCylMat = null;
+  synthVisualRefs.desertSkyMat = null;
+  synthVisualRefs.desertMoonMat = null;
+  synthVisualRefs.desertMoonGlowMat = null;
+  synthVisualRefs.alienSkyMat = null;
+  synthVisualRefs.alienCityShaderMat = null;
+  synthVisualRefs.alienGreenLight = null;
 }
 
 // [CORE] Purge biome geometry for boss cinematic
@@ -6648,9 +6662,10 @@ function advanceLevelAfterUpgrade() {
       const bossTier = getBossTier(game.level);
       playBossMusic(bossTier);
       playBossAlertSound();
+      game._pendingBossName = getBossNameForLevel(game.level);
       showBossAlert(
         game.level >= 20 ? '⚠ FINAL BOSS ⚠' : '⚠ INCOMING BOSS ⚠',
-        game.level >= 20 ? 'ECLIPSE ENGINE' : ''
+        game.level >= 20 ? 'ECLIPSE ENGINE' : (game._pendingBossName || '')
       );
       playIncomingBossSound();
       _log(`[game] Boss alert for level ${game.level} - boss music started`);
@@ -10053,6 +10068,36 @@ function render(timestamp) {
       if (synthVisualRefs.mountainCylMat && game._cinOrigMountainColor) {
         const redMountain = new THREE.Color(0x882244);  // Dark red-purple tint
         synthVisualRefs.mountainCylMat.color.copy(game._cinOrigMountainColor).lerp(redMountain, t);
+      }
+
+      // 7. Desert biome: tint moon and moon glow red (Prism Boss)
+      if (synthVisualRefs.desertMoonMat && !game._cinOrigDesertMoonColor) {
+        game._cinOrigDesertMoonColor = synthVisualRefs.desertMoonMat.color.clone();
+      }
+      if (synthVisualRefs.desertMoonMat && game._cinOrigDesertMoonColor) {
+        synthVisualRefs.desertMoonMat.color.copy(game._cinOrigDesertMoonColor).lerp(new THREE.Color(0xcc0000), t);
+      }
+      if (synthVisualRefs.desertMoonGlowMat && !game._cinOrigDesertMoonGlowColor) {
+        game._cinOrigDesertMoonGlowColor = synthVisualRefs.desertMoonGlowMat.color.clone();
+      }
+      if (synthVisualRefs.desertMoonGlowMat && game._cinOrigDesertMoonGlowColor) {
+        synthVisualRefs.desertMoonGlowMat.color.copy(game._cinOrigDesertMoonGlowColor).lerp(new THREE.Color(0xff2200), t);
+      }
+
+      // 8. Alien biome: tint city buildings and green light red (Minotaur)
+      if (synthVisualRefs.alienCityShaderMat && !game._cinOrigAlienMoonColor) {
+        game._cinOrigAlienMoonColor = synthVisualRefs.alienCityShaderMat.uniforms.uMoonColor.value.clone();
+        game._cinOrigAlienBaseColor = synthVisualRefs.alienCityShaderMat.uniforms.uBaseColor.value.clone();
+      }
+      if (synthVisualRefs.alienCityShaderMat && game._cinOrigAlienMoonColor) {
+        synthVisualRefs.alienCityShaderMat.uniforms.uMoonColor.value.copy(game._cinOrigAlienMoonColor).lerp(new THREE.Color(0xff2200), t);
+        synthVisualRefs.alienCityShaderMat.uniforms.uBaseColor.value.copy(game._cinOrigAlienBaseColor).lerp(new THREE.Color(0x150005), t);
+      }
+      if (synthVisualRefs.alienGreenLight && !game._cinOrigAlienGreenLightColor) {
+        game._cinOrigAlienGreenLightColor = synthVisualRefs.alienGreenLight.color.clone();
+      }
+      if (synthVisualRefs.alienGreenLight && game._cinOrigAlienGreenLightColor) {
+        synthVisualRefs.alienGreenLight.color.copy(game._cinOrigAlienGreenLightColor).lerp(new THREE.Color(0xff2200), t);
       }
     }
   }
