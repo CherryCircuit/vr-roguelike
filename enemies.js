@@ -12,6 +12,7 @@ import {
   playPhaseWraithCharge as playMortarCharge,
   playSkullPhaseSound, playSkullHandGrowlSound, playSkullDeathKnell, playSkullLaughSound,
   playFinalBossSealBreakSound, playFinalBossChargeSound, playFinalBossAscendSound,
+  playFinalBossExposeSound, playFinalBossSummonWallSound, playFinalBossReleaseWallSound,
 } from './audio.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
@@ -2885,6 +2886,47 @@ export function updateEnemies(dt, now, playerPos) {
     // Apply stasis field slow effect
     const stasisSlow = getStasisSlowFactor(e.mesh.position);
     speedMod *= stasisSlow;
+
+    // Final boss phase-2 formations freeze real enemies in a wall so the player
+    // can shoot them before release. Keep them readable and skip normal AI while held.
+    if (e._eclipseHeld) {
+      if (e._eclipseHoldTarget) {
+        e.mesh.position.lerp(e._eclipseHoldTarget, Math.min(1, dt * 7.5));
+        e.mesh.position.y += Math.sin(now * 0.004 + (e._eclipseHoldBob || 0)) * 0.0025;
+      }
+
+      if (e.mesh.userData.instanceId !== undefined) {
+        e.mesh.updateMatrix();
+        const iid = e.mesh.userData.instanceId;
+        const pool = e.mesh.userData.instancePool;
+        pool.mesh.setMatrixAt(iid, e.mesh.matrix);
+        _dirtyPools.add(pool);
+      }
+
+      _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
+      e.mesh.lookAt(_look);
+      updateStatusEffects(e, dt);
+
+      const heldDamageRatio = 1 - e.hp / e.maxHp;
+      if (e.mesh.userData.instanceId !== undefined) {
+        _scratchColor.copy(e.baseColor).lerp(_redColor, heldDamageRatio);
+        const pool = e.mesh.userData.instancePool;
+        pool.mesh.setColorAt(e.mesh.userData.instanceId, _scratchColor);
+        _dirtyPools.add(pool);
+      } else if (e.material) {
+        e.material.color.copy(e.baseColor).lerp(_redColor, heldDamageRatio);
+      }
+      continue;
+    }
+
+    if (e._eclipseReleaseTimer > 0 && e._eclipseReleaseVector) {
+      e._eclipseReleaseTimer -= dt;
+      e.mesh.position.addScaledVector(e._eclipseReleaseVector, dt);
+      if (e._eclipseReleaseTimer <= 0) {
+        e._eclipseReleaseTimer = 0;
+        e._eclipseReleaseVector = null;
+      }
+    }
 
     if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar) {
       e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
@@ -7652,30 +7694,35 @@ class PrismBoss extends Boss {
 }
 
 // ── ECLIPSE ENGINE (Final Boss, Level 20) ───────────────────
+const ECLIPSE_WALL_LEVEL = Object.freeze({
+  hpMultiplier: 1,
+  speedMultiplier: 1,
+});
+
 class EclipseEngineBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
     super(def, levelConfig, sceneRef, telegraphing);
 
-    // VR-CRITICAL: The final fight uses explicit state instead of many loose
-    // timers so phase gating, invulnerability windows, and cleanup stay robust.
-    this.fixedY = 1.9;
+    // VR-CRITICAL: This fight is heavily scripted. Explicit timers and state
+    // keep the long encounter deterministic and prevent orphaned attacks.
+    this.fixedY = 2.6;
     this.moveTimer = 0;
     this.moveDirection = new THREE.Vector3(1, 0, 0);
-    this.behaviorTimer = 0;
-    this.volleyTimer = 0;
-    this.coreShotTimer = 0;
+    this.moveTarget = new THREE.Vector3(0, this.fixedY, -14);
+    this.phaseHeightPhase = Math.random() * Math.PI * 2;
     this.transitioning = false;
     this.transitionTimer = 0;
-    this.transitionDuration = 2.5;
+    this.transitionDuration = 3.1; // Long enough to read in-headset, short enough to keep tension
     this.pendingPhaseTransition = 0;
 
-    this.phase2Threshold = this.maxHp * (2 / 3);
-    this.phase3Threshold = this.maxHp * (1 / 3);
-    this.lastStandThreshold = this.maxHp * 0.12;
+    // Phase floors deliberately force multiple windows so a stacked DPS build
+    // cannot delete the climax in one exposure.
+    this.phase2Threshold = this.maxHp * 0.72;
+    this.phase3Threshold = this.maxHp * 0.42;
+    this.lastStandThreshold = this.maxHp * 0.14;
 
     this.coreExposed = false;
     this.windowTimer = 0;
-    this.windowDuration = 0;
     this.windowDamageBudget = 0;
     this.windowDamageTaken = 0;
     this.forceCloseWindow = false;
@@ -7683,31 +7730,53 @@ class EclipseEngineBoss extends Boss {
 
     this.sealNodes = [];
     this.anchorNodes = [];
-    this.crownEmitters = [];
-    this.finalEmitters = [];
+    this.phase2WallEnemies = [];
+    this.phase2WallType = 'swarm';
+    this.phase2WallPatternIndex = 0;
+    this.phase2WallSpawnIndex = 0;
+    this.phase2WallSpawnTimer = 0;
+    this.phase2WallTimer = 0;
+    this.phase2WallReleaseTimer = 0;
+    this.phase2InterruptTimer = 0;
+    this.phase2InterruptBonus = 0;
+    this.phase2WallTotalPlanned = 0;
+    this.phase2ShockwaveStep = 0;
+
+    this.volleyTimer = 0;
+    this.lobTimer = 0;
+    this.patternTimer = 0;
+    this.coreShotTimer = 0;
+    this.phase3MeteorTimer = 0;
+    this.phase3BarrageTimer = 0;
+    this.phase3CrackTimer = 0;
+    this.phase3ShockwaveTimer = 0;
+    this.phase1SealAttackIndex = 0;
+
     this.shellMeshes = [];
     this.heartMeshes = [];
     this.crownMeshes = [];
     this.ascensionMeshes = [];
+    this.spireMeshes = [];
+    this.crownEmitters = [];
+    this.finalEmitters = [];
 
     this.visualSpin = 0;
     this.visualPulse = 0;
     this.currentScale = 1;
     this.targetScale = 1;
 
-    this.phase1VolleyIndex = 0;
-    this.phase2PatternIndex = 0;
-    this.phase2CycleTimer = 0;
-    this.phase2InterruptTimer = 0;
-    this.phase2ShockwaveIndex = 0;
-    this.phase3ArmorTimer = 0;
-    this.phase3PatternIndex = 0;
-    this.phase3ShockwaveTimer = 0;
+    this.phase2Formations = this.buildPhase2Formations();
+
+    this.frontArc = 140;
+    this.minDistance = 8;
+    this.maxDistance = 22;
 
     this.buildEclipseMesh();
     this.enterPhase1();
   }
 
+  // Build a small voxel cluster from shared cube geometry.
+  // The cubes share cached geometry, so cleanup only disposes materials.
   createVoxelCluster(positions, size, color, opacity, userData = {}, collectInto = null) {
     const group = new THREE.Group();
     const geo = getGeo(size);
@@ -7737,67 +7806,80 @@ class EclipseEngineBoss extends Boss {
       const child = this.mesh.children[0];
       this.mesh.remove(child);
       child.traverse?.((part) => {
-        if (part.geometry) part.geometry.dispose();
         if (part.material) part.material.dispose();
       });
     }
 
+    // Core shell: still readable as a heart-protecting machine, but taller so
+    // phase-3 scale changes feel cathedral-sized instead of just "slightly larger".
     this.shellGroup = this.createVoxelCluster([
-      [0, 0.72, 0],
-      [0.28, 0.46, 0],
-      [-0.28, 0.46, 0],
-      [0.54, 0.18, 0],
-      [-0.54, 0.18, 0],
-      [0.54, -0.18, 0],
-      [-0.54, -0.18, 0],
-      [0.28, -0.46, 0],
-      [-0.28, -0.46, 0],
-      [0, -0.72, 0],
-      [0, 0.18, 0.2],
-      [0, -0.18, 0.2],
-      [0.18, 0, 0.2],
-      [-0.18, 0, 0.2],
-    ], 0.22, 0x33ccff, 0.88, { isBossBody: true }, this.shellMeshes);
+      [0, 1.05, 0],
+      [0.35, 0.78, 0],
+      [-0.35, 0.78, 0],
+      [0.62, 0.38, 0],
+      [-0.62, 0.38, 0],
+      [0.74, 0, 0],
+      [-0.74, 0, 0],
+      [0.62, -0.38, 0],
+      [-0.62, -0.38, 0],
+      [0.35, -0.78, 0],
+      [-0.35, -0.78, 0],
+      [0, -1.05, 0],
+      [0.22, 0.2, 0.26],
+      [-0.22, 0.2, 0.26],
+      [0.22, -0.2, 0.26],
+      [-0.22, -0.2, 0.26],
+    ], 0.24, 0x33ccff, 0.9, { isBossBody: true }, this.shellMeshes);
     this.mesh.add(this.shellGroup);
 
+    this.spireGroup = this.createVoxelCluster([
+      [0, 1.55, -0.08],
+      [0, 1.95, -0.02],
+      [0, 2.3, 0.0],
+      [0, -1.45, -0.08],
+      [0, -1.8, 0.0],
+    ], 0.19, 0xffb46b, 0.78, { isBossBody: true }, this.spireMeshes);
+    this.mesh.add(this.spireGroup);
+
     this.heartGroup = this.createVoxelCluster([
-      [0, 0, 0.34],
-      [0.18, 0, 0.24],
-      [-0.18, 0, 0.24],
-      [0, 0.18, 0.2],
-      [0, -0.18, 0.2],
-    ], 0.18, 0xffffff, 0.92, { isEclipseHeart: true }, this.heartMeshes);
-    this.heartGroup.position.z = 0.04;
+      [0, 0.2, 0.42],
+      [0.22, 0.2, 0.3],
+      [-0.22, 0.2, 0.3],
+      [0.34, -0.08, 0.18],
+      [-0.34, -0.08, 0.18],
+      [0, -0.18, 0.28],
+      [0, -0.42, 0.18],
+    ], 0.19, 0xffffff, 0.95, { isEclipseHeart: true }, this.heartMeshes);
     this.mesh.add(this.heartGroup);
 
     this.crownGroup = new THREE.Group();
     const crownOffsets = [
-      { pos: [1.35, 0, 0], rotY: 0 },
-      { pos: [-1.35, 0, 0], rotY: Math.PI },
-      { pos: [0, 0, 1.35], rotY: Math.PI / 2 },
-      { pos: [0, 0, -1.35], rotY: -Math.PI / 2 },
+      { pos: [2.1, 0.3, 0], rotY: 0 },
+      { pos: [-2.1, 0.3, 0], rotY: Math.PI },
+      { pos: [0, 0.9, 2.0], rotY: Math.PI / 2 },
+      { pos: [0, 0.9, -2.0], rotY: -Math.PI / 2 },
     ];
     crownOffsets.forEach((cfg, idx) => {
       const arm = this.createVoxelCluster([
         [0, 0, 0],
-        [0.24, 0.18, 0],
-        [0.24, -0.18, 0],
-        [0.52, 0, 0],
-      ], 0.16, 0x66ffff, 0.7, { isBossBody: true }, this.crownMeshes);
+        [0.34, 0.18, 0],
+        [0.7, 0.12, 0],
+        [0.98, -0.05, 0],
+      ], 0.17, 0x7cf8ff, 0.74, { isBossBody: true }, this.crownMeshes);
       arm.position.set(cfg.pos[0], cfg.pos[1], cfg.pos[2]);
       arm.rotation.y = cfg.rotY;
 
       const tip = new THREE.Mesh(
-        getGeo(0.18),
+        getGeo(0.2),
         new THREE.MeshBasicMaterial({
-          color: 0xffaa55,
+          color: 0xffc06d,
           transparent: true,
-          opacity: 0.88,
+          opacity: 0.9,
           depthWrite: false,
           fog: false,
         }),
       );
-      tip.position.set(0.78, 0, 0);
+      tip.position.set(1.32, -0.08, 0);
       tip.userData.isBossBody = true;
       arm.add(tip);
       this.crownEmitters[idx] = tip;
@@ -7809,32 +7891,33 @@ class EclipseEngineBoss extends Boss {
     this.ascensionGroup = new THREE.Group();
     this.ascensionGroup.visible = false;
     const ascensionOffsets = [
-      { pos: [1.95, 0.55, 0], rotY: 0 },
-      { pos: [-1.95, 0.55, 0], rotY: Math.PI },
-      { pos: [0, 0.55, 1.95], rotY: Math.PI / 2 },
-      { pos: [0, 0.55, -1.95], rotY: -Math.PI / 2 },
+      { pos: [2.85, 1.25, 0], rotY: 0 },
+      { pos: [-2.85, 1.25, 0], rotY: Math.PI },
+      { pos: [0, 2.35, 2.6], rotY: Math.PI / 2 },
+      { pos: [0, 2.35, -2.6], rotY: -Math.PI / 2 },
     ];
     ascensionOffsets.forEach((cfg, idx) => {
       const spike = this.createVoxelCluster([
         [0, 0, 0],
-        [0.28, 0.18, 0],
-        [0.56, 0.05, 0],
-        [0.84, -0.08, 0],
-      ], 0.18, 0xff8844, 0.82, { isBossBody: true }, this.ascensionMeshes);
+        [0.4, 0.25, 0],
+        [0.82, 0.12, 0],
+        [1.2, -0.02, 0],
+        [1.56, -0.18, 0],
+      ], 0.21, 0xff7a3d, 0.84, { isBossBody: true }, this.ascensionMeshes);
       spike.position.set(cfg.pos[0], cfg.pos[1], cfg.pos[2]);
       spike.rotation.y = cfg.rotY;
 
       const tip = new THREE.Mesh(
-        getGeo(0.2),
+        getGeo(0.23),
         new THREE.MeshBasicMaterial({
-          color: 0xfff2b0,
+          color: 0xfff4c2,
           transparent: true,
-          opacity: 0.92,
+          opacity: 0.94,
           depthWrite: false,
           fog: false,
         }),
       );
-      tip.position.set(1.08, -0.12, 0);
+      tip.position.set(1.88, -0.22, 0);
       tip.userData.isBossBody = true;
       spike.add(tip);
       this.finalEmitters[idx] = tip;
@@ -7844,7 +7927,7 @@ class EclipseEngineBoss extends Boss {
     this.mesh.add(this.ascensionGroup);
 
     const hitbox = new THREE.Mesh(
-      getHitboxGeo(3.2, 3.2, 3.2),
+      getHitboxGeo(3.6, 5.8, 3.6),
       new THREE.MeshBasicMaterial({ visible: false }),
     );
     hitbox.userData.isBossHitbox = true;
@@ -7857,13 +7940,14 @@ class EclipseEngineBoss extends Boss {
     group.userData.eclipseNodeId = id;
     group.userData.eclipseNodeType = type;
 
-    const geo = getGeo(type === 'anchor' ? 0.18 : 0.16);
+    const geo = getGeo(type === 'anchor' ? 0.18 : 0.15);
     const positions = [
-      [0, 0, 0.14],
+      [0, 0, 0.16],
       [0.18, 0, 0],
       [-0.18, 0, 0],
       [0, 0.18, 0],
       [0, -0.18, 0],
+      [0, 0, -0.16],
     ];
 
     positions.forEach((pos, idx) => {
@@ -7872,7 +7956,7 @@ class EclipseEngineBoss extends Boss {
         new THREE.MeshBasicMaterial({
           color: idx === 0 ? 0xffffff : color,
           transparent: true,
-          opacity: 0.95,
+          opacity: 0.96,
           depthWrite: false,
           fog: false,
         }),
@@ -7885,6 +7969,33 @@ class EclipseEngineBoss extends Boss {
     });
 
     return group;
+  }
+
+  buildPhase2Formations() {
+    const swarm = [];
+    const tank = [];
+
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col < 6; col++) {
+        swarm.push(new THREE.Vector3(
+          (col - 2.5) * 1.7,
+          0.95 + row * 0.72 + ((row + col) % 2 === 0 ? 0.18 : -0.08),
+          (row % 2 === 0 ? 0.0 : -0.45),
+        ));
+      }
+    }
+
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 4; col++) {
+        tank.push(new THREE.Vector3(
+          (col - 1.5) * 2.8,
+          1.1 + row * 1.3,
+          -row * 0.8,
+        ));
+      }
+    }
+
+    return { swarm, tank };
   }
 
   setHeartExposed(exposed) {
@@ -7900,7 +8011,6 @@ class EclipseEngineBoss extends Boss {
       node.active = false;
       if (node.group?.parent) node.group.parent.remove(node.group);
       node.group?.traverse((part) => {
-        if (part.geometry) part.geometry.dispose();
         if (part.material) part.material.dispose();
       });
       node.group = null;
@@ -7908,64 +8018,80 @@ class EclipseEngineBoss extends Boss {
     nodes.length = 0;
   }
 
+  clearWallEnemies() {
+    this.phase2WallEnemies.forEach((enemy) => {
+      if (!enemy) return;
+      enemy._eclipseHeld = false;
+      enemy._eclipseHoldTarget = null;
+      enemy._eclipseReleaseTimer = 0;
+      enemy._eclipseReleaseVector = null;
+    });
+    this.phase2WallEnemies.length = 0;
+  }
+
   enterPhase1() {
     this.phase = 1;
     this.state = 'phase1_sealed';
-    this.fixedY = 1.9;
-    this.targetScale = 1.0;
-    this.volleyTimer = 0.9;
-    this.behaviorTimer = 3.1;
+    this.fixedY = 2.6;
+    this.targetScale = 1.15;
+    this.volleyTimer = 0.95;
+    this.lobTimer = 0.7;
+    this.patternTimer = 3.6;
     this.windowTimer = 0;
     this.windowDamageBudget = 0;
     this.windowDamageTaken = 0;
     this.forceCloseWindow = false;
     this.setHeartExposed(false);
     this.clearWeakNodes(this.anchorNodes);
+    this.clearWallEnemies();
     this.spawnPhase1Seals();
   }
 
   enterPhase2() {
     this.phase = 2;
-    this.state = 'phase2_pattern';
-    this.fixedY = 2.05;
-    this.targetScale = 1.12;
-    this.phase2CycleTimer = 0;
-    this.phase2InterruptTimer = 0;
-    this.phase2ShockwaveIndex = 0;
-    this.phase2PatternIndex = 0;
-    this.volleyTimer = 1.0;
+    this.state = 'phase2_wall_setup';
+    this.fixedY = 5.1;
+    this.targetScale = 1.45;
     this.windowTimer = 0;
+    this.windowDamageBudget = 0;
+    this.windowDamageTaken = 0;
     this.forceCloseWindow = false;
+    this.phase2InterruptTimer = 0;
+    this.phase2ShockwaveStep = 0;
+    this.phase2WallPatternIndex = 0;
+    this.phase2InterruptBonus = 0;
     this.setHeartExposed(false);
     this.clearWeakNodes(this.sealNodes);
     this.clearWeakNodes(this.anchorNodes);
+    this.clearWallEnemies();
+    this.startWallPattern('swarm');
   }
 
   enterPhase3() {
     this.phase = 3;
     this.state = 'phase3_armor';
-    this.fixedY = 2.25;
-    this.targetScale = 1.65;
-    this.phase3ArmorTimer = 0;
-    this.phase3PatternIndex = 0;
-    this.phase3ShockwaveTimer = 0;
-    this.volleyTimer = 1.0;
-    this.phase3ShockwaveTimer = 2.8;
+    this.fixedY = 7.1;
+    this.targetScale = 3.2;
+    this.phase3MeteorTimer = 0.7;
+    this.phase3BarrageTimer = 2.1;
+    this.phase3CrackTimer = 7.0;
+    this.phase3ShockwaveTimer = 3.0;
     this.windowTimer = 0;
     this.forceCloseWindow = false;
     this.lastStand = false;
     this.setHeartExposed(false);
     this.clearWeakNodes(this.sealNodes);
     this.clearWeakNodes(this.anchorNodes);
+    this.clearWallEnemies();
     if (this.ascensionGroup) this.ascensionGroup.visible = true;
   }
 
   spawnPhase1Seals() {
     this.clearWeakNodes(this.sealNodes);
     const configs = [
-      { angle: 0.2, radius: 2.55, height: 0.45, speed: 0.95 },
-      { angle: Math.PI * 0.9, radius: 2.8, height: -0.4, speed: -0.8 },
-      { angle: Math.PI * 1.6, radius: 2.4, height: 0.05, speed: 1.15 },
+      { angle: 0.2, radius: 5.5, height: 3.7, speed: 0.72 },
+      { angle: Math.PI * 0.86, radius: 6.1, height: -1.55, speed: -0.58 },
+      { angle: Math.PI * 1.58, radius: 5.0, height: 1.2, speed: 0.94 },
     ];
 
     configs.forEach((cfg, idx) => {
@@ -7975,7 +8101,7 @@ class EclipseEngineBoss extends Boss {
       this.sealNodes.push({
         id: idx,
         type: 'seal',
-        hp: 85,
+        hp: 145,
         angle: cfg.angle,
         radius: cfg.radius,
         height: cfg.height,
@@ -7989,8 +8115,9 @@ class EclipseEngineBoss extends Boss {
   spawnPhase2Anchors() {
     this.clearWeakNodes(this.anchorNodes);
     const configs = [
-      { offset: new THREE.Vector3(-3.2, 0.55, 0.35), bob: 0 },
-      { offset: new THREE.Vector3(3.2, -0.3, -0.35), bob: Math.PI },
+      { offset: new THREE.Vector3(-4.7, 1.9, 0.6), bob: 0 },
+      { offset: new THREE.Vector3(4.8, -1.2, -0.8), bob: Math.PI * 0.7 },
+      { offset: new THREE.Vector3(0, 4.2, -1.3), bob: Math.PI * 1.2 },
     ];
 
     configs.forEach((cfg, idx) => {
@@ -8000,7 +8127,7 @@ class EclipseEngineBoss extends Boss {
       this.anchorNodes.push({
         id: idx,
         type: 'anchor',
-        hp: 110,
+        hp: 165,
         offset: cfg.offset.clone(),
         bob: cfg.bob,
         active: true,
@@ -8021,27 +8148,37 @@ class EclipseEngineBoss extends Boss {
     this.setHeartExposed(false);
     this.clearWeakNodes(this.sealNodes);
     this.clearWeakNodes(this.anchorNodes);
+    this.clearWallEnemies();
     playFinalBossAscendSound();
 
     if (this.telegraphing) {
-      this.telegraphing.start('teleport', 0.7, 0xffaa44, this.mesh.position.clone());
-      this.telegraphing.start('pulse', 0.9, 0xffcc77, this.mesh.position.clone());
+      this.telegraphing.start('teleport', 0.8, 0xffaa44, this.mesh.position.clone());
+      this.telegraphing.start('pulse', 1.0, 0xffd07a, this.mesh.position.clone());
+      this.telegraphing.start('shockwave', 1.15, 0xff6b33, this.mesh.position.clone());
     }
   }
 
   beginCoreWindow(duration, budgetRatio) {
-    this.windowDuration = duration;
     this.windowTimer = duration;
     this.windowDamageBudget = budgetRatio === Infinity ? Infinity : this.maxHp * budgetRatio;
     this.windowDamageTaken = 0;
     this.forceCloseWindow = false;
-    this.coreShotTimer = 0.7;
+    this.coreShotTimer = 0.9;
     this.setHeartExposed(true);
+
+    // The expose callout has to be unmistakable in VR or players miss the burn window.
+    playFinalBossExposeSound();
+    playFinalBossSealBreakSound();
+
+    const heartPos = this.getHeartWorldPosition();
+    if (this.telegraphing) {
+      this.telegraphing.start('pulse', 0.85, 0xfff1b5, heartPos.clone());
+      this.telegraphing.start('charge', 0.7, 0xffd27a, heartPos.clone());
+    }
   }
 
   resolveExposure() {
     this.windowTimer = 0;
-    this.windowDuration = 0;
     this.windowDamageBudget = 0;
     this.windowDamageTaken = 0;
     this.forceCloseWindow = false;
@@ -8055,19 +8192,18 @@ class EclipseEngineBoss extends Boss {
     if (this.phase === 1) {
       this.state = 'phase1_sealed';
       this.spawnPhase1Seals();
-      this.volleyTimer = 0;
-      this.behaviorTimer = 0;
+      this.volleyTimer = 0.6;
+      this.lobTimer = 0.35;
+      this.patternTimer = 2.9;
     } else if (this.phase === 2) {
-      this.state = 'phase2_pattern';
-      this.phase2CycleTimer = 0;
-      this.phase2InterruptTimer = 0;
-      this.phase2ShockwaveIndex = 0;
-      this.volleyTimer = 0;
+      const nextType = this.phase2WallPatternIndex % 2 === 0 ? 'swarm' : 'tank';
+      this.startWallPattern(nextType);
     } else if (this.phase === 3 && !this.lastStand) {
       this.state = 'phase3_armor';
-      this.phase3ArmorTimer = 0;
-      this.phase3ShockwaveTimer = 0;
-      this.volleyTimer = 0;
+      this.phase3MeteorTimer = 0.55;
+      this.phase3BarrageTimer = 1.8;
+      this.phase3CrackTimer = 6.8;
+      this.phase3ShockwaveTimer = 2.8;
     }
   }
 
@@ -8075,19 +8211,22 @@ class EclipseEngineBoss extends Boss {
     if (this.lastStand) return;
     this.lastStand = true;
     this.state = 'phase3_laststand';
-    this.targetScale = 1.82;
+    this.fixedY = 8.4;
+    this.targetScale = 4.1;
     this.setHeartExposed(true);
     this.windowTimer = 999;
     this.windowDamageBudget = Infinity;
     this.windowDamageTaken = 0;
     this.forceCloseWindow = false;
-    this.volleyTimer = 0.95;
-    this.phase3ShockwaveTimer = 2.1;
+    this.phase3MeteorTimer = 0.7;
+    this.phase3BarrageTimer = 1.1;
+    this.phase3ShockwaveTimer = 2.4;
     playFinalBossAscendSound();
+    playFinalBossExposeSound();
 
     if (this.telegraphing) {
-      this.telegraphing.start('pulse', 0.8, 0xffe7aa, this.mesh.position.clone());
-      this.telegraphing.start('shockwave', 1.0, 0xff5c33, this.mesh.position.clone());
+      this.telegraphing.start('pulse', 1.0, 0xffefbf, this.mesh.position.clone());
+      this.telegraphing.start('shockwave', 1.2, 0xff5c33, this.mesh.position.clone());
     }
   }
 
@@ -8097,29 +8236,40 @@ class EclipseEngineBoss extends Boss {
       node.angle += node.speed * dt;
       node.group.position.set(
         Math.cos(node.angle) * node.radius,
-        node.height + Math.sin(now * 0.003 + node.id) * 0.18,
+        node.height + Math.sin(now * 0.0022 + node.id * 1.6) * 0.42,
         Math.sin(node.angle) * node.radius,
       );
       node.group.lookAt(playerPos);
     });
   }
 
-  updateAnchorNodes(dt, now, playerPos) {
+  updateAnchorNodes(now, playerPos) {
     this.anchorNodes.forEach((node) => {
       if (!node.active || !node.group?.parent) return;
       node.group.position.set(
-        node.offset.x,
-        node.offset.y + Math.sin(now * 0.004 + node.bob) * 0.25,
-        node.offset.z + Math.sin(now * 0.0025 + node.bob) * 0.18,
+        node.offset.x + Math.sin(now * 0.0017 + node.bob) * 0.3,
+        node.offset.y + Math.sin(now * 0.0032 + node.bob) * 0.45,
+        node.offset.z + Math.cos(now * 0.0026 + node.bob) * 0.28,
       );
       node.group.lookAt(playerPos);
     });
   }
 
-  fireFanFromOrigins(origins, playerPos, shotCount, spreadX, delayMs, color) {
+  collectEmitterPositions(emitters) {
+    return emitters
+      .map((emitter) => emitter?.getWorldPosition(new THREE.Vector3()))
+      .filter(Boolean);
+  }
+
+  getHeartWorldPosition() {
+    return this.heartGroup.getWorldPosition(new THREE.Vector3());
+  }
+
+  fireDirectFan(origins, playerPos, shotCount, spreadX, delayMs, color) {
     if (!origins || origins.length === 0) return;
     const expectedPhase = this.phase;
     const expectedState = this.state;
+
     origins.forEach((origin) => {
       if (this.telegraphing) {
         this.telegraphing.start('projectile', delayMs / 1000, color, origin.clone());
@@ -8134,7 +8284,7 @@ class EclipseEngineBoss extends Boss {
         const offset = shotCount === 1 ? 0 : (i / (shotCount - 1) - 0.5);
         const target = playerPos.clone();
         target.x += offset * spreadX;
-        target.y += Math.abs(offset) * 0.12;
+        target.y += Math.abs(offset) * 0.2;
         targets.push(target);
       }
     }
@@ -8149,19 +8299,54 @@ class EclipseEngineBoss extends Boss {
     });
   }
 
-  fireRadialBurst(projectileCount, radius, waveCount = 1, waveSpacingMs = 140, color = 0xff6633) {
+  fireLobbedVolley(origins, playerPos, targetOffsets, arcHeight, delayMs, color) {
+    if (!origins || origins.length === 0 || !targetOffsets || targetOffsets.length === 0) return;
+    const expectedPhase = this.phase;
+    const expectedState = this.state;
+
+    const targets = targetOffsets.map((offset) => {
+      const target = playerPos.clone();
+      target.x += offset.x || 0;
+      target.y += offset.y || 0;
+      target.z += offset.z || 0;
+      return target;
+    });
+
+    if (this.telegraphing) {
+      origins.forEach((origin) => {
+        this.telegraphing.start('projectile', delayMs / 1000, color, origin.clone());
+      });
+      targets.slice(0, 4).forEach((target) => {
+        const warningPos = target.clone();
+        warningPos.y = 0.05;
+        this.telegraphing.start('pulse', delayMs / 1000, color, warningPos);
+      });
+    }
+
+    this.later(delayMs, () => {
+      if (this.phase !== expectedPhase || this.state !== expectedState) return;
+      origins.forEach((origin) => {
+        targets.forEach((target) => {
+          spawnBossProjectile(origin.clone(), target.clone(), true, arcHeight);
+        });
+      });
+    });
+  }
+
+  fireRadialBurst(projectileCount, radius, waveCount = 1, waveSpacingMs = 150, color = 0xff6633) {
     const origin = this.mesh.position.clone();
     const expectedPhase = this.phase;
     const expectedState = this.state;
+
     if (this.telegraphing) {
-      this.telegraphing.start('shockwave', 0.7, color, origin.clone());
+      this.telegraphing.start('shockwave', 0.8, color, origin.clone());
     }
 
     for (let wave = 0; wave < waveCount; wave++) {
       this.later(wave * waveSpacingMs, () => {
         if (this.phase !== expectedPhase || this.state !== expectedState) return;
         for (let i = 0; i < projectileCount; i++) {
-          const angle = (i / projectileCount) * Math.PI * 2 + wave * 0.12;
+          const angle = (i / projectileCount) * Math.PI * 2 + wave * 0.11;
           const target = new THREE.Vector3(
             origin.x + Math.cos(angle) * radius,
             origin.y,
@@ -8174,51 +8359,175 @@ class EclipseEngineBoss extends Boss {
   }
 
   fireMeasuredHeartShot(playerPos, spreadX = 0) {
-    const origin = this.heartGroup.getWorldPosition(new THREE.Vector3());
+    const origin = this.getHeartWorldPosition();
     const expectedPhase = this.phase;
     const expectedState = this.state;
     const target = playerPos.clone();
     if (spreadX !== 0) target.x += spreadX;
-    this.showTelegraph('projectile', 0.24, 0xfff0b2, origin);
-    this.later(240, () => {
+    this.showTelegraph('projectile', 0.28, 0xfff0b2, origin);
+    this.later(280, () => {
       if (this.phase !== expectedPhase || this.state !== expectedState) return;
       spawnBossProjectile(origin.clone(), target);
     });
   }
 
-  firePhase1Volley(playerPos) {
-    const activeSeals = this.sealNodes.filter(node => node.active && node.group?.parent);
+  fireSealLobbedPressure(playerPos) {
+    const activeSeals = this.sealNodes.filter((node) => node.active && node.group?.parent);
     if (activeSeals.length === 0) return;
 
-    const node = activeSeals[this.phase1VolleyIndex % activeSeals.length];
-    this.phase1VolleyIndex++;
+    const node = activeSeals[this.phase1SealAttackIndex % activeSeals.length];
+    this.phase1SealAttackIndex++;
     const origin = node.group.getWorldPosition(new THREE.Vector3());
-    const shotCount = activeSeals.length >= 2 ? 3 : 2;
-    const spread = activeSeals.length >= 2 ? 0.8 : 0.45;
-    this.fireFanFromOrigins([origin], playerPos, shotCount, spread, 360, 0x59f7ff);
+    const offsets = [
+      { x: -0.9, z: -0.35 },
+      { x: 0.85, z: -0.1 },
+      { x: 0.2, z: 0.9 },
+    ];
+    this.fireLobbedVolley([origin], playerPos, offsets, 4.2, 520, 0x6eeaff);
   }
 
-  fireCrownCrossfire(playerPos, shotCount = 3, spreadX = 1.1, color = 0xff9933) {
-    const origins = this.crownEmitters
-      .slice(0, 4)
-      .map((emitter) => emitter?.getWorldPosition(new THREE.Vector3()))
-      .filter(Boolean);
+  firePhase2BacklineMortars(playerPos, originCount = 2) {
+    const emitterOrigins = this.collectEmitterPositions(this.crownEmitters);
+    const origins = emitterOrigins.slice(0, originCount).map((origin, idx) => {
+      origin.y += 1.8 + idx * 0.8;
+      return origin;
+    });
+    const offsets = [
+      { x: -1.25, z: -0.5 },
+      { x: 1.25, z: -0.3 },
+      { x: 0.25, z: 1.1 },
+    ];
+    this.fireLobbedVolley(origins, playerPos, offsets, 5.6, 640, 0xff8a44);
+  }
+
+  firePhase3MeteorRain(playerPos) {
+    const origins = this.collectEmitterPositions(this.finalEmitters.length > 0 ? this.finalEmitters : this.crownEmitters);
     if (origins.length === 0) return;
-    this.fireFanFromOrigins(origins.slice(0, 2), playerPos, shotCount, spreadX, 340, color);
+    origins.forEach((origin, idx) => {
+      origin.y += 2.8 + idx * 0.55;
+    });
+    const offsets = [
+      { x: -1.6, z: -0.9 },
+      { x: 1.55, z: -0.6 },
+      { x: -0.45, z: 1.2 },
+      { x: 0.8, z: 1.35 },
+    ];
+    this.fireLobbedVolley(origins.slice(0, 3), playerPos, offsets, this.lastStand ? 6.8 : 6.1, 620, 0xffb25a);
   }
 
-  firePhase3Volley(playerPos) {
-    const emitters = (this.finalEmitters.length > 0 ? this.finalEmitters : this.crownEmitters)
-      .map((emitter) => emitter?.getWorldPosition(new THREE.Vector3()))
-      .filter(Boolean);
-    if (emitters.length === 0) return;
-    this.fireFanFromOrigins(emitters.slice(0, 2), playerPos, 3, 1.35, 320, 0xffd27a);
+  firePhase3GiantVolley(playerPos) {
+    const origins = this.collectEmitterPositions(this.finalEmitters.length > 0 ? this.finalEmitters : this.crownEmitters);
+    if (origins.length === 0) return;
+    this.fireDirectFan(origins.slice(0, 3), playerPos, 3, this.lastStand ? 1.75 : 1.45, 360, 0xffd27a);
+  }
+
+  startWallPattern(type) {
+    this.state = 'phase2_wall_setup';
+    this.phase2WallType = type;
+    this.phase2WallSpawnIndex = 0;
+    this.phase2WallSpawnTimer = 0.12;
+    this.phase2WallTimer = 0;
+    this.phase2WallReleaseTimer = 0;
+    this.phase2InterruptTimer = 0;
+    this.phase2ShockwaveStep = 0;
+    this.phase2InterruptBonus = 0;
+    this.phase2WallTotalPlanned = this.phase2Formations[type].length;
+    this.lobTimer = 0.75;
+    this.volleyTimer = 1.6;
+    this.clearWeakNodes(this.anchorNodes);
+    this.clearWallEnemies();
+    this.setHeartExposed(false);
+    playFinalBossSummonWallSound();
+    playFinalBossChargeSound();
+
+    if (this.telegraphing) {
+      this.telegraphing.start('charge', 1.2, 0xff8844, this.mesh.position.clone());
+      this.telegraphing.start('pulse', 1.4, 0xffb266, this.mesh.position.clone());
+    }
+  }
+
+  spawnWallEnemy(slot, playerPos) {
+    const worldTarget = new THREE.Vector3(
+      slot.x + this.mesh.position.x * 0.45,
+      slot.y,
+      Math.min(this.mesh.position.z + 5.6, playerPos.z - 10.8) + slot.z,
+    );
+
+    const enemyType = this.phase2WallType === 'tank' ? 'tank' : 'swarm';
+    const enemy = spawnEnemy(enemyType, worldTarget.clone(), ECLIPSE_WALL_LEVEL);
+    if (!enemy) return null;
+
+    enemy._eclipseHeld = true;
+    enemy._eclipseHoldTarget = worldTarget.clone();
+    enemy._eclipseHoldBob = Math.random() * Math.PI * 2;
+    enemy._eclipseReleaseTimer = 0;
+    enemy._eclipseReleaseVector = null;
+    enemy._eclipseWallType = this.phase2WallType;
+
+    // The wall needs to be threatening but still answerable.
+    if (enemyType === 'swarm') {
+      enemy.hp = 26;
+      enemy.maxHp = 26;
+      enemy.baseSpeed = 5.8;
+      enemy.speed = 5.8;
+    } else {
+      enemy.hp = 165;
+      enemy.maxHp = 165;
+      enemy.baseSpeed = 1.18;
+      enemy.speed = 1.18;
+    }
+
+    this.phase2WallEnemies.push(enemy);
+    return enemy;
+  }
+
+  releaseWallEnemies(playerPos) {
+    playFinalBossReleaseWallSound();
+    let alive = 0;
+
+    this.phase2WallEnemies.forEach((enemy) => {
+      if (!enemy || enemy.hp <= 0) return;
+      alive++;
+      enemy._eclipseHeld = false;
+      enemy._eclipseHoldTarget = null;
+      enemy._eclipseReleaseTimer = this.phase2WallType === 'tank' ? 2.2 : 1.35;
+      enemy._eclipseReleaseVector = _scratch.copy(playerPos).sub(enemy.mesh.position).normalize().multiplyScalar(
+        this.phase2WallType === 'tank' ? 3.2 : 7.4,
+      ).clone();
+      if (this.phase2WallType === 'tank') {
+        enemy.baseSpeed = Math.max(enemy.baseSpeed, 1.45);
+        enemy.speed = enemy.baseSpeed;
+      }
+    });
+
+    const survivalRatio = this.phase2WallTotalPlanned > 0 ? alive / this.phase2WallTotalPlanned : 1;
+    if (survivalRatio <= 0.25) this.phase2InterruptBonus = 1.6;
+    else if (survivalRatio <= 0.55) this.phase2InterruptBonus = 0.8;
+    else this.phase2InterruptBonus = 0;
+
+    this.state = 'phase2_wall_release';
+    this.phase2WallReleaseTimer = 5.2 - this.phase2InterruptBonus * 0.45;
+    this.phase2ShockwaveStep = 0;
+
+    if (this.telegraphing) {
+      this.telegraphing.start('shockwave', 0.9, 0xff5a2f, this.mesh.position.clone());
+    }
+  }
+
+  countActiveWallEnemies() {
+    let alive = 0;
+    this.phase2WallEnemies.forEach((enemy) => {
+      if (!enemy || enemy.hp <= 0) return;
+      if (activeEnemies.includes(enemy)) alive++;
+    });
+    return alive;
   }
 
   startAnchorInterrupt() {
     this.state = 'phase2_interrupt';
     this.phase2InterruptTimer = 0;
-    this.phase2ShockwaveIndex = 0;
+    this.phase2ShockwaveStep = 0;
+    this.lobTimer = 0.65;
     this.setHeartExposed(false);
     this.spawnPhase2Anchors();
     playFinalBossChargeSound();
@@ -8226,7 +8535,7 @@ class EclipseEngineBoss extends Boss {
     if (this.telegraphing) {
       this.telegraphing.start('charge', 1.0, 0xff8844, this.mesh.position.clone());
       this.telegraphing.start('pulse', 1.25, 0xffb266, this.mesh.position.clone());
-      this.telegraphing.start('shockwave', 1.7, 0xff5522, this.mesh.position.clone());
+      this.telegraphing.start('shockwave', 1.55, 0xff5522, this.mesh.position.clone());
     }
   }
 
@@ -8235,62 +8544,75 @@ class EclipseEngineBoss extends Boss {
 
     this.clearWeakNodes(this.anchorNodes);
     this.state = 'phase2_exposed';
-    this.phase2CycleTimer = 0;
     this.phase2InterruptTimer = 0;
-    this.phase2ShockwaveIndex = 0;
+    this.phase2ShockwaveStep = 0;
 
     if (interrupted) {
-      playFinalBossSealBreakSound();
-      this.beginCoreWindow(8.0, 0.11);
+      this.beginCoreWindow(8.4 + this.phase2InterruptBonus, 0.07 + this.phase2InterruptBonus * 0.0045);
     } else {
-      this.beginCoreWindow(4.6, 0.06);
+      this.beginCoreWindow(4.6, 0.036);
     }
+    this.phase2WallPatternIndex++;
   }
 
-  updateMovement(dt, playerPos) {
-    const changeCadence = this.phase === 1 ? 2.4 : this.phase === 2 ? 2.0 : 1.45;
+  updateMovement(dt, now, playerPos) {
+    if (this.transitioning) return;
+
+    // Phase 2 backline patterns deliberately push the boss high and far away
+    // so the player has to look up and solve the wall attack under pressure.
+    if (this.phase === 2 && (this.state === 'phase2_wall_setup' || this.state === 'phase2_wall_release' || this.state === 'phase2_interrupt')) {
+      this.moveTarget.set(
+        playerPos.x + Math.sin(now * 0.0009 + this.phaseHeightPhase) * 5.5,
+        5.4 + Math.sin(now * 0.0018 + this.phaseHeightPhase * 0.7) * 2.15,
+        playerPos.z - 17.6 + Math.cos(now * 0.0012) * 1.4,
+      );
+      this.mesh.position.lerp(this.moveTarget, Math.min(1, dt * 2.2));
+      return;
+    }
+
+    if (this.phase === 3) {
+      this.moveTarget.set(
+        playerPos.x + Math.sin(now * 0.0007 + this.phaseHeightPhase) * 4.4,
+        (this.lastStand ? 8.4 : 7.1) + Math.sin(now * 0.0016 + this.phaseHeightPhase) * (this.lastStand ? 1.6 : 2.45),
+        playerPos.z - (this.lastStand ? 13.2 : 15.1) + Math.cos(now * 0.00105) * 2.2,
+      );
+      this.mesh.position.lerp(this.moveTarget, Math.min(1, dt * (this.lastStand ? 1.8 : 1.5)));
+      return;
+    }
+
     this.moveTimer += dt;
-    if (this.moveTimer >= changeCadence) {
+    if (this.moveTimer >= 1.9) {
       this.moveTimer = 0;
       _scratch.copy(this.mesh.position).sub(playerPos);
       _scratch.y = 0;
-      if (_scratch.lengthSq() < 0.0001) {
-        _scratch.set(0, 0, 1);
-      } else {
-        _scratch.normalize();
-      }
+      if (_scratch.lengthSq() < 0.0001) _scratch.set(0, 0, 1);
+      else _scratch.normalize();
+
       _scratch2.set(-_scratch.z, 0, _scratch.x).normalize();
       const tangentSign = Math.random() < 0.5 ? -1 : 1;
-      this.moveDirection.copy(_scratch2.multiplyScalar(tangentSign)).addScaledVector(_scratch, this.coreExposed ? -0.12 : 0.08);
-      if (this.moveDirection.lengthSq() < 0.0001) {
-        this.moveDirection.set(tangentSign, 0, 0);
-      } else {
-        this.moveDirection.normalize();
-      }
+      this.moveDirection.copy(_scratch2.multiplyScalar(tangentSign)).addScaledVector(_scratch, this.coreExposed ? -0.22 : 0.12);
+      if (this.moveDirection.lengthSq() < 0.0001) this.moveDirection.set(tangentSign, 0, 0);
+      else this.moveDirection.normalize();
     }
 
-    const speed = this.transitioning
-      ? 0
-      : this.phase === 1
-        ? (this.coreExposed ? 0.5 : 0.9)
-        : this.phase === 2
-          ? (this.coreExposed ? 0.65 : 1.05)
-          : (this.coreExposed || this.lastStand ? 0.85 : 1.2);
+    const speed = this.coreExposed ? 0.55 : 1.0;
     this.mesh.position.addScaledVector(this.moveDirection, speed * dt);
-    this.mesh.position.y += (this.fixedY - this.mesh.position.y) * Math.min(1, dt * 4);
+    const targetY = this.fixedY + Math.sin(now * 0.0014 + this.phaseHeightPhase) * (this.coreExposed ? 0.35 : 0.75);
+    this.mesh.position.y += (targetY - this.mesh.position.y) * Math.min(1, dt * 3.8);
   }
 
   updateVisualState(dt) {
-    this.visualSpin += dt * (this.phase === 3 ? 1.25 : 0.8);
-    this.visualPulse += dt * (this.transitioning ? 5.0 : this.phase === 3 ? 3.8 : 2.6);
-    this.currentScale += (this.targetScale - this.currentScale) * Math.min(1, dt * 2.6);
+    this.visualSpin += dt * (this.phase === 3 ? 0.95 : this.phase === 2 ? 0.74 : 0.58);
+    this.visualPulse += dt * (this.transitioning ? 5.6 : this.phase === 3 ? 3.5 : 2.3);
+    this.currentScale += (this.targetScale - this.currentScale) * Math.min(1, dt * 2.1);
 
-    const pulseAmp = this.transitioning ? 0.12 : this.phase === 3 ? 0.07 : 0.04;
+    const pulseAmp = this.transitioning ? 0.12 : this.phase === 3 ? 0.08 : 0.045;
     const pulse = 1 + Math.sin(this.visualPulse) * pulseAmp;
     this.mesh.scale.setScalar(this.currentScale * pulse);
 
     if (this.crownGroup) this.crownGroup.rotation.y = this.visualSpin;
-    if (this.ascensionGroup) this.ascensionGroup.rotation.y = -this.visualSpin * 0.8;
+    if (this.ascensionGroup) this.ascensionGroup.rotation.y = -this.visualSpin * 0.75;
+    if (this.spireGroup) this.spireGroup.rotation.z = Math.sin(this.visualPulse * 0.3) * 0.04;
 
     const damageRatio = 1 - (this.hp / this.maxHp);
     const shellColor = this.transitioning
@@ -8298,22 +8620,28 @@ class EclipseEngineBoss extends Boss {
       : this.phase === 1
         ? 0x33ccff
         : this.phase === 2
-          ? 0xff8844
-          : 0xff5533;
-    const heartColor = this.coreExposed || this.lastStand ? 0xfff2c2 : this.phase === 3 ? 0xffaa55 : 0xff6688;
-    const heartOpacity = this.coreExposed || this.lastStand ? 0.96 : 0.34;
+          ? 0xff7a33
+          : this.lastStand
+            ? 0xfff1c2
+            : 0xff5533;
+    const heartColor = this.coreExposed || this.lastStand ? 0xfff5c8 : this.phase === 3 ? 0xffb15c : 0xff6c96;
+    const heartOpacity = this.coreExposed || this.lastStand ? 0.98 : this.phase === 3 ? 0.45 : 0.3;
 
     this.shellMeshes.forEach((mesh) => {
       mesh.material.color.setHex(shellColor);
-      mesh.material.opacity = Math.max(0.35, 0.88 - damageRatio * 0.28);
+      mesh.material.opacity = Math.max(0.42, 0.92 - damageRatio * 0.22);
+    });
+    this.spireMeshes.forEach((mesh) => {
+      mesh.material.color.setHex(this.phase >= 2 ? 0xffb25a : 0xffd27a);
+      mesh.material.opacity = this.phase === 3 ? 0.88 : 0.76;
     });
     this.crownMeshes.forEach((mesh) => {
-      mesh.material.color.setHex(this.phase >= 2 ? 0xffaa55 : 0x66ffff);
-      mesh.material.opacity = this.phase === 3 ? 0.82 : 0.68;
+      mesh.material.color.setHex(this.phase >= 2 ? 0xffaa55 : 0x7cf8ff);
+      mesh.material.opacity = this.phase === 3 ? 0.86 : 0.72;
     });
     this.ascensionMeshes.forEach((mesh) => {
-      mesh.material.color.setHex(this.lastStand ? 0xfff0b2 : 0xff8844);
-      mesh.material.opacity = this.phase === 3 ? 0.84 : 0.0;
+      mesh.material.color.setHex(this.lastStand ? 0xfff0b2 : 0xff7a3d);
+      mesh.material.opacity = this.phase === 3 ? 0.9 : 0.0;
     });
     this.heartMeshes.forEach((mesh) => {
       mesh.material.color.setHex(heartColor);
@@ -8321,8 +8649,8 @@ class EclipseEngineBoss extends Boss {
     });
 
     const heartScale = this.coreExposed || this.lastStand
-      ? 1.15 + Math.sin(this.visualPulse * 1.35) * 0.14
-      : 0.92 + Math.sin(this.visualPulse * 0.7) * 0.04;
+      ? 1.22 + Math.sin(this.visualPulse * 1.5) * 0.17
+      : 0.94 + Math.sin(this.visualPulse * 0.75) * 0.05;
     if (this.heartGroup) this.heartGroup.scale.setScalar(heartScale);
   }
 
@@ -8332,9 +8660,15 @@ class EclipseEngineBoss extends Boss {
     if (this.coreExposed) {
       this.windowTimer -= dt;
       this.coreShotTimer -= dt;
+      this.lobTimer -= dt;
+
       if (this.coreShotTimer <= 0) {
-        this.coreShotTimer = 1.7;
-        this.fireMeasuredHeartShot(playerPos);
+        this.coreShotTimer = 1.45;
+        this.fireMeasuredHeartShot(playerPos, this.windowDamageTaken > this.windowDamageBudget * 0.5 ? 0.45 : -0.45);
+      }
+      if (this.lobTimer <= 0) {
+        this.lobTimer = 2.1;
+        this.firePhase2BacklineMortars(playerPos, 1);
       }
       if (this.forceCloseWindow || this.windowTimer <= 0) {
         this.resolveExposure();
@@ -8342,38 +8676,109 @@ class EclipseEngineBoss extends Boss {
       return;
     }
 
+    this.lobTimer -= dt;
     this.volleyTimer -= dt;
-    if (this.volleyTimer <= 0) {
-      this.volleyTimer = 1.25;
-      this.firePhase1Volley(playerPos);
-    }
+    this.patternTimer -= dt;
 
-    this.behaviorTimer -= dt;
-    if (this.behaviorTimer <= 0) {
-      this.behaviorTimer = 5.2;
-      this.fireFanFromOrigins([this.mesh.position.clone()], playerPos, 3, 0.95, 420, 0x88f2ff);
+    if (this.lobTimer <= 0) {
+      this.lobTimer = 1.75;
+      this.fireSealLobbedPressure(playerPos);
+    }
+    if (this.volleyTimer <= 0) {
+      this.volleyTimer = 1.35;
+      const crownOrigins = this.collectEmitterPositions(this.crownEmitters);
+      this.fireDirectFan(crownOrigins.slice(0, 2), playerPos, 3, 1.05, 360, 0x8ceeff);
+    }
+    if (this.patternTimer <= 0) {
+      this.patternTimer = 4.8;
+      this.firePhase2BacklineMortars(playerPos, 2);
     }
   }
 
   updatePhase2(dt, now, playerPos) {
+    if (this.state === 'phase2_wall_setup') {
+      this.phase2WallTimer += dt;
+      this.phase2WallSpawnTimer -= dt;
+      this.lobTimer -= dt;
+      this.volleyTimer -= dt;
+
+      if (this.phase2WallSpawnIndex < this.phase2Formations[this.phase2WallType].length && this.phase2WallSpawnTimer <= 0) {
+        const slot = this.phase2Formations[this.phase2WallType][this.phase2WallSpawnIndex];
+        this.spawnWallEnemy(slot, playerPos);
+        this.phase2WallSpawnIndex++;
+        this.phase2WallSpawnTimer = this.phase2WallType === 'tank' ? 0.28 : 0.16;
+      }
+
+      if (this.lobTimer <= 0) {
+        this.lobTimer = 1.45;
+        this.firePhase2BacklineMortars(playerPos, this.phase2WallType === 'tank' ? 1 : 2);
+      }
+      if (this.volleyTimer <= 0) {
+        this.volleyTimer = 2.1;
+        const crownOrigins = this.collectEmitterPositions(this.crownEmitters);
+        this.fireDirectFan(crownOrigins.slice(0, 2), playerPos, 2, 1.35, 420, 0xff9955);
+      }
+
+      const spawnedAll = this.phase2WallSpawnIndex >= this.phase2Formations[this.phase2WallType].length;
+      const aliveWallEnemies = this.countActiveWallEnemies();
+      if (spawnedAll && aliveWallEnemies === 0 && this.phase2WallTimer >= 3.0) {
+        this.phase2InterruptBonus = 1.8;
+        this.startAnchorInterrupt();
+        return;
+      }
+      if (spawnedAll && this.phase2WallTimer >= 8.8) {
+        this.releaseWallEnemies(playerPos);
+      }
+      return;
+    }
+
+    if (this.state === 'phase2_wall_release') {
+      this.phase2WallReleaseTimer -= dt;
+      this.lobTimer -= dt;
+      this.volleyTimer -= dt;
+
+      if (this.lobTimer <= 0) {
+        this.lobTimer = 1.15;
+        this.firePhase2BacklineMortars(playerPos, this.phase2WallType === 'tank' ? 2 : 1);
+      }
+      if (this.volleyTimer <= 0) {
+        this.volleyTimer = 2.0;
+        const crownOrigins = this.collectEmitterPositions(this.crownEmitters);
+        this.fireDirectFan(crownOrigins.slice(1, 3), playerPos, 3, 1.3, 420, 0xff8844);
+      }
+      if (this.phase2ShockwaveStep === 0 && this.phase2WallReleaseTimer <= 3.2) {
+        this.phase2ShockwaveStep = 1;
+        this.fireRadialBurst(10, 11.5, 1, 0, 0xff6e33);
+      }
+      if (this.phase2WallReleaseTimer <= 0) {
+        this.startAnchorInterrupt();
+      }
+      return;
+    }
+
     if (this.state === 'phase2_interrupt') {
       this.phase2InterruptTimer += dt;
-      this.updateAnchorNodes(dt, now, playerPos);
+      this.lobTimer -= dt;
+      this.updateAnchorNodes(now, playerPos);
 
-      if (this.anchorNodes.every(node => !node.active) && this.anchorNodes.length > 0) {
+      if (this.anchorNodes.length > 0 && this.anchorNodes.every((node) => !node.active)) {
         this.resolveAnchorInterrupt(true);
         return;
       }
 
-      if (this.phase2ShockwaveIndex === 0 && this.phase2InterruptTimer >= 1.15) {
-        this.phase2ShockwaveIndex = 1;
-        this.fireRadialBurst(9, 10.5, 1, 0, 0xff6633);
+      if (this.lobTimer <= 0) {
+        this.lobTimer = 1.3;
+        this.firePhase2BacklineMortars(playerPos, 2);
       }
-      if (this.phase2ShockwaveIndex === 1 && this.phase2InterruptTimer >= 2.2) {
-        this.phase2ShockwaveIndex = 2;
-        this.fireRadialBurst(10, 11.5, 1, 0, 0xff8844);
+      if (this.phase2ShockwaveStep === 0 && this.phase2InterruptTimer >= 1.3) {
+        this.phase2ShockwaveStep = 1;
+        this.fireRadialBurst(9, 11.0, 1, 0, 0xff6633);
       }
-      if (this.phase2InterruptTimer >= 3.25) {
+      if (this.phase2ShockwaveStep === 1 && this.phase2InterruptTimer >= 2.7) {
+        this.phase2ShockwaveStep = 2;
+        this.fireRadialBurst(10, 12.0, 1, 0, 0xff8844);
+      }
+      if (this.phase2InterruptTimer >= 5.2) {
         this.resolveAnchorInterrupt(false);
       }
       return;
@@ -8382,45 +8787,39 @@ class EclipseEngineBoss extends Boss {
     if (this.coreExposed) {
       this.windowTimer -= dt;
       this.coreShotTimer -= dt;
+      this.lobTimer -= dt;
+
       if (this.coreShotTimer <= 0) {
-        this.coreShotTimer = 1.45;
-        this.fireMeasuredHeartShot(playerPos, this.phase2PatternIndex % 2 === 0 ? -0.4 : 0.4);
-        this.phase2PatternIndex++;
+        this.coreShotTimer = 1.25;
+        this.fireMeasuredHeartShot(playerPos, Math.random() < 0.5 ? -0.6 : 0.6);
+      }
+      if (this.lobTimer <= 0) {
+        this.lobTimer = 2.2;
+        this.firePhase2BacklineMortars(playerPos, 1);
       }
       if (this.forceCloseWindow || this.windowTimer <= 0) {
         this.resolveExposure();
       }
-      return;
-    }
-
-    this.phase2CycleTimer += dt;
-    this.volleyTimer -= dt;
-    if (this.volleyTimer <= 0) {
-      this.volleyTimer = 1.55;
-      if (this.phase2PatternIndex % 2 === 0) {
-        this.fireCrownCrossfire(playerPos, 3, 1.0, 0xffaa55);
-      } else {
-        this.fireFanFromOrigins([this.mesh.position.clone()], playerPos, 5, 1.4, 420, 0xff8844);
-      }
-      this.phase2PatternIndex++;
-    }
-
-    if (this.phase2CycleTimer >= 6.0) {
-      this.startAnchorInterrupt();
     }
   }
 
   updatePhase3(dt, now, playerPos) {
     if (this.lastStand) {
-      this.volleyTimer -= dt;
+      this.phase3MeteorTimer -= dt;
+      this.phase3BarrageTimer -= dt;
       this.phase3ShockwaveTimer -= dt;
-      if (this.volleyTimer <= 0) {
-        this.volleyTimer = 1.15;
-        this.firePhase3Volley(playerPos);
+
+      if (this.phase3MeteorTimer <= 0) {
+        this.phase3MeteorTimer = 1.15;
+        this.firePhase3MeteorRain(playerPos);
+      }
+      if (this.phase3BarrageTimer <= 0) {
+        this.phase3BarrageTimer = 1.0;
+        this.firePhase3GiantVolley(playerPos);
       }
       if (this.phase3ShockwaveTimer <= 0) {
-        this.phase3ShockwaveTimer = 3.6;
-        this.fireRadialBurst(11, 12.0, 2, 170, 0xff6a33);
+        this.phase3ShockwaveTimer = 2.45;
+        this.fireRadialBurst(12, 13.0, 2, 170, 0xff6a33);
       }
       return;
     }
@@ -8428,9 +8827,15 @@ class EclipseEngineBoss extends Boss {
     if (this.coreExposed) {
       this.windowTimer -= dt;
       this.coreShotTimer -= dt;
+      this.phase3MeteorTimer -= dt;
+
       if (this.coreShotTimer <= 0) {
-        this.coreShotTimer = 1.2;
-        this.fireMeasuredHeartShot(playerPos);
+        this.coreShotTimer = 1.1;
+        this.fireMeasuredHeartShot(playerPos, Math.random() < 0.5 ? -0.55 : 0.55);
+      }
+      if (this.phase3MeteorTimer <= 0) {
+        this.phase3MeteorTimer = 2.35;
+        this.firePhase3MeteorRain(playerPos);
       }
       if (this.forceCloseWindow || this.windowTimer <= 0) {
         this.resolveExposure();
@@ -8438,30 +8843,33 @@ class EclipseEngineBoss extends Boss {
       return;
     }
 
-    this.phase3ArmorTimer += dt;
-    this.volleyTimer -= dt;
+    this.phase3MeteorTimer -= dt;
+    this.phase3BarrageTimer -= dt;
+    this.phase3CrackTimer -= dt;
     this.phase3ShockwaveTimer -= dt;
 
-    if (this.volleyTimer <= 0) {
-      this.volleyTimer = 1.35;
-      this.firePhase3Volley(playerPos);
+    if (this.phase3MeteorTimer <= 0) {
+      this.phase3MeteorTimer = 1.45;
+      this.firePhase3MeteorRain(playerPos);
+    }
+    if (this.phase3BarrageTimer <= 0) {
+      this.phase3BarrageTimer = 2.25;
+      this.firePhase3GiantVolley(playerPos);
     }
     if (this.phase3ShockwaveTimer <= 0) {
-      this.phase3ShockwaveTimer = 3.9;
-      this.fireRadialBurst(10, 11.5, 1, 0, 0xff7a33);
+      this.phase3ShockwaveTimer = 3.7;
+      this.fireRadialBurst(11, 12.5, 1, 0, 0xff7a33);
     }
-
-    if (this.phase3ArmorTimer >= 6.2) {
-      playFinalBossSealBreakSound();
+    if (this.phase3CrackTimer <= 0) {
       this.state = 'phase3_exposed';
-      this.beginCoreWindow(6.25, 0.08);
+      this.beginCoreWindow(7.6, 0.082);
     }
   }
 
   updateTransition(dt) {
     this.transitionTimer += dt;
     if (this.pendingPhaseTransition === 3) {
-      this.targetScale = 1.55;
+      this.targetScale = 2.3;
     }
 
     if (this.transitionTimer >= this.transitionDuration) {
@@ -8480,26 +8888,28 @@ class EclipseEngineBoss extends Boss {
 
     if (this.transitioning) {
       this.updateTransition(dt);
-      this.mesh.lookAt(_look.copy(playerPos).setY(this.fixedY));
+      this.mesh.lookAt(_look.copy(playerPos).setY(this.mesh.position.y * 0.55));
       return;
     }
 
-    this.updateMovement(dt, playerPos);
+    this.updateMovement(dt, now, playerPos);
 
     if (this.phase === 1) this.updatePhase1(dt, now, playerPos);
     else if (this.phase === 2) this.updatePhase2(dt, now, playerPos);
     else this.updatePhase3(dt, now, playerPos);
 
-    this.mesh.lookAt(_look.copy(playerPos).setY(this.fixedY));
+    this.mesh.lookAt(_look.copy(playerPos).setY(this.mesh.position.y * 0.55));
   }
 
   damageWeakNode(hitInfo, amount) {
-    const nodePool = hitInfo.eclipseNodeType === 'seal' ? this.sealNodes
-      : hitInfo.eclipseNodeType === 'anchor' ? this.anchorNodes
-      : null;
+    const nodePool = hitInfo.eclipseNodeType === 'seal'
+      ? this.sealNodes
+      : hitInfo.eclipseNodeType === 'anchor'
+        ? this.anchorNodes
+        : null;
     if (!nodePool) return { killed: false, immune: true };
 
-    const node = nodePool.find(candidate => candidate.id === hitInfo.eclipseNodeId && candidate.active);
+    const node = nodePool.find((candidate) => candidate.id === hitInfo.eclipseNodeId && candidate.active);
     if (!node) return { killed: false, immune: true };
 
     node.hp -= amount;
@@ -8511,21 +8921,20 @@ class EclipseEngineBoss extends Boss {
     const nodePos = node.group.getWorldPosition(new THREE.Vector3());
     playFinalBossSealBreakSound();
     if (this.telegraphing) {
-      this.telegraphing.start('pulse', 0.35, 0xffffff, nodePos);
+      this.telegraphing.start('pulse', 0.4, 0xffffff, nodePos);
     }
     if (node.group.parent) node.group.parent.remove(node.group);
     node.group.traverse((part) => {
-      if (part.geometry) part.geometry.dispose();
       if (part.material) part.material.dispose();
     });
     node.group = null;
 
-    if (nodePool === this.sealNodes && this.sealNodes.every(candidate => !candidate.active)) {
+    if (nodePool === this.sealNodes && this.sealNodes.every((candidate) => !candidate.active)) {
       this.state = 'phase1_exposed';
-      this.beginCoreWindow(7.2, 0.12);
+      this.beginCoreWindow(8.4, 0.062);
     }
 
-    if (nodePool === this.anchorNodes && this.anchorNodes.every(candidate => !candidate.active)) {
+    if (nodePool === this.anchorNodes && this.anchorNodes.every((candidate) => !candidate.active)) {
       this.resolveAnchorInterrupt(true);
     }
 
@@ -8535,21 +8944,23 @@ class EclipseEngineBoss extends Boss {
   applyBossDamage(amount, hitInfo = {}) {
     let actualDamage = amount;
     if (hitInfo.isWeakPoint || hitInfo.isEclipseHeart) {
-      actualDamage *= 1.25;
+      actualDamage *= 1.3;
     }
     if (hitInfo.isChargeCannon) {
-      actualDamage = Math.min(actualDamage, 160);
+      actualDamage = Math.min(actualDamage, 140);
     }
 
     const phaseFloor = this.phase === 1
       ? this.phase2Threshold
       : this.phase === 2
         ? this.phase3Threshold
-        : 0;
+        : this.lastStand
+          ? 0
+          : this.lastStandThreshold;
     const budgetRemaining = this.windowDamageBudget === Infinity
       ? Infinity
       : Math.max(0, this.windowDamageBudget - this.windowDamageTaken);
-    const phaseRemaining = this.phase < 3 ? Math.max(0, this.hp - phaseFloor) : actualDamage;
+    const phaseRemaining = phaseFloor > 0 ? Math.max(0, this.hp - phaseFloor) : actualDamage;
     const damageToApply = Math.min(actualDamage, budgetRemaining, phaseRemaining);
 
     if (damageToApply <= 0) {
@@ -8560,6 +8971,9 @@ class EclipseEngineBoss extends Boss {
       if (this.phase === 2 && this.hp <= this.phase3Threshold + 0.001) {
         this.pendingPhaseTransition = 3;
         this.forceCloseWindow = true;
+      }
+      if (this.phase === 3 && !this.lastStand && this.hp <= this.lastStandThreshold + 0.001) {
+        this.enterLastStand();
       }
       return { killed: false, immune: true };
     }
@@ -8580,7 +8994,8 @@ class EclipseEngineBoss extends Boss {
       this.hp = this.phase3Threshold;
       this.pendingPhaseTransition = 3;
       this.forceCloseWindow = true;
-    } else if (this.phase === 3 && !this.lastStand && this.hp <= this.lastStandThreshold) {
+    } else if (this.phase === 3 && !this.lastStand && this.hp <= this.lastStandThreshold + 0.001) {
+      this.hp = this.lastStandThreshold;
       this.enterLastStand();
     }
 
@@ -8605,8 +9020,8 @@ class EclipseEngineBoss extends Boss {
 
   onPhaseChange(newPhase) {
     if (this.telegraphing) {
-      this.telegraphing.start('teleport', 0.65, 0xffbb66, this.mesh.position.clone());
-      this.telegraphing.start('pulse', 0.8, 0xffe2a8, this.mesh.position.clone());
+      this.telegraphing.start('teleport', 0.75, 0xffbb66, this.mesh.position.clone());
+      this.telegraphing.start('pulse', 0.9, 0xffe2a8, this.mesh.position.clone());
     }
     if (newPhase === 3 && this.ascensionGroup) {
       this.ascensionGroup.visible = true;
@@ -8614,9 +9029,22 @@ class EclipseEngineBoss extends Boss {
   }
 
   destroy() {
+    this._destroyed = true;
+    this._timers.forEach(clearTimeout);
+    this._timers.clear();
     this.clearWeakNodes(this.sealNodes);
     this.clearWeakNodes(this.anchorNodes);
-    super.destroy();
+    this.clearWallEnemies();
+
+    if (this.sceneRef && this.mesh?.parent === this.sceneRef) {
+      this.sceneRef.remove(this.mesh);
+    } else if (this.mesh?.parent) {
+      this.mesh.parent.remove(this.mesh);
+    }
+
+    this.mesh?.traverse((part) => {
+      if (part.material) part.material.dispose();
+    });
   }
 }
 
@@ -8892,7 +9320,7 @@ const BOSS_DEFS = {
     name: 'Eclipse Engine',
     pattern: [[1]],
     voxelSize: 0.22,
-    baseHp: 2100,
+    baseHp: 4200,
     phases: 3,
     color: 0x33ccff,
     scoreValue: 800,

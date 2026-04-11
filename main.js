@@ -39,7 +39,7 @@ import {
   // Skull boss sounds
   playSkullDeathKnell, playSkullLaughSound,
   // Final boss sounds
-  playFinalBossAwakenSound, playFinalBossVictorySting,
+  playFinalBossAwakenSound, playFinalBossCollapseGroan, playFinalBossVictorySting,
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -1383,6 +1383,7 @@ function init() {
 
   // Init boss death cinematic module with dependencies
   initBossDeathCinematic({
+    scene,
     camera,
     game,
     State,
@@ -1390,6 +1391,7 @@ function init() {
     spawnExplosionVisual,
     hideBossHealthBar,
     clearBoss,
+    clearBossProjectiles,
     clearAllTelegraphs,
     playExplosionSound,
     stopMusic,
@@ -1400,6 +1402,7 @@ function init() {
     hideKillsAlert,
     unloadBiomeForBossCinematic: purgeBiomeForBossCinematic,
     playSkullDeathKnell,
+    playFinalBossCollapseGroan,
     showFloatingMessage,
     playFinalBossVictorySting,
   });
@@ -6661,7 +6664,7 @@ function advanceLevelAfterUpgrade() {
     // Check for boss level - enter BOSS_ALERT state
     if (game._levelConfig.isBoss) {
       game.state = State.BOSS_ALERT;
-      game.stateTimer = 3.0; // 3 second alert sequence
+      game.stateTimer = game.level >= 20 ? 7.4 : 3.0; // Final boss gets a longer authored arrival
       // Start boss music immediately at alert screen
       const bossTier = getBossTier(game.level);
       playBossMusic(bossTier);
@@ -9727,136 +9730,297 @@ function render(timestamp) {
   // ── Universal Boss Spawn Cinematic (All boss levels) ──
   if (st === State.BOSS_ALERT && game._levelConfig && game._levelConfig.isBoss && !game._bossCinematicInit) {
     game._bossCinematicInit = true;
-    game._bossCinematicDuration = 3.0; // Matches BOSS_ALERT stateTimer
+    const isFinalBossAlert = game.level >= 20;
+    game._bossCinematicDuration = isFinalBossAlert ? 7.4 : 3.0;
     game._bossCinematicElapsed = 0;
-    
-    // Find sun group in biome scene
-    game._cinSunGroup = null;
-    game._cinSkyMat = null;
-    if (biomeSceneGroup) {
-      biomeSceneGroup.traverse(child => {
-        if (child.name === 'synthwave-sun-group') game._cinSunGroup = child;
-        if (child.material && child.material.uniforms && child.material.uniforms.topColor) {
-          game._cinSkyMat = child.material;
+
+    // Final boss gets an authored arrival in hellscape instead of the generic
+    // red-shift intro. Spawn the real boss early, keep its health bar hidden,
+    // and animate the mesh from the exploding moon into the arena.
+    if (isFinalBossAlert) {
+      game._cinFinalMoonGroup = null;
+      game._cinFinalMoonCore = null;
+      game._cinFinalMoonGlow = null;
+      if (biomeSceneGroup) {
+        biomeSceneGroup.traverse((child) => {
+          if (child.name === 'hellscape-moon-group-1') game._cinFinalMoonGroup = child;
+          if (child.name === 'hellscape-moon-1') game._cinFinalMoonCore = child;
+          if (child.name === 'hellscape-moon-1-fake-glow') game._cinFinalMoonGlow = child;
+        });
+      }
+
+      if (!getBoss()) {
+        const bossId = getRandomBossIdForLevel(game.level);
+        if (bossId) {
+          spawnBoss(bossId, game._levelConfig);
+          hideBossHealthBar();
         }
+      }
+
+      game._cinFinalBoss = getBoss();
+      const moonPos = game._cinFinalMoonGroup
+        ? game._cinFinalMoonGroup.getWorldPosition(new THREE.Vector3())
+        : new THREE.Vector3(20, 30, -160);
+      game._cinFinalBossIntroStartPos = moonPos.clone().add(new THREE.Vector3(0, 0, 10));
+      game._cinFinalBossIntroEndPos = new THREE.Vector3(0, 5.8, -17.2);
+      game._cinFinalMoonScale = game._cinFinalMoonGroup ? game._cinFinalMoonGroup.scale.clone() : new THREE.Vector3(1, 1, 1);
+      game._cinFinalMoonVisible = true;
+      game._cinFinalBossRevealSound = false;
+
+      if (game._cinFinalBoss?.mesh) {
+        game._cinFinalBoss.mesh.visible = false;
+        game._cinFinalBoss.mesh.position.copy(game._cinFinalBossIntroStartPos);
+        game._cinFinalBoss.mesh.scale.setScalar(0.16);
+      }
+
+      const burstMat = new THREE.MeshBasicMaterial({
+        color: 0xffa54d,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        fog: false,
       });
+      game._cinFinalBurst = new THREE.Mesh(new THREE.SphereGeometry(3.5, 18, 14), burstMat);
+      game._cinFinalBurst.position.copy(moonPos);
+      game._cinFinalBurst.visible = false;
+      scene.add(game._cinFinalBurst);
+
+      const meteorGroup = new THREE.Group();
+      const meteorGeo = new THREE.BoxGeometry(0.18, 0.18, 3.2);
+      game._cinFinalMeteorGeo = meteorGeo;
+      const meteorTargets = [
+        [-12, 14, -38], [-7, 18, -32], [-3, 12, -26], [2, 16, -29],
+        [7, 10, -24], [12, 15, -34], [16, 11, -28], [-16, 9, -30],
+        [-10, 7, -20], [-4, 8, -18], [4, 6, -16], [10, 8, -22],
+      ];
+      meteorTargets.forEach((target, idx) => {
+        const streak = new THREE.Mesh(
+          meteorGeo,
+          new THREE.MeshBasicMaterial({
+            color: idx % 2 === 0 ? 0xffc06d : 0xff7a3d,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            fog: false,
+          }),
+        );
+        streak.visible = false;
+        streak.userData.delay = 0.22 + idx * 0.035;
+        streak.userData.start = moonPos.clone().add(new THREE.Vector3(
+          (Math.random() - 0.5) * 5.5,
+          (Math.random() - 0.5) * 4.0,
+          (Math.random() - 0.5) * 4.0,
+        ));
+        streak.userData.end = new THREE.Vector3(target[0], target[1], target[2]);
+        streak.userData.travel = 0.48 + Math.random() * 0.18;
+        meteorGroup.add(streak);
+      });
+      scene.add(meteorGroup);
+      game._cinFinalMeteorGroup = meteorGroup;
+
+      _log('[Boss Cinematic] Starting final boss arrival cinematic');
+    } else {
+      // Find sun group in biome scene
+      game._cinSunGroup = null;
+      game._cinSkyMat = null;
+      if (biomeSceneGroup) {
+        biomeSceneGroup.traverse(child => {
+          if (child.name === 'synthwave-sun-group') game._cinSunGroup = child;
+          if (child.material && child.material.uniforms && child.material.uniforms.topColor) {
+            game._cinSkyMat = child.material;
+          }
+        });
+      }
+
+      // Store original values for restoration later
+      game._cinOrigSunY = game._cinSunGroup ? game._cinSunGroup.position.y : 270;
+      game._cinOrigAmbientIntensity = 0.15;
+      game._cinOrigDirIntensity = 0.8;
+      game._cinOrigSkyOpacity = game._cinSkyMat ? game._cinSkyMat.opacity : 1.0;
+
+      // Store original terrain colors if available
+      game._cinOrigGridColor = null;
+      game._cinOrigBaseColor = null;
+      game._cinOrigPulseA = null;
+      game._cinOrigPulseB = null;
+      if (synthVisualRefs.terrainUniforms) {
+        game._cinOrigGridColor = synthVisualRefs.terrainUniforms.uGridColor.value.clone();
+        game._cinOrigBaseColor = synthVisualRefs.terrainUniforms.uBaseColor.value.clone();
+        game._cinOrigFogColor = synthVisualRefs.terrainUniforms.uFogColor.value.clone();
+        game._cinOrigPulseA = synthVisualRefs.terrainUniforms.uPulseColorA.value.clone();
+        game._cinOrigPulseB = synthVisualRefs.terrainUniforms.uPulseColorB.value.clone();
+      }
+
+      // Store original skydome gradient colors for red fade
+      game._cinOrigSkyTopColor = null;
+      game._cinOrigSkyMidColor = null;
+      game._cinOrigSkyHorizonColor = null;
+      game._cinOrigSkyGlowColor = null;
+      if (game._cinSkyMat && game._cinSkyMat.uniforms) {
+        const su = game._cinSkyMat.uniforms;
+        if (su.topColor) game._cinOrigSkyTopColor = su.topColor.value.clone();
+        if (su.midColor) game._cinOrigSkyMidColor = su.midColor.value.clone();
+        if (su.horizonColor) game._cinOrigSkyHorizonColor = su.horizonColor.value.clone();
+        if (su.glowColor) game._cinOrigSkyGlowColor = su.glowColor.value.clone();
+        // Also store moonGlowColor for desert biome
+        if (su.moonGlowColor) game._cinOrigSkyMoonGlowColor = su.moonGlowColor.value.clone();
+      }
+
+      _log(`[Boss Cinematic] Starting spawn cinematic for level ${game.level}`);
     }
-    
-    // Store original values for restoration later
-    game._cinOrigSunY = game._cinSunGroup ? game._cinSunGroup.position.y : 270;
-    game._cinOrigAmbientIntensity = 0.15;
-    game._cinOrigDirIntensity = 0.8;
-    game._cinOrigSkyOpacity = game._cinSkyMat ? game._cinSkyMat.opacity : 1.0;
-    
-    // Store original terrain colors if available
-    game._cinOrigGridColor = null;
-    game._cinOrigBaseColor = null;
-    game._cinOrigPulseA = null;
-    game._cinOrigPulseB = null;
-    if (synthVisualRefs.terrainUniforms) {
-      game._cinOrigGridColor = synthVisualRefs.terrainUniforms.uGridColor.value.clone();
-      game._cinOrigBaseColor = synthVisualRefs.terrainUniforms.uBaseColor.value.clone();
-      game._cinOrigFogColor = synthVisualRefs.terrainUniforms.uFogColor.value.clone();
-      game._cinOrigPulseA = synthVisualRefs.terrainUniforms.uPulseColorA.value.clone();
-      game._cinOrigPulseB = synthVisualRefs.terrainUniforms.uPulseColorB.value.clone();
-    }
-    
-    // Store original skydome gradient colors for red fade
-    game._cinOrigSkyTopColor = null;
-    game._cinOrigSkyMidColor = null;
-    game._cinOrigSkyHorizonColor = null;
-    game._cinOrigSkyGlowColor = null;
-    if (game._cinSkyMat && game._cinSkyMat.uniforms) {
-      const su = game._cinSkyMat.uniforms;
-      if (su.topColor) game._cinOrigSkyTopColor = su.topColor.value.clone();
-      if (su.midColor) game._cinOrigSkyMidColor = su.midColor.value.clone();
-      if (su.horizonColor) game._cinOrigSkyHorizonColor = su.horizonColor.value.clone();
-      if (su.glowColor) game._cinOrigSkyGlowColor = su.glowColor.value.clone();
-      // Also store moonGlowColor for desert biome
-      if (su.moonGlowColor) game._cinOrigSkyMoonGlowColor = su.moonGlowColor.value.clone();
-    }
-    
-    _log(`[Boss Cinematic] Starting spawn cinematic for level ${game.level}`);
   }
   
   // Update boss cinematic during BOSS_ALERT
   if (st === State.BOSS_ALERT && game._levelConfig && game._levelConfig.isBoss && game._bossCinematicInit) {
     const elapsed = game._bossCinematicDuration - game.stateTimer;
     const t = Math.min(1, elapsed / game._bossCinematicDuration); // 0 to 1 progress
-    
-    // 1. Move sun downward (-Y) below horizon
-    if (game._cinSunGroup) {
-      game._cinSunGroup.position.y = game._cinOrigSunY * (1 - t * 1.5);
-    }
-    
-    // 2. Dim scene lights to ~40%
-    const dimTarget = 0.4;
 
-    
-    // 3. Fade skydome opacity to 20%
-    if (game._cinSkyMat) {
-      game._cinSkyMat.opacity = game._cinOrigSkyOpacity * (1 - t * 0.8);
-    }
-    
-    // 4. Shift floor grid and base colors to locked red shades
-    if (synthVisualRefs.terrainUniforms && game._cinOrigGridColor) {
-      const redGrid = new THREE.Color(0x880000);  // Dark crimson grid
-      const redBase = new THREE.Color(0x1a0000);  // Very dark red base
-      const redFog = new THREE.Color(0x220000);   // Dark red fog
-      const redPulseA = new THREE.Color(0xcc0000); // Normal red (former pink)
-      const redPulseB = new THREE.Color(0x660000); // Dark red (former cyan)
-      synthVisualRefs.terrainUniforms.uGridColor.value.copy(game._cinOrigGridColor).lerp(redGrid, t);
-      synthVisualRefs.terrainUniforms.uBaseColor.value.copy(game._cinOrigBaseColor).lerp(redBase, t);
-      synthVisualRefs.terrainUniforms.uFogColor.value.copy(game._cinOrigFogColor).lerp(redFog, t);
-      if (game._cinOrigPulseA) {
-        synthVisualRefs.terrainUniforms.uPulseColorA.value.copy(game._cinOrigPulseA).lerp(redPulseA, t);
+    if (game.level >= 20) {
+      const moonCharge = Math.min(1, t / 0.24);
+      const detonate = Math.min(1, Math.max(0, (t - 0.22) / 0.14));
+      const bossApproach = Math.min(1, Math.max(0, (t - 0.28) / 0.52));
+      const meteorT = Math.max(0, t - 0.24);
+
+      if (game._cinFinalMoonGroup) {
+        const pulse = 1 + moonCharge * 0.08 + Math.sin(now * 0.02) * 0.02;
+        game._cinFinalMoonGroup.scale.copy(game._cinFinalMoonScale).multiplyScalar(pulse);
       }
-      if (game._cinOrigPulseB) {
-        synthVisualRefs.terrainUniforms.uPulseColorB.value.copy(game._cinOrigPulseB).lerp(redPulseB, t);
+      if (game._cinFinalMoonGlow?.material) {
+        game._cinFinalMoonGlow.material.opacity = 0.6 + moonCharge * 0.95 - detonate * 0.55;
       }
-    }
-    
-    // 4b. Fade skydome gradient to dark reds (~30% darker than original brightness)
-    if (game._cinSkyMat && game._cinSkyMat.uniforms) {
-      const su = game._cinSkyMat.uniforms;
-      // Target colors: red tones at ~70% of original brightness
-      const redTop = new THREE.Color(0x12000a);     // Dark red (was dark purple)
-      const redMid = new THREE.Color(0x32001a);     // Medium-dark red
-      const redHorizon = new THREE.Color(0x701a1a); // Reddish (was bright orange)
-      const redGlow = new THREE.Color(0x6a0020);    // Deep red (was pink)
-      const redMoonGlow = new THREE.Color(0x301020); // Dark red-purple (was moon purple)
-      if (su.topColor && game._cinOrigSkyTopColor) {
-        su.topColor.value.copy(game._cinOrigSkyTopColor).lerp(redTop, t);
+      if (game._cinFinalMoonCore && detonate >= 1 && game._cinFinalMoonVisible) {
+        game._cinFinalMoonCore.visible = false;
+        game._cinFinalMoonVisible = false;
       }
-      if (su.midColor && game._cinOrigSkyMidColor) {
-        su.midColor.value.copy(game._cinOrigSkyMidColor).lerp(redMid, t);
+
+      if (game._cinFinalBurst) {
+        const burstProgress = Math.max(0, Math.min(1, (t - 0.2) / 0.26));
+        game._cinFinalBurst.visible = burstProgress > 0;
+        game._cinFinalBurst.scale.setScalar(1 + burstProgress * 7.5);
+        game._cinFinalBurst.material.opacity = burstProgress > 0 ? (1 - burstProgress) * 0.9 : 0;
       }
-      if (su.horizonColor && game._cinOrigSkyHorizonColor) {
-        su.horizonColor.value.copy(game._cinOrigSkyHorizonColor).lerp(redHorizon, t);
+
+      if (game._cinFinalMeteorGroup) {
+        game._cinFinalMeteorGroup.children.forEach((streak) => {
+          const local = (meteorT - streak.userData.delay) / streak.userData.travel;
+          if (local < 0 || local > 1) {
+            streak.visible = false;
+            return;
+          }
+          streak.visible = true;
+          streak.position.lerpVectors(streak.userData.start, streak.userData.end, local);
+          streak.lookAt(streak.userData.end);
+          streak.material.opacity = 0.85 * (1 - local * 0.35);
+        });
       }
-      if (su.glowColor && game._cinOrigSkyGlowColor) {
-        su.glowColor.value.copy(game._cinOrigSkyGlowColor).lerp(redGlow, t);
+
+      if (game._cinFinalBoss?.mesh) {
+        if (!game._cinFinalBossRevealSound && bossApproach > 0.05) {
+          game._cinFinalBossRevealSound = true;
+          playBossSpawn();
+          playFinalBossAwakenSound();
+        }
+
+        const ease = 1 - Math.pow(1 - bossApproach, 3);
+        game._cinFinalBoss.mesh.visible = bossApproach > 0.01;
+        game._cinFinalBoss.mesh.position.lerpVectors(game._cinFinalBossIntroStartPos, game._cinFinalBossIntroEndPos, ease);
+        const introScale = 0.16 + ease * 1.35;
+        game._cinFinalBoss.mesh.scale.setScalar(introScale);
+        game._cinFinalBoss.mesh.rotation.y += clampedRawDt * (0.4 + (1 - bossApproach) * 1.8);
       }
-      if (su.moonGlowColor && game._cinOrigSkyMoonGlowColor) {
-        su.moonGlowColor.value.copy(game._cinOrigSkyMoonGlowColor).lerp(redMoonGlow, t);
+    } else {
+      // 1. Move sun downward (-Y) below horizon
+      if (game._cinSunGroup) {
+        game._cinSunGroup.position.y = game._cinOrigSunY * (1 - t * 1.5);
       }
-    }
-    
-    // 5. Shift sun glow materials to red
-    if (synthVisualRefs.sunOuterGlowMat) {
-      synthVisualRefs.sunOuterGlowMat.color.lerp(new THREE.Color(0xff2200), t * 0.1);
-    }
-    if (synthVisualRefs.sunGlowMat) {
-      synthVisualRefs.sunGlowMat.color.lerp(new THREE.Color(0xff3300), t * 0.1);
-    }
-    if (synthVisualRefs.sunCoreMat) {
-      synthVisualRefs.sunCoreMat.color.lerp(new THREE.Color(0xff0000), t * 0.1);
+
+      // 3. Fade skydome opacity to 20%
+      if (game._cinSkyMat) {
+        game._cinSkyMat.opacity = game._cinOrigSkyOpacity * (1 - t * 0.8);
+      }
+
+      // 4. Shift floor grid and base colors to locked red shades
+      if (synthVisualRefs.terrainUniforms && game._cinOrigGridColor) {
+        const redGrid = new THREE.Color(0x880000);  // Dark crimson grid
+        const redBase = new THREE.Color(0x1a0000);  // Very dark red base
+        const redFog = new THREE.Color(0x220000);   // Dark red fog
+        const redPulseA = new THREE.Color(0xcc0000); // Normal red (former pink)
+        const redPulseB = new THREE.Color(0x660000); // Dark red (former cyan)
+        synthVisualRefs.terrainUniforms.uGridColor.value.copy(game._cinOrigGridColor).lerp(redGrid, t);
+        synthVisualRefs.terrainUniforms.uBaseColor.value.copy(game._cinOrigBaseColor).lerp(redBase, t);
+        synthVisualRefs.terrainUniforms.uFogColor.value.copy(game._cinOrigFogColor).lerp(redFog, t);
+        if (game._cinOrigPulseA) {
+          synthVisualRefs.terrainUniforms.uPulseColorA.value.copy(game._cinOrigPulseA).lerp(redPulseA, t);
+        }
+        if (game._cinOrigPulseB) {
+          synthVisualRefs.terrainUniforms.uPulseColorB.value.copy(game._cinOrigPulseB).lerp(redPulseB, t);
+        }
+      }
+
+      // 4b. Fade skydome gradient to dark reds (~30% darker than original brightness)
+      if (game._cinSkyMat && game._cinSkyMat.uniforms) {
+        const su = game._cinSkyMat.uniforms;
+        const redTop = new THREE.Color(0x12000a);
+        const redMid = new THREE.Color(0x32001a);
+        const redHorizon = new THREE.Color(0x701a1a);
+        const redGlow = new THREE.Color(0x6a0020);
+        const redMoonGlow = new THREE.Color(0x301020);
+        if (su.topColor && game._cinOrigSkyTopColor) {
+          su.topColor.value.copy(game._cinOrigSkyTopColor).lerp(redTop, t);
+        }
+        if (su.midColor && game._cinOrigSkyMidColor) {
+          su.midColor.value.copy(game._cinOrigSkyMidColor).lerp(redMid, t);
+        }
+        if (su.horizonColor && game._cinOrigSkyHorizonColor) {
+          su.horizonColor.value.copy(game._cinOrigSkyHorizonColor).lerp(redHorizon, t);
+        }
+        if (su.glowColor && game._cinOrigSkyGlowColor) {
+          su.glowColor.value.copy(game._cinOrigSkyGlowColor).lerp(redGlow, t);
+        }
+        if (su.moonGlowColor && game._cinOrigSkyMoonGlowColor) {
+          su.moonGlowColor.value.copy(game._cinOrigSkyMoonGlowColor).lerp(redMoonGlow, t);
+        }
+      }
+
+      // 5. Shift sun glow materials to red
+      if (synthVisualRefs.sunOuterGlowMat) {
+        synthVisualRefs.sunOuterGlowMat.color.lerp(new THREE.Color(0xff2200), t * 0.1);
+      }
+      if (synthVisualRefs.sunGlowMat) {
+        synthVisualRefs.sunGlowMat.color.lerp(new THREE.Color(0xff3300), t * 0.1);
+      }
+      if (synthVisualRefs.sunCoreMat) {
+        synthVisualRefs.sunCoreMat.color.lerp(new THREE.Color(0xff0000), t * 0.1);
+      }
     }
   }
   
   // Reset cinematic state when leaving BOSS_ALERT for boss levels
   if (st === State.PLAYING && game._bossCinematicInit && !game._bossCinematicCleaned) {
     game._bossCinematicCleaned = true;
+    if (game.level >= 20) {
+      if (game._cinFinalMeteorGroup?.parent) {
+        game._cinFinalMeteorGroup.children.forEach((child) => {
+          if (child.material) child.material.dispose();
+        });
+        game._cinFinalMeteorGroup.parent.remove(game._cinFinalMeteorGroup);
+      }
+      if (game._cinFinalMeteorGeo) {
+        game._cinFinalMeteorGeo.dispose();
+        game._cinFinalMeteorGeo = null;
+      }
+      if (game._cinFinalBurst?.parent) {
+        if (game._cinFinalBurst.material) game._cinFinalBurst.material.dispose();
+        if (game._cinFinalBurst.geometry) game._cinFinalBurst.geometry.dispose();
+        game._cinFinalBurst.parent.remove(game._cinFinalBurst);
+      }
+      if (game._cinFinalBoss?.mesh) {
+        game._cinFinalBoss.mesh.visible = true;
+        game._cinFinalBoss.mesh.scale.setScalar(1.15);
+        if (game._cinFinalBoss.currentScale !== undefined) game._cinFinalBoss.currentScale = 1.15;
+        if (game._cinFinalBoss.targetScale !== undefined) game._cinFinalBoss.targetScale = 1.15;
+      }
+    }
     _log(`[Boss Cinematic] Cinematic complete for level ${game.level}, boss fight in red environment`);
     // Don't restore original values - keep the red-shifted environment for the boss fight
   }
@@ -9876,6 +10040,10 @@ function render(timestamp) {
       hideBossAlert();
       game.state = State.PLAYING;
       showHUD();
+      const boss = getBoss();
+      if (boss) {
+        showBossHealthBar(boss.hp, boss.maxHp, boss.phases);
+      }
       // Boss music already started in advanceLevelAfterUpgrade
       _log(`[game] Boss fight starting at level ${game.level}`);
     }
