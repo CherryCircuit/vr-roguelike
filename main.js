@@ -297,7 +297,7 @@ function getCountryDisplayLabel() {
 // For objects with textures (biome scenes), prefer disposeObject3D().
 // ============================================================
 // [CORE] Dispose mesh and remove from parent
-function disposeMesh(obj, removeFromParent) {
+function disposeMesh(obj, removeFromParent = true) {
   if (!obj) return;
   // Dispose children recursively
   if (obj.children) {
