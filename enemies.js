@@ -6939,7 +6939,9 @@ class PrismBoss extends Boss {
 
     // Icosahedron has 20 faces. Group them into 4 groups of 5 faces each.
     // Each face = 1 triangle = 3 indices.
-    const faceCount = geo.getIndex().count / 3;
+    // PolyhedronGeometry is non-indexed in Three.js r160, use position count
+    const indexCount = geo.index ? geo.index.count : geo.getAttribute('position').count;
+    const faceCount = indexCount / 3;
     const facesPerGroup = Math.ceil(faceCount / 4);
 
     this.facetMaterials = this.facetColors.map(c =>
