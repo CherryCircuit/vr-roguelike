@@ -1481,6 +1481,24 @@ function getUpgradeTotalText(upgrade, hand) {
   }
 }
 
+// Queue for deferred text sprite creation (avoids 12-16 makeSprite calls in one frame)
+const _textQueue = [];
+const TEXT_PER_FRAME = 3; // Sprites created per animation frame
+
+function queueTextSprite(group, text, opts, pos) {
+  _textQueue.push({ group, text, opts, pos });
+}
+
+function flushCardTextQueue() {
+  if (_textQueue.length === 0) return;
+  const batch = _textQueue.splice(0, TEXT_PER_FRAME);
+  for (const item of batch) {
+    const sprite = makeSprite(item.text, item.opts);
+    sprite.position.copy(item.pos);
+    item.group.add(sprite);
+  }
+}
+
 function createUpgradeCard(upgrade, position, hand) {
   const group = new THREE.Group();
   // Add null check for position - provide default if undefined
@@ -1513,55 +1531,47 @@ function createUpgradeCard(upgrade, position, hand) {
   // Store border color on card for hover glow matching
   card.userData.borderColor = borderColor;
 
-  // Name text - increased proportionally to card size
-  const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
+  // Name text - queued for deferred creation
+  queueTextSprite(group, upgrade.name.toUpperCase(), {
     fontSize: 45,
     color: upgrade.color || '#00ffff',
     glow: true,
     glowColor: upgrade.color,
     scale: 0.24,
     depthTest: true,
-    maxWidth: 600,  // Increased from 400 to reduce 2-line wrapping
-  });
-  nameSprite.position.set(0, 0.55, 0.01);
-  group.add(nameSprite);
+    maxWidth: 600,
+  }, new THREE.Vector3(0, 0.55, 0.01));
 
-  // #18: Description text - static font size, width matches title boundary, moved up
-  const descSprite = makeSprite(upgrade.desc, {
-    fontSize: 32,  // Static font size (was variable 60)
+  // #18: Description text - queued
+  queueTextSprite(group, upgrade.desc, {
+    fontSize: 32,
     color: '#cccccc',
-    scale: 0.36,   // Adjusted scale for readability
+    scale: 0.36,
     depthTest: true,
-    maxWidth: 280, // Width matches title text boundary
-  });
-  descSprite.position.set(0, 0.15, 0.01);  // Moved up (was -0.05)
-  group.add(descSprite);
+    maxWidth: 280,
+  }, new THREE.Vector3(0, 0.15, 0.01));
 
-  // Running total text for stackable upgrades
+  // Running total text for stackable upgrades - queued
   const totalText = getUpgradeTotalText(upgrade, hand);
   if (totalText) {
-    const totalSprite = makeSprite(totalText, {
+    queueTextSprite(group, totalText, {
       fontSize: 24,
-      color: '#88ff88',  // Light green for the before/after text
+      color: '#88ff88',
       scale: 0.14,
       depthTest: true,
       maxWidth: 300,
-    });
-    totalSprite.position.set(0, -0.05, 0.01);
-    group.add(totalSprite);
+    }, new THREE.Vector3(0, -0.05, 0.01));
   }
 
-  // Side-grade note (different color) when present
+  // Side-grade note - queued
   if (upgrade.sideGradeNote) {
-    const noteSprite = makeSprite(upgrade.sideGradeNote, {
+    queueTextSprite(group, upgrade.sideGradeNote, {
       fontSize: 22,
       color: '#ffdd00',
       scale: 0.14,
       depthTest: true,
       maxWidth: 280,
-    });
-    noteSprite.position.set(0, -0.15, 0.01);  // Moved up (was -0.28)
-    group.add(noteSprite);
+    }, new THREE.Vector3(0, -0.15, 0.01));
   }
 
   // Simple colored icon (shared geometry, delayed reveal)
@@ -1608,28 +1618,24 @@ function createSkipCard(position) {
   // Store border color on card for hover glow matching (green for skip)
   card.userData.borderColor = 0x00ff88;
 
-  // "SKIP" text - increased proportionally
-  const nameSprite = makeSprite('SKIP', {
+  // "SKIP" text - queued for deferred creation
+  queueTextSprite(group, 'SKIP', {
     fontSize: 45,
     color: '#00ff88',
     glow: true,
     glowColor: '#00ff88',
     scale: 0.24,
     depthTest: true,
-  });
-  nameSprite.position.set(0, 0.48, 0.01);
-  group.add(nameSprite);
+  }, new THREE.Vector3(0, 0.48, 0.01));
 
-  // Description
-  const descSprite = makeSprite('Skip upgrades and gain full health.', {
-    fontSize: 32,  // Match upgrade card description sizing
+  // Description - queued
+  queueTextSprite(group, 'Skip upgrades and gain full health.', {
+    fontSize: 32,
     color: '#88ffaa',
     scale: 0.36,
     depthTest: true,
     maxWidth: 280,
-  });
-  descSprite.position.set(0, -0.02, 0.01);
-  group.add(descSprite);
+  }, new THREE.Vector3(0, -0.02, 0.01));
 
   // Heart icon (shared geometry, delayed reveal)
   const iconMesh = new THREE.Mesh(
@@ -1646,6 +1652,7 @@ function createSkipCard(position) {
 }
 
 export function hideUpgradeCards() {
+  _textQueue.length = 0; // Clear any pending deferred text
   disposeGroupChildren(upgradeGroup);
   upgradeGroup.visible = false;
   upgradeCards = [];
@@ -1653,6 +1660,9 @@ export function hideUpgradeCards() {
 }
 
 export function updateUpgradeCards(now, cooldownRemaining) {
+  // Flush deferred text sprites (2-3 per frame to avoid frame drops)
+  flushCardTextQueue();
+
   // Animate card icons and reveal them after delay
   upgradeCards.forEach(card => {
     if (card.userData.iconMesh) {
