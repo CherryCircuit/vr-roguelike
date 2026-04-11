@@ -2512,18 +2512,6 @@ function handlePauseTrigger(controller) {
   } else if (pauseHit === 'settings') {
     playMenuClick();
     showSettings('pause');
-  } else if (pauseHit === 'perf') {
-    playMenuClick();
-    // Toggle profiler
-    if (typeof window !== 'undefined' && window.frameProfiler) {
-      window.frameProfiler.enabled = !window.frameProfiler.enabled;
-      console.log(`[PERF] Profiler ${window.frameProfiler.enabled ? 'ENABLED' : 'DISABLED'}`);
-      // Rebuild pause menu to update button text
-      import('./pause-menu.js').then(m => {
-        m.hidePauseMenu();
-        m.showPauseMenu();
-      });
-    }
   }
 }
 
@@ -2826,18 +2814,6 @@ function handleDesktopPauseClick() {
   } else if (pauseHit === 'settings') {
     playMenuClick();
     showSettings('pause');
-  } else if (pauseHit === 'perf') {
-    playMenuClick();
-    // Toggle profiler
-    if (typeof window !== 'undefined' && window.frameProfiler) {
-      window.frameProfiler.enabled = !window.frameProfiler.enabled;
-      console.log(`[PERF] Profiler ${window.frameProfiler.enabled ? 'ENABLED' : 'DISABLED'}`);
-      // Rebuild pause menu to update button text
-      import('./pause-menu.js').then(m => {
-        m.hidePauseMenu();
-        m.showPauseMenu();
-      });
-    }
   }
 }
 

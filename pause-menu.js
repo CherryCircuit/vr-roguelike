@@ -18,7 +18,6 @@ let pauseMenuElements = {
   statsSection: null,
   chartCanvas: null,
   resumeButton: null,
-  perfButton: null,
   settingsButton: null,
 };
 
@@ -146,7 +145,7 @@ export function showPauseMenu() {
         pauseMenuGroup.remove(oldSection);
       }
       const newSection = createBlasterSection(hand);
-      newSection.position.set(hand === 'left' ? -1.25 : 1.25, 0.4, 0.02);
+      newSection.position.set(hand === 'left' ? -1.7 : 1.7, 0.2, 0.02);
       pauseMenuGroup.add(newSection);
       pauseMenuElements[hand + 'BlasterSection'] = newSection;
     });
@@ -214,7 +213,7 @@ async function createPauseMenu() {
   const group = pauseMenuGroup;
 
   // Main panel - ONE dark see-through plane
-  const panelWidth = 4.6;
+  const panelWidth = 6.0;
   const panelHeight = 3.6;  // Taller to fit blaster sections with enemies killed
 
   // Background panel - semi-transparent black, no depth interaction
@@ -243,7 +242,7 @@ async function createPauseMenu() {
 
   // Left blaster section (includes stats now)
   const leftSection = createBlasterSection('left');
-  leftSection.position.set(-1.25, 0.2, 0.02);
+  leftSection.position.set(-1.7, 0.2, 0.02);
   // Apply layout override if loaded
   if (pauseMenuLayout?.elements?.left_blaster_section) {
     const pos = pauseMenuLayout.elements.left_blaster_section;
@@ -254,7 +253,7 @@ async function createPauseMenu() {
 
   // Right blaster section (includes stats now)
   const rightSection = createBlasterSection('right');
-  rightSection.position.set(1.25, 0.2, 0.02);
+  rightSection.position.set(1.7, 0.2, 0.02);
   // Apply layout override if loaded
   if (pauseMenuLayout?.elements?.right_blaster_section) {
     const pos = pauseMenuLayout.elements.right_blaster_section;
@@ -274,15 +273,9 @@ async function createPauseMenu() {
   group.add(resumeBtn);
   pauseMenuElements.resumeButton = resumeBtn;
 
-  // PERF profiler toggle button
-  const perfBtn = createPerfButton();
-  perfBtn.position.set(0, -1.75, 0.03);
-  group.add(perfBtn);
-  pauseMenuElements.perfButton = perfBtn;
-
   // Settings gear button
   const settingsBtn = createPauseSettingsButton();
-  settingsBtn.position.set(0, -2.1, 0.03);
+  settingsBtn.position.set(0, -0.423, 0.03);
   group.add(settingsBtn);
   pauseMenuElements.settingsButton = settingsBtn;
 
@@ -1017,15 +1010,12 @@ export function getPauseMenuHit(raycaster) {
 
   for (const intersect of intersects) {
     let obj = intersect.object;
-    while (obj && !obj.userData.isResumeButton && !obj.userData.isPerfButton && !obj.userData.isPauseSettingsBtn) {
+    while (obj && !obj.userData.isResumeButton && !obj.userData.isPauseSettingsBtn) {
       obj = obj.parent;
     }
 
     if (obj && obj.userData.isResumeButton) {
       return 'resume';
-    }
-    if (obj && obj.userData.isPerfButton) {
-      return 'perf';
     }
     if (obj && obj.userData.isPauseSettingsBtn) {
       return 'settings';
