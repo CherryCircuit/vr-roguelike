@@ -860,6 +860,11 @@ async function createTitleScreen() {
       const _le = layout.elements.btnGroup;
       btnGroup.position.set(_le.x, _le.y, _le.z);
     }
+    if (layout.elements.settingsBtnGroup) {
+      const _le = layout.elements.settingsBtnGroup;
+      settingsBtnGroup.position.set(_le.x, _le.y, _le.z);
+      if (_le.scale != null) settingsBtnText.scale.setScalar(_le.scale);
+    }
   }
 }
 

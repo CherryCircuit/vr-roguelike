@@ -4,16 +4,16 @@
   "font_multiplier": 2.5,
   "elements": {
     "panel": {
-      "w": 4.6,
+      "w": 6.0,
       "h": 3.6
     },
     "left_blaster_section": {
-      "x": -1.25,
+      "x": -1.7,
       "y": 0.2,
       "z": 0.02
     },
     "right_blaster_section": {
-      "x": 1.25,
+      "x": 1.7,
       "y": 0.2,
       "z": 0.02
     },
@@ -23,6 +23,11 @@
       "z": 0.03,
       "w": 1.55,
       "h": 0.34
+    },
+    "settings_button": {
+      "x": 0,
+      "y": -0.423,
+      "z": 0.03
     }
   }
 }
