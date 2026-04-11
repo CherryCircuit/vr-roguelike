@@ -6946,7 +6946,7 @@ class PrismBoss extends Boss {
 
     this.facetMaterials = this.facetColors.map(c =>
       new THREE.MeshBasicMaterial({
-        color: c, flatShading: true, transparent: true, opacity: 0.95
+        color: c, transparent: true, opacity: 0.95
       })
     );
 
@@ -6960,7 +6960,7 @@ class PrismBoss extends Boss {
 
     // Glow material for vulnerable facet (index 4)
     this.vulnerableGlowMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, flatShading: true, transparent: true, opacity: 0.95
+      color: 0xffffff, transparent: true, opacity: 0.95
     });
     this.facetMaterials.push(this.vulnerableGlowMat);
 
@@ -7234,7 +7234,7 @@ class PrismBoss extends Boss {
       // Build shard as a tapered crystal shape using flat-shaded geometry
       const shardGeo = new THREE.ConeGeometry(0.5, 1.4, 4, 1);
       const shardMat = new THREE.MeshBasicMaterial({
-        color: shardColors[i], flatShading: true, transparent: true, opacity: 0.9
+        color: shardColors[i], transparent: true, opacity: 0.9
       });
       const shardMesh = new THREE.Mesh(shardGeo, shardMat);
       shardMesh.userData.isBossBody = true;
