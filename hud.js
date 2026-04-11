@@ -1714,6 +1714,11 @@ export function showVictory(score, playerPos) {
   gameOverGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
   gameOverGroup.position.z -= 5; // 5 feet in front of player
   gameOverGroup.visible = true;
+  gameOverGroup.userData.fadeInStart = performance.now();
+  gameOverGroup.userData.fadeInDuration = 1100; // Slow enough to feel ceremonial after the final blackout
+  gameOverGroup.traverse((child) => {
+    if (child.material) child.material.opacity = 0;
+  });
 
   // Apply layout overrides (sync since preloaded)
   const layout = layoutCache['game-over'];
@@ -1734,9 +1739,23 @@ export function showVictory(score, playerPos) {
 }
 
 export function updateEndScreen(now) {
+  if (gameOverGroup.userData.fadeInStart) {
+    const elapsed = now - gameOverGroup.userData.fadeInStart;
+    const fade = Math.min(1, elapsed / (gameOverGroup.userData.fadeInDuration || 1));
+    gameOverGroup.traverse((child) => {
+      if (!child.material) return;
+      if (child.name === 'restartBlink') return;
+      child.material.opacity = fade;
+    });
+    if (fade >= 1) {
+      gameOverGroup.userData.fadeInStart = null;
+    }
+  }
+
   const blink = gameOverGroup.getObjectByName('restartBlink');
   if (blink) {
-    blink.material.opacity = 0.5 + Math.sin(now * 0.004) * 0.5;
+    const fadeBase = gameOverGroup.userData.fadeInStart ? Math.min(1, (now - gameOverGroup.userData.fadeInStart) / (gameOverGroup.userData.fadeInDuration || 1)) : 1;
+    blink.material.opacity = fadeBase * (0.5 + Math.sin(now * 0.004) * 0.5);
   }
 }
 

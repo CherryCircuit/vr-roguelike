@@ -1148,6 +1148,119 @@ export function playFinalBossAscendSound() {
   });
 }
 
+export function playFinalBossExposeSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  [320, 480, 720].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 1 ? 'triangle' : 'sine';
+    osc.frequency.setValueAtTime(freq * 0.75, t + i * 0.04);
+    osc.frequency.exponentialRampToValueAtTime(freq, t + 0.22 + i * 0.03);
+
+    gain.gain.setValueAtTime(0.0, t + i * 0.04);
+    gain.gain.linearRampToValueAtTime(0.12, t + 0.05 + i * 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45 + i * 0.04);
+
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.04);
+    osc.stop(t + 0.5 + i * 0.04);
+  });
+}
+
+export function playFinalBossSummonWallSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(70, t);
+  osc.frequency.exponentialRampToValueAtTime(180, t + 1.3);
+
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(250, t);
+  filter.frequency.exponentialRampToValueAtTime(1200, t + 1.1);
+  filter.Q.setValueAtTime(6, t);
+
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.13, t + 0.25);
+  gain.gain.linearRampToValueAtTime(0.08, t + 0.9);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 1.45);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 1.5);
+}
+
+export function playFinalBossReleaseWallSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  [140, 210, 280].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 2 ? 'square' : 'sawtooth';
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.55, t + 0.4);
+
+    gain.gain.setValueAtTime(0.0, t);
+    gain.gain.linearRampToValueAtTime(0.11, t + 0.04 + i * 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55 + i * 0.03);
+
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.03);
+    osc.stop(t + 0.6 + i * 0.03);
+  });
+}
+
+export function playFinalBossCollapseGroan() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const mod = ctx.createOscillator();
+  const modGain = ctx.createGain();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(110, t);
+  osc.frequency.exponentialRampToValueAtTime(38, t + 1.8);
+
+  mod.type = 'sine';
+  mod.frequency.setValueAtTime(16, t);
+  modGain.gain.setValueAtTime(18, t);
+  modGain.gain.exponentialRampToValueAtTime(4, t + 1.8);
+
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(500, t);
+  filter.frequency.exponentialRampToValueAtTime(160, t + 1.7);
+
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.16, t + 0.2);
+  gain.gain.linearRampToValueAtTime(0.1, t + 1.0);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
+
+  mod.connect(modGain);
+  modGain.connect(osc.frequency);
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(getSfxOutput());
+
+  osc.start(t);
+  mod.start(t);
+  osc.stop(t + 2.0);
+  mod.stop(t + 2.0);
+}
+
 export function playFinalBossVictorySting() {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
