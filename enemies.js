@@ -4605,7 +4605,10 @@ class Boss {
     this.sceneRef.remove(this.mesh);
     this.mesh.traverse(c => {
       if (c.geometry) c.geometry.dispose();
-      if (c.material) c.material.dispose();
+      if (c.material) {
+        if (Array.isArray(c.material)) c.material.forEach(m => m.dispose && m.dispose());
+        else if (c.material.dispose) c.material.dispose();
+      }
     });
   }
 }
@@ -5212,7 +5215,10 @@ class SkullHand {
     }
     this.group.traverse(c => {
       if (c.geometry) c.geometry.dispose();
-      if (c.material) c.material.dispose();
+      if (c.material) {
+        if (Array.isArray(c.material)) c.material.forEach(m => m.dispose && m.dispose());
+        else if (c.material.dispose) c.material.dispose();
+      }
     });
   }
 
@@ -7573,7 +7579,10 @@ class PrismBoss extends Boss {
       if (shard.parent) shard.parent.remove(shard);
       shard.traverse(child => {
         if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach(m => m.dispose && m.dispose());
+          else if (child.material.dispose) child.material.dispose();
+        }
       });
     });
     this.shards = [];
@@ -7768,7 +7777,10 @@ class PrismBoss extends Boss {
         if (shard.parent) shard.parent.remove(shard);
         shard.traverse(child => {
           if (child.geometry) child.geometry.dispose();
-          if (child.material) child.material.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach(m => m.dispose && m.dispose());
+            else if (child.material.dispose) child.material.dispose();
+          }
         });
       });
       this.shards = [];
@@ -9756,7 +9768,10 @@ export function clearBossMinions() {
       sceneRef.remove(m.mesh);
       m.mesh.traverse(c => {
         if (c.geometry) c.geometry.dispose();
-        if (c.material) c.material.dispose();
+        if (c.material) {
+          if (Array.isArray(c.material)) c.material.forEach(m => m.dispose && m.dispose());
+          else if (c.material.dispose) c.material.dispose();
+        }
       });
     }
   }
@@ -9948,7 +9963,7 @@ export function hitBossMinion(index, damage) {
   m.hp -= damage;
   if (m.hp <= 0) {
     sceneRef.remove(m.mesh);
-    m.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+    m.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) { if (Array.isArray(c.material)) c.material.forEach(m => m.dispose && m.dispose()); else if (c.material.dispose) c.material.dispose(); } });
     bossMinions.splice(index, 1);
     return { killed: true };
   }
