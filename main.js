@@ -1301,6 +1301,14 @@ function init() {
   // [DEBUG] Load debug settings from localStorage
   loadDebugSettings();
 
+  // [DEBUG] Sync debug checkboxes with loaded settings
+  const fpsCheckbox = document.getElementById('debug-show-fps');
+  if (fpsCheckbox) fpsCheckbox.checked = game.debugShowFPS;
+  const perfCheckbox = document.getElementById('debug-perf-monitor');
+  if (perfCheckbox) perfCheckbox.checked = game.debugPerfMonitor;
+  const posCheckbox = document.getElementById('debug-position-panel');
+  if (posCheckbox) posCheckbox.checked = game.debugShowPosition;
+
   // [DEBUG] Sync desktop position panel with game state
   if (typeof window !== 'undefined') {
     window.debugPositionPanel = game.debugShowPosition;
@@ -7121,6 +7129,11 @@ function commitProjectileInstance(poolType, instanceIndex, matrix) {
   if (!pool) return;
   pool.mesh.setMatrixAt(instanceIndex, matrix);
   pool.mesh.instanceMatrix.needsUpdate = true;
+
+  // Keep glow mesh count in sync with core
+  if (pool.glowMesh && pool.glowMesh.count < pool.mesh.count) {
+    pool.glowMesh.count = pool.mesh.count;
+  }
 
   // Update glow billboard plane (if pool has one)
   if (pool.glowMesh && camera) {

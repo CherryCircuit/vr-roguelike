@@ -2283,7 +2283,7 @@ function initHealthPopupPool() {
     const mesh = new THREE.Sprite(material);
     mesh.visible = false;
     mesh.renderOrder = 997;
-    mesh.scale.set(0.9, 0.45, 1);
+    mesh.scale.set(1.35, 0.675, 1);
     mesh.userData = { createdAt: 0, lifetime: 1000, velocity: new THREE.Vector3() };
     healthPopupPool.push(mesh);
     if (sceneRef) sceneRef.add(mesh);
@@ -9867,10 +9867,11 @@ export function setCameraRef(camera) {
  * Spawn a boss of the given type
  */
 export function getBossNameForLevel(level) {
-  const tier = getBossTier(level);
-  if (tier === 0) return '';
+  if (level % 5 !== 0) return '';
+  const tier = level / 5;
   const pool = BOSS_POOLS[tier];
-  const bossId = pool[0]; // single boss per tier currently
+  if (!pool || pool.length === 0) return '';
+  const bossId = pool[0];
   const def = BOSS_DEFS[bossId];
   return def ? def.name : '';
 }
