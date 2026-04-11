@@ -156,6 +156,40 @@ let fpsTexture = null;
 
 
 // Upgrade card meshes (for raycasting)
+// ── Upgrade card pooling ──────────────────────────────────────────
+// Pre-allocate card geometry and border geometry (shared across all cards)
+let _cardGeo = null;
+let _cardBorderGeo = null;
+let _skipCardGeo = null;
+let _skipCardBorderGeo = null;
+let _cardIconGeo = null;
+let _skipIconGeo = null;
+
+function getCardGeo() {
+  if (!_cardGeo) _cardGeo = new THREE.PlaneGeometry(1.2, 1.5);
+  return _cardGeo;
+}
+function getCardBorderGeo() {
+  if (!_cardBorderGeo) _cardBorderGeo = new THREE.EdgesGeometry(getCardGeo());
+  return _cardBorderGeo;
+}
+function getSkipCardGeo() {
+  if (!_skipCardGeo) _skipCardGeo = new THREE.PlaneGeometry(1.0, 1.3);
+  return _skipCardGeo;
+}
+function getSkipCardBorderGeo() {
+  if (!_skipCardBorderGeo) _skipCardBorderGeo = new THREE.EdgesGeometry(getSkipCardGeo());
+  return _skipCardBorderGeo;
+}
+function getCardIconGeo() {
+  if (!_cardIconGeo) _cardIconGeo = new THREE.OctahedronGeometry(0.12, 0);
+  return _cardIconGeo;
+}
+function getSkipIconGeo() {
+  if (!_skipIconGeo) _skipIconGeo = new THREE.OctahedronGeometry(0.08, 0);
+  return _skipIconGeo;
+}
+
 let upgradeCards = [];
 let upgradeChoices = [];
 
@@ -1439,12 +1473,12 @@ function createUpgradeCard(upgrade, position, hand) {
   }
   group.userData.upgradeId = upgrade.id;
 
-  // Card background plane
-  const cardGeo = new THREE.PlaneGeometry(1.2, 1.5);
+  // Card background plane (shared geometry)
+  const cardGeo = getCardGeo();
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
-    opacity: 0.91,  // Match SKIP card transparency
+    opacity: 0.91,
     side: THREE.DoubleSide,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
@@ -1452,11 +1486,10 @@ function createUpgradeCard(upgrade, position, hand) {
   card.userData.upgradeId = upgrade.id;
   group.add(card);
 
-  // Border (gold for side-grade / shot-type cards)
+  // Border (shared geometry)
   const borderColor = upgrade.sideGrade ? 0xffdd00 : (typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff));
-  const borderGeo = new THREE.EdgesGeometry(cardGeo);
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
-  group.add(new THREE.LineSegments(borderGeo, borderMat));
+  group.add(new THREE.LineSegments(getCardBorderGeo(), borderMat));
   
   // Store border color on card for hover glow matching
   card.userData.borderColor = borderColor;
@@ -1512,14 +1545,16 @@ function createUpgradeCard(upgrade, position, hand) {
     group.add(noteSprite);
   }
 
-  // Simple colored sphere as icon
+  // Simple colored icon (shared geometry, delayed reveal)
   const iconMesh = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.12, 0),
+    getCardIconGeo(),
     new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff', wireframe: true }),
   );
   iconMesh.position.set(0, -0.35, 0.05);
+  iconMesh.visible = false; // Hidden initially, revealed after cards settle
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
+  group.userData.iconRevealAt = performance.now() + 300; // Reveal after 300ms
 
   return group;
 }
@@ -1535,12 +1570,12 @@ function createSkipCard(position) {
   }
   group.userData.upgradeId = 'SKIP';  // Special ID for skip
 
-  // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades)
-  const cardGeo = new THREE.PlaneGeometry(1.0, 1.3);
+  // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades) - shared geometry
+  const cardGeo = getSkipCardGeo();
   const cardMat = new THREE.MeshBasicMaterial({
     color: 0x220044,
     transparent: true,
-    opacity: 0.91,  // Increased from 0.7 by 30%
+    opacity: 0.91,
     side: THREE.DoubleSide,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
@@ -1548,10 +1583,8 @@ function createSkipCard(position) {
   card.userData.upgradeId = 'SKIP';
   group.add(card);
 
-  // Border
-  const borderGeo = new THREE.EdgesGeometry(cardGeo);
-  const borderMat = new THREE.LineBasicMaterial({ color: '#00ff88' });
-  group.add(new THREE.LineSegments(borderGeo, borderMat));
+  // Border (shared geometry)
+  group.add(new THREE.LineSegments(getSkipCardBorderGeo(), new THREE.LineBasicMaterial({ color: '#00ff88' })));
   
   // Store border color on card for hover glow matching (green for skip)
   card.userData.borderColor = 0x00ff88;
@@ -1579,14 +1612,16 @@ function createSkipCard(position) {
   descSprite.position.set(0, -0.02, 0.01);
   group.add(descSprite);
 
-  // Heart icon
+  // Heart icon (shared geometry, delayed reveal)
   const iconMesh = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.08, 0),
+    getSkipIconGeo(),
     new THREE.MeshBasicMaterial({ color: '#ff0044', wireframe: true }),
   );
   iconMesh.position.set(0, -0.42, 0.05);
+  iconMesh.visible = false;
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
+  group.userData.iconRevealAt = performance.now() + 300;
 
   return group;
 }
@@ -1599,11 +1634,17 @@ export function hideUpgradeCards() {
 }
 
 export function updateUpgradeCards(now, cooldownRemaining) {
-  // Animate card icons
+  // Animate card icons and reveal them after delay
   upgradeCards.forEach(card => {
     if (card.userData.iconMesh) {
-      card.userData.iconMesh.rotation.y += 0.02;
-      card.userData.iconMesh.rotation.x += 0.01;
+      // Reveal icon after settle delay
+      if (!card.userData.iconMesh.visible && card.userData.iconRevealAt && now >= card.userData.iconRevealAt) {
+        card.userData.iconMesh.visible = true;
+      }
+      if (card.userData.iconMesh.visible) {
+        card.userData.iconMesh.rotation.y += 0.02;
+        card.userData.iconMesh.rotation.x += 0.01;
+      }
     }
   });
 
