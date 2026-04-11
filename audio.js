@@ -702,50 +702,50 @@ export function playProjectileWarningSound() {
 
 // ── Heal Sound (Vampiric/Health Pickup) ─────────────────────
 export function playHealSound() {
-  // Warm healing sound with bass/mid balance
+  // Bright upgrade/heal sound with rising pitch and sparkle
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
-  // Low warm pad (bass)
-  const bass = ctx.createOscillator();
-  bass.type = 'sine';
-  bass.frequency.setValueAtTime(220, t);      // A3
-  bass.frequency.linearRampToValueAtTime(330, t + 0.2);  // E4
-  const bassGain = ctx.createGain();
-  bassGain.gain.setValueAtTime(0.2, t);
-  bassGain.gain.linearRampToValueAtTime(0.25, t + 0.1);
-  bassGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-  bass.connect(bassGain);
-  bassGain.connect(getSfxOutput());
-  bass.start(t);
-  bass.stop(t + 0.5);
+  // Rising base tone (sine, C5→E5)
+  const base = ctx.createOscillator();
+  base.type = 'sine';
+  base.frequency.setValueAtTime(523, t);       // C5
+  base.frequency.linearRampToValueAtTime(659, t + 0.15);  // E5
+  const baseGain = ctx.createGain();
+  baseGain.gain.setValueAtTime(0.25, t);
+  baseGain.gain.linearRampToValueAtTime(0.3, t + 0.08);
+  baseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  base.connect(baseGain);
+  baseGain.connect(getSfxOutput());
+  base.start(t);
+  base.stop(t + 0.35);
 
-  // Mid arpeggio (triangle for warmth)
+  // Bright arpeggio (triangle, E5→G#5→B5)
   const mid = ctx.createOscillator();
   mid.type = 'triangle';
-  mid.frequency.setValueAtTime(440, t);      // A4
-  mid.frequency.setValueAtTime(554, t + 0.08); // C#5
-  mid.frequency.setValueAtTime(659, t + 0.16); // E5
+  mid.frequency.setValueAtTime(659, t + 0.04);     // E5
+  mid.frequency.setValueAtTime(831, t + 0.1);      // G#5
+  mid.frequency.setValueAtTime(988, t + 0.16);     // B5
   const midGain = ctx.createGain();
-  midGain.gain.setValueAtTime(0.15, t);
-  midGain.gain.linearRampToValueAtTime(0.18, t + 0.1);
-  midGain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+  midGain.gain.setValueAtTime(0.2, t + 0.04);
+  midGain.gain.linearRampToValueAtTime(0.22, t + 0.12);
+  midGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
   mid.connect(midGain);
   midGain.connect(getSfxOutput());
-  mid.start(t);
-  mid.stop(t + 0.4);
+  mid.start(t + 0.04);
+  mid.stop(t + 0.35);
 
-  // Subtle high sparkle (reduced volume)
+  // High sparkle (sine, C6→E6)
   const high = ctx.createOscillator();
   high.type = 'sine';
-  high.frequency.setValueAtTime(880, t);    // A5
-  high.frequency.setValueAtTime(1109, t + 0.12); // C#6
+  high.frequency.setValueAtTime(1047, t + 0.08);   // C6
+  high.frequency.linearRampToValueAtTime(1319, t + 0.2);  // E6
   const highGain = ctx.createGain();
-  highGain.gain.setValueAtTime(0.06, t);
+  highGain.gain.setValueAtTime(0.12, t + 0.08);
   highGain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
   high.connect(highGain);
   highGain.connect(getSfxOutput());
-  high.start(t);
+  high.start(t + 0.08);
   high.stop(t + 0.3);
 }
 

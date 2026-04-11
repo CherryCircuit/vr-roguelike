@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>SPACEOMICIDE v2026.04.11.1557</title>
+  <title>SPACEOMICIDE v2026.04.11.1620</title>
   <style>
     /* ── Base Reset & Synthwave Theme ── */
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -182,7 +182,7 @@
       </div>
     </div>
     
-    <p id="version-text" style="font-size: 1em; opacity: 0.6; margin-top: 12px;">v2026.04.11.1557</p>
+    <p id="version-text" style="font-size: 1em; opacity: 0.6; margin-top: 12px;">v2026.04.11.1620</p>
   </div>
 
   <!-- Fallback if WebXR is not available -->
@@ -209,7 +209,7 @@
     <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;background:#220044;color:#fff;border:1px solid #ff00ff;"></label>
     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
-    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-show-fps" checked> Show FPS counter</label>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-show-fps"> Show FPS counter</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-position-panel"> Debug position box</label>
     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-seed-controls"> Seed deck settings</label>
@@ -249,7 +249,7 @@
   <script type="module" src="main.js"></script>
   <script>
     (function() {
-      const GAME_VERSION = 'v2026.04.11.1557';
+      const GAME_VERSION = 'v2026.04.11.1620';
       document.title = GAME_VERSION;
       const versionEl = document.getElementById('version-text');
       if (versionEl) versionEl.textContent = GAME_VERSION;
@@ -278,10 +278,17 @@
       });
       document.getElementById('debug-show-fps').addEventListener('change', function() {
         window.debugShowFPS = this.checked;
+        if (window.game) window.game.debugShowFPS = this.checked;
         // Hide/show FPS sprite immediately
         if (window.hud && window.hud.setFPSVisible) {
           window.hud.setFPSVisible(this.checked);
         }
+        // Persist to localStorage
+        try {
+          const stored = JSON.parse(localStorage.getItem('spaceomicide_debug') || '{}');
+          stored.debugShowFPS = this.checked;
+          localStorage.setItem('spaceomicide_debug', JSON.stringify(stored));
+        } catch(e) {}
       });
       document.getElementById('debug-console').addEventListener('change', function() {
         consolePanel.style.display = this.checked ? 'block' : 'none';
