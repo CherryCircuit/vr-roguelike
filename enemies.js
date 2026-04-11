@@ -10150,12 +10150,12 @@ const _upVector = new THREE.Vector3(0, 1, 0);
 function initBossProjPools() {
   if (bossProjCorePool || !sceneRef) return;
 
-  // Boss projectiles: bright red-orange core spheres with visible edges
-  const coreGeo = new THREE.SphereGeometry(0.14, 10, 10);
+  // Boss projectiles: bright white-hot core spheres (smaller, glow planes do the heavy lifting)
+  const coreGeo = new THREE.SphereGeometry(0.10, 10, 10);  // 30% smaller (was 0.14)
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xff5500,
+    color: 0xffbb77,  // Brighter white-orange (was 0xff5500)
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.95,    // Brighter (was 0.85)
     depthWrite: false,
     depthTest: true,
   });

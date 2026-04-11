@@ -826,6 +826,7 @@ const synthVisualRefs = {
   sunOuterGlowMat: null,
   sunGlowMat: null,
   sunCoreMat: null,
+  mountainCylMat: null,
 };
 
 // [DEBUG] Player projectile materials that should respond to visual tuning sliders.
@@ -1942,6 +1943,7 @@ function clearBiomeScene() {
   synthVisualRefs.sunOuterGlowMat = null;
   synthVisualRefs.sunGlowMat = null;
   synthVisualRefs.sunCoreMat = null;
+  synthVisualRefs.mountainCylMat = null;
 }
 
 // [CORE] Purge biome geometry for boss cinematic
@@ -6926,7 +6928,57 @@ function initProjectilePool() {
     }
   });
 
-  _log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(40), seeker(28), plasma_carbine(80)');
+  // ── Player projectile glow planes (Star Wars-style bloom) ──
+  // Shared radial gradient texture: bright white-cyan center, fading to transparent
+  const pGlowSize = 64;
+  const pGlowCanvas = document.createElement('canvas');
+  pGlowCanvas.width = pGlowSize;
+  pGlowCanvas.height = pGlowSize;
+  const pGlowCtx = pGlowCanvas.getContext('2d');
+  const pGlowHalf = pGlowSize / 2;
+  const pGlowGrad = pGlowCtx.createRadialGradient(pGlowHalf, pGlowHalf, 0, pGlowHalf, pGlowHalf, pGlowHalf);
+  pGlowGrad.addColorStop(0, 'rgba(220,255,255,1)');    // Bright white-cyan core
+  pGlowGrad.addColorStop(0.2, 'rgba(0,220,255,0.7)'); // Cyan mid
+  pGlowGrad.addColorStop(0.5, 'rgba(0,180,255,0.3)');  // Fading cyan
+  pGlowGrad.addColorStop(1, 'rgba(0,100,255,0)');      // Transparent edge
+  pGlowCtx.fillStyle = pGlowGrad;
+  pGlowCtx.fillRect(0, 0, pGlowSize, pGlowSize);
+  const playerGlowTexture = new THREE.CanvasTexture(pGlowCanvas);
+  playerGlowTexture.minFilter = THREE.LinearFilter;
+
+  // Create a glow pool for each projectile type
+  const glowGeo = new THREE.PlaneGeometry(0.35, 0.35);
+  const glowMat = new THREE.MeshBasicMaterial({
+    map: playerGlowTexture,
+    transparent: true,
+    opacity: 0.8,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+  });
+  registerPlayerProjectileMaterial(glowMat);
+
+  for (const poolType of Object.keys(instancedProjectiles)) {
+    const maxCount = instancedProjectiles[poolType].maxCount;
+    const glowIM = new THREE.InstancedMesh(glowGeo, glowMat, maxCount);
+    glowIM.name = `${poolType}-glow-pool`;
+    glowIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    glowIM.count = 0;
+    glowIM.frustumCulled = false;
+    glowIM.renderOrder = 949;  // Just behind the projectile cores (950)
+    glowIM.visible = true;
+    scene.add(glowIM);
+    instancedProjectiles[poolType].glowMesh = glowIM;
+    // Initialize all glow instances as hidden (scale 0)
+    const hideMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let i = 0; i < maxCount; i++) {
+      glowIM.setMatrixAt(i, hideMatrix);
+    }
+    glowIM.instanceMatrix.needsUpdate = true;
+  }
+
+  _log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(40), seeker(28), plasma_carbine(80) + glow planes');
 }
 
 // PERFORMANCE: Acquire an instance slot from the InstancedMesh pool.
@@ -7038,12 +7090,40 @@ function createProjectileProxy(poolType, instanceIndex, color) {
   return proxy;
 }
 
-// [CORE] Commit projectile instance transform to instanced mesh
+// Reusable temp objects for glow billboarding
+const _projGlowMat = new THREE.Matrix4();
+const _projGlowQuat = new THREE.Quaternion();
+const _projGlowScale = new THREE.Vector3(1, 1, 1);
+const _projGlowScale0 = new THREE.Vector3(0, 0, 0);
+const _projGlowPos = new THREE.Vector3();
+const _projGlowTmpQ = new THREE.Quaternion();
+const _projGlowScl = new THREE.Vector3();
+const _upVec = new THREE.Vector3(0, 1, 0);
+
+// [CORE] Commit projectile instance transform to instanced mesh + glow billboard
 function commitProjectileInstance(poolType, instanceIndex, matrix) {
   const pool = instancedProjectiles[poolType];
   if (!pool) return;
   pool.mesh.setMatrixAt(instanceIndex, matrix);
   pool.mesh.instanceMatrix.needsUpdate = true;
+
+  // Update glow billboard plane (if pool has one)
+  if (pool.glowMesh && camera) {
+    _projGlowPos.setFromMatrixPosition(matrix);
+    matrix.decompose(_projGlowPos, _projGlowTmpQ, _projGlowScl);
+    const isHidden = _projGlowScl.x < 0.001;
+    // Re-get position since decompose overwrites it
+    _projGlowPos.setFromMatrixPosition(matrix);
+
+    if (isHidden) {
+      pool.glowMesh.setMatrixAt(instanceIndex, _projGlowMat.compose(_projGlowPos, _projGlowQuat, _projGlowScale0));
+    } else {
+      _projGlowMat.lookAt(_projGlowPos, camera.position, _upVec);
+      _projGlowQuat.setFromRotationMatrix(_projGlowMat);
+      pool.glowMesh.setMatrixAt(instanceIndex, _projGlowMat.compose(_projGlowPos, _projGlowQuat, _projGlowScale));
+    }
+    pool.glowMesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 // PERFORMANCE: Return projectile instance to pool (deactivate)
@@ -9822,6 +9902,11 @@ function render(timestamp) {
         game._cinOrigPulseB = synthVisualRefs.terrainUniforms.uPulseColorB.value.clone();
       }
 
+      // Store original mountain cylinder color for red tint
+      if (synthVisualRefs.mountainCylMat) {
+        game._cinOrigMountainColor = synthVisualRefs.mountainCylMat.color.clone();
+      }
+
       // Store original skydome gradient colors for red fade
       game._cinOrigSkyTopColor = null;
       game._cinOrigSkyMidColor = null;
@@ -9962,6 +10047,12 @@ function render(timestamp) {
       }
       if (synthVisualRefs.sunCoreMat) {
         synthVisualRefs.sunCoreMat.color.lerp(new THREE.Color(0xff0000), t * 0.1);
+      }
+
+      // 6. Tint mountain wrap cylinder to red during cinematic
+      if (synthVisualRefs.mountainCylMat && game._cinOrigMountainColor) {
+        const redMountain = new THREE.Color(0x882244);  // Dark red-purple tint
+        synthVisualRefs.mountainCylMat.color.copy(game._cinOrigMountainColor).lerp(redMountain, t);
       }
     }
   }
