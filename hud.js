@@ -750,7 +750,7 @@ async function createTitleScreen() {
     fontSize: 70,
     color: '#00ffff',
     glow: true, glowColor: '#0088ff', glowSize: 15,
-    scale: 0.9,
+    scale: 1.0,
   });
   titleSprite.position.set(0, 0.932, 0);
   titleSprite.name = 'titleSprite';
@@ -761,7 +761,7 @@ async function createTitleScreen() {
     fontSize: 24,
     color: '#ff00ff',
     glow: true, glowColor: '#ff00ff', glowSize: 5,
-    scale: 0.3,
+    scale: 0.7,
   });
   subSprite.position.set(0, 0.5, 0);
   subSprite.name = 'subSprite';
@@ -772,7 +772,7 @@ async function createTitleScreen() {
     fontSize: 26,
     color: '#ffffff',
     glow: true, glowColor: '#ffffff',
-    scale: 0.25,
+    scale: 0.5,
   });
   titleBlinkSprite.position.set(0, -0.065, 0);
   titleBlinkSprite.name = 'titleBlinkSprite';
@@ -831,7 +831,7 @@ async function createTitleScreen() {
     color: '#00ffff',
     glow: true,
     glowColor: '#00ffff',
-    scale: 0.16,
+    scale: 0.5,
   });
   settingsBtnText.position.set(0, 0, 0.01);
   settingsBtnGroup.add(settingsBtnText);
