@@ -157,7 +157,7 @@ export const game = {
 
   // DEBUG: Performance monitoring settings
   debugPerfMonitor: false,  // Extended FPS stats (frame time, memory)
-  debugShowFPS: true,  // Always show FPS counter in VR
+  debugShowFPS: false,  // FPS counter off by default (toggle in DEBUG panel)
   debugShowPosition: false,  // Show debug position box (desktop DOM + VR toggle)
   debugBiomeOverride: null,  // Force a specific biome for previews
   inDreamWorld: false,
@@ -301,7 +301,7 @@ export function loadDebugSettings() {
     if (stored) {
       const settings = JSON.parse(stored);
       game.debugPerfMonitor = settings.debugPerfMonitor ?? false;
-      game.debugShowFPS = settings.debugShowFPS ?? true;
+      game.debugShowFPS = settings.debugShowFPS ?? false;
       game.debugShowPosition = settings.debugShowPosition ?? false;
       // NOTE: debugBiomeOverride is NOT loaded - it resets on page refresh
       console.log('[debug] Loaded settings:', settings);

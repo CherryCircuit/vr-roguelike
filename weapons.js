@@ -78,7 +78,7 @@ export const MAIN_WEAPONS = {
       aoeRadius: 0,
       spreadAngle: 0,
       chargeShot: true,
-      chargeTimeMax: 5.0,  // Max charge time in seconds
+      chargeTimeMax: 3.0,  // Max charge time in seconds (matches CHARGE_SHOT_MAX_TIME)
       chargeDamageMultiplier: 3.0,  // Max damage = base * 3.0
     },
   },
