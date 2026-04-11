@@ -51,7 +51,7 @@ import {
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
   releaseBossProjIndex, clearBossMinions,
   clearAllTelegraphs, spawnHealthGainPopup,
-  clearGeometryCaches
+  clearGeometryCaches, setCameraRef
 } from './enemies.js';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -1409,6 +1409,7 @@ function init() {
 
   // Init subsystems
   initEnemies(scene);
+  setCameraRef(camera);
   initHUD(camera, scene);
   initBossDeathOverlays();
 
@@ -7138,8 +7139,8 @@ function triggerHostileProjectileExplosion(position, radius, damage) {
 // [CORE] Spawn boss projectile destruction VFX
 function spawnBossProjectileDestructionFX(position) {
   spawnExplosionVisual(position.clone(), 0.22);
-  // Red bits matching projectile color, capped at 3 per projectile death
-  spawnVoxelExplosion(position.clone(), 0xff0000, 3, 'basic', false, false);
+  // Tiny spark debris only (reduced from 3 to 1)
+  spawnVoxelExplosion(position.clone(), 0xff0000, 1, 'basic', false, false);
 }
 
 // [CORE] Update seeker projectile visual (homing curve)

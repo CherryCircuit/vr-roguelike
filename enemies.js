@@ -320,6 +320,7 @@ const ENEMY_DEFS = {
 
 // ── Module state ───────────────────────────────────────────
 let sceneRef = null;
+let cameraRef = null;
 const activeEnemies = [];
 let nextEnemyId = 1;
 const explosionParts = [];
@@ -3636,7 +3637,7 @@ export function setOnEnemyDestroyedCallback(callback) {
 }
 
 /**
- * Destroy enemy at `index` — remove from scene, spawn explosion.
+ * Destroy enemy at `index` - remove from scene, spawn explosion.
  */
 export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   const e = activeEnemies[index];
@@ -4613,7 +4614,7 @@ class Boss {
 class ScrapGolemBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
     super(def, levelConfig, sceneRef, telegraphing);
-    
+
     this.slamTimer = 0;
     this.slamRate = def.slamRate || 3.0;
     this.minionTimer = 0;
@@ -4624,18 +4625,18 @@ class ScrapGolemBoss extends Boss {
 
   updateBehavior(dt, now, playerPos) {
     _scratch.copy(playerPos).sub(this.mesh.position).normalize();
-    
+
     // Slow movement toward player
     this.mesh.position.addScaledVector(_scratch, 0.8 * dt);
     this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
-    
+
     // Ground slam attack
     this.slamTimer += dt;
     if (this.slamTimer >= this.slamRate) {
       this.slamTimer = 0;
       this.performSlam(playerPos);
     }
-    
+
     // Spawn scrap minions
     this.minionTimer += dt;
     if (this.minionTimer >= this.minionRate) {
@@ -4649,7 +4650,7 @@ class ScrapGolemBoss extends Boss {
     if (this.telegraphing) {
       this.showTelegraph('charge', 0.8, 0x886644);
     }
-    
+
     // Create shockwave after delay
     this.later(600, () => {
       if (typeof window !== 'undefined' && window.createBossShockwave) {
@@ -4691,7 +4692,7 @@ class ScrapGolemBoss extends Boss {
 class HoloPhantomBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
     super(def, levelConfig, sceneRef, telegraphing);
-    
+
     this.decoyTimer = 0;
     this.decoyRate = def.decoyRate || 4.0;
     this.teleportTimer = 0;
@@ -4701,19 +4702,19 @@ class HoloPhantomBoss extends Boss {
 
   updateBehavior(dt, now, playerPos) {
     _scratch.copy(playerPos).sub(this.mesh.position).normalize();
-    
+
     // Fast erratic movement
     if (this.state === 'visible') {
       this.mesh.position.addScaledVector(_scratch, 2.0 * dt);
       this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
-      
+
       // Create decoys
       this.decoyTimer += dt;
       if (this.decoyTimer >= this.decoyRate) {
         this.decoyTimer = 0;
         this.createDecoy();
       }
-      
+
       // Teleport
       this.teleportTimer += dt;
       if (this.teleportTimer >= this.teleportRate) {
@@ -4729,7 +4730,7 @@ class HoloPhantomBoss extends Boss {
     const decoyPos = this.mesh.position.clone();
     decoyPos.x += Math.cos(angle) * dist;
     decoyPos.z += Math.sin(angle) * dist;
-    
+
     // Use new shootable decoy system
     if (typeof window !== 'undefined' && window.createHoloDecoy) {
       window.createHoloDecoy(decoyPos, 10 + this.phase * 5, 2);
@@ -4740,10 +4741,10 @@ class HoloPhantomBoss extends Boss {
     if (this.telegraphing) {
       this.showTelegraph('teleport', 0.4, 0x00ffff);
     }
-    
+
     this.state = 'teleporting';
     this.mesh.visible = false;
-    
+
     this.later(400, () => {
       const angle = Math.random() * Math.PI * 2;
       const dist = 6 + Math.random() * 4;
@@ -4792,7 +4793,7 @@ class HoloPhantomBoss extends Boss {
 class PulseEmitterBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
     super(def, levelConfig, sceneRef, telegraphing);
-    
+
     this.pulseTimer = 0;
     this.pulseRate = def.pulseRate || 2.0;
     this.shieldActive = false;
@@ -4803,18 +4804,18 @@ class PulseEmitterBoss extends Boss {
 
   updateBehavior(dt, now, playerPos) {
     const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-    
+
     // Moderate movement
     this.mesh.position.addScaledVector(dirToPlayer, 1.2 * dt);
     this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
-    
+
     // Pulse attacks
     this.pulseTimer += dt;
     if (this.pulseTimer >= this.pulseRate && !this.shieldActive) {
       this.pulseTimer = 0;
       this.firePulse(playerPos);
     }
-    
+
     // Shield phase
     this.shieldTimer += dt;
     if (this.shieldTimer >= this.shieldDuration * 2) {
@@ -4827,7 +4828,7 @@ class PulseEmitterBoss extends Boss {
     if (this.telegraphing) {
       this.showTelegraph('projectile', 0.5, 0xff0088);
     }
-    
+
     // Fire pulse wave
     this.later(400, () => {
       if (typeof window !== 'undefined' && window.fireBossPulse) {
@@ -4838,22 +4839,22 @@ class PulseEmitterBoss extends Boss {
 
   activateShield() {
     this.shieldActive = true;
-    
+
     // Safely set emissiveIntensity on all child meshes with materials
     this.mesh.traverse(c => {
       if (c.isMesh && c.material) {
         setMaterialEmissiveSafe(c.material, _emissiveWhite, 0.8);
       }
     });
-    
+
     // Create visual shield
     if (typeof window !== 'undefined' && window.createBossShield) {
       window.createBossShield(this.mesh.position.clone(), 2);
     }
-    
+
     this.later(this.shieldDuration * 1000, () => {
       this.shieldActive = false;
-      
+
       // Safely reset emissiveIntensity on all child meshes with materials
       this.mesh.traverse(c => {
         if (c.isMesh && c.material) {
@@ -4902,7 +4903,7 @@ class PulseEmitterBoss extends Boss {
 class RustSerpentBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
     super(def, levelConfig, sceneRef, telegraphing);
-    
+
     this.slitherAngle = 0;
     this.slitherSpeed = def.slitherSpeed || 1.8;
     this.toxicTimer = 0;
@@ -4912,16 +4913,16 @@ class RustSerpentBoss extends Boss {
 
   updateBehavior(dt, now, playerPos) {
     const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-    
+
     // Slithering movement
     this.slitherAngle += dt * this.slitherSpeed * 2;
     const slitherOffset = Math.sin(this.slitherAngle) * 0.3;
     const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
-    
+
     this.mesh.position.addScaledVector(dirToPlayer, this.slitherSpeed * dt);
     this.mesh.position.addScaledVector(perp, slitherOffset * dt);
     this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
-    
+
     // Leave toxic trail
     this.toxicTimer += dt;
     if (this.toxicTimer >= this.toxicRate) {
@@ -4969,7 +4970,7 @@ class RustSerpentBoss extends Boss {
 class StaticWispBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
     super(def, levelConfig, sceneRef, telegraphing);
-    
+
     this.electricTimer = 0;
     this.electricRate = def.electricRate || 1.2;
     this.teleportTimer = 0;
@@ -4981,7 +4982,7 @@ class StaticWispBoss extends Boss {
 
   updateBehavior(dt, now, playerPos) {
     const dirToPlayer = playerPos.clone().sub(this.mesh.position).normalize();
-    
+
     // Fast zigzag movement
     this.zigzagTimer += dt;
     if (this.zigzagTimer >= 0.3) {
@@ -4989,18 +4990,18 @@ class StaticWispBoss extends Boss {
       const perp = new THREE.Vector3(-dirToPlayer.z, 0, dirToPlayer.x).normalize();
       this.zigzagDir = perp.multiplyScalar(Math.random() < 0.5 ? 1 : -1);
     }
-    
+
     this.mesh.position.addScaledVector(dirToPlayer, 2.5 * dt);
     this.mesh.position.addScaledVector(this.zigzagDir, 1.5 * dt);
     this.mesh.lookAt(playerPos.x, playerPos.y, playerPos.z);
-    
+
     // Electric attacks
     this.electricTimer += dt;
     if (this.electricTimer >= this.electricRate) {
       this.electricTimer = 0;
       this.fireElectricBolt(playerPos);
     }
-    
+
     // Teleport
     this.teleportTimer += dt;
     if (this.teleportTimer >= this.teleportRate) {
@@ -5026,9 +5027,9 @@ class StaticWispBoss extends Boss {
     if (this.telegraphing) {
       this.showTelegraph('teleport', 0.3, 0xffff00);
     }
-    
+
     this.mesh.visible = false;
-    
+
     this.later(300, () => {
       const angle = Math.random() * Math.PI * 2;
       const dist = 5 + Math.random() * 5;
@@ -5077,7 +5078,7 @@ class SkullHand {
     this.handIndex = handIndex;
     this.offsetPos = offsetPos.clone();
     this.sceneRef = sceneRef;
-    
+
     // HP scales based on how many hands remain - first hands easier, last hands harder
     const aliveHands = parentBoss.hands.filter(h => h.alive).length;
     const handsDestroyed = 4 - aliveHands;
@@ -5089,13 +5090,13 @@ class SkullHand {
     this.hp = this.maxHp;
     this.alive = true;
     _log(`[SkullHand] Hand ${handIndex} created with ${this.hp}/${this.maxHp} HP (handsDestroyed: ${handsDestroyed})`);
-    
+
     this.shootTimer = 0;
     this.shootRate = parentBoss.def.handShootRate || 1.5;
-    
+
     this.buildMesh();
   }
-  
+
   buildMesh() {
     // Voxel hand - skeletal hand shape
     this.group = new THREE.Group();
@@ -5108,13 +5109,13 @@ class SkullHand {
       depthWrite: false,
       fog: false,
     });
-    
+
     // Palm (center)
     const palm = new THREE.Mesh(geo, mat.clone());
     palm.userData.isHandBody = true;
     palm.userData.handIndex = this.handIndex;
     this.group.add(palm);
-    
+
     // Fingers (4 fingers + thumb)
     const fingerPositions = [
       [-0.2, 0.3, 0],   // Index
@@ -5123,7 +5124,7 @@ class SkullHand {
       [0.35, 0.15, 0],  // Pinky
       [-0.3, -0.1, 0],  // Thumb
     ];
-    
+
     fingerPositions.forEach(pos => {
       const finger = new THREE.Mesh(geo, mat.clone());
       finger.position.set(pos[0], pos[1], pos[2]);
@@ -5131,7 +5132,7 @@ class SkullHand {
       finger.userData.handIndex = this.handIndex;
       this.group.add(finger);
     });
-    
+
     // Hitbox (use cached geometry to avoid per-spawn leak)
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
     const hitbox = new THREE.Mesh(getHitboxGeo(1.0, 1.0, 1.0), hitboxMat);
@@ -5139,35 +5140,35 @@ class SkullHand {
     hitbox.userData.handIndex = this.handIndex;
     hitbox.userData.skullHand = this;
     this.group.add(hitbox);
-    
+
     this.group.userData.isSkullHand = true;
     this.group.userData.handIndex = this.handIndex;
     this.group.userData.skullHand = this;
-    
+
     // Add to boss mesh for proper raycasting
     this.parentBoss.mesh.add(this.group);
   }
-  
+
   update(dt, now, playerPos, bossPos) {
     if (!this.alive) return;
-    
+
     // Position is relative to boss (local coordinates)
     this.group.position.copy(this.offsetPos);
-    
+
     // Bobbing animation
     this.group.position.y += Math.sin(now * 0.003 + this.handIndex) * 0.15;
-    
+
     // Horizontal oscillating animation (slow left/right sway)
     const horizontalPhase = this.handIndex % 2 === 0 ? 0 : Math.PI; // Alternate phase for top/bottom hands
     this.group.position.x += Math.sin(now * 0.002 + horizontalPhase) * 0.5;
-    
+
     // Rotate to face player (world direction)
     this.group.getWorldPosition(_scratch);
     _scratch2.copy(playerPos).sub(_scratch);
     if (_scratch2.length() > 0.1) {
       this.group.lookAt(playerPos.x, _scratch.y, playerPos.z);
     }
-    
+
     // Update color based on damage - darken toward dark red
     const damageRatio = 1 - this.hp / this.maxHp;
     this.group.traverse(c => {
@@ -5178,16 +5179,16 @@ class SkullHand {
       }
     });
   }
-  
+
   takeDamage(amount) {
     if (!this.alive) return { killed: false };
-    
+
     // Damage reduction based on remaining hands - fewer hands = more tanky
     const aliveHands = this.parentBoss.hands.filter(h => h.alive).length;
     const damageReduction = 1 - (aliveHands - 1) * 0.15; // 4 hands: 85%, 3: 70%, 2: 55%, 1: 40% damage taken
     const actualDamage = Math.round(amount * damageReduction);
     if (DEBUG) console.log(`[SkullHand] Hand ${this.handIndex} takes ${actualDamage} damage (reduced from ${amount}, ${aliveHands} hands alive, ${(damageReduction * 100).toFixed(0)}% damage taken)`);
-    
+
     this.hp -= actualDamage;
     if (this.hp <= 0) {
       this.hp = 0;
@@ -5197,14 +5198,14 @@ class SkullHand {
     }
     return { killed: false };
   }
-  
+
   destroy() {
     // Explosion effect at world position (3 voxels per turret/hand)
     if (spawnVoxelExplosion) {
       const worldPos = this.group.getWorldPosition(new THREE.Vector3());
       spawnVoxelExplosion(worldPos, 0xffffff, 3, 'basic', false, false);
     }
-    
+
     // Remove from parent (boss mesh)
     if (this.group.parent) {
       this.group.parent.remove(this.group);
@@ -5214,10 +5215,10 @@ class SkullHand {
       if (c.material) c.material.dispose();
     });
   }
-  
+
   shouldShoot(now) {
     if (!this.alive) return false;
-    
+
     this.shootTimer += 0.016; // Approximate dt
     if (this.shootTimer >= this.shootRate) {
       this.shootTimer = 0;
@@ -5225,11 +5226,11 @@ class SkullHand {
     }
     return false;
   }
-  
+
   setShootRate(rate) {
     this.shootRate = rate;
   }
-  
+
   getPosition() {
     return this.group.getWorldPosition(new THREE.Vector3());
   }
@@ -5239,7 +5240,7 @@ class SkullHand {
 class SkullBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
     super(def, levelConfig, sceneRef, telegraphing);
-    
+
     // Skull-specific state
     this.hands = [];
     this.handsAlive = 4;
@@ -5249,7 +5250,7 @@ class SkullBoss extends Boss {
     this.moveTimer = 0;
     this.moveDirection = new THREE.Vector3();
     this.moveSpeed = def.moveSpeed || 1.5;
-    
+
     // Shared ammo pool for hands (Part 2)
     this.ammoPool = {
       timer: 0,
@@ -5258,23 +5259,23 @@ class SkullBoss extends Boss {
       reloadTimer: 0,
       reloading: false
     };
-    
+
     // Skull phase tracking (Part 3)
     this.skullPhase = 0; // 0 = hand phase, 1/2/3 = skull phases
     this.transitioning = false;
     this.transitionTimer = 0;
     this.transitionDuration = 3.0; // 3-second invuln between phases
-    
+
     // Build custom skull mesh
     this.buildSkullMesh();
-    
+
     // Create 4 hands
     this.createHands();
-    
+
     // Head starts immune
     this.setHeadImmune(true);
   }
-  
+
   buildSkullMesh() {
     // Clear the default mesh children
     while (this.mesh.children.length > 0) {
@@ -5283,7 +5284,7 @@ class SkullBoss extends Boss {
       if (child.geometry) child.geometry.dispose();
       if (child.material) child.material.dispose();
     }
-    
+
     const skullGroup = new THREE.Group();
     skullGroup.renderOrder = 10;
     const geo = getGeo(0.25);
@@ -5294,7 +5295,7 @@ class SkullBoss extends Boss {
       depthWrite: false,
       fog: false,
     });
-    
+
     // Skull top (dome)
     const domePositions = [
       // Top row (smaller)
@@ -5315,14 +5316,14 @@ class SkullBoss extends Boss {
       [0.35, 0.45, 0],
       [0.6, 0.35, 0],
     ];
-    
+
     domePositions.forEach(pos => {
       const cube = new THREE.Mesh(geo, mat.clone());
       cube.position.set(pos[0], pos[1], pos[2]);
       cube.userData.isSkullBody = true;
       skullGroup.add(cube);
     });
-    
+
     // Eye sockets (empty spaces, with red glowing eyes inside)
     const eyeGeo = getGeo(0.15);
     const eyeMat = new THREE.MeshBasicMaterial({
@@ -5332,21 +5333,21 @@ class SkullBoss extends Boss {
       depthWrite: false,
       fog: false,
     });
-    
+
     const leftEye = new THREE.Mesh(eyeGeo, eyeMat.clone());
     leftEye.position.set(-0.3, 0.2, 0.1);
     leftEye.userData.isEye = true;
     leftEye.userData.eyeIndex = 0;
     skullGroup.add(leftEye);
     this.leftEye = leftEye;
-    
+
     const rightEye = new THREE.Mesh(eyeGeo, eyeMat.clone());
     rightEye.position.set(0.3, 0.2, 0.1);
     rightEye.userData.isEye = true;
     rightEye.userData.eyeIndex = 1;
     skullGroup.add(rightEye);
     this.rightEye = rightEye;
-    
+
     // Nose cavity (bridge)
     const nosePositions = [
       [0, 0.05, 0.05],
@@ -5358,7 +5359,7 @@ class SkullBoss extends Boss {
       cube.userData.isSkullBody = true;
       skullGroup.add(cube);
     });
-    
+
     // Jaw/teeth
     const jawPositions = [
       [-0.4, -0.25, 0],
@@ -5379,7 +5380,7 @@ class SkullBoss extends Boss {
       cube.userData.isSkullBody = true;
       skullGroup.add(cube);
     });
-    
+
     // Cheekbones
     const cheekPositions = [
       [-0.7, 0.1, 0],
@@ -5393,13 +5394,13 @@ class SkullBoss extends Boss {
       cube.userData.isSkullBody = true;
       skullGroup.add(cube);
     });
-    
+
     // Store skull voxels for color updates
     this.skullVoxels = skullGroup.children.filter(c => c.userData.isSkullBody);
-    
+
     this.mesh.add(skullGroup);
     this.skullGroup = skullGroup;
-    
+
     // Add hitbox for head (use cached geometry to avoid per-spawn leak)
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
     const hitbox = new THREE.Mesh(getHitboxGeo(2.0, 2.0, 2.0), hitboxMat);
@@ -5407,7 +5408,7 @@ class SkullBoss extends Boss {
     hitbox.userData.isSkullHead = true;
     this.mesh.add(hitbox);
   }
-  
+
   createHands() {
     // Create 4 hands positioned around the skull
     const handOffsets = [
@@ -5416,20 +5417,20 @@ class SkullBoss extends Boss {
       new THREE.Vector3(4.5, 0.3, 0.5),    // Right top
       new THREE.Vector3(4.5, -0.5, 0.5),   // Right bottom
     ];
-    
+
     handOffsets.forEach((offset, idx) => {
       const hand = new SkullHand(this, idx, offset, this.sceneRef);
       this.hands.push(hand);
     });
   }
-  
+
   setHeadImmune(immune) {
     this.headVulnerable = !immune;
-    
+
     // Visual feedback - dim eyes when immune
     const eyeOpacity = immune ? 0.3 : 0.9;
     const eyeColor = immune ? 0x888888 : 0xff0000;
-    
+
     if (this.leftEye) {
       this.leftEye.material.opacity = eyeOpacity;
       this.leftEye.material.color.setHex(eyeColor);
@@ -5439,7 +5440,7 @@ class SkullBoss extends Boss {
       this.rightEye.material.color.setHex(eyeColor);
     }
   }
-  
+
   updateBehavior(dt, now, playerPos) {
     // Update hands
     let aliveHands = 0;
@@ -5449,9 +5450,9 @@ class SkullBoss extends Boss {
         hand.update(dt, now, playerPos, this.mesh.position);
       }
     });
-    
+
     this.handsAlive = aliveHands;
-    
+
     // Phase transition: all hands destroyed -> start skull phase 1
     if (this.handsAlive === 0 && !this.headVulnerable) {
       this.setHeadImmune(false);
@@ -5460,13 +5461,13 @@ class SkullBoss extends Boss {
       this.onPhaseChange(2);
       this.playGrowlSound();
     }
-    
+
     // HAND PHASE: Shared ammo pool shooting
     if (!this.headVulnerable && this.handsAlive > 0) {
       this.updateHandPhaseAmmo(dt, now, playerPos);
       this.constrainToMidfield(playerPos);
     }
-    
+
     // SKULL PHASE: 3-phase fight with transitions
     if (this.headVulnerable) {
       if (this.transitioning) {
@@ -5475,18 +5476,18 @@ class SkullBoss extends Boss {
         this.updateSkullPhase(dt, now, playerPos);
       }
     }
-    
+
     // Update head color based on damage
     this.updateHeadColor();
-    
+
     // Face player
     this.mesh.lookAt(_look.copy(playerPos));
   }
-  
+
   // Part 2: Shared ammo pool for hands
   updateHandPhaseAmmo(dt, now, playerPos) {
     const pool = this.ammoPool;
-    
+
     // Calculate fire rate based on alive hands (fewer hands = faster fire)
     // 4 hands: 1.2s, 3 hands: 1.0s, 2 hands: 0.8s, 1 hand: 0.5s
     const handCount = this.handsAlive;
@@ -5494,7 +5495,7 @@ class SkullBoss extends Boss {
     if (handCount === 3) fireRate = 1.0;
     else if (handCount === 2) fireRate = 0.8;
     else if (handCount === 1) fireRate = 0.5;
-    
+
     // Handle reload mechanic for single hand
     if (handCount === 1) {
       if (pool.reloading) {
@@ -5507,17 +5508,17 @@ class SkullBoss extends Boss {
         return; // Don't shoot while reloading
       }
     }
-    
+
     pool.timer += dt;
     if (pool.timer >= fireRate) {
       pool.timer = 0;
-      
+
       // Pick random alive hand to shoot
       const aliveHands = this.hands.filter(h => h.alive);
       if (aliveHands.length > 0) {
         const randomHand = aliveHands[Math.floor(Math.random() * aliveHands.length)];
         this.fireHandProjectile(randomHand, playerPos);
-        
+
         // Track shots for reload mechanic
         if (handCount === 1) {
           pool.shotsSinceReload++;
@@ -5529,7 +5530,7 @@ class SkullBoss extends Boss {
       }
     }
   }
-  
+
   // Part 3: Skull phase logic with 3 phases and transitions
   updateSkullPhase(dt, now, playerPos) {
     // Determine current skull phase based on HP thresholds
@@ -5537,7 +5538,7 @@ class SkullBoss extends Boss {
     const phaseThreshold2 = this.maxHp * (2 / 3);
     const phaseThreshold1 = this.maxHp * (1 / 3);
     const newPhase = this.hp > phaseThreshold2 ? 1 : this.hp > phaseThreshold1 ? 2 : 3;
-    
+
     // Check for phase transition
     if (newPhase !== this.skullPhase && !this.transitioning) {
       // Enter transition (3-sec invuln)
@@ -5545,20 +5546,20 @@ class SkullBoss extends Boss {
       this.skullPhase = newPhase;
       return;
     }
-    
+
     // If transitioning, don't run normal phase behavior
     if (this.transitioning) return;
-    
+
     // Phase-specific behavior
     const phaseConfig = this.getSkullPhaseConfig();
-    
+
     // Eye shooting with lobbed projectiles
     this.eyeTimer += dt;
     if (this.eyeTimer >= phaseConfig.shootRate) {
       this.eyeTimer = 0;
       this.fireLobbedEyeProjectiles(playerPos, phaseConfig.arcHeight);
     }
-    
+
     // Movement with phase-specific speed and erraticness
     this.moveTimer += dt;
     const directionChangeInterval = phaseConfig.erraticness; // How often to change direction
@@ -5568,14 +5569,14 @@ class SkullBoss extends Boss {
       const angle = Math.random() * Math.PI * 2;
       this.moveDirection.set(Math.sin(angle), 0, Math.cos(angle));
     }
-    
+
     // Apply movement
     this.mesh.position.addScaledVector(this.moveDirection, phaseConfig.moveSpeed * dt);
-    
+
     // Keep in bounds
     this.constrainToMidfield(playerPos);
   }
-  
+
   getSkullPhaseConfig() {
     // Return phase-specific configuration
     switch (this.skullPhase) {
@@ -5609,17 +5610,17 @@ class SkullBoss extends Boss {
         };
     }
   }
-  
+
   startPhaseTransition(fromPhase, toPhase) {
     this.transitioning = true;
     this.transitionTimer = 0;
     this.transitionFromPhase = fromPhase;
     this.transitionToPhase = toPhase;
-    
+
     // Visual effects during transition
     this.playGrowlSound();
     playSkullPhaseSound();
-    
+
     // Brighten eyes
     if (this.leftEye) {
       this.leftEye.material.color.setHex(0xff3333);
@@ -5629,18 +5630,18 @@ class SkullBoss extends Boss {
       this.rightEye.material.color.setHex(0xff3333);
       this.rightEye.material.opacity = 1.0;
     }
-    
+
     _log(`[SkullBoss] Phase transition: ${fromPhase} -> ${toPhase} (3-sec invuln)`);
   }
-  
+
   updateTransition(dt, now, playerPos) {
     this.transitionTimer += dt;
-    
+
     // Stop movement and shooting during transition
     // Pulsing scale effect
     const pulse = 1.0 + 0.1 * Math.sin(this.transitionTimer * 8.0);
     this.mesh.scale.setScalar(pulse);
-    
+
     // Eye glow pulsing
     const eyeGlow = 0.5 + 0.5 * Math.sin(this.transitionTimer * 6.0);
     if (this.leftEye) {
@@ -5649,12 +5650,12 @@ class SkullBoss extends Boss {
     if (this.rightEye) {
       this.rightEye.material.opacity = eyeGlow;
     }
-    
+
     // Transition complete
     if (this.transitionTimer >= this.transitionDuration) {
       this.transitioning = false;
       this.mesh.scale.setScalar(1.0);
-      
+
       // Set final eye state for new phase
       const eyeOpacity = 0.8 + (this.transitionToPhase - 1) * 0.1; // Brighter in later phases
       if (this.leftEye) {
@@ -5665,15 +5666,15 @@ class SkullBoss extends Boss {
         this.rightEye.material.opacity = eyeOpacity;
         this.rightEye.material.color.setHex(0xff0000);
       }
-      
+
       _log(`[SkullBoss] Transition complete, now in phase ${this.transitionToPhase}`);
     }
   }
-  
+
   constrainToMidfield(playerPos) {
     // Stay in a fixed arena, mid-field from player
     const dist = this.mesh.position.distanceTo(playerPos);
-    
+
     // Stay between 6 and 12 units from player
     if (dist < 6) {
       const awayDir = this.mesh.position.clone().sub(playerPos).normalize();
@@ -5682,19 +5683,19 @@ class SkullBoss extends Boss {
       const towardDir = playerPos.clone().sub(this.mesh.position).normalize();
       this.mesh.position.addScaledVector(towardDir, (dist - 14));
     }
-    
+
     // Keep in play area bounds
     const bound = 15;
     this.mesh.position.x = Math.max(-bound, Math.min(bound, this.mesh.position.x));
     this.mesh.position.z = Math.max(-bound, Math.min(bound, this.mesh.position.z));
     this.mesh.position.y = 1.5;
   }
-  
+
   fireHandProjectile(hand, playerPos) {
     if (this.telegraphing) {
       this.showTelegraph('projectile', 0.25, 0xff0000, hand.getPosition());
     }
-    
+
     this.later(150, () => {
       // Cancel if hand was destroyed during telegraph delay
       if (!hand.alive) return;
@@ -5703,18 +5704,18 @@ class SkullBoss extends Boss {
       }
     });
   }
-  
+
   fireEyeProjectiles(playerPos) {
     // Fire from both eyes (used by hand phase if needed)
     const eyePositions = [
       this.leftEye.getWorldPosition(new THREE.Vector3()),
       this.rightEye.getWorldPosition(new THREE.Vector3()),
     ];
-    
+
     if (this.telegraphing) {
       this.showTelegraph('projectile', 0.3, 0xff0000, this.mesh.position);
     }
-    
+
     this.later(200, () => {
       eyePositions.forEach(eyePos => {
         if (typeof spawnBossProjectile === 'function') {
@@ -5723,54 +5724,54 @@ class SkullBoss extends Boss {
       });
     }, 200);
   }
-  
+
   // Part 4: Lobbed projectiles for skull phase (arc trajectory)
   fireLobbedEyeProjectiles(playerPos, arcHeight) {
     // Show telegraph briefly before firing
     if (this.telegraphing) {
       this.showTelegraph('projectile', 0.3, 0xff0000, this.mesh.position);
     }
-    
+
     // Fire immediately from current eye positions (no setTimeout delay)
     // This prevents the boss from moving between aiming and firing
     const leftPos = this.leftEye.getWorldPosition(new THREE.Vector3());
     const rightPos = this.rightEye.getWorldPosition(new THREE.Vector3());
     const targetPos = playerPos.clone();
-    
+
     if (typeof spawnBossLobbedProjectile === 'function') {
       spawnBossLobbedProjectile(leftPos, targetPos, arcHeight || 2.0);
       spawnBossLobbedProjectile(rightPos, targetPos, arcHeight || 2.0);
     }
   }
-  
+
   playGrowlSound() {
     // Use audio system if available
     if (typeof window !== 'undefined' && window.playBossAttackSound) {
       window.playBossAttackSound('charge', 0.8);
     }
   }
-  
+
   updateHeadColor() {
     const damageRatio = 1 - this.hp / this.maxHp;
     const baseColor = new THREE.Color(0xffffff);
     // More dramatic darkening: progress from white -> pink -> red -> dark red -> almost black
     const damagedColor = new THREE.Color(0x330000); // Very dark red (almost black)
-    
+
     // Exponential darkening for more dramatic effect
     const enhancedRatio = Math.pow(damageRatio, 0.7); // Darker faster
-    
+
     this.skullVoxels.forEach(voxel => {
       voxel.material.color.copy(baseColor).lerp(damagedColor, enhancedRatio);
     });
   }
-  
+
   onHandDestroyed(handIndex) {
     this.handsAlive--;
-    
+
     // Play growl
     this.playGrowlSound();
     playSkullHandGrowlSound();
-    
+
     // Speed up remaining hands
     const speedMultiplier = 1 + (4 - this.handsAlive) * 0.3;
     this.hands.forEach(hand => {
@@ -5778,7 +5779,7 @@ class SkullBoss extends Boss {
         hand.setShootRate((this.def.handShootRate || 1.5) / speedMultiplier);
       }
     });
-    
+
     // Increase remaining hands' max HP (they get tougher as fewer remain)
     const hpIncreaseMultiplier = 1.25; // Each destroyed hand buffs remaining by 25%
     this.hands.forEach(hand => {
@@ -5790,13 +5791,13 @@ class SkullBoss extends Boss {
         _log(`[SkullBoss] Hand ${hand.handIndex} HP increased: ${oldMax} -> ${hand.maxHp}, now at ${hand.hp}/${hand.maxHp}`);
       }
     });
-    
+
     // Visual telegraph
     if (this.telegraphing) {
       this.showTelegraph('teleport', 0.3, 0xff0000);
     }
   }
-  
+
   takeDamage(amount, hitInfo = {}) {
     // Check if hitting a hand
     if (hitInfo.handIndex !== undefined) {
@@ -5810,21 +5811,21 @@ class SkullBoss extends Boss {
       }
       return { killed: false };
     }
-    
+
     // Head damage only when vulnerable
     if (!this.headVulnerable) {
       return { killed: false, immune: true };
     }
-    
+
     // Head immune during phase transitions
     if (this.transitioning) {
       return { killed: false, immune: true };
     }
-    
+
     // Apply damage to head
     return super.takeDamage(amount, hitInfo);
   }
-  
+
   onPhaseChange(newPhase) {
     super.onPhaseChange(newPhase);
     // Phase config is now driven by getSkullPhaseConfig() based on HP thresholds
@@ -5976,7 +5977,7 @@ class WalterBoss extends Boss {
   updateBehavior(dt, now, playerPos) {
     // Update holograms
     this.updateHolograms(dt, now, playerPos);
-    
+
     // Update CRT barrage
     this.updateCRTBarrage(dt, now, playerPos);
 
@@ -5985,24 +5986,24 @@ class WalterBoss extends Boss {
     const dist = _dir.length();
     if (dist > 0.01) _dir.divideScalar(dist);
     this.mesh.lookAt(_look.copy(playerPos));
-    
+
     const speed = 0.15 + this.phase * 0.05;
     this.mesh.position.addScaledVector(_dir, speed * dt);
   }
 
   updateHolograms(dt, now, playerPos) {
     this.hologramTimer -= dt;
-    
+
     if (this.phase >= 1 && this.hologramTimer <= 0) {
       // Spawn holograms based on phase
       const hologramCount = Math.min(3, this.phase);
-      
+
       // Remove old holograms
       this.holograms.forEach(h => {
         this.sceneRef.remove(h.mesh);
       });
       this.holograms = [];
-      
+
       // Spawn new holograms
       for (let i = 0; i < hologramCount; i++) {
         const angle = (i / hologramCount) * Math.PI * 2;
@@ -6021,10 +6022,10 @@ class WalterBoss extends Boss {
         this.sceneRef.add(hologram.mesh);
         this.holograms.push(hologram);
       }
-      
+
       this.hologramTimer = 5.0 + Math.random() * 3.0;
     }
-    
+
     // Update hologram positions (orbit around boss)
     this.holograms.forEach((h, i) => {
       h.angle += dt * 0.5;
@@ -6042,7 +6043,7 @@ class WalterBoss extends Boss {
   updateCRTBarrage(dt, now, playerPos) {
     if (this.phase >= 2) {
       this.crtBarrageTimer -= dt;
-      
+
       if (this.crtBarrageTimer <= 0 && !this.isBarraging) {
         // Start barrage
         this.isBarraging = true;
@@ -6050,14 +6051,14 @@ class WalterBoss extends Boss {
         this.crtBarrageTimer = 0.1; // Rapid fire
         this.barrageCount = 5 + this.phase * 2;
       }
-      
+
       if (this.isBarraging) {
         this.crtBarrageTimer -= dt;
         if (this.crtBarrageTimer <= 0) {
           // Fire projectile
           this.fireProjectile(playerPos);
           this.barrageCount--;
-          
+
           if (this.barrageCount <= 0) {
             this.isBarraging = false;
             this.crtBarrageTimer = 3.0 - this.phase * 0.5;
@@ -6095,7 +6096,7 @@ class KernelBoss extends Boss {
 
   buildMesh(def) {
     const mesh = super.buildMesh(def);
-    
+
     // Add 3 port indicators (colored voxels on the monolith)
     const voxels = mesh.children.filter(c => c.userData.isBossBody);
     if (voxels.length >= 3) {
@@ -6104,32 +6105,32 @@ class KernelBoss extends Boss {
       voxels[1].userData.port = 2;
       voxels[2].userData.port = 3;
     }
-    
+
     return mesh;
   }
 
   updateBehavior(dt, now, playerPos) {
     // Update port switching
     this.updatePorts(dt, now);
-    
+
     // Move very slowly (monolith)
     _dir.copy(playerPos).sub(this.mesh.position);
     const dist = _dir.length();
     if (dist > 0.01) _dir.divideScalar(dist);
     this.mesh.lookAt(_look.copy(playerPos));
-    
+
     const speed = 0.05 + this.phase * 0.02;
     this.mesh.position.addScaledVector(_dir, speed * dt);
   }
 
   updatePorts(dt, now) {
     this.portSwitchTimer -= dt;
-    
+
     if (this.phase === 3 && !this.corePhaseActive) {
       // Core phase - all ports vulnerable
       this.corePhaseActive = true;
       this.activePort = 0; // All active
-      
+
       // Make all voxels vulnerable
       this.mesh.children.forEach(c => {
         if (c.userData && c.userData.isBossBody) {
@@ -6142,7 +6143,7 @@ class KernelBoss extends Boss {
       // Switch active port
       this.activePort = (this.activePort % 3) + 1;
       this.portSwitchTimer = 8.0 - this.phase * 2.0;
-      
+
       // Update visual indicators
       this.mesh.children.forEach(c => {
         if (c.userData && c.userData.isBossBody && c.userData.port) {
@@ -6162,7 +6163,7 @@ class KernelBoss extends Boss {
     if (this.phase >= 2) {
       // Fire from active port
       this.fireProjectile(playerPos);
-      
+
       if (this.corePhaseActive) {
         // Core phase - fire multiple projectiles
         const spread = Math.PI / 6;
@@ -6198,29 +6199,29 @@ class KrakenBoss extends Boss {
   updateBehavior(dt, now, playerPos) {
     // Update tentacle spawning
     this.updateTentacles(dt, now, playerPos);
-    
+
     // Update rotation
     if (this.phase >= 3) {
       this.rotationSpeed = 0.5 + this.phase * 0.2;
       this.mesh.rotation.y += this.rotationSpeed * dt;
     }
-    
+
     // Move slowly
     _dir.copy(playerPos).sub(this.mesh.position);
     const dist = _dir.length();
     if (dist > 0.01) _dir.divideScalar(dist);
     this.mesh.lookAt(_look.copy(playerPos));
-    
+
     const speed = 0.1 + this.phase * 0.03;
     this.mesh.position.addScaledVector(_dir, speed * dt);
   }
 
   updateTentacles(dt, now, playerPos) {
     this.tentacleSpawnTimer -= dt;
-    
+
     if (this.tentacleSpawnTimer <= 0) {
       const maxTentacles = 2 + this.phase;
-      
+
       if (this.tentacles.length < maxTentacles) {
         // Spawn a tentacle (minion)
         const angle = Math.random() * Math.PI * 2;
@@ -6228,11 +6229,11 @@ class KrakenBoss extends Boss {
         const pos = this.mesh.position.clone();
         pos.x += Math.cos(angle) * dist;
         pos.z += Math.sin(angle) * dist;
-        
+
         this.spawnMinion(pos, playerPos, 'basic');
         this.tentacles.push({ angle, spawnTime: now });
       }
-      
+
       this.tentacleSpawnTimer = 6.0 - this.phase * 0.5;
     }
   }
@@ -6241,7 +6242,7 @@ class KrakenBoss extends Boss {
     if (this.phase >= 2) {
       // Acid spit - fire at player
       this.fireProjectile(playerPos);
-      
+
       if (this.phase >= 4) {
         // Additional spit angles
         const spread = Math.PI / 8;
@@ -6278,23 +6279,23 @@ class SeraphimBoss extends Boss {
   updateBehavior(dt, now, playerPos) {
     // Update afterimage turrets
     this.updateAfterimages(dt, now, playerPos);
-    
+
     // Update dive attacks
     if (this.phase >= 2) {
       this.updateDiveAttack(dt, now, playerPos);
     }
-    
+
     // Move gracefully
     if (!this.isDiving) {
       _dir.copy(playerPos).sub(this.mesh.position);
       const dist = _dir.length();
       if (dist > 0.01) _dir.divideScalar(dist);
       this.mesh.lookAt(_look.copy(playerPos));
-      
+
       // Float up and down
       const baseY = 1.5;
       this.mesh.position.y = baseY + Math.sin(now * 0.002) * 0.3;
-      
+
       const speed = 0.2 + this.phase * 0.05;
       this.mesh.position.addScaledVector(_dir, speed * dt);
     }
@@ -6302,10 +6303,10 @@ class SeraphimBoss extends Boss {
 
   updateAfterimages(dt, now, playerPos) {
     this.afterimageSpawnTimer -= dt;
-    
+
     if (this.afterimageSpawnTimer <= 0) {
       const maxAfterimages = 2 + this.phase;
-      
+
       if (this.afterimages.length < maxAfterimages) {
         // Spawn afterimage turret (minion that stays in place)
         const angle = Math.random() * Math.PI * 2;
@@ -6313,18 +6314,18 @@ class SeraphimBoss extends Boss {
         const pos = this.mesh.position.clone();
         pos.x += Math.cos(angle) * dist;
         pos.z += Math.sin(angle) * dist;
-        
+
         this.spawnMinion(pos, playerPos, 'basic');
         this.afterimages.push({ position: pos.clone(), spawnTime: now });
       }
-      
+
       this.afterimageSpawnTimer = 7.0 - this.phase * 0.5;
     }
   }
 
   updateDiveAttack(dt, now, playerPos) {
     this.diveTimer -= dt;
-    
+
     if (this.diveTimer <= 0 && !this.isDiving) {
       // Start dive
       this.isDiving = true;
@@ -6334,11 +6335,11 @@ class SeraphimBoss extends Boss {
       this.diveDuration = 1.5;
       this.diveElapsed = 0;
     }
-    
+
     if (this.isDiving) {
       this.diveElapsed += dt;
       const t = this.diveElapsed / this.diveDuration;
-      
+
       if (t >= 1.0) {
         // Dive complete
         this.isDiving = false;
@@ -6373,32 +6374,32 @@ class TrainBoss extends Boss {
 
   buildMesh(def) {
     const mesh = super.buildMesh(def);
-    
+
     // Create 3 cars (sub-groups)
     const voxels = mesh.children.filter(c => c.userData.isBossBody);
     const totalVoxels = voxels.length;
     const voxelsPerCar = Math.floor(totalVoxels / 3);
-    
+
     for (let i = 0; i < 3; i++) {
       const start = i * voxelsPerCar;
       const end = (i === 2) ? totalVoxels : start + voxelsPerCar;
-      
+
       for (let j = start; j < end; j++) {
         voxels[j].userData.car = i + 1;
       }
     }
-    
+
     return mesh;
   }
 
   updateBehavior(dt, now, playerPos) {
     // Update car cycling
     this.updateCars(dt, now);
-    
+
     // Move like a train (mostly straight, slight curve)
     _dir.set(0, 0, -1);
     const speed = 0.25 + this.phase * 0.05;
-    
+
     // Circle around arena
     const angle = now * 0.0002;
     this.mesh.position.x = Math.sin(angle) * 6;
@@ -6408,13 +6409,13 @@ class TrainBoss extends Boss {
 
   updateCars(dt, now) {
     this.carSwitchTimer -= dt;
-    
+
     if (this.phase <= 3) {
       // Cycle through cars
       if (this.carSwitchTimer <= 0) {
         this.activeCar = (this.activeCar % 3) + 1;
         this.carSwitchTimer = 10.0 - this.phase * 1.5;
-        
+
         // Update visual indicators
         this.mesh.children.forEach(c => {
           if (c.userData && c.userData.isBossBody && c.userData.car) {
@@ -9350,6 +9351,7 @@ export function getTelegraphingSystem() {
 }
 
 export function setCameraRef(camera) {
+  cameraRef = camera;
   if (telegraphingSystem) {
     telegraphingSystem.camera = camera;
   }
@@ -9728,22 +9730,27 @@ export function updateBossMinions(dt, playerPos) {
 const BOSS_PROJ_POOL_SIZE = 50;
 
 let bossProjCorePool = null;   // InstancedMesh for core spheres (red)
+let bossProjGlowPool = null;   // InstancedMesh for billboarded glow planes
 let bossProjFreeIndices = [];  // Available instance indices
 const bossProjData = [];       // Per-instance data (parallel to instance indices)
 const _bossProjMatrix = new THREE.Matrix4();
+const _bossProjGlowMatrix = new THREE.Matrix4();
 const _bossProjScale = new THREE.Vector3();
 const _identityQuat = new THREE.Quaternion();  // Identity rotation
 const _unitScale = new THREE.Vector3(1, 1, 1);  // Unit scale for initial spawn
+const _billboardQuat = new THREE.Quaternion();
+const _billboardMat = new THREE.Matrix4();
+const _upVector = new THREE.Vector3(0, 1, 0);
 
 function initBossProjPools() {
   if (bossProjCorePool || !sceneRef) return;
 
   // Boss projectiles: bright red-orange spheres (core only, no glow to avoid depth artifacts)
-  const coreGeo = new THREE.SphereGeometry(0.18, 8, 8);
+  const coreGeo = new THREE.SphereGeometry(0.11, 8, 8);
   const coreMat = new THREE.MeshBasicMaterial({
     color: 0xff4400,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.55,
     depthWrite: false,
     depthTest: true,
   });
@@ -9756,13 +9763,33 @@ function initBossProjPools() {
   bossProjCorePool.visible = true;  // Ensure visible on init
   sceneRef.add(bossProjCorePool);
 
+  // Glow pool: billboarded additive planes for each projectile
+  const glowGeo = new THREE.PlaneGeometry(0.5, 0.5);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xff6600,
+    transparent: true,
+    opacity: 0.35,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+  });
+  bossProjGlowPool = new THREE.InstancedMesh(glowGeo, glowMat, BOSS_PROJ_POOL_SIZE);
+  bossProjGlowPool.name = 'boss-projectile-glow-pool';
+  bossProjGlowPool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  bossProjGlowPool.count = 0;
+  bossProjGlowPool.frustumCulled = false;
+  bossProjGlowPool.renderOrder = 9;  // Draw before core so core is on top
+  bossProjGlowPool.visible = true;
+  sceneRef.add(bossProjGlowPool);
+
   // Initialize free indices (all available)
   for (let i = 0; i < BOSS_PROJ_POOL_SIZE; i++) {
     bossProjFreeIndices.push(i);
     bossProjData.push(null);
   }
 
-  _log('[performance] Boss projectile InstancedMesh pool initialized (50 instances, 1 draw call)');
+  _log('[performance] Boss projectile InstancedMesh pool initialized (50 instances, 2 draw calls)');
 }
 
 function acquireBossProjIndex() {
@@ -9776,6 +9803,9 @@ function acquireBossProjIndex() {
   if (idx >= bossProjCorePool.count) {
     bossProjCorePool.count = idx + 1;
   }
+  if (idx >= bossProjGlowPool.count) {
+    bossProjGlowPool.count = idx + 1;
+  }
 
   return idx;
 }
@@ -9787,6 +9817,8 @@ export function releaseBossProjIndex(idx) {
   _bossProjMatrix.makeScale(0, 0, 0);
   bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
   bossProjCorePool.instanceMatrix.needsUpdate = true;
+  bossProjGlowPool.setMatrixAt(idx, _bossProjMatrix);
+  bossProjGlowPool.instanceMatrix.needsUpdate = true;
 
   bossProjData[idx] = null;
   bossProjFreeIndices.push(idx);
@@ -9811,6 +9843,11 @@ export function clearBossProjectiles() {
     bossProjCorePool.visible = false;  // Hide pool between levels
     bossProjCorePool.instanceMatrix.needsUpdate = true;
   }
+  if (bossProjGlowPool) {
+    bossProjGlowPool.count = 0;
+    bossProjGlowPool.visible = false;
+    bossProjGlowPool.instanceMatrix.needsUpdate = true;
+  }
 
   // Reset free indices to initial state
   bossProjFreeIndices.length = 0;
@@ -9830,6 +9867,9 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
   // Ensure pool is visible (clearBossProjectiles hides it between levels)
   if (bossProjCorePool && !bossProjCorePool.visible) {
     bossProjCorePool.visible = true;
+  }
+  if (bossProjGlowPool && !bossProjGlowPool.visible) {
+    bossProjGlowPool.visible = true;
   }
 
   // Acquire an instance slot
@@ -9959,6 +9999,9 @@ export function spawnMortarProjectile(fromPos, targetPos, arcHeight = 2.0) {
   if (bossProjCorePool && !bossProjCorePool.visible) {
     bossProjCorePool.visible = true;
   }
+  if (bossProjGlowPool && !bossProjGlowPool.visible) {
+    bossProjGlowPool.visible = true;
+  }
 
   const idx = acquireBossProjIndex();
   if (idx < 0) return;
@@ -10071,7 +10114,7 @@ export function updateBossProjectiles(dt, now, playerPos) {
 
     const slowFactor = getStasisSlowFactor(proj.mesh.position);
     const adjustedDt = dt * slowFactor;
-    
+
     if (proj.lobbed) {
       // Lobbed projectile: apply gravity, no homing
       proj.velocity.y -= (proj.gravity || 9.8) * adjustedDt;
@@ -10115,6 +10158,18 @@ export function updateBossProjectiles(dt, now, playerPos) {
     _bossProjMatrix.compose(proj.mesh.position, _identityQuat, _bossProjScale);
     bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
 
+    // Update glow instance: billboard toward camera, fade with age
+    if (cameraRef) {
+      _billboardMat.lookAt(proj.mesh.position, cameraRef.position, _upVector);
+      _billboardQuat.setFromRotationMatrix(_billboardMat);
+      // Scale glow slightly with age for a "blooming" effect
+      const ageFraction = Math.min(age / proj.lifetime, 1);
+      const glowScale = 1 + ageFraction * 0.3;
+      _bossProjScale.set(glowScale, glowScale, glowScale);
+      _bossProjGlowMatrix.compose(proj.mesh.position, _billboardQuat, _bossProjScale);
+      bossProjGlowPool.setMatrixAt(idx, _bossProjGlowMatrix);
+    }
+
     // Proximity alert (Geiger-counter style) - plays at increasing rate as projectile gets closer
     const distToPlayer = proj.mesh.position.distanceTo(playerPos);
     if (distToPlayer < 8) {
@@ -10135,6 +10190,7 @@ export function updateBossProjectiles(dt, now, playerPos) {
 
   // Mark buffer for GPU update
   bossProjCorePool.instanceMatrix.needsUpdate = true;
+  bossProjGlowPool.instanceMatrix.needsUpdate = true;
 }
 
 export function getBossProjectiles() {
@@ -10173,10 +10229,10 @@ export function getEnemyByMesh(mesh) {
 
     // Check for SkullHand hit
     if (obj.userData.isSkullHand || obj.userData.isHandHitbox) {
-      return { 
-        boss: activeBoss, 
-        isBody: true, 
-        handIndex: obj.userData.handIndex 
+      return {
+        boss: activeBoss,
+        isBody: true,
+        handIndex: obj.userData.handIndex
       };
     }
 
