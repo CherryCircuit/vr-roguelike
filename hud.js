@@ -752,7 +752,7 @@ async function createTitleScreen() {
     glow: true, glowColor: '#0088ff', glowSize: 15,
     scale: 0.9,
   });
-  titleSprite.position.set(0, 0.9, 0);  // Moved down for better centering
+  titleSprite.position.set(0, 0.932, 0);
   titleSprite.name = 'titleSprite';
   titleGroup.add(titleSprite);
 
@@ -763,7 +763,7 @@ async function createTitleScreen() {
     glow: true, glowColor: '#ff00ff', glowSize: 5,
     scale: 0.3,
   });
-  subSprite.position.set(0, 0.4, 0);  // Moved down for better centering
+  subSprite.position.set(0, 0.5, 0);
   subSprite.name = 'subSprite';
   titleGroup.add(subSprite);
 
@@ -774,13 +774,13 @@ async function createTitleScreen() {
     glow: true, glowColor: '#ffffff',
     scale: 0.25,
   });
-  titleBlinkSprite.position.set(0, -0.2, 0);  // Moved down for better centering
+  titleBlinkSprite.position.set(0, -0.065, 0);
   titleBlinkSprite.name = 'titleBlinkSprite';
   titleGroup.add(titleBlinkSprite);
 
   // Scoreboard button
   const btnGroup = new THREE.Group();
-  btnGroup.position.set(0, -0.8, 0);  // Moved down for better centering
+  btnGroup.position.set(-0.36, -0.68, 0);
   btnGroup.name = 'btnGroup';
   const btnGeo = new THREE.PlaneGeometry(1.35, 0.3);
   const btnMat = new THREE.MeshBasicMaterial({
@@ -809,7 +809,7 @@ async function createTitleScreen() {
 
   // ── Settings gear button (next to SCOREBOARD) ──
   const settingsBtnGroup = new THREE.Group();
-  settingsBtnGroup.position.set(1.05, -0.8, 0); // Right of SCOREBOARD button
+  settingsBtnGroup.position.set(0.82, -0.68, 0);
   settingsBtnGroup.name = 'settingsBtnGroup';
   const settingsBtnGeo = new THREE.PlaneGeometry(0.4, 0.3);
   const settingsBtnMat = new THREE.MeshBasicMaterial({
@@ -3617,6 +3617,7 @@ export function updateHUDHover(raycasters) {
   if (titleGroup.visible) {
     if (titleScoreboardBtn) hoverables.push(titleScoreboardBtn);
     if (titleDiagBtn) hoverables.push(titleDiagBtn);
+    if (titleSettingsBtn) hoverables.push(titleSettingsBtn);
   }
 
   // 2. Upgrade Cards
@@ -3778,6 +3779,10 @@ export function updateHUDHover(raycasters) {
         else if (obj.userData.isTitleScoreboardBtn ||
                  obj.userData.scoreboardAction === 'scoreboard') {
           glowColor = '255,255,0'; // Yellow (#ffff00)
+        }
+        // Check for settings gear button (cyan glow)
+        else if (obj.userData.isTitleSettingsBtn) {
+          glowColor = '0,255,255'; // Cyan
         }
 
         const glowGeo = obj.geometry.clone();

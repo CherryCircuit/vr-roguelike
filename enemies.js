@@ -6882,7 +6882,7 @@ class PrismBoss extends Boss {
     this.facetRotateTimer = 0;
     this.facetRotateRate = 4.0;
     this.healAmount = 15;
-    this.facetHps = [350, 350, 350, 350];
+    this.facetHps = [350, 350, 350];
     this.facetsDestroyed = 0;
     this.shootTimer = 0;
 
@@ -6916,9 +6916,10 @@ class PrismBoss extends Boss {
     this.healAttempts = 0;
     this.phase3ShootTimer = 0;
 
-    // Facet colors (4 cardinal face groups)
-    this.facetColors = [0xff2222, 0x2222ff, 0x22ff22, 0xffff22];
+    // Facet colors (3 facets: red, blue, green)
+    this.facetColors = [0xff2222, 0x2222ff, 0x22ff22];
     this.facetMaterials = [];
+    this.pendingCenterReset = false;
 
     // Build custom visuals
     this.buildPrismMesh();
@@ -6937,18 +6938,25 @@ class PrismBoss extends Boss {
       }
     }
 
-    // Build a proper icosahedron (20 flat faces) with 4-color face groups
-    const radius = 1.8; // ~3x bigger than original
-    const detail = 0; // Flat faces (no subdivision)
-    // Use IcosahedronGeometry directly (already a mutable BufferGeometry)
-    const geo = new THREE.IcosahedronGeometry(radius, detail);
+    // Build a 3-faceted tall diamond/crystal shape
+    const radius = 1.8;
+    // OctahedronGeometry(radius, 0) gives 8 triangular faces (4 upper, 4 lower)
+    // We want 3 visible facets, so we use a custom approach:
+    // Create an octahedron and group into 3 facet groups
+    const geo = new THREE.OctahedronGeometry(radius, 0);
+    // Scale Y to make it taller (diamond-like)
+    const posAttr = geo.getAttribute('position');
+    for (let i = 0; i < posAttr.count; i++) {
+      posAttr.setY(i, posAttr.getY(i) * 1.6);
+    }
+    posAttr.needsUpdate = true;
+    geo.computeVertexNormals();
 
-    // Icosahedron has 20 faces. Group them into 4 groups of 5 faces each.
-    // Each face = 1 triangle = 3 indices.
-    // PolyhedronGeometry is non-indexed in Three.js r160, use position count
-    const indexCount = geo.index ? geo.index.count : geo.getAttribute('position').count;
-    const faceCount = indexCount / 3;
-    const facesPerGroup = Math.ceil(faceCount / 4);
+    // Octahedron has 8 faces. Group into 3 facet groups.
+    // Face indices 0-1 → facet 0, 2-3 → facet 1, 4-5 → facet 2, 6-7 → facet 2 (overflow)
+    // But since OctahedronGeometry is non-indexed, use position count
+    const indexCount = geo.index ? geo.index.count : posAttr.count;
+    const faceCount = Math.floor(indexCount / 3);
 
     this.facetMaterials = this.facetColors.map(c =>
       new THREE.MeshBasicMaterial({
@@ -6956,7 +6964,9 @@ class PrismBoss extends Boss {
       })
     );
 
-    for (let g = 0; g < 4; g++) {
+    // Distribute faces across 3 facet groups
+    const facesPerGroup = Math.ceil(faceCount / 3);
+    for (let g = 0; g < 3; g++) {
       const start = g * facesPerGroup;
       const count = Math.min(facesPerGroup, faceCount - start);
       if (count > 0) {
@@ -6964,7 +6974,7 @@ class PrismBoss extends Boss {
       }
     }
 
-    // Glow material for vulnerable facet (index 4)
+    // Glow material for vulnerable facet indicator (index 3)
     this.vulnerableGlowMat = new THREE.MeshBasicMaterial({
       color: 0xffffff, transparent: true, opacity: 0.95
     });
@@ -6975,7 +6985,7 @@ class PrismBoss extends Boss {
     this.mesh.add(this.prismMesh);
 
     // Store face group data
-    this.faceGroupCount = 4;
+    this.faceGroupCount = 3;
     this.facesPerGroup = facesPerGroup;
 
     // Hitbox (bigger for the larger prism)
@@ -6986,10 +6996,28 @@ class PrismBoss extends Boss {
     hitbox.userData.isBossHitbox = true;
     this.mesh.add(hitbox);
 
-    // Add invisible hitbox meshes per face group for facet detection
+    // Vulnerable facet indicator: glowing ring around the weak facet
+    const ringGeo = new THREE.TorusGeometry(2.0, 0.08, 8, 24);
+    this.vulnerableRingMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.9
+    });
+    this.vulnerableRing = new THREE.Mesh(ringGeo, this.vulnerableRingMat);
+    this.vulnerableRing.rotation.x = Math.PI / 2; // Lay flat
+    this.mesh.add(this.vulnerableRing);
+
+    // Floating arrow indicator pointing at vulnerable facet
+    const arrowGeo = new THREE.ConeGeometry(0.2, 0.6, 4);
+    const arrowMat = new THREE.MeshBasicMaterial({
+      color: 0xffff00, transparent: true, opacity: 0.95
+    });
+    this.vulnerableArrow = new THREE.Mesh(arrowGeo, arrowMat);
+    this.vulnerableArrow.name = 'prism-vulnerable-arrow';
+    this.mesh.add(this.vulnerableArrow);
+
+    // Add invisible hitbox meshes per face group for facet detection (3 facets)
     this.facetHitboxes = [];
-    for (let i = 0; i < 4; i++) {
-      const angle = (i / 4) * Math.PI * 2;
+    for (let i = 0; i < 3; i++) {
+      const angle = (i / 3) * Math.PI * 2;
       const hitGeo = new THREE.BoxGeometry(1.8, 1.8, 0.5);
       const hitMat = new THREE.MeshBasicMaterial({ visible: false });
       const hitMesh = new THREE.Mesh(hitGeo, hitMat);
@@ -7006,26 +7034,55 @@ class PrismBoss extends Boss {
   }
 
   updateVulnerableFacet(newIndex) {
-    // Restore previous facet's original color
+    // Restore previous facet's original color and full opacity
     const prevMat = this.facetMaterials[this.vulnerableFacetIndex];
     if (prevMat) {
       prevMat.color.setHex(this.facetColors[this.vulnerableFacetIndex]);
       prevMat.opacity = 0.95;
+      prevMat.color.setHex(this.facetColors[this.vulnerableFacetIndex]);
     }
 
     this.vulnerableFacetIndex = newIndex;
 
-    // Glow the new vulnerable facet white
+    // Glow the new vulnerable facet white and bright
     const newMat = this.facetMaterials[newIndex];
     if (newMat) {
       newMat.color.setHex(0xffffff);
       newMat.opacity = 1.0;
     }
 
+    // Dim non-vulnerable facets to make the vulnerable one stand out
+    this.facetMaterials.forEach((mat, i) => {
+      if (i < 3 && i !== newIndex) {
+        mat.opacity = 0.4;
+        mat.color.setHex(this.facetColors[i]);
+      }
+    });
+
     // Update facet hitbox weak points
     this.facetHitboxes.forEach((hb, i) => {
       hb.userData.isWeakPoint = (i === newIndex);
     });
+
+    // Position the ring and arrow around the vulnerable facet
+    const angle = (newIndex / 3) * Math.PI * 2;
+    if (this.vulnerableRing) {
+      this.vulnerableRing.position.set(Math.sin(angle) * 0.3, 0, Math.cos(angle) * 0.3);
+      // Rotate ring to face the facet direction
+      this.vulnerableRing.rotation.set(Math.PI / 2, -angle, 0);
+      this.vulnerableRing.visible = true;
+    }
+    if (this.vulnerableArrow) {
+      const arrowDist = 2.8;
+      this.vulnerableArrow.position.set(
+        Math.sin(angle) * arrowDist,
+        1.2 + Math.sin(Date.now() * 0.003) * 0.2,
+        Math.cos(angle) * arrowDist
+      );
+      // Point arrow toward the facet
+      this.vulnerableArrow.lookAt(0, this.vulnerableArrow.position.y, 0);
+      this.vulnerableArrow.visible = true;
+    }
   }
 
   // ── PHASE 1: Learn the Angles ───────────────────────────
@@ -7055,11 +7112,40 @@ class PrismBoss extends Boss {
       // They're children of this.mesh, so their local rotation tracks with prismMesh
     });
 
-    // Vulnerable facet glow pulsing
+    // Vulnerable facet glow pulsing - aggressive
     const glowMat = this.facetMaterials[this.vulnerableFacetIndex];
     if (glowMat) {
-      const pulse = 0.7 + 0.3 * Math.sin(now * 0.005);
+      const pulse = 0.6 + 0.4 * Math.sin(now * 0.008);
       glowMat.opacity = pulse;
+      // Emissive-like color shift between white and facet color
+      const flash = Math.abs(Math.sin(now * 0.006));
+      glowMat.color.setRGB(1.0, 1.0, 1.0);
+    }
+
+    // Scale pulse on the vulnerable facet hitbox for visual emphasis
+    if (this.facetHitboxes[this.vulnerableFacetIndex]) {
+      const scalePulse = 1.0 + 0.15 * Math.sin(now * 0.008);
+      this.facetHitboxes[this.vulnerableFacetIndex].scale.setScalar(scalePulse);
+    }
+
+    // Pulse the vulnerable ring
+    if (this.vulnerableRingMat) {
+      this.vulnerableRingMat.opacity = 0.5 + 0.5 * Math.abs(Math.sin(now * 0.006));
+    }
+    if (this.vulnerableRing) {
+      const ringPulse = 1.0 + 0.1 * Math.sin(now * 0.007);
+      this.vulnerableRing.scale.setScalar(ringPulse);
+    }
+
+    // Bob the arrow indicator
+    if (this.vulnerableArrow && this.vulnerableArrow.visible) {
+      const arrowAngle = (this.vulnerableFacetIndex / 3) * Math.PI * 2;
+      const arrowDist = 2.8;
+      this.vulnerableArrow.position.set(
+        Math.sin(arrowAngle) * arrowDist,
+        1.2 + Math.sin(now * 0.003) * 0.3,
+        Math.cos(arrowAngle) * arrowDist
+      );
     }
 
     // Facet rotation timer (swap vulnerable facet)
@@ -7068,8 +7154,8 @@ class PrismBoss extends Boss {
       this.facetRotateTimer = 0;
       let newIdx;
       do {
-        newIdx = Math.floor(Math.random() * 4);
-      } while (newIdx === this.vulnerableFacetIndex && this.facetsDestroyed < 3);
+        newIdx = Math.floor(Math.random() * 3);
+      } while (newIdx === this.vulnerableFacetIndex && this.facetsDestroyed < 2);
       this.updateVulnerableFacet(newIdx);
     }
 
@@ -7130,6 +7216,10 @@ class PrismBoss extends Boss {
     this.splitCinematicTimer = 0;
     this.transitioning = true; // Invulnerable during cinematic
 
+    // Hide vulnerable indicators during split cinematic
+    if (this.vulnerableRing) this.vulnerableRing.visible = false;
+    if (this.vulnerableArrow) this.vulnerableArrow.visible = false;
+
     _log('[PrismBoss] Phase 2: Starting split cinematic');
   }
 
@@ -7175,11 +7265,33 @@ class PrismBoss extends Boss {
         // All facets glow brighter as spin accelerates
         const brightness = 0.95 + progress * 0.05;
         this.facetMaterials.forEach((mat, i) => {
-          if (i < 4) {
+          if (i < 3) {
             mat.color.setHex(0xffffff);
             mat.opacity = brightness;
           }
         });
+
+        // Fire wild projectiles during the spin, staggered across 3 seconds
+        // Fire ~10 projectiles spread across the spin duration
+        const totalProjectiles = 10;
+        const fireInterval = 3.0 / totalProjectiles;
+        const expectedShots = Math.floor(this.splitCinematicTimer / fireInterval);
+        if (!this._spinShotsFired) this._spinShotsFired = 0;
+        while (this._spinShotsFired < expectedShots && this._spinShotsFired < totalProjectiles) {
+          const bossPos = this.mesh.position.clone();
+          // Fire in random directions as boss spins
+          const randAngle = Math.random() * Math.PI * 2;
+          const spreadH = 2.0 + Math.random() * 3.0;
+          const target = playerPos.clone();
+          target.x += Math.cos(randAngle) * spreadH;
+          target.z += Math.sin(randAngle) * spreadH;
+          target.y += (Math.random() - 0.5) * 2.0;
+          const arcHeight = 2.0 + Math.random() * 4.0;
+          if (typeof spawnBossProjectile === 'function') {
+            spawnBossProjectile(bossPos, target, true, arcHeight);
+          }
+          this._spinShotsFired++;
+        }
 
         playSkullHandGrowlSound();
 
@@ -7187,6 +7299,7 @@ class PrismBoss extends Boss {
           this.splitCinematicPhase = 'splitting';
           this.splitCinematicTimer = 0;
           this.mesh.scale.setScalar(1.0);
+          this._spinShotsFired = 0;
         }
         break;
       }
@@ -7195,11 +7308,10 @@ class PrismBoss extends Boss {
         // Hide prism, create shards that fly outward
         if (this.prismMesh) this.prismMesh.visible = false;
         this.facetHitboxes.forEach(hb => { hb.visible = false; });
+        if (this.vulnerableRing) this.vulnerableRing.visible = false;
+        if (this.vulnerableArrow) this.vulnerableArrow.visible = false;
 
-        // Fire projectile burst (seeker shots arcing toward player)
-        this.fireSplitBurst(playerPos);
-
-        // Create the 3 shards with outward animation
+        // Create the 3 shards with outward animation (projectiles fired during spinup)
         this.createShards();
 
         // Animate shards flying outward over 1 second
@@ -7447,7 +7559,7 @@ class PrismBoss extends Boss {
 
         // Flash all facets white
         this.facetMaterials.forEach((mat, i) => {
-          if (i < 4) {
+          if (i < 3) {
             mat.color.setHex(0xffffff);
             mat.opacity = 0.9 + 0.1 * Math.sin(this.rejoinTimer * 30);
           }
@@ -7494,7 +7606,7 @@ class PrismBoss extends Boss {
 
           // Reset facet colors
           this.facetMaterials.forEach((mat, i) => {
-            if (i < 4) mat.color.setHex(this.facetColors[i]);
+            if (i < 3) mat.color.setHex(this.facetColors[i]);
           });
 
           _log('[PrismBoss] Rejoin complete, shards active again');
@@ -7592,7 +7704,7 @@ class PrismBoss extends Boss {
       this.prismMesh.visible = true;
       // Darken facets for damaged look
       this.facetMaterials.forEach((mat, i) => {
-        if (i < 4) {
+        if (i < 3) {
           mat.color.setHex(0x881188);
           mat.opacity = 0.7;
         }
@@ -7767,6 +7879,11 @@ class PrismBoss extends Boss {
     this.transitionTimer = 0;
     this.transitionFromPhase = fromPhase;
     this.transitionToPhase = toPhase;
+    this.pendingCenterReset = true; // Reset to center on first updateTransition frame
+
+    // Hide vulnerable indicators during transition
+    if (this.vulnerableRing) this.vulnerableRing.visible = false;
+    if (this.vulnerableArrow) this.vulnerableArrow.visible = false;
 
     playSkullPhaseSound();
     playSkullHandGrowlSound();
@@ -7790,6 +7907,15 @@ class PrismBoss extends Boss {
   }
 
   updateTransition(dt, now, playerPos) {
+    // On first frame, snap to center in front of player
+    if (this.pendingCenterReset && playerPos) {
+      const forward = new THREE.Vector3(0, 0, -1);
+      const targetPos = playerPos.clone().addScaledVector(forward, 8);
+      targetPos.y = this.fixedY;
+      this.mesh.position.copy(targetPos);
+      this.pendingCenterReset = false;
+    }
+
     this.transitionTimer += dt;
 
     // Pulsing scale effect
@@ -7803,7 +7929,7 @@ class PrismBoss extends Boss {
 
     // Body glow pulsing
     this.facetMaterials.forEach((mat, i) => {
-      if (i < 4 && mat) {
+      if (i < 3 && mat) {
         const glow = 0.3 + 0.7 * Math.abs(Math.sin(this.transitionTimer * 6.0));
         mat.opacity = glow;
       }
@@ -7816,7 +7942,7 @@ class PrismBoss extends Boss {
 
       // Reset facet colors and opacity
       this.facetMaterials.forEach((mat, i) => {
-        if (i < 4) {
+        if (i < 3) {
           mat.color.setHex(this.facetColors[i]);
           mat.opacity = 0.95;
         }
@@ -7910,7 +8036,7 @@ class PrismBoss extends Boss {
       // Vulnerable facet hit or general body hit: damage
       if (hitFacet === this.vulnerableFacetIndex) {
         this.facetHps[hitFacet] -= amount;
-        if (this.facetHps[hitFacet] <= 0 && this.facetsDestroyed < 4) {
+        if (this.facetHps[hitFacet] <= 0 && this.facetsDestroyed < 3) {
           this.facetsDestroyed++;
           // Dim the destroyed facet
           const mat = this.facetMaterials[hitFacet];
@@ -10029,12 +10155,12 @@ const _upVector = new THREE.Vector3(0, 1, 0);
 function initBossProjPools() {
   if (bossProjCorePool || !sceneRef) return;
 
-  // Boss projectiles: bright red-orange spheres (core only, no glow to avoid depth artifacts)
-  const coreGeo = new THREE.SphereGeometry(0.11, 8, 8);
+  // Boss projectiles: bright red-orange core spheres with visible edges
+  const coreGeo = new THREE.SphereGeometry(0.14, 10, 10);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xff4400,
+    color: 0xff5500,
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.85,
     depthWrite: false,
     depthTest: true,
   });
@@ -10047,12 +10173,28 @@ function initBossProjPools() {
   bossProjCorePool.visible = true;  // Ensure visible on init
   sceneRef.add(bossProjCorePool);
 
-  // Glow pool: billboarded additive planes for each projectile
-  const glowGeo = new THREE.PlaneGeometry(0.5, 0.5);
+  // Glow pool: radial gradient planes (synthwave-sun style fade at edges)
+  const glowSize = 128;
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = glowSize;
+  glowCanvas.height = glowSize;
+  const glowCtx = glowCanvas.getContext('2d');
+  const halfGlow = glowSize / 2;
+  const glowGrad = glowCtx.createRadialGradient(halfGlow, halfGlow, 0, halfGlow, halfGlow, halfGlow);
+  glowGrad.addColorStop(0, 'rgba(255,120,20,1)');     // Bright orange center
+  glowGrad.addColorStop(0.3, 'rgba(255,80,0,0.7)');   // Mid orange
+  glowGrad.addColorStop(0.6, 'rgba(255,50,0,0.3)');    // Fading
+  glowGrad.addColorStop(1, 'rgba(255,30,0,0)');        // Transparent edge
+  glowCtx.fillStyle = glowGrad;
+  glowCtx.fillRect(0, 0, glowSize, glowSize);
+  const glowTexture = new THREE.CanvasTexture(glowCanvas);
+
+  const glowGeo = new THREE.PlaneGeometry(0.7, 0.7);
   const glowMat = new THREE.MeshBasicMaterial({
+    map: glowTexture,
     color: 0xff6600,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.9,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     depthTest: true,
