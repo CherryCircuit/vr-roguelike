@@ -444,15 +444,36 @@ function drawHeart(ctx, x, y, pixSize, state, animState = {}) {
   const glowIntensity = animState.glowIntensity || 0;
   const hitFlash = animState.hitFlash || 0;
   const isHealthGain = animState.isHealthGain || false;
-  
+
+  // Draw outline FIRST for all heart shapes (empty, half, full)
+  // This creates a permanent pink border that's always visible
+  HEART_PIXELS.forEach((row, py) => {
+    row.forEach((px_on, px) => {
+      if (!px_on) return;
+      // Draw the outline pixels (edge pixels of the heart shape)
+      const hasTop = py > 0 && HEART_PIXELS[py - 1][px];
+      const hasBot = py < 5 && HEART_PIXELS[py + 1][px];
+      const hasLft = px > 0 && row[px - 1];
+      const hasRgt = px < 6 && row[px + 1];
+      const isEdge = !(hasTop && hasBot && hasLft && hasRgt);
+
+      if (isEdge) {
+        // Pink outline (always drawn, visible even on empty hearts)
+        ctx.fillStyle = 'rgba(255, 60, 120, 0.6)';
+        ctx.fillRect(x + px * pixSize, y + py * pixSize, pixSize, pixSize);
+      }
+    });
+  });
+
+  // Now fill the heart pixels based on state
   HEART_PIXELS.forEach((row, py) => {
     row.forEach((px_on, px) => {
       if (!px_on) return;
       if (state === 'empty') {
-        // Don't draw empty hearts at all (transparent)
+        // Empty hearts: outline already drawn above, skip fill
         return;
       } else if (state === 'half' && px >= 4) {
-        // Don't draw right side of half hearts (gone, not faded)
+        // Don't fill right side of half hearts
         return;
       } else {
         // Base color
@@ -464,10 +485,9 @@ function drawHeart(ctx, x, y, pixSize, state, animState = {}) {
         }
         // #23: Hit flash animation - fade red
         else if (hitFlash > 0) {
-          // Interpolate from bright red (#ff0000) back to pink (#ff0044)
-          const t = hitFlash; // 1.0 = bright red, 0.0 = normal
+          const t = hitFlash;
           r = 255;
-          g = Math.floor(t * 50); // Add some red tint
+          g = Math.floor(t * 50);
           b = Math.floor(68 + t * 100);
         }
         
@@ -482,7 +502,6 @@ function drawHeart(ctx, x, y, pixSize, state, animState = {}) {
     ctx.shadowColor = '#ff0044';
     ctx.shadowBlur = 8 + glowIntensity * 10;
     ctx.fillStyle = 'rgba(255, 0, 68, ' + (glowIntensity * 0.3) + ')';
-    // Draw a larger heart shape for glow
     ctx.beginPath();
     ctx.arc(x + 3.5 * pixSize, y + 2 * pixSize, 4 * pixSize, 0, Math.PI * 2);
     ctx.fill();

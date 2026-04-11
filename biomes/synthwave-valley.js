@@ -217,6 +217,9 @@ export function buildSynthwaveValleyScene(group, deps) {
   group.add(mountainCylinder);
   registerFadeMaterial(mountainCylinderMat);
 
+  // Store ref for boss cinematic red tint
+  synthVisualRefs.mountainCylMat = mountainCylinderMat;
+
   // ── CLOUD DOME (baked to texture for Quest performance) ──
   // Clouds are baked once at init to a canvas texture. Zero per-frame GPU shader cost.
   const cloudTex = bakeCloudsToCanvas({
