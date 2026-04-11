@@ -604,42 +604,35 @@ export function playBossProjectileFiredSound() {
 
   const osc1 = ctx.createOscillator();
   const osc2 = ctx.createOscillator();
-  const osc3 = ctx.createOscillator();
   const gain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
 
   osc1.type = 'sine';
   osc2.type = 'triangle';
-  osc3.type = 'sawtooth';
   filter.type = 'lowpass';
 
-  // Low bass punch + rising mid tone for dramatic boss shot
-  osc1.frequency.setValueAtTime(120, t);
-  osc1.frequency.exponentialRampToValueAtTime(60, t + 0.25);
-  osc2.frequency.setValueAtTime(300, t);
-  osc2.frequency.exponentialRampToValueAtTime(500, t + 0.15);
-  osc2.frequency.exponentialRampToValueAtTime(200, t + 0.25);
-  osc3.frequency.setValueAtTime(150, t);
-  osc3.frequency.exponentialRampToValueAtTime(80, t + 0.3);
+  // Bass punch with pitch falloff + rising mid tone that drops away
+  osc1.frequency.setValueAtTime(160, t);
+  osc1.frequency.exponentialRampToValueAtTime(50, t + 0.25);
+  osc2.frequency.setValueAtTime(400, t);
+  osc2.frequency.exponentialRampToValueAtTime(180, t + 0.2);
 
-  filter.frequency.setValueAtTime(800, t);
-  filter.Q.setValueAtTime(3, t);
+  filter.frequency.setValueAtTime(1200, t);
+  filter.frequency.exponentialRampToValueAtTime(300, t + 0.25);
+  filter.Q.setValueAtTime(2, t);
 
-  gain.gain.setValueAtTime(0.35, t);
-  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  gain.gain.setValueAtTime(0.3, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
 
   osc1.connect(filter);
   osc2.connect(filter);
-  osc3.connect(filter);
   filter.connect(gain);
   gain.connect(getSfxOutput());
 
   osc1.start(t);
   osc2.start(t);
-  osc3.start(t);
-  osc1.stop(t + 0.3);
-  osc2.stop(t + 0.3);
-  osc3.stop(t + 0.3);
+  osc1.stop(t + 0.25);
+  osc2.stop(t + 0.25);
 }
 
 // ── Boss projectile proximity alert (Geiger-counter style) ──
