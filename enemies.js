@@ -6934,16 +6934,8 @@ class PrismBoss extends Boss {
     // Build a proper icosahedron (20 flat faces) with 4-color face groups
     const radius = 1.8; // ~3x bigger than original
     const detail = 0; // Flat faces (no subdivision)
-    const baseGeo = new THREE.IcosahedronGeometry(radius, detail);
-
-    // Clone to mutable BufferGeometry so we can assign groups
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', baseGeo.getAttribute('position').clone());
-    geo.setIndex(baseGeo.getIndex().clone());
-    if (baseGeo.getAttribute('normal')) {
-      geo.setAttribute('normal', baseGeo.getAttribute('normal').clone());
-    }
-    baseGeo.dispose();
+    // Use IcosahedronGeometry directly (already a mutable BufferGeometry)
+    const geo = new THREE.IcosahedronGeometry(radius, detail);
 
     // Icosahedron has 20 faces. Group them into 4 groups of 5 faces each.
     // Each face = 1 triangle = 3 indices.
