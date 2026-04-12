@@ -46,7 +46,8 @@ import {
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
   updatePhaseEchoes,
-  getBoss, spawnBoss, getBossNameForLevel, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
+  getBoss, spawnBoss, getBossNameForLevel, hitBoss, updateBoss, clearBoss, hitBossMinion, updateBossMinions,
+  getBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward, setBossSpawnForward,
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
   releaseBossProjIndex, clearBossMinions,
@@ -394,6 +395,12 @@ const activeShields = [];  // { mesh, hand, expiresAt }
 const activeLaserMines = [];  // { mesh, armedAt, isArmed, position, triggered, laserMesh, autoDetonateAt }
 const activeStasisFields = [];  // { mesh, position, radius, expiresAt, slowFactor }
 const activePlasmaOrbs = [];  // { mesh, velocity, damage, aoeRadius, expiresAt, detonatable }
+const STASIS_FIELD_POOL_SIZE = 3;
+const PLASMA_ORB_POOL_SIZE = 4;
+const stasisFieldVisualPool = [];
+const plasmaOrbVisualPool = [];
+let stasisFieldPoolInitialized = false;
+let plasmaOrbPoolInitialized = false;
 
 // Phase Dash afterimages
 const activePhaseDashAfterimages = [];  // { mesh, position, expiresAt, damage, aoeRadius }
@@ -803,6 +810,121 @@ const MAX_NANITE_SWARMS = 2;
 // Reflector drone system
 const activeReflectorDrones = [];
 const MAX_REFLECTOR_DRONES = 2;
+const reflectorDronePool = [];
+let reflectorDronePoolInitialized = false;
+
+function initReflectorDronePool() {
+  if (reflectorDronePoolInitialized || !scene) return;
+
+  for (let poolIndex = 0; poolIndex < MAX_REFLECTOR_DRONES; poolIndex++) {
+    const droneGroup = new THREE.Group();
+    droneGroup.visible = false;
+
+    const hexShape = new THREE.Shape();
+    const hexRadius = 0.2;
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
+      const x = Math.cos(angle) * hexRadius;
+      const y = Math.sin(angle) * hexRadius;
+      if (i === 0) hexShape.moveTo(x, y);
+      else hexShape.lineTo(x, y);
+    }
+    hexShape.closePath();
+
+    const hexGeo = new THREE.ShapeGeometry(hexShape);
+    const hexMat = basicMat(0x00ffcc, {
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+    });
+    const hexMesh = new THREE.Mesh(hexGeo, hexMat);
+    hexMesh.rotation.x = Math.PI / 2;
+    droneGroup.add(hexMesh);
+
+    const coreGeo = new THREE.SphereGeometry(0.08, 8, 8);
+    const coreMat = basicMat(0x00ffcc, {
+      transparent: true,
+      opacity: 0.8,
+    });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    core.name = 'reflector-drone-core';
+    droneGroup.add(core);
+
+    const shieldGeo = new THREE.SphereGeometry(0.4, 16, 16);
+    const shieldMat = basicMat(0x00ffcc, {
+      transparent: true,
+      opacity: 0.2,
+      side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const shield = new THREE.Mesh(shieldGeo, shieldMat);
+    shield.name = 'reflector-drone-shield';
+    droneGroup.add(shield);
+
+    const particles = [];
+    for (let i = 0; i < 12; i++) {
+      const particleGeo = new THREE.SphereGeometry(0.02, 4, 4);
+      const particleMat = basicMat(0x00ffaa, {
+        transparent: true,
+        opacity: 0.7,
+      });
+      const particle = new THREE.Mesh(particleGeo, particleMat);
+      particle.name = 'reflector-drone-particle';
+      particle.userData.orbitAngle = (i / 12) * Math.PI * 2;
+      particle.userData.orbitRadius = 0.25;
+      droneGroup.add(particle);
+      particles.push(particle);
+    }
+
+    scene.add(droneGroup);
+    reflectorDronePool.push({
+      mesh: droneGroup,
+      hexMesh,
+      hexMat,
+      coreMat,
+      shieldMat,
+      particles,
+      active: false,
+    });
+  }
+
+  reflectorDronePoolInitialized = true;
+}
+
+function acquireReflectorDroneVisual() {
+  initReflectorDronePool();
+  for (let i = 0; i < reflectorDronePool.length; i++) {
+    const entry = reflectorDronePool[i];
+    if (entry.active) continue;
+    entry.active = true;
+    entry.mesh.visible = true;
+    entry.mesh.scale.setScalar(1);
+    entry.mesh.rotation.set(0, 0, 0);
+    entry.hexMat.opacity = 0.9;
+    entry.coreMat.opacity = 0.8;
+    entry.shieldMat.opacity = 0.2;
+    entry.hexMat.color.setHex(0x00ffcc);
+    entry.coreMat.color.setHex(0x00ffcc);
+    entry.shieldMat.color.setHex(0x00ffcc);
+    for (let j = 0; j < entry.particles.length; j++) {
+      entry.particles[j].visible = true;
+      entry.particles[j].material.opacity = 0.7;
+      entry.particles[j].scale.setScalar(1);
+    }
+    return entry;
+  }
+  return null;
+}
+
+function releaseReflectorDroneVisual(entry) {
+  if (!entry) return;
+  entry.active = false;
+  entry.mesh.visible = false;
+}
+
+const attackDronePool = [];
+let attackDronePoolInitialized = false;
 
 // ============================================================
 // BOOTSTRAP & INITIALISATION
@@ -4812,87 +4934,23 @@ function fireReflectorDrone(origin, hand, altWeapon) {
   }
 
   _log(`[ALT] Reflector Drone deployed from ${hand} hand`);
-
-  // Create hexagonal drone
-  const droneGroup = new THREE.Group();
-
-  // Hexagon body
-  const hexShape = new THREE.Shape();
-  const hexRadius = 0.2;
-  for (let i = 0; i < 6; i++) {
-    const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
-    const x = Math.cos(angle) * hexRadius;
-    const y = Math.sin(angle) * hexRadius;
-    if (i === 0) hexShape.moveTo(x, y);
-    else hexShape.lineTo(x, y);
-  }
-  hexShape.closePath();
-
-  const hexGeo = new THREE.ShapeGeometry(hexShape);
-  const hexMat = basicMat(0x00ffcc, {
-    transparent: true,
-    opacity: 0.9,
-    side: THREE.DoubleSide,
-  });
-  const hexMesh = new THREE.Mesh(hexGeo, hexMat);
-  hexMesh.rotation.x = Math.PI / 2;  // Lay flat
-  droneGroup.add(hexMesh);
-
-  // Inner glow core
-  const coreGeo = new THREE.SphereGeometry(0.08, 8, 8);
-  const coreMat = basicMat(0x00ffcc, {
-    transparent: true,
-    opacity: 0.8,
-  });
-  const core = new THREE.Mesh(coreGeo, coreMat);
-  core.name = 'reflector-drone-core';
-  droneGroup.add(core);
-
-  // Shimmering shield effect (semi-transparent sphere)
-  const shieldGeo = new THREE.SphereGeometry(0.4, 16, 16);
-  const shieldMat = basicMat(0x00ffcc, {
-    transparent: true,
-    opacity: 0.2,
-    side: THREE.BackSide,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const shield = new THREE.Mesh(shieldGeo, shieldMat);
-  shield.name = 'reflector-drone-core';
-  droneGroup.add(shield);
-
-  // Orbiting particles
-  const particleCount = 12;
-  const particles = [];
-  for (let i = 0; i < particleCount; i++) {
-    const particleGeo = new THREE.SphereGeometry(0.02, 4, 4);
-    const particleMat = basicMat(0x00ffaa, {
-      transparent: true,
-      opacity: 0.7,
-    });
-    const particle = new THREE.Mesh(particleGeo, particleMat);
-    particle.name = 'reflector-drone-particle';
-    particle.userData.orbitAngle = (i / particleCount) * Math.PI * 2;
-    particle.userData.orbitRadius = 0.25;
-    droneGroup.add(particle);
-    particles.push(particle);
-  }
+  const pooledVisual = acquireReflectorDroneVisual();
+  if (!pooledVisual) return;
 
   // Position at player location
   const playerPos = camera.position.clone();
-  droneGroup.position.copy(playerPos);
-  droneGroup.position.y = 1.2;  // Chest height
-
-  scene.add(droneGroup);
+  pooledVisual.mesh.position.copy(playerPos);
+  pooledVisual.mesh.position.y = 1.2;  // Chest height
 
   // Drone data
   const drone = {
-    mesh: droneGroup,
-    hexMesh,
-    hexMat,
-    coreMat,
-    shieldMat,
-    particles,
+    poolEntry: pooledVisual,
+    mesh: pooledVisual.mesh,
+    hexMesh: pooledVisual.hexMesh,
+    hexMat: pooledVisual.hexMat,
+    coreMat: pooledVisual.coreMat,
+    shieldMat: pooledVisual.shieldMat,
+    particles: pooledVisual.particles,
     hand,
     createdAt: performance.now(),
     expiresAt: performance.now() + (altWeapon.duration || 15000),
@@ -5104,6 +5162,10 @@ function spawnReflectedProjectile(origin) {
  */
 // [CORE] Destroy reflector drone
 function destroyReflectorDrone(drone) {
+  if (drone?.poolEntry) {
+    releaseReflectorDroneVisual(drone.poolEntry);
+    return;
+  }
   disposeMesh(drone.mesh);
   _log('[Reflector Drone] Destroyed');
 }
@@ -5111,65 +5173,124 @@ function destroyReflectorDrone(drone) {
 // ============================================================
 //  STASIS FIELD
 // ============================================================
+
+/**
+ * Initialize pooled stasis visuals.
+ * VR-CRITICAL: Stasis spheres are expensive translucent meshes with many particles,
+ * so we allocate a tiny fixed pool and reskin/reposition it instead of rebuilding
+ * geometry every cast.
+ */
+function initStasisFieldVisualPool() {
+  if (stasisFieldPoolInitialized || !scene) return;
+
+  for (let poolIndex = 0; poolIndex < STASIS_FIELD_POOL_SIZE; poolIndex++) {
+    const fieldGeo = new THREE.SphereGeometry(1, 24, 24);
+    const fieldMat = basicMat(0x4488ff, {
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.BackSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const fieldMesh = new THREE.Mesh(fieldGeo, fieldMat);
+    fieldMesh.name = 'stasis-field';
+    fieldMesh.visible = false;
+    scene.add(fieldMesh);
+
+    const particles = [];
+    for (let i = 0; i < 30; i++) {
+      const particleGeo = new THREE.SphereGeometry(0.05, 4, 4);
+      const particleMat = basicMat(0x88ccff, {
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending,
+      });
+      const particle = new THREE.Mesh(particleGeo, particleMat);
+      particle.name = 'stasis-field-particle';
+      particle.visible = false;
+      fieldMesh.add(particle);
+      particles.push({
+        mesh: particle,
+        angle: Math.random() * Math.PI * 2,
+        speed: 0.5 + Math.random() * 0.5,
+        heightOffset: Math.random() * Math.PI * 2,
+      });
+    }
+
+    stasisFieldVisualPool.push({
+      mesh: fieldMesh,
+      material: fieldMat,
+      particles,
+      active: false,
+    });
+  }
+
+  stasisFieldPoolInitialized = true;
+}
+
+/**
+ * Acquire one pooled stasis field visual.
+ * Resets particle state so repeat casts do not inherit stale animation.
+ */
+function acquireStasisFieldVisual(radius) {
+  initStasisFieldVisualPool();
+  for (let i = 0; i < stasisFieldVisualPool.length; i++) {
+    const entry = stasisFieldVisualPool[i];
+    if (entry.active) continue;
+    entry.active = true;
+    entry.mesh.visible = true;
+    entry.mesh.scale.setScalar(radius);
+    entry.material.opacity = 0.3;
+    for (let j = 0; j < entry.particles.length; j++) {
+      const particle = entry.particles[j];
+      particle.angle = Math.random() * Math.PI * 2;
+      particle.speed = 0.5 + Math.random() * 0.5;
+      particle.heightOffset = Math.random() * Math.PI * 2;
+      particle.mesh.visible = true;
+      particle.mesh.material.opacity = 0.6;
+      particle.mesh.position.set(0, 0, 0);
+    }
+    return entry;
+  }
+  return null;
+}
+
+function releaseStasisFieldVisual(entry) {
+  if (!entry) return;
+  entry.active = false;
+  entry.mesh.visible = false;
+}
+
+function destroyStasisField(field) {
+  if (field?.poolEntry) {
+    releaseStasisFieldVisual(field.poolEntry);
+    return;
+  }
+  disposeMesh(field.mesh);
+}
+
 // [CORE] Stasis field weapon system
 function fireStasisField(origin, direction, hand, altWeapon) {
   // Create stasis field at target location
   const targetPosition = origin.clone().addScaledVector(direction, 8); // 8 units forward
 
-  // Create visual sphere (blue translucent)
   const radius = altWeapon.radius || 3.0;
-  const geometry = new THREE.SphereGeometry(radius, 24, 24);
-  const material = basicMat(0x4488ff, {
-    transparent: true,
-    opacity: 0.3,
-    side: THREE.BackSide,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = 'stasis-field';
+  const pooledVisual = acquireStasisFieldVisual(radius);
+  if (!pooledVisual) return;
+  const mesh = pooledVisual.mesh;
   mesh.position.copy(targetPosition);
-  scene.add(mesh);
-
-  // Create particle effect (blue particles swirling)
-  const particleCount = 30;
-  const particles = [];
-  for (let i = 0; i < particleCount; i++) {
-    const particleGeo = new THREE.SphereGeometry(0.05, 4, 4);
-    const particleMat = basicMat(0x88ccff, {
-      transparent: true,
-      opacity: 0.6,
-      blending: THREE.AdditiveBlending,
-    });
-    const particle = new THREE.Mesh(particleGeo, particleMat);
-    particle.name = 'stasis-field-particle';
-
-    // Random position on sphere surface
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    const r = radius * 0.9 + Math.random() * 0.2;
-    particle.position.x = r * Math.sin(phi) * Math.cos(theta);
-    particle.position.y = r * Math.sin(phi) * Math.sin(theta);
-    particle.position.z = r * Math.cos(phi);
-
-    mesh.add(particle);
-    particles.push({
-      mesh: particle,
-      angle: Math.random() * Math.PI * 2,
-      speed: 0.5 + Math.random() * 0.5,
-      heightOffset: Math.random() * Math.PI * 2,
-    });
-  }
 
   // Add to active stasis fields
   const expiresAt = performance.now() + (altWeapon.duration || 5000);
   activeStasisFields.push({
+    poolEntry: pooledVisual,
     mesh,
+    material: pooledVisual.material,
     position: targetPosition,
     radius,
     expiresAt,
     slowFactor: altWeapon.slowFactor || 0.2,
-    particles,
+    particles: pooledVisual.particles,
   });
 
   _log(`[Stasis Field] Created at (${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)}) for ${altWeapon.duration / 1000}s`);
@@ -5182,7 +5303,7 @@ function updateStasisFields(now, dt) {
 
     // Remove expired fields
     if (now > field.expiresAt) {
-      disposeMesh(field.mesh);
+      destroyStasisField(field);
       activeStasisFields.splice(i, 1);
       continue;
     }
@@ -5198,44 +5319,111 @@ function updateStasisFields(now, dt) {
     // Pulsing opacity
     const age = now - (field.expiresAt - (field.slowFactor ? 5000 : 5000));
     const pulse = Math.sin(age * 0.005) * 0.1 + 0.3;
-    field.mesh.material.opacity = pulse;
+    field.material.opacity = pulse;
   }
 }
 
 // ============================================================
 //  PLASMA ORB
 // ============================================================
-// [CORE] Plasma orb weapon system
-function firePlasmaOrb(origin, direction, hand, altWeapon) {
-  // Create plasma orb
-  const geometry = new THREE.SphereGeometry(0.15, 16, 16);
-  const material = basicMat(0xaa44ff, {
-    transparent: true,
-    opacity: 0.8,
-    blending: THREE.AdditiveBlending,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.copy(origin);
-    mesh.name = 'stasis-field';
-  scene.add(mesh);
 
-  // Add glow trail (smaller trailing spheres)
-  const trailLength = 8;
-  const trailParticles = [];
-  for (let i = 0; i < trailLength; i++) {
-    const trailGeo = new THREE.SphereGeometry(0.08, 8, 8);
-    const trailMat = basicMat(0xcc66ff, {
+/**
+ * Initialize pooled plasma orb visuals.
+ * Perf: each orb previously allocated its own mesh plus eight trail meshes.
+ * Pooling keeps this weapon from spraying transient geometry into the scene.
+ */
+function initPlasmaOrbVisualPool() {
+  if (plasmaOrbPoolInitialized || !scene) return;
+
+  for (let poolIndex = 0; poolIndex < PLASMA_ORB_POOL_SIZE; poolIndex++) {
+    const orbGeo = new THREE.SphereGeometry(0.15, 16, 16);
+    const orbMat = basicMat(0xaa44ff, {
       transparent: true,
-      opacity: 0.5 - (i * 0.05),
+      opacity: 0.8,
       blending: THREE.AdditiveBlending,
     });
-    const trail = new THREE.Mesh(trailGeo, trailMat);
-    trail.name = 'plasma-trail';
-    trail.position.copy(origin);
-    trail.visible = false;
-    scene.add(trail);
-    trailParticles.push({ mesh: trail, age: 0 });
+    const orbMesh = new THREE.Mesh(orbGeo, orbMat);
+    orbMesh.name = 'plasma-orb';
+    orbMesh.visible = false;
+    scene.add(orbMesh);
+
+    const trailParticles = [];
+    for (let i = 0; i < 8; i++) {
+      const trailGeo = new THREE.SphereGeometry(0.08, 8, 8);
+      const trailMat = basicMat(0xcc66ff, {
+        transparent: true,
+        opacity: 0.5 - (i * 0.05),
+        blending: THREE.AdditiveBlending,
+      });
+      const trail = new THREE.Mesh(trailGeo, trailMat);
+      trail.name = 'plasma-trail';
+      trail.visible = false;
+      scene.add(trail);
+      trailParticles.push({
+        mesh: trail,
+        material: trailMat,
+        baseOpacity: 0.5 - (i * 0.05),
+        age: 0,
+      });
+    }
+
+    plasmaOrbVisualPool.push({
+      mesh: orbMesh,
+      material: orbMat,
+      trailParticles,
+      active: false,
+    });
   }
+
+  plasmaOrbPoolInitialized = true;
+}
+
+function acquirePlasmaOrbVisual(origin) {
+  initPlasmaOrbVisualPool();
+  for (let i = 0; i < plasmaOrbVisualPool.length; i++) {
+    const entry = plasmaOrbVisualPool[i];
+    if (entry.active) continue;
+    entry.active = true;
+    entry.mesh.visible = true;
+    entry.mesh.position.copy(origin);
+    entry.material.opacity = 0.8;
+    for (let j = 0; j < entry.trailParticles.length; j++) {
+      const trail = entry.trailParticles[j];
+      trail.age = 0;
+      trail.mesh.visible = false;
+      trail.mesh.position.copy(origin);
+      trail.material.opacity = trail.baseOpacity;
+    }
+    return entry;
+  }
+  return null;
+}
+
+function releasePlasmaOrbVisual(entry) {
+  if (!entry) return;
+  entry.active = false;
+  entry.mesh.visible = false;
+  for (let i = 0; i < entry.trailParticles.length; i++) {
+    entry.trailParticles[i].mesh.visible = false;
+  }
+}
+
+function destroyPlasmaOrb(orb) {
+  if (orb?.poolEntry) {
+    releasePlasmaOrbVisual(orb.poolEntry);
+    return;
+  }
+  if (orb?.trailParticles) {
+    orb.trailParticles.forEach(t => disposeMesh(t.mesh));
+  }
+  disposeMesh(orb.mesh);
+}
+
+// [CORE] Plasma orb weapon system
+function firePlasmaOrb(origin, direction, hand, altWeapon) {
+  const pooledVisual = acquirePlasmaOrbVisual(origin);
+  if (!pooledVisual) return;
+  const mesh = pooledVisual.mesh;
 
   // Calculate velocity
   const speed = altWeapon.speed || 5;
@@ -5244,14 +5432,16 @@ function firePlasmaOrb(origin, direction, hand, altWeapon) {
   // Add to active plasma orbs
   const expiresAt = performance.now() + 10000; // 10 second lifetime
   activePlasmaOrbs.push({
+    poolEntry: pooledVisual,
     mesh,
+    material: pooledVisual.material,
     velocity,
     damage: altWeapon.damage || 75,
     aoeRadius: altWeapon.aoeRadius || 2.0,
     homingRange: altWeapon.homingRange || 15,
     expiresAt,
     detonatable: altWeapon.detonateOnHit !== false,
-    trailParticles,
+    trailParticles: pooledVisual.trailParticles,
     lastTrailUpdate: performance.now(),
   });
 
@@ -5266,11 +5456,7 @@ function updatePlasmaOrbs(now, dt) {
 
     // Remove expired orbs
     if (now > orb.expiresAt) {
-      // Remove trail particles
-      orb.trailParticles.forEach(t => {
-        disposeMesh(t.mesh);
-      });
-      disposeMesh(orb.mesh);
+      destroyPlasmaOrb(orb);
       activePlasmaOrbs.splice(i, 1);
       continue;
     }
@@ -5375,10 +5561,7 @@ function detonatePlasmaOrb(orb, enemyIndex) {
   spawnExplosionVisual(orb.mesh.position, orb.aoeRadius || 2.0);
 
   // Remove orb and trail
-  orb.trailParticles.forEach(t => {
-    disposeMesh(t.mesh);
-  });
-  disposeMesh(orb.mesh);
+  destroyPlasmaOrb(orb);
 
   // Remove from active array
   const index = activePlasmaOrbs.indexOf(orb);
@@ -5413,6 +5596,60 @@ function checkPlasmaOrbDetonation(proj) {
 
 const activeGrenades = [];
 const MAX_GRENADES = 5;
+const grenadePool = [];
+let grenadePoolInitialized = false;
+
+function initGrenadePool() {
+  if (grenadePoolInitialized || !scene) return;
+
+  for (let i = 0; i < MAX_GRENADES; i++) {
+    const grenadeGeo = new THREE.SphereGeometry(0.1, 8, 8);
+    const grenadeMat = basicMat(0xff4444, {
+      transparent: true,
+      opacity: 0.9,
+    });
+    const grenade = new THREE.Mesh(grenadeGeo, grenadeMat);
+    grenade.name = 'grenade';
+    grenade.visible = false;
+
+    const glowGeo = new THREE.SphereGeometry(0.15, 8, 8);
+    const glowMat = basicMat(0xff4444, {
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.BackSide,
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.name = 'grenade-glow';
+    grenade.add(glow);
+
+    scene.add(grenade);
+    grenadePool.push({ mesh: grenade, glowMat, active: false });
+  }
+
+  grenadePoolInitialized = true;
+}
+
+function acquireGrenadeVisual() {
+  initGrenadePool();
+  for (let i = 0; i < grenadePool.length; i++) {
+    const entry = grenadePool[i];
+    if (entry.active) continue;
+    entry.active = true;
+    entry.mesh.visible = true;
+    entry.mesh.scale.setScalar(1);
+    entry.mesh.rotation.set(0, 0, 0);
+    entry.mesh.material.opacity = 0.9;
+    entry.glowMat.opacity = 0.3;
+    return entry;
+  }
+  return null;
+}
+
+function releaseGrenadeVisual(entry) {
+  if (!entry) return;
+  entry.active = false;
+  entry.mesh.visible = false;
+}
 
 // [CORE] Grenade weapon system
 function fireGrenade(origin, direction, hand, altWeapon) {
@@ -5424,31 +5661,14 @@ function fireGrenade(origin, direction, hand, altWeapon) {
 
   _log(`[Grenade] Thrown from ${hand} hand`);
 
-  // Create grenade mesh (small red sphere)
-  const grenadeGeo = new THREE.SphereGeometry(0.1, 8, 8);
-  const grenadeMat = basicMat(0xff4444, {
-    transparent: true,
-    opacity: 0.9,
-  });
-  const grenade = new THREE.Mesh(grenadeGeo, grenadeMat);
-    grenade.name = 'grenade';
-
-  // Add glow
-  const glowGeo = new THREE.SphereGeometry(0.15, 8, 8);
-  const glowMat = basicMat(0xff4444, {
-    transparent: true,
-    opacity: 0.3,
-    side: THREE.BackSide,
-  });
-  const glow = new THREE.Mesh(glowGeo, glowMat);
-  glow.name = 'grenade';
-  grenade.add(glow);
-
-  grenade.position.copy(origin);
+  const pooledVisual = acquireGrenadeVisual();
+  if (!pooledVisual) return;
+  pooledVisual.mesh.position.copy(origin);
 
   const grenadeData = {
-    mesh: grenade,
-    glowMat,
+    poolEntry: pooledVisual,
+    mesh: pooledVisual.mesh,
+    glowMat: pooledVisual.glowMat,
     velocity: direction.clone().multiplyScalar(12), // Toss speed
     createdAt: performance.now(),
     hand,
@@ -5458,7 +5678,6 @@ function fireGrenade(origin, direction, hand, altWeapon) {
     bounceCount: 0,
   };
 
-  scene.add(grenade);
   activeGrenades.push(grenadeData);
   playShoothSound();
 }
@@ -5527,6 +5746,10 @@ function detonateGrenade(grenade, index) {
 
 // [CORE] Destroy grenade mesh
 function destroyGrenade(grenade) {
+  if (grenade?.poolEntry) {
+    releaseGrenadeVisual(grenade.poolEntry);
+    return;
+  }
   disposeMesh(grenade.mesh);
 }
 
@@ -5536,6 +5759,60 @@ function destroyGrenade(grenade) {
 
 const activeProximityMines = [];
 const MAX_PROXIMITY_MINES = 3;
+const proximityMinePool = [];
+let proximityMinePoolInitialized = false;
+
+function initProximityMinePool() {
+  if (proximityMinePoolInitialized || !scene) return;
+
+  for (let i = 0; i < MAX_PROXIMITY_MINES; i++) {
+    const mineGeo = new THREE.IcosahedronGeometry(0.12, 0);
+    const mineMat = basicMat(0xffaa00, {
+      transparent: true,
+      opacity: 0.9,
+    });
+    const mine = new THREE.Mesh(mineGeo, mineMat);
+    mine.visible = false;
+
+    const glowGeo = new THREE.SphereGeometry(0.2, 8, 8);
+    const glowMat = basicMat(0xffaa00, {
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.BackSide,
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.name = 'proximity-mine-glow';
+    mine.add(glow);
+
+    scene.add(mine);
+    proximityMinePool.push({ mesh: mine, glowMat, active: false });
+  }
+
+  proximityMinePoolInitialized = true;
+}
+
+function acquireProximityMineVisual() {
+  initProximityMinePool();
+  for (let i = 0; i < proximityMinePool.length; i++) {
+    const entry = proximityMinePool[i];
+    if (entry.active) continue;
+    entry.active = true;
+    entry.mesh.visible = true;
+    entry.mesh.scale.setScalar(1);
+    entry.mesh.rotation.set(0, 0, 0);
+    entry.mesh.material.opacity = 0.9;
+    entry.mesh.material.color.setHex(0xffaa00);
+    entry.glowMat.opacity = 0.3;
+    return entry;
+  }
+  return null;
+}
+
+function releaseProximityMineVisual(entry) {
+  if (!entry) return;
+  entry.active = false;
+  entry.mesh.visible = false;
+}
 
 // [CORE] Proximity mine weapon system
 function fireProximityMine(origin, hand, altWeapon) {
@@ -5551,32 +5828,18 @@ function fireProximityMine(origin, hand, altWeapon) {
 
   _log(`[Mine] Placed from ${hand} hand`);
 
-  // Create mine mesh (orange icosahedron)
-  const mineGeo = new THREE.IcosahedronGeometry(0.12, 0);
-  const mineMat = basicMat(0xffaa00, {
-    transparent: true,
-    opacity: 0.9,
-  });
-  const mine = new THREE.Mesh(mineGeo, mineMat);
-
-  // Add glow
-  const glowGeo = new THREE.SphereGeometry(0.2, 8, 8);
-  const glowMat = basicMat(0xffaa00, {
-    transparent: true,
-    opacity: 0.3,
-    side: THREE.BackSide,
-  });
-  const glow = new THREE.Mesh(glowGeo, glowMat);
-  glow.name = 'proximity-mine-glow';
-  mine.add(glow);
+  const pooledVisual = acquireProximityMineVisual();
+  if (!pooledVisual) return;
+  const mine = pooledVisual.mesh;
 
   // Place at ground level
   mine.position.copy(origin);
   mine.position.y = 0.15;
 
   const mineData = {
+    poolEntry: pooledVisual,
     mesh: mine,
-    glowMat,
+    glowMat: pooledVisual.glowMat,
     hand,
     position: mine.position.clone(),
     placedAt: performance.now(),
@@ -5588,7 +5851,6 @@ function fireProximityMine(origin, hand, altWeapon) {
     pulsePhase: Math.random() * Math.PI * 2,
   };
 
-  scene.add(mine);
   activeProximityMines.push(mineData);
   playShoothSound();
 }
@@ -5662,6 +5924,10 @@ function detonateProximityMine(mine, index) {
 
 // [CORE] Destroy proximity mine
 function destroyProximityMine(mine) {
+  if (mine?.poolEntry) {
+    releaseProximityMineVisual(mine.poolEntry);
+    return;
+  }
   disposeMesh(mine.mesh);
 }
 
@@ -5671,6 +5937,89 @@ function destroyProximityMine(mine) {
 
 const activeAttackDrones = [];
 const MAX_ATTACK_DRONES = 2;
+
+function initAttackDronePool() {
+  if (attackDronePoolInitialized || !scene) return;
+
+  for (let poolIndex = 0; poolIndex < MAX_ATTACK_DRONES; poolIndex++) {
+    const droneGroup = new THREE.Group();
+    droneGroup.visible = false;
+
+    const hexShape = new THREE.Shape();
+    const hexRadius = 0.15;
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
+      const x = Math.cos(angle) * hexRadius;
+      const y = Math.sin(angle) * hexRadius;
+      if (i === 0) hexShape.moveTo(x, y);
+      else hexShape.lineTo(x, y);
+    }
+    hexShape.closePath();
+
+    const hexGeo = new THREE.ShapeGeometry(hexShape);
+    const hexMat = basicMat(0x88ff88, {
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+    });
+    const hex = new THREE.Mesh(hexGeo, hexMat);
+    hex.rotation.x = Math.PI / 2;
+    droneGroup.add(hex);
+
+    const coreGeo = new THREE.SphereGeometry(0.06, 8, 8);
+    const coreMat = basicMat(0x88ff88, {
+      transparent: true,
+      opacity: 0.8,
+    });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    core.name = 'attack-drone-core';
+    droneGroup.add(core);
+
+    const glowGeo = new THREE.SphereGeometry(0.25, 12, 12);
+    const glowMat = basicMat(0x88ff88, {
+      transparent: true,
+      opacity: 0.2,
+      side: THREE.BackSide,
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.name = 'attack-drone-glow';
+    droneGroup.add(glow);
+
+    scene.add(droneGroup);
+    attackDronePool.push({
+      mesh: droneGroup,
+      hexMat,
+      coreMat,
+      glowMat,
+      active: false,
+    });
+  }
+
+  attackDronePoolInitialized = true;
+}
+
+function acquireAttackDroneVisual() {
+  initAttackDronePool();
+  for (let i = 0; i < attackDronePool.length; i++) {
+    const entry = attackDronePool[i];
+    if (entry.active) continue;
+    entry.active = true;
+    entry.mesh.visible = true;
+    entry.mesh.scale.setScalar(1);
+    entry.mesh.rotation.set(0, 0, 0);
+    entry.coreMat.opacity = 0.8;
+    entry.glowMat.opacity = 0.2;
+    entry.hexMat.opacity = 0.9;
+    return entry;
+  }
+  return null;
+}
+
+function releaseAttackDroneVisual(entry) {
+  if (!entry) return;
+  entry.active = false;
+  entry.mesh.visible = false;
+}
 
 // [CORE] Attack drone weapon system
 function fireAttackDrone(origin, hand, altWeapon) {
@@ -5684,64 +6033,19 @@ function fireAttackDrone(origin, hand, altWeapon) {
   }
 
   _log(`[Drone] Deployed from ${hand} hand`);
-
-  // Create drone mesh (green hexagon)
-  const droneGroup = new THREE.Group();
-
-  // Hexagon body
-  const hexShape = new THREE.Shape();
-  const hexRadius = 0.15;
-  for (let i = 0; i < 6; i++) {
-    const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
-    const x = Math.cos(angle) * hexRadius;
-    const y = Math.sin(angle) * hexRadius;
-    if (i === 0) hexShape.moveTo(x, y);
-    else hexShape.lineTo(x, y);
-  }
-  hexShape.closePath();
-
-  const hexGeo = new THREE.ShapeGeometry(hexShape);
-  const hexMat = basicMat(0x88ff88, {
-    transparent: true,
-    opacity: 0.9,
-    side: THREE.DoubleSide,
-  });
-  const hex = new THREE.Mesh(hexGeo, hexMat);
-  hex.rotation.x = Math.PI / 2;
-  droneGroup.add(hex);
-
-  // Core glow
-  const coreGeo = new THREE.SphereGeometry(0.06, 8, 8);
-  const coreMat = basicMat(0x88ff88, {
-    transparent: true,
-    opacity: 0.8,
-  });
-  const core = new THREE.Mesh(coreGeo, coreMat);
-  core.name = 'attack-drone-core';
-  droneGroup.add(core);
-
-  // Outer glow
-  const glowGeo = new THREE.SphereGeometry(0.25, 12, 12);
-  const glowMat = basicMat(0x88ff88, {
-    transparent: true,
-    opacity: 0.2,
-    side: THREE.BackSide,
-  });
-  const glow = new THREE.Mesh(glowGeo, glowMat);
-  glow.name = 'attack-drone-core';
-  droneGroup.add(glow);
+  const pooledVisual = acquireAttackDroneVisual();
+  if (!pooledVisual) return;
 
   // Position at player location
   const playerPos = camera.position.clone();
-  droneGroup.position.copy(playerPos);
-  droneGroup.position.y = 1.2;
-
-  scene.add(droneGroup);
+  pooledVisual.mesh.position.copy(playerPos);
+  pooledVisual.mesh.position.y = 1.2;
 
   const droneData = {
-    mesh: droneGroup,
-    coreMat,
-    glowMat,
+    poolEntry: pooledVisual,
+    mesh: pooledVisual.mesh,
+    coreMat: pooledVisual.coreMat,
+    glowMat: pooledVisual.glowMat,
     hand,
     createdAt: performance.now(),
     expiresAt: performance.now() + (altWeapon.duration || 10000),
@@ -5840,6 +6144,10 @@ function updateAttackDrones(now, dt, playerPos) {
 
 // [CORE] Destroy attack drone
 function destroyAttackDrone(drone) {
+  if (drone?.poolEntry) {
+    releaseAttackDroneVisual(drone.poolEntry);
+    return;
+  }
   disposeMesh(drone.mesh);
 }
 
@@ -5848,6 +6156,49 @@ function destroyAttackDrone(drone) {
 // ============================================================
 
 // [CORE] EMP weapon system
+const EMP_VISUAL_POOL_SIZE = 4;
+const empVisualPool = [];
+let empVisualPoolInitialized = false;
+
+function initEMPVisualPool() {
+  if (empVisualPoolInitialized || !scene) return;
+
+  for (let i = 0; i < EMP_VISUAL_POOL_SIZE; i++) {
+    const ringGeo = new THREE.RingGeometry(0.1, 5, 32);
+    const ringMat = basicMat(0x00ffff, {
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.visible = false;
+    scene.add(ring);
+    empVisualPool.push({ ring, ringMat, active: false });
+  }
+
+  empVisualPoolInitialized = true;
+}
+
+function acquireEMPVisual() {
+  initEMPVisualPool();
+  for (let i = 0; i < empVisualPool.length; i++) {
+    const entry = empVisualPool[i];
+    if (entry.active) continue;
+    entry.active = true;
+    entry.ring.visible = true;
+    entry.ring.scale.setScalar(1);
+    entry.ringMat.opacity = 0.6;
+    return entry;
+  }
+  return null;
+}
+
+function releaseEMPVisual(entry) {
+  if (!entry) return;
+  entry.active = false;
+  entry.ring.visible = false;
+}
+
 function fireEMP(origin, hand, altWeapon) {
   _log(`[EMP] Activated from ${hand} hand`);
 
@@ -5855,23 +6206,18 @@ function fireEMP(origin, hand, altWeapon) {
   const duration = altWeapon.duration || 3000;
   const playerPos = camera.position.clone();
 
-  // Create expanding ring effect
-  const ringGeo = new THREE.RingGeometry(0.1, range, 32);
-  const ringMat = basicMat(0x00ffff, {
-    transparent: true,
-    opacity: 0.6,
-    side: THREE.DoubleSide,
-  });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
+  const pooledVisual = acquireEMPVisual();
+  if (!pooledVisual) return;
+  const ring = pooledVisual.ring;
   ring.position.copy(playerPos);
   ring.position.y = 1.0;
   ring.rotation.x = Math.PI / 2;
-  scene.add(ring);
 
   // Track for animation
   const empData = {
+    poolEntry: pooledVisual,
     ring,
-    ringMat,
+    ringMat: pooledVisual.ringMat,
     createdAt: performance.now(),
     expiresAt: performance.now() + 500, // Quick burst
     range,
@@ -5937,7 +6283,7 @@ function updateEMPVisuals(now, dt) {
 
     // Remove when done
     if (age >= 500) {
-      disposeMesh(emp.ring);
+      releaseEMPVisual(emp.poolEntry);
       activeEMPVisuals.splice(i, 1);
     }
   }
@@ -5948,6 +6294,72 @@ function updateEMPVisuals(now, dt) {
 // ============================================================
 
 // [CORE] Teleport weapon system
+const TELEPORT_VISUAL_POOL_SIZE = 4;
+const teleportVisualPool = [];
+let teleportVisualPoolInitialized = false;
+
+function initTeleportVisualPool() {
+  if (teleportVisualPoolInitialized || !scene) return;
+
+  for (let i = 0; i < TELEPORT_VISUAL_POOL_SIZE; i++) {
+    const startEffectGeo = new THREE.SphereGeometry(0.5, 16, 16);
+    const startEffectMat = basicMat(0xaa00ff, {
+      transparent: true,
+      opacity: 0.5,
+      blending: THREE.AdditiveBlending,
+    });
+    const startEffect = new THREE.Mesh(startEffectGeo, startEffectMat);
+    startEffect.name = 'teleport-start-effect';
+    startEffect.visible = false;
+    scene.add(startEffect);
+
+    const endEffectGeo = new THREE.SphereGeometry(0.5, 16, 16);
+    const endEffectMat = basicMat(0xaa00ff, {
+      transparent: true,
+      opacity: 0.5,
+      blending: THREE.AdditiveBlending,
+    });
+    const endEffect = new THREE.Mesh(endEffectGeo, endEffectMat);
+    endEffect.name = 'teleport-end-effect';
+    endEffect.visible = false;
+    scene.add(endEffect);
+
+    teleportVisualPool.push({
+      startEffect,
+      startEffectMat,
+      endEffect,
+      endEffectMat,
+      active: false,
+    });
+  }
+
+  teleportVisualPoolInitialized = true;
+}
+
+function acquireTeleportVisual() {
+  initTeleportVisualPool();
+  for (let i = 0; i < teleportVisualPool.length; i++) {
+    const entry = teleportVisualPool[i];
+    if (entry.active) continue;
+    entry.active = true;
+    entry.startEffect.visible = true;
+    entry.endEffect.visible = true;
+    entry.startEffect.scale.setScalar(1);
+    entry.endEffect.scale.setScalar(1);
+    entry.startEffectMat.opacity = 0.5;
+    entry.endEffectMat.opacity = 0.5;
+    return entry;
+  }
+  return null;
+}
+
+function releaseTeleportVisual(entry) {
+  if (!entry) return;
+  entry.active = false;
+  entry.startEffect.visible = false;
+  entry.endEffect.visible = false;
+}
+
 function fireTeleport(origin, direction, hand, altWeapon) {
   _log(`[Teleport] Activated from ${hand} hand`);
 
@@ -5960,17 +6372,10 @@ function fireTeleport(origin, direction, hand, altWeapon) {
   // Clamp destination to ground level
   destination.y = Math.max(0.5, destination.y);
 
-  // Create visual effect at start position
-  const startEffectGeo = new THREE.SphereGeometry(0.5, 16, 16);
-  const startEffectMat = basicMat(0xaa00ff, {
-    transparent: true,
-    opacity: 0.5,
-    blending: THREE.AdditiveBlending,
-  });
-  const startEffect = new THREE.Mesh(startEffectGeo, startEffectMat);
-    startEffect.name = 'teleport-start-effect';
+  const pooledVisual = acquireTeleportVisual();
+  if (!pooledVisual) return;
+  const startEffect = pooledVisual.startEffect;
   startEffect.position.copy(playerPos);
-  scene.add(startEffect);
 
   // Teleport player (desktop only - in VR, WebXR controls camera position)
   if (!renderer.xr.isPresenting) {
@@ -5980,24 +6385,16 @@ function fireTeleport(origin, direction, hand, altWeapon) {
     _log(`[Teleport] VR mode - teleport visual only (WebXR controls camera)`);
   }
 
-  // Create visual effect at end position
-  const endEffectGeo = new THREE.SphereGeometry(0.5, 16, 16);
-  const endEffectMat = basicMat(0xaa00ff, {
-    transparent: true,
-    opacity: 0.5,
-    blending: THREE.AdditiveBlending,
-  });
-  const endEffect = new THREE.Mesh(endEffectGeo, endEffectMat);
-    endEffect.name = 'teleport-end-effect';
+  const endEffect = pooledVisual.endEffect;
   endEffect.position.copy(destination);
-  scene.add(endEffect);
 
   // Track effects for fade-out
   const teleportData = {
+    poolEntry: pooledVisual,
     startEffect,
-    startEffectMat,
+    startEffectMat: pooledVisual.startEffectMat,
     endEffect,
-    endEffectMat,
+    endEffectMat: pooledVisual.endEffectMat,
     createdAt: performance.now(),
     duration: 300,
   };
@@ -6027,8 +6424,7 @@ function updateTeleportEffects(now, dt) {
 
     // Remove when done
     if (age >= effect.duration) {
-      disposeMesh(effect.startEffect);
-      disposeMesh(effect.endEffect);
+      releaseTeleportVisual(effect.poolEntry);
       activeTeleportEffects.splice(i, 1);
     }
   }
@@ -6420,32 +6816,31 @@ function clearAllAltWeaponEffects() {
 
   // Clear active reflector drones
   for (let i = activeReflectorDrones.length - 1; i >= 0; i--) {
-    disposeMesh(activeReflectorDrones[i].mesh);
+    destroyReflectorDrone(activeReflectorDrones[i]);
   }
   activeReflectorDrones.length = 0;
 
   // Clear active grenades
   for (let i = activeGrenades.length - 1; i >= 0; i--) {
-    disposeMesh(activeGrenades[i].mesh);
+    destroyGrenade(activeGrenades[i]);
   }
   activeGrenades.length = 0;
 
   // Clear active proximity mines
   for (let i = activeProximityMines.length - 1; i >= 0; i--) {
-    disposeMesh(activeProximityMines[i].mesh);
+    destroyProximityMine(activeProximityMines[i]);
   }
   activeProximityMines.length = 0;
 
   // Clear active attack drones
   for (let i = activeAttackDrones.length - 1; i >= 0; i--) {
-    disposeMesh(activeAttackDrones[i].mesh);
+    destroyAttackDrone(activeAttackDrones[i]);
   }
   activeAttackDrones.length = 0;
 
   // Clear active plasma orbs
   for (let i = activePlasmaOrbs.length - 1; i >= 0; i--) {
-    activePlasmaOrbs[i].trailParticles.forEach(t => disposeMesh(t.mesh));
-    disposeMesh(activePlasmaOrbs[i].mesh);
+    destroyPlasmaOrb(activePlasmaOrbs[i]);
   }
   activePlasmaOrbs.length = 0;
 
@@ -6457,19 +6852,19 @@ function clearAllAltWeaponEffects() {
 
   // Clear active stasis fields
   for (let i = activeStasisFields.length - 1; i >= 0; i--) {
-    disposeMesh(activeStasisFields[i].mesh);
+    destroyStasisField(activeStasisFields[i]);
   }
   activeStasisFields.length = 0;
 
   // Clear active EMP visuals
   for (let i = activeEMPVisuals.length - 1; i >= 0; i--) {
-    disposeMesh(activeEMPVisuals[i].mesh);
+    releaseEMPVisual(activeEMPVisuals[i].poolEntry);
   }
   activeEMPVisuals.length = 0;
 
   // Clear active teleport effects
   for (let i = activeTeleportEffects.length - 1; i >= 0; i--) {
-    disposeMesh(activeTeleportEffects[i].mesh);
+    releaseTeleportVisual(activeTeleportEffects[i].poolEntry);
   }
   activeTeleportEffects.length = 0;
 
@@ -8051,14 +8446,14 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   if (bossProjectiles.length > 0) {
     for (let i = bossProjectiles.length - 1; i >= 0; i--) {
       const bossProj = bossProjectiles[i];
-      if (!bossProj || !bossProj.mesh) continue;
+      if (!bossProj) continue;
       
       // Check if boss projectile intersects with beam line
       const hitRadius = beamWidth + 0.3;
-      const distSq = pointToSegmentDistSq(bossProj.mesh.position, _chargeBeamA, _chargeBeamB);
+      const distSq = pointToSegmentDistSq(bossProj.position, _chargeBeamA, _chargeBeamB);
       if (distSq < hitRadius * hitRadius) { // Slightly larger collision radius
         // Destroy boss projectile with explosion effect
-        spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
+        spawnBossProjectileDestructionFX(bossProj.position.clone());
         if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
         bossProjectiles.splice(i, 1);
       }
@@ -9026,10 +9421,11 @@ function updateProjectiles(dt) {
     }
 
     // Boss minions do not need child-mesh precision, so we can hit them with a cheap sphere test.
-    const bossMinionMeshes = getBossMinionMeshes();
-    if (bossMinionMeshes.length > 0) {
-      for (let mi = 0; mi < bossMinionMeshes.length; mi++) {
-        const minionMesh = bossMinionMeshes[mi];
+    const bossMinions = getBossMinions();
+    if (bossMinions.length > 0) {
+      for (let mi = 0; mi < bossMinions.length; mi++) {
+        const minion = bossMinions[mi];
+        const minionMesh = minion?.mesh;
         if (!minionMesh) continue;
 
         const dx = projPos.x - minionMesh.position.x;
@@ -9044,11 +9440,8 @@ function updateProjectiles(dt) {
         if (hitDistSq <= hitRadiusSq) {
           const pathDistSq = _projectileSegmentStart.distanceToSquared(_projectileClosestPoint);
           if (pathDistSq < directMinionHitDistanceSq) {
-            const minionResult = getBossMinionByMesh(minionMesh);
-            if (minionResult) {
-              directMinionHitDistanceSq = pathDistSq;
-              directMinionHit = { ...minionResult, point: _projectileClosestPoint.clone() };
-            }
+            directMinionHitDistanceSq = pathDistSq;
+            directMinionHit = { index: mi, minion, point: _projectileClosestPoint.clone() };
           }
         }
       }
@@ -9122,23 +9515,6 @@ function updateProjectiles(dt) {
           }
           projectiles.splice(i, 1);
         }
-      } else {
-        const minionResult = getBossMinionByMesh(preciseHit.object);
-        if (minionResult) {
-          markProjectileHit(proj);
-          const mResult = hitBossMinion(minionResult.index, proj.userData.stats?.damage);
-          spawnDamageNumber(preciseHit.point, proj.userData.stats?.damage, '#ff8800');
-          if (mResult.killed) playExplosionSound();
-          if (!proj.userData.stats?.piercing) {
-            resolveProjectileAccuracy(proj);
-            if (proj.userData.isPooled) {
-              returnProjectileToPool(proj);
-            } else {
-              disposeObject3D(proj);
-            }
-            projectiles.splice(i, 1);
-          }
-        }
       }
     } else if (directEnemyHit) {
       proj.userData.hitEnemies.add(directEnemyHit.index);
@@ -9204,9 +9580,9 @@ function updateProjectiles(dt) {
       if (bossProjs.length > 0) {
         for (let j = bossProjs.length - 1; j >= 0; j--) {
           const bossProj = bossProjs[j];
-          if (!bossProj || !bossProj.mesh) continue;
-        if (proj.position.distanceToSquared(bossProj.mesh.position) < 0.25) {
-            spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
+          if (!bossProj) continue;
+        if (proj.position.distanceToSquared(bossProj.position) < 0.25) {
+            spawnBossProjectileDestructionFX(bossProj.position.clone());
             if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
             bossProjs.splice(j, 1);
 
@@ -9833,7 +10209,7 @@ function render(timestamp) {
         // Check for nearby boss projectiles
         for (let i = 0; i < bossProjsForRamp.length && !anyNear; i++) {
           const p = bossProjsForRamp[i];
-          if (p.mesh && p.mesh.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST) {
+          if (p && p.position.distanceTo(playerPos) < SLOW_MO_TRIGGER_DIST) {
             anyNear = true;
           }
         }
@@ -9871,7 +10247,7 @@ function render(timestamp) {
       if (!slowMoActive) {
         const bossProjs = getBossProjectiles();
         for (const proj of bossProjs) {
-          const dist = proj.mesh.position.distanceTo(playerPos);
+          const dist = proj.position.distanceTo(playerPos);
           if (dist < SLOW_MO_TRIGGER_DIST) {
             slowMoActive = true;
             slowMoDuration = 2.5;
@@ -10000,11 +10376,11 @@ function render(timestamp) {
     }
 
     // Boss minion collision with player
-    const bossMinionMeshes = getBossMinionMeshes();
-    if (bossMinionMeshes.length > 0) {
+    const bossMinions = getBossMinions();
+    if (bossMinions.length > 0) {
       const now2 = performance.now();
-      for (let mi = 0; mi < bossMinionMeshes.length; mi++) {
-        const minionMesh = bossMinionMeshes[mi];
+      for (let mi = 0; mi < bossMinions.length; mi++) {
+        const minionMesh = bossMinions[mi]?.mesh;
         if (!minionMesh) continue;
         if (minionMesh.position.distanceTo(playerPos) < 1.0) {
           if (!minionMesh.userData._lastContactHit || now2 - minionMesh.userData._lastContactHit >= 1200) {
@@ -10029,7 +10405,7 @@ function render(timestamp) {
       if (!proj) continue;
 
       // Warning beep when instanced boss projectiles are about to ruin your day.
-      if (proj.mesh && !proj._warned && proj.mesh.position.distanceTo(playerPos) < 4.0) {
+      if (!proj._warned && proj.position.distanceTo(playerPos) < 4.0) {
         playProjectileWarningSound();
         proj._warned = true;
       }
@@ -10037,14 +10413,14 @@ function render(timestamp) {
       if (!proj.hitPlayer) continue;
 
       // Check if reflector drone can reflect this projectile
-      if (checkReflectorDroneReflection(proj.mesh.position, true)) {
+      if (checkReflectorDroneReflection(proj.position, true)) {
         // Projectile was reflected - remove it without damaging player
         if (proj._instIdx !== undefined) releaseBossProjIndex(proj._instIdx);
         bossProjs.splice(i, 1);
         continue;
       }
 
-      triggerHostileProjectileExplosion(proj.mesh.position.clone(), 0.35, 0);
+      triggerHostileProjectileExplosion(proj.position.clone(), 0.35, 0);
       if (proj._instIdx !== undefined) releaseBossProjIndex(proj._instIdx);
       bossProjs.splice(i, 1);
 
@@ -10839,13 +11215,13 @@ function collectRuntimeCounts() {
     };
   });
 
-  const bossMinionMeshes = typeof getBossMinionMeshes === 'function' ? getBossMinionMeshes() : null;
+  const bossMinions = typeof getBossMinions === 'function' ? getBossMinions() : null;
 
   return {
     enemies: getEnemyCount(),
     bossActive: !!getBoss(),
     bossProjectiles: getBossProjectiles().length,
-    bossMinions: bossMinionMeshes ? bossMinionMeshes.length : 0,
+    bossMinions: bossMinions ? bossMinions.length : 0,
     projectiles: projectiles.length,
     instancedProjectiles: instancedStats,
     projectileQueue: seekerBurstQueue.length,

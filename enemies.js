@@ -125,6 +125,16 @@ const _scratchMat4 = new THREE.Matrix4();
 const _scratchMat4b = new THREE.Matrix4();
 const _scratchScale = new THREE.Vector3();
 const _explosionSpriteVel = new THREE.Vector3();
+const _dirtyEnemyPools = [];
+
+// VR-CRITICAL: updateEnemies() touches instanced pools every frame.
+// Reuse one dirty-pool list and a per-pool flag instead of allocating Set()
+// and duplicate entries on every render tick.
+function markEnemyPoolDirty(pool) {
+  if (!pool || pool._needsSync) return;
+  pool._needsSync = true;
+  _dirtyEnemyPools.push(pool);
+}
 
 // ── Voxel patterns (simplified for performance) ───────────
 const PATTERNS = {
@@ -1605,6 +1615,7 @@ function spawnTrainEnemy(type, position, levelConfig) {
 
   activeEnemies.push(enemy);
   _enemyMeshesDirty = true;
+  invalidateEnemyCache();
   sceneRef.add(group);
   return enemy;
 }
@@ -2027,6 +2038,7 @@ function spawnGeometryShifterSplit(position, hp, scale) {
 
     activeEnemies.push(enemy);
     _enemyMeshesDirty = true;
+    invalidateEnemyCache();
     sceneRef.add(group);
   });
 }
@@ -2109,6 +2121,7 @@ function spawnCloneMimicSplit(position) {
 
     activeEnemies.push(enemy);
     _enemyMeshesDirty = true;
+    invalidateEnemyCache();
     sceneRef.add(group);
   });
 }
@@ -2876,6 +2889,7 @@ export function spawnEnemy(type, position, levelConfig) {
 
   activeEnemies.push(enemy);
   _enemyMeshesDirty = true;  // Invalidate cache
+  invalidateEnemyCache();
   sceneRef.add(group);
   return enemy;
 }
@@ -2885,9 +2899,7 @@ export function spawnEnemy(type, position, levelConfig) {
  * Returns array of enemy indices that reached the player.
  */
 export function updateEnemies(dt, now, playerPos) {
-  _enemyCacheDirty = true; // invalidate cache at frame start
   const collisions = [];
-  const _dirtyPools = new Set();  // Collect pools that need GPU buffer sync
 
   for (let i = 0; i < activeEnemies.length; i++) {
     const e = activeEnemies[i];
@@ -2939,7 +2951,7 @@ export function updateEnemies(dt, now, playerPos) {
         const iid = e.mesh.userData.instanceId;
         const pool = e.mesh.userData.instancePool;
         pool.mesh.setMatrixAt(iid, e.mesh.matrix);
-        _dirtyPools.add(pool);
+        markEnemyPoolDirty(pool);
       }
 
       _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
@@ -2951,7 +2963,7 @@ export function updateEnemies(dt, now, playerPos) {
         _scratchColor.copy(e.baseColor).lerp(_redColor, heldDamageRatio);
         const pool = e.mesh.userData.instancePool;
         pool.mesh.setColorAt(e.mesh.userData.instanceId, _scratchColor);
-        _dirtyPools.add(pool);
+        markEnemyPoolDirty(pool);
       } else if (e.material) {
         e.material.color.copy(e.baseColor).lerp(_redColor, heldDamageRatio);
       }
@@ -2977,7 +2989,7 @@ export function updateEnemies(dt, now, playerPos) {
       const iid = e.mesh.userData.instanceId;
       const pool = e.mesh.userData.instancePool;
       pool.mesh.setMatrixAt(iid, e.mesh.matrix);
-      _dirtyPools.add(pool);
+      markEnemyPoolDirty(pool);
     }
 
     // ── Special Enemy AI Behaviors ──
@@ -3014,7 +3026,7 @@ export function updateEnemies(dt, now, playerPos) {
           _scratchMat4.premultiply(_scratchMat4b.makeTranslation(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z));
           pool.mesh.setMatrixAt(iid, _scratchMat4);
         }
-        _dirtyPools.add(pool);
+        markEnemyPoolDirty(pool);
       }
     }
 
@@ -3462,7 +3474,7 @@ export function updateEnemies(dt, now, playerPos) {
       _scratchColor.copy(e.baseColor).lerp(_redColor, dmgRatio);
       const pool = e.mesh.userData.instancePool;
       pool.mesh.setColorAt(e.mesh.userData.instanceId, _scratchColor);
-      _dirtyPools.add(pool);
+      markEnemyPoolDirty(pool);
     } else {
       // Non-instanced enemy: update material color directly
       if (e.material) {
@@ -3472,10 +3484,13 @@ export function updateEnemies(dt, now, playerPos) {
   }
 
   // Flush all dirty instanced pool buffers to GPU (once per pool, not per enemy)
-  for (const pool of _dirtyPools) {
+  for (let i = 0; i < _dirtyEnemyPools.length; i++) {
+    const pool = _dirtyEnemyPools[i];
     pool.mesh.instanceMatrix.needsUpdate = true;
     if (pool.mesh.instanceColor) pool.mesh.instanceColor.needsUpdate = true;
+    pool._needsSync = false;
   }
+  _dirtyEnemyPools.length = 0;
 
   updatePulseBomberRings(dt, now, playerPos);
 
@@ -3902,6 +3917,7 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   activeEnemies.splice(index, 1);
   _enemyMeshesDirty = true;  // Invalidate cache
   _enemyMeshToIndex.clear();
+  invalidateEnemyCache();
 
   return {
     position: pos,
@@ -3968,6 +3984,7 @@ export function clearAllEnemies() {
   _enemyMeshesDirty = true;  // Invalidate cache
   _enemyMeshToIndex.clear();
   _cachedEnemyMeshes.length = 0;
+  invalidateEnemyCache();
 
   for (let i = pulseBomberRings.length - 1; i >= 0; i--) {
     const ring = pulseBomberRings[i];
@@ -10273,6 +10290,9 @@ export function clearBossDebris() {
 
 // ── TELEPORTING BOSS SPECIFIC (for compatibility) ───────────
 const bossMinions = [];
+export function getBossMinions() {
+  return bossMinions;
+}
 export function spawnBossMinion(fromPos, playerPos, type = 'basic') {
   const group = new THREE.Group();
   group.renderOrder = 2;
@@ -10489,8 +10509,36 @@ export function releaseBossProjIndex(idx) {
   bossProjFreeIndices.push(idx);
 }
 
-// Legacy array for compatibility with getBossProjectiles()
 const bossProjectiles = [];
+
+function createBossProjectileRecord(idx, position, velocity, options = {}) {
+  const record = {
+    _instIdx: idx,
+    instanceIndex: idx,
+    position: position.clone(),
+    velocity,
+    createdAt: options.createdAt ?? performance.now(),
+    lifetime: options.lifetime ?? 5000,
+    homingStrength: options.homingStrength ?? 0,
+    wigglePhase: options.wigglePhase ?? 0,
+    wiggleAmplitude: options.wiggleAmplitude ?? 0,
+    damage: options.damage ?? 1,
+    explosionDamage: options.explosionDamage ?? 0,
+    explosionRadius: options.explosionRadius ?? 0.3,
+    hitRadius: options.hitRadius ?? 0.45,
+    hitPlayer: false,
+    lobbed: !!options.lobbed,
+    gravity: options.gravity ?? 0,
+    userData: {
+      isBossProjectile: true,
+      ...(options.userData || {}),
+    },
+  };
+
+  bossProjData[idx] = record;
+  bossProjectiles.push(record);
+  return record;
+}
 
 export function clearBossProjectiles() {
   // Release all active instances
@@ -10603,52 +10651,23 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
   }
 
   // Store per-instance data
-  const data = {
-    instanceIndex: idx,
-    position: fromPos.clone(),
-    velocity: velocity,
-    createdAt: performance.now(),
+  const data = createBossProjectileRecord(idx, fromPos, velocity, {
     lifetime: lobbed ? 6000 : 5000, // Lobbed projectiles live longer; hands at ±6.75 need extra distance
-    homingStrength: homingStrength,
+    homingStrength,
     wigglePhase: Math.random() * Math.PI * 2,
-    wiggleAmplitude: wiggleAmplitude,
+    wiggleAmplitude,
     damage: 1,
     explosionDamage: 1,
     explosionRadius: 0.3,
     hitRadius: 0.8,
-    hitPlayer: false,
-    lobbed: lobbed,
+    lobbed,
     gravity: lobbed ? 9.8 : 0,
-  };
-  bossProjData[idx] = data;
+  });
 
   // Set initial matrix (position + unit scale)
   _bossProjMatrix.compose(fromPos, _identityQuat, _unitScale);
   bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
   bossProjCorePool.instanceMatrix.needsUpdate = true;
-
-  // Create lightweight proxy for compatibility with getBossProjectiles()
-  const proxy = {
-    position: data.position,
-    userData: { isBossProjectile: true },
-  };
-  bossProjectiles.push({
-    mesh: proxy,
-    _instIdx: idx,
-    velocity: data.velocity,
-    createdAt: data.createdAt,
-    lifetime: data.lifetime,
-    homingStrength: data.homingStrength,
-    wigglePhase: data.wigglePhase,
-    damage: data.damage,
-    explosionDamage: data.explosionDamage,
-    explosionRadius: data.explosionRadius,
-    hitRadius: data.hitRadius,
-    wiggleAmplitude: data.wiggleAmplitude,
-    hitPlayer: false,
-    lobbed: data.lobbed,
-    gravity: data.gravity,
-  });
 }
 
 // Convenience wrapper for lobbed projectiles (skull phase eye shots)
@@ -10708,20 +10727,19 @@ export function spawnMortarProjectile(fromPos, targetPos, arcHeight = 2.0) {
     horizontalDir.z * (horizontalDist / flightTime)
   );
 
-  const data = bossProjData[idx];
-  if (!data) return;
-
-  data.position.copy(fromPos);
-  data.velocity.copy(velocity);
-  data.homingStrength = 0;
-  data.wigglePhase = 0;
-  data.wiggleAmplitude = 0;
-  data.damage = 1;
-  data.explosionDamage = 0;
-  data.explosionRadius = 0.3;
-  data.hitRadius = 0.3;
-  data.lobbed = true;
-  data.gravity = gravity;
+  createBossProjectileRecord(idx, fromPos, velocity, {
+    lifetime: 6000,
+    homingStrength: 0,
+    wigglePhase: 0,
+    wiggleAmplitude: 0,
+    damage: 1,
+    explosionDamage: 0,
+    explosionRadius: 0.3,
+    hitRadius: 0.3,
+    lobbed: true,
+    gravity,
+    userData: { isMortarProjectile: true },
+  });
 
   _bossProjMatrix.compose(fromPos, _identityQuat, _unitScale);
   bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
@@ -10731,27 +10749,6 @@ export function spawnMortarProjectile(fromPos, targetPos, arcHeight = 2.0) {
   bossProjCorePool.setColorAt(idx, _mortarColorTmp.setHex(0xff0000));
   if (bossProjCorePool.instanceColor) bossProjCorePool.instanceColor.needsUpdate = true;
 
-  const proxy = {
-    position: data.position,
-    userData: { isBossProjectile: true, isMortarProjectile: true },
-  };
-  bossProjectiles.push({
-    _instIdx: idx,
-    mesh: proxy,
-    createdAt: performance.now(),
-    lifetime: 6000,
-    velocity: data.velocity,
-    homingStrength: 0,
-    wigglePhase: 0,
-    damage: 1,
-    explosionDamage: 0,
-    explosionRadius: 0.3,
-    hitRadius: 0.3,
-    wiggleAmplitude: 0,
-    hitPlayer: false,
-    lobbed: true,
-    gravity: gravity,
-  });
 }
 
 export function updateBossProjectiles(dt, now, playerPos) {
@@ -10770,30 +10767,30 @@ export function updateBossProjectiles(dt, now, playerPos) {
 
     if (age > proj.lifetime) {
       if (typeof window !== 'undefined' && window.createExplosionAt) {
-        window.createExplosionAt(proj.mesh.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
+        window.createExplosionAt(proj.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
       }
       releaseBossProjIndex(idx);
       bossProjectiles.splice(i, 1);
       continue;
     }
 
-    const slowFactor = getStasisSlowFactor(proj.mesh.position);
+    const slowFactor = getStasisSlowFactor(proj.position);
     const adjustedDt = dt * slowFactor;
 
     if (proj.lobbed) {
       // Lobbed projectile: apply gravity, no homing
       proj.velocity.y -= (proj.gravity || 9.8) * adjustedDt;
-      proj.mesh.position.addScaledVector(proj.velocity, adjustedDt);
+      proj.position.addScaledVector(proj.velocity, adjustedDt);
     } else {
       // Homing projectile: steer toward player
       const speed = proj.velocity.length();
-      _scratch.subVectors(playerPos, proj.mesh.position).normalize();
+      _scratch.subVectors(playerPos, proj.position).normalize();
       const desiredVelocity = _scratch.multiplyScalar(speed);
       proj.velocity.lerp(desiredVelocity, Math.min(1, (proj.homingStrength || 2.5) * adjustedDt));
       if (proj.velocity.lengthSq() > 0.0001) {
         proj.velocity.setLength(speed);
       }
-      proj.mesh.position.addScaledVector(proj.velocity, adjustedDt);
+      proj.position.addScaledVector(proj.velocity, adjustedDt);
     }
 
     proj.wigglePhase = (proj.wigglePhase || 0) + adjustedDt * 7.0;
@@ -10805,13 +10802,13 @@ export function updateBossProjectiles(dt, now, playerPos) {
 
     // Only add wiggle for non-lobbed (homing) projectiles
     if (!proj.lobbed) {
-      proj.mesh.position.addScaledVector(_scratch3, wiggleOffset);
+      proj.position.addScaledVector(_scratch3, wiggleOffset);
     }
 
     // Despawn lobbed projectiles that fall below ground
-    if (proj.lobbed && proj.mesh.position.y < -2) {
+    if (proj.lobbed && proj.position.y < -2) {
       if (typeof window !== 'undefined' && window.createExplosionAt) {
-        window.createExplosionAt(proj.mesh.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
+        window.createExplosionAt(proj.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
       }
       releaseBossProjIndex(idx);
       bossProjectiles.splice(i, 1);
@@ -10820,23 +10817,23 @@ export function updateBossProjectiles(dt, now, playerPos) {
 
     // Update instance matrix
     _bossProjScale.set(1, 1, 1);
-    _bossProjMatrix.compose(proj.mesh.position, _identityQuat, _bossProjScale);
+    _bossProjMatrix.compose(proj.position, _identityQuat, _bossProjScale);
     bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
 
     // Update glow instance: billboard toward camera, fade with age
     if (cameraRef) {
-      _billboardMat.lookAt(proj.mesh.position, cameraRef.position, _upVector);
+      _billboardMat.lookAt(proj.position, cameraRef.position, _upVector);
       _billboardQuat.setFromRotationMatrix(_billboardMat);
       // Scale glow slightly with age for a "blooming" effect
       const ageFraction = Math.min(age / proj.lifetime, 1);
       const glowScale = 1 + ageFraction * 0.3;
       _bossProjScale.set(glowScale, glowScale, glowScale);
-      _bossProjGlowMatrix.compose(proj.mesh.position, _billboardQuat, _bossProjScale);
+      _bossProjGlowMatrix.compose(proj.position, _billboardQuat, _bossProjScale);
       bossProjGlowPool.setMatrixAt(idx, _bossProjGlowMatrix);
     }
 
     // Proximity alert (Geiger-counter style) - plays at increasing rate as projectile gets closer
-    const distToPlayer = proj.mesh.position.distanceTo(playerPos);
+    const distToPlayer = proj.position.distanceTo(playerPos);
     if (distToPlayer < 8) {
       const alertInterval = 200 + (distToPlayer / 8) * 600; // 200ms at closest, 800ms at edge
       if (now - (proj._lastAlertTime || 0) > alertInterval) {
@@ -10848,7 +10845,7 @@ export function updateBossProjectiles(dt, now, playerPos) {
     if (distToPlayer < (proj.hitRadius || 0.45)) {
       proj.hitPlayer = true;
       if (typeof window !== 'undefined' && window.createExplosionAt) {
-        window.createExplosionAt(proj.mesh.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
+        window.createExplosionAt(proj.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
       }
     }
   }
