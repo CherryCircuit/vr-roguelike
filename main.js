@@ -6952,37 +6952,50 @@ function initProjectilePool() {
   });
 
   // ── Player projectile glow planes (Star Wars-style bloom) ──
-  // Shared radial gradient texture: bright white-cyan center, fading to transparent
-  const pGlowSize = 64;
-  const pGlowCanvas = document.createElement('canvas');
-  pGlowCanvas.width = pGlowSize;
-  pGlowCanvas.height = pGlowSize;
-  const pGlowCtx = pGlowCanvas.getContext('2d');
-  const pGlowHalf = pGlowSize / 2;
-  const pGlowGrad = pGlowCtx.createRadialGradient(pGlowHalf, pGlowHalf, 0, pGlowHalf, pGlowHalf, pGlowHalf);
-  pGlowGrad.addColorStop(0, 'rgba(220,255,255,1)');    // Bright white-cyan core
-  pGlowGrad.addColorStop(0.2, 'rgba(0,220,255,0.7)'); // Cyan mid
-  pGlowGrad.addColorStop(0.5, 'rgba(0,180,255,0.3)');  // Fading cyan
-  pGlowGrad.addColorStop(1, 'rgba(0,100,255,0)');      // Transparent edge
-  pGlowCtx.fillStyle = pGlowGrad;
-  pGlowCtx.fillRect(0, 0, pGlowSize, pGlowSize);
-  const playerGlowTexture = new THREE.CanvasTexture(pGlowCanvas);
-  playerGlowTexture.minFilter = THREE.LinearFilter;
+  // Create separate glow textures per weapon type with matching colors
+  function createGlowTexture(r, g, b) {
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const half = size / 2;
+    const grad = ctx.createRadialGradient(half, half, 0, half, half, half);
+    grad.addColorStop(0, `rgba(255,255,255,1)`);       // Bright white core
+    grad.addColorStop(0.2, `rgba(${Math.floor(r*255)},${Math.floor(g*255)},${Math.floor(b*255)},0.7)`);
+    grad.addColorStop(0.5, `rgba(${Math.floor(r*200)},${Math.floor(g*200)},${Math.floor(b*200)},0.3)`);
+    grad.addColorStop(1, `rgba(${Math.floor(r*100)},${Math.floor(g*100)},${Math.floor(b*100)},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    return tex;
+  }
+
+  // Weapon glow colors (matching weapons.js)
+  const glowTextures = {
+    laser: createGlowTexture(0.0, 1.0, 1.0),        // Blue/cyan
+    buckshot: createGlowTexture(1.0, 0.53, 0.0),   // Orange/amber (#ff8800)
+    seeker: createGlowTexture(0.0, 1.0, 0.5),     // Green
+    plasma_carbine: createGlowTexture(1.0, 0.0, 1.0),  // Pink/magenta
+  };
 
   // Create a glow pool for each projectile type
   const glowGeo = new THREE.PlaneGeometry(0.35, 0.35);
-  const glowMat = new THREE.MeshBasicMaterial({
-    map: playerGlowTexture,
-    transparent: true,
-    opacity: 0.8,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    depthTest: true,
-    side: THREE.DoubleSide,
-  });
-  registerPlayerProjectileMaterial(glowMat);
 
   for (const poolType of Object.keys(instancedProjectiles)) {
+    const glowTex = glowTextures[poolType] || glowTextures.laser; // Fallback to laser glow
+    const glowMat = new THREE.MeshBasicMaterial({
+      map: glowTex,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.DoubleSide,
+    });
+    registerPlayerProjectileMaterial(glowMat);
+
     const maxCount = instancedProjectiles[poolType].maxCount;
     const glowIM = new THREE.InstancedMesh(glowGeo, glowMat, maxCount);
     glowIM.name = `${poolType}-glow-pool`;

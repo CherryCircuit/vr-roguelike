@@ -4524,7 +4524,8 @@ class Boss {
   fireProjectile(targetPos) {
     // Base projectile firing
     if (typeof spawnBossProjectile === 'function') {
-      spawnBossProjectile(this.mesh.position.clone(), targetPos);
+      const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+      spawnBossProjectile(fromPos, targetPos);
     }
   }
 
@@ -4810,8 +4811,9 @@ class HoloPhantomBoss extends Boss {
       const rightTarget = playerPos.clone();
       rightTarget.x += spread;
       if (typeof spawnBossProjectile === 'function') {
-        spawnBossProjectile(this.mesh.position.clone(), leftTarget);
-        spawnBossProjectile(this.mesh.position.clone(), rightTarget);
+        const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+        spawnBossProjectile(fromPos, leftTarget);
+        spawnBossProjectile(fromPos, rightTarget);
       }
     });
   }
@@ -4920,7 +4922,8 @@ class PulseEmitterBoss extends Boss {
           playerPos.z + Math.sin(angle) * 3
         );
         if (typeof spawnBossProjectile === 'function') {
-          spawnBossProjectile(this.mesh.position.clone(), target);
+          const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+          spawnBossProjectile(fromPos, target);
         }
       }
     });
@@ -4988,7 +4991,8 @@ class RustSerpentBoss extends Boss {
       target.x += (Math.random() - 0.5) * spread;
       target.z += (Math.random() - 0.5) * spread;
       if (typeof spawnBossProjectile === 'function') {
-        spawnBossProjectile(this.mesh.position.clone(), target);
+        const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+        spawnBossProjectile(fromPos, target);
       }
     });
   }
@@ -5093,7 +5097,8 @@ class StaticWispBoss extends Boss {
       target.x += (Math.random() - 0.5) * spread;
       target.z += (Math.random() - 0.5) * spread;
       if (typeof spawnBossProjectile === 'function') {
-        spawnBossProjectile(this.mesh.position.clone(), target);
+        const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+        spawnBossProjectile(fromPos, target);
       }
     });
   }
@@ -5152,6 +5157,7 @@ class SkullHand {
 
     // Palm (center)
     const palm = new THREE.Mesh(geo, mat.clone());
+    palm.renderOrder = 2;
     palm.userData.isHandBody = true;
     palm.userData.handIndex = this.handIndex;
     this.group.add(palm);
@@ -5167,6 +5173,7 @@ class SkullHand {
 
     fingerPositions.forEach(pos => {
       const finger = new THREE.Mesh(geo, mat.clone());
+      finger.renderOrder = 2;
       finger.position.set(pos[0], pos[1], pos[2]);
       finger.userData.isHandBody = true;
       finger.userData.handIndex = this.handIndex;
@@ -5410,6 +5417,7 @@ class SkullBoss extends Boss {
           fog: false,
         });
         const cube = new THREE.Mesh(geo, mat);
+        cube.renderOrder = 2;
         cube.position.set(
           col * voxelSize - halfW,
           (gridH - 1 - rowIdx) * voxelSize - halfH,
@@ -6603,7 +6611,7 @@ class MinotaurBoss extends Boss {
     }
 
     const faceGroup = new THREE.Group();
-    faceGroup.renderOrder = 10;
+    faceGroup.renderOrder = 2;
     const geo = getGeo(0.375);
 
     // BLOOD MINOTAUR pixel art: 8 wide × 7 tall, flat front-facing
@@ -6951,7 +6959,8 @@ class MinotaurBoss extends Boss {
 
       this.later(i * 50, () => {
         if (typeof spawnBossProjectile === 'function') {
-          spawnBossProjectile(this.mesh.position.clone(), targetPos);
+          const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+          spawnBossProjectile(fromPos, targetPos);
         }
       });
     }
@@ -7136,6 +7145,7 @@ class PrismBoss extends Boss {
     this.facetMaterials.push(this.vulnerableGlowMat);
 
     this.prismMesh = new THREE.Mesh(geo, this.facetMaterials);
+    this.prismMesh.renderOrder = 2;
     this.prismMesh.userData.isBossBody = true;
     this.mesh.add(this.prismMesh);
 
@@ -10207,7 +10217,7 @@ export function clearBossDebris() {
 const bossMinions = [];
 export function spawnBossMinion(fromPos, playerPos, type = 'basic') {
   const group = new THREE.Group();
-  group.renderOrder = 10;
+  group.renderOrder = 2;
   const def = ENEMY_DEFS[type] || ENEMY_DEFS.basic;
   const geo = getGeo(def.voxelSize);
   const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.8, depthWrite: false, fog: false });

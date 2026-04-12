@@ -14,9 +14,9 @@ export function buildAlienPlanetScene(group, deps) {
 
   // Ground plane split into LOD: near (high-detail with shader) + far (simple flat)
   // Uses a simple ShaderMaterial with cheap hash-based noise instead of flat MeshLambertMaterial
-  // Near ground plane (70-unit radius): high-detail with vertex height + shader
+  // Near ground plane (70-unit radius): reduced detail for performance (96x96 → 12x12)
   const nearSize = 140;
-  const nearGeo = new THREE.PlaneGeometry(nearSize, nearSize, 96, 96);
+  const nearGeo = new THREE.PlaneGeometry(nearSize, nearSize, 12, 12);
   const nearPositions = nearGeo.attributes.position;
   let _seed = 42;
   const srand = () => { _seed = (_seed * 16807 + 0) % 2147483647; return (_seed - 1) / 2147483646; };
@@ -478,7 +478,7 @@ export function buildAlienPlanetScene(group, deps) {
       const angle = Math.random() * Math.PI * 2;
       const dist = minDist + Math.random() * (maxDist - minDist);
       const height = minHeight + Math.random() * (maxHeight - minHeight);
-      const width = 1.5 + Math.random() * 4.5; // 3x thicker (was 0.5 + Math.random() * 1.5)
+      const width = 2.5 + Math.random() * 6.0; // Thicker buildings for same visual impact
       dummy.position.set(Math.cos(angle) * dist, (height / 2) - 3, Math.sin(angle) * dist);
       dummy.scale.set(width, height, width);
       dummy.rotation.y = Math.random() * Math.PI;
@@ -488,24 +488,24 @@ export function buildAlienPlanetScene(group, deps) {
     return mesh;
   };
 
-  // Far background city on horizon (REDUCED for FPS: was 100+80+60=240, now 30+25+20=75)
-  const cityLayer1 = generateCityLayer(boxGeo, 30, 120, 150, 30, 60);
+  // Far background city on horizon (REDUCED: 15+12+10=37, was 30+25+20=75)
+  const cityLayer1 = generateCityLayer(boxGeo, 15, 120, 150, 35, 70);
   cityLayer1.name = 'alien-city-boxes';
   cityMeshes.push(cityLayer1);
-  const cityLayer2 = generateCityLayer(cylinderGeo, 25, 140, 180, 40, 80);
+  const cityLayer2 = generateCityLayer(cylinderGeo, 12, 140, 180, 45, 90);
   cityLayer2.name = 'alien-city-cylinders';
   cityMeshes.push(cityLayer2);
-  const cityLayer3 = generateCityLayer(coneGeo, 20, 160, 200, 50, 100);
+  const cityLayer3 = generateCityLayer(coneGeo, 10, 160, 200, 55, 110);
   cityLayer3.name = 'alien-city-cones';
   cityMeshes.push(cityLayer3);
   cityMeshes.forEach((mesh) => group.add(mesh));
 
-  // Mega towers - far on horizon (REDUCED for FPS: was 10)
+  // Mega towers - far on horizon (REDUCED: 3, was 5)
   const megaGeo = new THREE.CylinderGeometry(1, 1.5, 1, 5);
-  const megaMesh = new THREE.InstancedMesh(megaGeo, cityShaderMat, 5);
+  const megaMesh = new THREE.InstancedMesh(megaGeo, cityShaderMat, 3);
   megaMesh.name = 'alien-mega-towers';
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2;
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2;
     const dist = 160 + Math.random() * 20;
     const h = 110 + Math.random() * 20;
     dummy.position.set(Math.cos(angle) * dist, (h / 2) - 3, Math.sin(angle) * dist); // Issue 5: Lower mega towers by 3 units
