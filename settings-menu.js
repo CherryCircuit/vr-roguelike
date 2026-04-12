@@ -130,7 +130,7 @@ function buildSettingsPanel() {
   settingsGroup.add(sfxLabel);
 
   // ── Music UP button ──
-  const mUp = makeBtn('▲', 0.5, 0.28, 0x00ffff, 36, 0.13);
+  const mUp = makeBtn('▲', 1.0, 0.42, 0x00ffff, 56, 0.22);
   mUp.group.position.set(colX, 0.18, 0.02);
   mUp.mesh.userData.isSettingsBtn = true;
   mUp.mesh.userData.settingsAction = 'musicUp';
@@ -150,7 +150,7 @@ function buildSettingsPanel() {
   settingsGroup.add(musicVolSprite);
 
   // ── Music DOWN button ──
-  const mDown = makeBtn('▼', 0.5, 0.28, 0x00ffff, 36, 0.13);
+  const mDown = makeBtn('▼', 1.0, 0.42, 0x00ffff, 56, 0.22);
   mDown.group.position.set(colX, -0.32, 0.02);
   mDown.mesh.userData.isSettingsBtn = true;
   mDown.mesh.userData.settingsAction = 'musicDown';
@@ -158,7 +158,7 @@ function buildSettingsPanel() {
   settingsGroup.add(mDown.group);
 
   // ── SFX UP button ──
-  const sUp = makeBtn('▲', 0.5, 0.28, 0x00ffff, 36, 0.13);
+  const sUp = makeBtn('▲', 1.0, 0.42, 0x00ffff, 56, 0.22);
   sUp.group.position.set(col2X, 0.18, 0.02);
   sUp.mesh.userData.isSettingsBtn = true;
   sUp.mesh.userData.settingsAction = 'sfxUp';
@@ -178,7 +178,7 @@ function buildSettingsPanel() {
   settingsGroup.add(sfxVolSprite);
 
   // ── SFX DOWN button ──
-  const sDown = makeBtn('▼', 0.5, 0.28, 0x00ffff, 36, 0.13);
+  const sDown = makeBtn('▼', 1.0, 0.42, 0x00ffff, 56, 0.22);
   sDown.group.position.set(col2X, -0.32, 0.02);
   sDown.mesh.userData.isSettingsBtn = true;
   sDown.mesh.userData.settingsAction = 'sfxDown';
