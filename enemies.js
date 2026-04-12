@@ -402,13 +402,49 @@ function clampPositionToFrontArc(position, playerPos, minDist = 3, maxDist = 20,
   return position;
 }
 
-// ── Mesh cache (avoid per-frame array allocation in getEnemyMeshes) ──
+// ── Mesh caches (avoid hot-path array allocation / linear lookups) ──
+// VR-CRITICAL: Projectile collision and beam weapons query these repeatedly.
+// Keep root-mesh arrays stable and maintain O(1) root -> index maps.
 let _cachedEnemyMeshes = [];
 let _enemyMeshesDirty = true;
+const _enemyMeshToIndex = new Map();
+
+let _cachedBossMinionMeshes = [];
+let _bossMinionMeshesDirty = true;
+const _bossMinionMeshToIndex = new Map();
 
 function rebuildMeshCache() {
-  _cachedEnemyMeshes = activeEnemies.map(e => e.mesh);
+  _cachedEnemyMeshes.length = 0;
+  _enemyMeshToIndex.clear();
+
+  for (let i = 0; i < activeEnemies.length; i++) {
+    const enemy = activeEnemies[i];
+    if (!enemy) continue;
+    enemy._activeIndex = i;
+    if (enemy.mesh) {
+      _cachedEnemyMeshes.push(enemy.mesh);
+      _enemyMeshToIndex.set(enemy.mesh, i);
+    }
+  }
+
   _enemyMeshesDirty = false;
+}
+
+function rebuildBossMinionMeshCache() {
+  _cachedBossMinionMeshes.length = 0;
+  _bossMinionMeshToIndex.clear();
+
+  for (let i = 0; i < bossMinions.length; i++) {
+    const minion = bossMinions[i];
+    if (!minion) continue;
+    minion._bossMinionIndex = i;
+    if (minion.mesh) {
+      _cachedBossMinionMeshes.push(minion.mesh);
+      _bossMinionMeshToIndex.set(minion.mesh, i);
+    }
+  }
+
+  _bossMinionMeshesDirty = false;
 }
 
 // Shared hitbox geometry cache
@@ -2855,6 +2891,8 @@ export function updateEnemies(dt, now, playerPos) {
 
   for (let i = 0; i < activeEnemies.length; i++) {
     const e = activeEnemies[i];
+    // Perf: Cache the live array index once so projectile / beam code can avoid indexOf().
+    e._activeIndex = i;
     if (e.baseSpeed !== undefined) {
       if (e.isJelly) {
         e.speed = e.baseSpeed + (e.jellyBaseHeight - e.jellyHeight) * e.jellySpeedBoost;
@@ -3863,6 +3901,7 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   if (e.material) e.material.dispose();
   activeEnemies.splice(index, 1);
   _enemyMeshesDirty = true;  // Invalidate cache
+  _enemyMeshToIndex.clear();
 
   return {
     position: pos,
@@ -3927,6 +3966,8 @@ export function clearAllEnemies() {
   }
   activeEnemies.length = 0;
   _enemyMeshesDirty = true;  // Invalidate cache
+  _enemyMeshToIndex.clear();
+  _cachedEnemyMeshes.length = 0;
 
   for (let i = pulseBomberRings.length - 1; i >= 0; i--) {
     const ring = pulseBomberRings[i];
@@ -10085,6 +10126,9 @@ export function clearBossMinions() {
     }
   }
   bossMinions.length = 0;
+  _bossMinionMeshesDirty = true;
+  _bossMinionMeshToIndex.clear();
+  _cachedBossMinionMeshes.length = 0;
 }
 
 export function clearAllTelegraphs() {
@@ -10246,20 +10290,30 @@ export function spawnBossMinion(fromPos, playerPos, type = 'basic') {
 
   group.position.copy(fromPos);
   group.userData.isBossMinion = true;
+  // Perf: Slightly generous hit radius keeps the final-boss minions readable in VR
+  // while letting projectile collision use direct math instead of recursive raycasts.
+  group.userData.hitRadius = Math.max(def.hitboxRadius || def.voxelSize * 2.8, 0.8);
   sceneRef.add(group);
   bossMinions.push({ mesh: group, hp: def.baseHp, maxHp: def.baseHp, speed: def.baseSpeed });
+  _bossMinionMeshesDirty = true;
 }
 
 export function getBossMinionMeshes() {
-  return bossMinions.map(m => m.mesh);
+  if (_bossMinionMeshesDirty) {
+    rebuildBossMinionMeshCache();
+  }
+  return _cachedBossMinionMeshes;
 }
 
 export function getBossMinionByMesh(mesh) {
+  if (_bossMinionMeshesDirty) {
+    rebuildBossMinionMeshCache();
+  }
   let obj = mesh;
   while (obj) {
     if (obj.userData.isBossMinion) {
-      const idx = bossMinions.findIndex(m => m.mesh === obj);
-      return idx >= 0 ? { index: idx, minion: bossMinions[idx] } : null;
+      const idx = _bossMinionMeshToIndex.get(obj);
+      return idx !== undefined ? { index: idx, minion: bossMinions[idx] } : null;
     }
     obj = obj.parent;
   }
@@ -10274,6 +10328,8 @@ export function hitBossMinion(index, damage) {
     sceneRef.remove(m.mesh);
     m.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) { if (Array.isArray(c.material)) c.material.forEach(m => m.dispose && m.dispose()); else if (c.material.dispose) c.material.dispose(); } });
     bossMinions.splice(index, 1);
+    _bossMinionMeshesDirty = true;
+    _bossMinionMeshToIndex.clear();
     return { killed: true };
   }
   return { killed: false };
@@ -10826,12 +10882,15 @@ export function getEnemyMeshes(includeBoss = false) {
 }
 
 export function getEnemyByMesh(mesh) {
+  if (_enemyMeshesDirty) {
+    rebuildMeshCache();
+  }
   let obj = mesh;
   while (obj) {
     // Check for regular enemy first (check userData.isEnemy flag)
     if (obj.userData.isEnemy) {
-      const idx = activeEnemies.findIndex(e => e.mesh === obj);
-      if (idx >= 0) {
+      const idx = _enemyMeshToIndex.get(obj);
+      if (idx !== undefined) {
         return { index: idx, enemy: activeEnemies[idx] };
       }
     }
