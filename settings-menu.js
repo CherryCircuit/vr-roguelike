@@ -18,11 +18,14 @@ let previousMenu = null; // 'title' | 'pause'
 let musicVolSprite = null;
 let sfxVolSprite = null;
 
+// Render order: 995 sits above game objects (max ~950) but below HUD (999)
+// and below blaster displays (999). This prevents the settings panel from
+// drawing on top of the player's weapon visuals.
 const SETTINGS_FONT_SIZE = 38;
 const SETTINGS_LABEL_FONT_SIZE = 28;
 const SETTINGS_SCALE = 0.12;
 const SETTINGS_LABEL_SCALE = 0.09;
-const SETTINGS_RENDER_ORDER = 10020;
+const SETTINGS_RENDER_ORDER = 995;
 
 // References to button meshes for raycasting
 let musicUpBtn = null;
@@ -138,7 +141,7 @@ function buildSettingsPanel() {
     color: '#ffffff',
     glow: true,
     glowColor: '#00ffff',
-    scale: SETTINGS_SCALE,
+    scale: 0.3,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
   musicVolSprite.position.set(colX, -0.08, 0.02);
@@ -166,7 +169,7 @@ function buildSettingsPanel() {
     color: '#ffffff',
     glow: true,
     glowColor: '#00ffff',
-    scale: SETTINGS_SCALE,
+    scale: 0.3,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
   sfxVolSprite.position.set(col2X, -0.08, 0.02);
@@ -180,10 +183,10 @@ function buildSettingsPanel() {
   sfxDownBtn = sDown.mesh;
   settingsGroup.add(sDown.group);
 
-  // ── Divider line ──
+  // ── Divider line ── (w=0.02, h=0.65, centered at (0, -0.08, 0.015))
   const divGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(0, 0.4, 0.015),
-    new THREE.Vector3(0, -0.55, 0.015),
+    new THREE.Vector3(0, -0.08 + 0.325, 0.015),
+    new THREE.Vector3(0, -0.08 - 0.325, 0.015),
   ]);
   const divider = new THREE.Line(divGeo, new THREE.LineBasicMaterial({
     color: 0x00ffff, transparent: true, opacity: 0.4, depthTest: false, depthWrite: false
@@ -191,8 +194,8 @@ function buildSettingsPanel() {
   divider.renderOrder = SETTINGS_RENDER_ORDER;
   settingsGroup.add(divider);
 
-  // ── BACK button ──
-  const back = makeBtn('BACK', 1.2, 0.3, 0xffff00, 38, 0.12);
+  // ── BACK button ── (w=0.75, h=0.3)
+  const back = makeBtn('BACK', 0.75, 0.3, 0xffff00, 38, 0.12);
   back.group.position.set(0, -0.72, 0.02);
   back.mesh.userData.isSettingsBtn = true;
   back.mesh.userData.settingsAction = 'back';
@@ -252,7 +255,10 @@ export function getPreviousMenu() {
 export function getSettingsHit(raycaster) {
   if (!settingsGroup.visible) return null;
 
-  const intersects = raycaster.intersectObjects(settingsGroup.children, true);
+  // Only raycast against the actual button meshes for precise hit detection
+  const buttonMeshes = [musicUpBtn, musicDownBtn, sfxUpBtn, sfxDownBtn, backBtn].filter(Boolean);
+  const intersects = raycaster.intersectObjects(buttonMeshes, false);
+
   for (const intersect of intersects) {
     let obj = intersect.object;
     // Walk up to find userData.settingsAction
@@ -267,7 +273,34 @@ export function getSettingsHit(raycaster) {
 }
 
 /**
- * Execute a settings action (from button hit)
+ * Update hover border highlight on settings menu buttons.
+ * Visual scale/glow/sound is handled by updateHUDHover() in hud.js.
+ * This only handles border color brightening.
+ */
+export function updateSettingsHover(raycaster) {
+  if (!settingsGroup.visible) return;
+
+  const buttonMeshes = [musicUpBtn, musicDownBtn, sfxUpBtn, sfxDownBtn, backBtn].filter(Boolean);
+  if (buttonMeshes.length === 0) return;
+
+  const intersects = raycaster.intersectObjects(buttonMeshes, false);
+  const hoveredMesh = intersects.length > 0 ? intersects[0].object : null;
+
+  buttonMeshes.forEach(btn => {
+    const group = btn.parent;
+    if (!group) return;
+    const border = group.children.find(c => c instanceof THREE.LineSegments);
+    if (!border || !border.material) return;
+
+    const isHovered = btn === hoveredMesh;
+    const isBack = btn.userData.settingsAction === 'back';
+    const baseColor = isBack ? 0xffff00 : 0x00ffff;
+    const hoverColor = isBack ? 0xffff88 : 0x88ffff;
+    border.material.color.set(isHovered ? hoverColor : baseColor);
+  });
+}
+
+/**
  * Returns true if settings should close (BACK was pressed)
  */
 export function executeSettingsAction(action) {

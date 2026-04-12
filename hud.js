@@ -16,11 +16,12 @@ import {
 } from './damage-numbers.js';
 import {
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown,
-  hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit
+  hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
+  updatePauseMenuHover
 } from './pause-menu.js';
 import {
   settingsGroup, showSettings, hideSettings, isSettingsVisible,
-  getSettingsHit, executeSettingsAction, getPreviousMenu
+  getSettingsHit, executeSettingsAction, getPreviousMenu, updateSettingsHover
 } from './settings-menu.js';
 
 // Re-export so main.js imports still work
@@ -31,8 +32,9 @@ export {
   clearAllKillChainPopups,
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown,
   hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
+  updatePauseMenuHover,
   showSettings, hideSettings, isSettingsVisible, getSettingsHit,
-  executeSettingsAction, getPreviousMenu, settingsGroup
+  executeSettingsAction, getPreviousMenu, settingsGroup, updateSettingsHover
 };
 
 // VR camera height fix: Shift entire scene down so XR camera at ~0.875m appears 1.6m above floor
@@ -3752,10 +3754,17 @@ export function updateHUDHover(raycasters) {
     nameEntryActionMeshes.forEach(m => { if (m) hoverables.push(m); });
   }
 
-  // 7. Pause Menu (RESUME button)
+  // 7. Pause Menu (RESUME and SETTINGS buttons)
   if (pauseMenuGroup.visible) {
     pauseMenuGroup.traverse(c => {
-      if (c.userData && c.userData.isResumeButton) hoverables.push(c);
+      if (c.userData && (c.userData.isResumeButton || c.userData.isPauseSettingsBtn)) hoverables.push(c);
+    });
+  }
+
+  // 8. Settings Menu buttons
+  if (settingsGroup.visible) {
+    settingsGroup.traverse(c => {
+      if (c.userData && c.userData.isSettingsBtn) hoverables.push(c);
     });
   }
 
@@ -3902,6 +3911,13 @@ export function updateHUDHover(raycasters) {
   // Play hover sound on new hover
   if (newHover) {
     playMenuHoverSound();
+  }
+
+  // Update border highlights on pause menu and settings buttons
+  if (raycasters.length > 0) {
+    const rc = raycasters[0];
+    updatePauseMenuHover(rc);
+    updateSettingsHover(rc);
   }
 
   return newHover;
