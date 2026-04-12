@@ -5173,8 +5173,14 @@ class SkullHand {
     });
 
     // Hitbox (use cached geometry to avoid per-spawn leak)
-    const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-    const hitbox = new THREE.Mesh(getHitboxGeo(1.0, 1.0, 1.0), hitboxMat);
+    // Must use transparent+opacity:0 instead of visible:false because Three.js raycaster skips invisible meshes
+    const hitboxMat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      depthTest: false,
+    });
+    const hitbox = new THREE.Mesh(getHitboxGeo(1.5, 1.5, 1.5), hitboxMat);
     hitbox.userData.isHandHitbox = true;
     hitbox.userData.handIndex = this.handIndex;
     hitbox.userData.skullHand = this;
@@ -5332,39 +5338,38 @@ class SkullBoss extends Boss {
     const geo = getGeo(0.375);
 
     // NECRO pixel art: 9 wide × 7 tall, flat front-facing
-    // Colors: 🟨=#F2E8D5 🟧=#D8B08A 🟫=#9C6B3C ⬛️=#2B1F1A 🟥=#C1121F 🟪=#6A2C70 🟦=#3A506B 🟩=#5A7D4D ⬜️=blank
+    // Colors: 0=blank, 1=🟨=#F9F2E5, 2=🟧=#E4D8C8, 3=🟫=#9E8D74, 4=⬛=#180000, 5=🟥=#F90001, 6=🟪=#594B38, 7=🟦=#2B2111, 8=🟩=#F8F0E4
     const COLORS = {
-      bone_highlight: 0xF2E8D5,  // 🟨 top bone highlight
-      bone_mid: 0xD8B08A,        // 🟧 warm mid-tone bone
-      bone_base: 0x9C6B3C,       // 🟫 base bone color
-      shadow: 0x2B1F1A,          // ⬛️ deep shadow
-      eye_glow: 0xC1121F,        // 🟥 core eye glow
-      eye_falloff: 0x6A2C70,     // 🟪 subsurface glow
-      cool_shadow: 0x3A506B,     // 🟦 cool shadow under skull
-      decay_tint: 0x5A7D4D,      // 🟩 subtle decay tint near jaw
+      bone_highlight: 0xF9F2E5,  // 🟨 new top highlight
+      bone_mid: 0xE4D8C8,        // 🟧 warm mid-tone bone
+      bone_base: 0x9E8D74,       // 🟫 base bone color
+      shadow: 0x180000,          // ⬛ deep shadow
+      eye_glow: 0xF90001,        // 🟥 core eye glow
+      eye_falloff: 0x594B38,     // 🟪 subsurface glow
+      cool_shadow: 0x2B2111,     // 🟦 cool shadow under skull
+      decay_tint: 0xF8F0E4,      // 🟩 light fill near jaw
     };
 
-    // Grid definition: row index → array of [col, color_key]
-    // 0 = blank, 1=🟨, 2=🟧, 3=🟫, 4=⬛, 5=🟥, 6=🟪, 7=🟦, 8=🟩
+    // Grid definition: full 9-element rows, 0 = blank
+    // 0=blank, 1=🟨, 2=🟧, 3=🟫, 4=⬛, 5=🟥, 6=🟪, 7=🟦, 8=🟩
     const GRID = [
-      // Row 0: ⬜️⬜️🟫🟫🟫🟫🟫⬜️⬜️
-      [3,3,3,3,3],  // cols 2-6
+      // Row 0: ⬜️⬜️🟫🟧🟧🟧🟫⬜️⬜️
+      [0,0,3,2,2,2,3,0,0],
       // Row 1: ⬜️🟫🟨🟨🟨🟨🟨🟫⬜️
-      [1,1,1,1,1,1],  // cols 1-6 (with 🟫 borders)
-      // Row 2: 🟫🟨🟨🟧🟧🟨🟨🟨🟫
-      [3,1,1,2,2,1,1,1,3],
-      // Row 3: 🟫⬛️⬛️🟧🟧🟧⬛️⬛️🟫
-      [3,4,4,2,2,2,4,4,3],
-      // Row 4: 🟫⬛️🟥🟪🟧🟪🟥⬛️🟫
-      [3,4,5,6,2,6,5,4,3],
-      // Row 5: ⬜️🟫⬛️🟦🟦🟦⬛️🟫⬜️
-      [3,4,7,7,7,4,3],  // cols 1-7
-      // Row 6: ⬜️⬜️🟫🟩⬛️🟩🟫⬜️⬜️
-      [3,8,4,8,3],  // cols 2-6
+      [0,3,1,1,1,1,1,3,0],
+      // Row 2: 🟫🟧🟧🟧🟧🟧🟧🟧🟫
+      [3,2,2,2,2,2,2,2,3],
+      // Row 3: 🟫⬛️⬛️🟩⬜️🟩⬛️⬛️🟫 (col 4 = blank = nose)
+      [3,4,4,8,0,8,4,4,3],
+      // Row 4: 🟫⬛️🟥🟪🟨🟪🟥⬛️🟫
+      [3,4,5,6,1,6,5,4,3],
+      // Row 5: ⬜️🟦🟧🟨🟪🟨🟧🟦⬜️
+      [0,7,2,1,6,1,2,7,0],
+      // Row 6: ⬜️🟦🟧🟫🟧🟫🟧🟦⬜️
+      [0,7,2,3,2,3,2,7,0],
     ];
 
-    // Column offsets per row (where the grid starts)
-    const COL_OFFSETS = [2, 1, 0, 0, 0, 1, 2];
+    // No column offsets needed - all rows are full 9-element arrays
 
     // Color key map
     const COLOR_MAP = {
@@ -5390,9 +5395,9 @@ class SkullBoss extends Boss {
     this.voxelMaterials = [];
 
     GRID.forEach((row, rowIdx) => {
-      const colOffset = COL_OFFSETS[rowIdx];
       row.forEach((cell, cellIdx) => {
-        const col = colOffset + cellIdx;
+        const col = cellIdx;
+        if (cell === 0) return; // blank
         const colorHex = COLOR_MAP[cell];
         if (!colorHex) return;
 
@@ -5451,6 +5456,7 @@ class SkullBoss extends Boss {
 
     handOffsets.forEach((offset, idx) => {
       const hand = new SkullHand(this, idx, offset, this.sceneRef);
+      hand.group.visible = false; // Hidden during rise animation
       this.hands.push(hand);
     });
   }
@@ -5473,6 +5479,17 @@ class SkullBoss extends Boss {
   }
 
   updateBehavior(dt, now, playerPos) {
+    // Show hands after rise animation completes
+    if (!this._handsRevealed) {
+      this._handsRevealed = true;
+      this.hands.forEach(hand => {
+        if (hand.alive) hand.group.visible = true;
+      });
+    }
+
+    // Bobbing animation (only after rise completes)
+    this.mesh.position.y += Math.sin(now * 0.002) * 0.2;
+
     // Update hands
     let aliveHands = 0;
     this.hands.forEach(hand => {
@@ -10497,7 +10514,7 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
     position: fromPos.clone(),
     velocity: velocity,
     createdAt: performance.now(),
-    lifetime: lobbed ? 6000 : 3600, // Lobbed projectiles live longer
+    lifetime: lobbed ? 6000 : 5000, // Lobbed projectiles live longer; hands at ±6.75 need extra distance
     homingStrength: homingStrength,
     wigglePhase: Math.random() * Math.PI * 2,
     wiggleAmplitude: wiggleAmplitude,
