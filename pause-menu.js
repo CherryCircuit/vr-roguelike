@@ -10,6 +10,9 @@ import {
   pauseMenuGroup, pauseCountdownGroup,
   loadLayout
 } from './hud.js';
+import { playMenuHoverSound } from './audio.js';
+
+let _lastPauseHovered = null; // track hover state for sound
 
 let pauseMenuElements = {
   panel: null,
@@ -1045,6 +1048,12 @@ export function updatePauseMenuHover(raycaster) {
 
   const intersects = raycaster.intersectObjects(buttonMeshes, false);
   const hoveredMesh = intersects.length > 0 ? intersects[0].object : null;
+
+  // Play hover sound on new hover
+  if (hoveredMesh && hoveredMesh !== _lastPauseHovered) {
+    playMenuHoverSound();
+  }
+  _lastPauseHovered = hoveredMesh;
 
   // Apply border color feedback
   buttonMeshes.forEach(btn => {

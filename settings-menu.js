@@ -5,8 +5,9 @@
 import * as THREE from 'three';
 import {
   makeSprite, updateSpriteText, disposeGroupChildren,
+  pauseMenuGroup,
 } from './hud.js';
-import { getMusicVolume, getSFXVolume, setMusicVolume, setSFXVolume, playMenuClick } from './audio.js';
+import { getMusicVolume, getSFXVolume, setMusicVolume, setSFXVolume, playMenuClick, playMenuHoverSound } from './audio.js';
 
 export const settingsGroup = new THREE.Group();
 settingsGroup.name = 'settings-menu';
@@ -29,6 +30,7 @@ const SETTINGS_RENDER_ORDER = 995;
 
 // References to button meshes for raycasting
 let musicUpBtn = null;
+let _lastSettingsHovered = null; // track hover state for sound
 let musicDownBtn = null;
 let sfxUpBtn = null;
 let sfxDownBtn = null;
@@ -208,13 +210,16 @@ function buildSettingsPanel() {
  */
 export function showSettings(from) {
   previousMenu = from;
+  _lastSettingsHovered = null;
   buildSettingsPanel();
 
-  if (from === 'pause') {
-    // Position at pause menu location (in front of player)
-    settingsGroup.position.set(0, 1.5, -2.6);
-    settingsGroup.rotation.set(0, 0, 0);
-    settingsGroup.scale.setScalar(0.78); // Match PAUSE_MENU_SCALE
+  if (from === 'pause' && pauseMenuGroup) {
+    // Copy pause menu position/rotation so settings appear at same spot
+    settingsGroup.position.copy(pauseMenuGroup.position);
+    settingsGroup.rotation.copy(pauseMenuGroup.rotation);
+    settingsGroup.scale.copy(pauseMenuGroup.scale);
+    // Hide pause menu while settings is open
+    pauseMenuGroup.visible = false;
   } else {
     // Position at title screen location
     settingsGroup.position.set(0, 1.2, -3.5);
@@ -235,6 +240,12 @@ export function hideSettings() {
   sfxUpBtn = null;
   sfxDownBtn = null;
   backBtn = null;
+  _lastSettingsHovered = null;
+
+  // Restore pause menu if we came from it
+  if (previousMenu === 'pause' && pauseMenuGroup) {
+    pauseMenuGroup.visible = true;
+  }
 }
 
 export function isSettingsVisible() {
@@ -286,6 +297,12 @@ export function updateSettingsHover(raycaster) {
   const intersects = raycaster.intersectObjects(buttonMeshes, false);
   const hoveredMesh = intersects.length > 0 ? intersects[0].object : null;
 
+  // Play hover sound on new hover
+  if (hoveredMesh && hoveredMesh !== _lastSettingsHovered) {
+    playMenuHoverSound();
+  }
+  _lastSettingsHovered = hoveredMesh;
+
   buttonMeshes.forEach(btn => {
     const group = btn.parent;
     if (!group) return;
@@ -308,22 +325,22 @@ export function executeSettingsAction(action) {
   switch (action) {
     case 'musicUp': {
       const vol = setMusicVolume(getMusicVolume() + 5);
-      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: SETTINGS_SCALE });
+      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: 0.3 });
       return false;
     }
     case 'musicDown': {
       const vol = setMusicVolume(getMusicVolume() - 5);
-      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: SETTINGS_SCALE });
+      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: 0.3 });
       return false;
     }
     case 'sfxUp': {
       const vol = setSFXVolume(getSFXVolume() + 5);
-      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: SETTINGS_SCALE });
+      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: 0.3 });
       return false;
     }
     case 'sfxDown': {
       const vol = setSFXVolume(getSFXVolume() - 5);
-      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: SETTINGS_SCALE });
+      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: 0.3 });
       return false;
     }
     case 'back':
