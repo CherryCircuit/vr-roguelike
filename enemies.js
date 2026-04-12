@@ -3864,7 +3864,13 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   activeEnemies.splice(index, 1);
   _enemyMeshesDirty = true;  // Invalidate cache
 
-  return { position: pos, scoreValue: e.scoreValue, baseColor: color, type: e.type };
+  return {
+    position: pos,
+    scoreValue: e.scoreValue,
+    baseColor: color,
+    type: e.type,
+    skipLevelProgress: !!e._bossSummoned,
+  };
 }
 
 /**
@@ -8513,7 +8519,7 @@ class EclipseEngineBoss extends Boss {
     group.userData.eclipseNodeId = id;
     group.userData.eclipseNodeType = type;
 
-    const geo = getGeo(type === 'anchor' ? 0.18 : 0.15);
+    const geo = getGeo(type === 'anchor' ? 0.22 : 0.19);
     const positions = [
       [0, 0, 0.16],
       [0.18, 0, 0],
@@ -8541,6 +8547,19 @@ class EclipseEngineBoss extends Boss {
       group.add(cube);
     });
 
+    // VR-CRITICAL: These sit far away and move on multiple height bands, so the
+    // invisible hit area must be larger than the visible voxels to stay fair.
+    const hitboxSize = type === 'anchor' ? 0.95 : 1.1;
+    const hitbox = new THREE.Mesh(
+      getHitboxGeo(hitboxSize, hitboxSize, hitboxSize),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    );
+    hitbox.userData.isWeakPoint = true;
+    hitbox.userData.eclipseNodeId = id;
+    hitbox.userData.eclipseNodeType = type;
+    group.add(hitbox);
+
+    group.scale.setScalar(type === 'anchor' ? 1.35 : 1.55);
     return group;
   }
 
@@ -8607,9 +8626,9 @@ class EclipseEngineBoss extends Boss {
     this.state = 'phase1_sealed';
     this.fixedY = 2.6;
     this.targetScale = 1.15;
-    this.volleyTimer = 0.95;
-    this.lobTimer = 0.7;
-    this.patternTimer = 3.6;
+    this.volleyTimer = 1.65;
+    this.lobTimer = 1.35;
+    this.patternTimer = 5.8;
     this.windowTimer = 0;
     this.windowDamageBudget = 0;
     this.windowDamageTaken = 0;
@@ -8674,7 +8693,7 @@ class EclipseEngineBoss extends Boss {
       this.sealNodes.push({
         id: idx,
         type: 'seal',
-        hp: 145,
+        hp: 78,
         angle: cfg.angle,
         radius: cfg.radius,
         height: cfg.height,
@@ -8700,7 +8719,7 @@ class EclipseEngineBoss extends Boss {
       this.anchorNodes.push({
         id: idx,
         type: 'anchor',
-        hp: 165,
+        hp: 110,
         offset: cfg.offset.clone(),
         bob: cfg.bob,
         active: true,
@@ -8765,9 +8784,9 @@ class EclipseEngineBoss extends Boss {
     if (this.phase === 1) {
       this.state = 'phase1_sealed';
       this.spawnPhase1Seals();
-      this.volleyTimer = 0.6;
-      this.lobTimer = 0.35;
-      this.patternTimer = 2.9;
+      this.volleyTimer = 1.3;
+      this.lobTimer = 1.2;
+      this.patternTimer = 4.9;
     } else if (this.phase === 2) {
       const nextType = this.phase2WallPatternIndex % 2 === 0 ? 'swarm' : 'tank';
       this.startWallPattern(nextType);
@@ -8952,11 +8971,10 @@ class EclipseEngineBoss extends Boss {
     this.phase1SealAttackIndex++;
     const origin = node.group.getWorldPosition(new THREE.Vector3());
     const offsets = [
-      { x: -0.9, z: -0.35 },
-      { x: 0.85, z: -0.1 },
-      { x: 0.2, z: 0.9 },
+      { x: -0.85, z: -0.25 },
+      { x: 0.8, z: 0.55 },
     ];
-    this.fireLobbedVolley([origin], playerPos, offsets, 4.2, 520, 0x6eeaff);
+    this.fireLobbedVolley([origin], playerPos, offsets, 3.9, 560, 0x6eeaff);
   }
 
   firePhase2BacklineMortars(playerPos, originCount = 2) {
@@ -9036,6 +9054,7 @@ class EclipseEngineBoss extends Boss {
     enemy._eclipseReleaseTimer = 0;
     enemy._eclipseReleaseVector = null;
     enemy._eclipseWallType = this.phase2WallType;
+    enemy._bossSummoned = true;
 
     // The wall needs to be threatening but still answerable.
     if (enemyType === 'swarm') {
@@ -9233,15 +9252,10 @@ class EclipseEngineBoss extends Boss {
     if (this.coreExposed) {
       this.windowTimer -= dt;
       this.coreShotTimer -= dt;
-      this.lobTimer -= dt;
 
       if (this.coreShotTimer <= 0) {
-        this.coreShotTimer = 1.45;
+        this.coreShotTimer = 1.7;
         this.fireMeasuredHeartShot(playerPos, this.windowDamageTaken > this.windowDamageBudget * 0.5 ? 0.45 : -0.45);
-      }
-      if (this.lobTimer <= 0) {
-        this.lobTimer = 2.1;
-        this.firePhase2BacklineMortars(playerPos, 1);
       }
       if (this.forceCloseWindow || this.windowTimer <= 0) {
         this.resolveExposure();
@@ -9254,17 +9268,17 @@ class EclipseEngineBoss extends Boss {
     this.patternTimer -= dt;
 
     if (this.lobTimer <= 0) {
-      this.lobTimer = 1.75;
+      this.lobTimer = 2.55;
       this.fireSealLobbedPressure(playerPos);
     }
     if (this.volleyTimer <= 0) {
-      this.volleyTimer = 1.35;
+      this.volleyTimer = 2.15;
       const crownOrigins = this.collectEmitterPositions(this.crownEmitters);
-      this.fireDirectFan(crownOrigins.slice(0, 2), playerPos, 3, 1.05, 360, 0x8ceeff);
+      this.fireDirectFan(crownOrigins.slice(0, 1), playerPos, 2, 0.7, 380, 0x8ceeff);
     }
     if (this.patternTimer <= 0) {
-      this.patternTimer = 4.8;
-      this.firePhase2BacklineMortars(playerPos, 2);
+      this.patternTimer = 6.8;
+      this.firePhase2BacklineMortars(playerPos, 1);
     }
   }
 
@@ -9504,7 +9518,7 @@ class EclipseEngineBoss extends Boss {
 
     if (nodePool === this.sealNodes && this.sealNodes.every((candidate) => !candidate.active)) {
       this.state = 'phase1_exposed';
-      this.beginCoreWindow(8.4, 0.062);
+      this.beginCoreWindow(9.8, 0.07);
     }
 
     if (nodePool === this.anchorNodes && this.anchorNodes.every((candidate) => !candidate.active)) {

@@ -647,12 +647,15 @@ function handleEnemyKilled(enemyIndex, opts = {}) {
   const destroyData = destroyEnemy(enemyIndex, isCritical, overkill);
   if (!destroyData) return null;
 
-  game.kills++;
-  trackKill();
-  if (killsWithoutHit) game.killsWithoutHit++;
+  const countsForLevelProgress = !destroyData.skipLevelProgress;
+  if (countsForLevelProgress) {
+    game.kills++;
+    trackKill();
+    if (killsWithoutHit) game.killsWithoutHit++;
+  }
   addScore(destroyData.scoreValue);
   updateHUD(game);
-  checkKillsAlert();
+  if (countsForLevelProgress) checkKillsAlert();
 
   // Kill chain system (direct projectile hits and DoT kills only)
   if (!skipChain) {
@@ -677,13 +680,13 @@ function handleEnemyKilled(enemyIndex, opts = {}) {
     }
 
     // Second alert check after chain updates
-    checkKillsAlert();
+    if (countsForLevelProgress) checkKillsAlert();
   }
 
   // Level complete check
-  if (!skipLevelComplete) {
+  if (!skipLevelComplete && countsForLevelProgress) {
     const cfg = game._levelConfig;
-    if (cfg && game.kills >= cfg.killTarget) {
+    if (cfg && !cfg.isBoss && game.kills >= cfg.killTarget) {
       completeLevel();
     }
   }
@@ -3104,8 +3107,10 @@ function activateNuke() {
     // Set HP to 0 so the death system handles cleanup naturally
     e.hp = 0;
     destroyEnemy(i, false, true); // isCritical=false, isOverkill=true (nuke)
-    game.kills++;
-    trackKill(false);
+    if (!e._bossSummoned) {
+      game.kills++;
+      trackKill(false);
+    }
     addScore(50); // Base score per nuked enemy
     killed++;
   }
@@ -3116,7 +3121,7 @@ function activateNuke() {
     const cfg = game._levelConfig;
     checkKillsAlert();
 
-    if (cfg && game.kills >= cfg.killTarget) {
+    if (cfg && !cfg.isBoss && game.kills >= cfg.killTarget) {
       completeLevel();
     }
   }
@@ -6664,6 +6669,18 @@ function advanceLevelAfterUpgrade() {
     
     // Check for boss level - enter BOSS_ALERT state
     if (game._levelConfig.isBoss) {
+      // Reset boss-alert cinematic state every boss level so repeated full runs
+      // or replays in the same session always rebuild the authored intro cleanly.
+      game._bossCinematicInit = false;
+      game._bossCinematicCleaned = false;
+      game._alertSound2 = false;
+      game._cinFinalBoss = null;
+      game._cinFinalMoonGroup = null;
+      game._cinFinalMoonCore = null;
+      game._cinFinalMoonGlow = null;
+      game._cinFinalBurst = null;
+      game._cinFinalMeteorGroup = null;
+      game._cinFinalMeteorGeo = null;
       game.state = State.BOSS_ALERT;
       game.stateTimer = game.level >= 20 ? 7.4 : 3.0; // Final boss gets a longer authored arrival
       // Start boss music immediately at alert screen
