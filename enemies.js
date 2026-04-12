@@ -5420,6 +5420,9 @@ class SkullBoss extends Boss {
         if (cell === 5) {  // eye_glow
           cube.userData.isEye = true;
           cube.userData.eyeIndex = eyeCount;
+          // Eye material: start bright, will be animated in updateBehavior
+          mat.color.setHex(0xff0000);
+          mat.opacity = 0.95;
           if (eyeCount === 0) this.leftEye = cube;
           else this.rightEye = cube;
           eyeCount++;
@@ -5466,18 +5469,11 @@ class SkullBoss extends Boss {
   setHeadImmune(immune) {
     this.headVulnerable = !immune;
 
-    // Visual feedback - dim eyes when immune
-    const eyeOpacity = immune ? 0.3 : 0.9;
-    const eyeColor = immune ? 0x888888 : 0xff0000;
-
-    if (this.leftEye) {
-      this.leftEye.material.opacity = eyeOpacity;
-      this.leftEye.material.color.setHex(eyeColor);
-    }
-    if (this.rightEye) {
-      this.rightEye.material.opacity = eyeOpacity;
-      this.rightEye.material.color.setHex(eyeColor);
-    }
+    // Visual feedback - dim eye opacity when immune
+    // Color is now handled by pulsing animation in updateBehavior
+    const eyeOpacity = immune ? 0.4 : 0.95;
+    if (this.leftEye) this.leftEye.material.opacity = eyeOpacity;
+    if (this.rightEye) this.rightEye.material.opacity = eyeOpacity;
   }
 
   updateBehavior(dt, now, playerPos) {
@@ -5487,9 +5483,19 @@ class SkullBoss extends Boss {
     }
 
     // Bobbing animation (only after rise completes)
-    // Use _bobBaseY to avoid accumulation - set Y, don't add
-    if (!this._bobBaseY) this._bobBaseY = this._riseTargetY;
+    // _bobBaseY is the target Y from rise animation
+    this._bobBaseY = this._bobBaseY || this._riseTargetY;
     this.mesh.position.y = this._bobBaseY + Math.sin(now * 0.002) * 0.3;
+
+    // Eye glow pulsing: loop from dark red to bright red
+    const pulseT = (Math.sin(now * 0.004) + 1) * 0.5; // 0..1 oscillation
+    // In angry phases (headVulnerable, skullPhase >= 2), eyes stay brighter
+    const minBrightness = this.headVulnerable && this.skullPhase >= 2 ? 0.6 : 0.25;
+    const brightness = minBrightness + pulseT * (1.0 - minBrightness);
+    const eyeR = Math.floor(brightness * 255);
+    const eyeColor = (eyeR << 16); // red channel only
+    if (this.leftEye) this.leftEye.material.color.setHex(eyeColor);
+    if (this.rightEye) this.rightEye.material.color.setHex(eyeColor);
 
     // Update hands
     let aliveHands = 0;
@@ -5730,20 +5736,20 @@ class SkullBoss extends Boss {
     // Stay in a fixed arena, mid-field from player
     const dist = this.mesh.position.distanceTo(playerPos);
 
-    // Stay between 6 and 12 units from player
-    if (dist < 6) {
+    // Stay between 8 and 16 units from player (moved back for NECRO)
+    if (dist < 8) {
       const awayDir = this.mesh.position.clone().sub(playerPos).normalize();
-      this.mesh.position.addScaledVector(awayDir, (6 - dist));
-    } else if (dist > 14) {
+      this.mesh.position.addScaledVector(awayDir, (8 - dist));
+    } else if (dist > 16) {
       const towardDir = playerPos.clone().sub(this.mesh.position).normalize();
-      this.mesh.position.addScaledVector(towardDir, (dist - 14));
+      this.mesh.position.addScaledVector(towardDir, (dist - 16));
     }
 
     // Keep in play area bounds
     const bound = 15;
     this.mesh.position.x = Math.max(-bound, Math.min(bound, this.mesh.position.x));
     this.mesh.position.z = Math.max(-bound, Math.min(bound, this.mesh.position.z));
-    this.mesh.position.y = 1.5;
+    // Don't override Y - bobbing animation handles it via _bobBaseY
   }
 
   fireHandProjectile(hand, playerPos) {
@@ -5804,13 +5810,20 @@ class SkullBoss extends Boss {
       ? this.leftEye.getWorldPosition(new THREE.Vector3())
       : this.rightEye.getWorldPosition(new THREE.Vector3());
 
-    // Cap arc height: max 2.5 above player Y, not above launch position
-    const maxPeakY = playerPos.y + arcHeight;
-    const effectiveArcHeight = Math.max(1.0, maxPeakY - eyePos.y);
+    // Arc sideways: aim at a point offset perpendicular to the player direction
+    // This creates a sweeping curve that arcs left/right
+    const toPlayer = new THREE.Vector3().subVectors(playerPos, eyePos);
+    toPlayer.y = 0;
+    toPlayer.normalize();
+    // Perpendicular direction (rotated 90 degrees on Y)
+    const perpDir = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
+    // Alternate curve direction based on eye side
+    const curveDir = this._eyeSide === 1 ? 1 : -1;
+    const curveOffset = perpDir.clone().multiplyScalar(curveDir * 2.5);
+    const curvedTarget = playerPos.clone().add(curveOffset);
 
-    const targetPos = playerPos.clone();
-    if (typeof spawnBossLobbedProjectile === 'function') {
-      spawnBossLobbedProjectile(eyePos, targetPos, effectiveArcHeight);
+    if (typeof spawnBossProjectile === 'function') {
+      spawnBossProjectile(eyePos, curvedTarget, false, 0);
     }
   }
 
