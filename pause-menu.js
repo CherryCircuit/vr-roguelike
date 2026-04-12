@@ -19,6 +19,9 @@ let pauseMenuElements = {
   chartCanvas: null,
   resumeButton: null,
   settingsButton: null,
+  // Actual button meshes for precise raycasting
+  resumeBtnMesh: null,
+  settingsBtnMesh: null,
 };
 
 let pauseMenuAnimation = {
@@ -798,6 +801,7 @@ function createPauseSettingsButton() {
   });
   const btnMesh = new THREE.Mesh(btnGeo, btnMat);
   btnMesh.userData.isPauseSettingsBtn = true;
+  btnMesh.userData._btnGroup = group; // Back-ref for hover scaling
   group.add(btnMesh);
 
   const btnBorder = new THREE.LineSegments(
@@ -824,12 +828,8 @@ function createPauseSettingsButton() {
   text.position.set(0, 0, 0.02);
   group.add(text);
 
-  // Store button data for raycasting
-  group.userData = {
-    isPauseSettingsBtn: true,
-    width: 2.0,
-    height: 0.5
-  };
+  // Store button mesh reference for targeted raycasting
+  pauseMenuElements.settingsBtnMesh = btnMesh;
 
   return group;
 }
@@ -849,6 +849,7 @@ function createResumeButton() {
   });
   const btnMesh = new THREE.Mesh(btnGeo, btnMat);
   btnMesh.userData.isResumeButton = true;
+  btnMesh.userData._btnGroup = group; // Back-ref for hover scaling
   group.add(btnMesh);
 
   const btnBorder = new THREE.LineSegments(
@@ -875,12 +876,8 @@ function createResumeButton() {
   text.position.set(0, 0, 0.02);
   group.add(text);
 
-  // Store button data for raycasting (hitbox is larger than text)
-  group.userData = {
-    isResumeButton: true,
-    width: 2.0,
-    height: 0.5
-  };
+  // Store button mesh reference for targeted raycasting
+  pauseMenuElements.resumeBtnMesh = btnMesh;
 
   return group;
 }
@@ -1002,27 +999,67 @@ export function updatePauseCountdownDisplay(seconds) {
 
 /**
  * Handle raycast hits on pause menu (for desktop clicks)
+ * Only tests against the specific button meshes, not all children.
+ * This prevents false positives from hitting text sprites or overlapping elements.
  */
 export function getPauseMenuHit(raycaster) {
   if (!pauseMenuGroup.visible) return null;
 
-  const intersects = raycaster.intersectObjects(pauseMenuGroup.children, true);
+  // Only raycast against the actual button meshes
+  const buttonMeshes = [
+    pauseMenuElements.resumeBtnMesh,
+    pauseMenuElements.settingsBtnMesh,
+  ].filter(Boolean);
+
+  if (buttonMeshes.length === 0) return null;
+
+  const intersects = raycaster.intersectObjects(buttonMeshes, false);
 
   for (const intersect of intersects) {
-    let obj = intersect.object;
-    while (obj && !obj.userData.isResumeButton && !obj.userData.isPauseSettingsBtn) {
-      obj = obj.parent;
-    }
-
-    if (obj && obj.userData.isResumeButton) {
+    const obj = intersect.object;
+    if (obj.userData.isResumeButton) {
       return 'resume';
     }
-    if (obj && obj.userData.isPauseSettingsBtn) {
+    if (obj.userData.isPauseSettingsBtn) {
       return 'settings';
     }
   }
 
   return null;
+}
+
+/**
+ * Update hover border highlight on pause menu buttons.
+ * Visual scale/glow/sound is handled by updateHUDHover() in hud.js.
+ * This only handles border color brightening.
+ */
+export function updatePauseMenuHover(raycaster) {
+  if (!pauseMenuGroup.visible) return;
+
+  const buttonMeshes = [
+    pauseMenuElements.resumeBtnMesh,
+    pauseMenuElements.settingsBtnMesh,
+  ].filter(Boolean);
+
+  if (buttonMeshes.length === 0) return;
+
+  const intersects = raycaster.intersectObjects(buttonMeshes, false);
+  const hoveredMesh = intersects.length > 0 ? intersects[0].object : null;
+
+  // Apply border color feedback
+  buttonMeshes.forEach(btn => {
+    const group = btn.userData._btnGroup;
+    if (!group) return;
+
+    const border = group.children.find(c => c instanceof THREE.LineSegments);
+    if (!border || !border.material) return;
+
+    const isHovered = btn === hoveredMesh;
+    const isResume = btn.userData.isResumeButton;
+    const baseColor = isResume ? 0xffff00 : 0x00ffff;
+    const hoverColor = isResume ? 0xffff88 : 0x88ffff;
+    border.material.color.set(isHovered ? hoverColor : baseColor);
+  });
 }
 
 /**

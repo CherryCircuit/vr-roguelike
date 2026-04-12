@@ -4471,11 +4471,16 @@ class Boss {
 
     // Update color based on damage
     const damageRatio = 1 - this.hp / this.maxHp;
-    this.mesh.traverse(c => {
-      if (c.isMesh && c.material && !c.userData.isBossBody) {
-        c.material.color.copy(this.baseColor).lerp(new THREE.Color(0xff0000), damageRatio);
-      }
-    });
+    // Per-voxel tinting: if subclass set up voxelMaterials, use those instead of flat tinting
+    if (this.voxelMaterials && this.voxelMaterials.length > 0) {
+      this.updateVoxelTinting(damageRatio);
+    } else {
+      this.mesh.traverse(c => {
+        if (c.isMesh && c.material && !c.userData.isBossBody) {
+          c.material.color.copy(this.baseColor).lerp(new THREE.Color(0xff0000), damageRatio);
+        }
+      });
+    }
 
     // Phase transitions (66%, 33%)
     const prevPhase = this.phase;
@@ -4495,6 +4500,16 @@ class Boss {
       phaseChanged: this.phase !== prevPhase,
       isWeakPointHit
     };
+  }
+
+  /** Per-voxel damage tinting: lerp each voxel from its original color toward dark red. */
+  updateVoxelTinting(damageRatio) {
+    const damagedColor = new THREE.Color(0x880000);
+    const enhancedRatio = Math.pow(damageRatio, 0.7);
+    for (let i = 0; i < this.voxelMaterials.length; i++) {
+      const entry = this.voxelMaterials[i];
+      entry.mesh.material.color.copy(entry.originalColor).lerp(damagedColor, enhancedRatio);
+    }
   }
 
   spawnMinion(position, playerPos, type = 'basic') {
@@ -5314,7 +5329,7 @@ class SkullBoss extends Boss {
 
     const skullGroup = new THREE.Group();
     skullGroup.renderOrder = 10;
-    const geo = getGeo(0.25);
+    const geo = getGeo(0.375);
 
     // NECRO pixel art: 9 wide × 7 tall, flat front-facing
     // Colors: 🟨=#F2E8D5 🟧=#D8B08A 🟫=#9C6B3C ⬛️=#2B1F1A 🟥=#C1121F 🟪=#6A2C70 🟦=#3A506B 🟩=#5A7D4D ⬜️=blank
@@ -5366,12 +5381,13 @@ class SkullBoss extends Boss {
     // Center the grid: 9 wide, 7 tall. Offset so center is at (0,0)
     const gridW = 9;
     const gridH = 7;
-    const voxelSize = 0.25;
+    const voxelSize = 0.375;
     const halfW = (gridW - 1) * voxelSize / 2;
     const halfH = (gridH - 1) * voxelSize / 2;
 
     let eyeCount = 0;
     const skullVoxels = [];
+    this.voxelMaterials = [];
 
     GRID.forEach((row, rowIdx) => {
       const colOffset = COL_OFFSETS[rowIdx];
@@ -5404,6 +5420,7 @@ class SkullBoss extends Boss {
         } else {
           cube.userData.isSkullBody = true;
           skullVoxels.push(cube);
+          this.voxelMaterials.push({ mesh: cube, originalColor: new THREE.Color(colorHex) });
         }
 
         skullGroup.add(cube);
@@ -5417,7 +5434,7 @@ class SkullBoss extends Boss {
 
     // Add hitbox for head (use cached geometry to avoid per-spawn leak)
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-    const hitbox = new THREE.Mesh(getHitboxGeo(2.0, 2.0, 2.0), hitboxMat);
+    const hitbox = new THREE.Mesh(getHitboxGeo(3.0, 3.0, 3.0), hitboxMat);
     hitbox.userData.isBossHitbox = true;
     hitbox.userData.isSkullHead = true;
     this.mesh.add(hitbox);
@@ -5426,10 +5443,10 @@ class SkullBoss extends Boss {
   createHands() {
     // Create 4 hands positioned around the skull
     const handOffsets = [
-      new THREE.Vector3(-4.5, 0.3, 0.5),   // Left top
-      new THREE.Vector3(-4.5, -0.5, 0.5),  // Left bottom
-      new THREE.Vector3(4.5, 0.3, 0.5),    // Right top
-      new THREE.Vector3(4.5, -0.5, 0.5),   // Right bottom
+      new THREE.Vector3(-6.75, 0.45, 0.75),   // Left top
+      new THREE.Vector3(-6.75, -0.75, 0.75),  // Left bottom
+      new THREE.Vector3(6.75, 0.45, 0.75),    // Right top
+      new THREE.Vector3(6.75, -0.75, 0.75),   // Right bottom
     ];
 
     handOffsets.forEach((offset, idx) => {
@@ -5787,6 +5804,7 @@ class SkullBoss extends Boss {
   }
 
   updateHeadColor() {
+    if (this.voxelMaterials && this.voxelMaterials.length > 0) return; // Handled by per-voxel tinting in takeDamage
     const damageRatio = 1 - this.hp / this.maxHp;
     const baseColor = new THREE.Color(0xffffff);
     // More dramatic darkening: progress from white -> pink -> red -> dark red -> almost black
@@ -6555,7 +6573,7 @@ class MinotaurBoss extends Boss {
 
     const faceGroup = new THREE.Group();
     faceGroup.renderOrder = 10;
-    const geo = getGeo(0.25);
+    const geo = getGeo(0.375);
 
     // BLOOD MINOTAUR pixel art: 8 wide × 7 tall, flat front-facing
     const COLORS = {
@@ -6592,12 +6610,13 @@ class MinotaurBoss extends Boss {
 
     const gridW = 8;
     const gridH = 7;
-    const voxelSize = 0.25;
+    const voxelSize = 0.375;
     const halfW = (gridW - 1) * voxelSize / 2;
     const halfH = (gridH - 1) * voxelSize / 2;
 
     let eyeCount = 0;
     const faceVoxels = [];
+    this.voxelMaterials = [];
 
     GRID.forEach((row, rowIdx) => {
       row.forEach((cell, colIdx) => {
@@ -6628,6 +6647,7 @@ class MinotaurBoss extends Boss {
         } else {
           cube.userData.isFaceBody = true;
           faceVoxels.push(cube);
+          this.voxelMaterials.push({ mesh: cube, originalColor: new THREE.Color(colorHex) });
         }
 
         faceGroup.add(cube);
@@ -6640,20 +6660,20 @@ class MinotaurBoss extends Boss {
 
     // Keep existing hitbox
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-    const hitbox = new THREE.Mesh(getHitboxGeo(2.0, 2.0, 2.0), hitboxMat);
+    const hitbox = new THREE.Mesh(getHitboxGeo(3.0, 3.0, 3.0), hitboxMat);
     hitbox.userData.isBossHitbox = true;
     this.mesh.add(hitbox);
   }
 
   createHorns() {
     const hornPositions = [
-      { x: -0.3, y: 0.8, z: 0.4 },
-      { x: 0.3, y: 0.8, z: 0.4 }
+      { x: -0.45, y: 1.2, z: 0.6 },
+      { x: 0.45, y: 1.2, z: 0.6 }
     ];
 
     hornPositions.forEach((pos, idx) => {
       const hornGroup = new THREE.Group();
-      const geo = getGeo(0.15);
+      const geo = getGeo(0.225);
       const hornMat = new THREE.MeshBasicMaterial({
         color: 0xeee6d7,
         transparent: true,
@@ -6663,8 +6683,7 @@ class MinotaurBoss extends Boss {
       // Horn (tapered up)
       for (let i = 0; i < 4; i++) {
         const cube = new THREE.Mesh(geo, hornMat.clone());
-        const size = 0.2 + i * 0.05;
-        cube.position.set(pos.x, pos.y + i * 0.12, pos.z + i * 0.08);
+        cube.position.set(pos.x, pos.y + i * 0.18, pos.z + i * 0.12);
         hornGroup.add(cube);
       }
 
