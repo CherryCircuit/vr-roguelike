@@ -102,18 +102,23 @@ import {
 import { getThemeForLevel, initAmbientParticles, updateAmbientParticles, removeAmbientParticles } from './scenery.js';
 import { SpatialHash } from './spatial-hash.js';
 import { enableTelemetry, disableTelemetry, isTelemetryEnabled, setTelemetryHistoryMs, recordTelemetrySample, getTelemetrySnapshot } from './telemetry.js';
+import { getRuntimeConfig, isDevRuntime, registerRuntimeAction, consumeDebugJump, getSeedSelection } from './runtime-config.js';
 import {
   initVoxelDebris, spawnVoxelExplosion, updateVoxelPhysics,
   voxelPool, activeVoxels
 } from './voxel-debris.js';
 
-// [DEBUG] Expose game state to window for debugging/testing
-window.State = State;
-window.game = game;
-window.hud = { setFPSVisible };
+const runtimeConfig = getRuntimeConfig();
+const devRuntimeEnabled = isDevRuntime();
 
-// [DEBUG] Flag for projectile firing investigation (toggled at runtime)
-window.DEBUG_PROJECTILES = false;
+// Dev launcher can opt into globals for browser-console workflows without
+// exposing that surface in the live player runtime.
+if (devRuntimeEnabled && runtimeConfig.dev.exposeGlobals && typeof window !== 'undefined') {
+  window.State = State;
+  window.game = game;
+  window.hud = { setFPSVisible };
+  window.DEBUG_PROJECTILES = false;
+}
 
 // [DEBUG] Debug flag to disable console.log in hot paths on Quest
 const DEBUG = false;
@@ -1426,20 +1431,13 @@ init();
 function init() {
   _log('[SPACEOMICIDE] Initialising...');
 
-  // [DEBUG] Load debug settings from localStorage
-  loadDebugSettings();
-
-  // [DEBUG] Sync debug checkboxes with loaded settings
-  const fpsCheckbox = document.getElementById('debug-show-fps');
-  if (fpsCheckbox) fpsCheckbox.checked = game.debugShowFPS;
-  const perfCheckbox = document.getElementById('debug-perf-monitor');
-  if (perfCheckbox) perfCheckbox.checked = game.debugPerfMonitor;
-  const posCheckbox = document.getElementById('debug-position-panel');
-  if (posCheckbox) posCheckbox.checked = game.debugShowPosition;
-
-  // [DEBUG] Sync desktop position panel with game state
-  if (typeof window !== 'undefined') {
-    window.debugPositionPanel = game.debugShowPosition;
+  // Dev-only: load persisted debug settings in the dev launcher.
+  // Live players should not pay localStorage / debug bootstrap costs here.
+  if (devRuntimeEnabled) {
+    loadDebugSettings();
+    runtimeConfig.dev.showFPS = game.debugShowFPS === true;
+    runtimeConfig.dev.perfMonitor = game.debugPerfMonitor === true;
+    runtimeConfig.dev.positionPanel = game.debugShowPosition === true;
   }
 
   // Scene — use black background for Adreno GPU "Fast clear" optimization on Quest
@@ -1556,6 +1554,9 @@ function init() {
   initEnemies(scene);
   setCameraRef(camera);
   initHUD(camera, scene);
+  if (devRuntimeEnabled && runtimeConfig.dev.showFPS) {
+    setFPSVisible(true);
+  }
   initBossDeathOverlays();
 
   // Nuke flash overlay (white screen flash on nuke activation)
@@ -1595,71 +1596,67 @@ function init() {
   setOnPauseCallback(togglePause);
   setOnNukeCallback(activateNuke);
 
-  // [DEBUG] Test helpers exposed to window.__test for automation/Puppeteer
-  window.__test = window.__test || {};
-  window.__test.getEnemies = getEnemies;
-  window.__test.getEnemyCount = getEnemyCount;
-  window.__test.getCamera = () => camera;
-  window.__test.getRenderer = () => renderer;
-  window.__test.getScene = () => scene;
-  window.__test.activateNuke = activateNuke;
-  window.__test.getNukeCount = () => game.nukes;
-  // [DEBUG] Telemetry bridge for test/automation access
-  const telemetryBridge = {
-    enable: (options = {}) => enableTelemetry(options),
-    disable: () => disableTelemetry(),
-    isEnabled: () => isTelemetryEnabled(),
-    setHistoryWindow: (ms) => setTelemetryHistoryMs(ms),
-    snapshot: () => getTelemetrySnapshot(),
-    getSnapshot: () => getTelemetrySnapshot(),
-    collect: () => getTelemetrySnapshot(),
-  };
-  window.__test.telemetry = telemetryBridge;
-  const perfTarget = window.__perf || {};
-  perfTarget.enable = telemetryBridge.enable;
-  perfTarget.disable = telemetryBridge.disable;
-  perfTarget.isEnabled = telemetryBridge.isEnabled;
-  perfTarget.setHistoryWindow = telemetryBridge.setHistoryWindow;
-  perfTarget.snapshot = telemetryBridge.snapshot;
-  perfTarget.getSnapshot = telemetryBridge.getSnapshot;
-  perfTarget.collect = telemetryBridge.collect;
-  window.__perf = perfTarget;
+  registerRuntimeAction('setFpsVisible', (visible) => setFPSVisible(visible === true));
+  registerRuntimeAction('cycleBiomeWithFade', () => cycleDebugBiomeWithFade());
 
-  // [DEBUG] Frame profiler API (debug/test only)
-  // Enable:  window.__perf.startProfileBuckets()
-  // Read:    window.__perf._profileBuckets
-  // Reset:   window.__perf.startProfileBuckets()  (call again)
-  // Report:  window.__perf.dumpProfileBuckets()
-  perfTarget.startProfileBuckets = () => {
-    perfTarget._profileBuckets = {};
-    return perfTarget._profileBuckets;
-  };
-  perfTarget.dumpProfileBuckets = () => {
-    const b = perfTarget._profileBuckets;
-    if (!b || !b._frames) return 'No profile data. Call __perf.startProfileBuckets() first.';
-    const frames = b._frames;
-    const omit = new Set(['_frames', '_wallTotal']);
-    const entries = Object.keys(b).filter(k => !omit.has(k)).map(k => [k, b[k]]);
-    entries.sort((a, b) => b[1] - a[1]);
-    const wallTotal = b._wallTotal || 0;
-    let report = `=== Frame Profile Report (${frames} frames, wall total ${wallTotal.toFixed(1)}ms, avg ${(wallTotal / frames).toFixed(2)}ms/frame) ===\n`;
-    report += entries.map(([k, v]) => `${k}: ${v.toFixed(2)}ms total, avg ${(v / frames).toFixed(3)}ms/frame (${(v / wallTotal * 100).toFixed(1)}% of wall)`).join('\n');
-    return report;
-  };
+  // Dev/test automation surfaces stay out of the live launcher.
+  if (devRuntimeEnabled && runtimeConfig.dev.testAPI && typeof window !== 'undefined') {
+    window.__test = window.__test || {};
+    window.__test.getEnemies = getEnemies;
+    window.__test.getEnemyCount = getEnemyCount;
+    window.__test.getCamera = () => camera;
+    window.__test.getRenderer = () => renderer;
+    window.__test.getScene = () => scene;
+    window.__test.activateNuke = activateNuke;
+    window.__test.getNukeCount = () => game.nukes;
+    const telemetryBridge = {
+      enable: (options = {}) => enableTelemetry(options),
+      disable: () => disableTelemetry(),
+      isEnabled: () => isTelemetryEnabled(),
+      setHistoryWindow: (ms) => setTelemetryHistoryMs(ms),
+      snapshot: () => getTelemetrySnapshot(),
+      getSnapshot: () => getTelemetrySnapshot(),
+      collect: () => getTelemetrySnapshot(),
+    };
+    window.__test.telemetry = telemetryBridge;
+    const perfTarget = window.__perf || {};
+    perfTarget.enable = telemetryBridge.enable;
+    perfTarget.disable = telemetryBridge.disable;
+    perfTarget.isEnabled = telemetryBridge.isEnabled;
+    perfTarget.setHistoryWindow = telemetryBridge.setHistoryWindow;
+    perfTarget.snapshot = telemetryBridge.snapshot;
+    perfTarget.getSnapshot = telemetryBridge.getSnapshot;
+    perfTarget.collect = telemetryBridge.collect;
+    window.__perf = perfTarget;
+    perfTarget.startProfileBuckets = () => {
+      perfTarget._profileBuckets = {};
+      return perfTarget._profileBuckets;
+    };
+    perfTarget.dumpProfileBuckets = () => {
+      const b = perfTarget._profileBuckets;
+      if (!b || !b._frames) return 'No profile data. Call __perf.startProfileBuckets() first.';
+      const frames = b._frames;
+      const omit = new Set(['_frames', '_wallTotal']);
+      const entries = Object.keys(b).filter(k => !omit.has(k)).map(k => [k, b[k]]);
+      entries.sort((a, b) => b[1] - a[1]);
+      const wallTotal = b._wallTotal || 0;
+      let report = `=== Frame Profile Report (${frames} frames, wall total ${wallTotal.toFixed(1)}ms, avg ${(wallTotal / frames).toFixed(2)}ms/frame) ===\n`;
+      report += entries.map(([k, v]) => `${k}: ${v.toFixed(2)}ms total, avg ${(v / frames).toFixed(3)}ms/frame (${(v / wallTotal * 100).toFixed(1)}% of wall)`).join('\n');
+      return report;
+    };
 
-  // [DEBUG] Progression API for headless automation
-  const progressionAPI = createProgressionAPI();
-  window.__test.progression = progressionAPI;
-  perfTarget.progression = progressionAPI;
-  window.__progression = progressionAPI;
+    const progressionAPI = createProgressionAPI();
+    window.__test.progression = progressionAPI;
+    perfTarget.progression = progressionAPI;
+    window.__progression = progressionAPI;
 
-  // [DEBUG] Test hook: deterministic single-shot at a chosen enemy for headless runs.
-  // Params: enemyIndex (number), options { distance, hp, snapToCamera }.
-  // Returns true if a projectile was fired.
-  window.__test.fireAtEnemy = (enemyIndex, options = {}) => {
-    const enemies = getEnemies();
-    const enemy = enemies && Number.isInteger(enemyIndex) ? enemies[enemyIndex] : null;
-    if (!enemy || !enemy.mesh || !camera) return false;
+    // [DEBUG] Test hook: deterministic single-shot at a chosen enemy for headless runs.
+    // Params: enemyIndex (number), options { distance, hp, snapToCamera }.
+    // Returns true if a projectile was fired.
+    window.__test.fireAtEnemy = (enemyIndex, options = {}) => {
+      const enemies = getEnemies();
+      const enemy = enemies && Number.isInteger(enemyIndex) ? enemies[enemyIndex] : null;
+      if (!enemy || !enemy.mesh || !camera) return false;
 
     const distance = Number.isFinite(options.distance) ? options.distance : 6;
     const snapToCamera = options.snapToCamera !== false;
@@ -1696,7 +1693,8 @@ function init() {
     weaponCooldowns[0] = 0;
     fireMainWeapon(testController, 0);
     return true;
-  };
+    };
+  }
 
   // PERFORMANCE: Initialize projectile pool
   initProjectilePool();
@@ -1750,23 +1748,21 @@ function clampDebugValue(value, min, max, fallback) {
   return Math.min(max, Math.max(min, n));
 }
 
-// [DEBUG] Read visual tuning parameters from window.debug* sliders
+// [DEBUG] Read visual tuning parameters from the dev launcher runtime config.
 function getVisualTuning() {
-  if (typeof window === 'undefined') {
-    return { ...VISUAL_TUNING_DEFAULTS };
-  }
+  const tuning = runtimeConfig.dev.visualTuning || {};
 
   return {
-    glowStrength: clampDebugValue(window.debugGlowStrength, 0, 2, VISUAL_TUNING_DEFAULTS.glowStrength),
-    smokeStrength: clampDebugValue(window.debugSmokeStrength, 0, 2, VISUAL_TUNING_DEFAULTS.smokeStrength),
-    fogIntensity: clampDebugValue(window.debugFogIntensity, 0, 1, VISUAL_TUNING_DEFAULTS.fogIntensity),
-    shellStrength: clampDebugValue(window.debugShellStrength, 0, 2, VISUAL_TUNING_DEFAULTS.shellStrength),
-    shellSaturation: clampDebugValue(window.debugShellSaturation, 0, 2, VISUAL_TUNING_DEFAULTS.shellSaturation),
-    shellScanlineSpeed: clampDebugValue(window.debugShellScanlineSpeed, 0, 3, VISUAL_TUNING_DEFAULTS.shellScanlineSpeed),
-    shellNoiseAmount: clampDebugValue(window.debugShellNoiseAmount, 0, 2, VISUAL_TUNING_DEFAULTS.shellNoiseAmount),
-    renderMode: typeof window.debugRenderMode === 'string' ? window.debugRenderMode : VISUAL_TUNING_DEFAULTS.renderMode,
-    stereoEyeSeparation: clampDebugValue(window.debugStereoEyeSeparation, 0.01, 0.2, VISUAL_TUNING_DEFAULTS.stereoEyeSeparation),
-    shellTint: typeof window.debugShellTint === 'string' ? window.debugShellTint : VISUAL_TUNING_DEFAULTS.shellTint,
+    glowStrength: clampDebugValue(tuning.glowStrength, 0, 2, VISUAL_TUNING_DEFAULTS.glowStrength),
+    smokeStrength: clampDebugValue(tuning.smokeStrength, 0, 2, VISUAL_TUNING_DEFAULTS.smokeStrength),
+    fogIntensity: clampDebugValue(tuning.fogIntensity, 0, 1, VISUAL_TUNING_DEFAULTS.fogIntensity),
+    shellStrength: clampDebugValue(tuning.shellStrength, 0, 2, VISUAL_TUNING_DEFAULTS.shellStrength),
+    shellSaturation: clampDebugValue(tuning.shellSaturation, 0, 2, VISUAL_TUNING_DEFAULTS.shellSaturation),
+    shellScanlineSpeed: clampDebugValue(tuning.shellScanlineSpeed, 0, 3, VISUAL_TUNING_DEFAULTS.shellScanlineSpeed),
+    shellNoiseAmount: clampDebugValue(tuning.shellNoiseAmount, 0, 2, VISUAL_TUNING_DEFAULTS.shellNoiseAmount),
+    renderMode: typeof tuning.renderMode === 'string' ? tuning.renderMode : VISUAL_TUNING_DEFAULTS.renderMode,
+    stereoEyeSeparation: clampDebugValue(tuning.stereoEyeSeparation, 0.01, 0.2, VISUAL_TUNING_DEFAULTS.stereoEyeSeparation),
+    shellTint: typeof tuning.shellTint === 'string' ? tuning.shellTint : VISUAL_TUNING_DEFAULTS.shellTint,
   };
 }
 
@@ -6522,12 +6518,6 @@ function cycleDebugBiomeWithFade() {
   });
 }
 
-// [DEBUG] Expose biome cycling to window for console automation
-window.debugCycleBiomeWithFade = () => {
-  _log('[debug] Next biome requested');
-  cycleDebugBiomeWithFade();
-};
-
 // [CORE] Reset ready countdown timer
 function resetReadyCountdown() {
   readyCountdownActive = false;
@@ -6613,8 +6603,9 @@ function startGame() {
   if (info) info.style.display = 'none';
   
   // Check for seed configuration from HTML inputs
-  const seed = window.gameSeed !== undefined ? window.gameSeed : null;
-  const tier = window.gameSeedTier || 'standard';
+  const seedConfig = getSeedSelection();
+  const seed = seedConfig.value;
+  const tier = seedConfig.tier || 'standard';
   
   if (seed !== null) {
     // Start game with seed
@@ -9828,7 +9819,7 @@ function render(timestamp) {
   if (_prof) { _prof._frames = (_prof._frames || 0) + 1; _prof._wallTotal = (_prof._wallTotal || 0) + (now - (_prof._prevFrameNow || now)); _prof._prevFrameNow = now; }
 
   // PERFORMANCE: Log stats every 5 seconds in debug mode
-  if (typeof window !== 'undefined' && window.debugPerfMonitor && frameCount % 300 === 0) {
+  if (runtimeConfig.dev.perfMonitor && frameCount % 300 === 0) {
     const instancedCounts = Object.entries(instancedProjectiles).map(([t, p]) => `${t}:${p.mesh.count}/${p.maxCount}`).join(', ');
     _log(`[PERF] Projectiles: ${projectiles.length}/${MAX_PROJECTILES}, ` +
                 `InstancedMesh: {${instancedCounts}}, ` +
@@ -9895,9 +9886,8 @@ function render(timestamp) {
   _mark('pre_state_dispatch'); // ── end: controls, seek, vr pause, desktop controls
   if (st === State.TITLE) {
     updateTitle(now);
-    if (typeof window !== 'undefined' && window.debugJumpToLevel) {
-      const level = window.debugJumpToLevel;
-      window.debugJumpToLevel = null;
+    const level = consumeDebugJump();
+    if (level) {
       debugJumpToLevel(level);
     }
   }
@@ -11104,7 +11094,7 @@ function render(timestamp) {
   if (activeTeleportEffects.length > 0) updateTeleportEffects(now, dt);
   _mark('universal_updates'); // ── end: projectiles, physics, shields, VFX, damage numbers, grenades, FPS
   updateFPS(now, {
-    perfMonitor: (typeof window !== 'undefined' && window.debugPerfMonitor) || game.debugPerfMonitor,
+    perfMonitor: runtimeConfig.dev.perfMonitor,
     frameTimeMs: rawDt * 1000,
     rendererInfo: renderer.info,
   });
@@ -11116,7 +11106,7 @@ function render(timestamp) {
   _mark('scanlines_misc'); // ── end: FPS, scanlines DOM
   // Fix 1.4: Gate visual tuning behind debug flag to avoid per-frame object allocation + material iteration
   // Only run when debug panel is open or visual tuning has changed
-  const visualTuning = (window.debugPerfMonitor || game.debugPerfMonitor) ? getVisualTuning() : null;
+  const visualTuning = runtimeConfig.dev.perfMonitor ? getVisualTuning() : null;
   if (visualTuning) {
     applyVisualTuning(visualTuning);
   }
@@ -11152,8 +11142,7 @@ function shouldCollectTelemetrySample() {
   // to keep telemetry overhead under 1ms per frame.
   if (frameCount % 6 !== 0) return false;
   if (isTelemetryEnabled()) return true;
-  if (game.debugPerfMonitor) return true;
-  if (typeof window !== 'undefined' && window.debugPerfMonitor) return true;
+  if (runtimeConfig.dev.perfMonitor) return true;
   return false;
 }
 

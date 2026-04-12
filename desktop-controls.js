@@ -2,6 +2,7 @@
 //  DESKTOP CONTROLS - Keyboard/Mouse Input for Non-VR Play
 // ============================================================
 import * as THREE from 'three';
+import { getRuntimeConfig } from './runtime-config.js';
 
 // ── Module State ───────────────────────────────────────────
 let enabled = false;
@@ -621,11 +622,11 @@ let currentLookTarget = null;
 let originalMaterials = new Map(); // Store original materials for highlight reset
 let debugLightsFrameCounter = 0;
 let debugLightsLastSceneLen = -1;
+const runtimeConfig = getRuntimeConfig();
 
 function shouldShowDebugPositionPanel() {
   // Default OFF unless explicitly enabled through DEBUG menu checkbox
-  if (typeof window === 'undefined') return false;
-  if (window.debugPositionPanel !== true) return false;
+  if (runtimeConfig.dev.positionPanel !== true) return false;
   // Skip debug panel on Quest/VR browsers for performance
   const ua = navigator.userAgent || '';
   if (/Quest|OculusBrowser|Oculus/i.test(ua)) return false;

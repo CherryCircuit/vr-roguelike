@@ -115,6 +115,32 @@
     <h1>SYNTHWAVE VR BLASTER</h1>
     <p>Put on your VR headset and press ENTER VR</p>
     <p style="font-size: 0.8em; opacity: 0.5; margin-top: 4px;">Pull triggers to shoot</p>
+
+    <div id="seed-controls" style="display:none;margin-top: 20px; padding: 15px; background: rgba(0, 0, 0, 0.3); border: 1px solid #ff00ff; border-radius: 5px;">
+      <div style="color: #00ffff; font-size: 0.9em; margin-bottom: 10px;">SEED DECK SETTINGS</div>
+
+      <div style="margin-bottom: 8px;">
+        <label style="color: #ff00ff; font-size: 0.8em;">Seed:</label>
+        <input type="text" id="seed-input" placeholder="Leave empty for random"
+               style="margin-left: 8px; background: #220044; color: #fff; border: 1px solid #ff00ff; padding: 4px 8px; font-family: 'Courier New', monospace; width: 150px;">
+        <button id="daily-seed-btn" style="margin-left: 8px; background: #220044; color: #00ffff; border: 1px solid #00ffff; cursor: pointer; padding: 4px 8px; font-family: 'Courier New', monospace; font-size: 0.75em;">DAILY</button>
+        <button id="weekly-seed-btn" style="margin-left: 4px; background: #220044; color: #00ffff; border: 1px solid #00ffff; cursor: pointer; padding: 4px 8px; font-family: 'Courier New', monospace; font-size: 0.75em;">WEEKLY</button>
+      </div>
+
+      <div style="margin-bottom: 8px;">
+        <label style="color: #ff00ff; font-size: 0.8em;">Difficulty:</label>
+        <select id="seed-tier" style="margin-left: 8px; background: #220044; color: #fff; border: 1px solid #ff00ff; padding: 4px; font-family: 'Courier New', monospace;">
+          <option value="chill">Chill (Easy)</option>
+          <option value="standard" selected>Standard (Normal)</option>
+          <option value="challenge">Challenge (Hard)</option>
+        </select>
+      </div>
+
+      <div style="font-size: 0.7em; opacity: 0.6; color: #88ff88;">
+        Same seed = same run. Daily/weekly seeds for leaderboards!
+      </div>
+    </div>
+
     <p id="version-text" style="font-size: 1em; opacity: 0.6; margin-top: 12px;">v2026.04.11.2127</p>
   </div>
 
@@ -128,6 +154,25 @@
     <h2 style="margin:0 0 20px 0;font-size:32px;">GAME ERROR</h2>
     <p id="error-message" style="font-size:20px;margin:0;word-wrap:break-word;"></p>
     <p id="error-stack" style="font-size:14px;margin:20px 0 0 0;white-space:pre-wrap;opacity:0.8;"></p>
+  </div>
+
+  <div id="debug-panel" style="display:none;position:fixed;bottom:20px;left:20px;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #00ffff;padding:12px;font-size:14px;">
+    <div style="color:#00ffff;margin-bottom:8px;">DEBUG</div>
+    <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;background:#220044;color:#fff;border:1px solid #ff00ff;"></label>
+    <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-show-fps"> Show FPS counter</label>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-position-panel"> Debug position box</label>
+    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-seed-controls"> Seed deck settings</label>
+    <button id="debug-next-biome" style="margin-top:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Next biome</button>
+    <button id="copy-log-btn" style="margin-top:8px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;">COPY LOG</button>
+  </div>
+  <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
+
+  <div id="console-panel" style="display:none;position:fixed;bottom:80px;left:20px;width:500px;max-height:300px;overflow-y:auto;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #ff00ff;padding:12px;font-size:12px;font-family:monospace;">
+    <div style="color:#ff00ff;margin-bottom:4px;">CONSOLE OUTPUT</div>
+    <div id="console-logs" style="color:#00ffff;word-break:break-all;"></div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
@@ -149,17 +194,26 @@
 
   <script>
     window.__SPACEOMICIDE_RUNTIME__ = {
-      mode: 'live',
+      mode: 'dev',
       dev: {
-        enabled: false,
-        exposeGlobals: false,
-        testAPI: false,
+        enabled: true,
+        exposeGlobals: true,
+        testAPI: true,
         perfMonitor: false,
         showFPS: false,
         positionPanel: false,
         debugConsole: false,
         seedControls: false,
-        visualTuning: {}
+        visualTuning: {
+          renderMode: 'normal',
+          stereoEyeSeparation: 0.064,
+          glowStrength: 1.0,
+          shellStrength: 1.0,
+          shellSaturation: 1.0,
+          shellScanlineSpeed: 1.0,
+          shellNoiseAmount: 0.35,
+          shellTint: '#99b8ff'
+        }
       },
       seed: {
         value: null,
@@ -169,7 +223,7 @@
   </script>
   <script type="module" src="launcher-common.js"></script>
   <script type="module" src="main.js"></script>
+  <script type="module" src="dev-tools.js"></script>
 
 </body>
 </html>
-<!-- Build: 2026-03-11T03:04:59Z -->
