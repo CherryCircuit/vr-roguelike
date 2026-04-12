@@ -1252,6 +1252,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeCards = [];
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
+  upgradeGroup.userData.hoveredSelection = null;
 
   // Position in front of player (VR-friendly)
   // Add null check for playerPos
@@ -1501,6 +1502,42 @@ function flushCardTextQueue() {
   }
 }
 
+/**
+ * Attach stable selection metadata to the card Group and its clickable face.
+ * This keeps hover and trigger selection resilient even if card composition changes.
+ *
+ * @param {THREE.Group} group - Upgrade card root group.
+ * @param {THREE.Mesh} faceMesh - Visible card plane used for hover glow.
+ * @param {object} upgrade - Upgrade definition or SKIP pseudo-upgrade.
+ * @param {string} hand - Target hand for the selection.
+ * @returns {{ upgrade: object, hand: string }}
+ */
+function attachUpgradeSelectionData(group, faceMesh, upgrade, hand) {
+  const selection = { upgrade, hand };
+  group.userData.isUpgradeCardGroup = true;
+  group.userData.upgradeSelection = selection;
+  faceMesh.userData.upgradeSelection = selection;
+  return selection;
+}
+
+/**
+ * Resolve upgrade-card selection metadata from any child object.
+ * VR-CRITICAL: Trigger selection and hover must agree even when ray hits text/icon children.
+ *
+ * @param {THREE.Object3D|null} object - Intersected HUD object.
+ * @returns {{ upgrade: object, hand: string }|null}
+ */
+function resolveUpgradeSelectionFromObject(object) {
+  let node = object;
+  while (node && node !== upgradeGroup) {
+    if (node.userData?.upgradeSelection) {
+      return node.userData.upgradeSelection;
+    }
+    node = node.parent;
+  }
+  return null;
+}
+
 function createUpgradeCard(upgrade, position, hand) {
   const group = new THREE.Group();
   // Add null check for position - provide default if undefined
@@ -1523,6 +1560,9 @@ function createUpgradeCard(upgrade, position, hand) {
   const card = new THREE.Mesh(cardGeo, cardMat);
   card.userData.isUpgradeCard = true;
   card.userData.upgradeId = upgrade.id;
+  // Fix for upgrade-screen selection regression: store selection data on both
+  // the card face and the parent group so hover, trigger, and descendant hits match.
+  attachUpgradeSelectionData(group, card, upgrade, hand);
   group.add(card);
 
   // Border (shared geometry)
@@ -1612,6 +1652,9 @@ function createSkipCard(position) {
   const card = new THREE.Mesh(cardGeo, cardMat);
   card.userData.isUpgradeCard = true;
   card.userData.upgradeId = 'SKIP';
+  // VR-CRITICAL: Keep SKIP card on the same metadata path as real upgrades so
+  // the UI never ends up with a "hover works but trigger misses" split.
+  attachUpgradeSelectionData(group, card, { id: 'SKIP', name: 'Skip' }, upgradeGroup.userData.hand);
   group.add(card);
 
   // Border (shared geometry)
@@ -1657,6 +1700,7 @@ export function hideUpgradeCards() {
   _textQueue.length = 0; // Clear any pending deferred text
   disposeGroupChildren(upgradeGroup);
   upgradeGroup.visible = false;
+  upgradeGroup.userData.hoveredSelection = null;
   upgradeCards = [];
   upgradeChoices = [];
 }
@@ -1704,12 +1748,16 @@ export function updateUpgradeCards(now, cooldownRemaining) {
  * Returns the upgrade definition or null.
  */
 export function getUpgradeCardHit(raycaster) {
-  const meshes = upgradeCards.map(g => g.children.find(c => c.userData.isUpgradeCard)).filter(Boolean);
-  const hits = raycaster.intersectObjects(meshes, false);
-  if (hits.length > 0) {
-    const id = hits[0].object.userData.upgradeId;
+  if (!upgradeGroup.visible || !raycaster) return null;
+  const hits = raycaster.intersectObjects(upgradeCards, true);
+  for (let i = 0; i < hits.length; i++) {
+    const selection = resolveUpgradeSelectionFromObject(hits[i].object);
+    if (selection?.upgrade) {
+      return selection;
+    }
 
-    // Handle SKIP card
+    const id = hits[i].object.userData?.upgradeId;
+    if (!id) continue;
     if (id === 'SKIP') {
       return { upgrade: { id: 'SKIP', name: 'Skip' }, hand: upgradeGroup.userData.hand };
     }
@@ -1720,6 +1768,17 @@ export function getUpgradeCardHit(raycaster) {
     }
   }
   return null;
+}
+
+/**
+ * Return the currently hovered upgrade selection, if any.
+ * This is used as a safety net when controller select timing drifts slightly
+ * from the ray used by the hover system.
+ *
+ * @returns {{ upgrade: object, hand: string }|null}
+ */
+export function getHoveredUpgradeCardHit() {
+  return upgradeGroup.userData.hoveredSelection || null;
 }
 
 // ── Game Over / Victory ────────────────────────────────────
@@ -3689,6 +3748,7 @@ function getHoverGlowTexture(color = '0,255,255') {
 
 export function updateHUDHover(raycasters) {
   const hoverables = [];
+  let hoveredUpgradeSelection = null;
 
   // 1. Title Scoreboard & Diagnostics
   if (titleGroup.visible) {
@@ -3768,7 +3828,10 @@ export function updateHUDHover(raycasters) {
     });
   }
 
-  if (hoverables.length === 0) return false;
+  if (hoverables.length === 0) {
+    upgradeGroup.userData.hoveredSelection = null;
+    return false;
+  }
 
   // Find ALL hovered objects from ALL raycasters
   const hoveredObjs = new Set();
@@ -3776,6 +3839,16 @@ export function updateHUDHover(raycasters) {
     const hits = rc.intersectObjects(hoverables, false);
     if (hits.length > 0) hoveredObjs.add(hits[0].object);
   });
+
+  // Fix for upgrade trigger regression: cache the actual hovered card selection
+  // so click/select can use the same resolved target the player is seeing.
+  hoveredObjs.forEach(obj => {
+    if (!hoveredUpgradeSelection) {
+      const selection = resolveUpgradeSelectionFromObject(obj);
+      if (selection) hoveredUpgradeSelection = selection;
+    }
+  });
+  upgradeGroup.userData.hoveredSelection = hoveredUpgradeSelection;
 
   let newHover = false;
 
