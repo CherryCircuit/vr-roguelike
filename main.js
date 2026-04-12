@@ -66,7 +66,7 @@ import {
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
-  updateUpgradeCards, getUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
+  updateUpgradeCards, getUpgradeCardHit, getHoveredUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, updateSpeedLines, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar,
   getTitleButtonHit, showNameEntry, hideNameEntry, getNameEntryHit, updateKeyboardHover, getNameEntryName,
@@ -361,6 +361,9 @@ let currentBiomeLightingConfig = null;
 // floorHUDDebugMarker removed - was debug white plane
 const controllers = [];
 const controllerTriggerPressed = [false, false];
+// Fix for upgrade-screen softlock: UI selection can fall back to held-trigger
+// polling when WebXR selectstart timing drifts against the menu cooldown.
+const upgradeTriggerLatched = [false, false];
 
 /**
  * Validate controller handedness after Quest sleep/wake.
@@ -382,6 +385,9 @@ function validateControllerHandedness() {
     const tempTrigger = controllerTriggerPressed[0];
     controllerTriggerPressed[0] = controllerTriggerPressed[1];
     controllerTriggerPressed[1] = tempTrigger;
+    const tempUpgradeLatch = upgradeTriggerLatched[0];
+    upgradeTriggerLatched[0] = upgradeTriggerLatched[1];
+    upgradeTriggerLatched[1] = tempUpgradeLatch;
   }
 }
 
@@ -560,6 +566,9 @@ let floorFlashing = false;
 
 // Pre-allocated raycasters (reused to avoid per-frame GC)
 const _uiRaycaster = new THREE.Raycaster();
+const _uiSelectOrigin = new THREE.Vector3();
+const _uiSelectQuat = new THREE.Quaternion();
+const _uiSelectDir = new THREE.Vector3();
 
 // Pooled UI hover raycasters for controller/desktop hover detection
 // Avoids creating new Raycaster/Vector3/Quaternion every frame in menu states
@@ -2334,8 +2343,16 @@ function setupControllers() {
     const controller = renderer.xr.getController(i);
 
     // MAIN weapon triggers (top/select trigger)
-    controller.addEventListener('selectstart', () => { controllerTriggerPressed[i] = true; onTriggerPress(controller, i); });
-    controller.addEventListener('selectend', () => { controllerTriggerPressed[i] = false; onTriggerRelease(i); });
+    controller.addEventListener('selectstart', () => {
+      controllerTriggerPressed[i] = true;
+      upgradeTriggerLatched[i] = false;
+      onTriggerPress(controller, i);
+    });
+    controller.addEventListener('selectend', () => {
+      controllerTriggerPressed[i] = false;
+      upgradeTriggerLatched[i] = false;
+      onTriggerRelease(i);
+    });
     
     // ALT weapon triggers (bottom/squeeze trigger)
     controller.addEventListener('squeezestart', () => { onSqueezePress(controller, i); });
@@ -2622,7 +2639,7 @@ function onTriggerPress(controller, index) {
   } else if (st === State.PLAYING) {
     fireMainWeapon(controller, index);  // Changed from shootWeapon
   } else if (st === State.UPGRADE_SELECT) {
-    selectUpgrade(controller);
+    selectUpgrade(controller, index);
   } else if (st === State.GAME_OVER || st === State.VICTORY) {
     if (gameOverCooldown <= 0) {
       handleGameOverTrigger(controller);
@@ -2940,7 +2957,9 @@ function handleDesktopUpgradeSelectClick() {
   const raycaster = getAimRaycaster();
   if (!raycaster) return;
 
-  const result = getUpgradeCardHit(raycaster);
+  // Desktop and VR should share the same "hovered card" fallback so local
+  // playtesting catches the same interaction regressions players would feel in-headset.
+  const result = getUpgradeCardHit(raycaster) || getHoveredUpgradeCardHit();
   if (result) {
     selectUpgradeAndAdvance(result.upgrade, result.hand);
   }
@@ -6921,6 +6940,8 @@ registerResetHook(() => {
 function showUpgradeScreen() {
   _log('[game] Showing upgrade selection');
   game.state = State.UPGRADE_SELECT;
+  upgradeTriggerLatched[0] = false;
+  upgradeTriggerLatched[1] = false;
   hideLevelComplete();
   resetHoloGlitch();
 
@@ -6992,7 +7013,15 @@ function finalizeUpgradeSelection() {
 
 // [CORE] Select upgrade and advance to next level
 function selectUpgradeAndAdvance(upgrade, hand) {
-  _log(`[game] Selected: ${upgrade.name} for ${hand} hand`);
+  const targetHand = hand || pendingUpgradeHand;
+  if (!upgrade?.id || !targetHand) {
+    // Fail gracefully instead of silently stranding the player on the upgrade screen.
+    console.error('[upgrade] Invalid upgrade selection payload', { upgrade, hand, pendingUpgradeHand });
+    playErrorSound();
+    return;
+  }
+
+  _log(`[game] Selected: ${upgrade.name} for ${targetHand} hand`);
 
   if (upgrade?.id === 'SKIP') {
     game.health = game.maxHealth;
@@ -7002,20 +7031,20 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   }
 
   if (upgrade?.type === 'main') {
-    _log(`[game] Selected MAIN weapon: ${upgrade.id} for ${hand} hand`);
-    setMainWeapon(upgrade.id, hand);
+    _log(`[game] Selected MAIN weapon: ${upgrade.id} for ${targetHand} hand`);
+    setMainWeapon(upgrade.id, targetHand);
     finalizeUpgradeSelection();
     return;
   }
 
   if (upgrade?.type === 'alt') {
-    _log(`[game] Selected ALT weapon: ${upgrade.id} for ${hand} hand`);
-    setAltWeapon(upgrade.id, hand);
+    _log(`[game] Selected ALT weapon: ${upgrade.id} for ${targetHand} hand`);
+    setAltWeapon(upgrade.id, targetHand);
     finalizeUpgradeSelection();
     return;
   }
 
-  addUpgrade(upgrade.id, hand);
+  addUpgrade(upgrade.id, targetHand);
 
   if (upgrade?.id === 'extra_nuke') {
     game.nukes = (game.nukes || 0) + 1;
@@ -9661,18 +9690,20 @@ function updateProjectiles(dt) {
 }
 
 // [CORE] Handle VR upgrade card selection
-function selectUpgrade(controller) {
+function selectUpgrade(controller, index = -1) {
   if (upgradeSelectionCooldown > 0) return;
 
-  const origin = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  controller.getWorldPosition(origin);
-  controller.getWorldQuaternion(quat);
-  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
-  _uiRaycaster.set(origin, direction, 0, 10);
-  const result = getUpgradeCardHit(_uiRaycaster);
+  controller.getWorldPosition(_uiSelectOrigin);
+  controller.getWorldQuaternion(_uiSelectQuat);
+  _uiSelectDir.set(0, 0, -1).applyQuaternion(_uiSelectQuat);
+  _uiRaycaster.set(_uiSelectOrigin, _uiSelectDir, 0, 10);
+
+  // Fix for the post-optimization regression: use the exact hovered card as a
+  // fallback so trigger selection matches the card the player is already seeing.
+  const result = getUpgradeCardHit(_uiRaycaster) || getHoveredUpgradeCardHit();
 
   if (result) {
+    if (index >= 0) upgradeTriggerLatched[index] = true;
     selectUpgradeAndAdvance(result.upgrade, result.hand);
   }
 }
@@ -10846,8 +10877,20 @@ function render(timestamp) {
 
   // ── Upgrade selection ──
   else if (st === State.UPGRADE_SELECT) {
-    upgradeSelectionCooldown = Math.max(0, upgradeSelectionCooldown - dt);
+    // UI cooldown should use unscaled frame time so menu interaction never gets
+    // trapped behind bullet-time, death-freeze, or other gameplay time scaling.
+    upgradeSelectionCooldown = Math.max(0, upgradeSelectionCooldown - clampedRawDt);
     updateUpgradeCards(now, upgradeSelectionCooldown);
+
+    // WebXR selectstart can occasionally drift around state transitions.
+    // Poll held trigger state as a fallback so upgrades remain selectable even
+    // if the initial edge was missed while the screen was entering.
+    if (upgradeSelectionCooldown <= 0) {
+      for (let i = 0; i < controllers.length; i++) {
+        if (!controllerTriggerPressed[i] || upgradeTriggerLatched[i] || !controllers[i]) continue;
+        selectUpgrade(controllers[i], i);
+      }
+    }
 
     // Show and update blaster displays
     // PERFORMANCE: Shader animation replaces mesh-based scan lines
