@@ -4334,8 +4334,9 @@ class Boss {
 
     // Mesh
     this.mesh = this.buildMesh(def);
-    this.mesh.position.set(0, 1.5, -12);
+    this.mesh.position.set(0, 2.5, -12);
     this.mesh.userData.isBoss = true;
+    this.mesh.renderOrder = 5; // Render below menus (pause=10000, settings=995)
     this.sceneRef.add(this.mesh);
 
     // Rise animation: spawn below floor, animate upward
@@ -5139,8 +5140,8 @@ class SkullHand {
   buildMesh() {
     // Voxel hand - skeletal hand shape
     this.group = new THREE.Group();
-    this.group.renderOrder = 10;
-    const geo = getGeo(0.18);
+    this.group.renderOrder = 5;
+    const geo = getGeo(0.25);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
@@ -5180,7 +5181,7 @@ class SkullHand {
       depthWrite: false,
       depthTest: false,
     });
-    const hitbox = new THREE.Mesh(getHitboxGeo(1.5, 1.5, 1.5), hitboxMat);
+    const hitbox = new THREE.Mesh(getHitboxGeo(2.1, 2.1, 2.1), hitboxMat);
     hitbox.userData.isHandHitbox = true;
     hitbox.userData.handIndex = this.handIndex;
     hitbox.userData.skullHand = this;
@@ -5334,7 +5335,7 @@ class SkullBoss extends Boss {
     }
 
     const skullGroup = new THREE.Group();
-    skullGroup.renderOrder = 10;
+    skullGroup.renderOrder = 5;
     const geo = getGeo(0.375);
 
     // NECRO pixel art: 9 wide × 7 tall, flat front-facing
@@ -5436,6 +5437,7 @@ class SkullBoss extends Boss {
 
     this.mesh.add(skullGroup);
     this.skullGroup = skullGroup;
+    this.skullGroup.scale.setScalar(1.3);
 
     // Add hitbox for head (use cached geometry to avoid per-spawn leak)
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
@@ -5456,7 +5458,7 @@ class SkullBoss extends Boss {
 
     handOffsets.forEach((offset, idx) => {
       const hand = new SkullHand(this, idx, offset, this.sceneRef);
-      hand.group.visible = false; // Hidden during rise animation
+      // Hands start visible - they move up with boss mesh during rise animation
       this.hands.push(hand);
     });
   }
@@ -5479,16 +5481,15 @@ class SkullBoss extends Boss {
   }
 
   updateBehavior(dt, now, playerPos) {
-    // Show hands after rise animation completes
-    if (!this._handsRevealed) {
-      this._handsRevealed = true;
-      this.hands.forEach(hand => {
-        if (hand.alive) hand.group.visible = true;
-      });
+    // Hands are visible from the start (rise with boss mesh)
+    if (!this._handsInitialized) {
+      this._handsInitialized = true;
     }
 
     // Bobbing animation (only after rise completes)
-    this.mesh.position.y += Math.sin(now * 0.002) * 0.2;
+    // Use _bobBaseY to avoid accumulation - set Y, don't add
+    if (!this._bobBaseY) this._bobBaseY = this._riseTargetY;
+    this.mesh.position.y = this._bobBaseY + Math.sin(now * 0.002) * 0.3;
 
     // Update hands
     let aliveHands = 0;
@@ -10521,7 +10522,7 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
     damage: 1,
     explosionDamage: 1,
     explosionRadius: 0.3,
-    hitRadius: 0.45,
+    hitRadius: 0.8,
     hitPlayer: false,
     lobbed: lobbed,
     gravity: lobbed ? 9.8 : 0,

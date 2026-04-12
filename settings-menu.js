@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import {
   makeSprite, updateSpriteText, disposeGroupChildren,
-  pauseMenuGroup,
+  pauseMenuGroup, hideTitle, showTitle,
 } from './hud.js';
 import { getMusicVolume, getSFXVolume, setMusicVolume, setSFXVolume, playMenuClick, playMenuHoverSound } from './audio.js';
 
@@ -225,6 +225,8 @@ export function showSettings(from) {
     settingsGroup.position.set(0, 1.2, -3.5);
     settingsGroup.rotation.set(0, 0, 0);
     settingsGroup.scale.setScalar(1);
+    // Hide title screen content (same pattern as scoreboard)
+    hideTitle();
   }
 
   settingsGroup.visible = true;
@@ -245,6 +247,10 @@ export function hideSettings() {
   // Restore pause menu if we came from it
   if (previousMenu === 'pause' && pauseMenuGroup) {
     pauseMenuGroup.visible = true;
+  }
+  // Restore title screen if we came from it
+  if (previousMenu === 'title') {
+    showTitle();
   }
 }
 
@@ -325,22 +331,22 @@ export function executeSettingsAction(action) {
   switch (action) {
     case 'musicUp': {
       const vol = setMusicVolume(getMusicVolume() + 5);
-      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: 0.3 });
+      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.3 });
       return false;
     }
     case 'musicDown': {
       const vol = setMusicVolume(getMusicVolume() - 5);
-      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: 0.3 });
+      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.3 });
       return false;
     }
     case 'sfxUp': {
       const vol = setSFXVolume(getSFXVolume() + 5);
-      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: 0.3 });
+      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.3 });
       return false;
     }
     case 'sfxDown': {
       const vol = setSFXVolume(getSFXVolume() - 5);
-      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, scale: 0.3 });
+      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.3 });
       return false;
     }
     case 'back':

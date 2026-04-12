@@ -8777,7 +8777,9 @@ function updateProjectiles(dt) {
       const dy = projPos.y - boss.mesh.position.y;
       const dz = projPos.z - boss.mesh.position.z;
       const distSq = dx * dx + dy * dy + dz * dz;
-      if (distSq < (broadRadius + 3) * (broadRadius + 3)) {
+      // Use larger radius for bosses with hands (SkullBoss hands at ±6.75 from center)
+      const bossRadius = boss.hands && boss.hands.length > 0 ? 8.0 : 3.0;
+      if (distSq < (broadRadius + bossRadius) * (broadRadius + bossRadius)) {
         _projectileNearbyMeshes.push(boss.mesh);
       }
     }
@@ -10215,7 +10217,7 @@ function render(timestamp) {
   // ── Unified UI hover detection for all menu states ──
   if (st === State.TITLE || st === State.UPGRADE_SELECT || st === State.SCOREBOARD || 
       st === State.REGIONAL_SCORES || st === State.COUNTRY_SELECT || st === State.READY_SCREEN ||
-      st === State.NAME_ENTRY) {
+      st === State.NAME_ENTRY || st === State.PAUSED) {
     // PERFORMANCE: Reuse pooled raycasters instead of creating new ones each frame
     // This reduces GC pressure during menu navigation and keyboard name entry
     const raycasters = [];
