@@ -2956,10 +2956,11 @@ function handleDesktopUpgradeSelectClick() {
 
   const raycaster = getAimRaycaster();
   if (!raycaster) return;
+  raycaster._hudSourceKey = 'desktop';
 
   // Desktop and VR should share the same "hovered card" fallback so local
   // playtesting catches the same interaction regressions players would feel in-headset.
-  const result = getUpgradeCardHit(raycaster) || getHoveredUpgradeCardHit();
+  const result = getUpgradeCardHit(raycaster) || getHoveredUpgradeCardHit('desktop');
   if (result) {
     selectUpgradeAndAdvance(result.upgrade, result.hand);
   }
@@ -9697,10 +9698,11 @@ function selectUpgrade(controller, index = -1) {
   controller.getWorldQuaternion(_uiSelectQuat);
   _uiSelectDir.set(0, 0, -1).applyQuaternion(_uiSelectQuat);
   _uiRaycaster.set(_uiSelectOrigin, _uiSelectDir, 0, 10);
+  const hoverSourceKey = index >= 0 ? `controller-${index}` : 'controller';
 
   // Fix for the post-optimization regression: use the exact hovered card as a
-  // fallback so trigger selection matches the card the player is already seeing.
-  const result = getUpgradeCardHit(_uiRaycaster) || getHoveredUpgradeCardHit();
+  // fallback so trigger selection matches the card this controller is seeing.
+  const result = getUpgradeCardHit(_uiRaycaster) || getHoveredUpgradeCardHit(hoverSourceKey);
 
   if (result) {
     if (index >= 0) upgradeTriggerLatched[index] = true;
@@ -10942,12 +10944,16 @@ function render(timestamp) {
       // Reuse pooled raycaster and update its properties
       const rc = _uiHoverRaycasters[i];
       rc.set(origin, dir, 0, 10);
+      rc._hudSourceKey = `controller-${i}`;
       raycasters.push(rc);
     }
     // Also add desktop aim raycaster if available
     if (isDesktopEnabled()) {
       const desktopRC = getAimRaycaster();
-      if (desktopRC) raycasters.push(desktopRC);
+      if (desktopRC) {
+        desktopRC._hudSourceKey = 'desktop';
+        raycasters.push(desktopRC);
+      }
     }
     // Add keyboard hover raycaster if name entry is visible
     if (nameEntryGroup.visible) {

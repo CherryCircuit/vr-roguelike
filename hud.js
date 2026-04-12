@@ -1252,7 +1252,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeCards = [];
   upgradeChoices = upgrades;
   upgradeGroup.userData.hand = hand;
-  upgradeGroup.userData.hoveredSelection = null;
+  upgradeGroup.userData.hoveredSelections = {};
 
   // Position in front of player (VR-friendly)
   // Add null check for playerPos
@@ -1700,7 +1700,7 @@ export function hideUpgradeCards() {
   _textQueue.length = 0; // Clear any pending deferred text
   disposeGroupChildren(upgradeGroup);
   upgradeGroup.visible = false;
-  upgradeGroup.userData.hoveredSelection = null;
+  upgradeGroup.userData.hoveredSelections = {};
   upgradeCards = [];
   upgradeChoices = [];
 }
@@ -1771,14 +1771,15 @@ export function getUpgradeCardHit(raycaster) {
 }
 
 /**
- * Return the currently hovered upgrade selection, if any.
+ * Return the hovered upgrade selection for a specific input source.
  * This is used as a safety net when controller select timing drifts slightly
- * from the ray used by the hover system.
+ * from the ray used by that same input source.
  *
+ * @param {string} sourceKey - Stable input source key (controller index or desktop).
  * @returns {{ upgrade: object, hand: string }|null}
  */
-export function getHoveredUpgradeCardHit() {
-  return upgradeGroup.userData.hoveredSelection || null;
+export function getHoveredUpgradeCardHit(sourceKey = 'desktop') {
+  return upgradeGroup.userData.hoveredSelections?.[sourceKey] || null;
 }
 
 // ── Game Over / Victory ────────────────────────────────────
@@ -3748,7 +3749,7 @@ function getHoverGlowTexture(color = '0,255,255') {
 
 export function updateHUDHover(raycasters) {
   const hoverables = [];
-  let hoveredUpgradeSelection = null;
+  const hoveredUpgradeSelections = {};
 
   // 1. Title Scoreboard & Diagnostics
   if (titleGroup.visible) {
@@ -3829,7 +3830,7 @@ export function updateHUDHover(raycasters) {
   }
 
   if (hoverables.length === 0) {
-    upgradeGroup.userData.hoveredSelection = null;
+    upgradeGroup.userData.hoveredSelections = {};
     return false;
   }
 
@@ -3837,18 +3838,19 @@ export function updateHUDHover(raycasters) {
   const hoveredObjs = new Set();
   raycasters.forEach(rc => {
     const hits = rc.intersectObjects(hoverables, false);
-    if (hits.length > 0) hoveredObjs.add(hits[0].object);
-  });
-
-  // Fix for upgrade trigger regression: cache the actual hovered card selection
-  // so click/select can use the same resolved target the player is seeing.
-  hoveredObjs.forEach(obj => {
-    if (!hoveredUpgradeSelection) {
-      const selection = resolveUpgradeSelectionFromObject(obj);
-      if (selection) hoveredUpgradeSelection = selection;
+    if (hits.length > 0) {
+      hoveredObjs.add(hits[0].object);
+      const sourceKey = rc._hudSourceKey;
+      if (sourceKey) {
+        const selection = resolveUpgradeSelectionFromObject(hits[0].object);
+        if (selection) hoveredUpgradeSelections[sourceKey] = selection;
+      }
     }
   });
-  upgradeGroup.userData.hoveredSelection = hoveredUpgradeSelection;
+
+  // Fix for upgrade trigger regression: cache hovered upgrade targets per input
+  // source so each controller can only select the card it is actually aiming at.
+  upgradeGroup.userData.hoveredSelections = hoveredUpgradeSelections;
 
   let newHover = false;
 
