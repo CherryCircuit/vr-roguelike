@@ -2406,6 +2406,47 @@ function getHandForController(controllerIndex) {
 }
 
 // [CORE] Create controller visual model
+// Weapon identity colors for controller spheres
+const WEAPON_SPHERE_COLORS = {
+  standard_blaster: { left: 0x00ffff, right: 0xff00ff },  // Cyan left, Pink right
+  seeker_burst: 0x83FF2B,      // Lightsaber green
+  buckshot: 0xff8800,           // Orange
+  lightning_rod: 0xF1DF25,     // Yellow
+  plasma_carbine: 0xA450B6,    // Purple
+  charge_cannon: 0xff0000,     // Red
+};
+
+function getWeaponSphereColor(weaponId, hand) {
+  const entry = WEAPON_SPHERE_COLORS[weaponId];
+  if (!entry) return hand === 'right' ? NEON_PINK : NEON_CYAN;
+  if (typeof entry === 'number') return entry;
+  return entry[hand] || entry.left;
+}
+
+function updateControllerSphereColor(index) {
+  const hand = index === 0 ? 'left' : 'right';
+  const controller = controllers[index];
+  if (!controller) return;
+  const visual = controller.children.find(c => c.name === `controller-visual-${hand}`);
+  if (!visual) return;
+
+  const weaponId = game.mainWeapon[hand];
+  const color = getWeaponSphereColor(weaponId, hand);
+
+  const core = visual.children.find(c => c.name === `controller-core-${hand}`);
+  const glowSphere = visual.children.find(c => c.name === `controller-glow-${hand}`);
+  const aimLine = visual.children.find(c => c.name === `controller-aim-${hand}`);
+
+  if (core) core.material.color.setHex(color);
+  if (glowSphere) glowSphere.material.color.setHex(color);
+  if (aimLine) aimLine.material.color.setHex(color);
+}
+
+function updateAllControllerSphereColors() {
+  updateControllerSphereColor(0);
+  updateControllerSphereColor(1);
+}
+
 function createControllerVisual(index) {
   const hand = index === 0 ? 'left' : 'right';
   const color = index === 0 ? NEON_CYAN : NEON_PINK;
@@ -6914,6 +6955,9 @@ function clearAllAltWeaponEffects() {
 // are properly cleared even on full game restart (not just level transitions).
 registerResetHook(clearAllAltWeaponEffects);
 
+// Reset controller sphere colors to default (cyan left, pink right) on game reset
+registerResetHook(() => updateAllControllerSphereColors());
+
 // Register HUD cleanup hooks (damage numbers, combo popups, kill-chain popups, floating messages)
 registerResetHook(clearAllDamageNumbers);
 registerResetHook(clearAllComboPopups);
@@ -7034,6 +7078,7 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   if (upgrade?.type === 'main') {
     _log(`[game] Selected MAIN weapon: ${upgrade.id} for ${targetHand} hand`);
     setMainWeapon(upgrade.id, targetHand);
+    updateAllControllerSphereColors();
     finalizeUpgradeSelection();
     return;
   }
@@ -7405,19 +7450,31 @@ function initProjectilePool() {
     return tex;
   }
 
-  // Weapon glow colors (matching weapons.js)
+  // Weapon glow colors (weapon identity colors, not hand-based)
+  // Standard blaster: cyan left / pink right (per hand)
+  // Other weapons: single identity color
   const glowTextures = {
-    laser: createGlowTexture(0.0, 1.0, 1.0),        // Blue/cyan
-    buckshot: createGlowTexture(1.0, 0.53, 0.0),   // Orange/amber (#ff8800)
-    seeker: createGlowTexture(0.0, 1.0, 0.5),     // Green
-    plasma_carbine: createGlowTexture(1.0, 0.0, 1.0),  // Pink/magenta
+    laser: createGlowTexture(0.0, 1.0, 1.0),              // Cyan (standard blaster left)
+    laser_right: createGlowTexture(1.0, 0.0, 1.0),        // Pink (standard blaster right)
+    buckshot: createGlowTexture(1.0, 0.53, 0.0),          // Orange #ff8800
+    seeker: createGlowTexture(0.51, 1.0, 0.17),           // Lightsaber green #83FF2B
+    plasma_carbine: createGlowTexture(0.64, 0.31, 0.71),  // Purple #A450B6
   };
 
-  // Create a glow pool for each projectile type
+  // Create glow pool for each projectile type
+  // Standard blaster (laser) gets two pools: cyan for left, pink for right
+  // Other weapons get a single identity-colored pool
   const glowGeo = new THREE.PlaneGeometry(0.35, 0.35);
+  const glowPoolConfigs = [
+    { poolType: 'laser', texKey: 'laser', count: 60 },
+    { poolType: 'laser_right', texKey: 'laser_right', count: 60 },
+    { poolType: 'buckshot', texKey: 'buckshot', count: instancedProjectiles['buckshot'].maxCount },
+    { poolType: 'seeker', texKey: 'seeker', count: instancedProjectiles['seeker'].maxCount },
+    { poolType: 'plasma_carbine', texKey: 'plasma_carbine', count: instancedProjectiles['plasma_carbine'].maxCount },
+  ];
 
-  for (const poolType of Object.keys(instancedProjectiles)) {
-    const glowTex = glowTextures[poolType] || glowTextures.laser; // Fallback to laser glow
+  for (const cfg of glowPoolConfigs) {
+    const glowTex = glowTextures[cfg.texKey] || glowTextures.laser;
     const glowMat = new THREE.MeshBasicMaterial({
       map: glowTex,
       transparent: true,
@@ -7429,19 +7486,26 @@ function initProjectilePool() {
     });
     registerPlayerProjectileMaterial(glowMat);
 
-    const maxCount = instancedProjectiles[poolType].maxCount;
-    const glowIM = new THREE.InstancedMesh(glowGeo, glowMat, maxCount);
-    glowIM.name = `${poolType}-glow-pool`;
+    const glowIM = new THREE.InstancedMesh(glowGeo, glowMat, cfg.count);
+    glowIM.name = `${cfg.poolType}-glow-pool`;
     glowIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     glowIM.count = 0;
     glowIM.frustumCulled = false;
     glowIM.renderOrder = 949;  // Just behind the projectile cores (950)
     glowIM.visible = true;
     scene.add(glowIM);
-    instancedProjectiles[poolType].glowMesh = glowIM;
+
+    // Store glow pool reference
+    // laser -> laser glow, laser_right -> laser glow (both map to 'laser' projectile pool)
+    if (cfg.poolType === 'laser_right') {
+      instancedProjectiles['laser'].glowMeshRight = glowIM;
+    } else {
+      instancedProjectiles[cfg.poolType].glowMesh = glowIM;
+    }
+
     // Initialize all glow instances as hidden (scale 0)
     const hideMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (let i = 0; i < maxCount; i++) {
+    for (let i = 0; i < cfg.count; i++) {
       glowIM.setMatrixAt(i, hideMatrix);
     }
     glowIM.instanceMatrix.needsUpdate = true;
@@ -7553,7 +7617,7 @@ function createProjectileProxy(poolType, instanceIndex, color) {
   // Sync position to the InstancedMesh pair (core + glow)
   proxy.commit = function() {
     _projMatrix.compose(pos, data.quaternion, _projScale);
-    commitProjectileInstance(poolType, instanceIndex, _projMatrix);
+    commitProjectileInstance(poolType, instanceIndex, _projMatrix, proxy._controllerIndex);
   };
 
   return proxy;
@@ -7570,19 +7634,25 @@ const _projGlowScl = new THREE.Vector3();
 const _upVec = new THREE.Vector3(0, 1, 0);
 
 // [CORE] Commit projectile instance transform to instanced mesh + glow billboard
-function commitProjectileInstance(poolType, instanceIndex, matrix) {
+function commitProjectileInstance(poolType, instanceIndex, matrix, controllerIndex) {
   const pool = instancedProjectiles[poolType];
   if (!pool) return;
   pool.mesh.setMatrixAt(instanceIndex, matrix);
   pool.mesh.instanceMatrix.needsUpdate = true;
 
+  // Select glow mesh: laser pool uses left/right glow based on controller
+  let glow = pool.glowMesh;
+  if (poolType === 'laser' && pool.glowMeshRight) {
+    glow = (controllerIndex === 1) ? pool.glowMeshRight : pool.glowMesh;
+  }
+
   // Keep glow mesh count in sync with core
-  if (pool.glowMesh && pool.glowMesh.count < pool.mesh.count) {
-    pool.glowMesh.count = pool.mesh.count;
+  if (glow && glow.count < pool.mesh.count) {
+    glow.count = pool.mesh.count;
   }
 
   // Update glow billboard plane (if pool has one)
-  if (pool.glowMesh && camera) {
+  if (glow && camera) {
     _projGlowPos.setFromMatrixPosition(matrix);
     matrix.decompose(_projGlowPos, _projGlowTmpQ, _projGlowScl);
     const isHidden = _projGlowScl.x < 0.001;
@@ -7590,13 +7660,13 @@ function commitProjectileInstance(poolType, instanceIndex, matrix) {
     _projGlowPos.setFromMatrixPosition(matrix);
 
     if (isHidden) {
-      pool.glowMesh.setMatrixAt(instanceIndex, _projGlowMat.compose(_projGlowPos, _projGlowQuat, _projGlowScale0));
+      glow.setMatrixAt(instanceIndex, _projGlowMat.compose(_projGlowPos, _projGlowQuat, _projGlowScale0));
     } else {
       _projGlowMat.lookAt(_projGlowPos, camera.position, _upVec);
       _projGlowQuat.setFromRotationMatrix(_projGlowMat);
-      pool.glowMesh.setMatrixAt(instanceIndex, _projGlowMat.compose(_projGlowPos, _projGlowQuat, _projGlowScale));
+      glow.setMatrixAt(instanceIndex, _projGlowMat.compose(_projGlowPos, _projGlowQuat, _projGlowScale));
     }
-    pool.glowMesh.instanceMatrix.needsUpdate = true;
+    glow.instanceMatrix.needsUpdate = true;
   }
 }
 
@@ -7613,7 +7683,16 @@ function returnProjectileToPool(proj) {
 
     // Hide instance by scaling to zero
     _projMatrix.makeScale(0, 0, 0);
-    commitProjectileInstance(poolType, instanceIndex, _projMatrix);
+    commitProjectileInstance(poolType, instanceIndex, _projMatrix, proj.userData.controllerIndex);
+
+    // Also hide right-hand glow if laser pool
+    if (poolType === 'laser' && pool.glowMeshRight) {
+      const rightGlow = pool.glowMeshRight;
+      if (rightGlow.count > instanceIndex) {
+        rightGlow.setMatrixAt(instanceIndex, _projMatrix);
+        rightGlow.instanceMatrix.needsUpdate = true;
+      }
+    }
 
     // Mark as free (DO NOT shrink count - can hide active instances at higher indices)
     pool.freeIndices.add(instanceIndex);
@@ -8494,7 +8573,6 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   }
 
   const now = performance.now();
-  const color = controllerIndex === 0 ? NEON_CYAN : NEON_PINK;
   // Use spread threshold: only treat as buckshot if spread > 5 degrees (0.087 rad)
   // This prevents plasma carbine (1.5 deg spread) from being treated as buckshot
   const BUCKSHOT_SPREAD_THRESHOLD = 0.087; // ~5 degrees
@@ -8502,14 +8580,9 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   const isPlasmaCarbine = stats.mainWeaponId === 'plasma_carbine';
   const poolType = stats.homing ? 'seeker' : (isPlasmaCarbine ? 'plasma_carbine' : (isBuckshot ? 'buckshot' : 'laser'));
   
-  // Color per weapon type and hand
-  // Plasma carbine: bright cyan-white (left) / bright pink-white (right)
-  // Seeker: use hand color (cyan/pink) instead of orange
-  // Standard blaster: uses NEON_CYAN/NEON_PINK from the 'color' variable
-  let projectileColor = color;
-  if (isPlasmaCarbine) {
-    projectileColor = controllerIndex === 0 ? 0xaaffff : 0xffaaff;
-  }
+  // All projectile cores are white (Star Wars blaster style)
+  // Color identity comes from glow billboards + controller spheres
+  const projectileColor = 0xffffff;
 
   // [DEBUG] Projectile investigation logging in spawnProjectile
   if (window.DEBUG_PROJECTILES) {
@@ -8562,6 +8635,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   mesh.userData.velocity = shotDirection.clone().multiplyScalar(projectileSpeed);
   mesh.userData.stats = stats;
   mesh.userData.controllerIndex = controllerIndex;
+  mesh._controllerIndex = controllerIndex;  // For commitProjectileInstance glow routing
   mesh.userData.isExploding = isExploding;
   mesh.userData.lifetime = 1500;
   mesh.userData.createdAt = performance.now();
