@@ -463,7 +463,7 @@ const lastExplodingShotTime = [0, 0];
 // Explosion visuals - pooled for Quest performance (pre-allocated geometry)
 const EXPLOSION_POOL_SIZE = 8;
 const explosionPool = [];
-const explosionVisuals = []; // still used for non-pooled (charge beams, toxic pools)
+const explosionVisuals = []; // still used for rare non-pooled visuals (toxic pools, shields, boss VFX)
 let _explosionGeo = null; // shared unit sphere, created once
 
 // [CORE] Initialize explosion visual pool
@@ -487,6 +487,8 @@ function initExplosionPool(scene) {
 // Lightning beam state (per controller)
 const lightningBeams = [null, null];
 const lightningTimers = [0, 0];
+const LIGHTNING_BOLT_SEGMENTS = 8;
+const MAX_LIGHTNING_CHAINS = 6;
 
 // Charge shot state (per controller): time when trigger was pressed (ms) or null
 const chargeShotStartTime = [null, null];
@@ -494,6 +496,7 @@ const CHARGE_SHOT_MAX_TIME = 3.0;  // seconds to reach full charge
 const CHARGE_SHOT_MIN_FIRE = 0.1;  // minimum charge time to fire
 const CHARGE_SHOT_MIN_DAMAGE = 50;   // minimum damage at no charge
 const CHARGE_SHOT_MAX_DAMAGE = 1000; // maximum damage at full charge
+const chargeBeamVisuals = [null, null];
 
 // Plasma carbine wind-up state (per controller): time when trigger was pressed (ms) or null
 const plasmaCarbineSpinStart = [null, null];
@@ -3061,8 +3064,7 @@ function onTriggerRelease(index) {
   }
   // Stop lightning beam when trigger released (dispose to prevent GEO leak)
   if (lightningBeams[index]) {
-    disposeMesh(lightningBeams[index]);
-    lightningBeams[index] = null;
+    clearLightningBeam(index);
     stopLightningSound();
   }
 }
@@ -4349,8 +4351,7 @@ function destroyNaniteSwarm(swarm) {
 // [CORE] Check projectile-nanite interaction
 function checkProjectileNaniteInteraction(proj) {
   for (const swarm of activeNaniteSwarms) {
-    const dist = proj.position.distanceTo(swarm.position);
-    if (dist < swarm.radius && !proj.userData.naniteInfused) {
+    if (proj.position.distanceToSquared(swarm.position) < swarm.radius * swarm.radius && !proj.userData.naniteInfused) {
       // Projectile carries nanites - mark it
       proj.userData.naniteInfused = true;
       proj.userData.naniteSwarm = swarm;
@@ -5019,8 +5020,7 @@ function checkPlayerProjectileHitsDrone(projPos, projControllerIndex) {
     const projHand = getHandForController(projControllerIndex);
     if (droneHand === projHand) continue;
 
-    const dist = projPos.distanceTo(drone.mesh.position);
-    if (dist < 0.3) {  // Hit drone
+    if (projPos.distanceToSquared(drone.mesh.position) < 0.09) {  // 0.3m hit radius
       // Overcharge the drone (100% reflect but takes damage)
       drone.overcharged = true;
       drone.health -= 10;  // 10 damage per shot
@@ -5396,8 +5396,7 @@ function checkPlasmaOrbDetonation(proj) {
     const orb = activePlasmaOrbs[i];
     if (!orb.detonatable) continue;
 
-    const dist = proj.position.distanceTo(orb.mesh.position);
-    if (dist < 0.5) { // Player projectile hit orb
+    if (proj.position.distanceToSquared(orb.mesh.position) < 0.25) { // 0.5m hit radius
       // Detonate orb with smaller AOE (early detonation)
       orb.aoeRadius *= 0.6; // 60% of normal radius
       detonatePlasmaOrb(orb, undefined);
@@ -6366,8 +6365,7 @@ function clearAllProjectiles() {
 function clearAllLightningBeams() {
   for (let i = 0; i < lightningBeams.length; i++) {
     if (lightningBeams[i]) {
-      disposeMesh(lightningBeams[i]);
-      lightningBeams[i] = null;
+      clearLightningBeam(i);
     }
   }
   lightningTimers.fill(0);
@@ -6480,6 +6478,7 @@ function clearAllAltWeaponEffects() {
     disposeMesh(explosionVisuals[i]);
   }
   explosionVisuals.length = 0;
+  clearAllChargeBeamVisuals();
 
   // Remove explosion pool meshes from scene and clear pool, then reinitialize
   for (let i = 0; i < explosionPool.length; i++) {
@@ -6646,6 +6645,7 @@ function advanceLevelAfterUpgrade() {
   clearAllEnemies();
   clearAllProjectiles();
   clearAllLightningBeams();
+  clearAllChargeBeamVisuals();
   clearAllElectricArcs();
   clearBossProjectiles();
   clearAllTelegraphs();
@@ -7277,25 +7277,25 @@ function updateSeekerProjectileVisual(proj, dt) {
 function findSeekerTarget(proj) {
   const homingRange = proj.userData.homingRange || 0;
   if (homingRange <= 0) return null;
-
-  const candidates = [];
   const enemies = getEnemies();
-  for (const enemy of enemies) {
-    if (enemy?.mesh) candidates.push(enemy.mesh);
+
+  let nearestTarget = null;
+  let nearestDistSq = homingRange * homingRange;
+  for (let i = 0; i < enemies.length; i++) {
+    const mesh = enemies[i]?.mesh;
+    if (!mesh) continue;
+    const distSq = mesh.position.distanceToSquared(proj.position);
+    if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
+      nearestTarget = mesh;
+    }
   }
 
   const boss = getBoss();
   if (boss?.mesh) {
-    candidates.push(boss.mesh);
-  }
-
-  let nearestTarget = null;
-  let nearestDist = homingRange;
-  for (const mesh of candidates) {
-    const dist = mesh.position.distanceTo(proj.position);
-    if (dist < nearestDist) {
-      nearestDist = dist;
-      nearestTarget = mesh;
+    const bossDistSq = boss.mesh.position.distanceToSquared(proj.position);
+    if (bossDistSq < nearestDistSq) {
+      nearestTarget = boss.mesh;
     }
   }
 
@@ -7443,57 +7443,46 @@ function updateLightningBeam(controller, index, stats, dt) {
   _lightningDirCalc.set(0, 0, -1).applyQuaternion(_lightningQuat);
 
   // Find enemies within range using spatial hash (O(1) lookup)
-  const enemies = getEnemies();  // Still needed for index lookup
   const nearbyEnemies = enemySpatialHash.query(_lightningOrigin.x, _lightningOrigin.z, stats.lightningRange);
   const targets = [];
   const maxChains = 2 + Math.floor(stats.lightningRange / 8);  // More chains with upgrades
+  const lightningRangeSq = stats.lightningRange * stats.lightningRange;
 
   for (const e of nearbyEnemies) {
-    const dist = e.mesh.position.distanceTo(_lightningOrigin);
+    const distSq = e.mesh.position.distanceToSquared(_lightningOrigin);
     // PERFORMANCE: Use pre-allocated vector instead of clone()
     _lightningToEnemy.copy(e.mesh.position).sub(_lightningOrigin).normalize();
     const angle = _lightningToEnemy.dot(_lightningDirCalc);
 
     // Within range and roughly in front (45° cone)
-    if (dist < stats.lightningRange && angle > 0.7) {
-      // Find enemy index for hitEnemy call
-      const enemyIndex = enemies.indexOf(e);
-      targets.push({ index: enemyIndex, enemy: e, dist });
+    if (distSq < lightningRangeSq && angle > 0.7) {
+      targets.push({ enemy: e, distSq });
     }
   }
 
   // Sort by distance, take closest N
-  targets.sort((a, b) => a.dist - b.dist);
-  const chainTargets = targets.slice(0, maxChains);
+  targets.sort((a, b) => a.distSq - b.distSq);
+  const chainCount = Math.min(targets.length, maxChains);
 
   // Create or update lightning beam visuals
-  if (chainTargets.length > 0) {
+  if (chainCount > 0) {
     // Start sound if not playing
     startLightningSound();
+    const beam = ensureLightningBeam(index);
+    const positions = beam.userData.positions;
+    let offset = 0;
 
-    // Remove old beam group (dispose geometry/material to prevent GEO leak)
-    // PERFORMANCE: Null pooled material so disposeMesh doesn't dispose it
-    if (lightningBeams[index]) {
-      lightningBeams[index].traverse(c => {
-        if (c.material === _lightningMaterial) c.material = null;
-      });
-      disposeMesh(lightningBeams[index]);
+    // Draw zigzag lightning bolts to each target into one shared buffer.
+    _lightningLastPos.copy(_lightningOrigin);
+    for (let ti = 0; ti < chainCount; ti++) {
+      const targetPos = targets[ti].enemy.mesh.position;
+      offset = writeLightningBoltPositions(_lightningLastPos, targetPos, positions, offset);
+      _lightningLastPos.copy(targetPos);
     }
 
-    const beamGroup = new THREE.Group();
-
-    // Draw zigzag lightning bolts to each target
-    // PERFORMANCE: Use pre-allocated vector instead of clone()
-    _lightningLastPos.copy(_lightningOrigin);
-    chainTargets.forEach(({ enemy }) => {
-      const targetPos = enemy.mesh.position;
-      const bolt = createLightningBolt(_lightningLastPos, targetPos);
-      beamGroup.add(bolt);
-      _lightningLastPos.copy(targetPos);
-    });
-
-    scene.add(beamGroup);
-    lightningBeams[index] = beamGroup;
+    beam.geometry.attributes.position.needsUpdate = true;
+    beam.geometry.setDrawRange(0, offset / 3);
+    beam.visible = offset > 0;
 
     // Apply damage at lightningTickInterval (reduced by barrel / fire rate upgrades)
     const tickInterval = stats.lightningTickInterval != null ? stats.lightningTickInterval : 0.2;
@@ -7502,7 +7491,11 @@ function updateLightningBeam(controller, index, stats, dt) {
       lightningTimers[index] = 0;
 
       let accuracyHitRegistered = false;
-      chainTargets.forEach(({ index: enemyIndex, enemy }) => {
+      for (let ti = 0; ti < chainCount; ti++) {
+        const { enemy } = targets[ti];
+        const liveTarget = enemy?.mesh ? getEnemyByMesh(enemy.mesh) : null;
+        const enemyIndex = liveTarget?.index;
+        if (enemyIndex === undefined) continue;
         const result = hitEnemy(enemyIndex, stats.lightningDamage);
         if (!accuracyHitRegistered) {
           // Track multiplier increase for accuracy popup
@@ -7525,18 +7518,11 @@ function updateLightningBeam(controller, index, stats, dt) {
           playExplosionSound();
           handleEnemyKilled(enemyIndex, { killsWithoutHit: true });
         }
-      });
+      }
     }
   } else {
     // No targets - clear beam and stop sound
-    // PERFORMANCE: Null pooled material so disposeMesh doesn't dispose it
-    if (lightningBeams[index]) {
-      lightningBeams[index].traverse(c => {
-        if (c.material === _lightningMaterial) c.material = null;
-      });
-      disposeMesh(lightningBeams[index]);
-      lightningBeams[index] = null;
-    }
+    clearLightningBeam(index);
     stopLightningSound();
     lightningTimers[index] = 0;
   }
@@ -7545,6 +7531,10 @@ function updateLightningBeam(controller, index, stats, dt) {
 // Pooled temp vectors for lightning bolt generation (per-segment)
 const _lightningDir = new THREE.Vector3();
 const _lightningPerp = new THREE.Vector3();
+const _lightningPrevPoint = new THREE.Vector3();
+const _lightningNextPoint = new THREE.Vector3();
+const _lightningUp = new THREE.Vector3(0, 1, 0);
+const _lightningAltPerp = new THREE.Vector3();
 
 // PERFORMANCE: Scratch vectors for updateLightningBeam hot path
 const _lightningOrigin = new THREE.Vector3();
@@ -7561,34 +7551,108 @@ const _lightningMaterial = new THREE.LineBasicMaterial({
   opacity: 0.9
 });
 
-// Create zigzag lightning bolt between two points
-// PERFORMANCE: Uses pooled _lightningMaterial to avoid material allocation per bolt
-// [CORE] Create lightning bolt visual between two points
-function createLightningBolt(start, end) {
-  const points = [start.clone()];
-  const segments = 8;
-  const zigzagAmount = 0.15;
+/**
+ * Lazily create one persistent lightning beam per hand.
+ * VR-CRITICAL: Reusing one geometry avoids per-frame BufferGeometry churn.
+ */
+function ensureLightningBeam(index) {
+  if (lightningBeams[index]) return lightningBeams[index];
 
-  for (let i = 1; i < segments; i++) {
-    const t = i / segments;
-    const mid = new THREE.Vector3().lerpVectors(start, end, t);
+  const maxVertices = MAX_LIGHTNING_CHAINS * LIGHTNING_BOLT_SEGMENTS * 2;
+  const positions = new Float32Array(maxVertices * 3);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setDrawRange(0, 0);
 
-    // Random perpendicular offset
-    _lightningDir.subVectors(end, start).normalize();
-    _lightningPerp.set(-_lightningDir.z, 0, _lightningDir.x).normalize();
-    // PERFORMANCE: Multiply directly instead of clone+multiply
-    const offsetX = _lightningPerp.x * ((Math.random() - 0.5) * zigzagAmount);
-    const offsetZ = _lightningPerp.z * ((Math.random() - 0.5) * zigzagAmount);
-    mid.x += offsetX;
-    mid.z += offsetZ;
+  const beam = new THREE.LineSegments(geometry, _lightningMaterial);
+  beam.name = `lightning-beam-${index}`;
+  beam.frustumCulled = false;
+  beam.renderOrder = 95;
+  beam.visible = false;
+  beam.userData.positions = positions;
+  scene.add(beam);
+  lightningBeams[index] = beam;
+  return beam;
+}
 
-    points.push(mid);
+/**
+ * Hide a pooled lightning beam without disposing its shared GPU resources.
+ * This keeps trigger spam from causing GC or driver hitches in VR.
+ */
+function clearLightningBeam(index) {
+  const beam = lightningBeams[index];
+  if (!beam) return;
+  beam.visible = false;
+  beam.geometry.setDrawRange(0, 0);
+}
+
+/**
+ * Write a zig-zag lightning chain into a shared LineSegments position buffer.
+ * @returns {number} Updated vertex offset into the Float32Array
+ */
+function writeLightningBoltPositions(start, end, positions, offset) {
+  _lightningDir.subVectors(end, start);
+  const length = _lightningDir.length();
+  if (length <= 0.0001) {
+    return offset;
   }
-  points.push(end.clone());
+  _lightningDir.divideScalar(length);
+  _lightningPerp.crossVectors(_lightningDir, _lightningUp);
+  if (_lightningPerp.lengthSq() < 0.0001) {
+    _lightningPerp.set(1, 0, 0);
+  } else {
+    _lightningPerp.normalize();
+  }
+  _lightningAltPerp.crossVectors(_lightningDir, _lightningPerp).normalize();
 
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  // PERFORMANCE: Use pooled material instead of creating new one each call
-  return new THREE.Line(geometry, _lightningMaterial);
+  _lightningPrevPoint.copy(start);
+  const zigzagAmount = Math.min(0.28, 0.08 + length * 0.04);
+
+  for (let i = 1; i <= LIGHTNING_BOLT_SEGMENTS; i++) {
+    const t = i / LIGHTNING_BOLT_SEGMENTS;
+    _lightningNextPoint.lerpVectors(start, end, t);
+
+    if (i < LIGHTNING_BOLT_SEGMENTS) {
+      const jitterA = (Math.random() - 0.5) * zigzagAmount;
+      const jitterB = (Math.random() - 0.5) * zigzagAmount * 0.45;
+      _lightningNextPoint.addScaledVector(_lightningPerp, jitterA);
+      _lightningNextPoint.addScaledVector(_lightningAltPerp, jitterB);
+    }
+
+    positions[offset++] = _lightningPrevPoint.x;
+    positions[offset++] = _lightningPrevPoint.y;
+    positions[offset++] = _lightningPrevPoint.z;
+    positions[offset++] = _lightningNextPoint.x;
+    positions[offset++] = _lightningNextPoint.y;
+    positions[offset++] = _lightningNextPoint.z;
+
+    _lightningPrevPoint.copy(_lightningNextPoint);
+  }
+
+  return offset;
+}
+
+/**
+ * Rare-use helper for boss-authored lightning VFX.
+ * This is intentionally separate from the player beam pool because bosses fire it
+ * infrequently, so a tiny transient line is cheaper than adding another global system.
+ */
+function spawnTransientLightningBolt(start, end, duration = 120) {
+  const maxVertices = LIGHTNING_BOLT_SEGMENTS * 2;
+  const positions = new Float32Array(maxVertices * 3);
+  const offset = writeLightningBoltPositions(start, end, positions, 0);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setDrawRange(0, offset / 3);
+
+  const material = _lightningMaterial.clone();
+  const bolt = new THREE.LineSegments(geometry, material);
+  bolt.name = 'boss-lightning-bolt';
+  bolt.frustumCulled = false;
+  bolt.userData.createdAt = performance.now();
+  bolt.userData.duration = duration;
+  scene.add(bolt);
+  explosionVisuals.push(bolt);
 }
 
 /**
@@ -7681,11 +7745,8 @@ function updateChargeVisuals(controller, index, progress) {
   glowSphere.scale.setScalar(scale);
 
   // Color shifts from cyan (low) to white/pink (high)
-  const color = new THREE.Color().lerpColors(
-    new THREE.Color(0x00ffff),  // Cyan
-    new THREE.Color(0xffffff),  // White
-    progress
-  );
+  _chargeVisualColor.lerpColors(_chargeBeamBaseColor, _chargeBeamHotColor, progress);
+  const color = _chargeVisualColor;
   glowSphere.material.color.copy(color);
 
   // Opacity increases with charge
@@ -7730,19 +7791,168 @@ function hideChargeVisuals(index) {
   }
 }
 
+/**
+ * Create persistent charge beam meshes for one hand.
+ * VR-CRITICAL: The charge cannon is a marquee effect, so we pool it instead of
+ * allocating cylinders into explosionVisuals on every shot.
+ */
+function ensureChargeBeamVisual(index) {
+  if (chargeBeamVisuals[index]) return chargeBeamVisuals[index];
+
+  const coreGeo = new THREE.CylinderGeometry(1, 0.15, 1, 6);
+  const glowGeo = new THREE.CylinderGeometry(1, 0.1, 1, 8);
+  const coreMat = basicMat(0x00ffff, {
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+  });
+  const glowMat = basicMat(0x00ffff, {
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+  coreMesh.name = `charge-beam-core-${index}`;
+  coreMesh.renderOrder = 100;
+  coreMesh.visible = false;
+  coreMesh.frustumCulled = false;
+  scene.add(coreMesh);
+
+  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  glowMesh.name = `charge-beam-glow-${index}`;
+  glowMesh.renderOrder = 101;
+  glowMesh.visible = false;
+  glowMesh.frustumCulled = false;
+  scene.add(glowMesh);
+
+  chargeBeamVisuals[index] = {
+    coreMesh,
+    glowMesh,
+    createdAt: 0,
+    duration: 0,
+    maxCoreOpacity: 0.9,
+    maxGlowOpacity: 0.7,
+    baseCoreWidth: 0,
+    baseGlowWidth: 0,
+    range: 0,
+  };
+  return chargeBeamVisuals[index];
+}
+
+function clearChargeBeamVisual(index) {
+  const beam = chargeBeamVisuals[index];
+  if (!beam) return;
+  beam.coreMesh.visible = false;
+  beam.glowMesh.visible = false;
+  beam.duration = 0;
+}
+
+function clearAllChargeBeamVisuals() {
+  for (let i = 0; i < chargeBeamVisuals.length; i++) {
+    clearChargeBeamVisual(i);
+  }
+}
+
+/**
+ * Reuse one core+glow beam pair per hand for the charge cannon.
+ * This preserves the old look while eliminating per-shot geometry churn.
+ */
+function activateChargeBeamVisual(index, origin, direction, range, beamWidth, progress, now) {
+  const beam = ensureChargeBeamVisual(index);
+  const visualBeamWidth = beamWidth * 0.3;
+  const coreWidth = visualBeamWidth * 0.4;
+
+  _chargeBeamColor.lerpColors(_chargeBeamBaseColor, _chargeBeamHotColor, progress);
+
+  beam.createdAt = now;
+  beam.duration = 200;
+  beam.maxCoreOpacity = 0.9;
+  beam.maxGlowOpacity = 0.7;
+  beam.baseCoreWidth = coreWidth;
+  beam.baseGlowWidth = visualBeamWidth;
+  beam.range = range;
+
+  beam.coreMesh.visible = true;
+  beam.glowMesh.visible = true;
+
+  beam.coreMesh.position.copy(origin).addScaledVector(direction, range * 0.5);
+  beam.glowMesh.position.copy(beam.coreMesh.position);
+  beam.coreMesh.quaternion.setFromUnitVectors(_chargeBeamUp, direction);
+  beam.glowMesh.quaternion.copy(beam.coreMesh.quaternion);
+
+  beam.coreMesh.scale.set(coreWidth, range, coreWidth);
+  beam.glowMesh.scale.set(visualBeamWidth, range, visualBeamWidth);
+
+  beam.coreMesh.material.color.copy(_chargeBeamColor);
+  beam.glowMesh.material.color.copy(_chargeBeamColor);
+  beam.coreMesh.material.opacity = beam.maxCoreOpacity;
+  beam.glowMesh.material.opacity = beam.maxGlowOpacity;
+}
+
+function updateChargeBeamVisuals(now) {
+  for (let i = 0; i < chargeBeamVisuals.length; i++) {
+    const beam = chargeBeamVisuals[i];
+    if (!beam || !beam.coreMesh.visible || beam.duration <= 0) continue;
+
+    const age = now - beam.createdAt;
+    if (age > beam.duration) {
+      clearChargeBeamVisual(i);
+      continue;
+    }
+
+    const t = age / beam.duration;
+    const pulsePhase = t < 0.3 ? t / 0.3 : 1.0;
+    const fadePhase = t < 0.3 ? 0 : (t - 0.3) / 0.7;
+    const pulseIntensity = Math.sin(pulsePhase * Math.PI) * 0.2;
+    const fadeOpacity = 1 - Math.pow(fadePhase, 2);
+    const scaleDown = 1 - fadePhase * 0.3;
+
+    beam.coreMesh.material.opacity = beam.maxCoreOpacity * (1 + pulseIntensity) * fadeOpacity;
+    beam.glowMesh.material.opacity = beam.maxGlowOpacity * (1 + pulseIntensity) * fadeOpacity;
+    beam.coreMesh.scale.set(
+      Math.max(0.0001, beam.baseCoreWidth * scaleDown),
+      beam.range,
+      Math.max(0.0001, beam.baseCoreWidth * scaleDown)
+    );
+    beam.glowMesh.scale.set(
+      Math.max(0.0001, beam.baseGlowWidth * scaleDown),
+      beam.range,
+      Math.max(0.0001, beam.baseGlowWidth * scaleDown)
+    );
+  }
+}
+
 // Pooled temp vectors for pointToSegmentDist (hot path)
 const _ptsAb = new THREE.Vector3();
 const _ptsAp = new THREE.Vector3();
 const _ptsProj = new THREE.Vector3();
 
+/**
+ * Distance squared from point to line segment (a to b).
+ * Perf: Hot collision path uses squared distance to avoid sqrt churn.
+ */
+function pointToSegmentDistSq(p, a, b, outClosestPoint = null) {
+  _ptsAb.subVectors(b, a);
+  const abLenSq = _ptsAb.lengthSq();
+  let t = 0;
+  if (abLenSq > 0.000001) {
+    _ptsAp.subVectors(p, a);
+    t = Math.max(0, Math.min(1, _ptsAp.dot(_ptsAb) / abLenSq));
+  }
+  _ptsProj.copy(a).addScaledVector(_ptsAb, t);
+  if (outClosestPoint) outClosestPoint.copy(_ptsProj);
+  return p.distanceToSquared(_ptsProj);
+}
+
 /** Distance from point to line segment (a to b) */
 // [CORE] Point-to-line-segment distance calculation
 function pointToSegmentDist(p, a, b) {
-  _ptsAb.subVectors(b, a);
-  _ptsAp.subVectors(p, a);
-  const t = Math.max(0, Math.min(1, _ptsAp.dot(_ptsAb) / _ptsAb.lengthSq()));
-  _ptsProj.copy(a).addScaledVector(_ptsAb, t);
-  return p.distanceTo(_ptsProj);
+  return Math.sqrt(pointToSegmentDistSq(p, a, b));
 }
 
 const _chargeBeamA = new THREE.Vector3();
@@ -7751,6 +7961,11 @@ const _playerForward = new THREE.Vector3();
 const _chargeBeamOrigin = new THREE.Vector3();
 const _chargeBeamQuat = new THREE.Quaternion();
 const _chargeBeamDir = new THREE.Vector3(0, 0, -1);
+const _chargeBeamUp = new THREE.Vector3(0, 1, 0);
+const _chargeBeamColor = new THREE.Color();
+const _chargeBeamBaseColor = new THREE.Color(0x00ffff);
+const _chargeBeamHotColor = new THREE.Color(0xffffff);
+const _chargeVisualColor = new THREE.Color();
 
 // [CORE] Fire charge beam weapon
 function fireChargeBeam(controller, index, chargeTimeSec, stats) {
@@ -7778,17 +7993,18 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   const hand = getHandForController(index);
 
   const chargeStats = { ...stats, damage: Math.round(damage) };
+  const beamWidthSq = beamWidth * beamWidth;
   getEnemies().forEach((e, i) => {
-    const dist = pointToSegmentDist(e.mesh.position, _chargeBeamA, _chargeBeamB);
-    if (dist < beamWidth) {
+    const distSq = pointToSegmentDistSq(e.mesh.position, _chargeBeamA, _chargeBeamB);
+    if (distSq < beamWidthSq) {
       handleHit(i, e, chargeStats, e.mesh.position.clone(), controllerIndex, false, false);
     }
   });
 
   const boss = getBoss();
   if (boss) {
-    const dist = pointToSegmentDist(boss.mesh.position, _chargeBeamA, _chargeBeamB);
-    if (dist < beamWidth) {
+    const distSq = pointToSegmentDistSq(boss.mesh.position, _chargeBeamA, _chargeBeamB);
+    if (distSq < beamWidthSq) {
       const result = hitBoss(Math.round(damage), { isChargeCannon: true });
 
       // Shield reflection
@@ -7838,8 +8054,9 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
       if (!bossProj || !bossProj.mesh) continue;
       
       // Check if boss projectile intersects with beam line
-      const dist = pointToSegmentDist(bossProj.mesh.position, _chargeBeamA, _chargeBeamB);
-      if (dist < beamWidth + 0.3) { // Slightly larger collision radius
+      const hitRadius = beamWidth + 0.3;
+      const distSq = pointToSegmentDistSq(bossProj.mesh.position, _chargeBeamA, _chargeBeamB);
+      if (distSq < hitRadius * hitRadius) { // Slightly larger collision radius
         // Destroy boss projectile with explosion effect
         spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
         if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
@@ -7847,63 +8064,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
       }
     }
   }
-
-  // Brief beam visual (cylinder) - color shifts from cyan to white based on charge
-  // Visual width is thinner than hit detection for better aesthetics
-  const visualBeamWidth = beamWidth * 0.3; // 30% of hit detection width
-  
-  // Color interpolates from cyan (low charge) to white (full charge)
-  const beamColor = new THREE.Color().lerpColors(
-    new THREE.Color(0x00ffff),  // Cyan at low charge
-    new THREE.Color(0xffffff),  // White at full charge
-    progress
-  );
-  
-  // CORE BEAM: Always visible against all backgrounds (including bright terrain)
-  // Uses normal blending with higher opacity - this ensures visibility regardless of
-  // what's behind the beam. Critical for desert biome where additive-only beams vanish.
-  const coreWidth = visualBeamWidth * 0.4; // 40% of outer glow width
-  const coreGeo = new THREE.CylinderGeometry(coreWidth, coreWidth * 0.15, range, 6);
-  const coreMat = basicMat(beamColor, {
-    transparent: true,
-    opacity: 0.9, // High opacity for visibility
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    blending: THREE.NormalBlending, // Normal blending ensures visibility on bright terrain
-  });
-  const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-  coreMesh.position.copy(_chargeBeamOrigin).addScaledVector(_chargeBeamDir, range * 0.5);
-  coreMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _chargeBeamDir);
-  coreMesh.userData.createdAt = performance.now();
-  coreMesh.userData.duration = 200;
-  coreMesh.userData.isChargeBeamCore = true; // Distinguish from glow for animation
-  coreMesh.userData.pulsePhase = 0;
-  coreMesh.userData.maxOpacity = 0.9;
-  coreMesh.renderOrder = 100; // Render after terrain
-  scene.add(coreMesh);
-  explosionVisuals.push(coreMesh);
-  
-  // OUTER GLOW: Additive blending for neon aesthetic
-  // This creates the signature glow effect but alone can vanish against bright terrain
-  const beamGeo = new THREE.CylinderGeometry(visualBeamWidth, visualBeamWidth * 0.1, range, 8); // Tapers toward horizon
-  const beamMat = basicMat(beamColor, {
-    transparent: true,
-    opacity: 0.7,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,  // Glow effect
-  });
-  const beamMesh = new THREE.Mesh(beamGeo, beamMat);
-  beamMesh.position.copy(_chargeBeamOrigin).addScaledVector(_chargeBeamDir, range * 0.5);
-  beamMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _chargeBeamDir);
-  beamMesh.userData.createdAt = performance.now();
-  beamMesh.userData.duration = 200; // Longer duration for fade effect
-  beamMesh.userData.isChargeBeam = true;
-  beamMesh.userData.pulsePhase = 0; // For pulse animation
-  beamMesh.userData.maxOpacity = 0.7;
-  beamMesh.renderOrder = 101; // Render just after core
-  scene.add(beamMesh);
-  explosionVisuals.push(beamMesh);
+  activateChargeBeamVisual(index, _chargeBeamOrigin, _chargeBeamDir, range, beamWidth, progress, performance.now());
 }
 
 // [CORE] Spawn a projectile with given parameters
@@ -8298,6 +8459,8 @@ function spawnExplosionVisual(center, radius) {
 
 // [CORE] Update explosion visual animations
 function updateExplosionVisuals(dt, now) {
+  updateChargeBeamVisuals(now);
+
   // Update pooled explosion visuals
   for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
     const entry = explosionPool[i];
@@ -8314,7 +8477,7 @@ function updateExplosionVisuals(dt, now) {
     }
   }
 
-  // Update non-pooled explosion visuals (charge beams, toxic pools, boss shields)
+  // Update rare non-pooled visuals (toxic pools, boss shields, transient bolts)
   for (let i = explosionVisuals.length - 1; i >= 0; i--) {
     const m = explosionVisuals[i];
     const age = now - m.userData.createdAt;
@@ -8524,7 +8687,7 @@ if (typeof window !== 'undefined') {
   // Fire lightning bolt for Static Wisp
   window.fireBossLightning = function(fromPos, targetPos, damage) {
     // Create visual lightning bolt
-    createLightningBolt(fromPos, targetPos);
+    spawnTransientLightningBolt(fromPos, targetPos);
     
     // Also create a projectile that can be shot down
     const direction = targetPos.clone().sub(fromPos).normalize();
@@ -8591,6 +8754,14 @@ const _hostileProjCurrent = new THREE.Vector3();
 const _hostileProjSide = new THREE.Vector3();
 const _projectileRayDir = new THREE.Vector3();
 const _projectileNearbyMeshes = [];
+const _projectileSegmentStart = new THREE.Vector3();
+const _projectileSegmentEnd = new THREE.Vector3();
+const _projectileClosestPoint = new THREE.Vector3();
+const _projectileBestHitPoint = new THREE.Vector3();
+
+function enemyNeedsPreciseProjectileHit(enemy) {
+  return !!enemy && (enemy.type === 'tank' || enemy.isTrain);
+}
 
 // ============================================================
 // PROJECTILE UPDATE LOOP
@@ -8707,7 +8878,9 @@ function updateProjectiles(dt) {
     // Homing behavior (Seeker Burst)
     if (proj.userData.homingRange && proj.userData.homingRange > 0) {
       let targetMesh = proj.userData.homingTarget;
-      const targetStillValid = targetMesh && targetMesh.parent && targetMesh.position.distanceTo(proj.position) <= proj.userData.homingRange;
+      const targetStillValid = targetMesh
+        && targetMesh.parent
+        && targetMesh.position.distanceToSquared(proj.position) <= proj.userData.homingRange * proj.userData.homingRange;
       if (!targetStillValid) {
         targetMesh = findSeekerTarget(proj);
         proj.userData.homingTarget = targetMesh || null;
@@ -8781,76 +8954,128 @@ function updateProjectiles(dt) {
     }
 
     // Check collision with enemies
-    // PERFORMANCE: Use spatial hash to shrink candidate set before raycasting.
+    // VR-CRITICAL: Use direct segment-vs-sphere tests for standard enemies/minions,
+    // and only recurse through child meshes when weak-point logic actually needs it.
     const projPos = proj.position;
     const broadRadius = moveDistance * 2 + 1.5; // Move distance + max hitbox radius
     const hashRadius = broadRadius + 3;
     _projectileNearbyMeshes.length = 0;
+
+    if (proj.userData.velocity && typeof proj.userData.velocity.lengthSq === 'function') {
+      _projectileRayDir.copy(proj.userData.velocity);
+    } else {
+      _projectileRayDir.set(0, 0, -1);
+    }
+    if (_projectileRayDir.lengthSq() === 0) {
+      _projectileRayDir.set(0, 0, -1);
+    } else {
+      _projectileRayDir.normalize();
+    }
+
+    _projectileSegmentEnd.copy(proj.position);
+    _projectileSegmentStart.copy(proj.position).addScaledVector(_projectileRayDir, -moveDistance);
+
+    let directEnemyHit = null;
+    let directEnemyHitDistanceSq = Infinity;
+    let directMinionHit = null;
+    let directMinionHitDistanceSq = Infinity;
+
     const hashed = enemySpatialHash.query(projPos.x, projPos.z, hashRadius);
     for (let ei = 0; ei < hashed.length; ei++) {
       const enemy = hashed[ei];
       if (!enemy || !enemy.mesh) continue;
+
       const dx = projPos.x - enemy.mesh.position.x;
       const dy = projPos.y - enemy.mesh.position.y;
       const dz = projPos.z - enemy.mesh.position.z;
-      const distSq = dx * dx + dy * dy + dz * dz;
-      const r = (enemy.hitboxRadius || 1) + broadRadius;
-      if (distSq < r * r) {
+      const centerDistSq = dx * dx + dy * dy + dz * dz;
+      const hitRadius = (enemy.hitboxRadius || 1) + broadRadius;
+      if (centerDistSq >= hitRadius * hitRadius) continue;
+
+      if (enemyNeedsPreciseProjectileHit(enemy)) {
         _projectileNearbyMeshes.push(enemy.mesh);
+        continue;
+      }
+
+      const directHitRadius = (enemy.hitboxRadius || 1) + 0.12;
+      const hitDistSq = pointToSegmentDistSq(enemy.mesh.position, _projectileSegmentStart, _projectileSegmentEnd, _projectileClosestPoint);
+      if (hitDistSq <= directHitRadius * directHitRadius) {
+        const liveEnemy = getEnemyByMesh(enemy.mesh);
+        const enemyIndex = liveEnemy?.index;
+        if (enemyIndex === undefined || proj.userData.hitEnemies.has(enemyIndex)) continue;
+        const pathDistSq = _projectileSegmentStart.distanceToSquared(_projectileClosestPoint);
+        if (pathDistSq < directEnemyHitDistanceSq) {
+          directEnemyHitDistanceSq = pathDistSq;
+          _projectileBestHitPoint.copy(_projectileClosestPoint);
+          directEnemyHit = { index: enemyIndex, enemy: liveEnemy.enemy, point: _projectileBestHitPoint.clone() };
+        }
       }
     }
 
-    // Also check active boss (bosses are not in regular enemies array)
+    // Bosses still use precise mesh hits so custom weak-point logic stays intact.
     const boss = getBoss();
     if (boss && boss.mesh) {
       const dx = projPos.x - boss.mesh.position.x;
       const dy = projPos.y - boss.mesh.position.y;
       const dz = projPos.z - boss.mesh.position.z;
       const distSq = dx * dx + dy * dy + dz * dz;
-      // Use larger radius for bosses with hands (SkullBoss hands at ±6.75 from center)
       const bossRadius = boss.hands && boss.hands.length > 0 ? 8.0 : 3.0;
       if (distSq < (broadRadius + bossRadius) * (broadRadius + bossRadius)) {
         _projectileNearbyMeshes.push(boss.mesh);
       }
     }
 
-    // Also check boss minions (orange minions spawned by bosses)
+    // Boss minions do not need child-mesh precision, so we can hit them with a cheap sphere test.
     const bossMinionMeshes = getBossMinionMeshes();
     if (bossMinionMeshes.length > 0) {
       for (let mi = 0; mi < bossMinionMeshes.length; mi++) {
         const minionMesh = bossMinionMeshes[mi];
         if (!minionMesh) continue;
+
         const dx = projPos.x - minionMesh.position.x;
         const dy = projPos.y - minionMesh.position.y;
         const dz = projPos.z - minionMesh.position.z;
-        const distSq = dx * dx + dy * dy + dz * dz;
-        if (distSq < (broadRadius + 1) * (broadRadius + 1)) {
-          _projectileNearbyMeshes.push(minionMesh);
+        const centerDistSq = dx * dx + dy * dy + dz * dz;
+        const minionRadius = (minionMesh.userData.hitRadius || 0.8) + broadRadius;
+        if (centerDistSq >= minionRadius * minionRadius) continue;
+
+        const hitRadiusSq = (minionMesh.userData.hitRadius || 0.8) * (minionMesh.userData.hitRadius || 0.8);
+        const hitDistSq = pointToSegmentDistSq(minionMesh.position, _projectileSegmentStart, _projectileSegmentEnd, _projectileClosestPoint);
+        if (hitDistSq <= hitRadiusSq) {
+          const pathDistSq = _projectileSegmentStart.distanceToSquared(_projectileClosestPoint);
+          if (pathDistSq < directMinionHitDistanceSq) {
+            const minionResult = getBossMinionByMesh(minionMesh);
+            if (minionResult) {
+              directMinionHitDistanceSq = pathDistSq;
+              directMinionHit = { ...minionResult, point: _projectileClosestPoint.clone() };
+            }
+          }
         }
       }
     }
 
-    let hits = [];
+    let preciseHit = null;
     if (_projectileNearbyMeshes.length > 0) {
-      if (proj.userData.velocity && typeof proj.userData.velocity.lengthSq === 'function') {
-        _projectileRayDir.copy(proj.userData.velocity);
-      } else {
-        _projectileRayDir.set(0, 0, -1);
+      _uiRaycaster.set(_projectileSegmentStart, _projectileRayDir);
+      _uiRaycaster.near = 0;
+      _uiRaycaster.far = Math.max(moveDistance, 0.5) + 1.5;
+      const hits = _uiRaycaster.intersectObjects(_projectileNearbyMeshes, true);
+      if (hits.length > 0) {
+        preciseHit = hits[0];
       }
-      if (_projectileRayDir.lengthSq() === 0) {
-        _projectileRayDir.set(0, 0, -1);
-      } else {
-        _projectileRayDir.normalize();
-      }
-      _uiRaycaster.set(proj.position, _projectileRayDir);
-      hits = _uiRaycaster.intersectObjects(_projectileNearbyMeshes, true);
     }
 
-    if (hits.length > 0 && hits[0].distance < moveDistance * 2) {
-      const result = getEnemyByMesh(hits[0].object);
+    const preciseHitDistanceSq = preciseHit ? preciseHit.distance * preciseHit.distance : Infinity;
+    const shouldUsePreciseHit = preciseHit
+      && preciseHit.distance <= Math.max(moveDistance, 0.5) + 1.5
+      && preciseHitDistanceSq <= directEnemyHitDistanceSq
+      && preciseHitDistanceSq <= directMinionHitDistanceSq;
+
+    if (shouldUsePreciseHit) {
+      const result = getEnemyByMesh(preciseHit.object);
       if (result && result.boss) {
         markProjectileHit(proj);
-        handleBossHit(result.boss, proj.userData.stats, hits[0].point, proj.userData.controllerIndex, result.handIndex, hits[0].object);
+        handleBossHit(result.boss, proj.userData.stats, preciseHit.point, proj.userData.controllerIndex, result.handIndex, preciseHit.object);
         if (!proj.userData.stats?.piercing) {
           resolveProjectileAccuracy(proj);
           if (proj.userData.isPooled) {
@@ -8862,7 +9087,7 @@ function updateProjectiles(dt) {
         }
       } else if (result && result.index !== undefined && !proj.userData.hitEnemies.has(result.index)) {
         proj.userData.hitEnemies.add(result.index);
-        const hitObj = hits[0].object;
+        const hitObj = preciseHit.object;
         const hitWeakPoint = hitObj.userData && hitObj.userData.weakPoint === true;
         const hitInfo = {
           trainIndex: hitObj.userData?.trainIndex,
@@ -8870,10 +9095,7 @@ function updateProjectiles(dt) {
           hitObject: hitObj,
         };
 
-        // Check if projectile is nanite-infused (passed through nanite swarm)
         const naniteDamage = proj.userData.naniteInfused ? 5 : 0;
-
-        // Apply nanite damage and reveal enemy
         if (naniteDamage > 0) {
           const enemy = result.enemy;
           if (!enemy._naniteRevealed) {
@@ -8885,14 +9107,12 @@ function updateProjectiles(dt) {
         }
 
         markProjectileHit(proj);
-        handleHit(result.index, result.enemy, { ...proj.userData.stats, damage: proj.userData.stats.damage + naniteDamage }, hits[0].point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint, hitInfo);
+        handleHit(result.index, result.enemy, { ...proj.userData.stats, damage: proj.userData.stats.damage + naniteDamage }, preciseHit.point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint, hitInfo);
 
-        // Ricochet effect
         if (proj.userData.stats?.ricochetBounces > 0) {
-          handleRicochet(hits[0].point, proj.userData.stats, 0, proj.userData.controllerIndex);
+          handleRicochet(preciseHit.point, proj.userData.stats, 0, proj.userData.controllerIndex);
         }
 
-        // Remove projectile if not piercing - return to pool
         if (!proj.userData.stats?.piercing) {
           resolveProjectileAccuracy(proj);
           if (proj.userData.isPooled) {
@@ -8903,11 +9123,11 @@ function updateProjectiles(dt) {
           projectiles.splice(i, 1);
         }
       } else {
-        const minionResult = getBossMinionByMesh(hits[0].object);
+        const minionResult = getBossMinionByMesh(preciseHit.object);
         if (minionResult) {
           markProjectileHit(proj);
           const mResult = hitBossMinion(minionResult.index, proj.userData.stats?.damage);
-          spawnDamageNumber(hits[0].point, proj.userData.stats?.damage, '#ff8800');
+          spawnDamageNumber(preciseHit.point, proj.userData.stats?.damage, '#ff8800');
           if (mResult.killed) playExplosionSound();
           if (!proj.userData.stats?.piercing) {
             resolveProjectileAccuracy(proj);
@@ -8920,6 +9140,61 @@ function updateProjectiles(dt) {
           }
         }
       }
+    } else if (directEnemyHit) {
+      proj.userData.hitEnemies.add(directEnemyHit.index);
+      const naniteDamage = proj.userData.naniteInfused ? 5 : 0;
+
+      if (naniteDamage > 0 && !directEnemyHit.enemy._naniteRevealed) {
+        directEnemyHit.enemy._naniteRevealed = true;
+        if (directEnemyHit.enemy.mesh.material) {
+          setMaterialEmissiveSafe(directEnemyHit.enemy.mesh.material, new THREE.Color(0xffd700), 0.5);
+        }
+      }
+
+      markProjectileHit(proj);
+      handleHit(
+        directEnemyHit.index,
+        directEnemyHit.enemy,
+        { ...proj.userData.stats, damage: proj.userData.stats.damage + naniteDamage },
+        directEnemyHit.point,
+        proj.userData.controllerIndex,
+        proj.userData.isExploding,
+        false,
+        { hitObject: directEnemyHit.enemy.mesh }
+      );
+
+      if (proj.userData.stats?.ricochetBounces > 0) {
+        handleRicochet(directEnemyHit.point, proj.userData.stats, 0, proj.userData.controllerIndex);
+      }
+
+      if (!proj.userData.stats?.piercing) {
+        resolveProjectileAccuracy(proj);
+        if (proj.userData.isPooled) {
+          returnProjectileToPool(proj);
+        } else {
+          disposeObject3D(proj);
+        }
+        projectiles.splice(i, 1);
+      }
+    } else if (directMinionHit) {
+      markProjectileHit(proj);
+      const mResult = hitBossMinion(directMinionHit.index, proj.userData.stats?.damage);
+      spawnDamageNumber(directMinionHit.point, proj.userData.stats?.damage, '#ff8800');
+      if (mResult.killed) playExplosionSound();
+      if (!proj.userData.stats?.piercing) {
+        resolveProjectileAccuracy(proj);
+        if (proj.userData.isPooled) {
+          returnProjectileToPool(proj);
+        } else {
+          disposeObject3D(proj);
+        }
+        projectiles.splice(i, 1);
+      }
+    }
+
+    // Safety: once a collision removed this projectile, skip the remaining collision tiers.
+    if (!projectiles[i] || projectiles[i] !== proj) {
+      continue;
     }
     
     // Check collision with boss projectiles (player can shoot them down)
@@ -8930,8 +9205,7 @@ function updateProjectiles(dt) {
         for (let j = bossProjs.length - 1; j >= 0; j--) {
           const bossProj = bossProjs[j];
           if (!bossProj || !bossProj.mesh) continue;
-          const dist = proj.position.distanceTo(bossProj.mesh.position);
-          if (dist < 0.5) {
+        if (proj.position.distanceToSquared(bossProj.mesh.position) < 0.25) {
             spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
             if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
             bossProjs.splice(j, 1);
@@ -8957,8 +9231,7 @@ function updateProjectiles(dt) {
         
         // Check if this is a boss projectile
         if (bossProj.userData.isBossProjectile || bossProj.userData.damage) {
-          const dist = proj.position.distanceTo(bossProj.position);
-          if (dist < 0.5) { // Collision radius
+          if (proj.position.distanceToSquared(bossProj.position) < 0.25) { // 0.5m collision radius
             // Destroy hostile projectile with a small blast
             triggerHostileProjectileExplosion(bossProj.position.clone(), 0.35, 0);
             markProjectileHit(proj);
@@ -8993,8 +9266,7 @@ function updateProjectiles(dt) {
         for (let k = explosionVisuals.length - 1; k >= 0; k--) {
           const visual = explosionVisuals[k];
           if (visual.userData.isBossProjectile) {
-            const dist = proj.position.distanceTo(visual.position);
-            if (dist < 1.0) { // Larger radius for area effects
+            if (proj.position.distanceToSquared(visual.position) < 1.0) { // 1.0m radius squared
               // Destroy the visual
               spawnExplosionVisual(visual.position.clone(), 0.3);
               disposeObject3D(visual);
@@ -9332,8 +9604,7 @@ function render(timestamp) {
         }
         chargeShotStartTime[i] = null;
         if (lightningBeams[i]) {
-          disposeMesh(lightningBeams[i]);
-          lightningBeams[i] = null;
+          clearLightningBeam(i);
         }
         // Clean up plasma carbine spin state
         plasmaCarbineSpinStart[i] = null;
@@ -9469,12 +9740,10 @@ function render(timestamp) {
         }
         // Clear lightning beams
         if (lightningBeams[0]) {
-          disposeMesh(lightningBeams[0]);
-          lightningBeams[0] = null;
+          clearLightningBeam(0);
         }
         if (lightningBeams[1]) {
-          disposeMesh(lightningBeams[1]);
-          lightningBeams[1] = null;
+          clearLightningBeam(1);
         }
         // Clear plasma carbine spin state
         plasmaCarbineSpinStart[0] = null;
