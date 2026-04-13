@@ -1723,20 +1723,20 @@ export function updateUpgradeCards(now, cooldownRemaining) {
     }
   });
 
-  // Update cooldown text
+  // Update cooldown text - only recreate texture when the displayed text changes
   const cd = upgradeGroup.getObjectByName('upgrade-cards-cooldown');
   if (cd) {
     if (cooldownRemaining > 0) {
       cd.visible = true;
-      // Update the cooldown sprite text
-      if (cd.material && cd.material.map) cd.material.map.dispose();
-      const { texture, aspect } = makeTextTexture(
-        `WAIT ${Math.ceil(cooldownRemaining)}...`,
-        { fontSize: 40, color: '#ffff00' }
-      );
-      cd.material.map = texture;
-      cd.material.needsUpdate = true;
-      cd.scale.set(aspect * 0.4, 0.4, 1);
+      const cdText = `WAIT ${Math.ceil(cooldownRemaining)}...`;
+      if (cd.userData._lastCdText !== cdText) {
+        cd.userData._lastCdText = cdText;
+        if (cd.material && cd.material.map) cd.material.map.dispose();
+        const { texture, aspect } = makeTextTexture(cdText, { fontSize: 40, color: '#ffff00' });
+        cd.material.map = texture;
+        cd.material.needsUpdate = true;
+        cd.scale.set(aspect * 0.4, 0.4, 1);
+      }
     } else {
       cd.visible = false;
     }
@@ -1749,22 +1749,21 @@ export function updateUpgradeCards(now, cooldownRemaining) {
  */
 export function getUpgradeCardHit(raycaster) {
   if (!upgradeGroup.visible || !raycaster) return null;
-  const hits = raycaster.intersectObjects(upgradeCards, true);
+
+  // Only raycast against card face meshes (tagged isUpgradeCard), not all descendants.
+  // Text sprites, borders, and hover glow meshes can extend beyond the card face
+  // boundary and intercept rays meant for a neighboring card.
+  const faceMeshes = [];
+  for (let i = 0; i < upgradeCards.length; i++) {
+    const face = upgradeCards[i].children?.find(c => c.userData?.isUpgradeCard);
+    if (face) faceMeshes.push(face);
+  }
+
+  const hits = raycaster.intersectObjects(faceMeshes, false);
   for (let i = 0; i < hits.length; i++) {
     const selection = resolveUpgradeSelectionFromObject(hits[i].object);
     if (selection?.upgrade) {
       return selection;
-    }
-
-    const id = hits[i].object.userData?.upgradeId;
-    if (!id) continue;
-    if (id === 'SKIP') {
-      return { upgrade: { id: 'SKIP', name: 'Skip' }, hand: upgradeGroup.userData.hand };
-    }
-
-    const upgrade = upgradeChoices.find(u => u.id === id) || null;
-    if (upgrade) {
-      return { upgrade, hand: upgradeGroup.userData.hand };
     }
   }
   return null;
