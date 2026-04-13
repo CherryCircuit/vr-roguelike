@@ -1,0 +1,257 @@
+{
+  "period": "2026-04-06 to 2026-04-12",
+  "generated_at": "2026-04-12T17:00:12.072057-07:00",
+  "days_analyzed": 6,
+  "automation_candidates": [
+    {
+      "task_type": "image generation",
+      "frequency": 107,
+      "agents_involved": [
+        "ampy",
+        "comfy"
+      ],
+      "suggestion": "'image generation' appeared 107x. Mostly handled by ampy. Keywords: generate, image, render, comfy. Consider template or shortcut for common 'image generation' requests."
+    },
+    {
+      "task_type": "code",
+      "frequency": 24,
+      "agents_involved": [
+        "codey",
+        "comfy",
+        "unknown"
+      ],
+      "suggestion": "'code' appeared 24x. Mostly handled by codey. Keywords: bug, fix, deploy, build, code. Consider template or shortcut for common 'code' requests."
+    },
+    {
+      "task_type": "analysis/review",
+      "frequency": 7,
+      "agents_involved": [
+        "codey"
+      ],
+      "suggestion": "'analysis/review' appeared 7x. Mostly handled by codey. Keywords: review, analyze, check, audit. Consider template or shortcut for common 'analysis/review' requests."
+    }
+  ],
+  "sequence_patterns": [
+    {
+      "sequence": [
+        "code",
+        "analysis/review"
+      ],
+      "frequency": 4,
+      "suggestion": "'code' followed by 'analysis/review' appeared 4x. Could be combined into a single request like 'deep code with analysis/review'."
+    }
+  ],
+  "pain_points": [],
+  "time_patterns": {
+    "peak_hours": {
+      "0": 9,
+      "1": 4,
+      "2": 3,
+      "5": 1,
+      "6": 1,
+      "7": 73,
+      "8": 80,
+      "9": 13,
+      "10": 7,
+      "11": 5,
+      "12": 33,
+      "13": 41,
+      "14": 55,
+      "15": 50,
+      "16": 34,
+      "17": 27,
+      "18": 11,
+      "19": 10,
+      "20": 8,
+      "21": 7,
+      "22": 10,
+      "23": 4
+    },
+    "peak_days": {
+      "Saturday": 184,
+      "Monday": 121,
+      "Thursday": 78,
+      "Tuesday": 54,
+      "Wednesday": 20,
+      "Friday": 17,
+      "Sunday": 12
+    },
+    "agent_by_hour": {
+      "ampy": {
+        "8": 80,
+        "7": 70,
+        "14": 14
+      },
+      "serena": {
+        "11": 2,
+        "12": 1,
+        "13": 1,
+        "15": 1,
+        "16": 14,
+        "17": 2,
+        "21": 1
+      },
+      "codey": {
+        "1": 2,
+        "2": 2,
+        "11": 3,
+        "12": 9,
+        "13": 32,
+        "14": 38,
+        "15": 49,
+        "16": 17,
+        "17": 16,
+        "20": 5,
+        "22": 5,
+        "18": 9,
+        "19": 5,
+        "21": 6
+      },
+      "brother-bot": {
+        "19": 2,
+        "20": 1,
+        "22": 5
+      },
+      "comfy": {
+        "14": 3,
+        "16": 3,
+        "17": 9,
+        "18": 2,
+        "19": 3,
+        "2": 1
+      },
+      "unknown": {
+        "20": 2,
+        "23": 4,
+        "0": 9,
+        "1": 2,
+        "9": 13,
+        "10": 7,
+        "5": 1,
+        "6": 1,
+        "12": 23,
+        "13": 8
+      },
+      "zenn": {
+        "7": 3
+      }
+    },
+    "longest_sessions": [
+      {
+        "agent": "ampy",
+        "duration": 18060,
+        "date": "2026-04-11"
+      },
+      {
+        "agent": "ampy",
+        "duration": 17461,
+        "date": "2026-04-11"
+      },
+      {
+        "agent": "ampy",
+        "duration": 16725,
+        "date": "2026-04-10"
+      },
+      {
+        "agent": "ampy",
+        "duration": 15273,
+        "date": "2026-04-09"
+      },
+      {
+        "agent": "ampy",
+        "duration": 13298,
+        "date": "2026-04-08"
+      }
+    ]
+  },
+  "agent_utilization": {
+    "ampy": {
+      "sessions": 7,
+      "user_messages": 164,
+      "tools_used": 56,
+      "top_tools": {
+        "write": 7,
+        "web_search": 7,
+        "exec": 7,
+        "web_fetch": 7,
+        "edit": 7
+      },
+      "trend": "stable"
+    },
+    "serena": {
+      "sessions": 1,
+      "user_messages": 22,
+      "tools_used": 14,
+      "top_tools": {
+        "session_status": 1,
+        "browser": 1,
+        "write": 1,
+        "sessions_list": 1,
+        "web_search": 1
+      },
+      "trend": "stable"
+    },
+    "codey": {
+      "sessions": 7,
+      "user_messages": 198,
+      "tools_used": 60,
+      "top_tools": {
+        "subagents": 7,
+        "sessions_spawn": 7,
+        "exec": 7,
+        "edit": 7,
+        "read": 7
+      },
+      "trend": "stable"
+    },
+    "brother-bot": {
+      "sessions": 1,
+      "user_messages": 8,
+      "tools_used": 1,
+      "top_tools": {
+        "read": 1
+      },
+      "trend": "stable"
+    },
+    "comfy": {
+      "sessions": 1,
+      "user_messages": 21,
+      "tools_used": 8,
+      "top_tools": {
+        "web_fetch": 1,
+        "image_generate": 1,
+        "image": 1,
+        "process": 1,
+        "read": 1
+      },
+      "trend": "stable"
+    },
+    "unknown": {
+      "sessions": 39,
+      "user_messages": 70,
+      "tools_used": 118,
+      "top_tools": {
+        "exec": 35,
+        "edit": 27,
+        "read": 26,
+        "process": 7,
+        "write": 4
+      },
+      "trend": "stable"
+    },
+    "zenn": {
+      "sessions": 1,
+      "user_messages": 3,
+      "tools_used": 0,
+      "top_tools": {},
+      "trend": "stable"
+    }
+  },
+  "insights": [
+    "Peak activity around 8:00 PT",
+    "Saturday is the busiest day",
+    "Longest session: ampy at 18060min on 2026-04-11",
+    "unknown had the most sessions (39), serena the fewest (1)",
+    "3 task type(s) flagged for automation (appeared 5+ times)"
+  ]
+}
