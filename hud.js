@@ -1344,6 +1344,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   // Warp-in animation: each card's children pop in with easeOutCubic (clean ease-out grow)
   const warpBaseTime = performance.now();
   _warpPieceIndex = 0; // Reset piece counter for text queue
+  console.warn('[WARP-DEBUG] showUpgradeCards: setting up warp, baseTime=', warpBaseTime, 'cards=', upgradeCards.length);
   upgradeCards.forEach((cardGroup, i) => {
     const cardDelay = i * CARD_WARP_STAGGER;
     cardGroup.userData._warpBaseTime = warpBaseTime;
@@ -1357,6 +1358,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
           : PIECE_WARP_STAGGER * 2;
         child.userData._warpStartTime = warpBaseTime + cardDelay + pieceDelay;
         child.userData._warpActive = true;
+        console.warn('[WARP-DEBUG] card', i, 'piece', child.userData._warpPiece, 'startAt=', child.userData._warpStartTime, 'scale=', child.scale.x);
       }
     });
   });
@@ -3835,6 +3837,7 @@ export function updateHUDHover(raycasters) {
     // Iterates ALL children with _warpActive regardless of cardGroup state,
     // because text sprites are flushed from a queue after the initial warp starts.
     const now = performance.now();
+    let _warpDebugLogged = false;
     upgradeCards.forEach(cardGroup => {
       let hasActive = false;
       cardGroup.children.forEach(child => {
@@ -3842,6 +3845,11 @@ export function updateHUDHover(raycasters) {
         hasActive = true;
         const elapsed = now - child.userData._warpStartTime;
         if (elapsed < 0) return;
+        // Debug: log first 3 frames of warp animation
+        if (!_warpDebugLogged && child.userData._warpPiece === 'face') {
+          _warpDebugLogged = true;
+          console.warn('[WARP-DEBUG] anim frame: elapsed=', Math.round(elapsed), 'ms scale=', child.scale.x.toFixed(3), 'active=', child.userData._warpActive);
+        }
         // Play pop sound when card face warp starts
         if (child.userData._warpPiece === 'face' && !child.userData._warpSounded) {
           child.userData._warpSounded = true;
