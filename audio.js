@@ -1858,6 +1858,7 @@ export function playMusic(category, loop = true) {
 export function playBossMusic(tier) {
   stopCurrentMusic();
   musicFadeToken += 1;
+  loopPlaylist = true;
   currentPlaylist = [];
   currentTrackIndex = 0;
 
@@ -1868,20 +1869,25 @@ export function playBossMusic(tier) {
   const tracks = bossTracks[tier] ? [...bossTracks[tier]] : [];
   if (!tracks || tracks.length === 0) return;
 
-  let track;
-  if (tracks.length === 1) {
-    track = tracks[0];
-  } else {
-    const last = lastBossTrack[tier];
-    const candidates = tracks.filter(t => t !== last);
-    track = candidates[Math.floor(Math.random() * candidates.length)];
-  }
-  lastBossTrack[tier] = track;
+  // Shuffle the full playlist for this tier
+  currentPlaylist = shuffleArray(tracks);
 
-  currentPlaylist = [track];
+  // Rotate so a different track starts each run (avoid repeating the same opener)
+  if (currentPlaylist.length > 1) {
+    const last = lastBossTrack[tier];
+    if (last) {
+      const lastIdx = currentPlaylist.findIndex(t => t === last);
+      if (lastIdx >= 0) {
+        // Rotate so the last-started track is at the end, ensuring a fresh opener
+        currentPlaylist.push(...currentPlaylist.splice(0, lastIdx + 1));
+      }
+    }
+  }
+
+  lastBossTrack[tier] = currentPlaylist[0];
   currentTrackIndex = 0;
 
-  console.log(`[music] Starting boss track (tier ${tier}): ${track.split('/').pop()}`);
+  console.log(`[music] Starting boss playlist (tier ${tier}) with ${currentPlaylist.length} tracks, opener: ${currentPlaylist[0].split('/').pop()}`);
   playNextTrack();
 }
 
