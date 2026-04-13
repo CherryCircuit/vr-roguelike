@@ -4400,7 +4400,7 @@ class Boss {
     this.mesh = this.buildMesh(def);
     this.mesh.position.set(0, 2.5, -12);
     this.mesh.userData.isBoss = true;
-    this.mesh.renderOrder = 5; // Render below menus (pause=10000, settings=995)
+    this.mesh.renderOrder = 10; // Same as regular enemies
     this.sceneRef.add(this.mesh);
 
     // Rise animation: spawn below floor, animate upward
@@ -5209,7 +5209,7 @@ class SkullHand {
   buildMesh() {
     // Voxel hand - skeletal hand shape
     this.group = new THREE.Group();
-    this.group.renderOrder = 5;
+    this.group.renderOrder = 10;
     const geo = getGeo(0.25);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -5221,7 +5221,7 @@ class SkullHand {
 
     // Palm (center)
     const palm = new THREE.Mesh(geo, mat.clone());
-    palm.renderOrder = 2;
+    palm.renderOrder = 10;
     palm.userData.isHandBody = true;
     palm.userData.handIndex = this.handIndex;
     this.group.add(palm);
@@ -5237,7 +5237,7 @@ class SkullHand {
 
     fingerPositions.forEach(pos => {
       const finger = new THREE.Mesh(geo, mat.clone());
-      finger.renderOrder = 2;
+      finger.renderOrder = 10;
       finger.position.set(pos[0], pos[1], pos[2]);
       finger.userData.isHandBody = true;
       finger.userData.handIndex = this.handIndex;
@@ -5406,7 +5406,7 @@ class SkullBoss extends Boss {
     }
 
     const skullGroup = new THREE.Group();
-    skullGroup.renderOrder = 5;
+    skullGroup.renderOrder = 10;
     const geo = getGeo(0.375);
 
     // NECRO pixel art: 9 wide × 7 tall, flat front-facing
@@ -5481,7 +5481,7 @@ class SkullBoss extends Boss {
           fog: false,
         });
         const cube = new THREE.Mesh(geo, mat);
-        cube.renderOrder = 2;
+        cube.renderOrder = 10;
         cube.position.set(
           col * voxelSize - halfW,
           (gridH - 1 - rowIdx) * voxelSize - halfH,
@@ -6675,7 +6675,7 @@ class MinotaurBoss extends Boss {
     }
 
     const faceGroup = new THREE.Group();
-    faceGroup.renderOrder = 2;
+    faceGroup.renderOrder = 10;
     const geo = getGeo(0.375);
 
     // BLOOD MINOTAUR pixel art: 8 wide × 7 tall, flat front-facing
@@ -7188,7 +7188,7 @@ class PrismBoss extends Boss {
 
     this.facetMaterials = this.facetColors.map(c =>
       new THREE.MeshBasicMaterial({
-        color: c, transparent: true, opacity: 0.95
+        color: c, transparent: true, opacity: 0.95, depthWrite: false, fog: false
       })
     );
 
@@ -7204,12 +7204,12 @@ class PrismBoss extends Boss {
 
     // Glow material for vulnerable facet indicator (index 3)
     this.vulnerableGlowMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.95
+      color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, fog: false
     });
     this.facetMaterials.push(this.vulnerableGlowMat);
 
     this.prismMesh = new THREE.Mesh(geo, this.facetMaterials);
-    this.prismMesh.renderOrder = 2;
+    this.prismMesh.renderOrder = 10;
     this.prismMesh.userData.isBossBody = true;
     this.mesh.add(this.prismMesh);
 
@@ -7228,7 +7228,7 @@ class PrismBoss extends Boss {
     // Vulnerable facet indicator: glowing ring around the weak facet
     const ringGeo = new THREE.TorusGeometry(2.0, 0.08, 8, 24);
     this.vulnerableRingMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.9
+      color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, fog: false
     });
     this.vulnerableRing = new THREE.Mesh(ringGeo, this.vulnerableRingMat);
     this.vulnerableRing.rotation.x = Math.PI / 2; // Lay flat
@@ -7237,7 +7237,7 @@ class PrismBoss extends Boss {
     // Floating arrow indicator pointing at vulnerable facet
     const arrowGeo = new THREE.ConeGeometry(0.2, 0.6, 4);
     const arrowMat = new THREE.MeshBasicMaterial({
-      color: 0xffff00, transparent: true, opacity: 0.95
+      color: 0xffff00, transparent: true, opacity: 0.95, depthWrite: false, fog: false
     });
     this.vulnerableArrow = new THREE.Mesh(arrowGeo, arrowMat);
     this.vulnerableArrow.name = 'prism-vulnerable-arrow';
