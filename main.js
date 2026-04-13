@@ -7746,10 +7746,16 @@ function triggerHostileProjectileExplosion(position, radius, damage) {
 }
 
 // [CORE] Spawn boss projectile destruction VFX
-function spawnBossProjectileDestructionFX(position) {
-  spawnExplosionVisual(position.clone(), 0.22);
-  // Tiny spark debris only (reduced from 3 to 1)
-  spawnVoxelExplosion(position.clone(), 0xff0000, 1, 'basic', false, false);
+function spawnBossProjectileDestructionFX(position, projColor) {
+  spawnExplosionVisual(position.clone(), 0.35);
+  // Spark debris: 3-5 random tiny voxels, 10% of projectile size, same color as projectile
+  const sparkCount = 3 + Math.floor(Math.random() * 3); // 3-5
+  const sparkColor = projColor || 0xff0000; // Default red to match boss projectile color
+  spawnVoxelExplosion(position.clone(), sparkColor, sparkCount, 'basic', false, false);
+  // Scale down the last N voxels added (the sparks) to 10% size
+  for (let i = Math.max(0, activeVoxels.length - sparkCount); i < activeVoxels.length; i++) {
+    activeVoxels[i].scale.setScalar(0.1);
+  }
 }
 
 // [CORE] Update seeker projectile visual (homing curve)
