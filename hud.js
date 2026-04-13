@@ -1486,7 +1486,7 @@ function getUpgradeTotalText(upgrade, hand) {
 
 // Queue for deferred text sprite creation (avoids 12-16 makeSprite calls in one frame)
 const _textQueue = [];
-const TEXT_PER_FRAME = 3; // Sprites created per animation frame
+const TEXT_PER_FRAME = 1; // One sprite per frame to spread GPU upload cost on Quest
 
 function queueTextSprite(group, text, opts, pos) {
   _textQueue.push({ group, text, opts, pos });
@@ -1572,6 +1572,26 @@ function createUpgradeCard(upgrade, position, hand) {
   
   // Store border color on card for hover glow matching
   card.userData.borderColor = borderColor;
+
+  // Pre-create hover glow mesh (avoids first-hover geometry clone hitch on Quest)
+  const glowR = (borderColor >> 16) & 255;
+  const glowG = (borderColor >> 8) & 255;
+  const glowB = borderColor & 255;
+  const glowColorStr = `${glowR},${glowG},${glowB}`;
+  const hoverGlowGeo = cardGeo.clone();
+  const hoverGlowMat = new THREE.MeshBasicMaterial({
+    map: getHoverGlowTexture(glowColorStr),
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const hoverGlow = new THREE.Mesh(hoverGlowGeo, hoverGlowMat);
+  hoverGlow.renderOrder = 998;
+  hoverGlow.scale.set(1.3, 1.3, 1.3);
+  hoverGlow.position.set(0, 0, -0.01);
+  card.add(hoverGlow);
+  card.userData._hoverGlow = hoverGlow;
 
   // Name text - queued for deferred creation
   queueTextSprite(group, upgrade.name.toUpperCase(), {
@@ -1662,6 +1682,23 @@ function createSkipCard(position) {
   
   // Store border color on card for hover glow matching (green for skip)
   card.userData.borderColor = 0x00ff88;
+
+  // Pre-create hover glow mesh (avoids first-hover geometry clone hitch on Quest)
+  const skipGlowColor = '0,255,136';
+  const skipHoverGlowGeo = cardGeo.clone();
+  const skipHoverGlowMat = new THREE.MeshBasicMaterial({
+    map: getHoverGlowTexture(skipGlowColor),
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const skipHoverGlow = new THREE.Mesh(skipHoverGlowGeo, skipHoverGlowMat);
+  skipHoverGlow.renderOrder = 998;
+  skipHoverGlow.scale.set(1.3, 1.3, 1.3);
+  skipHoverGlow.position.set(0, 0, -0.01);
+  card.add(skipHoverGlow);
+  card.userData._hoverGlow = skipHoverGlow;
 
   // "SKIP" text - queued for deferred creation
   queueTextSprite(group, 'SKIP', {
