@@ -10844,9 +10844,8 @@ export function updateBossProjectiles(dt, now, playerPos) {
 
     if (distToPlayer < (proj.hitRadius || 0.45)) {
       proj.hitPlayer = true;
-      if (typeof window !== 'undefined' && window.createExplosionAt) {
-        window.createExplosionAt(proj.position.clone(), proj.explosionRadius || 0.3, proj.explosionDamage || 0);
-      }
+      // Don't call createExplosionAt here — main.js handles explosion visual + damagePlayer
+      // to avoid double explosions and double damage.
     }
   }
 
