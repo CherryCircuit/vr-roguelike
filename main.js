@@ -11034,8 +11034,8 @@ function render(timestamp) {
       const keyboardRC = getAimRaycaster();
       if (keyboardRC) raycasters.push(keyboardRC);
     }
-    // Update hover effects
-    if (raycasters.length > 0) {
+    // Update hover effects (throttled to 30Hz to reduce raycasting cost)
+    if (raycasters.length > 0 && frameCount % 2 === 0) {
       updateHUDHover(raycasters);
     }
   }
