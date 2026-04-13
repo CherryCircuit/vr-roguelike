@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game } from './game.js';
-import { playMenuHoverSound, playMenuClick } from './audio.js';
+import { playMenuHoverSound, playMenuClick, playBasicEnemySpawn } from './audio.js';
 import {
   TextPopupPool, initDamageNumbers, disposePools,
   spawnDamageNumber, spawnCritIndicator, updateDamageNumbers,
@@ -1341,11 +1341,24 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.add(skipCard);
   upgradeCards.push(skipCard);
 
-  // Staggered zoom-in animation: cards start small and scale up over 0.5s
-  upgradeCards.forEach((card, i) => {
-    card.scale.set(0.01, 0.01, 0.01); // Start tiny
-    card.userData._zoomStart = performance.now() + i * 80; // 80ms stagger per card
-    card.userData._zooming = true;
+  // Warp-in animation: each card's children pop in with easeOutBack (same as enemy spawn)
+  const warpBaseTime = performance.now();
+  _warpPieceIndex = 0; // Reset piece counter for text queue
+  upgradeCards.forEach((cardGroup, i) => {
+    const cardDelay = i * CARD_WARP_STAGGER;
+    cardGroup.userData._warpBaseTime = warpBaseTime;
+    cardGroup.userData._warpCardDelay = cardDelay;
+    cardGroup.userData._warpActive = true;
+    // Set warp start times on pre-created children (face, border, icon)
+    cardGroup.children.forEach(child => {
+      if (child.userData._warpPiece) {
+        const pieceDelay = child.userData._warpPiece === 'face' ? 0
+          : child.userData._warpPiece === 'border' ? PIECE_WARP_STAGGER
+          : PIECE_WARP_STAGGER * 2;
+        child.userData._warpStartTime = warpBaseTime + cardDelay + pieceDelay;
+        child.userData._warpActive = true;
+      }
+    });
   });
 
   // Apply layout overrides (sync since preloaded)
@@ -1488,9 +1501,23 @@ function getUpgradeTotalText(upgrade, hand) {
 const _textQueue = [];
 const TEXT_PER_FRAME = 1; // One sprite per frame to spread GPU upload cost on Quest
 
+// ── Upgrade card warp-in animation (matches enemy spawn warp) ──
+const CARD_WARP_DURATION = 200; // ms per piece (same as enemy spawn)
+const CARD_WARP_STAGGER = 120; // ms between cards
+const PIECE_WARP_STAGGER = 50; // ms between pieces within a card
+
+function easeOutBack(t) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
 function queueTextSprite(group, text, opts, pos) {
   _textQueue.push({ group, text, opts, pos });
 }
+
+// Track per-card piece index for warp stagger
+let _warpPieceIndex = 0;
 
 function flushCardTextQueue() {
   if (_textQueue.length === 0) return;
@@ -1498,6 +1525,10 @@ function flushCardTextQueue() {
   for (const item of batch) {
     const sprite = makeSprite(item.text, item.opts);
     sprite.position.copy(item.pos);
+    sprite.scale.set(0.01, 0.01, 0.01); // Start invisible for warp-in
+    sprite.userData._warpStartTime = performance.now();
+    sprite.userData._warpActive = true;
+    _warpPieceIndex++;
     item.group.add(sprite);
   }
 }
@@ -1558,8 +1589,10 @@ function createUpgradeCard(upgrade, position, hand) {
     side: THREE.DoubleSide,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
+  card.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
   card.userData.isUpgradeCard = true;
   card.userData.upgradeId = upgrade.id;
+  card.userData._warpPiece = 'face'; // First piece to animate
   // Fix for upgrade-screen selection regression: store selection data on both
   // the card face and the parent group so hover, trigger, and descendant hits match.
   attachUpgradeSelectionData(group, card, upgrade, hand);
@@ -1568,7 +1601,10 @@ function createUpgradeCard(upgrade, position, hand) {
   // Border (shared geometry)
   const borderColor = upgrade.sideGrade ? 0xffdd00 : (typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff));
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
-  group.add(new THREE.LineSegments(getCardBorderGeo(), borderMat));
+  const border = new THREE.LineSegments(getCardBorderGeo(), borderMat);
+  border.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
+  border.userData._warpPiece = 'border';
+  group.add(border);
   
   // Store border color on card for hover glow matching
   card.userData.borderColor = borderColor;
@@ -1642,10 +1678,11 @@ function createUpgradeCard(upgrade, position, hand) {
     new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff', wireframe: true }),
   );
   iconMesh.position.set(0, -0.35, 0.05);
-  iconMesh.visible = false; // Hidden initially, revealed after cards settle
+  iconMesh.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
+  iconMesh.userData._warpPiece = 'icon';
+  iconMesh.visible = true; // Visible immediately, warp-in animates it
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
-  group.userData.iconRevealAt = performance.now() + 300; // Reveal after 300ms
 
   return group;
 }
@@ -1670,15 +1707,20 @@ function createSkipCard(position) {
     side: THREE.DoubleSide,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
+  card.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
   card.userData.isUpgradeCard = true;
   card.userData.upgradeId = 'SKIP';
+  card.userData._warpPiece = 'face';
   // VR-CRITICAL: Keep SKIP card on the same metadata path as real upgrades so
   // the UI never ends up with a "hover works but trigger misses" split.
   attachUpgradeSelectionData(group, card, { id: 'SKIP', name: 'Skip' }, upgradeGroup.userData.hand);
   group.add(card);
 
   // Border (shared geometry)
-  group.add(new THREE.LineSegments(getSkipCardBorderGeo(), new THREE.LineBasicMaterial({ color: '#00ff88' })));
+  const skipBorder = new THREE.LineSegments(getSkipCardBorderGeo(), new THREE.LineBasicMaterial({ color: '#00ff88' }));
+  skipBorder.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
+  skipBorder.userData._warpPiece = 'border';
+  group.add(skipBorder);
   
   // Store border color on card for hover glow matching (green for skip)
   card.userData.borderColor = 0x00ff88;
@@ -1725,10 +1767,11 @@ function createSkipCard(position) {
     new THREE.MeshBasicMaterial({ color: '#ff0044', wireframe: true }),
   );
   iconMesh.position.set(0, -0.42, 0.05);
-  iconMesh.visible = false;
+  iconMesh.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
+  iconMesh.userData._warpPiece = 'icon';
+  iconMesh.visible = true; // Warp-in animates it
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
-  group.userData.iconRevealAt = performance.now() + 300;
 
   return group;
 }
@@ -1746,17 +1789,11 @@ export function updateUpgradeCards(now, cooldownRemaining) {
   // Flush deferred text sprites (2-3 per frame to avoid frame drops)
   flushCardTextQueue();
 
-  // Animate card icons and reveal them after delay
+  // Animate card icons (rotation) - only after warp-in completes
   upgradeCards.forEach(card => {
-    if (card.userData.iconMesh) {
-      // Reveal icon after settle delay
-      if (!card.userData.iconMesh.visible && card.userData.iconRevealAt && now >= card.userData.iconRevealAt) {
-        card.userData.iconMesh.visible = true;
-      }
-      if (card.userData.iconMesh.visible) {
-        card.userData.iconMesh.rotation.y += 0.02;
-        card.userData.iconMesh.rotation.x += 0.01;
-      }
+    if (card.userData.iconMesh && card.userData.iconMesh.userData._warpActive === false) {
+      card.userData.iconMesh.rotation.y += 0.02;
+      card.userData.iconMesh.rotation.x += 0.01;
     }
   });
 
@@ -3796,23 +3833,52 @@ export function updateHUDHover(raycasters) {
 
   // 2. Upgrade Cards
   if (upgradeGroup.visible) {
-    // Animate staggered zoom-in for cards
+    // Animate per-piece warp-in (easeOutBack, same as enemy spawn)
     const now = performance.now();
-    upgradeCards.forEach(card => {
-      if (card.userData._zooming) {
-        const elapsed = now - (card.userData._zoomStart || 0);
+    upgradeCards.forEach(cardGroup => {
+      if (!cardGroup.userData._warpActive) return;
+      let allDone = true;
+      cardGroup.children.forEach(child => {
+        if (!child.userData._warpActive) return;
+        const elapsed = now - child.userData._warpStartTime;
         if (elapsed < 0) {
-          // Not started yet
-        } else if (elapsed < 400) {
-          const t = elapsed / 400;
-          // Ease out cubic
-          const s = 1 - Math.pow(1 - t, 3);
-          card.scale.set(s, s, s);
-        } else {
-          card.scale.set(1, 1, 1);
-          card.userData._zooming = false;
+          allDone = false;
+          return;
         }
-      }
+        // Play pop sound when card face warp starts
+        if (child.userData._warpPiece === 'face' && !child.userData._warpSounded) {
+          child.userData._warpSounded = true;
+          playBasicEnemySpawn();
+        }
+        if (elapsed >= CARD_WARP_DURATION) {
+          child.scale.set(1, 1, 1);
+          child.userData._warpActive = false;
+          return;
+        }
+        allDone = false;
+        const t = elapsed / CARD_WARP_DURATION;
+        const s = easeOutBack(t);
+        child.scale.set(s, s, s);
+      });
+      if (allDone) cardGroup.userData._warpActive = false;
+    });
+
+    // Also animate text sprites created by the queue
+    upgradeCards.forEach(cardGroup => {
+      cardGroup.children.forEach(child => {
+        if (!child.userData._warpActive) return;
+        if (!child.isSprite) return; // Only text sprites from queue
+        const elapsed = now - child.userData._warpStartTime;
+        if (elapsed < 0) return;
+        if (elapsed >= CARD_WARP_DURATION) {
+          child.scale.set(1, 1, 1);
+          child.userData._warpActive = false;
+          return;
+        }
+        const t = elapsed / CARD_WARP_DURATION;
+        const s = easeOutBack(t);
+        child.scale.set(s, s, s);
+      });
     });
 
     upgradeCards.forEach(card => {
@@ -3929,11 +3995,16 @@ export function updateHUDHover(raycasters) {
       target = obj.parent;
     }
 
-    // CRITICAL: For zooming cards - immediately complete zoom on hover
-    // This prevents cards from getting stuck at small scale if hovered during zoom animation
-    if (target.userData._zooming) {
-      target.scale.set(1, 1, 1);
-      target.userData._zooming = false;
+    // CRITICAL: For warping cards - immediately complete warp on hover
+    // This prevents cards from getting stuck at small scale if hovered during warp animation
+    if (target.userData._warpActive) {
+      target.children.forEach(child => {
+        if (child.userData._warpActive) {
+          child.scale.set(1, 1, 1);
+          child.userData._warpActive = false;
+        }
+      });
+      target.userData._warpActive = false;
       target.userData._baseScale = new THREE.Vector3(1, 1, 1);
     }
 
