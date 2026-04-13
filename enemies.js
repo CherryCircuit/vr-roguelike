@@ -1486,7 +1486,7 @@ function spawnTrainEnemy(type, position, levelConfig) {
 
   // Create the group to hold hitbox and track position
   const group = new THREE.Group();
-  group.renderOrder = 10;
+  group.renderOrder = 0;
 
   // Try to use instanced rendering for train segments
   const instanceIds = []; // Track all instance IDs for this train
@@ -1973,7 +1973,7 @@ function spawnGeometryShifterSplit(position, hp, scale) {
     });
 
     const group = new THREE.Group();
-    group.renderOrder = 10;
+    group.renderOrder = 0;
     // Simple 2x2 pattern for split
     const pattern = [[1, 1], [1, 1]];
     pattern.forEach((row, r) => {
@@ -2064,7 +2064,7 @@ function spawnCloneMimicSplit(position) {
     });
 
     const group = new THREE.Group();
-    group.renderOrder = 10;
+    group.renderOrder = 0;
     // Simple pattern
     const cube = new THREE.Mesh(geo, mat.clone());
     group.add(cube);
@@ -2507,7 +2507,7 @@ export function spawnEnemy(type, position, levelConfig) {
   const material = sharedMaterials[type].clone();
 
   const group = new THREE.Group();
-  group.renderOrder = 10;
+  group.renderOrder = 0;
   const geo = getGeo(def.voxelSize);
   const rows = def.pattern.length;
   const cols = def.pattern[0].length;
@@ -4400,7 +4400,7 @@ class Boss {
     this.mesh = this.buildMesh(def);
     this.mesh.position.set(0, 2.5, -12);
     this.mesh.userData.isBoss = true;
-    this.mesh.renderOrder = 10; // Same as regular enemies
+    this.mesh.renderOrder = 0; // groupOrder must be 0 so children sort with other scene objects
     this.sceneRef.add(this.mesh);
 
     // Rise animation: spawn below floor, animate upward
@@ -4457,7 +4457,7 @@ class Boss {
 
   buildMesh(def) {
     const group = new THREE.Group();
-    group.renderOrder = 10;
+    group.renderOrder = 0;
     const geo = getGeo(def.voxelSize);
     const mat = new THREE.MeshBasicMaterial({
       color: def.color,
@@ -5209,7 +5209,7 @@ class SkullHand {
   buildMesh() {
     // Voxel hand - skeletal hand shape
     this.group = new THREE.Group();
-    this.group.renderOrder = 10;
+    this.group.renderOrder = 0;
     const geo = getGeo(0.25);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -5406,7 +5406,7 @@ class SkullBoss extends Boss {
     }
 
     const skullGroup = new THREE.Group();
-    skullGroup.renderOrder = 10;
+    skullGroup.renderOrder = 0;
     const geo = getGeo(0.375);
 
     // NECRO pixel art: 9 wide × 7 tall, flat front-facing
@@ -6675,7 +6675,7 @@ class MinotaurBoss extends Boss {
     }
 
     const faceGroup = new THREE.Group();
-    faceGroup.renderOrder = 10;
+    faceGroup.renderOrder = 0;
     const geo = getGeo(0.375);
 
     // BLOOD MINOTAUR pixel art: 8 wide × 7 tall, flat front-facing
@@ -10295,7 +10295,7 @@ export function getBossMinions() {
 }
 export function spawnBossMinion(fromPos, playerPos, type = 'basic') {
   const group = new THREE.Group();
-  group.renderOrder = 2;
+  group.renderOrder = 0;
   const def = ENEMY_DEFS[type] || ENEMY_DEFS.basic;
   const geo = getGeo(def.voxelSize);
   const mat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0.8, depthWrite: false, fog: false });
