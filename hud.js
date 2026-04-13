@@ -3834,17 +3834,16 @@ export function updateHUDHover(raycasters) {
   // 2. Upgrade Cards
   if (upgradeGroup.visible) {
     // Animate per-piece warp-in (easeOutBack, same as enemy spawn)
+    // Iterates ALL children with _warpActive regardless of cardGroup state,
+    // because text sprites are flushed from a queue after the initial warp starts.
     const now = performance.now();
     upgradeCards.forEach(cardGroup => {
-      if (!cardGroup.userData._warpActive) return;
-      let allDone = true;
+      let hasActive = false;
       cardGroup.children.forEach(child => {
         if (!child.userData._warpActive) return;
+        hasActive = true;
         const elapsed = now - child.userData._warpStartTime;
-        if (elapsed < 0) {
-          allDone = false;
-          return;
-        }
+        if (elapsed < 0) return;
         // Play pop sound when card face warp starts
         if (child.userData._warpPiece === 'face' && !child.userData._warpSounded) {
           child.userData._warpSounded = true;
@@ -3855,30 +3854,11 @@ export function updateHUDHover(raycasters) {
           child.userData._warpActive = false;
           return;
         }
-        allDone = false;
         const t = elapsed / CARD_WARP_DURATION;
         const s = easeOutBack(t);
         child.scale.set(s, s, s);
       });
-      if (allDone) cardGroup.userData._warpActive = false;
-    });
-
-    // Also animate text sprites created by the queue
-    upgradeCards.forEach(cardGroup => {
-      cardGroup.children.forEach(child => {
-        if (!child.userData._warpActive) return;
-        if (!child.isSprite) return; // Only text sprites from queue
-        const elapsed = now - child.userData._warpStartTime;
-        if (elapsed < 0) return;
-        if (elapsed >= CARD_WARP_DURATION) {
-          child.scale.set(1, 1, 1);
-          child.userData._warpActive = false;
-          return;
-        }
-        const t = elapsed / CARD_WARP_DURATION;
-        const s = easeOutBack(t);
-        child.scale.set(s, s, s);
-      });
+      cardGroup.userData._warpActive = hasActive;
     });
 
     upgradeCards.forEach(card => {
