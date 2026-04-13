@@ -1341,7 +1341,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.add(skipCard);
   upgradeCards.push(skipCard);
 
-  // Warp-in animation: each card's children pop in with easeOutBack (same as enemy spawn)
+  // Warp-in animation: each card's children pop in with easeOutCubic (clean ease-out grow)
   const warpBaseTime = performance.now();
   _warpPieceIndex = 0; // Reset piece counter for text queue
   upgradeCards.forEach((cardGroup, i) => {
@@ -1502,14 +1502,12 @@ const _textQueue = [];
 const TEXT_PER_FRAME = 1; // One sprite per frame to spread GPU upload cost on Quest
 
 // ── Upgrade card warp-in animation (matches enemy spawn warp) ──
-const CARD_WARP_DURATION = 200; // ms per piece (same as enemy spawn)
-const CARD_WARP_STAGGER = 120; // ms between cards
-const PIECE_WARP_STAGGER = 50; // ms between pieces within a card
+const CARD_WARP_DURATION = 500; // ms per piece
+const CARD_WARP_STAGGER = 200; // ms between cards
+const PIECE_WARP_STAGGER = 100; // ms between pieces within a card
 
-function easeOutBack(t) {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
-  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
 }
 
 function queueTextSprite(group, text, opts, pos) {
@@ -3833,7 +3831,7 @@ export function updateHUDHover(raycasters) {
 
   // 2. Upgrade Cards
   if (upgradeGroup.visible) {
-    // Animate per-piece warp-in (easeOutBack, same as enemy spawn)
+    // Animate per-piece warp-in (easeOutCubic, clean ease-out grow)
     // Iterates ALL children with _warpActive regardless of cardGroup state,
     // because text sprites are flushed from a queue after the initial warp starts.
     const now = performance.now();
@@ -3855,7 +3853,7 @@ export function updateHUDHover(raycasters) {
           return;
         }
         const t = elapsed / CARD_WARP_DURATION;
-        const s = easeOutBack(t);
+        const s = easeOutCubic(t);
         child.scale.set(s, s, s);
       });
       cardGroup.userData._warpActive = hasActive;
