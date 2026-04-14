@@ -2412,7 +2412,7 @@ function getHandForController(controllerIndex) {
   return controllerIndex === 0 ? 'left' : 'right';
 }
 
-// [CORE] Create controller visual model
+import { CONTROLLER_RENDER_ORDER } from './pause-menu.js';
 // Weapon identity colors for controller spheres
 const WEAPON_SPHERE_COLORS = {
   standard_blaster: { left: 0x00ffff, right: 0xff00ff },  // Cyan left, Pink right
@@ -2459,18 +2459,24 @@ function createControllerVisual(index) {
   const color = index === 0 ? NEON_CYAN : NEON_PINK;
   const group = new THREE.Group();
   group.name = `controller-visual-${hand}`;
+  // CRITICAL: Controller visuals must render on TOP of all menus (pause, settings, scoreboard)
+  // so the player can always see their pointer beam when aiming at buttons.
+  group.renderOrder = CONTROLLER_RENDER_ORDER;
 
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color }));
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }));
   core.name = `controller-core-${hand}`;
+  core.renderOrder = CONTROLLER_RENDER_ORDER;
   group.add(core);
-  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 16), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 16), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2, depthTest: false, depthWrite: false }));
   glow.name = `controller-glow-${hand}`;
+  glow.renderOrder = CONTROLLER_RENDER_ORDER;
   group.add(glow);
 
-  // Aim line extending forward
+  // Aim line extending forward — must render on top of menus
   const aimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -10)]);
-  const aimLine = new THREE.Line(aimGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 }));
+  const aimLine = new THREE.Line(aimGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false }));
   aimLine.name = `controller-aim-${hand}`;
+  aimLine.renderOrder = CONTROLLER_RENDER_ORDER;
   group.add(aimLine);
 
   // Create holographic display (initially hidden)

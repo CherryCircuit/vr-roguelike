@@ -66,6 +66,10 @@ const PAUSE_BORDER_RENDER_ORDER = 10001;
 const PAUSE_SECTION_BG_RENDER_ORDER = 10002;
 const PAUSE_TEXT_RENDER_ORDER = 10010;
 
+// Controller visuals must render on TOP of all menus (pause, settings, scoreboard)
+// so the player can always see their pointer beam when aiming at buttons.
+export const CONTROLLER_RENDER_ORDER = 10020;
+
 function scalePauseFont(baseFontSize) {
   return Math.round(baseFontSize * PAUSE_MENU_FONT_MULTIPLIER);
 }
@@ -793,7 +797,8 @@ function updateSectionStats(section, hand) {
 function createPauseSettingsButton() {
   const group = new THREE.Group();
 
-  const btnGeo = new THREE.PlaneGeometry(1.55, 0.34);
+  // BoxGeometry for thick hitbox — easier to raycast from angles in VR
+  const btnGeo = new THREE.BoxGeometry(1.55, 0.34, 0.08);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -840,8 +845,8 @@ function createPauseSettingsButton() {
 function createResumeButton() {
   const group = new THREE.Group();
 
-  // Match the title SCOREBOARD button style so pause/resume remains readable in VR.
-  const btnGeo = new THREE.PlaneGeometry(1.55, 0.34);
+  // BoxGeometry for thick hitbox — easier to raycast from angles in VR
+  const btnGeo = new THREE.BoxGeometry(1.55, 0.34, 0.08);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -888,7 +893,7 @@ function createResumeButton() {
 function createPerfButton() {
   const group = new THREE.Group();
 
-  const btnGeo = new THREE.PlaneGeometry(1.55, 0.34);
+  const btnGeo = new THREE.BoxGeometry(1.55, 0.34, 0.08);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,

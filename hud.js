@@ -860,7 +860,8 @@ async function createTitleScreen() {
   const btnGroup = new THREE.Group();
   btnGroup.position.set(-0.36, -0.68, 0);
   btnGroup.name = 'btnGroup';
-  const btnGeo = new THREE.PlaneGeometry(1.35, 0.3);
+  // BoxGeometry for thick hitbox — easier to raycast from angles in VR
+  const btnGeo = new THREE.BoxGeometry(1.35, 0.3, 0.08);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -889,7 +890,8 @@ async function createTitleScreen() {
   const settingsBtnGroup = new THREE.Group();
   settingsBtnGroup.position.set(0.82, -0.68, 0);
   settingsBtnGroup.name = 'settingsBtnGroup';
-  const settingsBtnGeo = new THREE.PlaneGeometry(0.4, 0.3);
+  // BoxGeometry for thick hitbox — easier to raycast from angles in VR
+  const settingsBtnGeo = new THREE.BoxGeometry(0.4, 0.3, 0.08);
   const settingsBtnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -3312,7 +3314,8 @@ export function showScoreboard(scores, headerText, playerPos) {
     btnGroup.name = def.name;
     buttonGroups[def.name] = btnGroup;
 
-    const btnGeo = new THREE.PlaneGeometry(0.65, 0.3);
+    // BoxGeometry for thick hitbox — easier to raycast from angles in VR
+    const btnGeo = new THREE.BoxGeometry(0.65, 0.3, 0.08);
     const btnMat = new THREE.MeshBasicMaterial({
       color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
     });
@@ -3336,7 +3339,7 @@ export function showScoreboard(scores, headerText, playerPos) {
   const backGroup = new THREE.Group();
   backGroup.position.set(0, -1.0, 0);  // #5: Aligned with Country screen
   backGroup.name = 'btnBack';
-  const backGeo = new THREE.PlaneGeometry(0.9, 0.35);  // #5: Same size as Country
+  const backGeo = new THREE.BoxGeometry(0.9, 0.35, 0.08);  // Thick hitbox for VR raycasting
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
   });
@@ -3699,7 +3702,7 @@ export function showCountrySelect(countries, continents, initialContinent, playe
   // BACK button
   const backGroup = new THREE.Group();
   backGroup.position.set(0, -1.0, 0);  // #5: Aligned with Scoreboard screen
-  const backGeo = new THREE.PlaneGeometry(0.9, 0.35);  // #5: Same size as Scoreboard
+  const backGeo = new THREE.BoxGeometry(0.9, 0.35, 0.08);  // Thick hitbox for VR raycasting
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
   });
