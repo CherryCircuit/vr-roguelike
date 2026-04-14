@@ -11,6 +11,7 @@ import {
   playBossProjectileFiredSound, playBossProjectileAlertSound,
   playPhaseWraithCharge as playMortarCharge,
   playSkullPhaseSound, playSkullHandGrowlSound, playSkullDeathKnell, playSkullLaughSound,
+  playHealSound as playBossHealSound,
   playFinalBossSealBreakSound, playFinalBossChargeSound, playFinalBossAscendSound,
   playFinalBossExposeSound, playFinalBossSummonWallSound, playFinalBossReleaseWallSound,
 } from './audio.js';
@@ -1134,6 +1135,104 @@ function releaseAllConductorInstances() {
   pool.freeIndices.clear();
 
   if (window?.debugInstancing) console.log('[conductor-instance] All slots released (clearAllEnemies)');
+}
+
+// ── Conductor glow planes (pink billboard on buffed enemies) ──
+// Shows a pulsing pink glow plane on each enemy currently buffed by a conductor.
+const MAX_CONDUCTOR_GLOW = 30;
+let conductorGlowPool = null;
+const _conductorGlowPos = new THREE.Vector3();
+const _conductorGlowQuat = new THREE.Quaternion();
+const _conductorGlowMat = new THREE.Matrix4();
+const _conductorGlowScale = new THREE.Vector3();
+const _conductorGlowScale0 = new THREE.Vector3(0, 0, 0);
+const _conductorGlowUp = new THREE.Vector3(0, 1, 0);
+const _conductorGlowLook = new THREE.Matrix4();
+
+function initConductorGlowPool() {
+  if (conductorGlowPool || !sceneRef) return;
+
+  // Pink radial gradient texture
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const half = size / 2;
+  const grad = ctx.createRadialGradient(half, half, 0, half, half, half);
+  grad.addColorStop(0, 'rgba(255,102,170,1)');       // Bright pink core
+  grad.addColorStop(0.25, 'rgba(255,80,150,0.7)');   // Pink
+  grad.addColorStop(0.5, 'rgba(255,60,130,0.3)');     // Fading pink
+  grad.addColorStop(1, 'rgba(255,40,100,0)');          // Transparent edge
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+
+  const glowGeo = new THREE.PlaneGeometry(0.9, 0.9);
+  const glowMat = new THREE.MeshBasicMaterial({
+    map: tex,
+    color: 0xff66aa,
+    transparent: true,
+    opacity: 0.6,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+  });
+
+  conductorGlowPool = new THREE.InstancedMesh(glowGeo, glowMat, MAX_CONDUCTOR_GLOW);
+  conductorGlowPool.name = 'conductor-glow-pool';
+  conductorGlowPool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  conductorGlowPool.count = 0;
+  conductorGlowPool.frustumCulled = false;
+  conductorGlowPool.renderOrder = 8;
+  conductorGlowPool.visible = true;
+  sceneRef.add(conductorGlowPool);
+
+  // Initialize all slots as zero-scale (hidden)
+  for (let i = 0; i < MAX_CONDUCTOR_GLOW; i++) {
+    conductorGlowPool.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0));
+  }
+  conductorGlowPool.instanceMatrix.needsUpdate = true;
+}
+
+function updateConductorGlows(now) {
+  if (!conductorGlowPool) return;
+  if (!conductorGlowPool.initialized) conductorGlowPool.initialized = true;
+
+  let glowIdx = 0;
+  const pulse = 0.7 + 0.3 * Math.sin(now * 0.004); // Gentle pulse
+
+  // Place glow on each buffed enemy and each conductor
+  for (let i = 0; i < activeEnemies.length && glowIdx < MAX_CONDUCTOR_GLOW; i++) {
+    const e = activeEnemies[i];
+
+    // Place glow on buffed enemies
+    if (e.linkedByConductor && e.linkedDamageReduction > 0) {
+      _conductorGlowPos.copy(e.mesh.position);
+      _conductorGlowPos.y += 0.5; // Float above enemy
+      if (cameraRef) {
+        _conductorGlowLook.lookAt(_conductorGlowPos, cameraRef.position, _conductorGlowUp);
+        _conductorGlowQuat.setFromRotationMatrix(_conductorGlowLook);
+      } else {
+        _conductorGlowQuat.identity();
+      }
+      const s = pulse * (0.8 + 0.2 * Math.sin(now * 0.006 + e.id));
+      _conductorGlowScale.set(s, s, s);
+      _conductorGlowMat.compose(_conductorGlowPos, _conductorGlowQuat, _conductorGlowScale);
+      conductorGlowPool.setMatrixAt(glowIdx, _conductorGlowMat);
+      glowIdx++;
+    }
+  }
+
+  // Hide unused slots
+  for (let i = glowIdx; i < MAX_CONDUCTOR_GLOW; i++) {
+    conductorGlowPool.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0));
+  }
+
+  conductorGlowPool.count = MAX_CONDUCTOR_GLOW;
+  conductorGlowPool.instanceMatrix.needsUpdate = true;
 }
 
 // ── Mortar enemy InstancedMesh pool ───────────────────
@@ -2464,6 +2563,9 @@ export function initEnemies(scene) {
   // Initialize conductor enemy InstancedMesh pool
   initConductorInstancePool();
 
+  // Initialize conductor glow planes (pink billboard on buffed enemies)
+  initConductorGlowPool();
+
   // Initialize mortar enemy InstancedMesh pool
   initMortarInstancePool();
 
@@ -3494,6 +3596,9 @@ export function updateEnemies(dt, now, playerPos) {
 
   updatePulseBomberRings(dt, now, playerPos);
 
+  // Update conductor glow planes (pink billboard on buffed enemies)
+  updateConductorGlows(now);
+
   return collisions;
 }
 
@@ -3937,6 +4042,14 @@ export function clearAllEnemies() {
 
   // Clear electric arcs (conductor arcs must not leak across level transitions)
   clearAllElectricArcs();
+
+  // Reset conductor glow pool
+  if (conductorGlowPool) {
+    for (let i = 0; i < MAX_CONDUCTOR_GLOW; i++) {
+      conductorGlowPool.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0));
+    }
+    conductorGlowPool.instanceMatrix.needsUpdate = true;
+  }
 
   // Release all basic enemy InstancedMesh slots
   releaseAllBasicInstances();
@@ -5361,6 +5474,9 @@ class SkullBoss extends Boss {
   constructor(def, levelConfig, sceneRef, telegraphing) {
     super(def, levelConfig, sceneRef, telegraphing);
 
+    // Spawn further back during hand phase (50% more distance)
+    this.mesh.position.z -= 6; // Was -12, now -18
+
     // Skull-specific state
     this.hands = [];
     this.handsAlive = 4;
@@ -5374,7 +5490,7 @@ class SkullBoss extends Boss {
     // Shared ammo pool for hands (Part 2)
     this.ammoPool = {
       timer: 0,
-      baseFireRate: 1.2, // Base fire rate when 4 hands alive
+      baseFireRate: 0.84, // Base fire rate when 4 hands alive (cut 30% from 1.2)
       shotsSinceReload: 0,
       reloadTimer: 0,
       reloading: false
@@ -5616,12 +5732,12 @@ class SkullBoss extends Boss {
     const pool = this.ammoPool;
 
     // Calculate fire rate based on alive hands (fewer hands = faster fire)
-    // 4 hands: 1.2s, 3 hands: 1.0s, 2 hands: 0.8s, 1 hand: 0.5s
+    // Cut 30% from original: 0.84, 0.7, 0.56, 0.35
     const handCount = this.handsAlive;
     let fireRate = pool.baseFireRate;
-    if (handCount === 3) fireRate = 1.0;
-    else if (handCount === 2) fireRate = 0.8;
-    else if (handCount === 1) fireRate = 0.5;
+    if (handCount === 3) fireRate = 0.7;
+    else if (handCount === 2) fireRate = 0.56;
+    else if (handCount === 1) fireRate = 0.35;
 
     // Handle reload mechanic for single hand
     if (handCount === 1) {
@@ -5808,13 +5924,17 @@ class SkullBoss extends Boss {
     // Stay in a fixed arena, mid-field from player
     const dist = this.mesh.position.distanceTo(playerPos);
 
-    // Stay between 8 and 16 units from player (moved back for NECRO)
-    if (dist < 8) {
+    // Further away during hand phase, normal during skull phase
+    const minDist = this.headVulnerable ? 8 : 12;
+    const maxDist = this.headVulnerable ? 16 : 22;
+
+    // Stay between minDist and maxDist units from player
+    if (dist < minDist) {
       const awayDir = this.mesh.position.clone().sub(playerPos).normalize();
-      this.mesh.position.addScaledVector(awayDir, (8 - dist));
-    } else if (dist > 16) {
+      this.mesh.position.addScaledVector(awayDir, (minDist - dist));
+    } else if (dist > maxDist) {
       const towardDir = playerPos.clone().sub(this.mesh.position).normalize();
-      this.mesh.position.addScaledVector(towardDir, (dist - 16));
+      this.mesh.position.addScaledVector(towardDir, (dist - maxDist));
     }
 
     // Keep in play area bounds
@@ -5882,16 +6002,16 @@ class SkullBoss extends Boss {
       ? this.leftEye.getWorldPosition(new THREE.Vector3())
       : this.rightEye.getWorldPosition(new THREE.Vector3());
 
-    // Arc sideways: aim at a point offset perpendicular to the player direction
-    // This creates a sweeping curve that arcs left/right
+    // Zigzag arcing: offset initial direction outward, let homing curve it back
+    // Alternates left/right each shot for a zigzag pattern
+    this.necroShotSide = (this.necroShotSide || 1) * -1;
     const toPlayer = new THREE.Vector3().subVectors(playerPos, eyePos);
     toPlayer.y = 0;
     toPlayer.normalize();
     // Perpendicular direction (rotated 90 degrees on Y)
     const perpDir = new THREE.Vector3(-toPlayer.z, 0, toPlayer.x);
-    // Alternate curve direction based on eye side
-    const curveDir = this._eyeSide === 1 ? 1 : -1;
-    const curveOffset = perpDir.clone().multiplyScalar(curveDir * 2.5);
+    // Stronger zigzag offset alternating sides
+    const curveOffset = perpDir.clone().multiplyScalar(this.necroShotSide * 4.0);
     const curvedTarget = playerPos.clone().add(curveOffset);
 
     if (typeof spawnBossProjectile === 'function') {
@@ -6651,7 +6771,7 @@ class MinotaurBoss extends Boss {
     this.lungePhase = 'idle'; // 'idle' | 'lunging' | 'recovery'
     this.lungeTimer = 0;
     this.lungeDuration = 2.0;
-    this.lungeRecoveryTime = 0.8;
+    this.lungeRecoveryTime = 0.5;
     this.lungeStartPos = new THREE.Vector3();
     this.lungeEndPos = new THREE.Vector3();
     this.lungeCount = 0;
@@ -6893,11 +7013,12 @@ class MinotaurBoss extends Boss {
     this.lungeTimer += dt;
     const t = Math.min(this.lungeTimer / this.lungeDuration, 1.0);
 
-    // Ease-out interpolation
+    // Ease-out interpolation - blend toward linear so boss doesn't stall at lunge end
     const easedT = 1 - (1 - t) * (1 - t);
+    const blendT = t * 0.6 + easedT * 0.4; // Mostly linear, slight ease for feel
 
     // Interpolate position directly
-    this.mesh.position.lerpVectors(this.lungeStartPos, this.lungeEndPos, easedT);
+    this.mesh.position.lerpVectors(this.lungeStartPos, this.lungeEndPos, blendT);
     this.currentY = this.mesh.position.y;
 
     // Fire projectiles during the fast part (first 30% of lunge)
@@ -6929,13 +7050,13 @@ class MinotaurBoss extends Boss {
   getMinotaurPhaseConfig() {
     switch (this.skullPhase) {
       case 1:
-        return { lungeDuration: 2.0, recoveryTime: 0.8, diagonalEvery: Infinity, shardRate: 0.7 };
+        return { lungeDuration: 2.0, recoveryTime: 0.5, diagonalEvery: Infinity, shardRate: 0.7 };
       case 2:
-        return { lungeDuration: 1.4, recoveryTime: 0.5, diagonalEvery: 3, shardRate: 0.5 };
+        return { lungeDuration: 1.4, recoveryTime: 0.3, diagonalEvery: 3, shardRate: 0.5 };
       case 3:
-        return { lungeDuration: 1.0, recoveryTime: 0.3, diagonalEvery: 2, shardRate: 0.35 };
+        return { lungeDuration: 1.0, recoveryTime: 0.18, diagonalEvery: 2, shardRate: 0.35 };
       default:
-        return { lungeDuration: 2.0, recoveryTime: 0.8, diagonalEvery: Infinity, shardRate: 0.7 };
+        return { lungeDuration: 2.0, recoveryTime: 0.5, diagonalEvery: Infinity, shardRate: 0.7 };
     }
   }
 
@@ -7204,7 +7325,7 @@ class PrismBoss extends Boss {
 
     this.facetMaterials = this.facetColors.map(c =>
       new THREE.MeshBasicMaterial({
-        color: c, transparent: true, opacity: 0.95, depthWrite: false, fog: false
+        color: c, transparent: true, opacity: 0.6, depthWrite: false, fog: false, side: THREE.DoubleSide
       })
     );
 
@@ -7220,7 +7341,7 @@ class PrismBoss extends Boss {
 
     // Glow material for vulnerable facet indicator (index 3)
     this.vulnerableGlowMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, fog: false
+      color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, fog: false, side: THREE.DoubleSide
     });
     this.facetMaterials.push(this.vulnerableGlowMat);
 
@@ -7228,6 +7349,15 @@ class PrismBoss extends Boss {
     this.prismMesh.renderOrder = 10;
     this.prismMesh.userData.isBossBody = true;
     this.mesh.add(this.prismMesh);
+
+    // Add visible edges for the full 3D shape
+    const edgesGeo = new THREE.EdgesGeometry(geo);
+    const edgesMat = new THREE.LineBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, fog: false
+    });
+    this.prismEdges = new THREE.LineSegments(edgesGeo, edgesMat);
+    this.prismEdges.renderOrder = 11;
+    this.mesh.add(this.prismEdges);
 
     // Store face group data
     this.faceGroupCount = 3;
@@ -7279,27 +7409,26 @@ class PrismBoss extends Boss {
   }
 
   updateVulnerableFacet(newIndex) {
-    // Restore previous facet's original color and full opacity
+    // Restore previous facet's original color and semi-transparent opacity
     const prevMat = this.facetMaterials[this.vulnerableFacetIndex];
     if (prevMat) {
       prevMat.color.setHex(this.facetColors[this.vulnerableFacetIndex]);
-      prevMat.opacity = 0.95;
-      prevMat.color.setHex(this.facetColors[this.vulnerableFacetIndex]);
+      prevMat.opacity = 0.6;
     }
 
     this.vulnerableFacetIndex = newIndex;
 
-    // Glow the new vulnerable facet white and bright
+    // Make the vulnerable facet bright white and more opaque
     const newMat = this.facetMaterials[newIndex];
     if (newMat) {
       newMat.color.setHex(0xffffff);
-      newMat.opacity = 1.0;
+      newMat.opacity = 0.95;
     }
 
-    // Dim non-vulnerable facets to make the vulnerable one stand out
+    // Dim non-vulnerable facets to make the white one stand out
     this.facetMaterials.forEach((mat, i) => {
       if (i < 3 && i !== newIndex) {
-        mat.opacity = 0.4;
+        mat.opacity = 0.5;
         mat.color.setHex(this.facetColors[i]);
       }
     });
@@ -7338,8 +7467,9 @@ class PrismBoss extends Boss {
     this.shootTimer = 0;
     this.prismSpinSpeed = 0.3;
 
-    // Show prism mesh
+    // Show prism mesh and edges
     if (this.prismMesh) this.prismMesh.visible = true;
+    if (this.prismEdges) this.prismEdges.visible = true;
     this.facetHitboxes.forEach(hb => { hb.visible = true; });
 
     _log('[PrismBoss] Entering Phase 1: Learn the Angles');
@@ -7351,6 +7481,10 @@ class PrismBoss extends Boss {
     // Slow continuous spin
     if (this.prismMesh) {
       this.prismMesh.rotation.y += this.prismSpinSpeed * dt;
+    }
+    // Spin edges with prism
+    if (this.prismEdges) {
+      this.prismEdges.rotation.y = this.prismMesh ? this.prismMesh.rotation.y : 0;
     }
     // Spin facet hitboxes too so they stay aligned
     this.facetHitboxes.forEach(hb => {
@@ -7450,6 +7584,7 @@ class PrismBoss extends Boss {
   initPhase2() {
     this.skullPhase = 2;
     this.phase = 2;
+    this.phase2Active = true;
     this.shootTimer = 0;
     this.coreSwapTimer = 0;
     this.mergeTimer = 0;
@@ -7508,7 +7643,7 @@ class PrismBoss extends Boss {
         this.mesh.scale.set(scaleX, scaleY, scaleZ);
 
         // All facets glow brighter as spin accelerates
-        const brightness = 0.95 + progress * 0.05;
+        const brightness = 0.6 + progress * 0.4;
         this.facetMaterials.forEach((mat, i) => {
           if (i < 3) {
             mat.color.setHex(0xffffff);
@@ -7552,6 +7687,7 @@ class PrismBoss extends Boss {
       case 'splitting': {
         // Hide prism, create shards that fly outward
         if (this.prismMesh) this.prismMesh.visible = false;
+        if (this.prismEdges) this.prismEdges.visible = false;
         this.facetHitboxes.forEach(hb => { hb.visible = false; });
         if (this.vulnerableRing) this.vulnerableRing.visible = false;
         if (this.vulnerableArrow) this.vulnerableArrow.visible = false;
@@ -7801,6 +7937,7 @@ class PrismBoss extends Boss {
           this.shards.forEach(s => { s.visible = false; });
           // Show prism briefly
           if (this.prismMesh) this.prismMesh.visible = true;
+          if (this.prismEdges) this.prismEdges.visible = true;
         }
         break;
       }
@@ -7821,6 +7958,12 @@ class PrismBoss extends Boss {
           }
         });
 
+        // Spin edges with prism
+        if (this.prismEdges) {
+          this.prismEdges.rotation.y = this.prismMesh ? this.prismMesh.rotation.y : 0;
+          this.prismEdges.visible = true;
+        }
+
         const pulse = 1.0 + 0.2 * Math.sin(this.rejoinTimer * 15);
         this.mesh.scale.setScalar(pulse);
 
@@ -7838,6 +7981,7 @@ class PrismBoss extends Boss {
       case 'bursting': {
         // Re-show shards flying back out (1 second)
         if (this.prismMesh) this.prismMesh.visible = false;
+        if (this.prismEdges) this.prismEdges.visible = false;
         this.shards.forEach(s => { s.visible = true; });
 
         const progress = Math.min(this.rejoinTimer / 1.0, 1.0);
@@ -7907,37 +8051,29 @@ class PrismBoss extends Boss {
   }
 
   fireShardProjectiles(playerPos) {
-    const visibleShards = this.shards.filter(shard => shard.visible && shard.parent);
-    visibleShards.forEach((shard, i) => {
-      const idx = this.shards.indexOf(shard);
-      const shardPos = shard.getWorldPosition(new THREE.Vector3());
+    // Only fire from the shard with the white core (weak point visible)
+    if (!this.phase2Active) return;
 
-      // Stagger each shard's firing by 400ms sequentially
-      this.later(i * 400, () => {
-        if (typeof spawnBossProjectile !== 'function') return;
-
-        if (idx === 0) {
-          spawnBossProjectile(shardPos, playerPos.clone());
-        } else if (idx === 1) {
-          // Reduced from 3-shot burst to 2-shot spread
-          for (let s = -0.5; s <= 0.5; s += 1.0) {
-            const target = playerPos.clone();
-            target.x += s * 0.5;
-            target.y += s * 0.2;
-            spawnBossProjectile(shardPos, target);
-          }
-        } else {
-          spawnBossProjectile(shardPos, playerPos.clone());
-        }
+    const coreShard = this.shards.find(s => {
+      let found = false;
+      s.traverse(child => {
+        if (child.userData.isPrismCore && child.visible) found = true;
       });
+      return found;
+    });
 
-      // Show telegraph at time of firing, not all at once
-      if (this.telegraphing) {
-        this.later(i * 400, () => {
-          const pos = shard.getWorldPosition(new THREE.Vector3());
-          this.showTelegraph('projectile', 0.2, 0xff44ff, pos);
-        });
-      }
+    if (!coreShard) return;
+
+    const shardPos = coreShard.getWorldPosition(new THREE.Vector3());
+
+    if (this.telegraphing) {
+      this.showTelegraph('projectile', 0.2, 0xff44ff, shardPos);
+    }
+
+    this.later(200, () => {
+      if (!this.phase2Active) return;  // Guard against phase transition
+      if (typeof spawnBossProjectile !== 'function') return;
+      spawnBossProjectile(shardPos, playerPos.clone());
     });
   }
 
@@ -7945,11 +8081,16 @@ class PrismBoss extends Boss {
   initPhase3() {
     this.skullPhase = 3;
     this.phase = 3;
+    this.phase2Active = false;
     this.isHealCharging = false;
     this.healChargeTimer = 0;
     this.phase3ShootTimer = 0;
+    this.shootTimer = 999;  // Prevent any lingering phase 2 shoots
+    this.phase3FacetRotateTimer = 0;
+    this.phase3FacetRotateRate = 3.0;  // Faster rotation than phase 1
+    this.phase3SpinSpeed = 0.6;  // Faster spin than phase 1
 
-    // Clean up shards
+    // Clean up phase 2 shards
     this.shards.forEach(shard => {
       if (shard.parent) shard.parent.remove(shard);
       shard.traverse(child => {
@@ -7962,43 +8103,116 @@ class PrismBoss extends Boss {
     });
     this.shards = [];
 
-    // Show prism body again (damaged look)
+    // Re-form prism (phase 1 style but smaller, faster)
     if (this.prismMesh) {
       this.prismMesh.visible = true;
-      // Darken facets for damaged look
-      this.facetMaterials.forEach((mat, i) => {
-        if (i < 3) {
-          mat.color.setHex(0x881188);
-          mat.opacity = 0.7;
-        }
-      });
+      this.prismMesh.scale.setScalar(0.75);  // Smaller than phase 1
     }
-    this.facetHitboxes.forEach(hb => { hb.visible = false; });
+    if (this.prismEdges) {
+      this.prismEdges.visible = true;
+      this.prismEdges.scale.setScalar(0.75);
+    }
+    this.facetHitboxes.forEach(hb => {
+      hb.visible = true;
+      hb.scale.setScalar(0.75);
+    });
 
-    _log('[PrismBoss] Entering Phase 3: Overload');
+    // Reset facet colors for phase 3 (damaged purple tint)
+    this.facetMaterials.forEach((mat, i) => {
+      if (i < 3) {
+        mat.color.setHex(this.facetColors[i]);
+        mat.opacity = 0.6;
+      }
+    });
+
+    // Set a random vulnerable facet
+    this.updateVulnerableFacet(Math.floor(Math.random() * 3));
+
+    // Create 2 small orbiting shards that fire at the player
+    this.createPhase3Shards();
+
+    _log('[PrismBoss] Entering Phase 3: Combined Overload');
+  }
+
+  createPhase3Shards() {
+    const shardColors = [0xff2222, 0x22ff22];
+    const orbitRadii = [2.0, 2.5];
+    const orbitSpeeds = [1.5, 1.0];
+
+    for (let i = 0; i < 2; i++) {
+      const shard = new THREE.Group();
+      const shardGeo = new THREE.ConeGeometry(0.3, 0.8, 4, 1);
+      const shardMat = new THREE.MeshBasicMaterial({
+        color: shardColors[i], transparent: true, opacity: 0.9
+      });
+      const shardMesh = new THREE.Mesh(shardGeo, shardMat);
+      shardMesh.userData.isBossBody = true;
+      shard.add(shardMesh);
+
+      shard.userData.shardIndex = i;
+      shard.userData.orbitRadius = orbitRadii[i];
+      shard.userData.orbitSpeed = orbitSpeeds[i];
+      shard.userData.orbitHeight = (i === 0 ? 0.3 : -0.3);
+      shard.userData.angle = (i / 2) * Math.PI * 2;
+      shard.scale.setScalar(0.6);  // Smaller than phase 2 shards
+
+      this.shards.push(shard);
+      this.mesh.add(shard);
+    }
   }
 
   updatePhase3(dt, now, playerPos) {
     const config = this.getPrismPhaseConfig();
 
-    // Slow damaged spin in phase 3
+    // Phase 3 prism spin (faster than phase 1)
     if (this.prismMesh) {
-      this.prismMesh.rotation.y += 0.15 * dt;
+      this.prismMesh.rotation.y += this.phase3SpinSpeed * dt;
+    }
+    if (this.prismEdges) {
+      this.prismEdges.rotation.y = this.prismMesh ? this.prismMesh.rotation.y : 0;
     }
 
-    // Continuous projectile fire
-    let shootRate = config.shootRate;
-    if (this.healAttempts >= 1) shootRate *= 0.85;
-    if (this.healAttempts >= 2) shootRate *= 0.85;
-    if (this.healAttempts >= 3) shootRate *= 0.8;
+    // Vulnerable facet glow pulsing
+    const glowMat = this.facetMaterials[this.vulnerableFacetIndex];
+    if (glowMat) {
+      const pulse = 0.7 + 0.25 * Math.sin(now * 0.008);
+      glowMat.opacity = pulse;
+      glowMat.color.setRGB(1.0, 1.0, 1.0);
+    }
 
+    // Facet rotation timer (swap vulnerable facet, faster than phase 1)
+    this.phase3FacetRotateTimer += dt;
+    if (this.phase3FacetRotateTimer >= this.phase3FacetRotateRate) {
+      this.phase3FacetRotateTimer = 0;
+      let newIdx;
+      do {
+        newIdx = Math.floor(Math.random() * 3);
+      } while (newIdx === this.vulnerableFacetIndex);
+      this.updateVulnerableFacet(newIdx);
+    }
+
+    // Update shard positions (orbiting)
+    this.shards.forEach(shard => {
+      shard.userData.angle += shard.userData.orbitSpeed * dt;
+      const a = shard.userData.angle;
+      const r = shard.userData.orbitRadius;
+      shard.position.set(
+        Math.cos(a) * r,
+        shard.userData.orbitHeight,
+        Math.sin(a) * r
+      );
+      shard.lookAt(_look.copy(playerPos).setY(this.mesh.position.y + shard.userData.orbitHeight));
+      shard.rotation.y += 2.0 * dt;
+    });
+
+    // Shard shooting (slower rate than phase 2)
     this.phase3ShootTimer -= dt;
     if (this.phase3ShootTimer <= 0 && !this.isHealCharging) {
-      this.phase3ShootTimer = shootRate;
-      this.firePhase3Projectiles(playerPos);
+      this.phase3ShootTimer = 2.0;  // Slower than phase 2
+      this.firePhase3ShardProjectiles(playerPos);
     }
 
-    // Heal charge mechanic
+    // Heal charge mechanic (kept from original phase 3)
     if (!this.isHealCharging) {
       this.healChargeTimer += dt;
       if (this.healChargeTimer >= this.healChargeRate) {
@@ -8036,25 +8250,20 @@ class PrismBoss extends Boss {
     this.mesh.position.y = this.fixedY;
   }
 
-  firePhase3Projectiles(playerPos) {
-    const bossPos = this.mesh.position.clone();
+  firePhase3ShardProjectiles(playerPos) {
+    // Only one shard fires per cycle (alternating)
+    const shard = this.shards[this.phase3ShootCounter % this.shards.length];
+    this.phase3ShootCounter = (this.phase3ShootCounter || 0) + 1;
+    if (!shard || !shard.visible) return;
 
+    const shardPos = shard.getWorldPosition(new THREE.Vector3());
     if (this.telegraphing) {
-      this.showTelegraph('projectile', 0.2, 0xff44ff, bossPos);
+      this.showTelegraph('projectile', 0.2, 0xff44ff, shardPos);
     }
 
     this.later(200, () => {
       if (typeof spawnBossProjectile !== 'function') return;
-      spawnBossProjectile(bossPos, playerPos.clone());
-
-      if (this.healAttempts >= 2) {
-        for (let s = -1; s <= 1; s += 2) {
-          const target = playerPos.clone();
-          target.x += s * 0.6;
-          target.y += s * 0.2;
-          spawnBossProjectile(bossPos, target);
-        }
-      }
+      spawnBossProjectile(shardPos, playerPos.clone());
     });
   }
 
@@ -8147,6 +8356,7 @@ class PrismBoss extends Boss {
     // Hide vulnerable indicators during transition
     if (this.vulnerableRing) this.vulnerableRing.visible = false;
     if (this.vulnerableArrow) this.vulnerableArrow.visible = false;
+    if (this.prismEdges) this.prismEdges.visible = false;
 
     playSkullPhaseSound();
     playSkullHandGrowlSound();
@@ -8189,6 +8399,9 @@ class PrismBoss extends Boss {
     if (this.prismMesh) {
       this.prismMesh.rotation.y += 5.0 * dt;
     }
+    if (this.prismEdges) {
+      this.prismEdges.rotation.y = this.prismMesh ? this.prismMesh.rotation.y : 0;
+    }
 
     // Body glow pulsing
     this.facetMaterials.forEach((mat, i) => {
@@ -8207,7 +8420,7 @@ class PrismBoss extends Boss {
       this.facetMaterials.forEach((mat, i) => {
         if (i < 3) {
           mat.color.setHex(this.facetColors[i]);
-          mat.opacity = 0.95;
+          mat.opacity = 0.6;
         }
       });
 
@@ -8291,12 +8504,16 @@ class PrismBoss extends Boss {
       // Check if hit a specific facet
       const hitFacet = hitInfo.facetIndex;
       if (hitFacet !== undefined && hitFacet !== this.vulnerableFacetIndex) {
-        // Wrong facet: heal boss
-        this.hp = Math.min(this.maxHp, this.hp + this.healAmount);
-        playSkullHandGrowlSound();
-        return { killed: false, healed: true };
+        // Wrong facet: heal boss by damage dealt (capped at maxHp)
+        this.hp = Math.min(this.maxHp, this.hp + amount);
+        playBossHealSound();
+        // Flash boss bar green via window callback
+        if (typeof window !== 'undefined' && window.flashBossHealthBar) {
+          window.flashBossHealthBar();
+        }
+        return { killed: false, healed: true, healAmount: amount };
       }
-      // Vulnerable facet hit or general body hit: damage
+      // Vulnerable facet hit: normal damage
       if (hitFacet === this.vulnerableFacetIndex) {
         this.facetHps[hitFacet] -= amount;
         if (this.facetHps[hitFacet] <= 0 && this.facetsDestroyed < 3) {
@@ -8304,7 +8521,7 @@ class PrismBoss extends Boss {
           // Dim the destroyed facet
           const mat = this.facetMaterials[hitFacet];
           if (mat) {
-            mat.opacity = 0.3;
+            mat.opacity = 0.2;
           }
           playSkullHandGrowlSound();
         }
@@ -8338,18 +8555,29 @@ class PrismBoss extends Boss {
       return { killed: false };
     }
 
-    // Phase 3: heal weak point check
-    if (this.skullPhase === 3 && this.isHealCharging) {
-      if (hitInfo.isHealWeakPoint) {
+    // Phase 3: combined facet + shard mechanic
+    if (this.skullPhase === 3) {
+      // Heal weak point check (from heal charge)
+      if (this.isHealCharging && hitInfo.isHealWeakPoint) {
         const wpIndex = hitInfo.healWeakPointIndex;
         const wp = this.healWeakPoints.find(w => w.userData.healWeakPointIndex === wpIndex);
         if (wp) this.onHealWeakPointHit(wp);
         return { killed: false, healWeakPointHit: true };
       }
-    }
 
-    // Phase 3 default
-    if (this.skullPhase === 3) {
+      // Facet targeting (like phase 1)
+      const hitFacet = hitInfo.facetIndex;
+      if (hitFacet !== undefined && hitFacet !== this.vulnerableFacetIndex) {
+        // Wrong facet: heal boss by damage dealt (capped at maxHp)
+        this.hp = Math.min(this.maxHp, this.hp + amount);
+        playBossHealSound();
+        if (typeof window !== 'undefined' && window.flashBossHealthBar) {
+          window.flashBossHealthBar();
+        }
+        return { killed: false, healed: true, healAmount: amount };
+      }
+
+      // Normal damage
       this.hp -= amount;
       if (this.hp < 0) this.hp = 0;
       if (this.hp <= 0) return { killed: true };
@@ -9851,7 +10079,7 @@ const BOSS_DEFS = {
     scoreValue: 100,
     behavior: 'skull',
     hitboxRadius: 1.2,
-    handHp: 150, // HP per hand
+    handHp: 225, // HP per hand (increased 50% from 150)
     handShootRate: 1.5, // Base shoot rate per hand (UNUSED now - shared ammo pool)
     eyeShootRate: 0.8, // Skull phase base shoot rate
     moveSpeed: 1.5, // Skull phase base movement speed
@@ -9863,7 +10091,7 @@ const BOSS_DEFS = {
     name: 'The Prism',
     pattern: [[1]],
     voxelSize: 0.25,
-    baseHp: 1400,
+    baseHp: 2800,
     phases: 3,
     color: 0xff44ff,
     scoreValue: 200,
@@ -9879,7 +10107,7 @@ const BOSS_DEFS = {
     name: 'BLOOD MINOTAUR',
     pattern: [[1]],
     voxelSize: 0.25,
-    baseHp: 1900,
+    baseHp: 3800,
     phases: 3,
     color: 0xd70200,
     scoreValue: 400,
@@ -10188,15 +10416,112 @@ export function clearAllTelegraphs() {
   }
 }
 
-// ── BOSS DEBRIS PHYSICS (from commit 2abb1b5) ───────────────────────────
+// ── BOSS DEBRIS PHYSICS (enhanced with color palettes + Prism diamonds) ──
+// Boss color palettes for death voxels
+const BOSS_DEATH_PALETTES = {
+  skull_boss: [0xF9F2E5, 0xE4D8C8, 0x9E8D74, 0xF90001, 0x594B38, 0x2B2111],
+  neon_minotaur: [0xeee6d7, 0x361500, 0x9c3d01, 0xd70200],
+  the_prism: [0xff44ff, 0x44ffff, 0xffff44, 0xff4488, 0x8844ff, 0x44ff88],
+  scrap_golem: [0x8B7355, 0xA0522D, 0x6B4226, 0xD2691E],
+  holo_phantom: [0x00ff88, 0x00ffcc, 0x00ccff, 0x0088ff],
+  pulse_emitter: [0xff8800, 0xffaa00, 0xffcc00, 0xff4400],
+  rust_serpent: [0x8B4513, 0xA0522D, 0xCD853F, 0x6B4226],
+  static_wisp: [0xccccff, 0xaaaaff, 0x8888ff, 0xeeeeff],
+  hunter_boss: [0xff6600, 0xcc4400, 0x884422, 0xffaa00],
+  walter_breakenridge: [0x4a3728, 0x6B4226, 0x8B7355, 0xD2691E],
+  kernel_boss: [0x00ff88, 0x88ff00, 0x44cc00, 0xaaff44],
+  kraken_boss: [0x4488ff, 0x2266cc, 0x66aaff, 0x0044aa],
+  seraphim_boss: [0xffdd44, 0xffee88, 0xffaa00, 0xffffff],
+  train_boss: [0xff4444, 0x4444ff, 0xffff44, 0x44ff44],
+  eclipse_engine: [0xff0044, 0x4400ff, 0x00ffff, 0xff4400, 0x000000],
+};
+
 export function spawnBossDebris(boss) {
   if (!boss || !boss.mesh) return;
 
-  const voxels = boss.mesh.children.filter(c => c.userData.isBossBody);
   const bossPos = boss.mesh.position.clone();
   const bossColor = boss.def.color;
+  const bossId = boss.def.name; // Use name as key lookup fallback
 
-  // Limit debris count for performance
+  // Try to find the boss ID from BOSS_DEFS by matching the boss instance
+  let palette = null;
+  let isPrism = false;
+  for (const [id, def] of Object.entries(BOSS_DEFS)) {
+    if (def.name === boss.def.name) {
+      palette = BOSS_DEATH_PALETTES[id];
+      isPrism = (id === 'the_prism');
+      break;
+    }
+  }
+  if (!palette) palette = [bossColor];
+
+  // Spawn 15-25 small colored voxel bits
+  const count = 15 + Math.floor(Math.random() * 11); // 15-25
+  const voxelSize = 0.1 + Math.random() * 0.1; // 0.1-0.2
+
+  for (let i = 0; i < count; i++) {
+    const color = palette[Math.floor(Math.random() * palette.length)];
+
+    // Prism boss gets diamond/rhombus shapes, others get cubes
+    let geo;
+    if (isPrism) {
+      // Octahedron for diamond shape (rotated cube would also work)
+      geo = new THREE.OctahedronGeometry(voxelSize);
+    } else {
+      geo = new THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
+    }
+
+    const mat = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: 1.0,
+    });
+
+    const debris = new THREE.Mesh(geo, mat);
+
+    // Start at boss position with slight random offset
+    debris.position.copy(bossPos);
+    debris.position.x += (Math.random() - 0.5) * 1.5;
+    debris.position.y += (Math.random() - 0.5) * 1.5;
+    debris.position.z += (Math.random() - 0.5) * 1.5;
+
+    // Random initial rotation
+    debris.rotation.set(
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2
+    );
+
+    // Physics: outward + up velocity
+    const outward = new THREE.Vector3(
+      (Math.random() - 0.5) * 2,
+      0,
+      (Math.random() - 0.5) * 2
+    ).normalize();
+    const speed = 2 + Math.random() * 4;
+
+    debris.userData.velocity = new THREE.Vector3(
+      outward.x * speed,
+      3 + Math.random() * 4, // Strong upward burst
+      outward.z * speed
+    );
+    debris.userData.angularVel = new THREE.Vector3(
+      (Math.random() - 0.5) * 10,
+      (Math.random() - 0.5) * 10,
+      (Math.random() - 0.5) * 10
+    );
+    debris.userData.bounces = 0;
+    debris.userData.maxBounces = 1;
+    debris.userData.lifetime = 2.0; // 2 seconds before full fade
+    debris.userData.age = 0;
+    debris.userData.onFloor = false;
+
+    sceneRef.add(debris);
+    bossDebris.push(debris);
+  }
+
+  // Also spawn the original body voxel debris if any exist
+  const voxels = boss.mesh.children.filter(c => c.userData.isBossBody);
   const maxVoxels = Math.min(voxels.length, MAX_DEBRIS);
   const step = Math.max(1, Math.floor(voxels.length / maxVoxels));
 
@@ -10204,7 +10529,6 @@ export function spawnBossDebris(boss) {
     const voxel = voxels[i];
     if (!voxel.isMesh) continue;
 
-    // Create debris piece
     const geo = voxel.geometry.clone();
     const mat = new THREE.MeshBasicMaterial({
       color: voxel.material.color || bossColor,
@@ -10214,22 +10538,19 @@ export function spawnBossDebris(boss) {
 
     const debris = new THREE.Mesh(geo, mat);
 
-    // World position of voxel
     const worldPos = new THREE.Vector3();
     voxel.getWorldPosition(worldPos);
     debris.position.copy(worldPos);
 
-    // Random initial rotation
     debris.rotation.set(
       Math.random() * Math.PI * 2,
       Math.random() * Math.PI * 2,
       Math.random() * Math.PI * 2
     );
 
-    // Physics properties
     debris.userData.velocity = new THREE.Vector3(
-      (Math.random() - 0.5) * 4,  // Random horizontal velocity
-      2 + Math.random() * 3,      // Upward velocity
+      (Math.random() - 0.5) * 4,
+      2 + Math.random() * 3,
       (Math.random() - 0.5) * 4
     );
     debris.userData.angularVel = new THREE.Vector3(
@@ -10239,7 +10560,7 @@ export function spawnBossDebris(boss) {
     );
     debris.userData.bounces = 0;
     debris.userData.maxBounces = 2;
-    debris.userData.lifetime = 3.0;  // 3 seconds before fade
+    debris.userData.lifetime = 3.0;
     debris.userData.age = 0;
     debris.userData.onFloor = false;
 
@@ -10247,7 +10568,7 @@ export function spawnBossDebris(boss) {
     bossDebris.push(debris);
   }
 
-  _log(`[boss] Spawned ${bossDebris.length} debris voxels`);
+  _log(`[boss] Spawned ${bossDebris.length} death voxels (${count} colored + body debris)`);
 }
 
 export function updateBossDebris(dt, now, biomeFloorY = 0.05) {
@@ -10448,12 +10769,12 @@ const _upVector = new THREE.Vector3(0, 1, 0);
 function initBossProjPools() {
   if (bossProjCorePool || !sceneRef) return;
 
-  // Boss projectiles: bright white-hot core spheres (smaller, glow planes do the heavy lifting)
-  const coreGeo = new THREE.SphereGeometry(0.10, 10, 10);  // 30% smaller (was 0.14)
+  // Boss projectiles: bright white core with red glow
+  const coreGeo = new THREE.SphereGeometry(0.15, 10, 10);  // 1.5x larger (was 0.10)
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xffbb77,  // Brighter white-orange (was 0xff5500)
+    color: 0xffffff,  // Bright white core
     transparent: true,
-    opacity: 0.95,    // Brighter (was 0.85)
+    opacity: 1.0,     // Full brightness
     depthWrite: false,
     depthTest: true,
   });
@@ -10474,18 +10795,18 @@ function initBossProjPools() {
   const glowCtx = glowCanvas.getContext('2d');
   const halfGlow = glowSize / 2;
   const glowGrad = glowCtx.createRadialGradient(halfGlow, halfGlow, 0, halfGlow, halfGlow, halfGlow);
-  glowGrad.addColorStop(0, 'rgba(255,120,20,1)');     // Bright orange center
-  glowGrad.addColorStop(0.3, 'rgba(255,80,0,0.7)');   // Mid orange
-  glowGrad.addColorStop(0.6, 'rgba(255,50,0,0.3)');    // Fading
-  glowGrad.addColorStop(1, 'rgba(255,30,0,0)');        // Transparent edge
+  glowGrad.addColorStop(0, 'rgba(255,60,60,1)');      // Bright red center
+  glowGrad.addColorStop(0.3, 'rgba(255,30,30,0.7)');   // Mid red
+  glowGrad.addColorStop(0.6, 'rgba(200,0,0,0.3)');     // Fading dark red
+  glowGrad.addColorStop(1, 'rgba(150,0,0,0)');          // Transparent edge
   glowCtx.fillStyle = glowGrad;
   glowCtx.fillRect(0, 0, glowSize, glowSize);
   const glowTexture = new THREE.CanvasTexture(glowCanvas);
 
-  const glowGeo = new THREE.PlaneGeometry(0.7, 0.7);
+  const glowGeo = new THREE.PlaneGeometry(1.05, 1.05);  // 1.5x larger to match core (was 0.7)
   const glowMat = new THREE.MeshBasicMaterial({
     map: glowTexture,
-    color: 0xff6600,
+    color: 0xff3333,   // Red glow
     transparent: true,
     opacity: 0.9,
     blending: THREE.AdditiveBlending,
@@ -10781,9 +11102,7 @@ export function spawnMortarProjectile(fromPos, targetPos, arcHeight = 2.0) {
   bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
   bossProjCorePool.instanceMatrix.needsUpdate = true;
 
-  // Set color to red for mortar projectiles
-  bossProjCorePool.setColorAt(idx, _mortarColorTmp.setHex(0xff0000));
-  if (bossProjCorePool.instanceColor) bossProjCorePool.instanceColor.needsUpdate = true;
+  // Mortar projectiles use the default white core + red glow (matching boss projectile appearance)
 
 }
 

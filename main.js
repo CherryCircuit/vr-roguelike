@@ -24,7 +24,7 @@ import {
   playBossSpawn, playBossAlertSound, playMenuClick, playErrorSound, playBuckshotSound,
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound, playComboSound,
-  startLightningSound, stopLightningSound,
+  startLightningSound, stopLightningSound, pauseLightningSound,
   startLowHealthWarningSound, stopLowHealthWarningSound,
   playMusic, playBossMusic, stopMusic, fadeOutMusic,
   playKillsAlertSound, playTingSound, playSeekerBurstSound, playHealSound, playLevelCompleteSound,
@@ -35,7 +35,9 @@ import {
   // Boss and name entry sounds
   playIncomingBossSound, playNoOneMakesItSound,
   playProjectileWarningSound,
+  playBuffedHitSound,
   playPhaseWraithCharge as playMortarCharge,
+  playBossProjectileDestroySound,
   // Skull boss sounds
   playSkullDeathKnell, playSkullLaughSound,
   // Final boss sounds
@@ -68,7 +70,7 @@ import {
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
   updateUpgradeCards, getUpgradeCardHit, getHoveredUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, updateSpeedLines, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
-  showBossHealthBar, hideBossHealthBar, updateBossHealthBar,
+  showBossHealthBar, hideBossHealthBar, updateBossHealthBar, flashBossHealthBarGreen,
   getTitleButtonHit, showNameEntry, hideNameEntry, getNameEntryHit, updateKeyboardHover, getNameEntryName,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
@@ -99,7 +101,7 @@ import {
   isNameClean, COUNTRIES, CONTINENTS,
   getStoredCountry, setStoredCountry, getStoredName, setStoredName
 } from './scoreboard.js';
-import { getThemeForLevel, initAmbientParticles, updateAmbientParticles, removeAmbientParticles } from './scenery.js';
+import { getThemeForLevel, updateAmbientParticles, removeAmbientParticles } from './scenery.js';
 import { SpatialHash } from './spatial-hash.js';
 import { enableTelemetry, disableTelemetry, isTelemetryEnabled, setTelemetryHistoryMs, recordTelemetrySample, getTelemetrySnapshot } from './telemetry.js';
 import { getRuntimeConfig, isDevRuntime, registerRuntimeAction, consumeDebugJump, getSeedSelection } from './runtime-config.js';
@@ -431,7 +433,8 @@ const MAX_PROJECTILES = 100;
 // Instead of individual THREE.Group/Mesh objects per projectile (each a draw call),
 // we use ONE InstancedMesh per projectile type. This collapses ~100 draw calls
 // down to ~4, matching the three.js physics_ammo_instancing pattern.
-const PROJECTILE_POOL_SIZE = 120;
+// Increased from 120 to 150 to handle buckshot with +4 pellets upgrade (worst case: 21 pellets × 2 hands = 42)
+const PROJECTILE_POOL_SIZE = 150;
 
 // Stable single-material projectile visuals. Keep the instanced system and simple,
 // visible projectile bodies. We can revisit a fancier blaster shader later.
@@ -2199,7 +2202,7 @@ function applyThemeForLevel(level) {
   // Rebuild stars when biome changes
   const biomeId = getBiomeForLevel(level);
   if (biomeId !== starsBiomeId) {
-    rebuildStars(theme);
+    rebuildStars(theme, biomeId);
     starsBiomeId = biomeId;
   }
 
@@ -2315,15 +2318,19 @@ function createSparklingStars(theme) {
 // rebuildStars() REMOVED — was for non-custom biomes only
 
 // [CORE] Rebuild stars on biome change
-function rebuildStars(theme) {
+function rebuildStars(theme, biomeId) {
   if (!scene) return;
   if (starsRef) {
     unregisterFadeMaterial(starsRef.material);
     disposeMesh(starsRef, true);
     starsRef = null;
   }
-  // All biomes are custom scenes now — create their specific stars
-  if (theme.customScene) {
+  // Biomes that create their own stars inside biomeSceneGroup don't need
+  // global stars. Only synthwave_valley relies on the global starfield.
+  if (theme.customScene && theme.customScene !== 'synthwave_valley') {
+    return;
+  }
+  if (theme.customScene === 'synthwave_valley') {
     createSparklingStars(theme);
     return;
   }
@@ -3244,7 +3251,7 @@ function onTriggerRelease(index) {
   // Stop lightning beam when trigger released (dispose to prevent GEO leak)
   if (lightningBeams[index]) {
     clearLightningBeam(index);
-    stopLightningSound();
+    pauseLightningSound();
   }
 }
 
@@ -3295,6 +3302,24 @@ function activateNuke() {
     addScore(50); // Base score per nuked enemy
     killed++;
   }
+
+  // Destroy all boss projectiles
+  const bossProjectiles = getBossProjectiles();
+  let projDestroyed = 0;
+  for (let i = 0; i < bossProjectiles.length; i++) {
+    const bossProj = bossProjectiles[i];
+    if (bossProj) {
+      // Trigger destruction VFX and release the instance
+      spawnBossProjectileDestructionFX(bossProj.position.clone(), 0xff0000);
+      // Release the projectile instance
+      if (bossProj._instIdx !== undefined) {
+        releaseBossProjIndex(bossProj._instIdx);
+      }
+      projDestroyed++;
+    }
+  }
+  // Clear the boss projectiles array after destroying all instances
+  bossProjectiles.length = 0;
 
   if (killed > 0) {
     updateHUD(game);
@@ -6747,6 +6772,10 @@ function completeLevel() {
 
   game.state = State.LEVEL_COMPLETE;
 
+  // Force-clear lightning beams so they don't persist through upgrade screen
+  clearAllLightningBeams();
+  stopLightningSound();
+
   // Play victory fanfare
   playLevelCompleteSound();
 
@@ -6782,9 +6811,10 @@ function completeLevel() {
   }
   showLevelComplete(game.level, getAdjustedCameraPosition());
 
-  if (!game.justBossKill && [4, 9, 14, 19].includes(game.level)) {
-    fadeOutMusic(1200);
-  }
+  // Pre-boss music fade is handled in showUpgradeScreen() so the fade
+  // happens during the upgrade card screen, not during the level-complete
+  // celebration. Keeping the fade here caused the music to fade too early,
+  // and the second call in showUpgradeScreen was a no-op (currentMusic null).
 }
 
 // PERFORMANCE: Clear all active projectiles and return them to pool
@@ -7767,8 +7797,6 @@ function triggerHostileProjectileExplosion(position, radius, damage) {
 // [CORE] Spawn boss projectile destruction VFX
 function spawnBossProjectileDestructionFX(position, projColor) {
   // Spark debris: 3-5 random tiny voxels, 10% of projectile size, same color as projectile
-  // No spawnExplosionVisual here — avoids audio node spam + screen shake spam
-  // when rapidly shooting down multiple boss projectiles during boss fights.
   const sparkCount = 3 + Math.floor(Math.random() * 3); // 3-5
   const sparkColor = projColor || 0xff0000; // Default red to match boss projectile color
   spawnVoxelExplosion(position.clone(), sparkColor, sparkCount, 'basic', false, false);
@@ -7776,6 +7804,8 @@ function spawnBossProjectileDestructionFX(position, projColor) {
   for (let i = Math.max(0, activeVoxels.length - sparkCount); i < activeVoxels.length; i++) {
     activeVoxels[i].scale.setScalar(0.1);
   }
+  // Play fizzle sound (throttled in audio.js to avoid spam)
+  playBossProjectileDestroySound();
 }
 
 // [CORE] Update seeker projectile visual (homing curve)
@@ -7933,6 +7963,9 @@ function fireMainWeapon(controller, index) {
     playSeekerBurstSound(false, count);
   } else {
     // Standard simultaneous fire for non-homing weapons
+    // Suppress per-projectile sounds and play a single batched sound below
+    // to avoid audio overload from projectile sound stacking (Issue #10).
+    const multiProjectile = count > 1;
     for (let i = 0; i < count; i++) {
       let spawnOrigin = origin.clone();
 
@@ -7943,7 +7976,15 @@ function fireMainWeapon(controller, index) {
         spawnOrigin.addScaledVector(rightAxis, offsetIndex * gap);
       }
 
-      spawnProjectile(spawnOrigin, direction, index, stats, shotId, { suppressSound: false });
+      spawnProjectile(spawnOrigin, direction, index, stats, shotId, { suppressSound: multiProjectile });
+    }
+    // Play a single batched sound for multi-projectile shots
+    if (multiProjectile) {
+      if (isBuckshot) {
+        playBuckshotSound(count);
+      } else {
+        playShoothSound(count);
+      }
     }
   }
 }
@@ -7957,21 +7998,29 @@ function fireMainWeapon(controller, index) {
  * without going through the projectile system.
  */
 // [CORE] Update lightning beam weapon (continuous beam)
+// Issue #22: Always fires forward. Curves toward enemies if nearby.
+// Forward beam hits and destroys boss projectiles.
+const LIGHTNING_FORWARD_RANGE = 30;  // Max forward beam length (units)
+const LIGHTNING_BOSS_PROJ_RADIUS_SQ = 1.0;  // Hit radius squared for boss projectile intersection
+
 function updateLightningBeam(controller, index, stats, dt) {
-  // PERFORMANCE: Use pre-allocated scratch vectors instead of new THREE.Vector3()
   controller.getWorldPosition(_lightningOrigin);
   controller.getWorldQuaternion(_lightningQuat);
   _lightningDirCalc.set(0, 0, -1).applyQuaternion(_lightningQuat);
 
-  // Find enemies within range using spatial hash (O(1) lookup)
+  // Calculate forward beam endpoint
+  _lightningForwardEnd.copy(_lightningOrigin).addScaledVector(_lightningDirCalc, LIGHTNING_FORWARD_RANGE);
+
+  // Find enemies within lock-on range using spatial hash
   const nearbyEnemies = enemySpatialHash.query(_lightningOrigin.x, _lightningOrigin.z, stats.lightningRange);
   const targets = [];
-  const maxChains = 2 + Math.floor(stats.lightningRange / 8);  // More chains with upgrades
+  const maxChains = 2 + Math.floor(stats.lightningRange / 8);
   const lightningRangeSq = stats.lightningRange * stats.lightningRange;
 
   for (const e of nearbyEnemies) {
+    // Verify enemy is still valid (alive, mesh present, and registered in enemy list)
+    if (!e || !e.mesh || !e.mesh.parent || e.hp <= 0) continue;
     const distSq = e.mesh.position.distanceToSquared(_lightningOrigin);
-    // PERFORMANCE: Use pre-allocated vector instead of clone()
     _lightningToEnemy.copy(e.mesh.position).sub(_lightningOrigin).normalize();
     const angle = _lightningToEnemy.dot(_lightningDirCalc);
 
@@ -7985,27 +8034,54 @@ function updateLightningBeam(controller, index, stats, dt) {
   targets.sort((a, b) => a.distSq - b.distSq);
   const chainCount = Math.min(targets.length, maxChains);
 
-  // Create or update lightning beam visuals
-  if (chainCount > 0) {
-    // Start sound if not playing
-    startLightningSound();
-    const beam = ensureLightningBeam(index);
-    const positions = beam.userData.positions;
-    let offset = 0;
+  // Always show beam (sound + visuals)
+  startLightningSound();
+  const beam = ensureLightningBeam(index);
+  const positions = beam.userData.positions;
+  let offset = 0;
 
-    // Draw zigzag lightning bolts to each target into one shared buffer.
-    _lightningLastPos.copy(_lightningOrigin);
+  // Draw beam forward from controller
+  _lightningLastPos.copy(_lightningOrigin);
+
+  if (chainCount > 0) {
+    // First segment: forward beam then curve to first target
+    // Draw a short forward segment, then zigzag to each target
+    _lightningMidPoint.copy(_lightningOrigin).addScaledVector(_lightningDirCalc, 2.0);  // 2 units forward before curving
+    offset = writeLightningBoltPositions(_lightningOrigin, _lightningMidPoint, positions, offset);
     for (let ti = 0; ti < chainCount; ti++) {
       const targetPos = targets[ti].enemy.mesh.position;
-      offset = writeLightningBoltPositions(_lightningLastPos, targetPos, positions, offset);
-      _lightningLastPos.copy(targetPos);
+      const startPos = ti === 0 ? _lightningMidPoint : targets[ti - 1].enemy.mesh.position;
+      offset = writeLightningBoltPositions(startPos, targetPos, positions, offset);
     }
+  } else {
+    // No enemies: straight forward beam
+    offset = writeLightningBoltPositions(_lightningOrigin, _lightningForwardEnd, positions, offset);
+  }
 
-    beam.geometry.attributes.position.needsUpdate = true;
-    beam.geometry.setDrawRange(0, offset / 3);
-    beam.visible = offset > 0;
+  beam.geometry.attributes.position.needsUpdate = true;
+  beam.geometry.setDrawRange(0, offset / 3);
+  beam.visible = offset > 0;
 
-    // Apply damage at lightningTickInterval (reduced by barrel / fire rate upgrades)
+  // Check boss projectile intersection with forward beam segment
+  const bossProjectiles = getBossProjectiles();
+  if (bossProjectiles.length > 0) {
+    // Use origin -> forwardEnd as the beam line for intersection
+    const beamStart = chainCount > 0 ? _lightningOrigin : _lightningOrigin;
+    const beamEnd = _lightningForwardEnd;
+    for (let i = bossProjectiles.length - 1; i >= 0; i--) {
+      const bossProj = bossProjectiles[i];
+      if (!bossProj) continue;
+      const distSq = pointToSegmentDistSq(bossProj.position, beamStart, beamEnd);
+      if (distSq < LIGHTNING_BOSS_PROJ_RADIUS_SQ) {
+        spawnBossProjectileDestructionFX(bossProj.position.clone());
+        if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
+        bossProjectiles.splice(i, 1);
+      }
+    }
+  }
+
+  // Apply damage to enemy targets at tick interval
+  if (chainCount > 0) {
     const tickInterval = stats.lightningTickInterval != null ? stats.lightningTickInterval : 0.2;
     lightningTimers[index] += dt;
     if (lightningTimers[index] >= tickInterval) {
@@ -8019,7 +8095,6 @@ function updateLightningBeam(controller, index, stats, dt) {
         if (enemyIndex === undefined) continue;
         const result = hitEnemy(enemyIndex, stats.lightningDamage);
         if (!accuracyHitRegistered) {
-          // Track multiplier increase for accuracy popup
           const oldMultiplier = game.accuracyMultiplier || 1;
           registerAccuracyHit();
           const newMultiplier = game.accuracyMultiplier || 1;
@@ -8041,11 +8116,6 @@ function updateLightningBeam(controller, index, stats, dt) {
         }
       }
     }
-  } else {
-    // No targets - clear beam and stop sound
-    clearLightningBeam(index);
-    stopLightningSound();
-    lightningTimers[index] = 0;
   }
 }
 
@@ -8063,6 +8133,8 @@ const _lightningQuat = new THREE.Quaternion();
 const _lightningDirCalc = new THREE.Vector3();
 const _lightningToEnemy = new THREE.Vector3();
 const _lightningLastPos = new THREE.Vector3();
+const _lightningForwardEnd = new THREE.Vector3();
+const _lightningMidPoint = new THREE.Vector3();
 
 // PERFORMANCE: Pooled lightning material (reused across bolts)
 const _lightningMaterial = new THREE.LineBasicMaterial({
@@ -8079,7 +8151,7 @@ const _lightningMaterial = new THREE.LineBasicMaterial({
 function ensureLightningBeam(index) {
   if (lightningBeams[index]) return lightningBeams[index];
 
-  const maxVertices = MAX_LIGHTNING_CHAINS * LIGHTNING_BOLT_SEGMENTS * 2;
+  const maxVertices = (MAX_LIGHTNING_CHAINS + 2) * LIGHTNING_BOLT_SEGMENTS * 2;  // +2 for forward beam + midpoint
   const positions = new Float32Array(maxVertices * 3);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -8930,15 +9002,21 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
     game.handStats[hand].totalDamage += damage;
   }
 
-  // Spawn damage number
-  spawnDamageNumber(hitPoint, damage, '#ffffff');
+  // Spawn damage number (reddish if enemy is buffed by conductor)
+  const isBuffed = enemy.linkedByConductor && enemy.linkedDamageReduction > 0;
+  spawnDamageNumber(hitPoint, damage, isBuffed ? '#ff6666' : '#ffffff');
   
   // CRIT indicator for critical hits
   if (isCritical) {
     spawnCritIndicator(hitPoint);
   }
   
-  playHitSound();
+  // Muffled hit sound for buffed enemies, normal hit otherwise
+  if (isBuffed) {
+    playBuffedHitSound();
+  } else {
+    playHitSound();
+  }
 
   // Apply status effects
   if (stats.effects.length > 0) {
@@ -9058,6 +9136,15 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex, hitObj
     spawnDamageNumber(hitPoint, 0, '#aaaaaa');  // Show 0 damage in gray
     playTingSound();  // Metallic ping sound
     if (DEBUG) console.log('[boss] Hit was immune!');
+    return;
+  }
+
+  // Healed hit (wrong facet on PrismBoss - boss heals instead of taking damage)
+  if (result.healed) {
+    const healAmt = result.healAmount || damage;
+    spawnDamageNumber(hitPoint, healAmt, '#00ff44');  // Green number showing heal amount
+    playHealSound();  // Distinctive heal sound
+    if (DEBUG) console.log(`[boss] Wrong facet hit! Boss healed for ${healAmt}`);
     return;
   }
 
@@ -9275,6 +9362,9 @@ if (typeof window !== 'undefined') {
       }
     }
   };
+
+  // Flash boss health bar green when Prism boss heals from wrong facet hit
+  window.flashBossHealthBar = flashBossHealthBarGreen;
   
   // Create shootable decoy for Holo Phantom
   window.createHoloDecoy = function(position, explosionDamage, explosionRadius) {

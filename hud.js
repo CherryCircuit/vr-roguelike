@@ -805,6 +805,21 @@ export function updateBossHealthBar(hp, maxHp, phases = 3) {
   }
 }
 
+/** Flash all boss health bar segments green briefly to indicate healing. */
+export function flashBossHealthBarGreen() {
+  if (!bossHealthBars.length) return;
+  const originalColors = bossHealthBars.map(bar => bar.material.color.getHex());
+  bossHealthBars.forEach(bar => {
+    bar.material.color.setHex(0x00ff44);  // Bright green
+  });
+  // Restore original colors after 400ms
+  setTimeout(() => {
+    bossHealthBars.forEach((bar, i) => {
+      bar.material.color.setHex(originalColors[i] || 0xff0044);
+    });
+  }, 400);
+}
+
 // ── Title Screen ───────────────────────────────────────────
 
 async function createTitleScreen() {
@@ -1273,22 +1288,37 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.position.y += 0.9 + SCENE_Y_OFFSET; // Moved down for better centering
   upgradeGroup.position.z -= 4; // 4 feet in front of player
 
-  // Two-line upgrade header: "CHOOSE UPGRADE" in white + hand name in hand color
+  // Three-line upgrade header: "CHOOSE UPGRADE" in white + hand name in hand color + weapon name
   const handName = hand === 'left' ? 'LEFT BLASTER' : 'RIGHT BLASTER';
   const handColor = hand === 'left' ? '#00ffff' : '#ff88aa';  // cyan for left, pink for right
+  
+  // Get weapon name from game state
+  const weaponId = game.mainWeapon && game.mainWeapon[hand] ? game.mainWeapon[hand] : 'standard_blaster';
+  const weaponNameMap = {
+    'standard_blaster': 'Standard Blaster',
+    'buckshot': 'Buckshot',
+    'charge_cannon': 'Charge Cannon',
+    'plasma_carbine': 'Plasma Carbine',
+    'lightning_rod': 'Lightning Rod',
+    'seeker_burst': 'Seeker Burst'
+  };
+  const weaponName = weaponNameMap[weaponId] || 'Unknown Weapon';
+  
   const headerCanvas = document.createElement('canvas');
   const hCtx = headerCanvas.getContext('2d');
   const hFontSize = 48;
   hCtx.font = `bold ${hFontSize}px Arial, sans-serif`;
   const line1Text = 'CHOOSE UPGRADE';
   const line2Text = handName;
+  const line3Text = weaponName;
   const line1W = hCtx.measureText(line1Text).width;
   const line2W = hCtx.measureText(line2Text).width;
-  const maxW = Math.ceil(Math.max(line1W, line2W));
+  const line3W = hCtx.measureText(line3Text).width;
+  const maxW = Math.ceil(Math.max(line1W, line2W, line3W));
   const hLineHeight = hFontSize * 1.3;
   const hPad = 25;  // glow padding
   headerCanvas.width = maxW + hPad * 2;
-  headerCanvas.height = Math.ceil(hLineHeight * 2) + hPad * 2;
+  headerCanvas.height = Math.ceil(hLineHeight * 3) + hPad * 2;
   hCtx.font = `bold ${hFontSize}px Arial, sans-serif`;
   hCtx.textAlign = 'center';
   hCtx.textBaseline = 'middle';
@@ -1297,11 +1327,16 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   hCtx.shadowBlur = 15;
   hCtx.fillStyle = '#ffffff';
   const hMidY = headerCanvas.height / 2;
-  hCtx.fillText(line1Text, headerCanvas.width / 2, hMidY - hLineHeight / 2);
+  hCtx.fillText(line1Text, headerCanvas.width / 2, hMidY - hLineHeight);
   // Line 2: hand color with glow
   hCtx.shadowColor = handColor;
   hCtx.fillStyle = handColor;
-  hCtx.fillText(line2Text, headerCanvas.width / 2, hMidY + hLineHeight / 2);
+  hCtx.fillText(line2Text, headerCanvas.width / 2, hMidY);
+  // Line 3: weapon name in same hand color (smaller font, no glow)
+  const weaponFontSize = 36;
+  hCtx.font = `${weaponFontSize}px Arial, sans-serif`;
+  hCtx.shadowBlur = 0;
+  hCtx.fillText(line3Text, headerCanvas.width / 2, hMidY + hLineHeight);
   const headerTexture = new THREE.CanvasTexture(headerCanvas);
   headerTexture.minFilter = THREE.LinearFilter;
   headerTexture.premultiplyAlpha = false;
@@ -1991,7 +2026,7 @@ export function hideGameOver() {
 export function triggerHitFlash(includeHoloGlitch = false) {
   // High initial opacity for maximum visibility
   // Additive blending makes this visible even on bright/colored backgrounds
-  hitFlashOpacity = 0.35;
+  hitFlashOpacity = 0.5;  // Increased from 0.35 for better visibility
 
   // (holo glitch removed - was never wanted on floor HUD)
 }

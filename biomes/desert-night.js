@@ -146,15 +146,8 @@ export function buildDesertNightScene(group, deps) {
   // Shared materials to avoid per-segment allocation
   const cactusBodyMat = new THREE.MeshLambertMaterial({ color: 0x1a3d20, flatShading: true });
   const cactusArmMat = new THREE.MeshLambertMaterial({ color: 0x2d5535, flatShading: true });
-  const cactusOutlineMat = new THREE.LineBasicMaterial({
-    color: duneOutlineColor,
-    transparent: true,
-    opacity: 0.7,
-    depthWrite: false,
-  });
   registerFadeMaterial(cactusBodyMat);
   registerFadeMaterial(cactusArmMat);
-  registerFadeMaterial(cactusOutlineMat);
 
   // Shared cylinder geometries (4 radial segments instead of 5)
   const cactusGeoCache = {};
@@ -180,17 +173,6 @@ export function buildDesertNightScene(group, deps) {
       segment.receiveShadow = true;
       segment.frustumCulled = false; // Fix #9: prevent cacti from disappearing when looking up
       cactusGroup.add(segment);
-      // Pink edge outline matching dune crests
-      const segEdgeGeo = new THREE.EdgesGeometry(cactusGeoCache[geoKey], 14);
-      segEdgeGeo.name = `biome-desert-cactus-${cactusIndex}-body-edges-${i}`;
-      const segOutline = new THREE.LineSegments(
-        segEdgeGeo,
-        cactusOutlineMat
-      );
-      segOutline.name = `biome-desert-cactus-${cactusIndex}-body-outline-${i}`;
-      segOutline.position.copy(segment.position);
-      segOutline.frustumCulled = false; // Fix #9: prevent cactus outlines from disappearing
-      cactusGroup.add(segOutline);
       currentY += segmentHeight;
     }
 
@@ -213,17 +195,6 @@ export function buildDesertNightScene(group, deps) {
       hArm.castShadow = true;
       hArm.frustumCulled = false; // Fix #9: prevent cactus arms from disappearing
       cactusGroup.add(hArm);
-      const hArmEdgeGeo = new THREE.EdgesGeometry(cactusGeoCache[hArmKey], 14);
-      hArmEdgeGeo.name = `biome-desert-cactus-${cactusIndex}-arm-h-edges-${a}`;
-      const hArmOutline = new THREE.LineSegments(
-        hArmEdgeGeo,
-        cactusOutlineMat
-      );
-      hArmOutline.name = `biome-desert-cactus-${cactusIndex}-arm-h-outline-${a}`;
-      hArmOutline.position.copy(hArm.position);
-      hArmOutline.rotation.copy(hArm.rotation);
-      hArmOutline.frustumCulled = false; // Fix #9: prevent arm outlines from disappearing
-      cactusGroup.add(hArmOutline);
 
       // Vertical part (cached geometry)
       const vArmHeight = 0.5 + Math.random() * 0.5;
@@ -237,16 +208,6 @@ export function buildDesertNightScene(group, deps) {
       vArm.castShadow = true;
       vArm.frustumCulled = false; // Fix #9: prevent vertical cactus arms from disappearing
       cactusGroup.add(vArm);
-      const vArmEdgeGeo = new THREE.EdgesGeometry(cactusGeoCache[vArmKey], 14);
-      vArmEdgeGeo.name = `biome-desert-cactus-${cactusIndex}-arm-v-edges-${a}`;
-      const vArmOutline = new THREE.LineSegments(
-        vArmEdgeGeo,
-        cactusOutlineMat
-      );
-      vArmOutline.name = `biome-desert-cactus-${cactusIndex}-arm-v-outline-${a}`;
-      vArmOutline.position.copy(vArm.position);
-      vArmOutline.frustumCulled = false; // Fix #9: prevent vertical arm outlines from disappearing
-      cactusGroup.add(vArmOutline);
     }
 
     return cactusGroup;

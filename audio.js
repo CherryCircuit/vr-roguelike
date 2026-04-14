@@ -99,7 +99,7 @@ function resumeAudioContext() {
 }
 
 // ── Shoot sound (laser pew) — heavily randomized ───────────
-export function playShoothSound() {
+export function playShoothSound(projectileCount = 1) {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
@@ -110,30 +110,42 @@ export function playShoothSound() {
   const duration = 0.06 + Math.random() * 0.08;  // 60-140ms
   const waveforms = ['square', 'sawtooth', 'triangle'];
 
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = waveforms[Math.floor(Math.random() * waveforms.length)];
+  // Scale volume by sqrt(N) instead of N to avoid audio overload
+  // This gives a thicker sound for more projectiles without stacking N copies
+  const volumeScale = projectileCount > 1 ? Math.min(Math.sqrt(projectileCount) / projectileCount, 1) : 1;
+  const baseVol = 0.14 * volumeScale * Math.min(projectileCount, 3);
 
-  // Randomize sweep direction: most go down, some go up
-  if (Math.random() < 0.8) {
-    osc.frequency.setValueAtTime(baseFreq * pitch, t);
-    osc.frequency.exponentialRampToValueAtTime(150 * pitch, t + duration);
-  } else {
-    osc.frequency.setValueAtTime(300 * pitch, t);
-    osc.frequency.exponentialRampToValueAtTime(baseFreq * pitch, t + duration * 0.5);
-    osc.frequency.exponentialRampToValueAtTime(200 * pitch, t + duration);
+  // Stack up to 3 slightly detuned oscillators for multi-projectile "thickness"
+  const layers = projectileCount > 1 ? Math.min(projectileCount, 3) : 1;
+
+  for (let layer = 0; layer < layers; layer++) {
+    const layerPitch = layer === 0 ? 1 : (0.9 + Math.random() * 0.2); // ±10% detune for extra layers
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = waveforms[Math.floor(Math.random() * waveforms.length)];
+
+    // Randomize sweep direction: most go down, some go up
+    if (Math.random() < 0.8) {
+      osc.frequency.setValueAtTime(baseFreq * pitch * layerPitch, t);
+      osc.frequency.exponentialRampToValueAtTime(150 * pitch * layerPitch, t + duration);
+    } else {
+      osc.frequency.setValueAtTime(300 * pitch * layerPitch, t);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * pitch * layerPitch, t + duration * 0.5);
+      osc.frequency.exponentialRampToValueAtTime(200 * pitch * layerPitch, t + duration);
+    }
+
+    const layerVol = layer === 0 ? baseVol : baseVol * 0.4;
+    gain.gain.setValueAtTime(layerVol, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
+
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t);
+    osc.stop(t + duration);
   }
 
-  gain.gain.setValueAtTime(0.14, t);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
-
-  osc.connect(gain);
-  gain.connect(getSfxOutput());
-  osc.start(t);
-  osc.stop(t + duration);
-
-  // 30% chance: layer a second oscillator for "fat" laser sound
-  if (Math.random() < 0.3) {
+  // 30% chance: layer a noise-like oscillator for "fat" laser sound (only for single shots)
+  if (layers === 1 && Math.random() < 0.3) {
     const osc2 = ctx.createOscillator();
     const gain2 = ctx.createGain();
     osc2.type = waveforms[Math.floor(Math.random() * waveforms.length)];
@@ -516,7 +528,7 @@ export function playDamageSound() {
 
   // Noise envelope: INSTANT attack, extended decay
   const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.5, t); // LOUD initial crack
+  noiseGain.gain.setValueAtTime(0.8, t); // LOUD initial crack (increased from 0.5)
   noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15); // Extended decay
 
   noise.connect(noiseFilter);
@@ -1330,22 +1342,30 @@ export function playErrorSound() {
 }
 
 // ── Buckshot fire (heavy mechanical thud) ──────────────────
-export function playBuckshotSound() {
+export function playBuckshotSound(pelletCount = 1) {
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
-  // Low heavy thump
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(150, t);
-  osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
-  gain.gain.setValueAtTime(0.3, t);
-  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
-  osc.connect(gain);
-  gain.connect(getSfxOutput());
-  osc.start(t);
-  osc.stop(t + 0.15);
+  // Scale volume by sqrt(N) to convey more pellets without audio overload.
+  // Cap at 3 stacked layers regardless of actual pellet count.
+  const layers = Math.min(pelletCount, 3);
+  const volScale = pelletCount > 1 ? Math.sqrt(pelletCount) / pelletCount : 1;
+
+  // Low heavy thump(s) - slightly detuned for each layer
+  for (let i = 0; i < layers; i++) {
+    const detune = i === 0 ? 1 : (0.85 + Math.random() * 0.3); // ±15% detune
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 0 ? 'triangle' : 'sawtooth';
+    osc.frequency.setValueAtTime(150 * detune, t);
+    osc.frequency.exponentialRampToValueAtTime(40 * detune, t + 0.15);
+    gain.gain.setValueAtTime((i === 0 ? 0.3 : 0.12) * volScale, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t);
+    osc.stop(t + 0.15);
+  }
 
   // Metallic "clack"
   const osc2 = ctx.createOscillator();
@@ -1627,8 +1647,18 @@ let lightningAudio = null;
 let lightningSource = null;
 let lightningGain = null;
 let lightningVolumeTimeout = null;
+let lightningPaused = false;  // Track pause/resume state
 
 export function startLightningSound() {
+  // If paused, resume instead of creating new source
+  if (lightningPaused && lightningAudio && lightningSource) {
+    lightningAudio.play().catch(err => {
+      console.warn('[audio] Lightning loop resume failed:', err);
+    });
+    lightningPaused = false;
+    return;
+  }
+
   if (lightningSource) return;  // Already playing
 
   const ctx = getAudioContext();
@@ -1642,8 +1672,8 @@ export function startLightningSound() {
   lightningSource = ctx.createMediaElementSource(lightningAudio);
   lightningGain = ctx.createGain();
   
-  // Set normal gain (volume boosted in MP3 file)
-  lightningGain.gain.setValueAtTime(1.0, ctx.currentTime);
+  // Set gain to 1.5 (+50% volume)
+  lightningGain.gain.setValueAtTime(1.5, ctx.currentTime);
   
   // Connect: source -> gain -> destination
   lightningSource.connect(lightningGain);
@@ -1654,13 +1684,24 @@ export function startLightningSound() {
     console.warn('[audio] Lightning loop playback failed:', err);
   });
 
-  // After 4 seconds of continuous play, ease volume down slightly
+  // After 4 seconds of continuous play, ease volume down slightly (1.2 = 0.8 * 1.5)
   lightningVolumeTimeout = setTimeout(() => {
     if (lightningGain) {
-      lightningGain.gain.setValueAtTime(0.8, ctx.currentTime);
+      lightningGain.gain.setValueAtTime(1.2, ctx.currentTime);
       console.log('[audio] Lightning volume eased (4s continuous)');
     }
   }, 4000);
+}
+
+export function pauseLightningSound() {
+  if (lightningAudio && !lightningPaused) {
+    lightningAudio.pause();
+    lightningPaused = true;
+  }
+  if (lightningVolumeTimeout) {
+    clearTimeout(lightningVolumeTimeout);
+    lightningVolumeTimeout = null;
+  }
 }
 
 export function stopLightningSound() {
@@ -1681,6 +1722,7 @@ export function stopLightningSound() {
     clearTimeout(lightningVolumeTimeout);
     lightningVolumeTimeout = null;
   }
+  lightningPaused = false;
 }
 
 // ── Music System ───────────────────────────────────────────
@@ -1936,6 +1978,103 @@ export function playCountdown321() {
   countdown321Audio.play().catch(() => {});
 }
 
+// ── Boss projectile destroy fizzle sound ────────────────────
+// Short descending tone + white noise sizzle when player destroys a boss projectile
+let lastBossProjDestroySound = 0;
+export function playBossProjectileDestroySound() {
+  const now = performance.now();
+  if (now - lastBossProjDestroySound < 50) return; // 50ms throttle
+  lastBossProjDestroySound = now;
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // White noise burst with fast decay (sizzle)
+  const bufferSize = Math.floor(ctx.sampleRate * 0.12);
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  noise.playbackRate.value = 0.6 + Math.random() * 0.3;
+
+  const noiseFilter = ctx.createBiquadFilter();
+  noiseFilter.type = 'lowpass';
+  noiseFilter.frequency.setValueAtTime(3000, t);
+  noiseFilter.frequency.exponentialRampToValueAtTime(200, t + 0.1);
+  noiseFilter.Q.setValueAtTime(2, t);
+
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.15, t);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+  noise.connect(noiseFilter);
+  noiseFilter.connect(noiseGain);
+  noiseGain.connect(getSfxOutput());
+  noise.start(t);
+  noise.stop(t + 0.12);
+
+  // Short descending tone (fizzle)
+  const osc = ctx.createOscillator();
+  const oscGain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(600, t);
+  osc.frequency.exponentialRampToValueAtTime(80, t + 0.15);
+  oscGain.gain.setValueAtTime(0.1, t);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  osc.connect(oscGain);
+  oscGain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 0.15);
+}
+
+// ── Music Navigation (for settings menu track display) ───────
+
+export function getCurrentTrackName() {
+  if (!currentMusic || !currentMusic.src) return 'No track playing';
+  try {
+    const url = new URL(currentMusic.src);
+    const filename = url.pathname.split('/').pop();
+    // Remove extension for cleaner display
+    return filename.replace(/\.[^.]+$/, '');
+  } catch {
+    return 'Unknown';
+  }
+}
+
+export function skipToNextTrack() {
+  if (currentPlaylist.length === 0) return;
+  musicFadeToken += 1; // Cancel any in-progress fade
+  stopCurrentMusic();
+  currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
+  playNextTrack();
+}
+
+export function skipToPrevTrack() {
+  if (currentPlaylist.length === 0) return;
+  // Capture current time before stopping (stopCurrentMusic nulls currentMusic)
+  const wasPlaying = currentMusic !== null;
+  const elapsedTime = currentMusic ? currentMusic.currentTime : 0;
+  musicFadeToken += 1; // Cancel any in-progress fade
+  stopCurrentMusic();
+  // If more than 3 seconds into current track, restart it instead of going back
+  if (wasPlaying && elapsedTime > 3) {
+    // Restart same track (keep currentTrackIndex)
+  } else {
+    currentTrackIndex = (currentTrackIndex - 1 + currentPlaylist.length) % currentPlaylist.length;
+  }
+  playNextTrack();
+}
+
+export function getPlaylistInfo() {
+  return {
+    current: currentTrackIndex + 1,
+    total: currentPlaylist.length,
+    name: getCurrentTrackName(),
+  };
+}
+
 // ── Phase Wraith charge-up telegraph ───────────────────────
 // Eerie rising tone played 1s before phase wraith spawns a swarm
 export function playPhaseWraithCharge() {
@@ -2129,4 +2268,38 @@ export function playSkullDeathKnell() {
   gain3.connect(getSfxOutput());
   osc3.start(t);
   osc3.stop(t + 2.5);
+}
+
+// ── Buffed enemy hit sound (muffled/dull thud) ──────────────
+let lastBuffedHitSound = 0;
+export function playBuffedHitSound() {
+  const now = performance.now();
+  if (now - lastBuffedHitSound < 30) return; // 30ms throttle
+  lastBuffedHitSound = now;
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Muffled low thud: heavy lowpass filter, short duration
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(180, t);
+  osc.frequency.exponentialRampToValueAtTime(60, t + 0.1);
+
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(400, t);
+  filter.frequency.exponentialRampToValueAtTime(100, t + 0.1);
+  filter.Q.setValueAtTime(3, t);
+
+  gain.gain.setValueAtTime(0.15, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(getSfxOutput());
+
+  osc.start(t);
+  osc.stop(t + 0.12);
 }
