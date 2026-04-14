@@ -7747,8 +7747,9 @@ function triggerHostileProjectileExplosion(position, radius, damage) {
 
 // [CORE] Spawn boss projectile destruction VFX
 function spawnBossProjectileDestructionFX(position, projColor) {
-  spawnExplosionVisual(position.clone(), 0.35);
   // Spark debris: 3-5 random tiny voxels, 10% of projectile size, same color as projectile
+  // No spawnExplosionVisual here — avoids audio node spam + screen shake spam
+  // when rapidly shooting down multiple boss projectiles during boss fights.
   const sparkCount = 3 + Math.floor(Math.random() * 3); // 3-5
   const sparkColor = projColor || 0xff0000; // Default red to match boss projectile color
   spawnVoxelExplosion(position.clone(), sparkColor, sparkCount, 'basic', false, false);
@@ -8627,9 +8628,9 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   mesh.position.copy(origin);
   let shotDirection = direction.clone();
   if (isBuckshot) {
-    const minSpread = THREE.MathUtils.degToRad(0.5);
-    const maxSpread = THREE.MathUtils.degToRad(2.5);
-    const angle = minSpread + Math.random() * (maxSpread - minSpread);
+    // Use half the spreadAngle as max per-pellet deviation for natural distribution
+    const halfCone = (stats.spreadAngle || THREE.MathUtils.degToRad(8)) * 0.5;
+    const angle = Math.random() * halfCone;
     let axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
     if (axis.lengthSq() < 0.0001) axis.set(0, 1, 0);
     axis.cross(shotDirection);
