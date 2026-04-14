@@ -7006,6 +7006,9 @@ class MinotaurBoss extends Boss {
 
 
   groundSlam(playerPos) {
+    // Don't fire during phase transitions
+    if (this.transitioning) return;
+
     // Telegraph slam
     if (this.telegraphing) {
       this.showTelegraph('melee', 0.6, 0xff0088);
@@ -7013,17 +7016,22 @@ class MinotaurBoss extends Boss {
 
     // Fire shockwave projectiles in all directions
     const shardCount = 8 + this.skullPhase * 2;
+    // Capture boss position at call time, not callback time
+    const bossPos = this.mesh.position.clone();
+    // Safety: if boss position is near origin, skip firing
+    if (bossPos.lengthSq() < 0.01) return;
+
     for (let i = 0; i < shardCount; i++) {
       const angle = (i / shardCount) * Math.PI * 2;
       const targetPos = new THREE.Vector3(
-        this.mesh.position.x + Math.cos(angle) * 10,
-        this.mesh.position.y,
-        this.mesh.position.z + Math.sin(angle) * 10
+        bossPos.x + Math.cos(angle) * 10,
+        bossPos.y,
+        bossPos.z + Math.sin(angle) * 10
       );
+      const fromPos = bossPos.clone().add(new THREE.Vector3(0, 1.5, 0));
 
       this.later(i * 50, () => {
         if (typeof spawnBossProjectile === 'function') {
-          const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
           spawnBossProjectile(fromPos, targetPos);
         }
       });
@@ -7035,9 +7043,17 @@ class MinotaurBoss extends Boss {
   }
 
   fireHornShards(playerPos) {
+    // Don't fire during phase transitions
+    if (this.transitioning) return;
+
     // Fire shards from both horns
     this.hornShards.forEach((horn, idx) => {
+      // Force world matrix update before reading position
+      this.mesh.updateWorldMatrix(true, true);
       const hornPos = horn.getWorldPosition(new THREE.Vector3());
+
+      // Safety: if horn position is near world origin, skip
+      if (hornPos.lengthSq() < 0.01) return;
 
       if (this.telegraphing) {
         this.showTelegraph('projectile', 0.2, 0xff0088, hornPos);
@@ -7701,6 +7717,17 @@ class PrismBoss extends Boss {
       this.moveDirection.set(Math.sin(angle), 0, Math.cos(angle));
     }
     this.mesh.position.addScaledVector(this.moveDirection, config.moveSpeed * dt);
+
+    // Minimum distance from player: push boss back if too close
+    const minBossDist = 4.0;
+    const _toPlayer = new THREE.Vector3().subVectors(playerPos, this.mesh.position);
+    _toPlayer.y = 0;
+    const _bossDist = _toPlayer.length();
+    if (_bossDist < minBossDist && _bossDist > 0.01) {
+      _toPlayer.normalize().multiplyScalar(-(minBossDist - _bossDist));
+      this.mesh.position.add(_toPlayer);
+    }
+
     this.constrainToMidfield(playerPos);
     this.mesh.position.y = this.fixedY;
   }
@@ -7880,21 +7907,20 @@ class PrismBoss extends Boss {
   }
 
   fireShardProjectiles(playerPos) {
-    this.shards.forEach((shard, idx) => {
-      if (!shard.visible || !shard.parent) return;
+    const visibleShards = this.shards.filter(shard => shard.visible && shard.parent);
+    visibleShards.forEach((shard, i) => {
+      const idx = this.shards.indexOf(shard);
       const shardPos = shard.getWorldPosition(new THREE.Vector3());
 
-      if (this.telegraphing) {
-        this.showTelegraph('projectile', 0.2, 0xff44ff, shardPos);
-      }
-
-      this.later(200, () => {
+      // Stagger each shard's firing by 400ms sequentially
+      this.later(i * 400, () => {
         if (typeof spawnBossProjectile !== 'function') return;
 
         if (idx === 0) {
           spawnBossProjectile(shardPos, playerPos.clone());
         } else if (idx === 1) {
-          for (let s = -1; s <= 1; s++) {
+          // Reduced from 3-shot burst to 2-shot spread
+          for (let s = -0.5; s <= 0.5; s += 1.0) {
             const target = playerPos.clone();
             target.x += s * 0.5;
             target.y += s * 0.2;
@@ -7904,6 +7930,14 @@ class PrismBoss extends Boss {
           spawnBossProjectile(shardPos, playerPos.clone());
         }
       });
+
+      // Show telegraph at time of firing, not all at once
+      if (this.telegraphing) {
+        this.later(i * 400, () => {
+          const pos = shard.getWorldPosition(new THREE.Vector3());
+          this.showTelegraph('projectile', 0.2, 0xff44ff, pos);
+        });
+      }
     });
   }
 
@@ -10526,6 +10560,7 @@ function createBossProjectileRecord(idx, position, velocity, options = {}) {
     explosionDamage: options.explosionDamage ?? 0,
     explosionRadius: options.explosionRadius ?? 0.3,
     hitRadius: options.hitRadius ?? 0.45,
+    minFlightTime: options.minFlightTime ?? 0,
     hitPlayer: false,
     lobbed: !!options.lobbed,
     gravity: options.gravity ?? 0,
@@ -10646,7 +10681,7 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
     const dir = new THREE.Vector3().copy(targetPos).sub(fromPos).normalize();
     const speed = 5.2;
     velocity = dir.multiplyScalar(speed);
-    homingStrength = 8.0;
+    homingStrength = 4.0;
     wiggleAmplitude = 0.008;
   }
 
@@ -10660,6 +10695,7 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
     explosionDamage: 1,
     explosionRadius: 0.3,
     hitRadius: 0.8,
+    minFlightTime: lobbed ? 0 : 0.3,
     lobbed,
     gravity: lobbed ? 9.8 : 0,
   });
@@ -10842,7 +10878,7 @@ export function updateBossProjectiles(dt, now, playerPos) {
       }
     }
 
-    if (distToPlayer < (proj.hitRadius || 0.45)) {
+    if (distToPlayer < (proj.hitRadius || 0.45) && age >= (proj.minFlightTime || 0) * 1000) {
       proj.hitPlayer = true;
       // Don't call createExplosionAt here — main.js handles explosion visual + damagePlayer
       // to avoid double explosions and double damage.

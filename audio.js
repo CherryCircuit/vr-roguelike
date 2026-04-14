@@ -1801,6 +1801,10 @@ function playNextTrack() {
   // Auto-advance to next track when current ends (only if playlist looping is enabled)
   currentMusic.addEventListener('ended', () => {
     if (!loopPlaylist) return;  // Don't loop for single-play tracks like game over
+    // Don't auto-advance if a fade-out is in progress — the fade will stop the music.
+    // Without this guard, a track ending mid-fade creates a new Audio at full volume,
+    // causing music to pop back in during upgrade/boss transition screens.
+    if (token !== musicFadeToken) return;
     currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
     playNextTrack();
   });

@@ -7315,6 +7315,9 @@ function endGame(victory) {
   hideBossHealthBar();
   gameOverCooldown = 2.0;  // 2 second cooldown before restart allowed
 
+  // Release pointer lock so player can interact with end-game menus
+  if (document.pointerLockElement) document.exitPointerLock();
+
   // Stop music and play game over track
   stopMusic();
   stopLightningSound();
