@@ -37,7 +37,7 @@ export const MAIN_WEAPONS = {
       critMultiplier: 2,
       piercing: false,
       aoeRadius: 0,
-      spreadAngle: 0.1396,  // 8 degrees (increased by 3 degrees, was 5)
+      spreadAngle: 0.2618,  // 15 degrees (wider spread for satisfying shotgun feel)
     },
   },
   
@@ -514,6 +514,14 @@ export function getWeaponStats(mainWeaponId, upgrades) {
 
   if (mainWeaponId === 'seeker_burst') {
     if (u.gimme_more) projectileCount += 2 * u.gimme_more;
+  }
+
+  if (mainWeaponId === 'buckshot') {
+    if (u.buckshot_gentlemen) projectileCount += 4 * u.buckshot_gentlemen;
+    if (u.focused_frenzy) {
+      base.spreadAngle *= 0.6;
+      fireInterval *= 0.85;
+    }
   }
   
   // Plasma carbine wind-up upgrades

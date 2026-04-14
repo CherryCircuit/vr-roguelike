@@ -51,6 +51,7 @@ export function getPooledVoxel() {
 
 export function returnVoxelToPool(voxel) {
   voxel.visible = false;
+  voxel.scale.setScalar(1);
   voxel.userData.velocity.set(0, 0, 0);
   voxel.userData.createdAt = 0;
   voxel.userData.lifetime = 0;
