@@ -152,7 +152,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   const terrainGeo = buildTaperedTerrainGeo();
   const terrainMat = new THREE.ShaderMaterial({
     uniforms: terrainUniforms,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     depthWrite: true,
     depthTest: true,
     polygonOffset: true,
@@ -230,7 +230,7 @@ export function buildSynthwaveValleyScene(group, deps) {
     sunDir: [0, 0.3, -1],
     seed: 42,
   });
-  const cloudDome1Geo = new THREE.SphereGeometry(2400, 48, 24);
+  const cloudDome1Geo = new THREE.SphereGeometry(2400, 24, 12);
   const cloudDome1Mat = new THREE.MeshBasicMaterial({
     map: cloudTex,
     side: THREE.BackSide,

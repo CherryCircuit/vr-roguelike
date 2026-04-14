@@ -7,7 +7,7 @@ import {
   makeSprite, updateSpriteText, disposeGroupChildren,
   pauseMenuGroup, hideTitle, showTitle,
 } from './hud.js';
-import { getMusicVolume, getSFXVolume, setMusicVolume, setSFXVolume, playMenuClick, playMenuHoverSound } from './audio.js';
+import { getMusicVolume, getSFXVolume, setMusicVolume, setSFXVolume, playMenuClick, playMenuHoverSound, getCurrentTrackName, skipToNextTrack, skipToPrevTrack, getPlaylistInfo } from './audio.js';
 
 export const settingsGroup = new THREE.Group();
 settingsGroup.name = 'settings-menu';
@@ -35,6 +35,9 @@ let musicDownBtn = null;
 let sfxUpBtn = null;
 let sfxDownBtn = null;
 let backBtn = null;
+let prevTrackBtn = null;
+let nextTrackBtn = null;
+let trackNameSprite = null;
 
 function settingsMaterial(color = 0x110033, opacity = 0.85) {
   return new THREE.MeshBasicMaterial({
@@ -45,6 +48,32 @@ function settingsMaterial(color = 0x110033, opacity = 0.85) {
     depthTest: false,
     depthWrite: false,
   });
+}
+
+// Track name update interval (refreshes the display while settings is open)
+let _trackUpdateInterval = null;
+
+function startTrackDisplayUpdate() {
+  stopTrackDisplayUpdate();
+  _trackUpdateInterval = setInterval(() => {
+    if (trackNameSprite && settingsGroup.visible) {
+      const info = getPlaylistInfo();
+      const displayName = info.name.length > 28 ? info.name.substring(0, 25) + '...' : info.name;
+      updateSpriteText(trackNameSprite, displayName, {
+        fontSize: 22,
+        color: '#aaaaff',
+        scale: 0.08,
+        renderOrder: SETTINGS_RENDER_ORDER + 1,
+      });
+    }
+  }, 1000);
+}
+
+function stopTrackDisplayUpdate() {
+  if (_trackUpdateInterval) {
+    clearInterval(_trackUpdateInterval);
+    _trackUpdateInterval = null;
+  }
 }
 
 function makeBtn(label, width = 0.4, height = 0.25, borderColor = 0x00ffff, fontSize = 32, fontScale = 0.1) {
@@ -79,8 +108,8 @@ function buildSettingsPanel() {
   const musicVol = getMusicVolume();
   const sfxVol = getSFXVolume();
 
-  // ── Panel background ──
-  const panelGeo = new THREE.PlaneGeometry(3.2, 2.0);
+  // ── Panel background ── (taller to fit track player)
+  const panelGeo = new THREE.PlaneGeometry(3.2, 2.6);
   const panelMesh = new THREE.Mesh(panelGeo, settingsMaterial(0x0a0015, 0.92));
   panelMesh.renderOrder = SETTINGS_RENDER_ORDER - 2;
   settingsGroup.add(panelMesh);
@@ -196,9 +225,50 @@ function buildSettingsPanel() {
   divider.renderOrder = SETTINGS_RENDER_ORDER;
   settingsGroup.add(divider);
 
+  // ── Track Player Section ──
+  const trackY = -0.65;
+
+  // "NOW PLAYING" label
+  const trackLabel = makeSprite('NOW PLAYING', {
+    fontSize: 22,
+    color: '#666699',
+    scale: 0.3,
+    renderOrder: SETTINGS_RENDER_ORDER + 1,
+  });
+  trackLabel.position.set(0, trackY + 0.22, 0.02);
+  settingsGroup.add(trackLabel);
+
+  // Track name display
+  const trackInfo = getPlaylistInfo();
+  const displayName = trackInfo.name.length > 28 ? trackInfo.name.substring(0, 25) + '...' : trackInfo.name;
+  trackNameSprite = makeSprite(displayName, {
+    fontSize: 22,
+    color: '#aaaaff',
+    scale: 0.08,
+    renderOrder: SETTINGS_RENDER_ORDER + 1,
+  });
+  trackNameSprite.position.set(0, trackY + 0.05, 0.02);
+  settingsGroup.add(trackNameSprite);
+
+  // PREV button
+  const prevBtn = makeBtn('◀ PREV', 0.9, 0.25, 0x00ffff, 28, 0.09);
+  prevBtn.group.position.set(-0.65, trackY - 0.2, 0.02);
+  prevBtn.mesh.userData.isSettingsBtn = true;
+  prevBtn.mesh.userData.settingsAction = 'prevTrack';
+  prevTrackBtn = prevBtn.mesh;
+  settingsGroup.add(prevBtn.group);
+
+  // NEXT button
+  const nextBtn = makeBtn('NEXT ▶', 0.9, 0.25, 0x00ffff, 28, 0.09);
+  nextBtn.group.position.set(0.65, trackY - 0.2, 0.02);
+  nextBtn.mesh.userData.isSettingsBtn = true;
+  nextBtn.mesh.userData.settingsAction = 'nextTrack';
+  nextTrackBtn = nextBtn.mesh;
+  settingsGroup.add(nextBtn.group);
+
   // ── BACK button ── (w=0.75, h=0.3)
   const back = makeBtn('BACK', 0.75, 0.3, 0xffff00, 38, 0.12);
-  back.group.position.set(0, -0.72, 0.02);
+  back.group.position.set(0, -1.05, 0.02);
   back.mesh.userData.isSettingsBtn = true;
   back.mesh.userData.settingsAction = 'back';
   backBtn = back.mesh;
@@ -230,10 +300,12 @@ export function showSettings(from) {
   }
 
   settingsGroup.visible = true;
+  startTrackDisplayUpdate();
 }
 
 export function hideSettings() {
   settingsGroup.visible = false;
+  stopTrackDisplayUpdate();
   disposeGroupChildren(settingsGroup);
   musicVolSprite = null;
   sfxVolSprite = null;
@@ -242,6 +314,9 @@ export function hideSettings() {
   sfxUpBtn = null;
   sfxDownBtn = null;
   backBtn = null;
+  prevTrackBtn = null;
+  nextTrackBtn = null;
+  trackNameSprite = null;
   _lastSettingsHovered = null;
 
   // Restore pause menu if we came from it
@@ -273,7 +348,7 @@ export function getSettingsHit(raycaster) {
   if (!settingsGroup.visible) return null;
 
   // Only raycast against the actual button meshes for precise hit detection
-  const buttonMeshes = [musicUpBtn, musicDownBtn, sfxUpBtn, sfxDownBtn, backBtn].filter(Boolean);
+  const buttonMeshes = [musicUpBtn, musicDownBtn, sfxUpBtn, sfxDownBtn, prevTrackBtn, nextTrackBtn, backBtn].filter(Boolean);
   const intersects = raycaster.intersectObjects(buttonMeshes, false);
 
   for (const intersect of intersects) {
@@ -297,7 +372,7 @@ export function getSettingsHit(raycaster) {
 export function updateSettingsHover(raycaster) {
   if (!settingsGroup.visible) return;
 
-  const buttonMeshes = [musicUpBtn, musicDownBtn, sfxUpBtn, sfxDownBtn, backBtn].filter(Boolean);
+  const buttonMeshes = [musicUpBtn, musicDownBtn, sfxUpBtn, sfxDownBtn, prevTrackBtn, nextTrackBtn, backBtn].filter(Boolean);
   if (buttonMeshes.length === 0) return;
 
   const intersects = raycaster.intersectObjects(buttonMeshes, false);
@@ -351,6 +426,28 @@ export function executeSettingsAction(action) {
     }
     case 'back':
       return true;
+    case 'prevTrack': {
+      skipToPrevTrack();
+      if (trackNameSprite) {
+        const info = getPlaylistInfo();
+        const dn = info.name.length > 28 ? info.name.substring(0, 25) + '...' : info.name;
+        updateSpriteText(trackNameSprite, dn, {
+          fontSize: 22, color: '#aaaaff', scale: 0.08, renderOrder: SETTINGS_RENDER_ORDER + 1,
+        });
+      }
+      return false;
+    }
+    case 'nextTrack': {
+      skipToNextTrack();
+      if (trackNameSprite) {
+        const info = getPlaylistInfo();
+        const dn = info.name.length > 28 ? info.name.substring(0, 25) + '...' : info.name;
+        updateSpriteText(trackNameSprite, dn, {
+          fontSize: 22, color: '#aaaaff', scale: 0.08, renderOrder: SETTINGS_RENDER_ORDER + 1,
+        });
+      }
+      return false;
+    }
     default:
       return false;
   }
