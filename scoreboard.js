@@ -21,17 +21,32 @@ function getSupabase() {
 
 export async function submitScore(name, score, levelReached, country) {
   console.log(`[scoreboard] Submitting score for ${name}: ${score} (Level ${levelReached}, Country: ${country})`);
-  const { data, error } = await getSupabase()
-    .from('scores')
-    .insert([{ name, score, level_reached: levelReached, country }])
-    .select();
 
-  if (error) {
-    console.error('[scoreboard] Submit error:', error.message, error.details, error.hint);
+  try {
+    const response = await fetch('/api/submit-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        score,
+        levelReached,
+        country,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error('[scoreboard] Submit error:', result?.error || 'Unknown error');
+      return null;
+    }
+
+    console.log('[scoreboard] Submit successful:', result);
+    return result.data || result;
+  } catch (err) {
+    console.error('[scoreboard] Submit exception:', err);
     return null;
   }
-  console.log('[scoreboard] Submit successful:', data);
-  return data;
 }
 
 export async function fetchTopScores(limit = 100) {
@@ -250,35 +265,30 @@ export async function testConnection() {
     console.error('❌ Read exception:', err);
   }
 
-  // Test 3: Write access
-  console.log('Test 3: Write to scores table');
-  const testName = `TEST_${Date.now()}`;
+  // Test 3: Score submit endpoint
+  console.log('Test 3: Write via secure score endpoint');
+  const testName = 'TESTER';
+
   try {
-    const { data, error } = await getSupabase()
-      .from('scores')
-      .insert([{
+    const response = await fetch('/api/submit-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         name: testName,
         score: 99999,
-        level_reached: 20,
-        country: 'US'
-      }])
-      .select();
+        levelReached: 20,
+        country: 'US',
+      }),
+    });
 
-    if (error) {
-      if (error.message.includes('permission denied')) {
-        results.errors.push('Write permission denied. Create INSERT policy for anon role');
-        console.error('❌ Permission denied');
-      } else {
-        results.errors.push(`Write error: ${error.message}`);
-        console.error('❌ Write error:', error.message);
-      }
+    const result = await response.json();
+
+    if (!response.ok) {
+      results.errors.push(`Write error: ${result?.error || 'Unknown error'}`);
+      console.error('❌ Write error:', result?.error || 'Unknown error');
     } else {
       results.writeAccess = true;
-      console.log('✅ Write access working');
-
-      // Clean up test record
-      await getSupabase().from('scores').delete().eq('name', testName);
-      console.log('✅ Test record cleaned up\n');
+      console.log('✅ Write access working through secure endpoint\n');
     }
   } catch (err) {
     results.errors.push(`Write exception: ${err.message}`);
