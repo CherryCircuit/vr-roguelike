@@ -352,7 +352,7 @@ export const UPGRADE_POOL = [
   
   // Charge Cannon specific upgrades
   { id: 'quick_charge', name: 'Ain\'t Nobody Got Time For That', desc: 'Charge Cannon: 2x charge speed', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
-  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Adds fire DoT to charged shots', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
+  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Full charge kills cause AoE explosion + fire DoT', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
   { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
   
   // Plasma Carbine specific upgrades
@@ -598,6 +598,13 @@ export function getWeaponStats(mainWeaponId, upgrades) {
     projectileColor,
     projectileScale,
     projectileLength,
+    // Charge cannon upgrades
+    chargeRateMultiplier: 1 + (u.quick_charge || 0), // 2x per stack of quick_charge
+    chargeDeathRayMultiplier: 1 + (u.death_ray || 0), // 2x max damage per stack of death_ray
+    hasExcessHeat: (u.excess_heat || 0) > 0,
+    hasChargeAoEFire: (u.fire || 0) > 0,
+    hasChargeAoEFreeze: (u.freeze || 0) > 0,
+    hasChargeAoEShock: (u.shock || 0) > 0,
   };
 }
 

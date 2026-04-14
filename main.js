@@ -6973,6 +6973,17 @@ registerResetHook(clearAllElectricArcs);
 registerResetHook(clearGeometryCaches);
 registerResetHook(clearHudGeoCache);
 
+// Clean up active charge explosions on game reset
+registerResetHook(() => {
+  for (let i = activeChargeExplosions.length - 1; i >= 0; i--) {
+    const exp = activeChargeExplosions[i];
+    scene.remove(exp.mesh);
+    exp.mesh.geometry.dispose();
+    exp.mesh.material.dispose();
+  }
+  activeChargeExplosions.length = 0;
+});
+
 // Reset nuke flash opacity on full game restart
 registerResetHook(() => {
   if (nukeFlash) {
@@ -7033,6 +7044,11 @@ function showUpgradeScreen() {
     // MAIN weapon not locked yet - show all upgrades (shouldn't happen after level 2)
     _log(`[game] WARNING: MAIN weapon not locked for ${hand} hand at level ${game.level}`);
     pendingUpgrades = game.justBossKill ? getRandomSpecialUpgrades(3, mainWeaponId) : getRandomUpgrades(3, mainWeaponId);
+  }
+
+  // Exclude mega_scope from charge cannon (not useful for beam weapon)
+  if (mainWeaponId === 'charge_cannon') {
+    pendingUpgrades = pendingUpgrades.filter(u => u.id !== 'mega_scope');
   }
 
   showUpgradeCards(pendingUpgrades, getAdjustedCameraPosition(), hand);
@@ -8166,13 +8182,15 @@ function spawnTransientLightningBolt(start, end, duration = 120) {
  * @returns {number} damage value
  */
 // [CORE] Charge cannon damage calculation
-function chargeTimeToDamage(t) {
-  // Linear ramp: damage scales proportionally with charge time
-  // 0s = 50 dmg, 3s = 1000 dmg (3s is max charge)
-  const clampedT = Math.min(t, CHARGE_SHOT_MAX_TIME);
-  const progress = clampedT / CHARGE_SHOT_MAX_TIME;
+function chargeTimeToDamage(t, chargeRateMultiplier = 1, damageMultiplier = 1) {
+  // chargeRateMultiplier: from quick_charge upgrade (e.g. 2.0 = half charge time)
+  // damageMultiplier: from death_ray upgrade (e.g. 2.0 = double max damage)
+  const effectiveMaxTime = CHARGE_SHOT_MAX_TIME / chargeRateMultiplier;
+  const clampedT = Math.min(t, effectiveMaxTime);
+  const progress = clampedT / effectiveMaxTime;
+  const maxDamage = CHARGE_SHOT_MAX_DAMAGE * damageMultiplier;
 
-  return CHARGE_SHOT_MIN_DAMAGE + (CHARGE_SHOT_MAX_DAMAGE - CHARGE_SHOT_MIN_DAMAGE) * progress;
+  return CHARGE_SHOT_MIN_DAMAGE + (maxDamage - CHARGE_SHOT_MIN_DAMAGE) * progress;
 }
 
 /**
@@ -8180,9 +8198,10 @@ function chargeTimeToDamage(t) {
  * Uses the same curve as damage for consistent feedback
  */
 // [CORE] Charge cannon progress calculation
-function chargeTimeToProgress(t) {
-  const clampedT = Math.min(t, CHARGE_SHOT_MAX_TIME);
-  return clampedT / CHARGE_SHOT_MAX_TIME;
+function chargeTimeToProgress(t, chargeRateMultiplier = 1) {
+  const effectiveMaxTime = CHARGE_SHOT_MAX_TIME / chargeRateMultiplier;
+  const clampedT = Math.min(t, effectiveMaxTime);
+  return clampedT / effectiveMaxTime;
 }
 
 /**
@@ -8367,6 +8386,62 @@ function clearAllChargeBeamVisuals() {
  * Reuse one core+glow beam pair per hand for the charge cannon.
  * This preserves the old look while eliminating per-shot geometry churn.
  */
+
+// ── Charge Cannon AoE Explosion Visuals ──────────────────────
+const activeChargeExplosions = [];
+
+/**
+ * Spawn a billboard explosion at the given position.
+ * @param {THREE.Vector3} position - World position of explosion center
+ * @param {string|number} color - Color tint (CSS string or hex)
+ */
+function spawnChargeExplosion(position, color) {
+  const geo = new THREE.PlaneGeometry(2.0, 2.0);
+  const mat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(color),
+    transparent: true,
+    opacity: 0.9,
+    depthTest: false,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(position);
+  mesh.scale.setScalar(0.5);
+  scene.add(mesh);
+  activeChargeExplosions.push({
+    mesh,
+    age: 0,
+    maxAge: 0.5,
+  });
+}
+
+/**
+ * Update active charge explosions (billboard + animate fade/scale).
+ * Call from the main render loop.
+ */
+function updateChargeExplosions(dt) {
+  const camPos = camera.position;
+  for (let i = activeChargeExplosions.length - 1; i >= 0; i--) {
+    const exp = activeChargeExplosions[i];
+    exp.age += dt;
+    const t = Math.min(exp.age / exp.maxAge, 1);
+    // Scale: 0.5 -> 3.0 over 0.4s (ease out)
+    const scaleT = Math.min(exp.age / 0.4, 1);
+    exp.mesh.scale.setScalar(0.5 + 2.5 * scaleT);
+    // Opacity: 0.9 -> 0.0 over 0.5s
+    exp.mesh.material.opacity = 0.9 * (1 - t);
+    // Billboard: always face camera
+    exp.mesh.lookAt(camPos);
+    // Clean up when done
+    if (exp.age >= exp.maxAge) {
+      scene.remove(exp.mesh);
+      exp.mesh.geometry.dispose();
+      exp.mesh.material.dispose();
+      activeChargeExplosions.splice(i, 1);
+    }
+  }
+}
+
 function activateChargeBeamVisual(index, origin, direction, range, beamWidth, progress, now) {
   const beam = ensureChargeBeamVisual(index);
   const visualBeamWidth = beamWidth * 0.3;
@@ -8476,9 +8551,12 @@ const _chargeVisualColor = new THREE.Color();
 function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   if (chargeTimeSec < CHARGE_SHOT_MIN_FIRE) return; // minimum charge to fire
 
+  const chargeRateMultiplier = stats.chargeRateMultiplier || 1;
+  const damageMultiplier = stats.chargeDeathRayMultiplier || 1;
+
   // Use Mega Man style damage curve
-  const damage = Math.round(chargeTimeToDamage(chargeTimeSec));
-  const progress = chargeTimeToProgress(chargeTimeSec);
+  const damage = Math.round(chargeTimeToDamage(chargeTimeSec, chargeRateMultiplier, damageMultiplier));
+  const progress = chargeTimeToProgress(chargeTimeSec, chargeRateMultiplier);
 
   // Play the charge fire sound with progress for intensity
   playChargeFireSound(progress);
@@ -8497,12 +8575,23 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
   const controllerIndex = index;
   const hand = getHandForController(index);
 
+  // Track positions of enemies killed by this beam for AoE effects
+  const aoeKillPositions = [];
+  const isFullCharge = progress >= 1.0;
+
   const chargeStats = { ...stats, damage: Math.round(damage) };
   const beamWidthSq = beamWidth * beamWidth;
   getEnemies().forEach((e, i) => {
     const distSq = pointToSegmentDistSq(e.mesh.position, _chargeBeamA, _chargeBeamB);
     if (distSq < beamWidthSq) {
-      handleHit(i, e, chargeStats, e.mesh.position.clone(), controllerIndex, false, false);
+      // Record position before hit (enemy may be destroyed after handleHit)
+      const enemyPos = e.mesh.position.clone();
+      const hpBefore = e.hp;
+      handleHit(i, e, chargeStats, enemyPos, controllerIndex, false, false);
+      // If killed by this beam and it was a full charge, track for AoE
+      if (isFullCharge && hpBefore > 0 && e.hp <= 0) {
+        aoeKillPositions.push(enemyPos);
+      }
     }
   });
 
@@ -8570,6 +8659,91 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
     }
   }
   activateChargeBeamVisual(index, _chargeBeamOrigin, _chargeBeamDir, range, beamWidth, progress, performance.now());
+
+  // AoE explosion effects on full charge kills
+  if (isFullCharge && aoeKillPositions.length > 0) {
+    const aoeRadius = 3.0;
+    const aoeDamage = 200;
+    const enemies = getEnemies();
+
+    aoeKillPositions.forEach(killPos => {
+      // Determine which element effects to apply
+      const hasFire = stats.hasExcessHeat || stats.hasChargeAoEFire;
+      const hasFreeze = stats.hasChargeAoEFreeze;
+      const hasShock = stats.hasChargeAoEShock;
+
+      if (hasFire) {
+        spawnChargeExplosion(killPos, '#ff4400');
+        enemies.forEach((e, i) => {
+          if (!e || e.hp <= 0) return;
+          const dist = e.mesh.position.distanceTo(killPos);
+          if (dist <= aoeRadius) {
+            const result = hitEnemy(i, aoeDamage);
+            spawnDamageNumber(e.mesh.position.clone(), aoeDamage, '#ff4400');
+            // Apply fire DoT
+            applyEffects(i, [{ type: 'fire', stacks: 2 }]);
+            if (result.killed) {
+              handleEnemyKilled(i, { killsWithoutHit: true, skipChain: false });
+            }
+          }
+        });
+      }
+      if (hasFreeze) {
+        if (!hasFire) spawnChargeExplosion(killPos, '#88ccff'); // Don't double-spawn visual
+        enemies.forEach((e, i) => {
+          if (!e || e.hp <= 0) return;
+          const dist = e.mesh.position.distanceTo(killPos);
+          if (dist <= aoeRadius) {
+            const result = hitEnemy(i, Math.round(aoeDamage * 0.5)); // Freeze deals less direct damage
+            spawnDamageNumber(e.mesh.position.clone(), Math.round(aoeDamage * 0.5), '#88ccff');
+            applyEffects(i, [{ type: 'freeze', stacks: 2 }]);
+            if (result.killed) {
+              handleEnemyKilled(i, { killsWithoutHit: true, skipChain: false });
+            }
+          }
+        });
+      }
+      if (hasShock) {
+        if (!hasFire && !hasFreeze) spawnChargeExplosion(killPos, '#ffff44');
+        enemies.forEach((e, i) => {
+          if (!e || e.hp <= 0) return;
+          const dist = e.mesh.position.distanceTo(killPos);
+          if (dist <= aoeRadius) {
+            const result = hitEnemy(i, Math.round(aoeDamage * 0.75));
+            spawnDamageNumber(e.mesh.position.clone(), Math.round(aoeDamage * 0.75), '#ffff44');
+            applyEffects(i, [{ type: 'shock', stacks: 2 }]);
+            if (result.killed) {
+              handleEnemyKilled(i, { killsWithoutHit: true, skipChain: false });
+            }
+          }
+        });
+      }
+
+      // If no element but still full charge, spawn a generic explosion (white)
+      if (!hasFire && !hasFreeze && !hasShock) {
+        spawnChargeExplosion(killPos, '#ffffff');
+        // No element damage, just the visual
+      }
+    });
+  }
+
+  // Triple shot: schedule a second beam 300ms later
+  if ((game.upgrades[hand].triple_shot || 0) > 0) {
+    const savedChargeTime = chargeTimeSec;
+    const savedStats = { ...stats };
+    const savedIndex = index;
+    const savedController = controller;
+    setTimeout(() => {
+      // Guard: weapon still equipped, game still playing
+      if (!game || game.state !== State.PLAYING) return;
+      const currentHand = getHandForController(savedIndex);
+      if (game.mainWeapon[currentHand] !== stats.mainWeaponId) return;
+      const ctrl = savedIndex < 2 ? controllers[savedIndex] : savedController;
+      if (ctrl) {
+        fireChargeBeam(ctrl, savedIndex, savedChargeTime, savedStats);
+      }
+    }, 300);
+  }
 }
 
 // [CORE] Spawn a projectile with given parameters
@@ -10039,7 +10213,7 @@ function render(timestamp) {
           } else {
             // Update charge progress
             const chargeTimeSec = (now - chargeShotStartTime[i]) / 1000;
-            const progress = chargeTimeToProgress(chargeTimeSec);
+            const progress = chargeTimeToProgress(chargeTimeSec, stats.chargeRateMultiplier || 1);
             updateChargeSound(i, progress);
             updateChargeVisuals(controllers[i], i, progress);
 
@@ -10113,7 +10287,7 @@ function render(timestamp) {
               } else {
                 // Update charge progress
                 const chargeTimeSec = (now - chargeShotStartTime[0]) / 1000;
-                const progress = chargeTimeToProgress(chargeTimeSec);
+                const progress = chargeTimeToProgress(chargeTimeSec, stats.chargeRateMultiplier || 1);
                 updateChargeSound(0, progress);
                 updateChargeVisuals(virtualController, 0, progress);
 
@@ -10160,7 +10334,7 @@ function render(timestamp) {
               } else {
                 // Update charge progress
                 const chargeTimeSec = (now - chargeShotStartTime[1]) / 1000;
-                const progress = chargeTimeToProgress(chargeTimeSec);
+                const progress = chargeTimeToProgress(chargeTimeSec, stats.chargeRateMultiplier || 1);
                 updateChargeSound(1, progress);
                 updateChargeVisuals(virtualController, 1, progress);
 
@@ -11188,6 +11362,7 @@ function render(timestamp) {
   updateDamageNumbers(dt, now);
   profiler.end('damageNumbers');
   updateStatusBubbles(dt, now);
+  updateChargeExplosions(dt);
   updateBossDebris(dt, now, getBiomeFloorY());  // Boss debris physics with biome-aware floor
   // Update accuracy popups with fade-complete callback to reset bonus
   updateKillChainPopups(dt, now, (multiplier) => {
