@@ -1169,7 +1169,7 @@ function initConductorGlowPool() {
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;
 
-  const glowGeo = new THREE.PlaneGeometry(0.9, 0.9);
+  const glowGeo = new THREE.PlaneGeometry(1.4, 1.4);
   const glowMat = new THREE.MeshBasicMaterial({
     map: tex,
     color: 0xff66aa,
@@ -1204,21 +1204,41 @@ function updateConductorGlows(now) {
   let glowIdx = 0;
   const pulse = 0.7 + 0.3 * Math.sin(now * 0.004); // Gentle pulse
 
-  // Place glow on each buffed enemy and each conductor
+  // First: place a strong glow on conductors themselves (the source)
   for (let i = 0; i < activeEnemies.length && glowIdx < MAX_CONDUCTOR_GLOW; i++) {
     const e = activeEnemies[i];
-
-    // Place glow on buffed enemies
-    if (e.linkedByConductor && e.linkedDamageReduction > 0) {
+    if (e.isConductor && e.mesh) {
       _conductorGlowPos.copy(e.mesh.position);
-      _conductorGlowPos.y += 0.5; // Float above enemy
+      _conductorGlowPos.y += 0.3; // Center of body
       if (cameraRef) {
         _conductorGlowLook.lookAt(_conductorGlowPos, cameraRef.position, _conductorGlowUp);
         _conductorGlowQuat.setFromRotationMatrix(_conductorGlowLook);
       } else {
         _conductorGlowQuat.identity();
       }
-      const s = pulse * (0.8 + 0.2 * Math.sin(now * 0.006 + e.id));
+      // Conductor glow is 50% bigger than buffed enemy glow
+      const s = pulse * 1.8;
+      _conductorGlowScale.set(s, s, s);
+      _conductorGlowMat.compose(_conductorGlowPos, _conductorGlowQuat, _conductorGlowScale);
+      conductorGlowPool.setMatrixAt(glowIdx, _conductorGlowMat);
+      glowIdx++;
+    }
+  }
+
+  // Then: place glow on each buffed enemy (buff persists until death, not just in range)
+  for (let i = 0; i < activeEnemies.length && glowIdx < MAX_CONDUCTOR_GLOW; i++) {
+    const e = activeEnemies[i];
+
+    if (e.linkedByConductor && e.linkedDamageReduction > 0 && !e.isConductor) {
+      _conductorGlowPos.copy(e.mesh.position);
+      _conductorGlowPos.y += 0.3; // Center of body
+      if (cameraRef) {
+        _conductorGlowLook.lookAt(_conductorGlowPos, cameraRef.position, _conductorGlowUp);
+        _conductorGlowQuat.setFromRotationMatrix(_conductorGlowLook);
+      } else {
+        _conductorGlowQuat.identity();
+      }
+      const s = pulse * 1.2;
       _conductorGlowScale.set(s, s, s);
       _conductorGlowMat.compose(_conductorGlowPos, _conductorGlowQuat, _conductorGlowScale);
       conductorGlowPool.setMatrixAt(glowIdx, _conductorGlowMat);

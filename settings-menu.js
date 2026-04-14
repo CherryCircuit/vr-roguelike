@@ -243,16 +243,16 @@ function buildSettingsPanel() {
   const trackInfo = getPlaylistInfo();
   const displayName = trackInfo.name.length > 28 ? trackInfo.name.substring(0, 25) + '...' : trackInfo.name;
   trackNameSprite = makeSprite(displayName, {
-    fontSize: 22,
+    fontSize: 36,
     color: '#aaaaff',
-    scale: 0.08,
+    scale: 0.12,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
   trackNameSprite.position.set(0, trackY + 0.05, 0.02);
   settingsGroup.add(trackNameSprite);
 
   // PREV button
-  const prevBtn = makeBtn('◀ PREV', 0.9, 0.25, 0x00ffff, 28, 0.09);
+  const prevBtn = makeBtn('◀ PREV', 0.9, 0.25, 0x00ffff, 36, 0.12);
   prevBtn.group.position.set(-0.65, trackY - 0.2, 0.02);
   prevBtn.mesh.userData.isSettingsBtn = true;
   prevBtn.mesh.userData.settingsAction = 'prevTrack';
@@ -260,7 +260,7 @@ function buildSettingsPanel() {
   settingsGroup.add(prevBtn.group);
 
   // NEXT button
-  const nextBtn = makeBtn('NEXT ▶', 0.9, 0.25, 0x00ffff, 28, 0.09);
+  const nextBtn = makeBtn('NEXT ▶', 0.9, 0.25, 0x00ffff, 36, 0.12);
   nextBtn.group.position.set(0.65, trackY - 0.2, 0.02);
   nextBtn.mesh.userData.isSettingsBtn = true;
   nextBtn.mesh.userData.settingsAction = 'nextTrack';
@@ -268,7 +268,7 @@ function buildSettingsPanel() {
   settingsGroup.add(nextBtn.group);
 
   // ── BACK button ── (w=0.75, h=0.3)
-  const back = makeBtn('BACK', 0.75, 0.3, 0xffff00, 38, 0.12);
+  const back = makeBtn('BACK', 0.75, 0.3, 0x997700, 38, 0.12);
   back.group.position.set(0, -1.05, 0.02);
   back.mesh.userData.isSettingsBtn = true;
   back.mesh.userData.settingsAction = 'back';
@@ -393,8 +393,8 @@ export function updateSettingsHover(raycaster) {
 
     const isHovered = btn === hoveredMesh;
     const isBack = btn.userData.settingsAction === 'back';
-    const baseColor = isBack ? 0xffff00 : 0x00ffff;
-    const hoverColor = isBack ? 0xffff88 : 0x88ffff;
+    const baseColor = isBack ? 0x997700 : 0x006666; // Muted when not hovered
+    const hoverColor = isBack ? 0xffff00 : 0x00ffff; // Bright when hovered
     border.material.color.set(isHovered ? hoverColor : baseColor);
   });
 }

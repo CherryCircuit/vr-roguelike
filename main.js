@@ -72,6 +72,7 @@ import {
   hideGameOver, triggerHitFlash, updateHitFlash, updateSpeedLines, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar, flashBossHealthBarGreen,
   getTitleButtonHit, showNameEntry, hideNameEntry, getNameEntryHit, updateKeyboardHover, getNameEntryName,
+  desktopTypeChar,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
@@ -94,7 +95,8 @@ import {
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
   getPosition, getAimRaycaster, getVirtualController,
-  isLocked, isEnabled as isDesktopEnabled, setOnPauseCallback, setOnNukeCallback
+  isLocked, isEnabled as isDesktopEnabled, setOnPauseCallback, setOnNukeCallback,
+  setMenuStateCallback, setNameKeyCallback
 } from './desktop-controls.js';
 import {
   submitScore, fetchTopScores, fetchScoresByCountry, fetchScoresByContinent,
@@ -1607,6 +1609,42 @@ function init() {
   // [DEBUG] Set up pause/nuke callbacks for keyboard shortcuts
   setOnPauseCallback(togglePause);
   setOnNukeCallback(activateNuke);
+  setMenuStateCallback(() => {
+    const st = game.state;
+    return st === State.NAME_ENTRY || st === State.SCOREBOARD || st === State.REGIONAL_SCORES ||
+           st === State.COUNTRY_SELECT || st === State.TITLE || st === State.UPGRADE_SELECT ||
+           st === State.PAUSED || st === State.READY_SCREEN || st === State.GAME_OVER;
+  });
+  setNameKeyCallback((key) => {
+    const result = desktopTypeChar(key);
+    if (result && result.action === 'submit') {
+      const name = result.name.trim();
+      if (!isNameClean(name)) {
+        _log('[scoreboard] Name rejected by profanity filter');
+        return;
+      }
+      setStoredName(name);
+      hideNameEntry();
+      game.state = State.SCOREBOARD;
+      showScoreboard([], 'SUBMITTING...');
+      const country = getStoredCountry() || '';
+      let submittedAt = null;
+      submitScore(name, game.finalScore, game.finalLevel, country).then((data) => {
+        if (data && data[0] && data[0].created_at) {
+          submittedAt = data[0].created_at;
+          setLastSubmittedTimestamp(submittedAt);
+        }
+        return new Promise(resolve => setTimeout(resolve, 500));
+      }).then(() => {
+        return fetchTopScores();
+      }).then(scores => {
+        showScoreboard(scores, null, submittedAt);
+      }).catch(err => {
+        console.error('[scoreboard] Submit failed:', err);
+        showScoreboard([], 'FAILED TO LOAD');
+      });
+    }
+  });
 
   registerRuntimeAction('setFpsVisible', (visible) => setFPSVisible(visible === true));
   registerRuntimeAction('cycleBiomeWithFade', () => cycleDebugBiomeWithFade());
@@ -7802,13 +7840,12 @@ function triggerHostileProjectileExplosion(position, radius, damage) {
 
 // [CORE] Spawn boss projectile destruction VFX
 function spawnBossProjectileDestructionFX(position, projColor) {
-  // Spark debris: 3-5 random tiny voxels, 10% of projectile size, same color as projectile
-  const sparkCount = 3 + Math.floor(Math.random() * 3); // 3-5
-  const sparkColor = projColor || 0xff0000; // Default red to match boss projectile color
-  spawnVoxelExplosion(position.clone(), sparkColor, sparkCount, 'basic', false, false);
-  // Scale down the last N voxels added (the sparks) to 10% size
+  // Debris: bright white voxels, larger than before but smaller than enemy debris
+  const sparkCount = 4 + Math.floor(Math.random() * 3); // 4-6
+  spawnVoxelExplosion(position.clone(), 0xffffff, sparkCount, 'basic', false, false);
+  // Scale to 30% (between old 10% and standard enemy 100%)
   for (let i = Math.max(0, activeVoxels.length - sparkCount); i < activeVoxels.length; i++) {
-    activeVoxels[i].scale.setScalar(0.1);
+    activeVoxels[i].scale.setScalar(0.3);
   }
   // Play fizzle sound (throttled in audio.js to avoid spam)
   playBossProjectileDestroySound();
@@ -8474,22 +8511,44 @@ const activeChargeExplosions = [];
  * @param {string|number} color - Color tint (CSS string or hex)
  */
 function spawnChargeExplosion(position, color) {
-  const geo = new THREE.PlaneGeometry(2.0, 2.0);
+  // Canvas-based radial gradient glow for a proper round explosion effect
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  const c = new THREE.Color(color);
+  const r = Math.round(c.r * 255);
+  const g = Math.round(c.g * 255);
+  const b = Math.round(c.b * 255);
+  gradient.addColorStop(0.0, `rgba(255,255,255,1.0)`); // White core
+  gradient.addColorStop(0.15, `rgba(${r},${g},${b},1.0)`); // Colored bright
+  gradient.addColorStop(0.4, `rgba(${r},${g},${b},0.6)`);
+  gradient.addColorStop(0.7, `rgba(${r},${g},${b},0.2)`);
+  gradient.addColorStop(1.0, `rgba(${r},${g},${b},0)`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 256, 256);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const geo = new THREE.PlaneGeometry(3.0, 3.0);
   const mat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(color),
+    map: texture,
     transparent: true,
-    opacity: 0.9,
+    opacity: 1.0,
     depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.copy(position);
-  mesh.scale.setScalar(0.5);
+  mesh.scale.setScalar(0.3);
   scene.add(mesh);
   activeChargeExplosions.push({
     mesh,
+    texture,
     age: 0,
-    maxAge: 0.5,
+    maxAge: 0.6,
   });
 }
 
@@ -8515,6 +8574,7 @@ function updateChargeExplosions(dt) {
       scene.remove(exp.mesh);
       exp.mesh.geometry.dispose();
       exp.mesh.material.dispose();
+      if (exp.texture) exp.texture.dispose();
       activeChargeExplosions.splice(i, 1);
     }
   }
@@ -8626,7 +8686,7 @@ const _chargeBeamHotColor = new THREE.Color(0xffffff);
 const _chargeVisualColor = new THREE.Color();
 
 // [CORE] Fire charge beam weapon
-function fireChargeBeam(controller, index, chargeTimeSec, stats) {
+function fireChargeBeam(controller, index, chargeTimeSec, stats, options = {}) {
   if (chargeTimeSec < CHARGE_SHOT_MIN_FIRE) return; // minimum charge to fire
 
   const chargeRateMultiplier = stats.chargeRateMultiplier || 1;
@@ -8805,8 +8865,8 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
     });
   }
 
-  // Triple shot: schedule a second beam 300ms later
-  if ((game.upgrades[hand].triple_shot || 0) > 0) {
+  // Triple shot: schedule a second beam 300ms later (only on initial fire, not on delayed shots)
+  if ((game.upgrades[hand].triple_shot || 0) > 0 && !options._isDelayedShot) {
     const savedChargeTime = chargeTimeSec;
     const savedStats = { ...stats };
     const savedIndex = index;
@@ -8818,7 +8878,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
       if (game.mainWeapon[currentHand] !== stats.mainWeaponId) return;
       const ctrl = savedIndex < 2 ? controllers[savedIndex] : savedController;
       if (ctrl) {
-        fireChargeBeam(ctrl, savedIndex, savedChargeTime, savedStats);
+        fireChargeBeam(ctrl, savedIndex, savedChargeTime, savedStats, { _isDelayedShot: true });
       }
     }, 300);
   }

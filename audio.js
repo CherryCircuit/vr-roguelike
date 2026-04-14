@@ -1948,23 +1948,29 @@ export function fadeOutMusic(durationMs = 1200) {
   const token = ++musicFadeToken;
   const startVolume = currentMusic.volume;
   const startTime = performance.now();
+  const musicRef = currentMusic; // Capture reference so we fade the RIGHT audio element
 
+  // Use setTimeout instead of rAF — rAF may not fire reliably in WebXR immersive mode.
+  // 50ms steps give smooth fade over 1200ms (~24 steps).
+  const stepMs = 50;
   const step = () => {
-    if (token !== musicFadeToken) return;
-    if (!currentMusic) return;
+    if (token !== musicFadeToken) return; // Cancelled by new play/stop
 
     const elapsed = performance.now() - startTime;
     const t = Math.min(1, elapsed / durationMs);
-    currentMusic.volume = startVolume * (1 - t);
+    musicRef.volume = startVolume * (1 - t);
 
     if (t < 1) {
-      requestAnimationFrame(step);
+      setTimeout(step, stepMs);
     } else {
-      stopCurrentMusic();
+      // Only stop if this is still the current music (not replaced by new playlist)
+      if (currentMusic === musicRef) {
+        stopCurrentMusic();
+      }
     }
   };
 
-  requestAnimationFrame(step);
+  setTimeout(step, stepMs);
 }
 
 // 3-2-1 countdown beep — plays on the "3" of every game-start and unpause countdown.

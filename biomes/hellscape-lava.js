@@ -72,67 +72,28 @@ export function buildHellscapeLavaScene(group, deps) {
   }
   geometry.computeVertexNormals();
 
-  // PERF: Replaced MeshStandardMaterial + onBeforeCompile with ShaderMaterial.
-  // The PBR pipeline (metalness, roughness, env maps, IBL) was wasted on a
-  // flat-shaded volcanic terrain. Simple diffuse + emissive gives the same
-  // visual result at ~40% less GPU cost on Quest.
-  const terrainUniforms = {
-    uTime: { value: 0 },
-    uLightDir: { value: new THREE.Vector3(0.2, 0.8, -0.3).normalize() },
-  };
-  const material = new THREE.ShaderMaterial({
-    uniforms: terrainUniforms,
-    vertexShader: `
-      varying vec3 vPosition;
-      varying float vElevation;
-      varying vec3 vNormal;
-      varying vec3 vWorldPos;
-      void main() {
-        vPosition = position;
-        vElevation = position.y;
-        vNormal = normalize(normalMatrix * normal);
-        vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        vWorldPos = worldPos.xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform float uTime;
-      uniform vec3 uLightDir;
-      varying vec3 vPosition;
-      varying float vElevation;
-      varying vec3 vNormal;
-      varying vec3 vWorldPos;
-      void main() {
-        float lavaThreshold = 0.5;
-        if (vElevation < lavaThreshold) {
-          // Lava: animated orange-red flow
-          vec3 lavaColorBase = vec3(1.0, 0.45, 0.05);
-          vec3 lavaColorBright = vec3(1.0, 0.7, 0.3);
-          float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5;
-          float glow = 0.7 + 0.3 * pulse;
-          vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow);
-          gl_FragColor = vec4(finalLavaColor * 1.5, 0.9);
-        } else {
-          // Rock: simple diffuse lighting with emissive glow near lava
-          float diffuse = max(dot(vNormal, uLightDir), 0.0) * 0.5 + 0.5;
-          vec3 rockColor = vec3(0.067, 0.02, 0.02) * diffuse;
-          // Emissive glow near lava edges
-          float distToLava = vElevation - lavaThreshold;
-          float glowReflection = smoothstep(5.0, 0.0, distToLava);
-          float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5;
-          rockColor += vec3(0.6, 0.1, 0.0) * glowReflection * pulse * 1.5;
-          gl_FragColor = vec4(rockColor, 1.0);
-        }
-      }
-    `,
-    flatShading: false,  // Normals are already computed, flat shading handled by geometry
-    side: THREE.FrontSide,
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x110505,
+    roughness: 0.9,
+    metalness: 0.1,
+    flatShading: true,
+    onBeforeCompile: (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>
+varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
+      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+vPosition = position; vElevation = position.y;`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <emissive_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { } else { float distToLava = vElevation - lavaThreshold; float glowReflection = smoothstep(5.0, 0.0, distToLava); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; totalEmissiveRadiance = vec3(0.6, 0.1, 0.0) * glowReflection * pulse * 1.5; } #include <emissive_fragment>`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.45, 0.05); vec3 lavaColorBright = vec3(1.0, 0.7, 0.3); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.7 + 0.3 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor * 1.5, 0.9); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
+      material.userData.shader = shader;
+    }
   });
 
   const terrain = new THREE.Mesh(geometry, material);
   terrain.name = 'hellscape-terrain';
-  terrain.receiveShadow = false;  // ShaderMaterial doesn't support built-in shadow receiving
+  terrain.receiveShadow = true;
   terrain.frustumCulled = false; // Prevent disappearing when looking down
   terrain.position.y = floorY;
   terrain.position.x = -10.0;  // Shift terrain left so player spawns on riverbank (not riverbed)
@@ -144,7 +105,7 @@ export function buildHellscapeLavaScene(group, deps) {
   // ========================================
   const riverWidth = 25;  // Wide enough to cover bank-to-bank (overflow hidden by terrain)
   const riverLength = 350;
-  const riverGeo = new THREE.PlaneGeometry(riverWidth, riverLength, 8, 24);
+  const riverGeo = new THREE.PlaneGeometry(riverWidth, riverLength, 16, 32);
   riverGeo.rotateX(-Math.PI / 2);
 
   // Curve the plane to follow the river path
@@ -446,9 +407,8 @@ export function buildHellscapeLavaScene(group, deps) {
     const time = now * 0.001;
 
     // Terrain shader
-    // Update terrain shader time uniform
-    if (terrainUniforms.uTime) {
-      terrainUniforms.uTime.value = time;
+    if (material.userData.shader) {
+      material.userData.shader.uniforms.uTime.value = time;
     }
 
     // Lava river shader animation
