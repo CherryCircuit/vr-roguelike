@@ -168,7 +168,7 @@ let _cardIconGeo = null;
 let _skipIconGeo = null;
 
 function getCardGeo() {
-  if (!_cardGeo) _cardGeo = new THREE.PlaneGeometry(1.2, 1.5);
+  if (!_cardGeo) _cardGeo = new THREE.BoxGeometry(1.2, 1.5, 0.08);
   return _cardGeo;
 }
 function getCardBorderGeo() {
@@ -176,7 +176,7 @@ function getCardBorderGeo() {
   return _cardBorderGeo;
 }
 function getSkipCardGeo() {
-  if (!_skipCardGeo) _skipCardGeo = new THREE.PlaneGeometry(1.0, 1.3);
+  if (!_skipCardGeo) _skipCardGeo = new THREE.BoxGeometry(1.0, 1.3, 0.08);
   return _skipCardGeo;
 }
 function getSkipCardBorderGeo() {
@@ -1659,7 +1659,7 @@ function createUpgradeCard(upgrade, position, hand) {
   const glowG = (borderColor >> 8) & 255;
   const glowB = borderColor & 255;
   const glowColorStr = `${glowR},${glowG},${glowB}`;
-  const hoverGlowGeo = cardGeo.clone();
+  const hoverGlowGeo = new THREE.PlaneGeometry(1.2 * 1.3, 1.5 * 1.3);
   const hoverGlowMat = new THREE.MeshBasicMaterial({
     map: getHoverGlowTexture(glowColorStr),
     transparent: true,
@@ -1669,8 +1669,8 @@ function createUpgradeCard(upgrade, position, hand) {
   });
   const hoverGlow = new THREE.Mesh(hoverGlowGeo, hoverGlowMat);
   hoverGlow.renderOrder = 998;
-  hoverGlow.scale.set(1.3, 1.3, 1.3);
-  hoverGlow.position.set(0, 0, -0.01);
+  hoverGlow.scale.set(1.0, 1.0, 1.0);
+  hoverGlow.position.set(0, 0, 0.05); // Slightly in front of box face
   card.add(hoverGlow);
   card.userData._hoverGlow = hoverGlow;
 
@@ -1772,7 +1772,7 @@ function createSkipCard(position) {
 
   // Pre-create hover glow mesh (avoids first-hover geometry clone hitch on Quest)
   const skipGlowColor = '0,255,136';
-  const skipHoverGlowGeo = cardGeo.clone();
+  const skipHoverGlowGeo = new THREE.PlaneGeometry(1.0 * 1.3, 1.3 * 1.3);
   const skipHoverGlowMat = new THREE.MeshBasicMaterial({
     map: getHoverGlowTexture(skipGlowColor),
     transparent: true,
@@ -1782,8 +1782,8 @@ function createSkipCard(position) {
   });
   const skipHoverGlow = new THREE.Mesh(skipHoverGlowGeo, skipHoverGlowMat);
   skipHoverGlow.renderOrder = 998;
-  skipHoverGlow.scale.set(1.3, 1.3, 1.3);
-  skipHoverGlow.position.set(0, 0, -0.01);
+  skipHoverGlow.scale.set(1.0, 1.0, 1.0);
+  skipHoverGlow.position.set(0, 0, 0.05);
   card.add(skipHoverGlow);
   card.userData._hoverGlow = skipHoverGlow;
 
@@ -3076,6 +3076,32 @@ export function getNameEntryName() {
   return nameEntryName;
 }
 
+/** Handle desktop keyboard input for name entry */
+export function desktopTypeChar(key) {
+  if (!nameEntryGroup.visible) return null;
+  if (key === 'backspace') {
+    if (nameEntryCursor > 0) {
+      nameEntryName = nameEntryName.slice(0, -1);
+      nameEntryCursor = nameEntryName.length;
+      refreshNameSlots();
+      playMenuClick();
+    }
+    return null;
+  }
+  if (key === 'submit') {
+    if (nameEntryName.trim().length > 0) return { action: 'submit', name: nameEntryName };
+    return null;
+  }
+  // Regular character
+  if (nameEntryName.length < 6 && key.length === 1) {
+    nameEntryName += key.toUpperCase();
+    nameEntryCursor = nameEntryName.length;
+    refreshNameSlots();
+    playMenuClick();
+  }
+  return null;
+}
+
 export function getNameEntryHit(raycaster) {
   if (!nameEntryGroup.visible) return null;
   if (nameEntryActionMeshes.length > 0) {
@@ -4083,7 +4109,9 @@ export function updateHUDHover(raycasters) {
           glowColor = '0,255,255'; // Cyan
         }
 
-        const glowGeo = obj.geometry.clone();
+        const glowGeo = obj.geometry.type === 'BoxGeometry'
+          ? new THREE.PlaneGeometry(obj.geometry.parameters.width * 1.3, obj.geometry.parameters.height * 1.3)
+          : obj.geometry.clone();
         const glowMat = new THREE.MeshBasicMaterial({
           map: getHoverGlowTexture(glowColor),
           transparent: true,
@@ -4093,8 +4121,8 @@ export function updateHUDHover(raycasters) {
         });
         const glow = new THREE.Mesh(glowGeo, glowMat);
         glow.renderOrder = 998;
-        glow.scale.set(1.3, 1.3, 1.3);  // Larger glow
-        glow.position.set(0, 0, -0.01);
+        glow.scale.set(1.0, 1.0, 1.0);  // Already sized via PlaneGeometry
+        glow.position.set(0, 0, 0.05);  // Slightly in front of box
         obj.add(glow);
         obj.userData._hoverGlow = glow;
       }

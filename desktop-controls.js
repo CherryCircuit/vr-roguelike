@@ -82,6 +82,8 @@ const aimDirection = new THREE.Vector3();
 // ESC/pause callback
 let onPauseCallback = null;
 let onNukeCallback = null;
+let menuStateCallback = null;
+let onNameKeyCallback = null;
 
 export function setOnPauseCallback(callback) {
   onPauseCallback = callback;
@@ -89,6 +91,14 @@ export function setOnPauseCallback(callback) {
 
 export function setOnNukeCallback(callback) {
   onNukeCallback = callback;
+}
+
+export function setMenuStateCallback(callback) {
+  menuStateCallback = callback;
+}
+
+export function setNameKeyCallback(callback) {
+  onNameKeyCallback = callback;
 }
 
 // ── Public API ─────────────────────────────────────────────
@@ -475,9 +485,25 @@ function onKeyDown(e) {
     if (onPauseCallback) {
       onPauseCallback();
     }
-    console.log('[desktop-controls] ESC pressed');
     return;
   }
+
+  // Forward alphanumeric keys to name entry callback if registered
+  // (desktop keyboard typing for score entry)
+  if (onNameKeyCallback && key.length === 1 && key.match(/[a-z0-9]/)) {
+    onNameKeyCallback(key);
+    return;
+  }
+  if (onNameKeyCallback && (key === 'backspace' || key === 'delete')) {
+    onNameKeyCallback('backspace');
+    return;
+  }
+  if (onNameKeyCallback && key === 'enter') {
+    onNameKeyCallback('submit');
+    return;
+  }
+  // Skip movement/fire keys when in a menu state (name entry, scoreboard, etc.)
+  if (menuStateCallback && menuStateCallback()) return;
 
   if (!enabled) return;
 
