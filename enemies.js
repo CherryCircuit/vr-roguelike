@@ -7281,6 +7281,16 @@ class PrismBoss extends Boss {
     this.isMerged = false;
     this.mergeCooldownTimer = 0;
 
+    // Phase 2 burst fire state machine
+    this.burstPhase = 0;       // Which shard is currently firing (0, 1, 2)
+    this.burstShotCount = 0;   // Shots fired in current burst (0-2)
+    this.burstCooldownTimer = 0; // 1s pause between full burst cycles
+    this.burstShotTimer = 0;    // Timer between shots within a burst (0.2s)
+    this.burstFiring = false;   // True when actively in a burst cycle
+
+    // Phase 2 white shard (vulnerable shard)
+    this.vulnerableShardIndex = 0;
+
     // Split cinematic state
     this.splitCinematicPhase = 'none'; // none, centering, spinup, splitting, done
     this.splitCinematicTimer = 0;
@@ -7438,11 +7448,11 @@ class PrismBoss extends Boss {
 
     this.vulnerableFacetIndex = newIndex;
 
-    // Make the vulnerable facet bright white and more opaque
+    // Make the vulnerable facet bright white and more opaque (capped at 0.75)
     const newMat = this.facetMaterials[newIndex];
     if (newMat) {
       newMat.color.setHex(0xffffff);
-      newMat.opacity = 0.95;
+      newMat.opacity = 0.75;
     }
 
     // Dim non-vulnerable facets to make the white one stand out
@@ -7511,10 +7521,10 @@ class PrismBoss extends Boss {
       // They're children of this.mesh, so their local rotation tracks with prismMesh
     });
 
-    // Vulnerable facet glow pulsing - aggressive
+    // Vulnerable facet glow pulsing - aggressive (capped at 0.75)
     const glowMat = this.facetMaterials[this.vulnerableFacetIndex];
     if (glowMat) {
-      const pulse = 0.6 + 0.4 * Math.sin(now * 0.008);
+      const pulse = Math.min(0.75, 0.55 + 0.2 * Math.sin(now * 0.008));
       glowMat.opacity = pulse;
       // Emissive-like color shift between white and facet color
       const flash = Math.abs(Math.sin(now * 0.006));
@@ -7611,6 +7621,14 @@ class PrismBoss extends Boss {
     this.isMerged = false;
     this.mergeCooldownTimer = 5.0; // Delay before first merge
 
+    // Burst fire state machine init
+    this.burstPhase = 0;
+    this.burstShotCount = 0;
+    this.burstCooldownTimer = 1.0; // 1s before first burst
+    this.burstShotTimer = 0;
+    this.burstFiring = false;
+    this.vulnerableShardIndex = 0;
+
     // Start split cinematic instead of immediate split
     this.splitCinematicPhase = 'centering';
     this.splitCinematicTimer = 0;
@@ -7662,8 +7680,8 @@ class PrismBoss extends Boss {
         const scaleZ = 1.0 + blurAmount * Math.abs(Math.cos(this.splitCinematicTimer * 20));
         this.mesh.scale.set(scaleX, scaleY, scaleZ);
 
-        // All facets glow brighter as spin accelerates
-        const brightness = 0.6 + progress * 0.4;
+        // All facets glow brighter as spin accelerates (capped at 0.75)
+        const brightness = Math.min(0.75, 0.6 + progress * 0.15);
         this.facetMaterials.forEach((mat, i) => {
           if (i < 3) {
             mat.color.setHex(0xffffff);
@@ -7672,20 +7690,30 @@ class PrismBoss extends Boss {
         });
 
         // Fire wild projectiles during the spin, staggered across 3 seconds
-        // Fire ~10 projectiles spread across the spin duration
+        // Fire ~10 projectiles spread across the spin duration; 4 aimed at player
         const totalProjectiles = 10;
+        const aimedProjectiles = [1, 3, 6, 8]; // indices that aim directly at player
         const fireInterval = 3.0 / totalProjectiles;
         const expectedShots = Math.floor(this.splitCinematicTimer / fireInterval);
         if (!this._spinShotsFired) this._spinShotsFired = 0;
         while (this._spinShotsFired < expectedShots && this._spinShotsFired < totalProjectiles) {
           const bossPos = this.mesh.position.clone();
-          // Fire in random directions as boss spins
-          const randAngle = Math.random() * Math.PI * 2;
-          const spreadH = 2.0 + Math.random() * 3.0;
-          const target = playerPos.clone();
-          target.x += Math.cos(randAngle) * spreadH;
-          target.z += Math.sin(randAngle) * spreadH;
-          target.y += (Math.random() - 0.5) * 2.0;
+          let target;
+          if (aimedProjectiles.includes(this._spinShotsFired)) {
+            // Aim directly at player with slight jitter so they can't stand still
+            target = playerPos.clone();
+            target.x += (Math.random() - 0.5) * 0.6;
+            target.y += (Math.random() - 0.5) * 0.4;
+            target.z += (Math.random() - 0.5) * 0.6;
+          } else {
+            // Random spread
+            const randAngle = Math.random() * Math.PI * 2;
+            const spreadH = 2.0 + Math.random() * 3.0;
+            target = playerPos.clone();
+            target.x += Math.cos(randAngle) * spreadH;
+            target.z += Math.sin(randAngle) * spreadH;
+            target.y += (Math.random() - 0.5) * 2.0;
+          }
           const arcHeight = 2.0 + Math.random() * 4.0;
           if (typeof spawnBossProjectile === 'function') {
             spawnBossProjectile(bossPos, target, true, arcHeight);
@@ -7753,11 +7781,20 @@ class PrismBoss extends Boss {
       // Build shard as a tapered crystal shape using flat-shaded geometry
       const shardGeo = new THREE.ConeGeometry(0.5, 1.4, 4, 1);
       const shardMat = new THREE.MeshBasicMaterial({
-        color: shardColors[i], transparent: true, opacity: 0.9
+        color: shardColors[i], transparent: true, opacity: 0.75
       });
       const shardMesh = new THREE.Mesh(shardGeo, shardMat);
       shardMesh.userData.isBossBody = true;
       shard.add(shardMesh);
+
+      // Visible edges on each shard (like prismEdges on the full prism)
+      const shardEdgeGeo = new THREE.EdgesGeometry(shardGeo);
+      const shardEdgeMat = new THREE.LineBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, fog: false
+      });
+      const shardEdgeLines = new THREE.LineSegments(shardEdgeGeo, shardEdgeMat);
+      shardEdgeLines.renderOrder = 11;
+      shard.add(shardEdgeLines);
 
       // Core indicator (white dot)
       const coreGeo = new THREE.SphereGeometry(0.15, 8, 8);
@@ -7858,12 +7895,8 @@ class PrismBoss extends Boss {
       shard.rotation.y += 1.5 * dt;
     });
 
-    // Shooting
-    this.shootTimer -= dt;
-    if (this.shootTimer <= 0) {
-      this.shootTimer = config.shootRate;
-      this.fireShardProjectiles(playerPos);
-    }
+    // Burst fire state machine (sub-items 3 & 4)
+    this.updateBurstFire(dt, playerPos);
 
     // Movement
     this.moveTimer += dt;
@@ -7970,11 +8003,11 @@ class PrismBoss extends Boss {
           this.prismMesh.visible = true;
         }
 
-        // Flash all facets white
+        // Flash all facets white (capped at 0.75)
         this.facetMaterials.forEach((mat, i) => {
           if (i < 3) {
             mat.color.setHex(0xffffff);
-            mat.opacity = 0.9 + 0.1 * Math.sin(this.rejoinTimer * 30);
+            mat.opacity = Math.min(0.75, 0.7 + 0.05 * Math.sin(this.rejoinTimer * 30));
           }
         });
 
@@ -7999,37 +8032,111 @@ class PrismBoss extends Boss {
       }
 
       case 'bursting': {
-        // Re-show shards flying back out (1 second)
-        if (this.prismMesh) this.prismMesh.visible = false;
-        if (this.prismEdges) this.prismEdges.visible = false;
-        this.shards.forEach(s => { s.visible = true; });
+        if (this.transitionToPhase === 3) {
+          // Phase 2→3 transition: fire mad-spin burst (like split spinup), then enter phase 3
+          // Keep prism visible and spinning for the burst
+          if (this.prismMesh) {
+            this.prismMesh.visible = true;
+            const spinRate = (1.0 + 3.0 * Math.min(this.rejoinTimer / 2.0, 1.0)) * Math.PI * 2;
+            this.prismMesh.rotation.y += spinRate * dt;
+          }
+          if (this.prismEdges) {
+            this.prismEdges.visible = true;
+            this.prismEdges.rotation.y = this.prismMesh ? this.prismMesh.rotation.y : 0;
+          }
 
-        const progress = Math.min(this.rejoinTimer / 1.0, 1.0);
-        const easeOut = 1 - Math.pow(1 - progress, 3);
+          // Fire 10 projectiles during the spin, 4 aimed at player
+          const totalProjectiles = 10;
+          const fireInterval = 2.0 / totalProjectiles;
+          const expectedShots = Math.floor(this.rejoinTimer / fireInterval);
+          if (!this._rejoinSpinShotsFired) this._rejoinSpinShotsFired = 0;
+          const aimedIndices = [1, 3, 6, 8];
+          while (this._rejoinSpinShotsFired < expectedShots && this._rejoinSpinShotsFired < totalProjectiles) {
+            const bossPos = this.mesh.position.clone();
+            let target;
+            if (aimedIndices.includes(this._rejoinSpinShotsFired)) {
+              target = playerPos.clone();
+              target.x += (Math.random() - 0.5) * 0.6;
+              target.y += (Math.random() - 0.5) * 0.4;
+              target.z += (Math.random() - 0.5) * 0.6;
+            } else {
+              const randAngle = Math.random() * Math.PI * 2;
+              const spreadH = 2.0 + Math.random() * 3.0;
+              target = playerPos.clone();
+              target.x += Math.cos(randAngle) * spreadH;
+              target.z += Math.sin(randAngle) * spreadH;
+              target.y += (Math.random() - 0.5) * 2.0;
+            }
+            const arcHeight = 2.0 + Math.random() * 4.0;
+            if (typeof spawnBossProjectile === 'function') {
+              spawnBossProjectile(bossPos, target, true, arcHeight);
+            }
+            this._rejoinSpinShotsFired++;
+          }
 
-        this.shards.forEach((shard, i) => {
-          const targetR = shard.userData.orbitRadius;
-          const currentR = easeOut * targetR;
-          const a = shard.userData.angle;
-          shard.position.set(
-            Math.cos(a) * currentR,
-            shard.userData.orbitHeight * easeOut,
-            Math.sin(a) * currentR
-          );
-          shard.scale.setScalar(0.5 + easeOut * 0.5);
-        });
+          const pulse = 1.0 + 0.2 * Math.sin(this.rejoinTimer * 15);
+          this.mesh.scale.setScalar(pulse);
 
-        if (this.rejoinTimer >= 1.0) {
-          this.rejoinPhase = 'done';
-          this.transitioning = false;
-          this.mesh.scale.setScalar(1.0);
+          if (this.rejoinTimer >= 2.0) {
+            this.rejoinPhase = 'done';
+            this.transitioning = false;
+            this.mesh.scale.setScalar(1.0);
+            this._rejoinSpinShotsFired = 0;
 
-          // Reset facet colors
-          this.facetMaterials.forEach((mat, i) => {
-            if (i < 3) mat.color.setHex(this.facetColors[i]);
+            // Reset facet colors
+            this.facetMaterials.forEach((mat, i) => {
+              if (i < 3) mat.color.setHex(this.facetColors[i]);
+            });
+
+            // Clean up shards
+            this.shards.forEach(shard => {
+              if (shard.parent) shard.parent.remove(shard);
+              shard.traverse(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                  if (Array.isArray(child.material)) child.material.forEach(m => m.dispose && m.dispose());
+                  else if (child.material.dispose) child.material.dispose();
+                }
+              });
+            });
+            this.shards = [];
+
+            _log('[PrismBoss] Phase 2→3 rejoin cinematic complete, entering phase 3');
+            this.initPhase3();
+          }
+        } else {
+          // In-combat rejoin: re-show shards flying back out (1 second)
+          if (this.prismMesh) this.prismMesh.visible = false;
+          if (this.prismEdges) this.prismEdges.visible = false;
+          this.shards.forEach(s => { s.visible = true; });
+
+          const progress = Math.min(this.rejoinTimer / 1.0, 1.0);
+          const easeOut = 1 - Math.pow(1 - progress, 3);
+
+          this.shards.forEach((shard, i) => {
+            const targetR = shard.userData.orbitRadius;
+            const currentR = easeOut * targetR;
+            const a = shard.userData.angle;
+            shard.position.set(
+              Math.cos(a) * currentR,
+              shard.userData.orbitHeight * easeOut,
+              Math.sin(a) * currentR
+            );
+            shard.scale.setScalar(0.5 + easeOut * 0.5);
           });
 
-          _log('[PrismBoss] Rejoin complete, shards active again');
+          if (this.rejoinTimer >= 1.0) {
+            this.rejoinPhase = 'done';
+            this.transitioning = false;
+            this.mesh.scale.setScalar(1.0);
+
+            // Reset facet colors
+            this.facetMaterials.forEach((mat, i) => {
+              if (i < 3) mat.color.setHex(this.facetColors[i]);
+            });
+
+            _log('[PrismBoss] Rejoin complete, shards active again');
+          }
         }
         break;
       }
@@ -8068,6 +8175,89 @@ class PrismBoss extends Boss {
     this.isMerged = false;
     this.mergeTimer = 0;
     this.mergeCooldownTimer = 3.0;
+  }
+
+  updateBurstFire(dt, playerPos) {
+    if (!this.phase2Active || this.shards.length < 3) return;
+
+    // Update white shard visual
+    this.updateVulnerableShard();
+
+    if (this.burstFiring) {
+      // Active burst: fire shots within current shard's burst
+      this.burstShotTimer -= dt;
+      if (this.burstShotTimer <= 0) {
+        // Fire a shot from the current burst shard
+        const shard = this.shards[this.burstPhase];
+        if (shard && shard.visible) {
+          const shardPos = shard.getWorldPosition(new THREE.Vector3());
+          if (this.telegraphing) {
+            this.showTelegraph('projectile', 0.2, 0xff44ff, shardPos);
+          }
+          this.later(100, () => {
+            if (!this.phase2Active) return;
+            if (typeof spawnBossProjectile !== 'function') return;
+            spawnBossProjectile(shardPos, playerPos.clone());
+          });
+        }
+
+        this.burstShotCount++;
+        if (this.burstShotCount >= 3) {
+          // Move to next shard in the burst cycle
+          this.burstPhase++;
+          this.burstShotCount = 0;
+          if (this.burstPhase >= 3) {
+            // Full burst cycle complete: cooldown
+            this.burstFiring = false;
+            this.burstCooldownTimer = 1.0;
+            this.burstPhase = 0;
+            // Rotate white shard after each full burst cycle
+            this.rotateVulnerableShard();
+          }
+        }
+        this.burstShotTimer = 0.2; // 0.2s between shots
+      }
+    } else {
+      // Cooldown between burst cycles
+      this.burstCooldownTimer -= dt;
+      if (this.burstCooldownTimer <= 0) {
+        this.burstFiring = true;
+        this.burstShotTimer = 0; // Fire immediately
+        this.burstShotCount = 0;
+        this.burstPhase = 0;
+      }
+    }
+  }
+
+  updateVulnerableShard() {
+    // Set the vulnerable shard's material to white, others to their colors
+    this.shards.forEach((shard, i) => {
+      shard.traverse(child => {
+        if (child.isMesh && child.userData.isBossBody) {
+          if (i === this.vulnerableShardIndex) {
+            child.material.color.setHex(0xffffff);
+            child.material.opacity = 0.75;
+          } else {
+            const shardColors = [0xff2222, 0x2222ff, 0x22ff22];
+            child.material.color.setHex(shardColors[i]);
+            child.material.opacity = 0.75;
+          }
+        }
+        // Also update core visibility
+        if (child.userData.isPrismCore) {
+          child.visible = (i === this.vulnerableShardIndex);
+          child.userData.isWeakPoint = (i === this.vulnerableShardIndex);
+        }
+      });
+    });
+  }
+
+  rotateVulnerableShard() {
+    let newIdx;
+    do {
+      newIdx = Math.floor(Math.random() * 3);
+    } while (newIdx === this.vulnerableShardIndex);
+    this.vulnerableShardIndex = newIdx;
   }
 
   fireShardProjectiles(playerPos) {
@@ -8163,11 +8353,20 @@ class PrismBoss extends Boss {
       const shard = new THREE.Group();
       const shardGeo = new THREE.ConeGeometry(0.3, 0.8, 4, 1);
       const shardMat = new THREE.MeshBasicMaterial({
-        color: shardColors[i], transparent: true, opacity: 0.9
+        color: shardColors[i], transparent: true, opacity: 0.75
       });
       const shardMesh = new THREE.Mesh(shardGeo, shardMat);
       shardMesh.userData.isBossBody = true;
       shard.add(shardMesh);
+
+      // Visible edges on phase 3 shards
+      const shardEdgeGeo = new THREE.EdgesGeometry(shardGeo);
+      const shardEdgeMat = new THREE.LineBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, fog: false
+      });
+      const shardEdgeLines = new THREE.LineSegments(shardEdgeGeo, shardEdgeMat);
+      shardEdgeLines.renderOrder = 11;
+      shard.add(shardEdgeLines);
 
       shard.userData.shardIndex = i;
       shard.userData.orbitRadius = orbitRadii[i];
@@ -8192,10 +8391,10 @@ class PrismBoss extends Boss {
       this.prismEdges.rotation.y = this.prismMesh ? this.prismMesh.rotation.y : 0;
     }
 
-    // Vulnerable facet glow pulsing
+    // Vulnerable facet glow pulsing (capped at 0.75)
     const glowMat = this.facetMaterials[this.vulnerableFacetIndex];
     if (glowMat) {
-      const pulse = 0.7 + 0.25 * Math.sin(now * 0.008);
+      const pulse = Math.min(0.75, 0.6 + 0.15 * Math.sin(now * 0.008));
       glowMat.opacity = pulse;
       glowMat.color.setRGB(1.0, 1.0, 1.0);
     }
@@ -8376,12 +8575,23 @@ class PrismBoss extends Boss {
     // Hide vulnerable indicators during transition
     if (this.vulnerableRing) this.vulnerableRing.visible = false;
     if (this.vulnerableArrow) this.vulnerableArrow.visible = false;
-    if (this.prismEdges) this.prismEdges.visible = false;
 
     playSkullPhaseSound();
     playSkullHandGrowlSound();
 
-    // Clean up shards if leaving phase 2
+    // Phase 2→3: start rejoin cinematic instead of instant shard removal
+    if (fromPhase === 2 && toPhase === 3) {
+      this.rejoinPhase = 'converging';
+      this.rejoinTimer = 0;
+      this.phase2Active = false; // Stop shooting during cinematic
+      if (this.prismEdges) this.prismEdges.visible = false;
+      _log('[PrismBoss] Phase 2→3: Starting rejoin cinematic');
+      return;
+    }
+
+    if (this.prismEdges) this.prismEdges.visible = false;
+
+    // Clean up shards if leaving phase 2 (non-cinematic path)
     if (fromPhase === 2) {
       this.shards.forEach(shard => {
         if (shard.parent) shard.parent.remove(shard);
@@ -8423,10 +8633,10 @@ class PrismBoss extends Boss {
       this.prismEdges.rotation.y = this.prismMesh ? this.prismMesh.rotation.y : 0;
     }
 
-    // Body glow pulsing
+    // Body glow pulsing (capped at 0.75)
     this.facetMaterials.forEach((mat, i) => {
       if (i < 3 && mat) {
-        const glow = 0.3 + 0.7 * Math.abs(Math.sin(this.transitionTimer * 6.0));
+        const glow = Math.min(0.75, 0.3 + 0.45 * Math.abs(Math.sin(this.transitionTimer * 6.0)));
         mat.opacity = glow;
       }
     });
@@ -8489,13 +8699,13 @@ class PrismBoss extends Boss {
   updateBehavior(dt, now, playerPos) {
     if (this.transitioning) {
       // Phase 2 split cinematic has its own update path
-      if (this.skullPhase === 2 && this.splitCinematicPhase !== 'none' && this.splitCinematicPhase !== 'done') {
+      if (this.splitCinematicPhase !== 'none' && this.splitCinematicPhase !== 'done') {
         this.updateSplitCinematic(dt, now, playerPos);
         this.mesh.lookAt(_look.copy(playerPos).setY(this.fixedY));
         return;
       }
-      // Phase 2 rejoin cinematic has its own update path
-      if (this.skullPhase === 2 && this.rejoinPhase !== 'none' && this.rejoinPhase !== 'done') {
+      // Rejoin cinematic (phase 2 in-combat rejoin, or phase 2→3 transition)
+      if (this.rejoinPhase !== 'none' && this.rejoinPhase !== 'done') {
         this.updateRejoinCinematic(dt, now, playerPos);
         this.mesh.lookAt(_look.copy(playerPos).setY(this.fixedY));
         return;
@@ -8559,9 +8769,23 @@ class PrismBoss extends Boss {
       return { killed: false, facetDamaged: true };
     }
 
-    // Phase 2: damage to boss HP (merge/cinematic = immune, handled above)
+    // Phase 2: white shard does damage, others heal (sub-item 4)
     if (this.skullPhase === 2) {
       if (this.isMerged) return { killed: false, immune: true };
+
+      const hitShard = hitInfo.shardIndex;
+      if (hitShard !== undefined && hitShard !== this.vulnerableShardIndex) {
+        // Hit a non-white shard: heal boss
+        const healAmt = Math.min(amount, 10); // 5-10 HP heal per hit
+        this.hp = Math.min(this.maxHp, this.hp + healAmt);
+        playBossHealSound();
+        if (typeof window !== 'undefined' && window.flashBossHealthBar) {
+          window.flashBossHealthBar();
+        }
+        return { killed: false, healed: true, healAmount: healAmt };
+      }
+
+      // White shard hit or no shard info: normal damage
       this.hp -= amount;
       if (this.hp < 0) this.hp = 0;
 
@@ -10789,12 +11013,12 @@ const _upVector = new THREE.Vector3(0, 1, 0);
 function initBossProjPools() {
   if (bossProjCorePool || !sceneRef) return;
 
-  // Boss projectiles: bright white core with red glow
-  const coreGeo = new THREE.SphereGeometry(0.15, 10, 10);  // 1.5x larger (was 0.10)
+  // Boss projectiles: bright white-orange core with orange glow
+  const coreGeo = new THREE.SphereGeometry(0.10, 10, 10);
   const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,  // Bright white core
+    color: 0xffbb77,  // White-orange core
     transparent: true,
-    opacity: 1.0,     // Full brightness
+    opacity: 0.95,
     depthWrite: false,
     depthTest: true,
   });
@@ -10815,18 +11039,18 @@ function initBossProjPools() {
   const glowCtx = glowCanvas.getContext('2d');
   const halfGlow = glowSize / 2;
   const glowGrad = glowCtx.createRadialGradient(halfGlow, halfGlow, 0, halfGlow, halfGlow, halfGlow);
-  glowGrad.addColorStop(0, 'rgba(255,60,60,1)');      // Bright red center
-  glowGrad.addColorStop(0.3, 'rgba(255,30,30,0.7)');   // Mid red
-  glowGrad.addColorStop(0.6, 'rgba(200,0,0,0.3)');     // Fading dark red
-  glowGrad.addColorStop(1, 'rgba(150,0,0,0)');          // Transparent edge
+  glowGrad.addColorStop(0, 'rgba(255,120,20,1)');     // Bright orange center
+  glowGrad.addColorStop(0.3, 'rgba(255,80,0,0.7)');     // Mid orange
+  glowGrad.addColorStop(0.6, 'rgba(255,50,0,0.3)');      // Fading
+  glowGrad.addColorStop(1, 'rgba(255,30,0,0)');         // Transparent edge
   glowCtx.fillStyle = glowGrad;
   glowCtx.fillRect(0, 0, glowSize, glowSize);
   const glowTexture = new THREE.CanvasTexture(glowCanvas);
 
-  const glowGeo = new THREE.PlaneGeometry(1.05, 1.05);  // 1.5x larger to match core (was 0.7)
+  const glowGeo = new THREE.PlaneGeometry(0.7, 0.7);
   const glowMat = new THREE.MeshBasicMaterial({
     map: glowTexture,
-    color: 0xff3333,   // Red glow
+    color: 0xff6600,   // Orange glow
     transparent: true,
     opacity: 0.9,
     blending: THREE.AdditiveBlending,

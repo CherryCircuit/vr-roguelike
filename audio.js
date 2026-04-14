@@ -1589,57 +1589,52 @@ export function playNoOneMakesItSound() {
 }
 
 // ── Low health warning loop (gentle pulse) ────────────────────
-let lowHealthOsc = null;
-let lowHealthGain = null;
-let lowHealthLfo = null;
-let lowHealthLfoGain = null;
+let lowHealthInterval = null;
 
 export function startLowHealthWarningSound() {
-  if (lowHealthOsc) return;
+  if (lowHealthInterval) return;
 
-  const ctx = getAudioContext();
-  const t = ctx.currentTime;
+  // Heartbeat-style: two quick thuds (lub-dub) every ~1 second
+  function playHeartbeat() {
+    const ctx = getAudioContext();
+    const t = ctx.currentTime;
 
-  lowHealthOsc = ctx.createOscillator();
-  lowHealthGain = ctx.createGain();
-  lowHealthLfo = ctx.createOscillator();
-  lowHealthLfoGain = ctx.createGain();
+    // Lub (first thud - slightly higher)
+    const lubOsc = ctx.createOscillator();
+    const lubGain = ctx.createGain();
+    lubOsc.type = 'sine';
+    lubOsc.frequency.setValueAtTime(80, t);
+    lubOsc.frequency.exponentialRampToValueAtTime(35, t + 0.12);
+    lubGain.gain.setValueAtTime(0.2, t);
+    lubGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    lubOsc.connect(lubGain);
+    lubGain.connect(getSfxOutput());
+    lubOsc.start(t);
+    lubOsc.stop(t + 0.15);
 
-  lowHealthOsc.type = 'triangle';
-  lowHealthOsc.frequency.setValueAtTime(220, t);
+    // Dub (second thud - slightly lower, delayed 150ms)
+    const dubOsc = ctx.createOscillator();
+    const dubGain = ctx.createGain();
+    dubOsc.type = 'sine';
+    dubOsc.frequency.setValueAtTime(60, t + 0.15);
+    dubOsc.frequency.exponentialRampToValueAtTime(28, t + 0.15 + 0.1);
+    dubGain.gain.setValueAtTime(0.15, t + 0.15);
+    dubGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15 + 0.12);
+    dubOsc.connect(dubGain);
+    dubGain.connect(getSfxOutput());
+    dubOsc.start(t + 0.15);
+    dubOsc.stop(t + 0.15 + 0.12);
+  }
 
-  lowHealthLfo.type = 'sine';
-  lowHealthLfo.frequency.setValueAtTime(1.2, t);
-
-  lowHealthGain.gain.setValueAtTime(0.03, t);
-  lowHealthLfoGain.gain.setValueAtTime(0.02, t);
-
-  lowHealthLfo.connect(lowHealthLfoGain);
-  lowHealthLfoGain.connect(lowHealthGain.gain);
-
-  lowHealthOsc.connect(lowHealthGain);
-  lowHealthGain.connect(getSfxOutput());
-
-  lowHealthOsc.start(t);
-  lowHealthLfo.start(t);
+  playHeartbeat();
+  lowHealthInterval = setInterval(playHeartbeat, 1000);
 }
 
 export function stopLowHealthWarningSound() {
-  if (!lowHealthOsc) return;
-
-  const ctx = getAudioContext();
-  const stopTime = ctx.currentTime + 0.12;
-
-  lowHealthGain.gain.cancelScheduledValues(ctx.currentTime);
-  lowHealthGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-
-  lowHealthOsc.stop(stopTime);
-  lowHealthLfo.stop(stopTime);
-
-  lowHealthOsc = null;
-  lowHealthGain = null;
-  lowHealthLfo = null;
-  lowHealthLfoGain = null;
+  if (lowHealthInterval) {
+    clearInterval(lowHealthInterval);
+    lowHealthInterval = null;
+  }
 }
 
 // ── Lightning beam continuous sound (MP3 loop with Web Audio API) ─────────────

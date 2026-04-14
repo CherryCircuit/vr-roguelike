@@ -78,8 +78,7 @@ function stopTrackDisplayUpdate() {
 
 function makeBtn(label, width = 0.4, height = 0.25, borderColor = 0x00ffff, fontSize = 32, fontScale = 0.1) {
   const group = new THREE.Group();
-  // BoxGeometry for thick hitbox — easier to raycast from angles in VR
-  const geo = new THREE.BoxGeometry(width, height, 0.08);
+  const geo = new THREE.PlaneGeometry(width, height);
   const mesh = new THREE.Mesh(geo, settingsMaterial(0x0a0020));
   mesh.renderOrder = SETTINGS_RENDER_ORDER;
   group.add(mesh);

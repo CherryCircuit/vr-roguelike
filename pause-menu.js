@@ -797,8 +797,7 @@ function updateSectionStats(section, hand) {
 function createPauseSettingsButton() {
   const group = new THREE.Group();
 
-  // BoxGeometry for thick hitbox — easier to raycast from angles in VR
-  const btnGeo = new THREE.BoxGeometry(1.55, 0.34, 0.08);
+  const btnGeo = new THREE.PlaneGeometry(1.55, 0.34);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -845,8 +844,7 @@ function createPauseSettingsButton() {
 function createResumeButton() {
   const group = new THREE.Group();
 
-  // BoxGeometry for thick hitbox — easier to raycast from angles in VR
-  const btnGeo = new THREE.BoxGeometry(1.55, 0.34, 0.08);
+  const btnGeo = new THREE.PlaneGeometry(1.55, 0.34);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -893,7 +891,7 @@ function createResumeButton() {
 function createPerfButton() {
   const group = new THREE.Group();
 
-  const btnGeo = new THREE.BoxGeometry(1.55, 0.34, 0.08);
+  const btnGeo = new THREE.PlaneGeometry(1.55, 0.34);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
