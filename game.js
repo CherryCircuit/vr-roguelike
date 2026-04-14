@@ -163,6 +163,9 @@ export const game = {
   inDreamWorld: false,
   dreamCompleted: false,
 
+  // Kill tracking for Game Over display
+  killedBy: null, // { type: 'enemy'|'boss'|'boss_projectile'|'explosion'|'environment', name: string, enemyType: string }
+
   // Run statistics for pause menu
   runStats: {
     shotsFired: 0,
@@ -240,6 +243,9 @@ export function resetGame() {
     comboMultiplier: 1,
     lastKillTime: 0,
     comboResetTime: 3000, // 3 seconds
+
+    // Reset kill tracking
+    killedBy: null,
 
     // Reset run statistics
     runStats: {

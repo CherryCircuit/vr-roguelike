@@ -68,11 +68,11 @@ import {
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
-  updateUpgradeCards, getUpgradeCardHit, getHoveredUpgradeCardHit, showGameOver, showVictory, updateEndScreen,
-  hideGameOver, triggerHitFlash, updateHitFlash, updateSpeedLines, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
+  updateUpgradeCards, getUpgradeCardHit, getHoveredUpgradeCardHit, getHoveredAction, showGameOver, showVictory, updateEndScreen,
+  hideGameOver, triggerHitFlash, updateHitFlash, setLowHealthScreenPulse, updateSpeedLines, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar, flashBossHealthBarGreen,
   getTitleButtonHit, showNameEntry, hideNameEntry, getNameEntryHit, updateKeyboardHover, getNameEntryName,
-  desktopTypeChar,
+  desktopTypeChar, processKeyPress,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
   showDebugJumpScreen, getDebugJumpHit,
@@ -475,6 +475,18 @@ const _projScale = new THREE.Vector3(1, 1, 1);
 const _projColor = new THREE.Color();
 
 // voxelPool and activeVoxels now imported from voxel-debris.js
+
+// Debris glow plane pool (for boss projectile explosion bits)
+let _debrisGlowPool = null;       // InstancedMesh for billboarded orange glow
+let _debrisGlowActive = [];       // { voxelIndex, poolIndex } mappings
+let _debrisGlowFree = [];         // Free instance indices
+const DEBRIS_GLOW_POOL_SIZE = 20; // Enough for several simultaneous explosions
+const _debrisGlowMatrix = new THREE.Matrix4();
+const _debrisGlowQuat = new THREE.Quaternion();
+const _debrisGlowScale = new THREE.Vector3();
+const _debrisGlowBillboardMat = new THREE.Matrix4();
+const _debrisGlowUpVec = new THREE.Vector3(0, 1, 0);
+const _debrisGlowHideMat = new THREE.Matrix4().makeScale(0, 0, 0);
 
 // Weapon firing cooldowns (per controller)
 const weaponCooldowns = [0, 0];
@@ -1600,6 +1612,48 @@ function init() {
   setVFXReference(spawnVoxelExplosion);
   _log('[physics-death] Voxel explosion reference set');
 
+  // Initialize debris glow plane pool (orange glow for boss projectile debris)
+  if (!_debrisGlowPool) {
+    const glowSize = 64;
+    const glowCanvas = document.createElement('canvas');
+    glowCanvas.width = glowSize;
+    glowCanvas.height = glowSize;
+    const glowCtx = glowCanvas.getContext('2d');
+    const half = glowSize / 2;
+    const grad = glowCtx.createRadialGradient(half, half, 0, half, half, half);
+    grad.addColorStop(0, 'rgba(255,160,40,1)');
+    grad.addColorStop(0.3, 'rgba(255,100,10,0.7)');
+    grad.addColorStop(0.6, 'rgba(255,50,0,0.3)');
+    grad.addColorStop(1, 'rgba(200,20,0,0)');
+    glowCtx.fillStyle = grad;
+    glowCtx.fillRect(0, 0, glowSize, glowSize);
+    const glowTex = new THREE.CanvasTexture(glowCanvas);
+    glowTex.minFilter = THREE.LinearFilter;
+    const glowGeo = new THREE.PlaneGeometry(0.4, 0.4);
+    const glowMat = new THREE.MeshBasicMaterial({
+      map: glowTex,
+      color: 0xff6600,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.DoubleSide,
+    });
+    _debrisGlowPool = new THREE.InstancedMesh(glowGeo, glowMat, DEBRIS_GLOW_POOL_SIZE);
+    _debrisGlowPool.name = 'debris-glow-pool';
+    _debrisGlowPool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    _debrisGlowPool.count = 0;
+    _debrisGlowPool.frustumCulled = false;
+    _debrisGlowPool.renderOrder = 8;
+    _debrisGlowPool.visible = true;
+    scene.add(_debrisGlowPool);
+    _debrisGlowFree = [];
+    for (let i = 0; i < DEBRIS_GLOW_POOL_SIZE; i++) _debrisGlowFree.push(i);
+    _debrisGlowActive = [];
+    _log('[debris-glow] Glow plane pool initialized (20 instances)');
+  }
+
   // Set up stasis field reference for shared access
   setActiveStasisFields(activeStasisFields);
 
@@ -2450,6 +2504,10 @@ function getHandForController(controllerIndex) {
   return controllerIndex === 0 ? 'left' : 'right';
 }
 
+function getControllerIndex(controller) {
+  return controllers.indexOf(controller);
+}
+
 import { CONTROLLER_RENDER_ORDER } from './pause-menu.js';
 // Weapon identity colors for controller spheres
 const WEAPON_SPHERE_COLORS = {
@@ -2501,11 +2559,11 @@ function createControllerVisual(index) {
   // so the player can always see their pointer beam when aiming at buttons.
   group.renderOrder = CONTROLLER_RENDER_ORDER;
 
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }));
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color }));
   core.name = `controller-core-${hand}`;
   core.renderOrder = CONTROLLER_RENDER_ORDER;
   group.add(core);
-  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 16), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2, depthTest: false, depthWrite: false }));
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 16), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.2 }));
   glow.name = `controller-glow-${hand}`;
   glow.renderOrder = CONTROLLER_RENDER_ORDER;
   group.add(glow);
@@ -2762,7 +2820,13 @@ function handlePauseTrigger(controller) {
   _uiRaycaster.set(origin, direction, 0, 20);
 
   // Require an explicit pause-menu button hit so desktop and VR share the same resume path.
-  const pauseHit = getPauseMenuHit(_uiRaycaster);
+  let pauseHit = getPauseMenuHit(_uiRaycaster);
+  // Fallback: use hover cache when raycast misses
+  if (!pauseHit) {
+    const idx = getControllerIndex(controller);
+    const hover = getHoveredAction(idx >= 0 ? `controller-${idx}` : 'controller');
+    if (hover && (hover.action === 'resume' || hover.action === 'settings')) pauseHit = hover.action;
+  }
   if (pauseHit === 'resume') {
     playMenuClick();
     startPauseCountdown();
@@ -2780,7 +2844,13 @@ function handleSettingsTrigger(controller) {
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
   _uiRaycaster.set(origin, direction, 0, 20);
 
-  const action = getSettingsHit(_uiRaycaster);
+  let action = getSettingsHit(_uiRaycaster);
+  // Fallback: use hover cache when raycast misses
+  if (!action) {
+    const idx = getControllerIndex(controller);
+    const hover = getHoveredAction(idx >= 0 ? `controller-${idx}` : 'controller');
+    if (hover && hover.userData && hover.userData.isSettingsBtn) action = hover.userData.settingsAction;
+  }
   if (!action) return;
 
   const shouldClose = executeSettingsAction(action);
@@ -2797,7 +2867,13 @@ function handleTitleTrigger(controller) {
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
   _uiRaycaster.set(origin, direction, 0, 20);
 
-  const btnHit = getTitleButtonHit(_uiRaycaster);
+  let btnHit = getTitleButtonHit(_uiRaycaster);
+  // Fallback: use hover cache when raycast misses
+  if (!btnHit) {
+    const idx = getControllerIndex(controller);
+    const hover = getHoveredAction(idx >= 0 ? `controller-${idx}` : 'controller');
+    if (hover && (hover.action === 'scoreboard' || hover.action === 'settings' || hover.action === 'diagnostics')) btnHit = hover.action;
+  }
   if (btnHit === 'scoreboard') {
     playMenuClick();
     scoreboardFromGameOver = false;
@@ -2863,7 +2939,11 @@ function handleDesktopTitleClick() {
     return;
   }
 
-  const btnHit = getTitleButtonHit(raycaster);
+  let btnHit = getTitleButtonHit(raycaster);
+  if (!btnHit) {
+    const hover = getHoveredAction('desktop');
+    if (hover && (hover.action === 'scoreboard' || hover.action === 'settings' || hover.action === 'diagnostics')) btnHit = hover.action;
+  }
   if (btnHit === 'scoreboard') {
     playMenuClick();
     scoreboardFromGameOver = false;
@@ -2912,7 +2992,20 @@ function handleDesktopNameEntryClick() {
   const raycaster = getAimRaycaster();
   if (!raycaster) return;
 
-  const result = getNameEntryHit(raycaster);
+  let result = getNameEntryHit(raycaster);
+  if (!result) {
+    const hover = getHoveredAction('desktop');
+    if (hover) {
+      if (hover.userData.nameEntryAction) {
+        result = { action: hover.userData.nameEntryAction };
+        if (hover.userData.nameEntryAction === 'submit') {
+          result.name = getNameEntryName();
+        }
+      } else if (hover.userData.isKeyboardKey && hover.userData.keyValue) {
+        result = processKeyPress(hover.userData.keyValue);
+      }
+    }
+  }
   if (result && result.action === 'country') {
     playMenuClick();
     scoreboardFromGameOver = true;
@@ -2962,7 +3055,11 @@ function handleDesktopScoreboardClick() {
   const raycaster = getAimRaycaster();
   if (!raycaster) return;
 
-  const action = getScoreboardHit(raycaster);
+  let action = getScoreboardHit(raycaster);
+  if (!action) {
+    const hover = getHoveredAction('desktop');
+    if (hover && hover.userData.scoreboardAction) action = hover.userData.scoreboardAction;
+  }
   if (action === 'back') {
     playMenuClick();
     hideScoreboard();
@@ -2992,7 +3089,19 @@ function handleDesktopCountrySelectClick() {
   const raycaster = getAimRaycaster();
   if (!raycaster) return;
 
-  const result = getCountrySelectHit(raycaster, COUNTRIES);
+  let result = getCountrySelectHit(raycaster, COUNTRIES);
+  if (!result) {
+    const hover = getHoveredAction('desktop');
+    if (hover) {
+      if (hover.userData.countryCode) {
+        result = { action: 'select', code: hover.userData.countryCode };
+      } else if (hover.userData.continentTab) {
+        result = { action: 'select_continent', continent: hover.userData.continentTab };
+      } else if (hover.userData.countryAction === 'back') {
+        result = { action: 'back' };
+      }
+    }
+  }
   if (!result) return;
 
   if (result.action === 'back') {
@@ -3067,7 +3176,11 @@ function handleDesktopReadyScreenClick() {
 function handleDesktopPauseClick() {
   const raycaster = getAimRaycaster();
   // Match VR behavior: desktop pause only resumes when the button is actually selected.
-  const pauseHit = getPauseMenuHit(raycaster);
+  let pauseHit = getPauseMenuHit(raycaster);
+  if (!pauseHit) {
+    const hover = getHoveredAction('desktop');
+    if (hover && (hover.action === 'resume' || hover.action === 'settings')) pauseHit = hover.action;
+  }
   if (pauseHit === 'resume') {
     playMenuClick();
     startPauseCountdown();
@@ -3081,7 +3194,11 @@ function handleDesktopSettingsClick() {
   const raycaster = getAimRaycaster();
   if (!raycaster) return;
 
-  const action = getSettingsHit(raycaster);
+  let action = getSettingsHit(raycaster);
+  if (!action) {
+    const hover = getHoveredAction('desktop');
+    if (hover && hover.userData && hover.userData.isSettingsBtn) action = hover.userData.settingsAction;
+  }
   if (!action) return;
 
   const shouldClose = executeSettingsAction(action);
@@ -3128,7 +3245,22 @@ function handleNameEntryTrigger(controller) {
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
   _uiRaycaster.set(origin, direction, 0, 10);
 
-  const result = getNameEntryHit(_uiRaycaster);
+  let result = getNameEntryHit(_uiRaycaster);
+  // Fallback: use hover cache when raycast misses
+  if (!result) {
+    const idx = getControllerIndex(controller);
+    const hover = getHoveredAction(idx >= 0 ? `controller-${idx}` : 'controller');
+    if (hover) {
+      if (hover.userData.nameEntryAction) {
+        result = { action: hover.userData.nameEntryAction };
+        if (hover.userData.nameEntryAction === 'submit') {
+          result.name = getNameEntryName();
+        }
+      } else if (hover.userData.isKeyboardKey && hover.userData.keyValue) {
+        result = processKeyPress(hover.userData.keyValue);
+      }
+    }
+  }
   if (result && result.action === 'country') {
     playMenuClick();
     scoreboardFromGameOver = true;
@@ -3184,7 +3316,13 @@ function handleScoreboardTrigger(controller) {
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
   _uiRaycaster.set(origin, direction, 0, 20);
 
-  const action = getScoreboardHit(_uiRaycaster);
+  let action = getScoreboardHit(_uiRaycaster);
+  // Fallback: use hover cache when raycast misses
+  if (!action) {
+    const idx = getControllerIndex(controller);
+    const hover = getHoveredAction(idx >= 0 ? `controller-${idx}` : 'controller');
+    if (hover && hover.userData.scoreboardAction) action = hover.userData.scoreboardAction;
+  }
   if (action === 'back') {
     playMenuClick();  // #7: Activate sound for BACK
     hideScoreboard();
@@ -3221,7 +3359,21 @@ function handleCountrySelectTrigger(controller) {
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
   _uiRaycaster.set(origin, direction, 0, 10);
 
-  const result = getCountrySelectHit(_uiRaycaster, COUNTRIES);
+  let result = getCountrySelectHit(_uiRaycaster, COUNTRIES);
+  // Fallback: use hover cache when raycast misses
+  if (!result) {
+    const idx = getControllerIndex(controller);
+    const hover = getHoveredAction(idx >= 0 ? `controller-${idx}` : 'controller');
+    if (hover) {
+      if (hover.userData.countryCode) {
+        result = { action: 'select', code: hover.userData.countryCode };
+      } else if (hover.userData.continentTab) {
+        result = { action: 'select_continent', continent: hover.userData.continentTab };
+      } else if (hover.userData.countryAction === 'back') {
+        result = { action: 'back' };
+      }
+    }
+  }
   if (!result) return;
 
   if (result.action === 'back') {
@@ -7022,6 +7174,15 @@ function clearAllAltWeaponEffects() {
   }
   activeVoxels.length = 0;
 
+  // Reset debris glow pool
+  if (_debrisGlowPool) {
+    _debrisGlowPool.count = 0;
+    _debrisGlowPool.instanceMatrix.needsUpdate = true;
+    _debrisGlowActive.length = 0;
+    _debrisGlowFree = [];
+    for (let i = 0; i < DEBRIS_GLOW_POOL_SIZE; i++) _debrisGlowFree.push(i);
+  }
+
   _log('[cleanup] Cleared all alt-weapon effects and visuals');
 }
 
@@ -7383,6 +7544,23 @@ function updatePauseCountdown(now) {
   }
 }
 
+// [CORE] Set kill tracking data before endGame
+const ENEMY_DISPLAY_NAMES = {
+  basic: 'DRONE',
+  fast: 'DART',
+  tank: 'TANK',
+  swarm: 'SWARM',
+  spiral_swimmer: 'SERPENT',
+  jelly: 'JELLY',
+  mortar: 'MORTAR',
+  conductor: 'CONDUCTOR',
+  mirror_knight: 'MIRROR KNIGHT',
+};
+
+function setKilledBy(info) {
+  game.killedBy = info;
+}
+
 // [CORE] End game (victory or game over)
 function endGame(victory) {
   _log(`[game] Game ${victory ? 'won' : 'over'} — score: ${game.score}`);
@@ -7415,7 +7593,7 @@ function endGame(victory) {
   if (victory) {
     showVictory(game.score, getAdjustedCameraPosition());
   } else {
-    showGameOver(game.score, getAdjustedCameraPosition());
+    showGameOver(game.score, getAdjustedCameraPosition(), game.killedBy);
     // Play game over music (no loop - play once)
     playMusic('gameOver', false);
   }
@@ -7840,12 +8018,20 @@ function triggerHostileProjectileExplosion(position, radius, damage) {
 
 // [CORE] Spawn boss projectile destruction VFX
 function spawnBossProjectileDestructionFX(position, projColor) {
-  // Debris: bright white voxels, larger than before but smaller than enemy debris
+  // Debris: orange/warm voxels matching boss projectile orb color
   const sparkCount = 4 + Math.floor(Math.random() * 3); // 4-6
-  spawnVoxelExplosion(position.clone(), 0xffffff, sparkCount, 'basic', false, false);
-  // Scale to 30% (between old 10% and standard enemy 100%)
+  const bossDebrisColor = 0xff8833; // Warm orange matching boss projectile orb
+  spawnVoxelExplosion(position.clone(), bossDebrisColor, sparkCount, 'basic', false, false);
+  // Scale to 55% (larger than old 30%, still smaller than enemy 100%)
   for (let i = Math.max(0, activeVoxels.length - sparkCount); i < activeVoxels.length; i++) {
-    activeVoxels[i].scale.setScalar(0.3);
+    activeVoxels[i].scale.setScalar(0.55);
+    activeVoxels[i].userData.isBossDebris = true;
+    // Acquire a glow plane for this debris bit
+    if (_debrisGlowFree.length > 0) {
+      const gIdx = _debrisGlowFree.pop();
+      if (gIdx >= _debrisGlowPool.count) _debrisGlowPool.count = gIdx + 1;
+      _debrisGlowActive.push({ voxel: activeVoxels[i], glowIdx: gIdx });
+    }
   }
   // Play fizzle sound (throttled in audio.js to avoid spam)
   playBossProjectileDestroySound();
@@ -8744,6 +8930,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats, options = {}) {
         spawnDamageNumber(boss.mesh.position.clone(), 0, '#ff00ff');
         playHitSound();
         const dead = damagePlayer(1);
+        setKilledBy({ type: 'boss', name: boss.def?.name || 'Boss', enemyType: boss.def?.behavior || '' });
         triggerHitFlash(true);
         playDamageSound();
         cameraShake = 0.3;
@@ -9141,6 +9328,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex, hitObj
     if (hitObject.userData.isHealWeakPoint) bossHitInfo.isHealWeakPoint = true;
     if (hitObject.userData.healWeakPointIndex !== undefined) bossHitInfo.healWeakPointIndex = hitObject.userData.healWeakPointIndex;
     if (hitObject.userData.isPrismCore) bossHitInfo.isPrismCore = true;
+    if (hitObject.userData.shardIndex !== undefined) bossHitInfo.shardIndex = hitObject.userData.shardIndex;
     if (hitObject.userData.eclipseNodeId !== undefined) bossHitInfo.eclipseNodeId = hitObject.userData.eclipseNodeId;
     if (hitObject.userData.eclipseNodeType) bossHitInfo.eclipseNodeType = hitObject.userData.eclipseNodeType;
     if (hitObject.userData.isEclipseHeart) bossHitInfo.isEclipseHeart = true;
@@ -9155,6 +9343,9 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex, hitObj
     if (walk.userData && walk.userData.facetIndex !== undefined && bossHitInfo.facetIndex === undefined) {
       bossHitInfo.facetIndex = walk.userData.facetIndex;
     }
+    if (walk.userData && walk.userData.shardIndex !== undefined && bossHitInfo.shardIndex === undefined) {
+      bossHitInfo.shardIndex = walk.userData.shardIndex;
+    }
     if (walk.userData && walk.userData.eclipseNodeId !== undefined && bossHitInfo.eclipseNodeId === undefined) {
       bossHitInfo.eclipseNodeId = walk.userData.eclipseNodeId;
     }
@@ -9166,6 +9357,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex, hitObj
     }
     if (
       bossHitInfo.facetIndex !== undefined
+      && bossHitInfo.shardIndex !== undefined
       && bossHitInfo.eclipseNodeId !== undefined
       && bossHitInfo.eclipseNodeType !== undefined
     ) {
@@ -9181,6 +9373,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex, hitObj
     spawnDamageNumber(hitPoint, 0, '#ff00ff');  // Show 0 damage in magenta
     playHitSound();
     const dead = damagePlayer(1);
+    setKilledBy({ type: 'boss', name: boss.def?.name || 'Boss', enemyType: boss.def?.behavior || '' });
     triggerHitFlash(true);
     playDamageSound();
     cameraShake = 0.3;
@@ -9346,7 +9539,12 @@ function updateExplosionVisuals(dt, now) {
           ).length();
           
           if (dist < m.userData.radius && typeof damagePlayer === 'function') {
-            damagePlayer(m.userData.damage);
+            const _dead = damagePlayer(m.userData.damage);
+            if (_dead && game.state === State.PLAYING) {
+              const _boss = getBoss();
+              setKilledBy({ type: 'environment', name: _boss?.def?.name || 'Toxic Pool', enemyType: 'toxic_pool' });
+              endGame(false);
+            }
           }
           m.userData.lastDamageTime = now;
         }
@@ -9424,7 +9622,12 @@ if (typeof window !== 'undefined') {
     const dist = playerPos.distanceTo(position);
     if (dist < radius) {
       if (typeof damagePlayer === 'function') {
-        damagePlayer(damage);
+        const _dead = damagePlayer(damage);
+        if (_dead && game.state === State.PLAYING) {
+          const _boss = getBoss();
+          setKilledBy({ type: 'explosion', name: _boss?.def?.name || 'Explosion', enemyType: 'explosion' });
+          endGame(false);
+        }
       }
     }
   };
@@ -9652,7 +9855,16 @@ function updateProjectiles(dt) {
 
         if (dist < 1.0) {
           if (typeof damagePlayer === 'function') {
-            damagePlayer(proj.userData.damage);
+            const _dead = damagePlayer(proj.userData.damage);
+            if (_dead && game.state === State.PLAYING) {
+              if (proj.userData.isBossProjectile) {
+                const _boss = getBoss();
+                setKilledBy({ type: 'boss_projectile', name: _boss?.def?.name || 'Boss', enemyType: 'projectile' });
+              } else {
+                setKilledBy({ type: 'enemy', name: 'Enemy Projectile', enemyType: 'projectile' });
+              }
+              endGame(false);
+            }
           }
           triggerHostileProjectileExplosion(proj.position, 0.4, 0);
           disposeObject3D(proj);
@@ -10757,8 +10969,11 @@ function render(timestamp) {
     // Fix 1.9: Profile player collision handling
     // Handle enemy collisions with player
     collisions.forEach(index => {
+      const _enemy = enemies[index];
+      const _enemyType = _enemy?.type || 'unknown';
       destroyEnemy(index);
       const dead = damagePlayer(1);
+      setKilledBy({ type: 'enemy', name: ENEMY_DISPLAY_NAMES[_enemyType] || _enemyType.toUpperCase(), enemyType: _enemyType });
       triggerHitFlash(true);
       playDamageSound();
 
@@ -10793,6 +11008,7 @@ function render(timestamp) {
       if (!boss._lastContactHit || now - boss._lastContactHit >= contactCooldown) {
         boss._lastContactHit = now;
         const dead = damagePlayer(contactDamage);
+        setKilledBy({ type: 'boss', name: boss.def?.name || 'Boss', enemyType: boss.def?.behavior || '' });
         triggerHitFlash(true);
         playDamageSound();
         cameraShake = 0.6;
@@ -10823,6 +11039,7 @@ function render(timestamp) {
           if (!minionMesh.userData._lastContactHit || now2 - minionMesh.userData._lastContactHit >= 1200) {
             minionMesh.userData._lastContactHit = now2;
             const dead = damagePlayer(1);
+            setKilledBy({ type: 'boss', name: boss?.def?.name || 'Boss Minion', enemyType: boss?.def?.behavior || 'minion' });
             triggerHitFlash(true);
             playDamageSound();
             triggerScreenShake(0.15, 200);
@@ -10862,11 +11079,10 @@ function render(timestamp) {
       bossProjs.splice(i, 1);
 
       const dead = damagePlayer(proj.damage || 1);
+      const _skullBoss = getBoss();
+      setKilledBy({ type: 'boss_projectile', name: _skullBoss?.def?.name || 'Boss', enemyType: _skullBoss?.def?.behavior || 'projectile' });
       triggerHitFlash(true);
       playDamageSound();
-
-      // Skull boss laugh when hitting player
-      const _skullBoss = getBoss();
       if (_skullBoss && _skullBoss.def && (_skullBoss.def.behavior === 'skull' || _skullBoss.def.behavior === 'minotaur' || _skullBoss.def.behavior === 'prism')) {
         playSkullLaughSound();
       }
@@ -11437,10 +11653,12 @@ function render(timestamp) {
     lowHealthWarningActive = true;
     lowHealthPulseTimer = 0;
     startLowHealthWarningSound();
+    setLowHealthScreenPulse(true);
   } else if (!shouldLowHealthWarn && lowHealthWarningActive) {
     lowHealthWarningActive = false;
     lowHealthPulseTimer = 0;
     stopLowHealthWarningSound();
+    setLowHealthScreenPulse(false);
     // Reset terrain flash
     biomeTerrainMaterials.forEach(item => {
       if (item.type === 'shader') {
@@ -11504,6 +11722,35 @@ function render(timestamp) {
   profiler.end('projectiles');
   profiler.mark('voxelDebris');
   updateVoxelPhysics(dt, now);  // PHYSICS DEATH SYSTEM
+
+  // Update debris glow planes: billboard toward camera, follow voxel position
+  if (_debrisGlowActive.length > 0 && _debrisGlowPool) {
+    for (let gi = _debrisGlowActive.length - 1; gi >= 0; gi--) {
+      const entry = _debrisGlowActive[gi];
+      const voxel = entry.voxel;
+      if (!voxel || !voxel.visible) {
+        // Voxel returned to pool, release glow instance
+        _debrisGlowPool.setMatrixAt(entry.glowIdx, _debrisGlowHideMat);
+        _debrisGlowFree.push(entry.glowIdx);
+        _debrisGlowActive.splice(gi, 1);
+        continue;
+      }
+      // Billboard toward camera
+      if (camera) {
+        _debrisGlowBillboardMat.lookAt(voxel.position, camera.position, _debrisGlowUpVec);
+        _debrisGlowQuat.setFromRotationMatrix(_debrisGlowBillboardMat);
+      }
+      // Fade glow with voxel opacity
+      const age = performance.now() - voxel.userData.createdAt;
+      const fadeStart = voxel.userData.lifetime - 500;
+      const glowOpacity = age > fadeStart ? Math.max(0, 1.0 - (age - fadeStart) / 500) : 1.0;
+      const s = 0.55 * glowOpacity;
+      _debrisGlowScale.set(Math.max(s, 0.01), Math.max(s, 0.01), Math.max(s, 0.01));
+      _debrisGlowMatrix.compose(voxel.position, _debrisGlowQuat, _debrisGlowScale);
+      _debrisGlowPool.setMatrixAt(entry.glowIdx, _debrisGlowMatrix);
+    }
+    _debrisGlowPool.instanceMatrix.needsUpdate = true;
+  }
   profiler.end('voxelDebris');
   if (activeShields.length > 0) updateShields(now);
   if (activeStasisFields.length > 0) updateStasisFields(now, dt);

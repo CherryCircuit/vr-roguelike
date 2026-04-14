@@ -168,7 +168,7 @@ let _cardIconGeo = null;
 let _skipIconGeo = null;
 
 function getCardGeo() {
-  if (!_cardGeo) _cardGeo = new THREE.BoxGeometry(1.2, 1.5, 0.08);
+  if (!_cardGeo) _cardGeo = new THREE.PlaneGeometry(1.2, 1.5);
   return _cardGeo;
 }
 function getCardBorderGeo() {
@@ -176,7 +176,7 @@ function getCardBorderGeo() {
   return _cardBorderGeo;
 }
 function getSkipCardGeo() {
-  if (!_skipCardGeo) _skipCardGeo = new THREE.BoxGeometry(1.0, 1.3, 0.08);
+  if (!_skipCardGeo) _skipCardGeo = new THREE.PlaneGeometry(1.0, 1.3);
   return _skipCardGeo;
 }
 function getSkipCardBorderGeo() {
@@ -206,6 +206,8 @@ let _warpAnimating = false;
 // Hit flash (red sphere inside camera)
 let hitFlash = null;
 let hitFlashOpacity = 0;
+let lowHealthScreenPulse = false;
+let lowHealthScreenPulseTimer = 0;
 
 // Speed lines overlay (radial streaks during slow-mo)
 const ENABLE_SPEED_LINES = false; // Disabled: no visible effect on Quest, wastes a draw call
@@ -860,8 +862,7 @@ async function createTitleScreen() {
   const btnGroup = new THREE.Group();
   btnGroup.position.set(-0.36, -0.68, 0);
   btnGroup.name = 'btnGroup';
-  // BoxGeometry for thick hitbox — easier to raycast from angles in VR
-  const btnGeo = new THREE.BoxGeometry(1.35, 0.3, 0.08);
+  const btnGeo = new THREE.PlaneGeometry(1.35, 0.3);
   const btnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -890,8 +891,7 @@ async function createTitleScreen() {
   const settingsBtnGroup = new THREE.Group();
   settingsBtnGroup.position.set(0.82, -0.68, 0);
   settingsBtnGroup.name = 'settingsBtnGroup';
-  // BoxGeometry for thick hitbox — easier to raycast from angles in VR
-  const settingsBtnGeo = new THREE.BoxGeometry(0.4, 0.3, 0.08);
+  const settingsBtnGeo = new THREE.PlaneGeometry(0.4, 0.3);
   const settingsBtnMat = new THREE.MeshBasicMaterial({
     color: 0x110033,
     transparent: true,
@@ -1670,7 +1670,7 @@ function createUpgradeCard(upgrade, position, hand) {
   const hoverGlow = new THREE.Mesh(hoverGlowGeo, hoverGlowMat);
   hoverGlow.renderOrder = 998;
   hoverGlow.scale.set(1.0, 1.0, 1.0);
-  hoverGlow.position.set(0, 0, 0.05); // Slightly in front of box face
+  hoverGlow.position.set(0, 0, -0.01);
   card.add(hoverGlow);
   card.userData._hoverGlow = hoverGlow;
 
@@ -1783,7 +1783,7 @@ function createSkipCard(position) {
   const skipHoverGlow = new THREE.Mesh(skipHoverGlowGeo, skipHoverGlowMat);
   skipHoverGlow.renderOrder = 998;
   skipHoverGlow.scale.set(1.0, 1.0, 1.0);
-  skipHoverGlow.position.set(0, 0, 0.05);
+  skipHoverGlow.position.set(0, 0, -0.01);
   card.add(skipHoverGlow);
   card.userData._hoverGlow = skipHoverGlow;
 
@@ -1904,7 +1904,33 @@ export function getHoveredUpgradeCardHit(sourceKey = 'desktop') {
 
 // ── Game Over / Victory ────────────────────────────────────
 
-export function showGameOver(score, playerPos) {
+// Kill info display: enemy type colors for the rotating icon
+const ENEMY_ICON_COLORS = {
+  basic: 0x00ff88,
+  fast: 0xffff00,
+  tank: 0x4488ff,
+  swarm: 0xff8800,
+  spiral_swimmer: 0x00ffcc,
+  jelly: 0xff00ff,
+  mortar: 0xff4400,
+  conductor: 0xffaa00,
+  mirror_knight: 0xccccff,
+  projectile: 0xff0044,
+  explosion: 0xff8800,
+  toxic_pool: 0xcc4400,
+};
+
+// TODO: Supabase integration for death stats
+// function fetchDeathStats(killedByType) {
+//   // Will call Supabase to get count of deaths by this type
+//   // e.g., GET /rest/v1/rpc/get_death_stats?type=killedByType
+//   return fetch(`${SUPABASE_URL}/rest/v1/rpc/get_death_stats`, { ... })
+// }
+function fetchDeathStats(killedByType) {
+  return 'N/A';
+}
+
+export function showGameOver(score, playerPos, killedBy) {
   hideAll();
   disposeGroupChildren(gameOverGroup);
 
@@ -1918,8 +1944,67 @@ export function showGameOver(score, playerPos) {
   s2.name = 'scoreSprite';
   gameOverGroup.add(s2);
 
+  // Kill info display (between SCORE and PRESS TRIGGER)
+  if (killedBy) {
+    const killLabel = makeSprite('You were finished off by', { fontSize: 36, color: '#ffffff', scale: 0.35 });
+    killLabel.position.set(0, 0.1, 0);
+    killLabel.name = 'killLabel';
+    gameOverGroup.add(killLabel);
+
+    // Rotating 3D icon representing the killer
+    const iconColor = ENEMY_ICON_COLORS[killedBy.enemyType] || 0xff0044;
+    let iconGeo;
+    if (killedBy.type === 'enemy') {
+      // Cube for regular enemies
+      iconGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
+    } else {
+      // Sphere for bosses and projectiles
+      iconGeo = new THREE.SphereGeometry(0.15, 12, 12);
+    }
+    const iconMat = new THREE.MeshBasicMaterial({
+      color: iconColor,
+      transparent: true,
+      opacity: 1,
+    });
+    const icon = new THREE.Mesh(iconGeo, iconMat);
+    icon.position.set(0, -0.15, 0);
+    icon.name = 'killIcon';
+    gameOverGroup.add(icon);
+
+    // Killer name below the icon
+    let killerName = killedBy.name || 'Unknown';
+    if (killedBy.type === 'boss_projectile') {
+      killerName = killedBy.name;
+    }
+    const killName = makeSprite(killerName, { fontSize: 40, color: '#ff6666', glow: true, scale: 0.4 });
+    killName.position.set(0, -0.4, 0);
+    killName.name = 'killName';
+    gameOverGroup.add(killName);
+
+    // Sub-label for boss projectiles
+    if (killedBy.type === 'boss_projectile') {
+      const projLabel = makeSprite('PROJECTILE', { fontSize: 30, color: '#ff4444', scale: 0.3 });
+      projLabel.position.set(0, -0.58, 0);
+      projLabel.name = 'killSubLabel';
+      gameOverGroup.add(projLabel);
+    }
+
+    // TODO: Uncomment when Supabase is set up
+    // const deathCount = fetchDeathStats(killedBy.enemyType || killedBy.type);
+    // if (deathCount !== 'N/A') {
+    //   const statsLabel = makeSprite(`Don't feel bad, ${deathCount} other players also succumbed to a ${killerName}`, {
+    //     fontSize: 28, color: '#aaaaaa', scale: 0.28
+    //   });
+    //   statsLabel.position.set(0, -0.75, 0);
+    //   statsLabel.name = 'deathStatsLabel';
+    //   gameOverGroup.add(statsLabel);
+    // }
+  }
+
+  // Adjust PRESS TRIGGER position down if kill info is shown
+  const restartY = killedBy ? -0.8 : -0.3;
   const s3 = makeSprite('PRESS TRIGGER TO RESTART', { fontSize: 44, color: '#ffffff', scale: 0.5 });
-  s3.position.set(0, -0.3, 0);
+  s3.position.set(0, restartY, 0);
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
@@ -2014,6 +2099,12 @@ export function updateEndScreen(now) {
     const fadeBase = gameOverGroup.userData.fadeInStart ? Math.min(1, (now - gameOverGroup.userData.fadeInStart) / (gameOverGroup.userData.fadeInDuration || 1)) : 1;
     blink.material.opacity = fadeBase * (0.5 + Math.sin(now * 0.004) * 0.5);
   }
+
+  // Rotate the kill icon
+  const killIcon = gameOverGroup.getObjectByName('killIcon');
+  if (killIcon) {
+    killIcon.rotation.y += 0.02; // Slow rotation
+  }
 }
 
 export function hideGameOver() {
@@ -2033,6 +2124,11 @@ export function triggerHitFlash(includeHoloGlitch = false) {
   // (holo glitch removed - was never wanted on floor HUD)
 }
 
+export function setLowHealthScreenPulse(active) {
+  lowHealthScreenPulse = active;
+  lowHealthScreenPulseTimer = 0;
+}
+
 export function updateHitFlash(dt) {
   if (!hitFlash) return; // Guard: initHUD is async, render may start before hitFlash is created
   if (hitFlashOpacity > 0) {
@@ -2041,6 +2137,13 @@ export function updateHitFlash(dt) {
     // Quick fade but not instant - 0.5s total duration
     // Fast enough to not linger, slow enough to be seen
     hitFlashOpacity -= dt * 3.6;
+  } else if (lowHealthScreenPulse) {
+    // Low health: pulsing red overlay (~1 second cycle)
+    lowHealthScreenPulseTimer += dt;
+    const pulse = (Math.sin(lowHealthScreenPulseTimer * Math.PI * 2 * 0.9) + 1) * 0.5; // 0.9Hz = ~1.1s period
+    const opacity = pulse * 0.18; // Subtle but noticeable
+    hitFlash.visible = true;
+    hitFlash.material.opacity = opacity;
   } else {
     hitFlash.visible = false;
   }
@@ -3120,7 +3223,7 @@ export function getNameEntryHit(raycaster) {
   return null;
 }
 
-function processKeyPress(key) {
+export function processKeyPress(key) {
   if (key === 'OK') {
     playMenuClick();  // #7: Activate sound for OK button
     if (nameEntryName.length > 0) return { action: 'submit', name: nameEntryName };
@@ -3340,8 +3443,7 @@ export function showScoreboard(scores, headerText, playerPos) {
     btnGroup.name = def.name;
     buttonGroups[def.name] = btnGroup;
 
-    // BoxGeometry for thick hitbox — easier to raycast from angles in VR
-    const btnGeo = new THREE.BoxGeometry(0.65, 0.3, 0.08);
+    const btnGeo = new THREE.PlaneGeometry(0.65, 0.3);
     const btnMat = new THREE.MeshBasicMaterial({
       color: 0x111133, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
     });
@@ -3365,7 +3467,7 @@ export function showScoreboard(scores, headerText, playerPos) {
   const backGroup = new THREE.Group();
   backGroup.position.set(0, -1.0, 0);  // #5: Aligned with Country screen
   backGroup.name = 'btnBack';
-  const backGeo = new THREE.BoxGeometry(0.9, 0.35, 0.08);  // Thick hitbox for VR raycasting
+  const backGeo = new THREE.PlaneGeometry(0.9, 0.35);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
   });
@@ -3728,7 +3830,7 @@ export function showCountrySelect(countries, continents, initialContinent, playe
   // BACK button
   const backGroup = new THREE.Group();
   backGroup.position.set(0, -1.0, 0);  // #5: Aligned with Scoreboard screen
-  const backGeo = new THREE.BoxGeometry(0.9, 0.35, 0.08);  // Thick hitbox for VR raycasting
+  const backGeo = new THREE.PlaneGeometry(0.9, 0.35);
   const backMat = new THREE.MeshBasicMaterial({
     color: 0x330000, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
   });
@@ -3894,6 +3996,12 @@ function getHoverGlowTexture(color = '0,255,255') {
   return tex;
 }
 
+// Cache of last-hovered action per input source (controller-0, controller-1, desktop)
+// Used as fallback when trigger raycaster misses but hover system has a hit.
+const _hoveredActions = {};
+export function getHoveredAction(sourceKey) { return _hoveredActions[sourceKey] || null; }
+export function clearHoveredActions() { for (const k in _hoveredActions) delete _hoveredActions[k]; }
+
 export function updateHUDHover(raycasters) {
   const hoverables = [];
   const hoveredUpgradeSelections = {};
@@ -3995,6 +4103,9 @@ export function updateHUDHover(raycasters) {
     return false;
   }
 
+  // Clear per-frame action cache
+  for (const k in _hoveredActions) delete _hoveredActions[k];
+
   // Find ALL hovered objects from ALL raycasters
   const hoveredObjs = new Set();
   raycasters.forEach(rc => {
@@ -4005,6 +4116,21 @@ export function updateHUDHover(raycasters) {
       if (sourceKey) {
         const selection = resolveUpgradeSelectionFromObject(hits[0].object);
         if (selection) hoveredUpgradeSelections[sourceKey] = selection;
+
+        // Build action cache from userData of hovered object
+        const obj = hits[0].object;
+        const action = obj.userData.scoreboardAction || obj.userData.countryAction ||
+                       obj.userData.readyAction || obj.userData.continentTab ||
+                       obj.userData.countryCode || obj.userData.nameEntryAction ||
+                       (obj.userData.isResumeButton ? 'resume' : null) ||
+                       (obj.userData.isPauseSettingsBtn ? 'settings' : null) ||
+                       (obj.userData.isSettingsBtn ? obj.userData.settingsAction : null) ||
+                       (obj.userData.isTitleScoreboardBtn ? 'scoreboard' : null) ||
+                       (obj.userData.isTitleSettingsBtn ? 'settings' : null) ||
+                       (obj.userData.isKeyboardKey ? obj.userData.keyValue : null);
+        if (action) {
+          _hoveredActions[sourceKey] = { action, userData: obj.userData, object: obj };
+        }
       }
     }
   });
@@ -4109,9 +4235,8 @@ export function updateHUDHover(raycasters) {
           glowColor = '0,255,255'; // Cyan
         }
 
-        const glowGeo = obj.geometry.type === 'BoxGeometry'
-          ? new THREE.PlaneGeometry(obj.geometry.parameters.width * 1.3, obj.geometry.parameters.height * 1.3)
-          : obj.geometry.clone();
+        // Share parent geometry instead of cloning (glow is a child, inherits scale)
+        const glowGeo = obj.geometry;
         const glowMat = new THREE.MeshBasicMaterial({
           map: getHoverGlowTexture(glowColor),
           transparent: true,
@@ -4122,7 +4247,7 @@ export function updateHUDHover(raycasters) {
         const glow = new THREE.Mesh(glowGeo, glowMat);
         glow.renderOrder = 998;
         glow.scale.set(1.0, 1.0, 1.0);  // Already sized via PlaneGeometry
-        glow.position.set(0, 0, 0.05);  // Slightly in front of box
+        glow.position.set(0, 0, -0.01);
         obj.add(glow);
         obj.userData._hoverGlow = glow;
       }
