@@ -195,6 +195,14 @@ function getSkipIconGeo() {
 let upgradeCards = [];
 let upgradeChoices = [];
 
+// Cached cooldown sprite reference (avoids getObjectByName traversal every frame)
+let _cooldownSprite = null;
+const _tmpColor = new THREE.Color();
+const _tmpColor2 = new THREE.Color();
+const _tmpVec3 = new THREE.Vector3(1, 1, 1);
+// Track whether any warp animation is still active to skip the loop early
+let _warpAnimating = false;
+
 // Hit flash (red sphere inside camera)
 let hitFlash = null;
 let hitFlashOpacity = 0;
@@ -1311,6 +1319,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   const cooldownSprite = makeSprite('WAIT...', { fontSize: 36, color: '#ffff00', scale: 0.3 });
   cooldownSprite.position.set(0, 0.8, 0);
   cooldownSprite.name = 'upgrade-cards-cooldown';
+  _cooldownSprite = cooldownSprite;
   upgradeGroup.add(cooldownSprite);
 
   // Shuffle upgrades so cards are random each time
@@ -1344,6 +1353,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   // Warp-in animation: each card's children pop in with easeOutCubic (clean ease-out grow)
   const warpBaseTime = performance.now();
   _warpPieceIndex = 0; // Reset piece counter for text queue
+  _warpAnimating = true; // Flag for early-exit optimization
   upgradeCards.forEach((cardGroup, i) => {
     const cardDelay = i * CARD_WARP_STAGGER;
     cardGroup.userData._warpBaseTime = warpBaseTime;
@@ -1776,6 +1786,8 @@ function createSkipCard(position) {
 
 export function hideUpgradeCards() {
   _textQueue.length = 0; // Clear any pending deferred text
+  _warpAnimating = false;
+  _cooldownSprite = null;
   disposeGroupChildren(upgradeGroup);
   upgradeGroup.visible = false;
   upgradeGroup.userData.hoveredSelections = {};
@@ -1795,8 +1807,8 @@ export function updateUpgradeCards(now, cooldownRemaining) {
     }
   });
 
-  // Update cooldown text - only recreate texture when the displayed text changes
-  const cd = upgradeGroup.getObjectByName('upgrade-cards-cooldown');
+  // Use cached reference instead of getObjectByName traversal every frame
+  const cd = _cooldownSprite;
   if (cd) {
     if (cooldownRemaining > 0) {
       cd.visible = true;
@@ -3832,32 +3844,37 @@ export function updateHUDHover(raycasters) {
   // 2. Upgrade Cards
   if (upgradeGroup.visible) {
     // Animate per-piece warp-in (easeOutCubic, clean ease-out grow)
-    // Iterates ALL children with _warpActive regardless of cardGroup state,
-    // because text sprites are flushed from a queue after the initial warp starts.
-    const now = performance.now();
-    upgradeCards.forEach(cardGroup => {
-      let hasActive = false;
-      cardGroup.children.forEach(child => {
-        if (!child.userData._warpActive) return;
-        hasActive = true;
-        const elapsed = now - child.userData._warpStartTime;
-        if (elapsed < 0) return;
-        // Play pop sound when card face warp starts
-        if (child.userData._warpPiece === 'face' && !child.userData._warpSounded) {
-          child.userData._warpSounded = true;
-          playBasicEnemySpawn();
-        }
-        if (elapsed >= CARD_WARP_DURATION) {
-          child.scale.set(1, 1, 1);
-          child.userData._warpActive = false;
-          return;
-        }
-        const t = elapsed / CARD_WARP_DURATION;
-        const s = easeOutCubic(t);
-        child.scale.set(s, s, s);
+    // PERFORMANCE: Skip the entire warp loop when _warpAnimating is false
+    // to avoid iterating all children of all cards every frame after warp completes.
+    if (_warpAnimating) {
+      const now = performance.now();
+      let anyActive = false;
+      upgradeCards.forEach(cardGroup => {
+        let hasActive = false;
+        cardGroup.children.forEach(child => {
+          if (!child.userData._warpActive) return;
+          hasActive = true;
+          const elapsed = now - child.userData._warpStartTime;
+          if (elapsed < 0) return;
+          // Play pop sound when card face warp starts
+          if (child.userData._warpPiece === 'face' && !child.userData._warpSounded) {
+            child.userData._warpSounded = true;
+            playBasicEnemySpawn();
+          }
+          if (elapsed >= CARD_WARP_DURATION) {
+            child.scale.set(1, 1, 1);
+            child.userData._warpActive = false;
+            return;
+          }
+          const t = elapsed / CARD_WARP_DURATION;
+          const s = easeOutCubic(t);
+          child.scale.set(s, s, s);
+        });
+        cardGroup.userData._warpActive = hasActive;
+        if (hasActive) anyActive = true;
       });
-      cardGroup.userData._warpActive = hasActive;
-    });
+      if (!anyActive) _warpAnimating = false;
+    }
 
     upgradeCards.forEach(card => {
       const mesh = card.children.find(c => c.userData.isUpgradeCard);
@@ -3952,7 +3969,7 @@ export function updateHUDHover(raycasters) {
         // Per-key box highlight: brighten the hovered key's material
         if (layoutEntry && layoutEntry.boxMat) {
           const hc = layoutEntry.key === 'OK' ? 0x005500 : (layoutEntry.key === 'DEL' ? 0x550000 : 0x112255);
-          layoutEntry.boxMat.color.lerp(new THREE.Color(hc), 0.2);
+          layoutEntry.boxMat.color.lerp(_tmpColor.set(hc), 0.2);
         }
       } else {
         if (obj.userData._isActuallyHovered) {
@@ -3960,7 +3977,7 @@ export function updateHUDHover(raycasters) {
         }
         // Revert to base color when not hovered
         if (layoutEntry && layoutEntry.boxMat && layoutEntry.baseColor !== undefined) {
-          layoutEntry.boxMat.color.lerp(new THREE.Color(layoutEntry.baseColor), 0.15);
+          layoutEntry.boxMat.color.lerp(_tmpColor.set(layoutEntry.baseColor), 0.15);
         }
       }
       return;
@@ -3984,7 +4001,7 @@ export function updateHUDHover(raycasters) {
           }
         });
         target.userData._warpActive = false;
-        target.userData._baseScale = new THREE.Vector3(1, 1, 1);
+        target.userData._baseScale = _tmpVec3.clone();
       }
       if (!obj.userData._isActuallyHovered) {
         obj.userData._isActuallyHovered = true;
@@ -4053,7 +4070,7 @@ export function updateHUDHover(raycasters) {
       if (obj.userData._isActuallyHovered) {
         obj.userData._isActuallyHovered = false;
       }
-      const baseScale = target.userData._baseScale || new THREE.Vector3(1, 1, 1);
+      const baseScale = target.userData._baseScale || _tmpVec3;
       const currentScale = target.userData._hoverScale ?? 1;
       const nextScale = currentScale + (1 - currentScale) * 0.2;
       target.userData._hoverScale = nextScale;
