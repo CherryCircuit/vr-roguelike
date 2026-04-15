@@ -434,7 +434,10 @@ async function createLogoSprite() {
     const response = await fetch('logo.svg');
     if (!response.ok) throw new Error('Logo not found');
     const svgText = await response.text();
-    const blob = new Blob([svgText], { type: 'image/svg+xml' });
+    // Inject a per-shape glow filter into the SVG
+    const glowFilter = `<defs><filter id="char-glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;
+    const svgWithGlow = svgText.replace('</svg>', '').replace(/<g /g, '<g filter="url(#char-glow)" ') + glowFilter + '</svg>';
+    const blob = new Blob([svgWithGlow], { type: 'image/svg+xml' });
     const url = URL.createObjectURL(blob);
 
     const img = new Image();
@@ -921,20 +924,19 @@ async function createTitleScreen() {
     fontSize: 24,
     color: '#00ffff',
     glow: true, glowColor: '#00ffff', glowSize: 5,
-    scale: 0.7,
+    scale: 0.52,
   });
   subSprite.position.set(0, 0.35, 0);
-  subSprite.name = 'subSprite';
   titleGroup.add(subSprite);
 
   // Blinking "Press Trigger to Begin"
   titleBlinkSprite = makeSprite('PRESS TRIGGER TO BEGIN', {
-    fontSize: 26,
+    fontSize: 40,
     color: '#ffffff',
     glow: true, glowColor: '#ffffff',
-    scale: 0.5,
+    scale: 1.25,
   });
-  titleBlinkSprite.position.set(0, -0.065, 0);
+  titleBlinkSprite.position.set(0, -0.15, 0);
   titleBlinkSprite.name = 'titleBlinkSprite';
   titleGroup.add(titleBlinkSprite);
 
