@@ -423,90 +423,69 @@ export function makeSprite(text, opts = {}) {
 
 /** Load the SVG logo as a texture and return a plane mesh */
 async function createLogoSprite() {
-  const logoSize = 2048; // Higher res for VR clarity
-  const canvas = document.createElement('canvas');
-  canvas.width = logoSize;
-  canvas.height = Math.round(logoSize * (225 / 1153)); // match SVG aspect ratio
-  const ctx = canvas.getContext('2d');
-
-  // Load SVG via fetch
   try {
-    const response = await fetch('logo.svg');
-    if (!response.ok) throw new Error('Logo not found');
-    const svgText = await response.text();
-    // Inject a per-shape glow filter into the SVG
-    const glowFilter = `<defs><filter id="char-glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;
-    const svgWithGlow = svgText.replace('</svg>', '').replace(/<g /g, '<g filter="url(#char-glow)" ') + glowFilter + '</svg>';
-    const blob = new Blob([svgWithGlow], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-
-    const img = new Image();
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-      img.src = url;
+    const texture = await new Promise((resolve, reject) => {
+      const loader = new THREE.TextureLoader();
+      loader.load('logo.png', tex => {
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        resolve(tex);
+      }, undefined, reject);
     });
 
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    URL.revokeObjectURL(url);
+    const aspect = texture.image.width / texture.image.height;
+    const scale = 0.9;
+    const geometry = new THREE.PlaneGeometry(aspect * scale, scale);
+    const mat = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geometry, mat);
+    mesh.renderOrder = 999;
+
+    // Glow plane behind the logo (additive bloom)
+    const glowCanvas = document.createElement('canvas');
+    glowCanvas.width = 512;
+    glowCanvas.height = Math.round(512 / aspect);
+    const glowCtx = glowCanvas.getContext('2d');
+    const grad = glowCtx.createRadialGradient(
+      glowCanvas.width / 2, glowCanvas.height / 2, 0,
+      glowCanvas.width / 2, glowCanvas.height / 2, glowCanvas.width / 2
+    );
+    grad.addColorStop(0, 'rgba(237, 33, 140, 0.4)');
+    grad.addColorStop(0.4, 'rgba(0, 200, 255, 0.2)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    glowCtx.fillStyle = grad;
+    glowCtx.fillRect(0, 0, glowCanvas.width, glowCanvas.height);
+    const glowTexture = new THREE.CanvasTexture(glowCanvas);
+    glowTexture.minFilter = THREE.LinearFilter;
+    const glowGeo = new THREE.PlaneGeometry(aspect * scale * 1.4, scale * 1.4);
+    const glowMat = new THREE.MeshBasicMaterial({
+      map: glowTexture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+    glowMesh.renderOrder = 998;
+    glowMesh.position.z = -0.01;
+
+    const group = new THREE.Group();
+    group.add(glowMesh);
+    group.add(mesh);
+    return group;
   } catch (e) {
-    // Fallback: plain text if SVG fails
-    console.warn('[hud] Logo SVG failed, falling back to text:', e);
+    // Fallback: plain text if image fails
+    console.warn('[hud] Logo image failed, falling back to text:', e);
     return makeSprite('SPACEOMICIDE', {
       fontSize: 70, color: '#00ffff', glow: true, glowColor: '#0088ff', glowSize: 15, scale: 1.0,
     });
   }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-
-  const aspect = canvas.width / canvas.height;
-  const scale = 0.9; // 25% smaller than 1.2
-  const geometry = new THREE.PlaneGeometry(aspect * scale, scale);
-  const mat = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const mesh = new THREE.Mesh(geometry, mat);
-  mesh.renderOrder = 999;
-
-  // Glow plane behind the logo (cyan/pink bloom)
-  const glowCanvas = document.createElement('canvas');
-  glowCanvas.width = 512;
-  glowCanvas.height = Math.round(512 * (225 / 1153));
-  const glowCtx = glowCanvas.getContext('2d');
-  const grad = glowCtx.createRadialGradient(
-    glowCanvas.width / 2, glowCanvas.height / 2, 0,
-    glowCanvas.width / 2, glowCanvas.height / 2, glowCanvas.width / 2
-  );
-  grad.addColorStop(0, 'rgba(237, 33, 140, 0.4)');
-  grad.addColorStop(0.4, 'rgba(0, 200, 255, 0.2)');
-  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  glowCtx.fillStyle = grad;
-  glowCtx.fillRect(0, 0, glowCanvas.width, glowCanvas.height);
-  const glowTexture = new THREE.CanvasTexture(glowCanvas);
-  glowTexture.minFilter = THREE.LinearFilter;
-  const glowGeo = new THREE.PlaneGeometry(aspect * scale * 1.4, scale * 1.4);
-  const glowMat = new THREE.MeshBasicMaterial({
-    map: glowTexture,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-  });
-  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-  glowMesh.renderOrder = 998;
-  glowMesh.position.z = -0.01; // Behind logo
-
-  const group = new THREE.Group();
-  group.add(glowMesh);
-  group.add(mesh);
-  return group;
 }
 
 // ── Pixel heart drawing ────────────────────────────────────
