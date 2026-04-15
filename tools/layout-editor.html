@@ -103,6 +103,7 @@
             <button class="create" onclick="createNewRect()">+ Rect</button>
             <button class="create" onclick="createNewText()">+ Text</button>
             <button class="create" onclick="duplicateSelected()" title="Duplicate selected element">⧉ Dup</button>
+            <button class="danger" onclick="deleteSelected()" title="Delete selected element">✕ Del</button>
         </div>
         <div class="note" id="note-text"></div>
         <div class="pr" style="margin-bottom:8px"><input type="checkbox" id="showBounds" checked onchange="toggleBounds()" style="width:auto"><label style="width:auto;color:#aaa;font-size:11px;margin-left:4px">Show bounding boxes</label></div>
@@ -202,25 +203,62 @@
 
     const PAUSE_MENU_DEFS = [
         { id:'panel', name:'Panel BG', type:'rect', color:0x0a0015, w:6.0, h:3.6, x:0, y:0, z:0, opacity:0.85 },
+        // Neon borders (cyan)
+        { id:'border_top', name:'Border Top', type:'rect', color:0x00ffff, w:6.0, h:0.03, x:0, y:1.8, z:0.01, opacity:1.0 },
+        { id:'border_bot', name:'Border Bottom', type:'rect', color:0x00ffff, w:6.0, h:0.03, x:0, y:-1.8, z:0.01, opacity:1.0 },
+        { id:'border_left', name:'Border Left', type:'rect', color:0x00ffff, w:0.03, h:3.6, x:-3.0, y:0, z:0.01, opacity:1.0 },
+        { id:'border_right', name:'Border Right', type:'rect', color:0x00ffff, w:0.03, h:3.6, x:3.0, y:0, z:0.01, opacity:1.0 },
+        // Left blaster section
         { id:'left_blaster_section', name:'Left Blaster Section', type:'rect', color:0x112244, w:1.9, h:1.55, x:-1.7, y:0.2, z:0.02, opacity:0.45 },
+        { id:'left_title', name:'LEFT BLASTER title', type:'text', text:'LEFT BLASTER', color:0x00ffff, fontSize:110, scale:0.325, glow:true, x:-1.7, y:1.5, z:0.02 },
+        { id:'left_weapon', name:'Left Weapon Name', type:'text', text:'STANDARD BLASTER', color:0xffffff, fontSize:80, scale:0.2, x:-1.7, y:1.3, z:0.02 },
+        { id:'left_sep1', name:'Left Sep 1', type:'rect', color:0x00ffff, w:1.8, h:0.02, x:-1.7, y:1.2, z:0.02, opacity:0.6 },
+        { id:'left_upgrades_hdr', name:'Left UPGRADES label', type:'text', text:'UPGRADES', color:0x888888, fontSize:60, scale:0.15, x:-1.7, y:1.12, z:0.02 },
+        { id:'left_upgrades', name:'Left Upgrades List', type:'text', text:'🔥 RAPID FIRE x2\n⚡ DAMAGE UP x1\n💫 SPREAD SHOT x1', color:0xffff00, fontSize:55, scale:0.125, x:-1.7, y:0.85, z:0.02, maxWidth:600 },
+        { id:'left_sep2', name:'Left Sep 2', type:'rect', color:0x00ffff, w:1.8, h:0.02, x:-1.7, y:0.55, z:0.02, opacity:0.6 },
+        { id:'left_stats', name:'Left Stats', type:'text', text:'KILLS: 42\nSHOTS: 120\nHITS: 85\nACC: 71%', color:0x00ffff, fontSize:55, scale:0.1375, x:-1.7, y:0.25, z:0.02 },
+        { id:'left_sep3', name:'Left Sep 3', type:'rect', color:0x00ffff, w:1.8, h:0.02, x:-1.7, y:-0.05, z:0.02, opacity:0.6 },
+        { id:'left_enemies_hdr', name:'Left ENEMIES label', type:'text', text:'ENEMIES', color:0x888888, fontSize:55, scale:0.125, x:-1.7, y:-0.15, z:0.02 },
+        { id:'left_enemies', name:'Left Enemy Kills', type:'text', text:'👾 BASIC x30\n🤖 TANK x5\n💨 FAST x7', color:0xff6666, fontSize:55, scale:0.125, x:-1.7, y:-0.4, z:0.02 },
+        // Right blaster section
         { id:'right_blaster_section', name:'Right Blaster Section', type:'rect', color:0x112244, w:1.9, h:1.55, x:1.7, y:0.2, z:0.02, opacity:0.45 },
+        { id:'right_title', name:'RIGHT BLASTER title', type:'text', text:'RIGHT BLASTER', color:0xff88aa, fontSize:110, scale:0.325, glow:true, x:1.7, y:1.5, z:0.02 },
+        { id:'right_weapon', name:'Right Weapon Name', type:'text', text:'BUCKSHOT', color:0xffffff, fontSize:80, scale:0.2, x:1.7, y:1.3, z:0.02 },
+        { id:'right_sep1', name:'Right Sep 1', type:'rect', color:0xff88aa, w:1.8, h:0.02, x:1.7, y:1.2, z:0.02, opacity:0.6 },
+        { id:'right_upgrades_hdr', name:'Right UPGRADES label', type:'text', text:'UPGRADES', color:0x888888, fontSize:60, scale:0.15, x:1.7, y:1.12, z:0.02 },
+        { id:'right_upgrades', name:'Right Upgrades List', type:'text', text:'🎯 HOMING x1\n🗡️ PIERCING x1', color:0xff88aa, fontSize:55, scale:0.125, x:1.7, y:0.9, z:0.02, maxWidth:600 },
+        { id:'right_sep2', name:'Right Sep 2', type:'rect', color:0xff88aa, w:1.8, h:0.02, x:1.7, y:0.7, z:0.02, opacity:0.6 },
+        { id:'right_stats', name:'Right Stats', type:'text', text:'KILLS: 38\nSHOTS: 95\nHITS: 72\nACC: 76%', color:0xff88aa, fontSize:55, scale:0.1375, x:1.7, y:0.4, z:0.02 },
+        { id:'right_sep3', name:'Right Sep 3', type:'rect', color:0xff88aa, w:1.8, h:0.02, x:1.7, y:0.1, z:0.02, opacity:0.6 },
+        { id:'right_enemies_hdr', name:'Right ENEMIES label', type:'text', text:'ENEMIES', color:0x888888, fontSize:55, scale:0.125, x:1.7, y:0.0, z:0.02 },
+        { id:'right_enemies', name:'Right Enemy Kills', type:'text', text:'👾 BASIC x25\n💣 BOMBER x3', color:0xff6666, fontSize:55, scale:0.125, x:1.7, y:-0.2, z:0.02 },
+        // Center stats (run totals)
+        { id:'stats_section', name:'Stats Section BG', type:'rect', color:0x15002a, w:4.2, h:2.2, x:0, y:-0.9, z:0.02, opacity:0.85 },
+        { id:'run_totals', name:'RUN TOTALS', type:'text', text:'RUN TOTALS', color:0xff00ff, fontSize:120, scale:0.375, glow:true, x:0, y:0.0, z:0.03 },
+        { id:'run_stats_primary', name:'Primary Stats', type:'text', text:'KILLS: 80\nSHOTS: 215\nHITS: 157', color:0x00ffff, fontSize:90, scale:0.25, x:0, y:-0.35, z:0.03 },
+        { id:'run_stats_secondary', name:'Secondary Stats', type:'text', text:'ACCURACY: 73%\nSTREAK: 12\nBOSS: 1', color:0x00ffff, fontSize:90, scale:0.25, x:-1.08, y:-0.9, z:0.03 },
+        // Buttons
         { id:'resume_button', name:'Resume Button', type:'rect', color:0x110033, w:1.55, h:0.34, x:0, y:-1.35, z:0.03, opacity:0.85 },
+        { id:'resume_text', name:'RESUME Text', type:'text', text:'RESUME', color:0xffff00, fontSize:105, scale:0.35, glow:true, x:0, y:-1.35, z:0.04 },
         { id:'settings_button', name:'Settings Button', type:'rect', color:0x110033, w:1.55, h:0.34, x:0, y:-0.423, z:0.03, opacity:0.85 },
+        { id:'settings_text', name:'SETTINGS Text', type:'text', text:'SETTINGS', color:0x00ffff, fontSize:105, scale:0.35, glow:true, x:0, y:-0.423, z:0.04 },
     ];
 
     const TITLE_SCREEN_DEFS = [
-      { id:'titleSprite', name:'Logo', type:'text', text:'SPACEOMICIDE', color:0x00ffff, fontSize:70, scale:1.0, glow:true, x:0, y:0.932, z:0 },
+      { id:'titleSprite', name:'Logo', type:'image', src:'../logo.png', scale:1.44, x:0, y:0.932, z:0, fallbackText:'SPACEOMICIDE', fallbackColor:0x00ffff, fallbackFontSize:70 },
       { id:'subSprite', name:'Subtitle', type:'text', text:'VR ROGUELIKE BLASTER', color:0x00ffff, fontSize:24, scale:0.52, glow:true, x:0, y:0.35, z:0 },
       { id:'titleBlinkSprite', name:'Start Prompt', type:'text', text:'PRESS TRIGGER TO BEGIN', color:0xffffff, fontSize:28, scale:0.87, glow:true, x:0, y:-0.1, z:0 },
       { id:'btnGroup', name:'Scoreboard Button Group', type:'rect', color:0x110033, w:1.35, h:0.3, x:-0.36, y:-0.68, z:0, opacity:0.85 },
+      { id:'btn_text', name:'SCOREBOARD Text', type:'text', text:'SCOREBOARD', color:0xffff00, fontSize:48, scale:0.16, glow:true, x:-0.36, y:-0.68, z:0.01 },
       { id:'settingsBtnGroup', name:'Settings Button Group', type:'rect', color:0x110033, w:0.4, h:0.3, x:0.82, y:-0.68, z:0, opacity:0.85 },
+      { id:'settings_btn_text', name:'⚙ Settings Icon', type:'text', text:'\u2699', color:0x00ffff, fontSize:48, scale:0.5, glow:true, x:0.82, y:-0.68, z:0.01 },
     ];
 
     const GAME_OVER_DEFS = [
       { id:'titleSprite', name:'GAME OVER Title', type:'text', text:'GAME OVER', color:0xff0044, fontSize:120, scale:1.4, glow:true, x:0, y:1.2, z:0 },
       { id:'scoreSprite', name:'Final Score', type:'text', text:'SCORE: 42000', color:0xffff00, fontSize:60, scale:0.7, glow:true, x:0, y:0.4, z:0 },
       { id:'killLabel', name:'Killer Label', type:'text', text:'You were finished off by', color:0xffffff, fontSize:36, scale:0.35, x:0, y:0.1, z:0 },
-      { id:'killIcon', name:'Killer Icon', type:'cube', color:0xff0044, scale:0.25, x:0, y:-0.15, z:0, spinX:0.6, spinY:1.1 },
+      { id:'killIcon', name:'Killer Icon (Grunt)', type:'grunt', color:0x00ff88, voxelSize:0.29, x:0, y:-0.15, z:0, spinY:0.8 },
       { id:'killName', name:'Killer Name', type:'text', text:'GRUNT', color:0xff6666, fontSize:40, scale:0.4, glow:true, x:0, y:-0.4, z:0 },
       { id:'killSubLabel', name:'Projectile Sub Label', type:'text', text:'PROJECTILE', color:0xff4444, fontSize:30, scale:0.3, x:0, y:-0.58, z:0 },
       { id:'deathStatsLabel', name:'Community Death Text', type:'text', text:"Don't feel bad, 24 other players also succumbed to a GRUNT", color:0xaaaaaa, fontSize:28, scale:0.28, x:0, y:-0.75, z:0, maxWidth:1100 },
@@ -228,7 +266,7 @@
     ];
 
     const UPGRADE_CARDS_DEFS = [
-      { id:'header', name:'Header', type:'text', text:'CHOOSE UPGRADE\nLEFT BLASTER', color:0x00ffff, fontSize:48, scale:0.4, glow:true, x:0, y:1.05, z:0 },
+      { id:'header', name:'Header', type:'text', text:'CHOOSE UPGRADE\nLEFT BLASTER\nStandard Blaster', color:0x00ffff, fontSize:48, scale:0.4, glow:true, x:0, y:1.05, z:0 },
       { id:'cooldownSprite', name:'Cooldown Sprite', type:'text', text:'WAIT...', color:0xffff00, fontSize:36, scale:0.3, x:0, y:0.8, z:0 },
 
       { id:'card0', name:'Card 0 Face', type:'rect', color:0x110033, w:1.2, h:1.5, x:-2.25, y:0, z:0, opacity:0.91 },
@@ -290,14 +328,19 @@
     ];
 
     const SCOREBOARD_DEFS = [
-      { id:'mainHeader', name:'Main Header', type:'text', text:'SCOREBOARD', color:0xffffff, fontSize:60, scale:0.65, glow:true, x:0, y:2.25, z:0 },
+      { id:'mainHeader', name:'Main Header', type:'text', text:'GLOBAL', color:0xffffff, fontSize:60, scale:0.65, glow:true, x:0, y:2.25, z:0 },
       { id:'subHeader', name:'LEADERBOARD', type:'text', text:'LEADERBOARD', color:0x00ffff, fontSize:44, scale:0.5, glow:true, x:0, y:1.95, z:0 },
       { id:'scoreboardMesh', name:'Score List BG', type:'rect', color:0x111133, w:3.5, h:2.5, x:0, y:0.45, z:0, opacity:0.9 },
       { id:'btnCountry', name:'COUNTRY button', type:'rect', color:0x111133, w:0.65, h:0.3, x:1.55, y:1.2, z:0, opacity:0.9 },
+      { id:'btnCountry_text', name:'COUNTRY text', type:'text', text:'COUNTRY', color:0xccffff, fontSize:54, scale:0.18, x:1.55, y:1.2, z:0.01 },
       { id:'btnContinent', name:'CONTINENT button', type:'rect', color:0x111133, w:0.65, h:0.3, x:1.55, y:0.85, z:0, opacity:0.9 },
-      { id:'btnPrevPage', name:'⬅ PREV PAGE button', type:'rect', color:0x111133, w:0.65, h:0.3, x:1.55, y:0.1, z:0, opacity:0.9 },
-      { id:'btnNextPage', name:'NEXT PAGE ➡ button', type:'rect', color:0x111133, w:0.65, h:0.3, x:1.55, y:-0.25, z:0, opacity:0.9 },
+      { id:'btnContinent_text', name:'CONTINENT text', type:'text', text:'CONTINENT', color:0xccffff, fontSize:54, scale:0.18, x:1.55, y:0.85, z:0.01 },
+      { id:'btnPrevPage', name:'PREV PAGE button', type:'rect', color:0x111133, w:0.65, h:0.3, x:1.55, y:0.1, z:0, opacity:0.9 },
+      { id:'btnPrevPage_text', name:'PREV PAGE text', type:'text', text:'⬅ PREV PAGE', color:0xccffff, fontSize:54, scale:0.18, x:1.55, y:0.1, z:0.01 },
+      { id:'btnNextPage', name:'NEXT PAGE button', type:'rect', color:0x111133, w:0.65, h:0.3, x:1.55, y:-0.25, z:0, opacity:0.9 },
+      { id:'btnNextPage_text', name:'NEXT PAGE text', type:'text', text:'NEXT PAGE ➡', color:0xccffff, fontSize:54, scale:0.18, x:1.55, y:-0.25, z:0.01 },
       { id:'btnBack', name:'BACK button', type:'rect', color:0x330000, w:0.9, h:0.35, x:0, y:-1.0, z:0, opacity:0.9 },
+      { id:'btnBack_text', name:'BACK text', type:'text', text:'BACK', color:0xff6666, fontSize:52, scale:0.2, x:0, y:-1.0, z:0.01 },
     ];
 
     // ── Wrist Hologram Screens (controller-attached during upgrade-between-levels) ──
@@ -306,29 +349,37 @@
     // Positions are in local controller space (small panel ~0.3m wide, angled up from wrist).
 
     const UPGRADE_WRIST_LEFT_DEFS = [
-      { id:'wrist_panel_bg', name:'Panel BG', type:'rect', color:0x0a0022, w:0.30, h:0.22, x:0, y:0, z:0, opacity:0.88 },
-      { id:'wrist_panel_border', name:'Panel Border', type:'rect', color:0x00ffff, w:0.30, h:0.22, x:0, y:0, z:0.005, opacity:0.6 },
-      { id:'wrist_header', name:'LEFT BLASTER', type:'text', text:'LEFT BLASTER', color:0x00ffff, fontSize:28, scale:0.12, glow:true, x:0, y:0.08, z:0.01 },
-      { id:'wrist_weapon_name', name:'Weapon Name', type:'text', text:'Standard Blaster', color:0xffffff, fontSize:22, scale:0.10, x:0, y:0.04, z:0.01 },
-      { id:'wrist_damage_label', name:'DMG Label', type:'text', text:'DMG', color:0xaaaaaa, fontSize:16, scale:0.06, x:-0.08, y:-0.02, z:0.01 },
-      { id:'wrist_damage_val', name:'DMG Value', type:'text', text:'12', color:0x88ff88, fontSize:20, scale:0.08, x:-0.02, y:-0.02, z:0.01 },
-      { id:'wrist_rof_label', name:'ROF Label', type:'text', text:'ROF', color:0xaaaaaa, fontSize:16, scale:0.06, x:0.05, y:-0.02, z:0.01 },
-      { id:'wrist_rof_val', name:'ROF Value', type:'text', text:'5.0', color:0x88ff88, fontSize:20, scale:0.08, x:0.10, y:-0.02, z:0.01 },
-      { id:'wrist_upgrade_count', name:'Upgrade Count', type:'text', text:'UPGRADES: 3', color:0xffff00, fontSize:14, scale:0.06, x:0, y:-0.07, z:0.01 },
-      { id:'wrist_divider', name:'Divider Line', type:'rect', color:0x00ffff, w:0.26, h:0.003, x:0, y:-0.035, z:0.008, opacity:0.4 },
+      // Hologram background plane (shader effect simulated as translucent rect)
+      { id:'wrist_holo_bg', name:'Holo Background', type:'rect', color:0x0a0033, w:0.21, h:0.26, x:0, y:0, z:0.003, opacity:0.45 },
+      // Border outline (matches runtime LineSegments border)
+      { id:'wrist_panel_border', name:'Panel Border', type:'rect', color:0x00ffff, w:0.202, h:0.252, x:0, y:0, z:0.001, opacity:0.3 },
+      // Scanline overlay (simulates holo shader scanlines)
+      { id:'wrist_scanline1', name:'Scanline 1', type:'rect', color:0x00ffff, w:0.19, h:0.003, x:0, y:0.06, z:0.004, opacity:0.12 },
+      { id:'wrist_scanline2', name:'Scanline 2', type:'rect', color:0x00ffff, w:0.19, h:0.003, x:0, y:0.02, z:0.004, opacity:0.12 },
+      { id:'wrist_scanline3', name:'Scanline 3', type:'rect', color:0x00ffff, w:0.19, h:0.003, x:0, y:-0.02, z:0.004, opacity:0.12 },
+      { id:'wrist_scanline4', name:'Scanline 4', type:'rect', color:0x00ffff, w:0.19, h:0.003, x:0, y:-0.06, z:0.004, opacity:0.12 },
+      // Text elements (match runtime blaster display: hand name, kills, dmg, upgrades)
+      { id:'wrist_header', name:'LEFT BLASTER', type:'text', text:'LEFT BLASTER', color:0x00ffff, fontSize:20, scale:0.05, x:0, y:0.1, z:0.002 },
+      { id:'wrist_kills', name:'Kills Stat', type:'text', text:'KILLS: 42', color:0x00ffff, fontSize:16, scale:0.04, x:0, y:0.04, z:0.002 },
+      { id:'wrist_dmg', name:'Damage Stat', type:'text', text:'DMG: 1250', color:0x00ffff, fontSize:16, scale:0.04, x:0, y:-0.02, z:0.002 },
+      { id:'wrist_upgrade_count', name:'Upgrade Count', type:'text', text:'UPGRADES: 4', color:0x00ffff, fontSize:16, scale:0.04, x:0, y:-0.08, z:0.002 },
     ];
 
     const UPGRADE_WRIST_RIGHT_DEFS = [
-      { id:'wrist_panel_bg', name:'Panel BG', type:'rect', color:0x0a0022, w:0.30, h:0.22, x:0, y:0, z:0, opacity:0.88 },
-      { id:'wrist_panel_border', name:'Panel Border', type:'rect', color:0xff88aa, w:0.30, h:0.22, x:0, y:0, z:0.005, opacity:0.6 },
-      { id:'wrist_header', name:'RIGHT BLASTER', type:'text', text:'RIGHT BLASTER', color:0xff88aa, fontSize:28, scale:0.12, glow:true, x:0, y:0.08, z:0.01 },
-      { id:'wrist_weapon_name', name:'Weapon Name', type:'text', text:'Buckshot', color:0xffffff, fontSize:22, scale:0.10, x:0, y:0.04, z:0.01 },
-      { id:'wrist_damage_label', name:'DMG Label', type:'text', text:'DMG', color:0xaaaaaa, fontSize:16, scale:0.06, x:-0.08, y:-0.02, z:0.01 },
-      { id:'wrist_damage_val', name:'DMG Value', type:'text', text:'8', color:0x88ff88, fontSize:20, scale:0.08, x:-0.02, y:-0.02, z:0.01 },
-      { id:'wrist_rof_label', name:'ROF Label', type:'text', text:'ROF', color:0xaaaaaa, fontSize:16, scale:0.06, x:0.05, y:-0.02, z:0.01 },
-      { id:'wrist_rof_val', name:'ROF Value', type:'text', text:'3.2', color:0x88ff88, fontSize:20, scale:0.08, x:0.10, y:-0.02, z:0.01 },
-      { id:'wrist_upgrade_count', name:'Upgrade Count', type:'text', text:'UPGRADES: 5', color:0xffff00, fontSize:14, scale:0.06, x:0, y:-0.07, z:0.01 },
-      { id:'wrist_divider', name:'Divider Line', type:'rect', color:0xff88aa, w:0.26, h:0.003, x:0, y:-0.035, z:0.008, opacity:0.4 },
+      // Hologram background plane
+      { id:'wrist_holo_bg', name:'Holo Background', type:'rect', color:0x0a0033, w:0.21, h:0.26, x:0, y:0, z:0.003, opacity:0.45 },
+      // Border outline (pink for right hand)
+      { id:'wrist_panel_border', name:'Panel Border', type:'rect', color:0xff88aa, w:0.202, h:0.252, x:0, y:0, z:0.001, opacity:0.3 },
+      // Scanline overlay
+      { id:'wrist_scanline1', name:'Scanline 1', type:'rect', color:0xff88aa, w:0.19, h:0.003, x:0, y:0.06, z:0.004, opacity:0.12 },
+      { id:'wrist_scanline2', name:'Scanline 2', type:'rect', color:0xff88aa, w:0.19, h:0.003, x:0, y:0.02, z:0.004, opacity:0.12 },
+      { id:'wrist_scanline3', name:'Scanline 3', type:'rect', color:0xff88aa, w:0.19, h:0.003, x:0, y:-0.02, z:0.004, opacity:0.12 },
+      { id:'wrist_scanline4', name:'Scanline 4', type:'rect', color:0xff88aa, w:0.19, h:0.003, x:0, y:-0.06, z:0.004, opacity:0.12 },
+      // Text elements (pink theme for right hand)
+      { id:'wrist_header', name:'RIGHT BLASTER', type:'text', text:'RIGHT BLASTER', color:0xff88aa, fontSize:20, scale:0.05, x:0, y:0.1, z:0.002 },
+      { id:'wrist_kills', name:'Kills Stat', type:'text', text:'KILLS: 38', color:0xff88aa, fontSize:16, scale:0.04, x:0, y:0.04, z:0.002 },
+      { id:'wrist_dmg', name:'Damage Stat', type:'text', text:'DMG: 980', color:0xff88aa, fontSize:16, scale:0.04, x:0, y:-0.02, z:0.002 },
+      { id:'wrist_upgrade_count', name:'Upgrade Count', type:'text', text:'UPGRADES: 2', color:0xff88aa, fontSize:16, scale:0.04, x:0, y:-0.08, z:0.002 },
     ];
 
     const SCREEN_CONFIGS = {
@@ -648,7 +699,7 @@
         return { geo: new THREE.PlaneGeometry(w, h), mat, w, h };
     }
 
-    const scaleTypeSet = new Set(['text', 'hearts', 'wire-octa', 'cube', 'sphere']);
+    const scaleTypeSet = new Set(['text', 'hearts', 'wire-octa', 'cube', 'sphere', 'image', 'grunt']);
     function isScaleType(def) {
         return scaleTypeSet.has(def.type);
     }
@@ -663,6 +714,65 @@
 
     function buildElement(def) {
         let geo, mat;
+        if (def.type === 'image') {
+            // Image type: creates a plane; the image loads asynchronously.
+            // On load success, replaces material with textured one.
+            // Falls back to text if load fails.
+            const scale = def.scale || 1.0;
+            // Start with fallback text sprite
+            const r = renderTextMesh(def.fallbackText || 'IMAGE', def.fallbackFontSize || 70, scale,
+                '#' + (def.fallbackColor || 0x00ffff).toString(16).padStart(6, '0'), true, def);
+            geo = r.geo; mat = r.mat; def._w = r.w; def._h = r.h;
+            // Attempt async image load
+            const loader = new THREE.TextureLoader();
+            const mesh = createMeshFromGeo(geo, mat, def);
+            loader.load(def.src, tex => {
+                tex.minFilter = THREE.LinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                const aspect = (tex.image ? tex.image.width / tex.image.height : 1.0);
+                def._imgAspect = aspect;
+                const newGeo = new THREE.PlaneGeometry(aspect * scale, scale);
+                const newMat = new THREE.MeshBasicMaterial({
+                    map: tex, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide
+                });
+                mesh.geometry.dispose();
+                if (mesh.material.map) mesh.material.map.dispose();
+                mesh.material.dispose();
+                mesh.geometry = newGeo;
+                mesh.material = newMat;
+                def._w = aspect * scale; def._h = scale;
+            }, undefined, () => {}); // silent fallback
+            return;
+        }
+        if (def.type === 'grunt') {
+            // Grunt model: cross pattern of 5 boxes matching basic enemy pattern
+            const vs = def.voxelSize || 0.29;
+            const group = new THREE.Group();
+            const gmat = new THREE.MeshBasicMaterial({
+                color: def.color || 0x00ff88, transparent: true, opacity: 0.7
+            });
+            // Pattern: .1. / 111 / .1.  => 5 voxels
+            const offsets = [[0,1,0],[-1,0,0],[0,0,0],[1,0,0],[0,-1,0]];
+            offsets.forEach(([ox, oy]) => {
+                const box = new THREE.Mesh(new THREE.BoxGeometry(vs, vs, vs), gmat);
+                box.position.set(ox * vs, oy * vs, 0);
+                group.add(box);
+            });
+            def._w = 3 * vs; def._h = 3 * vs;
+            group.position.set(def.x, def.y, def.z);
+            group.rotation.set(def.rx || 0, def.ry || 0, def.rz || 0);
+            group.frustumCulled = false;
+            group.renderOrder = 999;
+            group.userData = { id: def.id, def, align: 'center', origColor: def.color, isGruntGroup: true };
+            getContainer().add(group);
+            els[def.id] = group;
+            INIT[def.id] = {
+                x: def.x, y: def.y, z: def.z, scale: vs,
+                rx: def.rx || 0, ry: def.ry || 0, rz: def.rz || 0,
+                align: 'center', type: def.type, visible: true, anchor: 'center'
+            };
+            return;
+        }
         if (def.type === 'text') {
             const r = renderTextMesh(def.text, def.fontSize, def.scale,
                 '#' + def.color.toString(16).padStart(6, '0'), def.glow, def);
@@ -686,6 +796,11 @@
             });
             def._w = def.w; def._h = def.h;
         }
+        createMeshFromGeo(geo, mat, def);
+        return;
+    }
+
+    function createMeshFromGeo(geo, mat, def) {
         const mesh = new THREE.Mesh(geo, mat);
         const initialAlign = def.align || 'center';
         if (initialAlign === 'left') mesh.geometry.translate((def._w || 1) / 2, 0, 0);
@@ -708,6 +823,52 @@
         const def = DEFS.find(d => d.id === id);
         const mesh = els[id];
         if (!def || !mesh) return;
+        if (def.type === 'grunt') {
+            // Grunt groups: rebuild voxel children
+            while (mesh.children.length > 0) {
+                const child = mesh.children[0];
+                child.geometry.dispose(); child.material.dispose();
+                mesh.remove(child);
+            }
+            const vs = def.voxelSize || 0.29;
+            const gmat = new THREE.MeshBasicMaterial({
+                color: def.color || 0x00ff88, transparent: true, opacity: 0.7
+            });
+            const offsets = [[0,1,0],[-1,0,0],[0,0,0],[1,0,0],[0,-1,0]];
+            offsets.forEach(([ox, oy]) => {
+                const box = new THREE.Mesh(new THREE.BoxGeometry(vs, vs, vs), gmat);
+                box.position.set(ox * vs, oy * vs, 0);
+                mesh.add(box);
+            });
+            def._w = 3 * vs; def._h = 3 * vs;
+            return;
+        }
+        if (def.type === 'image') {
+            // Image type: just update fallback text, async load handles the rest
+            const pos = mesh.position.clone();
+            const scale = def.scale || 1.0;
+            mesh.geometry.dispose();
+            if (mesh.material.map) mesh.material.map.dispose();
+            const r = renderTextMesh(def.fallbackText || 'IMAGE', def.fallbackFontSize || 70, scale,
+                '#' + (def.fallbackColor || 0x00ffff).toString(16).padStart(6, '0'), true, def);
+            mesh.geometry = r.geo; mesh.material = r.mat; def._w = r.w; def._h = r.h;
+            // Re-try async image load
+            const loader = new THREE.TextureLoader();
+            loader.load(def.src, tex => {
+                tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+                const aspect = tex.image ? tex.image.width / tex.image.height : 1.0;
+                mesh.geometry.dispose();
+                if (mesh.material.map) mesh.material.map.dispose();
+                mesh.material.dispose();
+                mesh.geometry = new THREE.PlaneGeometry(aspect * scale, scale);
+                mesh.material = new THREE.MeshBasicMaterial({
+                    map: tex, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide
+                });
+                def._w = aspect * scale; def._h = scale;
+            }, undefined, () => {});
+            mesh.position.copy(pos);
+            return;
+        }
         const align = mesh.userData.align || 'center';
         const pos = mesh.position.clone();
         mesh.geometry.dispose();
@@ -1295,6 +1456,41 @@
         autoSave();
     };
 
+    window.deleteSelected = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        const def = els[pid]?.userData?.def;
+        if (!def) return;
+        pushUndo();
+        // Remove from DEFS array
+        const idx = DEFS.indexOf(def);
+        if (idx >= 0) DEFS.splice(idx, 1);
+        // Remove 3D object
+        const mesh = els[pid];
+        if (mesh) {
+            if (mesh.isGroup) {
+                mesh.children.forEach(child => {
+                    child.geometry?.dispose();
+                    child.material?.dispose();
+                });
+            } else {
+                mesh.geometry?.dispose();
+                if (mesh.material?.map) mesh.material.map.dispose();
+                mesh.material?.dispose();
+            }
+            mesh.parent?.remove(mesh);
+        }
+        // Remove from registries
+        delete els[pid];
+        delete INIT[pid];
+        delete elVisible[pid];
+        delete elAnchor[pid];
+        // Deselect
+        selectedIds = [];
+        updateSidebar();
+        autoSave();
+    };
+
     window.onColorInput = function() {
         const pid = primarySelectedId();
         if (!pid) return;
@@ -1355,7 +1551,41 @@
     //  VISIBILITY TOGGLES
     // ══════════════════════════════════════════════════
 
+    window.deleteSelected = function() {
+        if (selectedIds.length === 0) return;
+        const idsToDelete = [...selectedIds];
+        // Prevent deleting built-in defs (only allow custom added elements)
+        const cfg = SCREEN_CONFIGS[currentScreen];
+        const builtinIds = new Set((cfg?.defs || []).map(d => d.id));
+        const deletable = idsToDelete.filter(id => !builtinIds.has(id));
+        if (deletable.length === 0) return;
+        pushUndo();
+        for (const id of deletable) {
+            const mesh = els[id];
+            if (!mesh) continue;
+            getContainer().remove(mesh);
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) {
+                if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
+                else mesh.material.dispose();
+            }
+            delete els[id];
+            delete elVisible[id];
+            delete elAnchor[id];
+            if (INIT[id]) delete INIT[id];
+            // Remove from any groups
+            for (const [gName, members] of Object.entries(groups)) {
+                const idx = members.indexOf(id);
+                if (idx !== -1) members.splice(idx, 1);
+            }
+        }
+        selectedIds = [];
+        updateUI(); updateList();
+        autoSave();
+    };
+
     window.toggleVisible = function(id, ev) {
+
         if (ev) ev.stopPropagation();
         pushUndo();
         elVisible[id] = !elVisible[id];
@@ -1906,9 +2136,16 @@
         tc.detach();
         // Remove all element meshes from their containers
         Object.values(els).forEach(mesh => {
-            mesh.geometry.dispose();
-            if (mesh.material.map) mesh.material.map.dispose();
-            mesh.material.dispose();
+            if (mesh.isGroup) {
+                mesh.children.forEach(child => {
+                    child.geometry?.dispose();
+                    child.material?.dispose();
+                });
+            } else {
+                mesh.geometry?.dispose();
+                if (mesh.material?.map) mesh.material.map.dispose();
+                mesh.material?.dispose();
+            }
             mesh.parent?.remove(mesh);
         });
         // Remove hudGroup children
@@ -1992,9 +2229,14 @@
         Object.values(els).forEach(mesh => {
             const def = mesh.userData?.def;
             if (!def) return;
-            if (def.spinX) mesh.rotation.x += def.spinX * 0.01;
-            if (def.spinY) mesh.rotation.y += def.spinY * 0.01;
-            if (def.spinZ) mesh.rotation.z += def.spinZ * 0.01;
+            if (def.type === 'grunt') {
+                // Grunt model: smooth slow Y-only rotation
+                if (def.spinY) mesh.rotation.y += def.spinY * 0.01;
+            } else {
+                if (def.spinX) mesh.rotation.x += def.spinX * 0.01;
+                if (def.spinY) mesh.rotation.y += def.spinY * 0.01;
+                if (def.spinZ) mesh.rotation.z += def.spinZ * 0.01;
+            }
         });
         renderer.render(scene, camera);
     })();
