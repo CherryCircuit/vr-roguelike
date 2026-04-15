@@ -445,40 +445,7 @@ async function createLogoSprite() {
     });
     const mesh = new THREE.Mesh(geometry, mat);
     mesh.renderOrder = 999;
-
-    // Glow plane behind the logo (additive bloom)
-    const glowCanvas = document.createElement('canvas');
-    glowCanvas.width = 512;
-    glowCanvas.height = Math.round(512 / aspect);
-    const glowCtx = glowCanvas.getContext('2d');
-    const grad = glowCtx.createRadialGradient(
-      glowCanvas.width / 2, glowCanvas.height / 2, 0,
-      glowCanvas.width / 2, glowCanvas.height / 2, glowCanvas.width / 2
-    );
-    grad.addColorStop(0, 'rgba(237, 33, 140, 0.4)');
-    grad.addColorStop(0.4, 'rgba(0, 200, 255, 0.2)');
-    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    glowCtx.fillStyle = grad;
-    glowCtx.fillRect(0, 0, glowCanvas.width, glowCanvas.height);
-    const glowTexture = new THREE.CanvasTexture(glowCanvas);
-    glowTexture.minFilter = THREE.LinearFilter;
-    const glowGeo = new THREE.PlaneGeometry(aspect * scale * 1.4, scale * 1.4);
-    const glowMat = new THREE.MeshBasicMaterial({
-      map: glowTexture,
-      transparent: true,
-      depthTest: false,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    });
-    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-    glowMesh.renderOrder = 998;
-    glowMesh.position.z = -0.01;
-
-    const group = new THREE.Group();
-    group.add(glowMesh);
-    group.add(mesh);
-    return group;
+    return mesh;
   } catch (e) {
     // Fallback: plain text if image fails
     console.warn('[hud] Logo image failed, falling back to text:', e);
@@ -910,12 +877,12 @@ async function createTitleScreen() {
 
   // Blinking "Press Trigger to Begin"
   titleBlinkSprite = makeSprite('PRESS TRIGGER TO BEGIN', {
-    fontSize: 40,
+    fontSize: 28,
     color: '#ffffff',
     glow: true, glowColor: '#ffffff',
-    scale: 1.25,
+    scale: 0.87,
   });
-  titleBlinkSprite.position.set(0, -0.15, 0);
+  titleBlinkSprite.position.set(0, -0.1, 0);
   titleBlinkSprite.name = 'titleBlinkSprite';
   titleGroup.add(titleBlinkSprite);
 
