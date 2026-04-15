@@ -15,6 +15,7 @@ import {
   playFinalBossSealBreakSound, playFinalBossChargeSound, playFinalBossAscendSound,
   playFinalBossExposeSound, playFinalBossSummonWallSound, playFinalBossReleaseWallSound,
 } from './audio.js';
+import { novemberFontFamily } from './hud.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
 let spawnVoxelExplosion = null;
@@ -2356,7 +2357,7 @@ function spawnStatusEffectBubble(position, effectType, stacks) {
 
   // Redraw canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.font = 'bold 56px Arial, sans-serif';
+  ctx.font = 'bold 56px ' + novemberFontFamily;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = glowColor;
@@ -2424,7 +2425,7 @@ function createHealthPopupTexture() {
   }
 
   // White + on the left
-  ctx.font = 'bold 72px Arial';
+  ctx.font = 'bold 72px ' + novemberFontFamily;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';

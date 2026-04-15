@@ -89,7 +89,8 @@ import {
   setLastSubmittedTimestamp,
   setLastSubmittedPageIndex,
   setFPSVisible,
-  clearHudGeoCache
+  clearHudGeoCache,
+  novemberFontFamily,
 } from './hud.js';
 
 import {
@@ -2739,7 +2740,7 @@ function updateBlasterDisplay(display, controllerIndex) {
     // Clear canvas to transparent
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    ctx.font = `bold ${size}px Arial`;
+    ctx.font = `bold ${size}px ${novemberFontFamily}`;
     ctx.fillStyle = '#00ffff';
     ctx.textAlign = 'center';
     ctx.fillText(text, 128, 32);

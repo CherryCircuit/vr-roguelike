@@ -4,6 +4,7 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { novemberFontFamily } from './hud.js';
 
 // ── TextPopupPool: Object pool for popup meshes ────────────────────
 // Reuses pre-allocated PlaneGeometry + CanvasTexture + MeshBasicMaterial
@@ -240,7 +241,7 @@ function getNumberDrawFn(value, color) {
   offscreen.width = 128;
   offscreen.height = 64;
   const offCtx = offscreen.getContext('2d');
-  offCtx.font = `bold ${fontSize}px Arial, sans-serif`;
+  offCtx.font = `bold ${fontSize}px ${novemberFontFamily}`;
   offCtx.textAlign = 'center';
   offCtx.textBaseline = 'middle';
 
@@ -411,7 +412,7 @@ function spawnOuchBubble(position, text = 'OUCH!') {
     ctx.stroke();
 
     ctx.font = 'bold 36px "Comic Sans MS", cursive, sans-serif';
-    if (text.length > 8) ctx.font = 'bold 24px "Comic Sans MS", cursive, sans-serif';
+    if (text.length > 8) ctx.font = `bold 24px "Comic Sans MS", cursive, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = text.includes('STREAK') ? '#003311' : '#ff0000';
@@ -433,7 +434,7 @@ export function spawnCritIndicator(position) {
   ensurePools();
 
   damageNumberPool.acquire(position, (canvas, ctx) => {
-    ctx.font = 'bold 36px Arial, sans-serif';
+    ctx.font = 'bold 36px ' + novemberFontFamily;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -490,7 +491,7 @@ export function spawnComboPopup(combo, cameraPos) {
 
   comboPopupPool.acquire(cameraPos, (canvas, ctx) => {
     const fontSize = 72;
-    ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+    ctx.font = `bold ${fontSize}px ${novemberFontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -561,7 +562,7 @@ export function spawnKillChainPopup(multiplier, cameraPos) {
 
   killChainPool.acquire(cameraPos, (canvas, ctx) => {
     const fontSize = 140;
-    ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+    ctx.font = `bold ${fontSize}px ${novemberFontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -583,7 +584,7 @@ export function spawnKillChainPopup(multiplier, cameraPos) {
     ctx.fillText(text, 256, 128);
 
     // Add "ACCURACY!" subtitle
-    ctx.font = 'bold 36px Arial, sans-serif';
+    ctx.font = 'bold 36px ' + novemberFontFamily;
     ctx.shadowBlur = 10;
     ctx.fillStyle = '#ffffff';
     ctx.fillText('ACCURACY!', 256, 200);
