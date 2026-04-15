@@ -423,7 +423,7 @@ export function makeSprite(text, opts = {}) {
 
 /** Load the SVG logo as a texture and return a plane mesh */
 async function createLogoSprite() {
-  const logoSize = 1024;
+  const logoSize = 2048; // Higher res for VR clarity
   const canvas = document.createElement('canvas');
   canvas.width = logoSize;
   canvas.height = Math.round(logoSize * (225 / 1153)); // match SVG aspect ratio
@@ -459,7 +459,7 @@ async function createLogoSprite() {
   texture.magFilter = THREE.LinearFilter;
 
   const aspect = canvas.width / canvas.height;
-  const scale = 1.2; // slightly larger than the old text sprite
+  const scale = 0.9; // 25% smaller than 1.2
   const geometry = new THREE.PlaneGeometry(aspect * scale, scale);
   const mat = new THREE.MeshBasicMaterial({
     map: texture,
@@ -470,7 +470,40 @@ async function createLogoSprite() {
   });
   const mesh = new THREE.Mesh(geometry, mat);
   mesh.renderOrder = 999;
-  return mesh;
+
+  // Glow plane behind the logo (cyan/pink bloom)
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = 512;
+  glowCanvas.height = Math.round(512 * (225 / 1153));
+  const glowCtx = glowCanvas.getContext('2d');
+  const grad = glowCtx.createRadialGradient(
+    glowCanvas.width / 2, glowCanvas.height / 2, 0,
+    glowCanvas.width / 2, glowCanvas.height / 2, glowCanvas.width / 2
+  );
+  grad.addColorStop(0, 'rgba(237, 33, 140, 0.4)');
+  grad.addColorStop(0.4, 'rgba(0, 200, 255, 0.2)');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  glowCtx.fillStyle = grad;
+  glowCtx.fillRect(0, 0, glowCanvas.width, glowCanvas.height);
+  const glowTexture = new THREE.CanvasTexture(glowCanvas);
+  glowTexture.minFilter = THREE.LinearFilter;
+  const glowGeo = new THREE.PlaneGeometry(aspect * scale * 1.4, scale * 1.4);
+  const glowMat = new THREE.MeshBasicMaterial({
+    map: glowTexture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  glowMesh.renderOrder = 998;
+  glowMesh.position.z = -0.01; // Behind logo
+
+  const group = new THREE.Group();
+  group.add(glowMesh);
+  group.add(mesh);
+  return group;
 }
 
 // ── Pixel heart drawing ────────────────────────────────────
@@ -886,11 +919,11 @@ async function createTitleScreen() {
   // Subtitle
   const subSprite = makeSprite('VR ROGUELIKE BLASTER', {
     fontSize: 24,
-    color: '#ff00ff',
-    glow: true, glowColor: '#ff00ff', glowSize: 5,
+    color: '#00ffff',
+    glow: true, glowColor: '#00ffff', glowSize: 5,
     scale: 0.7,
   });
-  subSprite.position.set(0, 0.5, 0);
+  subSprite.position.set(0, 0.35, 0);
   subSprite.name = 'subSprite';
   titleGroup.add(subSprite);
 
