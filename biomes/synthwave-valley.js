@@ -12,13 +12,14 @@ import { bakeCloudsToCanvas } from '../bake-clouds.js';
  * regions the player never sees.
  *
  * Distribution strategy:
- *   X axis: 45-segment center corridor, 12-seg ridge transitions,
- *           4-seg far silhouette edges
- *   Z axis: 40-segment walking corridor, 25-seg far mountain zone,
+ *   X axis: 30-segment center corridor, 8-seg ridge transitions,
+ *           4-seg mountain body, 2-seg far silhouette edges
+ *   Z axis: 25-segment walking corridor, 15-seg far mountain zone,
  *           sparse behind-player tail
  *
- * Result: ~16k triangles (vs 28.8k uniform 120x120) with ~2x
- * higher detail where the player actually looks.
+ * Result: ~6k triangles (vs 16k prior, 28.8k uniform 120x120) with
+ * concentrated detail where the player looks; fog-obscured regions
+ * aggressively simplified.
  */
 function buildTaperedTerrainGeo() {
   // Piecewise axis: each entry is [start, end, segmentCount].
@@ -39,23 +40,23 @@ function buildTaperedTerrainGeo() {
 
   // X: dense center corridor, moderate mountain flanks, sparse far edges
   const xPos = piecewise([
-    [-1200, -600,  4],   // far left silhouette (fogged)
-    [-600,  -350,  8],   // left mountain body
-    [-350,  -150, 12],   // left ridge transition
-    [-150,   150, 45],   // center corridor — HIGH detail
-    [ 150,   350, 12],   // right ridge transition
-    [ 350,   600,  8],   // right mountain body
-    [ 600,  1200,  4],   // far right silhouette (fogged)
+    [-1200, -600,  2],   // far left silhouette (fogged)
+    [-600,  -350,  4],   // left mountain body
+    [-350,  -150,  8],   // left ridge transition
+    [-150,   150, 30],   // center corridor — HIGH detail
+    [ 150,   350,  8],   // right ridge transition
+    [ 350,   600,  4],   // right mountain body
+    [ 600,  1200,  2],   // far right silhouette (fogged)
   ]);
 
   // Z: dense walking path + near mountains, sparse behind player
   const zPos = piecewise([
-    [-1200, -500, 12],   // far scenic backdrop
-    [-500,  -100, 25],   // far mountains (ridgeline near z≈-260)
-    [-100,   500, 40],   // walking corridor — HIGH detail
-    [ 500,   750,  6],   // behind-player taper
-    [ 750,  1200,  4],   // behind player — sparse
-    [ 1200, 2000,  2],   // far behind player — reach mountain cylinder
+    [-1200, -500,  6],   // far scenic backdrop
+    [-500,  -100, 15],   // far mountains (ridgeline near z≈-260)
+    [-100,   500, 25],   // walking corridor — HIGH detail
+    [ 500,   750,  4],   // behind-player taper
+    [ 750,  1200,  2],   // behind player — sparse
+    [ 1200, 2000,  1],   // far behind player — reach mountain cylinder
   ]);
 
   const nx = xPos.length;   // ~94
@@ -113,7 +114,7 @@ export function buildSynthwaveValleyScene(group, deps) {
 
   // Sky dome (no stars, we use global starfield)
   // EXACT colors: Horizon #FE9053 (orange) → Mountain tips #E00186 (pink) → Sun top #2C0051 (purple) → Top #1A004A (dark purple) → Black
-  const skyGeo = new THREE.SphereGeometry(2800, 32, 24);
+  const skyGeo = new THREE.SphereGeometry(2800, 24, 16);
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: {
@@ -136,8 +137,8 @@ export function buildSynthwaveValleyScene(group, deps) {
   registerFadeMaterial(skyMat);
 
   // Terrain - EXACT colors: Gridlines #015CC1 (bright blue), Between gridlines #0C0E3E (dark blue)
-  // TAPERED TERRAIN: Non-uniform grid concentrates detail in visible corridor (45 seg center)
-  // while cutting dead side/rear geometry. ~16k tris vs 28.8k uniform 120x120.
+  // TAPERED TERRAIN: Non-uniform grid concentrates detail in visible corridor (30 seg center)
+  // while cutting dead side/rear geometry. ~6k tris vs 16k prior, 28.8k uniform 120x120.
   const terrainUniforms = {
     uGridColor: { value: new THREE.Color(0x4368AC) },     // Gridlines
     uBaseColor: { value: new THREE.Color(0x0C1347) },     // Primary/base color
@@ -180,13 +181,13 @@ export function buildSynthwaveValleyScene(group, deps) {
   // ── MOUNTAIN WRAP CYLINDER ──
   // Large open cylinder with mountain PNG on the inside, positioned IN FRONT of sun.
   // This creates a 360° panoramic mountain backdrop as distant horizon.
-  const mountainTex = new THREE.TextureLoader().load('assets/mountain_wrap.png');
+  const mountainTex = new THREE.TextureLoader().load('assets/mountain_wrap_4k.png');
   mountainTex.wrapS = THREE.RepeatWrapping;
   mountainTex.wrapT = THREE.ClampToEdgeWrapping;
   // FIX: Ensure PNG colors display exactly as-is, no fading/washing
   mountainTex.colorSpace = THREE.SRGBColorSpace;  // Treat as sRGB (PNG standard)
   mountainTex.premultiplyAlpha = false;  // Avoid color washing from premultiplied alpha
-  // 9003px width / 609px height ≈ 14.78 aspect.
+  // 4096px width / 277px height ≈ 14.78 aspect (matches original 9003x609).
   // With a 190-high cylinder, one full image repeat should span ~2808 world units.
   const mountainRadius = 1162;
   const mountainRepeatWidth = 2808;
@@ -230,7 +231,7 @@ export function buildSynthwaveValleyScene(group, deps) {
     sunDir: [0, 0.3, -1],
     seed: 42,
   });
-  const cloudDome1Geo = new THREE.SphereGeometry(2400, 24, 12);
+  const cloudDome1Geo = new THREE.SphereGeometry(2400, 18, 10);
   const cloudDome1Mat = new THREE.MeshBasicMaterial({
     map: cloudTex,
     side: THREE.BackSide,

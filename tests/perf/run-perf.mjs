@@ -17,7 +17,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const ARTIFACT_ROOT = path.join(__dirname, 'artifacts');
 const STATIC_PORT = 8000;
-const GAME_URL = `http://localhost:${STATIC_PORT}`;
+// Perf harness needs the dev launcher because telemetry, test APIs, and exposed globals
+// are intentionally disabled in the live player launcher.
+const GAME_URL = `http://localhost:${STATIC_PORT}/dev.html`;
 
 const CHROME_ARGS = [
   '--no-sandbox',

@@ -152,16 +152,20 @@ export function getThemeForLevel(level) {
 
 // ── Ambient Particle System ───────────────────────────────
 const AMBIENT_POOL = 60;
+const AMBIENT_UPDATE_STRIDE = 3;
 let ambientParticles = null;
 let ambientGeo = null;
+let ambientUpdateCursor = 0;
 
 // Fix 1.7: Pre-allocated scratch Color for prism particles (avoid per-frame allocation)
 const _prismColorScratch = new THREE.Color();
 
 // Secondary particle system for layered effects
 const SECONDARY_POOL = 30;
+const SECONDARY_UPDATE_STRIDE = 2;
 let secondaryParticles = null;
 let secondaryGeo = null;
+let secondaryUpdateCursor = 0;
 
 // Lookup table for particle updates - eliminates switch statement overhead
 const PARTICLE_UPDATERS = {
@@ -365,6 +369,7 @@ export function initAmbientParticles(scene) {
 
   ambientParticles = points;
   ambientGeo = geo;
+  ambientUpdateCursor = 0;
 
   // Secondary particle system
   const secondaryPositions = new Float32Array(SECONDARY_POOL * 3);
@@ -393,8 +398,7 @@ export function initAmbientParticles(scene) {
 
   secondaryParticles = secondaryPoints;
   secondaryGeo = secondaryGeoInstance;
-
-  console.log('[scenery] Initialized ambient particles (60 primary, 30 secondary)');
+  secondaryUpdateCursor = 0;
 }
 
 export function removeAmbientParticles(scene) {
@@ -455,11 +459,12 @@ export function updateAmbientParticles(dt, theme, playerPos) {
     const particleType = theme.particles.type;
     const updater = PARTICLE_UPDATERS[particleType] || DEFAULT_UPDATER;
     
-    for (let i = 0; i < maxCount; i++) {
+    const ambientDt = dt * AMBIENT_UPDATE_STRIDE;
+    for (let i = ambientUpdateCursor; i < maxCount; i += AMBIENT_UPDATE_STRIDE) {
       const i3 = i * 3;
 
-      // Update particle using lookup table (faster than switch statement)
-      updater(positions, i3, now, speed, dt, i, AMBIENT_POOL, playerPos);
+      // Stagger ambient particle updates across frames to reduce per-frame work.
+      updater(positions, i3, now, speed, ambientDt, i, AMBIENT_POOL, playerPos);
 
       // Reset out-of-range particles
       const dx = positions[i3] - playerPos.x;
@@ -480,6 +485,7 @@ export function updateAmbientParticles(dt, theme, playerPos) {
     }
 
     ambientGeo.attributes.position.needsUpdate = true;
+    ambientUpdateCursor = (ambientUpdateCursor + 1) % AMBIENT_UPDATE_STRIDE;
   }
 
   // Update secondary particles
@@ -509,11 +515,12 @@ export function updateAmbientParticles(dt, theme, playerPos) {
     const secondaryType = theme.secondaryParticles.type;
     const secondaryUpdater = PARTICLE_UPDATERS[secondaryType] || DEFAULT_UPDATER;
 
-    for (let i = 0; i < maxCount; i++) {
+    const secondaryDt = dt * SECONDARY_UPDATE_STRIDE;
+    for (let i = secondaryUpdateCursor; i < maxCount; i += SECONDARY_UPDATE_STRIDE) {
       const i3 = i * 3;
 
-      // Update particle using lookup table (faster than switch statement)
-      secondaryUpdater(positions, i3, now, speed, dt, i, SECONDARY_POOL, playerPos);
+      // Stagger secondary particle updates too, but with a lighter stride.
+      secondaryUpdater(positions, i3, now, speed, secondaryDt, i, SECONDARY_POOL, playerPos);
 
       // Reset out-of-range secondary particles
       const dx = positions[i3] - playerPos.x;
@@ -531,6 +538,7 @@ export function updateAmbientParticles(dt, theme, playerPos) {
     }
 
     secondaryGeo.attributes.position.needsUpdate = true;
+    secondaryUpdateCursor = (secondaryUpdateCursor + 1) % SECONDARY_UPDATE_STRIDE;
   }
 }
 

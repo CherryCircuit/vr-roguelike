@@ -4,6 +4,9 @@
 
 import { createClient } from '@supabase/supabase-js';
 
+const SCOREBOARD_INFO_LOGS = false;
+const scoreboardInfoLog = SCOREBOARD_INFO_LOGS ? console.log.bind(console) : () => {};
+
 // ── Supabase client (lazy-loaded) ────────────────────────────
 const SUPABASE_URL = 'https://lseixvdlsbietnalbhhe.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxzZWl4dmRsc2JpZXRuYWxiaGhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2MDM0NjMsImV4cCI6MjA4NjE3OTQ2M30.0Iboawe4PRx_CdBN1NphRt3D5ZhPGiE_7wiV2l-VvQg';
@@ -12,7 +15,7 @@ let _supabase = null;
 function getSupabase() {
   if (!_supabase) {
     _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    console.log('[scoreboard] Supabase client initialized:', !!_supabase);
+    scoreboardInfoLog('[scoreboard] Supabase client initialized:', !!_supabase);
   }
   return _supabase;
 }
@@ -20,7 +23,7 @@ function getSupabase() {
 // ── Score CRUD ──────────────────────────────────────────────
 
 export async function submitScore(name, score, levelReached, country) {
-  console.log(`[scoreboard] Submitting score for ${name}: ${score} (Level ${levelReached}, Country: ${country})`);
+  scoreboardInfoLog(`[scoreboard] Submitting score for ${name}: ${score} (Level ${levelReached}, Country: ${country})`);
 
   try {
     const response = await fetch('/api/submit-score', {
@@ -41,7 +44,7 @@ export async function submitScore(name, score, levelReached, country) {
       return null;
     }
 
-    console.log('[scoreboard] Submit successful:', result);
+    scoreboardInfoLog('[scoreboard] Submit successful:', result);
     return result.data || result;
   } catch (err) {
     console.error('[scoreboard] Submit exception:', err);
@@ -50,7 +53,7 @@ export async function submitScore(name, score, levelReached, country) {
 }
 
 export async function fetchTopScores(limit = 100) {
-  console.log('[scoreboard] Fetching top scores...');
+  scoreboardInfoLog('[scoreboard] Fetching top scores...');
   const { data, error } = await getSupabase()
     .from('scores')
     .select('name, score, level_reached, country, created_at')
@@ -61,7 +64,7 @@ export async function fetchTopScores(limit = 100) {
     console.error('[scoreboard] Fetch error:', error.message, error.details, error.hint);
     return [];
   }
-  console.log(`[scoreboard] Fetch successful: ${data ? data.length : 0} scores found`);
+  scoreboardInfoLog(`[scoreboard] Fetch successful: ${data ? data.length : 0} scores found`);
   return data || [];
 }
 
@@ -315,5 +318,4 @@ export async function testConnection() {
 // Expose test function globally for console access
 if (typeof window !== 'undefined') {
   window.testSupabaseConnection = testConnection;
-  console.log('💡 Tip: Run window.testSupabaseConnection() to test the scoreboard');
 }

@@ -12,7 +12,6 @@ let sceneRef = null;
 // ── Initialization ─────────────────────────────────────────
 export function initVFX(scene) {
   sceneRef = scene;
-  console.log('[vfx] Initialized (stub - voxel system in main.js)');
 }
 
 // ── Update Loop ────────────────────────────────────────────
