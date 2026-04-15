@@ -8,7 +8,7 @@ import {
   makeSprite, updateSpriteText, disposeGroupChildren,
   hudGroup, cameraRef,
   pauseMenuGroup, pauseCountdownGroup,
-  loadLayout
+  loadLayout, novemberFontFamily,
 } from './hud.js';
 import { playMenuHoverSound } from './audio.js';
 
@@ -643,7 +643,7 @@ function updatePauseCharts() {
 
   // Accuracy percentage text
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 24px monospace';
+  ctx.font = 'bold 24px ' + novemberFontFamily;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`${Math.floor(accuracy * anim)}%`, centerX, centerY);
@@ -669,7 +669,7 @@ function updatePauseCharts() {
 
     // Label
     ctx.fillStyle = '#888888';
-    ctx.font = `${scalePauseFont(10)}px monospace`;
+    ctx.font = `${scalePauseFont(10)}px ${novemberFontFamily}`;
     ctx.textAlign = 'center';
     ctx.fillText(hand.toUpperCase(), barBaseX + (i * barSpacing) + barWidth / 2, barBaseY + 10);
   });

@@ -42,7 +42,14 @@ const SCENE_Y_OFFSET = -0.725;
 
 // ── November Font Loading ───────────────────────────────────
 let novemberFontLoaded = false;
-let novemberFontFamily = 'November';
+export let novemberFontFamily = 'November';
+
+/** Central font resolution: November if loaded, else Arial fallback. */
+export function getGameFont(weight = 'bold', size) {
+  const family = novemberFontFamily;
+  if (size != null) return `${weight} ${size}px ${family}`;
+  return family;
+}
 
 async function loadNovemberFont() {
   if (novemberFontLoaded) return true;
@@ -322,7 +329,8 @@ function makeTextTexture(text, opts = {}) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   const fontSize = opts.fontSize || 64;
-  const font = `bold ${fontSize}px Arial, sans-serif`;
+  const fontFamily = opts.forceArial ? 'Arial, sans-serif' : novemberFontFamily;
+  const font = `bold ${fontSize}px ${fontFamily}`;
   const maxWidth = opts.maxWidth || null;
 
   ctx.font = font;
@@ -434,7 +442,7 @@ async function createLogoSprite() {
     });
 
     const aspect = texture.image.width / texture.image.height;
-    const scale = 0.9;
+    const scale = 1.44; // 160% of previous 0.9
     const geometry = new THREE.PlaneGeometry(aspect * scale, scale);
     const mat = new THREE.MeshBasicMaterial({
       map: texture,
@@ -1165,6 +1173,7 @@ export function updateSpriteText(sprite, text, opts = {}) {
     shadow: true,
     glow: opts.glow,
     glowColor: opts.glowColor,
+    forceArial: opts.forceArial,
   });
   sprite.material.map = texture;
   sprite.material.needsUpdate = true;
@@ -1337,7 +1346,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   const headerCanvas = document.createElement('canvas');
   const hCtx = headerCanvas.getContext('2d');
   const hFontSize = 48;
-  hCtx.font = `bold ${hFontSize}px Arial, sans-serif`;
+  hCtx.font = `bold ${hFontSize}px ${novemberFontFamily}`;
   const line1Text = 'CHOOSE UPGRADE';
   const line2Text = handName;
   const line3Text = weaponName;
@@ -1349,7 +1358,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   const hPad = 25;  // glow padding
   headerCanvas.width = maxW + hPad * 2;
   headerCanvas.height = Math.ceil(hLineHeight * 3) + hPad * 2;
-  hCtx.font = `bold ${hFontSize}px Arial, sans-serif`;
+  hCtx.font = `bold ${hFontSize}px ${novemberFontFamily}`;
   hCtx.textAlign = 'center';
   hCtx.textBaseline = 'middle';
   // Line 1: white with glow
@@ -1364,7 +1373,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   hCtx.fillText(line2Text, headerCanvas.width / 2, hMidY);
   // Line 3: weapon name in same hand color (smaller font, no glow)
   const weaponFontSize = 36;
-  hCtx.font = `${weaponFontSize}px Arial, sans-serif`;
+  hCtx.font = `${weaponFontSize}px ${novemberFontFamily}`;
   hCtx.shadowBlur = 0;
   hCtx.fillText(line3Text, headerCanvas.width / 2, hMidY + hLineHeight);
   const headerTexture = new THREE.CanvasTexture(headerCanvas);
@@ -1660,8 +1669,11 @@ function createUpgradeCard(upgrade, position, hand) {
     transparent: true,
     opacity: 0.91,
     side: THREE.DoubleSide,
+    depthWrite: false,
+    depthTest: true,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
+  card.renderOrder = 1;  // Draw after mountain backdrop (renderOrder 0) so depth doesn't cull it
   card.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
   card.userData.isUpgradeCard = true;
   card.userData.upgradeId = upgrade.id;
@@ -1713,16 +1725,17 @@ function createUpgradeCard(upgrade, position, hand) {
     maxWidth: 600,
   }, new THREE.Vector3(0, 0.55, 0.01));
 
-  // #18: Description text - queued
+  // #18: Description text - queued (forceArial for legibility)
   queueTextSprite(group, upgrade.desc, {
     fontSize: 32,
     color: '#cccccc',
     scale: 0.36,
     depthTest: true,
     maxWidth: 280,
+    forceArial: true,
   }, new THREE.Vector3(0, 0.15, 0.01));
 
-  // Running total text for stackable upgrades - queued
+  // Running total text for stackable upgrades - queued (forceArial for legibility)
   const totalText = getUpgradeTotalText(upgrade, hand);
   if (totalText) {
     queueTextSprite(group, totalText, {
@@ -1731,10 +1744,11 @@ function createUpgradeCard(upgrade, position, hand) {
       scale: 0.14,
       depthTest: true,
       maxWidth: 300,
+      forceArial: true,
     }, new THREE.Vector3(0, -0.05, 0.01));
   }
 
-  // Side-grade note - queued
+  // Side-grade note - queued (forceArial for legibility)
   if (upgrade.sideGradeNote) {
     queueTextSprite(group, upgrade.sideGradeNote, {
       fontSize: 22,
@@ -1742,6 +1756,7 @@ function createUpgradeCard(upgrade, position, hand) {
       scale: 0.14,
       depthTest: true,
       maxWidth: 280,
+      forceArial: true,
     }, new THREE.Vector3(0, -0.15, 0.01));
   }
 
@@ -1778,8 +1793,11 @@ function createSkipCard(position) {
     transparent: true,
     opacity: 0.91,
     side: THREE.DoubleSide,
+    depthWrite: false,
+    depthTest: true,
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
+  card.renderOrder = 1;  // Draw after mountain backdrop (renderOrder 0) so depth doesn't cull it
   card.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
   card.userData.isUpgradeCard = true;
   card.userData.upgradeId = 'SKIP';
@@ -1825,13 +1843,14 @@ function createSkipCard(position) {
     depthTest: true,
   }, new THREE.Vector3(0, 0.48, 0.01));
 
-  // Description - queued
+  // Description - queued (forceArial for legibility)
   queueTextSprite(group, 'Skip upgrades and gain full health.', {
     fontSize: 32,
     color: '#88ffaa',
     scale: 0.36,
     depthTest: true,
     maxWidth: 280,
+    forceArial: true,
   }, new THREE.Vector3(0, -0.02, 0.01));
 
   // Heart icon (shared geometry, delayed reveal)
@@ -2272,7 +2291,7 @@ export function updateFPS(now, opts = {}) {
 
     // Configure text style
     const fontSize = perfMonitor ? 48 : 72;
-    fpsCtx.font = `bold ${fontSize}px Arial, sans-serif`;
+    fpsCtx.font = `bold ${fontSize}px ${novemberFontFamily}`;
     fpsCtx.textAlign = 'center';
     fpsCtx.textBaseline = 'middle';
 
@@ -2854,7 +2873,7 @@ function updateCharSlotSprite(index, char) {
 
   if (char) {
     // Draw character
-    ctx.font = 'bold 64px Arial, sans-serif';
+    ctx.font = `bold 64px ${novemberFontFamily}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffffff';
@@ -3102,7 +3121,7 @@ export function showNameEntry(score, level, storedName, countryLabel, playerPos)
 
   const labelUVMap = {};
   labelChars.forEach((lc, i) => {
-    atlasCtx.font = 'bold 52px Arial, sans-serif';
+    atlasCtx.font = `bold 52px ${novemberFontFamily}`;
     atlasCtx.fillStyle = lc.color;
     atlasCtx.fillText(lc.label, i * cellW + cellW / 2, cellH / 2);
     labelUVMap[lc.label] = {
