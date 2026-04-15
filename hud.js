@@ -421,6 +421,58 @@ export function makeSprite(text, opts = {}) {
   return mesh;
 }
 
+/** Load the SVG logo as a texture and return a plane mesh */
+async function createLogoSprite() {
+  const logoSize = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = logoSize;
+  canvas.height = Math.round(logoSize * (225 / 1153)); // match SVG aspect ratio
+  const ctx = canvas.getContext('2d');
+
+  // Load SVG via fetch
+  try {
+    const response = await fetch('logo.svg');
+    if (!response.ok) throw new Error('Logo not found');
+    const svgText = await response.text();
+    const blob = new Blob([svgText], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = url;
+    });
+
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    // Fallback: plain text if SVG fails
+    console.warn('[hud] Logo SVG failed, falling back to text:', e);
+    return makeSprite('SPACEOMICIDE', {
+      fontSize: 70, color: '#00ffff', glow: true, glowColor: '#0088ff', glowSize: 15, scale: 1.0,
+    });
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+
+  const aspect = canvas.width / canvas.height;
+  const scale = 1.2; // slightly larger than the old text sprite
+  const geometry = new THREE.PlaneGeometry(aspect * scale, scale);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geometry, mat);
+  mesh.renderOrder = 999;
+  return mesh;
+}
+
 // ── Pixel heart drawing ────────────────────────────────────
 const HEART_PIXELS = [
   [0, 1, 1, 0, 1, 1, 0],
@@ -825,13 +877,8 @@ export function flashBossHealthBarGreen() {
 // ── Title Screen ───────────────────────────────────────────
 
 async function createTitleScreen() {
-  // Big title: SPACEOMICIDE
-  const titleSprite = makeSprite('SPACEOMICIDE', {
-    fontSize: 70,
-    color: '#00ffff',
-    glow: true, glowColor: '#0088ff', glowSize: 15,
-    scale: 1.0,
-  });
+  // Logo: SPACE☢MICIDE SVG
+  const titleSprite = await createLogoSprite();
   titleSprite.position.set(0, 0.932, 0);
   titleSprite.name = 'titleSprite';
   titleGroup.add(titleSprite);
