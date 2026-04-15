@@ -3,6 +3,8 @@
 // ============================================================
 
 let audioCtx = null;
+const AUDIO_INFO_LOGS = false;
+const audioInfoLog = AUDIO_INFO_LOGS ? console.log.bind(console) : () => {};
 
 const skipStreamingAudio = typeof navigator !== 'undefined' && navigator.webdriver;
 let loggedStreamingSkip = false;
@@ -10,7 +12,7 @@ function shouldStreamRemoteAudio() {
   if (typeof window !== 'undefined' && window.debugForceStreamingAudio) return true;
   if (!skipStreamingAudio) return true;
   if (!loggedStreamingSkip) {
-    console.log('[audio] Skipping remote streaming audio under automation (navigator.webdriver=true)');
+    audioInfoLog('[audio] Skipping remote streaming audio under automation (navigator.webdriver=true)');
     loggedStreamingSkip = true;
   }
   return false;
@@ -1683,7 +1685,7 @@ export function startLightningSound() {
   lightningVolumeTimeout = setTimeout(() => {
     if (lightningGain) {
       lightningGain.gain.setValueAtTime(1.2, ctx.currentTime);
-      console.log('[audio] Lightning volume eased (4s continuous)');
+      audioInfoLog('[audio] Lightning volume eased (4s continuous)');
     }
   }, 4000);
 }
@@ -1827,7 +1829,7 @@ function playNextTrack() {
 
   const track = currentPlaylist[currentTrackIndex];
   const token = musicFadeToken; // capture so error handler can detect stale calls
-  console.log(`[music] Playing track ${currentTrackIndex + 1}/${currentPlaylist.length}: ${track}`);
+  audioInfoLog(`[music] Playing track ${currentTrackIndex + 1}/${currentPlaylist.length}: ${track}`);
 
   const ctx = getAudioContext();
 
@@ -1892,7 +1894,7 @@ export function playMusic(category, loop = true) {
   currentPlaylist = shuffleArray(tracks);
   currentTrackIndex = 0;
 
-  console.log(`[music] Starting playlist for ${category} with ${currentPlaylist.length} tracks (loop: ${loop})`);
+  audioInfoLog(`[music] Starting playlist for ${category} with ${currentPlaylist.length} tracks (loop: ${loop})`);
   playNextTrack();
 }
 
@@ -1928,7 +1930,7 @@ export function playBossMusic(tier) {
   lastBossTrack[tier] = currentPlaylist[0];
   currentTrackIndex = 0;
 
-  console.log(`[music] Starting boss playlist (tier ${tier}) with ${currentPlaylist.length} tracks, opener: ${currentPlaylist[0].split('/').pop()}`);
+  audioInfoLog(`[music] Starting boss playlist (tier ${tier}) with ${currentPlaylist.length} tracks, opener: ${currentPlaylist[0].split('/').pop()}`);
   playNextTrack();
 }
 

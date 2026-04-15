@@ -29,12 +29,8 @@ export function buildDesertNightScene(group, deps) {
   moonLight.shadow.bias = -0.0005;
   group.add(moonLight);
 
-  // Very dim ambient
-  const ambientLight = new THREE.AmbientLight(0x1a2035, 0.15);
-  group.add(ambientLight);
-
-  // Hemisphere light for sky/ground color
-  const hemiLight = new THREE.HemisphereLight(0x1a2035, 0x2d1f1a, 0.2);
+  // Hemisphere light provides sky/ground ambient (replaces separate AmbientLight + HemisphereLight)
+  const hemiLight = new THREE.HemisphereLight(0x1a2035, 0x2d1f1a, 0.35);
   group.add(hemiLight);
 
   // Front-fill light - moonlit blue over player position

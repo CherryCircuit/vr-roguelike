@@ -212,14 +212,10 @@ export function buildAlienPlanetScene(group, deps) {
   greenLight.position.set(0, 35, 0);
   group.add(greenLight);
 
-  // Purple accent lights
-  const purpleLight1 = new THREE.PointLight(0x6622aa, 1.5, 50);
-  purpleLight1.position.set(-30, 20, -30);
-  group.add(purpleLight1);
-
-  const purpleLight2 = new THREE.PointLight(0x8833cc, 1.2, 45);
-  purpleLight2.position.set(25, 18, 35);
-  group.add(purpleLight2);
+  // Purple accent light (merged from two symmetric low-intensity purples)
+  const purpleLight = new THREE.PointLight(0x7733bb, 2.0, 60);
+  purpleLight.position.set(0, 22, 0);
+  group.add(purpleLight);
 
   // River path used for plant placement (but no visible river mesh)
   const riverPoints = [];
@@ -551,7 +547,7 @@ export function buildAlienPlanetScene(group, deps) {
   }
 
   // Darkened mountain wrap cylinder (synthwave asset, very dark for silhouette backdrop)
-  const alienMountainTex = new THREE.TextureLoader().load('assets/mountain_wrap.png');
+  const alienMountainTex = new THREE.TextureLoader().load('assets/mountain_wrap_4k.png');
   alienMountainTex.wrapS = THREE.RepeatWrapping;
   alienMountainTex.wrapT = THREE.ClampToEdgeWrapping;
   const alienMtnRadius = 148;  // Fits within 300x300 floor

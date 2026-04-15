@@ -9,6 +9,8 @@ let enabled = false;
 let sceneRef = null;
 let cameraRef = null;
 let rendererRef = null;
+const DESKTOP_CONTROL_INFO_LOGS = false;
+const desktopInfoLog = DESKTOP_CONTROL_INFO_LOGS ? console.log.bind(console) : () => {};
 
 // Movement state
 const keys = {
@@ -115,14 +117,14 @@ export function initDesktopControls(scene, camera, renderer) {
   // Auto-detect VR availability
   if (navigator.xr) {
     navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
-      console.log(`[desktop-controls] VR available: ${supported}`);
+      desktopInfoLog(`[desktop-controls] VR available: ${supported}`);
       if (!supported) {
-        console.log('[desktop-controls] No VR detected - enabling desktop mode');
+        desktopInfoLog('[desktop-controls] No VR detected - enabling desktop mode');
         enable();
       }
     });
   } else {
-    console.log('[desktop-controls] WebXR not supported - enabling desktop mode');
+    desktopInfoLog('[desktop-controls] WebXR not supported - enabling desktop mode');
     enable();
   }
 
@@ -138,7 +140,7 @@ export function enable() {
   if (enabled) return;
   enabled = true;
   debugMode = true; // Enable debug movement in desktop mode
-  console.log('[desktop-controls] Enabled (debug mode)');
+  desktopInfoLog('[desktop-controls] Enabled (debug mode)');
 
   // Sync player position with camera
   if (cameraRef) {
@@ -164,7 +166,7 @@ export function enable() {
     if (req && req.catch) {
       req.catch((err) => {
         if (err && err.name === 'SecurityError') return;
-        console.log('[desktop-controls] Click to enable mouse look');
+        desktopInfoLog('[desktop-controls] Click to enable mouse look');
       });
     }
   }
@@ -182,7 +184,7 @@ export function disable() {
   if (!enabled) return;
   enabled = false;
   debugMode = false;
-  console.log('[desktop-controls] Disabled');
+  desktopInfoLog('[desktop-controls] Disabled');
 
   // Exit pointer lock
   document.exitPointerLock = document.exitPointerLock ||
@@ -470,7 +472,7 @@ function setupEventListeners() {
       if (req && req.catch) {
         req.catch((err) => {
           if (err && err.name === 'SecurityError') return;
-          console.log('[desktop-controls] Click to enable mouse look');
+          desktopInfoLog('[desktop-controls] Click to enable mouse look');
         });
       }
     }
@@ -609,7 +611,7 @@ function onMouseWheel(e) {
     weaponState.fireMode = modes[(currentIndex - 1 + modes.length) % modes.length];
   }
 
-  console.log(`[desktop-controls] Fire mode: ${weaponState.fireMode}`);
+  desktopInfoLog(`[desktop-controls] Fire mode: ${weaponState.fireMode}`);
 }
 
 function onPointerLockChange() {
@@ -617,7 +619,7 @@ function onPointerLockChange() {
     document.mozPointerLockElement === document.body ||
     document.webkitPointerLockElement === document.body;
 
-  console.log(`[desktop-controls] Pointer lock: ${mouse.locked}`);
+  desktopInfoLog(`[desktop-controls] Pointer lock: ${mouse.locked}`);
 }
 
 function onPointerLockError() {

@@ -8052,6 +8052,8 @@ function spawnBossProjectileDestructionFX(position, projColor) {
   playBossProjectileDestroySound();
 }
 
+const SEEKER_RETARGET_INTERVAL_MS = 120;
+
 // [CORE] Update seeker projectile visual (homing curve)
 function updateSeekerProjectileVisual(proj, dt) {
   if (!proj || !proj.children || proj.children.length < 2) return;
@@ -9170,6 +9172,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   mesh.userData.homingStrength = stats.homing ? 15 : 0;
   mesh.userData.baseSpeed = projectileSpeed;
   mesh.userData.homingTarget = null;
+  mesh.userData.nextHomingTargetRefreshAt = 0;
   mesh.userData.tailPhase = stats.homing ? Math.random() * Math.PI * 2 : 0;
   mesh.userData.tailSpeed = stats.homing ? 16 + Math.random() * 5 : 0;
   mesh.visible = true;
@@ -9938,9 +9941,10 @@ function updateProjectiles(dt) {
       const targetStillValid = targetMesh
         && targetMesh.parent
         && targetMesh.position.distanceToSquared(proj.position) <= proj.userData.homingRange * proj.userData.homingRange;
-      if (!targetStillValid) {
+      if (!targetStillValid && now >= (proj.userData.nextHomingTargetRefreshAt || 0)) {
         targetMesh = findSeekerTarget(proj);
         proj.userData.homingTarget = targetMesh || null;
+        proj.userData.nextHomingTargetRefreshAt = now + SEEKER_RETARGET_INTERVAL_MS;
       }
 
       const baseSpeed = proj.userData.baseSpeed || proj.userData.velocity.length();

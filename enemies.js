@@ -4721,7 +4721,7 @@ class Boss {
 
   fireProjectile(targetPos) {
     // Base projectile firing
-    if (typeof spawnBossProjectile === 'function') {
+    {
       const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
       spawnBossProjectile(fromPos, targetPos);
     }
@@ -5008,7 +5008,7 @@ class HoloPhantomBoss extends Boss {
       leftTarget.x -= spread;
       const rightTarget = playerPos.clone();
       rightTarget.x += spread;
-      if (typeof spawnBossProjectile === 'function') {
+      {
         const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
         spawnBossProjectile(fromPos, leftTarget);
         spawnBossProjectile(fromPos, rightTarget);
@@ -5119,7 +5119,7 @@ class PulseEmitterBoss extends Boss {
           playerPos.y,
           playerPos.z + Math.sin(angle) * 3
         );
-        if (typeof spawnBossProjectile === 'function') {
+        {
           const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
           spawnBossProjectile(fromPos, target);
         }
@@ -5188,7 +5188,7 @@ class RustSerpentBoss extends Boss {
       const target = playerPos.clone();
       target.x += (Math.random() - 0.5) * spread;
       target.z += (Math.random() - 0.5) * spread;
-      if (typeof spawnBossProjectile === 'function') {
+      {
         const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
         spawnBossProjectile(fromPos, target);
       }
@@ -5294,7 +5294,7 @@ class StaticWispBoss extends Boss {
       const target = playerPos.clone();
       target.x += (Math.random() - 0.5) * spread;
       target.z += (Math.random() - 0.5) * spread;
-      if (typeof spawnBossProjectile === 'function') {
+      {
         const fromPos = this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
         spawnBossProjectile(fromPos, target);
       }
@@ -5973,7 +5973,7 @@ class SkullBoss extends Boss {
     this.later(150, () => {
       // Cancel if hand was destroyed during telegraph delay
       if (!hand.alive) return;
-      if (typeof spawnBossProjectile === 'function') {
+      {
         spawnBossProjectile(hand.getPosition(), playerPos);
       }
     });
@@ -5992,7 +5992,7 @@ class SkullBoss extends Boss {
 
     this.later(200, () => {
       eyePositions.forEach(eyePos => {
-        if (typeof spawnBossProjectile === 'function') {
+        {
           spawnBossProjectile(eyePos, playerPos);
         }
       });
@@ -6035,7 +6035,7 @@ class SkullBoss extends Boss {
     const curveOffset = perpDir.clone().multiplyScalar(this.necroShotSide * 4.0);
     const curvedTarget = playerPos.clone().add(curveOffset);
 
-    if (typeof spawnBossProjectile === 'function') {
+    {
       spawnBossProjectile(eyePos, curvedTarget, false, 0);
     }
   }
@@ -6206,7 +6206,7 @@ class HunterBoss extends Boss {
         this.showTelegraph('projectile', 0.3, 0xffaa00, droneWorldPos, droneDir);
       }
       this.later(300, () => {
-        if (typeof spawnBossProjectile === 'function') {
+        {
           spawnBossProjectile(droneWorldPos, playerPos);
         }
       });
@@ -6760,7 +6760,7 @@ class TrainBoss extends Boss {
       // All cars fire from their own positions
       for (let carNum = 1; carNum <= 3; carNum++) {
         const carPos = this.getCarCenter(carNum);
-        if (typeof spawnBossProjectile === 'function') {
+        {
           spawnBossProjectile(carPos, playerPos);
         }
       }
@@ -7173,7 +7173,7 @@ class MinotaurBoss extends Boss {
       const fromPos = bossPos.clone().add(new THREE.Vector3(0, 1.5, 0));
 
       this.later(i * 50, () => {
-        if (typeof spawnBossProjectile === 'function') {
+        {
           spawnBossProjectile(fromPos, targetPos);
         }
       });
@@ -7202,7 +7202,7 @@ class MinotaurBoss extends Boss {
       }
 
       this.later(200, () => {
-        if (typeof spawnBossProjectile === 'function') {
+        {
           // Add some spread
           const spread = (idx === 0 ? -1 : 1) * 0.3;
           const target = playerPos.clone();
@@ -7716,7 +7716,7 @@ class PrismBoss extends Boss {
             target.y += (Math.random() - 0.5) * 2.0;
           }
           const arcHeight = 2.0 + Math.random() * 4.0;
-          if (typeof spawnBossProjectile === 'function') {
+          {
             spawnBossProjectile(bossPos, target, true, arcHeight);
           }
           this._spinShotsFired++;
@@ -7838,7 +7838,7 @@ class PrismBoss extends Boss {
       const arcHeight = 3.0 + Math.random() * 5.0;
 
       this.later(i * 60, () => {
-        if (typeof spawnBossProjectile === 'function') {
+        {
           spawnBossProjectile(bossPos.clone(), target, true, arcHeight);
         }
       });
@@ -8069,7 +8069,7 @@ class PrismBoss extends Boss {
               target.y += (Math.random() - 0.5) * 2.0;
             }
             const arcHeight = 2.0 + Math.random() * 4.0;
-            if (typeof spawnBossProjectile === 'function') {
+            {
               spawnBossProjectile(bossPos, target, true, arcHeight);
             }
             this._rejoinSpinShotsFired++;
@@ -8165,7 +8165,7 @@ class PrismBoss extends Boss {
           this.mesh.position.y,
           this.mesh.position.z + Math.sin(angle) * 10
         );
-        if (typeof spawnBossProjectile === 'function') {
+        {
           spawnBossProjectile(this.mesh.position.clone(), targetPos);
         }
       }
@@ -11171,6 +11171,45 @@ export function clearBossProjectiles() {
   }
 }
 
+// ── LOBBED TRAJECTORY MATH (shared) ─────────────────────
+// Computes initial velocity for a lobbed projectile arc from fromPos to targetPos.
+// Returns { velocity: THREE.Vector3, flightTime: number }.
+function computeLobbedVelocity(fromPos, targetPos, arcHeight = 3.5, speed = 6.0) {
+  const horizontalDir = new THREE.Vector3(
+    targetPos.x - fromPos.x,
+    0,
+    targetPos.z - fromPos.z
+  );
+  const horizontalDist = horizontalDir.length();
+  if (horizontalDist > 0.001) horizontalDir.normalize();
+
+  const gravity = 9.8;
+  const heightDiff = targetPos.y - fromPos.y;
+  let flightTime = Math.max(0.8, horizontalDist / speed);
+  let initialUpSpeed = (heightDiff + 0.5 * gravity * flightTime * flightTime) / flightTime;
+
+  const peakAboveLaunch = (initialUpSpeed * initialUpSpeed) / (2 * gravity);
+  if (peakAboveLaunch < arcHeight) {
+    const minV0y = Math.sqrt(2 * gravity * arcHeight);
+    const disc = minV0y * minV0y - 2 * gravity * heightDiff;
+    flightTime = disc >= 0
+      ? (minV0y + Math.sqrt(disc)) / gravity
+      : minV0y * 2 / gravity;
+    flightTime = Math.max(flightTime, 0.8);
+    initialUpSpeed = (heightDiff + 0.5 * gravity * flightTime * flightTime) / flightTime;
+  }
+
+  const horizontalSpeed = flightTime > 0.001 ? horizontalDist / flightTime : 0;
+  return {
+    velocity: new THREE.Vector3(
+      horizontalDir.x * horizontalSpeed,
+      initialUpSpeed,
+      horizontalDir.z * horizontalSpeed
+    ),
+    flightTime,
+  };
+}
+
 export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeight = 3.5) {
   // Don't spawn if no active boss (prevents leaked projectiles during transitions)
   if (!activeBoss) return;
@@ -11198,49 +11237,9 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
   let wiggleAmplitude;
 
   if (lobbed) {
-    // Lobbed projectile: arc trajectory aimed at player position
-    const horizontalDir = new THREE.Vector3(
-      targetPos.x - fromPos.x,
-      0,
-      targetPos.z - fromPos.z
-    );
-    const horizontalDist = horizontalDir.length();
-    if (horizontalDist > 0.001) horizontalDir.normalize();
-
-    const gravity = 9.8;
-    const heightDiff = targetPos.y - fromPos.y;
-
-    // Start with flight time proportional to horizontal distance
-    let flightTime = Math.max(0.8, horizontalDist / 6.0);
-
-    // Compute v0y so the projectile lands at targetPos.y at flightTime
-    // y(T) = fromPos.y + v0y*T - 0.5*g*T^2 = targetPos.y
-    // v0y = (heightDiff + 0.5*g*T^2) / T
-    let initialUpSpeed = (heightDiff + 0.5 * gravity * flightTime * flightTime) / flightTime;
-
-    // Ensure the arc peaks at least arcHeight above the launch position
-    // Peak above launch = v0y^2 / (2*g)
-    const peakAboveLaunch = (initialUpSpeed * initialUpSpeed) / (2 * gravity);
-    if (peakAboveLaunch < arcHeight) {
-      // Need a higher arc: increase flightTime so v0y produces >= arcHeight above launch
-      const minV0y = Math.sqrt(2 * gravity * arcHeight);
-      // Solve: minV0y = (heightDiff + 0.5*g*T^2) / T  =>  0.5*g*T^2 - minV0y*T + heightDiff = 0
-      const disc = minV0y * minV0y - 2 * gravity * heightDiff;
-      flightTime = disc >= 0
-        ? (minV0y + Math.sqrt(disc)) / gravity
-        : minV0y * 2 / gravity; // fallback for extreme cases
-      flightTime = Math.max(flightTime, 0.8);
-      initialUpSpeed = (heightDiff + 0.5 * gravity * flightTime * flightTime) / flightTime;
-    }
-
-    const horizontalSpeed = flightTime > 0.001 ? horizontalDist / flightTime : 0;
-
-    velocity = new THREE.Vector3(
-      horizontalDir.x * horizontalSpeed,
-      initialUpSpeed,
-      horizontalDir.z * horizontalSpeed
-    );
-    homingStrength = 0; // No homing for lobbed projectiles
+    const lob = computeLobbedVelocity(fromPos, targetPos, arcHeight);
+    velocity = lob.velocity;
+    homingStrength = 0;
     wiggleAmplitude = 0;
   } else {
     // Straight-line homing projectile (original behavior)
@@ -11273,10 +11272,6 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
 }
 
 // Convenience wrapper for lobbed projectiles (skull phase eye shots)
-export function spawnBossLobbedProjectile(fromPos, targetPos, arcHeight = 3.5) {
-  return spawnBossProjectile(fromPos, targetPos, true, arcHeight);
-}
-
 // Mortar enemy lobbed projectile (works without active boss)
 export function spawnMortarProjectile(fromPos, targetPos, arcHeight = 2.0) {
   // Initialize pools if needed
@@ -11292,44 +11287,9 @@ export function spawnMortarProjectile(fromPos, targetPos, arcHeight = 2.0) {
   const idx = acquireBossProjIndex();
   if (idx < 0) return;
 
-  // Lobbed trajectory calculation
-  const horizontalDir = new THREE.Vector3(
-    targetPos.x - fromPos.x,
-    0,
-    targetPos.z - fromPos.z
-  );
-  const horizontalDist = horizontalDir.length();
-  if (horizontalDist > 0.001) horizontalDir.normalize();
+  const lob = computeLobbedVelocity(fromPos, targetPos, arcHeight);
 
-  const gravity = 9.8;
-  const heightDiff = targetPos.y - fromPos.y;
-  let flightTime = Math.max(0.8, horizontalDist / 6.0);
-  let initialUpSpeed = (heightDiff + 0.5 * gravity * flightTime * flightTime) / flightTime;
-
-  const peakAboveLaunch = (initialUpSpeed * initialUpSpeed) / (2 * gravity);
-  if (peakAboveLaunch < arcHeight) {
-    const minV0y = Math.sqrt(2 * gravity * arcHeight);
-    const a = 0.5 * gravity;
-    const b = -heightDiff;
-    const c = -(minV0y * minV0y) / (2 * gravity);
-    const discriminant = b * b - 4 * a * c;
-    if (discriminant >= 0) {
-      const t1 = (-b + Math.sqrt(discriminant)) / (2 * a);
-      const t2 = (-b - Math.sqrt(discriminant)) / (2 * a);
-      flightTime = Math.max(t1, t2);
-      if (flightTime <= 0) flightTime = Math.min(t1, t2);
-      if (flightTime <= 0) flightTime = horizontalDist / 6.0;
-    }
-    initialUpSpeed = (heightDiff + 0.5 * gravity * flightTime * flightTime) / flightTime;
-  }
-
-  const velocity = new THREE.Vector3(
-    horizontalDir.x * (horizontalDist / flightTime),
-    initialUpSpeed,
-    horizontalDir.z * (horizontalDist / flightTime)
-  );
-
-  createBossProjectileRecord(idx, fromPos, velocity, {
+  createBossProjectileRecord(idx, fromPos, lob.velocity, {
     lifetime: 6000,
     homingStrength: 0,
     wigglePhase: 0,
@@ -11339,16 +11299,13 @@ export function spawnMortarProjectile(fromPos, targetPos, arcHeight = 2.0) {
     explosionRadius: 0.3,
     hitRadius: 0.3,
     lobbed: true,
-    gravity,
+    gravity: 9.8,
     userData: { isMortarProjectile: true },
   });
 
   _bossProjMatrix.compose(fromPos, _identityQuat, _unitScale);
   bossProjCorePool.setMatrixAt(idx, _bossProjMatrix);
   bossProjCorePool.instanceMatrix.needsUpdate = true;
-
-  // Mortar projectiles use the default white core + red glow (matching boss projectile appearance)
-
 }
 
 export function updateBossProjectiles(dt, now, playerPos) {

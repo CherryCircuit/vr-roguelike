@@ -59,7 +59,6 @@ async function loadNovemberFont() {
     await font.load();
     document.fonts.add(font);
     novemberFontLoaded = true;
-    console.log('[hud] November font loaded successfully');
     return true;
   } catch (err) {
     console.warn('[hud] Failed to load November font, falling back to monospace:', err);

@@ -9,6 +9,9 @@ import { buildAlienPlanetScene } from './biomes/alien-planet.js';
 import { buildHellscapeLavaScene } from './biomes/hellscape-lava.js';
 import { buildSynthwaveValleyScene } from './biomes/synthwave-valley.js';
 
+const DEBUG_BIOME_SCENE_LOGS = false;
+const biomeSceneLog = DEBUG_BIOME_SCENE_LOGS ? console.log.bind(console) : () => {};
+
 // ── Exports ────────────────────────────────────────────────
 
 /**
@@ -42,20 +45,20 @@ export function rebuildBiomeScene(deps) {
     biomeTerrainMaterials,
   } = deps;
 
-  console.log('[debug] rebuildBiomeScene: biomeId=', biomeId, 'customScene=', theme?.customScene);
+  biomeSceneLog('[debug] rebuildBiomeScene: biomeId=', biomeId, 'customScene=', theme?.customScene);
   
   if (!scene || !theme || !theme.customScene) {
-    console.log('[debug] Clearing biome scene (no custom scene)');
+    biomeSceneLog('[debug] Clearing biome scene (no custom scene)');
     clearBiomeScene();
     return;
   }
   
   if (state.biomeSceneGroup && state.biomeSceneBiome === biomeId) {
-    console.log('[debug] Biome scene already built for', biomeId, ', skipping');
+    biomeSceneLog('[debug] Biome scene already built for', biomeId, ', skipping');
     return;
   }
 
-  console.log('[debug] Building new biome scene for', biomeId);
+  biomeSceneLog('[debug] Building new biome scene for', biomeId);
   clearBiomeScene();
 
   // Aurora colors removed with aurora system
