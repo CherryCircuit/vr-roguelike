@@ -10,16 +10,16 @@
     },
     "subSprite": {
       "x": 0,
-      "y": 0.5,
+      "y": 0.35,
       "z": 0,
-      "scale": 0.7,
+      "scale": 0.52,
       "align": "center"
     },
     "titleBlinkSprite": {
       "x": 0,
-      "y": -0.065,
+      "y": -0.1,
       "z": 0,
-      "scale": 0.5,
+      "scale": 0.87,
       "align": "center"
     },
     "btnGroup": {

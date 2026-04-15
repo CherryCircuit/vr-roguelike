@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Layout Editor - VR Roguelike</title>
     <style>
+        @font-face {
+            font-family: 'November';
+            src: url('../assets/fonts/november.ttf') format('truetype');
+            font-display: swap;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a1a; color: #e0e0e0; overflow: hidden; display: flex; height: 100vh; }
         #sidebar { width: 320px; background: #252525; padding: 12px; display: flex; flex-direction: column; border-right: 1px solid #333; overflow-y: auto; }
@@ -16,12 +21,14 @@
         button.primary:hover { background: #0077dd; }
         button.danger { background: #882222; border-color: #aa3333; }
         button.danger:hover { background: #993333; }
-        button.save { background: #228833; border-color: #33aa44; }
-        button.save:hover { background: #33aa44; }
+        .triple-grid { display: grid; grid-template-columns: 16px 1fr 16px 1fr 16px 1fr; gap: 4px; align-items: center; margin-bottom: 5px; }
+        .triple-grid label { font-size: 11px; color: #888; text-align: center; width: auto; }
+        .triple-grid input { min-width: 0; width: 100%; }
         .pr { display: flex; gap: 5px; margin-bottom: 5px; align-items: center; }
         .pr label { font-size: 11px; color: #888; width: 48px; text-align: right; flex-shrink: 0; }
-        .pr input, .pr select { flex: 1; background: #333; border: 1px solid #444; color: #fff; padding: 4px 6px; border-radius: 3px; font-size: 12px; min-width: 0; }
-        .pr input:focus, .pr select:focus { outline: none; border-color: #4af; }
+        .pr input, .pr select, .pr textarea { flex: 1; background: #333; border: 1px solid #444; color: #fff; padding: 4px 6px; border-radius: 3px; font-size: 12px; min-width: 0; }
+        .pr input:focus, .pr select:focus, .pr textarea:focus { outline: none; border-color: #4af; }
+        .pr textarea { resize: vertical; min-height: 54px; font-family: inherit; }
         .sec { font-size: 10px; color: #555; margin: 6px 0 3px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; border-top: 1px solid #333; padding-top: 6px; }
         .abtn { display: flex; gap: 3px; }
         .abtn button { padding: 3px 8px; font-size: 11px; }
@@ -49,7 +56,7 @@
         .group-hdr .gname:hover { border-color: #555; }
         .group-hdr .gname:focus { border-color: #4af; background: #333; }
         .group-ei { padding-left: 20px; }
-        .note { background: #332200; border: 1px solid #553300; padding: 6px 8px; border-radius: 4px; font-size: 10px; color: #cc9; margin-bottom: 8px; line-height: 1.4; }
+        .note { display: none; }
         #canvas { width: 100%; height: 100%; }
         #inst { position: absolute; bottom: 12px; left: 12px; background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 4px; font-size: 10px; color: #aaa; }
         #inst kbd { background: #444; padding: 1px 4px; border-radius: 2px; font-family: monospace; }
@@ -60,6 +67,13 @@
         #group-actions { display: none; margin-bottom: 6px; gap: 4px; }
         #group-actions button { padding: 4px 10px; font-size: 11px; }
         #anchor-section { display: none; }
+        #create-section { margin-bottom: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
+        #create-section button { font-size: 11px; padding: 4px 10px; }
+        button.create { background: #225566; border-color: #338899; }
+        button.create:hover { background: #336677; }
+        #font-section { display: none; }
+        #color-section { display: none; }
+        .pr input[type="color"] { padding: 1px 3px; height: 26px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -73,28 +87,59 @@
                 <option value="upgrade-cards">Upgrade Cards</option>
                 <option value="ready-screen">Ready Screen</option>
                 <option value="settings">Settings</option>
+                <option value="scoreboard">Scoreboard</option>
+                <option value="upgrade-wrist-left">Upgrade Wrist (Left)</option>
+                <option value="upgrade-wrist-right">Upgrade Wrist (Right)</option>
             </select>
         </div>
         <div id="toolbar">
             <button class="primary" onclick="exportJSON()">Export</button>
-            <button class="save" onclick="saveLayout()" title="Saves to layouts/{screen}.json - drop into game's layouts/ folder">SAVE</button>
             <button onclick="document.getElementById('impF').click()">Import</button>
             <input type="file" id="impF" accept=".json" style="display:none" onchange="importJSON(event)">
             <button onclick="undo()">Undo</button>
             <button class="danger" onclick="resetAll()">Reset</button>
         </div>
-        <div class="note" id="note-text"><kbd>Shift+Click</kbd> multi-select. Anchor controls scale origin. Elements render at exact in-game size.</div>
+        <div id="create-section">
+            <button class="create" onclick="createNewRect()">+ Rect</button>
+            <button class="create" onclick="createNewText()">+ Text</button>
+            <button class="create" onclick="duplicateSelected()" title="Duplicate selected element">⧉ Dup</button>
+        </div>
+        <div class="note" id="note-text"></div>
         <div class="pr" style="margin-bottom:8px"><input type="checkbox" id="showBounds" checked onchange="toggleBounds()" style="width:auto"><label style="width:auto;color:#aaa;font-size:11px;margin-left:4px">Show bounding boxes</label></div>
         <div id="sel-info">
             <h3>SELECTED</h3>
             <div id="sel-name">Click an element</div>
             <div id="multi-sel-info"></div>
             <div class="sec">Text Content</div>
-            <div class="pr"><label>Text</label><input type="text" id="inp-text" oninput="onTextInput()"></div>
+            <div class="pr"><label>Text</label><textarea id="inp-text" rows="3" oninput="onTextInput()"></textarea></div>
+            <div id="font-section">
+                <div class="sec">Font Mode</div>
+                <div class="pr"><label>Font</label>
+                    <select id="inp-font" onchange="onFontInput()">
+                        <option value="november">November</option>
+                        <option value="arial">Arial / forceArial</option>
+                    </select>
+                </div>
+            </div>
+            <div id="color-section">
+                <div class="sec">Color</div>
+                <div class="pr"><label>Color</label>
+                    <input type="color" id="inp-color" onchange="onColorInput()">
+                    <input type="text" id="inp-color-hex" placeholder="#ffffff" onchange="onColorHexInput()" style="width:80px;font-size:11px">
+                </div>
+            </div>
             <div class="sec">Position</div>
-            <div class="pr"><label>X</label><input type="number" step="0.02" id="inp-x" onchange="onNumInput()"></div>
-            <div class="pr"><label>Y</label><input type="number" step="0.02" id="inp-y" onchange="onNumInput()"></div>
-            <div class="pr"><label>Z</label><input type="number" step="0.01" id="inp-z" onchange="onNumInput()"></div>
+            <div class="triple-grid">
+                <label for="inp-x">X</label><input type="number" step="0.02" id="inp-x" onchange="onNumInput()">
+                <label for="inp-y">Y</label><input type="number" step="0.02" id="inp-y" onchange="onNumInput()">
+                <label for="inp-z">Z</label><input type="number" step="0.01" id="inp-z" onchange="onNumInput()">
+            </div>
+            <div class="sec">Rotation</div>
+            <div class="triple-grid">
+                <label for="inp-rx">X</label><input type="number" step="1" id="inp-rx" onchange="onNumInput()">
+                <label for="inp-ry">Y</label><input type="number" step="1" id="inp-ry" onchange="onNumInput()">
+                <label for="inp-rz">Z</label><input type="number" step="1" id="inp-rz" onchange="onNumInput()">
+            </div>
             <div class="sec">Size</div>
             <div class="pr" id="row-scale"><label>Scale</label><input type="number" step="0.01" min="0.02" id="inp-scale" onchange="onNumInput()"></div>
             <div class="pr" id="row-w" style="display:none"><label>Width</label><input type="number" step="0.05" id="inp-w" onchange="onNumInput()"></div>
@@ -144,133 +189,146 @@
     // ══════════════════════════════════════════════════
 
     const FLOOR_HUD_DEFS = [
-        { id:'hearts', name:'Hearts (Lives)', type:'hearts', color:0xcc3333, scale:1.0, x:-1.41, y:0.56, z:0.01 },
-        { id:'score_title', name:'SCORE title', type:'text', text:'SCORE', color:0xcccc33, fontSize:72, scale:0.45, glow:true, x:0, y:0.58, z:0.01 },
-        { id:'score_num', name:'Score number', type:'text', text:'100000', color:0xcccc33, fontSize:72, scale:0.45, x:0, y:0.32, z:0.01 },
-        { id:'level', name:'LEVEL', type:'text', text:'LEVEL 20', color:0x00cccc, fontSize:72, scale:0.45, glow:true, x:1.02, y:0.58, z:0.01 },
-        { id:'kills', name:'Kill count', type:'text', text:'123/123', color:0xffffff, fontSize:72, scale:0.45, x:1.02, y:0.3, z:0.01 },
-        { id:'nuke_icon', name:'☢ Nuke', type:'text', text:'☢', color:0xcccc33, fontSize:144, scale:0.9, glow:true, x:1.82, y:0.5, z:0.01 },
-        { id:'nuke_count', name:'Nuke count', type:'text', text:'X3', color:0xcccc33, fontSize:72, scale:0.35, glow:true, x:2.12, y:0.5, z:0.01 },
-        { id:'combo_text', name:'Accuracy Bonus', type:'text', text:'4.5X ACCURACY BONUS', color:0xff8800, fontSize:40, scale:0.25, x:-2.26, y:0.1, z:0.01 },
-        { id:'combo_bar', name:'Cooldown bar', type:'rect', color:0xff8800, w:1.25, h:0.05, x:-2.2, y:0.21, z:0.01, opacity:0.8 },
+        { id:'hearts', name:'Hearts (Lives)', type:'hearts', color:0xcc3333, scale:1.0, x:-1.41, y:0.56, z:0.01, align:'left' },
+        { id:'score_title', name:'SCORE title', type:'text', text:'SCORE', color:0xffff00, fontSize:72, scale:0.45, glow:true, x:0, y:0.58, z:0.01, align:'left' },
+        { id:'score_num', name:'Score number', type:'text', text:'100000', color:0xffff00, fontSize:72, scale:0.45, x:0, y:0.32, z:0.01, align:'left' },
+        { id:'level', name:'LEVEL', type:'text', text:'LEVEL 20', color:0x00cccc, fontSize:72, scale:0.45, glow:true, x:1.02, y:0.58, z:0.01, align:'left' },
+        { id:'kills', name:'Kill count', type:'text', text:'123/123', color:0xffffff, fontSize:72, scale:0.45, x:1.02, y:0.3, z:0.01, align:'left' },
+        { id:'nuke_icon', name:'☢ Nuke', type:'text', text:'☢', color:0xffff44, fontSize:144, scale:0.9, glow:true, x:1.82, y:0.5, z:0.01, align:'left' },
+        { id:'nuke_count', name:'Nuke count', type:'text', text:'X3', color:0xffff44, fontSize:72, scale:0.35, glow:true, x:2.12, y:0.5, z:0.01, align:'left' },
+        { id:'combo_text', name:'Accuracy Bonus', type:'text', text:'4.5X ACCURACY BONUS', color:0xff8800, fontSize:40, scale:0.25, x:-2.26, y:0.1, z:0.01, align:'left' },
+        { id:'combo_bar', name:'Cooldown bar', type:'rect', color:0xff8800, w:1.65, h:0.05, x:-2.202, y:0.21, z:0.01, opacity:0.8, align:'left' },
     ];
 
     const PAUSE_MENU_DEFS = [
-        { id:'panel', name:'Panel BG', type:'rect', color:0x0a0015, w:4.6, h:3.6, x:0, y:0, z:0, opacity:0.85 },
-        { id:'lb_title', name:'LEFT BLASTER', type:'text', text:'LEFT BLASTER', color:0x00ffff, fontSize:90, scale:0.175, x:-1.25, y:1.3, z:0.02 },
-        { id:'lb_weapon', name:'PLASMA CARBINE', type:'text', text:'PLASMA CARBINE', color:0xffffff, fontSize:70, scale:0.15, x:-1.25, y:1.1, z:0.02 },
-        { id:'lb_sep1', name:'L-Sep1', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:1.0, z:0.02 },
-        { id:'lb_upg_header', name:'[UPGRADES]', type:'text', text:'[UPGRADES]', color:0x888888, fontSize:60, scale:0.125, x:-1.25, y:0.9, z:0.02 },
-        { id:'lb_upg1', name:'RAPID FIRE x3', type:'text', text:'RAPID FIRE x3', color:0xff8800, fontSize:60, scale:0.125, x:-1.48, y:0.76, z:0.02 },
-        { id:'lb_upg2', name:'DAMAGE UP x2', type:'text', text:'DAMAGE UP x2', color:0xffff00, fontSize:60, scale:0.125, x:-1.02, y:0.76, z:0.02 },
-        { id:'lb_upg3', name:'HOMING x1', type:'text', text:'HOMING x1', color:0x00ff00, fontSize:60, scale:0.125, x:-1.48, y:0.62, z:0.02 },
-        { id:'lb_sep2', name:'L-Sep2', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:0.52, z:0.02 },
-        { id:'lb_enemy_header', name:'[ENEMIES]', type:'text', text:'[ENEMIES]', color:0x888888, fontSize:60, scale:0.125, x:-1.25, y:0.42, z:0.02 },
-        { id:'lb_enemy1', name:'GRUNT x12', type:'text', text:'GRUNT x12', color:0xff6666, fontSize:60, scale:0.125, x:-1.48, y:0.28, z:0.02 },
-        { id:'lb_enemy2', name:'TANK x5', type:'text', text:'TANK x5', color:0xff6666, fontSize:60, scale:0.125, x:-1.02, y:0.28, z:0.02 },
-        { id:'lb_sep3', name:'L-Sep3', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:-1.25, y:0.18, z:0.02 },
-        { id:'lb_kills', name:'KILLS: 24', type:'text', text:'KILLS: 24', color:0x00ffff, fontSize:60, scale:0.1125, x:-1.58, y:0.04, z:0.02 },
-        { id:'lb_shots', name:'SHOTS: 156', type:'text', text:'SHOTS: 156', color:0x00ffff, fontSize:60, scale:0.1125, x:-1.25, y:0.04, z:0.02 },
-        { id:'lb_hits', name:'HITS: 89', type:'text', text:'HITS: 89', color:0x00ffff, fontSize:60, scale:0.1125, x:-0.92, y:0.04, z:0.02 },
-        { id:'lb_acc', name:'ACC: 57%', type:'text', text:'ACC: 57%', color:0x00ffff, fontSize:60, scale:0.1125, x:-1.25, y:-0.12, z:0.02 },
-        { id:'rb_title', name:'RIGHT BLASTER', type:'text', text:'RIGHT BLASTER', color:0x00ffff, fontSize:90, scale:0.175, x:1.25, y:1.3, z:0.02 },
-        { id:'rb_weapon', name:'BLASTER', type:'text', text:'BLASTER', color:0xffffff, fontSize:70, scale:0.15, x:1.25, y:1.1, z:0.02 },
-        { id:'rb_sep1', name:'R-Sep1', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:1.0, z:0.02 },
-        { id:'rb_upg_header', name:'[UPGRADES]', type:'text', text:'[UPGRADES]', color:0x888888, fontSize:60, scale:0.125, x:1.25, y:0.9, z:0.02 },
-        { id:'rb_upg1', name:'PIERCING x2', type:'text', text:'PIERCING x2', color:0xff0000, fontSize:60, scale:0.125, x:1.02, y:0.76, z:0.02 },
-        { id:'rb_upg2', name:'SPREAD SHOT x1', type:'text', text:'SPREAD SHOT x1', color:0x00ffff, fontSize:60, scale:0.125, x:1.48, y:0.76, z:0.02 },
-        { id:'rb_sep2', name:'R-Sep2', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:0.52, z:0.02 },
-        { id:'rb_enemy_header', name:'[ENEMIES]', type:'text', text:'[ENEMIES]', color:0x888888, fontSize:60, scale:0.125, x:1.25, y:0.42, z:0.02 },
-        { id:'rb_enemy1', name:'SPEEDER x8', type:'text', text:'SPEEDER x8', color:0xff6666, fontSize:60, scale:0.125, x:1.02, y:0.28, z:0.02 },
-        { id:'rb_enemy2', name:'SHOOTER x3', type:'text', text:'SHOOTER x3', color:0xff6666, fontSize:60, scale:0.125, x:1.48, y:0.28, z:0.02 },
-        { id:'rb_sep3', name:'R-Sep3', type:'rect', color:0x00aaaa, w:1.8, h:0.025, x:1.25, y:0.18, z:0.02 },
-        { id:'rb_kills', name:'KILLS: 18', type:'text', text:'KILLS: 18', color:0x00ffff, fontSize:60, scale:0.1125, x:0.92, y:0.04, z:0.02 },
-        { id:'rb_shots', name:'SHOTS: 94', type:'text', text:'SHOTS: 94', color:0x00ffff, fontSize:60, scale:0.1125, x:1.25, y:0.04, z:0.02 },
-        { id:'rb_hits', name:'HITS: 61', type:'text', text:'HITS: 61', color:0x00ffff, fontSize:60, scale:0.1125, x:1.58, y:0.04, z:0.02 },
-        { id:'rb_acc', name:'ACC: 65%', type:'text', text:'ACC: 65%', color:0x00ffff, fontSize:60, scale:0.1125, x:1.25, y:-0.12, z:0.02 },
-        { id:'stats_title', name:'RUN STATISTICS', type:'text', text:'RUN STATISTICS', color:0xff00ff, fontSize:90, scale:0.175, x:0, y:0.84, z:0.02 },
-        { id:'stat_kills', name:'KILLS: 42', type:'text', text:'KILLS: 42', color:0x00ffff, fontSize:70, scale:0.125, x:0, y:0.44, z:0.02 },
-        { id:'stat_shots', name:'SHOTS: 250', type:'text', text:'SHOTS: 250', color:0x00ffff, fontSize:70, scale:0.125, x:0, y:0.20, z:0.02 },
-        { id:'stat_hits', name:'HITS: 150', type:'text', text:'HITS: 150', color:0x00ffff, fontSize:70, scale:0.125, x:0, y:-0.04, z:0.02 },
-        { id:'stat_acc2', name:'ACCURACY: 60%', type:'text', text:'ACCURACY: 60%', color:0x00ffff, fontSize:70, scale:0.125, x:-1.08, y:-0.34, z:0.02 },
-        { id:'stat_streak', name:'STREAK: 7', type:'text', text:'STREAK: 7', color:0x00ffff, fontSize:70, scale:0.125, x:-1.08, y:-0.56, z:0.02 },
-        { id:'stat_boss', name:'BOSS: 1', type:'text', text:'BOSS: 1', color:0x00ffff, fontSize:70, scale:0.125, x:-1.08, y:-0.78, z:0.02 },
-        { id:'chart_area', name:'Chart Area', type:'rect', color:0x333344, w:1.7, h:0.9, x:1.1, y:-0.82, z:0.02, opacity:0.6 },
-        { id:'resume', name:'RESUME', type:'text', text:'RESUME', color:0x00aacc, fontSize:95, scale:0.225, x:0, y:-1.35, z:0.03 },
-        { id:'perf_btn', name:'PERF', type:'text', text:'PERF', color:0x888888, fontSize:95, scale:0.225, x:0, y:-1.75, z:0.03 },
-        { id:'settings_btn', name:'⚙ SETTINGS', type:'text', text:'⚙ SETTINGS', color:0x00ffff, fontSize:95, scale:0.225, x:0, y:-2.1, z:0.03 },
-        { id:'bdr_top', name:'Border Top', type:'rect', color:0x00ffff, w:4.6, h:0.03, x:0, y:1.8, z:0.01, opacity:1.0 },
-        { id:'bdr_bot', name:'Border Bottom', type:'rect', color:0x00ffff, w:4.6, h:0.03, x:0, y:-1.8, z:0.01, opacity:1.0 },
-        { id:'bdr_left', name:'Border Left', type:'rect', color:0x00ffff, w:0.03, h:3.6, x:-2.3, y:0, z:0.01, opacity:1.0 },
-        { id:'bdr_right', name:'Border Right', type:'rect', color:0x00ffff, w:0.03, h:3.6, x:2.3, y:0, z:0.01, opacity:1.0 },
+        { id:'panel', name:'Panel BG', type:'rect', color:0x0a0015, w:6.0, h:3.6, x:0, y:0, z:0, opacity:0.85 },
+        { id:'left_blaster_section', name:'Left Blaster Section', type:'rect', color:0x112244, w:1.9, h:1.55, x:-1.7, y:0.2, z:0.02, opacity:0.45 },
+        { id:'right_blaster_section', name:'Right Blaster Section', type:'rect', color:0x112244, w:1.9, h:1.55, x:1.7, y:0.2, z:0.02, opacity:0.45 },
+        { id:'resume_button', name:'Resume Button', type:'rect', color:0x110033, w:1.55, h:0.34, x:0, y:-1.35, z:0.03, opacity:0.85 },
+        { id:'settings_button', name:'Settings Button', type:'rect', color:0x110033, w:1.55, h:0.34, x:0, y:-0.423, z:0.03, opacity:0.85 },
     ];
 
     const TITLE_SCREEN_DEFS = [
-      { id:'title', name:'SPACEOMICIDE', type:'text', text:'SPACEOMICIDE', color:0x00ffff, fontSize:70, scale:0.9, glow:true, x:0, y:0.9, z:0 },
-      { id:'subtitle', name:'VR ROGUELIKE BLASTER', type:'text', text:'VR ROGUELIKE BLASTER', color:0xff00ff, fontSize:24, scale:0.3, glow:true, x:0, y:0.4, z:0 },
-      { id:'blink_text', name:'PRESS TRIGGER TO BEGIN', type:'text', text:'PRESS TRIGGER TO BEGIN', color:0xffffff, fontSize:26, scale:0.25, glow:true, x:0, y:-0.2, z:0 },
-      { id:'scoreboard_btn_bg', name:'Scoreboard Button BG', type:'rect', color:0x110033, w:1.35, h:0.3, x:0, y:-0.8, z:0, opacity:0.85 },
-      { id:'scoreboard_btn_border', name:'Scoreboard Button Border', type:'rect', color:0xffff00, w:1.35, h:0.3, x:0, y:-0.8, z:0.005, opacity:1.0 },
-      { id:'scoreboard_btn_text', name:'SCOREBOARD', type:'text', text:'SCOREBOARD', color:0xffff00, fontSize:48, scale:0.16, glow:true, x:0, y:-0.8, z:0.01 },
-      { id:'settings_btn_bg', name:'Settings Button BG', type:'rect', color:0x110033, w:0.4, h:0.3, x:1.05, y:-0.8, z:0, opacity:0.85 },
-      { id:'settings_btn_border', name:'Settings Button Border', type:'rect', color:0x00ffff, w:0.4, h:0.3, x:1.05, y:-0.8, z:0.005, opacity:1.0 },
-      { id:'settings_btn_text', name:'⚙', type:'text', text:'⚙', color:0x00ffff, fontSize:36, scale:0.14, x:1.05, y:-0.8, z:0.01 },
+      { id:'titleSprite', name:'Logo', type:'text', text:'SPACEOMICIDE', color:0x00ffff, fontSize:70, scale:1.0, glow:true, x:0, y:0.932, z:0 },
+      { id:'subSprite', name:'Subtitle', type:'text', text:'VR ROGUELIKE BLASTER', color:0x00ffff, fontSize:24, scale:0.52, glow:true, x:0, y:0.35, z:0 },
+      { id:'titleBlinkSprite', name:'Start Prompt', type:'text', text:'PRESS TRIGGER TO BEGIN', color:0xffffff, fontSize:28, scale:0.87, glow:true, x:0, y:-0.1, z:0 },
+      { id:'btnGroup', name:'Scoreboard Button Group', type:'rect', color:0x110033, w:1.35, h:0.3, x:-0.36, y:-0.68, z:0, opacity:0.85 },
+      { id:'settingsBtnGroup', name:'Settings Button Group', type:'rect', color:0x110033, w:0.4, h:0.3, x:0.82, y:-0.68, z:0, opacity:0.85 },
     ];
 
     const GAME_OVER_DEFS = [
-      { id:'game_over_title', name:'GAME OVER', type:'text', text:'GAME OVER', color:0xff0044, fontSize:120, scale:1.4, glow:true, x:0, y:1.2, z:0 },
-      { id:'score_text', name:'SCORE: 42000', type:'text', text:'SCORE: 42000', color:0xffff00, fontSize:60, scale:0.7, glow:true, x:0, y:0.4, z:0 },
-      { id:'restart_text', name:'PRESS TRIGGER TO RESTART', type:'text', text:'PRESS TRIGGER TO RESTART', color:0xffffff, fontSize:44, scale:0.5, x:0, y:-0.3, z:0 },
+      { id:'titleSprite', name:'GAME OVER Title', type:'text', text:'GAME OVER', color:0xff0044, fontSize:120, scale:1.4, glow:true, x:0, y:1.2, z:0 },
+      { id:'scoreSprite', name:'Final Score', type:'text', text:'SCORE: 42000', color:0xffff00, fontSize:60, scale:0.7, glow:true, x:0, y:0.4, z:0 },
+      { id:'killLabel', name:'Killer Label', type:'text', text:'You were finished off by', color:0xffffff, fontSize:36, scale:0.35, x:0, y:0.1, z:0 },
+      { id:'killIcon', name:'Killer Icon', type:'cube', color:0xff0044, scale:0.25, x:0, y:-0.15, z:0, spinX:0.6, spinY:1.1 },
+      { id:'killName', name:'Killer Name', type:'text', text:'GRUNT', color:0xff6666, fontSize:40, scale:0.4, glow:true, x:0, y:-0.4, z:0 },
+      { id:'killSubLabel', name:'Projectile Sub Label', type:'text', text:'PROJECTILE', color:0xff4444, fontSize:30, scale:0.3, x:0, y:-0.58, z:0 },
+      { id:'deathStatsLabel', name:'Community Death Text', type:'text', text:"Don't feel bad, 24 other players also succumbed to a GRUNT", color:0xaaaaaa, fontSize:28, scale:0.28, x:0, y:-0.75, z:0, maxWidth:1100 },
+      { id:'restartSprite', name:'Restart Prompt', type:'text', text:'PRESS TRIGGER TO RESTART', color:0xffffff, fontSize:44, scale:0.5, x:0, y:-0.8, z:0 },
     ];
 
     const UPGRADE_CARDS_DEFS = [
-      { id:'header', name:'CHOOSE UPGRADE / LEFT BLASTER', type:'text', text:'CHOOSE UPGRADE\nLEFT BLASTER', color:0x00ffff, fontSize:48, scale:0.4, glow:true, x:0, y:1.05, z:0 },
-      { id:'cooldown', name:'Cooldown WAIT...', type:'text', text:'WAIT...', color:0xffff00, fontSize:36, scale:0.3, x:0, y:0.8, z:0 },
-      // Card 1 (upgrade)
-      { id:'card1_bg', name:'Card 1 BG', type:'rect', color:0x110033, w:1.2, h:1.5, x:-2.25, y:0, z:0, opacity:0.91 },
-      { id:'card1_name', name:'Card 1 Name', type:'text', text:'RAPID FIRE', color:0x00ffff, fontSize:45, scale:0.24, glow:true, x:-2.25, y:0.55, z:0.01 },
-      { id:'card1_desc', name:'Card 1 Desc', type:'text', text:'+20% fire rate', color:0xcccccc, fontSize:32, scale:0.36, x:-2.25, y:0.15, z:0.01 },
-      { id:'card1_stat', name:'Card 1 Stat', type:'text', text:'(+20 → +40)', color:0x88ff88, fontSize:24, scale:0.14, x:-2.25, y:-0.05, z:0.01 },
-      // Card 2 (upgrade)
-      { id:'card2_bg', name:'Card 2 BG', type:'rect', color:0x110033, w:1.2, h:1.5, x:-0.75, y:0, z:0, opacity:0.91 },
-      { id:'card2_name', name:'Card 2 Name', type:'text', text:'DAMAGE UP', color:0xff8800, fontSize:45, scale:0.24, glow:true, x:-0.75, y:0.55, z:0.01 },
-      { id:'card2_desc', name:'Card 2 Desc', type:'text', text:'+15% damage', color:0xcccccc, fontSize:32, scale:0.36, x:-0.75, y:0.15, z:0.01 },
-      { id:'card2_stat', name:'Card 2 Stat', type:'text', text:'(+10 → +20)', color:0x88ff88, fontSize:24, scale:0.14, x:-0.75, y:-0.05, z:0.01 },
-      // Card 3 (upgrade)
-      { id:'card3_bg', name:'Card 3 BG', type:'rect', color:0x110033, w:1.2, h:1.5, x:0.75, y:0, z:0, opacity:0.91 },
-      { id:'card3_name', name:'Card 3 Name', type:'text', text:'HOMING', color:0x00ff00, fontSize:45, scale:0.24, glow:true, x:0.75, y:0.55, z:0.01 },
-      { id:'card3_desc', name:'Card 3 Desc', type:'text', text:'Shots seek enemies', color:0xcccccc, fontSize:32, scale:0.36, x:0.75, y:0.15, z:0.01 },
-      { id:'card3_stat', name:'Card 3 Stat', type:'text', text:'(non-stackable)', color:0x88ff88, fontSize:24, scale:0.14, x:0.75, y:-0.05, z:0.01 },
-      // Skip card
-      { id:'skip_bg', name:'Skip Card BG', type:'rect', color:0x220044, w:1.0, h:1.3, x:2.25, y:0, z:0, opacity:0.91 },
-      { id:'skip_name', name:'SKIP', type:'text', text:'SKIP', color:0x00ff88, fontSize:45, scale:0.24, glow:true, x:2.25, y:0.48, z:0.01 },
+      { id:'header', name:'Header', type:'text', text:'CHOOSE UPGRADE\nLEFT BLASTER', color:0x00ffff, fontSize:48, scale:0.4, glow:true, x:0, y:1.05, z:0 },
+      { id:'cooldownSprite', name:'Cooldown Sprite', type:'text', text:'WAIT...', color:0xffff00, fontSize:36, scale:0.3, x:0, y:0.8, z:0 },
+
+      { id:'card0', name:'Card 0 Face', type:'rect', color:0x110033, w:1.2, h:1.5, x:-2.25, y:0, z:0, opacity:0.91 },
+      { id:'card0_name', name:'Card 0 Name', type:'text', text:'RAPID FIRE', color:0x00ffff, fontSize:45, scale:0.24, glow:true, x:-2.25, y:0.55, z:0.01, maxWidth:600 },
+      { id:'card0_desc', name:'Card 0 Description', type:'text', text:'Shots fire much faster and can stack into absurd nonsense.', color:0xcccccc, fontSize:32, scale:0.36, x:-2.25, y:0.15, z:0.01, maxWidth:280, forceArial:true },
+      { id:'card0_stat', name:'Card 0 Stat Text', type:'text', text:'(+30% → +45%)', color:0x88ff88, fontSize:24, scale:0.14, x:-2.25, y:-0.05, z:0.01, maxWidth:300, forceArial:true },
+      { id:'card0_note', name:'Card 0 Sidegrade Note', type:'text', text:'Best paired with spread weapons.', color:0xffdd00, fontSize:22, scale:0.14, x:-2.25, y:-0.15, z:0.01, maxWidth:280, forceArial:true },
+      { id:'card0_icon', name:'Card 0 Spinner', type:'wire-octa', color:0x00ffff, scale:0.12, x:-2.25, y:-0.35, z:0.05, spinY:1.6 },
+
+      { id:'card1', name:'Card 1 Face', type:'rect', color:0x110033, w:1.2, h:1.5, x:-0.75, y:0, z:0, opacity:0.91 },
+      { id:'card1_name', name:'Card 1 Name', type:'text', text:'DAMAGE UP', color:0xff8800, fontSize:45, scale:0.24, glow:true, x:-0.75, y:0.55, z:0.01, maxWidth:600 },
+      { id:'card1_desc', name:'Card 1 Description', type:'text', text:'Increase raw damage. Long descriptions should wrap the same way the live cards do.', color:0xcccccc, fontSize:32, scale:0.36, x:-0.75, y:0.15, z:0.01, maxWidth:280, forceArial:true },
+      { id:'card1_stat', name:'Card 1 Stat Text', type:'text', text:'(+10 → +20)', color:0x88ff88, fontSize:24, scale:0.14, x:-0.75, y:-0.05, z:0.01, maxWidth:300, forceArial:true },
+      { id:'card1_icon', name:'Card 1 Spinner', type:'wire-octa', color:0xff8800, scale:0.12, x:-0.75, y:-0.35, z:0.05, spinY:1.6 },
+
+      { id:'card2', name:'Card 2 Face', type:'rect', color:0x110033, w:1.2, h:1.5, x:0.75, y:0, z:0, opacity:0.91 },
+      { id:'card2_name', name:'Card 2 Name', type:'text', text:'HOMING', color:0x00ff00, fontSize:45, scale:0.24, glow:true, x:0.75, y:0.55, z:0.01, maxWidth:600 },
+      { id:'card2_desc', name:'Card 2 Description', type:'text', text:'Shots seek enemies and tighter text should still respect the same wrap width.', color:0xcccccc, fontSize:32, scale:0.36, x:0.75, y:0.15, z:0.01, maxWidth:280, forceArial:true },
+      { id:'card2_stat', name:'Card 2 Stat Text', type:'text', text:'(non-stackable)', color:0x88ff88, fontSize:24, scale:0.14, x:0.75, y:-0.05, z:0.01, maxWidth:300, forceArial:true },
+      { id:'card2_icon', name:'Card 2 Spinner', type:'wire-octa', color:0x00ff00, scale:0.12, x:0.75, y:-0.35, z:0.05, spinY:1.6 },
+
+      { id:'card3', name:'Skip Card Face', type:'rect', color:0x220044, w:1.0, h:1.3, x:2.25, y:0, z:0, opacity:0.91 },
+      { id:'card3_name', name:'Skip Card Name', type:'text', text:'SKIP', color:0x00ff88, fontSize:45, scale:0.24, glow:true, x:2.25, y:0.48, z:0.01, maxWidth:600 },
+      { id:'card3_desc', name:'Skip Card Description', type:'text', text:'Skip upgrades and gain full health.', color:0x88ffaa, fontSize:32, scale:0.36, x:2.25, y:-0.02, z:0.01, maxWidth:280, forceArial:true },
+      { id:'card3_icon', name:'Skip Card Spinner', type:'wire-octa', color:0xff0044, scale:0.08, x:2.25, y:-0.42, z:0.05, spinY:1.6 },
     ];
 
     const READY_SCREEN_DEFS = [
       { id:'header', name:'READY?', type:'text', text:'READY?', color:0xffff00, fontSize:70, scale:0.6, glow:true, x:0, y:0.8, z:0 },
       { id:'instruction', name:'SHOOT TO BEGIN', type:'text', text:'SHOOT TO BEGIN', color:0x00ffff, fontSize:40, scale:0.4, x:0, y:0.4, z:0 },
-      { id:'countdown', name:'Countdown (3)', type:'text', text:'3', color:0xffffff, fontSize:120, scale:0.7, glow:true, x:0, y:0.1, z:0.01 },
+      { id:'countdown', name:'Countdown (3)', type:'text', text:'3', color:0xffffff, fontSize:120, scale:0.7, glow:true, x:0, y:-0.05, z:0.01 },
     ];
 
     const SETTINGS_DEFS = [
-      { id:'panel', name:'Panel BG', type:'rect', color:0x0a0015, w:3.2, h:2.0, x:0, y:0, z:0, opacity:0.92 },
-      { id:'panel_border', name:'Panel Border', type:'rect', color:0x00ffff, w:3.2, h:2.0, x:0, y:0, z:0.005, opacity:0.8 },
-      { id:'title', name:'SETTINGS', type:'text', text:'SETTINGS', color:0x00ffff, fontSize:42, scale:0.14, glow:true, x:0, y:0.75, z:0.02 },
-      { id:'music_label', name:'MUSIC label', type:'text', text:'MUSIC', color:0xaaaaff, fontSize:28, scale:0.09, x:-0.7, y:0.38, z:0.02 },
-      { id:'sfx_label', name:'SFX label', type:'text', text:'SFX', color:0xaaaaff, fontSize:28, scale:0.09, x:0.7, y:0.38, z:0.02 },
-      { id:'music_up', name:'Music ▲', type:'rect', color:0x00ffff, w:0.5, h:0.28, x:-0.7, y:0.15, z:0.02, opacity:0.7 },
-      { id:'music_up_text', name:'Music ▲ text', type:'text', text:'▲', color:0x00ffff, fontSize:36, scale:0.13, x:-0.7, y:0.15, z:0.03 },
-      { id:'music_vol', name:'Music Volume', type:'text', text:'75%', color:0xffffff, fontSize:38, scale:0.12, glow:true, x:-0.7, y:-0.08, z:0.02 },
-      { id:'music_down', name:'Music ▼', type:'rect', color:0x00ffff, w:0.5, h:0.28, x:-0.7, y:-0.32, z:0.02, opacity:0.7 },
-      { id:'music_down_text', name:'Music ▼ text', type:'text', text:'▼', color:0x00ffff, fontSize:36, scale:0.13, x:-0.7, y:-0.32, z:0.03 },
-      { id:'sfx_up', name:'SFX ▲', type:'rect', color:0x00ffff, w:0.5, h:0.28, x:0.7, y:0.15, z:0.02, opacity:0.7 },
-      { id:'sfx_up_text', name:'SFX ▲ text', type:'text', text:'▲', color:0x00ffff, fontSize:36, scale:0.13, x:0.7, y:0.15, z:0.03 },
-      { id:'sfx_vol', name:'SFX Volume', type:'text', text:'80%', color:0xffffff, fontSize:38, scale:0.12, glow:true, x:0.7, y:-0.08, z:0.02 },
-      { id:'sfx_down', name:'SFX ▼', type:'rect', color:0x00ffff, w:0.5, h:0.28, x:0.7, y:-0.32, z:0.02, opacity:0.7 },
-      { id:'sfx_down_text', name:'SFX ▼ text', type:'text', text:'▼', color:0x00ffff, fontSize:36, scale:0.13, x:0.7, y:-0.32, z:0.03 },
+      { id:'panel', name:'Panel BG', type:'rect', color:0x0a0015, w:3.2, h:2.6, x:0, y:0, z:0, opacity:0.92 },
+      { id:'panel_border', name:'Panel Border', type:'rect', color:0x00ffff, w:3.2, h:2.6, x:0, y:0, z:0.005, opacity:0.8 },
+      { id:'title', name:'SETTINGS', type:'text', text:'SETTINGS', color:0x00ffff, fontSize:42, scale:0.4, glow:true, x:0, y:0.75, z:0.02 },
+      { id:'music_label', name:'MUSIC VOLUME label', type:'text', text:'MUSIC VOLUME', color:0xaaaaff, fontSize:28, scale:0.4, x:-0.7, y:0.44, z:0.02 },
+      { id:'sfx_label', name:'SOUND EFFECTS label', type:'text', text:'SOUND EFFECTS VOLUME', color:0xaaaaff, fontSize:28, scale:0.4, x:0.7, y:0.44, z:0.02 },
+      { id:'music_up', name:'Music ▲', type:'rect', color:0x00ffff, w:1.0, h:0.42, x:-0.7, y:0.18, z:0.02, opacity:0.7 },
+      { id:'music_up_text', name:'Music ▲ text', type:'text', text:'▲', color:0x00ffff, fontSize:56, scale:0.22, x:-0.7, y:0.18, z:0.03 },
+      { id:'music_vol', name:'Music Volume', type:'text', text:'75%', color:0xffffff, fontSize:38, scale:0.3, glow:true, x:-0.7, y:-0.08, z:0.02 },
+      { id:'music_down', name:'Music ▼', type:'rect', color:0x00ffff, w:1.0, h:0.42, x:-0.7, y:-0.32, z:0.02, opacity:0.7 },
+      { id:'music_down_text', name:'Music ▼ text', type:'text', text:'▼', color:0x00ffff, fontSize:56, scale:0.22, x:-0.7, y:-0.32, z:0.03 },
+      { id:'sfx_up', name:'SFX ▲', type:'rect', color:0x00ffff, w:1.0, h:0.42, x:0.7, y:0.18, z:0.02, opacity:0.7 },
+      { id:'sfx_up_text', name:'SFX ▲ text', type:'text', text:'▲', color:0x00ffff, fontSize:56, scale:0.22, x:0.7, y:0.18, z:0.03 },
+      { id:'sfx_vol', name:'SFX Volume', type:'text', text:'80%', color:0xffffff, fontSize:38, scale:0.3, glow:true, x:0.7, y:-0.08, z:0.02 },
+      { id:'sfx_down', name:'SFX ▼', type:'rect', color:0x00ffff, w:1.0, h:0.42, x:0.7, y:-0.32, z:0.02, opacity:0.7 },
+      { id:'sfx_down_text', name:'SFX ▼ text', type:'text', text:'▼', color:0x00ffff, fontSize:56, scale:0.22, x:0.7, y:-0.32, z:0.03 },
       { id:'divider', name:'Divider', type:'rect', color:0x00ffff, w:0.02, h:0.95, x:0, y:-0.08, z:0.015, opacity:0.4 },
-      { id:'back_btn', name:'BACK button', type:'rect', color:0xffff00, w:1.2, h:0.3, x:0, y:-0.7, z:0.02, opacity:0.7 },
-      { id:'back_text', name:'BACK', type:'text', text:'BACK', color:0xffff00, fontSize:38, scale:0.12, x:0, y:-0.7, z:0.03 },
+      { id:'track_label', name:'NOW PLAYING label', type:'text', text:'NOW PLAYING', color:0x666699, fontSize:22, scale:0.3, x:0, y:-0.43, z:0.02 },
+      { id:'track_name', name:'Track Name', type:'text', text:'Battle Theme', color:0xaaaaff, fontSize:36, scale:0.12, x:0, y:-0.6, z:0.02 },
+      { id:'prev_btn', name:'◀ PREV button', type:'rect', color:0x00ffff, w:0.9, h:0.25, x:-0.65, y:-0.85, z:0.02, opacity:0.7 },
+      { id:'prev_text', name:'◀ PREV text', type:'text', text:'◀ PREV', color:0x00ffff, fontSize:36, scale:0.12, x:-0.65, y:-0.85, z:0.03 },
+      { id:'next_btn', name:'NEXT ▶ button', type:'rect', color:0x00ffff, w:0.9, h:0.25, x:0.65, y:-0.85, z:0.02, opacity:0.7 },
+      { id:'next_text', name:'NEXT ▶ text', type:'text', text:'NEXT ▶', color:0x00ffff, fontSize:36, scale:0.12, x:0.65, y:-0.85, z:0.03 },
+      { id:'back_btn', name:'BACK button', type:'rect', color:0x997700, w:0.75, h:0.3, x:0, y:-1.05, z:0.02, opacity:0.7 },
+      { id:'back_text', name:'BACK', type:'text', text:'BACK', color:0x997700, fontSize:38, scale:0.12, x:0, y:-1.05, z:0.03 },
+    ];
+
+    const SCOREBOARD_DEFS = [
+      { id:'mainHeader', name:'Main Header', type:'text', text:'SCOREBOARD', color:0xffffff, fontSize:60, scale:0.65, glow:true, x:0, y:2.25, z:0 },
+      { id:'subHeader', name:'LEADERBOARD', type:'text', text:'LEADERBOARD', color:0x00ffff, fontSize:44, scale:0.5, glow:true, x:0, y:1.95, z:0 },
+      { id:'scoreboardMesh', name:'Score List BG', type:'rect', color:0x111133, w:3.5, h:2.5, x:0, y:0.45, z:0, opacity:0.9 },
+      { id:'btnCountry', name:'COUNTRY button', type:'rect', color:0x111133, w:0.65, h:0.3, x:1.55, y:1.2, z:0, opacity:0.9 },
+      { id:'btnContinent', name:'CONTINENT button', type:'rect', color:0x111133, w:0.65, h:0.3, x:1.55, y:0.85, z:0, opacity:0.9 },
+      { id:'btnPrevPage', name:'⬅ PREV PAGE button', type:'rect', color:0x111133, w:0.65, h:0.3, x:1.55, y:0.1, z:0, opacity:0.9 },
+      { id:'btnNextPage', name:'NEXT PAGE ➡ button', type:'rect', color:0x111133, w:0.65, h:0.3, x:1.55, y:-0.25, z:0, opacity:0.9 },
+      { id:'btnBack', name:'BACK button', type:'rect', color:0x330000, w:0.9, h:0.35, x:0, y:-1.0, z:0, opacity:0.9 },
+    ];
+
+    // ── Wrist Hologram Screens (controller-attached during upgrade-between-levels) ──
+    // These represent small holographic panels attached to each VR controller.
+    // Left wrist shows current left-blaster info; right wrist shows right-blaster info.
+    // Positions are in local controller space (small panel ~0.3m wide, angled up from wrist).
+
+    const UPGRADE_WRIST_LEFT_DEFS = [
+      { id:'wrist_panel_bg', name:'Panel BG', type:'rect', color:0x0a0022, w:0.30, h:0.22, x:0, y:0, z:0, opacity:0.88 },
+      { id:'wrist_panel_border', name:'Panel Border', type:'rect', color:0x00ffff, w:0.30, h:0.22, x:0, y:0, z:0.005, opacity:0.6 },
+      { id:'wrist_header', name:'LEFT BLASTER', type:'text', text:'LEFT BLASTER', color:0x00ffff, fontSize:28, scale:0.12, glow:true, x:0, y:0.08, z:0.01 },
+      { id:'wrist_weapon_name', name:'Weapon Name', type:'text', text:'Standard Blaster', color:0xffffff, fontSize:22, scale:0.10, x:0, y:0.04, z:0.01 },
+      { id:'wrist_damage_label', name:'DMG Label', type:'text', text:'DMG', color:0xaaaaaa, fontSize:16, scale:0.06, x:-0.08, y:-0.02, z:0.01 },
+      { id:'wrist_damage_val', name:'DMG Value', type:'text', text:'12', color:0x88ff88, fontSize:20, scale:0.08, x:-0.02, y:-0.02, z:0.01 },
+      { id:'wrist_rof_label', name:'ROF Label', type:'text', text:'ROF', color:0xaaaaaa, fontSize:16, scale:0.06, x:0.05, y:-0.02, z:0.01 },
+      { id:'wrist_rof_val', name:'ROF Value', type:'text', text:'5.0', color:0x88ff88, fontSize:20, scale:0.08, x:0.10, y:-0.02, z:0.01 },
+      { id:'wrist_upgrade_count', name:'Upgrade Count', type:'text', text:'UPGRADES: 3', color:0xffff00, fontSize:14, scale:0.06, x:0, y:-0.07, z:0.01 },
+      { id:'wrist_divider', name:'Divider Line', type:'rect', color:0x00ffff, w:0.26, h:0.003, x:0, y:-0.035, z:0.008, opacity:0.4 },
+    ];
+
+    const UPGRADE_WRIST_RIGHT_DEFS = [
+      { id:'wrist_panel_bg', name:'Panel BG', type:'rect', color:0x0a0022, w:0.30, h:0.22, x:0, y:0, z:0, opacity:0.88 },
+      { id:'wrist_panel_border', name:'Panel Border', type:'rect', color:0xff88aa, w:0.30, h:0.22, x:0, y:0, z:0.005, opacity:0.6 },
+      { id:'wrist_header', name:'RIGHT BLASTER', type:'text', text:'RIGHT BLASTER', color:0xff88aa, fontSize:28, scale:0.12, glow:true, x:0, y:0.08, z:0.01 },
+      { id:'wrist_weapon_name', name:'Weapon Name', type:'text', text:'Buckshot', color:0xffffff, fontSize:22, scale:0.10, x:0, y:0.04, z:0.01 },
+      { id:'wrist_damage_label', name:'DMG Label', type:'text', text:'DMG', color:0xaaaaaa, fontSize:16, scale:0.06, x:-0.08, y:-0.02, z:0.01 },
+      { id:'wrist_damage_val', name:'DMG Value', type:'text', text:'8', color:0x88ff88, fontSize:20, scale:0.08, x:-0.02, y:-0.02, z:0.01 },
+      { id:'wrist_rof_label', name:'ROF Label', type:'text', text:'ROF', color:0xaaaaaa, fontSize:16, scale:0.06, x:0.05, y:-0.02, z:0.01 },
+      { id:'wrist_rof_val', name:'ROF Value', type:'text', text:'3.2', color:0x88ff88, fontSize:20, scale:0.08, x:0.10, y:-0.02, z:0.01 },
+      { id:'wrist_upgrade_count', name:'Upgrade Count', type:'text', text:'UPGRADES: 5', color:0xffff00, fontSize:14, scale:0.06, x:0, y:-0.07, z:0.01 },
+      { id:'wrist_divider', name:'Divider Line', type:'rect', color:0xff88aa, w:0.26, h:0.003, x:0, y:-0.035, z:0.008, opacity:0.4 },
     ];
 
     const SCREEN_CONFIGS = {
@@ -364,8 +422,47 @@
             hasAnchors: false,
             hasVisibility: false,
             label: 'Settings',
-            exportName: 'settings-layout.json',
+            exportName: 'settings.json',
             exportEditor: 'settings',
+        },
+        'scoreboard': {
+            defs: SCOREBOARD_DEFS,
+            cameraPos: [0, 0, 5],
+            cameraTarget: [0, 0, 0],
+            useHudGroup: false,
+            gridRotation: Math.PI / 2,
+            hasGroups: true,
+            hasAnchors: false,
+            hasVisibility: false,
+            label: 'Scoreboard',
+            exportName: 'scoreboard-layout.json',
+            exportEditor: 'scoreboard',
+        },
+        'upgrade-wrist-left': {
+            defs: UPGRADE_WRIST_LEFT_DEFS,
+            cameraPos: [0, 0, 1.5],
+            cameraTarget: [0, 0, 0],
+            useHudGroup: false,
+            gridRotation: Math.PI / 2,
+            hasGroups: false,
+            hasAnchors: false,
+            hasVisibility: false,
+            label: 'Upgrade Wrist (Left)',
+            exportName: 'upgrade-wrist-left.json',
+            exportEditor: 'upgrade-wrist-left',
+        },
+        'upgrade-wrist-right': {
+            defs: UPGRADE_WRIST_RIGHT_DEFS,
+            cameraPos: [0, 0, 1.5],
+            cameraTarget: [0, 0, 0],
+            useHudGroup: false,
+            gridRotation: Math.PI / 2,
+            hasGroups: false,
+            hasAnchors: false,
+            hasVisibility: false,
+            label: 'Upgrade Wrist (Right)',
+            exportName: 'upgrade-wrist-right.json',
+            exportEditor: 'upgrade-wrist-right',
         },
     };
 
@@ -411,6 +508,7 @@
     let selectedIds = [];
     let undos = [];
     const MAX_UNDO = 25;
+    let customCounter = 0; // for unique IDs on created/duplicated elements
 
     // Drag handle guard
     let isDragging = false;
@@ -454,21 +552,85 @@
     //  TEXT RENDERING (matches makeSprite exactly)
     // ══════════════════════════════════════════════════
 
-    function renderTextMesh(text, fontSize, scale, colorHex, glow) {
+    const EDITOR_GAME_FONT = 'November, Arial, sans-serif';
+
+    function buildPrimitive(def) {
+        let geo;
+        let mat;
+        if (def.type === 'wire-octa') {
+            const radius = def.scale || 0.12;
+            geo = new THREE.OctahedronGeometry(radius, 0);
+            mat = new THREE.MeshBasicMaterial({
+                color: def.color, wireframe: true, transparent: true,
+                opacity: def.opacity ?? 1.0
+            });
+            def._w = radius * 2; def._h = radius * 2;
+        } else if (def.type === 'cube') {
+            const size = def.scale || 0.25;
+            geo = new THREE.BoxGeometry(size, size, size);
+            mat = new THREE.MeshBasicMaterial({
+                color: def.color, transparent: true, opacity: def.opacity ?? 1.0,
+            });
+            def._w = size; def._h = size;
+        } else if (def.type === 'sphere') {
+            const radius = (def.scale || 0.15) / 2;
+            geo = new THREE.SphereGeometry(radius, 12, 12);
+            mat = new THREE.MeshBasicMaterial({
+                color: def.color, transparent: true, opacity: def.opacity ?? 1.0,
+            });
+            def._w = radius * 2; def._h = radius * 2;
+        }
+        return { geo, mat };
+    }
+
+    function renderTextMesh(text, fontSize, scale, colorHex, glow, opts = {}) {
         const showBounds = document.getElementById('showBounds')?.checked ?? true;
-        const pad = glow ? 25 : 40;
         const c = document.createElement('canvas');
         const ctx = c.getContext('2d');
-        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-        const tw = Math.ceil(ctx.measureText(text).width) + pad * 2;
-        const th = Math.ceil(fontSize * 1.3) + pad * 2;
+        const fontFamily = opts.forceArial ? 'Arial, sans-serif' : EDITOR_GAME_FONT;
+        const font = `bold ${fontSize}px ${fontFamily}`;
+        const maxWidth = opts.maxWidth || null;
+        ctx.font = font;
+
+        const paragraphs = String(text ?? '').split('\n');
+        let lines = [];
+        for (const paragraph of paragraphs) {
+            if (!maxWidth) {
+                lines.push(paragraph);
+                continue;
+            }
+            const words = paragraph.split(' ');
+            let currentLine = '';
+            for (const word of words) {
+                const testLine = currentLine ? `${currentLine} ${word}` : word;
+                const metrics = ctx.measureText(testLine);
+                if (metrics.width > maxWidth && currentLine) {
+                    lines.push(currentLine);
+                    currentLine = word;
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            lines.push(currentLine || ' ');
+        }
+        if (!lines.length) lines = [' '];
+
+        const textWidth = maxWidth || Math.ceil(Math.max(...lines.map(line => ctx.measureText(line).width)));
+        const lineHeight = fontSize * 1.3;
+        const textHeight = lines.length * lineHeight;
+        const pad = glow ? 25 : 40;
+        const tw = Math.ceil(textWidth) + pad * 2;
+        const th = Math.ceil(textHeight) + pad * 2;
         c.width = tw; c.height = th;
-        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+        ctx.font = font;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.clearRect(0, 0, tw, th);
         if (glow) { ctx.shadowColor = colorHex; ctx.shadowBlur = 15; }
         ctx.fillStyle = colorHex;
-        ctx.fillText(text, tw / 2, th / 2);
+        lines.forEach((line, i) => {
+            const y = (th / 2) - ((lines.length - 1) * lineHeight / 2) + (i * lineHeight);
+            ctx.fillText(line, tw / 2, y);
+        });
         ctx.shadowBlur = 0;
         if (showBounds) {
             ctx.strokeStyle = colorHex.length === 7 ? colorHex + '55' : 'rgba(255,255,255,0.2)';
@@ -486,6 +648,11 @@
         return { geo: new THREE.PlaneGeometry(w, h), mat, w, h };
     }
 
+    const scaleTypeSet = new Set(['text', 'hearts', 'wire-octa', 'cube', 'sphere']);
+    function isScaleType(def) {
+        return scaleTypeSet.has(def.type);
+    }
+
     // ══════════════════════════════════════════════════
     //  BUILD / REBUILD ELEMENTS
     // ══════════════════════════════════════════════════
@@ -498,7 +665,7 @@
         let geo, mat;
         if (def.type === 'text') {
             const r = renderTextMesh(def.text, def.fontSize, def.scale,
-                '#' + def.color.toString(16).padStart(6, '0'), def.glow);
+                '#' + def.color.toString(16).padStart(6, '0'), def.glow, def);
             geo = r.geo; mat = r.mat; def._w = r.w; def._h = r.h;
         } else if (def.type === 'hearts') {
             const s = def.scale || 1.0;
@@ -508,6 +675,9 @@
                 side: THREE.DoubleSide, depthTest: false, depthWrite: false
             });
             def._w = 1.7875 * s; def._h = 0.55 * s;
+        } else if (def.type === 'wire-octa' || def.type === 'cube' || def.type === 'sphere') {
+            const r = buildPrimitive(def);
+            geo = r.geo; mat = r.mat;
         } else {
             geo = new THREE.PlaneGeometry(def.w, def.h);
             mat = new THREE.MeshBasicMaterial({
@@ -517,15 +687,20 @@
             def._w = def.w; def._h = def.h;
         }
         const mesh = new THREE.Mesh(geo, mat);
+        const initialAlign = def.align || 'center';
+        if (initialAlign === 'left') mesh.geometry.translate((def._w || 1) / 2, 0, 0);
+        else if (initialAlign === 'right') mesh.geometry.translate(-(def._w || 1) / 2, 0, 0);
         mesh.position.set(def.x, def.y, def.z);
+        mesh.rotation.set(def.rx || 0, def.ry || 0, def.rz || 0);
         mesh.frustumCulled = false;
         mesh.renderOrder = 999;
-        mesh.userData = { id: def.id, def, align: 'center', origColor: def.color };
+        mesh.userData = { id: def.id, def, align: initialAlign, origColor: def.color };
         getContainer().add(mesh);
         els[def.id] = mesh;
         INIT[def.id] = {
             x: def.x, y: def.y, z: def.z, text: def.text, scale: def.scale,
-            w: def.w, h: def.h, align: 'center', type: def.type, visible: true, anchor: 'center'
+            w: def.w, h: def.h, rx: def.rx || 0, ry: def.ry || 0, rz: def.rz || 0,
+            align: initialAlign, type: def.type, visible: true, anchor: 'center'
         };
     }
 
@@ -539,7 +714,7 @@
         if (mesh.material.map) mesh.material.map.dispose();
         if (def.type === 'text') {
             const r = renderTextMesh(def.text, def.fontSize, def.scale,
-                '#' + def.color.toString(16).padStart(6, '0'), def.glow);
+                '#' + def.color.toString(16).padStart(6, '0'), def.glow, def);
             mesh.geometry = r.geo; mesh.material = r.mat; def._w = r.w; def._h = r.h;
         } else if (def.type === 'hearts') {
             const s = def.scale || 1.0;
@@ -547,6 +722,9 @@
             mesh.material.map?.dispose();
             mesh.material.map = renderHeartsTexture();
             def._w = 1.7875 * s; def._h = 0.55 * s;
+        } else if (def.type === 'wire-octa' || def.type === 'cube' || def.type === 'sphere') {
+            const r = buildPrimitive(def);
+            mesh.geometry = r.geo; mesh.material = r.mat;
         } else {
             mesh.geometry = new THREE.PlaneGeometry(def.w, def.h);
             def._w = def.w; def._h = def.h;
@@ -602,6 +780,9 @@
             def._w = 1.7875 * s; def._h = 0.55 * s;
             if (align === 'left') mesh.geometry.translate(1.7875 * s / 2, 0, 0);
             else if (align === 'right') mesh.geometry.translate(-1.7875 * s / 2, 0, 0);
+        } else if (def.type === 'wire-octa' || def.type === 'cube' || def.type === 'sphere') {
+            def.scale = newScale;
+            rebuildMesh(id);
         } else {
             const ratio = newScale / (def._w || 1);
             def.w = def.w * ratio; def.h = def.h * ratio;
@@ -662,6 +843,23 @@
     function primaryMesh() {
         const id = primarySelectedId();
         return id ? els[id] : null;
+    }
+
+    function focusSelected() {
+        const mesh = primaryMesh();
+        if (!mesh) return;
+        const worldPos = new THREE.Vector3();
+        mesh.getWorldPosition(worldPos);
+        const box = new THREE.Box3().setFromObject(mesh);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const radius = Math.max(size.length() * 0.5, 0.25);
+        const viewDir = new THREE.Vector3().subVectors(camera.position, orbit.target);
+        if (viewDir.lengthSq() < 0.0001) viewDir.set(0, 0, 1);
+        viewDir.normalize();
+        camera.position.copy(worldPos).addScaledVector(viewDir, Math.max(radius * 2.2, 0.8));
+        orbit.target.copy(worldPos);
+        orbit.update();
     }
 
     canvas.addEventListener('pointerdown', e => {
@@ -806,10 +1004,12 @@
             document.getElementById('sel-name').textContent = 'Click an element';
             multi.style.display = 'none';
             ga.style.display = 'none';
-            ['inp-x','inp-y','inp-z','inp-scale','inp-w','inp-h','inp-text'].forEach(k =>
+            ['inp-x','inp-y','inp-z','inp-rx','inp-ry','inp-rz','inp-scale','inp-w','inp-h','inp-text'].forEach(k =>
                 document.getElementById(k).value = '');
             document.getElementById('inp-text').disabled = true;
             document.getElementById('inp-anchor').value = 'center';
+            document.getElementById('font-section').style.display = 'none';
+            document.getElementById('color-section').style.display = 'none';
             document.querySelectorAll('.abtn button').forEach(b => b.classList.remove('active'));
             document.getElementById('row-scale').style.display = '';
             document.getElementById('row-w').style.display = 'none';
@@ -838,6 +1038,9 @@
         document.getElementById('inp-x').value = pm.position.x.toFixed(3);
         document.getElementById('inp-y').value = pm.position.y.toFixed(3);
         document.getElementById('inp-z').value = pm.position.z.toFixed(3);
+        document.getElementById('inp-rx').value = THREE.MathUtils.radToDeg(pm.rotation.x).toFixed(1);
+        document.getElementById('inp-ry').value = THREE.MathUtils.radToDeg(pm.rotation.y).toFixed(1);
+        document.getElementById('inp-rz').value = THREE.MathUtils.radToDeg(pm.rotation.z).toFixed(1);
 
         const align = pm.userData.align || 'center';
         document.querySelectorAll('.abtn button').forEach(b => b.classList.remove('active'));
@@ -848,6 +1051,13 @@
         if (def.type === 'text') {
             document.getElementById('inp-text').value = def.text;
             document.getElementById('inp-text').disabled = false;
+            // Show font and color controls for text
+            document.getElementById('font-section').style.display = '';
+            document.getElementById('color-section').style.display = '';
+            document.getElementById('inp-font').value = def.forceArial ? 'arial' : 'november';
+            const hexColor = '#' + def.color.toString(16).padStart(6, '0');
+            document.getElementById('inp-color').value = hexColor;
+            document.getElementById('inp-color-hex').value = hexColor;
             if (selectedIds.length > 1) {
                 // Multi-select: always show Scale with primary's value
                 document.getElementById('inp-scale').value = def.scale.toFixed(4);
@@ -863,6 +1073,8 @@
         } else if (def.type === 'hearts') {
             document.getElementById('inp-text').value = '(3 hearts)';
             document.getElementById('inp-text').disabled = true;
+            document.getElementById('font-section').style.display = 'none';
+            document.getElementById('color-section').style.display = 'none';
             if (selectedIds.length > 1) {
                 document.getElementById('inp-scale').value = (def.scale || 1.0).toFixed(4);
                 document.getElementById('row-scale').style.display = '';
@@ -874,9 +1086,24 @@
                 document.getElementById('row-w').style.display = 'none';
                 document.getElementById('row-h').style.display = 'none';
             }
+        } else if (isScaleType(def)) {
+            document.getElementById('inp-text').value = '(mesh)';
+            document.getElementById('inp-text').disabled = true;
+            document.getElementById('font-section').style.display = 'none';
+            document.getElementById('color-section').style.display = 'none';
+            document.getElementById('inp-scale').value = (def.scale || 0.1).toFixed(4);
+            document.getElementById('row-scale').style.display = '';
+            document.getElementById('row-w').style.display = 'none';
+            document.getElementById('row-h').style.display = 'none';
         } else {
             document.getElementById('inp-text').value = '(rectangle)';
             document.getElementById('inp-text').disabled = true;
+            document.getElementById('font-section').style.display = 'none';
+            // Show color for rects too
+            document.getElementById('color-section').style.display = '';
+            const hexColor = '#' + def.color.toString(16).padStart(6, '0');
+            document.getElementById('inp-color').value = hexColor;
+            document.getElementById('inp-color-hex').value = hexColor;
             if (selectedIds.length > 1) {
                 // Multi-select rect: show Scale (1.0) instead of w/h
                 document.getElementById('inp-scale').value = '1.0000';
@@ -920,11 +1147,17 @@
         const newX = parseFloat(document.getElementById('inp-x').value) || 0;
         const newY = parseFloat(document.getElementById('inp-y').value) || 0;
         const newZ = parseFloat(document.getElementById('inp-z').value) || 0;
+        const newRx = THREE.MathUtils.degToRad(parseFloat(document.getElementById('inp-rx').value) || 0);
+        const newRy = THREE.MathUtils.degToRad(parseFloat(document.getElementById('inp-ry').value) || 0);
+        const newRz = THREE.MathUtils.degToRad(parseFloat(document.getElementById('inp-rz').value) || 0);
 
         // Calculate deltas from primary element's current position
         const dx = newX - mesh.position.x;
         const dy = newY - mesh.position.y;
         const dz = newZ - mesh.position.z;
+        const drx = newRx - mesh.rotation.x;
+        const dry = newRy - mesh.rotation.y;
+        const drz = newRz - mesh.rotation.z;
 
         // Apply delta to ALL selected elements
         if (selectedIds.length > 1) {
@@ -934,11 +1167,17 @@
                 m.position.x += dx;
                 m.position.y += dy;
                 m.position.z += dz;
+                m.rotation.x += drx;
+                m.rotation.y += dry;
+                m.rotation.z += drz;
             });
         } else {
             mesh.position.x = newX;
             mesh.position.y = newY;
             mesh.position.z = newZ;
+            mesh.rotation.x = newRx;
+            mesh.rotation.y = newRy;
+            mesh.rotation.z = newRz;
         }
 
         // Handle scale/size changes for primary
@@ -955,7 +1194,7 @@
             selectedIds.forEach(id => {
                 const d2 = els[id]?.userData.def;
                 if (!d2) return;
-                if (d2.type === 'text' || d2.type === 'hearts') {
+                if (isScaleType(d2)) {
                     // Apply scale directly
                     const targetScale = (d2.scale || 1.0) * ratio;
                     applyScaleWithAnchor(id, targetScale);
@@ -966,7 +1205,7 @@
                     applyRectSizeWithAnchor(id, newW, newH);
                 }
             });
-        } else if (def.type === 'text' || def.type === 'hearts') {
+        } else if (isScaleType(def)) {
             const newScale = parseFloat(document.getElementById('inp-scale').value) || 0.02;
             applyScaleWithAnchor(pid, newScale);
         } else if (def.type === 'rect') {
@@ -992,6 +1231,123 @@
         const pid = primarySelectedId();
         if (!pid) return;
         elAnchor[pid] = document.getElementById('inp-anchor').value;
+        autoSave();
+    };
+
+    // ══════════════════════════════════════════════════
+    //  CREATE / DUPLICATE / COLOR / FONT
+    // ══════════════════════════════════════════════════
+
+    window.createNewRect = function() {
+        customCounter++;
+        const id = 'custom_rect_' + customCounter;
+        const def = {
+            id, name: 'New Rect ' + customCounter, type: 'rect',
+            color: 0x333366, w: 0.5, h: 0.3,
+            x: 0, y: 0, z: 0.01, opacity: 0.8, _custom: true
+        };
+        pushUndo();
+        DEFS.push(def);
+        elVisible[id] = true; elAnchor[id] = 'center';
+        buildElement(def);
+        doSelect(id);
+        autoSave();
+    };
+
+    window.createNewText = function() {
+        customCounter++;
+        const id = 'custom_text_' + customCounter;
+        const def = {
+            id, name: 'New Text ' + customCounter, type: 'text',
+            text: 'TEXT', color: 0xffffff, fontSize: 36, scale: 0.3,
+            x: 0, y: 0, z: 0.01, glow: false, _custom: true
+        };
+        pushUndo();
+        DEFS.push(def);
+        elVisible[id] = true; elAnchor[id] = 'center';
+        buildElement(def);
+        doSelect(id);
+        autoSave();
+    };
+
+    window.duplicateSelected = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        const srcDef = els[pid]?.userData?.def;
+        if (!srcDef) return;
+        customCounter++;
+        const newId = 'dup_' + customCounter + '_' + pid;
+        // Deep clone the def
+        const def = { ...srcDef, id: newId, name: srcDef.name + ' (copy)', _custom: true };
+        if (srcDef.text !== undefined) def.text = srcDef.text;
+        // Offset slightly so duplicate is visible
+        const mesh = els[pid];
+        def.x = mesh.position.x + 0.1;
+        def.y = mesh.position.y - 0.1;
+        def.z = mesh.position.z + 0.005;
+        pushUndo();
+        DEFS.push(def);
+        elVisible[newId] = true; elAnchor[newId] = 'center';
+        buildElement(def);
+        // Copy alignment from source
+        els[newId].userData.align = mesh.userData.align || 'center';
+        doSelect(newId);
+        autoSave();
+    };
+
+    window.onColorInput = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        const hex = document.getElementById('inp-color').value;
+        const colorInt = parseInt(hex.slice(1), 16);
+        applyColorChange(pid, colorInt, hex);
+    };
+
+    window.onColorHexInput = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        let hex = document.getElementById('inp-color-hex').value.trim();
+        if (!hex.startsWith('#')) hex = '#' + hex;
+        if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
+            const colorInt = parseInt(hex.slice(1), 16);
+            applyColorChange(pid, colorInt, hex);
+        }
+    };
+
+    function applyColorChange(pid, colorInt, hexStr) {
+        const mesh = els[pid];
+        const def = mesh?.userData?.def;
+        if (!mesh || !def) return;
+        pushUndo();
+        def.color = colorInt;
+        mesh.userData.origColor = colorInt;
+        if (selectedIds.includes(pid)) {
+            // Keep highlight color
+        } else {
+            if (mesh.material.color) mesh.material.color.setHex(colorInt);
+        }
+        // For text, rebuild to update rendered text color
+        if (def.type === 'text') {
+            rebuildMesh(pid);
+            if (selectedIds.includes(pid)) mesh.material.color.setHex(0x00ffff);
+        } else if (def.type !== 'hearts') {
+            // For rect types, just update material color
+            if (mesh.material.color) mesh.material.color.setHex(colorInt);
+        }
+        updateList();
+        autoSave();
+    }
+
+    window.onFontInput = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        const def = els[pid]?.userData?.def;
+        if (!def || def.type !== 'text') return;
+        pushUndo();
+        const fontVal = document.getElementById('inp-font').value;
+        def.forceArial = (fontVal === 'arial');
+        rebuildMesh(pid);
+        if (selectedIds.includes(pid)) els[pid].material.color.setHex(0x00ffff);
         autoSave();
     };
 
@@ -1246,6 +1602,7 @@
             m.userData.align = v.align;
             if (d.type === 'text') { d.text = v.text; d.scale = v.scale; }
             else if (d.type === 'hearts') { d.scale = v.scale || 1.0; }
+            else if (d.type === 'wire-octa' || d.type === 'cube' || d.type === 'sphere') { d.scale = v.scale || d.scale || 0.1; }
             else { d.w = v.w; d.h = v.h; }
             rebuildMesh(id);
         });
@@ -1277,9 +1634,11 @@
         Object.keys(els).forEach(id => {
             const m = els[id], d = m.userData.def, v = INIT[id];
             m.position.set(v.x, v.y, v.z);
+            m.rotation.set(v.rx || 0, v.ry || 0, v.rz || 0);
             m.userData.align = v.align;
             if (d.type === 'text') { d.text = v.text; d.scale = v.scale; }
             else if (d.type === 'hearts') { d.scale = v.scale || 1.0; }
+            else if (d.type === 'wire-octa' || d.type === 'cube' || d.type === 'sphere') { d.scale = v.scale || d.scale || 0.1; }
             else { d.w = v.w; d.h = v.h; }
             rebuildMesh(id);
         });
@@ -1291,7 +1650,10 @@
     };
 
     document.addEventListener('keydown', e => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); window.undo(); }
+        const tag = e.target?.tagName;
+        const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable;
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); window.undo(); return; }
+        if (!isTyping && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); focusSelected(); }
     });
 
     // ══════════════════════════════════════════════════
@@ -1308,39 +1670,78 @@
         }
     }
 
+    function applyLayoutData(d) {
+        if (!d || !d.elements) return false;
+        Object.keys(d.elements).forEach(id => {
+            if (!els[id]) return;
+            const m = els[id], dd = m.userData.def, v = d.elements[id];
+            m.position.set(v.x, v.y, v.z);
+            m.rotation.set(v.rx || 0, v.ry || 0, v.rz || 0);
+            if (v.align) m.userData.align = v.align;
+            if (v.visible === false) { elVisible[id] = false; m.visible = false; }
+            else { elVisible[id] = true; m.visible = true; }
+            if (v.anchor) elAnchor[id] = v.anchor;
+            if (dd.type === 'text' && v.text !== undefined) {
+                dd.text = v.text; dd.scale = v.scale;
+                if (v.forceArial !== undefined) dd.forceArial = v.forceArial;
+            }
+            else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; }
+            else if (dd.type === 'wire-octa' || dd.type === 'cube' || dd.type === 'sphere') { dd.scale = v.scale || dd.scale || 0.1; }
+            else if (v.w != null) { dd.w = v.w; dd.h = v.h; }
+            rebuildMesh(id);
+        });
+        if (d.groups) {
+            groups = {};
+            for (const [name, members] of Object.entries(d.groups)) {
+                groups[name] = members.filter(m => els[m]);
+                if (groups[name].length === 0) delete groups[name];
+            }
+            const existingNums = Object.keys(groups).map(n => {
+                const match = n.match(/^Group (\d+)$/);
+                return match ? parseInt(match[1]) : 0;
+            });
+            groupCounter = Math.max(groupCounter, ...existingNums);
+        }
+        // Re-create custom items
+        if (d._customDefs && Array.isArray(d._customDefs)) {
+            d._customDefs.forEach(cdef => {
+                if (els[cdef.id]) return;
+                const def = { ...cdef, _custom: true };
+                DEFS.push(def);
+                elVisible[def.id] = true;
+                elAnchor[def.id] = 'center';
+                buildElement(def);
+                const cEl = d.elements[cdef.id];
+                if (cEl) {
+                    els[def.id].position.set(cEl.x ?? def.x, cEl.y ?? def.y, cEl.z ?? def.z);
+                    els[def.id].rotation.set(cEl.rx || 0, cEl.ry || 0, cEl.rz || 0);
+                    if (cEl.align) els[def.id].userData.align = cEl.align;
+                }
+                const numMatch = cdef.id.match(/\d+/);
+                if (numMatch) customCounter = Math.max(customCounter, parseInt(numMatch[0]));
+            });
+        }
+        return true;
+    }
+
+    async function loadBundledLayout(screenId) {
+        try {
+            const resp = await fetch(`../layouts/${screenId}.json`, { cache: 'no-store' });
+            if (!resp.ok) return false;
+            const d = await resp.json();
+            return applyLayoutData(d);
+        } catch (err) {
+            return false;
+        }
+    }
+
     function autoLoad(screenId) {
         const key = 'layout-editor:' + screenId;
         try {
             const raw = localStorage.getItem(key);
             if (!raw) return false;
             const d = JSON.parse(raw);
-            if (!d.elements) return false;
-            Object.keys(d.elements).forEach(id => {
-                if (!els[id]) return;
-                const m = els[id], dd = m.userData.def, v = d.elements[id];
-                m.position.set(v.x, v.y, v.z);
-                if (v.align) m.userData.align = v.align;
-                if (v.visible === false) { elVisible[id] = false; m.visible = false; }
-                else { elVisible[id] = true; m.visible = true; }
-                if (v.anchor) elAnchor[id] = v.anchor;
-                if (dd.type === 'text' && v.text !== undefined) { dd.text = v.text; dd.scale = v.scale; }
-                else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; }
-                else if (v.w) { dd.w = v.w; dd.h = v.h; }
-                rebuildMesh(id);
-            });
-            if (d.groups) {
-                groups = {};
-                for (const [name, members] of Object.entries(d.groups)) {
-                    groups[name] = members.filter(m => els[m]);
-                    if (groups[name].length === 0) delete groups[name];
-                }
-                const existingNums = Object.keys(groups).map(n => {
-                    const match = n.match(/^Group (\d+)$/);
-                    return match ? parseInt(match[1]) : 0;
-                });
-                groupCounter = Math.max(groupCounter, ...existingNums);
-            }
-            return true;
+            return applyLayoutData(d);
         } catch (err) {
             return false;
         }
@@ -1366,14 +1767,21 @@
             data.elements[id] = {
                 x: +m.position.x.toFixed(3), y: +m.position.y.toFixed(3),
                 z: +m.position.z.toFixed(3), align: m.userData.align || 'center',
+                rx: +m.rotation.x.toFixed(4), ry: +m.rotation.y.toFixed(4), rz: +m.rotation.z.toFixed(4),
                 type: d.type, visible: elVisible[id] !== false,
                 anchor: elAnchor[id] || 'center',
             };
             if (d.type === 'text') {
                 data.elements[id].scale = +(d.scale.toFixed(4));
                 data.elements[id].text = d.text;
+                data.elements[id].fontSize = d.fontSize;
+                data.elements[id].glow = !!d.glow;
+                if (d.forceArial) data.elements[id].forceArial = true;
+                if (d.maxWidth) data.elements[id].maxWidth = d.maxWidth;
             } else if (d.type === 'hearts') {
                 data.elements[id].scale = +((d.scale || 1.0).toFixed(4));
+            } else if (d.type === 'wire-octa' || d.type === 'cube' || d.type === 'sphere') {
+                data.elements[id].scale = +((d.scale || 0.1).toFixed(4));
             } else {
                 data.elements[id].w = +(d.w.toFixed(3));
                 data.elements[id].h = +(d.h.toFixed(3));
@@ -1385,6 +1793,19 @@
             if (members.length > 0) nonEmptyGroups[name] = [...members];
         }
         if (Object.keys(nonEmptyGroups).length > 0) data.groups = nonEmptyGroups;
+        // Export full definitions for custom items so they can be re-created
+        const customDefs = DEFS.filter(d => d._custom);
+        if (customDefs.length > 0) {
+            data._customDefs = customDefs.map(d => {
+                const m = els[d.id];
+                const out = { ...d };
+                // Use mesh position (may differ from def if moved)
+                if (m) { out.x = +m.position.x.toFixed(3); out.y = +m.position.y.toFixed(3); out.z = +m.position.z.toFixed(3); }
+                // Remove internal props
+                delete out._w; delete out._h; delete out._custom;
+                return out;
+            });
+        }
         return data;
     }
 
@@ -1421,12 +1842,14 @@
                     if (!els[id]) return;
                     const m = els[id], dd = m.userData.def, v = d.elements[id];
                     m.position.set(v.x, v.y, v.z);
+                    m.rotation.set(v.rx || 0, v.ry || 0, v.rz || 0);
                     if (v.align) m.userData.align = v.align;
                     if (v.visible === false) { elVisible[id] = false; m.visible = false; }
                     else { elVisible[id] = true; m.visible = true; }
                     if (v.anchor) elAnchor[id] = v.anchor;
                     if (dd.type === 'text' && v.text !== undefined) { dd.text = v.text; dd.scale = v.scale; }
                     else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; }
+                    else if (dd.type === 'wire-octa' || dd.type === 'cube' || dd.type === 'sphere') { dd.scale = v.scale || dd.scale || 0.1; }
                     else if (v.w) { dd.w = v.w; dd.h = v.h; }
                     rebuildMesh(id);
                 });
@@ -1441,6 +1864,26 @@
                         return match ? parseInt(match[1]) : 0;
                     });
                     groupCounter = Math.max(groupCounter, ...existingNums);
+                }
+                // Re-create custom items from _customDefs
+                if (d._customDefs && Array.isArray(d._customDefs)) {
+                    d._customDefs.forEach(cdef => {
+                        if (els[cdef.id]) return; // skip if already exists
+                        const def = { ...cdef, _custom: true };
+                        DEFS.push(def);
+                        elVisible[def.id] = true;
+                        elAnchor[def.id] = 'center';
+                        buildElement(def);
+                        const cEl = d.elements[cdef.id];
+                        if (cEl) {
+                            els[def.id].position.set(cEl.x ?? def.x, cEl.y ?? def.y, cEl.z ?? def.z);
+                            els[def.id].rotation.set(cEl.rx || 0, cEl.ry || 0, cEl.rz || 0);
+                            if (cEl.align) els[def.id].userData.align = cEl.align;
+                        }
+                        // Track counter
+                        const numMatch = cdef.id.match(/\d+/);
+                        if (numMatch) customCounter = Math.max(customCounter, parseInt(numMatch[0]));
+                    });
                 }
                 selectedIds = selectedIds.filter(id => {
                     if (SCREEN_CONFIGS[currentScreen].hasVisibility) return elVisible[id];
@@ -1481,7 +1924,7 @@
         selectedIds = []; undos = [];
     }
 
-    window.switchScreen = function(screenId) {
+    window.switchScreen = async function(screenId) {
         if (!SCREEN_CONFIGS[screenId]) return;
         // Auto-save current screen before switching
         if (Object.keys(els).length > 0) autoSave();
@@ -1518,7 +1961,8 @@
             buildElement(d);
         });
 
-        // Try to auto-load saved state
+        // Load the repo layout first, then let local unsaved edits override it.
+        await loadBundledLayout(screenId);
         autoLoad(screenId);
 
         // Update UI
@@ -1545,12 +1989,21 @@
     (function animate() {
         requestAnimationFrame(animate);
         orbit.update();
+        Object.values(els).forEach(mesh => {
+            const def = mesh.userData?.def;
+            if (!def) return;
+            if (def.spinX) mesh.rotation.x += def.spinX * 0.01;
+            if (def.spinY) mesh.rotation.y += def.spinY * 0.01;
+            if (def.spinZ) mesh.rotation.z += def.spinZ * 0.01;
+        });
         renderer.render(scene, camera);
     })();
 
     // ══════════════════════════════════════════════════
     //  INITIALIZE
     // ══════════════════════════════════════════════════
+
+    document.fonts?.load('bold 32px November').then(() => rebuildAllTextMeshes()).catch(() => {});
 
     window.switchScreen('floor-hud');
     resize();
