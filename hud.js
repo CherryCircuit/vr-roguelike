@@ -1920,14 +1920,15 @@ const ENEMY_ICON_COLORS = {
   toxic_pool: 0xcc4400,
 };
 
-// TODO: Supabase integration for death stats
-// function fetchDeathStats(killedByType) {
-//   // Will call Supabase to get count of deaths by this type
-//   // e.g., GET /rest/v1/rpc/get_death_stats?type=killedByType
-//   return fetch(`${SUPABASE_URL}/rest/v1/rpc/get_death_stats`, { ... })
-// }
-function fetchDeathStats(killedByType) {
-  return 'N/A';
+async function fetchDeathStats(killedByType) {
+  try {
+    const response = await fetch(`/api/death-stats?enemyType=${encodeURIComponent(killedByType)}`);
+    if (!response.ok) return 'N/A';
+    const result = await response.json();
+    return result.count != null ? result.count.toLocaleString() : 'N/A';
+  } catch {
+    return 'N/A';
+  }
 }
 
 export function showGameOver(score, playerPos, killedBy) {
@@ -1989,16 +1990,18 @@ export function showGameOver(score, playerPos, killedBy) {
       gameOverGroup.add(projLabel);
     }
 
-    // TODO: Uncomment when Supabase is set up
-    // const deathCount = fetchDeathStats(killedBy.enemyType || killedBy.type);
-    // if (deathCount !== 'N/A') {
-    //   const statsLabel = makeSprite(`Don't feel bad, ${deathCount} other players also succumbed to a ${killerName}`, {
-    //     fontSize: 28, color: '#aaaaaa', scale: 0.28
-    //   });
-    //   statsLabel.position.set(0, -0.75, 0);
-    //   statsLabel.name = 'deathStatsLabel';
-    //   gameOverGroup.add(statsLabel);
-    // }
+    // Fetch death stats from Supabase (async)
+    const killerKey = killedBy.enemyType || killedBy.type;
+    fetchDeathStats(killerKey).then(deathCount => {
+      if (deathCount !== 'N/A' && deathCount !== '0') {
+        const statsLabel = makeSprite(`Don't feel bad, ${deathCount} other players also succumbed to a ${killerName}`, {
+          fontSize: 28, color: '#aaaaaa', scale: 0.28
+        });
+        statsLabel.position.set(0, -0.75, 0);
+        statsLabel.name = 'deathStatsLabel';
+        gameOverGroup.add(statsLabel);
+      }
+    });
   }
 
   // Adjust PRESS TRIGGER position down if kill info is shown
