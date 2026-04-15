@@ -944,6 +944,12 @@
         } else if (def.type === 'wire-octa' || def.type === 'cube' || def.type === 'sphere') {
             def.scale = newScale;
             rebuildMesh(id);
+        } else if (def.type === 'grunt') {
+            def.voxelSize = newScale;
+            rebuildMesh(id);
+        } else if (def.type === 'image') {
+            def.scale = newScale;
+            rebuildMesh(id);
         } else {
             const ratio = newScale / (def._w || 1);
             def.w = def.w * ratio; def.h = def.h * ratio;
@@ -1040,10 +1046,13 @@
             if (SCREEN_CONFIGS[currentScreen].hasVisibility) return elVisible[mesh.userData.id];
             return true;
         });
-        const hits = rc.intersectObjects(visibleMeshes, false);
+        const hits = rc.intersectObjects(visibleMeshes, true);
         const isShift = e.shiftKey || e.ctrlKey || e.metaKey;
         if (hits.length) {
-            const hitId = hits[0].object.userData.id;
+            let target = hits[0].object;
+            while (target && !target.userData?.id) target = target.parent;
+            const hitId = target?.userData?.id;
+            if (!hitId) return;
             if (isShift) {
                 toggleSelect(hitId);
             } else {
@@ -1087,14 +1096,28 @@
     function clearHighlights() {
         selectedIds.forEach(id => {
             const mesh = els[id];
-            if (mesh && mesh.material.color) mesh.material.color.setHex(mesh.userData.origColor);
+            if (!mesh) return;
+            if (mesh.isGroup || mesh.userData?.isGruntGroup) {
+                mesh.children.forEach(child => {
+                    if (child.material?.color) child.material.color.setHex(mesh.userData.origColor ?? 0xffffff);
+                });
+            } else if (mesh.material?.color) {
+                mesh.material.color.setHex(mesh.userData.origColor ?? 0xffffff);
+            }
         });
     }
 
     function applyHighlights() {
         selectedIds.forEach(id => {
             const mesh = els[id];
-            if (mesh && mesh.material.color) mesh.material.color.setHex(0x00ffff);
+            if (!mesh) return;
+            if (mesh.isGroup || mesh.userData?.isGruntGroup) {
+                mesh.children.forEach(child => {
+                    if (child.material?.color) child.material.color.setHex(0x00ffff);
+                });
+            } else if (mesh.material?.color) {
+                mesh.material.color.setHex(0x00ffff);
+            }
         });
     }
 
@@ -1251,8 +1274,20 @@
             document.getElementById('inp-text').value = '(mesh)';
             document.getElementById('inp-text').disabled = true;
             document.getElementById('font-section').style.display = 'none';
-            document.getElementById('color-section').style.display = 'none';
-            document.getElementById('inp-scale').value = (def.scale || 0.1).toFixed(4);
+            // Show color for grunt (enemy model color)
+            if (def.type === 'grunt') {
+                document.getElementById('color-section').style.display = '';
+                const hexColor = '#' + def.color.toString(16).padStart(6, '0');
+                document.getElementById('inp-color').value = hexColor;
+                document.getElementById('inp-color-hex').value = hexColor;
+            } else {
+                document.getElementById('color-section').style.display = '';
+                const hexColor = '#' + def.color.toString(16).padStart(6, '0');
+                document.getElementById('inp-color').value = hexColor;
+                document.getElementById('inp-color-hex').value = hexColor;
+            }
+            const sc = def.type === 'grunt' ? (def.voxelSize || 0.29) : (def.type === 'image' ? (def.scale || 1.0) : (def.scale || 0.1));
+            document.getElementById('inp-scale').value = sc.toFixed(4);
             document.getElementById('row-scale').style.display = '';
             document.getElementById('row-w').style.display = 'none';
             document.getElementById('row-h').style.display = 'none';
@@ -1456,41 +1491,6 @@
         autoSave();
     };
 
-    window.deleteSelected = function() {
-        const pid = primarySelectedId();
-        if (!pid) return;
-        const def = els[pid]?.userData?.def;
-        if (!def) return;
-        pushUndo();
-        // Remove from DEFS array
-        const idx = DEFS.indexOf(def);
-        if (idx >= 0) DEFS.splice(idx, 1);
-        // Remove 3D object
-        const mesh = els[pid];
-        if (mesh) {
-            if (mesh.isGroup) {
-                mesh.children.forEach(child => {
-                    child.geometry?.dispose();
-                    child.material?.dispose();
-                });
-            } else {
-                mesh.geometry?.dispose();
-                if (mesh.material?.map) mesh.material.map.dispose();
-                mesh.material?.dispose();
-            }
-            mesh.parent?.remove(mesh);
-        }
-        // Remove from registries
-        delete els[pid];
-        delete INIT[pid];
-        delete elVisible[pid];
-        delete elAnchor[pid];
-        // Deselect
-        selectedIds = [];
-        updateSidebar();
-        autoSave();
-    };
-
     window.onColorInput = function() {
         const pid = primarySelectedId();
         if (!pid) return;
@@ -1526,9 +1526,14 @@
         if (def.type === 'text') {
             rebuildMesh(pid);
             if (selectedIds.includes(pid)) mesh.material.color.setHex(0x00ffff);
+        } else if (def.type === 'grunt') {
+            // Grunt groups: update all child materials
+            mesh.children.forEach(child => {
+                if (child.material?.color) child.material.color.setHex(colorInt);
+            });
         } else if (def.type !== 'hearts') {
             // For rect types, just update material color
-            if (mesh.material.color) mesh.material.color.setHex(colorInt);
+            if (mesh.material?.color) mesh.material.color.setHex(colorInt);
         }
         updateList();
         autoSave();
@@ -1554,26 +1559,38 @@
     window.deleteSelected = function() {
         if (selectedIds.length === 0) return;
         const idsToDelete = [...selectedIds];
-        // Prevent deleting built-in defs (only allow custom added elements)
         const cfg = SCREEN_CONFIGS[currentScreen];
         const builtinIds = new Set((cfg?.defs || []).map(d => d.id));
-        const deletable = idsToDelete.filter(id => !builtinIds.has(id));
-        if (deletable.length === 0) return;
         pushUndo();
-        for (const id of deletable) {
+        for (const id of idsToDelete) {
             const mesh = els[id];
+            const def = mesh?.userData?.def;
             if (!mesh) continue;
-            getContainer().remove(mesh);
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) {
+            if (builtinIds.has(id)) {
+                elVisible[id] = false;
+                mesh.visible = false;
+                continue;
+            }
+            if (mesh.isGroup || mesh.userData?.isGruntGroup) {
+                mesh.children.forEach(child => {
+                    child.geometry?.dispose();
+                    child.material?.dispose();
+                });
+            } else {
+                mesh.geometry?.dispose();
+                if (mesh.material?.map) mesh.material.map.dispose();
                 if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
-                else mesh.material.dispose();
+                else mesh.material?.dispose();
+            }
+            mesh.parent?.remove(mesh);
+            if (def) {
+                const idx = DEFS.indexOf(def);
+                if (idx >= 0) DEFS.splice(idx, 1);
             }
             delete els[id];
             delete elVisible[id];
             delete elAnchor[id];
             if (INIT[id]) delete INIT[id];
-            // Remove from any groups
             for (const [gName, members] of Object.entries(groups)) {
                 const idx = members.indexOf(id);
                 if (idx !== -1) members.splice(idx, 1);
@@ -1883,7 +1900,8 @@
         const tag = e.target?.tagName;
         const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable;
         if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); window.undo(); return; }
-        if (!isTyping && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); focusSelected(); }
+        if (!isTyping && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); focusSelected(); return; }
+        if (!isTyping && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteSelected(); }
     });
 
     // ══════════════════════════════════════════════════
@@ -1917,6 +1935,8 @@
             }
             else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; }
             else if (dd.type === 'wire-octa' || dd.type === 'cube' || dd.type === 'sphere') { dd.scale = v.scale || dd.scale || 0.1; }
+            else if (dd.type === 'grunt') { dd.voxelSize = v.scale || dd.voxelSize || 0.29; }
+            else if (dd.type === 'image') { dd.scale = v.scale || dd.scale || 1.0; }
             else if (v.w != null) { dd.w = v.w; dd.h = v.h; }
             rebuildMesh(id);
         });
@@ -2012,6 +2032,10 @@
                 data.elements[id].scale = +((d.scale || 1.0).toFixed(4));
             } else if (d.type === 'wire-octa' || d.type === 'cube' || d.type === 'sphere') {
                 data.elements[id].scale = +((d.scale || 0.1).toFixed(4));
+            } else if (d.type === 'grunt') {
+                data.elements[id].scale = +(d.voxelSize || 0.29).toFixed(4);
+            } else if (d.type === 'image') {
+                data.elements[id].scale = +((d.scale || 1.0).toFixed(4));
             } else {
                 data.elements[id].w = +(d.w.toFixed(3));
                 data.elements[id].h = +(d.h.toFixed(3));
@@ -2136,7 +2160,7 @@
         tc.detach();
         // Remove all element meshes from their containers
         Object.values(els).forEach(mesh => {
-            if (mesh.isGroup) {
+            if (mesh.isGroup || mesh.userData?.isGruntGroup) {
                 mesh.children.forEach(child => {
                     child.geometry?.dispose();
                     child.material?.dispose();
