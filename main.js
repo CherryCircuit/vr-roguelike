@@ -7568,6 +7568,20 @@ function endGame(victory) {
   game.state = victory ? State.VICTORY : State.GAME_OVER;
   game.finalScore = game.score;
   game.finalLevel = game.level;
+
+  // Record death stats to Supabase (game over only)
+  if (!victory && game.killedBy) {
+    fetch('/api/death-stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        killerType: game.killedBy.type,
+        killerName: game.killedBy.name,
+        killerEnemyType: game.killedBy.enemyType || '',
+        levelReached: game.level,
+      }),
+    }).catch(() => {}); // Fire-and-forget
+  }
   clearAllEnemies();
   clearBoss();
   clearBossProjectiles();
