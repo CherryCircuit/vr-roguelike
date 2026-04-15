@@ -71,8 +71,8 @@
         #create-section button { font-size: 11px; padding: 4px 10px; }
         button.create { background: #225566; border-color: #338899; }
         button.create:hover { background: #336677; }
-        #font-section { display: none; }
-        #color-section { display: none; }
+        #font-section, #color-section { display: block; }
+        #font-section.disabled, #color-section.disabled { opacity: 0.45; }
         .pr input[type="color"] { padding: 1px 3px; height: 26px; cursor: pointer; }
     </style>
 </head>
@@ -121,6 +121,7 @@
                         <option value="arial">Arial / forceArial</option>
                     </select>
                 </div>
+                <div class="pr"><label></label><small style="color:#888">Select a text object to edit font.</small></div>
             </div>
             <div id="color-section">
                 <div class="sec">Color</div>
@@ -128,6 +129,7 @@
                     <input type="color" id="inp-color" onchange="onColorInput()">
                     <input type="text" id="inp-color-hex" placeholder="#ffffff" onchange="onColorHexInput()" style="width:80px;font-size:11px">
                 </div>
+                <div class="pr"><label></label><small style="color:#888">Works for text, rectangles, and some preview meshes.</small></div>
             </div>
             <div class="sec">Position</div>
             <div class="triple-grid">
@@ -1180,6 +1182,11 @@
         const ga = document.getElementById('group-actions');
         const anchorSec = document.getElementById('anchor-section');
         const cfg = SCREEN_CONFIGS[currentScreen];
+        const fontSection = document.getElementById('font-section');
+        const colorSection = document.getElementById('color-section');
+        const fontInput = document.getElementById('inp-font');
+        const colorInput = document.getElementById('inp-color');
+        const colorHexInput = document.getElementById('inp-color-hex');
 
         // Show/hide anchor section based on screen config
         anchorSec.style.display = cfg.hasAnchors ? '' : 'none';
@@ -1192,8 +1199,11 @@
                 document.getElementById(k).value = '');
             document.getElementById('inp-text').disabled = true;
             document.getElementById('inp-anchor').value = 'center';
-            document.getElementById('font-section').style.display = 'none';
-            document.getElementById('color-section').style.display = 'none';
+            fontSection.classList.add('disabled');
+            colorSection.classList.add('disabled');
+            fontInput.disabled = true;
+            colorInput.disabled = true;
+            colorHexInput.disabled = true;
             document.querySelectorAll('.abtn button').forEach(b => b.classList.remove('active'));
             document.getElementById('row-scale').style.display = '';
             document.getElementById('row-w').style.display = 'none';
@@ -1235,9 +1245,11 @@
         if (def.type === 'text') {
             document.getElementById('inp-text').value = def.text;
             document.getElementById('inp-text').disabled = false;
-            // Show font and color controls for text
-            document.getElementById('font-section').style.display = '';
-            document.getElementById('color-section').style.display = '';
+            fontSection.classList.remove('disabled');
+            colorSection.classList.remove('disabled');
+            fontInput.disabled = false;
+            colorInput.disabled = false;
+            colorHexInput.disabled = false;
             document.getElementById('inp-font').value = def.forceArial ? 'arial' : 'november';
             const hexColor = '#' + def.color.toString(16).padStart(6, '0');
             document.getElementById('inp-color').value = hexColor;
@@ -1257,8 +1269,11 @@
         } else if (def.type === 'hearts') {
             document.getElementById('inp-text').value = '(3 hearts)';
             document.getElementById('inp-text').disabled = true;
-            document.getElementById('font-section').style.display = 'none';
-            document.getElementById('color-section').style.display = 'none';
+            fontSection.classList.add('disabled');
+            colorSection.classList.add('disabled');
+            fontInput.disabled = true;
+            colorInput.disabled = true;
+            colorHexInput.disabled = true;
             if (selectedIds.length > 1) {
                 document.getElementById('inp-scale').value = (def.scale || 1.0).toFixed(4);
                 document.getElementById('row-scale').style.display = '';
@@ -1273,19 +1288,14 @@
         } else if (isScaleType(def)) {
             document.getElementById('inp-text').value = '(mesh)';
             document.getElementById('inp-text').disabled = true;
-            document.getElementById('font-section').style.display = 'none';
-            // Show color for grunt (enemy model color)
-            if (def.type === 'grunt') {
-                document.getElementById('color-section').style.display = '';
-                const hexColor = '#' + def.color.toString(16).padStart(6, '0');
-                document.getElementById('inp-color').value = hexColor;
-                document.getElementById('inp-color-hex').value = hexColor;
-            } else {
-                document.getElementById('color-section').style.display = '';
-                const hexColor = '#' + def.color.toString(16).padStart(6, '0');
-                document.getElementById('inp-color').value = hexColor;
-                document.getElementById('inp-color-hex').value = hexColor;
-            }
+            fontSection.classList.add('disabled');
+            fontInput.disabled = true;
+            colorSection.classList.remove('disabled');
+            colorInput.disabled = false;
+            colorHexInput.disabled = false;
+            const hexColor = '#' + def.color.toString(16).padStart(6, '0');
+            document.getElementById('inp-color').value = hexColor;
+            document.getElementById('inp-color-hex').value = hexColor;
             const sc = def.type === 'grunt' ? (def.voxelSize || 0.29) : (def.type === 'image' ? (def.scale || 1.0) : (def.scale || 0.1));
             document.getElementById('inp-scale').value = sc.toFixed(4);
             document.getElementById('row-scale').style.display = '';
@@ -1294,9 +1304,11 @@
         } else {
             document.getElementById('inp-text').value = '(rectangle)';
             document.getElementById('inp-text').disabled = true;
-            document.getElementById('font-section').style.display = 'none';
-            // Show color for rects too
-            document.getElementById('color-section').style.display = '';
+            fontSection.classList.add('disabled');
+            fontInput.disabled = true;
+            colorSection.classList.remove('disabled');
+            colorInput.disabled = false;
+            colorHexInput.disabled = false;
             const hexColor = '#' + def.color.toString(16).padStart(6, '0');
             document.getElementById('inp-color').value = hexColor;
             document.getElementById('inp-color-hex').value = hexColor;
