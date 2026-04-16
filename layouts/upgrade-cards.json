@@ -13,6 +13,7 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "scale": 0.5,
       "text": "CHOOSE UPGRADE\nLEFT BLASTER",
       "fontSize": 80,
@@ -30,6 +31,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16776960,
+      "_colorHex": "#ffff00",
       "scale": 0.25,
       "text": "WAIT...",
       "fontSize": 60,
@@ -47,13 +49,15 @@
       "visible": true,
       "anchor": "center",
       "color": 1114163,
+      "_colorHex": "#110033",
       "w": 1.2,
-      "h": 1.5
+      "h": 1.5,
+      "opacity": 0.91
     },
     "card0_name": {
       "x": -2.02,
       "y": 0.54,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -62,6 +66,7 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "scale": 1,
       "text": "RAPID FIRE",
       "fontSize": 65,
@@ -71,7 +76,7 @@
     "card0_desc": {
       "x": -2.02,
       "y": 0.16,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -80,6 +85,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
+      "_colorHex": "#ffffff",
       "scale": 1,
       "text": "abc def ghijkl mnop qrstuv wxyz abcd efghijk l gaadfga ggfj gjrjeoet  t ye ry serhgsadfhsdfg  adfgadg",
       "fontSize": 40,
@@ -90,7 +96,7 @@
     "card0_stat": {
       "x": -2.02,
       "y": -0.18,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -99,6 +105,7 @@
       "visible": true,
       "anchor": "center",
       "color": 8978312,
+      "_colorHex": "#88ff88",
       "scale": 1,
       "text": "(+30% → +45%) or even ahhasdj ggssgfd kgoha",
       "fontSize": 34,
@@ -109,7 +116,7 @@
     "card0_note": {
       "x": -2.02,
       "y": -0.36,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -118,6 +125,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16768256,
+      "_colorHex": "#ffdd00",
       "scale": 1,
       "text": "Pair with spread weapons.",
       "fontSize": 25,
@@ -131,12 +139,13 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 8995.1364,
+      "ry": 11800.8644,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "scale": 0.08
     },
     "card1": {
@@ -151,13 +160,15 @@
       "visible": true,
       "anchor": "center",
       "color": 1114163,
+      "_colorHex": "#110033",
       "w": 1.2,
-      "h": 1.5
+      "h": 1.5,
+      "opacity": 0.91
     },
     "card1_name": {
       "x": -0.68,
       "y": 0.54,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -166,6 +177,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16746496,
+      "_colorHex": "#ff8800",
       "scale": 1,
       "text": "DAMAGE UP",
       "fontSize": 65,
@@ -175,7 +187,7 @@
     "card1_desc": {
       "x": -0.68,
       "y": 0.16,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -184,6 +196,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
+      "_colorHex": "#ffffff",
       "scale": 1,
       "text": "This is a short description dghjdghjdgh jdg hjd ghj d",
       "fontSize": 40,
@@ -194,7 +207,7 @@
     "card1_stat": {
       "x": -0.68,
       "y": -0.18,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -203,6 +216,7 @@
       "visible": true,
       "anchor": "center",
       "color": 8978312,
+      "_colorHex": "#88ff88",
       "scale": 1,
       "text": "(+10 → +20)",
       "fontSize": 34,
@@ -216,12 +230,13 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 9443.6972,
+      "ry": 12249.4252,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
       "anchor": "center",
       "color": 16746496,
+      "_colorHex": "#ff8800",
       "scale": 0.08
     },
     "card2": {
@@ -236,13 +251,15 @@
       "visible": true,
       "anchor": "center",
       "color": 1114163,
+      "_colorHex": "#110033",
       "w": 1.2,
-      "h": 1.5
+      "h": 1.5,
+      "opacity": 0.91
     },
     "card2_name": {
       "x": 0.68,
       "y": 0.54,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -251,6 +268,7 @@
       "visible": true,
       "anchor": "center",
       "color": 65280,
+      "_colorHex": "#00ff00",
       "scale": 1,
       "text": "HOMING",
       "fontSize": 65,
@@ -260,7 +278,7 @@
     "card2_desc": {
       "x": 0.68,
       "y": 0.16,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -269,6 +287,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
+      "_colorHex": "#ffffff",
       "scale": 1,
       "text": "Medium length description here",
       "fontSize": 40,
@@ -279,7 +298,7 @@
     "card2_stat": {
       "x": 0.68,
       "y": -0.18,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -288,6 +307,7 @@
       "visible": true,
       "anchor": "center",
       "color": 8978312,
+      "_colorHex": "#88ff88",
       "scale": 1,
       "text": "(non-stackable)",
       "fontSize": 34,
@@ -301,12 +321,13 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 9441.2955,
+      "ry": 12247.0235,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
       "anchor": "center",
       "color": 65280,
+      "_colorHex": "#00ff00",
       "scale": 0.08
     },
     "card3": {
@@ -321,13 +342,15 @@
       "visible": true,
       "anchor": "center",
       "color": 3342336,
+      "_colorHex": "#330000",
       "w": 1,
-      "h": 1.3
+      "h": 1.3,
+      "opacity": 0.91
     },
     "card3_name": {
       "x": 2.1,
       "y": 0.44,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -335,7 +358,8 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 16671330,
+      "color": 16756141,
+      "_colorHex": "#ffadad",
       "scale": 1,
       "text": "SKIP",
       "fontSize": 65,
@@ -345,7 +369,7 @@
     "card3_desc": {
       "x": 2.1,
       "y": -0.02,
-      "z": 0.01,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -354,6 +378,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
+      "_colorHex": "#ffffff",
       "scale": 0.65,
       "text": "Skip upgrades and gain full health.",
       "fontSize": 40,
@@ -363,29 +388,22 @@
     },
     "card3_icon": {
       "x": 2.1,
-      "y": -0.44,
+      "y": -0.42,
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 9496.7526,
+      "ry": 9.52,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
       "anchor": "center",
-      "color": 16711748,
+      "color": 16711680,
+      "_colorHex": "#ff0000",
       "scale": 0.08
     }
   },
-  "exportedAt": "2026-04-16T19:10:27.230Z",
+  "exportedAt": "2026-04-16T23:11:29.221Z",
   "groups": {
-    "Group 1": [
-      "card0",
-      "card0_name",
-      "card0_desc",
-      "card0_stat",
-      "card0_note",
-      "card0_icon"
-    ],
     "Group 2": [
       "card1",
       "card1_name",
@@ -406,5 +424,98 @@
       "card3_desc",
       "card3_icon"
     ]
+  },
+  "_localPositions": {
+    "Group 2": {
+      "_center": {
+        "x": -0.68,
+        "y": 0,
+        "z": 0.022
+      },
+      "card1": {
+        "x": 0,
+        "y": 0,
+        "z": -0.022
+      },
+      "card1_name": {
+        "x": 0,
+        "y": 0.54,
+        "z": -0.002
+      },
+      "card1_desc": {
+        "x": 0,
+        "y": 0.16,
+        "z": -0.002
+      },
+      "card1_stat": {
+        "x": 0,
+        "y": -0.18,
+        "z": -0.002
+      },
+      "card1_icon": {
+        "x": 0,
+        "y": -0.52,
+        "z": 0.028
+      }
+    },
+    "Group 3": {
+      "_center": {
+        "x": 0.68,
+        "y": 0,
+        "z": 0.022
+      },
+      "card2": {
+        "x": 0,
+        "y": 0,
+        "z": -0.022
+      },
+      "card2_name": {
+        "x": 0,
+        "y": 0.54,
+        "z": -0.002
+      },
+      "card2_desc": {
+        "x": 0,
+        "y": 0.16,
+        "z": -0.002
+      },
+      "card2_stat": {
+        "x": 0,
+        "y": -0.18,
+        "z": -0.002
+      },
+      "card2_icon": {
+        "x": 0,
+        "y": -0.52,
+        "z": 0.028
+      }
+    },
+    "Group 4": {
+      "_center": {
+        "x": 2.1,
+        "y": 0,
+        "z": 0.022
+      },
+      "card3": {
+        "x": 0,
+        "y": 0,
+        "z": -0.0225
+      },
+      "card3_name": {
+        "x": 0,
+        "y": 0.44,
+        "z": -0.0025
+      },
+      "card3_desc": {
+        "x": 0,
+        "y": -0.02,
+        "z": -0.0025
+      },
+      "card3_icon": {
+        "x": 0,
+        "y": -0.42,
+        "z": 0.0275
+      }
+    }
   }
 }
