@@ -111,7 +111,7 @@ function stopTrackDisplayUpdate() {
   }
 }
 
-function makeBtn(label, width = 0.4, height = 0.25, borderColor = 0x00ffff, fontSize = 32, fontScale = 0.1) {
+function makeBtn(label, width = 0.4, height = 0.25, borderColor = 0x00ffff, fontSize = 32, fontScale = 0.1, textColorParam) {
   const group = new THREE.Group();
   const geo = new THREE.PlaneGeometry(width, height);
   const mesh = new THREE.Mesh(geo, settingsMaterial(0x0a0020));
@@ -123,10 +123,11 @@ function makeBtn(label, width = 0.4, height = 0.25, borderColor = 0x00ffff, font
   );
   border.renderOrder = SETTINGS_RENDER_ORDER;
   group.add(border);
-  const textColor = typeof borderColor === 'number' ? '#' + borderColor.toString(16).padStart(6, '0') : borderColor;
+  const tc = textColorParam != null ? textColorParam : borderColor;
+  const textHex = typeof tc === 'number' ? '#' + tc.toString(16).padStart(6, '0') : tc;
   const text = makeSprite(label, {
     fontSize,
-    color: textColor,
+    color: textHex,
     scale: fontScale,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
@@ -210,15 +211,14 @@ async function buildSettingsPanel() {
 
   // ── Music UP button ──
   const mUpEl = le(layout, 'music_up', { x: colX, y: 0.18, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
-  const mUp = makeBtn('▲', mUpEl.w, mUpEl.h, mUpEl.color || 0x00ffff, 56, 0.22);
+  const mUpTextEl = le(layout, 'music_up_text', { x: colX, y: 0.18, z: 0.03, scale: 0.35, fontSize: 100 });
+  const mUp = makeBtn('▲', mUpEl.w, mUpEl.h, mUpEl.color || 0x00ffff, mUpTextEl.fontSize || 56, mUpTextEl.scale || 0.22, mUpTextEl.color);
   mUp.group.position.set(mUpEl.x, mUpEl.y, mUpEl.z);
   mUp.mesh.userData.isSettingsBtn = true;
   mUp.mesh.userData.settingsAction = 'musicUp';
   musicUpBtn = mUp.mesh;
   settingsGroup.add(mUp.group);
-  // Apply layout to up text
-  const mUpTextEl = le(layout, 'music_up_text', { x: colX, y: 0.18, z: 0.03, scale: 0.22 });
-  if (mUp.group.children[2]) mUp.group.children[2].position.set(mUpTextEl.x, mUpTextEl.y, mUpTextEl.z);
+  if (mUp.group.children[2]) mUp.group.children[2].position.set(mUpTextEl.x - mUpEl.x, mUpTextEl.y - mUpEl.y, mUpTextEl.z - mUpEl.z);
 
   // ── Music volume display ──
   musicVolEl = le(layout, 'music_vol', { x: colX, y: -0.02, z: 0.02, scale: 0.32, fontSize: 38, color: 0xffffff });
@@ -236,25 +236,25 @@ async function buildSettingsPanel() {
 
   // ── Music DOWN button ──
   const mDownEl = le(layout, 'music_down', { x: colX, y: -0.26, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
-  const mDown = makeBtn('▼', mDownEl.w, mDownEl.h, mDownEl.color || 0x00ffff, 56, 0.22);
+  const mDownTextEl = le(layout, 'music_down_text', { x: colX, y: -0.26, z: 0.03, scale: 0.35, fontSize: 100 });
+  const mDown = makeBtn('▼', mDownEl.w, mDownEl.h, mDownEl.color || 0x00ffff, mDownTextEl.fontSize || 56, mDownTextEl.scale || 0.22, mDownTextEl.color);
   mDown.group.position.set(mDownEl.x, mDownEl.y, mDownEl.z);
   mDown.mesh.userData.isSettingsBtn = true;
   mDown.mesh.userData.settingsAction = 'musicDown';
   musicDownBtn = mDown.mesh;
   settingsGroup.add(mDown.group);
-  const mDownTextEl = le(layout, 'music_down_text', { x: colX, y: -0.26, z: 0.03, scale: 0.22 });
-  if (mDown.group.children[2]) mDown.group.children[2].position.set(mDownTextEl.x, mDownTextEl.y, mDownTextEl.z);
+  if (mDown.group.children[2]) mDown.group.children[2].position.set(mDownTextEl.x - mDownEl.x, mDownTextEl.y - mDownEl.y, mDownTextEl.z - mDownEl.z);
 
   // ── SFX UP button ──
   const sUpEl = le(layout, 'sfx_up', { x: col2X, y: 0.18, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
-  const sUp = makeBtn('▲', sUpEl.w, sUpEl.h, sUpEl.color || 0x00ffff, 56, 0.22);
+  const sUpTextEl = le(layout, 'sfx_up_text', { x: col2X, y: 0.18, z: 0.03, scale: 0.35, fontSize: 100 });
+  const sUp = makeBtn('▲', sUpEl.w, sUpEl.h, sUpEl.color || 0x00ffff, sUpTextEl.fontSize || 56, sUpTextEl.scale || 0.22, sUpTextEl.color);
   sUp.group.position.set(sUpEl.x, sUpEl.y, sUpEl.z);
   sUp.mesh.userData.isSettingsBtn = true;
   sUp.mesh.userData.settingsAction = 'sfxUp';
   sfxUpBtn = sUp.mesh;
   settingsGroup.add(sUp.group);
-  const sUpTextEl = le(layout, 'sfx_up_text', { x: col2X, y: 0.18, z: 0.03, scale: 0.22 });
-  if (sUp.group.children[2]) sUp.group.children[2].position.set(sUpTextEl.x, sUpTextEl.y, sUpTextEl.z);
+  if (sUp.group.children[2]) sUp.group.children[2].position.set(sUpTextEl.x - sUpEl.x, sUpTextEl.y - sUpEl.y, sUpTextEl.z - sUpEl.z);
 
   // ── SFX volume display ──
   const sfxVolElLocal = le(layout, 'sfx_vol', { x: col2X, y: -0.02, z: 0.02, scale: 0.32, fontSize: 38, color: 0xffffff });
@@ -273,14 +273,14 @@ async function buildSettingsPanel() {
 
   // ── SFX DOWN button ──
   const sDownEl = le(layout, 'sfx_down', { x: col2X, y: -0.26, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
-  const sDown = makeBtn('▼', sDownEl.w, sDownEl.h, sDownEl.color || 0x00ffff, 56, 0.22);
+  const sDownTextEl = le(layout, 'sfx_down_text', { x: col2X, y: -0.26, z: 0.03, scale: 0.35, fontSize: 100 });
+  const sDown = makeBtn('▼', sDownEl.w, sDownEl.h, sDownEl.color || 0x00ffff, sDownTextEl.fontSize || 56, sDownTextEl.scale || 0.22, sDownTextEl.color);
   sDown.group.position.set(sDownEl.x, sDownEl.y, sDownEl.z);
   sDown.mesh.userData.isSettingsBtn = true;
   sDown.mesh.userData.settingsAction = 'sfxDown';
   sfxDownBtn = sDown.mesh;
   settingsGroup.add(sDown.group);
-  const sDownTextEl = le(layout, 'sfx_down_text', { x: col2X, y: -0.26, z: 0.03, scale: 0.22 });
-  if (sDown.group.children[2]) sDown.group.children[2].position.set(sDownTextEl.x, sDownTextEl.y, sDownTextEl.z);
+  if (sDown.group.children[2]) sDown.group.children[2].position.set(sDownTextEl.x - sDownEl.x, sDownTextEl.y - sDownEl.y, sDownTextEl.z - sDownEl.z);
 
   // ── Divider line ──
   const divEl = le(layout, 'divider', { x: 0, y: -0.08, z: 0.015, w: 0.02, h: 0.95, visible: false });
@@ -323,37 +323,37 @@ async function buildSettingsPanel() {
   settingsGroup.add(trackNameSprite);
 
   // PREV button
-  const prevEl = le(layout, 'prev_btn', { x: -0.3, y: -0.26, z: 0.06, w: 0.9, h: 0.25, color: 0x00ffff });
-  const prevBtn = makeBtn('◀ PREV', prevEl.w, prevEl.h, prevEl.color || 0x00ffff, 36, 0.12);
+  const prevEl = le(layout, 'prev_btn', { x: -0.3, y: -0.11, z: 0.06, w: 0.4, h: 0.25, color: 0xaaaaff });
+  const prevTextEl = le(layout, 'prev_text', { x: -0.3, y: -0.12, z: 0.08, scale: 0.18, fontSize: 100 });
+  const prevBtn = makeBtn('◀ PREV', prevEl.w, prevEl.h, prevEl.color || 0x00ffff, prevTextEl.fontSize || 36, prevTextEl.scale || 0.12, prevTextEl.color);
   prevBtn.group.position.set(prevEl.x, prevEl.y, prevEl.z);
   prevBtn.mesh.userData.isSettingsBtn = true;
   prevBtn.mesh.userData.settingsAction = 'prevTrack';
   prevTrackBtn = prevBtn.mesh;
   settingsGroup.add(prevBtn.group);
-  const prevTextEl = le(layout, 'prev_text', { x: -0.3, y: -0.26, z: 0.08, scale: 0.12 });
-  if (prevBtn.group.children[2]) prevBtn.group.children[2].position.set(prevTextEl.x, prevTextEl.y, prevTextEl.z);
+  if (prevBtn.group.children[2]) prevBtn.group.children[2].position.set(prevTextEl.x - prevEl.x, prevTextEl.y - prevEl.y, prevTextEl.z - prevEl.z);
 
   // NEXT button
-  const nextEl = le(layout, 'next_btn', { x: 0.3, y: -0.26, z: 0.06, w: 0.9, h: 0.25, color: 0x00ffff });
-  const nextBtn = makeBtn('NEXT ▶', nextEl.w, nextEl.h, nextEl.color || 0x00ffff, 36, 0.12);
+  const nextEl = le(layout, 'next_btn', { x: 0.3, y: -0.11, z: 0.06, w: 0.4, h: 0.25, color: 0xaaaaff });
+  const nextTextEl = le(layout, 'next_text', { x: 0.3, y: -0.12, z: 0.08, scale: 0.18, fontSize: 100 });
+  const nextBtn = makeBtn('NEXT ▶', nextEl.w, nextEl.h, nextEl.color || 0x00ffff, nextTextEl.fontSize || 36, nextTextEl.scale || 0.12, nextTextEl.color);
   nextBtn.group.position.set(nextEl.x, nextEl.y, nextEl.z);
   nextBtn.mesh.userData.isSettingsBtn = true;
   nextBtn.mesh.userData.settingsAction = 'nextTrack';
   nextTrackBtn = nextBtn.mesh;
   settingsGroup.add(nextBtn.group);
-  const nextTextEl = le(layout, 'next_text', { x: 0.3, y: -0.26, z: 0.08, scale: 0.12 });
-  if (nextBtn.group.children[2]) nextBtn.group.children[2].position.set(nextTextEl.x, nextTextEl.y, nextTextEl.z);
+  if (nextBtn.group.children[2]) nextBtn.group.children[2].position.set(nextTextEl.x - nextEl.x, nextTextEl.y - nextEl.y, nextTextEl.z - nextEl.z);
 
   // ── BACK button ──
-  const backEl = le(layout, 'back_btn', { x: 0, y: -0.7, z: 0.02, w: 1.2, h: 0.3, color: 0x997700 });
-  const back = makeBtn('BACK', backEl.w, backEl.h, backEl.color || 0x997700, 38, 0.12);
+  const backEl = le(layout, 'back_btn', { x: 0, y: -0.7, z: 0.02, w: 1.02, h: 0.3, color: 0x997700 });
+  const backTextEl = le(layout, 'back_text', { x: 0, y: -0.722, z: 0.04, scale: 0.3, fontSize: 130 });
+  const back = makeBtn('BACK', backEl.w, backEl.h, backEl.color || 0x997700, backTextEl.fontSize || 38, backTextEl.scale || 0.12, backTextEl.color);
   back.group.position.set(backEl.x, backEl.y, backEl.z);
   back.mesh.userData.isSettingsBtn = true;
   back.mesh.userData.settingsAction = 'back';
   backBtn = back.mesh;
   settingsGroup.add(back.group);
-  const backTextEl = le(layout, 'back_text', { x: 0, y: -0.712, z: 0.04, scale: 0.12 });
-  if (back.group.children[2]) back.group.children[2].position.set(backTextEl.x, backTextEl.y, backTextEl.z);
+  if (back.group.children[2]) back.group.children[2].position.set(backTextEl.x - backEl.x, backTextEl.y - backEl.y, backTextEl.z - backEl.z);
 
   // ── Decorative border rects from layout ──
   // Render the custom border rects (top/bottom/left/right) if present
