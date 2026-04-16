@@ -883,7 +883,8 @@ async function createTitleScreen() {
     return { x: el.x ?? defaults.x, y: el.y ?? defaults.y, z: el.z ?? defaults.z,
       scale: el.scale ?? defaults.scale, fontSize: el.fontSize ?? defaults.fontSize,
       glow: el.glow ?? defaults.glow, color: el.color ?? defaults.color,
-      w: el.w ?? defaults.w, h: el.h ?? defaults.h };
+      w: el.w ?? defaults.w, h: el.h ?? defaults.h,
+      opacity: el.opacity ?? defaults.opacity, visible: el.visible ?? defaults.visible };
   };
 
   // Logo: SPACE☢MICIDE SVG
@@ -920,14 +921,14 @@ async function createTitleScreen() {
   const btnGroup = new THREE.Group();
   btnGroup.position.set(btnGroupDef.x, btnGroupDef.y, btnGroupDef.z);
   btnGroup.name = 'btnGroup';
+  const btnTextDef = le('btn_text', { fontSize: 48, scale: 0.16, glow: true, color: 0xffff00 });
   const btnGeo = new THREE.PlaneGeometry(btnGroupDef.w, btnGroupDef.h);
-  const btnMat = new THREE.MeshBasicMaterial({ color: 0x110033, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+  const btnMat = new THREE.MeshBasicMaterial({ color: btnGroupDef.color || 0x110033, transparent: true, opacity: btnGroupDef.opacity || 0.85, side: THREE.DoubleSide });
   const btnMesh = new THREE.Mesh(btnGeo, btnMat);
   btnMesh.userData.isTitleScoreboardBtn = true;
-  btnMesh.userData.borderColor = 0xffff00;
+  btnMesh.userData.borderColor = btnTextDef.color || 0xffff00;
   btnGroup.add(btnMesh);
-  btnGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(btnGeo), new THREE.LineBasicMaterial({ color: 0xffff00 })));
-  const btnTextDef = le('btn_text', { fontSize: 48, scale: 0.16, glow: true, color: 0xffff00 });
+  btnGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(btnGeo), new THREE.LineBasicMaterial({ color: btnTextDef.color || 0xffff00 })));
   const btnText = makeSprite('SCOREBOARD', {
     fontSize: btnTextDef.fontSize, color: '#' + btnTextDef.color.toString(16).padStart(6, '0'),
     glow: btnTextDef.glow, glowColor: '#' + btnTextDef.color.toString(16).padStart(6, '0'),
@@ -949,17 +950,17 @@ async function createTitleScreen() {
   const settingsBtnGroup = new THREE.Group();
   settingsBtnGroup.position.set(settingsBtnDef.x, settingsBtnDef.y, settingsBtnDef.z);
   settingsBtnGroup.name = 'settingsBtnGroup';
-  const settingsBtnGeo = new THREE.PlaneGeometry(0.4, 0.3);
-  const settingsBtnMat = new THREE.MeshBasicMaterial({ color: 0x110033, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+  const settingsTextDef = le('settings_btn_text', { fontSize: 48, scale: 0.5, glow: true, color: 0x00ffff });
+  const settingsBtnGeo = new THREE.PlaneGeometry(settingsBtnDef.w || 0.4, settingsBtnDef.h || 0.3);
+  const settingsBtnMat = new THREE.MeshBasicMaterial({ color: settingsBtnDef.color || 0x110033, transparent: true, opacity: settingsBtnDef.opacity || 0.85, side: THREE.DoubleSide });
   const settingsBtnMesh = new THREE.Mesh(settingsBtnGeo, settingsBtnMat);
   settingsBtnMesh.userData.isTitleSettingsBtn = true;
-  settingsBtnMesh.userData.borderColor = 0x00ffff;
+  settingsBtnMesh.userData.borderColor = settingsTextDef.color || 0x00ffff;
   settingsBtnGroup.add(settingsBtnMesh);
   settingsBtnGroup.add(new THREE.LineSegments(
     new THREE.EdgesGeometry(settingsBtnGeo),
-    new THREE.LineBasicMaterial({ color: 0x00ffff })
+    new THREE.LineBasicMaterial({ color: settingsTextDef.color || 0x00ffff })
   ));
-  const settingsTextDef = le('settings_btn_text', { fontSize: 48, scale: 0.5, glow: true, color: 0x00ffff });
   const settingsBtnText = makeSprite('\u2699', {
     fontSize: settingsTextDef.fontSize, color: '#' + settingsTextDef.color.toString(16).padStart(6, '0'),
     glow: settingsTextDef.glow, glowColor: '#' + settingsTextDef.color.toString(16).padStart(6, '0'),
