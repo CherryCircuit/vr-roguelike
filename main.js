@@ -91,6 +91,7 @@ import {
   setFPSVisible,
   clearHudGeoCache,
   novemberFontFamily,
+  layoutCache,
 } from './hud.js';
 import {
   initWristHolograms, showWristHolograms, updateWristHolograms, hideAllWristHolograms
@@ -1587,6 +1588,8 @@ function init() {
   setCameraRef(camera);
   initHUD(camera, scene);
   initWristHolograms();
+  // Preload wrist layout JSONs so updateBlasterDisplay can read them
+  import('./hud.js').then(m => { m.loadLayout('upgrade-wrist-left'); m.loadLayout('upgrade-wrist-right'); });
   if (devRuntimeEnabled && runtimeConfig.dev.showFPS) {
     setFPSVisible(true);
   }
@@ -2610,6 +2613,13 @@ function createBlasterDisplay(controllerIndex) {
   const hand = getHandForController(controllerIndex);
   group.name = `blaster-display-group-${hand}`;
 
+  // Read bg dimensions from layout if available (async, may not be loaded yet)
+  const layoutKey = `upgrade-wrist-${hand}`;
+  const els = layoutCache[layoutKey]?.elements;
+  const bgEl = els?.wrist_holo_bg;
+  const bgW = bgEl?.w || 0.21;
+  const bgH = bgEl?.h || 0.26;
+
   // ═══════════════════════════════════════════════════════════════
   // HOLOGRAM SHADER - Single draw call replaces 8 scan line meshes
   // ═══════════════════════════════════════════════════════════════
@@ -2670,18 +2680,18 @@ function createBlasterDisplay(controllerIndex) {
     blending: THREE.NormalBlending
   });
 
-  // Single plane with hologram shader replaces 8 scan line meshes
-  const holoGeo = new THREE.PlaneGeometry(0.21, 0.26);
+  // Single plane with hologram shader - size from layout
+  const holoGeo = new THREE.PlaneGeometry(bgW, bgH);
   const holoPlane = new THREE.Mesh(holoGeo, holoMaterial);
-  holoPlane.position.z = 0.003;  // Behind text but in front of border
-  holoPlane.renderOrder = 500;   // Render before text (text is default order)
+  holoPlane.position.z = bgEl?.z || 0.003;
+  holoPlane.renderOrder = 500;
   group.add(holoPlane);
 
   // Store material reference for animation (uTime updates in render loop)
   group.userData.holoMaterial = holoMaterial;
 
   // Subtle border outline (kept for visual definition)
-  const borderPanelGeo = new THREE.PlaneGeometry(0.2, 0.25);
+  const borderPanelGeo = new THREE.PlaneGeometry(bgW - 0.01, bgH - 0.01);
   const borderGeo = new THREE.EdgesGeometry(borderPanelGeo);
   const borderMat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 });
   const border = new THREE.LineSegments(borderGeo, borderMat);
@@ -2695,7 +2705,7 @@ function createBlasterDisplay(controllerIndex) {
   // Initialize caching metadata for text sprites
   group.userData.hand = hand;
   group.userData.needsUpdate = true;
-  group.userData.lastRenderedHash = null;  // Hash of weapon+upgrades for dirty checking
+  group.userData.lastRenderedHash = null;
 
   return group;
 }
@@ -2720,8 +2730,9 @@ function updateBlasterDisplay(display, controllerIndex) {
   const upgrades = game.upgrades[hand];
 
   // Compute hash of current data for dirty checking
-  const upgradeCount = Object.values(upgrades).reduce((sum, count) => sum + count, 0);
-  const currentHash = `${hand}|${stats.kills}|${Math.round(stats.totalDamage)}|${upgradeCount}`;
+  const upgradeKeys = Object.entries(upgrades).filter(([,v]) => v > 0).map(([k,v]) => `${k}x${v}`).sort().join(',');
+  const weaponId = game.mainWeapon?.[hand] || 'standard_blaster';
+  const currentHash = `${hand}|${weaponId}|${stats.kills}|${Math.round(stats.totalDamage)}|${upgradeKeys}`;
 
   // Skip text rebuild if data hasn't changed (cache hit)
   if (display.userData.lastRenderedHash === currentHash) {
@@ -2734,45 +2745,118 @@ function updateBlasterDisplay(display, controllerIndex) {
 
   // Remove old text
   const oldText = display.children.filter(c => c.userData.isText);
-  oldText.forEach(t => display.remove(t));
+  oldText.forEach(t => { t.geometry?.dispose(); t.material?.dispose(); if (t.material.map) t.material.map.dispose(); display.remove(t); });
 
-  // Create new text (using PlaneGeometry to respect parent rotation)
-  const makeText = (text, yPos, size = 20) => {
+  // Load layout data for this hand
+  const layoutKey = `upgrade-wrist-${hand}`;
+  const layout = _layoutCache[layoutKey];
+  const els = layout?.elements;
+
+  // Fallback font constants
+  const november = novemberFontFamily;
+  const handColor = hand === 'left' ? '#00ffff' : '#ff88aa';
+
+  // Helper: create a text mesh from layout element or fallback
+  const makeText = (text, layoutEl, fallbackY, fallbackSize = 20, fallbackColor = '#00ffff') => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = 256;
-    canvas.height = 64;
+    const fontSize = layoutEl?.fontSize || fallbackSize;
+    const color = layoutEl?.color != null ? '#' + layoutEl.color.toString(16).padStart(6, '0') : fallbackColor;
+    const scale = layoutEl?.scale || 0.03;
 
-    // Clear canvas to transparent
+    ctx.font = `bold ${fontSize}px ${november}`;
+    const textWidth = ctx.measureText(text).width;
+    const pad = 20;
+    canvas.width = Math.max(1, Math.ceil(textWidth) + pad * 2);
+    canvas.height = Math.max(1, Math.ceil(fontSize * 1.5) + pad * 2);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    ctx.font = `bold ${size}px ${novemberFontFamily}`;
-    ctx.fillStyle = '#00ffff';
+    ctx.font = `bold ${fontSize}px ${november}`;
+    ctx.fillStyle = color;
     ctx.textAlign = 'center';
-    ctx.fillText(text, 128, 32);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
 
     const texture = new THREE.CanvasTexture(canvas);
-
-    // Use PlaneGeometry instead of Sprite so it follows parent rotation
-    const geometry = new THREE.PlaneGeometry(0.15, 0.04);
+    // Scale plane to match the layout scale, preserving aspect ratio
+    const aspect = canvas.width / canvas.height;
+    const h = scale;
+    const w = aspect * scale;
+    const geometry = new THREE.PlaneGeometry(w, h);
     const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      alphaTest: 0.05,
-      side: THREE.DoubleSide,
-      depthTest: true
+      map: texture, transparent: true, alphaTest: 0.05,
+      side: THREE.DoubleSide, depthTest: true
     });
-
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(0, yPos, 0.002);
+    const x = layoutEl?.x || 0;
+    const y = layoutEl?.y || fallbackY;
+    const z = layoutEl?.z || 0.006;
+    mesh.position.set(x, y, z);
     mesh.userData.isText = true;
     return mesh;
   };
 
-  display.add(makeText(`${hand.toUpperCase()} BLASTER`, 0.1));
-  display.add(makeText(`KILLS: ${stats.kills}`, 0.04, 16));
-  display.add(makeText(`DMG: ${Math.round(stats.totalDamage)}`, -0.02, 16));
-  display.add(makeText(`UPGRADES: ${upgradeCount}`, -0.08, 16));
+  // Weapon name (top, prominent)
+  const weaponNameMap = {
+    'standard_blaster': 'STANDARD BLASTER', 'buckshot': 'BUCKSHOT',
+    'charge_cannon': 'CHARGE CANNON', 'plasma_carbine': 'PLASMA CARBINE',
+    'lightning_rod': 'LIGHTNING ROD', 'seeker_burst': 'SEEKER BURST'
+  };
+  const weaponName = weaponNameMap[weaponId] || 'BLASTER';
+  const weaponEl = els?.dup_18_wrist_header || els?.wrist_header;
+  display.add(makeText(weaponName, weaponEl, 0.116, 100, handColor));
+
+  // Hand label
+  const headerEl = els?.wrist_header;
+  display.add(makeText(hand.toUpperCase() + ' BLASTER', headerEl, 0.094, 50, '#00ffff'));
+
+  // Stats row: KILLS / TOTAL DMG / DPS
+  const killsLabelEl = els?.wrist_kills;
+  display.add(makeText('KILLS:', killsLabelEl, 0.054, 50, '#00ffff'));
+  const dmgLabelEl = els?.wrist_dmg;
+  display.add(makeText('TOTAL DMG:', dmgLabelEl, 0.054, 50, '#00ffff'));
+  const dpsLabelEl = els?.dup_21_wrist_dmg;
+  display.add(makeText('DPS:', dpsLabelEl, 0.054, 50, '#00ffff'));
+
+  // Stat values
+  const killsValEl = els?.dup_19_wrist_kills;
+  display.add(makeText(`${stats.kills}`, killsValEl, 0.04, 70, handColor));
+  const dmgValEl = els?.dup_20_dup_19_wrist_kills;
+  display.add(makeText(`${Math.round(stats.totalDamage)}`, dmgValEl, 0.04, 70, handColor));
+  const dps = stats.kills > 0 ? Math.round(stats.totalDamage / Math.max(1, stats.shots)) : 0;
+  const dpsValEl = els?.dup_22_dup_19_wrist_kills;
+  display.add(makeText(`${dps}`, dpsValEl, 0.04, 70, handColor));
+
+  // Upgrade list
+  const upgradeCount = Object.values(upgrades).reduce((sum, count) => sum + count, 0);
+  const upgradeHeaderEl = els?.wrist_upgrade_count;
+  display.add(makeText(`UPGRADES (${upgradeCount})`, upgradeHeaderEl, -0.007, 50, '#00ffff'));
+
+  // List individual upgrades (max 8, two columns)
+  const upgradeEntries = Object.entries(upgrades).filter(([,v]) => v > 0);
+  const upgradeNameMap = {
+    'rapid_fire': 'RAPID FIRE', 'damage_up': 'DAMAGE UP', 'homing': 'HOMING',
+    'spread_shot': 'SPREAD SHOT', 'piercing': 'PIERCING', 'scope': 'SCOPE',
+    'mega_scope': 'MEGA SCOPE', 'double_shot': 'DOUBLE SHOT', 'triple_shot': 'TRIPLE SHOT',
+    'barrel': 'BARREL', 'turbo_barrel': 'TURBO BARREL', 'duck_hunt': 'DUCK HUNT',
+    'focused_frenzy': 'FOCUSED FRENZY', 'its_electric': "IT'S ELECTRIC",
+    'tesla_coil': 'TESLA COIL', 'quick_charge': 'QUICK CHARGE',
+    'excess_heat': 'EXCESS HEAT', 'death_ray': 'DEATH RAY',
+    'hold_together': 'HOLD TOGETHER', 'vampiric': 'VAMPIRIC', 'shock': 'SHOCK'
+  };
+  // Find the dup_23-30 elements for upgrade positions
+  const upgradePosKeys = [
+    'dup_23_wrist_upgrade_count', 'dup_24_dup_23_wrist_upgrade_count',
+    'dup_25_dup_23_wrist_upgrade_count', 'dup_26_dup_24_dup_23_wrist_upgrade_count',
+    'dup_27_dup_25_dup_23_wrist_upgrade_count', 'dup_28_dup_26_dup_24_dup_23_wrist_upgrade_count',
+    'dup_29_dup_28_dup_26_dup_24_dup_23_wrist_upgrade_count', 'dup_30_dup_27_dup_25_dup_23_wrist_upgrade_count'
+  ];
+  upgradeEntries.slice(0, 8).forEach(([id, count], i) => {
+    const posEl = els?.[upgradePosKeys[i]];
+    const name = (upgradeNameMap[id] || id).toUpperCase();
+    const label = count > 1 ? `${name} (x${count})` : name;
+    const upgradeColor = handColor;
+    display.add(makeText(label, posEl, -0.03 - i * 0.03, 40, upgradeColor));
+  });
 
   display.userData.needsUpdate = false;
 }

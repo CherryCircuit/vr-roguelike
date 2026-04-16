@@ -99,7 +99,7 @@ floatingMessageGroup.name = 'floating-message';
 
 // ── Layout Loading ──
 // Loads layout JSON from layouts/ directory. Falls back to hardcoded positions if fetch fails.
-const layoutCache = {};
+export const layoutCache = {};
 export async function loadLayout(screenName) {
   if (layoutCache[screenName]) return layoutCache[screenName];
   try {
