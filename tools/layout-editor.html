@@ -38,11 +38,11 @@
         #sel-name { font-size: 14px; font-weight: 600; color: #4af; margin-bottom: 8px; }
         #elist { flex: 1; overflow-y: auto; background: #2a2a2a; border-radius: 4px; padding: 6px; min-height: 80px; }
         #elist h3 { font-size: 12px; color: #888; margin-bottom: 4px; }
-        .ei { padding: 3px 7px; cursor: pointer; border-radius: 3px; font-size: 10px; margin-bottom: 1px; display: flex; justify-content: space-between; align-items: center; }
+        .ei { padding: 3px 7px; cursor: pointer; border-radius: 3px; font-size: 10px; margin-bottom: 1px; display: flex; align-items: center; gap: 6px; }
         .ei:hover { background: #333; }
         .ei.sel { background: #0066cc; }
-        .ei .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; text-align: left; flex-shrink: 1; }
-        .ei .p { color: #888; font-size: 9px; flex-shrink: 0; }
+        .ei .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; flex: 1 1 auto; min-width: 0; }
+        .ei .p { color: #888; font-size: 9px; flex: 0 0 auto; margin-left: auto; text-align: right; }
         .ei.sel .p { color: #aac; }
         .cs { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 3px; vertical-align: middle; flex-shrink: 0; }
         .eye-btn { background: none; border: none; color: #888; cursor: pointer; font-size: 13px; padding: 0 3px; line-height: 1; flex-shrink: 0; width: 20px; display: inline-block; text-align: center; }
@@ -729,6 +729,7 @@
             const loader = new THREE.TextureLoader();
             const mesh = createMeshFromGeo(geo, mat, def);
             loader.load(def.src, tex => {
+                if (!mesh || !els[def.id]) return;
                 tex.minFilter = THREE.LinearFilter;
                 tex.magFilter = THREE.LinearFilter;
                 const aspect = (tex.image ? tex.image.width / tex.image.height : 1.0);
@@ -811,7 +812,7 @@
         mesh.rotation.set(def.rx || 0, def.ry || 0, def.rz || 0);
         mesh.frustumCulled = false;
         mesh.renderOrder = 999;
-        mesh.userData = { id: def.id, def, align: initialAlign, origColor: def.color };
+        mesh.userData = { id: def.id, def, align: initialAlign, origColor: def.color ?? def.fallbackColor ?? 0xffffff };
         getContainer().add(mesh);
         els[def.id] = mesh;
         INIT[def.id] = {
@@ -820,6 +821,7 @@
             color: def.color, forceArial: !!def.forceArial,
             align: initialAlign, type: def.type, visible: true, anchor: 'center'
         };
+        return mesh;
     }
 
     function rebuildMesh(id) {
@@ -1799,7 +1801,8 @@
         if (cfg.hasVisibility) {
             html += `<span class="eye-btn ${elVisible[id] ? '' : 'hidden'}" data-id="${id}">${eyeIcon}</span>`;
         }
-        html += `<span class="n"><span class="cs" style="background:#${d.color.toString(16).padStart(6,'0')}"></span>${ai} ${d.name}</span>`;
+        const swatchColor = (d.color ?? d.fallbackColor ?? 0xffffff).toString(16).padStart(6,'0');
+        html += `<span class="n"><span class="cs" style="background:#${swatchColor}"></span>${ai} ${d.name}</span>`;
         html += `<span class="p">${p.x.toFixed(2)},${p.y.toFixed(2)}</span>`;
         div.innerHTML = html;
 
