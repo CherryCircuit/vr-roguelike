@@ -2,25 +2,56 @@
   "screen": "ready-screen",
   "elements": {
     "header": {
-      "x": 0,
+      "x": 0.01,
       "y": 0.8,
       "z": 0,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
+      "color": 16776960,
       "scale": 0.6,
-      "align": "center"
+      "text": "READY?",
+      "fontSize": 70,
+      "glow": true
     },
     "instruction": {
       "x": 0,
-      "y": 0.4,
+      "y": 0.44,
       "z": 0,
-      "scale": 0.4,
-      "align": "center"
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
+      "color": 65535,
+      "scale": 0.43,
+      "text": "SHOOT TO BEGIN",
+      "fontSize": 40,
+      "glow": false
     },
     "countdown": {
       "x": 0,
       "y": -0.05,
       "z": 0.01,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
+      "color": 16777215,
       "scale": 0.7,
-      "align": "center"
+      "text": "3",
+      "fontSize": 120,
+      "glow": true
     }
-  }
+  },
+  "exportedAt": "2026-04-16T05:59:28.026Z"
 }

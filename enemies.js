@@ -5867,7 +5867,7 @@ class SkullBoss extends Boss {
       case 3: // 600-0 HP: Very fast, with burst/cooldown
         return {
           moveSpeed: 4.0,
-          shootRate: 0.4,
+          shootRate: 0.13,  // ~3x faster (was 0.4)
           arcHeight: 2.5,
           erraticness: 0.8
         };
@@ -6012,7 +6012,7 @@ class SkullBoss extends Boss {
       this._burstCount = (this._burstCount || 0) + 1;
       if (this._burstCount >= 15) {
         this._burstCount = 0;
-        this._burstCooldown = 3.0; // 3-second reload pause
+        this._burstCooldown = 1.0; // 1-second reload pause (was 3.0, ~3x faster)
         return;
       }
     }
@@ -11250,6 +11250,11 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
     wiggleAmplitude = 0.008;
   }
 
+  // Store boss identity on projectile for kill credit
+  const bossDef = activeBoss.def || {};
+  const bossName = bossDef.name || 'Boss';
+  const bossBehavior = bossDef.behavior || '';
+
   // Store per-instance data
   const data = createBossProjectileRecord(idx, fromPos, velocity, {
     lifetime: lobbed ? 6000 : 5000, // Lobbed projectiles live longer; hands at ±6.75 need extra distance
@@ -11263,6 +11268,10 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
     minFlightTime: lobbed ? 0 : 0.3,
     lobbed,
     gravity: lobbed ? 9.8 : 0,
+    userData: {
+      bossName,
+      bossBehavior,
+    },
   });
 
   // Set initial matrix (position + unit scale)

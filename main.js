@@ -19,7 +19,7 @@ import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook } from './game.js';
 import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
 import {
-  playShoothSound, playHitSound, playExplosionSound, playDamageSound,
+  playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
   playBossSpawn, playBossAlertSound, playMenuClick, playErrorSound, playBuckshotSound,
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
@@ -92,6 +92,9 @@ import {
   clearHudGeoCache,
   novemberFontFamily,
 } from './hud.js';
+import {
+  initWristHolograms, showWristHolograms, updateWristHolograms, hideAllWristHolograms
+} from './wrist-holograms.js';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
@@ -542,6 +545,8 @@ const plasmaCarbineLastFireTime = [0, 0];
 // Each entry: { origin, direction, controllerIndex, stats, shotId, fireTime }
 const seekerBurstQueue = [];
 const SEEKER_BURST_DELAY = 45; // 45ms between shots in burst ("pew-pew-pew") - reduced from 80ms for faster burst
+const SEEKER_BURST_COOLDOWN = 350; // 350ms pause after burst completes (prevents continuous fire with multi-projectile upgrades)
+const seekerBurstCooldownEnd = [0, 0]; // per-hand burst cooldown timestamps
 
 // Charge shot visual effects (per controller)
 const chargeGlowSpheres = [null, null];
@@ -1581,6 +1586,7 @@ function init() {
   initEnemies(scene);
   setCameraRef(camera);
   initHUD(camera, scene);
+  initWristHolograms();
   if (devRuntimeEnabled && runtimeConfig.dev.showFPS) {
     setFPSVisible(true);
   }
@@ -3478,6 +3484,9 @@ function activateNuke() {
     nukeFlash.material.opacity = 1.0;
     nukeFlashTimer = now;
   }
+
+  // Big explosion sound: low rumble with distortion, pitch glides down over 2s
+  playNukeExplosionSound();
 
   // Kill all non-boss enemies
   const enemies = getEnemies();
@@ -7292,6 +7301,9 @@ function showUpgradeScreen() {
 
   // Mark blaster displays for update
   blasterDisplays.forEach(d => { if (d) d.userData.needsUpdate = true; });
+
+  // Show wrist holograms on controllers with live weapon stats
+  showWristHolograms(controllers, game.handStats, game.upgrades, game.mainWeapon);
 }
 
 // [CORE] Clear pending upgrade state
@@ -7305,6 +7317,7 @@ function finalizeUpgradeSelection() {
   clearPendingUpgradeState();
   playUpgradeSound();
   hideUpgradeCards();
+  hideAllWristHolograms();
   advanceLevelAfterUpgrade();
 }
 
@@ -7696,7 +7709,7 @@ function initProjectilePool() {
 
   // ── Plasma carbine darts ──
   // PERFORMANCE: Bumped from 30 to 80 to support dual wield + fire rate upgrades
-  const plasmaGeo = new THREE.CylinderGeometry(0.0375, 0.0375, 0.5, 6);
+  const plasmaGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.25, 6);  // Thinner and shorter than standard blaster bolts
   plasmaGeo.rotateX(Math.PI / 2);
   const plasmaMat = createProjectileMaterial(0xffffff);
   registerPlayerProjectileMaterial(plasmaMat);
@@ -8179,6 +8192,8 @@ function fireMainWeapon(controller, index) {
   // BURST FIRE for seeker weapons: rapid succession with spread
   if (stats.homing && count > 1) {
     const now = performance.now();
+    // Enforce burst cooldown: prevent firing if still in cooldown from previous burst
+    if (now < seekerBurstCooldownEnd[index]) return;
     for (let i = 0; i < count; i++) {
       // Add random spread angle (like buckshot but for homing)
       const spreadAngle = THREE.MathUtils.degToRad(3 + Math.random() * 5); // 3-8 degrees
@@ -8246,7 +8261,7 @@ function fireMainWeapon(controller, index) {
 // [CORE] Update lightning beam weapon (continuous beam)
 // Issue #22: Always fires forward. Curves toward enemies if nearby.
 // Forward beam hits and destroys boss projectiles.
-const LIGHTNING_FORWARD_RANGE = 30;  // Max forward beam length (units)
+const LIGHTNING_FORWARD_RANGE = 0.5;  // Max forward beam length when no enemies in range (~1-2 feet, prevents cheesing boss fights)
 const LIGHTNING_BOSS_PROJ_RADIUS_SQ = 1.0;  // Hit radius squared for boss projectile intersection
 
 function updateLightningBeam(controller, index, stats, dt) {
@@ -9210,6 +9225,10 @@ function processSeekerBurstQueue(now) {
       spawnProjectile(shot.origin, shot.direction, shot.controllerIndex, shot.stats, shot.shotId, { suppressSound: true });
       // Play per-shot sound: "p" for middle shots, full "pew" for last
       playSeekerBurstSound(shot.isLastShot, shot.totalShots, shot.burstIndex);
+      // Set burst cooldown when last shot fires
+      if (shot.isLastShot) {
+        seekerBurstCooldownEnd[shot.controllerIndex] = now + SEEKER_BURST_COOLDOWN;
+      }
       seekerBurstQueue.splice(i, 1);
     }
   }
@@ -9876,8 +9895,9 @@ function updateProjectiles(dt) {
             const _dead = damagePlayer(proj.userData.damage);
             if (_dead && game.state === State.PLAYING) {
               if (proj.userData.isBossProjectile) {
-                const _boss = getBoss();
-                setKilledBy({ type: 'boss_projectile', name: _boss?.def?.name || 'Boss', enemyType: 'projectile' });
+                const bossName = proj.userData.bossName || getBoss()?.def?.name || 'Boss';
+                const bossBehavior = proj.userData.bossBehavior || getBoss()?.def?.behavior || '';
+                setKilledBy({ type: 'boss', name: bossName, enemyType: bossBehavior });
               } else {
                 setKilledBy({ type: 'enemy', name: 'Enemy Projectile', enemyType: 'projectile' });
               }
@@ -11098,8 +11118,9 @@ function render(timestamp) {
       bossProjs.splice(i, 1);
 
       const dead = damagePlayer(proj.damage || 1);
-      const _skullBoss = getBoss();
-      setKilledBy({ type: 'boss_projectile', name: _skullBoss?.def?.name || 'Boss', enemyType: _skullBoss?.def?.behavior || 'projectile' });
+      const projBossName = proj.userData?.bossName || getBoss()?.def?.name || 'Boss';
+      const projBossBehavior = proj.userData?.bossBehavior || getBoss()?.def?.behavior || '';
+      setKilledBy({ type: 'boss', name: projBossName, enemyType: projBossBehavior });
       triggerHitFlash(true);
       playDamageSound();
       if (_skullBoss && _skullBoss.def && (_skullBoss.def.behavior === 'skull' || _skullBoss.def.behavior === 'minotaur' || _skullBoss.def.behavior === 'prism')) {
@@ -11559,6 +11580,9 @@ function render(timestamp) {
         }
       }
     });
+
+    // Update wrist holograms with live data (only rebuilds when data changes)
+    updateWristHolograms(game.handStats, game.upgrades, game.mainWeapon);
   }
 
   // ── Game over / Victory ──
