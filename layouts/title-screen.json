@@ -13,7 +13,8 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 1.5
+      "_colorHex": "#ffffff",
+      "scale": 1.2
     },
     "subSprite": {
       "x": 0,
@@ -27,7 +28,8 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "scale": 0.34,
+      "_colorHex": "#00ffff",
+      "scale": 0.38,
       "text": "VR ROGUELIKE BLASTER",
       "fontSize": 60,
       "glow": true
@@ -44,9 +46,10 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 0.4,
+      "_colorHex": "#ffffff",
+      "scale": 0.5,
       "text": "PRESS TRIGGER TO BEGIN",
-      "fontSize": 100,
+      "fontSize": 70,
       "glow": true
     },
     "btnGroup": {
@@ -60,9 +63,11 @@
       "type": "rect",
       "visible": true,
       "anchor": "center",
-      "color": 1114163,
+      "color": 3354880,
+      "_colorHex": "#333100",
       "w": 1.35,
-      "h": 0.3
+      "h": 0.3,
+      "opacity": 0.85
     },
     "btn_text": {
       "x": -0.36,
@@ -76,6 +81,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16776960,
+      "_colorHex": "#ffff00",
       "scale": 0.25,
       "text": "SCOREBOARD",
       "fontSize": 100,
@@ -92,9 +98,11 @@
       "type": "rect",
       "visible": true,
       "anchor": "center",
-      "color": 1114163,
+      "color": 9267,
+      "_colorHex": "#002433",
       "w": 0.4,
-      "h": 0.3
+      "h": 0.3,
+      "opacity": 0.85
     },
     "settings_btn_text": {
       "x": 0.82,
@@ -108,6 +116,7 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "scale": 0.35,
       "text": "⚙",
       "fontSize": 100,
@@ -115,5 +124,5 @@
       "forceArial": true
     }
   },
-  "exportedAt": "2026-04-16T17:56:54.603Z"
+  "exportedAt": "2026-04-16T23:07:45.712Z"
 }

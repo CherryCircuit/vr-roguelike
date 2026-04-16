@@ -13,9 +13,10 @@
       "visible": true,
       "anchor": "center",
       "color": 16711748,
+      "_colorHex": "#ff0044",
       "scale": 0.9,
       "text": "GAME OVER",
-      "fontSize": 160,
+      "fontSize": 150,
       "glow": true
     },
     "scoreSprite": {
@@ -30,6 +31,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16776960,
+      "_colorHex": "#ffff00",
       "scale": 0.58,
       "text": "SCORE: 42000",
       "fontSize": 100,
@@ -47,6 +49,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
+      "_colorHex": "#ffffff",
       "scale": 0.3,
       "text": "You were finished off by",
       "fontSize": 60,
@@ -58,12 +61,13 @@
       "z": 0,
       "align": "center",
       "rx": 0,
-      "ry": 264.488,
+      "ry": 465.312,
       "rz": 0,
       "type": "grunt",
       "visible": true,
       "anchor": "center",
       "color": 65416,
+      "_colorHex": "#00ff88",
       "scale": 0.16
     },
     "killName": {
@@ -78,6 +82,7 @@
       "visible": true,
       "anchor": "center",
       "color": 374630,
+      "_colorHex": "#05b766",
       "scale": 0.35,
       "text": "GRUNT",
       "fontSize": 90,
@@ -95,6 +100,7 @@
       "visible": false,
       "anchor": "center",
       "color": 16729156,
+      "_colorHex": "#ff4444",
       "scale": 0.3,
       "text": "PROJECTILE",
       "fontSize": 30,
@@ -111,10 +117,11 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 11184810,
-      "scale": 0.17,
+      "color": 16777215,
+      "_colorHex": "#ffffff",
+      "scale": 0.2,
       "text": "Don't feel bad, 24 other players also succumbed to a GRUNT",
-      "fontSize": 100,
+      "fontSize": 50,
       "glow": false
     },
     "restartSprite": {
@@ -129,11 +136,12 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
+      "_colorHex": "#ffffff",
       "scale": 0.45,
       "text": "PRESS TRIGGER",
       "fontSize": 100,
       "glow": false
     }
   },
-  "exportedAt": "2026-04-16T18:55:08.833Z"
+  "exportedAt": "2026-04-16T23:10:26.369Z"
 }

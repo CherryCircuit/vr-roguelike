@@ -63,6 +63,7 @@ function le(layout, key, defaults) {
     fontSize: el.fontSize ?? defaults.fontSize,
     visible: el.visible ?? defaults.visible,
     glow: el.glow ?? defaults.glow,
+    opacity: el.opacity ?? defaults.opacity,
   };
 }
 
@@ -114,10 +115,12 @@ function stopTrackDisplayUpdate() {
   }
 }
 
-function makeBtn(label, width = 0.4, height = 0.25, borderColor = 0x00ffff, fontSize = 32, fontScale = 0.1, textColorParam) {
+function makeBtn(label, width = 0.4, height = 0.25, borderColor = 0x00ffff, fontSize = 32, fontScale = 0.1, textColorParam, bgColor, bgOpacity) {
   const group = new THREE.Group();
   const geo = new THREE.PlaneGeometry(width, height);
-  const mesh = new THREE.Mesh(geo, settingsMaterial(0x0a0020));
+  const bg = bgColor != null ? bgColor : 0x0a0020;
+  const op = bgOpacity != null ? bgOpacity : 0.85;
+  const mesh = new THREE.Mesh(geo, settingsMaterial(bg, op));
   mesh.renderOrder = SETTINGS_RENDER_ORDER;
   group.add(mesh);
   const border = new THREE.LineSegments(
@@ -153,7 +156,7 @@ async function buildSettingsPanel() {
   // ── Panel background ──
   const panelEl = le(layout, 'panel', { x: 0, y: 0, z: 0, w: 3.2, h: 2.6, color: 0x0a0015 });
   const panelGeo = new THREE.PlaneGeometry(panelEl.w, panelEl.h);
-  const panelMesh = new THREE.Mesh(panelGeo, settingsMaterial(panelEl.color, 0.92));
+  const panelMesh = new THREE.Mesh(panelGeo, settingsMaterial(panelEl.color, panelEl.opacity || 0.92));
   panelMesh.renderOrder = SETTINGS_RENDER_ORDER - 2;
   panelMesh.position.set(panelEl.x, panelEl.y, panelEl.z);
   settingsGroup.add(panelMesh);
@@ -215,7 +218,7 @@ async function buildSettingsPanel() {
   // ── Music UP button ──
   const mUpEl = le(layout, 'music_up', { x: colX, y: 0.18, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
   const mUpTextEl = le(layout, 'music_up_text', { x: colX, y: 0.18, z: 0.03, scale: 0.35, fontSize: 100 });
-  const mUp = makeBtn('▲', mUpEl.w, mUpEl.h, mUpEl.color || 0x00ffff, mUpTextEl.fontSize || 56, mUpTextEl.scale || 0.22, mUpTextEl.color);
+  const mUp = makeBtn('▲', mUpEl.w, mUpEl.h, mUpEl.color || 0x00ffff, mUpTextEl.fontSize || 56, mUpTextEl.scale || 0.22, mUpTextEl.color, mUpEl.color, mUpEl.opacity);
   mUp.group.position.set(mUpEl.x, mUpEl.y, mUpEl.z);
   mUp.mesh.userData.isSettingsBtn = true;
   mUp.mesh.userData.settingsAction = 'musicUp';
@@ -240,7 +243,7 @@ async function buildSettingsPanel() {
   // ── Music DOWN button ──
   const mDownEl = le(layout, 'music_down', { x: colX, y: -0.26, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
   const mDownTextEl = le(layout, 'music_down_text', { x: colX, y: -0.26, z: 0.03, scale: 0.35, fontSize: 100 });
-  const mDown = makeBtn('▼', mDownEl.w, mDownEl.h, mDownEl.color || 0x00ffff, mDownTextEl.fontSize || 56, mDownTextEl.scale || 0.22, mDownTextEl.color);
+  const mDown = makeBtn('▼', mDownEl.w, mDownEl.h, mDownEl.color || 0x00ffff, mDownTextEl.fontSize || 56, mDownTextEl.scale || 0.22, mDownTextEl.color, mDownEl.color, mDownEl.opacity);
   mDown.group.position.set(mDownEl.x, mDownEl.y, mDownEl.z);
   mDown.mesh.userData.isSettingsBtn = true;
   mDown.mesh.userData.settingsAction = 'musicDown';
@@ -251,7 +254,7 @@ async function buildSettingsPanel() {
   // ── SFX UP button ──
   const sUpEl = le(layout, 'sfx_up', { x: col2X, y: 0.18, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
   const sUpTextEl = le(layout, 'sfx_up_text', { x: col2X, y: 0.18, z: 0.03, scale: 0.35, fontSize: 100 });
-  const sUp = makeBtn('▲', sUpEl.w, sUpEl.h, sUpEl.color || 0x00ffff, sUpTextEl.fontSize || 56, sUpTextEl.scale || 0.22, sUpTextEl.color);
+  const sUp = makeBtn('▲', sUpEl.w, sUpEl.h, sUpEl.color || 0x00ffff, sUpTextEl.fontSize || 56, sUpTextEl.scale || 0.22, sUpTextEl.color, sUpEl.color, sUpEl.opacity);
   sUp.group.position.set(sUpEl.x, sUpEl.y, sUpEl.z);
   sUp.mesh.userData.isSettingsBtn = true;
   sUp.mesh.userData.settingsAction = 'sfxUp';
@@ -277,7 +280,7 @@ async function buildSettingsPanel() {
   // ── SFX DOWN button ──
   const sDownEl = le(layout, 'sfx_down', { x: col2X, y: -0.26, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
   const sDownTextEl = le(layout, 'sfx_down_text', { x: col2X, y: -0.26, z: 0.03, scale: 0.35, fontSize: 100 });
-  const sDown = makeBtn('▼', sDownEl.w, sDownEl.h, sDownEl.color || 0x00ffff, sDownTextEl.fontSize || 56, sDownTextEl.scale || 0.22, sDownTextEl.color);
+  const sDown = makeBtn('▼', sDownEl.w, sDownEl.h, sDownEl.color || 0x00ffff, sDownTextEl.fontSize || 56, sDownTextEl.scale || 0.22, sDownTextEl.color, sDownEl.color, sDownEl.opacity);
   sDown.group.position.set(sDownEl.x, sDownEl.y, sDownEl.z);
   sDown.mesh.userData.isSettingsBtn = true;
   sDown.mesh.userData.settingsAction = 'sfxDown';
@@ -330,7 +333,7 @@ async function buildSettingsPanel() {
   // PREV button
   const prevEl = le(layout, 'prev_btn', { x: -0.3, y: -0.11, z: 0.06, w: 0.4, h: 0.25, color: 0xaaaaff });
   const prevTextEl = le(layout, 'prev_text', { x: -0.3, y: -0.12, z: 0.08, scale: 0.18, fontSize: 100 });
-  const prevBtn = makeBtn('◀ PREV', prevEl.w, prevEl.h, prevEl.color || 0x00ffff, prevTextEl.fontSize || 36, prevTextEl.scale || 0.12, prevTextEl.color);
+  const prevBtn = makeBtn('◀ PREV', prevEl.w, prevEl.h, prevEl.color || 0x00ffff, prevTextEl.fontSize || 36, prevTextEl.scale || 0.12, prevTextEl.color, prevEl.color, prevEl.opacity);
   prevBtn.group.position.set(prevEl.x, prevEl.y, prevEl.z);
   prevBtn.mesh.userData.isSettingsBtn = true;
   prevBtn.mesh.userData.settingsAction = 'prevTrack';
@@ -341,7 +344,7 @@ async function buildSettingsPanel() {
   // NEXT button
   const nextEl = le(layout, 'next_btn', { x: 0.3, y: -0.11, z: 0.06, w: 0.4, h: 0.25, color: 0xaaaaff });
   const nextTextEl = le(layout, 'next_text', { x: 0.3, y: -0.12, z: 0.08, scale: 0.18, fontSize: 100 });
-  const nextBtn = makeBtn('NEXT ▶', nextEl.w, nextEl.h, nextEl.color || 0x00ffff, nextTextEl.fontSize || 36, nextTextEl.scale || 0.12, nextTextEl.color);
+  const nextBtn = makeBtn('NEXT ▶', nextEl.w, nextEl.h, nextEl.color || 0x00ffff, nextTextEl.fontSize || 36, nextTextEl.scale || 0.12, nextTextEl.color, nextEl.color, nextEl.opacity);
   nextBtn.group.position.set(nextEl.x, nextEl.y, nextEl.z);
   nextBtn.mesh.userData.isSettingsBtn = true;
   nextBtn.mesh.userData.settingsAction = 'nextTrack';
@@ -352,7 +355,7 @@ async function buildSettingsPanel() {
   // ── BACK button ──
   const backEl = le(layout, 'back_btn', { x: 0, y: -0.7, z: 0.02, w: 1.02, h: 0.3, color: 0x997700 });
   const backTextEl = le(layout, 'back_text', { x: 0, y: -0.722, z: 0.04, scale: 0.3, fontSize: 130 });
-  const back = makeBtn('BACK', backEl.w, backEl.h, backEl.color || 0x997700, backTextEl.fontSize || 38, backTextEl.scale || 0.12, backTextEl.color);
+  const back = makeBtn('BACK', backEl.w, backEl.h, backEl.color || 0x997700, backTextEl.fontSize || 38, backTextEl.scale || 0.12, backTextEl.color, backEl.color, backEl.opacity);
   back.group.position.set(backEl.x, backEl.y, backEl.z);
   back.mesh.userData.isSettingsBtn = true;
   back.mesh.userData.settingsAction = 'back';
@@ -370,7 +373,7 @@ async function buildSettingsPanel() {
       const rectMat = new THREE.MeshBasicMaterial({
         color: rectEl.color,
         transparent: true,
-        opacity: 0.8,
+        opacity: rectEl.opacity || 0.8,
         side: THREE.DoubleSide,
         depthTest: false,
         depthWrite: false,

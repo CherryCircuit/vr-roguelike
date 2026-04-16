@@ -12,9 +12,11 @@
       "type": "rect",
       "visible": true,
       "anchor": "center",
-      "color": 1114148,
+      "color": 1900605,
+      "_colorHex": "#1d003d",
       "w": 3.2,
-      "h": 2
+      "h": 2,
+      "opacity": 0.92
     },
     "panel_border": {
       "x": 3.848,
@@ -28,8 +30,10 @@
       "visible": false,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "w": 3.2,
-      "h": 2
+      "h": 2,
+      "opacity": 0.8
     },
     "title": {
       "x": 0,
@@ -43,6 +47,7 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "scale": 0.35,
       "text": "SETTINGS",
       "fontSize": 150,
@@ -60,6 +65,7 @@
       "visible": true,
       "anchor": "center",
       "color": 11184895,
+      "_colorHex": "#aaaaff",
       "scale": 0.3,
       "text": "MUSIC",
       "fontSize": 60,
@@ -77,6 +83,7 @@
       "visible": true,
       "anchor": "center",
       "color": 11184895,
+      "_colorHex": "#aaaaff",
       "scale": 0.3,
       "text": "SFX",
       "fontSize": 60,
@@ -94,8 +101,10 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "w": 0.45,
-      "h": 0.28
+      "h": 0.28,
+      "opacity": 0.7
     },
     "music_up_text": {
       "x": -0.98,
@@ -108,7 +117,8 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
+      "color": 10747903,
+      "_colorHex": "#a3ffff",
       "scale": 0.35,
       "text": "▲",
       "fontSize": 100,
@@ -126,6 +136,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
+      "_colorHex": "#ffffff",
       "scale": 0.25,
       "text": "75%",
       "fontSize": 100,
@@ -143,8 +154,10 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "w": 0.45,
-      "h": 0.28
+      "h": 0.28,
+      "opacity": 0.7
     },
     "music_down_text": {
       "x": -0.98,
@@ -157,7 +170,8 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
+      "color": 10747903,
+      "_colorHex": "#a3ffff",
       "scale": 0.35,
       "text": "▼",
       "fontSize": 100,
@@ -175,8 +189,10 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "w": 0.45,
-      "h": 0.28
+      "h": 0.28,
+      "opacity": 0.7
     },
     "sfx_up_text": {
       "x": 0.98,
@@ -189,7 +205,8 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
+      "color": 10747903,
+      "_colorHex": "#a3ffff",
       "scale": 0.35,
       "text": "▲",
       "fontSize": 100,
@@ -207,6 +224,7 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
+      "_colorHex": "#ffffff",
       "scale": 0.25,
       "text": "80%",
       "fontSize": 100,
@@ -224,8 +242,10 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "w": 0.45,
-      "h": 0.28
+      "h": 0.28,
+      "opacity": 0.7
     },
     "sfx_down_text": {
       "x": 0.98,
@@ -238,7 +258,8 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
+      "color": 10747903,
+      "_colorHex": "#a3ffff",
       "scale": 0.35,
       "text": "▼",
       "fontSize": 100,
@@ -256,8 +277,10 @@
       "visible": false,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "w": 0.02,
-      "h": 0.95
+      "h": 0.95,
+      "opacity": 0.4
     },
     "track_label": {
       "x": 0,
@@ -270,7 +293,8 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 6710937,
+      "color": 9276863,
+      "_colorHex": "#8d8dbf",
       "scale": 0.16,
       "text": "NOW PLAYING",
       "fontSize": 100,
@@ -288,6 +312,7 @@
       "visible": true,
       "anchor": "center",
       "color": 11184895,
+      "_colorHex": "#aaaaff",
       "scale": 0.22,
       "text": "Battle Theme",
       "fontSize": 100,
@@ -305,8 +330,10 @@
       "visible": true,
       "anchor": "center",
       "color": 11184895,
+      "_colorHex": "#aaaaff",
       "w": 0.4,
-      "h": 0.25
+      "h": 0.25,
+      "opacity": 0.7
     },
     "prev_text": {
       "x": -0.3,
@@ -320,6 +347,7 @@
       "visible": true,
       "anchor": "center",
       "color": 15461375,
+      "_colorHex": "#ebebff",
       "scale": 0.18,
       "text": "◀ PREV",
       "fontSize": 100,
@@ -337,8 +365,10 @@
       "visible": true,
       "anchor": "center",
       "color": 11184895,
+      "_colorHex": "#aaaaff",
       "w": 0.4,
-      "h": 0.25
+      "h": 0.25,
+      "opacity": 0.7
     },
     "next_text": {
       "x": 0.3,
@@ -352,6 +382,7 @@
       "visible": true,
       "anchor": "center",
       "color": 15461375,
+      "_colorHex": "#ebebff",
       "scale": 0.18,
       "text": "NEXT ▶",
       "fontSize": 100,
@@ -368,9 +399,11 @@
       "type": "rect",
       "visible": true,
       "anchor": "center",
-      "color": 10057472,
+      "color": 11087641,
+      "_colorHex": "#a92f19",
       "w": 1.02,
-      "h": 0.3
+      "h": 0.3,
+      "opacity": 0.7
     },
     "back_text": {
       "x": 0,
@@ -383,7 +416,8 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 16777215,
+      "color": 16765393,
+      "_colorHex": "#ffd1d1",
       "scale": 0.3,
       "text": "BACK",
       "fontSize": 130,
@@ -400,7 +434,8 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 6710937,
+      "color": 9276863,
+      "_colorHex": "#8d8dbf",
       "scale": 0.24,
       "text": "♬",
       "fontSize": 100,
@@ -418,8 +453,10 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "w": 3.2,
-      "h": 0.05
+      "h": 0.05,
+      "opacity": 0.8
     },
     "dup_3_custom_rect_2": {
       "x": 0,
@@ -433,8 +470,10 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "w": 3.2,
-      "h": 0.05
+      "h": 0.05,
+      "opacity": 0.8
     },
     "dup_4_custom_rect_2": {
       "x": -1.625,
@@ -448,8 +487,10 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "w": 0.05,
-      "h": 2.1
+      "h": 2.1,
+      "opacity": 0.8
     },
     "dup_5_dup_4_custom_rect_2": {
       "x": 1.625,
@@ -463,11 +504,13 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
+      "_colorHex": "#00ffff",
       "w": 0.05,
-      "h": 2.1
+      "h": 2.1,
+      "opacity": 0.8
     }
   },
-  "exportedAt": "2026-04-16T22:03:57.886Z",
+  "exportedAt": "2026-04-16T23:14:35.502Z",
   "groups": {
     "Music": [
       "music_up",
@@ -493,13 +536,121 @@
       "dup_1_track_label"
     ]
   },
+  "_localPositions": {
+    "Music": {
+      "_center": {
+        "x": -0.98,
+        "y": -0.004,
+        "z": 0.028
+      },
+      "music_up": {
+        "x": 0,
+        "y": 0.264,
+        "z": -0.008
+      },
+      "music_up_text": {
+        "x": 0,
+        "y": 0.264,
+        "z": 0.012
+      },
+      "music_vol": {
+        "x": 0,
+        "y": -0.016,
+        "z": -0.008
+      },
+      "music_down": {
+        "x": 0,
+        "y": -0.256,
+        "z": -0.008
+      },
+      "music_down_text": {
+        "x": 0,
+        "y": -0.256,
+        "z": 0.012
+      }
+    },
+    "SFX": {
+      "_center": {
+        "x": 0.98,
+        "y": -0.004,
+        "z": 0.028
+      },
+      "sfx_up": {
+        "x": 0,
+        "y": 0.264,
+        "z": -0.008
+      },
+      "sfx_up_text": {
+        "x": 0,
+        "y": 0.264,
+        "z": 0.012
+      },
+      "sfx_vol": {
+        "x": 0,
+        "y": -0.016,
+        "z": -0.008
+      },
+      "sfx_down": {
+        "x": 0,
+        "y": -0.256,
+        "z": -0.008
+      },
+      "sfx_down_text": {
+        "x": 0,
+        "y": -0.256,
+        "z": 0.012
+      }
+    },
+    "Group 1": {
+      "_center": {
+        "x": 0,
+        "y": 0.051,
+        "z": 0.069
+      },
+      "track_label": {
+        "x": 0,
+        "y": 0.2286,
+        "z": -0.0086
+      },
+      "track_name": {
+        "x": 0,
+        "y": 0.0886,
+        "z": 0.0114
+      },
+      "prev_btn": {
+        "x": -0.3,
+        "y": -0.1614,
+        "z": -0.0086
+      },
+      "prev_text": {
+        "x": -0.3,
+        "y": -0.1714,
+        "z": 0.0114
+      },
+      "next_btn": {
+        "x": 0.3,
+        "y": -0.1614,
+        "z": -0.0086
+      },
+      "next_text": {
+        "x": 0.3,
+        "y": -0.1714,
+        "z": 0.0114
+      },
+      "dup_1_track_label": {
+        "x": 0,
+        "y": 0.3486,
+        "z": -0.0086
+      }
+    }
+  },
   "_customDefs": [
     {
       "id": "dup_1_track_label",
       "name": "NOW PLAYING label (copy)",
       "type": "text",
       "text": "♬",
-      "color": 6710937,
+      "color": 9276863,
       "fontSize": 100,
       "scale": 0.24,
       "x": 0,
