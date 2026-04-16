@@ -867,73 +867,76 @@ export function flashBossHealthBarGreen() {
 // ── Title Screen ───────────────────────────────────────────
 
 async function createTitleScreen() {
+  // Load layout first so we can use fontSize/scale from JSON
+  const layout = await loadLayout('title-screen');
+  const le = (key, defaults) => {
+    const el = layout?.elements?.[key];
+    if (!el) return defaults;
+    return { x: el.x ?? defaults.x, y: el.y ?? defaults.y, z: el.z ?? defaults.z,
+      scale: el.scale ?? defaults.scale, fontSize: el.fontSize ?? defaults.fontSize,
+      glow: el.glow ?? defaults.glow, color: el.color ?? defaults.color,
+      w: el.w ?? defaults.w, h: el.h ?? defaults.h };
+  };
+
   // Logo: SPACE☢MICIDE SVG
   const titleSprite = await createLogoSprite();
-  titleSprite.position.set(0, 0.932, 0);
+  const titleDef = le('titleSprite', { x: 0, y: 0.932, z: 0, scale: null });
+  titleSprite.position.set(titleDef.x, titleDef.y, titleDef.z);
+  if (titleDef.scale != null) titleSprite.scale.setScalar(titleDef.scale);
   titleSprite.name = 'titleSprite';
   titleGroup.add(titleSprite);
 
   // Subtitle
+  const subDef = le('subSprite', { x: 0, y: 0.35, z: 0, fontSize: 24, scale: 0.52, glow: true, color: 0x00ffff });
   const subSprite = makeSprite('VR ROGUELIKE BLASTER', {
-    fontSize: 24,
-    color: '#00ffff',
-    glow: true, glowColor: '#00ffff', glowSize: 5,
-    scale: 0.52,
+    fontSize: subDef.fontSize, color: '#' + subDef.color.toString(16).padStart(6, '0'),
+    glow: subDef.glow, glowColor: '#' + subDef.color.toString(16).padStart(6, '0'), glowSize: 5,
+    scale: subDef.scale,
   });
-  subSprite.position.set(0, 0.35, 0);
+  subSprite.position.set(subDef.x, subDef.y, subDef.z);
   titleGroup.add(subSprite);
 
   // Blinking "Press Trigger to Begin"
+  const blinkDef = le('titleBlinkSprite', { x: 0, y: -0.1, z: 0, fontSize: 28, scale: 0.87, glow: true, color: 0xffffff });
   titleBlinkSprite = makeSprite('PRESS TRIGGER TO BEGIN', {
-    fontSize: 28,
-    color: '#ffffff',
-    glow: true, glowColor: '#ffffff',
-    scale: 0.87,
+    fontSize: blinkDef.fontSize, color: '#' + blinkDef.color.toString(16).padStart(6, '0'),
+    glow: blinkDef.glow, glowColor: '#' + blinkDef.color.toString(16).padStart(6, '0'),
+    scale: blinkDef.scale,
   });
-  titleBlinkSprite.position.set(0, -0.1, 0);
+  titleBlinkSprite.position.set(blinkDef.x, blinkDef.y, blinkDef.z);
   titleBlinkSprite.name = 'titleBlinkSprite';
   titleGroup.add(titleBlinkSprite);
 
   // Scoreboard button
+  const btnGroupDef = le('btnGroup', { x: -0.36, y: -0.68, z: 0, w: 1.35, h: 0.3 });
   const btnGroup = new THREE.Group();
-  btnGroup.position.set(-0.36, -0.68, 0);
+  btnGroup.position.set(btnGroupDef.x, btnGroupDef.y, btnGroupDef.z);
   btnGroup.name = 'btnGroup';
-  const btnGeo = new THREE.PlaneGeometry(1.35, 0.3);
-  const btnMat = new THREE.MeshBasicMaterial({
-    color: 0x110033,
-    transparent: true,
-    opacity: 0.85,
-    side: THREE.DoubleSide,
-  });
+  const btnGeo = new THREE.PlaneGeometry(btnGroupDef.w, btnGroupDef.h);
+  const btnMat = new THREE.MeshBasicMaterial({ color: 0x110033, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
   const btnMesh = new THREE.Mesh(btnGeo, btnMat);
   btnMesh.userData.isTitleScoreboardBtn = true;
-  btnMesh.userData.borderColor = 0xffff00;  // Yellow border for hover glow
+  btnMesh.userData.borderColor = 0xffff00;
   btnGroup.add(btnMesh);
-  const btnBorderGeo = new THREE.EdgesGeometry(btnGeo);
-  btnGroup.add(new THREE.LineSegments(btnBorderGeo, new THREE.LineBasicMaterial({ color: 0xffff00 })));
+  btnGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(btnGeo), new THREE.LineBasicMaterial({ color: 0xffff00 })));
+  const btnTextDef = le('btn_text', { x: 0, y: 0, z: 0.01, fontSize: 48, scale: 0.16, glow: true, color: 0xffff00 });
   const btnText = makeSprite('SCOREBOARD', {
-    fontSize: 48,
-    color: '#ffff00',
-    glow: true,
-    glowColor: '#ffff00',
-    scale: 0.16,
+    fontSize: btnTextDef.fontSize, color: '#' + btnTextDef.color.toString(16).padStart(6, '0'),
+    glow: btnTextDef.glow, glowColor: '#' + btnTextDef.color.toString(16).padStart(6, '0'),
+    scale: btnTextDef.scale,
   });
-  btnText.position.set(0, 0, 0.01);
+  btnText.position.set(btnTextDef.x, btnTextDef.y, btnTextDef.z);
   btnGroup.add(btnText);
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
 
-  // ── Settings gear button (next to SCOREBOARD) ──
+  // Settings gear button
+  const settingsBtnDef = le('settingsBtnGroup', { x: 0.82, y: -0.68, z: 0, scale: null });
   const settingsBtnGroup = new THREE.Group();
-  settingsBtnGroup.position.set(0.82, -0.68, 0);
+  settingsBtnGroup.position.set(settingsBtnDef.x, settingsBtnDef.y, settingsBtnDef.z);
   settingsBtnGroup.name = 'settingsBtnGroup';
   const settingsBtnGeo = new THREE.PlaneGeometry(0.4, 0.3);
-  const settingsBtnMat = new THREE.MeshBasicMaterial({
-    color: 0x110033,
-    transparent: true,
-    opacity: 0.85,
-    side: THREE.DoubleSide,
-  });
+  const settingsBtnMat = new THREE.MeshBasicMaterial({ color: 0x110033, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
   const settingsBtnMesh = new THREE.Mesh(settingsBtnGeo, settingsBtnMat);
   settingsBtnMesh.userData.isTitleSettingsBtn = true;
   settingsBtnMesh.userData.borderColor = 0x00ffff;
@@ -942,56 +945,16 @@ async function createTitleScreen() {
     new THREE.EdgesGeometry(settingsBtnGeo),
     new THREE.LineBasicMaterial({ color: 0x00ffff })
   ));
+  const settingsTextDef = le('settings_btn_text', { x: 0, y: 0, z: 0.01, fontSize: 48, scale: 0.5, glow: true, color: 0x00ffff });
   const settingsBtnText = makeSprite('\u2699', {
-    fontSize: 48,
-    color: '#00ffff',
-    glow: true,
-    glowColor: '#00ffff',
-    scale: 0.5,
+    fontSize: settingsTextDef.fontSize, color: '#' + settingsTextDef.color.toString(16).padStart(6, '0'),
+    glow: settingsTextDef.glow, glowColor: '#' + settingsTextDef.color.toString(16).padStart(6, '0'),
+    scale: settingsTextDef.scale,
   });
-  settingsBtnText.position.set(0, 0, 0.01);
+  settingsBtnText.position.set(settingsTextDef.x, settingsTextDef.y, settingsTextDef.z);
   settingsBtnGroup.add(settingsBtnText);
   titleGroup.add(settingsBtnGroup);
   titleSettingsBtn = settingsBtnMesh;
-
-  // Apply layout overrides
-  const layout = await loadLayout('title-screen');
-  if (layout?.elements) {
-    if (layout.elements.titleSprite) {
-      const _le = layout.elements.titleSprite;
-      titleSprite.position.set(_le.x, _le.y, _le.z);
-      if (_le.scale != null) titleSprite.scale.setScalar(_le.scale);
-    }
-    if (layout.elements.subSprite) {
-      const _le = layout.elements.subSprite;
-      subSprite.position.set(_le.x, _le.y, _le.z);
-      if (_le.scale != null) subSprite.scale.setScalar(_le.scale);
-    }
-    if (layout.elements.titleBlinkSprite) {
-      const _le = layout.elements.titleBlinkSprite;
-      titleBlinkSprite.position.set(_le.x, _le.y, _le.z);
-      if (_le.scale != null) titleBlinkSprite.scale.setScalar(_le.scale);
-    }
-    if (layout.elements.btnGroup) {
-      const _le = layout.elements.btnGroup;
-      btnGroup.position.set(_le.x, _le.y, _le.z);
-      if (_le.w != null) btnGroup.children[0].geometry = new THREE.PlaneGeometry(_le.w, _le.h || 0.3);
-    }
-    if (layout.elements.settingsBtnGroup) {
-      const _le = layout.elements.settingsBtnGroup;
-      settingsBtnGroup.position.set(_le.x, _le.y, _le.z);
-      if (_le.scale != null) settingsBtnText.scale.setScalar(_le.scale);
-    }
-    if (layout.elements.btn_text) {
-      const _le = layout.elements.btn_text;
-      btnText.position.set(_le.x, _le.y, _le.z);
-      if (_le.scale != null) btnText.scale.setScalar(_le.scale);
-    }
-    if (layout.elements.settings_btn_text) {
-      const _le = layout.elements.settings_btn_text;
-      settingsBtnText.position.set(_le.x, _le.y, _le.z);
-    }
-  }
 }
 
 export function showTitle() {
@@ -1019,118 +982,85 @@ async function createHUDElements() {
 
   // Load layout from JSON (falls back to hardcoded values if missing)
   const floorLayout = await loadLayout('floor-hud');
+  const fl = floorLayout?.elements;
 
-  // Floor-based HUD layout (Space Pirate Trainer style)
-  // Increased by 200% (3x) for better visibility
-
-  // HOLOGRAPHIC BASE - no background box (glitch/scanline overlays are separate below)
-
-  // (holoMesh removed - hologram shader overlay was never wanted)
+  // Helper: read layout element, fall back to defaults
+  const _fl = (key, defaults) => {
+    const el = fl?.[key];
+    if (!el) return defaults;
+    return { x: el.x ?? defaults.x, y: el.y ?? defaults.y, z: el.z ?? defaults.z,
+      scale: el.scale ?? defaults.scale, fontSize: el.fontSize ?? defaults.fontSize,
+      glow: el.glow ?? defaults.glow, color: el.color ?? defaults.color,
+      visible: el.visible ?? defaults.visible };
+  };
 
   // Lives (hearts) - left side on floor
-  // #19: Hearts aligned with TOP of SCORE and LEVEL X titles
-  // Layout: Spread horizontally to avoid overlap
+  const heartsDef = _fl('hearts', { x: -2.3 + (1.7875 / 2), y: 0.56, z: 0.01, scale: 1, visible: true });
   const heartsGeo = new THREE.PlaneGeometry(1.7875, 0.55);
   const heartsMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide });
   heartsSprite = new THREE.Mesh(heartsGeo, heartsMat);
-  heartsSprite.position.set(-2.3 + (1.7875 / 2), 0.56, 0.01);  // Left-aligned: offset by half width so left edge at -2.3 (v13)
-  if (floorLayout?.elements?.hearts) {
-    const _le = floorLayout.elements.hearts;
-    heartsSprite.position.set(_le.x, _le.y, _le.z);
-  }
+  heartsSprite.position.set(heartsDef.x, heartsDef.y, heartsDef.z);
   heartsSprite.renderOrder = 999;
   heartsSprite.name = 'floor-hud-hearts';
   hudGroup.add(heartsSprite);
 
-  // SCORE - center-left on floor with title above
-  // Layout: Spread from hearts, number centered under SCORE title
-  scoreSprite = makeSprite('0', { fontSize: 72, color: '#ffff00', shadow: true, scale: 0.45 });
-  scoreSprite.position.set(0, 0.32, 0.01);  // Centered under SCORE title (v13)
-  if (floorLayout?.elements?.score_num) {
-    const _le = floorLayout.elements.score_num;
-    scoreSprite.position.set(_le.x, _le.y, _le.z);
-  }
+  // SCORE number
+  const scoreNumDef = _fl('score_num', { x: 0, y: 0.32, z: 0.01, fontSize: 72, scale: 0.45, glow: false, color: 0xffff00 });
+  scoreSprite = makeSprite('0', { fontSize: scoreNumDef.fontSize, color: '#' + scoreNumDef.color.toString(16).padStart(6, '0'), shadow: !scoreNumDef.glow, glow: scoreNumDef.glow, scale: scoreNumDef.scale });
+  scoreSprite.position.set(scoreNumDef.x, scoreNumDef.y, scoreNumDef.z);
   scoreSprite.name = 'floor-hud-score';
   hudGroup.add(scoreSprite);
 
-  // SCORE title - above score in yellow same style as level
-  scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
-  scoreTitleSprite.position.set(0, 0.58, 0.01);  // Top row
-  if (floorLayout?.elements?.score_title) {
-    const _le = floorLayout.elements.score_title;
-    scoreTitleSprite.position.set(_le.x, _le.y, _le.z);
-  }
+  // SCORE title
+  const scoreTitleDef = _fl('score_title', { x: 0, y: 0.58, z: 0.01, fontSize: 72, scale: 0.45, glow: true, color: 0xffff00 });
+  scoreTitleSprite = makeSprite('SCORE', { fontSize: scoreTitleDef.fontSize, color: '#' + scoreTitleDef.color.toString(16).padStart(6, '0'), glow: scoreTitleDef.glow, glowColor: '#' + scoreTitleDef.color.toString(16).padStart(6, '0'), scale: scoreTitleDef.scale });
+  scoreTitleSprite.position.set(scoreTitleDef.x, scoreTitleDef.y, scoreTitleDef.z);
   scoreTitleSprite.name = 'floor-hud-score-title';
   hudGroup.add(scoreTitleSprite);
 
-  // Kill counter — below LEVEL display
-  // Layout: Center-right, below level
-  killCountSprite = makeSprite('0/0', { fontSize: 72, color: '#ffffff', shadow: true, scale: 0.45 });
-  killCountSprite.position.set(1.02, 0.3, 0.01);  // Center-right, second row
-  if (floorLayout?.elements?.kills) {
-    const _le = floorLayout.elements.kills;
-    killCountSprite.position.set(_le.x, _le.y, _le.z);
-  }
+  // Kill counter
+  const killsDef = _fl('kills', { x: 1.02, y: 0.3, z: 0.01, fontSize: 72, scale: 0.45, glow: false, color: 0xffffff });
+  killCountSprite = makeSprite('0/0', { fontSize: killsDef.fontSize, color: '#' + killsDef.color.toString(16).padStart(6, '0'), shadow: !killsDef.glow, scale: killsDef.scale });
+  killCountSprite.position.set(killsDef.x, killsDef.y, killsDef.z);
   killCountSprite.name = 'floor-hud-kills';
   hudGroup.add(killCountSprite);
 
-  // Level indicator — above kill counter
-  // Layout: Center-right, top row
-  levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 0.45 });
-  levelSprite.position.set(1.02, 0.58, 0.01);  // Center-right, top row
-  if (floorLayout?.elements?.level) {
-    const _le = floorLayout.elements.level;
-    levelSprite.position.set(_le.x, _le.y, _le.z);
-  }
+  // Level indicator
+  const levelDef = _fl('level', { x: 1.02, y: 0.58, z: 0.01, fontSize: 72, scale: 0.45, glow: true, color: 0x00cccc });
+  levelSprite = makeSprite('LEVEL 1', { fontSize: levelDef.fontSize, color: '#' + levelDef.color.toString(16).padStart(6, '0'), glow: levelDef.glow, glowColor: '#' + levelDef.color.toString(16).padStart(6, '0'), scale: levelDef.scale });
+  levelSprite.position.set(levelDef.x, levelDef.y, levelDef.z);
   levelSprite.name = 'floor-hud-level';
   hudGroup.add(levelSprite);
 
-  // Nuke counter — far right, top row; emoji 2x size, count text normal
-  nukeEmojiSprite = makeSprite('☢', { fontSize: 144, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.9 });
-  nukeEmojiSprite.position.set(1.82, 0.5, 0.01);  // Far right (v13)
-  if (floorLayout?.elements?.nuke_icon) {
-    const _le = floorLayout.elements.nuke_icon;
-    nukeEmojiSprite.position.set(_le.x, _le.y, _le.z);
-  }
+  // Nuke emoji
+  const nukeIconDef = _fl('nuke_icon', { x: 1.82, y: 0.5, z: 0.01, fontSize: 144, scale: 0.9, glow: true, color: 0xffff44 });
+  nukeEmojiSprite = makeSprite('☢', { fontSize: nukeIconDef.fontSize, color: '#' + nukeIconDef.color.toString(16).padStart(6, '0'), glow: nukeIconDef.glow, glowColor: '#' + nukeIconDef.color.toString(16).padStart(6, '0'), scale: nukeIconDef.scale });
+  nukeEmojiSprite.position.set(nukeIconDef.x, nukeIconDef.y, nukeIconDef.z);
   nukeEmojiSprite.name = 'floor-hud-nuke-icon';
   hudGroup.add(nukeEmojiSprite);
-  nukeCountSprite = makeSprite('X3', { fontSize: 72, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.35 });
-  nukeCountSprite.position.set(2.12, 0.5, 0.01);  // Far right (v13)
-  if (floorLayout?.elements?.nuke_count) {
-    const _le = floorLayout.elements.nuke_count;
-    nukeCountSprite.position.set(_le.x, _le.y, _le.z);
-  }
+
+  // Nuke count
+  const nukeCountDef = _fl('nuke_count', { x: 2.12, y: 0.5, z: 0.01, fontSize: 72, scale: 0.35, glow: true, color: 0xffff44 });
+  nukeCountSprite = makeSprite('X3', { fontSize: nukeCountDef.fontSize, color: '#' + nukeCountDef.color.toString(16).padStart(6, '0'), glow: nukeCountDef.glow, glowColor: '#' + nukeCountDef.color.toString(16).padStart(6, '0'), scale: nukeCountDef.scale });
+  nukeCountSprite.position.set(nukeCountDef.x, nukeCountDef.y, nukeCountDef.z);
   nukeCountSprite.name = 'floor-hud-nuke-count';
   hudGroup.add(nukeCountSprite);
 
-  // Accuracy bonus — center, just below main HUD row
-  // Y=-0.45 keeps it close to the SCORE/LEVEL row (Y=0.3) without overlap
-  // NOTE: combo_text uses center-aligned geometry; left-alignment would require
-  // updating position each frame since text width varies with the accuracy multiplier.
-  comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 0.25 });
-  comboSprite.position.set(-2.26, 0.1, 0.01);
-  // Left-align: offset by half geometry width so left edge sits at x=-2.26
-  const comboGeoW = comboSprite.geometry.parameters?.width || 1;
-  comboSprite.position.x = -2.26 + comboGeoW / 2;  // Left side, below hearts (v13)
-  if (floorLayout?.elements?.combo_text) {
-    const _le = floorLayout.elements.combo_text;
-    comboSprite.position.set(_le.x, _le.y, _le.z);
-  }
+  // Accuracy bonus text
+  const comboTextDef = _fl('combo_text', { x: -2.26, y: 0.1, z: 0.01, fontSize: 40, scale: 0.25, glow: false, color: 0xff8800 });
+  comboSprite = makeSprite('1x', { fontSize: comboTextDef.fontSize, color: '#' + comboTextDef.color.toString(16).padStart(6, '0'), shadow: !comboTextDef.glow, scale: comboTextDef.scale });
+  comboSprite.position.set(comboTextDef.x, comboTextDef.y, comboTextDef.z);
   comboSprite.visible = false;
   comboSprite.name = 'floor-hud-combo-text';
   hudGroup.add(comboSprite);
 
-  // Accuracy bonus meter bar — directly below combo text
-  // Geometry shifted so pivot is left edge: bar shrinks from left, not center
-  const cooldownGeo = new THREE.PlaneGeometry(1.65, 0.05);
-  cooldownGeo.translate(0.825, 0, 0); // shift right by half width for left-edge pivot
-  const cooldownMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.8 });
+  // Accuracy bonus meter bar
+  const comboBarDef = _fl('combo_bar', { x: -2.202, y: 0.21, z: 0.01, w: 1.65, h: 0.05, color: 0xff8800, visible: true });
+  const cooldownGeo = new THREE.PlaneGeometry(comboBarDef.w || 1.65, comboBarDef.h || 0.05);
+  cooldownGeo.translate((comboBarDef.w || 1.65) / 2, 0, 0); // left-edge pivot
+  const cooldownMat = new THREE.MeshBasicMaterial({ color: comboBarDef.color, transparent: true, opacity: 0.8 });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
-  comboCooldownSprite.position.set(-2.202, 0.21, 0.01);  // Left side, below combo text (v13) - geo.translate handles left-edge pivot
-  if (floorLayout?.elements?.combo_bar) {
-    const _le = floorLayout.elements.combo_bar;
-    comboCooldownSprite.position.set(_le.x, _le.y, _le.z);
-  }
+  comboCooldownSprite.position.set(comboBarDef.x, comboBarDef.y, comboBarDef.z);
   comboCooldownSprite.visible = false;
   comboCooldownSprite.name = 'floor-hud-combo-bar';
   hudGroup.add(comboCooldownSprite);
@@ -1992,111 +1922,99 @@ export function showGameOver(score, playerPos, killedBy) {
   hideAll();
   disposeGroupChildren(gameOverGroup);
 
-  const s1 = makeSprite('GAME OVER', { fontSize: 120, color: '#ff0044', glow: true, glowSize: 30, scale: 1.4 });
-  s1.position.set(0, 1.2, 0);
+  const goLayout = layoutCache['game-over']?.elements;
+  const _go = (key, defaults) => {
+    const el = goLayout?.[key];
+    if (!el) return defaults;
+    return { x: el.x ?? defaults.x, y: el.y ?? defaults.y, z: el.z ?? defaults.z,
+      scale: el.scale ?? defaults.scale, fontSize: el.fontSize ?? defaults.fontSize,
+      glow: el.glow ?? defaults.glow, color: el.color ?? defaults.color,
+      visible: el.visible ?? defaults.visible,
+      rx: el.rx ?? defaults.rx, ry: el.ry ?? defaults.ry, rz: el.rz ?? defaults.rz };
+  };
+
+  const titleDef = _go('titleSprite', { x: 0, y: 1.2, z: 0, fontSize: 120, scale: 1.4, glow: true, color: 0xff0044, rx: 0, ry: 0, rz: 0 });
+  const s1 = makeSprite('GAME OVER', { fontSize: titleDef.fontSize, color: '#' + titleDef.color.toString(16).padStart(6, '0'), glow: titleDef.glow, glowSize: 30, scale: titleDef.scale });
+  s1.position.set(titleDef.x, titleDef.y, titleDef.z);
+  if (titleDef.rx) s1.rotation.x = titleDef.rx * Math.PI / 180;
+  if (titleDef.ry) s1.rotation.y = titleDef.ry * Math.PI / 180;
+  if (titleDef.rz) s1.rotation.z = titleDef.rz * Math.PI / 180;
   s1.name = 'titleSprite';
   gameOverGroup.add(s1);
 
-  const s2 = makeSprite(`SCORE: ${score}`, { fontSize: 60, color: '#ffff00', glow: true, scale: 0.7 });
-  s2.position.set(0, 0.4, 0);
+  const scoreDef = _go('scoreSprite', { x: 0, y: 0.4, z: 0, fontSize: 60, scale: 0.7, glow: true, color: 0xffff00 });
+  const s2 = makeSprite(`SCORE: ${score}`, { fontSize: scoreDef.fontSize, color: '#' + scoreDef.color.toString(16).padStart(6, '0'), glow: scoreDef.glow, scale: scoreDef.scale });
+  s2.position.set(scoreDef.x, scoreDef.y, scoreDef.z);
   s2.name = 'scoreSprite';
   gameOverGroup.add(s2);
 
   // Kill info display (between SCORE and PRESS TRIGGER)
   if (killedBy) {
-    const killLabel = makeSprite('You were finished off by', { fontSize: 36, color: '#ffffff', scale: 0.35 });
-    killLabel.position.set(0, 0.1, 0);
+    const killLabelDef = _go('killLabel', { x: 0, y: 0.1, z: 0, fontSize: 36, scale: 0.35, color: 0xffffff });
+    const killLabel = makeSprite('You were finished off by', { fontSize: killLabelDef.fontSize, color: '#' + killLabelDef.color.toString(16).padStart(6, '0'), scale: killLabelDef.scale });
+    killLabel.position.set(killLabelDef.x, killLabelDef.y, killLabelDef.z);
     killLabel.name = 'killLabel';
     gameOverGroup.add(killLabel);
 
     // Rotating 3D icon representing the killer
+    const iconDef = _go('killIcon', { x: 0, y: -0.15, z: 0, scale: 0.18, color: 0xff0044, visible: true });
     const iconColor = ENEMY_ICON_COLORS[killedBy.enemyType] || 0xff0044;
     let iconGeo;
     if (killedBy.type === 'enemy') {
-      // Cube for regular enemies
       iconGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
     } else {
-      // Sphere for bosses and projectiles
       iconGeo = new THREE.SphereGeometry(0.15, 12, 12);
     }
-    const iconMat = new THREE.MeshBasicMaterial({
-      color: iconColor,
-      transparent: true,
-      opacity: 1,
-    });
+    const iconMat = new THREE.MeshBasicMaterial({ color: iconColor, transparent: true, opacity: 1 });
     const icon = new THREE.Mesh(iconGeo, iconMat);
-    icon.position.set(0, -0.15, 0);
+    icon.position.set(iconDef.x, iconDef.y, iconDef.z);
+    if (iconDef.scale != null) icon.scale.setScalar(iconDef.scale);
+    icon.visible = iconDef.visible;
     icon.name = 'killIcon';
     gameOverGroup.add(icon);
 
     // Killer name below the icon
+    const killNameDef = _go('killName', { x: 0, y: -0.4, z: 0, fontSize: 40, scale: 0.4, glow: true, color: 0xff6666 });
     let killerName = killedBy.name || 'Unknown';
-    if (killedBy.type === 'boss_projectile') {
-      killerName = killedBy.name;
-    }
-    const killName = makeSprite(killerName, { fontSize: 40, color: '#ff6666', glow: true, scale: 0.4 });
-    killName.position.set(0, -0.4, 0);
+    const killName = makeSprite(killerName, { fontSize: killNameDef.fontSize, color: '#' + killNameDef.color.toString(16).padStart(6, '0'), glow: killNameDef.glow, scale: killNameDef.scale });
+    killName.position.set(killNameDef.x, killNameDef.y, killNameDef.z);
     killName.name = 'killName';
     gameOverGroup.add(killName);
 
     // Sub-label for boss projectiles
+    const subLabelDef = _go('killSubLabel', { x: 0, y: -0.58, z: 0, fontSize: 30, scale: 0.3, color: 0xff4444, visible: true });
     if (killedBy.type === 'boss_projectile') {
-      const projLabel = makeSprite('PROJECTILE', { fontSize: 30, color: '#ff4444', scale: 0.3 });
-      projLabel.position.set(0, -0.58, 0);
+      const projLabel = makeSprite('PROJECTILE', { fontSize: subLabelDef.fontSize, color: '#' + subLabelDef.color.toString(16).padStart(6, '0'), scale: subLabelDef.scale });
+      projLabel.position.set(subLabelDef.x, subLabelDef.y, subLabelDef.z);
+      projLabel.visible = subLabelDef.visible;
       projLabel.name = 'killSubLabel';
       gameOverGroup.add(projLabel);
     }
 
-    // Fetch death stats from Supabase (async)
-    const killerKey = killedBy.enemyType || killedBy.type;
+    const deathStatsDef = _go('deathStatsLabel', { x: 0, y: -0.75, z: 0, fontSize: 28, scale: 0.28, color: 0xaaaaaa });
     fetchDeathStats(killerKey).then(deathCount => {
       if (deathCount !== 'N/A' && deathCount !== '0') {
         const statsLabel = makeSprite(`Don't feel bad, ${deathCount} other players also succumbed to a ${killerName}`, {
-          fontSize: 28, color: '#aaaaaa', scale: 0.28
+          fontSize: deathStatsDef.fontSize, color: '#' + deathStatsDef.color.toString(16).padStart(6, '0'), scale: deathStatsDef.scale
         });
-        statsLabel.position.set(0, -0.75, 0);
+        statsLabel.position.set(deathStatsDef.x, deathStatsDef.y, deathStatsDef.z);
         statsLabel.name = 'deathStatsLabel';
         gameOverGroup.add(statsLabel);
       }
     });
   }
 
-  // Adjust PRESS TRIGGER position down if kill info is shown
-  const restartY = killedBy ? -0.8 : -0.3;
-  const s3 = makeSprite('PRESS TRIGGER TO RESTART', { fontSize: 44, color: '#ffffff', scale: 0.5 });
-  s3.position.set(0, restartY, 0);
+  const restartDef = _go('restartSprite', { x: 0, y: killedBy ? -1.04 : -0.3, z: 0, fontSize: 44, scale: 0.5, color: 0xffffff });
+  const s3 = makeSprite('PRESS TRIGGER TO RESTART', { fontSize: restartDef.fontSize, color: '#' + restartDef.color.toString(16).padStart(6, '0'), scale: restartDef.scale });
+  s3.position.set(restartDef.x, restartDef.y, restartDef.z);
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
   // Position in front of player (VR-friendly)
   gameOverGroup.position.copy(playerPos);
-  gameOverGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
-  gameOverGroup.position.z -= 5; // 5 feet in front of player
+  gameOverGroup.position.y += 1.6 + SCENE_Y_OFFSET;
+  gameOverGroup.position.z -= 5;
   gameOverGroup.visible = true;
-
-  // Apply layout overrides (sync since preloaded)
-  const layout = layoutCache['game-over'];
-  if (layout?.elements) {
-    const _applyEl = (name, sprite) => {
-      const _le = layout.elements[name];
-      if (!_le || !sprite) return;
-      sprite.position.set(_le.x, _le.y, _le.z);
-      if (_le.scale != null && sprite.isMesh) sprite.scale.setScalar(_le.scale);
-      if (_le.rx != null) sprite.rotation.x = _le.rx * Math.PI / 180;
-      if (_le.ry != null) sprite.rotation.y = _le.ry * Math.PI / 180;
-      if (_le.rz != null) sprite.rotation.z = _le.rz * Math.PI / 180;
-      if (_le.visible != null) sprite.visible = _le.visible;
-    };
-    _applyEl('titleSprite', s1);
-    _applyEl('scoreSprite', s2);
-    _applyEl('restartSprite', s3);
-    // Kill info elements
-    _applyEl('killLabel', gameOverGroup.getObjectByName('killLabel'));
-    _applyEl('killIcon', gameOverGroup.getObjectByName('killIcon'));
-    _applyEl('killName', gameOverGroup.getObjectByName('killName'));
-    _applyEl('killSubLabel', gameOverGroup.getObjectByName('killSubLabel'));
-    _applyEl('deathStatsLabel', gameOverGroup.getObjectByName('deathStatsLabel'));
-  }
 }
 
 export function showVictory(score, playerPos) {

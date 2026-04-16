@@ -15,7 +15,7 @@
       "color": 16776960,
       "scale": 0.6,
       "text": "READY?",
-      "fontSize": 70,
+      "fontSize": 130,
       "glow": true
     },
     "instruction": {
@@ -32,7 +32,7 @@
       "color": 65535,
       "scale": 0.43,
       "text": "SHOOT TO BEGIN",
-      "fontSize": 40,
+      "fontSize": 55,
       "glow": false
     },
     "countdown": {
@@ -47,11 +47,11 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 0.7,
+      "scale": 0.65,
       "text": "3",
-      "fontSize": 120,
+      "fontSize": 150,
       "glow": true
     }
   },
-  "exportedAt": "2026-04-16T05:59:28.026Z"
+  "exportedAt": "2026-04-16T17:06:40.503Z"
 }
