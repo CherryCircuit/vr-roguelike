@@ -2749,7 +2749,7 @@ function updateBlasterDisplay(display, controllerIndex) {
 
   // Load layout data for this hand
   const layoutKey = `upgrade-wrist-${hand}`;
-  const layout = _layoutCache[layoutKey];
+  const layout = layoutCache[layoutKey];
   const els = layout?.elements;
 
   // Fallback font constants

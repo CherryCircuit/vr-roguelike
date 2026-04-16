@@ -123,9 +123,10 @@ function makeBtn(label, width = 0.4, height = 0.25, borderColor = 0x00ffff, font
   );
   border.renderOrder = SETTINGS_RENDER_ORDER;
   group.add(border);
+  const textColor = typeof borderColor === 'number' ? '#' + borderColor.toString(16).padStart(6, '0') : borderColor;
   const text = makeSprite(label, {
     fontSize,
-    color: '#00ffff',
+    color: textColor,
     scale: fontScale,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
