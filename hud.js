@@ -402,16 +402,24 @@ function makeTextTexture(text, opts = {}) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   texture.premultiplyAlpha = false;
-  return { texture, aspect: canvas.width / canvas.height };
+  return { texture, aspect: canvas.width / canvas.height, canvasWidth: canvas.width, canvasHeight: canvas.height };
 }
 
 export function makeSprite(text, opts = {}) {
-  const { texture, aspect } = makeTextTexture(text, opts);
+  const { texture, aspect, canvasWidth, canvasHeight } = makeTextTexture(text, opts);
 
   // Use PlaneGeometry instead of Sprite to prevent billboarding
   const scale = opts.scale || 0.3;
-  const width = aspect * scale;
-  const height = scale;
+  let width, height;
+  if (opts.maxWidth) {
+    // When maxWidth is set, scale controls mesh width (matches layout editor)
+    const unitPerPixel = scale / opts.maxWidth;
+    width = canvasWidth * unitPerPixel;
+    height = canvasHeight * unitPerPixel;
+  } else {
+    width = aspect * scale;
+    height = scale;
+  }
 
   const geometry = new THREE.PlaneGeometry(width, height);
   const mat = new THREE.MeshBasicMaterial({
