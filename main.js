@@ -7302,8 +7302,9 @@ function showUpgradeScreen() {
   // Mark blaster displays for update
   blasterDisplays.forEach(d => { if (d) d.userData.needsUpdate = true; });
 
-  // Show wrist holograms on controllers with live weapon stats
-  showWristHolograms(controllers, game.handStats, game.upgrades, game.mainWeapon);
+  // Note: wrist-holograms.js system disabled - using original blasterDisplay system
+  // which has the scanline shader. Layout data from wrist JSON will be applied
+  // to the original system in a follow-up.
 }
 
 // [CORE] Clear pending upgrade state
@@ -7317,7 +7318,7 @@ function finalizeUpgradeSelection() {
   clearPendingUpgradeState();
   playUpgradeSound();
   hideUpgradeCards();
-  hideAllWristHolograms();
+  // hideAllWristHolograms(); // disabled - using original blasterDisplay system
   advanceLevelAfterUpgrade();
 }
 
@@ -11581,8 +11582,8 @@ function render(timestamp) {
       }
     });
 
-    // Update wrist holograms with live data (only rebuilds when data changes)
-    updateWristHolograms(game.handStats, game.upgrades, game.mainWeapon);
+    // Update wrist holograms with live data (disabled - using original blasterDisplay system)
+    // updateWristHolograms(game.handStats, game.upgrades, game.mainWeapon);
   }
 
   // ── Game over / Victory ──

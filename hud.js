@@ -1370,9 +1370,10 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
     icon: _uc('card0_icon', { y: -0.52, z: 0.05, scale: 0.08 }),
   };
   const skipStyle = {
-    name: _uc('card3_name', { y: 0.44, z: 0.01, fontSize: 65, scale: 1, glow: true, maxWidth: 600 }),
-    desc: _uc('card3_desc', { y: -0.02, z: 0.01, fontSize: 40, scale: 0.65, maxWidth: 400 }),
-    icon: _uc('card3_icon', { y: -0.44, z: 0.05, scale: 0.08 }),
+    bg: _uc('card3', { w: 1, h: 1.3, color: 0x220044 }),
+    name: _uc('card3_name', { y: 0.44, z: 0.01, fontSize: 65, scale: 1, glow: true, color: 0x00ff88, maxWidth: 600 }),
+    desc: _uc('card3_desc', { y: -0.02, z: 0.01, fontSize: 40, scale: 0.65, color: 0x88ffaa, maxWidth: 400 }),
+    icon: _uc('card3_icon', { y: -0.44, z: 0.05, scale: 0.08, color: 0xff0044 }),
   };
 
   // Shuffle upgrades so cards are random each time
@@ -1747,7 +1748,7 @@ function createSkipCard(position, style) {
   // Smaller card (0.7×0.9 vs 0.9×1.1 for upgrades) - shared geometry
   const cardGeo = getSkipCardGeo();
   const cardMat = new THREE.MeshBasicMaterial({
-    color: 0x220044,
+    color: s.bg?.color || 0x220044,
     transparent: true,
     opacity: 0.91,
     side: THREE.DoubleSide,
@@ -1766,16 +1767,21 @@ function createSkipCard(position, style) {
   group.add(card);
 
   // Border (shared geometry)
-  const skipBorder = new THREE.LineSegments(getSkipCardBorderGeo(), new THREE.LineBasicMaterial({ color: '#00ff88' }));
+  const nameColor = s.name?.color || 0x00ff88;
+  const borderColor = typeof nameColor === 'string' ? parseInt(nameColor.replace('#', ''), 16) : nameColor;
+  const skipBorder = new THREE.LineSegments(getSkipCardBorderGeo(), new THREE.LineBasicMaterial({ color: borderColor }));
   skipBorder.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
   skipBorder.userData._warpPiece = 'border';
   group.add(skipBorder);
   
   // Store border color on card for hover glow matching (green for skip)
-  card.userData.borderColor = 0x00ff88;
+  card.userData.borderColor = borderColor;
 
   // Pre-create hover glow mesh (avoids first-hover geometry clone hitch on Quest)
-  const skipGlowColor = '0,255,136';
+  const glowR = (borderColor >> 16) & 255;
+  const glowG = (borderColor >> 8) & 255;
+  const glowB = borderColor & 255;
+  const skipGlowColor = `${glowR},${glowG},${glowB}`;
   const skipHoverGlowGeo = new THREE.PlaneGeometry(1.0 * 1.3, 1.3 * 1.3);
   const skipHoverGlowMat = new THREE.MeshBasicMaterial({
     map: getHoverGlowTexture(skipGlowColor),
@@ -1794,9 +1800,9 @@ function createSkipCard(position, style) {
   // "SKIP" text - queued for deferred creation
   queueTextSprite(group, 'SKIP', {
     fontSize: s.name?.fontSize || 65,
-    color: '#00ff88',
+    color: '#' + (s.name?.color || 0x00ff88).toString(16).padStart(6, '0'),
     glow: s.name?.glow !== false,
-    glowColor: '#00ff88',
+    glowColor: '#' + (s.name?.color || 0x00ff88).toString(16).padStart(6, '0'),
     scale: s.name?.scale || 1,
     depthTest: true,
   }, new THREE.Vector3(0, s.name?.y || 0.48, s.name?.z || 0.01));
@@ -1804,7 +1810,7 @@ function createSkipCard(position, style) {
   // Description - queued (forceArial for legibility)
   queueTextSprite(group, 'Skip upgrades and gain full health.', {
     fontSize: s.desc?.fontSize || 40,
-    color: '#88ffaa',
+    color: '#' + (s.desc?.color || 0x88ffaa).toString(16).padStart(6, '0'),
     scale: s.desc?.scale || 0.36,
     depthTest: true,
     maxWidth: s.desc?.maxWidth || 280,
@@ -1814,7 +1820,7 @@ function createSkipCard(position, style) {
   // Heart icon (shared geometry, delayed reveal)
   const iconMesh = new THREE.Mesh(
     getSkipIconGeo(),
-    new THREE.MeshBasicMaterial({ color: '#ff0044', wireframe: true }),
+    new THREE.MeshBasicMaterial({ color: s.icon?.color || 0xff0044, wireframe: true }),
   );
   iconMesh.position.set(0, s.icon?.y || -0.42, s.icon?.z || 0.05);
   iconMesh.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
@@ -2010,6 +2016,7 @@ export function showGameOver(score, playerPos, killedBy) {
     }
 
     const deathStatsDef = _go('deathStatsLabel', { x: 0, y: -0.75, z: 0, fontSize: 28, scale: 0.28, color: 0xaaaaaa });
+    const killerKey = killedBy.enemyType || killedBy.type;
     fetchDeathStats(killerKey).then(deathCount => {
       if (deathCount !== 'N/A' && deathCount !== '0') {
         const statsLabel = makeSprite(`Don't feel bad, ${deathCount} other players also succumbed to a ${killerName}`, {
