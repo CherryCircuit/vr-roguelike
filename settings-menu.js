@@ -20,6 +20,14 @@ let previousMenu = null; // 'title' | 'pause'
 let musicVolSprite = null;
 let sfxVolSprite = null;
 
+// Stored layout values for use in executeSettingsAction updates
+let musicVolEl = null;
+let sfxVolEl = null;
+let musicVolColor = '#ffffff';
+let sfxVolColor = '#ffffff';
+let titleColor = '#00ffff';
+let trackNameColor = '#aaaaff';
+
 // Render order: 995 sits above game objects (max ~950) but below HUD (999)
 // and below blaster displays (999). This prevents the settings panel from
 // drawing on top of the player's weapon visuals.
@@ -88,7 +96,7 @@ function startTrackDisplayUpdate() {
       const displayName = info.name.length > 28 ? info.name.substring(0, 25) + '...' : info.name;
       updateSpriteText(trackNameSprite, displayName, {
         fontSize: 22,
-        color: '#aaaaff',
+        color: trackNameColor,
         scale: 0.08,
         renderOrder: SETTINGS_RENDER_ORDER + 1,
       });
@@ -158,12 +166,13 @@ async function buildSettingsPanel() {
   }
 
   // ── Title ──
-  const titleEl = le(layout, 'title', { x: 0, y: 0.75, z: 0.02, scale: 0.4, fontSize: 42 });
+  const titleEl = le(layout, 'title', { x: 0, y: 0.75, z: 0.02, scale: 0.4, fontSize: 42, color: 0x00ffff });
+  titleColor = '#' + (titleEl.color).toString(16).padStart(6, '0');
   const title = makeSprite('SETTINGS', {
     fontSize: titleEl.fontSize,
-    color: '#00ffff',
+    color: titleColor,
     glow: true,
-    glowColor: '#00ffff',
+    glowColor: titleColor,
     scale: titleEl.scale,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
@@ -177,9 +186,10 @@ async function buildSettingsPanel() {
   const col2X = sfxLabelEl.x;
 
   // ── MUSIC label ──
+  const musicLabelColor = '#' + (musicLabelEl.color || 0xaaaaff).toString(16).padStart(6, '0');
   const musicLabel = makeSprite('MUSIC', {
     fontSize: musicLabelEl.fontSize || SETTINGS_LABEL_FONT_SIZE,
-    color: '#aaaaff',
+    color: musicLabelColor,
     scale: musicLabelEl.scale,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
@@ -187,9 +197,10 @@ async function buildSettingsPanel() {
   settingsGroup.add(musicLabel);
 
   // ── SFX label ──
+  const sfxLabelColor = '#' + (sfxLabelEl.color || 0xaaaaff).toString(16).padStart(6, '0');
   const sfxLabel = makeSprite('SFX', {
     fontSize: sfxLabelEl.fontSize || SETTINGS_LABEL_FONT_SIZE,
-    color: '#aaaaff',
+    color: sfxLabelColor,
     scale: sfxLabelEl.scale,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
@@ -197,8 +208,8 @@ async function buildSettingsPanel() {
   settingsGroup.add(sfxLabel);
 
   // ── Music UP button ──
-  const mUpEl = le(layout, 'music_up', { x: colX, y: 0.18, z: 0.02, w: 1.0, h: 0.42 });
-  const mUp = makeBtn('▲', mUpEl.w, mUpEl.h, 0x00ffff, 56, 0.22);
+  const mUpEl = le(layout, 'music_up', { x: colX, y: 0.18, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
+  const mUp = makeBtn('▲', mUpEl.w, mUpEl.h, mUpEl.color || 0x00ffff, 56, 0.22);
   mUp.group.position.set(mUpEl.x, mUpEl.y, mUpEl.z);
   mUp.mesh.userData.isSettingsBtn = true;
   mUp.mesh.userData.settingsAction = 'musicUp';
@@ -209,12 +220,13 @@ async function buildSettingsPanel() {
   if (mUp.group.children[2]) mUp.group.children[2].position.set(mUpTextEl.x, mUpTextEl.y, mUpTextEl.z);
 
   // ── Music volume display ──
-  const musicVolEl = le(layout, 'music_vol', { x: colX, y: -0.02, z: 0.02, scale: 0.32, fontSize: 38 });
+  musicVolEl = le(layout, 'music_vol', { x: colX, y: -0.02, z: 0.02, scale: 0.32, fontSize: 38, color: 0xffffff });
+  musicVolColor = '#' + (musicVolEl.color).toString(16).padStart(6, '0');
   musicVolSprite = makeSprite(`${musicVol}%`, {
     fontSize: musicVolEl.fontSize || SETTINGS_FONT_SIZE,
-    color: '#ffffff',
+    color: musicVolColor,
     glow: true,
-    glowColor: '#00ffff',
+    glowColor: titleColor,
     scale: musicVolEl.scale,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
@@ -222,8 +234,8 @@ async function buildSettingsPanel() {
   settingsGroup.add(musicVolSprite);
 
   // ── Music DOWN button ──
-  const mDownEl = le(layout, 'music_down', { x: colX, y: -0.26, z: 0.02, w: 1.0, h: 0.42 });
-  const mDown = makeBtn('▼', mDownEl.w, mDownEl.h, 0x00ffff, 56, 0.22);
+  const mDownEl = le(layout, 'music_down', { x: colX, y: -0.26, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
+  const mDown = makeBtn('▼', mDownEl.w, mDownEl.h, mDownEl.color || 0x00ffff, 56, 0.22);
   mDown.group.position.set(mDownEl.x, mDownEl.y, mDownEl.z);
   mDown.mesh.userData.isSettingsBtn = true;
   mDown.mesh.userData.settingsAction = 'musicDown';
@@ -233,8 +245,8 @@ async function buildSettingsPanel() {
   if (mDown.group.children[2]) mDown.group.children[2].position.set(mDownTextEl.x, mDownTextEl.y, mDownTextEl.z);
 
   // ── SFX UP button ──
-  const sUpEl = le(layout, 'sfx_up', { x: col2X, y: 0.18, z: 0.02, w: 1.0, h: 0.42 });
-  const sUp = makeBtn('▲', sUpEl.w, sUpEl.h, 0x00ffff, 56, 0.22);
+  const sUpEl = le(layout, 'sfx_up', { x: col2X, y: 0.18, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
+  const sUp = makeBtn('▲', sUpEl.w, sUpEl.h, sUpEl.color || 0x00ffff, 56, 0.22);
   sUp.group.position.set(sUpEl.x, sUpEl.y, sUpEl.z);
   sUp.mesh.userData.isSettingsBtn = true;
   sUp.mesh.userData.settingsAction = 'sfxUp';
@@ -244,21 +256,23 @@ async function buildSettingsPanel() {
   if (sUp.group.children[2]) sUp.group.children[2].position.set(sUpTextEl.x, sUpTextEl.y, sUpTextEl.z);
 
   // ── SFX volume display ──
-  const sfxVolEl = le(layout, 'sfx_vol', { x: col2X, y: -0.02, z: 0.02, scale: 0.32, fontSize: 38 });
+  const sfxVolElLocal = le(layout, 'sfx_vol', { x: col2X, y: -0.02, z: 0.02, scale: 0.32, fontSize: 38, color: 0xffffff });
+  sfxVolEl = sfxVolElLocal;
+  sfxVolColor = '#' + (sfxVolElLocal.color).toString(16).padStart(6, '0');
   sfxVolSprite = makeSprite(`${sfxVol}%`, {
-    fontSize: sfxVolEl.fontSize || SETTINGS_FONT_SIZE,
-    color: '#ffffff',
+    fontSize: sfxVolElLocal.fontSize || SETTINGS_FONT_SIZE,
+    color: sfxVolColor,
     glow: true,
-    glowColor: '#00ffff',
-    scale: sfxVolEl.scale,
+    glowColor: titleColor,
+    scale: sfxVolElLocal.scale,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
   sfxVolSprite.position.set(sfxVolEl.x, sfxVolEl.y, sfxVolEl.z);
   settingsGroup.add(sfxVolSprite);
 
   // ── SFX DOWN button ──
-  const sDownEl = le(layout, 'sfx_down', { x: col2X, y: -0.26, z: 0.02, w: 1.0, h: 0.42 });
-  const sDown = makeBtn('▼', sDownEl.w, sDownEl.h, 0x00ffff, 56, 0.22);
+  const sDownEl = le(layout, 'sfx_down', { x: col2X, y: -0.26, z: 0.02, w: 1.0, h: 0.42, color: 0x00ffff });
+  const sDown = makeBtn('▼', sDownEl.w, sDownEl.h, sDownEl.color || 0x00ffff, 56, 0.22);
   sDown.group.position.set(sDownEl.x, sDownEl.y, sDownEl.z);
   sDown.mesh.userData.isSettingsBtn = true;
   sDown.mesh.userData.settingsAction = 'sfxDown';
@@ -282,11 +296,11 @@ async function buildSettingsPanel() {
   }
 
   // ── Track Player Section ──
-  const trackLabelEl = le(layout, 'track_label', { x: 0, y: 0.12, z: 0.06, scale: 0.3, fontSize: 22 });
-  // "NOW PLAYING" label
+  const trackLabelEl = le(layout, 'track_label', { x: 0, y: 0.12, z: 0.06, scale: 0.3, fontSize: 22, color: 0x666699 });
+  const trackLabelColor = '#' + (trackLabelEl.color).toString(16).padStart(6, '0');
   const trackLabel = makeSprite('NOW PLAYING', {
     fontSize: trackLabelEl.fontSize || 22,
-    color: '#666699',
+    color: trackLabelColor,
     scale: trackLabelEl.scale,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
@@ -294,12 +308,13 @@ async function buildSettingsPanel() {
   settingsGroup.add(trackLabel);
 
   // Track name display
-  const trackNameEl = le(layout, 'track_name', { x: 0, y: 0, z: 0.08, scale: 0.3, fontSize: 36 });
+  const trackNameEl = le(layout, 'track_name', { x: 0, y: 0, z: 0.08, scale: 0.3, fontSize: 36, color: 0xaaaaff });
+  trackNameColor = '#' + (trackNameEl.color).toString(16).padStart(6, '0');
   const trackInfo = getPlaylistInfo();
   const displayName = trackInfo.name.length > 28 ? trackInfo.name.substring(0, 25) + '...' : trackInfo.name;
   trackNameSprite = makeSprite(displayName, {
     fontSize: trackNameEl.fontSize || 36,
-    color: '#aaaaff',
+    color: trackNameColor,
     scale: trackNameEl.scale,
     renderOrder: SETTINGS_RENDER_ORDER + 1,
   });
@@ -307,8 +322,8 @@ async function buildSettingsPanel() {
   settingsGroup.add(trackNameSprite);
 
   // PREV button
-  const prevEl = le(layout, 'prev_btn', { x: -0.3, y: -0.26, z: 0.06, w: 0.9, h: 0.25 });
-  const prevBtn = makeBtn('◀ PREV', prevEl.w, prevEl.h, 0x00ffff, 36, 0.12);
+  const prevEl = le(layout, 'prev_btn', { x: -0.3, y: -0.26, z: 0.06, w: 0.9, h: 0.25, color: 0x00ffff });
+  const prevBtn = makeBtn('◀ PREV', prevEl.w, prevEl.h, prevEl.color || 0x00ffff, 36, 0.12);
   prevBtn.group.position.set(prevEl.x, prevEl.y, prevEl.z);
   prevBtn.mesh.userData.isSettingsBtn = true;
   prevBtn.mesh.userData.settingsAction = 'prevTrack';
@@ -318,8 +333,8 @@ async function buildSettingsPanel() {
   if (prevBtn.group.children[2]) prevBtn.group.children[2].position.set(prevTextEl.x, prevTextEl.y, prevTextEl.z);
 
   // NEXT button
-  const nextEl = le(layout, 'next_btn', { x: 0.3, y: -0.26, z: 0.06, w: 0.9, h: 0.25 });
-  const nextBtn = makeBtn('NEXT ▶', nextEl.w, nextEl.h, 0x00ffff, 36, 0.12);
+  const nextEl = le(layout, 'next_btn', { x: 0.3, y: -0.26, z: 0.06, w: 0.9, h: 0.25, color: 0x00ffff });
+  const nextBtn = makeBtn('NEXT ▶', nextEl.w, nextEl.h, nextEl.color || 0x00ffff, 36, 0.12);
   nextBtn.group.position.set(nextEl.x, nextEl.y, nextEl.z);
   nextBtn.mesh.userData.isSettingsBtn = true;
   nextBtn.mesh.userData.settingsAction = 'nextTrack';
@@ -329,8 +344,8 @@ async function buildSettingsPanel() {
   if (nextBtn.group.children[2]) nextBtn.group.children[2].position.set(nextTextEl.x, nextTextEl.y, nextTextEl.z);
 
   // ── BACK button ──
-  const backEl = le(layout, 'back_btn', { x: 0, y: -0.7, z: 0.02, w: 1.2, h: 0.3 });
-  const back = makeBtn('BACK', backEl.w, backEl.h, 0x997700, 38, 0.12);
+  const backEl = le(layout, 'back_btn', { x: 0, y: -0.7, z: 0.02, w: 1.2, h: 0.3, color: 0x997700 });
+  const back = makeBtn('BACK', backEl.w, backEl.h, backEl.color || 0x997700, 38, 0.12);
   back.group.position.set(backEl.x, backEl.y, backEl.z);
   back.mesh.userData.isSettingsBtn = true;
   back.mesh.userData.settingsAction = 'back';
@@ -364,9 +379,10 @@ async function buildSettingsPanel() {
   // ── Decorative music icon ──
   const musicIconEl = le(layout, 'dup_1_track_label', { x: 0, y: 0.21, z: 0.06, visible: true, scale: 0.4, fontSize: 22 });
   if (musicIconEl.visible) {
+    const musicIconColor = '#' + (musicIconEl.color || 0x666699).toString(16).padStart(6, '0');
     const musicIcon = makeSprite('♬', {
       fontSize: musicIconEl.fontSize || 22,
-      color: '#666699',
+      color: musicIconColor,
       scale: musicIconEl.scale,
       renderOrder: SETTINGS_RENDER_ORDER + 1,
     });
@@ -418,6 +434,12 @@ export function hideSettings() {
   nextTrackBtn = null;
   trackNameSprite = null;
   _lastSettingsHovered = null;
+  musicVolEl = null;
+  sfxVolEl = null;
+  musicVolColor = '#ffffff';
+  sfxVolColor = '#ffffff';
+  titleColor = '#00ffff';
+  trackNameColor = '#aaaaff';
 
   // Restore pause menu if we came from it
   if (previousMenu === 'pause' && pauseMenuGroup) {
@@ -506,22 +528,22 @@ export function executeSettingsAction(action) {
   switch (action) {
     case 'musicUp': {
       const vol = setMusicVolume(getMusicVolume() + 5);
-      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.3 });
+      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: musicVolEl?.fontSize || SETTINGS_FONT_SIZE, color: musicVolColor || '#ffffff', glow: true, glowColor: titleColor || '#00ffff', scale: musicVolEl?.scale || 0.3 });
       return false;
     }
     case 'musicDown': {
       const vol = setMusicVolume(getMusicVolume() - 5);
-      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.3 });
+      if (musicVolSprite) updateSpriteText(musicVolSprite, `${vol}%`, { fontSize: musicVolEl?.fontSize || SETTINGS_FONT_SIZE, color: musicVolColor || '#ffffff', glow: true, glowColor: titleColor || '#00ffff', scale: musicVolEl?.scale || 0.3 });
       return false;
     }
     case 'sfxUp': {
       const vol = setSFXVolume(getSFXVolume() + 5);
-      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.3 });
+      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: sfxVolEl?.fontSize || SETTINGS_FONT_SIZE, color: sfxVolColor || '#ffffff', glow: true, glowColor: titleColor || '#00ffff', scale: sfxVolEl?.scale || 0.3 });
       return false;
     }
     case 'sfxDown': {
       const vol = setSFXVolume(getSFXVolume() - 5);
-      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: SETTINGS_FONT_SIZE, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.3 });
+      if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: sfxVolEl?.fontSize || SETTINGS_FONT_SIZE, color: sfxVolColor || '#ffffff', glow: true, glowColor: titleColor || '#00ffff', scale: sfxVolEl?.scale || 0.3 });
       return false;
     }
     case 'back':
@@ -532,7 +554,7 @@ export function executeSettingsAction(action) {
         const info = getPlaylistInfo();
         const dn = info.name.length > 28 ? info.name.substring(0, 25) + '...' : info.name;
         updateSpriteText(trackNameSprite, dn, {
-          fontSize: 22, color: '#aaaaff', scale: 0.08, renderOrder: SETTINGS_RENDER_ORDER + 1,
+          fontSize: 22, color: trackNameColor, scale: 0.08, renderOrder: SETTINGS_RENDER_ORDER + 1,
         });
       }
       return false;
@@ -543,7 +565,7 @@ export function executeSettingsAction(action) {
         const info = getPlaylistInfo();
         const dn = info.name.length > 28 ? info.name.substring(0, 25) + '...' : info.name;
         updateSpriteText(trackNameSprite, dn, {
-          fontSize: 22, color: '#aaaaff', scale: 0.08, renderOrder: SETTINGS_RENDER_ORDER + 1,
+          fontSize: 22, color: trackNameColor, scale: 0.08, renderOrder: SETTINGS_RENDER_ORDER + 1,
         });
       }
       return false;
