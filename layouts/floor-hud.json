@@ -2,68 +2,173 @@
   "screen": "floor-hud",
   "elements": {
     "hearts": {
-      "x": -1.40625,
+      "x": -1.316,
       "y": 0.56,
       "z": 0.01,
-      "scale": 1.0,
-      "align": "left"
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "hearts",
+      "visible": true,
+      "anchor": "center",
+      "scale": 1
     },
     "score_title": {
       "x": 0,
       "y": 0.58,
       "z": 0.01,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
       "scale": 0.45,
-      "align": "left"
+      "text": "SCORE",
+      "fontSize": 72,
+      "glow": true
     },
     "score_num": {
       "x": 0,
       "y": 0.32,
       "z": 0.01,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
       "scale": 0.45,
-      "align": "left"
+      "text": "100000",
+      "fontSize": 72,
+      "glow": false
     },
     "level": {
-      "x": 1.02,
+      "x": 0.933,
       "y": 0.58,
       "z": 0.01,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
       "scale": 0.45,
-      "align": "left"
+      "text": "LEVEL 20",
+      "fontSize": 72,
+      "glow": true
     },
     "kills": {
-      "x": 1.02,
+      "x": 0.933,
       "y": 0.3,
       "z": 0.01,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
       "scale": 0.45,
-      "align": "left"
+      "text": "123/123",
+      "fontSize": 72,
+      "glow": false
     },
     "nuke_icon": {
-      "x": 1.82,
+      "x": 1.723,
       "y": 0.5,
       "z": 0.01,
-      "scale": 0.9,
-      "align": "left"
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
+      "scale": 0.7,
+      "text": "☢",
+      "fontSize": 144,
+      "glow": true
     },
     "nuke_count": {
-      "x": 2.12,
+      "x": 2.023,
       "y": 0.5,
       "z": 0.01,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
       "scale": 0.35,
-      "align": "left"
+      "text": "X3",
+      "fontSize": 72,
+      "glow": true
     },
     "combo_text": {
-      "x": -2.26,
+      "x": -2.214,
       "y": 0.1,
       "z": 0.01,
+      "align": "left",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
       "scale": 0.25,
-      "align": "left"
+      "text": "4.5X ACCURACY BONUS",
+      "fontSize": 40,
+      "glow": false
     },
     "combo_bar": {
-      "x": -2.202,
+      "x": -2.135,
       "y": 0.21,
       "z": 0.01,
+      "align": "left",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "rect",
+      "visible": true,
+      "anchor": "center",
       "w": 1.65,
-      "h": 0.05,
-      "align": "left"
+      "h": 0.05
     }
+  },
+  "exportedAt": "2026-04-16T04:05:29.759Z",
+  "hudGroupPosition": {
+    "x": 0,
+    "y": 0,
+    "z": -3
+  },
+  "hudGroupRotation": {
+    "x": -70,
+    "y": 0,
+    "z": 0
+  },
+  "groups": {
+    "HUD: Hearts & Accuracy": [
+      "hearts",
+      "combo_text",
+      "combo_bar"
+    ],
+    "Score": [
+      "score_title",
+      "score_num"
+    ],
+    "Level & Kill Count": [
+      "level",
+      "kills"
+    ],
+    "Nukes": [
+      "nuke_icon",
+      "nuke_count"
+    ]
   }
 }

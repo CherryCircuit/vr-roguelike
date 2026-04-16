@@ -504,6 +504,68 @@ export function playExplosionSound() {
   }
 }
 
+// ── Nuke explosion ──────────────────────────────────────────
+export function playNukeExplosionSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const duration = 2.0;
+
+  // Low rumble oscillator: starts ~80Hz, glides down to ~20Hz with distortion
+  const osc = ctx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(80, t);
+  osc.frequency.exponentialRampToValueAtTime(20, t + duration);
+
+  // Distortion via waveshaper
+  const waveshaper = ctx.createWaveShaper();
+  const curve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const x = (i / 128) - 1;
+    curve[i] = (Math.PI + 20) * x / (Math.PI + 20 * Math.abs(x));
+  }
+  waveshaper.curve = curve;
+
+  // Low-pass filter for rumble character
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(400, t);
+  filter.frequency.exponentialRampToValueAtTime(60, t + duration);
+  filter.Q.setValueAtTime(2, t);
+
+  // Envelope: sharp attack, long rumble decay
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.001, t);
+  gain.gain.exponentialRampToValueAtTime(0.35, t + 0.05); // quick punch
+  gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
+
+  // Noise layer for texture
+  const noise = ctx.createBufferSource();
+  noise.buffer = getExplosionBuffer();
+  noise.playbackRate.value = 0.25;
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.3, t);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 1.5);
+  const noiseFilter = ctx.createBiquadFilter();
+  noiseFilter.type = 'lowpass';
+  noiseFilter.frequency.setValueAtTime(600, t);
+  noiseFilter.frequency.exponentialRampToValueAtTime(30, t + 1.5);
+
+  // Connect: osc -> distortion -> filter -> gain -> out
+  osc.connect(waveshaper);
+  waveshaper.connect(filter);
+  filter.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + duration);
+
+  // Noise: noise -> noiseFilter -> noiseGain -> out
+  noise.connect(noiseFilter);
+  noiseFilter.connect(noiseGain);
+  noiseGain.connect(getSfxOutput());
+  noise.start(t);
+  noise.stop(t + 1.5);
+}
+
 // ── Player damage ──────────────────────────────────────────
 export function playDamageSound() {
   // Minecraft-style "OUCH" - sharp static crack with extended decay

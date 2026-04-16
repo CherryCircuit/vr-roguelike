@@ -641,6 +641,7 @@ export async function initHUD(camera, scene) {
     loadLayout('upgrade-cards'),
     loadLayout('ready-screen'),
     loadLayout('scoreboard'),
+    loadLayout('settings'),
   ]);
 
   // ── Title Screen (world-space, fixed position) ──
@@ -974,11 +975,21 @@ async function createTitleScreen() {
     if (layout.elements.btnGroup) {
       const _le = layout.elements.btnGroup;
       btnGroup.position.set(_le.x, _le.y, _le.z);
+      if (_le.w != null) btnGroup.children[0].geometry = new THREE.PlaneGeometry(_le.w, _le.h || 0.3);
     }
     if (layout.elements.settingsBtnGroup) {
       const _le = layout.elements.settingsBtnGroup;
       settingsBtnGroup.position.set(_le.x, _le.y, _le.z);
       if (_le.scale != null) settingsBtnText.scale.setScalar(_le.scale);
+    }
+    if (layout.elements.btn_text) {
+      const _le = layout.elements.btn_text;
+      btnText.position.set(_le.x, _le.y, _le.z);
+      if (_le.scale != null) btnText.scale.setScalar(_le.scale);
+    }
+    if (layout.elements.settings_btn_text) {
+      const _le = layout.elements.settings_btn_text;
+      settingsBtnText.position.set(_le.x, _le.y, _le.z);
     }
   }
 }
@@ -2066,18 +2077,25 @@ export function showGameOver(score, playerPos, killedBy) {
   // Apply layout overrides (sync since preloaded)
   const layout = layoutCache['game-over'];
   if (layout?.elements) {
-    if (layout.elements.titleSprite) {
-      const _le = layout.elements.titleSprite;
-      s1.position.set(_le.x, _le.y, _le.z);
-    }
-    if (layout.elements.scoreSprite) {
-      const _le = layout.elements.scoreSprite;
-      s2.position.set(_le.x, _le.y, _le.z);
-    }
-    if (layout.elements.restartSprite) {
-      const _le = layout.elements.restartSprite;
-      s3.position.set(_le.x, _le.y, _le.z);
-    }
+    const _applyEl = (name, sprite) => {
+      const _le = layout.elements[name];
+      if (!_le || !sprite) return;
+      sprite.position.set(_le.x, _le.y, _le.z);
+      if (_le.scale != null && sprite.isMesh) sprite.scale.setScalar(_le.scale);
+      if (_le.rx != null) sprite.rotation.x = _le.rx * Math.PI / 180;
+      if (_le.ry != null) sprite.rotation.y = _le.ry * Math.PI / 180;
+      if (_le.rz != null) sprite.rotation.z = _le.rz * Math.PI / 180;
+      if (_le.visible != null) sprite.visible = _le.visible;
+    };
+    _applyEl('titleSprite', s1);
+    _applyEl('scoreSprite', s2);
+    _applyEl('restartSprite', s3);
+    // Kill info elements
+    _applyEl('killLabel', gameOverGroup.getObjectByName('killLabel'));
+    _applyEl('killIcon', gameOverGroup.getObjectByName('killIcon'));
+    _applyEl('killName', gameOverGroup.getObjectByName('killName'));
+    _applyEl('killSubLabel', gameOverGroup.getObjectByName('killSubLabel'));
+    _applyEl('deathStatsLabel', gameOverGroup.getObjectByName('deathStatsLabel'));
   }
 }
 
@@ -2114,18 +2132,16 @@ export function showVictory(score, playerPos) {
   // Apply layout overrides (sync since preloaded)
   const layout = layoutCache['game-over'];
   if (layout?.elements) {
-    if (layout.elements.titleSprite) {
-      const _le = layout.elements.titleSprite;
-      s1.position.set(_le.x, _le.y, _le.z);
-    }
-    if (layout.elements.scoreSprite) {
-      const _le = layout.elements.scoreSprite;
-      s2.position.set(_le.x, _le.y, _le.z);
-    }
-    if (layout.elements.restartSprite) {
-      const _le = layout.elements.restartSprite;
-      s3.position.set(_le.x, _le.y, _le.z);
-    }
+    const _applyEl = (name, sprite) => {
+      const _le = layout.elements[name];
+      if (!_le || !sprite) return;
+      sprite.position.set(_le.x, _le.y, _le.z);
+      if (_le.scale != null && sprite.isMesh) sprite.scale.setScalar(_le.scale);
+      if (_le.visible != null) sprite.visible = _le.visible;
+    };
+    _applyEl('titleSprite', s1);
+    _applyEl('scoreSprite', s2);
+    _applyEl('restartSprite', s3);
   }
 }
 
