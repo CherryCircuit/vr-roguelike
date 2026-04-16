@@ -699,7 +699,17 @@
             map: tex, transparent: true, side: THREE.DoubleSide,
             depthTest: false, depthWrite: false, opacity: 0.9
         });
-        const w = (tw / th) * scale, h = scale;
+        // When maxWidth is set, scale relative to width so text doesn't squish
+        // when more lines are added. Without maxWidth, use height-based scale (original).
+        let w, h;
+        if (maxWidth) {
+            const unitPerPixel = scale / maxWidth;
+            w = tw * unitPerPixel;
+            h = th * unitPerPixel;
+        } else {
+            w = (tw / th) * scale;
+            h = scale;
+        }
         return { geo: new THREE.PlaneGeometry(w, h), mat, w, h };
     }
 
