@@ -27,6 +27,8 @@ let musicVolColor = '#ffffff';
 let sfxVolColor = '#ffffff';
 let titleColor = '#00ffff';
 let trackNameColor = '#aaaaff';
+let trackNameFontSize = 100;
+let trackNameScale = 0.22;
 
 // Render order: 995 sits above game objects (max ~950) but below HUD (999)
 // and below blaster displays (999). This prevents the settings panel from
@@ -60,6 +62,7 @@ function le(layout, key, defaults) {
     color: el.color != null ? el.color : defaults.color,
     fontSize: el.fontSize ?? defaults.fontSize,
     visible: el.visible ?? defaults.visible,
+    glow: el.glow ?? defaults.glow,
   };
 }
 
@@ -95,9 +98,9 @@ function startTrackDisplayUpdate() {
       const info = getPlaylistInfo();
       const displayName = info.name.length > 28 ? info.name.substring(0, 25) + '...' : info.name;
       updateSpriteText(trackNameSprite, displayName, {
-        fontSize: 22,
+        fontSize: trackNameFontSize,
         color: trackNameColor,
-        scale: 0.08,
+        scale: trackNameScale,
         renderOrder: SETTINGS_RENDER_ORDER + 1,
       });
     }
@@ -311,6 +314,8 @@ async function buildSettingsPanel() {
   // Track name display
   const trackNameEl = le(layout, 'track_name', { x: 0, y: 0, z: 0.08, scale: 0.3, fontSize: 36, color: 0xaaaaff });
   trackNameColor = '#' + (trackNameEl.color).toString(16).padStart(6, '0');
+  trackNameFontSize = trackNameEl.fontSize || 100;
+  trackNameScale = trackNameEl.scale || 0.22;
   const trackInfo = getPlaylistInfo();
   const displayName = trackInfo.name.length > 28 ? trackInfo.name.substring(0, 25) + '...' : trackInfo.name;
   trackNameSprite = makeSprite(displayName, {
@@ -441,6 +446,8 @@ export function hideSettings() {
   sfxVolColor = '#ffffff';
   titleColor = '#00ffff';
   trackNameColor = '#aaaaff';
+  trackNameFontSize = 100;
+  trackNameScale = 0.22;
 
   // Restore pause menu if we came from it
   if (previousMenu === 'pause' && pauseMenuGroup) {
@@ -555,7 +562,7 @@ export function executeSettingsAction(action) {
         const info = getPlaylistInfo();
         const dn = info.name.length > 28 ? info.name.substring(0, 25) + '...' : info.name;
         updateSpriteText(trackNameSprite, dn, {
-          fontSize: 22, color: trackNameColor, scale: 0.08, renderOrder: SETTINGS_RENDER_ORDER + 1,
+          fontSize: trackNameFontSize, color: trackNameColor, scale: trackNameScale, renderOrder: SETTINGS_RENDER_ORDER + 1,
         });
       }
       return false;
@@ -566,7 +573,7 @@ export function executeSettingsAction(action) {
         const info = getPlaylistInfo();
         const dn = info.name.length > 28 ? info.name.substring(0, 25) + '...' : info.name;
         updateSpriteText(trackNameSprite, dn, {
-          fontSize: 22, color: trackNameColor, scale: 0.08, renderOrder: SETTINGS_RENDER_ORDER + 1,
+          fontSize: trackNameFontSize, color: trackNameColor, scale: trackNameScale, renderOrder: SETTINGS_RENDER_ORDER + 1,
         });
       }
       return false;
