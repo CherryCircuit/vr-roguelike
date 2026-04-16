@@ -106,7 +106,7 @@
             <button class="danger" onclick="deleteSelected()" title="Delete selected element">✕ Del</button>
         </div>
         <div class="note" id="note-text"></div>
-        <div class="pr" style="margin-bottom:8px"><input type="checkbox" id="showBounds" checked onchange="toggleBounds()" style="width:auto"><label style="width:auto;color:#aaa;font-size:11px;margin-left:4px">Show bounding boxes</label></div>
+        <div class="pr" style="margin-bottom:8px;justify-content:flex-start;align-items:center;gap:6px"><input type="checkbox" id="showBounds" checked onchange="toggleBounds()" style="width:auto;flex:0 0 auto"><label style="width:auto;color:#aaa;font-size:11px;margin-left:0;text-align:left;flex:0 0 auto">Show bounding boxes</label></div>
         <div id="sel-info">
             <h3>SELECTED</h3>
             <div id="sel-name">Click an element</div>
@@ -126,8 +126,8 @@
             <div id="color-section">
                 <div class="sec">Color</div>
                 <div class="pr"><label>Color</label>
-                    <input type="color" id="inp-color" onchange="onColorInput()">
-                    <input type="text" id="inp-color-hex" placeholder="#ffffff" onchange="onColorHexInput()" style="width:80px;font-size:11px">
+                    <input type="color" id="inp-color" oninput="onColorInput(false)" onchange="onColorInput(true)">
+                    <input type="text" id="inp-color-hex" placeholder="#ffffff" oninput="onColorHexInput(false)" onchange="onColorHexInput(true)" style="width:80px;font-size:11px">
                 </div>
                 <div class="pr"><label></label><small style="color:#888">Works for text, rectangles, and some preview meshes.</small></div>
             </div>
@@ -408,7 +408,7 @@
             gridRotation: Math.PI / 2,
             hasGroups: true,
             hasAnchors: false,
-            hasVisibility: false,
+            hasVisibility: true,
             label: 'Pause Menu',
             exportName: 'pause-menu-layout.json',
             exportEditor: 'pause-menu',
@@ -421,7 +421,7 @@
             gridRotation: Math.PI / 2,
             hasGroups: true,
             hasAnchors: false,
-            hasVisibility: false,
+            hasVisibility: true,
             label: 'Title Screen',
             exportName: 'title-screen-layout.json',
             exportEditor: 'title-screen',
@@ -434,7 +434,7 @@
             gridRotation: Math.PI / 2,
             hasGroups: true,
             hasAnchors: false,
-            hasVisibility: false,
+            hasVisibility: true,
             label: 'Game Over',
             exportName: 'game-over-layout.json',
             exportEditor: 'game-over',
@@ -447,7 +447,7 @@
             gridRotation: Math.PI / 2,
             hasGroups: true,
             hasAnchors: false,
-            hasVisibility: false,
+            hasVisibility: true,
             label: 'Upgrade Cards',
             exportName: 'upgrade-cards-layout.json',
             exportEditor: 'upgrade-cards',
@@ -460,7 +460,7 @@
             gridRotation: Math.PI / 2,
             hasGroups: true,
             hasAnchors: false,
-            hasVisibility: false,
+            hasVisibility: true,
             label: 'Ready Screen',
             exportName: 'ready-screen-layout.json',
             exportEditor: 'ready-screen',
@@ -473,7 +473,7 @@
             gridRotation: Math.PI / 2,
             hasGroups: true,
             hasAnchors: false,
-            hasVisibility: false,
+            hasVisibility: true,
             label: 'Settings',
             exportName: 'settings.json',
             exportEditor: 'settings',
@@ -486,7 +486,7 @@
             gridRotation: Math.PI / 2,
             hasGroups: true,
             hasAnchors: false,
-            hasVisibility: false,
+            hasVisibility: true,
             label: 'Scoreboard',
             exportName: 'scoreboard-layout.json',
             exportEditor: 'scoreboard',
@@ -499,7 +499,7 @@
             gridRotation: Math.PI / 2,
             hasGroups: false,
             hasAnchors: false,
-            hasVisibility: false,
+            hasVisibility: true,
             label: 'Upgrade Wrist (Left)',
             exportName: 'upgrade-wrist-left.json',
             exportEditor: 'upgrade-wrist-left',
@@ -512,7 +512,7 @@
             gridRotation: Math.PI / 2,
             hasGroups: false,
             hasAnchors: false,
-            hasVisibility: false,
+            hasVisibility: true,
             label: 'Upgrade Wrist (Right)',
             exportName: 'upgrade-wrist-right.json',
             exportEditor: 'upgrade-wrist-right',
@@ -769,7 +769,7 @@
             getContainer().add(group);
             els[def.id] = group;
             INIT[def.id] = {
-                x: def.x, y: def.y, z: def.z, scale: vs,
+                x: def.x, y: def.y, z: def.z, scale: vs, voxelSize: vs, color: def.color,
                 rx: def.rx || 0, ry: def.ry || 0, rz: def.rz || 0,
                 align: 'center', type: def.type, visible: true, anchor: 'center'
             };
@@ -817,6 +817,7 @@
         INIT[def.id] = {
             x: def.x, y: def.y, z: def.z, text: def.text, scale: def.scale,
             w: def.w, h: def.h, rx: def.rx || 0, ry: def.ry || 0, rz: def.rz || 0,
+            color: def.color, forceArial: !!def.forceArial,
             align: initialAlign, type: def.type, visible: true, anchor: 'center'
         };
     }
@@ -1503,30 +1504,38 @@
         autoSave();
     };
 
-    window.onColorInput = function() {
+    let liveColorUndoPid = null;
+
+    window.onColorInput = function(commit = false) {
         const pid = primarySelectedId();
         if (!pid) return;
         const hex = document.getElementById('inp-color').value;
+        document.getElementById('inp-color-hex').value = hex;
         const colorInt = parseInt(hex.slice(1), 16);
-        applyColorChange(pid, colorInt, hex);
+        applyColorChange(pid, colorInt, hex, { pushHistory: liveColorUndoPid !== pid });
+        if (liveColorUndoPid !== pid) liveColorUndoPid = pid;
+        if (commit) liveColorUndoPid = null;
     };
 
-    window.onColorHexInput = function() {
+    window.onColorHexInput = function(commit = false) {
         const pid = primarySelectedId();
         if (!pid) return;
         let hex = document.getElementById('inp-color-hex').value.trim();
         if (!hex.startsWith('#')) hex = '#' + hex;
         if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
+            document.getElementById('inp-color').value = hex;
             const colorInt = parseInt(hex.slice(1), 16);
-            applyColorChange(pid, colorInt, hex);
+            applyColorChange(pid, colorInt, hex, { pushHistory: liveColorUndoPid !== pid });
+            if (liveColorUndoPid !== pid) liveColorUndoPid = pid;
+            if (commit) liveColorUndoPid = null;
         }
     };
 
-    function applyColorChange(pid, colorInt, hexStr) {
+    function applyColorChange(pid, colorInt, hexStr, { pushHistory = true } = {}) {
         const mesh = els[pid];
         const def = mesh?.userData?.def;
         if (!mesh || !def) return;
-        pushUndo();
+        if (pushHistory) pushUndo();
         def.color = colorInt;
         mesh.userData.origColor = colorInt;
         if (selectedIds.includes(pid)) {
@@ -1547,6 +1556,8 @@
             // For rect types, just update material color
             if (mesh.material?.color) mesh.material.color.setHex(colorInt);
         }
+        document.getElementById('inp-color').value = hexStr;
+        document.getElementById('inp-color-hex').value = hexStr;
         updateList();
         autoSave();
     }
@@ -1825,7 +1836,9 @@
             const m = els[id], d = m.userData.def;
             s[id] = {
                 x: m.position.x, y: m.position.y, z: m.position.z,
-                align: m.userData.align, text: d.text, scale: d.scale, w: d.w, h: d.h
+                rx: m.rotation.x, ry: m.rotation.y, rz: m.rotation.z,
+                align: m.userData.align, text: d.text, scale: d.scale, w: d.w, h: d.h,
+                color: d.color, forceArial: !!d.forceArial, voxelSize: d.voxelSize
             };
         });
         return {
@@ -1858,10 +1871,14 @@
             if (!els[id]) return;
             const m = els[id], d = m.userData.def, v = sn.elements[id];
             m.position.set(v.x, v.y, v.z);
+            m.rotation.set(v.rx || 0, v.ry || 0, v.rz || 0);
             m.userData.align = v.align;
-            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; }
+            if (v.color != null) { d.color = v.color; m.userData.origColor = v.color; }
+            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; d.forceArial = !!v.forceArial; }
             else if (d.type === 'hearts') { d.scale = v.scale || 1.0; }
             else if (d.type === 'wire-octa' || d.type === 'cube' || d.type === 'sphere') { d.scale = v.scale || d.scale || 0.1; }
+            else if (d.type === 'grunt') { d.voxelSize = v.voxelSize || v.scale || d.voxelSize || 0.29; }
+            else if (d.type === 'image') { d.scale = v.scale || d.scale || 1.0; }
             else { d.w = v.w; d.h = v.h; }
             rebuildMesh(id);
         });
@@ -1895,9 +1912,12 @@
             m.position.set(v.x, v.y, v.z);
             m.rotation.set(v.rx || 0, v.ry || 0, v.rz || 0);
             m.userData.align = v.align;
-            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; }
+            if (v.color != null) { d.color = v.color; m.userData.origColor = v.color; }
+            if (d.type === 'text') { d.text = v.text; d.scale = v.scale; d.forceArial = !!v.forceArial; }
             else if (d.type === 'hearts') { d.scale = v.scale || 1.0; }
             else if (d.type === 'wire-octa' || d.type === 'cube' || d.type === 'sphere') { d.scale = v.scale || d.scale || 0.1; }
+            else if (d.type === 'grunt') { d.voxelSize = v.voxelSize || v.scale || d.voxelSize || 0.29; }
+            else if (d.type === 'image') { d.scale = v.scale || d.scale || 1.0; }
             else { d.w = v.w; d.h = v.h; }
             rebuildMesh(id);
         });
@@ -1941,6 +1961,7 @@
             if (v.visible === false) { elVisible[id] = false; m.visible = false; }
             else { elVisible[id] = true; m.visible = true; }
             if (v.anchor) elAnchor[id] = v.anchor;
+            if (v.color != null) { dd.color = v.color; m.userData.origColor = v.color; }
             if (dd.type === 'text' && v.text !== undefined) {
                 dd.text = v.text; dd.scale = v.scale;
                 if (v.forceArial !== undefined) dd.forceArial = v.forceArial;
@@ -2031,7 +2052,7 @@
                 z: +m.position.z.toFixed(3), align: m.userData.align || 'center',
                 rx: +m.rotation.x.toFixed(4), ry: +m.rotation.y.toFixed(4), rz: +m.rotation.z.toFixed(4),
                 type: d.type, visible: elVisible[id] !== false,
-                anchor: elAnchor[id] || 'center',
+                anchor: elAnchor[id] || 'center', color: d.color,
             };
             if (d.type === 'text') {
                 data.elements[id].scale = +(d.scale.toFixed(4));
