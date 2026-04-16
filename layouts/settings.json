@@ -43,9 +43,9 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "scale": 0.4,
+      "scale": 0.35,
       "text": "SETTINGS",
-      "fontSize": 42,
+      "fontSize": 150,
       "glow": true
     },
     "music_label": {
@@ -60,9 +60,9 @@
       "visible": true,
       "anchor": "center",
       "color": 11184895,
-      "scale": 0.4,
+      "scale": 0.3,
       "text": "MUSIC",
-      "fontSize": 28,
+      "fontSize": 60,
       "glow": false
     },
     "sfx_label": {
@@ -77,9 +77,9 @@
       "visible": true,
       "anchor": "center",
       "color": 11184895,
-      "scale": 0.4,
+      "scale": 0.3,
       "text": "SFX",
-      "fontSize": 28,
+      "fontSize": 60,
       "glow": false
     },
     "music_up": {
@@ -109,9 +109,9 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "scale": 0.45,
+      "scale": 0.35,
       "text": "▲",
-      "fontSize": 56,
+      "fontSize": 100,
       "glow": false
     },
     "music_vol": {
@@ -126,9 +126,9 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 0.32,
+      "scale": 0.25,
       "text": "75%",
-      "fontSize": 38,
+      "fontSize": 100,
       "glow": true
     },
     "music_down": {
@@ -158,9 +158,9 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "scale": 0.45,
+      "scale": 0.35,
       "text": "▼",
-      "fontSize": 56,
+      "fontSize": 100,
       "glow": false
     },
     "sfx_up": {
@@ -190,9 +190,9 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "scale": 0.45,
+      "scale": 0.35,
       "text": "▲",
-      "fontSize": 56,
+      "fontSize": 100,
       "glow": false
     },
     "sfx_vol": {
@@ -207,9 +207,9 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 0.32,
+      "scale": 0.25,
       "text": "80%",
-      "fontSize": 38,
+      "fontSize": 100,
       "glow": true
     },
     "sfx_down": {
@@ -239,9 +239,9 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "scale": 0.45,
+      "scale": 0.35,
       "text": "▼",
-      "fontSize": 56,
+      "fontSize": 100,
       "glow": false
     },
     "divider": {
@@ -261,7 +261,7 @@
     },
     "track_label": {
       "x": 0,
-      "y": 0.12,
+      "y": 0.28,
       "z": 0.06,
       "align": "center",
       "rx": 0,
@@ -271,14 +271,14 @@
       "visible": true,
       "anchor": "center",
       "color": 6710937,
-      "scale": 0.3,
+      "scale": 0.16,
       "text": "NOW PLAYING",
-      "fontSize": 22,
+      "fontSize": 100,
       "glow": false
     },
     "track_name": {
       "x": 0,
-      "y": 0,
+      "y": 0.14,
       "z": 0.08,
       "align": "center",
       "rx": 0,
@@ -288,14 +288,14 @@
       "visible": true,
       "anchor": "center",
       "color": 11184895,
-      "scale": 0.3,
+      "scale": 0.22,
       "text": "Battle Theme",
-      "fontSize": 36,
+      "fontSize": 100,
       "glow": false
     },
     "prev_btn": {
       "x": -0.3,
-      "y": -0.26,
+      "y": -0.11,
       "z": 0.06,
       "align": "center",
       "rx": 0,
@@ -304,13 +304,13 @@
       "type": "rect",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
+      "color": 11184895,
       "w": 0.4,
       "h": 0.25
     },
     "prev_text": {
       "x": -0.3,
-      "y": -0.26,
+      "y": -0.12,
       "z": 0.08,
       "align": "center",
       "rx": 0,
@@ -319,15 +319,15 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
-      "scale": 0.3,
+      "color": 15461375,
+      "scale": 0.18,
       "text": "◀ PREV",
-      "fontSize": 36,
+      "fontSize": 100,
       "glow": false
     },
     "next_btn": {
       "x": 0.3,
-      "y": -0.26,
+      "y": -0.11,
       "z": 0.06,
       "align": "center",
       "rx": 0,
@@ -336,13 +336,13 @@
       "type": "rect",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
+      "color": 11184895,
       "w": 0.4,
       "h": 0.25
     },
     "next_text": {
       "x": 0.3,
-      "y": -0.26,
+      "y": -0.12,
       "z": 0.08,
       "align": "center",
       "rx": 0,
@@ -351,10 +351,10 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
-      "scale": 0.3,
+      "color": 15461375,
+      "scale": 0.18,
       "text": "NEXT ▶",
-      "fontSize": 36,
+      "fontSize": 100,
       "glow": false
     },
     "back_btn": {
@@ -369,7 +369,7 @@
       "visible": true,
       "anchor": "center",
       "color": 10057472,
-      "w": 1.2,
+      "w": 1.02,
       "h": 0.3
     },
     "back_text": {
@@ -384,14 +384,14 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 0.4,
+      "scale": 0.3,
       "text": "BACK",
-      "fontSize": 38,
+      "fontSize": 130,
       "glow": false
     },
     "dup_1_track_label": {
       "x": 0,
-      "y": 0.21,
+      "y": 0.4,
       "z": 0.06,
       "align": "center",
       "rx": 0,
@@ -401,9 +401,9 @@
       "visible": true,
       "anchor": "center",
       "color": 6710937,
-      "scale": 0.4,
+      "scale": 0.24,
       "text": "♬",
-      "fontSize": 22,
+      "fontSize": 100,
       "glow": false
     },
     "custom_rect_2": {
@@ -467,7 +467,7 @@
       "h": 2.1
     }
   },
-  "exportedAt": "2026-04-16T06:27:51.645Z",
+  "exportedAt": "2026-04-16T17:13:33.661Z",
   "groups": {
     "Music": [
       "music_up",
@@ -483,19 +483,14 @@
       "sfx_down",
       "sfx_down_text"
     ],
-    "PREV button": [
+    "Group 1": [
+      "track_label",
+      "track_name",
       "prev_btn",
-      "prev_text"
-    ],
-    "Next Button": [
+      "prev_text",
       "next_btn",
-      "next_text"
-    ],
-    "Borders": [
-      "custom_rect_2",
-      "dup_3_custom_rect_2",
-      "dup_4_custom_rect_2",
-      "dup_5_dup_4_custom_rect_2"
+      "next_text",
+      "dup_1_track_label"
     ]
   },
   "_customDefs": [
@@ -505,10 +500,10 @@
       "type": "text",
       "text": "♬",
       "color": 6710937,
-      "fontSize": 22,
-      "scale": 0.4,
+      "fontSize": 100,
+      "scale": 0.24,
       "x": 0,
-      "y": 0.21,
+      "y": 0.4,
       "z": 0.06,
       "forceArial": false
     },

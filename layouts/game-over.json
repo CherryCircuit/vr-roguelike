@@ -13,15 +13,15 @@
       "visible": true,
       "anchor": "center",
       "color": 16711748,
-      "scale": 1.24,
+      "scale": 1.1,
       "text": "GAME OVER",
-      "fontSize": 120,
+      "fontSize": 168,
       "glow": true
     },
     "scoreSprite": {
       "x": 0,
-      "y": 0.64,
-      "z": 0,
+      "y": 0.667,
+      "z": 0.03,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -30,9 +30,9 @@
       "visible": true,
       "anchor": "center",
       "color": 16776960,
-      "scale": 0.7,
+      "scale": 0.6,
       "text": "SCORE: 42000",
-      "fontSize": 60,
+      "fontSize": 110,
       "glow": true
     },
     "killLabel": {
@@ -47,9 +47,9 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 0.35,
+      "scale": 0.3,
       "text": "You were finished off by",
-      "fontSize": 36,
+      "fontSize": 60,
       "glow": false
     },
     "killIcon": {
@@ -58,7 +58,7 @@
       "z": 0,
       "align": "center",
       "rx": 0,
-      "ry": 534.9907,
+      "ry": 118.232,
       "rz": 0,
       "type": "grunt",
       "visible": true,
@@ -69,7 +69,7 @@
     "killName": {
       "x": 0,
       "y": -0.603,
-      "z": 0,
+      "z": 0.035,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -78,9 +78,9 @@
       "visible": true,
       "anchor": "center",
       "color": 374630,
-      "scale": 0.5,
+      "scale": 0.35,
       "text": "GRUNT",
-      "fontSize": 40,
+      "fontSize": 90,
       "glow": true
     },
     "killSubLabel": {
@@ -112,16 +112,16 @@
       "visible": true,
       "anchor": "center",
       "color": 11184810,
-      "scale": 0.24,
+      "scale": 0.26,
       "text": "Don't feel bad, 24 other players also succumbed to a GRUNT",
-      "fontSize": 28,
+      "fontSize": 32,
       "glow": false,
       "maxWidth": 1100
     },
     "restartSprite": {
       "x": 0,
       "y": -1.04,
-      "z": 0,
+      "z": 0.1,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -130,11 +130,11 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 0.5,
+      "scale": 0.45,
       "text": "PRESS TRIGGER",
-      "fontSize": 44,
+      "fontSize": 90,
       "glow": false
     }
   },
-  "exportedAt": "2026-04-16T05:55:51.260Z"
+  "exportedAt": "2026-04-16T17:01:29.902Z"
 }

@@ -12,6 +12,7 @@
       "type": "hearts",
       "visible": true,
       "anchor": "center",
+      "color": 13382451,
       "scale": 1
     },
     "score_title": {
@@ -25,6 +26,7 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
+      "color": 16776960,
       "scale": 0.45,
       "text": "SCORE",
       "fontSize": 72,
@@ -41,6 +43,7 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
+      "color": 16776960,
       "scale": 0.45,
       "text": "100000",
       "fontSize": 72,
@@ -57,6 +60,7 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
+      "color": 52428,
       "scale": 0.45,
       "text": "LEVEL 20",
       "fontSize": 72,
@@ -73,6 +77,7 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
+      "color": 16777215,
       "scale": 0.45,
       "text": "123/123",
       "fontSize": 72,
@@ -89,9 +94,10 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
+      "color": 16777028,
       "scale": 0.7,
       "text": "☢",
-      "fontSize": 144,
+      "fontSize": 170,
       "glow": true
     },
     "nuke_count": {
@@ -105,6 +111,7 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
+      "color": 16777028,
       "scale": 0.35,
       "text": "X3",
       "fontSize": 72,
@@ -121,6 +128,7 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
+      "color": 16746496,
       "scale": 0.25,
       "text": "4.5X ACCURACY BONUS",
       "fontSize": 40,
@@ -137,11 +145,12 @@
       "type": "rect",
       "visible": true,
       "anchor": "center",
+      "color": 16746496,
       "w": 1.65,
       "h": 0.05
     }
   },
-  "exportedAt": "2026-04-16T04:05:29.759Z",
+  "exportedAt": "2026-04-16T16:55:05.319Z",
   "hudGroupPosition": {
     "x": 0,
     "y": 0,

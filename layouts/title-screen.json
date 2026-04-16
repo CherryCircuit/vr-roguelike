@@ -3,8 +3,8 @@
   "elements": {
     "titleSprite": {
       "x": 0,
-      "y": 1.001,
-      "z": 0,
+      "y": 1.04,
+      "z": -0.2,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -13,12 +13,12 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 1.2
+      "scale": 1.5
     },
     "subSprite": {
       "x": 0,
       "y": 0.526,
-      "z": 0,
+      "z": 0.04,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -27,15 +27,15 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "scale": 0.52,
+      "scale": 0.34,
       "text": "VR ROGUELIKE BLASTER",
-      "fontSize": 24,
+      "fontSize": 110,
       "glow": true
     },
     "titleBlinkSprite": {
       "x": 0,
       "y": -0.124,
-      "z": 0,
+      "z": 0.06,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -44,9 +44,9 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 0.65,
+      "scale": 0.45,
       "text": "PRESS TRIGGER TO BEGIN",
-      "fontSize": 28,
+      "fontSize": 123,
       "glow": true
     },
     "btnGroup": {
@@ -66,8 +66,8 @@
     },
     "btn_text": {
       "x": -0.36,
-      "y": -0.69,
-      "z": 0.01,
+      "y": -0.696,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -76,9 +76,9 @@
       "visible": true,
       "anchor": "center",
       "color": 16776960,
-      "scale": 0.3,
+      "scale": 0.29,
       "text": "SCOREBOARD",
-      "fontSize": 48,
+      "fontSize": 130,
       "glow": true
     },
     "settingsBtnGroup": {
@@ -98,8 +98,8 @@
     },
     "settings_btn_text": {
       "x": 0.82,
-      "y": -0.69,
-      "z": 0.01,
+      "y": -0.687,
+      "z": 0.02,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -108,12 +108,12 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "scale": 0.5,
+      "scale": 0.39,
       "text": "⚙",
-      "fontSize": 48,
+      "fontSize": 180,
       "glow": true,
       "forceArial": true
     }
   },
-  "exportedAt": "2026-04-16T04:23:15.487Z"
+  "exportedAt": "2026-04-16T16:58:54.273Z"
 }
