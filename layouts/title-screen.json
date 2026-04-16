@@ -17,7 +17,7 @@
     },
     "subSprite": {
       "x": 0,
-      "y": 0.526,
+      "y": 0.471,
       "z": 0.04,
       "align": "center",
       "rx": 0,
@@ -29,7 +29,7 @@
       "color": 65535,
       "scale": 0.34,
       "text": "VR ROGUELIKE BLASTER",
-      "fontSize": 110,
+      "fontSize": 60,
       "glow": true
     },
     "titleBlinkSprite": {
@@ -44,9 +44,9 @@
       "visible": true,
       "anchor": "center",
       "color": 16777215,
-      "scale": 0.45,
+      "scale": 0.4,
       "text": "PRESS TRIGGER TO BEGIN",
-      "fontSize": 123,
+      "fontSize": 100,
       "glow": true
     },
     "btnGroup": {
@@ -66,7 +66,7 @@
     },
     "btn_text": {
       "x": -0.36,
-      "y": -0.696,
+      "y": -0.695,
       "z": 0.02,
       "align": "center",
       "rx": 0,
@@ -76,9 +76,9 @@
       "visible": true,
       "anchor": "center",
       "color": 16776960,
-      "scale": 0.29,
+      "scale": 0.25,
       "text": "SCOREBOARD",
-      "fontSize": 130,
+      "fontSize": 100,
       "glow": true
     },
     "settingsBtnGroup": {
@@ -98,7 +98,7 @@
     },
     "settings_btn_text": {
       "x": 0.82,
-      "y": -0.687,
+      "y": -0.68,
       "z": 0.02,
       "align": "center",
       "rx": 0,
@@ -108,12 +108,12 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "scale": 0.39,
+      "scale": 0.35,
       "text": "⚙",
-      "fontSize": 180,
+      "fontSize": 100,
       "glow": true,
       "forceArial": true
     }
   },
-  "exportedAt": "2026-04-16T16:58:54.273Z"
+  "exportedAt": "2026-04-16T17:56:54.603Z"
 }

@@ -3,7 +3,7 @@
   "elements": {
     "titleSprite": {
       "x": 0,
-      "y": 1.2,
+      "y": 1.42,
       "z": 0,
       "align": "center",
       "rx": 0,
@@ -13,14 +13,14 @@
       "visible": true,
       "anchor": "center",
       "color": 16711748,
-      "scale": 1.1,
+      "scale": 0.9,
       "text": "GAME OVER",
-      "fontSize": 168,
+      "fontSize": 160,
       "glow": true
     },
     "scoreSprite": {
       "x": 0,
-      "y": 0.667,
+      "y": 0.96,
       "z": 0.03,
       "align": "center",
       "rx": 0,
@@ -30,14 +30,14 @@
       "visible": true,
       "anchor": "center",
       "color": 16776960,
-      "scale": 0.6,
+      "scale": 0.58,
       "text": "SCORE: 42000",
-      "fontSize": 110,
+      "fontSize": 100,
       "glow": true
     },
     "killLabel": {
       "x": 0,
-      "y": 0.28,
+      "y": 0.66,
       "z": 0,
       "align": "center",
       "rx": 0,
@@ -54,21 +54,21 @@
     },
     "killIcon": {
       "x": 0,
-      "y": -0.12,
+      "y": 0.26,
       "z": 0,
       "align": "center",
       "rx": 0,
-      "ry": 118.232,
+      "ry": 264.488,
       "rz": 0,
       "type": "grunt",
       "visible": true,
       "anchor": "center",
       "color": 65416,
-      "scale": 0.18
+      "scale": 0.16
     },
     "killName": {
       "x": 0,
-      "y": -0.603,
+      "y": -0.223,
       "z": 0.035,
       "align": "center",
       "rx": 0,
@@ -102,7 +102,7 @@
     },
     "deathStatsLabel": {
       "x": 0,
-      "y": -0.801,
+      "y": -0.421,
       "z": 0,
       "align": "center",
       "rx": 0,
@@ -112,16 +112,15 @@
       "visible": true,
       "anchor": "center",
       "color": 11184810,
-      "scale": 0.26,
+      "scale": 0.17,
       "text": "Don't feel bad, 24 other players also succumbed to a GRUNT",
-      "fontSize": 32,
-      "glow": false,
-      "maxWidth": 1100
+      "fontSize": 100,
+      "glow": false
     },
     "restartSprite": {
       "x": 0,
-      "y": -1.04,
-      "z": 0.1,
+      "y": -0.74,
+      "z": 0.05,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -132,9 +131,9 @@
       "color": 16777215,
       "scale": 0.45,
       "text": "PRESS TRIGGER",
-      "fontSize": 90,
+      "fontSize": 100,
       "glow": false
     }
   },
-  "exportedAt": "2026-04-16T17:01:29.902Z"
+  "exportedAt": "2026-04-16T18:55:08.833Z"
 }
