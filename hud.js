@@ -919,13 +919,19 @@ async function createTitleScreen() {
   btnMesh.userData.borderColor = 0xffff00;
   btnGroup.add(btnMesh);
   btnGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(btnGeo), new THREE.LineBasicMaterial({ color: 0xffff00 })));
-  const btnTextDef = le('btn_text', { x: 0, y: 0, z: 0.01, fontSize: 48, scale: 0.16, glow: true, color: 0xffff00 });
+  const btnTextDef = le('btn_text', { fontSize: 48, scale: 0.16, glow: true, color: 0xffff00 });
   const btnText = makeSprite('SCOREBOARD', {
     fontSize: btnTextDef.fontSize, color: '#' + btnTextDef.color.toString(16).padStart(6, '0'),
     glow: btnTextDef.glow, glowColor: '#' + btnTextDef.color.toString(16).padStart(6, '0'),
     scale: btnTextDef.scale,
   });
-  btnText.position.set(btnTextDef.x, btnTextDef.y, btnTextDef.z);
+  // Text is child of btnGroup, so use local offset from layout
+  // (layout has world coords, subtract parent group position)
+  btnText.position.set(
+    (btnTextDef.x || 0) - btnGroupDef.x,
+    (btnTextDef.y || 0) - btnGroupDef.y,
+    btnTextDef.z || 0.01
+  );
   btnGroup.add(btnText);
   titleGroup.add(btnGroup);
   titleScoreboardBtn = btnMesh;
@@ -945,13 +951,18 @@ async function createTitleScreen() {
     new THREE.EdgesGeometry(settingsBtnGeo),
     new THREE.LineBasicMaterial({ color: 0x00ffff })
   ));
-  const settingsTextDef = le('settings_btn_text', { x: 0, y: 0, z: 0.01, fontSize: 48, scale: 0.5, glow: true, color: 0x00ffff });
+  const settingsTextDef = le('settings_btn_text', { fontSize: 48, scale: 0.5, glow: true, color: 0x00ffff });
   const settingsBtnText = makeSprite('\u2699', {
     fontSize: settingsTextDef.fontSize, color: '#' + settingsTextDef.color.toString(16).padStart(6, '0'),
     glow: settingsTextDef.glow, glowColor: '#' + settingsTextDef.color.toString(16).padStart(6, '0'),
     scale: settingsTextDef.scale,
   });
-  settingsBtnText.position.set(settingsTextDef.x, settingsTextDef.y, settingsTextDef.z);
+  // Text is child of settingsBtnGroup, so use local offset
+  settingsBtnText.position.set(
+    (settingsTextDef.x || 0) - settingsBtnDef.x,
+    (settingsTextDef.y || 0) - settingsBtnDef.y,
+    settingsTextDef.z || 0.01
+  );
   settingsBtnGroup.add(settingsBtnText);
   titleGroup.add(settingsBtnGroup);
   titleSettingsBtn = settingsBtnMesh;
