@@ -2133,6 +2133,7 @@
             }
             // Export opacity for rects
             if (d.opacity != null && d.opacity !== 1.0) data.elements[id].opacity = d.opacity;
+        });
         // Export groups
         const nonEmptyGroups = {};
         for (const [name, members] of Object.entries(groups)) {
