@@ -1804,6 +1804,7 @@ function createSkipCard(position, style) {
     glow: s.name?.glow !== false,
     glowColor: '#' + (s.name?.color || 0x00ff88).toString(16).padStart(6, '0'),
     scale: s.name?.scale || 1,
+    maxWidth: s.name?.maxWidth || 600,
     depthTest: true,
   }, new THREE.Vector3(0, s.name?.y || 0.48, s.name?.z || 0.01));
 
