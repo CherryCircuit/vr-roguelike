@@ -1267,9 +1267,20 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.position.y += 0.9 + SCENE_Y_OFFSET; // Moved down for better centering
   upgradeGroup.position.z -= 4; // 4 feet in front of player
 
+  // Load layout for fontSize/scale/position values
+  const ucLayout = layoutCache['upgrade-cards']?.elements;
+  const _uc = (key, defaults) => {
+    const el = ucLayout?.[key];
+    if (!el) return defaults;
+    return { x: el.x ?? defaults.x, y: el.y ?? defaults.y, z: el.z ?? defaults.z,
+      scale: el.scale ?? defaults.scale, fontSize: el.fontSize ?? defaults.fontSize,
+      glow: el.glow ?? defaults.glow, color: el.color ?? defaults.color,
+      maxWidth: el.maxWidth ?? defaults.maxWidth };
+  };
+
   // Three-line upgrade header: "CHOOSE UPGRADE" in white + hand name in hand color + weapon name
   const handName = hand === 'left' ? 'LEFT BLASTER' : 'RIGHT BLASTER';
-  const handColor = hand === 'left' ? '#00ffff' : '#ff88aa';  // cyan for left, pink for right
+  const handColor = hand === 'left' ? '#00ffff' : '#ff88aa';
   
   // Get weapon name from game state
   const weaponId = game.mainWeapon && game.mainWeapon[hand] ? game.mainWeapon[hand] : 'standard_blaster';
@@ -1283,9 +1294,10 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   };
   const weaponName = weaponNameMap[weaponId] || 'Unknown Weapon';
   
+  const headerDef = _uc('header', { x: 0, y: 1.2, z: 0, fontSize: 48, scale: 0.5, glow: true, color: 0xffffff });
   const headerCanvas = document.createElement('canvas');
   const hCtx = headerCanvas.getContext('2d');
-  const hFontSize = 48;
+  const hFontSize = headerDef.fontSize;
   hCtx.font = `bold ${hFontSize}px ${novemberFontFamily}`;
   const line1Text = 'CHOOSE UPGRADE';
   const line2Text = handName;
@@ -1295,23 +1307,17 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   const line3W = hCtx.measureText(line3Text).width;
   const maxW = Math.ceil(Math.max(line1W, line2W, line3W));
   const hLineHeight = hFontSize * 1.3;
-  const hPad = 25;  // glow padding
+  const hPad = 25;
   headerCanvas.width = maxW + hPad * 2;
   headerCanvas.height = Math.ceil(hLineHeight * 3) + hPad * 2;
   hCtx.font = `bold ${hFontSize}px ${novemberFontFamily}`;
   hCtx.textAlign = 'center';
   hCtx.textBaseline = 'middle';
-  // Line 1: white with glow
-  hCtx.shadowColor = '#ffffff';
-  hCtx.shadowBlur = 15;
-  hCtx.fillStyle = '#ffffff';
+  hCtx.shadowColor = '#ffffff'; hCtx.shadowBlur = 15; hCtx.fillStyle = '#ffffff';
   const hMidY = headerCanvas.height / 2;
   hCtx.fillText(line1Text, headerCanvas.width / 2, hMidY - hLineHeight);
-  // Line 2: hand color with glow
-  hCtx.shadowColor = handColor;
-  hCtx.fillStyle = handColor;
+  hCtx.shadowColor = handColor; hCtx.fillStyle = handColor;
   hCtx.fillText(line2Text, headerCanvas.width / 2, hMidY);
-  // Line 3: weapon name in same hand color (smaller font, no glow)
   const weaponFontSize = 36;
   hCtx.font = `${weaponFontSize}px ${novemberFontFamily}`;
   hCtx.shadowBlur = 0;
@@ -1320,21 +1326,35 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   headerTexture.minFilter = THREE.LinearFilter;
   headerTexture.premultiplyAlpha = false;
   const headerAspect = headerCanvas.width / headerCanvas.height;
-  const headerScale = 0.4;
-  const headerGeom = new THREE.PlaneGeometry(headerAspect * headerScale, headerScale);
+  const headerGeom = new THREE.PlaneGeometry(headerAspect * headerDef.scale, headerDef.scale);
   const headerMat = new THREE.MeshBasicMaterial({ map: headerTexture, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
   const header = new THREE.Mesh(headerGeom, headerMat);
   header.renderOrder = 999;
-  header.position.set(0, 1.05, 0);
+  header.position.set(headerDef.x, headerDef.y, headerDef.z);
   header.name = 'upgrade-cards-header';
   upgradeGroup.add(header);
 
   // Cooldown text
-  const cooldownSprite = makeSprite('WAIT...', { fontSize: 36, color: '#ffff00', scale: 0.3 });
-  cooldownSprite.position.set(0, 0.8, 0);
+  const cooldownDef = _uc('cooldownSprite', { x: 0, y: 0.876, z: 0, fontSize: 60, scale: 0.25, glow: false, color: 0xffff00 });
+  const cooldownSprite = makeSprite('WAIT...', { fontSize: cooldownDef.fontSize, color: '#' + cooldownDef.color.toString(16).padStart(6, '0'), scale: cooldownDef.scale, glow: cooldownDef.glow });
+  cooldownSprite.position.set(cooldownDef.x, cooldownDef.y, cooldownDef.z);
   cooldownSprite.name = 'upgrade-cards-cooldown';
   _cooldownSprite = cooldownSprite;
   upgradeGroup.add(cooldownSprite);
+
+  // Read card template styling from layout (card0 defines the template)
+  const cardStyle = {
+    name: _uc('card0_name', { y: 0.54, z: 0.01, fontSize: 65, scale: 1, glow: true, maxWidth: 600 }),
+    desc: _uc('card0_desc', { y: 0.16, z: 0.01, fontSize: 40, scale: 1, maxWidth: 600 }),
+    stat: _uc('card0_stat', { y: -0.18, z: 0.01, fontSize: 34, scale: 1, maxWidth: 600 }),
+    note: _uc('card0_note', { y: -0.36, z: 0.01, fontSize: 25, scale: 1, maxWidth: 600 }),
+    icon: _uc('card0_icon', { y: -0.52, z: 0.05, scale: 0.08 }),
+  };
+  const skipStyle = {
+    name: _uc('card3_name', { y: 0.44, z: 0.01, fontSize: 65, scale: 1, glow: true, maxWidth: 600 }),
+    desc: _uc('card3_desc', { y: -0.02, z: 0.01, fontSize: 40, scale: 0.65, maxWidth: 400 }),
+    icon: _uc('card3_icon', { y: -0.44, z: 0.05, scale: 0.08 }),
+  };
 
   // Shuffle upgrades so cards are random each time
   const shuffledUpgrades = [...upgrades];
@@ -1342,24 +1362,22 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffledUpgrades[i], shuffledUpgrades[j]] = [shuffledUpgrades[j], shuffledUpgrades[i]];
   }
-  // Four cards evenly spaced (3 upgrades + 1 skip option)
-  const positions = [
-    new THREE.Vector3(-2.25, 0, 0),
-    new THREE.Vector3(-0.75, 0, 0),
-    new THREE.Vector3(0.75, 0, 0),
-    new THREE.Vector3(2.25, 0, 0),
-  ];
+  // Card positions from layout (card0-card3 define positions)
+  const positions = [0,1,2,3].map(i => {
+    const el = ucLayout?.[`card${i}`];
+    return new THREE.Vector3(el?.x ?? [-2.25,-0.75,0.75,2.25][i], el?.y ?? 0, el?.z ?? 0);
+  });
 
   // Limit to first 3 upgrades only
   shuffledUpgrades.slice(0, 3).forEach((upg, i) => {
-    const card = createUpgradeCard(upg, positions[i], hand);
+    const card = createUpgradeCard(upg, positions[i], hand, cardStyle);
     card.name = `upgrade-card-${i}`;
     upgradeGroup.add(card);
     upgradeCards.push(card);
   });
 
   // Add SKIP card as 4th option
-  const skipCard = createSkipCard(positions[3]);
+  const skipCard = createSkipCard(positions[3], skipStyle);
   skipCard.name = 'upgrade-card-3';
   upgradeGroup.add(skipCard);
   upgradeCards.push(skipCard);
@@ -1384,27 +1402,6 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
       }
     });
   });
-
-  // Apply layout overrides (sync since preloaded)
-  const layout = layoutCache['upgrade-cards'];
-  if (layout?.elements) {
-    if (layout.elements.header) {
-      const _le = layout.elements.header;
-      header.position.set(_le.x, _le.y, _le.z);
-    }
-    if (layout.elements.cooldownSprite) {
-      const _le = layout.elements.cooldownSprite;
-      cooldownSprite.position.set(_le.x, _le.y, _le.z);
-    }
-    // Apply card positions from layout
-    for (let i = 0; i < 4; i++) {
-      const cardKey = `card${i}`;
-      if (layout.elements[cardKey] && upgradeCards[i]) {
-        const _le = layout.elements[cardKey];
-        upgradeCards[i].position.set(_le.x, _le.y, _le.z);
-      }
-    }
-  }
 }
 
 // Helper function to generate "before → after" text for stackable upgrades
@@ -1591,7 +1588,8 @@ function resolveUpgradeSelectionFromObject(object) {
   return null;
 }
 
-function createUpgradeCard(upgrade, position, hand) {
+function createUpgradeCard(upgrade, position, hand, style) {
+  const s = style || {}; // fallback if no style passed
   const group = new THREE.Group();
   // Add null check for position - provide default if undefined
   if (position && typeof position.x === 'number') {
@@ -1656,48 +1654,48 @@ function createUpgradeCard(upgrade, position, hand) {
 
   // Name text - queued for deferred creation
   queueTextSprite(group, upgrade.name.toUpperCase(), {
-    fontSize: 45,
+    fontSize: s.name?.fontSize || 65,
     color: upgrade.color || '#00ffff',
-    glow: true,
+    glow: s.name?.glow !== false,
     glowColor: upgrade.color,
-    scale: 0.24,
+    scale: s.name?.scale || 1,
     depthTest: true,
-    maxWidth: 600,
-  }, new THREE.Vector3(0, 0.55, 0.01));
+    maxWidth: s.name?.maxWidth || 600,
+  }, new THREE.Vector3(0, s.name?.y || 0.55, s.name?.z || 0.01));
 
-  // #18: Description text - queued (forceArial for legibility)
+  // Description text - queued (forceArial for legibility)
   queueTextSprite(group, upgrade.desc, {
-    fontSize: 32,
+    fontSize: s.desc?.fontSize || 40,
     color: '#cccccc',
-    scale: 0.36,
+    scale: s.desc?.scale || 1,
     depthTest: true,
-    maxWidth: 280,
+    maxWidth: s.desc?.maxWidth || 600,
     forceArial: true,
-  }, new THREE.Vector3(0, 0.15, 0.01));
+  }, new THREE.Vector3(0, s.desc?.y || 0.15, s.desc?.z || 0.01));
 
   // Running total text for stackable upgrades - queued (forceArial for legibility)
   const totalText = getUpgradeTotalText(upgrade, hand);
   if (totalText) {
     queueTextSprite(group, totalText, {
-      fontSize: 24,
+      fontSize: s.stat?.fontSize || 34,
       color: '#88ff88',
-      scale: 0.14,
+      scale: s.stat?.scale || 1,
       depthTest: true,
-      maxWidth: 300,
+      maxWidth: s.stat?.maxWidth || 600,
       forceArial: true,
-    }, new THREE.Vector3(0, -0.05, 0.01));
+    }, new THREE.Vector3(0, s.stat?.y || -0.05, s.stat?.z || 0.01));
   }
 
   // Side-grade note - queued (forceArial for legibility)
   if (upgrade.sideGradeNote) {
     queueTextSprite(group, upgrade.sideGradeNote, {
-      fontSize: 22,
+      fontSize: s.note?.fontSize || 25,
       color: '#ffdd00',
-      scale: 0.14,
+      scale: s.note?.scale || 1,
       depthTest: true,
-      maxWidth: 280,
+      maxWidth: s.note?.maxWidth || 600,
       forceArial: true,
-    }, new THREE.Vector3(0, -0.15, 0.01));
+    }, new THREE.Vector3(0, s.note?.y || -0.15, s.note?.z || 0.01));
   }
 
   // Simple colored icon (shared geometry, delayed reveal)
@@ -1705,7 +1703,7 @@ function createUpgradeCard(upgrade, position, hand) {
     getCardIconGeo(),
     new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff', wireframe: true }),
   );
-  iconMesh.position.set(0, -0.35, 0.05);
+  iconMesh.position.set(0, s.icon?.y || -0.35, s.icon?.z || 0.05);
   iconMesh.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
   iconMesh.userData._warpPiece = 'icon';
   iconMesh.visible = true; // Visible immediately, warp-in animates it
@@ -1715,7 +1713,8 @@ function createUpgradeCard(upgrade, position, hand) {
   return group;
 }
 
-function createSkipCard(position) {
+function createSkipCard(position, style) {
+  const s = style || {}; // fallback if no style passed
   const group = new THREE.Group();
   // Add null check for position - provide default if undefined
   if (position && typeof position.x === 'number') {
@@ -1775,30 +1774,30 @@ function createSkipCard(position) {
 
   // "SKIP" text - queued for deferred creation
   queueTextSprite(group, 'SKIP', {
-    fontSize: 45,
+    fontSize: s.name?.fontSize || 65,
     color: '#00ff88',
-    glow: true,
+    glow: s.name?.glow !== false,
     glowColor: '#00ff88',
-    scale: 0.24,
+    scale: s.name?.scale || 1,
     depthTest: true,
-  }, new THREE.Vector3(0, 0.48, 0.01));
+  }, new THREE.Vector3(0, s.name?.y || 0.48, s.name?.z || 0.01));
 
   // Description - queued (forceArial for legibility)
   queueTextSprite(group, 'Skip upgrades and gain full health.', {
-    fontSize: 32,
+    fontSize: s.desc?.fontSize || 40,
     color: '#88ffaa',
-    scale: 0.36,
+    scale: s.desc?.scale || 0.36,
     depthTest: true,
-    maxWidth: 280,
+    maxWidth: s.desc?.maxWidth || 280,
     forceArial: true,
-  }, new THREE.Vector3(0, -0.02, 0.01));
+  }, new THREE.Vector3(0, s.desc?.y || -0.02, s.desc?.z || 0.01));
 
   // Heart icon (shared geometry, delayed reveal)
   const iconMesh = new THREE.Mesh(
     getSkipIconGeo(),
     new THREE.MeshBasicMaterial({ color: '#ff0044', wireframe: true }),
   );
-  iconMesh.position.set(0, -0.42, 0.05);
+  iconMesh.position.set(0, s.icon?.y || -0.42, s.icon?.z || 0.05);
   iconMesh.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
   iconMesh.userData._warpPiece = 'icon';
   iconMesh.visible = true; // Warp-in animates it
@@ -2021,46 +2020,43 @@ export function showVictory(score, playerPos) {
   hideAll();
   disposeGroupChildren(gameOverGroup);
 
-  const s1 = makeSprite('VICTORY!', { fontSize: 120, color: '#ffff00', glow: true, glowSize: 30, scale: 1.5 });
-  s1.position.set(0, 1.2, 0);
+  const goLayout = layoutCache['game-over']?.elements;
+  const _go = (key, defaults) => {
+    const el = goLayout?.[key];
+    if (!el) return defaults;
+    return { x: el.x ?? defaults.x, y: el.y ?? defaults.y, z: el.z ?? defaults.z,
+      scale: el.scale ?? defaults.scale, fontSize: el.fontSize ?? defaults.fontSize,
+      glow: el.glow ?? defaults.glow, color: el.color ?? defaults.color };
+  };
+
+  const titleDef = _go('titleSprite', { x: 0, y: 1.2, z: 0, fontSize: 168, scale: 1.1, glow: true, color: 0xff0044 });
+  const s1 = makeSprite('VICTORY!', { fontSize: titleDef.fontSize, color: '#' + titleDef.color.toString(16).padStart(6, '0'), glow: titleDef.glow, glowSize: 30, scale: titleDef.scale });
+  s1.position.set(titleDef.x, titleDef.y, titleDef.z);
   s1.name = 'titleSprite';
   gameOverGroup.add(s1);
 
-  const s2 = makeSprite(`FINAL SCORE: ${score}`, { fontSize: 60, color: '#00ffff', glow: true, scale: 0.7 });
-  s2.position.set(0, 0.4, 0);
+  const scoreDef = _go('scoreSprite', { x: 0, y: 0.667, z: 0.03, fontSize: 110, scale: 0.6, glow: true, color: 0xffff00 });
+  const s2 = makeSprite(`FINAL SCORE: ${score}`, { fontSize: scoreDef.fontSize, color: '#' + scoreDef.color.toString(16).padStart(6, '0'), glow: scoreDef.glow, scale: scoreDef.scale });
+  s2.position.set(scoreDef.x, scoreDef.y, scoreDef.z);
   s2.name = 'scoreSprite';
   gameOverGroup.add(s2);
 
-  const s3 = makeSprite('PRESS TRIGGER TO RETURN', { fontSize: 44, color: '#ffffff', scale: 0.5 });
-  s3.position.set(0, -0.3, 0);
+  const restartDef = _go('restartSprite', { x: 0, y: -0.74, z: 0.05, fontSize: 100, scale: 0.45, glow: false, color: 0xffffff });
+  const s3 = makeSprite('PRESS TRIGGER TO RETURN', { fontSize: restartDef.fontSize, color: '#' + restartDef.color.toString(16).padStart(6, '0'), scale: restartDef.scale });
+  s3.position.set(restartDef.x, restartDef.y, restartDef.z);
   s3.name = 'restartBlink';
   gameOverGroup.add(s3);
 
   // Position in front of player (VR-friendly)
   gameOverGroup.position.copy(playerPos);
-  gameOverGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
-  gameOverGroup.position.z -= 5; // 5 feet in front of player
+  gameOverGroup.position.y += 1.6 + SCENE_Y_OFFSET;
+  gameOverGroup.position.z -= 5;
   gameOverGroup.visible = true;
   gameOverGroup.userData.fadeInStart = performance.now();
-  gameOverGroup.userData.fadeInDuration = 1100; // Slow enough to feel ceremonial after the final blackout
+  gameOverGroup.userData.fadeInDuration = 1100;
   gameOverGroup.traverse((child) => {
     if (child.material) child.material.opacity = 0;
   });
-
-  // Apply layout overrides (sync since preloaded)
-  const layout = layoutCache['game-over'];
-  if (layout?.elements) {
-    const _applyEl = (name, sprite) => {
-      const _le = layout.elements[name];
-      if (!_le || !sprite) return;
-      sprite.position.set(_le.x, _le.y, _le.z);
-      if (_le.scale != null && sprite.isMesh) sprite.scale.setScalar(_le.scale);
-      if (_le.visible != null) sprite.visible = _le.visible;
-    };
-    _applyEl('titleSprite', s1);
-    _applyEl('scoreSprite', s2);
-    _applyEl('restartSprite', s3);
-  }
 }
 
 export function updateEndScreen(now) {
@@ -2393,44 +2389,41 @@ export function showReadyScreen(level, playerPos) {
   }
   readyGroup.visible = true;
 
-  const header = makeSprite(`READY?`, {
-    fontSize: 70, color: '#ffff00', glow: true, scale: 0.6,
+  const rsLayout = layoutCache['ready-screen']?.elements;
+  const _rs = (key, defaults) => {
+    const el = rsLayout?.[key];
+    if (!el) return defaults;
+    return { x: el.x ?? defaults.x, y: el.y ?? defaults.y, z: el.z ?? defaults.z,
+      scale: el.scale ?? defaults.scale, fontSize: el.fontSize ?? defaults.fontSize,
+      glow: el.glow ?? defaults.glow, color: el.color ?? defaults.color };
+  };
+
+  const headerDef = _rs('header', { x: 0, y: 0.8, z: 0, fontSize: 130, scale: 0.6, glow: true, color: 0xffff00 });
+  const header = makeSprite('READY?', {
+    fontSize: headerDef.fontSize, color: '#' + headerDef.color.toString(16).padStart(6, '0'),
+    glow: headerDef.glow, scale: headerDef.scale,
   });
-  header.position.set(0, 0.8, 0);
+  header.position.set(headerDef.x, headerDef.y, headerDef.z);
   header.name = 'header';
   readyGroup.add(header);
 
+  const instrDef = _rs('instruction', { x: 0, y: 0.44, z: 0, fontSize: 55, scale: 0.43, glow: false, color: 0x00ffff });
   const instruction = makeSprite('SHOOT TO BEGIN', {
-    fontSize: 40, color: '#00ffff', scale: 0.4,
+    fontSize: instrDef.fontSize, color: '#' + instrDef.color.toString(16).padStart(6, '0'), scale: instrDef.scale,
   });
-  instruction.position.set(0, 0.4, 0);
+  instruction.position.set(instrDef.x, instrDef.y, instrDef.z);
   instruction.name = 'instruction';
   readyGroup.add(instruction);
 
+  const countdownDef = _rs('countdown', { x: 0, y: -0.05, z: 0.01, fontSize: 150, scale: 0.65, glow: true, color: 0xffffff });
   readyCountdownSprite = makeSprite('3', {
-    fontSize: 120, color: '#ffffff', glow: true, glowColor: '#00ffff', scale: 0.7,
+    fontSize: countdownDef.fontSize, color: '#' + countdownDef.color.toString(16).padStart(6, '0'),
+    glow: countdownDef.glow, glowColor: '#00ffff', scale: countdownDef.scale,
   });
-  readyCountdownSprite.position.set(0, -0.05, 0.01);
+  readyCountdownSprite.position.set(countdownDef.x, countdownDef.y, countdownDef.z);
   readyCountdownSprite.name = 'countdown';
   readyCountdownSprite.visible = false;
   readyGroup.add(readyCountdownSprite);
-
-  // Apply layout overrides (sync since preloaded)
-  const layout = layoutCache['ready-screen'];
-  if (layout?.elements) {
-    if (layout.elements.header) {
-      const _le = layout.elements.header;
-      header.position.set(_le.x, _le.y, _le.z);
-    }
-    if (layout.elements.instruction) {
-      const _le = layout.elements.instruction;
-      instruction.position.set(_le.x, _le.y, _le.z);
-    }
-    if (layout.elements.countdown) {
-      const _le = layout.elements.countdown;
-      readyCountdownSprite.position.set(_le.x, _le.y, _le.z);
-    }
-  }
 }
 
 export function hideReadyScreen() {

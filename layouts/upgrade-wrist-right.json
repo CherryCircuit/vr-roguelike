@@ -144,7 +144,7 @@
     },
     "wrist_upgrade_count": {
       "x": 0,
-      "y": 0,
+      "y": -0.007,
       "z": 0.006,
       "align": "center",
       "rx": 0,
@@ -154,7 +154,7 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "scale": 0.03,
+      "scale": 0.05,
       "text": "UPGRADES\n",
       "fontSize": 50,
       "glow": false
@@ -255,11 +255,12 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
-      "scale": 0.03,
+      "color": 14417919,
+      "scale": 0.06,
       "text": "DOUBLE SHOT",
-      "fontSize": 50,
-      "glow": false
+      "fontSize": 40,
+      "glow": false,
+      "maxWidth": 330
     },
     "dup_24_dup_23_wrist_upgrade_count": {
       "x": 0.05,
@@ -272,11 +273,12 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
-      "scale": 0.03,
-      "text": "AIN'T NOBODY GOT\nTIME FOR THAT",
-      "fontSize": 50,
-      "glow": false
+      "color": 14417919,
+      "scale": 0.06,
+      "text": "AIN'T NOBODY GOT TIME FOR THAT",
+      "fontSize": 40,
+      "glow": false,
+      "maxWidth": 330
     },
     "dup_25_dup_23_wrist_upgrade_count": {
       "x": -0.05,
@@ -289,11 +291,12 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
-      "scale": 0.03,
+      "color": 14417919,
+      "scale": 0.06,
       "text": "AIN'T NOBODY GOT\nTIME FOR THAT",
-      "fontSize": 50,
-      "glow": false
+      "fontSize": 40,
+      "glow": false,
+      "maxWidth": 330
     },
     "dup_26_dup_24_dup_23_wrist_upgrade_count": {
       "x": 0.05,
@@ -306,11 +309,12 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
-      "scale": 0.03,
+      "color": 14417919,
+      "scale": 0.06,
       "text": "SHOCK (x2)",
-      "fontSize": 50,
-      "glow": false
+      "fontSize": 40,
+      "glow": false,
+      "maxWidth": 330
     },
     "dup_27_dup_25_dup_23_wrist_upgrade_count": {
       "x": -0.05,
@@ -323,11 +327,12 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
-      "scale": 0.03,
+      "color": 14417919,
+      "scale": 0.06,
       "text": "VAMPIRIC",
-      "fontSize": 50,
-      "glow": false
+      "fontSize": 40,
+      "glow": false,
+      "maxWidth": 330
     },
     "dup_28_dup_26_dup_24_dup_23_wrist_upgrade_count": {
       "x": 0.05,
@@ -340,11 +345,12 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
-      "scale": 0.03,
+      "color": 14417919,
+      "scale": 0.06,
       "text": "SCOPE (x3)",
-      "fontSize": 50,
-      "glow": false
+      "fontSize": 40,
+      "glow": false,
+      "maxWidth": 330
     },
     "dup_29_dup_28_dup_26_dup_24_dup_23_wrist_upgrade_count": {
       "x": 0.05,
@@ -357,11 +363,12 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
-      "scale": 0.03,
+      "color": 14417919,
+      "scale": 0.06,
       "text": "TURBO BARREL",
-      "fontSize": 50,
-      "glow": false
+      "fontSize": 40,
+      "glow": false,
+      "maxWidth": 330
     },
     "dup_30_dup_27_dup_25_dup_23_wrist_upgrade_count": {
       "x": -0.05,
@@ -374,11 +381,12 @@
       "type": "text",
       "visible": true,
       "anchor": "center",
-      "color": 65535,
-      "scale": 0.03,
+      "color": 14417919,
+      "scale": 0.06,
       "text": "TRIPLE SHOT",
-      "fontSize": 50,
-      "glow": false
+      "fontSize": 40,
+      "glow": false,
+      "maxWidth": 330
     },
     "custom_rect_31": {
       "x": 0,
@@ -396,7 +404,7 @@
       "h": 0.001
     }
   },
-  "exportedAt": "2026-04-16T17:21:22.764Z",
+  "exportedAt": "2026-04-16T19:18:51.954Z",
   "groups": {
     "Group 3": [
       "wrist_kills",
@@ -419,7 +427,8 @@
       "x": 0,
       "y": 0.116,
       "z": 0.012,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false
     },
     {
       "id": "dup_19_wrist_kills",
@@ -432,7 +441,8 @@
       "x": -0.063,
       "y": 0.04,
       "z": 0.018,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false
     },
     {
       "id": "dup_20_dup_19_wrist_kills",
@@ -445,7 +455,8 @@
       "x": 0,
       "y": 0.04,
       "z": 0.018,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false
     },
     {
       "id": "dup_21_wrist_dmg",
@@ -458,7 +469,8 @@
       "x": 0.064,
       "y": 0.054,
       "z": 0.018,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false
     },
     {
       "id": "dup_22_dup_19_wrist_kills",
@@ -471,111 +483,128 @@
       "x": 0.063,
       "y": 0.04,
       "z": 0.018,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false
     },
     {
       "id": "dup_23_wrist_upgrade_count",
       "name": "Upgrade Count (copy)",
       "type": "text",
       "text": "DOUBLE SHOT",
-      "color": 65535,
-      "fontSize": 50,
-      "scale": 0.03,
+      "color": 14417919,
+      "fontSize": 40,
+      "scale": 0.06,
       "x": -0.05,
       "y": -0.03,
       "z": 0.012,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false,
+      "maxWidth": 330
     },
     {
       "id": "dup_24_dup_23_wrist_upgrade_count",
       "name": "Upgrade Count (copy) (copy)",
       "type": "text",
-      "text": "AIN'T NOBODY GOT\nTIME FOR THAT",
-      "color": 65535,
-      "fontSize": 50,
-      "scale": 0.03,
+      "text": "AIN'T NOBODY GOT TIME FOR THAT",
+      "color": 14417919,
+      "fontSize": 40,
+      "scale": 0.06,
       "x": 0.05,
       "y": -0.03,
       "z": 0.012,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false,
+      "maxWidth": 330
     },
     {
       "id": "dup_25_dup_23_wrist_upgrade_count",
       "name": "Upgrade Count (copy) (copy)",
       "type": "text",
       "text": "AIN'T NOBODY GOT\nTIME FOR THAT",
-      "color": 65535,
-      "fontSize": 50,
-      "scale": 0.03,
+      "color": 14417919,
+      "fontSize": 40,
+      "scale": 0.06,
       "x": -0.05,
       "y": -0.06,
       "z": 0.012,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false,
+      "maxWidth": 330
     },
     {
       "id": "dup_26_dup_24_dup_23_wrist_upgrade_count",
       "name": "Upgrade Count (copy) (copy) (copy)",
       "type": "text",
       "text": "SHOCK (x2)",
-      "color": 65535,
-      "fontSize": 50,
-      "scale": 0.03,
+      "color": 14417919,
+      "fontSize": 40,
+      "scale": 0.06,
       "x": 0.05,
       "y": -0.06,
       "z": 0.012,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false,
+      "maxWidth": 330
     },
     {
       "id": "dup_27_dup_25_dup_23_wrist_upgrade_count",
       "name": "Upgrade Count (copy) (copy) (copy)",
       "type": "text",
       "text": "VAMPIRIC",
-      "color": 65535,
-      "fontSize": 50,
-      "scale": 0.03,
+      "color": 14417919,
+      "fontSize": 40,
+      "scale": 0.06,
       "x": -0.05,
       "y": -0.09,
       "z": 0.012,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false,
+      "maxWidth": 330
     },
     {
       "id": "dup_28_dup_26_dup_24_dup_23_wrist_upgrade_count",
       "name": "Upgrade Count (copy) (copy) (copy) (copy)",
       "type": "text",
       "text": "SCOPE (x3)",
-      "color": 65535,
-      "fontSize": 50,
-      "scale": 0.03,
+      "color": 14417919,
+      "fontSize": 40,
+      "scale": 0.06,
       "x": 0.05,
       "y": -0.09,
       "z": 0.012,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false,
+      "maxWidth": 330
     },
     {
       "id": "dup_29_dup_28_dup_26_dup_24_dup_23_wrist_upgrade_count",
       "name": "Upgrade Count (copy) (copy) (copy) (copy) (copy)",
       "type": "text",
       "text": "TURBO BARREL",
-      "color": 65535,
-      "fontSize": 50,
-      "scale": 0.03,
+      "color": 14417919,
+      "fontSize": 40,
+      "scale": 0.06,
       "x": 0.05,
       "y": -0.12,
       "z": 0.012,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false,
+      "maxWidth": 330
     },
     {
       "id": "dup_30_dup_27_dup_25_dup_23_wrist_upgrade_count",
       "name": "Upgrade Count (copy) (copy) (copy) (copy)",
       "type": "text",
       "text": "TRIPLE SHOT",
-      "color": 65535,
-      "fontSize": 50,
-      "scale": 0.03,
+      "color": 14417919,
+      "fontSize": 40,
+      "scale": 0.06,
       "x": -0.05,
       "y": -0.12,
       "z": 0.012,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false,
+      "maxWidth": 330
     },
     {
       "id": "custom_rect_31",

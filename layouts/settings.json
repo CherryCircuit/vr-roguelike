@@ -94,7 +94,7 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "w": 0.5,
+      "w": 0.45,
       "h": 0.28
     },
     "music_up_text": {
@@ -143,7 +143,7 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "w": 0.5,
+      "w": 0.45,
       "h": 0.28
     },
     "music_down_text": {
@@ -175,7 +175,7 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "w": 0.5,
+      "w": 0.45,
       "h": 0.28
     },
     "sfx_up_text": {
@@ -224,7 +224,7 @@
       "visible": true,
       "anchor": "center",
       "color": 65535,
-      "w": 0.5,
+      "w": 0.45,
       "h": 0.28
     },
     "sfx_down_text": {
@@ -374,7 +374,7 @@
     },
     "back_text": {
       "x": 0,
-      "y": -0.712,
+      "y": -0.722,
       "z": 0.04,
       "align": "center",
       "rx": 0,
@@ -467,7 +467,7 @@
       "h": 2.1
     }
   },
-  "exportedAt": "2026-04-16T17:13:33.661Z",
+  "exportedAt": "2026-04-16T19:13:00.303Z",
   "groups": {
     "Music": [
       "music_up",
@@ -505,7 +505,8 @@
       "x": 0,
       "y": 0.4,
       "z": 0.06,
-      "forceArial": false
+      "forceArial": false,
+      "glow": false
     },
     {
       "id": "custom_rect_2",
