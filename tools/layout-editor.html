@@ -121,7 +121,8 @@
                         <option value="arial">Arial / forceArial</option>
                     </select>
                 </div>
-                <div class="pr"><label></label><small style="color:#888">Select a text object to edit font.</small></div>
+                <div class="pr" id="row-fontsize"><label>Font Size</label><input type="number" step="1" min="8" max="200" id="inp-fontsize" onchange="onFontSizeInput()"></div>
+                <div class="pr"><label></label><small style="color:#888">Increase fontSize for sharper text. Use Scale for overall size.</small></div>
             </div>
             <div id="color-section">
                 <div class="sec">Color</div>
@@ -1254,6 +1255,8 @@
             colorInput.disabled = false;
             colorHexInput.disabled = false;
             document.getElementById('inp-font').value = def.forceArial ? 'arial' : 'november';
+            document.getElementById('inp-fontsize').value = def.fontSize || 64;
+            document.getElementById('row-fontsize').style.display = '';
             const hexColor = '#' + def.color.toString(16).padStart(6, '0');
             document.getElementById('inp-color').value = hexColor;
             document.getElementById('inp-color-hex').value = hexColor;
@@ -1272,6 +1275,7 @@
         } else if (def.type === 'hearts') {
             document.getElementById('inp-text').value = '(3 hearts)';
             document.getElementById('inp-text').disabled = true;
+            document.getElementById('row-fontsize').style.display = 'none';
             fontSection.classList.add('disabled');
             colorSection.classList.add('disabled');
             fontInput.disabled = true;
@@ -1291,6 +1295,7 @@
         } else if (isScaleType(def)) {
             document.getElementById('inp-text').value = '(mesh)';
             document.getElementById('inp-text').disabled = true;
+            document.getElementById('row-fontsize').style.display = 'none';
             fontSection.classList.add('disabled');
             fontInput.disabled = true;
             colorSection.classList.remove('disabled');
@@ -1307,6 +1312,7 @@
         } else {
             document.getElementById('inp-text').value = '(rectangle)';
             document.getElementById('inp-text').disabled = true;
+            document.getElementById('row-fontsize').style.display = 'none';
             fontSection.classList.add('disabled');
             fontInput.disabled = true;
             colorSection.classList.remove('disabled');
@@ -1574,6 +1580,19 @@
         def.forceArial = (fontVal === 'arial');
         rebuildMesh(pid);
         if (selectedIds.includes(pid)) els[pid].material.color.setHex(0x00ffff);
+        autoSave();
+    };
+
+    window.onFontSizeInput = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        const def = els[pid]?.userData?.def;
+        if (!def || def.type !== 'text') return;
+        pushUndo();
+        def.fontSize = Math.max(8, Math.min(200, parseInt(document.getElementById('inp-fontsize').value) || 64));
+        document.getElementById('inp-fontsize').value = def.fontSize;
+        rebuildMesh(pid);
+        updateList();
         autoSave();
     };
 
