@@ -9595,6 +9595,12 @@ function spawnExplosionVisual(center, radius) {
   entry.radius = radius;
   entry.mesh.visible = true;
   entry.mesh.position.copy(center);
+  // Safety: skip explosion if center is near world origin (likely a bug)
+  if (entry.mesh.position.lengthSq() < 0.01) {
+    entry.active = false;
+    entry.mesh.visible = false;
+    return;
+  }
   entry.mesh.scale.setScalar(radius * 0.3);
   // Reset material opacity for pooled mesh
   entry.mesh.material.opacity = 0.7;
