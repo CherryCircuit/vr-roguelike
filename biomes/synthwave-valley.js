@@ -259,6 +259,30 @@ export function buildSynthwaveValleyScene(group, deps) {
   group.add(horizonGlowCylinder);
   registerFadeMaterial(horizonGlowMat);
 
+  // ── SUN FLOOR REFLECTION ──
+  // Blurred sun texture laid flat on the floor, directly below the sky sun.
+  // Additive blending, slow drift for subtle shimmer.
+  const sunReflTex = new THREE.TextureLoader().load('assets/sun-retro-blur.png');
+  const sunReflMat = new THREE.MeshBasicMaterial({
+    map: sunReflTex,
+    transparent: true,
+    opacity: 0.35,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    depthTest: true,
+    fog: true,
+    blending: THREE.AdditiveBlending,
+  });
+  const sunReflPlane = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), sunReflMat);
+  sunReflPlane.name = 'synthwave-sun-floor-reflection';
+  sunReflPlane.rotation.x = -Math.PI / 2; // Lay flat
+  sunReflPlane.position.set(0, 0.1, -1700); // Below sun, slightly above floor
+  sunReflPlane.frustumCulled = false;
+  sunReflPlane.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.1, -1700), 900);
+  sunReflPlane.renderOrder = -5; // Behind terrain
+  group.add(sunReflPlane);
+  registerFadeMaterial(sunReflMat);
+
   // Store ref for boss cinematic red tint
   synthVisualRefs.mountainCylMat = mountainCylinderMat;
 
@@ -368,9 +392,9 @@ export function buildSynthwaveValleyScene(group, deps) {
   group.userData.update = (time) => {
     const t = time;
     terrainUniforms.uTime.value = t * 0.001;
-    // Floor bloom removed — no _bloomMat to update.
-    // Cloud animation disabled for Quest performance - static clouds
-    // cloudDome1Mat.uniforms.uTime.value = t * 0.0001;
+    // Slow drift on sun floor reflection for subtle shimmer
+    sunReflPlane.position.x = Math.sin(t * 0.0003) * 15;
+    sunReflPlane.position.z = -1700 + Math.cos(t * 0.0002) * 10;
   };
 
   // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
