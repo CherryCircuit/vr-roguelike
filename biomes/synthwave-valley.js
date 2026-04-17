@@ -163,7 +163,7 @@ export function buildSynthwaveValleyScene(group, deps) {
     // Fix for synthwave floor popping in VR: keep the terrain static and use the
     // built-in modelViewMatrix projection instead of manual projection math.
     vertexShader: `varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} h=max(0.0,h); pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vec4 mvPosition=modelViewMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; vFogDistance=length(mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }`,
-    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform vec3 uPulseColorA; uniform vec3 uPulseColorB; uniform float uFlashIntensity; uniform float uGlowIntensity; uniform float uFogIntensity; uniform float uTime; uniform vec2 uSunGroundPos; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float dist=length(vObjPos.xz); float lineW=0.25*smoothstep(1000.0,100.0,dist); float gx=gridLine(vObjPos.x*gridScale,lineW); float gz=gridLine(vObjPos.z*gridScale,lineW); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34*uGlowIntensity); float wave=0.5+0.5*sin(uTime*1.8 + vObjPos.x*0.018 + vObjPos.z*0.012); vec3 pulseColor=mix(uPulseColorA, uPulseColorB, wave); vec3 animatedGridColor=mix(uGridColor, pulseColor, 0.7); vec3 col=mix(uBaseColor, animatedGridColor, clamp(grid*uGlowIntensity,0.0,1.0)); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=pulseColor*ridgeGlow*0.22*uGlowIntensity; float sunReflDist=length(vWorldPos.xz-uSunGroundPos); float sunReflHeight=1.0-smoothstep(0.0,50.0,vHeight); float sunRefl=exp(-sunReflDist*0.001)*sunReflHeight*0.45; col+=vec3(1.0,0.5,0.12)*sunRefl; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*uFogIntensity,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
+    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform vec3 uPulseColorA; uniform vec3 uPulseColorB; uniform float uFlashIntensity; uniform float uGlowIntensity; uniform float uFogIntensity; uniform float uTime; uniform vec2 uSunGroundPos; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float dist=length(vObjPos.xz); float lineW=0.25*smoothstep(1000.0,100.0,dist); float gx=gridLine(vObjPos.x*gridScale,lineW); float gz=gridLine(vObjPos.z*gridScale,lineW); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34*uGlowIntensity); float wave=0.5+0.5*sin(uTime*1.8 + vObjPos.x*0.018 + vObjPos.z*0.012); vec3 pulseColor=mix(uPulseColorA, uPulseColorB, wave); vec3 animatedGridColor=mix(uGridColor, pulseColor, 0.7); vec3 col=mix(uBaseColor, animatedGridColor, clamp(grid*uGlowIntensity,0.0,1.0)); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=pulseColor*ridgeGlow*0.22*uGlowIntensity; float sunReflDist=length(vWorldPos.xz-uSunGroundPos); float sunReflHeight=1.0-smoothstep(0.0,50.0,vHeight); float sunRefl=exp(-sunReflDist*0.001)*sunReflHeight*0.45; col+=vec3(1.0,0.5,0.12)*sunRefl; float horizonGlow=exp(-max(0.0,-vWorldPos.z-200.0)*0.0025)*(1.0-smoothstep(0.0,50.0,vHeight)); col+=vec3(0.0,0.75,1.0)*horizonGlow*0.35; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*uFogIntensity,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
   });
   const terrain = new THREE.Mesh(terrainGeo, terrainMat);
   terrain.name = 'synthwave-valley-floor-and-mountains';
@@ -218,6 +218,44 @@ export function buildSynthwaveValleyScene(group, deps) {
   mountainCylinder.renderOrder = 0;  // In front of sun (sun is -3 to -1)
   group.add(mountainCylinder);
   registerFadeMaterial(mountainCylinderMat);
+
+  // ── HORIZON GLOW CYLINDER ──
+  // Vertical glow band just inside the mountain wrap, simulating light bleed at the horizon.
+  // Bright white/cyan core at bottom, fading to transparent upward.
+  // Matches the projectile glow style: bright core → fast falloff.
+  const horizonGlowRadius = 1155; // 7 units smaller than mountain wrap
+  const horizonGlowHeight = 120;
+  const horizonGlowCanvas = document.createElement('canvas');
+  horizonGlowCanvas.width = 16;
+  horizonGlowCanvas.height = 256;
+  const hgCtx = horizonGlowCanvas.getContext('2d');
+  const hgGrad = hgCtx.createLinearGradient(0, 0, 0, 256);
+  hgGrad.addColorStop(0.0, 'rgba(255,255,255,0)');     // Top: transparent
+  hgGrad.addColorStop(0.45, 'rgba(0,200,255,0.12)');  // Upper: faint cyan
+  hgGrad.addColorStop(0.75, 'rgba(0,230,255,0.45)');  // Mid: brighter cyan
+  hgGrad.addColorStop(0.92, 'rgba(180,255,255,0.7)');  // Near bottom: white-cyan
+  hgGrad.addColorStop(1.0, 'rgba(255,255,255,0.85)');  // Bottom edge: bright white core
+  hgCtx.fillStyle = hgGrad;
+  hgCtx.fillRect(0, 0, 16, 256);
+  const horizonGlowTex = new THREE.CanvasTexture(horizonGlowCanvas);
+
+  const horizonGlowGeo = new THREE.CylinderGeometry(horizonGlowRadius, horizonGlowRadius, horizonGlowHeight, 64, 1, true);
+  const horizonGlowMat = new THREE.MeshBasicMaterial({
+    map: horizonGlowTex,
+    transparent: true,
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: true,
+    fog: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const horizonGlowCylinder = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
+  horizonGlowCylinder.name = 'synthwave-horizon-glow';
+  horizonGlowCylinder.position.set(0, horizonGlowHeight / 2, 0); // bottom at y=0 (horizon line)
+  horizonGlowCylinder.frustumCulled = false;
+  horizonGlowCylinder.renderOrder = 1; // In front of mountains (mountains are 0)
+  group.add(horizonGlowCylinder);
+  registerFadeMaterial(horizonGlowMat);
 
   // Store ref for boss cinematic red tint
   synthVisualRefs.mountainCylMat = mountainCylinderMat;
