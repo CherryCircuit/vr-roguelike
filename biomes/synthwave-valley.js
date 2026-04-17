@@ -259,7 +259,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   horizonGlowCylinder.position.set(0, 245, 0);
   horizonGlowCylinder.frustumCulled = false;
   horizonGlowCylinder.geometry.computeBoundingSphere();
-  horizonGlowCylinder.renderOrder = 0;
+  horizonGlowCylinder.renderOrder = 0.5;  // After mountains (0), before cards/sun-refl (1)
   // Add directly to scene root, not the biome group.
   if (deps.scene) {
     deps.scene.add(horizonGlowCylinder);
