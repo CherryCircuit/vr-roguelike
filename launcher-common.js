@@ -3,10 +3,9 @@
 //  Shared page bootstrap for both live and dev launchers.
 // ============================================================
 
-const GAME_VERSION = 'v2026.04.17.1434';
+const GAME_VERSION = 'v2026.04.17.1509';
 
 function updateVersionText() {
-  document.title = GAME_VERSION;
   const versionEl = document.getElementById('version-text');
   if (versionEl) versionEl.textContent = GAME_VERSION;
 }
@@ -25,16 +24,19 @@ function installGlobalErrorOverlay() {
 
   window.addEventListener('error', function onWindowError(e) {
     if (e.message && e.message.includes('Pointer lock')) return;
+    if (e.message && e.message.includes('setPointerCapture')) return;
+    if (e.filename && e.filename.includes('chrome-extension://')) return;
     const where = `${e.filename || 'unknown'}:${e.lineno || 0}:${e.colno || 0}`;
     window.showWebError(`${e.message} @ ${where}`, e.error?.stack || e.stack || '');
   });
 
   window.addEventListener('unhandledrejection', function onUnhandledRejection(e) {
     const reason = String(e.reason || '');
-    if (reason.includes('Pointer lock') || reason.includes('SecurityError')) {
+    if (reason.includes('Pointer lock') || reason.includes('SecurityError') || reason.includes('setPointerCapture')) {
       console.debug('[game] Suppressed pointer lock error');
       return;
     }
+    if (reason.includes('chrome-extension://')) return;
     window.showWebError('Unhandled Promise Rejection: ' + e.reason, e.reason?.stack || '');
   });
 }

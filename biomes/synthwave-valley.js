@@ -223,7 +223,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   // Closed cylinder so it's visible from any angle (open cylinders vanish when looking down).
   // Bright white/cyan core at bottom, fading smoothly to dark transparent at top.
   const horizonGlowRadius = 1155;
-  const horizonGlowHeight = 120;
+  const horizonGlowHeight = 500;
   const horizonGlowCanvas = document.createElement('canvas');
   horizonGlowCanvas.width = 16;
   horizonGlowCanvas.height = 512; // Taller canvas for smoother gradient
@@ -243,7 +243,6 @@ export function buildSynthwaveValleyScene(group, deps) {
   hgCtx.fillRect(0, 0, 16, 512);
   const horizonGlowTex = new THREE.CanvasTexture(horizonGlowCanvas);
 
-  // Closed cylinder (no openEnded flag) so it's visible from all angles in VR
   const horizonGlowGeo = new THREE.CylinderGeometry(horizonGlowRadius, horizonGlowRadius, horizonGlowHeight, 64, 1, false);
   const horizonGlowMat = new THREE.MeshBasicMaterial({
     map: horizonGlowTex,
@@ -256,10 +255,9 @@ export function buildSynthwaveValleyScene(group, deps) {
   });
   const horizonGlowCylinder = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
   horizonGlowCylinder.name = 'synthwave-horizon-glow';
-  horizonGlowCylinder.position.set(0, 16, 0);
-  horizonGlowCylinder.scale.set(1, 0.3, 1);
+  horizonGlowCylinder.position.set(0, 250, 0);
   horizonGlowCylinder.frustumCulled = false;
-  horizonGlowCylinder.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 16, 0), 1200);
+  horizonGlowCylinder.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 250, 0), 1200);
   horizonGlowCylinder.renderOrder = 0;
   group.add(horizonGlowCylinder);
   registerFadeMaterial(horizonGlowMat);
