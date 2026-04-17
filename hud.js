@@ -436,7 +436,61 @@ export function makeSprite(text, opts = {}) {
   return mesh;
 }
 
-/** Load the SVG logo as a texture and return a plane mesh */
+// ── Logo shimmer shader ──────────────────────────────────
+const logoShimmerVert = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const logoShimmerFrag = `
+  uniform sampler2D uTexture;
+  uniform float uTime;
+  varying vec2 vUv;
+
+  // RGB <-> HSV helpers
+  vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+  }
+  vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+  }
+
+  void main() {
+    vec4 tex = texture2D(uTexture, vUv);
+    if (tex.a < 0.01) discard;
+
+    // Diagonal wave moving through the image
+    float wave = sin((vUv.x + vUv.y) * 4.0 - uTime * 0.8) * 0.5 + 0.5;
+    // Subtle secondary cross-wave for more organic feel
+    float wave2 = sin((vUv.x - vUv.y) * 3.0 + uTime * 0.5) * 0.5 + 0.5;
+    float combined = mix(wave, wave2, 0.3);
+
+    // Shift hue by a tiny amount (±0.03) based on the wave
+    vec3 hsv = rgb2hsv(tex.rgb);
+    hsv.x += combined * 0.06 - 0.03; // ±0.03 hue shift
+    // Slightly boost saturation in the bright parts of the wave
+    hsv.y = clamp(hsv.y + combined * 0.08 - 0.04, 0.0, 1.0);
+    // Tiny brightness pulse
+    hsv.z = clamp(hsv.z + combined * 0.05 - 0.025, 0.0, 1.0);
+
+    vec3 color = hsv2rgb(hsv);
+    gl_FragColor = vec4(color, tex.a);
+  }
+`;
+
+let _logoUniforms = null;
+
+/** Load the logo image as a textured plane with a shimmer shader */
 async function createLogoSprite() {
   try {
     const texture = await new Promise((resolve, reject) => {
@@ -449,10 +503,17 @@ async function createLogoSprite() {
     });
 
     const aspect = texture.image.width / texture.image.height;
-    const scale = 1.44; // 160% of previous 0.9
+    const scale = 1.44;
     const geometry = new THREE.PlaneGeometry(aspect * scale, scale);
-    const mat = new THREE.MeshBasicMaterial({
-      map: texture,
+
+    _logoUniforms = {
+      uTexture: { value: texture },
+      uTime: { value: 0 },
+    };
+    const mat = new THREE.ShaderMaterial({
+      uniforms: _logoUniforms,
+      vertexShader: logoShimmerVert,
+      fragmentShader: logoShimmerFrag,
       transparent: true,
       depthTest: false,
       depthWrite: false,
@@ -989,6 +1050,10 @@ export function hideTitle() {
 export function updateTitle(now) {
   if (titleBlinkSprite) {
     titleBlinkSprite.material.opacity = 0.5 + Math.sin(now * 0.004) * 0.5;
+  }
+  // Animate logo shimmer
+  if (_logoUniforms) {
+    _logoUniforms.uTime.value = now * 0.001; // seconds
   }
 }
 
