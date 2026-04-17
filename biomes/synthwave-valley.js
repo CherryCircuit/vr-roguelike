@@ -404,7 +404,9 @@ export function buildSynthwaveValleyScene(group, deps) {
 
   // Synthwave floor HUD height:group.position.y = 5.82
   group.position.set(0, -(floorY + 1.5), 0);
-
-  // Rotate so player faces sun
   group.rotation.y = 0;
+  // Prevent frustum culling on the entire biome group so children with
+  // frustumCulled=false aren't culled when the group's bounding volume exits the frustum
+  group.frustumCulled = false;
+  group.traverse((child) => { child.frustumCulled = false; });
 }
