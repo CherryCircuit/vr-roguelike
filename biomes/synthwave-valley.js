@@ -221,26 +221,22 @@ export function buildSynthwaveValleyScene(group, deps) {
   registerFadeMaterial(mountainCylinderMat);
 
   // ── HORIZON GLOW CYLINDER ──
-  // Large cylinder added directly to scene root (not biome group) so it's
-  // not affected by group transforms. Bright bottom at ground level fading
-  // up to transparent. 500 units tall so it covers ~25° of vertical FOV
-  // from the player's position at radius 1155.
+  // Bright white/cyan core at bottom, fading smoothly to dark transparent at top.
+  // renderOrder 0.5: after mountains (0) but before upgrade cards/sun-refl (1).
   const horizonGlowRadius = 1155;
-  const horizonGlowHeight = 500;
+  const horizonGlowHeight = 120;
   const horizonGlowCanvas = document.createElement('canvas');
   horizonGlowCanvas.width = 16;
   horizonGlowCanvas.height = 256;
   const hgCtx = horizonGlowCanvas.getContext('2d');
   const hgGrad = hgCtx.createLinearGradient(0, 0, 0, 256);
-  hgGrad.addColorStop(0.0, 'rgba(255,255,255,0)');       // Top: transparent
-  hgGrad.addColorStop(0.30, 'rgba(0,180,255,0.06)');     // Upper: very faint
-  hgGrad.addColorStop(0.55, 'rgba(0,210,255,0.18)');     // Mid-upper: faint cyan
-  hgGrad.addColorStop(0.72, 'rgba(0,230,255,0.35)');     // Mid: brighter cyan
-  hgGrad.addColorStop(0.85, 'rgba(100,245,255,0.55)');   // Lower-mid: strong cyan
-  hgGrad.addColorStop(0.94, 'rgba(200,255,255,0.75)');   // Near bottom: bright
-  hgGrad.addColorStop(1.0, 'rgba(255,255,255,0.85)');    // Bottom edge: white core
+  hgGrad.addColorStop(0.0, 'rgba(255,255,255,0)');     // Top: transparent
+  hgGrad.addColorStop(0.45, 'rgba(0,200,255,0.12)');  // Upper: faint cyan
+  hgGrad.addColorStop(0.75, 'rgba(0,230,255,0.45)');  // Mid: brighter cyan
+  hgGrad.addColorStop(0.92, 'rgba(180,255,255,0.7)');  // Near bottom: white-cyan
+  hgGrad.addColorStop(1.0, 'rgba(255,255,255,0.85)');  // Bottom edge: bright white core
   hgCtx.fillStyle = hgGrad;
-  hgCtx.fillRect(0, 0, 16, 256);
+  hgCtx.fillRect(0, 0, 16, 512);
   const horizonGlowTex = new THREE.CanvasTexture(horizonGlowCanvas);
 
   const horizonGlowGeo = new THREE.CylinderGeometry(horizonGlowRadius, horizonGlowRadius, horizonGlowHeight, 64, 1, true);
@@ -255,17 +251,11 @@ export function buildSynthwaveValleyScene(group, deps) {
   });
   const horizonGlowCylinder = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
   horizonGlowCylinder.name = 'synthwave-horizon-glow';
-  // Center at Y=245 so bottom is at Y=-5 (just below ground), top at Y=495
-  horizonGlowCylinder.position.set(0, 245, 0);
+  horizonGlowCylinder.position.set(0, 16, 0);
+  horizonGlowCylinder.scale.set(1, 0.3, 1);
   horizonGlowCylinder.frustumCulled = false;
-  horizonGlowCylinder.geometry.computeBoundingSphere();
-  horizonGlowCylinder.renderOrder = 0.5;  // After mountains (0), before cards/sun-refl (1)
-  // Add directly to scene root, not the biome group.
-  if (deps.scene) {
-    deps.scene.add(horizonGlowCylinder);
-  } else {
-    group.add(horizonGlowCylinder);
-  }
+  horizonGlowCylinder.renderOrder = 0.5;
+  group.add(horizonGlowCylinder);
   registerFadeMaterial(horizonGlowMat);
 
   // ── SUN FLOOR REFLECTION ──

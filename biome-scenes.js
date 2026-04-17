@@ -79,7 +79,6 @@ export function rebuildBiomeScene(deps) {
     synthVisualRefs: refs.synthVisualRefs,
     biomeTerrainMaterials,
     getVisualTuning: refs.getVisualTuning,
-    scene,
   };
 
   if (theme.customScene === 'synthwave_valley') {
