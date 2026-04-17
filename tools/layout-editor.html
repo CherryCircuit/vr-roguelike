@@ -839,6 +839,7 @@
             );
             border.position.z = 0.001;
             border.userData.isRectBorder = true;
+            border.raycast = () => {}; // never intercept selection clicks
             mesh.add(border);
             mesh.userData.origBorderColor = bc;
         }
@@ -933,6 +934,7 @@
             );
             border.position.z = 0.001;
             border.userData.isRectBorder = true;
+            border.raycast = () => {}; // never intercept selection clicks
             mesh.add(border);
             mesh.userData.origBorderColor = bc;
         }
