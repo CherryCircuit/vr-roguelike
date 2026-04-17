@@ -254,6 +254,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   horizonGlowCylinder.position.set(0, 16, 0);
   horizonGlowCylinder.scale.set(1, 0.3, 1);
   horizonGlowCylinder.frustumCulled = false;
+  horizonGlowCylinder.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 16, 0), 1200);
   horizonGlowCylinder.renderOrder = 0; // Same as mountains, behind UI
   group.add(horizonGlowCylinder);
   registerFadeMaterial(horizonGlowMat);
