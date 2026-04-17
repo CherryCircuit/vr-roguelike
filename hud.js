@@ -1500,6 +1500,14 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
 function getUpgradeTotalText(upgrade, hand) {
   const currentCount = game.upgrades[hand][upgrade.id] || 0;
   const nextCount = currentCount + 1;
+  const weaponNameMap = {
+    'standard_blaster': 'Standard Blaster',
+    'buckshot': 'Buckshot',
+    'charge_cannon': 'Charge Cannon',
+    'plasma_carbine': 'Plasma Carbine',
+    'lightning_rod': 'Lightning Rod',
+    'seeker_burst': 'Seeker Burst'
+  };
   
   // Non-stackable upgrades - no total shown
   const nonStackable = [
@@ -1556,6 +1564,7 @@ function getUpgradeTotalText(upgrade, hand) {
       // Heal every 5 kills
       const currentVamp = 6 - Math.min(currentCount, 4);
       const nextVamp = 6 - Math.min(nextCount, 4);
+      if (currentCount === 0) return `(Heal every ${currentVamp} kills)`;
       return `(Heal every ${currentVamp} kills → ${nextVamp} kills)`;
     
     case 'life_steal':
@@ -1574,6 +1583,7 @@ function getUpgradeTotalText(upgrade, hand) {
       // Ricochet: bounce damage starts at 50%, +25% per stack
       const ricochetDmg = 50 + (currentCount * 25);
       const nextRicochetDmg = ricochetDmg + 25;
+      if (currentCount === 0) return `(Ricochet @ ${ricochetDmg}% damage)`;
       return `(Ricochet @ ${ricochetDmg}% → ${nextRicochetDmg}% damage)`;
     
     case 'extra_nuke':
@@ -1604,6 +1614,18 @@ function getUpgradeTotalText(upgrade, hand) {
       const nextGimme = nextCount * 2;
       return `(+${currentGimme} → +${nextGimme} shots)`;
     
+    case 'standard_blaster':
+    case 'buckshot':
+    case 'charge_cannon':
+    case 'plasma_carbine':
+    case 'lightning_rod':
+    case 'seeker_burst':
+      // Weapon sidegrades: show weapon names instead of numbers
+      const prevWeaponId = game.mainWeapon && game.mainWeapon[hand] ? game.mainWeapon[hand] : 'standard_blaster';
+      const prevName = weaponNameMap[prevWeaponId] || prevWeaponId;
+      const nextName = weaponNameMap[upgrade.id] || upgrade.id;
+      return `(${prevName} → ${nextName})`;
+
     default:
       // Generic fallback for any other stackable upgrade
       return `(${currentCount} → ${nextCount})`;
