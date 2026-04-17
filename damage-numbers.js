@@ -310,7 +310,7 @@ function makePositionKey(position) {
   return `${x},${y},${z}`;
 }
 
-export function spawnDamageNumber(position, damage, color) {
+export function spawnDamageNumber(position, damage, color, scaleMultiplier = 1.0) {
   ensurePools();
 
   const posKey = makePositionKey(position);
@@ -322,8 +322,9 @@ export function spawnDamageNumber(position, damage, color) {
     existing.totalDamage += damage;
     const totalDamage = existing.totalDamage;
     const existingColor = existing.color;
+    const sm = existing.scaleMultiplier || 1.0;
 
-    const scale = (0.25 + Math.min(totalDamage / 100, 0.15)) * 1.3;
+    const scale = (0.25 + Math.min(totalDamage / 100, 0.15)) * 1.3 * sm;
     const width = scale * 2;
     const height = scale;
     const baseScaleX = width / 0.65;
@@ -361,7 +362,7 @@ export function spawnDamageNumber(position, damage, color) {
   }
 
   // No existing number: create new one
-  const dmgScale = (0.25 + Math.min(damage / 100, 0.15)) * 1.3;
+  const dmgScale = (0.25 + Math.min(damage / 100, 0.15)) * 1.3 * scaleMultiplier;
   const dmgW = dmgScale * 2;
   const dmgH = dmgScale;
 
@@ -384,6 +385,7 @@ export function spawnDamageNumber(position, damage, color) {
       mesh,
       totalDamage: damage,
       color: color || '#ffffff',
+      scaleMultiplier,
       positionKey: posKey,
       _lastRedraw: now,
     });

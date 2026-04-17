@@ -9377,9 +9377,10 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
     game.handStats[hand].totalDamage += damage;
   }
 
-  // Spawn damage number (reddish if enemy is buffed by conductor)
+  // Spawn damage number (reddish if enemy is buffed by conductor, yellow+double if crit)
   const isBuffed = enemy.linkedByConductor && enemy.linkedDamageReduction > 0;
-  spawnDamageNumber(hitPoint, damage, isBuffed ? '#ff6666' : '#ffffff');
+  const dmgColor = isCritical ? '#ffff00' : (isBuffed ? '#ff6666' : '#ffffff');
+  spawnDamageNumber(hitPoint, damage, dmgColor, isCritical ? 2.0 : 1.0);
   
   // CRIT indicator for critical hits
   if (isCritical) {
