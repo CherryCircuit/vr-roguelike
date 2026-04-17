@@ -2096,12 +2096,65 @@ export function playBossProjectileDestroySound() {
 
 // ── Music Navigation (for settings menu track display) ───────
 
+// Track title lookup (filename → display name)
+const TRACK_TITLES = {
+  '00_Main_Menu.mp3': 'SPACEOMICIDE Theme',
+  '0101_Levels_1-4.mp3': 'Nightfall Over Paradise',
+  '0102_Levels_1-4.mp3': 'Cassette Hearts',
+  '0103_Levels_1-4.mp3': 'Chrome Kisses',
+  '0104_Levels_1-4.mp3': 'Starhaze Avenue',
+  '0105_Levels_1-4.mp3': 'Neonara',
+  '0106_Levels_1-4.mp3': 'Mirror Headlights',
+  '0107_Levels_1-4.mp3': 'Velvet Static',
+  '0108_Levels_1-4.mp3': 'Skylush',
+  '0109_Levels_1-4.mp3': 'The City Burns Magenta',
+  '0110_Levels_1-4.mp3': 'Palm Parade',
+  '0201_Levels_6-9.mp3': 'Nightlogic',
+  '0202_Levels_6-9.mp3': 'Lucid Highway',
+  '0203_Levels_6-9.mp3': 'Dreamvelocity',
+  '0204_Levels_6-9.mp3': 'Radiant Overdrive',
+  '0205_Levels_6-9.mp3': 'Mirrorglide',
+  '0206_Levels_6-9.mp3': 'Hyperlight Memory',
+  '0207_Levels_6-9.mp3': 'The Obelisk',
+  '0208_Levels_6-9.mp3': 'Neurostar',
+  '0209_Levels_6-9.mp3': 'Synapse Singularity',
+  '0210_Levels_6-9.mp3': 'Heatwave Cruise',
+  '0301_Levels_11-14.mp3': 'Synaptic Freefall',
+  '0302_Levels_11-14.mp3': 'Fractaline Rush',
+  '0304_Levels_11-14.mp3': 'Mouroboros',
+  '0305_Levels_11-14.mp3': 'Violight',
+  '0306_Levels_11-14.mp3': 'Bloodrush Panic',
+  '0307_Levels_11-14.mp3': 'Pulsebreaker',
+  '0308_Levels_11-14.mp3': 'Redline',
+  '0401_Levels_16-19.mp3': 'Cathedral of the Machine',
+  '0402_Levels_16-19.mp3': 'Anxiety Hymn',
+  '0403_Levels_16-19.mp3': 'Teeth in the Abyss',
+  '0404_Levels_16-19.mp3': 'Ritual Silence',
+  'B101_Level_05_Boss.mp3': 'Cranium Cruise',
+  'B102_Level_05_Boss.mp3': 'Neon Ossuary',
+  'B103_Level_05_Boss.mp3': 'Voltage Revue',
+  'B104_Level_05_Boss.mp3': 'Luxdrift',
+  'B201_Level_10_Boss.mp3': 'Darkflora',
+  'B202_Level_10_Boss.mp3': 'Shardwake',
+  'B203_Level_10_Boss.mp3': 'Refraction Engine',
+  'B204_Level_10_Boss.mp3': 'The Crystal Opens',
+  'B301_Level_15_Boss.mp3': 'Neon Gore Stampede',
+  'B302_Level_15_Boss.mp3': 'Predator Signal',
+  'B303_Level_15_Boss.mp3': 'Velocitaur',
+  'B304_Level_15_Boss.mp3': 'Choir of the Crimson',
+  'B401_Level_20_Boss.mp3': 'The Devourer Descends',
+  'B402_Level_20_Boss.mp3': 'Grief Titan',
+  'B403_Level_20_Boss.mp3': 'The Sound of Extinction',
+  'B404_Level_20_Boss.mp3': 'Pulse of the Maw',
+};
+
 export function getCurrentTrackName() {
   if (!currentMusic || !currentMusic.src) return 'No track playing';
   try {
     const url = new URL(currentMusic.src);
     const filename = url.pathname.split('/').pop();
-    // Remove extension for cleaner display
+    // Look up display title, fall back to filename without extension
+    if (TRACK_TITLES[filename]) return TRACK_TITLES[filename];
     return filename.replace(/\.[^.]+$/, '');
   } catch {
     return 'Unknown';
