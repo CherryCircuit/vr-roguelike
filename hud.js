@@ -2528,6 +2528,21 @@ export function showReadyScreen(level, playerPos) {
   header.name = 'header';
   readyGroup.add(header);
 
+  // Tutorial image (controller diagram) above instruction text
+  const texLoader = new THREE.TextureLoader();
+  const tutorialTex = texLoader.load('tutorial.png');
+  tutorialTex.colorSpace = THREE.SRGBColorSpace;
+  const tutorialAspect = 1920 / 1614;
+  const tutorialScale = 0.28;
+  const tutorialGeo = new THREE.PlaneGeometry(tutorialAspect * tutorialScale, tutorialScale);
+  const tutorialMat = new THREE.MeshBasicMaterial({
+    map: tutorialTex, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide
+  });
+  const tutorialMesh = new THREE.Mesh(tutorialGeo, tutorialMat);
+  tutorialMesh.position.set(0, 0.58, 0);
+  tutorialMesh.name = 'tutorial';
+  readyGroup.add(tutorialMesh);
+
   const instrDef = _rs('instruction', { x: 0, y: 0.44, z: 0, fontSize: 55, scale: 0.43, glow: false, color: 0x00ffff });
   const instruction = makeSprite('SHOOT TO BEGIN', {
     fontSize: instrDef.fontSize, color: '#' + instrDef.color.toString(16).padStart(6, '0'), scale: instrDef.scale,
