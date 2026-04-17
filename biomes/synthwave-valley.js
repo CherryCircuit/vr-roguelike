@@ -264,26 +264,26 @@ export function buildSynthwaveValleyScene(group, deps) {
   registerFadeMaterial(horizonGlowMat);
 
   // ── SUN FLOOR REFLECTION ──
-  // Blurred sun texture laid flat on the floor, directly below the sky sun.
-  // Additive blending, slow drift for subtle shimmer.
+  // Blurred sun texture laid flat on the floor.
   const sunReflTex = new THREE.TextureLoader().load('assets/sun-retro-blur.png');
   const sunReflMat = new THREE.MeshBasicMaterial({
     map: sunReflTex,
     transparent: true,
-    opacity: 0.35,
-    side: THREE.DoubleSide,
+    opacity: 0.8,
+    color: 0xf5f906,
+    side: THREE.FrontSide,
     depthWrite: false,
     depthTest: true,
     fog: true,
-    blending: THREE.AdditiveBlending,
   });
   const sunReflPlane = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), sunReflMat);
   sunReflPlane.name = 'synthwave-sun-floor-reflection';
-  sunReflPlane.rotation.x = -Math.PI / 2; // Lay flat
-  sunReflPlane.position.set(0, 0.1, -1700); // Below sun, slightly above floor
+  sunReflPlane.rotation.set(-Math.PI / 2, 0, -Math.PI);
+  sunReflPlane.position.set(0, 1.5, -600);
+  sunReflPlane.scale.set(0.15, 1.5, 1);
   sunReflPlane.frustumCulled = false;
-  sunReflPlane.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.1, -1700), 900);
-  sunReflPlane.renderOrder = -5; // Behind terrain
+  sunReflPlane.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.5, -600), 900);
+  sunReflPlane.renderOrder = 1;
   group.add(sunReflPlane);
   registerFadeMaterial(sunReflMat);
 
