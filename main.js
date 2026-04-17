@@ -7693,13 +7693,13 @@ function updatePauseCountdown(now) {
 // [CORE] Set kill tracking data before endGame
 const ENEMY_DISPLAY_NAMES = {
   basic: 'DRONE',
-  fast: 'DART',
-  tank: 'TANK',
-  swarm: 'SWARM',
-  spiral_swimmer: 'SERPENT',
-  jelly: 'JELLY',
+  fast: 'SNEAK',
+  tank: 'SENTINEL',
+  swarm: 'DART',
+  spiral_swimmer: 'SPIRAL SWIMMER',
+  jelly: 'STACK',
   mortar: 'MORTAR',
-  conductor: 'CONDUCTOR',
+  conductor: 'COMMANDER',
   mirror_knight: 'MIRROR KNIGHT',
 };
 
@@ -10242,7 +10242,7 @@ function updateProjectiles(dt) {
       const dy = projPos.y - boss.mesh.position.y;
       const dz = projPos.z - boss.mesh.position.z;
       const distSq = dx * dx + dy * dy + dz * dz;
-      const bossRadius = boss.hands && boss.hands.length > 0 ? 8.0 : 3.0;
+      const bossRadius = boss.hands && boss.hands.length > 0 ? 8.0 : (boss.def?.behavior === 'eclipse' ? 8.0 : 3.0);
       if (distSq < (broadRadius + bossRadius) * (broadRadius + bossRadius)) {
         _projectileNearbyMeshes.push(boss.mesh);
       }

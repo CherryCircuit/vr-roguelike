@@ -8935,6 +8935,11 @@ class EclipseEngineBoss extends Boss {
     this.phase3Threshold = this.maxHp * 0.42;
     this.lastStandThreshold = this.maxHp * 0.14;
 
+    // Phase 1 sub-thresholds: 3 vulnerability windows within phase 1 health
+    const phase1Health = this.maxHp - this.phase2Threshold;
+    this.phase1SubThreshold1 = this.maxHp - phase1Health * (1 / 3);
+    this.phase1SubThreshold2 = this.maxHp - phase1Health * (2 / 3);
+
     this.coreExposed = false;
     this.windowTimer = 0;
     this.windowDamageBudget = 0;
@@ -9417,6 +9422,11 @@ class EclipseEngineBoss extends Boss {
     }
 
     if (this.phase === 1) {
+      if (this.hp <= this.phase2Threshold + 0.001) {
+        this.pendingPhaseTransition = 2;
+        this.startPhaseTransition(2);
+        return;
+      }
       this.state = 'phase1_sealed';
       this.spawnPhase1Seals();
       this.volleyTimer = 1.3;
@@ -9605,11 +9615,22 @@ class EclipseEngineBoss extends Boss {
     const node = activeSeals[this.phase1SealAttackIndex % activeSeals.length];
     this.phase1SealAttackIndex++;
     const origin = node.group.getWorldPosition(new THREE.Vector3());
-    const offsets = [
-      { x: -0.85, z: -0.25 },
-      { x: 0.8, z: 0.55 },
-    ];
-    this.fireLobbedVolley([origin], playerPos, offsets, 3.9, 560, 0x6eeaff);
+
+    // Fire diagonally outward at 45 degrees, then home in on player
+    const bossPos = this.mesh.position;
+    const outwardDir = new THREE.Vector3().copy(origin).sub(bossPos).normalize();
+    outwardDir.y = 0;
+    const launchDir = new THREE.Vector3(outwardDir.x, 1.0, outwardDir.z).normalize();
+    const launchTarget = origin.clone().addScaledVector(launchDir, 8.0);
+
+    const color = 0x6eeaff;
+    if (this.telegraphing) {
+      this.telegraphing.start('projectile', 0.56, color, origin.clone());
+    }
+    this.later(280, () => {
+      if (this.phase !== 1 || this.state === 'transition') return;
+      spawnBossProjectile(origin.clone(), playerPos.clone(), false, 0);
+    });
   }
 
   firePhase2BacklineMortars(playerPos, originCount = 2) {
@@ -10153,7 +10174,12 @@ class EclipseEngineBoss extends Boss {
 
     if (nodePool === this.sealNodes && this.sealNodes.every((candidate) => !candidate.active)) {
       this.state = 'phase1_exposed';
-      this.beginCoreWindow(9.8, 0.07);
+      // Calculate budget: 1/3 of phase 1 health per vulnerability window
+      const phaseHealth = this.maxHp - this.phase2Threshold;
+      const remaining = this.hp - this.phase2Threshold;
+      let budget = phaseHealth / 3;
+      if (remaining <= phaseHealth / 3) budget = remaining; // Last third
+      this.beginCoreWindow(9.8, budget / this.maxHp);
     }
 
     if (nodePool === this.anchorNodes && this.anchorNodes.every((candidate) => !candidate.active)) {
@@ -11327,7 +11353,7 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
 
   // Store per-instance data
   const data = createBossProjectileRecord(idx, fromPos, velocity, {
-    lifetime: lobbed ? 6000 : 5000, // Lobbed projectiles live longer; hands at ±6.75 need extra distance
+    lifetime: lobbed ? 6000 : 7000, // Lobbed projectiles live longer; non-lobbed extended for reliable reach
     homingStrength,
     wigglePhase: Math.random() * Math.PI * 2,
     wiggleAmplitude,

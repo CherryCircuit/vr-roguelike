@@ -9,6 +9,7 @@ import {
   hudGroup, cameraRef,
   pauseMenuGroup, pauseCountdownGroup,
   loadLayout, novemberFontFamily,
+  ENEMY_DISPLAY_NAMES,
 } from './hud.js';
 import { playMenuHoverSound } from './audio.js';
 
@@ -498,7 +499,7 @@ function createBlasterSection(hand, panelX) {
       const icon = ENEMY_ICONS[type] || '💀';
       const x = index % 2 === 0 ? colLeft : colRight;
       const row = Math.floor(index / 2);
-      const enemyText = makeSprite(`${icon} ${type.toUpperCase()} x${count}`, {
+      const enemyText = makeSprite(`${icon} ${ENEMY_DISPLAY_NAMES[type] || type.toUpperCase()} x${count}`, {
         fontSize: scalePauseFont(22),
         color: '#ff6666',
         scale: scalePauseText(0.05),

@@ -44,6 +44,18 @@ const SCENE_Y_OFFSET = -0.725;
 let novemberFontLoaded = false;
 export let novemberFontFamily = 'November';
 
+export const ENEMY_DISPLAY_NAMES = {
+  basic: 'DRONE',
+  fast: 'SNEAK',
+  tank: 'SENTINEL',
+  swarm: 'DART',
+  spiral_swimmer: 'SPIRAL SWIMMER',
+  jelly: 'STACK',
+  mortar: 'MORTAR',
+  conductor: 'COMMANDER',
+  mirror_knight: 'MIRROR KNIGHT',
+};
+
 /** Central font resolution: November if loaded, else Arial fallback. */
 export function getGameFont(weight = 'bold', size) {
   const family = novemberFontFamily;
@@ -1100,13 +1112,13 @@ export function updateTitle(now) {
 
 const BESTIARY_ENTRIES = [
   { id: 'basic', name: 'Drone', firstLevel: 1, color: 0x00ff88, pattern: [[0,1,0],[1,1,1],[0,1,0]], voxelSize: 0.29, desc: 'A simple recon drone. Slow but steady, these units form the backbone of every wave.' },
-  { id: 'fast', name: 'Scout', firstLevel: 3, color: 0xffff00, pattern: [[1],[1]], voxelSize: 0.24, desc: 'Lightning-fast interceptor. Fragile but hard to hit.' },
-  { id: 'jelly', name: 'Column', firstLevel: 4, color: 0xff66ff, pattern: [[1],[1],[1],[1],[1]], voxelSize: 0.22, desc: 'Tall, unstable energy columns that shrink when damaged. Faster as they lose segments.' },
+  { id: 'fast', name: 'Sneak', firstLevel: 3, color: 0xffff00, pattern: [[1],[1]], voxelSize: 0.24, desc: 'Lightning-fast interceptor. Fragile but hard to hit.' },
+  { id: 'jelly', name: 'Stack', firstLevel: 4, color: 0xff66ff, pattern: [[1],[1],[1],[1],[1]], voxelSize: 0.22, desc: 'Tall, unstable energy columns that shrink when damaged. Faster as they lose segments.' },
   { id: 'tank', name: 'Sentinel', firstLevel: 6, color: 0x4488ff, pattern: [[1,1,1],[1,1,1]], voxelSize: 0.36, desc: 'Heavily armored assault unit. Slow but durable.' },
   { id: 'spiral_swimmer', name: 'Spiral Swimmer', firstLevel: 7, color: 0x00ffcc, pattern: [[1]], voxelSize: 0.18, desc: 'Serpentine train of segments weaving in spirals. Break the chain.' },
-  { id: 'swarm', name: 'Mote', firstLevel: 8, color: 0xff8800, pattern: [[1]], voxelSize: 0.19, desc: 'Tiny seekers that hunt in packs. Weak alone, deadly together.' },
-  { id: 'mortar', name: 'Artillery', firstLevel: 9, color: 0xff0000, pattern: [[0,1,0],[1,0,1],[0,1,0],[0,1,0]], voxelSize: 0.24, desc: 'Long-range artillery lobbing explosive projectiles. Close the gap or dodge.' },
-  { id: 'conductor', name: 'Warden', firstLevel: 10, color: 0xff66cc, pattern: [[1,0,1],[0,1,0],[1,0,1]], voxelSize: 0.28, desc: 'Tactical node linking nearby enemies, boosting speed and reducing damage taken.' },
+  { id: 'swarm', name: 'Dart', firstLevel: 8, color: 0xff8800, pattern: [[1]], voxelSize: 0.19, desc: 'Tiny seekers that hunt in packs. Weak alone, deadly together.' },
+  { id: 'mortar', name: 'Mortar', firstLevel: 9, color: 0xff0000, pattern: [[0,1,0],[1,0,1],[0,1,0],[0,1,0]], voxelSize: 0.24, desc: 'Long-range artillery lobbing explosive projectiles. Close the gap or dodge.' },
+  { id: 'conductor', name: 'Commander', firstLevel: 10, color: 0xff66cc, pattern: [[1,0,1],[0,1,0],[1,0,1]], voxelSize: 0.28, desc: 'Tactical node linking nearby enemies, boosting speed and reducing damage taken.' },
   { id: 'mirror_knight', name: 'Mirror Knight', firstLevel: 12, color: 0xd0d0d0, pattern: [[1,1,1],[1,0,1],[1,1,1]], voxelSize: 0.32, desc: 'Reflective warrior that phases to dodge. Temporarily immune after hits.' },
   { id: 'scrap_golem', name: 'Scrap Golem', firstLevel: 5, color: 0x886644, pattern: [[0,1,1,0],[1,1,1,1],[1,1,1,1],[0,1,1,0]], voxelSize: 0.35, desc: 'Hulking salvage assembly. Slams ground, summons scraplings.', isBoss: true },
   { id: 'holo_phantom', name: 'Holo Phantom', firstLevel: 5, color: 0x00ffff, pattern: [[0,1,0],[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.3, desc: 'Ghostly projection that teleports and deploys decoys.', isBoss: true },
@@ -1114,7 +1126,7 @@ const BESTIARY_ENTRIES = [
   { id: 'rust_serpent', name: 'Rust Serpent', firstLevel: 5, color: 0xcc4400, pattern: [[1,0,0,0,0],[1,1,0,0,0],[0,1,1,0,0],[0,0,1,1,0],[0,0,0,1,1]], voxelSize: 0.28, desc: 'Segmented serpent spitting toxic projectiles.', isBoss: true },
   { id: 'static_wisp', name: 'Static Wisp', firstLevel: 5, color: 0xffff00, pattern: [[0,0,1,0,0],[0,1,1,1,0],[1,1,0,1,1],[0,1,1,1,0],[0,0,1,0,0]], voxelSize: 0.25, desc: 'Crackling entity arcing electricity between positions.', isBoss: true },
   { id: 'skull_boss', name: 'NECRO', firstLevel: 5, color: 0xffffff, pattern: [[1]], voxelSize: 0.4, desc: 'Massive skull with animated hands. Destroy hands to expose skull.', isBoss: true },
-  { id: 'the_prism', name: 'The Prism', firstLevel: 10, color: 0xff44ff, pattern: [[1]], voxelSize: 0.35, desc: 'Crystalline entity refracting damage into rainbow shards. Summons prismatic walls.', isBoss: true },
+  { id: 'the_prism', name: 'THE PRISM', firstLevel: 10, color: 0xff44ff, pattern: [[1]], voxelSize: 0.35, desc: 'Crystalline entity refracting damage into rainbow shards. Summons prismatic walls.', isBoss: true },
   { id: 'neon_minotaur', name: 'Blood Minotaur', firstLevel: 15, color: 0xd70200, pattern: [[1]], voxelSize: 0.4, desc: 'Charging juggernaut with shockwaves and blood shards.', isBoss: true },
   { id: 'eclipse_engine', name: 'Eclipse Engine', firstLevel: 20, color: 0x33ccff, pattern: [[1]], voxelSize: 0.45, desc: 'The final boss. Seals reality, charges beams, summons walls. Break the seals.', isBoss: true },
 ];
@@ -1184,7 +1196,7 @@ export function showBestiary(playerPos) {
   const backGeo = new THREE.PlaneGeometry(1.0, 0.2);
   const backMat = new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
   const backMesh = new THREE.Mesh(backGeo, backMat);
-  backMesh.position.set(0, -0.85, 0);
+  backMesh.position.set(0, -1.2, 0);
   backMesh.userData.scoreboardAction = 'back';
   bestiaryGroup.add(backMesh);
   bestiaryGroup.add(new THREE.LineSegments(
@@ -1194,16 +1206,16 @@ export function showBestiary(playerPos) {
   const backText = makeSprite('BACK', {
     fontSize: 60, color: '#ff4444', glow: true, glowColor: '#ff4444', scale: 0.2,
   });
-  backText.position.set(0, -0.85, 0.02);
+  backText.position.set(0, -1.2, 0.02);
   bestiaryGroup.add(backText);
   bestiaryBackBtn = backMesh;
 
-  // Enemy grid - 4 columns
-  const COLS = 4;
-  const CARD_W = 0.45;
-  const CARD_H = 0.35;
+  // Enemy grid - 6 columns
+  const COLS = 6;
+  const CARD_W = 0.6;
+  const CARD_H = 0.5;
   const startX = -((COLS - 1) * CARD_W) / 2;
-  const startY = 0.6;
+  const startY = 0.3;
 
   BESTIARY_ENTRIES.forEach((entry, i) => {
     const col = i % COLS;
@@ -1219,15 +1231,15 @@ export function showBestiary(playerPos) {
     const model = discovered
       ? buildVoxelModel(entry.pattern, entry.voxelSize * 0.8, entry.color)
       : buildQuestionMark();
-    model.scale.setScalar(0.5);
+    model.scale.setScalar(0.6);
     model.position.y = 0.05;
     cardGroup.add(model);
 
     // Name
     const nameText = makeSprite(discovered ? entry.name : '???', {
-      fontSize: 32, color: discovered ? '#' + entry.color.toString(16).padStart(6, '0') : '#888888',
+      fontSize: 40, color: discovered ? '#' + entry.color.toString(16).padStart(6, '0') : '#888888',
       glow: discovered, glowColor: discovered ? '#' + entry.color.toString(16).padStart(6, '0') : '#444444',
-      scale: 0.15,
+      scale: 0.18,
     });
     nameText.position.y = -0.1;
     cardGroup.add(nameText);
@@ -1235,9 +1247,9 @@ export function showBestiary(playerPos) {
     // Description (discovered only)
     if (discovered && entry.desc) {
       const descText = makeSprite(entry.desc, {
-        fontSize: 18, color: '#aaaaaa', scale: 0.08, forceArial: true,
+        fontSize: 22, color: '#aaaaaa', scale: 0.1, forceArial: true,
       });
-      descText.position.y = -0.16;
+      descText.position.y = -0.22;
       cardGroup.add(descText);
     }
 
@@ -2768,7 +2780,7 @@ export function showReadyScreen(level, playerPos) {
   });
   const tutorialMesh = new THREE.Mesh(tutorialGeo, tutorialMat);
   tutorialMesh.renderOrder = 999;
-  tutorialMesh.position.set(0, 1.7, 0.1);
+  tutorialMesh.position.set(0, 2.0, 0.1);
   tutorialMesh.name = 'tutorial';
   readyGroup.add(tutorialMesh);
 
@@ -4579,18 +4591,10 @@ export function updateHUDHover(raycasters) {
             obj.userData.debugAction === 'back') {
           glowColor = '255,68,68'; // Red (#ff4444)
         }
-        // Check for SCOREBOARD button (yellow glow)
-        else if (obj.userData.isTitleScoreboardBtn ||
-                 obj.userData.scoreboardAction === 'scoreboard') {
-          glowColor = '255,255,0'; // Yellow (#ffff00)
-        }
-        // Check for settings gear button (cyan glow)
-        else if (obj.userData.isTitleSettingsBtn) {
-          glowColor = '0,255,255'; // Cyan
-        }
-        // Check for bestiary button (magenta glow)
-        else if (obj.userData.isTitleBestiaryBtn) {
-          glowColor = '255,0,255'; // Magenta
+        // All other buttons: derive glow from borderColor
+        else if (obj.userData.borderColor !== undefined) {
+          const bc = obj.userData.borderColor;
+          glowColor = `${(bc >> 16) & 255},${(bc >> 8) & 255},${bc & 255}`;
         }
 
         // Share parent geometry instead of cloning (glow is a child, inherits scale)

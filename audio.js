@@ -1468,6 +1468,10 @@ export function playUpgradeSound() {
 
 // ── Ting Sound (metallic ping for immune hits) ───────────
 export function playTingSound() {
+  const now = performance.now();
+  if (now - (playTingSound._lastPlayed || 0) < 120) return; // 120ms throttle - max ~8 per second
+  playTingSound._lastPlayed = now;
+
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 

@@ -355,6 +355,12 @@
       { id:'btnBack_text', name:'BACK text', type:'text', text:'BACK', color:0xff6666, fontSize:52, scale:0.2, x:0, y:-1.0, z:0.01 },
     ];
 
+    const BESTIARY_DEFS = [
+      { id:'title', name:'BESTIARY Title', type:'text', text:'BESTIARY', color:0x00ffff, fontSize:70, scale:0.35, glow:true, x:0, y:0.9, z:0 },
+      { id:'backBtnGroup', name:'BACK Button', type:'rect', color:0x333333, w:1.0, h:0.2, x:0, y:-0.85, z:0, opacity:0.85, borderColor:0xff0000 },
+      { id:'backBtnText', name:'BACK Text', type:'text', text:'BACK', color:0xff0000, fontSize:60, scale:0.2, glow:true, x:0, y:-0.85, z:0.02 },
+    ];
+
     // ── Wrist Hologram Screens (controller-attached during upgrade-between-levels) ──
     // These represent small holographic panels attached to each VR controller.
     // Left wrist shows current left-blaster info; right wrist shows right-blaster info.
@@ -526,6 +532,19 @@
             label: 'Upgrade Wrist (Right)',
             exportName: 'upgrade-wrist-right.json',
             exportEditor: 'upgrade-wrist-right',
+        },
+        'bestiary': {
+            defs: BESTIARY_DEFS,
+            cameraPos: [0, 0, 5],
+            cameraTarget: [0, 0, 0],
+            useHudGroup: false,
+            gridRotation: Math.PI / 2,
+            hasGroups: true,
+            hasAnchors: false,
+            hasVisibility: true,
+            label: 'Bestiary',
+            exportName: 'bestiary.json',
+            exportEditor: 'bestiary',
         },
     };
 
