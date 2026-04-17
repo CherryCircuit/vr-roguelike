@@ -2533,13 +2533,14 @@ export function showReadyScreen(level, playerPos) {
   const tutorialTex = texLoader.load('tutorial.png');
   tutorialTex.colorSpace = THREE.SRGBColorSpace;
   const tutorialAspect = 1920 / 1614;
-  const tutorialScale = 1.12;
+  const tutorialScale = 1.3;
   const tutorialGeo = new THREE.PlaneGeometry(tutorialAspect * tutorialScale, tutorialScale);
   const tutorialMat = new THREE.MeshBasicMaterial({
-    map: tutorialTex, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide
+    map: tutorialTex, transparent: true, depthWrite: false, depthTest: false, fog: false, side: THREE.DoubleSide
   });
   const tutorialMesh = new THREE.Mesh(tutorialGeo, tutorialMat);
-  tutorialMesh.position.set(0, 1.5, -0.1);
+  tutorialMesh.renderOrder = 999;
+  tutorialMesh.position.set(0, 1.7, 0.1);
   tutorialMesh.name = 'tutorial';
   readyGroup.add(tutorialMesh);
 
