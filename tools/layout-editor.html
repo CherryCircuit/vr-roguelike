@@ -2020,6 +2020,7 @@
                 if (v.fontSize !== undefined) dd.fontSize = v.fontSize;
                 if (v.glow !== undefined) dd.glow = v.glow;
                 if (v.maxWidth !== undefined) dd.maxWidth = v.maxWidth;
+                else if (dd.maxWidth) dd.maxWidth = undefined;
                 if (v.forceArial !== undefined) dd.forceArial = v.forceArial;
             }
             else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; }
@@ -2118,7 +2119,7 @@
                 data.elements[id].fontSize = d.fontSize;
                 data.elements[id].glow = !!d.glow;
                 if (d.forceArial) data.elements[id].forceArial = true;
-                if (d.maxWidth) data.elements[id].maxWidth = d.maxWidth;
+                if (d.maxWidth != null) data.elements[id].maxWidth = d.maxWidth;
             } else if (d.type === 'hearts') {
                 data.elements[id].scale = +((d.scale || 1.0).toFixed(4));
             } else if (d.type === 'wire-octa' || d.type === 'cube' || d.type === 'sphere') {
@@ -2247,6 +2248,7 @@
                         if (v.fontSize !== undefined) dd.fontSize = v.fontSize;
                         if (v.glow !== undefined) dd.glow = v.glow;
                         if (v.maxWidth !== undefined) dd.maxWidth = v.maxWidth;
+                        else if (dd.maxWidth) dd.maxWidth = undefined;
                         if (v.forceArial !== undefined) dd.forceArial = v.forceArial;
                     }
                     else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; }

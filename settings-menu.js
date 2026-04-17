@@ -122,6 +122,7 @@ function makeBtn(label, width = 0.4, height = 0.25, borderColor = 0x00ffff, font
   const op = bgOpacity != null ? bgOpacity : 0.85;
   const mesh = new THREE.Mesh(geo, settingsMaterial(bg, op));
   mesh.renderOrder = SETTINGS_RENDER_ORDER;
+  mesh.userData.btnBorderColor = borderColor;
   group.add(mesh);
   const border = new THREE.LineSegments(
     new THREE.EdgesGeometry(geo),
@@ -524,10 +525,10 @@ export function updateSettingsHover(raycaster) {
     if (!border || !border.material) return;
 
     const isHovered = btn === hoveredMesh;
-    const isBack = btn.userData.settingsAction === 'back';
-    const baseColor = isBack ? 0x997700 : 0x006666; // Muted when not hovered
-    const hoverColor = isBack ? 0xffff00 : 0x00ffff; // Bright when hovered
-    border.material.color.set(isHovered ? hoverColor : baseColor);
+    const btnColor = btn.userData.btnBorderColor || 0x00ffff;
+    // Dim the button color for unhovered, full brightness for hovered
+    const dimColor = new THREE.Color(btnColor).multiplyScalar(0.4).getHex();
+    border.material.color.set(isHovered ? btnColor : dimColor);
   });
 }
 
