@@ -80,6 +80,7 @@ import {
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown, hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
   showSettings, hideSettings, isSettingsVisible, getSettingsHit, executeSettingsAction, getPreviousMenu,
   updateHUDHover,
+  showBestiary, hideBestiary, isBestiaryVisible, getBestiaryHit, updateBestiary,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, showBossAlert, hideBossAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
   resetHoloGlitch,
@@ -2950,6 +2951,15 @@ function handleSettingsTrigger(controller) {
   }
 }
 
+// ── Highest Level Tracking (localStorage) ─────────────
+function getHighestLevel() {
+  return parseInt(localStorage.getItem('spaceomicide_highest_level') || '0', 10);
+}
+function saveHighestLevel(level) {
+  const current = getHighestLevel();
+  if (level > current) localStorage.setItem('spaceomicide_highest_level', String(level));
+}
+
 function handleTitleTrigger(controller) {
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -2963,7 +2973,18 @@ function handleTitleTrigger(controller) {
   if (!btnHit) {
     const idx = getControllerIndex(controller);
     const hover = getHoveredAction(idx >= 0 ? `controller-${idx}` : 'controller');
-    if (hover && (hover.action === 'scoreboard' || hover.action === 'settings' || hover.action === 'diagnostics')) btnHit = hover.action;
+    if (hover && (hover.action === 'scoreboard' || hover.action === 'settings' || hover.action === 'diagnostics' || hover.action === 'bestiary')) btnHit = hover.action;
+  }
+  // Check if bestiary is open
+  if (isBestiaryVisible()) {
+    const action = getBestiaryHit(_uiRaycaster);
+    if (action === 'back') {
+      playMenuClick();
+      hideBestiary();
+      showTitle();
+      return;
+    }
+    return; // Consume trigger while bestiary is open
   }
   if (btnHit === 'scoreboard') {
     playMenuClick();
@@ -2981,6 +3002,12 @@ function handleTitleTrigger(controller) {
     showSettings('title');
     return;
   }
+  if (btnHit === 'bestiary') {
+    playMenuClick();
+    hideTitle();
+    showBestiary(new THREE.Vector3(0, 1.6, 0));
+    return;
+  }
   playMenuClick();
   startGame();
 }
@@ -2995,6 +3022,8 @@ function handleDesktopClick() {
   if (st === State.TITLE) {
     if (isSettingsVisible()) {
       handleDesktopSettingsClick();
+    } else if (isBestiaryVisible()) {
+      handleDesktopBestiaryClick();
     } else {
       handleDesktopTitleClick();
     }
@@ -3033,7 +3062,7 @@ function handleDesktopTitleClick() {
   let btnHit = getTitleButtonHit(raycaster);
   if (!btnHit) {
     const hover = getHoveredAction('desktop');
-    if (hover && (hover.action === 'scoreboard' || hover.action === 'settings' || hover.action === 'diagnostics')) btnHit = hover.action;
+    if (hover && (hover.action === 'scoreboard' || hover.action === 'settings' || hover.action === 'diagnostics' || hover.action === 'bestiary')) btnHit = hover.action;
   }
   if (btnHit === 'scoreboard') {
     playMenuClick();
@@ -3051,8 +3080,26 @@ function handleDesktopTitleClick() {
     showSettings('title');
     return;
   }
+  if (btnHit === 'bestiary') {
+    playMenuClick();
+    hideTitle();
+    showBestiary(new THREE.Vector3(0, 1.6, 0));
+    return;
+  }
   playMenuClick();
   startGame();
+}
+
+function handleDesktopBestiaryClick() {
+  const raycaster = getAimRaycaster();
+  if (!raycaster) return;
+  const action = getBestiaryHit(raycaster);
+  if (action === 'back') {
+    playMenuClick();
+    hideBestiary();
+    showTitle();
+    return;
+  }
 }
 
 function handleDesktopGameOverClick() {
@@ -7668,6 +7715,9 @@ function endGame(victory) {
   game.finalScore = game.score;
   game.finalLevel = game.level;
 
+  // Save highest level reached to localStorage
+  saveHighestLevel(game.level);
+
   // Record death stats to Supabase (game over only)
   if (!victory && game.killedBy) {
     fetch('/api/death-stats', {
@@ -10676,6 +10726,7 @@ function render(timestamp) {
   _mark('pre_state_dispatch'); // ── end: controls, seek, vr pause, desktop controls
   if (st === State.TITLE) {
     updateTitle(now);
+    updateBestiary(now);
     const level = consumeDebugJump();
     if (level) {
       debugJumpToLevel(level);

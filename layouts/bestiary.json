@@ -1,0 +1,18 @@
+{
+  "screen": "bestiary",
+  "elements": {
+    "title": {
+      "x": 0, "y": 0.9, "z": 0, "align": "center", "type": "text", "visible": true, "anchor": "center",
+      "color": 65535, "_colorHex": "#00ffff", "scale": 0.35, "text": "BESTIARY", "fontSize": 70, "glow": true
+    },
+    "backBtnGroup": {
+      "x": 0, "y": -0.85, "z": 0, "align": "center", "type": "rect", "visible": true, "anchor": "center",
+      "color": 3355443, "_colorHex": "#333333", "w": 1.0, "h": 0.2, "opacity": 0.85, "borderColor": 16711680
+    },
+    "backBtnText": {
+      "x": 0, "y": -0.85, "z": 0.02, "align": "center", "type": "text", "visible": true, "anchor": "center",
+      "color": 16711680, "_colorHex": "#ff0000", "scale": 0.2, "text": "BACK", "fontSize": 60, "glow": true
+    }
+  },
+  "exportedAt": "2026-04-17T18:00:00.000Z"
+}

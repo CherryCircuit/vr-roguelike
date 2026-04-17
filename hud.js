@@ -230,6 +230,11 @@ let titleBlinkSprite = null;
 // Title scoreboard button
 let titleScoreboardBtn = null;
 let titleSettingsBtn = null;
+let titleBestiaryBtn = null;
+let bestiaryBackBtn = null;
+
+const bestiaryGroup = new THREE.Group();
+bestiaryGroup.name = 'bestiary';
 
 // Title diagnostics button
 let titleDiagBtn = null;
@@ -747,12 +752,16 @@ export async function initHUD(camera, scene) {
   settingsGroup.rotation.set(0, 0, 0);
   scene.add(settingsGroup);
 
+  bestiaryGroup.visible = false;
+  bestiaryGroup.rotation.set(0, 0, 0);
+  scene.add(bestiaryGroup);
+
   // Disable frustum culling on all UI groups to prevent disappearing when looking around
   // UI elements have unreliable bounding boxes/spheres that cause false culling
   [
     titleGroup, hudGroup, floatingMessageGroup, levelTextGroup, upgradeGroup,
     gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup,
-    readyGroup, pauseMenuGroup, pauseCountdownGroup, settingsGroup
+    readyGroup, pauseMenuGroup, pauseCountdownGroup, settingsGroup, bestiaryGroup
   ].forEach(g => { if (g) g.frustumCulled = false; });
 
   // Countdown still follows camera so player can see it
@@ -1036,6 +1045,36 @@ async function createTitleScreen() {
   settingsBtnGroup.add(settingsBtnText);
   titleGroup.add(settingsBtnGroup);
   titleSettingsBtn = settingsBtnMesh;
+
+  // Bestiary book button
+  const bestiaryBtnDef = le('dup_1_settingsBtnGroup', { x: -0.82, y: -0.66, z: 0.005, w: 0.4, h: 0.25, color: 9267, opacity: 0.85 });
+  const bestiaryBtnGrp = new THREE.Group();
+  bestiaryBtnGrp.position.set(bestiaryBtnDef.x, bestiaryBtnDef.y, bestiaryBtnDef.z);
+  bestiaryBtnGrp.name = 'bestiaryBtnGroup';
+  const bestiaryTextDef = le('dup_2_settings_btn_text', { fontSize: 100, scale: 0.27, glow: true, color: 65535 });
+  const bestiaryBtnGeo = new THREE.PlaneGeometry(bestiaryBtnDef.w, bestiaryBtnDef.h);
+  const bestiaryBtnMat = new THREE.MeshBasicMaterial({ color: bestiaryBtnDef.color, transparent: true, opacity: bestiaryBtnDef.opacity, side: THREE.DoubleSide });
+  const bestiaryBtnMesh = new THREE.Mesh(bestiaryBtnGeo, bestiaryBtnMat);
+  bestiaryBtnMesh.userData.isTitleBestiaryBtn = true;
+  bestiaryBtnMesh.userData.borderColor = bestiaryTextDef.color || 65535;
+  bestiaryBtnGrp.add(bestiaryBtnMesh);
+  bestiaryBtnGrp.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(bestiaryBtnGeo),
+    new THREE.LineBasicMaterial({ color: 190440 })
+  ));
+  const bestiaryBtnText = makeSprite('\uD83D\uDCD6', {
+    fontSize: bestiaryTextDef.fontSize, color: '#' + (bestiaryTextDef.color || 65535).toString(16).padStart(6, '0'),
+    glow: bestiaryTextDef.glow, glowColor: '#' + (bestiaryTextDef.color || 65535).toString(16).padStart(6, '0'),
+    scale: bestiaryTextDef.scale, forceArial: true,
+  });
+  bestiaryBtnText.position.set(
+    (bestiaryTextDef.x || 0) - bestiaryBtnDef.x,
+    (bestiaryTextDef.y || 0) - bestiaryBtnDef.y,
+    bestiaryTextDef.z || 0.01
+  );
+  bestiaryBtnGrp.add(bestiaryBtnText);
+  titleGroup.add(bestiaryBtnGrp);
+  titleBestiaryBtn = bestiaryBtnMesh;
 }
 
 export function showTitle() {
@@ -1055,6 +1094,184 @@ export function updateTitle(now) {
   if (_logoUniforms) {
     _logoUniforms.uTime.value = now * 0.001; // seconds
   }
+}
+
+// ── Bestiary Screen ───────────────────────────────────────
+
+const BESTIARY_ENTRIES = [
+  { id: 'basic', name: 'Drone', firstLevel: 1, color: 0x00ff88, pattern: [[0,1,0],[1,1,1],[0,1,0]], voxelSize: 0.29, desc: 'A simple recon drone. Slow but steady, these units form the backbone of every wave.' },
+  { id: 'fast', name: 'Scout', firstLevel: 3, color: 0xffff00, pattern: [[1],[1]], voxelSize: 0.24, desc: 'Lightning-fast interceptor. Fragile but hard to hit.' },
+  { id: 'jelly', name: 'Column', firstLevel: 4, color: 0xff66ff, pattern: [[1],[1],[1],[1],[1]], voxelSize: 0.22, desc: 'Tall, unstable energy columns that shrink when damaged. Faster as they lose segments.' },
+  { id: 'tank', name: 'Sentinel', firstLevel: 6, color: 0x4488ff, pattern: [[1,1,1],[1,1,1]], voxelSize: 0.36, desc: 'Heavily armored assault unit. Slow but durable.' },
+  { id: 'spiral_swimmer', name: 'Spiral Swimmer', firstLevel: 7, color: 0x00ffcc, pattern: [[1]], voxelSize: 0.18, desc: 'Serpentine train of segments weaving in spirals. Break the chain.' },
+  { id: 'swarm', name: 'Mote', firstLevel: 8, color: 0xff8800, pattern: [[1]], voxelSize: 0.19, desc: 'Tiny seekers that hunt in packs. Weak alone, deadly together.' },
+  { id: 'mortar', name: 'Artillery', firstLevel: 9, color: 0xff0000, pattern: [[0,1,0],[1,0,1],[0,1,0],[0,1,0]], voxelSize: 0.24, desc: 'Long-range artillery lobbing explosive projectiles. Close the gap or dodge.' },
+  { id: 'conductor', name: 'Warden', firstLevel: 10, color: 0xff66cc, pattern: [[1,0,1],[0,1,0],[1,0,1]], voxelSize: 0.28, desc: 'Tactical node linking nearby enemies, boosting speed and reducing damage taken.' },
+  { id: 'mirror_knight', name: 'Mirror Knight', firstLevel: 12, color: 0xd0d0d0, pattern: [[1,1,1],[1,0,1],[1,1,1]], voxelSize: 0.32, desc: 'Reflective warrior that phases to dodge. Temporarily immune after hits.' },
+  { id: 'scrap_golem', name: 'Scrap Golem', firstLevel: 5, color: 0x886644, pattern: [[0,1,1,0],[1,1,1,1],[1,1,1,1],[0,1,1,0]], voxelSize: 0.35, desc: 'Hulking salvage assembly. Slams ground, summons scraplings.', isBoss: true },
+  { id: 'holo_phantom', name: 'Holo Phantom', firstLevel: 5, color: 0x00ffff, pattern: [[0,1,0],[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.3, desc: 'Ghostly projection that teleports and deploys decoys.', isBoss: true },
+  { id: 'pulse_emitter', name: 'Pulse Emitter', firstLevel: 5, color: 0xff0088, pattern: [[1,1,1],[1,0,1],[1,1,1]], voxelSize: 0.32, desc: 'Pulsing core with rhythmic shields. Strike between cycles.', isBoss: true },
+  { id: 'rust_serpent', name: 'Rust Serpent', firstLevel: 5, color: 0xcc4400, pattern: [[1,0,0,0,0],[1,1,0,0,0],[0,1,1,0,0],[0,0,1,1,0],[0,0,0,1,1]], voxelSize: 0.28, desc: 'Segmented serpent spitting toxic projectiles.', isBoss: true },
+  { id: 'static_wisp', name: 'Static Wisp', firstLevel: 5, color: 0xffff00, pattern: [[0,0,1,0,0],[0,1,1,1,0],[1,1,0,1,1],[0,1,1,1,0],[0,0,1,0,0]], voxelSize: 0.25, desc: 'Crackling entity arcing electricity between positions.', isBoss: true },
+  { id: 'skull_boss', name: 'NECRO', firstLevel: 5, color: 0xffffff, pattern: [[1]], voxelSize: 0.4, desc: 'Massive skull with animated hands. Destroy hands to expose skull.', isBoss: true },
+  { id: 'the_prism', name: 'The Prism', firstLevel: 10, color: 0xff44ff, pattern: [[1]], voxelSize: 0.35, desc: 'Crystalline entity refracting damage into rainbow shards. Summons prismatic walls.', isBoss: true },
+  { id: 'neon_minotaur', name: 'Blood Minotaur', firstLevel: 15, color: 0xd70200, pattern: [[1]], voxelSize: 0.4, desc: 'Charging juggernaut with shockwaves and blood shards.', isBoss: true },
+  { id: 'eclipse_engine', name: 'Eclipse Engine', firstLevel: 20, color: 0x33ccff, pattern: [[1]], voxelSize: 0.45, desc: 'The final boss. Seals reality, charges beams, summons walls. Break the seals.', isBoss: true },
+];
+
+function buildVoxelModel(pattern, voxelSize, color) {
+  const group = new THREE.Group();
+  const geo = new THREE.BoxGeometry(voxelSize * 0.95, voxelSize * 0.95, voxelSize * 0.95);
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, depthWrite: false, fog: false });
+  const rows = pattern.length;
+  const cols = pattern[0].length;
+  const cx = (cols - 1) / 2;
+  const cy = (rows - 1) / 2;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (pattern[r][c]) {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set((c - cx) * voxelSize, (cy - r) * voxelSize, 0);
+        group.add(mesh);
+      }
+    }
+  }
+  return group;
+}
+
+function buildQuestionMark() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.6 });
+  const curve = new THREE.TorusGeometry(0.15, 0.03, 8, 16, Math.PI * 1.5);
+  const curveMesh = new THREE.Mesh(curve, mat);
+  curveMesh.position.y = 0.15;
+  group.add(curveMesh);
+  const dot = new THREE.SphereGeometry(0.04, 8, 8);
+  const dotMesh = new THREE.Mesh(dot, mat);
+  dotMesh.position.y = -0.1;
+  group.add(dotMesh);
+  return group;
+}
+
+export function showBestiary(playerPos) {
+  // Clear previous content
+  while (bestiaryGroup.children.length) {
+    const child = bestiaryGroup.children[0];
+    bestiaryGroup.remove(child);
+  }
+  bestiaryGroup.visible = true;
+
+  // Position in front of player (same pattern as scoreboard)
+  if (playerPos) {
+    bestiaryGroup.position.copy(playerPos);
+    bestiaryGroup.position.y += 1.6 + SCENE_Y_OFFSET + 0.3;
+    bestiaryGroup.position.z -= 4;
+  } else {
+    bestiaryGroup.position.set(0, 1.6 + SCENE_Y_OFFSET + 0.3, -4);
+  }
+  bestiaryGroup.rotation.set(0, 0, 0);
+
+  const highestLevel = parseInt(localStorage.getItem('spaceomicide_highest_level') || '0', 10);
+
+  // Title
+  const titleSprite = makeSprite('BESTIARY', {
+    fontSize: 70, color: '#00ffff', glow: true, glowColor: '#00ffff', glowSize: 5, scale: 0.35,
+  });
+  titleSprite.position.set(0, 0.9, 0);
+  bestiaryGroup.add(titleSprite);
+
+  // Back button
+  const backGeo = new THREE.PlaneGeometry(1.0, 0.2);
+  const backMat = new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+  const backMesh = new THREE.Mesh(backGeo, backMat);
+  backMesh.position.set(0, -0.85, 0);
+  backMesh.userData.scoreboardAction = 'back';
+  bestiaryGroup.add(backMesh);
+  bestiaryGroup.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(backGeo),
+    new THREE.LineBasicMaterial({ color: 0xff4444 })
+  ));
+  const backText = makeSprite('BACK', {
+    fontSize: 60, color: '#ff4444', glow: true, glowColor: '#ff4444', scale: 0.2,
+  });
+  backText.position.set(0, -0.85, 0.02);
+  bestiaryGroup.add(backText);
+  bestiaryBackBtn = backMesh;
+
+  // Enemy grid - 4 columns
+  const COLS = 4;
+  const CARD_W = 0.45;
+  const CARD_H = 0.35;
+  const startX = -((COLS - 1) * CARD_W) / 2;
+  const startY = 0.6;
+
+  BESTIARY_ENTRIES.forEach((entry, i) => {
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
+    const x = startX + col * CARD_W;
+    const y = startY - row * CARD_H;
+
+    const discovered = highestLevel >= entry.firstLevel;
+    const cardGroup = new THREE.Group();
+    cardGroup.position.set(x, y, 0);
+
+    // Model
+    const model = discovered
+      ? buildVoxelModel(entry.pattern, entry.voxelSize * 0.8, entry.color)
+      : buildQuestionMark();
+    model.scale.setScalar(0.5);
+    model.position.y = 0.05;
+    cardGroup.add(model);
+
+    // Name
+    const nameText = makeSprite(discovered ? entry.name : '???', {
+      fontSize: 32, color: discovered ? '#' + entry.color.toString(16).padStart(6, '0') : '#888888',
+      glow: discovered, glowColor: discovered ? '#' + entry.color.toString(16).padStart(6, '0') : '#444444',
+      scale: 0.15,
+    });
+    nameText.position.y = -0.1;
+    cardGroup.add(nameText);
+
+    // Description (discovered only)
+    if (discovered && entry.desc) {
+      const descText = makeSprite(entry.desc, {
+        fontSize: 18, color: '#aaaaaa', scale: 0.08, forceArial: true,
+      });
+      descText.position.y = -0.16;
+      cardGroup.add(descText);
+    }
+
+    bestiaryGroup.add(cardGroup);
+  });
+}
+
+export function hideBestiary() {
+  bestiaryGroup.visible = false;
+  while (bestiaryGroup.children.length) {
+    const child = bestiaryGroup.children[0];
+    bestiaryGroup.remove(child);
+  }
+}
+
+export function isBestiaryVisible() {
+  return bestiaryGroup.visible;
+}
+
+export function getBestiaryHit(raycaster) {
+  if (!bestiaryBackBtn) return null;
+  const hits = raycaster.intersectObject(bestiaryBackBtn, false);
+  return hits.length > 0 ? 'back' : null;
+}
+
+export function updateBestiary(now) {
+  if (!bestiaryGroup.visible) return;
+  bestiaryGroup.children.forEach(child => {
+    if (child.isGroup && child !== bestiaryBackBtn?.parent) {
+      child.children.forEach(sub => {
+        if (sub.isGroup) sub.rotation.y = now * 0.001;
+      });
+    }
+  });
 }
 
 // ── VR HUD (hearts, kill counter, level, score) ────────────
@@ -2427,6 +2644,12 @@ export function getTitleButtonHit(raycaster) {
   if (titleSettingsBtn) {
     const hits = raycaster.intersectObject(titleSettingsBtn, false);
     if (hits.length > 0) return 'settings';
+  }
+
+  // Check bestiary button
+  if (titleBestiaryBtn) {
+    const hits = raycaster.intersectObject(titleBestiaryBtn, false);
+    if (hits.length > 0) return 'bestiary';
   }
 
   return null;
@@ -4129,6 +4352,7 @@ export function updateHUDHover(raycasters) {
     if (titleScoreboardBtn) hoverables.push(titleScoreboardBtn);
     if (titleDiagBtn) hoverables.push(titleDiagBtn);
     if (titleSettingsBtn) hoverables.push(titleSettingsBtn);
+    if (titleBestiaryBtn) hoverables.push(titleBestiaryBtn);
   }
 
   // 2. Upgrade Cards
@@ -4258,6 +4482,7 @@ export function updateHUDHover(raycasters) {
                        (obj.userData.isSettingsBtn ? obj.userData.settingsAction : null) ||
                        (obj.userData.isTitleScoreboardBtn ? 'scoreboard' : null) ||
                        (obj.userData.isTitleSettingsBtn ? 'settings' : null) ||
+                       (obj.userData.isTitleBestiaryBtn ? 'bestiary' : null) ||
                        (obj.userData.isKeyboardKey ? obj.userData.keyValue : null);
         if (action) {
           _hoveredActions[sourceKey] = { action, userData: obj.userData, object: obj };
@@ -4362,6 +4587,10 @@ export function updateHUDHover(raycasters) {
         // Check for settings gear button (cyan glow)
         else if (obj.userData.isTitleSettingsBtn) {
           glowColor = '0,255,255'; // Cyan
+        }
+        // Check for bestiary button (magenta glow)
+        else if (obj.userData.isTitleBestiaryBtn) {
+          glowColor = '255,0,255'; // Magenta
         }
 
         // Share parent geometry instead of cloning (glow is a child, inherits scale)
@@ -4471,4 +4700,4 @@ export function clearFloatingMessage() {
 }
 
 // Export nameEntryGroup and pauseMenuGroup for use in other modules
-export { nameEntryGroup };
+export { nameEntryGroup, bestiaryGroup };
