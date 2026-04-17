@@ -1474,25 +1474,26 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.add(skipCard);
   upgradeCards.push(skipCard);
 
-  // Warp-in animation: each card's children pop in with easeOutCubic (clean ease-out grow)
+  // Smooth card-level intro. Keep the expensive text uploads slightly delayed so
+  // the motion itself stays clean instead of hitching while textures are created.
   const warpBaseTime = performance.now();
-  _warpPieceIndex = 0; // Reset piece counter for text queue
-  _warpAnimating = true; // Flag for early-exit optimization
+  _warpAnimating = true;
+  _textQueueReleaseTime = warpBaseTime + TEXT_QUEUE_DELAY_MS;
   upgradeCards.forEach((cardGroup, i) => {
     const cardDelay = i * CARD_WARP_STAGGER;
+    const basePosition = cardGroup.position.clone();
     cardGroup.userData._warpBaseTime = warpBaseTime;
     cardGroup.userData._warpCardDelay = cardDelay;
     cardGroup.userData._warpActive = true;
-    // Set warp start times on pre-created children (face, border, icon)
-    cardGroup.children.forEach(child => {
-      if (child.userData._warpPiece) {
-        const pieceDelay = child.userData._warpPiece === 'face' ? 0
-          : child.userData._warpPiece === 'border' ? PIECE_WARP_STAGGER
-          : PIECE_WARP_STAGGER * 2;
-        child.userData._warpStartTime = warpBaseTime + cardDelay + pieceDelay;
-        child.userData._warpActive = true;
-      }
-    });
+    cardGroup.userData._warpBasePosition = basePosition;
+    cardGroup.userData._warpBaseRotationX = 0;
+    cardGroup.userData._baseScale = _tmpVec3.clone();
+    cardGroup.userData._hoverScale = 1;
+    cardGroup.userData._warpScale = CARD_WARP_START_SCALE;
+    cardGroup.userData._warpSounded = false;
+    cardGroup.position.set(basePosition.x, basePosition.y - CARD_WARP_LIFT, basePosition.z);
+    cardGroup.rotation.x = -CARD_WARP_TILT;
+    cardGroup.scale.setScalar(CARD_WARP_START_SCALE);
   });
 }
 
@@ -1632,36 +1633,40 @@ function getUpgradeTotalText(upgrade, hand) {
   }
 }
 
-// Queue for deferred text sprite creation (avoids 12-16 makeSprite calls in one frame)
+// Queue for deferred text sprite creation so card motion stays smooth while
+// canvas textures upload over a few later frames on Quest-class hardware.
 const _textQueue = [];
-const TEXT_PER_FRAME = 1; // One sprite per frame to spread GPU upload cost on Quest
+const TEXT_PER_FRAME = 1;
+const TEXT_QUEUE_DELAY_MS = 220;
+let _textQueueReleaseTime = 0;
 
-// ── Upgrade card warp-in animation (matches enemy spawn warp) ──
-const CARD_WARP_DURATION = 500; // ms per piece
-const CARD_WARP_STAGGER = 200; // ms between cards
-const PIECE_WARP_STAGGER = 100; // ms between pieces within a card
+// ── Upgrade card intro animation ──
+const CARD_WARP_DURATION = 420;
+const CARD_WARP_STAGGER = 110;
+const CARD_WARP_START_SCALE = 0.7;
+const CARD_WARP_LIFT = 0.18;
+const CARD_WARP_TILT = 0.16;
 
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
+}
+
+function easeOutBack(t) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
 function queueTextSprite(group, text, opts, pos) {
   _textQueue.push({ group, text, opts, pos });
 }
 
-// Track per-card piece index for warp stagger
-let _warpPieceIndex = 0;
-
 function flushCardTextQueue() {
-  if (_textQueue.length === 0) return;
+  if (_textQueue.length === 0 || performance.now() < _textQueueReleaseTime) return;
   const batch = _textQueue.splice(0, TEXT_PER_FRAME);
   for (const item of batch) {
     const sprite = makeSprite(item.text, item.opts);
     sprite.position.copy(item.pos);
-    sprite.scale.set(0.01, 0.01, 0.01); // Start invisible for warp-in
-    sprite.userData._warpStartTime = performance.now();
-    sprite.userData._warpActive = true;
-    _warpPieceIndex++;
     item.group.add(sprite);
   }
 }
@@ -1726,7 +1731,7 @@ function createUpgradeCard(upgrade, position, hand, style) {
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
   card.renderOrder = 1;  // Draw after mountain backdrop (renderOrder 0) so depth doesn't cull it
-  card.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
+  card.scale.set(1, 1, 1);
   card.userData.isUpgradeCard = true;
   card.userData.upgradeId = upgrade.id;
   card.userData._warpPiece = 'face'; // First piece to animate
@@ -1739,7 +1744,7 @@ function createUpgradeCard(upgrade, position, hand, style) {
   const borderColor = upgrade.sideGrade ? 0xffdd00 : (typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff));
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
   const border = new THREE.LineSegments(getCardBorderGeo(), borderMat);
-  border.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
+  border.scale.set(1, 1, 1);
   border.userData._warpPiece = 'border';
   group.add(border);
   
@@ -1818,9 +1823,9 @@ function createUpgradeCard(upgrade, position, hand, style) {
     new THREE.MeshBasicMaterial({ color: upgrade.color || '#00ffff', wireframe: true }),
   );
   iconMesh.position.set(0, s.icon?.y || -0.35, s.icon?.z || 0.05);
-  iconMesh.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
+  iconMesh.scale.set(1, 1, 1);
   iconMesh.userData._warpPiece = 'icon';
-  iconMesh.visible = true; // Visible immediately, warp-in animates it
+  iconMesh.visible = true;
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
 
@@ -1851,7 +1856,7 @@ function createSkipCard(position, style) {
   });
   const card = new THREE.Mesh(cardGeo, cardMat);
   card.renderOrder = 1;  // Draw after mountain backdrop (renderOrder 0) so depth doesn't cull it
-  card.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
+  card.scale.set(1, 1, 1);
   card.userData.isUpgradeCard = true;
   card.userData.upgradeId = 'SKIP';
   card.userData._warpPiece = 'face';
@@ -1864,7 +1869,7 @@ function createSkipCard(position, style) {
   const nameColor = s.name?.color || 0x00ff88;
   const borderColor = typeof nameColor === 'string' ? parseInt(nameColor.replace('#', ''), 16) : nameColor;
   const skipBorder = new THREE.LineSegments(getSkipCardBorderGeo(), new THREE.LineBasicMaterial({ color: borderColor }));
-  skipBorder.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
+  skipBorder.scale.set(1, 1, 1);
   skipBorder.userData._warpPiece = 'border';
   group.add(skipBorder);
   
@@ -1918,9 +1923,9 @@ function createSkipCard(position, style) {
     new THREE.MeshBasicMaterial({ color: s.icon?.color || 0xff0044, wireframe: true }),
   );
   iconMesh.position.set(0, s.icon?.y || -0.42, s.icon?.z || 0.05);
-  iconMesh.scale.set(0.01, 0.01, 0.01); // Start tiny for warp-in
+  iconMesh.scale.set(1, 1, 1);
   iconMesh.userData._warpPiece = 'icon';
-  iconMesh.visible = true; // Warp-in animates it
+  iconMesh.visible = true;
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
 
@@ -1930,6 +1935,7 @@ function createSkipCard(position, style) {
 export function hideUpgradeCards() {
   _textQueue.length = 0; // Clear any pending deferred text
   _warpAnimating = false;
+  _textQueueReleaseTime = 0;
   _cooldownSprite = null;
   disposeGroupChildren(upgradeGroup);
   upgradeGroup.visible = false;
@@ -1939,12 +1945,11 @@ export function hideUpgradeCards() {
 }
 
 export function updateUpgradeCards(now, cooldownRemaining) {
-  // Flush deferred text sprites (2-3 per frame to avoid frame drops)
   flushCardTextQueue();
 
-  // Animate card icons (rotation) - only after warp-in completes
+  // Animate card icons (rotation) - only after intro completes
   upgradeCards.forEach(card => {
-    if (card.userData.iconMesh && card.userData.iconMesh.userData._warpActive === false) {
+    if (card.userData.iconMesh && !card.userData._warpActive) {
       card.userData.iconMesh.rotation.y += 0.02;
       card.userData.iconMesh.rotation.x += 0.01;
     }
@@ -4128,35 +4133,48 @@ export function updateHUDHover(raycasters) {
 
   // 2. Upgrade Cards
   if (upgradeGroup.visible) {
-    // Animate per-piece warp-in (easeOutCubic, clean ease-out grow)
-    // PERFORMANCE: Skip the entire warp loop when _warpAnimating is false
-    // to avoid iterating all children of all cards every frame after warp completes.
+    // Animate card intro at the group level so we avoid per-child scale churn while
+    // text textures are still being created over later frames.
     if (_warpAnimating) {
       const now = performance.now();
       let anyActive = false;
       upgradeCards.forEach(cardGroup => {
-        let hasActive = false;
-        cardGroup.children.forEach(child => {
-          if (!child.userData._warpActive) return;
-          hasActive = true;
-          const elapsed = now - child.userData._warpStartTime;
-          if (elapsed < 0) return;
-          // Play pop sound when card face warp starts
-          if (child.userData._warpPiece === 'face' && !child.userData._warpSounded) {
-            child.userData._warpSounded = true;
-            playBasicEnemySpawn();
-          }
-          if (elapsed >= CARD_WARP_DURATION) {
-            child.scale.set(1, 1, 1);
-            child.userData._warpActive = false;
-            return;
-          }
-          const t = elapsed / CARD_WARP_DURATION;
-          const s = easeOutCubic(t);
-          child.scale.set(s, s, s);
-        });
-        cardGroup.userData._warpActive = hasActive;
-        if (hasActive) anyActive = true;
+        const elapsed = now - (cardGroup.userData._warpBaseTime + cardGroup.userData._warpCardDelay);
+        if (elapsed < 0) {
+          anyActive = true;
+          return;
+        }
+
+        if (!cardGroup.userData._warpSounded) {
+          cardGroup.userData._warpSounded = true;
+          playBasicEnemySpawn();
+        }
+
+        if (elapsed >= CARD_WARP_DURATION) {
+          cardGroup.userData._warpScale = 1;
+          cardGroup.scale.set(1, 1, 1);
+          cardGroup.position.copy(cardGroup.userData._warpBasePosition);
+          cardGroup.rotation.x = cardGroup.userData._warpBaseRotationX || 0;
+          cardGroup.userData._warpActive = false;
+          return;
+        }
+
+        anyActive = true;
+        const t = elapsed / CARD_WARP_DURATION;
+        const scale = CARD_WARP_START_SCALE + (1 - CARD_WARP_START_SCALE) * easeOutBack(t);
+        cardGroup.userData._warpScale = scale;
+        const yOffset = (1 - easeOutCubic(t)) * CARD_WARP_LIFT;
+        const tilt = (1 - easeOutCubic(t)) * CARD_WARP_TILT;
+        const hoverScale = cardGroup.userData._hoverScale ?? 1;
+        const actualScale = scale * hoverScale;
+        cardGroup.scale.set(actualScale, actualScale, actualScale);
+        cardGroup.position.set(
+          cardGroup.userData._warpBasePosition.x,
+          cardGroup.userData._warpBasePosition.y - yOffset,
+          cardGroup.userData._warpBasePosition.z,
+        );
+        cardGroup.rotation.x = (cardGroup.userData._warpBaseRotationX || 0) - tilt;
+        cardGroup.userData._warpActive = true;
       });
       if (!anyActive) _warpAnimating = false;
     }
@@ -4294,15 +4312,12 @@ export function updateHUDHover(raycasters) {
     }
 
     if (hoveredObjs.has(obj)) {
-      // CRITICAL: For warping cards - immediately complete warp on hover
-      // This prevents cards from getting stuck at small scale if hovered during warp animation
+      // If the player hovers mid-intro, snap this card cleanly to its final state.
       if (target.userData._warpActive) {
-        target.children.forEach(child => {
-          if (child.userData._warpActive) {
-            child.scale.set(1, 1, 1);
-            child.userData._warpActive = false;
-          }
-        });
+        if (target.userData._warpBasePosition) target.position.copy(target.userData._warpBasePosition);
+        target.rotation.x = target.userData._warpBaseRotationX || 0;
+        target.userData._warpScale = 1;
+        target.scale.set(1, 1, 1);
         target.userData._warpActive = false;
         target.userData._baseScale = _tmpVec3.clone();
       }
@@ -4317,7 +4332,8 @@ export function updateHUDHover(raycasters) {
       const desiredScale = 1.08;
       const nextScale = currentScale + (desiredScale - currentScale) * 0.2;
       target.userData._hoverScale = nextScale;
-      target.scale.set(baseScale.x * nextScale, baseScale.y * nextScale, baseScale.z * nextScale);
+      const warpScale = target.userData._warpActive ? (target.userData._warpScale ?? 1) : 1;
+      target.scale.set(baseScale.x * warpScale * nextScale, baseScale.y * warpScale * nextScale, baseScale.z * warpScale * nextScale);
 
       // #3: Enhanced glow mesh with dynamic color based on button type
       if (!obj.userData._hoverGlow && obj.geometry) {
@@ -4378,7 +4394,8 @@ export function updateHUDHover(raycasters) {
       const currentScale = target.userData._hoverScale ?? 1;
       const nextScale = currentScale + (1 - currentScale) * 0.2;
       target.userData._hoverScale = nextScale;
-      target.scale.set(baseScale.x * nextScale, baseScale.y * nextScale, baseScale.z * nextScale);
+      const warpScale = target.userData._warpActive ? (target.userData._warpScale ?? 1) : 1;
+      target.scale.set(baseScale.x * warpScale * nextScale, baseScale.y * warpScale * nextScale, baseScale.z * warpScale * nextScale);
       if (obj.userData._hoverGlow) {
         const glow = obj.userData._hoverGlow;
         const current = glow.material.opacity || 0;
