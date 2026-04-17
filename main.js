@@ -2189,6 +2189,19 @@ function setMaterialEmissiveSafe(material, color, intensity) {
 // [CORE] Clear current biome scene
 function clearBiomeScene() {
   if (!biomeSceneGroup) return;
+  // Remove any scene-root biome objects (e.g. horizon glow added outside the group)
+  const sceneRoot = biomeSceneGroup.parent;
+  if (sceneRoot) {
+    const toRemove = sceneRoot.children.filter(c => c.name === 'synthwave-horizon-glow');
+    toRemove.forEach(c => {
+      sceneRoot.remove(c);
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) {
+        if (c.material.map) c.material.map.dispose();
+        c.material.dispose();
+      }
+    });
+  }
   disposeObject3D(biomeSceneGroup);
   biomeSceneGroup = null;
   biomeSceneBiome = null;

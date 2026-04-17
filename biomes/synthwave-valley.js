@@ -168,6 +168,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   terrain.name = 'synthwave-valley-floor-and-mountains';
   terrain.userData.planeName = 'synthwave-valley-floor-and-mountains';
   terrain.position.set(0, floorY + 1.5, -700);
+  terrain.scale.x = 2.25;
   terrain.frustumCulled = false;
   group.add(terrain);
   registerFadeMaterial(terrainMat);
@@ -220,22 +221,26 @@ export function buildSynthwaveValleyScene(group, deps) {
   registerFadeMaterial(mountainCylinderMat);
 
   // ── HORIZON GLOW CYLINDER ──
-  // Closed cylinder so it's visible from any angle (open cylinders vanish when looking down).
-  // Bright white/cyan core at bottom, fading smoothly to dark transparent at top.
+  // Large cylinder added directly to scene root (not biome group) so it's
+  // not affected by group transforms. Bright bottom at ground level fading
+  // up to transparent. 500 units tall so it covers ~25° of vertical FOV
+  // from the player's position at radius 1155.
   const horizonGlowRadius = 1155;
-  const horizonGlowHeight = 120;
+  const horizonGlowHeight = 500;
   const horizonGlowCanvas = document.createElement('canvas');
   horizonGlowCanvas.width = 16;
   horizonGlowCanvas.height = 256;
   const hgCtx = horizonGlowCanvas.getContext('2d');
   const hgGrad = hgCtx.createLinearGradient(0, 0, 0, 256);
-  hgGrad.addColorStop(0.0, 'rgba(255,255,255,0)');     // Top: transparent
-  hgGrad.addColorStop(0.45, 'rgba(0,200,255,0.12)');  // Upper: faint cyan
-  hgGrad.addColorStop(0.75, 'rgba(0,230,255,0.45)');  // Mid: brighter cyan
-  hgGrad.addColorStop(0.92, 'rgba(180,255,255,0.7)');  // Near bottom: white-cyan
-  hgGrad.addColorStop(1.0, 'rgba(255,255,255,0.85)');  // Bottom edge: bright white core
+  hgGrad.addColorStop(0.0, 'rgba(255,255,255,0)');       // Top: transparent
+  hgGrad.addColorStop(0.30, 'rgba(0,180,255,0.06)');     // Upper: very faint
+  hgGrad.addColorStop(0.55, 'rgba(0,210,255,0.18)');     // Mid-upper: faint cyan
+  hgGrad.addColorStop(0.72, 'rgba(0,230,255,0.35)');     // Mid: brighter cyan
+  hgGrad.addColorStop(0.85, 'rgba(100,245,255,0.55)');   // Lower-mid: strong cyan
+  hgGrad.addColorStop(0.94, 'rgba(200,255,255,0.75)');   // Near bottom: bright
+  hgGrad.addColorStop(1.0, 'rgba(255,255,255,0.85)');    // Bottom edge: white core
   hgCtx.fillStyle = hgGrad;
-  hgCtx.fillRect(0, 0, 16, 512);
+  hgCtx.fillRect(0, 0, 16, 256);
   const horizonGlowTex = new THREE.CanvasTexture(horizonGlowCanvas);
 
   const horizonGlowGeo = new THREE.CylinderGeometry(horizonGlowRadius, horizonGlowRadius, horizonGlowHeight, 64, 1, true);
@@ -244,23 +249,23 @@ export function buildSynthwaveValleyScene(group, deps) {
     transparent: true,
     side: THREE.DoubleSide,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
     fog: false,
     blending: THREE.AdditiveBlending,
   });
   const horizonGlowCylinder = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
   horizonGlowCylinder.name = 'synthwave-horizon-glow';
-  horizonGlowCylinder.position.set(0, 16, 0);
-  horizonGlowCylinder.scale.set(1, 0.3, 1);
+  // Center at Y=245 so bottom is at Y=-5 (just below ground), top at Y=495
+  horizonGlowCylinder.position.set(0, 245, 0);
   horizonGlowCylinder.frustumCulled = false;
-  // Override both bounding sphere AND box to prevent Three.js render culling
-  horizonGlowCylinder.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 2000);
-  horizonGlowCylinder.geometry.boundingBox = new THREE.Box3(
-    new THREE.Vector3(-2000, -2000, -2000),
-    new THREE.Vector3(2000, 2000, 2000)
-  );
+  horizonGlowCylinder.geometry.computeBoundingSphere();
   horizonGlowCylinder.renderOrder = 0;
-  group.add(horizonGlowCylinder);
+  // Add directly to scene root, not the biome group.
+  if (deps.scene) {
+    deps.scene.add(horizonGlowCylinder);
+  } else {
+    group.add(horizonGlowCylinder);
+  }
   registerFadeMaterial(horizonGlowMat);
 
   // ── SUN FLOOR REFLECTION ──
@@ -405,8 +410,4 @@ export function buildSynthwaveValleyScene(group, deps) {
   // Synthwave floor HUD height:group.position.y = 5.82
   group.position.set(0, -(floorY + 1.5), 0);
   group.rotation.y = 0;
-  // Prevent frustum culling on the entire biome group so children with
-  // frustumCulled=false aren't culled when the group's bounding volume exits the frustum
-  group.frustumCulled = false;
-  group.traverse((child) => { child.frustumCulled = false; });
 }
