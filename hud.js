@@ -475,13 +475,13 @@ const logoShimmerFrag = `
     float wave2 = sin((vUv.x - vUv.y) * 3.0 + uTime * 0.5) * 0.5 + 0.5;
     float combined = mix(wave, wave2, 0.3);
 
-    // Shift hue by a tiny amount (±0.03) based on the wave
+    // Shift hue based on the wave (±0.08 for visible shimmer)
     vec3 hsv = rgb2hsv(tex.rgb);
-    hsv.x += combined * 0.06 - 0.03; // ±0.03 hue shift
-    // Slightly boost saturation in the bright parts of the wave
-    hsv.y = clamp(hsv.y + combined * 0.08 - 0.04, 0.0, 1.0);
-    // Tiny brightness pulse
-    hsv.z = clamp(hsv.z + combined * 0.05 - 0.025, 0.0, 1.0);
+    hsv.x += combined * 0.16 - 0.08; // ±0.08 hue shift
+    // Boost saturation in the bright parts of the wave
+    hsv.y = clamp(hsv.y + combined * 0.2 - 0.1, 0.0, 1.0);
+    // Brightness pulse
+    hsv.z = clamp(hsv.z + combined * 0.12 - 0.06, 0.0, 1.0);
 
     vec3 color = hsv2rgb(hsv);
     gl_FragColor = vec4(color, tex.a);
@@ -1386,27 +1386,21 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   hCtx.font = `bold ${hFontSize}px ${novemberFontFamily}`;
   const line1Text = 'CHOOSE UPGRADE';
   const line2Text = handName;
-  const line3Text = weaponName;
   const line1W = hCtx.measureText(line1Text).width;
   const line2W = hCtx.measureText(line2Text).width;
-  const line3W = hCtx.measureText(line3Text).width;
-  const maxW = Math.ceil(Math.max(line1W, line2W, line3W));
+  const maxW = Math.ceil(Math.max(line1W, line2W));
   const hLineHeight = hFontSize * 1.3;
   const hPad = 25;
   headerCanvas.width = maxW + hPad * 2;
-  headerCanvas.height = Math.ceil(hLineHeight * 3) + hPad * 2;
+  headerCanvas.height = Math.ceil(hLineHeight * 2) + hPad * 2;
   hCtx.font = `bold ${hFontSize}px ${novemberFontFamily}`;
   hCtx.textAlign = 'center';
   hCtx.textBaseline = 'middle';
   hCtx.shadowColor = '#ffffff'; hCtx.shadowBlur = 15; hCtx.fillStyle = '#ffffff';
   const hMidY = headerCanvas.height / 2;
-  hCtx.fillText(line1Text, headerCanvas.width / 2, hMidY - hLineHeight);
+  hCtx.fillText(line1Text, headerCanvas.width / 2, hMidY - hLineHeight * 0.5);
   hCtx.shadowColor = handColor; hCtx.fillStyle = handColor;
-  hCtx.fillText(line2Text, headerCanvas.width / 2, hMidY);
-  const weaponFontSize = 36;
-  hCtx.font = `${weaponFontSize}px ${novemberFontFamily}`;
-  hCtx.shadowBlur = 0;
-  hCtx.fillText(line3Text, headerCanvas.width / 2, hMidY + hLineHeight);
+  hCtx.fillText(line2Text, headerCanvas.width / 2, hMidY + hLineHeight * 0.5);
   const headerTexture = new THREE.CanvasTexture(headerCanvas);
   headerTexture.minFilter = THREE.LinearFilter;
   headerTexture.premultiplyAlpha = false;
@@ -1418,6 +1412,18 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   header.position.set(headerDef.x, headerDef.y, headerDef.z);
   header.name = 'upgrade-cards-header';
   upgradeGroup.add(header);
+
+  // Weapon name as separate sprite (positioned from layout)
+  const weaponDef = _uc('headerWeapon', { x: 0, y: 1.2 - hLineHeight * 2 * headerDef.scale * 0.001, z: 0, fontSize: 36, scale: 0.35, glow: false, color: 0xaaaaaa });
+  const weaponSprite = makeSprite(weaponName, {
+    fontSize: weaponDef.fontSize,
+    color: '#' + (weaponDef.color || 0xaaaaaa).toString(16).padStart(6, '0'),
+    glow: weaponDef.glow,
+    scale: weaponDef.scale,
+  });
+  weaponSprite.position.set(weaponDef.x, weaponDef.y, weaponDef.z);
+  weaponSprite.name = 'upgrade-cards-weapon-name';
+  upgradeGroup.add(weaponSprite);
 
   // Cooldown text
   const cooldownDef = _uc('cooldownSprite', { x: 0, y: 0.876, z: 0, fontSize: 60, scale: 0.25, glow: false, color: 0xffff00 });
