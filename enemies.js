@@ -2373,6 +2373,12 @@ function spawnStatusEffectBubble(position, effectType, stacks) {
   mesh.scale.set(scale * 2, scale, 1);
   mesh.material.opacity = 0.95;
   mesh.position.copy(position);
+  // Safety: if position was near world origin, skip spawning the bubble
+  if (mesh.position.lengthSq() < 0.01) {
+    // Return entry to pool
+    statusBubblePool.push(entry);
+    return;
+  }
   mesh.position.y += 1.2;
   mesh.position.x += (Math.random() - 0.5) * 0.3;
   mesh.position.z += (Math.random() - 0.5) * 0.3;
@@ -4302,11 +4308,16 @@ class TelegraphingSystem {
         if (position) {
           effect.mesh.position.copy(position);
         } else if (this.camera) {
+          // Camera-relative fallback; Boss.showTelegraph now defaults to mesh.position
           effect.mesh.position.set(
             this.camera.position.x,
             this.camera.position.y + 1.5,
             this.camera.position.z - 8
           );
+        }
+        // Safety: skip rendering if somehow still at world origin
+        if (effect.mesh.position.lengthSq() < 0.01) {
+          effect.mesh.visible = false;
         }
         effect.data.velocity = direction ? direction.clone() : new THREE.Vector3(0, 0, -1);
         break;
@@ -4331,6 +4342,9 @@ class TelegraphingSystem {
             this.camera.position.z - 2
           );
         }
+        if (effect.mesh.position.lengthSq() < 0.01) {
+          effect.mesh.visible = false;
+        }
         break;
 
       case 'minion':
@@ -4343,7 +4357,9 @@ class TelegraphingSystem {
         });
         effect.mesh = new THREE.Mesh(minionGeo, minionMat);
         effect.mesh.name = 'boss-attack-minion';
-        if (this.camera) {
+        if (position) {
+          effect.mesh.position.copy(position);
+        } else if (this.camera) {
           effect.mesh.position.set(
             this.camera.position.x,
             this.camera.position.y + 1.5,
@@ -4363,9 +4379,17 @@ class TelegraphingSystem {
         });
         effect.mesh = new THREE.Mesh(eyeGeo, eyeMat);
         effect.mesh.rotation.x = -Math.PI / 2;
+        effect.mesh.name = 'boss-attack-teleport';
         effect.data.spinSpeed = 0.1;
         if (position) {
           effect.mesh.position.copy(position);
+        } else if (this.camera) {
+          // Fallback: show at camera ground plane (better than world origin)
+          effect.mesh.position.copy(this.camera.position);
+          effect.mesh.position.y = 0.1;
+        }
+        if (effect.mesh.position.lengthSq() < 0.01) {
+          effect.mesh.visible = false;
         }
         break;
 
@@ -4381,6 +4405,11 @@ class TelegraphingSystem {
         effect.mesh.name = 'boss-attack-melee';
         if (position) {
           effect.mesh.position.copy(position);
+        } else if (this.camera) {
+          effect.mesh.position.copy(this.camera.position);
+        }
+        if (effect.mesh.position.lengthSq() < 0.01) {
+          effect.mesh.visible = false;
         }
         break;
 
@@ -4399,6 +4428,12 @@ class TelegraphingSystem {
         effect.mesh.name = 'boss-attack-pulse';
         if (position) {
           effect.mesh.position.copy(position);
+        } else if (this.camera) {
+          effect.mesh.position.copy(this.camera.position);
+          effect.mesh.position.y = 0.1;
+        }
+        if (effect.mesh.position.lengthSq() < 0.01) {
+          effect.mesh.visible = false;
         }
         break;
 
@@ -4417,6 +4452,13 @@ class TelegraphingSystem {
         effect.mesh.name = 'boss-attack-shockwave';
         if (position) {
           effect.mesh.position.copy(position);
+        } else if (this.camera) {
+          // Fallback: center on camera (better than world origin)
+          effect.mesh.position.copy(this.camera.position);
+          effect.mesh.position.y = 0.1;
+        }
+        if (effect.mesh.position.lengthSq() < 0.01) {
+          effect.mesh.visible = false;
         }
         break;
     }
@@ -4823,11 +4865,16 @@ class Boss {
 
     // Play phase change effect
     if (this.telegraphing) {
-      this.telegraphing.start('teleport', 1.0, 0x00ffff);
+      this.telegraphing.start('teleport', 1.0, 0x00ffff, this.mesh.position);
     }
   }
 
   showTelegraph(type, duration, color, position = null, direction = null) {
+    // Default position to boss mesh position so telegraphs don't appear at world origin
+    // or camera-relative positions when the caller omits the position parameter.
+    if (!position && this.mesh) {
+      position = this.mesh.position;
+    }
     if (this.telegraphCooldown <= 0 && this.telegraphing) {
       this.telegraphing.start(type, duration, color, position, direction);
       this.telegraphCooldown = 0.5; // Cooldown between telegraphs
