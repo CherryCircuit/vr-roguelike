@@ -3,7 +3,7 @@
   "elements": {
     "header": {
       "x": 0,
-      "y": 1.2,
+      "y": 1.426,
       "z": 0,
       "align": "center",
       "rx": 0,
@@ -14,14 +14,50 @@
       "anchor": "center",
       "color": 65535,
       "_colorHex": "#00ffff",
-      "scale": 0.5,
-      "text": "CHOOSE UPGRADE\nLEFT BLASTER",
+      "scale": 0.25,
+      "text": "CHOOSE UPGRADE",
       "fontSize": 80,
       "glow": true
     },
+    "headerHand": {
+      "x": 0,
+      "y": 1.015,
+      "z": 0,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
+      "color": 65535,
+      "_colorHex": "#00ffff",
+      "scale": 0.16,
+      "text": "LEFT BLASTER",
+      "fontSize": 48,
+      "glow": true
+    },
+    "headerWeapon": {
+      "x": 0,
+      "y": 1.155,
+      "z": 0,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
+      "color": 16777215,
+      "_colorHex": "#ffffff",
+      "scale": 0.4,
+      "text": "Standard Blaster",
+      "fontSize": 60,
+      "glow": false
+    },
     "cooldownSprite": {
       "x": 0,
-      "y": 0.876,
+      "y": 0.846,
       "z": 0,
       "align": "center",
       "rx": 0,
@@ -139,7 +175,7 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 11800.8644,
+      "ry": 11961.8724,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
@@ -230,7 +266,7 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 12249.4252,
+      "ry": 12410.4332,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
@@ -321,7 +357,7 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 12247.0235,
+      "ry": 12408.0315,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
@@ -345,7 +381,8 @@
       "_colorHex": "#330000",
       "w": 1,
       "h": 1.3,
-      "opacity": 0.91
+      "opacity": 0.91,
+      "borderColor": 16711680
     },
     "card3_name": {
       "x": 2.1,
@@ -392,7 +429,7 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 9.52,
+      "ry": 170.528,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
@@ -402,7 +439,7 @@
       "scale": 0.08
     }
   },
-  "exportedAt": "2026-04-16T23:11:29.221Z",
+  "exportedAt": "2026-04-17T03:42:25.609Z",
   "groups": {
     "Group 2": [
       "card1",

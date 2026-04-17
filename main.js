@@ -11215,7 +11215,8 @@ function render(timestamp) {
       setKilledBy({ type: 'boss', name: projBossName, enemyType: projBossBehavior });
       triggerHitFlash(true);
       playDamageSound();
-      if (_skullBoss && _skullBoss.def && (_skullBoss.def.behavior === 'skull' || _skullBoss.def.behavior === 'minotaur' || _skullBoss.def.behavior === 'prism')) {
+      const _boss = getBoss();
+      if (_boss && _boss.def && (_boss.def.behavior === 'skull' || _boss.def.behavior === 'minotaur' || _boss.def.behavior === 'prism')) {
         playSkullLaughSound();
       }
       cameraShake = 0.4;
