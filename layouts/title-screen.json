@@ -2,7 +2,7 @@
   "screen": "title-screen",
   "elements": {
     "titleSprite": {
-      "x": 0,
+      "x": 0.052,
       "y": 1.04,
       "z": -0.2,
       "align": "center",
@@ -14,11 +14,11 @@
       "anchor": "center",
       "color": 16777215,
       "_colorHex": "#ffffff",
-      "scale": 1.2
+      "scale": 1
     },
     "subSprite": {
       "x": 0,
-      "y": 0.471,
+      "y": 0.501,
       "z": 0.04,
       "align": "center",
       "rx": 0,
@@ -29,7 +29,7 @@
       "anchor": "center",
       "color": 65535,
       "_colorHex": "#00ffff",
-      "scale": 0.38,
+      "scale": 0.3,
       "text": "VR ROGUELIKE BLASTER",
       "fontSize": 60,
       "glow": true
@@ -47,7 +47,7 @@
       "anchor": "center",
       "color": 16777215,
       "_colorHex": "#ffffff",
-      "scale": 0.5,
+      "scale": 0.35,
       "text": "PRESS TRIGGER TO BEGIN",
       "fontSize": 70,
       "glow": true
@@ -71,7 +71,7 @@
     },
     "btn_text": {
       "x": -0.36,
-      "y": -0.695,
+      "y": -0.669,
       "z": 0.02,
       "align": "center",
       "rx": 0,
@@ -106,8 +106,8 @@
     },
     "settings_btn_text": {
       "x": 0.82,
-      "y": -0.68,
-      "z": 0.02,
+      "y": -0.669,
+      "z": 0.01,
       "align": "center",
       "rx": 0,
       "ry": 0,
@@ -117,12 +117,12 @@
       "anchor": "center",
       "color": 65535,
       "_colorHex": "#00ffff",
-      "scale": 0.35,
+      "scale": 0.5,
       "text": "⚙",
       "fontSize": 100,
       "glow": true,
       "forceArial": true
     }
   },
-  "exportedAt": "2026-04-16T23:07:45.712Z"
+  "exportedAt": "2026-04-17T03:51:22.060Z"
 }
