@@ -223,27 +223,22 @@ export function buildSynthwaveValleyScene(group, deps) {
   // Closed cylinder so it's visible from any angle (open cylinders vanish when looking down).
   // Bright white/cyan core at bottom, fading smoothly to dark transparent at top.
   const horizonGlowRadius = 1155;
-  const horizonGlowHeight = 500;
+  const horizonGlowHeight = 120;
   const horizonGlowCanvas = document.createElement('canvas');
   horizonGlowCanvas.width = 16;
-  horizonGlowCanvas.height = 512; // Taller canvas for smoother gradient
+  horizonGlowCanvas.height = 256;
   const hgCtx = horizonGlowCanvas.getContext('2d');
-  const hgGrad = hgCtx.createLinearGradient(0, 0, 0, 512);
-  hgGrad.addColorStop(0.0, 'rgba(0,10,30,0)');          // Top: dark, fully transparent
-  hgGrad.addColorStop(0.15, 'rgba(0,15,40,0)');         // Still transparent
-  hgGrad.addColorStop(0.30, 'rgba(0,40,80,0.04)');      // Barely visible dark cyan
-  hgGrad.addColorStop(0.45, 'rgba(0,80,140,0.10)');     // Faint cyan emerging
-  hgGrad.addColorStop(0.58, 'rgba(0,140,200,0.22)');    // Cyan building
-  hgGrad.addColorStop(0.70, 'rgba(0,190,230,0.38)');    // Brighter cyan
-  hgGrad.addColorStop(0.80, 'rgba(60,220,240,0.52)');   // Bright cyan
-  hgGrad.addColorStop(0.88, 'rgba(140,245,255,0.68)');  // Light cyan
-  hgGrad.addColorStop(0.94, 'rgba(210,255,255,0.82)');  // Near-white cyan
-  hgGrad.addColorStop(1.0, 'rgba(255,255,255,0.90)');   // Bottom edge: white core
+  const hgGrad = hgCtx.createLinearGradient(0, 0, 0, 256);
+  hgGrad.addColorStop(0.0, 'rgba(255,255,255,0)');     // Top: transparent
+  hgGrad.addColorStop(0.45, 'rgba(0,200,255,0.12)');  // Upper: faint cyan
+  hgGrad.addColorStop(0.75, 'rgba(0,230,255,0.45)');  // Mid: brighter cyan
+  hgGrad.addColorStop(0.92, 'rgba(180,255,255,0.7)');  // Near bottom: white-cyan
+  hgGrad.addColorStop(1.0, 'rgba(255,255,255,0.85)');  // Bottom edge: bright white core
   hgCtx.fillStyle = hgGrad;
   hgCtx.fillRect(0, 0, 16, 512);
   const horizonGlowTex = new THREE.CanvasTexture(horizonGlowCanvas);
 
-  const horizonGlowGeo = new THREE.CylinderGeometry(horizonGlowRadius, horizonGlowRadius, horizonGlowHeight, 64, 1, false);
+  const horizonGlowGeo = new THREE.CylinderGeometry(horizonGlowRadius, horizonGlowRadius, horizonGlowHeight, 64, 1, true);
   const horizonGlowMat = new THREE.MeshBasicMaterial({
     map: horizonGlowTex,
     transparent: true,
@@ -255,9 +250,15 @@ export function buildSynthwaveValleyScene(group, deps) {
   });
   const horizonGlowCylinder = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
   horizonGlowCylinder.name = 'synthwave-horizon-glow';
-  horizonGlowCylinder.position.set(0, 250, 0);
+  horizonGlowCylinder.position.set(0, 16, 0);
+  horizonGlowCylinder.scale.set(1, 0.3, 1);
   horizonGlowCylinder.frustumCulled = false;
-  horizonGlowCylinder.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 250, 0), 1200);
+  // Override both bounding sphere AND box to prevent Three.js render culling
+  horizonGlowCylinder.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 2000);
+  horizonGlowCylinder.geometry.boundingBox = new THREE.Box3(
+    new THREE.Vector3(-2000, -2000, -2000),
+    new THREE.Vector3(2000, 2000, 2000)
+  );
   horizonGlowCylinder.renderOrder = 0;
   group.add(horizonGlowCylinder);
   registerFadeMaterial(horizonGlowMat);
