@@ -244,7 +244,7 @@ export function buildSynthwaveValleyScene(group, deps) {
     transparent: true,
     side: THREE.DoubleSide,
     depthWrite: false,
-    depthTest: true,
+    depthTest: false,
     fog: false,
     blending: THREE.AdditiveBlending,
   });
