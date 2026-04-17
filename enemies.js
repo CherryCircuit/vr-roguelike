@@ -4272,13 +4272,30 @@ class TelegraphingSystem {
 
     switch (effect.type) {
       case 'projectile':
-        // 3D sphere that expands outward
-        const projGeo = new THREE.SphereGeometry(0.25, 16, 16);
+        // Muzzle flash glow plane (quick, bright, non-occluding)
+        const flashSize = 64;
+        const flashCanvas = document.createElement('canvas');
+        flashCanvas.width = flashSize;
+        flashCanvas.height = flashSize;
+        const fCtx = flashCanvas.getContext('2d');
+        const fHalf = flashSize / 2;
+        const fGrad = fCtx.createRadialGradient(fHalf, fHalf, 0, fHalf, fHalf, fHalf);
+        fGrad.addColorStop(0, 'rgba(255,255,255,1)');
+        fGrad.addColorStop(0.2, `rgba(${(effect.color >> 16) & 255},${(effect.color >> 8) & 255},${effect.color & 255},0.9)`);
+        fGrad.addColorStop(0.5, `rgba(${(effect.color >> 16) & 255},${(effect.color >> 8) & 255},${effect.color & 255},0.4)`);
+        fGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        fCtx.fillStyle = fGrad;
+        fCtx.fillRect(0, 0, flashSize, flashSize);
+        const flashTex = new THREE.CanvasTexture(flashCanvas);
+        const projGeo = new THREE.PlaneGeometry(1.0, 1.0);
         const projMat = new THREE.MeshBasicMaterial({
+          map: flashTex,
           color: effect.color,
           transparent: true,
-          opacity: 0.8,
-          wireframe: false
+          opacity: 0.95,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
         });
         effect.mesh = new THREE.Mesh(projGeo, projMat);
         effect.mesh.name = 'boss-attack-projectile';
@@ -4421,8 +4438,13 @@ class TelegraphingSystem {
         case 'projectile':
           if (effect.mesh) {
             const progress = elapsed / effect.duration;
-            effect.mesh.scale.setScalar(1 + progress * 2);
-            effect.mesh.material.opacity = 0.8 * (1 - progress);
+            // Quick muzzle flash: bright then gone
+            effect.mesh.scale.setScalar(0.8 + progress * 0.5);
+            effect.mesh.material.opacity = 0.95 * Math.pow(1 - progress, 3); // fast fade-out
+            // Billboard toward camera
+            if (this.camera) {
+              effect.mesh.quaternion.copy(this.camera.quaternion);
+            }
           }
           break;
 
