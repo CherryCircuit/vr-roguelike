@@ -7851,7 +7851,7 @@ class PrismBoss extends Boss {
       // Build shard as a tapered crystal shape using flat-shaded geometry
       const shardGeo = new THREE.ConeGeometry(0.5, 1.4, 4, 1);
       const shardMat = new THREE.MeshBasicMaterial({
-        color: shardColors[i], transparent: true, opacity: 0.75
+        color: shardColors[i], transparent: true, opacity: 0.75, depthWrite: false, fog: false
       });
       const shardMesh = new THREE.Mesh(shardGeo, shardMat);
       shardMesh.userData.isBossBody = true;
@@ -7978,7 +7978,8 @@ class PrismBoss extends Boss {
     this.mesh.position.addScaledVector(this.moveDirection, config.moveSpeed * dt);
 
     // Minimum distance from player: push boss back if too close
-    const minBossDist = 4.0;
+    // Account for shard orbit radius so shards don't clip into the player
+    const minBossDist = 7.0;
     const _toPlayer = new THREE.Vector3().subVectors(playerPos, this.mesh.position);
     _toPlayer.y = 0;
     const _bossDist = _toPlayer.length();
@@ -8423,7 +8424,7 @@ class PrismBoss extends Boss {
       const shard = new THREE.Group();
       const shardGeo = new THREE.ConeGeometry(0.3, 0.8, 4, 1);
       const shardMat = new THREE.MeshBasicMaterial({
-        color: shardColors[i], transparent: true, opacity: 0.75
+        color: shardColors[i], transparent: true, opacity: 0.75, depthWrite: false, fog: false
       });
       const shardMesh = new THREE.Mesh(shardGeo, shardMat);
       shardMesh.userData.isBossBody = true;
