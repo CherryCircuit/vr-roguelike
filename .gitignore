@@ -7,3 +7,7 @@ mnt/project/music/*.mp3
 mnt/project/music/*.m4a
 mnt/project/music/*.wav
 mnt/project/music/*.ogg
+
+# Auto-generated screenshots from test/deploy scripts
+*-screenshot.png
+test-result.png
