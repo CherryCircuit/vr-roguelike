@@ -1651,9 +1651,18 @@ export function playIncomingBossSound() {
 
 // ── No one makes it to level 20 sound ──────────────────────────
 export function playNoOneMakesItSound() {
+  if (!shouldStreamRemoteAudio()) return;
   const audio = new Audio('https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_no-one-makes-it-to-level-20.mp3');
   audio.volume = 0.5 * sfxVolume;
   audio.play().catch(err => console.warn('[audio] Failed to play name entry clip:', err));
+}
+
+// ── You made it to level 20! (played when player reached level 20) ──
+export function playYouMadeItSound() {
+  if (!shouldStreamRemoteAudio()) return;
+  const audio = new Audio('https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_you_made_it_to_level_20.mp3');
+  audio.volume = 0.6 * sfxVolume;
+  audio.play().catch(err => console.warn('[audio] Failed to play victory clip:', err));
 }
 
 // ── Low health warning loop (gentle pulse) ────────────────────

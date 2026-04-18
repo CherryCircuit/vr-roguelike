@@ -33,7 +33,7 @@ import {
   startChargeSound, updateChargeSound, stopChargeSound,
   playChargeReadySound, playChargeFireSound,
   // Boss and name entry sounds
-  playIncomingBossSound, playNoOneMakesItSound,
+  playIncomingBossSound, playNoOneMakesItSound, playYouMadeItSound,
   playProjectileWarningSound,
   playBuffedHitSound,
   playPhaseWraithCharge as playMortarCharge,
@@ -3122,7 +3122,7 @@ function handleDesktopGameOverClick() {
   } else {
     game.state = State.NAME_ENTRY;
     showNameEntry(game.finalScore, game.finalLevel, getStoredName(), getCountryDisplayLabel());
-    playNoOneMakesItSound();
+    if (game.finalLevel >= 20) { playYouMadeItSound(); } else { playNoOneMakesItSound(); }
   }
 }
 
@@ -3370,7 +3370,7 @@ function handleGameOverTrigger(controller) {
   } else {
     game.state = State.NAME_ENTRY;
     showNameEntry(game.finalScore, game.finalLevel, getStoredName(), getCountryDisplayLabel());
-    playNoOneMakesItSound();
+    if (game.finalLevel >= 20) { playYouMadeItSound(); } else { playNoOneMakesItSound(); }
   }
 }
 
