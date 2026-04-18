@@ -7845,33 +7845,28 @@ class PrismBoss extends Boss {
     const orbitSpeeds = [1.2, 0.8, 0.5];
     const orbitHeights = [0, 1.5, -1.0];
 
+    // Store direct material references for reliable color updates
+    this.shardMaterials = [];
+
     for (let i = 0; i < 3; i++) {
       const shard = new THREE.Group();
 
       // Build shard as a tapered crystal shape using flat-shaded geometry
+      // MeshBasicMaterial with high opacity for guaranteed color visibility
       const shardGeo = new THREE.ConeGeometry(0.5, 1.4, 4, 1);
       const shardMat = new THREE.MeshBasicMaterial({
-        color: shardColors[i], transparent: true, opacity: 0.9, depthWrite: false, fog: false, side: THREE.DoubleSide
+        color: shardColors[i], transparent: false, fog: false, side: THREE.DoubleSide
       });
+      this.shardMaterials.push(shardMat);
       const shardMesh = new THREE.Mesh(shardGeo, shardMat);
       shardMesh.renderOrder = 1;
       shardMesh.userData.isBossBody = true;
       shard.add(shardMesh);
 
-      // Inner glow core (brighter, smaller copy inside the shard)
-      const innerGeo = new THREE.ConeGeometry(0.25, 0.7, 4, 1);
-      const innerMat = new THREE.MeshBasicMaterial({
-        color: shardColors[i], transparent: true, opacity: 0.95, depthWrite: false, fog: false, side: THREE.DoubleSide
-      });
-      const innerMesh = new THREE.Mesh(innerGeo, innerMat);
-      innerMesh.renderOrder = 2;
-      innerMesh.userData.isBossBody = true;
-      shard.add(innerMesh);
-
       // Visible edges on each shard (like prismEdges on the full prism)
-      const shardEdgeGeo = new THREE.EdgesGeometry(shardGeo);
+      const shardEdgeGeo = new THREE.OctahedronGeometry(0.6, 0);
       const shardEdgeMat = new THREE.LineBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, fog: false
+        color: shardColors[i], transparent: true, opacity: 0.9, depthWrite: false, fog: false
       });
       const shardEdgeLines = new THREE.LineSegments(shardEdgeGeo, shardEdgeMat);
       shardEdgeLines.renderOrder = 11;
@@ -8312,20 +8307,23 @@ class PrismBoss extends Boss {
   }
 
   updateVulnerableShard() {
-    // Set the vulnerable shard's material to white, others to their colors
+    // Set shard colors using direct material references (no traverse)
+    const shardColors = [0xff2222, 0x2222ff, 0x22ff22];
+    if (!this.shardMaterials || this.shardMaterials.length < 3) return;
+
+    for (let i = 0; i < 3; i++) {
+      const mat = this.shardMaterials[i];
+      if (!mat) continue;
+      if (i === this.vulnerableShardIndex) {
+        mat.color.setHex(0xffffff);
+      } else {
+        mat.color.setHex(shardColors[i]);
+      }
+    }
+
+    // Also update core visibility
     this.shards.forEach((shard, i) => {
       shard.traverse(child => {
-        if (child.isMesh && child.userData.isBossBody) {
-          if (i === this.vulnerableShardIndex) {
-            child.material.color.setHex(0xffffff);
-            child.material.opacity = 0.95;
-          } else {
-            const shardColors = [0xff2222, 0x2222ff, 0x22ff22];
-            child.material.color.setHex(shardColors[i]);
-            child.material.opacity = 0.9;
-          }
-        }
-        // Also update core visibility
         if (child.userData.isPrismCore) {
           child.visible = (i === this.vulnerableShardIndex);
           child.userData.isWeakPoint = (i === this.vulnerableShardIndex);
