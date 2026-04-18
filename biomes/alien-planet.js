@@ -255,6 +255,9 @@ export function buildAlienPlanetScene(group, deps) {
   });
 
   // Mountains - 3 rings of procedural jagged mountains
+  // PERF: Single unit-cone geometry scaled per peak (zero extra geometry objects)
+  const sharedMountainGeo = new THREE.ConeGeometry(1, 1, 6);
+
   const createMountain = (x, z, scale, mountainIndex) => {
     const peakCount = 1 + Math.floor(Math.random() * 3);
     const mountainGroup = new THREE.Group();
@@ -262,9 +265,9 @@ export function buildAlienPlanetScene(group, deps) {
     for (let p = 0; p < peakCount; p++) {
       const height = (12 + Math.random() * 18) * scale;
       const radius = Math.max(2.5, (2 + Math.random() * 3) * scale);
-      const peakGeo = new THREE.ConeGeometry(radius, height, 6);
-      const peak = new THREE.Mesh(peakGeo, sharedMountainMat);
+      const peak = new THREE.Mesh(sharedMountainGeo, sharedMountainMat);
       peak.name = `alien-mountain-${mountainIndex ?? 'x'}-peak-${p}`;
+      peak.scale.set(radius, height, radius);
       peak.position.set(
         (Math.random() - 0.5) * 4 * scale,
         height / 2,
@@ -513,6 +516,9 @@ export function buildAlienPlanetScene(group, deps) {
   group.add(megaMesh);
 
   // Issue 7: Distant low-poly mountains at ~100 units (alien planet colors)
+  // PERF: Single unit-cone geometry scaled per peak (zero extra geometry objects)
+  const sharedDistantMountainGeo = new THREE.ConeGeometry(1, 1, 6);
+
   const createDistantMountain = (x, z, scale, mtnIdx) => {
     const peakCount = 1 + Math.floor(Math.random() * 2);
     const mountainGroup = new THREE.Group();
@@ -520,9 +526,9 @@ export function buildAlienPlanetScene(group, deps) {
     for (let p = 0; p < peakCount; p++) {
       const height = (30 + Math.random() * 50) * scale;
       const radius = Math.max(6, (6 + Math.random() * 10) * scale);
-      const peakGeo = new THREE.ConeGeometry(radius, height, 6);
-      const peak = new THREE.Mesh(peakGeo, sharedDistantMountainMat);
+      const peak = new THREE.Mesh(sharedDistantMountainGeo, sharedDistantMountainMat);
       peak.name = `alien-distant-mountain-${mtnIdx}-peak-${p}`;
+      peak.scale.set(radius, height, radius);
       peak.position.set(
         (Math.random() - 0.5) * 6 * scale,
         height / 2,
