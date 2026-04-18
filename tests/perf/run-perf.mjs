@@ -12,6 +12,7 @@ import profileBuckets from './scenarios/profile-buckets.js';
 import combatProfileHighLevel from './scenarios/combat-profile-highlevel.js';
 import combatSpikeDiag from './scenarios/combat-spike-diag.js';
 import progressionStress from './scenarios/progression-stress.js';
+import fullRunRestart from './scenarios/full-run-restart.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
@@ -74,6 +75,11 @@ const SCENARIOS = {
     runner: combatSpikeDiag,
     defaults: { targetLevel: 14, spawnWaitMs: 8000, profileDurationMs: 20000, minimal: true, spikeThresholdMs: 50 },
     description: 'Combat spike diagnostic: per-frame timing, spike detection, slow-mo event correlation. Use --minimal=false for full visuals.',
+  },
+  'full-run-restart': {
+    runner: fullRunRestart,
+    defaults: { targetLevels: 17, playerName: 'CODEY' },
+    description: 'Full 17-level run → game over → name entry → scoreboard → title → restart → second 17-level run. Tracks GEO/TEX/TRI/DC/Heap drift between playthroughs.',
   },
   'progression-stress': {
     runner: progressionStress,
