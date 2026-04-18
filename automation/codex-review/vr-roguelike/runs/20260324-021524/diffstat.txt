@@ -1,0 +1,111 @@
+ .codex/review/nightly-review-schema.json                                                     |   60 +++
+ .codex/review/nightly-review-template.md                                                     |   59 +++
+ AGENTS.md                                                                                    |   11 +
+ RAYCASTER_OPTIMIZATION.md                                                                    |  105 ++++
+ BIOME_SAFETY_CHECK.md => archive/BIOME_SAFETY_CHECK.md                                       |    0
+ BIOME_UPGRADE_REPORT.md => archive/BIOME_UPGRADE_REPORT.md                                   |    0
+ BIOME_UPGRADE_SUMMARY.md => archive/BIOME_UPGRADE_SUMMARY.md                                 |    0
+ BOSS_ARCHITECTURE.md => archive/BOSS_ARCHITECTURE.md                                         |    0
+ BOSS_DIAGRAMS.md => archive/BOSS_DIAGRAMS.md                                                 |    0
+ BOSS_QUICK_REFERENCE.md => archive/BOSS_QUICK_REFERENCE.md                                   |    0
+ BRANCH_ANALYSIS.md => archive/BRANCH_ANALYSIS.md                                             |    0
+ archive/BRANCH_PRESERVATION_MANIFEST_2026-03-23.md                                           |   99 ++++
+ CREATIVE_EXPANSION_PLAN.md => archive/CREATIVE_EXPANSION_PLAN.md                             |    0
+ DEBUG_POSITIONING_QUICK_REFERENCE.md => archive/DEBUG_POSITIONING_QUICK_REFERENCE.md         |    0
+ DEBUG_POSITIONING_TOOL_REPORT.md => archive/DEBUG_POSITIONING_TOOL_REPORT.md                 |    0
+ ENEMY_IMPLEMENTATION_STATUS.md => archive/ENEMY_IMPLEMENTATION_STATUS.md                     |    0
+ FIXES_APPLIED.md => archive/FIXES_APPLIED.md                                                 |    0
+ FIX_SUMMARY.md => archive/FIX_SUMMARY.md                                                     |    0
+ IMPLEMENTATION_SUMMARY.md => archive/IMPLEMENTATION_SUMMARY.md                               |    0
+ INSTRUCTION_1_WEAPONS.md => archive/INSTRUCTION_1_WEAPONS.md                                 |    0
+ INSTRUCTION_2_FPS_MONITOR.md => archive/INSTRUCTION_2_FPS_MONITOR.md                         |    0
+ INSTRUCTION_3_KEYBOARD_MOUSE.md => archive/INSTRUCTION_3_KEYBOARD_MOUSE.md                   |    0
+ INSTRUCTION_4_GLTF_SPHERE.md => archive/INSTRUCTION_4_GLTF_SPHERE.md                         |    0
+ INSTRUCTION_5_BOSS_FIGHTS.md => archive/INSTRUCTION_5_BOSS_FIGHTS.md                         |    0
+ INSTRUCTION_6_SUPABASE_PERFORMANCE.md => archive/INSTRUCTION_6_SUPABASE_PERFORMANCE.md       |    0
+ LEVEL_5_BOSSES_FINAL_REPORT.md => archive/LEVEL_5_BOSSES_FINAL_REPORT.md                     |    0
+ LEVEL_5_BOSSES_IMPLEMENTATION_SUMMARY.md => archive/LEVEL_5_BOSSES_IMPLEMENTATION_SUMMARY.md |    0
+ LEVEL_5_BOSSES_TEST_CHECKLIST.md => archive/LEVEL_5_BOSSES_TEST_CHECKLIST.md                 |    0
+ LOCAL_TESTING.md => archive/LOCAL_TESTING.md                                                 |    0
+ LOCAL_TEST_CHECKLIST.md => archive/LOCAL_TEST_CHECKLIST.md                                   |    0
+ MISSING_FEATURES.md => archive/MISSING_FEATURES.md                                           |    0
+ PERFORMANCE_FIXES.md => archive/PERFORMANCE_FIXES.md                                         |    0
+ PERFORMANCE_IMPLEMENTATION.md => archive/PERFORMANCE_IMPLEMENTATION.md                       |    0
+ PHYSICS_DEATH_IMPLEMENTATION.md => archive/PHYSICS_DEATH_IMPLEMENTATION.md                   |    0
+ REFACTOR_SUMMARY.md => archive/REFACTOR_SUMMARY.md                                           |    0
+ RESEARCH_BIOMES_ALT.md => archive/RESEARCH_BIOMES_ALT.md                                     |    0
+ SCOREBOARD_README.md => archive/SCOREBOARD_README.md                                         |    0
+ SCOREBOARD_TROUBLESHOOTING.md => archive/SCOREBOARD_TROUBLESHOOTING.md                       |    0
+ SHOOTABLE_PROJECTILES_FEATURE.md => archive/SHOOTABLE_PROJECTILES_FEATURE.md                 |    0
+ SUN_FIX_SUMMARY.md => archive/SUN_FIX_SUMMARY.md                                             |    0
+ SUPABASE_SETUP.md => archive/SUPABASE_SETUP.md                                               |    0
+ TESTING_GUIDE.md => archive/TESTING_GUIDE.md                                                 |    0
+ TEST_CHECKLIST.md => archive/TEST_CHECKLIST.md                                               |    0
+ TEST_CHECKLIST_PROJECTILE_FIX.md => archive/TEST_CHECKLIST_PROJECTILE_FIX.md                 |    0
+ UI_HOVER_TEST_CHECKLIST.md => archive/UI_HOVER_TEST_CHECKLIST.md                             |    0
+ WEAPON_ARCHITECTURE.md => archive/WEAPON_ARCHITECTURE.md                                     |    0
+ WEAPON_DIAGRAMS.md => archive/WEAPON_DIAGRAMS.md                                             |    0
+ WEAPON_INTEGRATION_PLAN.md => archive/WEAPON_INTEGRATION_PLAN.md                             |    0
+ WEAPON_QUICK_REFERENCE.md => archive/WEAPON_QUICK_REFERENCE.md                               |    0
+ WEAPON_SYSTEM_STATUS.md => archive/WEAPON_SYSTEM_STATUS.md                                   |    0
+ fog-check.mjs => archive/dev-scraps/fog-check.mjs                                            |    0
+ hud.js.backup => archive/dev-scraps/hud.js.backup                                            |    0
+ object-pool.js => archive/dev-scraps/object-pool.js                                          |    0
+ old_main.txt => archive/dev-scraps/old_main.txt                                              |    0
+ patch_diagnostic.ps1 => archive/dev-scraps/patch_diagnostic.ps1                              |    0
+ patch_main.ps1 => archive/dev-scraps/patch_main.ps1                                          |    0
+ patch_main_2.ps1 => archive/dev-scraps/patch_main_2.ps1                                      |    0
+ patch_visuals.ps1 => archive/dev-scraps/patch_visuals.ps1                                    |    0
+ performance.js => archive/dev-scraps/performance.js                                          |    0
+ temp_imports.txt => archive/dev-scraps/temp_imports.txt                                      |    0
+ test-imports.html => archive/dev-scraps/test-imports.html                                    |    0
+ test-projectile-hits.js => archive/dev-scraps/test-projectile-hits.js                        |    0
+ test-server.js => archive/dev-scraps/test-server.js                                          |    0
+ test-server.log => archive/dev-scraps/test-server.log                                        |    0
+ test-tracker.js => archive/dev-scraps/test-tracker.js                                        |    0
+ test-tracking.json => archive/dev-scraps/test-tracking.json                                  |    0
+ scenery-upgrade-plan.md => archive/scenery-upgrade-plan.md                                   |    0
+ deployed-screenshot.png => archive/screenshots/deployed-screenshot.png                       |  Bin
+ archive/screenshots/game-screenshot.png                                                      |  Bin 0 -> 532852 bytes
+ game-screenshot2.png => archive/screenshots/game-screenshot2.png                             |  Bin
+ game-screenshot3.png => archive/screenshots/game-screenshot3.png                             |  Bin
+ game-screenshot4.png => archive/screenshots/game-screenshot4.png                             |  Bin
+ puppeteer-after-click.png => archive/screenshots/puppeteer-after-click.png                   |  Bin
+ puppeteer-final.png => archive/screenshots/puppeteer-final.png                               |  Bin
+ puppeteer-screenshot.png => archive/screenshots/puppeteer-screenshot.png                     |  Bin
+ test-1-title.png => archive/screenshots/test-1-title.png                                     |  Bin
+ test-2-after-click.png => archive/screenshots/test-2-after-click.png                         |  Bin
+ test-3-state-check.png => archive/screenshots/test-3-state-check.png                         |  Bin
+ test-after-mouse.png => archive/screenshots/test-after-mouse.png                             |  Bin
+ test-after-rapid-fire.png => archive/screenshots/test-after-rapid-fire.png                   |  Bin
+ test-after-shooting.png => archive/screenshots/test-after-shooting.png                       |  Bin
+ test-after-space.png => archive/screenshots/test-after-space.png                             |  Bin
+ test-comprehensive-result.png => archive/screenshots/test-comprehensive-result.png           |  Bin
+ test-enemies-spawned.png => archive/screenshots/test-enemies-spawned.png                     |  Bin
+ test-enemies.png => archive/screenshots/test-enemies.png                                     |  Bin
+ test-final-result.png => archive/screenshots/test-final-result.png                           |  Bin
+ test-final.png => archive/screenshots/test-final.png                                         |  Bin
+ test-gameplay-start.png => archive/screenshots/test-gameplay-start.png                       |  Bin
+ test-projectile-hits.png => archive/screenshots/test-projectile-hits.png                     |  Bin
+ archive/screenshots/test-result.png                                                          |  Bin 0 -> 511212 bytes
+ upgrades.js => archive/upgrades.js.archived                                                  |    0
+ biome-scenes.js                                                                              | 1302 ++++++++++++++++++++++++++++++++++++++++++++++
+ boss-death-cinematic.js                                                                      |  288 +++++++++++
+ desktop-controls.js                                                                          |   21 +-
+ enemies.js                                                                                   |   22 +-
+ environment.js                                                                               |    5 +
+ game-screenshot.png                                                                          |  Bin 538929 -> 569981 bytes
+ game.js                                                                                      |   35 +-
+ hud.js                                                                                       |  445 ++++++++++------
+ index.html                                                                                   |  100 +++-
+ investigation-projectile-pool-sharing.md                                                     |  244 +++++++++
+ main.js                                                                                      | 2783 +++++++++++++++++++++++++++++---------------------------------------------------------------------
+ scenery.js                                                                                   |   20 +-
+ worker-monitor.js => scripts/worker-monitor.js                                               |    8 +-
+ test-result.png                                                                              |  Bin 387277 -> 0 bytes
+ test-game-comprehensive.js => tests/automation/test-game-comprehensive.js                    |    0
+ test-game.js => tests/automation/test-game.js                                                |    2 +-
+ supabase-test.js => tests/manual/supabase-test.js                                            |    0
+ test-desktop-controls.js => tests/manual/test-desktop-controls.js                            |    0
+ vfx.js                                                                                       |  241 +--------
+ 110 files changed, 3482 insertions(+), 2368 deletions(-)

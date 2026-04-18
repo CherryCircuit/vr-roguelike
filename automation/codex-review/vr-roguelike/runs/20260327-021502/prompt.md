@@ -1,0 +1,2101 @@
+# Nightly Codex Review
+
+You are performing a nightly automated review for the `vr-roguelike` repository.
+
+Your job is to find high-value, actionable issues in the supplied diff and nearby code context.
+
+## Review priorities
+
+Prioritize findings in this order:
+1. Correctness bugs and regressions
+2. Runtime stability issues and console-error risks
+3. Performance hotspots, especially VR or per-frame costs
+4. Wasteful code paths, repeated work, and unnecessary allocations
+5. Maintainability issues that materially increase bug risk
+6. Security issues, if the changed code creates realistic exposure
+
+## Project-specific rules
+
+This is a WebXR VR game. Performance matters.
+
+Focus especially on:
+- per-frame object allocation
+- repeated scans over large arrays in hot paths
+- unnecessary DOM or HUD updates every frame
+- expensive math in update loops
+- state-machine regressions during pause, level transitions, death, restart, and boss phases
+- stale pooled-object state
+- missing cleanup on level transition or reset
+- controller-specific or XR-session-specific null/undefined risks
+
+## Findings policy
+
+Only report actionable findings.
+
+Do not report:
+- cosmetic style issues
+- tiny refactors without clear payoff
+- naming preferences
+- speculative concerns without evidence
+- issues that already existed outside the supplied change unless the change makes them worse
+
+For each finding:
+- cite the exact file path
+- cite the exact line range if you can verify it from the provided diff/context
+- explain the impact briefly and concretely
+- suggest a fix only if it is reasonably clear
+- keep the wording direct and specific
+
+## Severity guide
+
+- `critical`: crash, save/progression break, security exposure, or severe performance cliff
+- `high`: likely bug, serious regression, or hot-path waste that will matter in play
+- `medium`: real maintainability/performance/correctness issue worth fixing soon
+- `low`: minor but valid issue with clear practical value
+
+## Output expectations
+
+Favor fewer, better findings over many weak ones.
+If there are no meaningful findings, say so in the structured output rather than inventing noise.
+
+## Review context
+- Repository: /home/graeme/.openclaw/workspace-codey/vr-roguelike
+- Branch: main
+- Base SHA: 02018d9e2ac488ef268f36a4392873f469a46ad3
+- Head SHA: 0c154bc6721b56b43bfbafaddf01f32592439378
+- Commit count in scope: 3
+- Include uncommitted changes: 1
+
+## Changed files
+ assets/fonts/november.ttf | Bin 0 -> 11056 bytes
+ biome-scenes.js           | 844 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--------------------------------------------------------
+ enemies.js                |   3 +-
+ game-screenshot.png       | Bin 680224 -> 514199 bytes
+ hud.js                    | 209 ++++++++++++++++++++++++++++-------------
+ index.html                | 165 ++-------------------------------
+ main.js                   |  46 ++++++---
+ scenery.js                |   4 +-
+ 8 files changed, 755 insertions(+), 516 deletions(-)
+
+## Unified diff
+diff --git a/assets/fonts/november.ttf b/assets/fonts/november.ttf
+new file mode 100644
+index 0000000..778df78
+Binary files /dev/null and b/assets/fonts/november.ttf differ
+diff --git a/biome-scenes.js b/biome-scenes.js
+index d27657b..57ca5c9 100644
+--- a/biome-scenes.js
++++ b/biome-scenes.js
+@@ -356,86 +356,82 @@ function buildSynthwaveValleyScene(group, deps) {
+   group.rotation.y = 0;
+ }
+ 
+ function buildDesertNightScene(group, deps) {
+   const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
+-  
++
+   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+   const floorY = floorHeight;
+-  const sceneColor = 0x06080c;
+ 
+-  // === LIGHTING (CRITICAL) ===
+-  // Pale moonlight
+-  const moonLight = new THREE.DirectionalLight(0xd4e5f7, 2.34);
+-  moonLight.position.set(-30, 50, -30);
++  // ── AURORA MACHINE DESERT — RESCUE PASS ────────────────────
++  // Monumental machine ruins in moonlit desert.
++  // Big horizon language, cleaner silhouettes, stronger aurora read.
++  // Warm sand with cyan machine accents.
++
++  // === LIGHTING (stronger, more dramatic) ===
++  const moonLight = new THREE.DirectionalLight(0xc8daf0, 2.2);
++  moonLight.position.set(-60, 80, -60);
+   group.add(moonLight);
+ 
+-  // Point light for long moon-like shadows from cacti
+-  const shadowLight = new THREE.PointLight(0xd4e5f7, 1.5, 100);
+-  shadowLight.position.set(-45, 35, -60); // Same as moon position
+-  shadowLight.castShadow = true;
+-  shadowLight.shadow.mapSize.width = 1024;
+-  shadowLight.shadow.mapSize.height = 1024;
+-  shadowLight.shadow.camera.near = 10;
+-  shadowLight.shadow.camera.far = 100;
+-  group.add(shadowLight);
+-
+-  // Very dim ambient
+-  const ambientLight = new THREE.AmbientLight(0x1a2035, 0.15);
++  const ambientLight = new THREE.AmbientLight(0x2a3545, 0.25);
+   group.add(ambientLight);
+ 
+-  // Hemisphere light for sky/ground color
+-  const hemiLight = new THREE.HemisphereLight(0x1a2035, 0x2d1f1a, 0.2);
++  const hemiLight = new THREE.HemisphereLight(0x2a3555, 0x4a3a2a, 0.3);
+   group.add(hemiLight);
+ 
+-  // Ground
+-  const geometry = new THREE.PlaneGeometry(140, 140, 70, 70);
++  // === TERRAIN: Broad dunes (scaled up for horizon) ===
++  const terrainSize = 400;
++  const geometry = new THREE.PlaneGeometry(terrainSize, terrainSize, 100, 100);
+   geometry.rotateX(-Math.PI / 2);
+   const positions = geometry.attributes.position;
+   const colors = [];
+-  const flatRadius = 12.0;
+-  const mountainStart = 18.0;
++  const flatRadius = 20.0;
++  const duneStart = 40.0;
++
+   for (let i = 0; i < positions.count; i++) {
+     const x = positions.getX(i);
+     const z = positions.getZ(i);
+     const dist = Math.sqrt(x * x + z * z);
+-    let heightFactor = Math.min(Math.max((dist - flatRadius) / (mountainStart - flatRadius), 0), 1);
++
++    let heightFactor = Math.min(Math.max((dist - flatRadius) / (duneStart - flatRadius), 0), 1);
+     heightFactor = heightFactor * heightFactor * (3 - 2 * heightFactor);
++
+     let height = 0;
+-    height += Math.sin(x * 0.08 + 0.5) * Math.cos(z * 0.06) * 4.0;
+-    height += Math.sin(x * 0.04 + 2) * Math.sin(z * 0.05 + 1) * 3.0;
+-    height += Math.sin(x * 0.15 + z * 0.1) * 1.5;
+-    height += Math.cos(z * 0.12 - x * 0.08) * 1.0;
+-    height += Math.sin(x * 0.3) * Math.cos(z * 0.25) * 0.5;
+-    if (dist > mountainStart) {
+-      height += Math.sin(x * 0.4 + z * 0.3) * 2.0;
+-      height += Math.cos(x * 0.2 - z * 0.5) * 2.5;
++    height += Math.sin(x * 0.018 + 0.5) * Math.cos(z * 0.014) * 12.0;
++    height += Math.sin(x * 0.01 + 2) * Math.sin(z * 0.012 + 1) * 8.0;
++    height += Math.cos(z * 0.024 - x * 0.016) * 4.0;
++    if (dist > duneStart) {
++      height += Math.abs(Math.sin(x * 0.032 + z * 0.024)) * 3.0;
+     }
++
+     const finalHeight = height * heightFactor;
+     positions.setY(i, finalHeight);
+-    const heightNorm = (finalHeight + 5) / 15;
+-    const baseColor = new THREE.Color(0x2a241b);
+-    const highlightColor = new THREE.Color(0x585144);
+-    const moonTint = new THREE.Color(0x404a5a);
+-    let color = baseColor.clone().lerp(highlightColor, Math.max(0, Math.min(1, heightNorm)));
++
++    const heightNorm = Math.min(1, Math.max(0, (finalHeight + 5) / 20));
++    const sandDark = new THREE.Color(0x2a2218);
++    const sandMid = new THREE.Color(0x5a4838);
++    const sandLit = new THREE.Color(0x706858);
++    const moonTint = new THREE.Color(0x405060);
++
++    let color = sandDark.clone().lerp(sandMid, heightNorm * 0.7);
++    color.lerp(sandLit, heightNorm * heightNorm * 0.6);
+     color.lerp(moonTint, heightNorm * 0.2);
+     colors.push(color.r, color.g, color.b);
+   }
+   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+   geometry.computeVertexNormals();
++
+   const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+   const terrain = new THREE.Mesh(geometry, material);
+   terrain.name = 'desert-night-terrain';
+   terrain.userData.planeName = 'desert-night-terrain';
+   terrain.position.y = floorY;
+   terrain.frustumCulled = false;
+-  terrain.receiveShadow = true;  // Sand dunes receive cactus shadows
+   group.add(terrain);
+   registerFadeMaterial(material);
+ 
+-  // Flash overlay plane for damage feedback (entire sand floor turns red)
+-  const flashGeo = new THREE.PlaneGeometry(140, 140);
++  const flashGeo = new THREE.PlaneGeometry(terrainSize, terrainSize);
+   const flashMat = new THREE.MeshBasicMaterial({
+     color: 0xff0000,
+     transparent: true,
+     opacity: 0,
+     depthWrite: false,
+@@ -443,103 +439,193 @@ function buildDesertNightScene(group, deps) {
+   });
+   const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+   flashPlane.name = 'desert-night-damage-flash-plane';
+   flashPlane.userData.planeName = 'desert-night-damage-flash-plane';
+   flashPlane.rotation.x = -Math.PI / 2;
+-  flashPlane.position.y = floorY + 0.02; // Very close to terrain surface
++  flashPlane.position.y = floorY + 0.02;
+   flashPlane.frustumCulled = false;
+   group.add(flashPlane);
+   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
+ 
+-  // === CACTUSES (9 procedural) ===
+-  const createCactus = (height) => {
+-    const cactusGroup = new THREE.Group();
+-    const bodyColor = 0x1a3d20;
+-    const armColor = 0x2d5535;
+-    const segments = 3 + Math.floor(Math.random() * 2); // 3-4 segments
+-    let currentY = 0;
+-    const segmentHeight = height / segments;
+-
+-    // Main body segments
+-    for (let i = 0; i < segments; i++) {
+-      const radius = 0.12 + (segments - i) * 0.03; // Taper upward
+-      const segGeo = new THREE.CylinderGeometry(radius * 0.9, radius, segmentHeight, 5);
+-      const segMat = new THREE.MeshLambertMaterial({ color: bodyColor, flatShading: true });
+-      const segment = new THREE.Mesh(segGeo, segMat);
+-      segment.position.y = currentY + segmentHeight / 2;
+-      segment.castShadow = true;  // Cacti cast shadows
+-      segment.receiveShadow = true;
+-      cactusGroup.add(segment);
+-      currentY += segmentHeight;
+-    }
++  // === MONUMENTAL MACHINE RELICS ===
+ 
+-    // Random arms (0-2)
+-    const numArms = Math.floor(Math.random() * 3);
+-    for (let a = 0; a < numArms; a++) {
+-      const armY = segmentHeight * (1 + Math.floor(Math.random() * (segments - 1)));
+-      const side = Math.random() > 0.5 ? 1 : -1;
+-      const armLength = 0.4 + Math.random() * 0.4;
+-
+-      // Horizontal part
+-      const hArmGeo = new THREE.CylinderGeometry(0.08, 0.1, armLength, 5);
+-      const hArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
+-      const hArm = new THREE.Mesh(hArmGeo, hArmMat);
+-      hArm.castShadow = true;
+-      hArm.receiveShadow = true;
+-      hArm.rotation.z = Math.PI / 2;
+-      hArm.position.set(side * armLength / 2, armY, 0);
+-      cactusGroup.add(hArm);
+-
+-      // Vertical part (upward)
+-      const vArmHeight = 0.5 + Math.random() * 0.5;
+-      const vArmGeo = new THREE.CylinderGeometry(0.06, 0.08, vArmHeight, 5);
+-      const vArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
+-      const vArm = new THREE.Mesh(vArmGeo, vArmMat);
+-      vArm.castShadow = true;
+-      vArm.receiveShadow = true;
+-      vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
+-      cactusGroup.add(vArm);
+-    }
++  // Massive arch structures (dominant horizon silhouettes)
++  const archGeo = new THREE.TorusGeometry(25, 2.5, 8, 24, Math.PI);
++  const archMat = new THREE.MeshLambertMaterial({
++    color: 0x1a1820,
++    emissive: 0x0a2030,
++    emissiveIntensity: 0.8,
++    flatShading: true
++  });
++  registerFadeMaterial(archMat);
+ 
+-    // REMOVED: Fake circle shadow - now using point light for realistic moon shadows
+-    // Cacti will cast natural shadows from the shadowLight
++  const archGlowGeo = new THREE.TorusGeometry(25, 3.5, 6, 24, Math.PI);
++  const archGlowMat = new THREE.MeshBasicMaterial({
++    color: 0x00ffcc,
++    transparent: true,
++    opacity: 0.25,
++    depthWrite: false,
++    blending: THREE.AdditiveBlending,
++    fog: true
++  });
++  registerFadeMaterial(archGlowMat);
+ 
+-    return cactusGroup;
+-  };
++  const archConfigs = [
++    { x: 120, z: -80, ry: 0.3, tilt: 0.05, scale: 1.0 },
++    { x: -140, z: -60, ry: -0.6, tilt: -0.08, scale: 0.85 },
++    { x: 80, z: 100, ry: 1.2, tilt: 0.1, scale: 0.7 },
++  ];
++
++  archConfigs.forEach((cfg, i) => {
++    const archGroup = new THREE.Group();
++    archGroup.name = `machine-arch-${i}`;
++    const arch = new THREE.Mesh(archGeo, archMat);
++    const glow = new THREE.Mesh(archGlowGeo, archGlowMat);
++    archGroup.add(arch, glow);
++    archGroup.position.set(cfg.x, floorY + 25 * cfg.scale, cfg.z);
++    archGroup.rotation.set(cfg.tilt, cfg.ry, 0);
++    archGroup.scale.setScalar(cfg.scale);
++    group.add(archGroup);
++  });
++
++  // Buried colossus fragments (partial geometry emerging from sand)
++  const colossusGeo = new THREE.CylinderGeometry(8, 10, 20, 12, 1, true);
++  const colossusMat = new THREE.MeshLambertMaterial({
++    color: 0x15120f,
++    emissive: 0x0a1520,
++    emissiveIntensity: 0.6,
++    flatShading: true,
++    side: THREE.DoubleSide
++  });
++  registerFadeMaterial(colossusMat);
+ 
+-  const cactusPositions = [
+-    { x: 6, z: 4, h: 2.5 },
+-    { x: -4, z: 6, h: 3 },
+-    { x: 8, z: -3, h: 2 },
+-    { x: -7, z: -5, h: 2.8 },
+-    { x: 3, z: -8, h: 1.8 },
+-    { x: -10, z: 1, h: 2.2 },
+-    { x: 0, z: 10, h: 2.3 },
+-    // Removed cactus at {x: 5, z: 9, h: 1.9} - player now spawns there
+-    { x: -5, z: -9, h: 2.4 },
++  const colossusGlowGeo = new THREE.RingGeometry(6, 12, 16);
++  const colossusGlowMat = new THREE.MeshBasicMaterial({
++    color: 0x00ddbb,
++    transparent: true,
++    opacity: 0.2,
++    depthWrite: false,
++    side: THREE.DoubleSide,
++    blending: THREE.AdditiveBlending,
++    fog: true
++  });
++  registerFadeMaterial(colossusGlowMat);
++
++  const colossusConfigs = [
++    { x: -100, z: 60, height: 18, rotY: 0.4 },
++    { x: 150, z: 40, height: 14, rotY: -0.7 },
++  ];
++
++  colossusConfigs.forEach((cfg, i) => {
++    const colGroup = new THREE.Group();
++    colGroup.name = `buried-colossus-${i}`;
++    const body = new THREE.Mesh(colossusGeo, colossusMat);
++    body.scale.y = cfg.height / 20;
++    body.position.y = -8;
++    const glow = new THREE.Mesh(colossusGlowGeo, colossusGlowMat);
++    glow.rotation.x = -Math.PI / 2;
++    glow.position.y = 0.1;
++    colGroup.add(body, glow);
++    colGroup.position.set(cfg.x, floorY, cfg.z);
++    colGroup.rotation.y = cfg.rotY;
++    group.add(colGroup);
++  });
++
++  // Ring gates (scaled up 3x, stronger glow)
++  const ringGeo = new THREE.TorusGeometry(12, 0.9, 8, 24);
++  const ringMat = new THREE.MeshLambertMaterial({
++    color: 0x1a1820,
++    emissive: 0x0a2030,
++    emissiveIntensity: 0.8,
++    flatShading: true
++  });
++  registerFadeMaterial(ringMat);
++
++  const ringGlowGeo = new THREE.TorusGeometry(12, 1.5, 6, 24);
++  const ringGlowMat = new THREE.MeshBasicMaterial({
++    color: 0x00ffcc,
++    transparent: true,
++    opacity: 0.3,
++    depthWrite: false,
++    blending: THREE.AdditiveBlending,
++    fog: true
++  });
++  registerFadeMaterial(ringGlowMat);
++
++  const ringGates = [
++    [60, -40, 0.3, 0.1, 1.0],
++    [-70, -60, -0.8, -0.15, 0.85],
++    [30, -80, 1.2, 0.05, 1.1],
++    [-40, 50, 0.6, -0.2, 0.9],
++    [80, 30, -0.4, 0.12, 0.75],
+   ];
+ 
+-  cactusPositions.forEach(pos => {
+-    const cactus = createCactus(pos.h);
+-    cactus.position.set(pos.x, floorY, pos.z);
+-    cactus.rotation.y = Math.random() * Math.PI * 2;
+-    group.add(cactus);
++  ringGates.forEach(([rx, rz, ry, tiltX, s], i) => {
++    const ringGroup = new THREE.Group();
++    ringGroup.name = `ring-gate-${i}`;
++    const ring = new THREE.Mesh(ringGeo, ringMat);
++    const glow = new THREE.Mesh(ringGlowGeo, ringGlowMat);
++    ringGroup.add(ring, glow);
++    ringGroup.position.set(rx, floorY + 15 * s, rz);
++    ringGroup.rotation.set(tiltX, ry, 0);
++    ringGroup.scale.setScalar(s);
++    group.add(ringGroup);
+   });
+ 
+-  // === TWINKLING STARS (400 particles - reduced from 800 for performance) ===
+-  const starCount = 400;
++  // Obelisks (scaled up 2x, stronger tip glow)
++  const obeliskGeo = new THREE.BoxGeometry(1.6, 1, 1.6);
++  obeliskGeo.translate(0, 0.5, 0);
++  const obeliskMat = new THREE.MeshLambertMaterial({
++    color: 0x201c18,
++    emissive: 0x081015,
++    emissiveIntensity: 0.5,
++    flatShading: true
++  });
++  registerFadeMaterial(obeliskMat);
++
++  const obeliskCapGeo = new THREE.BoxGeometry(1.8, 0.8, 1.8);
++  const obeliskCapMat = new THREE.MeshBasicMaterial({
++    color: 0x00ffcc,
++    transparent: true,
++    opacity: 0.5,
++    depthWrite: false,
++    blending: THREE.AdditiveBlending,
++    fog: true
++  });
++  registerFadeMaterial(obeliskCapMat);
++
++  const obelisks = [
++    [-24, -30, 16, 0.2],
++    [36, -16, 20, -0.5],
++    [-50, 36, 14, 1.1],
++    [70, -50, 18, 0.8],
++  ];
++
++  obelisks.forEach(([ox, oz, oh, ory], i) => {
++    const obGroup = new THREE.Group();
++    obGroup.name = `obelisk-${i}`;
++    const body = new THREE.Mesh(obeliskGeo, obeliskMat);
++    body.scale.set(1, oh, 1);
++    const cap = new THREE.Mesh(obeliskCapGeo, obeliskCapMat);
++    cap.position.y = oh;
++    obGroup.add(body, cap);
++    obGroup.position.set(ox, floorY, oz);
++    obGroup.rotation.y = ory;
++    group.add(obGroup);
++  });
++
++  // === STARS (500, shader-based twinkle) ===
++  const starCount = 500;
+   const starPositions = new Float32Array(starCount * 3);
+   const starPhases = new Float32Array(starCount);
+ 
+   for (let i = 0; i < starCount; i++) {
+-    // Hemisphere distribution
+     const theta = Math.random() * Math.PI * 2;
+-    const radius = 80 + Math.random() * 40; // 80-120
+-    const phi = Math.random() * Math.PI * 0.5; // Upper hemisphere
+-
++    const radius = 150 + Math.random() * 80;
++    const phi = Math.random() * Math.PI * 0.5;
+     starPositions[i * 3] = Math.cos(theta) * Math.sin(phi) * radius;
+-    starPositions[i * 3 + 1] = Math.cos(phi) * radius + 10; // Offset up
++    starPositions[i * 3 + 1] = Math.cos(phi) * radius + 20;
+     starPositions[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * radius;
+     starPhases[i] = Math.random() * Math.PI * 2;
+   }
+ 
+   const starGeometry = new THREE.BufferGeometry();
+@@ -557,175 +643,199 @@ function buildDesertNightScene(group, deps) {
+       uniform float uPixelRatio;
+       varying float vTwinkle;
+       void main() {
+         vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
+         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+-        float size = 2.0 * uPixelRatio * vTwinkle;
++        float size = 2.5 * uPixelRatio * vTwinkle;
+         gl_PointSize = size * (200.0 / -mvPosition.z);
+         gl_Position = projectionMatrix * mvPosition;
+       }
+     `,
+     fragmentShader: `
+       varying float vTwinkle;
+       void main() {
+         float dist = length(gl_PointCoord - vec2(0.5));
+         if (dist > 0.5) discard;
+         float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+-        vec3 color = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.95, 0.9), vTwinkle);
+-        gl_FragColor = vec4(color * (0.7 + vTwinkle * 0.3), alpha * vTwinkle);
++        vec3 color = mix(vec3(0.7, 0.85, 1.0), vec3(0.5, 1.0, 0.85), vTwinkle);
++        gl_FragColor = vec4(color * (0.8 + vTwinkle * 0.2), alpha * vTwinkle);
+       }
+     `,
+     transparent: true,
+     depthWrite: false,
+     fog: false,
+     blending: THREE.AdditiveBlending
+   });
+ 
+   const stars = new THREE.Points(starGeometry, starMaterial);
+-  stars.frustumCulled = false; // Fix disappearing when looking up
++  stars.frustumCulled = false;
+   stars.renderOrder = 999;
+   group.add(stars);
+   registerFadeMaterial(starMaterial);
+ 
+-  // === DUST PARTICLES (300 particles - reduced from 600 for performance) ===
+-  const dustCount = 300;
+-  const dustPositions = new Float32Array(dustCount * 3);
+-  const dustPhases = new Float32Array(dustCount);
+-
+-  for (let i = 0; i < dustCount; i++) {
+-    dustPositions[i * 3] = (Math.random() - 0.5) * 60;
+-    dustPositions[i * 3 + 1] = Math.random() * 15 + floorY;
+-    dustPositions[i * 3 + 2] = (Math.random() - 0.5) * 60;
+-    dustPhases[i] = Math.random() * Math.PI * 2;
+-  }
+-
+-  const dustGeometry = new THREE.BufferGeometry();
+-  dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+-  dustGeometry.setAttribute('aPhase', new THREE.BufferAttribute(dustPhases, 1));
+-
+-  const dustMaterial = new THREE.ShaderMaterial({
++  // === AURORA STRIPS (5 strips, 3x brighter) ===
++  const auroraStripGeo = new THREE.PlaneGeometry(350, 25, 1, 1);
++  const auroraStripMat = new THREE.ShaderMaterial({
+     uniforms: {
+       uTime: { value: 0 },
+-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
++      uColor1: { value: new THREE.Color(0x00ffcc) },
++      uColor2: { value: new THREE.Color(0x00ccdd) },
+     },
+     vertexShader: `
+-      attribute float aPhase;
+-      uniform float uTime;
+-      uniform float uPixelRatio;
+-      varying float vAlpha;
++      varying vec2 vUv;
+       void main() {
+-        vAlpha = 0.5 + 0.3 * sin(uTime + aPhase);
+-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+-        gl_PointSize = 4.0 * uPixelRatio;
+-        gl_Position = projectionMatrix * mvPosition;
++        vUv = uv;
++        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+       }
+     `,
+     fragmentShader: `
+-      varying float vAlpha;
++      uniform float uTime;
++      uniform vec3 uColor1;
++      uniform vec3 uColor2;
++      varying vec2 vUv;
+       void main() {
+-        float dist = length(gl_PointCoord - vec2(0.5));
+-        if (dist > 0.5) discard;
+-        float alpha = (1.0 - smoothstep(0.0, 0.5, dist)) * vAlpha * 1.2;
+-        vec3 dustColor = vec3(0.8, 0.85, 0.9);
+-        gl_FragColor = vec4(dustColor, alpha);
++        float wave = sin(vUv.x * 3.14159 + uTime * 0.3) * 0.5 + 0.5;
++        float edge = smoothstep(0.0, 0.25, vUv.y) * smoothstep(1.0, 0.75, vUv.y);
++        float alpha = edge * (0.18 + wave * 0.12);
++        vec3 color = mix(uColor1, uColor2, wave);
++        gl_FragColor = vec4(color, alpha);
+       }
+     `,
+     transparent: true,
+     depthWrite: false,
+-    fog: false,
+-    blending: THREE.AdditiveBlending
++    side: THREE.DoubleSide,
++    blending: THREE.AdditiveBlending,
++    fog: true
+   });
++  registerFadeMaterial(auroraStripMat);
++
++  const auroraConfigs = [
++    { y: 70, z: -120, rx: -0.25, rz: 0.08 },
++    { y: 85, z: -140, rx: -0.12, rz: -0.12 },
++    { y: 60, z: -100, rx: -0.35, rz: 0.15 },
++    { y: 95, z: -160, rx: -0.08, rz: -0.05 },
++    { y: 55, z: -80, rx: -0.45, rz: 0.18 },
++  ];
+ 
+-  const dust = new THREE.Points(dustGeometry, dustMaterial);
+-  dust.renderOrder = 999;
+-  group.add(dust);
+-  registerFadeMaterial(dustMaterial);
++  auroraConfigs.forEach((cfg, i) => {
++    const strip = new THREE.Mesh(auroraStripGeo, auroraStripMat.clone());
++    strip.name = `aurora-strip-${i}`;
++    strip.material.uniforms.uTime.value = i * 1.8;
++    strip.position.set(0, cfg.y, cfg.z);
++    strip.rotation.x = cfg.rx;
++    strip.rotation.z = cfg.rz;
++    strip.frustumCulled = false;
++    group.add(strip);
++  });
+ 
+-  // Moon
++  // === MOON (larger, positioned for horizon dominance) ===
+   const moonGroup = new THREE.Group();
+-  const moonGeometry = new THREE.IcosahedronGeometry(8, 2);
++  const moonGeometry = new THREE.IcosahedronGeometry(15, 2);
+   const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xfffef8 });
+   const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+   moonGroup.add(moon);
+   registerFadeMaterial(moonMaterial);
+-  const innerGlowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 });
+-  const innerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(9.5, 2), innerGlowMat);
+-  const outerGlowMat = new THREE.MeshBasicMaterial({ color: 0xd4e5f7, transparent: true, opacity: 0.12 });
+-  const outerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 2), outerGlowMat);
+-  const farGlowMat = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.06 });
+-  const farGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(18, 2), farGlowMat);
+-  moonGroup.add(innerGlow, outerGlow, farGlow);
+-  registerFadeMaterial(innerGlowMat);
+-  registerFadeMaterial(outerGlowMat);
+-  registerFadeMaterial(farGlowMat);
+-  moonGroup.position.set(-45, 35, -60);
+-  group.add(moonGroup);
+ 
+-  // Desert floor HUD height: Y = -0.20, rotated 25 degrees (-0.436 rad)
+-  group.rotation.y = -0.436; // yaw: -25 degrees
+-  group.position.set(-2.12, -0.20, -4.82);  // Moved 5 units +X and +Z
++  const moonGlowMat = new THREE.MeshBasicMaterial({
++    color: 0xc8daf0,
++    transparent: true,
++    opacity: 0.2,
++    side: THREE.BackSide
++  });
++  const moonGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(25, 2), moonGlowMat);
++  moonGroup.add(moonGlow);
++  registerFadeMaterial(moonGlowMat);
++  moonGroup.position.set(-90, 50, -120);
++  group.add(moonGroup);
+ 
+-  // Frame counter for throttling dust particle updates (Issue 4: reduce CPU cost)
+-  let desertFrameCount = 0;
++  // Desert floor HUD height
++  group.rotation.y = -0.436;
++  group.position.set(-2.12, -0.20, -4.82);
+ 
+   // === ANIMATION UPDATE ===
+   group.userData.update = (now, dt) => {
+     const time = now * 0.001;
+-    // Update stars twinkle (shader-based, already efficient)
+     starMaterial.uniforms.uTime.value = time;
+-    // Update dust shader time
+-    dustMaterial.uniforms.uTime.value = time;
+-
+-    // Throttle dust particle position updates to every 5th frame (Issue 4: reduce CPU cost)
+-    desertFrameCount++;
+-    if (desertFrameCount % 5 === 0) {
+-      const dustPos = dustGeometry.attributes.position.array;
+-      for (let i = 0; i < dustCount; i++) {
+-        const idx = i * 3;
+-        // Gentle wind drift (scaled by 5 since we only update every 5th frame)
+-        dustPos[idx] += 0.025 * dt;
+-        dustPos[idx + 1] += Math.sin(time + dustPhases[i]) * 0.005 * dt;
+-        dustPos[idx + 2] += Math.cos(time * 0.7 + dustPhases[i]) * 0.01 * dt;
+-
+-        // Wrap around boundaries
+-        if (dustPos[idx] > 30) dustPos[idx] = -30;
+-        if (dustPos[idx] < -30) dustPos[idx] = 30;
+-        if (dustPos[idx + 1] > floorY + 15) dustPos[idx + 1] = floorY;
+-        if (dustPos[idx + 1] < floorY) dustPos[idx + 1] = floorY + 15;
+-        if (dustPos[idx + 2] > 30) dustPos[idx + 2] = -30;
+-        if (dustPos[idx + 2] < -30) dustPos[idx + 2] = 30;
++
++    group.children.forEach(child => {
++      if (child.name && child.name.startsWith('aurora-strip-') && child.material.uniforms) {
++        child.material.uniforms.uTime.value = time;
+       }
+-      dustGeometry.attributes.position.needsUpdate = true;
+-    }
++    });
+   };
+ }
+ 
+ function buildAlienPlanetScene(group, deps) {
+   const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
+   
+   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+-  const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
++  const floorY = floorHeight - 0.3;
++
++  // ── SUNKEN NEON GARDEN — RESCUE PASS ───────────────────────
++  // Lush alien wetland with bioluminescent flora.
++  // Grounded beauty, luminous atmosphere, clear ecosystem logic.
++  // Deep teal/purple with bright green/cyan accents.
++
++  // === LIGHTING (soft, bioluminescent) ===
++  const ambientLight = new THREE.AmbientLight(0x1a2030, 0.35);
++  group.add(ambientLight);
++
++  const hemiLight = new THREE.HemisphereLight(0x2a3040, 0x102020, 0.4);
++  group.add(hemiLight);
+ 
+-  // Ground
+-  const groundGeo = new THREE.PlaneGeometry(300, 300, 84, 84);
++  // === TERRAIN: Luminous alien wetland ===
++  const groundGeo = new THREE.PlaneGeometry(300, 300, 100, 100);
++  groundGeo.rotateX(-Math.PI / 2);
+   const groundPositions = groundGeo.attributes.position;
++  const groundColors = [];
++
+   for (let i = 0; i < groundPositions.count; i++) {
+     const x = groundPositions.getX(i);
+-    const y = groundPositions.getY(i);
+-    groundPositions.setZ(i, Math.sin(x * 0.03) * Math.cos(y * 0.03) * 0.3);
++    const z = groundPositions.getZ(i);
++    
++    // Subtle height variation for wetland feel
++    let height = Math.sin(x * 0.02) * Math.cos(z * 0.02) * 0.8;
++    height += Math.sin(x * 0.05 + z * 0.03) * 0.3;
++    groundPositions.setY(i, height);
++
++    // Bioluminescent ground coloring
++    const dist = Math.sqrt(x * x + z * z);
++    const heightNorm = (height + 1) / 2;
++    
++    // Deep teal/purple base
++    const baseDark = new THREE.Color(0x0a1520);
++    const baseMid = new THREE.Color(0x102535);
++    // Bioluminescent patches (brighter teal/green)
++    const bioGlow = new THREE.Color(0x00aa88);
++    
++    // Random bioluminescent patches
++    const patchNoise = Math.sin(x * 0.08) * Math.cos(z * 0.08) + Math.sin(x * 0.12 + z * 0.1) * 0.5;
++    const patchStrength = Math.max(0, patchNoise - 0.3) * 1.5;
++    
++    let color = baseDark.clone().lerp(baseMid, heightNorm * 0.6);
++    color.lerp(bioGlow, patchStrength * 0.4);
++    groundColors.push(color.r, color.g, color.b);
+   }
++  
++  groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(groundColors, 3));
+   groundGeo.computeVertexNormals();
+-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0510, roughness: 1, metalness: 0, flatShading: true });
++  
++  const groundMat = new THREE.MeshStandardMaterial({ 
++    vertexColors: true,
++    roughness: 0.9, 
++    metalness: 0, 
++    flatShading: true 
++  });
+   const ground = new THREE.Mesh(groundGeo, groundMat);
+   ground.name = 'alien-planet-ground-plane';
+   ground.userData.planeName = 'alien-planet-ground-plane';
+-  ground.rotation.x = -Math.PI / 2;
+   ground.position.y = floorY;
+   ground.frustumCulled = false;
+   group.add(ground);
++  registerFadeMaterial(groundMat);
+ 
+-  // Flash overlay plane for damage feedback (Issue 2: 320x320 for full floor coverage)
++  // Flash overlay plane
+   const flashGeo = new THREE.PlaneGeometry(320, 320);
+   const flashMat = new THREE.MeshBasicMaterial({
+     color: 0xff0000,
+     transparent: true,
+     opacity: 0,
+@@ -739,101 +849,269 @@ function buildAlienPlanetScene(group, deps) {
+   flashPlane.position.y = floorY + 0.1;
+   flashPlane.frustumCulled = false;
+   group.add(flashPlane);
+   biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
+ 
+-  // Moon and glow
+-  const moonGeo = new THREE.IcosahedronGeometry(24, 1);
+-  const moonMat = new THREE.MeshBasicMaterial({ color: 0xddaaff, transparent: true, opacity: 0.95 });
++  // === GROUNDED ALIEN FLORA ===
++
++  // Tall crystalline stalks (emerging from ground, not floating)
++  const stalkGeo = new THREE.CylinderGeometry(0.3, 0.5, 8, 8);
++  stalkGeo.translate(0, 4, 0);
++  const stalkMat = new THREE.MeshStandardMaterial({
++    color: 0x1a3040,
++    emissive: 0x00aa88,
++    emissiveIntensity: 0.6,
++    roughness: 0.3,
++    metalness: 0.2,
++    flatShading: true
++  });
++  registerFadeMaterial(stalkMat);
++
++  // Glowing nodes along stalks
++  const nodeGeo = new THREE.SphereGeometry(0.6, 8, 8);
++  const nodeMat = new THREE.MeshBasicMaterial({
++    color: 0x00ffaa,
++    transparent: true,
++    opacity: 0.8
++  });
++  registerFadeMaterial(nodeMat);
++
++  const stalkConfigs = [
++    { x: 25, z: -30, height: 10, nodes: 3 },
++    { x: -35, z: -25, height: 12, nodes: 4 },
++    { x: 15, z: 40, height: 8, nodes: 2 },
++    { x: -45, z: 35, height: 14, nodes: 5 },
++    { x: 50, z: 15, height: 9, nodes: 3 },
++    { x: -20, z: -50, height: 11, nodes: 4 },
++    { x: 40, z: -45, height: 13, nodes: 4 },
++    { x: -55, z: -10, height: 10, nodes: 3 },
++  ];
++
++  const stalks = [];
++  stalkConfigs.forEach((cfg, i) => {
++    const stalkGroup = new THREE.Group();
++    stalkGroup.name = `crystal-stalk-${i}`;
++    
++    const stalk = new THREE.Mesh(stalkGeo, stalkMat);
++    stalk.scale.y = cfg.height / 8;
++    stalkGroup.add(stalk);
++    
++    // Add glowing nodes
++    for (let n = 0; n < cfg.nodes; n++) {
++      const node = new THREE.Mesh(nodeGeo, nodeMat);
++      const nodeY = (n + 1) * (cfg.height / (cfg.nodes + 1));
++      node.position.set(0, nodeY, 0);
++      node.scale.setScalar(0.6 + Math.random() * 0.4);
++      stalkGroup.add(node);
++    }
++    
++    stalkGroup.position.set(cfg.x, floorY, cfg.z);
++    stalkGroup.rotation.z = (Math.random() - 0.5) * 0.15;
++    stalks.push(stalkGroup);
++    group.add(stalkGroup);
++  });
++
++  // Mushroom-like structures with bright caps
++  const mushroomGeo = new THREE.CylinderGeometry(0.4, 0.6, 2, 8);
++  mushroomGeo.translate(0, 1, 0);
++  const mushroomMat = new THREE.MeshStandardMaterial({
++    color: 0x1a2530,
++    emissive: 0x004455,
++    emissiveIntensity: 0.4,
++    roughness: 0.8,
++    flatShading: true
++  });
++  registerFadeMaterial(mushroomMat);
++
++  const capGeo = new THREE.SphereGeometry(2, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
++  const capMat = new THREE.MeshBasicMaterial({
++    color: 0x00ddff,
++    transparent: true,
++    opacity: 0.7
++  });
++  registerFadeMaterial(capMat);
++
++  const mushroomConfigs = [
++    { x: 20, z: 25, height: 3, capScale: 1.2 },
++    { x: -30, z: 15, height: 4, capScale: 1.5 },
++    { x: 10, z: -35, height: 2.5, capScale: 1.0 },
++    { x: -40, z: -40, height: 3.5, capScale: 1.3 },
++    { x: 55, z: -20, height: 4.5, capScale: 1.6 },
++    { x: -15, z: 55, height: 3, capScale: 1.1 },
++  ];
++
++  mushroomConfigs.forEach((cfg, i) => {
++    const mushGroup = new THREE.Group();
++    mushGroup.name = `mushroom-${i}`;
++    
++    const stem = new THREE.Mesh(mushroomGeo, mushroomMat);
++    stem.scale.y = cfg.height / 2;
++    mushGroup.add(stem);
++    
++    const cap = new THREE.Mesh(capGeo, capMat);
++    cap.position.y = cfg.height;
++    cap.scale.setScalar(cfg.capScale);
++    mushGroup.add(cap);
++    
++    mushGroup.position.set(cfg.x, floorY, cfg.z);
++    group.add(mushGroup);
++  });
++
++  // Organic tube formations with internal glow
++  const tubeGeo = new THREE.CylinderGeometry(1.5, 2, 6, 12, 1, true);
++  const tubeMat = new THREE.MeshBasicMaterial({
++    color: 0x00ffaa,
++    transparent: true,
++    opacity: 0.5,
++    side: THREE.DoubleSide
++  });
++  registerFadeMaterial(tubeMat);
++
++  const tubeConfigs = [
++    { x: 35, z: 10, height: 7, rotX: 0.2, rotZ: 0.1 },
++    { x: -50, z: 20, height: 5, rotX: -0.15, rotZ: 0.25 },
++    { x: 5, z: -55, height: 8, rotX: 0.3, rotZ: -0.2 },
++    { x: -25, z: -15, height: 6, rotX: -0.1, rotZ: 0.15 },
++  ];
++
++  tubeConfigs.forEach((cfg, i) => {
++    const tube = new THREE.Mesh(tubeGeo, tubeMat);
++    tube.name = `glow-tube-${i}`;
++    tube.scale.y = cfg.height / 6;
++    tube.position.set(cfg.x, floorY + cfg.height / 2, cfg.z);
++    tube.rotation.set(cfg.rotX, 0, cfg.rotZ);
++    tube.frustumCulled = false;
++    group.add(tube);
++  });
++
++  // === ATMOSPHERIC DEPTH (volumetric fog planes) ===
++  const fogPlaneGeo = new THREE.PlaneGeometry(350, 350);
++  const fogPlaneMat = new THREE.MeshBasicMaterial({
++    color: 0x1a3040,
++    transparent: true,
++    opacity: 0.15,
++    depthWrite: false,
++    side: THREE.DoubleSide
++  });
++  registerFadeMaterial(fogPlaneMat);
++
++  const fogLayers = [
++    { y: floorY + 2, opacity: 0.12 },
++    { y: floorY + 6, opacity: 0.08 },
++    { y: floorY + 12, opacity: 0.05 },
++  ];
++
++  fogLayers.forEach((cfg, i) => {
++    const fog = new THREE.Mesh(fogPlaneGeo, fogPlaneMat.clone());
++    fog.name = `fog-layer-${i}`;
++    fog.material.opacity = cfg.opacity;
++    fog.rotation.x = -Math.PI / 2;
++    fog.position.y = cfg.y;
++    fog.frustumCulled = false;
++    group.add(fog);
++  });
++
++  // === MOON (larger, horizon-positioned) ===
++  const moonGeo = new THREE.IcosahedronGeometry(35, 2);
++  const moonMat = new THREE.MeshBasicMaterial({ 
++    color: 0xddaaff, 
++    transparent: true, 
++    opacity: 0.95 
++  });
+   const moon = new THREE.Mesh(moonGeo, moonMat);
+-  moon.position.set(60, 80, -40);
+-  moon.frustumCulled = false; // Fix disappearing when looking up
++  moon.position.set(80, 60, -100);
++  moon.frustumCulled = false;
+   group.add(moon);
+-  const moonGlowGeo = new THREE.IcosahedronGeometry(36, 1);
+-  const moonGlowMat = new THREE.MeshBasicMaterial({ color: 0xaa66ff, transparent: true, opacity: 0.15, side: THREE.BackSide });
++  
++  const moonGlowGeo = new THREE.IcosahedronGeometry(55, 2);
++  const moonGlowMat = new THREE.MeshBasicMaterial({ 
++    color: 0xaa66ff, 
++    transparent: true, 
++    opacity: 0.25, 
++    side: THREE.BackSide 
++  });
+   const moonGlow = new THREE.Mesh(moonGlowGeo, moonGlowMat);
+   moonGlow.position.copy(moon.position);
+-  moonGlow.frustumCulled = false; // Fix disappearing when looking up
++  moonGlow.frustumCulled = false;
+   group.add(moonGlow);
+   registerFadeMaterial(moonMat);
+   registerFadeMaterial(moonGlowMat);
+ 
+-  // Floating crystals (5)
+-  const crystalGeo = new THREE.OctahedronGeometry(1.2, 0);
+-  const crystalMat = new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.8 });
+-  const crystalPositions = [
+-    { x: 10, z: 10 },
+-    { x: -12, z: 8 },
+-    { x: 8, z: -15 },
+-    { x: -15, z: -10 },
+-    { x: 0, z: 20 },
+-  ];
+-  const crystals = [];
+-  crystalPositions.forEach((pos) => {
+-    const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+-    crystal.position.set(pos.x, floorY + 4 + Math.random() * 2, pos.z);
+-    crystal.scale.set(1, 2, 1);
+-    crystal.rotation.y = Math.random() * Math.PI;
+-    crystal.frustumCulled = false;
+-    group.add(crystal);
+-    crystals.push(crystal);
+-  });
+-  registerFadeMaterial(crystalMat);
+-
+-  // Glowing orbs (4)
+-  const orbGeo = new THREE.SphereGeometry(0.8, 16, 16);
+-  const orbMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.7 });
+-  const orbPositions = [
+-    { x: 5, z: -5 },
+-    { x: -8, z: 12 },
+-    { x: 15, z: 5 },
+-    { x: -3, z: -18 },
+-  ];
+-  const orbs = [];
+-  orbPositions.forEach((pos) => {
+-    const orb = new THREE.Mesh(orbGeo, orbMat);
+-    orb.position.set(pos.x, floorY + 3 + Math.random() * 3, pos.z);
+-    orb.frustumCulled = false;
+-    group.add(orb);
+-    orbs.push(orb);
+-  });
+-  registerFadeMaterial(orbMat);
+-
+-  // Atmospheric fog (very light, to add depth)
+-  // Removed THREE.Fog - causes visibility issues at distance
+-
+-  // Stars
+-  const starCount = 200;
++  // === STARS (350, shader-based twinkle) ===
++  const starCount = 350;
+   const starPositions = new Float32Array(starCount * 3);
++  const starPhases = new Float32Array(starCount);
++
+   for (let i = 0; i < starCount; i++) {
+-    starPositions[i * 3] = (Math.random() - 0.5) * 200;
+-    starPositions[i * 3 + 1] = Math.random() * 100 + 20;
+-    starPositions[i * 3 + 2] = (Math.random() - 0.5) * 200;
++    const theta = Math.random() * Math.PI * 2;
++    const radius = 120 + Math.random() * 60;
++    const phi = Math.random() * Math.PI * 0.5;
++    starPositions[i * 3] = Math.cos(theta) * Math.sin(phi) * radius;
++    starPositions[i * 3 + 1] = Math.cos(phi) * radius + 30;
++    starPositions[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * radius;
++    starPhases[i] = Math.random() * Math.PI * 2;
+   }
+-  const starGeo = new THREE.BufferGeometry();
+-  starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+-  const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true, opacity: 0.8 });
+-  const stars = new THREE.Points(starGeo, starMat);
+-  stars.frustumCulled = false; // Fix disappearing when looking up
++
++  const starGeometry = new THREE.BufferGeometry();
++  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
++  starGeometry.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
++
++  const starMaterial = new THREE.ShaderMaterial({
++    uniforms: {
++      uTime: { value: 0 },
++      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
++    },
++    vertexShader: `
++      attribute float aPhase;
++      uniform float uTime;
++      uniform float uPixelRatio;
++      varying float vTwinkle;
++      void main() {
++        vTwinkle = 0.5 + 0.5 * sin(uTime * 1.5 + aPhase);
++        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
++        float size = 2.2 * uPixelRatio * vTwinkle;
++        gl_PointSize = size * (200.0 / -mvPosition.z);
++        gl_Position = projectionMatrix * mvPosition;
++      }
++    `,
++    fragmentShader: `
++      varying float vTwinkle;
++      void main() {
++        float dist = length(gl_PointCoord - vec2(0.5));
++        if (dist > 0.5) discard;
++        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
++        vec3 color = mix(vec3(1.0, 0.9, 0.7), vec3(0.7, 1.0, 0.9), vTwinkle);
++        gl_FragColor = vec4(color * (0.75 + vTwinkle * 0.25), alpha * vTwinkle);
++      }
++    `,
++    transparent: true,
++    depthWrite: false,
++    fog: false,
++    blending: THREE.AdditiveBlending
++  });
++
++  const stars = new THREE.Points(starGeometry, starMaterial);
++  stars.frustumCulled = false;
++  stars.renderOrder = 999;
+   group.add(stars);
+-  registerFadeMaterial(starMat);
++  registerFadeMaterial(starMaterial);
+ 
+-  // Animation
++  // === ANIMATION (gentle sway, no floating) ===
+   group.userData.update = (now, dt) => {
+-    const t = now * 0.001;
+-    // Float crystals
+-    crystals.forEach((crystal, i) => {
+-      crystal.position.y = floorY + 4 + Math.sin(t + i * 2) * 0.5;
+-      crystal.rotation.y += dt * 0.5;
+-    });
+-    // Float orbs
+-    orbs.forEach((orb, i) => {
+-      orb.position.y = floorY + 3 + Math.sin(t * 1.5 + i * 3) * 0.8;
++    const time = now * 0.001;
++    
++    // Stars twinkle
++    starMaterial.uniforms.uTime.value = time;
++    
++    // Stalks sway gently
++    stalks.forEach((stalk, i) => {
++      stalk.rotation.z = Math.sin(time * 0.5 + i * 1.2) * 0.08;
++      stalk.rotation.x = Math.cos(time * 0.4 + i * 0.8) * 0.05;
+     });
+   };
+ 
+-  // Alien floor HUD height: Y = -0.28, no rotation
++  // Alien floor HUD height
+   group.position.set(-0.048, -0.28, -2.475);
+ }
+ 
+ function buildHellscapeLavaScene(group, deps) {
+   const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
+diff --git a/enemies.js b/enemies.js
+index 45b369b..ea6e05a 100644
+--- a/enemies.js
++++ b/enemies.js
+@@ -7777,11 +7777,11 @@ const _unitScale = new THREE.Vector3(1, 1, 1);  // Unit scale for initial spawn
+ function initBossProjPools() {
+   if (bossProjCorePool || !sceneRef) return;
+ 
+   // Core sphere (smaller, opaque red)
+   const coreGeo = new THREE.SphereGeometry(0.065, 8, 8);
+-  const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3355 });
++  const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3355, depthWrite: false, depthTest: false });
+   bossProjCorePool = new THREE.InstancedMesh(coreGeo, coreMat, BOSS_PROJ_POOL_SIZE);
+   bossProjCorePool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+   bossProjCorePool.count = 0;
+   bossProjCorePool.frustumCulled = false;
+   sceneRef.add(bossProjCorePool);
+@@ -7792,10 +7792,11 @@ function initBossProjPools() {
+     color: 0xff88aa,
+     transparent: true,
+     opacity: 0.7,
+     blending: THREE.AdditiveBlending,
+     depthWrite: false,
++    depthTest: false,
+   });
+   bossProjGlowPool = new THREE.InstancedMesh(glowGeo, glowMat, BOSS_PROJ_POOL_SIZE);
+   bossProjGlowPool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+   bossProjGlowPool.count = 0;
+   bossProjGlowPool.frustumCulled = false;
+diff --git a/game-screenshot.png b/game-screenshot.png
+index 40b16e8..349100c 100644
+Binary files a/game-screenshot.png and b/game-screenshot.png differ
+diff --git a/hud.js b/hud.js
+index 6e06f8c..15b1a50 100644
+--- a/hud.js
++++ b/hud.js
+@@ -4,15 +4,36 @@
+ // ============================================================
+ 
+ import * as THREE from 'three';
+ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+ import { State, game } from './game.js';
+-import { playMenuHoverSound } from './audio.js';
++import { playMenuHoverSound, playMenuClick } from './audio.js';
+ 
+ // VR camera height fix: Shift entire scene down so XR camera at ~0.875m appears 1.6m above floor
+ const SCENE_Y_OFFSET = -0.725;
+ 
++// ── November Font Loading ───────────────────────────────────
++let novemberFontLoaded = false;
++let novemberFontFamily = 'November';
++
++async function loadNovemberFont() {
++  if (novemberFontLoaded) return true;
++
++  try {
++    const font = new FontFace('November', 'url(assets/fonts/november.ttf)');
++    await font.load();
++    document.fonts.add(font);
++    novemberFontLoaded = true;
++    console.log('[hud] November font loaded successfully');
++    return true;
++  } catch (err) {
++    console.warn('[hud] Failed to load November font, falling back to monospace:', err);
++    novemberFontFamily = '"Courier New", monospace';
++    return false;
++  }
++}
++
+ // ── Module state ───────────────────────────────────────────
+ let sceneRef, cameraRef;
+ 
+ // Groups for different UI states
+ const titleGroup = new THREE.Group();
+@@ -398,10 +419,13 @@ function makeHeartsTexture(health, maxHealth, animParams = {}) {
+ 
+ export function initHUD(camera, scene) {
+   sceneRef = scene;
+   cameraRef = camera;
+ 
++  // #11: Load November font for scoreboard
++  loadNovemberFont();
++
+   // ── Title Screen (world-space, fixed position) ──
+   createTitleScreen();
+   titleGroup.position.set(0, 1.2, -3.5);  // Moved down for better centering
+   titleGroup.rotation.set(0, 0, 0);
+   titleGroup.visible = true;
+@@ -470,11 +494,11 @@ export function initHUD(camera, scene) {
+   fpsCanvas.height = 128;
+   fpsCtx = fpsCanvas.getContext('2d');
+   fpsTexture = new THREE.CanvasTexture(fpsCanvas);
+   fpsTexture.minFilter = THREE.LinearFilter;
+ 
+-  const fpsGeo = new THREE.PlaneGeometry(0.8, 0.15);  // Will be resized dynamically in updateFPS
++  const fpsGeo = new THREE.PlaneGeometry(0.16, 0.03);  // 80% smaller: 0.8*0.2, 0.15*0.2
+   const fpsMat = new THREE.MeshBasicMaterial({
+     map: fpsTexture,
+     transparent: true,
+     depthTest: false,
+     depthWrite: false,
+@@ -763,32 +787,38 @@ function createHUDElements() {
+   heartsSprite.position.set(-1.5, 0.45, 0);  // #19: Moved up to align with titles (was y=0)
+   heartsSprite.renderOrder = 999;
+   hudGroup.add(heartsSprite);
+ 
+   // SCORE - center on floor with title above
+-  scoreSprite = makeSprite('0', { fontSize: 90, color: '#ffff00', shadow: true, scale: 3.6 });
+-  scoreSprite.position.set(0, 0, 0);
++  // #7: Scale adjusted to match LEVEL (0.45 for both titles, values aligned)
++  scoreSprite = makeSprite('0', { fontSize: 90, color: '#ffff00', shadow: true, scale: 0.39 });
++  scoreSprite.position.set(-0.5, 0.3, 0);  // #4: Moved up closer to SCORE title (was y=0.2)
+   hudGroup.add(scoreSprite);
+ 
+   // SCORE title - above score in yellow same style as level
++  // #7: Font size 72, scale 0.45 matches LEVEL title for perfect alignment
+   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
+-  scoreTitleSprite.position.set(0, 0.45, 0);  // #19: Same Y as hearts
++  scoreTitleSprite.position.set(-0.5, 0.45, 0);  // #4: Aligned with new score position
+   hudGroup.add(scoreTitleSprite);
+ 
+-  // Kill counter — right side on floor
+-  killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 3.15 });
+-  killCountSprite.position.set(1.5, 0, 0);
++  // Kill counter — below LEVEL display, moved left to be closer to SCORE
++  // #5: Moved up closer to LEVEL display (y=0.3, was y=0.2)
++  // #6: Moved left (x=0.2, was x=0.5) to be closer to SCORE display
++  killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 0.45 });
++  killCountSprite.position.set(0.2, 0.3, 0);
+   hudGroup.add(killCountSprite);
+ 
+-  // Level indicator — above kill counter on right
+-  levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 2.925 });
+-  levelSprite.position.set(1.5, 0.45, 0);  // #19: Same Y as hearts
++  // Level indicator — above kill counter, moved left closer to SCORE
++  // #6: Moved left (x=0.2, was x=0.5) to be closer to SCORE display
++  levelSprite = makeSprite('LEVEL 1', { fontSize: 72, color: '#00ffff', glow: true, scale: 0.45 });
++  levelSprite.position.set(0.2, 0.45, 0);  // #19: Same Y as hearts and SCORE title
+   hudGroup.add(levelSprite);
+ 
+-  // Nuke counter — left side, below hearts
+-  nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 1.4 });
+-  nukeSprite.position.set(-1.5, -0.55, 0);
++  // Nuke counter — right of LEVEL display on top row
++  // #6: Moved from x=1.4 to x=0.9 to be closer to LEVEL (right of it)
++  nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.28 });
++  nukeSprite.position.set(0.9, 0.45, 0);  // Right of LEVEL, aligned with top row
+   hudGroup.add(nukeSprite);
+ 
+   // Accuracy bonus — below score on left side
+   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 1.8 });
+   comboSprite.position.set(0, -0.85, 0);
+@@ -961,22 +991,25 @@ export function updateHUD(gameState) {
+   heartsSprite.material.needsUpdate = true;
+   // Update geometry to match aspect ratio (200% larger: height 0.48)
+   heartsSprite.geometry.dispose();
+   heartsSprite.geometry = new THREE.PlaneGeometry(ha * 0.48, 0.48);
+ 
+-  // Kill counter - increased 50% for VR readability
++  // Kill counter - #5: Moved up closer to LEVEL display
++  // #6: Moved left to x=0.5 (center-right) to be closer to SCORE display
+   const cfg = gameState._levelConfig;
+   const killTarget = cfg ? cfg.killTarget : 0;
+   updateSpriteText(killCountSprite, `${gameState.kills} / ${killTarget}`, { color: '#ffffff', scale: 0.45 });
+ 
+-  // Level - increased 50% for VR readability
++  // Level - #6: Moved left to x=0.5 (center-right) closer to SCORE display
++  // #7: Scale 0.45 matches SCORE title for perfect alignment
+   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.45 });
+ 
+-  // Score - increased 50% for VR readability
++  // Score - #4: Moved closer to SCORE title at x=-0.5 (center-left)
++  // #7: Scale 0.39 matches LEVEL value size for consistency
+   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.39 });
+ 
+-  // Nuke counter
++  // Nuke counter - #6: Moved to x=1.4 (right) on top row, right of LEVEL display
+   const nukeCount = gameState.nukes || 0;
+   if (nukeCount > 0 && nukeSprite) {
+     nukeSprite.visible = true;
+     updateSpriteText(nukeSprite, `☢ X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.28 });
+   } else if (nukeSprite) {
+@@ -1916,19 +1949,26 @@ export function updateFPS(now, opts = {}) {
+     fpsTexture.needsUpdate = true;
+ 
+     // Adjust sprite geometry to match canvas aspect ratio (prevents squishing)
+     // Use fixed aspect ratio based on canvas size to avoid stretching
+     const canvasAspect = fpsCanvas.width / fpsCanvas.height;  // 1024/128 = 8
+-    const displayScale = perfMonitor ? 0.25 : 0.15;  // Larger scale for perf monitor
+-    const baseHeight = perfMonitor ? 0.12 : 0.08;  // Adjust height based on mode
++    const displayScale = perfMonitor ? 0.05 : 0.03;  // 80% smaller: 0.25*0.2, 0.15*0.2
++    const baseHeight = perfMonitor ? 0.024 : 0.016;  // 80% smaller: 0.12*0.2, 0.08*0.2
+     fpsSprite.geometry.dispose();
+     fpsSprite.geometry = new THREE.PlaneGeometry(canvasAspect * baseHeight, baseHeight);
+-    fpsSprite.visible = true;
++    fpsSprite.visible = game.debugShowFPS;  // Respect FPS display toggle
+     lastFpsUpdate = now;
+   }
+ }
+ 
++// ── FPS Display Toggle ────────────────────────────────────────
++export function setFPSVisible(visible) {
++  if (fpsSprite) {
++    fpsSprite.visible = visible;
++  }
++}
++
+ // ── Helpers ────────────────────────────────────────────────
+ 
+ function hideAll() {
+   titleGroup.visible = false;
+   levelTextGroup.visible = false;
+@@ -3084,30 +3124,34 @@ export function getNameEntryHit(raycaster) {
+   return null;
+ }
+ 
+ function processKeyPress(key) {
+   if (key === 'OK') {
++    playMenuClick();  // #7: Activate sound for OK button
+     if (nameEntryName.length > 0) return { action: 'submit', name: nameEntryName };
+     return null;
+   }
+   if (key === 'DEL') {
++    playMenuClick();  // #7: Activate sound for DEL button
+     if (nameEntryCursor > 0) {
+       nameEntryName = nameEntryName.slice(0, -1);
+       nameEntryCursor = nameEntryName.length;
+       refreshNameSlots();
+     }
+     return null;
+   }
+   if (key === 'SPACE') {
++    playMenuClick();  // #7: Activate sound for SPACE button
+     if (nameEntryName.length < 6) {
+       nameEntryName += ' ';
+       nameEntryCursor = nameEntryName.length;
+       refreshNameSlots();
+     }
+     return null;
+   }
+   // Letter key
++  playMenuClick();  // #7: Activate sound for letter keys
+   if (nameEntryName.length < 6) {
+     nameEntryName += key;
+     nameEntryCursor = nameEntryName.length;
+     refreshNameSlots();
+   }
+@@ -3168,14 +3212,14 @@ export function showScoreboard(scores, headerText, playerPos) {
+     scoreboardSpinnerTimer = null;
+   }
+   // Position in front of player (VR-friendly)
+   if (playerPos) {
+     scoreboardGroup.position.copy(playerPos);
+-    scoreboardGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
++    scoreboardGroup.position.y += 1.6 + SCENE_Y_OFFSET + 0.5; // Eye level + #9: Move up 0.5 units
+     scoreboardGroup.position.z -= 5; // 5 feet in front of player
+   } else {
+-    scoreboardGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -5); // Fallback
++    scoreboardGroup.position.set(0, 1.6 + SCENE_Y_OFFSET + 0.5, -5); // Fallback + #9: Move up 0.5 units
+   }
+   scoreboardGroup.visible = true;
+ 
+   // Header
+   // Header (two-line)
+@@ -3249,10 +3293,51 @@ export function showScoreboard(scores, headerText, playerPos) {
+   backTxt.position.set(0, 0, 0.01);
+   backGroup.add(backTxt);
+   scoreboardGroup.add(backGroup);
+ }
+ 
++// #11: Helper function to draw text with letter spacing and drop shadow
++function drawTextWithSpacing(ctx, text, x, y, color, letterSpacing = 3, fontSize = 44, align = 'left') {
++  // Drop shadow offset at 125 degrees with small distance
++  const shadowDistance = 3;
++  const shadowAngle = 125 * Math.PI / 180;
++  const shadowX = Math.cos(shadowAngle) * shadowDistance;
++  const shadowY = Math.sin(shadowAngle) * shadowDistance;
++
++  ctx.font = `bold ${fontSize}px ${novemberFontFamily}`;
++  ctx.textBaseline = 'middle';
++  ctx.textAlign = 'left';  // Always use left alignment for character-by-character rendering
++
++  // Calculate total width for alignment
++  let totalWidth = 0;
++  for (let i = 0; i < text.length; i++) {
++    totalWidth += ctx.measureText(text[i]).width + letterSpacing;
++  }
++  totalWidth -= letterSpacing;  // Remove last letter spacing
++
++  // Adjust starting position for alignment
++  let startX = x;
++  if (align === 'center') startX = x - totalWidth / 2;
++  else if (align === 'right') startX = x - totalWidth;
++
++  // Draw shadow first
++  ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';  // 90% opacity black
++  let currentX = startX + shadowX;
++  for (let i = 0; i < text.length; i++) {
++    ctx.fillText(text[i], currentX, y + shadowY);
++    currentX += ctx.measureText(text[i]).width + letterSpacing;
++  }
++
++  // Draw main text
++  ctx.fillStyle = color;
++  currentX = startX;
++  for (let i = 0; i < text.length; i++) {
++    ctx.fillText(text[i], currentX, y);
++    currentX += ctx.measureText(text[i]).width + letterSpacing;
++  }
++}
++
+ function renderScoreboardCanvas() {
+   const canvas = document.createElement('canvas');
+   const w = 900;
+   const h = 1080;
+   canvas.width = w;
+@@ -3267,28 +3352,22 @@ function renderScoreboardCanvas() {
+   // Border
+   ctx.strokeStyle = '#00ffff';
+   ctx.lineWidth = 3;
+   ctx.strokeRect(1, 1, w - 2, h - 2);
+ 
+-  const rowHeight = 74;
++  const rowHeight = 80;  // #11: Slightly increased for better line spacing
+   const maxVisible = SCOREBOARD_PAGE_SIZE;
+   const totalPages = Math.max(1, Math.ceil(scoreboardScores.length / maxVisible));
+   scoreboardPage = Math.max(0, Math.min(totalPages - 1, scoreboardPage));
+   const startIdx = scoreboardPage * maxVisible;
+   const endIdx = Math.min(startIdx + maxVisible, scoreboardScores.length);
+ 
+-  ctx.font = 'bold 44px "Courier New", monospace';
+-  ctx.textBaseline = 'middle';
+-
+-  // Header row
+-  ctx.fillStyle = '#ffffff';
+-  ctx.textAlign = 'left';
+-  ctx.fillText('#', 20, 60);
+-  ctx.fillText('NAME', 110, 60);
+-  ctx.textAlign = 'right';
+-  ctx.fillText('SCORE', 640, 60);
+-  ctx.fillText('LVL', 740, 60);
++  // #11: Header row with November font
++  drawTextWithSpacing(ctx, '#', 20, 60, '#ffffff', 3, 44, 'left');
++  drawTextWithSpacing(ctx, 'NAME', 110, 60, '#ffffff', 3, 44, 'left');
++  drawTextWithSpacing(ctx, 'SCORE', 640, 60, '#ffffff', 3, 44, 'right');
++  drawTextWithSpacing(ctx, 'LVL', 740, 60, '#ffffff', 3, 44, 'right');
+ 
+   ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+   ctx.beginPath();
+   ctx.moveTo(12, 90);
+   ctx.lineTo(w - 12, 90);
+@@ -3313,48 +3392,46 @@ function renderScoreboardCanvas() {
+       ctx.strokeStyle = 'rgba(0, 255, 255, 0.7)';
+       ctx.lineWidth = 2;
+       ctx.strokeRect(6, y - rowHeight / 2 + 4, w - 12, rowHeight - 8);
+     }
+ 
+-    // Rank color
+-    if (rank === 1) ctx.fillStyle = '#ffdd00';
+-    else if (rank === 2) ctx.fillStyle = '#cccccc';
+-    else if (rank === 3) ctx.fillStyle = '#cc8844';
+-    else ctx.fillStyle = '#66ffff';
++    // #11: Row color based on rank (full-line color)
++    let rowColor;
++    if (rank === 1) rowColor = '#FFD000';      // Gold for 1st
++    else if (rank === 2) rowColor = '#B5B5B5'; // Silver for 2nd
++    else if (rank === 3) rowColor = '#D68500'; // Bronze for 3rd
++    else rowColor = '#68FDFF';                 // Cyan for all others
+ 
+-    ctx.textAlign = 'left';
++    // Rank
+     const rankLabel = String(rank).padStart(2, '0');
+-    ctx.fillText(rankLabel, 20, y);
++    drawTextWithSpacing(ctx, rankLabel, 20, y, rowColor, 3, 44, 'left');
+ 
+     // Flag
+     if (score.country) {
+       try {
+         const flag = String.fromCodePoint(
+           ...[...score.country.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
+         );
+-        ctx.font = '40px "Courier New", monospace';
++        ctx.font = '40px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+         ctx.fillStyle = '#ffffff';
++        ctx.textBaseline = 'middle';
++        ctx.textAlign = 'left';
+         ctx.fillText(flag, 95, y);
+-        ctx.font = 'bold 44px "Courier New", monospace';
+       } catch (e) { /* skip flag */ }
+     }
+ 
+-    // Name (removed gold star character that was overlapping)
+-    ctx.fillStyle = isPlayer ? '#ffffff' : '#ccffff';
+-    ctx.fillText((score.name || 'ANON').toUpperCase(), 160, y);
++    // Name (use row color)
++    const displayName = (score.name || 'ANON').toUpperCase();
++    drawTextWithSpacing(ctx, displayName, 160, y, isPlayer ? '#ffffff' : rowColor, 3, 44, 'left');
+ 
+-    // Score
+-    ctx.fillStyle = '#ffffff';
+-    ctx.textAlign = 'right';
++    // Score (use row color)
+     const scoreVal = score.score !== undefined && score.score !== null ? score.score.toLocaleString() : '0';
+-    ctx.fillText(scoreVal, 670, y);
++    drawTextWithSpacing(ctx, scoreVal, 670, y, rowColor, 3, 44, 'right');
+ 
+-    // Level
+-    ctx.fillStyle = '#66ffff';
+-    ctx.textAlign = 'right';
++    // Level (use row color)
+     const levelVal = score.level_reached !== undefined && score.level_reached !== null ? `L${String(score.level_reached).padStart(2, '0')}` : 'L?';
+-    ctx.fillText(levelVal, 770, y);
++    drawTextWithSpacing(ctx, levelVal, 770, y, rowColor, 3, 44, 'right');
+ 
+     // Divider line
+     ctx.strokeStyle = 'rgba(0, 255, 255, 0.25)';
+     ctx.beginPath();
+     ctx.moveTo(12, y + rowHeight / 2);
+@@ -3377,16 +3454,13 @@ function renderScoreboardCanvas() {
+     ctx.beginPath();
+     ctx.arc(cx, cy, radius, t, t + Math.PI * 0.7);
+     ctx.stroke();
+   }
+ 
+-  // Page indicator
++  // #11: Page indicator with November font, #10: moved up by ~0.1 units
+   if (scoreboardScores.length > 0) {
+-    ctx.fillStyle = '#ffffff';
+-    ctx.textAlign = 'center';
+-    ctx.font = 'bold 38px "Courier New", monospace';
+-    ctx.fillText(`PAGE ${scoreboardPage + 1} OF ${totalPages}`, w / 2, h - 20);
++    drawTextWithSpacing(ctx, `PAGE ${scoreboardPage + 1} OF ${totalPages}`, w / 2, h - 110, '#ffffff', 3, 38, 'center');
+   }
+ 
+   if (scoreboardTexture) scoreboardTexture.dispose();
+   scoreboardTexture = new THREE.CanvasTexture(canvas);
+   scoreboardTexture.premultiplyAlpha = false;
+@@ -3433,20 +3507,24 @@ export function getScoreboardHit(raycaster) {
+   });
+   const hits = raycaster.intersectObjects(actionMeshes, false);
+   if (hits.length > 0) {
+     const action = hits[0].object.userData.scoreboardAction;
+     if (action === 'page_prev') {
++      playMenuClick();  // #7: Activate sound for PREV PAGE
+       scoreboardPage = Math.max(0, scoreboardPage - 1);
+       renderScoreboardCanvas();
+       return null;
+     }
+     if (action === 'page_next') {
++      playMenuClick();  // #7: Activate sound for NEXT PAGE
+       const totalPages = Math.max(1, Math.ceil(scoreboardScores.length / SCOREBOARD_PAGE_SIZE));
+       scoreboardPage = Math.min(totalPages - 1, scoreboardPage + 1);
+       renderScoreboardCanvas();
+       return null;
+     }
++    // #7: Activate sound for COUNTRY, CONTINENT, and BACK buttons
++    playMenuClick();
+     return action;
+   }
+   return null;
+ }
+ 
+@@ -3469,14 +3547,14 @@ export function showCountrySelect(countries, continents, initialContinent, playe
+   countrySelectMode = mode;
+ 
+   // Position in front of player (VR-friendly)
+   if (playerPos) {
+     countrySelectGroup.position.copy(playerPos);
+-    countrySelectGroup.position.y += 1.6 + SCENE_Y_OFFSET; // Eye level
++    countrySelectGroup.position.y += 1.6 + SCENE_Y_OFFSET + 0.5; // Eye level + #9: Move up 0.5 units
+     countrySelectGroup.position.z -= 4; // 4 feet in front of player
+   } else {
+-    countrySelectGroup.position.set(0, 1.6 + SCENE_Y_OFFSET, -4); // Fallback
++    countrySelectGroup.position.set(0, 1.6 + SCENE_Y_OFFSET + 0.5, -4); // Fallback + #9: Move up 0.5 units
+   }
+   countrySelectGroup.visible = true;
+ 
+   // Header
+   const headerText = mode === 'continent' ? 'SELECT CONTINENT' : 'SELECT YOUR COUNTRY';
+@@ -3628,10 +3706,11 @@ export function getCountrySelectHit(raycaster, countries) {
+   // Check continent tabs
+   const tabMeshes = continentTabs.map(t => t.mesh);
+   let hits = raycaster.intersectObjects(tabMeshes, false);
+   if (hits.length > 0) {
+     const continent = hits[0].object.userData.continentTab;
++    playMenuClick();  // #7: Activate sound for continent tab
+     if (countrySelectMode === 'continent') {
+       return { action: 'select_continent', continent };
+     }
+     if (continent !== countrySelectContinent) {
+       countrySelectContinent = continent;
+@@ -3650,21 +3729,25 @@ export function getCountrySelectHit(raycaster, countries) {
+   if (countrySelectMode !== 'continent') {
+     const itemMeshes = countryItems.map(i => i.mesh);
+     hits = raycaster.intersectObjects(itemMeshes, false);
+     if (hits.length > 0) {
+       const code = hits[0].object.userData.countryCode;
++      playMenuClick();  // #7: Activate sound for country selection
+       return { action: 'select', code };
+     }
+   }
+ 
+   // Check back button
+   const actionMeshes = [];
+   countrySelectGroup.traverse(c => {
+     if (c.userData && c.userData.countryAction === 'back') actionMeshes.push(c);
+   });
+   hits = raycaster.intersectObjects(actionMeshes, false);
+-  if (hits.length > 0) return { action: 'back' };
++  if (hits.length > 0) {
++    playMenuClick();  // #7: Activate sound for back button
++    return { action: 'back' };
++  }
+ 
+   return null;
+ }
+ 
+ /**
+diff --git a/index.html b/index.html
+index 060ac02..b552940 100644
+--- a/index.html
++++ b/index.html
+@@ -180,11 +180,11 @@
+       <div style="font-size: 0.7em; opacity: 0.6; color: #88ff88;">
+         Same seed = same run. Daily/weekly seeds for leaderboards!
+       </div>
+     </div>
+     
+-    <p id="version-text" style="font-size: 1em; opacity: 0.6; margin-top: 12px;">v2026.03.22.0322</p>
++    <p id="version-text" style="font-size: 1em; opacity: 0.6; margin-top: 12px;">v2026.03.26.2216</p>
+   </div>
+ 
+   <!-- Fallback if WebXR is not available -->
+   <div id="no-vr">
+     <h2>VR NOT AVAILABLE</h2>
+@@ -207,82 +207,16 @@
+   <div id="debug-panel" style="display:none;position:fixed;bottom:20px;left:20px;z-index:150;background:rgba(10,0,21,0.95);border:1px solid #00ffff;padding:12px;font-size:14px;">
+     <div style="color:#00ffff;margin-bottom:8px;">DEBUG</div>
+     <label>Jump to level: <input type="number" id="debug-level" min="1" max="20" value="5" style="width:40px;background:#220044;color:#fff;border:1px solid #ff00ff;"></label>
+     <button id="debug-jump" style="margin-left:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Jump</button>
+     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-perf-monitor"> Performance monitor</label>
++    <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-show-fps" checked> Show FPS counter</label>
+     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-console"> Console log</label>
+     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-position-panel"> Debug position box</label>
+     <label style="display:block;margin-top:8px;"><input type="checkbox" id="debug-seed-controls"> Seed deck settings</label>
+     <button id="debug-next-biome" style="margin-top:8px;background:#220044;color:#00ffff;border:1px solid #00ffff;cursor:pointer;padding:4px 8px;">Next biome</button>
+ 
+-    <!-- Visual Tuning Section (collapsible) -->
+-    <div style="margin-top:12px;border-top:1px solid #333;padding-top:8px;">
+-      <div id="visual-toggle" style="color:#ff00ff;cursor:pointer;user-select:none;">▶ Visual Tuning</div>
+-      <div id="visual-controls" style="display:none;margin-top:8px;padding-left:8px;">
+-        <div style="font-size:11px;line-height:1.4;opacity:0.7;color:#88d8ff;">
+-          Shell controls are XR-safe and work in VR. Anaglyph/stereo are desktop-only and bypass selective bloom while active.
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+-          <label for="debug-render-mode" style="width:150px;">Render mode</label>
+-          <select id="debug-render-mode" style="width:154px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+-            <option value="normal" selected>Normal</option>
+-            <option value="anaglyph">Anaglyph (desktop)</option>
+-            <option value="stereo">Stereo (desktop)</option>
+-          </select>
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+-          <label for="debug-stereo-eye-separation" style="width:150px;">Stereo eye sep</label>
+-          <input type="range" id="debug-stereo-eye-separation" min="0.01" max="0.2" step="0.001" value="0.064" style="width:90px;">
+-          <input type="number" id="debug-stereo-eye-separation-value" min="0.01" max="0.2" step="0.001" value="0.064" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+-          <label for="debug-glow-strength" style="width:150px;">Glow strength</label>
+-          <input type="range" id="debug-glow-strength" min="0" max="2" step="0.01" value="1" style="width:90px;">
+-          <input type="number" id="debug-glow-strength-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+-          <label for="debug-bloom-strength" style="width:150px;">Bloom strength</label>
+-          <input type="range" id="debug-bloom-strength" min="0" max="2" step="0.01" value="1" style="width:90px;">
+-          <input type="number" id="debug-bloom-strength-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+-          <label for="debug-shell-strength" style="width:150px;">Shell strength</label>
+-          <input type="range" id="debug-shell-strength" min="0" max="2" step="0.01" value="1" style="width:90px;">
+-          <input type="number" id="debug-shell-strength-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+-          <label for="debug-shell-saturation" style="width:150px;">Shell saturation</label>
+-          <input type="range" id="debug-shell-saturation" min="0" max="2" step="0.01" value="1" style="width:90px;">
+-          <input type="number" id="debug-shell-saturation-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+-          <label for="debug-shell-scanline-speed" style="width:150px;">Scanline speed</label>
+-          <input type="range" id="debug-shell-scanline-speed" min="0" max="3" step="0.01" value="1" style="width:90px;">
+-          <input type="number" id="debug-shell-scanline-speed-value" min="0" max="3" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+-          <label for="debug-shell-noise-amount" style="width:150px;">Noise amount</label>
+-          <input type="range" id="debug-shell-noise-amount" min="0" max="2" step="0.01" value="0.35" style="width:90px;">
+-          <input type="number" id="debug-shell-noise-amount-value" min="0" max="2" step="0.01" value="0.35" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+-          <label for="debug-shell-tint" style="width:150px;">Shell tint</label>
+-          <input type="color" id="debug-shell-tint" value="#99b8ff" style="width:58px;height:24px;background:#220044;border:1px solid #ff00ff;padding:0;">
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+-          <label for="debug-smoke-strength" style="width:150px;">Smoke particles</label>
+-          <input type="range" id="debug-smoke-strength" min="0" max="2" step="0.01" value="1" style="width:90px;">
+-          <input type="number" id="debug-smoke-strength-value" min="0" max="2" step="0.01" value="1.00" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+-        </div>
+-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+-          <label for="debug-fog-intensity" style="width:150px;">Fog intensity</label>
+-          <input type="range" id="debug-fog-intensity" min="0" max="1" step="0.01" value="0.58" style="width:90px;">
+-          <input type="number" id="debug-fog-intensity-value" min="0" max="1" step="0.01" value="0.58" style="width:58px;background:#220044;color:#fff;border:1px solid #ff00ff;">
+-        </div>
+-      </div>
+-    </div>
+-
+     <button id="copy-log-btn" style="margin-top:8px;background:#220044;color:#ff00ff;border:1px solid #ff00ff;cursor:pointer;padding:4px 8px;">📋 COPY LOG</button>
+   </div>
+   <a href="#" id="debug-toggle" style="position:fixed;bottom:10px;left:10px;z-index:140;color:#666;font-size:12px;text-decoration:none;">DEBUG</a>
+ 
+   <!-- Console log output panel (only visible when enabled) -->
+@@ -313,11 +247,11 @@
+ 
+   <!-- Main game module -->
+   <script type="module" src="main.js"></script>
+   <script>
+     (function() {
+-      const GAME_VERSION = 'v2026.03.24.1520';
++      const GAME_VERSION = 'v2026.03.26.2216';
+       document.title = GAME_VERSION;
+       const versionEl = document.getElementById('version-text');
+       if (versionEl) versionEl.textContent = GAME_VERSION;
+ 
+       const params = new URLSearchParams(location.search);
+@@ -341,10 +275,17 @@
+         window.debugJumpToLevel = Math.max(1, Math.min(20, level));
+       });
+       document.getElementById('debug-perf-monitor').addEventListener('change', function() {
+         window.debugPerfMonitor = this.checked;
+       });
++      document.getElementById('debug-show-fps').addEventListener('change', function() {
++        window.debugShowFPS = this.checked;
++        // Hide/show FPS sprite immediately
++        if (window.hud && window.hud.setFPSVisible) {
++          window.hud.setFPSVisible(this.checked);
++        }
++      });
+       document.getElementById('debug-console').addEventListener('change', function() {
+         consolePanel.style.display = this.checked ? 'block' : 'none';
+       });
+ 
+       const debugPositionToggle = document.getElementById('debug-position-panel');
+@@ -374,96 +315,10 @@
+             window.debugCycleBiomeWithFade();
+           }
+         });
+       }
+ 
+-      // Visual Tuning Section Toggle
+-      const visualToggle = document.getElementById('visual-toggle');
+-      const visualControls = document.getElementById('visual-controls');
+-      if (visualToggle && visualControls) {
+-        visualToggle.addEventListener('click', function() {
+-          const isExpanded = visualControls.style.display !== 'none';
+-          visualControls.style.display = isExpanded ? 'none' : 'block';
+-          visualToggle.textContent = (isExpanded ? '▶' : '▼') + ' Visual Tuning';
+-        });
+-
+-        const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+-        const bindRangeAndNumber = (rangeId, numberId, min, max, fallback, setter, digits = 2) => {
+-          const range = document.getElementById(rangeId);
+-          const number = document.getElementById(numberId);
+-          if (!range || !number) return;
+-
+-          const apply = (raw) => {
+-            const parsed = Number(raw);
+-            const value = Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback;
+-            const fixed = value.toFixed(digits);
+-            range.value = fixed;
+-            number.value = fixed;
+-            setter(value);
+-          };
+-
+-          range.addEventListener('input', () => apply(range.value));
+-          number.addEventListener('change', () => apply(number.value));
+-          apply(fallback);
+-        };
+-
+-        bindRangeAndNumber('debug-glow-strength', 'debug-glow-strength-value', 0, 2, 1.0, (value) => {
+-          window.debugGlowStrength = value;
+-          window.debugGlow = value > 0;
+-        });
+-
+-        bindRangeAndNumber('debug-bloom-strength', 'debug-bloom-strength-value', 0, 2, 1.0, (value) => {
+-          window.debugBloomStrength = value;
+-          window.debugBloom = value > 0;
+-        });
+-
+-        bindRangeAndNumber('debug-shell-strength', 'debug-shell-strength-value', 0, 2, 1.0, (value) => {
+-          window.debugShellStrength = value;
+-        });
+-
+-        bindRangeAndNumber('debug-shell-saturation', 'debug-shell-saturation-value', 0, 2, 1.0, (value) => {
+-          window.debugShellSaturation = value;
+-        });
+-
+-        bindRangeAndNumber('debug-shell-scanline-speed', 'debug-shell-scanline-speed-value', 0, 3, 1.0, (value) => {
+-          window.debugShellScanlineSpeed = value;
+-        });
+-
+-        bindRangeAndNumber('debug-shell-noise-amount', 'debug-shell-noise-amount-value', 0, 2, 0.35, (value) => {
+-          window.debugShellNoiseAmount = value;
+-        });
+-
+-        bindRangeAndNumber('debug-smoke-strength', 'debug-smoke-strength-value', 0, 2, 1.0, (value) => {
+-          window.debugSmokeStrength = value;
+-          window.debugSmoke = value > 0;
+-        });
+-
+-        bindRangeAndNumber('debug-fog-intensity', 'debug-fog-intensity-value', 0, 1, 0.58, (value) => {
+-          window.debugFogIntensity = value;
+-        });
+-
+-        const renderModeSelect = document.getElementById('debug-render-mode');
+-        if (renderModeSelect) {
+-          renderModeSelect.addEventListener('change', () => {
+-            window.debugRenderMode = renderModeSelect.value;
+-          });
+-          window.debugRenderMode = renderModeSelect.value;
+-        }
+-
+-        bindRangeAndNumber('debug-stereo-eye-separation', 'debug-stereo-eye-separation-value', 0.01, 0.2, 0.064, (value) => {
+-          window.debugStereoEyeSeparation = value;
+-        }, 3);
+-
+-        const shellTintInput = document.getElementById('debug-shell-tint');
+-        if (shellTintInput) {
+-          shellTintInput.addEventListener('input', () => {
+-            window.debugShellTint = shellTintInput.value;
+-          });
+-          window.debugShellTint = shellTintInput.value;
+-        }
+-      }
+-
+       // Seed Deck Controls
+       const seedInput = document.getElementById('seed-input');
+       const seedTier = document.getElementById('seed-tier');
+       const dailySeedBtn = document.getElementById('daily-seed-btn');
+       const weeklySeedBtn = document.getElementById('weekly-seed-btn');
+diff --git a/main.js b/main.js
+index 31722c8..96020d5 100644
+--- a/main.js
++++ b/main.js
+@@ -43,10 +43,11 @@ import {
+   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
+   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
+   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
+   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward,
+   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
++  releaseBossProjIndex,
+   clearAllTelegraphs, spawnHealthGainPopup
+ } from './enemies.js';
+ import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
+ import { initVFX, updateVFX } from './vfx.js';
+ import { rebuildBiomeScene as rebuildBiomeSceneModule, getBiomeFloorY as getBiomeFloorYModule } from './biome-scenes.js';
+@@ -73,11 +74,12 @@ import {
+   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
+   updateHolographicGlitch, resetHoloGlitch,
+   showFloatingMessage, hideFloatingMessage, updateFloatingMessage,
+   nameEntryGroup,
+   setLastSubmittedTimestamp,
+-  setLastSubmittedPageIndex
++  setLastSubmittedPageIndex,
++  setFPSVisible
+ } from './hud.js';
+ 
+ import {
+   initDesktopControls, update as updateDesktopControls, getWeaponState,
+   getPosition, getAimRaycaster, getVirtualController,
+@@ -93,10 +95,11 @@ import { initDreamWorld, enterDreamWorld, exitDreamWorld, getDreamFogSettings, g
+ import { SpatialHash } from './spatial-hash.js';
+ 
+ // Expose game state to window for debugging/testing
+ window.State = State;
+ window.game = game;
++window.hud = { setFPSVisible };
+ 
+ // Debug flag for projectile firing investigation
+ window.DEBUG_PROJECTILES = false;
+ 
+ // ============================================================
+@@ -1164,11 +1167,11 @@ function createEnvironment() {
+   // horizonInnerRingRef.renderOrder = -2;
+   // scene.add(horizonInnerRingRef);
+   // registerFadeMaterial(horizonInnerRingRef.material);
+ 
+   createSun();
+-  createVHSRetroShell();
++  // createVHSRetroShell();  // REMOVED: Debug sphere for visual effects testing
+   // Removed legacy flat ShapeGeometry mountain layers. They were stale overlays
+   // that conflicted with the biome-specific terrain scenes.
+   createStars();
+   initAmbientParticles(scene);
+   createDreamTrigger();
+@@ -2996,17 +2999,19 @@ function handleDesktopScoreboardClick() {
+     resetGame();
+     showTitle();
+     return;
+   }
+   if (action === 'country') {
++    playMenuClick();  // #7: Activate sound for COUNTRY
+     scoreboardFromGameOver = false;
+     game.state = State.COUNTRY_SELECT;
+     hideScoreboard();
+     showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+     return;
+   }
+   if (action === 'continent') {
++    playMenuClick();  // #7: Activate sound for CONTINENT
+     scoreboardFromGameOver = false;
+     game.state = State.COUNTRY_SELECT;
+     hideScoreboard();
+     showCountrySelect(COUNTRIES, CONTINENTS, 'North America', null, 'continent');
+     return;
+@@ -3204,24 +3209,27 @@ function handleScoreboardTrigger(controller) {
+   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+   _uiRaycaster.set(origin, direction, 0, 20);
+ 
+   const action = getScoreboardHit(_uiRaycaster);
+   if (action === 'back') {
++    playMenuClick();  // #7: Activate sound for BACK
+     hideScoreboard();
+     resetGame();
+     showTitle();
+     return;
+   }
+   if (action === 'country') {
++    playMenuClick();  // #7: Activate sound for COUNTRY
+     // Show country select for filtering
+     scoreboardFromGameOver = false;
+     game.state = State.COUNTRY_SELECT;
+     hideScoreboard();
+     showCountrySelect(COUNTRIES, CONTINENTS, 'North America');
+     return;
+   }
+   if (action === 'continent') {
++    playMenuClick();  // #7: Activate sound for CONTINENT
+     // Show continent picker
+     scoreboardFromGameOver = false;
+     game.state = State.COUNTRY_SELECT;
+     hideScoreboard();
+     showCountrySelect(COUNTRIES, CONTINENTS, 'North America', null, 'continent');
+@@ -3239,10 +3247,11 @@ function handleCountrySelectTrigger(controller) {
+ 
+   const result = getCountrySelectHit(_uiRaycaster, COUNTRIES);
+   if (!result) return;
+ 
+   if (result.action === 'back') {
++    playMenuClick();  // #7: Activate sound for BACK
+     hideCountrySelect();
+     if (scoreboardFromGameOver) {
+       // Back to name entry
+       game.state = State.NAME_ENTRY;
+       showNameEntry(game.finalScore, game.finalLevel, getStoredName(), getCountryDisplayLabel());
+@@ -3352,16 +3361,31 @@ function activateNuke() {
+ 
+     // Set HP to 0 so the death system handles cleanup naturally
+     e.hp = 0;
+     destroyEnemy(i, false, true); // isCritical=false, isOverkill=true (nuke)
+     game.kills++;
+-    game.totalKills++;
+     trackKill(false);
+     addScore(50); // Base score per nuked enemy
+     killed++;
+   }
+ 
++  if (killed > 0) {
++    updateHUD(game);
++
++    const cfg = game._levelConfig;
++    if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
++      const remaining = cfg ? cfg.killTarget - game.kills : 0;
++      showKillsRemainingAlert(remaining);
++      playKillsAlertSound(remaining);
++      killsAlertShownThisLevel = true;
++    }
++
++    if (cfg && game.kills >= cfg.killTarget) {
++      completeLevel();
++    }
++  }
++
+   console.log(`[nuke] Activated! Killed ${killed} enemies. ${game.nukes} remaining.`);
+   return true;
+ }
+ 
+ // ============================================================
+@@ -6776,10 +6800,13 @@ function showUpgradeScreen() {
+   console.log('[game] Showing upgrade selection');
+   game.state = State.UPGRADE_SELECT;
+   hideLevelComplete();
+   resetHoloGlitch();
+ 
++  // Dismiss boss death overlay so upgrade cards are visible
++  dismissBossDeathOverlay();
++
+   // Stop lightning sound during upgrade screen
+   stopLightningSound();
+ 
+   // Get the hand for this upgrade
+   const hand = getNextUpgradeHand();
+@@ -8127,12 +8154,11 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
+       // Check if boss projectile intersects with beam line
+       const dist = pointToSegmentDist(bossProj.mesh.position, _chargeBeamA, _chargeBeamB);
+       if (dist < beamWidth + 0.3) { // Slightly larger collision radius
+         // Destroy boss projectile with explosion effect
+         spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
+-        scene.remove(bossProj.mesh);
+-        disposeObject3D(bossProj.mesh);
++        if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
+         bossProjectiles.splice(i, 1);
+       }
+     }
+   }
+ 
+@@ -9154,13 +9180,11 @@ function updateProjectiles(dt) {
+           const bossProj = bossProjs[j];
+           if (!bossProj || !bossProj.mesh) continue;
+           const dist = proj.position.distanceTo(bossProj.mesh.position);
+           if (dist < 0.5) {
+             spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
+-            markProjectileHit(proj);
+-            scene.remove(bossProj.mesh);
+-            disposeObject3D(bossProj.mesh);
++            if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
+             bossProjs.splice(j, 1);
+ 
+             if (!proj.userData.stats?.piercing) {
+               markProjectileHit(proj);
+               resolveProjectileAccuracy(proj);
+@@ -9887,19 +9911,17 @@ function render(timestamp) {
+       if (!proj || !proj.hitPlayer) continue;
+ 
+       // Check if reflector drone can reflect this projectile
+       if (checkReflectorDroneReflection(proj.mesh.position, true)) {
+         // Projectile was reflected - remove it without damaging player
+-        scene.remove(proj.mesh);
+-        disposeObject3D(proj.mesh);
++        if (proj._instIdx !== undefined) releaseBossProjIndex(proj._instIdx);
+         bossProjs.splice(i, 1);
+         continue;
+       }
+ 
+       triggerHostileProjectileExplosion(proj.mesh.position.clone(), 0.35, 0);
+-      scene.remove(proj.mesh);
+-      disposeObject3D(proj.mesh);
++      if (proj._instIdx !== undefined) releaseBossProjIndex(proj._instIdx);
+       bossProjs.splice(i, 1);
+ 
+       const dead = damagePlayer(proj.damage || 1);
+       triggerHitFlash(true);
+       playDamageSound();
+diff --git a/scenery.js b/scenery.js
+index e9a999c..3817b38 100644
+--- a/scenery.js
++++ b/scenery.js
+@@ -412,13 +412,13 @@ export const THEMES = {
+     starBase: 15,
+     particles: null,
+     hideBaseEnv: true,
+     keepStars: true,
+     customScene: 'desert_night',
+-    // Aurora borealis colors: warm orange/red - BRIGHTER
++    // Aurora borealis colors: cyan/green machine aurora
+     aurora: {
+-      colors: ['rgba(60,20,0,0)', 'rgba(255,100,0,0.2)', 'rgba(255,150,50,0.35)', 'rgba(255,80,30,0.3)', 'rgba(200,50,20,0.15)', 'rgba(80,20,10,0)'],
++      colors: ['rgba(0,20,30,0)', 'rgba(0,255,180,0.15)', 'rgba(0,220,200,0.30)', 'rgba(80,255,220,0.25)', 'rgba(0,180,150,0.12)', 'rgba(0,40,50,0)'],
+     },
+   },
+ 
+   alien_planet: {
+     skyColor: 0x080812,
+
+--- UNCOMMITTED CHANGES ---
+

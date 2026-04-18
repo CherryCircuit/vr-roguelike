@@ -1,0 +1,3772 @@
+# Nightly Codex Review
+
+You are performing a nightly automated review for the `vr-roguelike` repository.
+
+Your job is to find high-value, actionable issues in the supplied diff and nearby code context.
+
+## Review priorities
+
+Prioritize findings in this order:
+1. Correctness bugs and regressions
+2. Runtime stability issues and console-error risks
+3. Performance hotspots, especially VR or per-frame costs
+4. Wasteful code paths, repeated work, and unnecessary allocations
+5. Maintainability issues that materially increase bug risk
+6. Security issues, if the changed code creates realistic exposure
+
+## Project-specific rules
+
+This is a WebXR VR game. Performance matters.
+
+Focus especially on:
+- per-frame object allocation
+- repeated scans over large arrays in hot paths
+- unnecessary DOM or HUD updates every frame
+- expensive math in update loops
+- state-machine regressions during pause, level transitions, death, restart, and boss phases
+- stale pooled-object state
+- missing cleanup on level transition or reset
+- controller-specific or XR-session-specific null/undefined risks
+
+## Findings policy
+
+Only report actionable findings.
+
+Do not report:
+- cosmetic style issues
+- tiny refactors without clear payoff
+- naming preferences
+- speculative concerns without evidence
+- issues that already existed outside the supplied change unless the change makes them worse
+
+For each finding:
+- cite the exact file path
+- cite the exact line range if you can verify it from the provided diff/context
+- explain the impact briefly and concretely
+- suggest a fix only if it is reasonably clear
+- keep the wording direct and specific
+
+## Severity guide
+
+- `critical`: crash, save/progression break, security exposure, or severe performance cliff
+- `high`: likely bug, serious regression, or hot-path waste that will matter in play
+- `medium`: real maintainability/performance/correctness issue worth fixing soon
+- `low`: minor but valid issue with clear practical value
+
+## Output expectations
+
+Favor fewer, better findings over many weak ones.
+If there are no meaningful findings, say so in the structured output rather than inventing noise.
+
+## Review context
+- Repository: /home/graeme/.openclaw/workspace-codey/vr-roguelike
+- Branch: main
+- Base SHA: 561eaafe837be66d4e8f6e5cc57e7cd74fc36ce0
+- Head SHA: d7ca96515945f7f6c171b42a95b40c97449ed31a
+- Commit count in scope: 2
+- Include uncommitted changes: 1
+
+## Changed files
+ assets/fonts/november.ttf:Zone.Identifier |  Bin 0 -> 25 bytes
+ audio.js                                  |   80 +++++-----
+ biome-scenes.js                           | 1228 +----------------------------------------------------------------------------------------------------------------------------------------------------
+ biomes/alien-planet.js                    |  473 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ biomes/desert-night.js                    |  345 ++++++++++++++++++++++++++++++++++++++++++
+ biomes/hellscape-lava.js                  |  665 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ biomes/synthwave-valley.js                |  450 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ enemies.js                                |  119 ++++++++++-----
+ game-screenshot.png                       |  Bin 514199 -> 516196 bytes
+ hud.js                                    |   10 +-
+ main.js                                   |    7 +-
+ 11 files changed, 2071 insertions(+), 1306 deletions(-)
+
+## Unified diff
+diff --git a/assets/fonts/november.ttf:Zone.Identifier b/assets/fonts/november.ttf:Zone.Identifier
+new file mode 100644
+index 0000000..d6c1ec6
+Binary files /dev/null and b/assets/fonts/november.ttf:Zone.Identifier differ
+diff --git a/audio.js b/audio.js
+index b60b7af..9fdbfd0 100644
+--- a/audio.js
++++ b/audio.js
+@@ -66,63 +66,63 @@ export function playShoothSound() {
+     osc2.start(t);
+     osc2.stop(t + duration);
+   }
+ }
+ 
+-// ── Seeker Burst sound (soft homing whistle) ───────────────
+-// isLastShot: true = full "whistle", false = short chirp
++// ── Seeker Burst sound (sfxr-based square wave burst) ──────
++// Translated from sfxr parameters. wave_type=0 (square), with phaser effect.
++// isLastShot: true = longer sustain+decay variant, false = short chirp variant
+ export function playSeekerBurstSound(isLastShot = false, totalShots = 3, burstIndex = 0) {
+   const ctx = getAudioContext();
+   const t = ctx.currentTime;
+ 
++  // sfxr parameter sets (shared params)
++  // p_base_freq: 0.5203 → ~452Hz, wave_type: 0 (square)
++  // p_duty: 0.159, p_duty_ramp: 0.021
++  // p_pha_offset: 0.083, p_pha_ramp: -0.184
++  // p_lpf_freq: 1 (wide open), p_hpf_freq: 0.11 (~2200Hz)
++  // sound_vol: 0.25
++  const baseFreq = 20 * Math.pow(400, 0.5203121253268148); // ~452Hz
++  const sustainTime = isLastShot ? 0.122 : 0.076;
++  const decayTime = isLastShot ? 0.28 : 0.079;
++  const freqRamp = isLastShot ? -0.277 : -0.209; // per second
++
++  // sfxr freq_ramp is exponential change per second
++  const endFreq = Math.max(20, baseFreq * Math.pow(2, freqRamp));
++
+   const osc = ctx.createOscillator();
+-  const osc2 = ctx.createOscillator();
+   const gain = ctx.createGain();
+-  const filter = ctx.createBiquadFilter();
+ 
+-  // Soft sine + triangle blend for pleasant whistle
+-  osc.type = 'sine';
+-  osc2.type = 'triangle';
+-
+-  if (isLastShot) {
+-    // Full whistle: smooth rising tone, soft attack/decay
+-    osc.frequency.setValueAtTime(180, t);
+-    osc.frequency.exponentialRampToValueAtTime(520, t + 0.12);
+-    osc.frequency.exponentialRampToValueAtTime(380, t + 0.25);
+-    osc2.frequency.setValueAtTime(90, t);
+-    osc2.frequency.exponentialRampToValueAtTime(260, t + 0.12);
+-    filter.type = 'lowpass';
+-    filter.frequency.setValueAtTime(2200, t);
+-    filter.Q.setValueAtTime(1.5, t);
+-    gain.gain.setValueAtTime(0, t);
+-    gain.gain.linearRampToValueAtTime(0.35, t + 0.03);
+-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+-  } else {
+-    // Short chirp: quick rising blip
+-    osc.frequency.setValueAtTime(220, t);
+-    osc.frequency.exponentialRampToValueAtTime(380, t + 0.05);
+-    osc2.frequency.setValueAtTime(110, t);
+-    osc2.frequency.exponentialRampToValueAtTime(190, t + 0.05);
+-    filter.type = 'lowpass';
+-    filter.frequency.setValueAtTime(3000, t);
+-    filter.Q.setValueAtTime(1.0, t);
+-    gain.gain.setValueAtTime(0, t);
+-    gain.gain.linearRampToValueAtTime(0.25, t + 0.01);
+-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+-  }
++  // wave_type 0 = square
++  osc.type = 'square';
++  osc.frequency.setValueAtTime(baseFreq, t);
++  osc.frequency.exponentialRampToValueAtTime(endFreq, t + sustainTime + decayTime);
++
++  // HPF at ~2200Hz (p_hpf_freq: 0.1096 → 20*pow(400,0.1096) ≈ 41Hz... 
++  // sfxr maps 0-1 to 0-10000Hz for HPF: 0.1096 * 10000 ≈ 1096Hz)
++  const hpf = ctx.createBiquadFilter();
++  hpf.type = 'highpass';
++  hpf.frequency.setValueAtTime(1096, t);
++  hpf.Q.setValueAtTime(1, t);
++
++  // Envelope: attack 0.015s, sustain with punch 0.171, sustain time, decay
++  const attack = 0.015;
++  const vol = 0.25;
++  gain.gain.setValueAtTime(0, t);
++  gain.gain.linearRampToValueAtTime(vol * (1 + 0.171), t + attack); // punch boosts initial
++  gain.gain.linearRampToValueAtTime(vol, t + attack + 0.02); // punch settles
++  gain.gain.linearRampToValueAtTime(vol, t + attack + sustainTime);
++  gain.gain.exponentialRampToValueAtTime(0.001, t + attack + sustainTime + decayTime);
+ 
+-  osc.connect(filter);
+-  osc2.connect(filter);
+-  filter.connect(gain);
++  osc.connect(hpf);
++  hpf.connect(gain);
+   gain.connect(ctx.destination);
+ 
++  const stopTime = t + attack + sustainTime + decayTime + 0.01;
+   try {
+     osc.start(t);
+-    osc2.start(t);
+-    const stopTime = isLastShot ? t + 0.28 : t + 0.08;
+     osc.stop(stopTime);
+-    osc2.stop(stopTime);
+   } catch(e) {
+     // If start fails, don't attempt stop
+   }
+ }
+ 
+diff --git a/biome-scenes.js b/biome-scenes.js
+index 1a870d8..3a2db64 100644
+--- a/biome-scenes.js
++++ b/biome-scenes.js
+@@ -2,10 +2,13 @@
+ //  BIOME SCENES — Custom visual scene builders for biomes
+ //  Extracted from main.js for modular architecture
+ // ============================================================
+ 
+ import * as THREE from 'three';
++import { buildDesertNightScene } from './biomes/desert-night.js';
++import { buildAlienPlanetScene } from './biomes/alien-planet.js';
++import { buildHellscapeLavaScene } from './biomes/hellscape-lava.js';
+ 
+ // ── Exports ────────────────────────────────────────────────
+ 
+ /**
+  * Rebuild the biome scene for a given biome ID.
+@@ -181,10 +184,11 @@ export function logCylinderColors(refs) {
+   
+   console.log('====================');
+ }
+ 
+ // ── Scene Builders ──────────────────────────────────────────
++// Note: Synthwave remains inline for now (kept as-is for stability)
+ 
+ function buildSynthwaveValleyScene(group, deps) {
+   const { registerFadeMaterial, floorMaterial, synthVisualRefs, biomeTerrainMaterials, BLOOM_LAYER, getVisualTuning } = deps;
+   
+   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+@@ -353,1229 +357,5 @@ function buildSynthwaveValleyScene(group, deps) {
+   group.position.set(0, 5.82, 0);
+ 
+   // Rotate so player faces sun
+   group.rotation.y = 0;
+ }
+-
+-function buildDesertNightScene(group, deps) {
+-  const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
+-
+-  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+-  const floorY = floorHeight;
+-
+-  // ── AURORA MACHINE DESERT — RESCUE PASS ────────────────────
+-  // Monumental machine ruins in moonlit desert.
+-  // Big horizon language, cleaner silhouettes, stronger aurora read.
+-  // Warm sand with cyan machine accents.
+-
+-  // === LIGHTING (stronger, more dramatic) ===
+-  const moonLight = new THREE.DirectionalLight(0xc8daf0, 2.2);
+-  moonLight.position.set(-60, 80, -60);
+-  group.add(moonLight);
+-
+-  const ambientLight = new THREE.AmbientLight(0x2a3545, 0.25);
+-  group.add(ambientLight);
+-
+-  const hemiLight = new THREE.HemisphereLight(0x2a3555, 0x4a3a2a, 0.3);
+-  group.add(hemiLight);
+-
+-  // === TERRAIN: Broad dunes (scaled up for horizon) ===
+-  const terrainSize = 400;
+-  const geometry = new THREE.PlaneGeometry(terrainSize, terrainSize, 100, 100);
+-  geometry.rotateX(-Math.PI / 2);
+-  const positions = geometry.attributes.position;
+-  const colors = [];
+-  const flatRadius = 20.0;
+-  const duneStart = 40.0;
+-
+-  for (let i = 0; i < positions.count; i++) {
+-    const x = positions.getX(i);
+-    const z = positions.getZ(i);
+-    const dist = Math.sqrt(x * x + z * z);
+-
+-    let heightFactor = Math.min(Math.max((dist - flatRadius) / (duneStart - flatRadius), 0), 1);
+-    heightFactor = heightFactor * heightFactor * (3 - 2 * heightFactor);
+-
+-    let height = 0;
+-    height += Math.sin(x * 0.018 + 0.5) * Math.cos(z * 0.014) * 12.0;
+-    height += Math.sin(x * 0.01 + 2) * Math.sin(z * 0.012 + 1) * 8.0;
+-    height += Math.cos(z * 0.024 - x * 0.016) * 4.0;
+-    if (dist > duneStart) {
+-      height += Math.abs(Math.sin(x * 0.032 + z * 0.024)) * 3.0;
+-    }
+-
+-    const finalHeight = height * heightFactor;
+-    positions.setY(i, finalHeight);
+-
+-    const heightNorm = Math.min(1, Math.max(0, (finalHeight + 5) / 20));
+-    const sandDark = new THREE.Color(0x2a2218);
+-    const sandMid = new THREE.Color(0x5a4838);
+-    const sandLit = new THREE.Color(0x706858);
+-    const moonTint = new THREE.Color(0x405060);
+-
+-    let color = sandDark.clone().lerp(sandMid, heightNorm * 0.7);
+-    color.lerp(sandLit, heightNorm * heightNorm * 0.6);
+-    color.lerp(moonTint, heightNorm * 0.2);
+-    colors.push(color.r, color.g, color.b);
+-  }
+-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+-  geometry.computeVertexNormals();
+-
+-  const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+-  const terrain = new THREE.Mesh(geometry, material);
+-  terrain.name = 'desert-night-terrain';
+-  terrain.userData.planeName = 'desert-night-terrain';
+-  terrain.position.y = floorY;
+-  terrain.frustumCulled = false;
+-  group.add(terrain);
+-  registerFadeMaterial(material);
+-
+-  const flashGeo = new THREE.PlaneGeometry(terrainSize, terrainSize);
+-  const flashMat = new THREE.MeshBasicMaterial({
+-    color: 0xff0000,
+-    transparent: true,
+-    opacity: 0,
+-    depthWrite: false,
+-    side: THREE.DoubleSide
+-  });
+-  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+-  flashPlane.name = 'desert-night-damage-flash-plane';
+-  flashPlane.userData.planeName = 'desert-night-damage-flash-plane';
+-  flashPlane.rotation.x = -Math.PI / 2;
+-  flashPlane.position.y = floorY + 0.02;
+-  flashPlane.frustumCulled = false;
+-  group.add(flashPlane);
+-  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
+-
+-  // === MONUMENTAL MACHINE RELICS ===
+-
+-  // Massive arch structures (dominant horizon silhouettes)
+-  const archGeo = new THREE.TorusGeometry(25, 2.5, 8, 24, Math.PI);
+-  const archMat = new THREE.MeshLambertMaterial({
+-    color: 0x1a1820,
+-    emissive: 0x0a2030,
+-    emissiveIntensity: 0.8,
+-    flatShading: true
+-  });
+-  registerFadeMaterial(archMat);
+-
+-  const archGlowGeo = new THREE.TorusGeometry(25, 3.5, 6, 24, Math.PI);
+-  const archGlowMat = new THREE.MeshBasicMaterial({
+-    color: 0x00ffcc,
+-    transparent: true,
+-    opacity: 0.25,
+-    depthWrite: false,
+-    blending: THREE.AdditiveBlending,
+-    fog: true
+-  });
+-  registerFadeMaterial(archGlowMat);
+-
+-  const archConfigs = [
+-    { x: 120, z: -80, ry: 0.3, tilt: 0.05, scale: 1.0 },
+-    { x: -140, z: -60, ry: -0.6, tilt: -0.08, scale: 0.85 },
+-    { x: 80, z: 100, ry: 1.2, tilt: 0.1, scale: 0.7 },
+-  ];
+-
+-  archConfigs.forEach((cfg, i) => {
+-    const archGroup = new THREE.Group();
+-    archGroup.name = `machine-arch-${i}`;
+-    const arch = new THREE.Mesh(archGeo, archMat);
+-    const glow = new THREE.Mesh(archGlowGeo, archGlowMat);
+-    archGroup.add(arch, glow);
+-    archGroup.position.set(cfg.x, floorY + 25 * cfg.scale, cfg.z);
+-    archGroup.rotation.set(cfg.tilt, cfg.ry, 0);
+-    archGroup.scale.setScalar(cfg.scale);
+-    group.add(archGroup);
+-  });
+-
+-  // Buried colossus fragments (partial geometry emerging from sand)
+-  const colossusGeo = new THREE.CylinderGeometry(8, 10, 20, 12, 1, true);
+-  const colossusMat = new THREE.MeshLambertMaterial({
+-    color: 0x15120f,
+-    emissive: 0x0a1520,
+-    emissiveIntensity: 0.6,
+-    flatShading: true,
+-    side: THREE.DoubleSide
+-  });
+-  registerFadeMaterial(colossusMat);
+-
+-  const colossusGlowGeo = new THREE.RingGeometry(6, 12, 16);
+-  const colossusGlowMat = new THREE.MeshBasicMaterial({
+-    color: 0x00ddbb,
+-    transparent: true,
+-    opacity: 0.2,
+-    depthWrite: false,
+-    side: THREE.DoubleSide,
+-    blending: THREE.AdditiveBlending,
+-    fog: true
+-  });
+-  registerFadeMaterial(colossusGlowMat);
+-
+-  const colossusConfigs = [
+-    { x: -100, z: 60, height: 18, rotY: 0.4 },
+-    { x: 150, z: 40, height: 14, rotY: -0.7 },
+-  ];
+-
+-  colossusConfigs.forEach((cfg, i) => {
+-    const colGroup = new THREE.Group();
+-    colGroup.name = `buried-colossus-${i}`;
+-    const body = new THREE.Mesh(colossusGeo, colossusMat);
+-    body.scale.y = cfg.height / 20;
+-    body.position.y = -8;
+-    const glow = new THREE.Mesh(colossusGlowGeo, colossusGlowMat);
+-    glow.rotation.x = -Math.PI / 2;
+-    glow.position.y = 0.1;
+-    colGroup.add(body, glow);
+-    colGroup.position.set(cfg.x, floorY, cfg.z);
+-    colGroup.rotation.y = cfg.rotY;
+-    group.add(colGroup);
+-  });
+-
+-  // Ring gates (scaled up 3x, stronger glow)
+-  const ringGeo = new THREE.TorusGeometry(12, 0.9, 8, 24);
+-  const ringMat = new THREE.MeshLambertMaterial({
+-    color: 0x1a1820,
+-    emissive: 0x0a2030,
+-    emissiveIntensity: 0.8,
+-    flatShading: true
+-  });
+-  registerFadeMaterial(ringMat);
+-
+-  const ringGlowGeo = new THREE.TorusGeometry(12, 1.5, 6, 24);
+-  const ringGlowMat = new THREE.MeshBasicMaterial({
+-    color: 0x00ffcc,
+-    transparent: true,
+-    opacity: 0.3,
+-    depthWrite: false,
+-    blending: THREE.AdditiveBlending,
+-    fog: true
+-  });
+-  registerFadeMaterial(ringGlowMat);
+-
+-  const ringGates = [
+-    [60, -40, 0.3, 0.1, 1.0],
+-    [-70, -60, -0.8, -0.15, 0.85],
+-    [30, -80, 1.2, 0.05, 1.1],
+-    [-40, 50, 0.6, -0.2, 0.9],
+-    [80, 30, -0.4, 0.12, 0.75],
+-  ];
+-
+-  ringGates.forEach(([rx, rz, ry, tiltX, s], i) => {
+-    const ringGroup = new THREE.Group();
+-    ringGroup.name = `ring-gate-${i}`;
+-    const ring = new THREE.Mesh(ringGeo, ringMat);
+-    const glow = new THREE.Mesh(ringGlowGeo, ringGlowMat);
+-    ringGroup.add(ring, glow);
+-    ringGroup.position.set(rx, floorY + 15 * s, rz);
+-    ringGroup.rotation.set(tiltX, ry, 0);
+-    ringGroup.scale.setScalar(s);
+-    group.add(ringGroup);
+-  });
+-
+-  // Obelisks (scaled up 2x, stronger tip glow)
+-  const obeliskGeo = new THREE.BoxGeometry(1.6, 1, 1.6);
+-  obeliskGeo.translate(0, 0.5, 0);
+-  const obeliskMat = new THREE.MeshLambertMaterial({
+-    color: 0x201c18,
+-    emissive: 0x081015,
+-    emissiveIntensity: 0.5,
+-    flatShading: true
+-  });
+-  registerFadeMaterial(obeliskMat);
+-
+-  const obeliskCapGeo = new THREE.BoxGeometry(1.8, 0.8, 1.8);
+-  const obeliskCapMat = new THREE.MeshBasicMaterial({
+-    color: 0x00ffcc,
+-    transparent: true,
+-    opacity: 0.5,
+-    depthWrite: false,
+-    blending: THREE.AdditiveBlending,
+-    fog: true
+-  });
+-  registerFadeMaterial(obeliskCapMat);
+-
+-  const obelisks = [
+-    [-24, -30, 16, 0.2],
+-    [36, -16, 20, -0.5],
+-    [-50, 36, 14, 1.1],
+-    [70, -50, 18, 0.8],
+-  ];
+-
+-  obelisks.forEach(([ox, oz, oh, ory], i) => {
+-    const obGroup = new THREE.Group();
+-    obGroup.name = `obelisk-${i}`;
+-    const body = new THREE.Mesh(obeliskGeo, obeliskMat);
+-    body.scale.set(1, oh, 1);
+-    const cap = new THREE.Mesh(obeliskCapGeo, obeliskCapMat);
+-    cap.position.y = oh;
+-    obGroup.add(body, cap);
+-    obGroup.position.set(ox, floorY, oz);
+-    obGroup.rotation.y = ory;
+-    group.add(obGroup);
+-  });
+-
+-  // === STARS (500, shader-based twinkle) ===
+-  const starCount = 500;
+-  const starPositions = new Float32Array(starCount * 3);
+-  const starPhases = new Float32Array(starCount);
+-
+-  for (let i = 0; i < starCount; i++) {
+-    const theta = Math.random() * Math.PI * 2;
+-    const radius = 150 + Math.random() * 80;
+-    const phi = Math.random() * Math.PI * 0.5;
+-    starPositions[i * 3] = Math.cos(theta) * Math.sin(phi) * radius;
+-    starPositions[i * 3 + 1] = Math.cos(phi) * radius + 20;
+-    starPositions[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * radius;
+-    starPhases[i] = Math.random() * Math.PI * 2;
+-  }
+-
+-  const starGeometry = new THREE.BufferGeometry();
+-  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+-  starGeometry.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
+-
+-  const starMaterial = new THREE.ShaderMaterial({
+-    uniforms: {
+-      uTime: { value: 0 },
+-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+-    },
+-    vertexShader: `
+-      attribute float aPhase;
+-      uniform float uTime;
+-      uniform float uPixelRatio;
+-      varying float vTwinkle;
+-      void main() {
+-        vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
+-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+-        float size = 2.5 * uPixelRatio * vTwinkle;
+-        gl_PointSize = size * (200.0 / -mvPosition.z);
+-        gl_Position = projectionMatrix * mvPosition;
+-      }
+-    `,
+-    fragmentShader: `
+-      varying float vTwinkle;
+-      void main() {
+-        float dist = length(gl_PointCoord - vec2(0.5));
+-        if (dist > 0.5) discard;
+-        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+-        vec3 color = mix(vec3(0.7, 0.85, 1.0), vec3(0.5, 1.0, 0.85), vTwinkle);
+-        gl_FragColor = vec4(color * (0.8 + vTwinkle * 0.2), alpha * vTwinkle);
+-      }
+-    `,
+-    transparent: true,
+-    depthWrite: false,
+-    fog: false,
+-    blending: THREE.AdditiveBlending
+-  });
+-
+-  const stars = new THREE.Points(starGeometry, starMaterial);
+-  stars.frustumCulled = false;
+-  stars.renderOrder = 999;
+-  group.add(stars);
+-  registerFadeMaterial(starMaterial);
+-
+-  // === AURORA STRIPS (5 strips, 3x brighter) ===
+-  const auroraStripGeo = new THREE.PlaneGeometry(350, 25, 1, 1);
+-  const auroraStripMat = new THREE.ShaderMaterial({
+-    uniforms: {
+-      uTime: { value: 0 },
+-      uColor1: { value: new THREE.Color(0x00ffcc) },
+-      uColor2: { value: new THREE.Color(0x00ccdd) },
+-    },
+-    vertexShader: `
+-      varying vec2 vUv;
+-      void main() {
+-        vUv = uv;
+-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+-      }
+-    `,
+-    fragmentShader: `
+-      uniform float uTime;
+-      uniform vec3 uColor1;
+-      uniform vec3 uColor2;
+-      varying vec2 vUv;
+-      void main() {
+-        float wave = sin(vUv.x * 3.14159 + uTime * 0.3) * 0.5 + 0.5;
+-        float edge = smoothstep(0.0, 0.25, vUv.y) * smoothstep(1.0, 0.75, vUv.y);
+-        float alpha = edge * (0.18 + wave * 0.12);
+-        vec3 color = mix(uColor1, uColor2, wave);
+-        gl_FragColor = vec4(color, alpha);
+-      }
+-    `,
+-    transparent: true,
+-    depthWrite: false,
+-    side: THREE.DoubleSide,
+-    blending: THREE.AdditiveBlending,
+-    fog: true
+-  });
+-  registerFadeMaterial(auroraStripMat);
+-
+-  const auroraConfigs = [
+-    { y: 70, z: -120, rx: -0.25, rz: 0.08 },
+-    { y: 85, z: -140, rx: -0.12, rz: -0.12 },
+-    { y: 60, z: -100, rx: -0.35, rz: 0.15 },
+-    { y: 95, z: -160, rx: -0.08, rz: -0.05 },
+-    { y: 55, z: -80, rx: -0.45, rz: 0.18 },
+-  ];
+-
+-  const auroraStrips = [];
+-  auroraConfigs.forEach((cfg, i) => {
+-    const strip = new THREE.Mesh(auroraStripGeo, auroraStripMat.clone());
+-    strip.name = `aurora-strip-${i}`;
+-    strip.userData.phaseOffset = i * 1.8;
+-    strip.material.uniforms.uTime.value = i * 1.8;
+-    strip.position.set(0, cfg.y, cfg.z);
+-    strip.rotation.x = cfg.rx;
+-    strip.rotation.z = cfg.rz;
+-    strip.frustumCulled = false;
+-    group.add(strip);
+-    auroraStrips.push(strip);
+-  });
+-
+-  // === MOON (larger, positioned for horizon dominance) ===
+-  const moonGroup = new THREE.Group();
+-  const moonGeometry = new THREE.IcosahedronGeometry(15, 2);
+-  const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xfffef8 });
+-  const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+-  moonGroup.add(moon);
+-  registerFadeMaterial(moonMaterial);
+-
+-  const moonGlowMat = new THREE.MeshBasicMaterial({
+-    color: 0xc8daf0,
+-    transparent: true,
+-    opacity: 0.2,
+-    side: THREE.BackSide
+-  });
+-  const moonGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(25, 2), moonGlowMat);
+-  moonGroup.add(moonGlow);
+-  registerFadeMaterial(moonGlowMat);
+-  moonGroup.position.set(-90, 50, -120);
+-  group.add(moonGroup);
+-
+-  // Desert floor HUD height
+-  group.rotation.y = -0.436;
+-  group.position.set(-2.12, -0.20, -4.82);
+-
+-  // === ANIMATION UPDATE ===
+-  group.userData.update = (now, dt) => {
+-    const time = now * 0.001;
+-    starMaterial.uniforms.uTime.value = time;
+-
+-    for (const strip of auroraStrips) {
+-      strip.material.uniforms.uTime.value = time + strip.userData.phaseOffset;
+-    }
+-  };
+-}
+-
+-function buildAlienPlanetScene(group, deps) {
+-  const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
+-  
+-  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+-  const floorY = floorHeight - 0.3;
+-
+-  // ── SUNKEN NEON GARDEN — RESCUE PASS ───────────────────────
+-  // Lush alien wetland with bioluminescent flora.
+-  // Grounded beauty, luminous atmosphere, clear ecosystem logic.
+-  // Deep teal/purple with bright green/cyan accents.
+-
+-  // === LIGHTING (soft, bioluminescent) ===
+-  const ambientLight = new THREE.AmbientLight(0x1a2030, 0.35);
+-  group.add(ambientLight);
+-
+-  const hemiLight = new THREE.HemisphereLight(0x2a3040, 0x102020, 0.4);
+-  group.add(hemiLight);
+-
+-  // === TERRAIN: Luminous alien wetland ===
+-  const groundGeo = new THREE.PlaneGeometry(300, 300, 100, 100);
+-  groundGeo.rotateX(-Math.PI / 2);
+-  const groundPositions = groundGeo.attributes.position;
+-  const groundColors = [];
+-
+-  for (let i = 0; i < groundPositions.count; i++) {
+-    const x = groundPositions.getX(i);
+-    const z = groundPositions.getZ(i);
+-    
+-    // Subtle height variation for wetland feel
+-    let height = Math.sin(x * 0.02) * Math.cos(z * 0.02) * 0.8;
+-    height += Math.sin(x * 0.05 + z * 0.03) * 0.3;
+-    groundPositions.setY(i, height);
+-
+-    // Bioluminescent ground coloring
+-    const dist = Math.sqrt(x * x + z * z);
+-    const heightNorm = (height + 1) / 2;
+-    
+-    // Deep teal/purple base
+-    const baseDark = new THREE.Color(0x0a1520);
+-    const baseMid = new THREE.Color(0x102535);
+-    // Bioluminescent patches (brighter teal/green)
+-    const bioGlow = new THREE.Color(0x00aa88);
+-    
+-    // Random bioluminescent patches
+-    const patchNoise = Math.sin(x * 0.08) * Math.cos(z * 0.08) + Math.sin(x * 0.12 + z * 0.1) * 0.5;
+-    const patchStrength = Math.max(0, patchNoise - 0.3) * 1.5;
+-    
+-    let color = baseDark.clone().lerp(baseMid, heightNorm * 0.6);
+-    color.lerp(bioGlow, patchStrength * 0.4);
+-    groundColors.push(color.r, color.g, color.b);
+-  }
+-  
+-  groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(groundColors, 3));
+-  groundGeo.computeVertexNormals();
+-  
+-  const groundMat = new THREE.MeshStandardMaterial({ 
+-    vertexColors: true,
+-    roughness: 0.9, 
+-    metalness: 0, 
+-    flatShading: true 
+-  });
+-  const ground = new THREE.Mesh(groundGeo, groundMat);
+-  ground.name = 'alien-planet-ground-plane';
+-  ground.userData.planeName = 'alien-planet-ground-plane';
+-  ground.position.y = floorY;
+-  ground.frustumCulled = false;
+-  group.add(ground);
+-  registerFadeMaterial(groundMat);
+-
+-  // Flash overlay plane
+-  const flashGeo = new THREE.PlaneGeometry(320, 320);
+-  const flashMat = new THREE.MeshBasicMaterial({
+-    color: 0xff0000,
+-    transparent: true,
+-    opacity: 0,
+-    depthWrite: false,
+-    side: THREE.DoubleSide
+-  });
+-  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+-  flashPlane.name = 'alien-planet-damage-flash-plane';
+-  flashPlane.userData.planeName = 'alien-planet-damage-flash-plane';
+-  flashPlane.rotation.x = -Math.PI / 2;
+-  flashPlane.position.y = floorY + 0.1;
+-  flashPlane.frustumCulled = false;
+-  group.add(flashPlane);
+-  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
+-
+-  // === GROUNDED ALIEN FLORA ===
+-
+-  // Tall crystalline stalks (emerging from ground, not floating)
+-  const stalkGeo = new THREE.CylinderGeometry(0.3, 0.5, 8, 8);
+-  stalkGeo.translate(0, 4, 0);
+-  const stalkMat = new THREE.MeshStandardMaterial({
+-    color: 0x1a3040,
+-    emissive: 0x00aa88,
+-    emissiveIntensity: 0.6,
+-    roughness: 0.3,
+-    metalness: 0.2,
+-    flatShading: true
+-  });
+-  registerFadeMaterial(stalkMat);
+-
+-  // Glowing nodes along stalks
+-  const nodeGeo = new THREE.SphereGeometry(0.6, 8, 8);
+-  const nodeMat = new THREE.MeshBasicMaterial({
+-    color: 0x00ffaa,
+-    transparent: true,
+-    opacity: 0.8
+-  });
+-  registerFadeMaterial(nodeMat);
+-
+-  const stalkConfigs = [
+-    { x: 25, z: -30, height: 10, nodes: 3 },
+-    { x: -35, z: -25, height: 12, nodes: 4 },
+-    { x: 15, z: 40, height: 8, nodes: 2 },
+-    { x: -45, z: 35, height: 14, nodes: 5 },
+-    { x: 50, z: 15, height: 9, nodes: 3 },
+-    { x: -20, z: -50, height: 11, nodes: 4 },
+-    { x: 40, z: -45, height: 13, nodes: 4 },
+-    { x: -55, z: -10, height: 10, nodes: 3 },
+-  ];
+-
+-  const stalks = [];
+-  stalkConfigs.forEach((cfg, i) => {
+-    const stalkGroup = new THREE.Group();
+-    stalkGroup.name = `crystal-stalk-${i}`;
+-    
+-    const stalk = new THREE.Mesh(stalkGeo, stalkMat);
+-    stalk.scale.y = cfg.height / 8;
+-    stalkGroup.add(stalk);
+-    
+-    // Add glowing nodes
+-    for (let n = 0; n < cfg.nodes; n++) {
+-      const node = new THREE.Mesh(nodeGeo, nodeMat);
+-      const nodeY = (n + 1) * (cfg.height / (cfg.nodes + 1));
+-      node.position.set(0, nodeY, 0);
+-      node.scale.setScalar(0.6 + Math.random() * 0.4);
+-      stalkGroup.add(node);
+-    }
+-    
+-    stalkGroup.position.set(cfg.x, floorY, cfg.z);
+-    stalkGroup.rotation.z = (Math.random() - 0.5) * 0.15;
+-    stalks.push(stalkGroup);
+-    group.add(stalkGroup);
+-  });
+-
+-  // Mushroom-like structures with bright caps
+-  const mushroomGeo = new THREE.CylinderGeometry(0.4, 0.6, 2, 8);
+-  mushroomGeo.translate(0, 1, 0);
+-  const mushroomMat = new THREE.MeshStandardMaterial({
+-    color: 0x1a2530,
+-    emissive: 0x004455,
+-    emissiveIntensity: 0.4,
+-    roughness: 0.8,
+-    flatShading: true
+-  });
+-  registerFadeMaterial(mushroomMat);
+-
+-  const capGeo = new THREE.SphereGeometry(2, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+-  const capMat = new THREE.MeshBasicMaterial({
+-    color: 0x00ddff,
+-    transparent: true,
+-    opacity: 0.7
+-  });
+-  registerFadeMaterial(capMat);
+-
+-  const mushroomConfigs = [
+-    { x: 20, z: 25, height: 3, capScale: 1.2 },
+-    { x: -30, z: 15, height: 4, capScale: 1.5 },
+-    { x: 10, z: -35, height: 2.5, capScale: 1.0 },
+-    { x: -40, z: -40, height: 3.5, capScale: 1.3 },
+-    { x: 55, z: -20, height: 4.5, capScale: 1.6 },
+-    { x: -15, z: 55, height: 3, capScale: 1.1 },
+-  ];
+-
+-  mushroomConfigs.forEach((cfg, i) => {
+-    const mushGroup = new THREE.Group();
+-    mushGroup.name = `mushroom-${i}`;
+-    
+-    const stem = new THREE.Mesh(mushroomGeo, mushroomMat);
+-    stem.scale.y = cfg.height / 2;
+-    mushGroup.add(stem);
+-    
+-    const cap = new THREE.Mesh(capGeo, capMat);
+-    cap.position.y = cfg.height;
+-    cap.scale.setScalar(cfg.capScale);
+-    mushGroup.add(cap);
+-    
+-    mushGroup.position.set(cfg.x, floorY, cfg.z);
+-    group.add(mushGroup);
+-  });
+-
+-  // Organic tube formations with internal glow
+-  const tubeGeo = new THREE.CylinderGeometry(1.5, 2, 6, 12, 1, true);
+-  const tubeMat = new THREE.MeshBasicMaterial({
+-    color: 0x00ffaa,
+-    transparent: true,
+-    opacity: 0.5,
+-    side: THREE.DoubleSide
+-  });
+-  registerFadeMaterial(tubeMat);
+-
+-  const tubeConfigs = [
+-    { x: 35, z: 10, height: 7, rotX: 0.2, rotZ: 0.1 },
+-    { x: -50, z: 20, height: 5, rotX: -0.15, rotZ: 0.25 },
+-    { x: 5, z: -55, height: 8, rotX: 0.3, rotZ: -0.2 },
+-    { x: -25, z: -15, height: 6, rotX: -0.1, rotZ: 0.15 },
+-  ];
+-
+-  tubeConfigs.forEach((cfg, i) => {
+-    const tube = new THREE.Mesh(tubeGeo, tubeMat);
+-    tube.name = `glow-tube-${i}`;
+-    tube.scale.y = cfg.height / 6;
+-    tube.position.set(cfg.x, floorY + cfg.height / 2, cfg.z);
+-    tube.rotation.set(cfg.rotX, 0, cfg.rotZ);
+-    tube.frustumCulled = false;
+-    group.add(tube);
+-  });
+-
+-  // === ATMOSPHERIC DEPTH (volumetric fog planes) ===
+-  const fogPlaneGeo = new THREE.PlaneGeometry(350, 350);
+-  const fogPlaneMat = new THREE.MeshBasicMaterial({
+-    color: 0x1a3040,
+-    transparent: true,
+-    opacity: 0.15,
+-    depthWrite: false,
+-    side: THREE.DoubleSide
+-  });
+-  registerFadeMaterial(fogPlaneMat);
+-
+-  const fogLayers = [
+-    { y: floorY + 2, opacity: 0.12 },
+-    { y: floorY + 6, opacity: 0.08 },
+-    { y: floorY + 12, opacity: 0.05 },
+-  ];
+-
+-  fogLayers.forEach((cfg, i) => {
+-    const fog = new THREE.Mesh(fogPlaneGeo, fogPlaneMat.clone());
+-    fog.name = `fog-layer-${i}`;
+-    fog.material.opacity = cfg.opacity;
+-    fog.rotation.x = -Math.PI / 2;
+-    fog.position.y = cfg.y;
+-    fog.frustumCulled = false;
+-    group.add(fog);
+-  });
+-
+-  // === MOON (larger, horizon-positioned) ===
+-  const moonGeo = new THREE.IcosahedronGeometry(35, 2);
+-  const moonMat = new THREE.MeshBasicMaterial({ 
+-    color: 0xddaaff, 
+-    transparent: true, 
+-    opacity: 0.95 
+-  });
+-  const moon = new THREE.Mesh(moonGeo, moonMat);
+-  moon.position.set(80, 60, -100);
+-  moon.frustumCulled = false;
+-  group.add(moon);
+-  
+-  const moonGlowGeo = new THREE.IcosahedronGeometry(55, 2);
+-  const moonGlowMat = new THREE.MeshBasicMaterial({ 
+-    color: 0xaa66ff, 
+-    transparent: true, 
+-    opacity: 0.25, 
+-    side: THREE.BackSide 
+-  });
+-  const moonGlow = new THREE.Mesh(moonGlowGeo, moonGlowMat);
+-  moonGlow.position.copy(moon.position);
+-  moonGlow.frustumCulled = false;
+-  group.add(moonGlow);
+-  registerFadeMaterial(moonMat);
+-  registerFadeMaterial(moonGlowMat);
+-
+-  // === STARS (350, shader-based twinkle) ===
+-  const starCount = 350;
+-  const starPositions = new Float32Array(starCount * 3);
+-  const starPhases = new Float32Array(starCount);
+-
+-  for (let i = 0; i < starCount; i++) {
+-    const theta = Math.random() * Math.PI * 2;
+-    const radius = 120 + Math.random() * 60;
+-    const phi = Math.random() * Math.PI * 0.5;
+-    starPositions[i * 3] = Math.cos(theta) * Math.sin(phi) * radius;
+-    starPositions[i * 3 + 1] = Math.cos(phi) * radius + 30;
+-    starPositions[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * radius;
+-    starPhases[i] = Math.random() * Math.PI * 2;
+-  }
+-
+-  const starGeometry = new THREE.BufferGeometry();
+-  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+-  starGeometry.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
+-
+-  const starMaterial = new THREE.ShaderMaterial({
+-    uniforms: {
+-      uTime: { value: 0 },
+-      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+-    },
+-    vertexShader: `
+-      attribute float aPhase;
+-      uniform float uTime;
+-      uniform float uPixelRatio;
+-      varying float vTwinkle;
+-      void main() {
+-        vTwinkle = 0.5 + 0.5 * sin(uTime * 1.5 + aPhase);
+-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+-        float size = 2.2 * uPixelRatio * vTwinkle;
+-        gl_PointSize = size * (200.0 / -mvPosition.z);
+-        gl_Position = projectionMatrix * mvPosition;
+-      }
+-    `,
+-    fragmentShader: `
+-      varying float vTwinkle;
+-      void main() {
+-        float dist = length(gl_PointCoord - vec2(0.5));
+-        if (dist > 0.5) discard;
+-        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+-        vec3 color = mix(vec3(1.0, 0.9, 0.7), vec3(0.7, 1.0, 0.9), vTwinkle);
+-        gl_FragColor = vec4(color * (0.75 + vTwinkle * 0.25), alpha * vTwinkle);
+-      }
+-    `,
+-    transparent: true,
+-    depthWrite: false,
+-    fog: false,
+-    blending: THREE.AdditiveBlending
+-  });
+-
+-  const stars = new THREE.Points(starGeometry, starMaterial);
+-  stars.frustumCulled = false;
+-  stars.renderOrder = 999;
+-  group.add(stars);
+-  registerFadeMaterial(starMaterial);
+-
+-  // === ANIMATION (gentle sway, no floating) ===
+-  group.userData.update = (now, dt) => {
+-    const time = now * 0.001;
+-    
+-    // Stars twinkle
+-    starMaterial.uniforms.uTime.value = time;
+-    
+-    // Stalks sway gently
+-    stalks.forEach((stalk, i) => {
+-      stalk.rotation.z = Math.sin(time * 0.5 + i * 1.2) * 0.08;
+-      stalk.rotation.x = Math.cos(time * 0.4 + i * 0.8) * 0.05;
+-    });
+-  };
+-
+-  // Alien floor HUD height
+-  group.position.set(-0.048, -0.28, -2.475);
+-}
+-
+-function buildHellscapeLavaScene(group, deps) {
+-  const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
+-  
+-  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
+-  const floorY = floorHeight;
+-  const sceneColor = 0x1a0505;
+-
+-  // Sky dome (dark red/black)
+-  const skyGeo = new THREE.SphereGeometry(500, 32, 24);
+-  const skyMat = new THREE.MeshBasicMaterial({
+-    color: sceneColor,
+-    side: THREE.BackSide,
+-  });
+-  const sky = new THREE.Mesh(skyGeo, skyMat);
+-  sky.frustumCulled = false;
+-  sky.renderOrder = -20;
+-  group.add(sky);
+-  registerFadeMaterial(skyMat);
+-
+-  // Lighting
+-  const ambientLight = new THREE.AmbientLight(0x331111, 0.3);
+-  group.add(ambientLight);
+-
+-  // Ground with lava rivers
+-  const groundGeo = new THREE.PlaneGeometry(200, 200, 100, 100);
+-  groundGeo.rotateX(-Math.PI / 2);
+-  const groundPos = groundGeo.attributes.position;
+-  const groundColors = [];
+-  for (let i = 0; i < groundPos.count; i++) {
+-    const x = groundPos.getX(i);
+-    const z = groundPos.getZ(i);
+-    // Lava river pattern
+-    const lavaPattern = Math.sin(x * 0.05) * Math.cos(z * 0.05) + Math.sin(x * 0.1 + z * 0.1) * 0.5;
+-    const isLava = lavaPattern > 0.3;
+-    const height = isLava ? -0.5 : Math.sin(x * 0.02) * Math.cos(z * 0.02) * 2;
+-    groundPos.setY(i, height);
+-    const color = isLava ? new THREE.Color(0xff2200) : new THREE.Color(0x1a0505);
+-    groundColors.push(color.r, color.g, color.b);
+-  }
+-  groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(groundColors, 3));
+-  groundGeo.computeVertexNormals();
+-  const groundMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+-  const ground = new THREE.Mesh(groundGeo, groundMat);
+-  ground.name = 'hellscape-lava-ground';
+-  ground.userData.planeName = 'hellscape-lava-ground';
+-  ground.position.y = floorY;
+-  ground.frustumCulled = false;
+-  group.add(ground);
+-  registerFadeMaterial(groundMat);
+-
+-  // Flash overlay for damage feedback
+-  const flashGeo = new THREE.PlaneGeometry(200, 200);
+-  const flashMat = new THREE.MeshBasicMaterial({
+-    color: 0xff0000,
+-    transparent: true,
+-    opacity: 0,
+-    depthWrite: false,
+-    side: THREE.DoubleSide
+-  });
+-  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
+-  flashPlane.name = 'hellscape-lava-damage-flash-plane';
+-  flashPlane.userData.planeName = 'hellscape-lava-damage-flash-plane';
+-  flashPlane.rotation.x = -Math.PI / 2;
+-  flashPlane.position.y = floorY + 0.1;
+-  flashPlane.frustumCulled = false;
+-  group.add(flashPlane);
+-  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
+-
+-  // Lava glow plane (below ground for glow effect)
+-  const glowGeo = new THREE.PlaneGeometry(200, 200);
+-  const glowMat = new THREE.MeshBasicMaterial({
+-    color: 0xff4400,
+-    transparent: true,
+-    opacity: 0.5,
+-    depthWrite: false,
+-    side: THREE.DoubleSide
+-  });
+-  const glowPlane = new THREE.Mesh(glowGeo, glowMat);
+-  glowPlane.rotation.x = -Math.PI / 2;
+-  glowPlane.position.y = floorY - 0.6;
+-  glowPlane.frustumCulled = false;
+-  group.add(glowPlane);
+-  registerFadeMaterial(glowMat);
+-
+-  // Fire particles
+-  const fireCount = 150;
+-  const firePositions = new Float32Array(fireCount * 3);
+-  const fireVelocities = [];
+-  const fireLifetimes = [];
+-  for (let i = 0; i < fireCount; i++) {
+-    firePositions[i * 3] = (Math.random() - 0.5) * 80;
+-    firePositions[i * 3 + 1] = floorY - 0.3;
+-    firePositions[i * 3 + 2] = (Math.random() - 0.5) * 80;
+-    fireVelocities.push({
+-      x: (Math.random() - 0.5) * 0.1,
+-      y: 0.5 + Math.random() * 1.5,
+-      z: (Math.random() - 0.5) * 0.1
+-    });
+-    fireLifetimes.push(Math.random() * 2);
+-  }
+-  const fireGeo = new THREE.BufferGeometry();
+-  fireGeo.setAttribute('position', new THREE.BufferAttribute(firePositions, 3));
+-  const fireMat = new THREE.PointsMaterial({
+-    color: 0xff6600,
+-    size: 0.8,
+-    transparent: true,
+-    opacity: 0.8,
+-    blending: THREE.AdditiveBlending
+-  });
+-  const fire = new THREE.Points(fireGeo, fireMat);
+-  fire.frustumCulled = false;
+-  group.add(fire);
+-  registerFadeMaterial(fireMat);
+-
+-  // Ember particles (smaller, faster)
+-  const emberCount = 200;
+-  const emberPositions = new Float32Array(emberCount * 3);
+-  const emberVelocities = [];
+-  for (let i = 0; i < emberCount; i++) {
+-    emberPositions[i * 3] = (Math.random() - 0.5) * 100;
+-    emberPositions[i * 3 + 1] = floorY + Math.random() * 30;
+-    emberPositions[i * 3 + 2] = (Math.random() - 0.5) * 100;
+-    emberVelocities.push({
+-      x: (Math.random() - 0.5) * 0.2,
+-      y: 0.3 + Math.random() * 0.5,
+-      z: (Math.random() - 0.5) * 0.2
+-    });
+-  }
+-  const emberGeo = new THREE.BufferGeometry();
+-  emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPositions, 3));
+-  const emberMat = new THREE.PointsMaterial({
+-    color: 0xffaa00,
+-    size: 0.3,
+-    transparent: true,
+-    opacity: 0.6,
+-    blending: THREE.AdditiveBlending
+-  });
+-  const embers = new THREE.Points(emberGeo, emberMat);
+-  embers.frustumCulled = false;
+-  group.add(embers);
+-  registerFadeMaterial(emberMat);
+-
+-  // Rocky outcrops (procedural)
+-  const createRock = () => {
+-    const rockGeo = new THREE.DodecahedronGeometry(1, 0);
+-    const rockMat = new THREE.MeshBasicMaterial({ color: 0x2a1515, flatShading: true });
+-    const rock = new THREE.Mesh(rockGeo, rockMat);
+-    rock.scale.set(
+-      1 + Math.random() * 2,
+-      1 + Math.random() * 3,
+-      1 + Math.random() * 2
+-    );
+-    rock.rotation.set(
+-      Math.random() * Math.PI,
+-      Math.random() * Math.PI,
+-      Math.random() * Math.PI
+-    );
+-    registerFadeMaterial(rockMat);
+-    return rock;
+-  };
+-
+-  const rockPositions = [
+-    { x: 15, z: 15 },
+-    { x: -20, z: 10 },
+-    { x: 10, z: -25 },
+-    { x: -15, z: -20 },
+-    { x: 25, z: -10 },
+-    { x: -30, z: 25 },
+-  ];
+-  rockPositions.forEach((pos) => {
+-    const rock = createRock();
+-    rock.position.set(pos.x, floorY + 1, pos.z);
+-    group.add(rock);
+-  });
+-
+-  // Ash particles (floating grey particles)
+-  const ashCount = 100;
+-  const ashPositions = new Float32Array(ashCount * 3);
+-  for (let i = 0; i < ashCount; i++) {
+-    ashPositions[i * 3] = (Math.random() - 0.5) * 80;
+-    ashPositions[i * 3 + 1] = Math.random() * 20 + floorY;
+-    ashPositions[i * 3 + 2] = (Math.random() - 0.5) * 80;
+-  }
+-  const ashGeo = new THREE.BufferGeometry();
+-  ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPositions, 3));
+-  const ashMat = new THREE.PointsMaterial({
+-    color: 0x666666,
+-    size: 0.2,
+-    transparent: true,
+-    opacity: 0.4
+-  });
+-  const ash = new THREE.Points(ashGeo, ashMat);
+-  ash.frustumCulled = false;
+-  group.add(ash);
+-  registerFadeMaterial(ashMat);
+-
+-  // Geyser particles (periodic bursts)
+-  const GEYSER_PARTICLE_COUNT = 50;
+-  const geyserPos = new Float32Array(GEYSER_PARTICLE_COUNT * 3);
+-  const geyserSizes = new Float32Array(GEYSER_PARTICLE_COUNT);
+-  const geyserParticleData = [];
+-  for (let i = 0; i < GEYSER_PARTICLE_COUNT; i++) {
+-    geyserPos[i * 3] = 0;
+-    geyserPos[i * 3 + 1] = -1000; // Hidden initially
+-    geyserPos[i * 3 + 2] = 0;
+-    geyserSizes[i] = 0;
+-    geyserParticleData.push({
+-      active: false,
+-      x: 0, y: 0, z: 0,
+-      vx: 0, vy: 0, vz: 0,
+-      life: 0,
+-      maxLife: 0
+-    });
+-  }
+-  const geyserGeo = new THREE.BufferGeometry();
+-  geyserGeo.setAttribute('position', new THREE.BufferAttribute(geyserPos, 3));
+-  geyserGeo.setAttribute('aSize', new THREE.BufferAttribute(geyserSizes, 1));
+-  const geyserMat = new THREE.ShaderMaterial({
+-    uniforms: {
+-      uColor: { value: new THREE.Color(0xff6600) }
+-    },
+-    vertexShader: `
+-      attribute float aSize;
+-      void main() {
+-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+-        gl_PointSize = aSize * (300.0 / -mvPosition.z);
+-        gl_Position = projectionMatrix * mvPosition;
+-      }
+-    `,
+-    fragmentShader: `
+-      uniform vec3 uColor;
+-      void main() {
+-        float dist = length(gl_PointCoord - vec2(0.5));
+-        if (dist > 0.5) discard;
+-        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+-        gl_FragColor = vec4(uColor, alpha * 0.8);
+-      }
+-    `,
+-    transparent: true,
+-    depthWrite: false,
+-    blending: THREE.AdditiveBlending
+-  });
+-  const geyserParticles = new THREE.Points(geyserGeo, geyserMat);
+-  geyserParticles.frustumCulled = false;
+-  group.add(geyserParticles);
+-  registerFadeMaterial(geyserMat);
+-
+-  // Flame pillars (3 locations with constant particle streams)
+-  const FLAME_PILLAR_PARTICLES = 60;
+-  const TOTAL_FLAME_PILLAR_PARTICLES = FLAME_PILLAR_PARTICLES * 3;
+-  const flamePillarPos = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES * 3);
+-  const flamePillarSizes = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES);
+-  const flameParticleData = [];
+-  const pillarDefs = [
+-    { x: -20, z: -15, height: 15, speed: 8 },
+-    { x: 15, z: -20, height: 12, speed: 10 },
+-    { x: 0, z: 20, height: 18, speed: 7 }
+-  ];
+-
+-  const initFlameParticle = (i) => {
+-    const pillarIdx = Math.floor(i / FLAME_PILLAR_PARTICLES);
+-    const pillar = pillarDefs[pillarIdx];
+-    const pd = flameParticleData[i];
+-    pd.pillarIdx = pillarIdx;
+-    pd.t = Math.random();
+-    pd.speed = 0.8 + Math.random() * 0.4;
+-    pd.driftPhase = Math.random() * Math.PI * 2;
+-    pd.driftAmp = 0.3 + Math.random() * 0.4;
+-
+-    const i3 = i * 3;
+-    flamePillarPos[i3] = pillar.x + (Math.random() - 0.5) * 2;
+-    flamePillarPos[i3 + 1] = floorY + pd.t * pillar.height;
+-    flamePillarPos[i3 + 2] = pillar.z + (Math.random() - 0.5) * 2;
+-    flamePillarSizes[i] = 2.0;
+-  };
+-
+-  for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
+-    flameParticleData.push({
+-      pillarIdx: 0,
+-      t: 0,
+-      speed: 1,
+-      driftPhase: 0,
+-      driftAmp: 0
+-    });
+-    initFlameParticle(i);
+-  }
+-
+-  const flamePillarGeo = new THREE.BufferGeometry();
+-  flamePillarGeo.setAttribute('position', new THREE.BufferAttribute(flamePillarPos, 3));
+-  flamePillarGeo.setAttribute('aSize', new THREE.BufferAttribute(flamePillarSizes, 1));
+-  const flamePillarMat = new THREE.ShaderMaterial({
+-    uniforms: {
+-      uColor: { value: new THREE.Color(0xff4400) }
+-    },
+-    vertexShader: `
+-      attribute float aSize;
+-      void main() {
+-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+-        gl_PointSize = aSize * (200.0 / -mvPosition.z);
+-        gl_Position = projectionMatrix * mvPosition;
+-      }
+-    `,
+-    fragmentShader: `
+-      uniform vec3 uColor;
+-      void main() {
+-        float dist = length(gl_PointCoord - vec2(0.5));
+-        if (dist > 0.5) discard;
+-        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+-        gl_FragColor = vec4(uColor, alpha * 0.9);
+-      }
+-    `,
+-    transparent: true,
+-    depthWrite: false,
+-    blending: THREE.AdditiveBlending
+-  });
+-  const flamePillars = new THREE.Points(flamePillarGeo, flamePillarMat);
+-  flamePillars.frustumCulled = false;
+-  group.add(flamePillars);
+-  registerFadeMaterial(flamePillarMat);
+-
+-  // Geyser state
+-  let lastGeyserTime = 0;
+-  const geyserInterval = 2000; // ms between bursts
+-  const activeGeyserParticles = [];
+-
+-  const createGeyserBurst = (now) => {
+-    const burstX = (Math.random() - 0.5) * 60;
+-    const burstZ = (Math.random() - 0.5) * 60;
+-
+-    for (let i = 0; i < 15; i++) {
+-      const particleIdx = activeGeyserParticles.length % GEYSER_PARTICLE_COUNT;
+-      const pd = geyserParticleData[particleIdx];
+-      pd.active = true;
+-      pd.x = burstX + (Math.random() - 0.5) * 2;
+-      pd.y = floorY;
+-      pd.z = burstZ + (Math.random() - 0.5) * 2;
+-      pd.vx = (Math.random() - 0.5) * 4;
+-      pd.vy = 10 + Math.random() * 8;
+-      pd.vz = (Math.random() - 0.5) * 4;
+-      pd.life = 0;
+-      pd.maxLife = 1.5 + Math.random() * 1;
+-
+-      if (activeGeyserParticles.length < GEYSER_PARTICLE_COUNT) {
+-        activeGeyserParticles.push(particleIdx);
+-      }
+-    }
+-  };
+-
+-  // Animation update
+-  group.userData.update = (now, dt) => {
+-    const time = now * 0.001;
+-    const dtSec = dt * 0.001;
+-
+-    // Fire particles
+-    const firePos = fireGeo.attributes.position.array;
+-    for (let i = 0; i < fireCount; i++) {
+-      const idx = i * 3;
+-      firePos[idx] += fireVelocities[i].x * dt;
+-      firePos[idx + 1] += fireVelocities[i].y * dt;
+-      firePos[idx + 2] += fireVelocities[i].z * dt;
+-      fireLifetimes[i] += dtSec;
+-
+-      if (fireLifetimes[i] > 2 || firePos[idx + 1] > floorY + 10) {
+-        firePos[idx] = (Math.random() - 0.5) * 80;
+-        firePos[idx + 1] = floorY - 0.3;
+-        firePos[idx + 2] = (Math.random() - 0.5) * 80;
+-        fireLifetimes[i] = 0;
+-      }
+-    }
+-    fireGeo.attributes.position.needsUpdate = true;
+-
+-    // Ember particles
+-    const emberPosArr = emberGeo.attributes.position.array;
+-    for (let i = 0; i < emberCount; i++) {
+-      const idx = i * 3;
+-      emberPosArr[idx] += emberVelocities[i].x * dt;
+-      emberPosArr[idx + 1] += emberVelocities[i].y * dt;
+-      emberPosArr[idx + 2] += emberVelocities[i].z * dt;
+-
+-      if (emberPosArr[idx + 1] > floorY + 30) {
+-        emberPosArr[idx] = (Math.random() - 0.5) * 100;
+-        emberPosArr[idx + 1] = floorY;
+-        emberPosArr[idx + 2] = (Math.random() - 0.5) * 100;
+-      }
+-    }
+-    emberGeo.attributes.position.needsUpdate = true;
+-
+-    // Ash particles
+-    const ashPosArr = ashGeo.attributes.position.array;
+-    for (let i = 0; i < ashCount; i++) {
+-      const idx = i * 3;
+-      ashPosArr[idx] += Math.sin(time + i) * 0.02;
+-      ashPosArr[idx + 1] += 0.01 * dt;
+-      ashPosArr[idx + 2] += Math.cos(time + i) * 0.02;
+-
+-      if (ashPosArr[idx] > 40) ashPosArr[idx] = -40;
+-      if (ashPosArr[idx] < -40) ashPosArr[idx] = 40;
+-      if (ashPosArr[idx + 1] > floorY + 20) ashPosArr[idx + 1] = floorY;
+-      if (ashPosArr[idx + 2] > 40) ashPosArr[idx + 2] = -40;
+-      if (ashPosArr[idx + 2] < -40) ashPosArr[idx + 2] = 40;
+-    }
+-    ashGeo.attributes.position.needsUpdate = true;
+-
+-    // Geyser trigger and update
+-    if (now - lastGeyserTime > geyserInterval) {
+-      createGeyserBurst(now);
+-      lastGeyserTime = now;
+-    }
+-
+-    const geyserPosArr = geyserGeo.attributes.position.array;
+-    let activeCount = 0;
+-    for (let i = geyserParticleData.length - 1; i >= 0; i--) {
+-      const p = geyserParticleData[i];
+-      if (!p.active) continue;
+-
+-      p.life += dtSec;
+-
+-      if (p.life > p.maxLife) {
+-        p.active = false;
+-        continue;
+-      }
+-
+-      p.x += p.vx * dtSec;
+-      p.y += p.vy * dtSec;
+-      p.z += p.vz * dtSec;
+-      p.vy -= 18 * dtSec;
+-
+-      const idx = activeCount * 3;
+-      geyserPosArr[idx] = p.x;
+-      geyserPosArr[idx + 1] = p.y;
+-      geyserPosArr[idx + 2] = p.z;
+-      activeCount++;
+-    }
+-    geyserGeo.setDrawRange(0, activeCount);
+-    geyserGeo.attributes.position.needsUpdate = true;
+-
+-    // Flame pillar animation
+-    const fpPos = flamePillarGeo.attributes.position.array;
+-    const fpSizes = flamePillarGeo.attributes.aSize.array;
+-    for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
+-      const pd = flameParticleData[i];
+-      const pillar = pillarDefs[pd.pillarIdx];
+-      const i3 = i * 3;
+-
+-      pd.t += (pd.speed * dtSec * pillar.speed) / Math.max(1, pillar.height);
+-
+-      if (pd.t >= 1.0) {
+-        initFlameParticle(i);
+-      } else {
+-        const driftWave = Math.sin(time * 2.2 + pd.driftPhase) * pd.driftAmp * dtSec;
+-        fpPos[i3] += Math.cos(pd.driftPhase) * driftWave;
+-        fpPos[i3 + 1] += pd.speed * dtSec * pillar.speed;
+-        fpPos[i3 + 2] += Math.sin(pd.driftPhase) * driftWave;
+-
+-        fpSizes[i] = Math.max(0.3, (1.0 - pd.t) * 3.0);
+-      }
+-    }
+-    flamePillarGeo.attributes.position.needsUpdate = true;
+-    flamePillarGeo.attributes.aSize.needsUpdate = true;
+-  };
+-
+-  // Hellscape floor HUD height: group.position.y = 0.05
+-  group.position.set(26.599, 0.05, -0.486);
+-  group.rotation.y = 0.248; // yaw: 14.21°
+-}
+diff --git a/biomes/alien-planet.js b/biomes/alien-planet.js
+new file mode 100644
+index 0000000..1ffcc5b
+--- /dev/null
++++ b/biomes/alien-planet.js
+@@ -0,0 +1,473 @@
++// ============================================================
++//  BIOME: Alien Planet
++//  Purple/green alien world with glowing plants and city
++//  Extracted from biome-scenes.js (restored version)
++// ============================================================
++
++import * as THREE from 'three';
++
++export function buildAlienPlanetScene(group, deps) {
++  const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
++  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
++  const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
++
++  // Ground
++  const groundGeo = new THREE.PlaneGeometry(300, 300, 120, 120);
++  const groundPositions = groundGeo.attributes.position;
++  for (let i = 0; i < groundPositions.count; i++) {
++    const x = groundPositions.getX(i);
++    const y = groundPositions.getY(i);
++    groundPositions.setZ(i, Math.sin(x * 0.03) * Math.cos(y * 0.03) * 0.3);
++  }
++  groundGeo.computeVertexNormals();
++  const groundMat = new THREE.MeshStandardMaterial({ color: 0x0a0510, roughness: 1, metalness: 0, flatShading: true });
++  const ground = new THREE.Mesh(groundGeo, groundMat);
++  ground.rotation.x = -Math.PI / 2;
++  ground.position.y = floorY;
++  ground.frustumCulled = false;
++  group.add(ground);
++
++  // Flash overlay plane for damage feedback (Issue 2: 320x320 for full floor coverage)
++  const flashGeo = new THREE.PlaneGeometry(320, 320);
++  const flashMat = new THREE.MeshBasicMaterial({
++    color: 0xff0000,
++    transparent: true,
++    opacity: 0,
++    depthWrite: false,
++    side: THREE.DoubleSide
++  });
++  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
++  flashPlane.rotation.x = -Math.PI / 2;
++  flashPlane.position.y = floorY + 0.1;
++  flashPlane.frustumCulled = false;
++  group.add(flashPlane);
++  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
++
++  // Moon and glow
++  const moonGeo = new THREE.IcosahedronGeometry(24, 1);
++  const moonMat = new THREE.MeshBasicMaterial({ color: 0xddaaff, transparent: true, opacity: 0.95 });
++  const moon = new THREE.Mesh(moonGeo, moonMat);
++  moon.position.set(60, 80, -40);
++  moon.frustumCulled = false; // Fix disappearing when looking up
++  group.add(moon);
++  const moonGlowGeo = new THREE.IcosahedronGeometry(36, 1);
++  const moonGlowMat = new THREE.MeshBasicMaterial({ color: 0xaa66ff, transparent: true, opacity: 0.15, side: THREE.BackSide });
++  const moonGlow = new THREE.Mesh(moonGlowGeo, moonGlowMat);
++  moonGlow.position.copy(moon.position);
++  moonGlow.frustumCulled = false; // Fix disappearing when looking up
++  group.add(moonGlow);
++
++  // Lighting - moonLight for ambient scene lighting (shadows DISABLED for FPS)
++  const moonLight = new THREE.DirectionalLight(0xcc88ff, 8.4);
++  moonLight.position.set(60, 80, -40);
++  // SHADOWS DISABLED - major FPS cost in this biome
++  moonLight.castShadow = false;
++  group.add(moonLight);
++
++  // Green light - moved HIGH (y: 35) to not block view
++  const greenLight = new THREE.PointLight(0x00ff66, 1.2, 80);
++  greenLight.position.set(0, 35, 0);
++  group.add(greenLight);
++
++  // Purple accent lights
++  const purpleLight1 = new THREE.PointLight(0x6622aa, 1.5, 50);
++  purpleLight1.position.set(-30, 20, -30);
++  group.add(purpleLight1);
++
++  const purpleLight2 = new THREE.PointLight(0x8833cc, 1.2, 45);
++  purpleLight2.position.set(25, 18, 35);
++  group.add(purpleLight2);
++
++  // River path used for plant placement (but no visible river mesh)
++  const riverPoints = [];
++  for (let i = 0; i < 60; i++) {
++    const t = i / 59;
++    const x = Math.sin(t * Math.PI * 2.5) * 12 + Math.sin(t * Math.PI * 5) * 4;
++    const z = t * 120 - 60;
++    riverPoints.push(new THREE.Vector3(x, 0.1, z));
++  }
++  // Green river-object REMOVED - was blocking view and looking out of place
++
++  // Mountains - 3 rings of procedural jagged mountains
++  const createMountain = (x, z, scale) => {
++    const peakCount = 1 + Math.floor(Math.random() * 3);
++    const mountainGroup = new THREE.Group();
++    for (let p = 0; p < peakCount; p++) {
++      const height = (12 + Math.random() * 18) * scale;
++      const radius = Math.max(2.5, (2 + Math.random() * 3) * scale); // Minimum radius of 2.5 for no skinny pyramids
++      const peakGeo = new THREE.ConeGeometry(radius, height, 5 + Math.floor(Math.random() * 3));
++      const peakMat = new THREE.MeshStandardMaterial({
++        color: 0x1a1020,
++        roughness: 0.9,
++        metalness: 0.1,
++        flatShading: true
++      });
++      const peak = new THREE.Mesh(peakGeo, peakMat);
++      peak.position.set(
++        (Math.random() - 0.5) * 4 * scale,
++        height / 2,
++        (Math.random() - 0.5) * 4 * scale
++      );
++      // Issue 5: Enable shadows for mountains
++      peak.castShadow = true;
++      peak.receiveShadow = true;
++      mountainGroup.add(peak);
++    }
++    mountainGroup.position.set(x, floorY, z);
++    mountainGroup.frustumCulled = false; // Prevent culling at distance
++    return mountainGroup;
++  };
++
++  // Mountains - single ring for FPS (was 2 rings = 24 mountains)
++  for (let ring = 0; ring < 1; ring++) {
++    const count = 14;  // Single ring of 14 mountains (was 8+16=24)
++    const radius = 40;
++    for (let i = 0; i < count; i++) {
++      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.3;
++      const r = radius + (Math.random() - 0.5) * 10;
++      const x = Math.cos(angle) * r;
++      const z = Math.sin(angle) * r;
++      group.add(createMountain(x, z, 1.2 + Math.random() * 0.6));
++    }
++  }
++
++  // Alien Plants - 3 types along river (removed fern type - too expensive with 40-72 meshes)
++  const alienPlants = [];
++
++  const createAlienPlant = (x, z, type) => {
++    const plantGroup = new THREE.Group();
++
++    if (type === 0) {
++      // Glowing Spire - tall thin cone with glowing orb on top
++      const height = 3 + Math.random() * 5;
++      const spireGeo = new THREE.ConeGeometry(0.2, height, 6);
++      const spireMat = new THREE.MeshStandardMaterial({
++        color: 0x00aa33,
++        emissive: 0x00ff44,
++        emissiveIntensity: 0.6,
++        roughness: 0.5
++      });
++      const spire = new THREE.Mesh(spireGeo, spireMat);
++      spire.position.y = height / 2;
++      spire.castShadow = false;
++      spire.receiveShadow = false;
++      plantGroup.add(spire);
++
++      // Glowing orb on top
++      const orbGeo = new THREE.IcosahedronGeometry(0.3, 1);
++      const orbMat = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
++      const orb = new THREE.Mesh(orbGeo, orbMat);
++      orb.position.y = height + 0.2;
++      orb.castShadow = false;
++      orb.receiveShadow = false;
++      plantGroup.add(orb);
++
++    } else if (type === 1) {
++      // Crystal Cluster - 3 small angular cones
++      for (let c = 0; c < 3; c++) {
++        const height = 0.8 + Math.random() * 1.2;
++        const crystalGeo = new THREE.ConeGeometry(0.15, height, 3);
++        const crystalMat = new THREE.MeshStandardMaterial({
++          color: 0x00cc55,
++          emissive: 0x00ff66,
++          emissiveIntensity: 0.7,
++          roughness: 0.3
++        });
++        const crystal = new THREE.Mesh(crystalGeo, crystalMat);
++        crystal.position.set(
++          (Math.random() - 0.5) * 0.4,
++          height / 2,
++          (Math.random() - 0.5) * 0.4
++        );
++        crystal.rotation.set(
++          (Math.random() - 0.5) * 0.4,
++          Math.random() * Math.PI,
++          (Math.random() - 0.5) * 0.4
++        );
++        crystal.castShadow = false;
++        crystal.receiveShadow = false;
++        plantGroup.add(crystal);
++      }
++
++    } else if (type === 2) {
++      // Mushroom - cylinder stem + hemisphere cap
++      const stemHeight = 0.5 + Math.random() * 0.5;
++      const stemGeo = new THREE.CylinderGeometry(0.1, 0.15, stemHeight, 8);
++      const stemMat = new THREE.MeshStandardMaterial({ color: 0x204020, roughness: 0.8 });
++      const stem = new THREE.Mesh(stemGeo, stemMat);
++      stem.position.y = stemHeight / 2;
++      stem.castShadow = false;
++      stem.receiveShadow = false;
++      plantGroup.add(stem);
++
++      const capGeo = new THREE.SphereGeometry(0.4, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
++      const capMat = new THREE.MeshStandardMaterial({
++        color: 0x00aa44,
++        emissive: 0x00ff55,
++        emissiveIntensity: 0.5,
++        roughness: 0.6
++      });
++      const cap = new THREE.Mesh(capGeo, capMat);
++      cap.position.y = stemHeight;
++      cap.castShadow = false;
++      cap.receiveShadow = false;
++      plantGroup.add(cap);
++    }
++
++    plantGroup.position.set(x, floorY, z);
++    plantGroup.castShadow = false;
++    plantGroup.receiveShadow = false;
++    // REMOVED: Sway animation data - per-frame rotation is too expensive
++
++    return plantGroup;
++  };
++
++  // Place 15 plants along river with random offsets (reduced for FPS)
++  for (let i = 0; i < 15; i++) {
++    const t = Math.random();
++    const riverT = t * 59;
++    const idx = Math.floor(riverT);
++    const frac = riverT - idx;
++
++    const p1 = riverPoints[Math.min(idx, 59)];
++    const p2 = riverPoints[Math.min(idx + 1, 59)];
++
++    const x = p1.x + (p2.x - p1.x) * frac + (Math.random() - 0.5) * 8;
++    const z = p1.z + (p2.z - p1.z) * frac + (Math.random() - 0.5) * 8;
++
++    // Keep plants away from river center
++    const distToCenter = Math.abs(x - (p1.x + (p2.x - p1.x) * frac));
++    if (distToCenter < 3) continue;
++
++    // AGGRESSIVE: Skip plants behind player (positive Z)
++    if (z > 0) continue;
++
++    // Clearance zone: no tall plants within 12 units directly in front of player spawn
++    const clearanceRadius = 12;
++    const distToPlayer = Math.sqrt(x * x + z * z);
++    if (distToPlayer < clearanceRadius && z < 5) {
++      continue; // Skip this plant to keep front area clear
++    }
++
++    const plantType = Math.floor(Math.random() * 3);  // Only 3 types (removed fern)
++    const plant = createAlienPlant(x, z, plantType);
++    // Shadow casting disabled for FPS
++    alienPlants.push(plant);
++    group.add(plant);
++  }
++
++  // Extra flora spread around the player (reduced for FPS)
++  // AGGRESSIVE: Only spawn in front of player (negative Z, front 180-degree arc)
++  for (let i = 0; i < 15; i++) {  // Reduced from 50 to 15 (total plants: 30 instead of 100)
++    const angle = Math.random() * Math.PI * 2;
++    const radius = 8 + Math.random() * 40;
++    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 8;
++    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 8;
++
++    // AGGRESSIVE: Skip objects behind player (positive Z)
++    if (z > 0) continue;
++
++    // Clearance zone: no tall plants within 12 units directly in front of player spawn
++    const clearanceRadius = 12;
++    const distToPlayer = Math.sqrt(x * x + z * z);
++    if (distToPlayer < clearanceRadius && z < 5) {
++      continue; // Skip this plant to keep front area clear
++    }
++
++    const plantType = Math.floor(Math.random() * 3);  // Only 3 types (removed fern)
++    const plant = createAlienPlant(x, z, plantType);
++    // Shadow casting disabled for FPS
++    plant.castShadow = false;
++    plant.receiveShadow = false;
++    plant.traverse((child) => {
++      if (child.isMesh) {
++        child.castShadow = false;
++        child.receiveShadow = false;
++      }
++    });
++    alienPlants.push(plant);
++    group.add(plant);
++  }
++
++  // Small fauna critters (reduced for FPS)
++  // AGGRESSIVE: Only spawn in front of player (negative Z)
++  const critterGeo = new THREE.SphereGeometry(0.18, 8, 6);
++  const critterGlowGeo = new THREE.SphereGeometry(0.3, 8, 6);
++  for (let i = 0; i < 5; i++) {  // Reduced from 10 to 5 for FPS
++    const angle = Math.random() * Math.PI * 2;
++    const radius = 6 + Math.random() * 35;
++    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 4;
++    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 4;
++
++    // AGGRESSIVE: Skip critters behind player (positive Z)
++    if (z > 0) continue;
++
++    const critterGroup = new THREE.Group();
++    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00aa55, emissive: 0x00ff66, emissiveIntensity: 0.4 });
++    const body = new THREE.Mesh(critterGeo, bodyMat);
++    body.position.y = 0.2;
++    body.castShadow = false;
++    body.receiveShadow = false;
++    critterGroup.add(body);
++
++    const glowMat = new THREE.MeshBasicMaterial({ color: 0x33ffaa, transparent: true, opacity: 0.3 });
++    const glow = new THREE.Mesh(critterGlowGeo, glowMat);
++    glow.position.y = 0.2;
++    critterGroup.add(glow);
++
++    critterGroup.position.set(x, floorY, z);
++    critterGroup.rotation.y = Math.random() * Math.PI * 2;
++    group.add(critterGroup);
++  }
++
++  // Fireflies - 25 particles with gentle drift (reduced from 60 for FPS)
++  // AGGRESSIVE: Only spawn in front of player (negative Z)
++  const fireflyPositions = [];
++  const fireflyGeo = new THREE.BufferGeometry();
++
++  for (let i = 0; i < 25; i++) {
++    const angle = Math.random() * Math.PI * 2;
++    const radius = 4 + Math.random() * 35;
++    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 3;
++    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * 3;
++    const y = 0.5 + Math.random() * 3;  // Float above ground
++
++    // AGGRESSIVE: Skip fireflies behind player (positive Z)
++    if (z > 0) continue;
++
++    fireflyPositions.push(x, y, z);
++  }
++
++  fireflyGeo.setAttribute('position', new THREE.Float32BufferAttribute(fireflyPositions, 3));
++  const fireflyMat = new THREE.PointsMaterial({
++    color: 0x44ff88,
++    size: 0.12,
++    transparent: true,
++    opacity: 0.9,
++    sizeAttenuation: true
++  });
++  const fireflies = new THREE.Points(fireflyGeo, fireflyMat);
++  fireflies.frustumCulled = false; // Fix disappearing when looking up
++  group.add(fireflies);
++
++  // River sparkles removed along with river mesh
++
++  // Instanced city - FAR on horizon (was too close at 55-100)
++  const cityShaderMat = new THREE.ShaderMaterial({
++    uniforms: {
++      uTime: { value: 0 },
++      uMoonDir: { value: new THREE.Vector3(60, 80, -40).normalize() },
++      uMoonColor: { value: new THREE.Color(0xcc88ff) },
++      uBaseColor: { value: new THREE.Color(0x0a0a15) }
++    },
++    vertexShader: `varying vec2 vUv; varying vec3 vNormal; varying vec3 vWorldPos; void main(){ vUv=uv; vNormal=normalize(normalMatrix*normal); vec4 worldPos=modelMatrix*instanceMatrix*vec4(position,1.0); vWorldPos=worldPos.xyz; gl_Position=projectionMatrix*viewMatrix*worldPos; }`,
++    fragmentShader: `uniform float uTime; uniform vec3 uMoonDir; uniform vec3 uMoonColor; uniform vec3 uBaseColor; varying vec2 vUv; varying vec3 vNormal; float rand(vec2 co){ return fract(sin(dot(co, vec2(12.9898,78.233)))*43758.5453);} void main(){ float moonLight=max(dot(vNormal,uMoonDir),0.0); vec3 finalColor=uBaseColor*(0.2+moonLight*0.8)*uMoonColor; vec2 uv=vUv; float numWindowsX=6.0; float numWindowsY=15.0; vec2 grid=floor(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); vec2 gridUv=fract(vec2(uv.x*numWindowsX, uv.y*numWindowsY)); float windowMask=step(0.15,gridUv.x)*step(gridUv.x,0.85)*step(0.1,gridUv.y)*step(gridUv.y,0.9); float r=rand(grid); float isLit=step(0.5,r); if(windowMask>0.5 && isLit>0.5){ vec3 windowColor=mix(vec3(0.0,1.0,0.5), vec3(0.5,0.0,1.0), rand(grid*0.5)); float flicker=0.9+0.1*sin(uTime*2.0+rand(grid)*10.0); finalColor=windowColor*flicker*1.5; } gl_FragColor=vec4(finalColor,1.0); }`
++  });
++  const boxGeo = new THREE.BoxGeometry(1, 1, 1);
++  const cylinderGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
++  const coneGeo = new THREE.BoxGeometry(1, 1, 1);
++  const dummy = new THREE.Object3D();
++  const cityMeshes = [];
++
++  const generateCityLayer = (geometry, count, minDist, maxDist, minHeight, maxHeight) => {
++    const mesh = new THREE.InstancedMesh(geometry, cityShaderMat, count);
++    for (let i = 0; i < count; i++) {
++      const angle = Math.random() * Math.PI * 2;
++      const dist = minDist + Math.random() * (maxDist - minDist);
++      const height = minHeight + Math.random() * (maxHeight - minHeight);
++      const width = 1.5 + Math.random() * 4.5; // 3x thicker (was 0.5 + Math.random() * 1.5)
++      dummy.position.set(Math.cos(angle) * dist, (height / 2) - 3, Math.sin(angle) * dist);
++      dummy.scale.set(width, height, width);
++      dummy.rotation.y = Math.random() * Math.PI;
++      dummy.updateMatrix();
++      mesh.setMatrixAt(i, dummy.matrix);
++    }
++    return mesh;
++  };
++
++  // Far background city on horizon (REDUCED for FPS: was 100+80+60=240, now 30+25+20=75)
++  cityMeshes.push(generateCityLayer(boxGeo, 30, 120, 150, 30, 60));
++  cityMeshes.push(generateCityLayer(cylinderGeo, 25, 140, 180, 40, 80));
++  cityMeshes.push(generateCityLayer(coneGeo, 20, 160, 200, 50, 100));
++  cityMeshes.forEach((mesh) => group.add(mesh));
++
++  // Mega towers - far on horizon (REDUCED for FPS: was 10)
++  const megaGeo = new THREE.CylinderGeometry(1, 1.5, 1, 5);
++  const megaMesh = new THREE.InstancedMesh(megaGeo, cityShaderMat, 5);
++  for (let i = 0; i < 5; i++) {
++    const angle = (i / 5) * Math.PI * 2;
++    const dist = 160 + Math.random() * 20;
++    const h = 110 + Math.random() * 20;
++    dummy.position.set(Math.cos(angle) * dist, (h / 2) - 3, Math.sin(angle) * dist); // Issue 5: Lower mega towers by 3 units
++    dummy.scale.set(5, h, 5);
++    dummy.updateMatrix();
++    megaMesh.setMatrixAt(i, dummy.matrix);
++  }
++  cityMeshes.push(megaMesh);
++  group.add(megaMesh);
++
++  // Issue 7: Distant low-poly mountains at ~100 units (alien planet colors) - closer and larger for visibility
++  const createDistantMountain = (x, z, scale) => {
++    const peakCount = 1 + Math.floor(Math.random() * 2);
++    const mountainGroup = new THREE.Group();
++    for (let p = 0; p < peakCount; p++) {
++      const height = (30 + Math.random() * 50) * scale;
++      const radius = Math.max(6, (6 + Math.random() * 10) * scale);
++      // Low-poly cone with 5-7 segments
++      const peakGeo = new THREE.ConeGeometry(radius, height, 5 + Math.floor(Math.random() * 3));
++      const peakMat = new THREE.MeshStandardMaterial({
++        color: 0x0a2015, // Dark teal-green
++        roughness: 0.9,
++        metalness: 0.1,
++        flatShading: true
++      });
++      const peak = new THREE.Mesh(peakGeo, peakMat);
++      peak.position.set(
++        (Math.random() - 0.5) * 6 * scale,
++        height / 2,
++        (Math.random() - 0.5) * 6 * scale
++      );
++      peak.castShadow = false;
++      peak.receiveShadow = false;
++      mountainGroup.add(peak);
++    }
++    mountainGroup.position.set(x, floorY, z);
++    mountainGroup.frustumCulled = false; // Prevent culling at distance
++    return mountainGroup;
++  };
++
++  // Ring of 10 distant mountains at ~100 units (closer for visibility with fog)
++  const distantMountainCount = 10;
++  const distantMountainRadius = 100;
++  for (let i = 0; i < distantMountainCount; i++) {
++    const angle = (i / distantMountainCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
++    const r = distantMountainRadius + (Math.random() - 0.5) * 20;
++    const x = Math.cos(angle) * r;
++    const z = Math.sin(angle) * r;
++    group.add(createDistantMountain(x, z, 1.0 + Math.random() * 0.5));
++  }
++
++  // Animation update - OPTIMIZED: stagger updates to reduce per-frame cost
++  let frameCounter = 0;
++  group.userData.update = (now, dt) => {
++    frameCounter++;
++    const time = now * 0.001;
++
++    // City shader: update every frame (cheap - just uniform)
++    cityShaderMat.uniforms.uTime.value = time;
++
++    // Green light pulse: every frame (cheap - single value)
++    greenLight.intensity = 1.2 + Math.sin(time * 2) * 0.3;
++
++    // REMOVED: Firefly drift animation - per-frame position updates were too expensive
++    // Fireflies are now static for better FPS
++
++    // REMOVED: Plant sway animation - per-frame rotation was too expensive
++    // Plants are now static for better FPS
++  };
++
++  group.rotation.y = -0.062; // yaw: 3.55°
++
++  // Alien floor HUD height: group.position.y = -0.28
++  group.position.set(6.628, -0.28, -13.926);
++}
+diff --git a/biomes/desert-night.js b/biomes/desert-night.js
+new file mode 100644
+index 0000000..0792f4d
+--- /dev/null
++++ b/biomes/desert-night.js
+@@ -0,0 +1,345 @@
++// ============================================================
++//  BIOME: Desert Night
++//  Moonlit desert with cacti, stars, and dust particles
++//  Extracted from biome-scenes.js (restored version)
++// ============================================================
++
++import * as THREE from 'three';
++
++export function buildDesertNightScene(group, deps) {
++  const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
++  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
++  const floorY = floorHeight;
++  const sceneColor = 0x06080c;
++
++  // === LIGHTING (CRITICAL) ===
++  // Pale moonlight
++  const moonLight = new THREE.DirectionalLight(0xd4e5f7, 2.34);
++  moonLight.position.set(-30, 50, -30);
++  group.add(moonLight);
++
++  // Point light for long moon-like shadows from cacti
++  const shadowLight = new THREE.PointLight(0xd4e5f7, 1.5, 100);
++  shadowLight.position.set(-45, 35, -60); // Same as moon position
++  shadowLight.castShadow = true;
++  shadowLight.shadow.mapSize.width = 1024;
++  shadowLight.shadow.mapSize.height = 1024;
++  shadowLight.shadow.camera.near = 10;
++  shadowLight.shadow.camera.far = 100;
++  group.add(shadowLight);
++
++  // Very dim ambient
++  const ambientLight = new THREE.AmbientLight(0x1a2035, 0.15);
++  group.add(ambientLight);
++
++  // Hemisphere light for sky/ground color
++  const hemiLight = new THREE.HemisphereLight(0x1a2035, 0x2d1f1a, 0.2);
++  group.add(hemiLight);
++
++  // Ground
++  const geometry = new THREE.PlaneGeometry(140, 140, 70, 70);
++  geometry.rotateX(-Math.PI / 2);
++  const positions = geometry.attributes.position;
++  const colors = [];
++  const flatRadius = 12.0;
++  const mountainStart = 18.0;
++  for (let i = 0; i < positions.count; i++) {
++    const x = positions.getX(i);
++    const z = positions.getZ(i);
++    const dist = Math.sqrt(x * x + z * z);
++    let heightFactor = Math.min(Math.max((dist - flatRadius) / (mountainStart - flatRadius), 0), 1);
++    heightFactor = heightFactor * heightFactor * (3 - 2 * heightFactor);
++    let height = 0;
++    height += Math.sin(x * 0.08 + 0.5) * Math.cos(z * 0.06) * 4.0;
++    height += Math.sin(x * 0.04 + 2) * Math.sin(z * 0.05 + 1) * 3.0;
++    height += Math.sin(x * 0.15 + z * 0.1) * 1.5;
++    height += Math.cos(z * 0.12 - x * 0.08) * 1.0;
++    height += Math.sin(x * 0.3) * Math.cos(z * 0.25) * 0.5;
++    if (dist > mountainStart) {
++      height += Math.sin(x * 0.4 + z * 0.3) * 2.0;
++      height += Math.cos(x * 0.2 - z * 0.5) * 2.5;
++    }
++    const finalHeight = height * heightFactor;
++    positions.setY(i, finalHeight);
++    const heightNorm = (finalHeight + 5) / 15;
++    const baseColor = new THREE.Color(0x2a241b);
++    const highlightColor = new THREE.Color(0x585144);
++    const moonTint = new THREE.Color(0x404a5a);
++    let color = baseColor.clone().lerp(highlightColor, Math.max(0, Math.min(1, heightNorm)));
++    color.lerp(moonTint, heightNorm * 0.2);
++    colors.push(color.r, color.g, color.b);
++  }
++  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
++  geometry.computeVertexNormals();
++  const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
++  const terrain = new THREE.Mesh(geometry, material);
++  terrain.position.y = floorY;
++  terrain.frustumCulled = false;
++  terrain.receiveShadow = true;  // Sand dunes receive cactus shadows
++  group.add(terrain);
++  registerFadeMaterial(material);
++
++  // Flash overlay plane for damage feedback (entire sand floor turns red)
++  const flashGeo = new THREE.PlaneGeometry(140, 140);
++  const flashMat = new THREE.MeshBasicMaterial({
++    color: 0xff0000,
++    transparent: true,
++    opacity: 0,
++    depthWrite: false,
++    side: THREE.DoubleSide
++  });
++  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
++  flashPlane.rotation.x = -Math.PI / 2;
++  flashPlane.position.y = floorY + 0.02; // Very close to terrain surface
++  flashPlane.frustumCulled = false;
++  group.add(flashPlane);
++  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
++
++  // === CACTUSES (9 procedural) ===
++  const createCactus = (height) => {
++    const cactusGroup = new THREE.Group();
++    const bodyColor = 0x1a3d20;
++    const armColor = 0x2d5535;
++    const segments = 3 + Math.floor(Math.random() * 2); // 3-4 segments
++    let currentY = 0;
++    const segmentHeight = height / segments;
++
++    // Main body segments
++    for (let i = 0; i < segments; i++) {
++      const radius = 0.12 + (segments - i) * 0.03; // Taper upward
++      const segGeo = new THREE.CylinderGeometry(radius * 0.9, radius, segmentHeight, 5);
++      const segMat = new THREE.MeshLambertMaterial({ color: bodyColor, flatShading: true });
++      const segment = new THREE.Mesh(segGeo, segMat);
++      segment.position.y = currentY + segmentHeight / 2;
++      segment.castShadow = true;  // Cacti cast shadows
++      segment.receiveShadow = true;
++      cactusGroup.add(segment);
++      currentY += segmentHeight;
++    }
++
++    // Random arms (0-2)
++    const numArms = Math.floor(Math.random() * 3);
++    for (let a = 0; a < numArms; a++) {
++      const armY = segmentHeight * (1 + Math.floor(Math.random() * (segments - 1)));
++      const side = Math.random() > 0.5 ? 1 : -1;
++      const armLength = 0.4 + Math.random() * 0.4;
++
++      // Horizontal part
++      const hArmGeo = new THREE.CylinderGeometry(0.08, 0.1, armLength, 5);
++      const hArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
++      const hArm = new THREE.Mesh(hArmGeo, hArmMat);
++      hArm.castShadow = true;
++      hArm.receiveShadow = true;
++      hArm.rotation.z = Math.PI / 2;
++      hArm.position.set(side * armLength / 2, armY, 0);
++      cactusGroup.add(hArm);
++
++      // Vertical part (upward)
++      const vArmHeight = 0.5 + Math.random() * 0.5;
++      const vArmGeo = new THREE.CylinderGeometry(0.06, 0.08, vArmHeight, 5);
++      const vArmMat = new THREE.MeshLambertMaterial({ color: armColor, flatShading: true });
++      const vArm = new THREE.Mesh(vArmGeo, vArmMat);
++      vArm.castShadow = true;
++      vArm.receiveShadow = true;
++      vArm.position.set(side * armLength, armY + vArmHeight / 2, 0);
++      cactusGroup.add(vArm);
++    }
++
++    // REMOVED: Fake circle shadow - now using point light for realistic moon shadows
++    // Cacti will cast natural shadows from the shadowLight
++
++    return cactusGroup;
++  };
++
++  const cactusPositions = [
++    { x: 6, z: 4, h: 2.5 },
++    { x: -4, z: 6, h: 3 },
++    { x: 8, z: -3, h: 2 },
++    { x: -7, z: -5, h: 2.8 },
++    { x: 3, z: -8, h: 1.8 },
++    { x: -10, z: 1, h: 2.2 },
++    { x: 0, z: 10, h: 2.3 },
++    // Removed cactus at {x: 5, z: 9, h: 1.9} - player now spawns there
++    { x: -5, z: -9, h: 2.4 },
++  ];
++
++  cactusPositions.forEach(pos => {
++    const cactus = createCactus(pos.h);
++    cactus.position.set(pos.x, floorY, pos.z);
++    cactus.rotation.y = Math.random() * Math.PI * 2;
++    group.add(cactus);
++  });
++
++  // === TWINKLING STARS (400 particles - reduced from 800 for performance) ===
++  const starCount = 400;
++  const starPositions = new Float32Array(starCount * 3);
++  const starPhases = new Float32Array(starCount);
++
++  for (let i = 0; i < starCount; i++) {
++    // Hemisphere distribution
++    const theta = Math.random() * Math.PI * 2;
++    const radius = 80 + Math.random() * 40; // 80-120
++    const phi = Math.random() * Math.PI * 0.5; // Upper hemisphere
++
++    starPositions[i * 3] = Math.cos(theta) * Math.sin(phi) * radius;
++    starPositions[i * 3 + 1] = Math.cos(phi) * radius + 10; // Offset up
++    starPositions[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * radius;
++    starPhases[i] = Math.random() * Math.PI * 2;
++  }
++
++  const starGeometry = new THREE.BufferGeometry();
++  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
++  starGeometry.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
++
++  const starMaterial = new THREE.ShaderMaterial({
++    uniforms: {
++      uTime: { value: 0 },
++      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
++    },
++    vertexShader: `
++      attribute float aPhase;
++      uniform float uTime;
++      uniform float uPixelRatio;
++      varying float vTwinkle;
++      void main() {
++        vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
++        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
++        float size = 2.0 * uPixelRatio * vTwinkle;
++        gl_PointSize = size * (200.0 / -mvPosition.z);
++        gl_Position = projectionMatrix * mvPosition;
++      }
++    `,
++    fragmentShader: `
++      varying float vTwinkle;
++      void main() {
++        float dist = length(gl_PointCoord - vec2(0.5));
++        if (dist > 0.5) discard;
++        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
++        vec3 color = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.95, 0.9), vTwinkle);
++        gl_FragColor = vec4(color * (0.7 + vTwinkle * 0.3), alpha * vTwinkle);
++      }
++    `,
++    transparent: true,
++    depthWrite: false,
++    fog: false,
++    blending: THREE.AdditiveBlending
++  });
++
++  const stars = new THREE.Points(starGeometry, starMaterial);
++  stars.frustumCulled = false; // Fix disappearing when looking up
++  stars.renderOrder = 999;
++  group.add(stars);
++  registerFadeMaterial(starMaterial);
++
++  // === DUST PARTICLES (300 particles - reduced from 600 for performance) ===
++  const dustCount = 300;
++  const dustPositions = new Float32Array(dustCount * 3);
++  const dustPhases = new Float32Array(dustCount);
++
++  for (let i = 0; i < dustCount; i++) {
++    dustPositions[i * 3] = (Math.random() - 0.5) * 60;
++    dustPositions[i * 3 + 1] = Math.random() * 15 + floorY;
++    dustPositions[i * 3 + 2] = (Math.random() - 0.5) * 60;
++    dustPhases[i] = Math.random() * Math.PI * 2;
++  }
++
++  const dustGeometry = new THREE.BufferGeometry();
++  dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
++  dustGeometry.setAttribute('aPhase', new THREE.BufferAttribute(dustPhases, 1));
++
++  const dustMaterial = new THREE.ShaderMaterial({
++    uniforms: {
++      uTime: { value: 0 },
++      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
++    },
++    vertexShader: `
++      attribute float aPhase;
++      uniform float uTime;
++      uniform float uPixelRatio;
++      varying float vAlpha;
++      void main() {
++        vAlpha = 0.5 + 0.3 * sin(uTime + aPhase);
++        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
++        gl_PointSize = 4.0 * uPixelRatio;
++        gl_Position = projectionMatrix * mvPosition;
++      }
++    `,
++    fragmentShader: `
++      varying float vAlpha;
++      void main() {
++        float dist = length(gl_PointCoord - vec2(0.5));
++        if (dist > 0.5) discard;
++        float alpha = (1.0 - smoothstep(0.0, 0.5, dist)) * vAlpha * 1.2;
++        vec3 dustColor = vec3(0.8, 0.85, 0.9);
++        gl_FragColor = vec4(dustColor, alpha);
++      }
++    `,
++    transparent: true,
++    depthWrite: false,
++    fog: false,
++    blending: THREE.AdditiveBlending
++  });
++
++  const dust = new THREE.Points(dustGeometry, dustMaterial);
++  dust.renderOrder = 999;
++  group.add(dust);
++  registerFadeMaterial(dustMaterial);
++
++  // Moon
++  const moonGroup = new THREE.Group();
++  const moonGeometry = new THREE.IcosahedronGeometry(8, 2);
++  const moonMaterial = new THREE.MeshBasicMaterial({ color: 0xfffef8 });
++  const moon = new THREE.Mesh(moonGeometry, moonMaterial);
++  moonGroup.add(moon);
++  registerFadeMaterial(moonMaterial);
++  const innerGlowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 });
++  const innerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(9.5, 2), innerGlowMat);
++  const outerGlowMat = new THREE.MeshBasicMaterial({ color: 0xd4e5f7, transparent: true, opacity: 0.12 });
++  const outerGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(13, 2), outerGlowMat);
++  const farGlowMat = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.06 });
++  const farGlow = new THREE.Mesh(new THREE.IcosahedronGeometry(18, 2), farGlowMat);
++  moonGroup.add(innerGlow, outerGlow, farGlow);
++  registerFadeMaterial(innerGlowMat);
++  registerFadeMaterial(outerGlowMat);
++  registerFadeMaterial(farGlowMat);
++  moonGroup.position.set(-45, 35, -60);
++  group.add(moonGroup);
++
++  // Desert floor HUD height: Y = -0.20, rotated 25 degrees (-0.436 rad)
++  group.rotation.y = -0.436; // yaw: -25 degrees
++  group.position.set(-2.12, -0.20, -4.82);  // Moved 5 units +X and +Z
++
++  // Frame counter for throttling dust particle updates (Issue 4: reduce CPU cost)
++  let desertFrameCount = 0;
++
++  // === ANIMATION UPDATE ===
++  group.userData.update = (now, dt) => {
++    const time = now * 0.001;
++    // Update stars twinkle (shader-based, already efficient)
++    starMaterial.uniforms.uTime.value = time;
++    // Update dust shader time
++    dustMaterial.uniforms.uTime.value = time;
++
++    // Throttle dust particle position updates to every 5th frame (Issue 4: reduce CPU cost)
++    desertFrameCount++;
++    if (desertFrameCount % 5 === 0) {
++      const dustPos = dustGeometry.attributes.position.array;
++      for (let i = 0; i < dustCount; i++) {
++        const idx = i * 3;
++        // Gentle wind drift (scaled by 5 since we only update every 5th frame)
++        dustPos[idx] += 0.025 * dt;
++        dustPos[idx + 1] += Math.sin(time + dustPhases[i]) * 0.005 * dt;
++        dustPos[idx + 2] += Math.cos(time * 0.7 + dustPhases[i]) * 0.01 * dt;
++
++        // Wrap around boundaries
++        if (dustPos[idx] > 30) dustPos[idx] = -30;
++        if (dustPos[idx] < -30) dustPos[idx] = 30;
++        if (dustPos[idx + 1] > floorY + 15) dustPos[idx + 1] = floorY;
++        if (dustPos[idx + 1] < floorY) dustPos[idx + 1] = floorY + 15;
++        if (dustPos[idx + 2] > 30) dustPos[idx + 2] = -30;
++        if (dustPos[idx + 2] < -30) dustPos[idx + 2] = 30;
++      }
++      dustGeometry.attributes.position.needsUpdate = true;
++    }
++  };
++}
+diff --git a/biomes/hellscape-lava.js b/biomes/hellscape-lava.js
+new file mode 100644
+index 0000000..02f52f9
+--- /dev/null
++++ b/biomes/hellscape-lava.js
+@@ -0,0 +1,665 @@
++// ============================================================
++//  BIOME: Hellscape Lava
++//  Volcanic landscape with lava river, rocks, and flame pillars
++//  Extracted from biome-scenes.js (restored version)
++// ============================================================
++
++import * as THREE from 'three';
++
++export function buildHellscapeLavaScene(group, deps) {
++  const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
++  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
++  const floorY = floorHeight;  // Player stands on riverbanks at correct height
++  const valleyWidth = 35.0;
++
++  // ========================================
++  // 1. LIGHTING (CRITICAL)
++  // ========================================
++  // Red moonlight with shadows
++  const moonLight = new THREE.DirectionalLight(0xff3333, 2.5);
++  moonLight.position.set(20, 30, -100);
++  moonLight.castShadow = true;
++  moonLight.shadow.mapSize.width = 2048;
++  moonLight.shadow.mapSize.height = 2048;
++  moonLight.shadow.camera.near = 0.5;
++  moonLight.shadow.camera.far = 500;
++  moonLight.shadow.camera.left = -100;
++  moonLight.shadow.camera.right = 100;
++  moonLight.shadow.camera.top = 100;
++  moonLight.shadow.camera.bottom = -100;
++  group.add(moonLight);
++
++  // Very dim ambient
++  const ambientLight = new THREE.AmbientLight(0x220505, 0.1);
++  group.add(ambientLight);
++
++  // Lava glow point light (will animate)
++  const lavaGlow = new THREE.PointLight(0xff3300, 2.5, 60);
++  lavaGlow.position.set(0, 5, 0);
++  group.add(lavaGlow);
++
++  // ========================================
++  // TERRAIN (existing logic)
++  // ========================================
++  const geometry = new THREE.PlaneGeometry(300, 300, 200, 200);
++  geometry.rotateX(-Math.PI / 2);
++  const positions = geometry.attributes.position;
++  for (let i = 0; i < positions.count; i++) {
++    const x = positions.getX(i);
++    const z = positions.getZ(i);
++    const riverX = Math.sin(z * 0.03) * 15.0;
++    const distToRiver = Math.abs(x - riverX);
++    const riverWidth = 5.0;
++    const distFromCenter = Math.abs(x);
++    let height = 0;
++    const valleyFloorHeight = 0.0;  // Fixed: was 1.5, causing camera to appear below ground
++    if (distFromCenter > valleyWidth) {
++      const mountainFactor = (distFromCenter - valleyWidth) / 15.0;
++      let mHeight = 0;
++      mHeight += Math.abs(Math.sin(x * 0.05) * Math.cos(z * 0.04)) * 15.0;
++      mHeight += Math.abs(Math.sin(z * 0.08 + 1.0)) * 10.0;
++      mHeight += Math.abs(Math.cos(x * 0.12 - z * 0.08)) * 6.0;
++      mHeight += (Math.random() * 3.0);
++      height = valleyFloorHeight + mHeight * Math.min(mountainFactor, 1.0);
++    } else {
++      height = valleyFloorHeight;
++      height += (Math.sin(x * 0.5) * Math.cos(z * 0.5)) * 0.3;
++      if (distToRiver < riverWidth) {
++        height = -1.0;
++      } else if (distToRiver < riverWidth + 3.0) {
++        height = Math.min(height, valleyFloorHeight - (riverWidth + 3.0 - distToRiver) * 0.5);
++      }
++    }
++    positions.setY(i, height);
++  }
++  geometry.computeVertexNormals();
++
++  const material = new THREE.MeshStandardMaterial({
++    color: 0x110505,
++    roughness: 0.9,
++    metalness: 0.1,
++    flatShading: true,
++    onBeforeCompile: (shader) => {
++      shader.uniforms.uTime = { value: 0 };
++      shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>
++varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
++      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
++vPosition = position; vElevation = position.y;`);
++      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>
++varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
++      shader.fragmentShader = shader.fragmentShader.replace('#include <emissive_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { } else { float distToLava = vElevation - lavaThreshold; float glowReflection = smoothstep(5.0, 0.0, distToLava); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; totalEmissiveRadiance = vec3(0.6, 0.1, 0.0) * glowReflection * pulse; } #include <emissive_fragment>`);
++      shader.fragmentShader = shader.fragmentShader.replace('#include <output_fragment>', `float lavaThreshold = 0.5; if (vElevation < lavaThreshold) { vec3 lavaColorBase = vec3(1.0, 0.05, 0.05); vec3 lavaColorBright = vec3(1.0, 0.25, 0.2); float pulse = sin(uTime * 0.8 + vPosition.x * 0.5 + vPosition.z * 0.5) * 0.5 + 0.5; float glow = 0.7 + 0.3 * pulse; vec3 finalLavaColor = mix(lavaColorBase, lavaColorBright, glow); gl_FragColor = vec4(finalLavaColor, 0.9); } else { gl_FragColor = vec4( outgoingLight, diffuseColor.a ); }`);
++      material.userData.shader = shader;
++    }
++  });
++
++  const terrain = new THREE.Mesh(geometry, material);
++  terrain.receiveShadow = true;
++  terrain.position.y = floorY;
++  terrain.position.x = -10.0;  // Shift terrain left so player spawns on riverbank (not riverbed)
++  terrain.position.z = 0.0;  // Player on flat valley floor
++  group.add(terrain);
++
++  // Flash overlay plane for damage feedback
++  const flashGeo = new THREE.PlaneGeometry(300, 300);
++  const flashMat = new THREE.MeshBasicMaterial({
++    color: 0xff0000,
++    transparent: true,
++    opacity: 0,
++    depthWrite: false,
++    side: THREE.DoubleSide
++  });
++  const flashPlane = new THREE.Mesh(flashGeo, flashMat);
++  flashPlane.rotation.x = -Math.PI / 2;
++  flashPlane.position.y = floorY + 0.05;
++  flashPlane.frustumCulled = false;
++  group.add(flashPlane);
++  biomeTerrainMaterials.push({ type: 'overlay', material: flashMat });
++
++  // ========================================
++  // 2. JAGGED ROCKS (50 scattered)
++  // ========================================
++  const rockGeo = new THREE.TetrahedronGeometry(1, 0);
++  const rockMat = new THREE.MeshStandardMaterial({
++    color: 0x1a1a1a,
++    roughness: 0.8,
++    metalness: 0.2,
++    flatShading: true
++  });
++
++  for (let i = 0; i < 50; i++) {
++    const rock = new THREE.Mesh(rockGeo, rockMat);
++    let x, z, riverX, distToRiver;
++    let attempts = 0;
++    do {
++      x = (Math.random() - 0.5) * 60;
++      z = (Math.random() - 0.5) * 100;
++      riverX = Math.sin(z * 0.03) * 15.0;
++      distToRiver = Math.abs(x - riverX);
++      attempts++;
++    } while (distToRiver < 8 && attempts < 20);
++
++    rock.position.set(x, floorY + 0.5, z);
++    // Scale: taller than wide (0.5-4.0)
++    const scaleY = 0.5 + Math.random() * 3.5;
++    const scaleX = 0.5 + Math.random() * 1.5;
++    rock.scale.set(scaleX, scaleY, scaleX);
++    rock.rotation.set(
++      Math.random() * Math.PI,
++      Math.random() * Math.PI * 2,
++      Math.random() * Math.PI
++    );
++    rock.castShadow = true;
++    rock.receiveShadow = true;
++    group.add(rock);
++  }
++
++  // ========================================
++  // 3. DEAD TREES (25 procedural)
++  // ========================================
++  const treeMat = new THREE.MeshStandardMaterial({
++    color: 0x0a0a0a,
++    roughness: 0.9,
++    metalness: 0.1,
++    flatShading: true
++  });
++
++  const createBranch = (depth, maxDepth, length, radius) => {
++    const branchGroup = new THREE.Group();
++
++    // Main branch cylinder (5 sides)
++    const branchGeo = new THREE.CylinderGeometry(radius * 0.7, radius, length, 5);
++    const branch = new THREE.Mesh(branchGeo, treeMat);
++    branch.position.y = length / 2;
++    branch.castShadow = true;
++    branch.receiveShadow = true;
++    branchGroup.add(branch);
++
++    // Add child branches if not at max depth
++    if (depth < maxDepth) {
++      const numChildren = 2 + Math.floor(Math.random() * 2); // 2-3 children
++      for (let i = 0; i < numChildren; i++) {
++        const childBranch = createBranch(
++          depth + 1,
++          maxDepth,
++          length * 0.6,
++          radius * 0.6
++        );
++        childBranch.position.y = length;
++        childBranch.rotation.z = (Math.random() - 0.5) * 1.2;
++        childBranch.rotation.y = (i / numChildren) * Math.PI * 2 + Math.random() * 0.5;
++        branchGroup.add(childBranch);
++      }
++    }
++
++    return branchGroup;
++  };
++
++  for (let i = 0; i < 25; i++) {
++    let x, z, riverX, distToRiver;
++    let attempts = 0;
++    do {
++      x = (Math.random() - 0.5) * 60;
++      z = (Math.random() - 0.5) * 100;
++      riverX = Math.sin(z * 0.03) * 15.0;
++      distToRiver = Math.abs(x - riverX);
++      attempts++;
++    } while (distToRiver < 8 && attempts < 20);
++
++    const tree = createBranch(0, 3, 3 + Math.random() * 2, 0.2 + Math.random() * 0.1);
++    tree.position.set(x, floorY, z);
++    tree.rotation.y = Math.random() * Math.PI * 2;
++    const treeScale = 0.8 + Math.random() * 0.6;
++    tree.scale.setScalar(treeScale);
++    group.add(tree);
++  }
++
++  // ========================================
++  // 4. TWINKLING STARS (1500 particles with red tint)
++  // ========================================
++  const starCount = 1500;
++  const starPositions = new Float32Array(starCount * 3);
++  const starColors = new Float32Array(starCount * 3);
++  const starSizes = new Float32Array(starCount);
++  const starPhases = new Float32Array(starCount);
++
++  for (let i = 0; i < starCount; i++) {
++    const i3 = i * 3;
++    // Position in a dome
++    const theta = Math.random() * Math.PI * 2;
++    const phi = Math.random() * Math.PI * 0.5; // Upper hemisphere
++    const r = 120 + Math.random() * 80;
++    starPositions[i3] = r * Math.sin(phi) * Math.cos(theta);
++    starPositions[i3 + 1] = r * Math.cos(phi) + 20;
++    starPositions[i3 + 2] = r * Math.sin(phi) * Math.sin(theta);
++
++    // Red-tinted colors: mix between (0.6, 0.2, 0.2) and (1.0, 0.8, 0.8)
++    const colorMix = Math.random();
++    starColors[i3] = 0.6 + colorMix * 0.4;     // R
++    starColors[i3 + 1] = 0.2 + colorMix * 0.6; // G
++    starColors[i3 + 2] = 0.2 + colorMix * 0.6; // B
++
++    starSizes[i] = 0.5 + Math.random() * 1.5;
++    starPhases[i] = Math.random() * Math.PI * 2;
++  }
++
++  const starGeo = new THREE.BufferGeometry();
++  starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
++  starGeo.setAttribute('aColor', new THREE.BufferAttribute(starColors, 3));
++  starGeo.setAttribute('aSize', new THREE.BufferAttribute(starSizes, 1));
++  starGeo.setAttribute('aPhase', new THREE.BufferAttribute(starPhases, 1));
++
++  const starMat = new THREE.ShaderMaterial({
++    uniforms: {
++      uTime: { value: 0 }
++    },
++    vertexShader: `
++      attribute vec3 aColor;
++      attribute float aSize;
++      attribute float aPhase;
++      varying vec3 vColor;
++      varying float vTwinkle;
++      uniform float uTime;
++      void main() {
++        vColor = aColor;
++        vTwinkle = 0.5 + 0.5 * sin(uTime * 2.0 + aPhase);
++        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
++        gl_PointSize = aSize * (300.0 / -mvPosition.z) * vTwinkle;
++        gl_Position = projectionMatrix * mvPosition;
++      }
++    `,
++    fragmentShader: `
++      varying vec3 vColor;
++      varying float vTwinkle;
++      void main() {
++        float dist = length(gl_PointCoord - vec2(0.5));
++        if (dist > 0.5) discard;
++        float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
++        gl_FragColor = vec4(vColor * vTwinkle, alpha);
++      }
++    `,
++    transparent: true,
++    depthWrite: false,
++    blending: THREE.AdditiveBlending
++  });
++
++  const stars = new THREE.Points(starGeo, starMat);
++  group.add(stars);
++
++  // ========================================
++  // 5. SPARK PARTICLES (200 rising from lava)
++  // ========================================
++  const sparkCount = 200;
++  const sparkPositions = new Float32Array(sparkCount * 3);
++  const sparkVelocities = new Float32Array(sparkCount * 3);
++  const sparkLifetimes = new Float32Array(sparkCount);
++  const sparkMaxLifetimes = new Float32Array(sparkCount);
++
++  const initSpark = (idx) => {
++    const i3 = idx * 3;
++    const z = (Math.random() - 0.5) * 100;
++    const riverX = Math.sin(z * 0.03) * 15.0 + 10.0;  // Account for terrain X shift
++    sparkPositions[i3] = riverX + (Math.random() - 0.5) * 4;
++    sparkPositions[i3 + 1] = floorY - 0.5 + Math.random() * 0.5;  // Account for terrain Y offset
++    sparkPositions[i3 + 2] = z;
++    sparkVelocities[i3] = (Math.random() - 0.5) * 0.02;
++    sparkVelocities[i3 + 1] = 0.03 + Math.random() * 0.05;
++    sparkVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
++    sparkLifetimes[idx] = 0;
++    sparkMaxLifetimes[idx] = 2 + Math.random() * 3;
++  };
++
++  for (let i = 0; i < sparkCount; i++) {
++    initSpark(i);
++    sparkLifetimes[i] = Math.random() * sparkMaxLifetimes[i]; // Stagger initial lifetimes
++  }
++
++  const sparkGeo = new THREE.BufferGeometry();
++  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
++
++  const sparkMat = new THREE.PointsMaterial({
++    color: 0xffaa00,
++    size: 0.3,
++    transparent: true,
++    opacity: 0.8,
++    blending: THREE.AdditiveBlending,
++    depthWrite: false
++  });
++
++  const sparks = new THREE.Points(sparkGeo, sparkMat);
++  group.add(sparks);
++
++  // ========================================
++  // 5b. ASH PARTICLES (dark floating)
++  // ========================================
++  const ashCount = 260;
++  const ashPositions = new Float32Array(ashCount * 3);
++  const ashVelocities = new Float32Array(ashCount * 3);
++  for (let i = 0; i < ashCount; i++) {
++    const i3 = i * 3;
++    ashPositions[i3] = (Math.random() - 0.5) * 80;
++    ashPositions[i3 + 1] = 1 + Math.random() * 10;
++    ashPositions[i3 + 2] = (Math.random() - 0.5) * 80;
++    ashVelocities[i3] = (Math.random() - 0.5) * 0.02;
++    ashVelocities[i3 + 1] = 0.01 + Math.random() * 0.015;
++    ashVelocities[i3 + 2] = (Math.random() - 0.5) * 0.02;
++  }
++  const ashGeo = new THREE.BufferGeometry();
++  ashGeo.setAttribute('position', new THREE.BufferAttribute(ashPositions, 3));
++  const ashMat = new THREE.PointsMaterial({
++    color: 0x2b2b2b,
++    size: 0.06,  // Smaller than alien particles (0.0875)
++    transparent: true,
++    opacity: 0.5,
++    depthWrite: false
++  });
++  const ash = new THREE.Points(ashGeo, ashMat);
++  group.add(ash);
++
++  // ========================================
++  // 6. FLAME GEYSERS (periodic eruptions)
++  // ========================================
++  const geyserParticles = [];
++  let lastGeyserTime = 0;
++  const geyserInterval = 5000; // 5 seconds
++
++  const createGeyserBurst = (now) => {
++    const particleCount = 100;
++    // Spawn from mountainsides (outside valleyWidth), accounting for terrain X shift
++    const side = Math.random() > 0.5 ? 1 : -1;
++    const x = side * (valleyWidth + 5 + Math.random() * 20) + 10.0;  // Account for terrain X shift
++    const z = (Math.random() - 0.5) * 80;
++    const baseY = floorY + 5;
++
++    for (let i = 0; i < particleCount; i++) {
++      geyserParticles.push({
++        x: x + (Math.random() - 0.5) * 2,
++        y: baseY,
++        z: z + (Math.random() - 0.5) * 2,
++        vx: (Math.random() - 0.5) * 0.1,
++        vy: 0.8 + Math.random() * 0.5, // Strong upward velocity
++        vz: (Math.random() - 0.5) * 0.1,
++        life: 0,
++        maxLife: 1.5 + Math.random() * 1.5
++      });
++    }
++  };
++
++  const geyserGeo = new THREE.BufferGeometry();
++  const geyserPositions = new Float32Array(500 * 3); // Max 500 particles
++  geyserGeo.setAttribute('position', new THREE.BufferAttribute(geyserPositions, 3));
++  geyserGeo.setDrawRange(0, 0);
++
++  const geyserMat = new THREE.PointsMaterial({
++    color: 0xff6600,
++    size: 0.4,
++    transparent: true,
++    opacity: 0.9,
++    blending: THREE.AdditiveBlending,
++    depthWrite: false
++  });
++
++  const geyserPoints = new THREE.Points(geyserGeo, geyserMat);
++  group.add(geyserPoints);
++
++  // ========================================
++  // 7. FLAME PILLARS (distant fire columns)
++  // ========================================
++  const PILLAR_COUNT = 7;
++  const PARTICLES_PER_PILLAR = 35;
++  const TOTAL_FLAME_PILLAR_PARTICLES = PILLAR_COUNT * PARTICLES_PER_PILLAR;
++
++  // Canvas-drawn flame sprite texture (64x64, soft radial gradient)
++  const flameCanvas = document.createElement('canvas');
++  flameCanvas.width = 64;
++  flameCanvas.height = 64;
++  const fCtx = flameCanvas.getContext('2d');
++  const flameGrad = fCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
++  flameGrad.addColorStop(0, 'rgba(255,255,200,1.0)');
++  flameGrad.addColorStop(0.2, 'rgba(255,200,50,0.9)');
++  flameGrad.addColorStop(0.5, 'rgba(255,100,0,0.6)');
++  flameGrad.addColorStop(0.8, 'rgba(200,30,0,0.2)');
++  flameGrad.addColorStop(1, 'rgba(100,0,0,0.0)');
++  fCtx.fillStyle = flameGrad;
++  fCtx.fillRect(0, 0, 64, 64);
++  const flameTexture = new THREE.CanvasTexture(flameCanvas);
++
++  // Pillar positions: spread around the arena at 30-70 units distance
++  const pillarDefs = [];
++  for (let i = 0; i < PILLAR_COUNT; i++) {
++    const angle = (i / PILLAR_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
++    const dist = 35 + Math.random() * 40; // 35-75 units away
++    pillarDefs.push({
++      x: Math.cos(angle) * dist + 10.0, // Account for terrain X shift
++      z: Math.sin(angle) * dist,
++      height: 12 + Math.random() * 10, // Pillar height 12-22 units
++      radius: 1.5 + Math.random() * 1.5, // Base radius 1.5-3 units
++      speed: 0.6 + Math.random() * 0.4 // Rise speed multiplier
++    });
++  }
++
++  // Particle arrays
++  const flamePositions = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES * 3);
++  const flameSizes = new Float32Array(TOTAL_FLAME_PILLAR_PARTICLES);
++  const flameParticleData = []; // Per-particle: { pillarIdx, t (0-1 life progress) }
++
++  const initFlameParticle = (idx) => {
++    const pillarIdx = idx % PILLAR_COUNT;
++    const pillar = pillarDefs[pillarIdx];
++    const i3 = idx * 3;
++    const angle = Math.random() * Math.PI * 2;
++    const r = Math.random() * pillar.radius;
++    const t = Math.random(); // Start at random height for stagger
++
++    flamePositions[i3] = pillar.x + Math.cos(angle) * r;
++    flamePositions[i3 + 1] = floorY + t * pillar.height;
++    flamePositions[i3 + 2] = pillar.z + Math.sin(angle) * r;
++    flameSizes[idx] = 1.0 + (1.0 - t) * 2.0; // Larger at base, smaller at top
++
++    if (!flameParticleData[idx]) {
++      flameParticleData[idx] = { pillarIdx, speed: 0.3 + Math.random() * 0.3 };
++    }
++    flameParticleData[idx].t = t;
++    flameParticleData[idx].pillarIdx = pillarIdx;
++  };
++
++  for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
++    initFlameParticle(i);
++  }
++
++  const flamePillarGeo = new THREE.BufferGeometry();
++  flamePillarGeo.setAttribute('position', new THREE.BufferAttribute(flamePositions, 3));
++  flamePillarGeo.setAttribute('aSize', new THREE.BufferAttribute(flameSizes, 1));
++
++  // Use ShaderMaterial for per-particle size with sizeAttenuation
++  const flamePillarMat = new THREE.ShaderMaterial({
++    uniforms: {
++      uTexture: { value: flameTexture },
++      uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
++    },
++    vertexShader: `
++      attribute float aSize;
++      varying float vAlpha;
++      uniform float uPixelRatio;
++      void main() {
++        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
++        gl_PointSize = aSize * uPixelRatio * (200.0 / -mvPosition.z);
++        gl_PointSize = clamp(gl_PointSize, 1.0, 64.0);
++        gl_Position = projectionMatrix * mvPosition;
++        // Fade particles that are very high (near top of pillar)
++        vAlpha = aSize / 3.0;
++      }
++    `,
++    fragmentShader: `
++      uniform sampler2D uTexture;
++      varying float vAlpha;
++      void main() {
++        vec4 texColor = texture2D(uTexture, gl_PointCoord);
++        gl_FragColor = vec4(texColor.rgb, texColor.a * vAlpha);
++      }
++    `,
++    transparent: true,
++    depthWrite: false,
++    blending: THREE.AdditiveBlending
++  });
++
++  const flamePillarPoints = new THREE.Points(flamePillarGeo, flamePillarMat);
++  group.add(flamePillarPoints);
++
++  // ========================================
++  // MOONS (existing)
++  // ========================================
++  const createMoon = (size, color, glowColor) => {
++    const mGroup = new THREE.Group();
++    const moonGeo = new THREE.IcosahedronGeometry(size, 2);
++    const moonMat = new THREE.MeshBasicMaterial({ color });
++    mGroup.add(new THREE.Mesh(moonGeo, moonMat));
++    const glowGeo = new THREE.IcosahedronGeometry(size * 1.2, 2);
++    const glowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.3 });
++    mGroup.add(new THREE.Mesh(glowGeo, glowMat));
++    const farGlowGeo = new THREE.IcosahedronGeometry(size * 1.5, 2);
++    const farGlowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.1 });
++    mGroup.add(new THREE.Mesh(farGlowGeo, farGlowMat));
++    return mGroup;
++  };
++  const moon1 = createMoon(10.5, 0xaa1111, 0xff2200);
++  moon1.position.set(20, 25, -100);
++  group.add(moon1);
++  const moon2 = createMoon(7.5, 0x880000, 0xaa0000);
++  moon2.position.set(-40, 20, -90);
++  group.add(moon2);
++  const moon3 = createMoon(5.4, 0x550000, 0x770000);
++  moon3.position.set(-20, 35, -95);
++  group.add(moon3);
++
++  // ========================================
++  // ANIMATION UPDATE
++  // ========================================
++  group.userData.update = (now, dt) => {
++    const time = now * 0.001;
++
++    // Terrain shader
++    if (material.userData.shader) {
++      material.userData.shader.uniforms.uTime.value = time;
++    }
++
++    // Star twinkle
++    starMat.uniforms.uTime.value = time;
++
++    // Lava glow position animation (circle)
++    lavaGlow.position.x = Math.sin(time * 0.3) * 15;
++    lavaGlow.position.z = Math.cos(time * 0.3) * 20;
++    lavaGlow.position.y = 5 + Math.sin(time * 0.5) * 2;
++
++    // Lava glow intensity pulse
++    lavaGlow.intensity = 2.0 + Math.sin(time * 2) * 0.5;
++
++    // Update spark particles - continuously spawn from lava river
++    const sparkPos = sparkGeo.attributes.position.array;
++
++    // Continuously spawn 10-15 new sparks each frame from random positions along the river
++    // (increased spawn rate for more dynamic lava effect)
++    const sparksToSpawn = 10 + Math.floor(Math.random() * 6);  // Was 6 + Math.floor(Math.random() * 4)
++    for (let s = 0; s < sparksToSpawn; s++) {
++      const randomIdx = Math.floor(Math.random() * sparkCount);
++      // Only respawn if lifetime is mostly elapsed or just starting fresh
++      if (sparkLifetimes[randomIdx] > sparkMaxLifetimes[randomIdx] * 0.8) {
++        initSpark(randomIdx);
++      }
++    }
++
++    for (let i = 0; i < sparkCount; i++) {
++      const i3 = i * 3;
++      sparkLifetimes[i] += dt * 0.001;
++
++      if (sparkLifetimes[i] > sparkMaxLifetimes[i]) {
++        initSpark(i);
++      } else {
++        sparkPos[i3] += sparkVelocities[i3];
++        sparkPos[i3 + 1] += sparkVelocities[i3 + 1];
++        sparkPos[i3 + 2] += sparkVelocities[i3 + 2];
++      }
++    }
++    sparkGeo.attributes.position.needsUpdate = true;
++
++    // Ash drift
++    const ashPos = ashGeo.attributes.position.array;
++    for (let i = 0; i < ashCount; i++) {
++      const i3 = i * 3;
++      ashPos[i3] += ashVelocities[i3] * dt * 0.6;
++      ashPos[i3 + 1] += ashVelocities[i3 + 1] * dt * 0.6;
++      ashPos[i3 + 2] += ashVelocities[i3 + 2] * dt * 0.6;
++      if (ashPos[i3 + 1] > 12) ashPos[i3 + 1] = 1;
++      if (ashPos[i3] > 40) ashPos[i3] = -40;
++      if (ashPos[i3] < -40) ashPos[i3] = 40;
++      if (ashPos[i3 + 2] > 40) ashPos[i3 + 2] = -40;
++      if (ashPos[i3 + 2] < -40) ashPos[i3 + 2] = 40;
++    }
++    ashGeo.attributes.position.needsUpdate = true;
++
++    // Geyser trigger and update
++    if (now - lastGeyserTime > geyserInterval) {
++      createGeyserBurst(now);
++      lastGeyserTime = now;
++    }
++
++    // Update geyser particles
++    const geyserPos = geyserGeo.attributes.position.array;
++    let activeCount = 0;
++    for (let i = geyserParticles.length - 1; i >= 0; i--) {
++      const p = geyserParticles[i];
++      p.life += dt * 0.001;
++
++      if (p.life > p.maxLife) {
++        geyserParticles.splice(i, 1);
++        continue;
++      }
++
++      p.x += p.vx;
++      p.y += p.vy;
++      p.z += p.vz;
++      p.vy -= 0.03; // Gravity
++
++      const idx = activeCount * 3;
++      geyserPos[idx] = p.x;
++      geyserPos[idx + 1] = p.y;
++      geyserPos[idx + 2] = p.z;
++      activeCount++;
++    }
++    geyserGeo.setDrawRange(0, activeCount);
++    geyserGeo.attributes.position.needsUpdate = true;
++
++    // Flame pillar animation
++    const fpPos = flamePillarGeo.attributes.position.array;
++    const fpSizes = flamePillarGeo.attributes.aSize.array;
++    for (let i = 0; i < TOTAL_FLAME_PILLAR_PARTICLES; i++) {
++      const pd = flameParticleData[i];
++      const pillar = pillarDefs[pd.pillarIdx];
++      const i3 = i * 3;
++      const dtSec = dt * 0.001;
++
++      // Advance particle up the pillar
++      pd.t += dtSec * pd.speed * pillar.speed / pillar.height;
++
++      if (pd.t >= 1.0) {
++        // Respawn at base
++        initFlameParticle(i);
++      } else {
++        // Slight horizontal drift as particle rises
++        const drift = (Math.random() - 0.5) * 0.05;
++        fpPos[i3] += drift;
++        fpPos[i3 + 1] += pd.speed * dtSec * pillar.speed;
++        fpPos[i3 + 2] += drift;
++
++        // Shrink as particle rises
++        fpSizes[i] = Math.max(0.3, (1.0 - pd.t) * 3.0);
++      }
++    }
++    flamePillarGeo.attributes.position.needsUpdate = true;
++    flamePillarGeo.attributes.aSize.needsUpdate = true;
++  };
++
++  // Hellscape floor HUD height: group.position.y = 0.05
++  group.position.set(26.599, 0.05, -0.486);
++  group.rotation.y = 0.248; // yaw: 14.21°
++}
+diff --git a/biomes/synthwave-valley.js b/biomes/synthwave-valley.js
+new file mode 100644
+index 0000000..5aad762
+--- /dev/null
++++ b/biomes/synthwave-valley.js
+@@ -0,0 +1,450 @@
++// ============================================================
++//  BIOME: Synthwave Valley
++//  Retro synthwave scene with grid terrain, sun, and aurora
++// ============================================================
++import * as THREE from 'three';
++
++export function buildSynthwaveValleyScene(group, deps) {
++  const { registerFadeMaterial, floorMaterial, synthVisualRefs, biomeTerrainMaterials, BLOOM_LAYER, getVisualTuning } = deps;
++  
++  const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
++  const floorY = floorHeight;
++
++  // Reset synth visual tuning refs each time this biome scene is rebuilt.
++  synthVisualRefs.terrainUniforms = null;
++  synthVisualRefs.sunOuterGlowMat = null;
++  synthVisualRefs.sunGlowMat = null;
++  synthVisualRefs.sunCoreMat = null;
++
++  // Fix for synthwave valley lighting regression: the extracted scene lost the
++  // original standalone scene's punch after we removed postprocessing, so raise
++  // the local material brightness without affecting other biomes.
++  const brightness = 1.0;
++
++  // Sky dome (no stars, we use global starfield)
++  // EXACT colors: Horizon #FE9053 (orange) → Mountain tips #E00186 (pink) → Sun top #2C0051 (purple) → Top #1A004A (dark purple) → Black
++  const skyGeo = new THREE.SphereGeometry(2800, 32, 24);
++  const skyMat = new THREE.ShaderMaterial({
++    side: THREE.BackSide,
++    uniforms: {
++      topColor: { value: new THREE.Color(0x1A004A) },      // Top: dark purple
++      midColor: { value: new THREE.Color(0x71006E) },      // 75% from equator: deep purple
++      horizonColor: { value: new THREE.Color(0xFF8626) },  // Equator: bright orange
++      glowColor: { value: new THREE.Color(0xF30787) },     // 40% from equator: pink
++    },
++    // VR-CRITICAL: Use the standard modelViewMatrix path so the sky remains
++    // stable in stereo rendering and does not rely on manual clip-space math.
++    vertexShader: `varying vec3 vWorldPosition; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vWorldPosition=worldPosition.xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
++    fragmentShader: `varying vec3 vWorldPosition; uniform vec3 topColor; uniform vec3 midColor; uniform vec3 horizonColor; uniform vec3 glowColor; void main(){ float worldY=vWorldPosition.y; float t1=smoothstep(0.0,550.0,worldY); float t2=smoothstep(0.0,950.0,worldY); float t3=smoothstep(0.0,1400.0,worldY); vec3 col=horizonColor; col=mix(col,glowColor,t1); col=mix(col,midColor,t2); col=mix(col,topColor,t3); col=pow(col,vec3(1.0/2.2)); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
++    depthWrite: false,
++  });
++  const sky = new THREE.Mesh(skyGeo, skyMat);
++  sky.frustumCulled = false;
++  sky.renderOrder = -20;  // Draw before sun (which is at -3 to -1)
++  group.add(sky);
++  registerFadeMaterial(skyMat);
++
++  // Terrain - EXACT colors: Gridlines #015CC1 (bright blue), Between gridlines #0C0E3E (dark blue)
++  // PERFORMANCE FIX: Reduced from 240x240 (57,600 vertices) to 120x120 (14,400 vertices) for 75% reduction
++  // Still provides good visual quality while improving FPS at level start
++  const terrainUniforms = {
++    uGridColor: { value: new THREE.Color(0x4368AC) },     // Gridlines
++    uBaseColor: { value: new THREE.Color(0x0C1347) },     // Primary/base color
++    uFogColor: { value: new THREE.Color(0x2C0051) },      // EXACT: Sun top purple fog
++    uFlashIntensity: { value: 0.0 },
++    uGlowIntensity: { value: getVisualTuning().glowStrength },
++    uFogIntensity: { value: getVisualTuning().fogIntensity },
++  };
++  const terrainGeo = new THREE.PlaneGeometry(2000, 2000, 240, 240);
++  terrainGeo.rotateX(-Math.PI / 2);
++  const terrainMat = new THREE.ShaderMaterial({
++    uniforms: terrainUniforms,
++    side: THREE.DoubleSide,
++    depthWrite: true,
++    depthTest: true,
++    polygonOffset: true,
++    polygonOffsetFactor: 2.0,
++    polygonOffsetUnits: 8.0,
++    // Fix for synthwave floor popping in VR: keep the terrain static and use the
++    // built-in modelViewMatrix projection instead of manual projection math.
++    vertexShader: `varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; vec2 hash2(vec2 p){ p=vec2(dot(p, vec2(127.1,311.7)), dot(p, vec2(269.5,183.3))); return -1.0+2.0*fract(sin(p)*43758.5453123);} float noise(in vec2 p){ vec2 i=floor(p); vec2 f=fract(p); vec2 u=f*f*(3.0-2.0*f); return mix(mix(dot(hash2(i+vec2(0.0,0.0)), f-vec2(0.0,0.0)), dot(hash2(i+vec2(1.0,0.0)), f-vec2(1.0,0.0)), u.x), mix(dot(hash2(i+vec2(0.0,1.0)), f-vec2(0.0,1.0)), dot(hash2(i+vec2(1.0,1.0)), f-vec2(1.0,1.0)), u.x), u.y);} float fbm(vec2 p){ float value=0.0; float amp=0.5; for(int i=0;i<5;i++){ value+=amp*noise(p); p*=2.0; amp*=0.5;} return value;} float ridgeNoise(vec2 p){ float sum=0.0; float amp=0.55; for(int i=0;i<5;i++){ float n=noise(p); n=1.0-abs(n); n*=n; sum+=n*amp; p*=2.15; amp*=0.5;} return sum;} void main(){ vec3 pos=position; vec2 p=pos.xz; float valleyMask=smoothstep(0.0,1.0, clamp(abs(pos.x)/240.0,0.0,1.0)); float broad=fbm(p*vec2(0.0035,0.0024))*16.0; float detail=fbm(p*vec2(0.012,0.01))*5.0; float ridges=ridgeNoise((p+vec2(0.0,-260.0))*0.008)*180.0; float mountainMask=pow(valleyMask,1.55); float centerDip=-10.0*(1.0-valleyMask); float distanceFade=smoothstep(750.0,120.0, abs(pos.z+120.0)); float h=broad+detail+centerDip; h+=ridges*mountainMask*distanceFade; if(pos.z>700.0){ h*=smoothstep(1000.0,700.0,pos.z);} pos.y=h; vec4 world=modelMatrix*vec4(pos,1.0); vec4 mvPosition=modelViewMatrix*vec4(pos,1.0); vWorldPos=world.xyz; vObjPos=pos; vHeight=h; vFogDistance=length(mvPosition.xyz); gl_Position=projectionMatrix*mvPosition; }`,
++    fragmentShader: `uniform vec3 uGridColor; uniform vec3 uBaseColor; uniform vec3 uFogColor; uniform float uFlashIntensity; uniform float uGlowIntensity; uniform float uFogIntensity; varying vec3 vWorldPos; varying vec3 vObjPos; varying float vHeight; varying float vFogDistance; float gridLine(float coord,float width){ float g=abs(fract(coord-0.5)-0.5)/fwidth(coord); return 1.0-smoothstep(width,width+1.0,g);} void main(){ float gridScale=1.0/6.0; float dist=length(vObjPos.xz); float lineW=0.25*smoothstep(1000.0,100.0,dist); float gx=gridLine(vObjPos.x*gridScale,lineW); float gz=gridLine(vObjPos.z*gridScale,lineW); float grid=max(gx,gz); float glowPath=exp(-abs(vObjPos.x)*0.014)*smoothstep(350.0,-150.0,vObjPos.z); grid=max(grid, glowPath*0.34*uGlowIntensity); vec3 col=mix(uBaseColor, uGridColor, clamp(grid*uGlowIntensity,0.0,1.0)); float ridgeGlow=smoothstep(48.0,160.0,vHeight)*smoothstep(100.0,350.0,abs(vObjPos.x)); col+=uGridColor*ridgeGlow*0.18*uGlowIntensity; float fogAmount=1.0-exp(-0.0000012*vFogDistance*vFogDistance); col=mix(col,uFogColor, clamp(fogAmount*uFogIntensity,0.0,1.0)); vec3 flashColor=vec3(1.0,0.0,0.0); col=mix(col,flashColor,uFlashIntensity); gl_FragColor=vec4(col*${brightness.toFixed(2)},1.0); }`,
++  });
++  const terrain = new THREE.Mesh(terrainGeo, terrainMat);
++  terrain.name = 'synthwave-valley-floor-and-mountains';
++  terrain.userData.planeName = 'synthwave-valley-floor-and-mountains';
++  terrain.position.set(0, floorY + 1.5, -700);
++  terrain.frustumCulled = false;
++  terrain.layers.enable(BLOOM_LAYER);  // Selective bloom: floor grid glows
++  group.add(terrain);
++  registerFadeMaterial(terrainMat);
++  // Store terrain material for damage flash
++  biomeTerrainMaterials.push({ type: 'shader', material: terrainMat });
++
++  synthVisualRefs.terrainUniforms = terrainUniforms;
++
++  // Sun + glow - flat planes (no billboard), using retro synthwave PNG
++  const sunGroup = new THREE.Group();
++  sunGroup.name = 'synthwave-sun-group';
++  sunGroup.position.set(0, 270, -1700);  // Y raised so full circle is above horizon
++  group.add(sunGroup);
++
++  const makeRadial = (inner, outer) => {
++    const c = document.createElement('canvas');
++    c.width = 512; c.height = 512;
++    const ctx = c.getContext('2d');
++    const g = ctx.createRadialGradient(256,256,0,256,256,256);
++    g.addColorStop(0.0, inner);
++    g.addColorStop(0.35, inner);
++    g.addColorStop(0.6, outer);
++    g.addColorStop(1.0, 'rgba(255,102,204,0)');
++    ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
++    return new THREE.CanvasTexture(c);
++  };
++
++  const sunGlowTex = makeRadial('rgba(255,255,255,1.0)', 'rgba(254,151,83,0.85)');
++  const sunOuterGlowTex = makeRadial('rgba(254,151,83,0.9)', 'rgba(224,1,134,0.3)');
++
++  // Outer massive glow (flat plane, no billboard, fog-proof, no depth test)
++  const sunOuterGlowMat = new THREE.MeshBasicMaterial({ map: sunOuterGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
++  const sunOuterGlow = new THREE.Mesh(new THREE.PlaneGeometry(875, 875), sunOuterGlowMat); // 10% smaller again (81% of original)
++  sunOuterGlow.name = 'synthwave-sun-outer-glow';
++  sunOuterGlow.userData.planeName = 'synthwave-sun-outer-glow';
++  sunOuterGlow.frustumCulled = false;
++  sunOuterGlow.renderOrder = -3;
++  sunGroup.add(sunOuterGlow);
++  registerFadeMaterial(sunOuterGlowMat);
++  synthVisualRefs.sunOuterGlowMat = sunOuterGlowMat;
++
++  // Main bright glow (fog-proof, no depth test)
++  const sunGlowMat = new THREE.MeshBasicMaterial({ map: sunGlowTex, color: 0xffffff, transparent: true, opacity: 1.0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
++  const sunGlow = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), sunGlowMat); // 10% smaller again (81% of original)
++  sunGlow.name = 'synthwave-sun-main-glow';
++  sunGlow.userData.planeName = 'synthwave-sun-main-glow';
++  sunGlow.frustumCulled = false;
++  sunGlow.renderOrder = -2;
++  sunGroup.add(sunGlow);
++  registerFadeMaterial(sunGlowMat);
++  synthVisualRefs.sunGlowMat = sunGlowMat;
++
++  // Retro synthwave sun disc from PNG (flat plane, no billboard)
++  // PNG has white background - process to make white pixels transparent
++  const sunDiscTex = new THREE.TextureLoader().load('assets/sun-retro.png');
++  const sunCoreMat = new THREE.MeshBasicMaterial({ map: sunDiscTex, color: 0xffffff, transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide, fog: false });
++  // Process: load PNG, threshold white pixels to transparent, replace material map
++  const sunDiscImg = new Image();
++  sunDiscImg.crossOrigin = 'anonymous';
++  sunDiscImg.onload = () => {
++    const c = document.createElement('canvas');
++    c.width = sunDiscImg.width;
++    c.height = sunDiscImg.height;
++    const ctx = c.getContext('2d');
++    ctx.drawImage(sunDiscImg, 0, 0);
++    const id = ctx.getImageData(0, 0, c.width, c.height);
++    const d = id.data;
++    for (let i = 0; i < d.length; i += 4) {
++      if ((d[i] + d[i+1] + d[i+2]) / 3 > 240) d[i+3] = 0;
++    }
++    ctx.putImageData(id, 0, 0);
++    if (sunCoreMat.map) sunCoreMat.map.dispose();
++    sunCoreMat.map = new THREE.CanvasTexture(c);
++    sunCoreMat.map.needsUpdate = true;
++    sunCoreMat.needsUpdate = true;
++  };
++  sunDiscImg.src = 'assets/sun-retro.png';
++  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(466, 466), sunCoreMat); // 10% smaller again (81% of original)
++  sunCore.name = 'synthwave-sun-core-disc';
++  sunCore.userData.planeName = 'synthwave-sun-core-disc';
++  sunCore.frustumCulled = false;
++  sunCore.renderOrder = -1;
++  sunGroup.add(sunCore);
++  registerFadeMaterial(sunCoreMat);
++  synthVisualRefs.sunCoreMat = sunCoreMat;
++
++  // Log cylinder colors for debugging
++  // logCylinderColors(refs); // Disabled - only for debugging
++
++  // ---- CATHEDRAL REEF ADDITIONS ----
++  const columnBodyMat = new THREE.MeshStandardMaterial({ color: 0x1A1A2E, metalness: 0.8, roughness: 0.3 });
++  const columnNeonCyanMat = new THREE.MeshBasicMaterial({ color: 0x00FFFF, transparent: true, opacity: 0.9 });
++  const columnNeonPurpleMat = new THREE.MeshBasicMaterial({ color: 0x8A2BE2, transparent: true, opacity: 0.9 });
++  const columnBaseMat = new THREE.MeshStandardMaterial({ color: 0x0A0A1A, metalness: 0.9, roughness: 0.2 });
++  const archFrameMat = new THREE.MeshStandardMaterial({ color: 0x1A1A3E, metalness: 0.7, roughness: 0.4 });
++  const archGlowMat = new THREE.MeshBasicMaterial({ color: 0x00DDDD, transparent: true, opacity: 0.4 });
++  const crystalLargeMat = new THREE.MeshStandardMaterial({ color: 0x008B8B, emissive: 0x004040, emissiveIntensity: 0.5, metalness: 0.3, roughness: 0.2, transparent: true, opacity: 0.85 });
++  const crystalMediumMat = new THREE.MeshStandardMaterial({ color: 0x008B8B, emissive: 0x003333, emissiveIntensity: 0.3, metalness: 0.3, roughness: 0.3, transparent: true, opacity: 0.8 });
++  const crystalSmallTealMat = new THREE.MeshBasicMaterial({ color: 0x20B2AA, transparent: true, opacity: 0.8 });
++  const crystalSmallPurpleMat = new THREE.MeshBasicMaterial({ color: 0x9370DB, transparent: true, opacity: 0.8 });
++  const crystalSmallPinkMat = new THREE.MeshBasicMaterial({ color: 0xFF69B4, transparent: true, opacity: 0.8 });
++  const lightBeamMat = new THREE.MeshBasicMaterial({ color: 0x00FFFF, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
++  const orbCyanMat = new THREE.MeshBasicMaterial({ color: 0x00FFFF, transparent: true, opacity: 0.7 });
++  const orbPurpleMat = new THREE.MeshBasicMaterial({ color: 0x8A2BE2, transparent: true, opacity: 0.7 });
++  const orbPinkMat = new THREE.MeshBasicMaterial({ color: 0xFF69B4, transparent: true, opacity: 0.7 });
++  const fanCoralMat = new THREE.MeshStandardMaterial({ color: 0xDAA520, emissive: 0x553300, emissiveIntensity: 0.2, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
++  const pyramidMat = new THREE.MeshStandardMaterial({ color: 0x008080, emissive: 0x2F4F4F, emissiveIntensity: 0.3, metalness: 0.5, roughness: 0.3 });
++  const circuitTreeMat = new THREE.MeshStandardMaterial({ color: 0x1A1A2E, metalness: 0.8, roughness: 0.3 });
++  [columnBodyMat, columnNeonCyanMat, columnNeonPurpleMat, columnBaseMat, archFrameMat, archGlowMat, crystalLargeMat, crystalMediumMat, crystalSmallTealMat, crystalSmallPurpleMat, crystalSmallPinkMat, lightBeamMat, orbCyanMat, orbPurpleMat, orbPinkMat, fanCoralMat, pyramidMat, circuitTreeMat].forEach(registerFadeMaterial);
++  const columnMaterials = [columnNeonCyanMat, columnNeonPurpleMat];
++  const addMesh = (mesh, x, y, z, rx = 0, ry = 0, rz = 0) => {
++    mesh.position.set(x, y, z);
++    mesh.rotation.set(rx, ry, rz);
++    mesh.frustumCulled = false;
++    group.add(mesh);
++    return mesh;
++  };
++  const terrainYAt = (x, z) => floorY + 1.5 + Math.sin(x * 0.05) * 0.6 + Math.cos(z * 0.04) * 0.6;
++  const makeColumn = (name, x, z, height, neonMat, angle = 0) => {
++    const y = terrainYAt(x, z);
++    const g = new THREE.Group();
++    g.name = name;
++    g.position.set(x, y, z);
++    g.rotation.y = angle;
++    const base = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.15, 1.5), columnBaseMat);
++    base.name = `${name}-base`;
++    base.position.y = 0.075;
++    base.frustumCulled = false;
++    g.add(base);
++    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, height, 8), columnBodyMat);
++    shaft.name = `${name}-shaft`;
++    shaft.position.y = height * 0.5 + 0.15;
++    shaft.frustumCulled = false;
++    g.add(shaft);
++    const stripOffsets = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5];
++    stripOffsets.forEach((a, idx) => {
++      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.05, height, 0.05), neonMat);
++      strip.name = `${name}-led-${idx}`;
++      strip.position.set(Math.cos(a) * 0.34, height * 0.5 + 0.15, Math.sin(a) * 0.34);
++      strip.frustumCulled = false;
++      strip.layers.enable(BLOOM_LAYER);
++      g.add(strip);
++    });
++    group.add(g);
++    return g;
++  };
++  makeColumn('synth-column-a-0', -34, -38, 8, columnNeonCyanMat, 0.1);
++  makeColumn('synth-column-a-1', -28, -42, 10, columnNeonCyanMat, -0.3);
++  makeColumn('synth-column-a-2', -30, -46, 12, columnNeonCyanMat, 0.5);
++  makeColumn('synth-column-a-3', -24, -39, 10, columnNeonCyanMat, -0.8);
++  makeColumn('synth-column-a-4', -37, -44, 8, columnNeonCyanMat, 1.0);
++  makeColumn('synth-column-b-0', 37, -76, 10, columnNeonPurpleMat, 0.2);
++  makeColumn('synth-column-b-1', 43, -82, 12, columnNeonPurpleMat, -0.4);
++  makeColumn('synth-column-b-2', 46, -78, 10, columnNeonPurpleMat, 0.7);
++  makeColumn('synth-column-c-0', -19, -116, 8, columnNeonCyanMat, 0.1);
++  makeColumn('synth-column-c-1', -12, -122, 11, columnNeonPurpleMat, -0.2);
++  makeColumn('synth-column-c-2', -16, -128, 11, columnNeonCyanMat, 0.6);
++  makeColumn('synth-column-c-3', -10, -119, 8, columnNeonPurpleMat, -1.0);
++
++  const makeArch = (name, x, z, ry) => {
++    const y = terrainYAt(x, z);
++    const g = new THREE.Group();
++    g.name = name;
++    g.position.set(x, y, z);
++    g.rotation.y = ry;
++    const parts = [
++      [-5.6, 3.5, 0, 0.25, 7.0, 0.25],
++      [5.6, 3.5, 0, 0.25, 7.0, 0.25],
++      [-3.5, 10.0, 0, 0.25, 6.0, 0.25, 0, 0, -0.65],
++      [3.5, 10.0, 0, 0.25, 6.0, 0.25, 0, 0, 0.65],
++      [0, 12.4, 0, 0.35, 0.25, 2.0],
++      [0, 6.7, 0, 8.0, 0.18, 0.18],
++    ];
++    parts.forEach((p, i) => {
++      const m = new THREE.Mesh(new THREE.BoxGeometry(p[3], p[4], p[5]), archFrameMat);
++      m.name = `${name}-frame-${i}`;
++      m.position.set(p[0], p[1], p[2]);
++      if (p.length > 6) m.rotation.set(p[6] || 0, p[7] || 0, p[8] || 0);
++      m.frustumCulled = false;
++      g.add(m);
++      const glow = new THREE.Mesh(new THREE.BoxGeometry(p[3] * 0.25, p[4] * 0.9, p[5] * 0.25), archGlowMat);
++      glow.name = `${name}-glow-${i}`;
++      glow.position.copy(m.position);
++      glow.rotation.copy(m.rotation);
++      glow.frustumCulled = false;
++      glow.layers.enable(BLOOM_LAYER);
++      g.add(glow);
++    });
++    group.add(g);
++  };
++  makeArch('synth-arch-0', 0, -60, 0);
++  makeArch('synth-arch-1', -25, -90, Math.PI * 0.15);
++
++  const makeCrystal = (name, x, z, height, mat, tip = false) => {
++    const y = terrainYAt(x, z);
++    const g = new THREE.Group();
++    g.name = name;
++    g.position.set(x, y, z);
++    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, height, 6), mat);
++    body.name = `${name}-body`;
++    body.position.y = height * 0.5;
++    body.rotation.z = 0.15;
++    body.frustumCulled = false;
++    g.add(body);
++    if (tip) {
++      const tipMat = new THREE.MeshBasicMaterial({ color: 0xFFD700, transparent: true, opacity: 0.95 });
++      registerFadeMaterial(tipMat);
++      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.5, 6), tipMat);
++      cone.name = `${name}-tip`;
++      cone.position.y = height + 0.25;
++      cone.frustumCulled = false;
++      cone.layers.enable(BLOOM_LAYER);
++      g.add(cone);
++    }
++    group.add(g);
++    return g;
++  };
++  makeCrystal('synth-crystal-large-0', 20, -55, 4.8, crystalLargeMat, false);
++  makeCrystal('synth-crystal-large-1', -35, -100, 5.2, crystalLargeMat, false);
++  makeCrystal('synth-crystal-large-2', 10, -140, 4.5, crystalLargeMat, false);
++  makeCrystal('synth-crystal-medium-0', 14, -58, 2.4, crystalMediumMat, true);
++  makeCrystal('synth-crystal-medium-1', -40, -95, 2.8, crystalMediumMat, true);
++  makeCrystal('synth-crystal-medium-2', -30, -108, 2.2, crystalMediumMat, true);
++  makeCrystal('synth-crystal-medium-3', 18, -145, 2.6, crystalMediumMat, true);
++  makeCrystal('synth-crystal-medium-4', 6, -132, 2.5, crystalMediumMat, true);
++  makeCrystal('synth-crystal-medium-5', -2, -70, 2.1, crystalMediumMat, true);
++  [[6, -61], [-2, -66], [22, -74], [-28, -103], [12, -118], [-12, -128], [31, -140], [-5, -145], [18, -88], [26, -57], [-18, -49], [0, -98], [9, -108], [42, -83], [-36, -74], [15, -35], [-20, -118], [5, -155]].forEach((p, i) => {
++    const mats = [crystalSmallTealMat, crystalSmallPurpleMat, crystalSmallPinkMat];
++    const m = mats[i % mats.length];
++    const y = terrainYAt(p[0], p[1]);
++    const c = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), m);
++    c.name = `synth-crystal-small-${i}`;
++    c.position.set(p[0], y + 0.5, p[1]);
++    c.scale.y = 1.5;
++    c.rotation.set(0.3 * (i % 3), 0.4 * i, 0.2 * (i % 5));
++    c.frustumCulled = false;
++    c.layers.enable(BLOOM_LAYER);
++    group.add(c);
++  });
++
++  const makeBeam = (name, x, z) => {
++    const y = terrainYAt(x, z);
++    const core = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 40, 12, 1, true), lightBeamMat);
++    core.name = `${name}-core`;
++    core.position.set(x, y + 20, z);
++    core.frustumCulled = false;
++    core.layers.enable(BLOOM_LAYER);
++    group.add(core);
++    const glow = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 40, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0x00FFFF, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
++    glow.name = `${name}-glow`;
++    glow.position.set(x, y + 20, z);
++    glow.frustumCulled = false;
++    glow.layers.enable(BLOOM_LAYER);
++    registerFadeMaterial(glow.material);
++    group.add(glow);
++  };
++  makeBeam('synth-beam-0', 20, -55);
++  makeBeam('synth-beam-1', -35, -100);
++  makeBeam('synth-beam-2', 10, -140);
++
++  const orbDefs = [
++    [5, 3, -30, orbCyanMat, 0.35],
++    [-8, 4, -45, orbPurpleMat, 0.35],
++    [15, 3, -65, orbPinkMat, 0.25],
++    [-20, 4, -55, orbCyanMat, 0.25],
++    [0, 3.5, -85, orbPurpleMat, 0.35],
++    [30, 4, -75, orbPinkMat, 0.35],
++    [-10, 3, -105, orbCyanMat, 0.35],
++    [8, 3.5, -115, orbPurpleMat, 0.25],
++  ];
++  const orbitals = [];
++  orbDefs.forEach((o, i) => {
++    const mesh = new THREE.Mesh(new THREE.SphereGeometry(o[4], 12, 12), o[3]);
++    mesh.name = `synth-orb-${i}`;
++    mesh.position.set(o[0], floorY + o[1], o[2]);
++    mesh.userData.baseY = mesh.position.y;
++    mesh.userData.phase = i * 0.7;
++    mesh.frustumCulled = false;
++    mesh.layers.enable(BLOOM_LAYER);
++    group.add(mesh);
++    orbitals.push(mesh);
++  });
++
++  const fanPositions = [[25, -50], [-30, -70], [15, -110]];
++  fanPositions.forEach((p, i) => {
++    const y = terrainYAt(p[0], p[1]);
++    const g = new THREE.Group();
++    g.name = `synth-fan-coral-${i}`;
++    g.position.set(p[0], y, p[1]);
++    for (let j = 0; j < 4; j++) {
++      const plane = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 3), fanCoralMat);
++      plane.name = `synth-fan-coral-${i}-plane-${j}`;
++      plane.position.y = 1.5;
++      plane.rotation.y = j * Math.PI * 0.5;
++      plane.rotation.z = (j % 2 === 0 ? 0.15 : -0.15);
++      plane.frustumCulled = false;
++      g.add(plane);
++    }
++    group.add(g);
++  });
++  [[-12, -88], [8, -124], [34, -98], [-25, -60]].forEach((p, i) => {
++    const y = terrainYAt(p[0], p[1]);
++    const pyr = new THREE.Mesh(new THREE.ConeGeometry(1.0, 2.5, 4), pyramidMat);
++    pyr.name = `synth-pyramid-${i}`;
++    pyr.position.set(p[0], y + 1.25, p[1]);
++    pyr.rotation.x = 0.15 + i * 0.03;
++    pyr.rotation.z = 0.2 + i * 0.02;
++    pyr.frustumCulled = false;
++    group.add(pyr);
++  });
++  [[-20, -35], [35, -95]].forEach((p, i) => {
++    const y = terrainYAt(p[0], p[1]);
++    const g = new THREE.Group();
++    g.name = `synth-circuit-tree-${i}`;
++    g.position.set(p[0], y, p[1]);
++    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.25, 4, 6), circuitTreeMat);
++    trunk.name = `synth-circuit-tree-${i}-trunk`;
++    trunk.position.y = 2;
++    trunk.frustumCulled = false;
++    g.add(trunk);
++    const nodeMat = new THREE.MeshBasicMaterial({ color: 0x00FFFF, transparent: true, opacity: 0.9 });
++    registerFadeMaterial(nodeMat);
++    for (let b = 0; b < 4; b++) {
++      const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 2, 4), circuitTreeMat);
++      branch.name = `synth-circuit-tree-${i}-branch-${b}`;
++      branch.position.set(0, 2.4 + b * 0.2, 0);
++      branch.rotation.set(0.7 - b * 0.1, b * 1.3, 0.4 * (b % 2 ? -1 : 1));
++      branch.frustumCulled = false;
++      g.add(branch);
++      const node = new THREE.Mesh(new THREE.SphereGeometry(0.1), nodeMat);
++      node.name = `synth-circuit-tree-${i}-node-${b}`;
++      node.position.set(Math.cos(b) * 0.8, 3.2 + b * 0.3, Math.sin(b) * 0.8);
++      node.frustumCulled = false;
++      node.layers.enable(BLOOM_LAYER);
++      g.add(node);
++    }
++    group.add(g);
++  });
++
++  const crystalMaterials = [crystalLargeMat, crystalMediumMat, crystalSmallTealMat, crystalSmallPurpleMat, crystalSmallPinkMat, lightBeamMat, orbCyanMat, orbPurpleMat, orbPinkMat, archGlowMat, fanCoralMat, pyramidMat];
++  group.userData.update = (time, deltaTime) => {
++    const t = time;
++    columnNeonCyanMat.opacity = 0.5 + 0.4 * Math.sin(t * 0.8);
++    columnNeonPurpleMat.opacity = 0.5 + 0.4 * Math.sin(t * 0.6 + 1.0);
++    archGlowMat.opacity = 0.25 + 0.15 * Math.sin(t * 0.5);
++    crystalLargeMat.emissiveIntensity = 0.3 + 0.3 * Math.sin(t * 0.7);
++    lightBeamMat.opacity = 0.08 + 0.06 * Math.sin(t * 0.4);
++    orbCyanMat.opacity = 0.5 + 0.3 * Math.sin(t * 1.2);
++    orbPurpleMat.opacity = 0.5 + 0.3 * Math.sin(t * 1.2 + 1.1);
++    orbPinkMat.opacity = 0.5 + 0.3 * Math.sin(t * 1.2 + 2.2);
++    orbitals.forEach((orb, i) => {
++      orb.position.y = orb.userData.baseY + Math.sin(t * 0.6 + orb.userData.phase) * 0.8;
++      orb.material.opacity = 0.5 + 0.3 * Math.sin(t * 1.2 + orb.userData.phase);
++    });
++    group.children.forEach((child) => {
++      if (child.name && child.name.startsWith('synth-circuit-tree-')) {
++        child.children.forEach((node) => {
++          if (node.name && node.name.includes('-node-')) node.material.opacity = 0.55 + 0.35 * Math.sin(t * 1.1 + node.name.length);
++        });
++      }
++    });
++  };
++
++  // Fix for synthwave valley "jiggle": keep the imported scene static in-game.
++  // The standalone HTML used perpetual scrolling and pulsing, but the game
++  // version should behave like a stable biome backdrop.
++
++  // Synthwave floor HUD height: group.position.y = 5.82
++  group.position.set(0, 5.82, 0);
++
++  // Rotate so player faces sun
++  group.rotation.y = 0;
++}
+diff --git a/enemies.js b/enemies.js
+index d10f3fe..128cdd3 100644
+--- a/enemies.js
++++ b/enemies.js
+@@ -1321,15 +1321,17 @@ function spawnElectricArc(fromPos, toPos, color = 0xffcc00, conductorIndex = -1)
+   const arc = new THREE.Line(geometry, material);
+ 
+   sceneRef.add(arc);
+ 
+   // Store for cleanup (track conductor index for cleanup when conductor dies)
++  // Also track target enemy for cleanup when buffed enemy dies
+   electricArcs.push({
+     mesh: arc,
+     createdAt: performance.now(),
+     lifetime: 200, // 0.2 seconds
+     conductorIndex: conductorIndex,
++    targetEnemyIndex: -1, // Set by caller if available
+   });
+ }
+ 
+ const electricArcs = [];
+ 
+@@ -1348,10 +1350,27 @@ function clearConductorArcs(conductorIndex) {
+       electricArcs.splice(i, 1);
+     }
+   }
+ }
+ 
++/**
++ * Clear all electric arcs connected to a specific buffed enemy.
++ * Called when a buffed enemy dies to immediately remove its lightning visuals.
++ * @param {number} targetEnemyIndex - Index of the buffed enemy in activeEnemies
++ */
++function clearTargetEnemyArcs(targetEnemyIndex) {
++  for (let i = electricArcs.length - 1; i >= 0; i--) {
++    const arc = electricArcs[i];
++    if (arc.targetEnemyIndex === targetEnemyIndex) {
++      sceneRef.remove(arc.mesh);
++      arc.mesh.geometry.dispose();
++      arc.mesh.material.dispose();
++      electricArcs.splice(i, 1);
++    }
++  }
++}
++
+ /**
+  * Update electric arcs (fade out).
+  */
+ export function updateElectricArcs(dt, now) {
+   for (let i = electricArcs.length - 1; i >= 0; i--) {
+@@ -1657,83 +1676,97 @@ function getExplosionSprite() {
+ 
+ // Temp vectors (avoid allocation in hot loops)
+ const _dir = new THREE.Vector3();
+ const _look = new THREE.Vector3();
+ 
+-// Status effect bubbles array (similar to damage numbers)
++// Status effect text popups (glowing title text style, similar to damage numbers)
+ const statusBubbles = [];
+ 
+ /**
+- * Spawn a speech bubble indicating a status effect was applied.
++ * Spawn glowing title text indicating a status effect was applied.
++ * Task #4: Replaced comic bubble icons with large glowing text for VR readability.
++ * Colors: Fire=#ff3300, Freeze=#88ccff, Shock=#ffdd00
+  */
+ function spawnStatusEffectBubble(position, effectType, stacks) {
+   const canvas = document.createElement('canvas');
+   const ctx = canvas.getContext('2d');
+   canvas.width = 256;
+   canvas.height = 128;
+ 
+   // Determine color and text based on effect type
+-  let bgColor, textColor, text;
++  // Task #4: Use specified glowing colors for each effect
++  let glowColor, text;
+   switch (effectType) {
+     case 'fire':
+-      bgColor = '#ff4400';
+-      textColor = '#ffffff';
++      glowColor = '#ff3300';  // Hot red
+       text = stacks > 1 ? `FIRE x${stacks}!` : 'FIRE!';
+       break;
+     case 'shock':
+-      bgColor = '#ffff44';
+-      textColor = '#000000';
++      glowColor = '#ffdd00';  // Electric yellow
+       text = stacks > 1 ? `SHOCK x${stacks}!` : 'SHOCK!';
+       break;
+     case 'freeze':
+-      bgColor = '#44aaff';
+-      textColor = '#ffffff';
++      glowColor = '#88ccff';  // Icy blue
+       text = stacks > 1 ? `CHILL x${stacks}!` : 'CHILL!';
+       break;
+     default:
+-      bgColor = '#888888';
+-      textColor = '#ffffff';
++      glowColor = '#ffffff';
+       text = 'EFFECT!';
+   }
+ 
+-  // Background bubble
+-  ctx.fillStyle = bgColor;
+-  ctx.strokeStyle = '#000000';
+-  ctx.lineWidth = 6;
+-
+-  // Flashy comic bubble shape
+-  ctx.beginPath();
+-  ctx.moveTo(40, 60);
+-  ctx.lineTo(20, 20); ctx.lineTo(80, 40);
+-  ctx.lineTo(128, 10); ctx.lineTo(176, 40);
+-  ctx.lineTo(236, 20); ctx.lineTo(216, 60);
+-  ctx.lineTo(236, 100); ctx.lineTo(176, 80);
+-  ctx.lineTo(128, 110); ctx.lineTo(80, 80);
+-  ctx.lineTo(20, 100); ctx.closePath();
+-  ctx.fill();
+-  ctx.stroke();
+-
+-  ctx.font = 'bold 36px "Comic Sans MS", cursive, sans-serif';
+-  if (text.length > 8) ctx.font = 'bold 24px "Comic Sans MS", cursive, sans-serif';
++  // Large font for VR readability
++  const fontSize = 56;
++  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+   ctx.textAlign = 'center';
+   ctx.textBaseline = 'middle';
+-  ctx.fillStyle = textColor;
++
++  // Glow effect (similar to damage numbers)
++  ctx.shadowColor = glowColor;
++  ctx.shadowBlur = 20;
++
++  // Drop shadow for depth
++  ctx.fillStyle = 'rgba(0,0,0,0.8)';
++  ctx.fillText(text, 130, 66);
++
++  // Main glowing text
++  ctx.fillStyle = glowColor;
+   ctx.fillText(text, 128, 64);
+ 
+   const texture = new THREE.CanvasTexture(canvas);
++  texture.minFilter = THREE.LinearFilter;
+   texture.premultiplyAlpha = false;
++
++  // Larger scale for VR readability (similar to damage numbers)
++  const scale = 0.5;
++  const width = scale * 2;
++  const height = scale;
++
+   const mesh = new THREE.Mesh(
+-    new THREE.PlaneGeometry(1.5, 0.75),
+-    new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, side: THREE.DoubleSide })
++    new THREE.PlaneGeometry(width, height),
++    new THREE.MeshBasicMaterial({ 
++      map: texture, 
++      transparent: true, 
++      opacity: 0.95,
++      depthTest: false, 
++      side: THREE.DoubleSide 
++    })
+   );
++  
++  // Position at enemy, pop up effect
+   mesh.position.copy(position);
+-  mesh.position.y += 1.2;
+-  mesh.position.z += 0.5;
+-  mesh.renderOrder = 997;
++  mesh.position.y += 1.2;  // Above enemy
++  mesh.position.x += (Math.random() - 0.5) * 0.3;
++  mesh.position.z += (Math.random() - 0.5) * 0.3;
++  
++  mesh.renderOrder = 998;
+   mesh.userData.createdAt = performance.now();
+   mesh.userData.lifetime = 800;
+-  mesh.userData.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.5, 1.5, (Math.random() - 0.5) * 0.5);
++  mesh.userData.velocity = new THREE.Vector3(
++    (Math.random() - 0.5) * 0.5,
++    1.2,  // Float up
++    (Math.random() - 0.5) * 0.5
++  );
+ 
+   sceneRef.add(mesh);
+   statusBubbles.push(mesh);
+ 
+   // Cap total to prevent perf issues
+@@ -1854,10 +1887,16 @@ export function initEnemies(scene) {
+ export function spawnEnemy(type, position, levelConfig) {
+   const def = ENEMY_DEFS[type];
+   if (!def) return;
+   if (type === 'mirror_knight' && activeEnemies.some(enemy => enemy.isMirror)) return;
+ 
++  // Limit 5-high jelly enemies to 1 concurrent (they're too hard in groups)
++  if (type === 'jelly' && activeEnemies.some(enemy => enemy.isJelly)) return;
++
++  // Limit conductor (warden) enemies to 2 concurrent
++  if (type === 'conductor' && activeEnemies.filter(enemy => enemy.isConductor).length >= 2) return;
++
+   // Handle special enemy types
+   if (def.isTrain) {
+     return spawnTrainEnemy(type, position, levelConfig);
+   }
+ 
+@@ -2543,10 +2582,14 @@ export function updateEnemies(dt, now, playerPos) {
+           other.linkedDamageReduction = Math.max(other.linkedDamageReduction, e.linkDamageReduction);
+           other.speed = other.baseSpeed * (1 + e.linkSpeedBonus);
+ 
+           if (e.conductorArcTimer <= 0) {
+             spawnElectricArc(e.mesh.position.clone(), other.mesh.position.clone(), 0xff66cc, i);
++            // Track the last spawned arc's target for cleanup when buffed enemy dies
++            if (electricArcs.length > 0) {
++              electricArcs[electricArcs.length - 1].targetEnemyIndex = j;
++            }
+           }
+ 
+           other.mesh.traverse(c => {
+             if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+               setMaterialEmissiveSafe(c.material, new THREE.Color(0xff66cc), 0.35);
+@@ -2958,10 +3001,12 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
+     e.mesh.traverse(c => {
+       if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+         setMaterialEmissiveSafe(c.material, new THREE.Color(0x000000), 0);
+       }
+     });
++    // Clear all electric arcs connected to this buffed enemy
++    clearTargetEnemyArcs(index);
+   }
+ 
+   // Conductor: Chain overload - kills all linked enemies
+   if (e.isConductor) {
+     // Clear all electric arcs spawned by this conductor immediately
+diff --git a/game-screenshot.png b/game-screenshot.png
+index 349100c..9cbbdd8 100644
+Binary files a/game-screenshot.png and b/game-screenshot.png differ
+diff --git a/hud.js b/hud.js
+index 48c0dba..4bdea40 100644
+--- a/hud.js
++++ b/hud.js
+@@ -789,17 +789,19 @@ function createHUDElements() {
+   heartsSprite.renderOrder = 999;
+   hudGroup.add(heartsSprite);
+ 
+   // SCORE - center-left on floor with title above
+   // Layout: Spread from hearts
++  // Task #3: Moved right by 0.3 to avoid overlap with hearts
+   scoreSprite = makeSprite('0', { fontSize: 90, color: '#ffff00', shadow: true, scale: 0.39 });
+-  scoreSprite.position.set(-0.8, 0.3, 0);  // Center-left, second row
++  scoreSprite.position.set(-0.5, 0.3, 0);  // Center-left, second row (moved right from -0.8)
+   hudGroup.add(scoreSprite);
+ 
+   // SCORE title - above score in yellow same style as level
++  // Task #3: Moved right by 0.3 to avoid overlap with hearts
+   scoreTitleSprite = makeSprite('SCORE', { fontSize: 72, color: '#ffff00', glow: true, glowColor: '#ffff00', scale: 0.45 });
+-  scoreTitleSprite.position.set(-0.8, 0.45, 0);  // Center-left, top row
++  scoreTitleSprite.position.set(-0.2, 0.45, 0);  // Moved right from -0.5 to clear hearts
+   hudGroup.add(scoreTitleSprite);
+ 
+   // Kill counter — below LEVEL display
+   // Layout: Center-right, below level
+   killCountSprite = makeSprite('0/0', { fontSize: 75, color: '#ffffff', shadow: true, scale: 0.45 });
+@@ -812,11 +814,11 @@ function createHUDElements() {
+   levelSprite.position.set(0.7, 0.45, 0);  // Center-right, top row
+   hudGroup.add(levelSprite);
+ 
+   // Nuke counter — far right, top row
+   // Layout: Far right to avoid overlap
+-  nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.28 });
++  nukeSprite = makeSprite('☢ X3', { fontSize: 60, color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.322 });
+   nukeSprite.position.set(1.5, 0.45, 0);  // Far right, top row
+   hudGroup.add(nukeSprite);
+ 
+   // Accuracy bonus — center bottom
+   comboSprite = makeSprite('1x', { fontSize: 40, color: '#ff8800', shadow: true, scale: 1.8 });
+@@ -1000,11 +1002,11 @@ export function updateHUD(gameState) {
+ 
+   // Level - #6: Moved left to x=0.5 (center-right) closer to SCORE display
+   // #7: Scale 0.45 matches SCORE title for perfect alignment
+   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.45 });
+ 
+-  // Score - #4: Moved closer to SCORE title at x=-0.5 (center-left)
++  // Score - Task #3: Moved right to x=-0.3 to avoid overlap with hearts
+   // #7: Scale 0.39 matches LEVEL value size for consistency
+   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.39 });
+ 
+   // Nuke counter - #6: Moved to x=1.4 (right) on top row, right of LEVEL display
+   const nukeCount = gameState.nukes || 0;
+diff --git a/main.js b/main.js
+index 96fa185..1290975 100644
+--- a/main.js
++++ b/main.js
+@@ -273,10 +273,14 @@ let biomePropsGroup = null;
+ let biomePropsBiome = null;
+ const biomePropFloaters = [];
+ let biomeSceneGroup = null;
+ let biomeSceneBiome = null;
+ 
++// Dream sequence trigger - DISABLED until player can collect upgrades in dreamworld
++// The dream sequence code and transition system remain intact, just hidden from players
++const DREAM_TRIGGER_ENABLED = false;
++
+ let dreamTriggerMesh = null;
+ let dreamTransition = null;
+ let dreamFadeOverlay = null;
+ let dreamReturnPosition = new THREE.Vector3();
+ let dreamOriginalEnv = null;
+@@ -1902,11 +1906,12 @@ function placeDreamTriggerBehindPlayer(force = false) {
+   dreamTriggerMesh.userData.placedForRun = true;
+ }
+ 
+ function refreshDreamTriggerVisibility() {
+   if (!dreamTriggerMesh) return;
+-  dreamTriggerMesh.visible = !game.inDreamWorld && !game.dreamCompleted;
++  // Dream trigger disabled until player can collect upgrades in dreamworld
++  dreamTriggerMesh.visible = DREAM_TRIGGER_ENABLED && !game.inDreamWorld && !game.dreamCompleted;
+ }
+ 
+ function didProjectileHitDreamTrigger(previousPos, currentPos) {
+   if (!dreamTriggerMesh?.visible) return false;
+ 
+
+--- UNCOMMITTED CHANGES ---
+ game-screenshot.png | Bin 516196 -> 516644 bytes
+ hud.js              |   5 +++--
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/game-screenshot.png b/game-screenshot.png
+index 9cbbdd8..885ec53 100644
+Binary files a/game-screenshot.png and b/game-screenshot.png differ
+diff --git a/hud.js b/hud.js
+index 4bdea40..3c042cd 100644
+--- a/hud.js
++++ b/hud.js
+@@ -1002,19 +1002,19 @@ export function updateHUD(gameState) {
+ 
+   // Level - #6: Moved left to x=0.5 (center-right) closer to SCORE display
+   // #7: Scale 0.45 matches SCORE title for perfect alignment
+   updateSpriteText(levelSprite, `LEVEL ${gameState.level}`, { color: '#00ffff', glow: true, glowColor: '#00ffff', scale: 0.45 });
+ 
+-  // Score - Task #3: Moved right to x=-0.3 to avoid overlap with hearts
++  // Score - Task #3: Moved right to x=-1.5 to avoid overlap with hearts
+   // #7: Scale 0.39 matches LEVEL value size for consistency
+   updateSpriteText(scoreSprite, `${gameState.score}`, { color: '#ffff00', scale: 0.39 });
+ 
+   // Nuke counter - #6: Moved to x=1.4 (right) on top row, right of LEVEL display
+   const nukeCount = gameState.nukes || 0;
+   if (nukeCount > 0 && nukeSprite) {
+     nukeSprite.visible = true;
+-    updateSpriteText(nukeSprite, `☢ X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.28 });
++    updateSpriteText(nukeSprite, `☢ X${nukeCount}`, { color: '#ffff44', glow: true, glowColor: '#ffff44', scale: 0.322 });
+   } else if (nukeSprite) {
+     nukeSprite.visible = false;
+   }
+ 
+   // Accuracy bonus - 200% larger with descriptive label
+@@ -4864,5 +4864,6 @@ function calculateAccuracy() {
+   return Math.round((hit / fired) * 100);
+ }
+ 
+ // Export nameEntryGroup and pauseMenuGroup for use in other modules
+ export { nameEntryGroup, pauseMenuGroup, pauseCountdownGroup };
++

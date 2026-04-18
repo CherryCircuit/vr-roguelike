@@ -1,0 +1,21 @@
+{
+  "headline": "Nightly Codex Review Failed",
+  "overall_risk": "high",
+  "verdict": "issues found",
+  "summary": "The scheduled Codex review did not complete. Check the run artifacts and events log for the CLI error before trusting the nightly report.",
+  "focus_areas": ["automation", "auth", "quota"],
+  "findings": [
+    {
+      "title": "Scheduled Codex review failed to complete",
+      "category": "stability",
+      "severity": "high",
+      "confidence": 1,
+      "file": "automation/codex-review/run-vr-roguelike-nightly.sh",
+      "start_line": 1,
+      "end_line": 1,
+      "impact": "No trustworthy nightly code review results were produced for this run.",
+      "evidence": "The codex exec process exited non-zero. Inspect events.jsonl or service logs for the exact failure.",
+      "recommendation": "Fix the Codex CLI auth, quota, or runtime error, then rerun the job manually."
+    }
+  ]
+}

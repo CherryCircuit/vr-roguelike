@@ -1,0 +1,141 @@
+diff --git a/audio.js b/audio.js
+index 420b475..2f40a0e 100644
+--- a/audio.js
++++ b/audio.js
+@@ -1364,32 +1364,14 @@ function playNextTrack() {
+   const track = currentPlaylist[currentTrackIndex];
+   console.log(`[music] Playing track ${currentTrackIndex + 1}/${currentPlaylist.length}: ${track}`);
+ 
+   const ctx = getAudioContext();
+ 
+-  // Create analyser if it doesn't exist
+-  if (!musicAnalyser) {
+-    musicAnalyser = ctx.createAnalyser();
+-    musicAnalyser.fftSize = 64;  // Small for performance (32 frequency bins)
+-    musicAnalyser.smoothingTimeConstant = 0.8;
+-    musicAnalyser.connect(ctx.destination);
+-  }
+-
+   currentMusic = new Audio(track);
+   currentMusic.volume = musicVolume;
+   currentMusic.loop = false;  // Don't loop individual tracks
+ 
+-  // Connect same-origin music through analyser for visualization.
+-  // Cross-origin CDN tracks can still play directly, but should not be routed
+-  // through Web Audio unless the CDN sends permissive CORS headers.
+-  musicSource = null;
+-  const isCrossOriginTrack = /^https?:\/\//i.test(track);
+-  if (!isCrossOriginTrack) {
+-    musicSource = ctx.createMediaElementSource(currentMusic);
+-    musicSource.connect(musicAnalyser);
+-  }
+-
+   // Auto-advance to next track when current ends (only if playlist looping is enabled)
+   currentMusic.addEventListener('ended', () => {
+     if (!loopPlaylist) return;  // Don't loop for single-play tracks like game over
+     currentTrackIndex = (currentTrackIndex + 1) % currentPlaylist.length;
+     playNextTrack();
+diff --git a/game-screenshot.png b/game-screenshot.png
+index 9852630..40864f5 100644
+Binary files a/game-screenshot.png and b/game-screenshot.png differ
+diff --git a/main.js b/main.js
+index 5d98b67..9a6cbf1 100644
+--- a/main.js
++++ b/main.js
+@@ -211,10 +211,13 @@ const chargeGlowSpheres = [null, null];
+ const chargeParticleSystems = [null, null];
+ 
+ // Holographic blaster displays (per controller)
+ const blasterDisplays = [null, null];
+ 
++// Mountain visualizer references (for per-theme color updates)
++const mountainLines = [];
++
+ // Environment refs for level-based scaling (sun, ominous horizon)
+ let sunMeshRef = null;
+ let sunGlowRef = null;
+ let ominousRef = null;
+ let gridHelper = null;
+@@ -1148,15 +1151,10 @@ function applyThemeForLevel(level) {
+   const hideBaseEnv = !!theme.hideBaseEnv;
+   if (gridHelper) gridHelper.visible = !hideBaseEnv;
+   if (horizonRingRef) horizonRingRef.visible = !hideBaseEnv;
+   if (horizonInnerRingRef) horizonInnerRingRef.visible = !hideBaseEnv;
+   if (sunMeshRef) sunMeshRef.visible = !hideBaseEnv;
+-  // Hide base environment mountains when custom biome scene replaces them
+-  mountainLines.forEach((layer) => {
+-    if (layer.fillMesh) layer.fillMesh.visible = !hideBaseEnv;
+-    if (layer.line) layer.line.visible = !hideBaseEnv;
+-  });
+   if (atmosphereRef) atmosphereRef.visible = !hideBaseEnv;
+   if (sunGlowRef) sunGlowRef.visible = !hideBaseEnv;
+   if (starsRef) starsRef.visible = theme.keepStars ? true : !hideBaseEnv;
+ 
+   rebuildBiomeProps(getBiomeForLevel(level), theme);
+@@ -1666,11 +1664,11 @@ function createAtmosphere() {
+ function createMountains() {
+   const layers = [
+     { z: -85, color: 0x0d001a, peaks: generatePeaks(12, 6, 20), layerIndex: 0 },
+     { z: -75, color: MTN_DARK, peaks: generatePeaks(10, 4, 14), layerIndex: 1 },
+   ];
+-  layers.forEach(({ z, color, peaks }) => {
++  layers.forEach(({ z, color, peaks, layerIndex }) => {
+     const shape = new THREE.Shape();
+     shape.moveTo(-100, 0);
+     peaks.forEach(([x, y]) => shape.lineTo(x, y));
+     shape.lineTo(100, 0);
+     shape.closePath();
+@@ -1689,10 +1687,12 @@ function createMountains() {
+     const edgeLine = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: MTN_WIRE, transparent: true, opacity: 0.5 }));
+     edgeLine.matrixAutoUpdate = false;
+     scene.add(edgeLine);
+     registerFadeMaterial(edgeLine.material);
+ 
++    // Store for theme color updates
++    mountainLines[layerIndex] = { line: edgeLine, geometry, z, fillMesh };
+   });
+ }
+ 
+ function generatePeaks(count, minH, maxH) {
+   const peaks = [];
+@@ -11223,9 +11223,5 @@ function buildHellscapeLavaScene(group) {
+ 
+   // Hellscape floor HUD height: group.position.y = 0.05
+   group.position.set(26.599, 0.05, -0.486);
+   group.rotation.y = 0.248; // yaw: 14.21°
+ }
+-.05
+-  group.position.set(26.599, 0.05, -0.486);
+-  group.rotation.y = 0.248; // yaw: 14.21°
+-}
+
+--- UNCOMMITTED CHANGES ---
+ AGENTS.md | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/AGENTS.md b/AGENTS.md
+index 5fbdc36..e32ef97 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -353,10 +353,21 @@ if (enemy && enemy.position) {
+ if (controller?.userData?.weapon?.fire) {
+   controller.userData.weapon.fire();
+ }
+ ```
+ 
++## Review guidelines
++
++When running automated code review on this repository:
++
++- Prioritize correctness, runtime stability, and VR performance over style.
++- Treat per-frame allocations, repeated full-array scans in hot paths, and missed cleanup on reset or level transitions as high-value findings.
++- Flag console-error risks, null/undefined controller or XR-session access, and state-machine regressions around pause, restart, death, and boss transitions.
++- Ignore cosmetic naming or formatting feedback unless it blocks understanding or hides a bug.
++- Prefer a few precise findings with file and line references over broad advice.
++- Call out duplicate logic only when it creates real maintenance or bug risk.
++
+ ## 15. FINAL REMINDER
+ 
+ **You are building a VR game that people play in headsets.**
+ 
+ - Every frame drop causes motion sickness

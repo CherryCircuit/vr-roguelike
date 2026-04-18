@@ -1,0 +1,4 @@
+ audio.js            |  18 ------------------
+ game-screenshot.png | Bin 87967 -> 538929 bytes
+ main.js             |  16 ++++++----------
+ 3 files changed, 6 insertions(+), 28 deletions(-)

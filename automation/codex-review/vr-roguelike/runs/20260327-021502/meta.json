@@ -1,0 +1,9 @@
+{
+  "timestamp": "20260327-021502",
+  "repo": "/home/graeme/.openclaw/workspace-codey/vr-roguelike",
+  "branch": "main",
+  "base_sha": "02018d9e2ac488ef268f36a4392873f469a46ad3",
+  "head_sha": "0c154bc6721b56b43bfbafaddf01f32592439378",
+  "dirty": 1,
+  "commits_in_scope": 3
+}

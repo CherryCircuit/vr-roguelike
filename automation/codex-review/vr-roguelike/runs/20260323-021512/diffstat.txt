@@ -1,0 +1,12 @@
+ .codex/review/nightly-review-schema.json |   60 +++++++++
+ .codex/review/nightly-review-template.md |   59 +++++++++
+ AGENTS.md                                |   11 ++
+ desktop-controls.js                      |   21 ++-
+ game-screenshot.png                      |  Bin 538929 -> 532852 bytes
+ game.js                                  |   17 +++
+ hud.js                                   |  283 +++++++++++++++++++++++++++--------------
+ index.html                               |   92 +++++++++++---
+ main.js                                  | 1054 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++------------------------------
+ scenery.js                               |   20 ++-
+ test-result.png                          |  Bin 387277 -> 511212 bytes
+ 11 files changed, 1293 insertions(+), 324 deletions(-)

@@ -1,0 +1,242 @@
+# Nightly Codex Review
+
+You are performing a nightly automated review for the `vr-roguelike` repository.
+
+Your job is to find high-value, actionable issues in the supplied diff and nearby code context.
+
+## Review priorities
+
+Prioritize findings in this order:
+1. Correctness bugs and regressions
+2. Runtime stability issues and console-error risks
+3. Performance hotspots, especially VR or per-frame costs
+4. Wasteful code paths, repeated work, and unnecessary allocations
+5. Maintainability issues that materially increase bug risk
+6. Security issues, if the changed code creates realistic exposure
+
+## Project-specific rules
+
+This is a WebXR VR game. Performance matters.
+
+Focus especially on:
+- per-frame object allocation
+- repeated scans over large arrays in hot paths
+- unnecessary DOM or HUD updates every frame
+- expensive math in update loops
+- state-machine regressions during pause, level transitions, death, restart, and boss phases
+- stale pooled-object state
+- missing cleanup on level transition or reset
+- controller-specific or XR-session-specific null/undefined risks
+
+## Findings policy
+
+Only report actionable findings.
+
+Do not report:
+- cosmetic style issues
+- tiny refactors without clear payoff
+- naming preferences
+- speculative concerns without evidence
+- issues that already existed outside the supplied change unless the change makes them worse
+
+For each finding:
+- cite the exact file path
+- cite the exact line range if you can verify it from the provided diff/context
+- explain the impact briefly and concretely
+- suggest a fix only if it is reasonably clear
+- keep the wording direct and specific
+
+## Severity guide
+
+- `critical`: crash, save/progression break, security exposure, or severe performance cliff
+- `high`: likely bug, serious regression, or hot-path waste that will matter in play
+- `medium`: real maintainability/performance/correctness issue worth fixing soon
+- `low`: minor but valid issue with clear practical value
+
+## Output expectations
+
+Favor fewer, better findings over many weak ones.
+If there are no meaningful findings, say so in the structured output rather than inventing noise.
+
+## Review context
+- Repository: /home/graeme/.openclaw/workspace-codey/vr-roguelike
+- Branch: main
+- Base SHA: 02018d9e2ac488ef268f36a4392873f469a46ad3
+- Head SHA: 02018d9e2ac488ef268f36a4392873f469a46ad3
+- Commit count in scope: 0
+- Include uncommitted changes: 1
+
+## Changed files
+
+## Unified diff
+
+--- UNCOMMITTED CHANGES ---
+ enemies.js          |   3 ++-
+ game-screenshot.png | Bin 680224 -> 676669 bytes
+ index.html          |   2 +-
+ main.js             |  34 ++++++++++++++++++++++++----------
+ 4 files changed, 27 insertions(+), 12 deletions(-)
+
+diff --git a/enemies.js b/enemies.js
+index 45b369b..ea6e05a 100644
+--- a/enemies.js
++++ b/enemies.js
+@@ -7777,11 +7777,11 @@ const _unitScale = new THREE.Vector3(1, 1, 1);  // Unit scale for initial spawn
+ function initBossProjPools() {
+   if (bossProjCorePool || !sceneRef) return;
+ 
+   // Core sphere (smaller, opaque red)
+   const coreGeo = new THREE.SphereGeometry(0.065, 8, 8);
+-  const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3355 });
++  const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3355, depthWrite: false, depthTest: false });
+   bossProjCorePool = new THREE.InstancedMesh(coreGeo, coreMat, BOSS_PROJ_POOL_SIZE);
+   bossProjCorePool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+   bossProjCorePool.count = 0;
+   bossProjCorePool.frustumCulled = false;
+   sceneRef.add(bossProjCorePool);
+@@ -7792,10 +7792,11 @@ function initBossProjPools() {
+     color: 0xff88aa,
+     transparent: true,
+     opacity: 0.7,
+     blending: THREE.AdditiveBlending,
+     depthWrite: false,
++    depthTest: false,
+   });
+   bossProjGlowPool = new THREE.InstancedMesh(glowGeo, glowMat, BOSS_PROJ_POOL_SIZE);
+   bossProjGlowPool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+   bossProjGlowPool.count = 0;
+   bossProjGlowPool.frustumCulled = false;
+diff --git a/game-screenshot.png b/game-screenshot.png
+index 40b16e8..2078c20 100644
+Binary files a/game-screenshot.png and b/game-screenshot.png differ
+diff --git a/index.html b/index.html
+index 060ac02..504764b 100644
+--- a/index.html
++++ b/index.html
+@@ -313,11 +313,11 @@
+ 
+   <!-- Main game module -->
+   <script type="module" src="main.js"></script>
+   <script>
+     (function() {
+-      const GAME_VERSION = 'v2026.03.24.1520';
++      const GAME_VERSION = 'v2026.03.25.0815';
+       document.title = GAME_VERSION;
+       const versionEl = document.getElementById('version-text');
+       if (versionEl) versionEl.textContent = GAME_VERSION;
+ 
+       const params = new URLSearchParams(location.search);
+diff --git a/main.js b/main.js
+index 31722c8..c0211fe 100644
+--- a/main.js
++++ b/main.js
+@@ -43,10 +43,11 @@ import {
+   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
+   applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
+   getBoss, spawnBoss, hitBoss, updateBoss, clearBoss, getBossMinionMeshes, getBossMinionByMesh, hitBossMinion, updateBossMinions,
+   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward,
+   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
++  releaseBossProjIndex,
+   clearAllTelegraphs, spawnHealthGainPopup
+ } from './enemies.js';
+ import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
+ import { initVFX, updateVFX } from './vfx.js';
+ import { rebuildBiomeScene as rebuildBiomeSceneModule, getBiomeFloorY as getBiomeFloorYModule } from './biome-scenes.js';
+@@ -3352,16 +3353,31 @@ function activateNuke() {
+ 
+     // Set HP to 0 so the death system handles cleanup naturally
+     e.hp = 0;
+     destroyEnemy(i, false, true); // isCritical=false, isOverkill=true (nuke)
+     game.kills++;
+-    game.totalKills++;
+     trackKill(false);
+     addScore(50); // Base score per nuked enemy
+     killed++;
+   }
+ 
++  if (killed > 0) {
++    updateHUD(game);
++
++    const cfg = game._levelConfig;
++    if (!killsAlertShownThisLevel && killsAlertTriggerKill && game.kills >= killsAlertTriggerKill) {
++      const remaining = cfg ? cfg.killTarget - game.kills : 0;
++      showKillsRemainingAlert(remaining);
++      playKillsAlertSound(remaining);
++      killsAlertShownThisLevel = true;
++    }
++
++    if (cfg && game.kills >= cfg.killTarget) {
++      completeLevel();
++    }
++  }
++
+   console.log(`[nuke] Activated! Killed ${killed} enemies. ${game.nukes} remaining.`);
+   return true;
+ }
+ 
+ // ============================================================
+@@ -6776,10 +6792,13 @@ function showUpgradeScreen() {
+   console.log('[game] Showing upgrade selection');
+   game.state = State.UPGRADE_SELECT;
+   hideLevelComplete();
+   resetHoloGlitch();
+ 
++  // Dismiss boss death overlay so upgrade cards are visible
++  dismissBossDeathOverlay();
++
+   // Stop lightning sound during upgrade screen
+   stopLightningSound();
+ 
+   // Get the hand for this upgrade
+   const hand = getNextUpgradeHand();
+@@ -8127,12 +8146,11 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats) {
+       // Check if boss projectile intersects with beam line
+       const dist = pointToSegmentDist(bossProj.mesh.position, _chargeBeamA, _chargeBeamB);
+       if (dist < beamWidth + 0.3) { // Slightly larger collision radius
+         // Destroy boss projectile with explosion effect
+         spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
+-        scene.remove(bossProj.mesh);
+-        disposeObject3D(bossProj.mesh);
++        if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
+         bossProjectiles.splice(i, 1);
+       }
+     }
+   }
+ 
+@@ -9154,13 +9172,11 @@ function updateProjectiles(dt) {
+           const bossProj = bossProjs[j];
+           if (!bossProj || !bossProj.mesh) continue;
+           const dist = proj.position.distanceTo(bossProj.mesh.position);
+           if (dist < 0.5) {
+             spawnBossProjectileDestructionFX(bossProj.mesh.position.clone());
+-            markProjectileHit(proj);
+-            scene.remove(bossProj.mesh);
+-            disposeObject3D(bossProj.mesh);
++            if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
+             bossProjs.splice(j, 1);
+ 
+             if (!proj.userData.stats?.piercing) {
+               markProjectileHit(proj);
+               resolveProjectileAccuracy(proj);
+@@ -9887,19 +9903,17 @@ function render(timestamp) {
+       if (!proj || !proj.hitPlayer) continue;
+ 
+       // Check if reflector drone can reflect this projectile
+       if (checkReflectorDroneReflection(proj.mesh.position, true)) {
+         // Projectile was reflected - remove it without damaging player
+-        scene.remove(proj.mesh);
+-        disposeObject3D(proj.mesh);
++        if (proj._instIdx !== undefined) releaseBossProjIndex(proj._instIdx);
+         bossProjs.splice(i, 1);
+         continue;
+       }
+ 
+       triggerHostileProjectileExplosion(proj.mesh.position.clone(), 0.35, 0);
+-      scene.remove(proj.mesh);
+-      disposeObject3D(proj.mesh);
++      if (proj._instIdx !== undefined) releaseBossProjIndex(proj._instIdx);
+       bossProjs.splice(i, 1);
+ 
+       const dead = damagePlayer(proj.damage || 1);
+       triggerHitFlash(true);
+       playDamageSound();
