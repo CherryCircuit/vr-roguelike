@@ -2419,7 +2419,7 @@ function createHealthPopupTexture() {
     [0, 0, 0, 1, 0, 0, 0],
   ];
   const pixelSize = 8;
-  const heartX = 140;
+  const heartX = 100;
   const heartY = canvas.height / 2 - (6 * pixelSize) / 2;
   ctx.fillStyle = '#ff0044';
   for (let row = 0; row < 6; row++) {
@@ -2430,8 +2430,8 @@ function createHealthPopupTexture() {
     }
   }
 
-  // White + on the left
-  ctx.font = 'bold 72px ' + novemberFontFamily;
+  // White + on the left, larger font for emphasis
+  ctx.font = 'bold 90px ' + novemberFontFamily;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';
@@ -2458,7 +2458,7 @@ function initHealthPopupPool() {
     const mesh = new THREE.Sprite(material);
     mesh.visible = false;
     mesh.renderOrder = 997;
-    mesh.scale.set(1.35, 0.675, 1);
+    mesh.scale.set(2.025, 1.0125, 1);
     mesh.userData = { createdAt: 0, lifetime: 1000, velocity: new THREE.Vector3() };
     healthPopupPool.push(mesh);
     if (sceneRef) sceneRef.add(mesh);
@@ -7851,11 +7851,22 @@ class PrismBoss extends Boss {
       // Build shard as a tapered crystal shape using flat-shaded geometry
       const shardGeo = new THREE.ConeGeometry(0.5, 1.4, 4, 1);
       const shardMat = new THREE.MeshBasicMaterial({
-        color: shardColors[i], transparent: true, opacity: 0.75, depthWrite: false, fog: false
+        color: shardColors[i], transparent: true, opacity: 0.9, depthWrite: false, fog: false, side: THREE.DoubleSide
       });
       const shardMesh = new THREE.Mesh(shardGeo, shardMat);
+      shardMesh.renderOrder = 1;
       shardMesh.userData.isBossBody = true;
       shard.add(shardMesh);
+
+      // Inner glow core (brighter, smaller copy inside the shard)
+      const innerGeo = new THREE.ConeGeometry(0.25, 0.7, 4, 1);
+      const innerMat = new THREE.MeshBasicMaterial({
+        color: shardColors[i], transparent: true, opacity: 0.95, depthWrite: false, fog: false, side: THREE.DoubleSide
+      });
+      const innerMesh = new THREE.Mesh(innerGeo, innerMat);
+      innerMesh.renderOrder = 2;
+      innerMesh.userData.isBossBody = true;
+      shard.add(innerMesh);
 
       // Visible edges on each shard (like prismEdges on the full prism)
       const shardEdgeGeo = new THREE.EdgesGeometry(shardGeo);
@@ -8307,11 +8318,11 @@ class PrismBoss extends Boss {
         if (child.isMesh && child.userData.isBossBody) {
           if (i === this.vulnerableShardIndex) {
             child.material.color.setHex(0xffffff);
-            child.material.opacity = 0.75;
+            child.material.opacity = 0.95;
           } else {
             const shardColors = [0xff2222, 0x2222ff, 0x22ff22];
             child.material.color.setHex(shardColors[i]);
-            child.material.opacity = 0.75;
+            child.material.opacity = 0.9;
           }
         }
         // Also update core visibility

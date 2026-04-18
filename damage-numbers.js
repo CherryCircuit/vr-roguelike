@@ -234,7 +234,8 @@ function getNumberDrawFn(value, color) {
 
   // Render and cache
   const fontSize = Math.min(48, 28 + value / 6);
-  const text = rounded.toString();
+  const isHeal = color === '#00ff44';
+  const text = isHeal ? `+${rounded}` : rounded.toString();
 
   // Pre-render to offscreen canvas
   const offscreen = document.createElement('canvas');

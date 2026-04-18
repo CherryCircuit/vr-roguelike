@@ -3,7 +3,7 @@
 //  Shared page bootstrap for both live and dev launchers.
 // ============================================================
 
-const GAME_VERSION = 'v2026.04.17.1931';
+const GAME_VERSION = 'v2026.04.17.1951';
 
 function updateVersionText() {
   const versionEl = document.getElementById('version-text');
