@@ -5,7 +5,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 export function buildHellscapeLavaScene(group, deps) {
   const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials } = deps;
