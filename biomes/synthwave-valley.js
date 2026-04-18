@@ -227,14 +227,19 @@ export function buildSynthwaveValleyScene(group, deps) {
   const horizonGlowHeight = 120;
   const horizonGlowCanvas = document.createElement('canvas');
   horizonGlowCanvas.width = 16;
-  horizonGlowCanvas.height = 256;
+  horizonGlowCanvas.height = 512;
   const hgCtx = horizonGlowCanvas.getContext('2d');
-  const hgGrad = hgCtx.createLinearGradient(0, 0, 0, 256);
-  hgGrad.addColorStop(0.0, 'rgba(255,255,255,0)');     // Top: transparent
-  hgGrad.addColorStop(0.45, 'rgba(0,200,255,0.12)');  // Upper: faint cyan
-  hgGrad.addColorStop(0.75, 'rgba(0,230,255,0.45)');  // Mid: brighter cyan
-  hgGrad.addColorStop(0.92, 'rgba(180,255,255,0.7)');  // Near bottom: white-cyan
-  hgGrad.addColorStop(1.0, 'rgba(255,255,255,0.85)');  // Bottom edge: bright white core
+  const hgGrad = hgCtx.createLinearGradient(0, 0, 0, 512);
+  hgGrad.addColorStop(0.0, 'rgba(0,255,255,0)');       // Top: pure cyan transparent
+  hgGrad.addColorStop(0.15, 'rgba(0,255,255,0.01)');   // Near top: barely there
+  hgGrad.addColorStop(0.30, 'rgba(0,255,255,0.04)');   // Upper: very faint cyan
+  hgGrad.addColorStop(0.45, 'rgba(40,255,255,0.10)');  // Mid-upper: faint
+  hgGrad.addColorStop(0.58, 'rgba(80,255,255,0.20)');  // Mid: building
+  hgGrad.addColorStop(0.70, 'rgba(120,255,255,0.32)'); // Mid-lower: visible
+  hgGrad.addColorStop(0.80, 'rgba(170,255,255,0.48)'); // Lower: strong
+  hgGrad.addColorStop(0.88, 'rgba(210,255,255,0.62)'); // Near bottom: bright
+  hgGrad.addColorStop(0.94, 'rgba(235,255,255,0.78)'); // Near-white bright
+  hgGrad.addColorStop(1.0, 'rgba(255,255,255,0.95)');  // Bottom edge: near-white full opacity
   hgCtx.fillStyle = hgGrad;
   hgCtx.fillRect(0, 0, 16, 512);
   const horizonGlowTex = new THREE.CanvasTexture(horizonGlowCanvas);
@@ -243,7 +248,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   const horizonGlowMat = new THREE.MeshBasicMaterial({
     map: horizonGlowTex,
     transparent: true,
-    side: THREE.DoubleSide,
+    side: THREE.BackSide,
     depthWrite: false,
     depthTest: true,
     fog: false,
@@ -251,8 +256,8 @@ export function buildSynthwaveValleyScene(group, deps) {
   });
   const horizonGlowCylinder = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
   horizonGlowCylinder.name = 'synthwave-horizon-glow';
-  horizonGlowCylinder.position.set(0, 16, 0);
-  horizonGlowCylinder.scale.set(1, 0.3, 1);
+  horizonGlowCylinder.position.set(0, 61, 0);
+  horizonGlowCylinder.scale.set(1, 1, 1);
   horizonGlowCylinder.frustumCulled = false;
   horizonGlowCylinder.renderOrder = 0.5;
   group.add(horizonGlowCylinder);
@@ -270,19 +275,21 @@ export function buildSynthwaveValleyScene(group, deps) {
     depthWrite: false,
     depthTest: true,
     fog: true,
+    blending: THREE.AdditiveBlending,
   });
   const sunReflPlane = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), sunReflMat);
   sunReflPlane.name = 'synthwave-sun-floor-reflection';
   sunReflPlane.rotation.set(-Math.PI / 2, 0, -Math.PI);
   sunReflPlane.position.set(0, 1.5, -600);
-  sunReflPlane.scale.set(0.15, 1.5, 1);
+  sunReflPlane.scale.set(0.075, 1.525, 1);
   sunReflPlane.frustumCulled = false;
   sunReflPlane.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.5, -600), 900);
   sunReflPlane.renderOrder = 1;
   group.add(sunReflPlane);
   registerFadeMaterial(sunReflMat);
 
-  // Store ref for boss cinematic red tint
+  // Store refs for boss cinematic red tint
+  synthVisualRefs.sunReflMat = sunReflMat;
   synthVisualRefs.mountainCylMat = mountainCylinderMat;
 
   // ── CLOUD DOME (baked to texture for Quest performance) ──
