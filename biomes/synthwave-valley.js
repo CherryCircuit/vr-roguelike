@@ -216,7 +216,7 @@ export function buildSynthwaveValleyScene(group, deps) {
   mountainCylinder.frustumCulled = false;
   // FIX: Mountain must have higher renderOrder than sun (-3 to -1) AND sun must respect depth.
   // Higher renderOrder = draws later = appears on top when depthTest is enabled.
-  mountainCylinder.renderOrder = 0;  // In front of sun (sun is -3 to -1)
+  mountainCylinder.renderOrder = -0.1;  // Just behind horizon glow (0.5) but ahead of sky (-20)
   group.add(mountainCylinder);
   registerFadeMaterial(mountainCylinderMat);
 
@@ -230,19 +230,14 @@ export function buildSynthwaveValleyScene(group, deps) {
   horizonGlowCanvas.height = 512;
   const hgCtx = horizonGlowCanvas.getContext('2d');
   const hgGrad = hgCtx.createLinearGradient(0, 0, 0, 512);
-  hgGrad.addColorStop(0.0, 'rgba(0,255,255,0)');       // Top: pure cyan transparent
-  hgGrad.addColorStop(0.15, 'rgba(0,255,255,0.01)');   // Near top: barely there
-  hgGrad.addColorStop(0.30, 'rgba(0,255,255,0.04)');   // Upper: very faint cyan
-  hgGrad.addColorStop(0.45, 'rgba(40,255,255,0.10)');  // Mid-upper: faint
-  hgGrad.addColorStop(0.58, 'rgba(80,255,255,0.20)');  // Mid: building
-  hgGrad.addColorStop(0.70, 'rgba(120,255,255,0.32)'); // Mid-lower: visible
-  hgGrad.addColorStop(0.80, 'rgba(170,255,255,0.48)'); // Lower: strong
-  hgGrad.addColorStop(0.88, 'rgba(210,255,255,0.62)'); // Near bottom: bright
-  hgGrad.addColorStop(0.94, 'rgba(235,255,255,0.78)'); // Near-white bright
-  hgGrad.addColorStop(1.0, 'rgba(255,255,255,0.95)');  // Bottom edge: near-white full opacity
+  // Canvas top (0) = cylinder top = transparent. Canvas bottom (512) = cylinder bottom = bright.
+  hgGrad.addColorStop(0.0, 'rgba(0,174,239,0)');      // Top: #00aeef transparent
+  hgGrad.addColorStop(0.85, 'rgba(0,174,239,0.85)');   // 85% up from bottom: #00aeef at 85% opacity
+  hgGrad.addColorStop(1.0, 'rgba(177,222,239,1)');     // Bottom edge: #b1deef at 100% opacity
   hgCtx.fillStyle = hgGrad;
   hgCtx.fillRect(0, 0, 16, 512);
   const horizonGlowTex = new THREE.CanvasTexture(horizonGlowCanvas);
+  horizonGlowTex.colorSpace = THREE.SRGBColorSpace;
 
   const horizonGlowGeo = new THREE.CylinderGeometry(horizonGlowRadius, horizonGlowRadius, horizonGlowHeight, 64, 1, true);
   const horizonGlowMat = new THREE.MeshBasicMaterial({
@@ -252,7 +247,6 @@ export function buildSynthwaveValleyScene(group, deps) {
     depthWrite: false,
     depthTest: true,
     fog: false,
-    blending: THREE.AdditiveBlending,
   });
   const horizonGlowCylinder = new THREE.Mesh(horizonGlowGeo, horizonGlowMat);
   horizonGlowCylinder.name = 'synthwave-horizon-glow';
