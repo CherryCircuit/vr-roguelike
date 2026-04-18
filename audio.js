@@ -2049,7 +2049,7 @@ export function fadeOutMusic(durationMs = 1200) {
 let countdown321Audio = null;
 export function playCountdown321() {
   if (!countdown321Audio) {
-    countdown321Audio = new Audio('mnt/project/music/sfx_321.m4a');
+    countdown321Audio = new Audio('https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_321.mp3');
   }
   countdown321Audio.volume = 0.5 * sfxVolume;
   countdown321Audio.currentTime = 0;

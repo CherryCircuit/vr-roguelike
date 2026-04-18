@@ -1,3 +1,9 @@
 .DS_Store
 node_modules/
 .worktrees/
+
+# Audio files hosted on R2 — do not track locally
+mnt/project/music/*.mp3
+mnt/project/music/*.m4a
+mnt/project/music/*.wav
+mnt/project/music/*.ogg
