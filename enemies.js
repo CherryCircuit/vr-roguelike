@@ -4657,6 +4657,8 @@ class Boss {
     const group = new THREE.Group();
     group.renderOrder = 0;
     const geo = getGeo(def.voxelSize);
+    // Single shared material for all body voxels — avoids N unique GPU materials per boss.
+    // Weak-point voxels and subclasses that need per-voxel visuals call ensureUniqueMaterial().
     const mat = new THREE.MeshBasicMaterial({
       color: def.color,
       transparent: true,
@@ -4664,6 +4666,7 @@ class Boss {
       depthWrite: false,
       fog: false,
     });
+    this._sharedBodyMat = mat;
     const rows = def.pattern.length;
     const cols = def.pattern[0].length;
     const cx = (cols - 1) / 2;
@@ -4672,7 +4675,7 @@ class Boss {
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         if (def.pattern[r][c]) {
-          const cube = new THREE.Mesh(geo, mat.clone());
+          const cube = new THREE.Mesh(geo, mat);
           cube.position.set(
             (c - cx) * def.voxelSize,
             (cy - r) * def.voxelSize,
@@ -4691,6 +4694,17 @@ class Boss {
     group.add(hitbox);
 
     return group;
+  }
+
+  /**
+   * Give a voxel its own material (cloned from the shared body material)
+   * so it can be styled independently without affecting other voxels.
+   * No-op if the voxel already has a unique material.
+   */
+  ensureUniqueMaterial(voxel) {
+    if (voxel.material === this._sharedBodyMat) {
+      voxel.material = voxel.material.clone();
+    }
   }
 
   createWeakPoints() {
@@ -6470,6 +6484,10 @@ class KernelBoss extends Boss {
       voxels[0].userData.port = 1;
       voxels[1].userData.port = 2;
       voxels[2].userData.port = 3;
+      // Port voxels need unique materials for per-port opacity/color styling
+      this.ensureUniqueMaterial(voxels[0]);
+      this.ensureUniqueMaterial(voxels[1]);
+      this.ensureUniqueMaterial(voxels[2]);
     }
 
     return mesh;
@@ -6752,6 +6770,8 @@ class TrainBoss extends Boss {
 
       for (let j = start; j < end; j++) {
         voxels[j].userData.car = i + 1;
+        // Each car needs its own material for per-car opacity/emissive styling
+        this.ensureUniqueMaterial(voxels[j]);
       }
     }
 
