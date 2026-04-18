@@ -182,7 +182,42 @@ export function buildSynthwaveValleyScene(group, deps) {
   // ── MOUNTAIN WRAP CYLINDER ──
   // Large open cylinder with mountain PNG on the inside, positioned IN FRONT of sun.
   // This creates a 360° panoramic mountain backdrop as distant horizon.
-  const mountainTex = new THREE.TextureLoader().load('assets/mountain_wrap_4k.png');
+  const mountainTex = new THREE.TextureLoader().load(
+    'assets/mountain_wrap_4k.png',
+    undefined,
+    undefined,
+    (err) => {
+      console.warn('Mountain wrap PNG failed to load; using gradient fallback', err);
+      // Create procedural gradient fallback
+      const c = document.createElement('canvas');
+      c.width = 1024;
+      c.height = 256;
+      const ctx = c.getContext('2d');
+      // Purple to pink gradient
+      const g = ctx.createLinearGradient(0, 0, 0, 256);
+      g.addColorStop(0.0, '#2C0051');
+      g.addColorStop(0.5, '#71006E');
+      g.addColorStop(1.0, '#E00186');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 1024, 256);
+      // Add some noise/ridge lines
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      for (let i = 0; i < 50; i++) {
+        const x = Math.random() * 1024;
+        const y = Math.random() * 256;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.random() * 100 - 50, y + Math.random() * 50 - 25);
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 1 + Math.random() * 2;
+        ctx.stroke();
+      }
+      const fallbackTex = new THREE.CanvasTexture(c);
+      fallbackTex.colorSpace = THREE.SRGBColorSpace;
+      mountainCylinderMat.map = fallbackTex;
+      mountainCylinderMat.needsUpdate = true;
+    }
+  );
   mountainTex.wrapS = THREE.RepeatWrapping;
   mountainTex.wrapT = THREE.ClampToEdgeWrapping;
   // FIX: Ensure PNG colors display exactly as-is, no fading/washing
@@ -265,7 +300,17 @@ export function buildSynthwaveValleyScene(group, deps) {
 
   // ── SUN FLOOR REFLECTION ──
   // Blurred sun texture laid flat on the floor.
-  const sunReflTex = new THREE.TextureLoader().load('assets/sun-retro-blur.png');
+  const sunReflTex = new THREE.TextureLoader().load(
+    'assets/sun-retro-blur.png',
+    undefined,
+    undefined,
+    (err) => {
+      console.warn('Sun reflection blur PNG failed to load; hiding reflection', err);
+      // Fallback: set opacity to 0 to hide the plane
+      sunReflMat.opacity = 0;
+      sunReflMat.needsUpdate = true;
+    }
+  );
   const sunReflMat = new THREE.MeshBasicMaterial({
     map: sunReflTex,
     transparent: true,
@@ -367,7 +412,35 @@ export function buildSynthwaveValleyScene(group, deps) {
   // Process: load PNG, threshold white pixels to transparent, replace material map
   const sunDiscImg = new Image();
   sunDiscImg.crossOrigin = 'anonymous';
+
+  // Fallback: create canvas-based gradient disc if PNG fails to load
+  const applyFallbackSunDisc = () => {
+    console.warn('Synthwave sun disc PNG failed to load; using gradient fallback');
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 512;
+    const ctx = c.getContext('2d');
+    // Orange/yellow radial gradient as fallback
+    const g = ctx.createRadialGradient(256, 256, 50, 256, 256, 250);
+    g.addColorStop(0.0, 'rgba(255, 230, 100, 1)');
+    g.addColorStop(0.4, 'rgba(255, 180, 50, 1)');
+    g.addColorStop(0.7, 'rgba(255, 120, 0, 1)');
+    g.addColorStop(1.0, 'rgba(255, 80, 0, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 512);
+    if (sunCoreMat.map) sunCoreMat.map.dispose();
+    sunCoreMat.map = new THREE.CanvasTexture(c);
+    sunCoreMat.map.needsUpdate = true;
+    sunCoreMat.needsUpdate = true;
+  };
+
+  let imageLoadComplete = false;
+
   sunDiscImg.onload = () => {
+    if (imageLoadComplete) return;
+    imageLoadComplete = true;
+    clearTimeout(loadTimeout);
+
     const c = document.createElement('canvas');
     c.width = sunDiscImg.width;
     c.height = sunDiscImg.height;
@@ -384,6 +457,22 @@ export function buildSynthwaveValleyScene(group, deps) {
     sunCoreMat.map.needsUpdate = true;
     sunCoreMat.needsUpdate = true;
   };
+
+  sunDiscImg.onerror = () => {
+    if (imageLoadComplete) return;
+    imageLoadComplete = true;
+    clearTimeout(loadTimeout);
+    applyFallbackSunDisc();
+  };
+
+  // 5-second timeout: trigger fallback if onload hasn't fired
+  const loadTimeout = setTimeout(() => {
+    if (!imageLoadComplete) {
+      imageLoadComplete = true;
+      applyFallbackSunDisc();
+    }
+  }, 5000);
+
   sunDiscImg.src = 'assets/sun-retro.png';
   const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(466, 466), sunCoreMat); // 10% smaller again (81% of original)
   sunCore.name = 'synthwave-sun-core-disc';
