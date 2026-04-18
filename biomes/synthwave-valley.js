@@ -232,10 +232,14 @@ export function buildSynthwaveValleyScene(group, deps) {
   const hgGrad = hgCtx.createLinearGradient(0, 0, 0, 512);
   // Canvas top (0) = cylinder top = transparent. Canvas bottom (512) = cylinder bottom = bright.
   hgGrad.addColorStop(0.0, 'rgba(0,174,239,0)');       // Top: zero
-  hgGrad.addColorStop(0.75, 'rgba(0,174,239,0.05)');    // Very long faint tail
-  hgGrad.addColorStop(0.85, 'rgba(0,174,239,0.20)');    // Accelerating
-  hgGrad.addColorStop(0.90, 'rgba(0,174,239,0.80)');    // Steep dropoff
-  hgGrad.addColorStop(1.0, 'rgba(177,222,239,1)');      // Bottom: bright #b1deef
+  hgGrad.addColorStop(0.60, 'rgba(0,174,239,0.003)');   // Almost nothing
+  hgGrad.addColorStop(0.72, 'rgba(0,174,239,0.01)');    // Faint glow begins
+  hgGrad.addColorStop(0.80, 'rgba(0,174,239,0.04)');    // Barely visible
+  hgGrad.addColorStop(0.86, 'rgba(0,174,239,0.10)');    // Building
+  hgGrad.addColorStop(0.91, 'rgba(0,174,239,0.30)');    // Visible
+  hgGrad.addColorStop(0.95, 'rgba(0,174,239,0.60)');    // Strong
+  hgGrad.addColorStop(0.98, 'rgba(0,174,239,0.85)');    // Near full
+  hgGrad.addColorStop(1.0, 'rgba(177,222,239,1)');      // Bottom: bright core
   hgCtx.fillStyle = hgGrad;
   hgCtx.fillRect(0, 0, 16, 512);
   const horizonGlowTex = new THREE.CanvasTexture(horizonGlowCanvas);
