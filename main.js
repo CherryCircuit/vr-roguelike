@@ -435,7 +435,7 @@ let playerStillnessStartTime = null;
 let laserMineSpawnCooldown = 0;
 
 // PERFORMANCE: Hard cap on active projectiles to prevent accumulation
-const MAX_PROJECTILES = 100;
+const MAX_PROJECTILES = 150; // Increased from 100 for triple-shot + fast weapon sustained fire
 
 // PERFORMANCE: InstancedMesh projectile system
 // Instead of individual THREE.Group/Mesh objects per projectile (each a draw call),
@@ -9296,18 +9296,27 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   let mesh = getPooledProjectile(poolType, projectileColor);
 
   if (!mesh) {
-    // Pool exhausted - recycle oldest active projectile to keep fire continuous
-    const recycled = projectiles.shift();
-    if (recycled) {
-      returnProjectileToPool(recycled);
-      // BUG FIX: Don't reuse the recycled proxy - get a fresh one from the pool
-      // The recycled proxy's instance index may have been invalidated by count adjustment
-      mesh = getPooledProjectile(poolType, projectileColor);
+    // Pool exhausted - force-expire active projectiles until we free a slot in the right pool type
+    // A single recycle may free a slot in a different pool type, so loop until we succeed
+    const recycleLimit = projectiles.length; // bound: don't recycle more than currently active
+    for (let i = 0; i < recycleLimit; i++) {
+      const recycled = projectiles.shift();
+      if (recycled) {
+        returnProjectileToPool(recycled);
+        mesh = getPooledProjectile(poolType, projectileColor);
+        if (mesh) break;
+      } else {
+        break;
+      }
     }
   }
 
   if (!mesh) {
-    // No available projectile to recycle
+    // Safety net: all pools exhausted, no active projectiles to recycle
+    if (window.DEBUG_PROJECTILES) {
+      window._droppedShots = (window._droppedShots || 0) + 1;
+      console.warn(`[PROJECTILE] Shot dropped (pool exhausted). Total dropped: ${window._droppedShots}, poolType: ${poolType}`);
+    }
     return;
   }
 
