@@ -7840,7 +7840,7 @@ class PrismBoss extends Boss {
   }
 
   createShards() {
-    const shardColors = [0xff2222, 0x2222ff, 0x22ff22];
+    const shardColors = [0x22ff22, 0xffdd22, 0xffdd22]; // Green=hit me, Yellow=heals boss
     const orbitRadii = [2.5, 4.0, 5.5];
     const orbitSpeeds = [1.2, 0.8, 0.5];
     const orbitHeights = [0, 1.5, -1.0];
@@ -8308,16 +8308,16 @@ class PrismBoss extends Boss {
 
   updateVulnerableShard() {
     // Set shard colors using direct material references (no traverse)
-    const shardColors = [0xff2222, 0x2222ff, 0x22ff22];
+    const shardColors = [0x22ff22, 0xffdd22, 0xffdd22]; // Green=hit me, Yellow=heals boss
     if (!this.shardMaterials || this.shardMaterials.length < 3) return;
 
     for (let i = 0; i < 3; i++) {
       const mat = this.shardMaterials[i];
       if (!mat) continue;
       if (i === this.vulnerableShardIndex) {
-        mat.color.setHex(0xffffff);
+        mat.color.setHex(0x22ff22); // The one to hit is always green
       } else {
-        mat.color.setHex(shardColors[i]);
+        mat.color.setHex(0xffdd22); // The ones to avoid are always yellow
       }
     }
 
@@ -8425,24 +8425,26 @@ class PrismBoss extends Boss {
   }
 
   createPhase3Shards() {
-    const shardColors = [0xff2222, 0x22ff22];
+    const shardColors = [0x22ff22, 0xffdd22]; // Green + Yellow (same visual language as phase 2)
     const orbitRadii = [2.0, 2.5];
     const orbitSpeeds = [1.5, 1.0];
+    this.phase3ShardMaterials = [];
 
     for (let i = 0; i < 2; i++) {
       const shard = new THREE.Group();
       const shardGeo = new THREE.ConeGeometry(0.3, 0.8, 4, 1);
       const shardMat = new THREE.MeshBasicMaterial({
-        color: shardColors[i], transparent: true, opacity: 0.75, depthWrite: false, fog: false
+        color: shardColors[i], transparent: false, fog: false, side: THREE.DoubleSide
       });
+      this.phase3ShardMaterials.push(shardMat);
       const shardMesh = new THREE.Mesh(shardGeo, shardMat);
       shardMesh.userData.isBossBody = true;
       shard.add(shardMesh);
 
       // Visible edges on phase 3 shards
-      const shardEdgeGeo = new THREE.EdgesGeometry(shardGeo);
+      const shardEdgeGeo = new THREE.OctahedronGeometry(0.4, 0);
       const shardEdgeMat = new THREE.LineBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, fog: false
+        color: shardColors[i], transparent: true, opacity: 0.9, depthWrite: false, fog: false
       });
       const shardEdgeLines = new THREE.LineSegments(shardEdgeGeo, shardEdgeMat);
       shardEdgeLines.renderOrder = 11;
@@ -8453,7 +8455,7 @@ class PrismBoss extends Boss {
       shard.userData.orbitSpeed = orbitSpeeds[i];
       shard.userData.orbitHeight = (i === 0 ? 0.3 : -0.3);
       shard.userData.angle = (i / 2) * Math.PI * 2;
-      shard.scale.setScalar(0.6);  // Smaller than phase 2 shards
+      shard.scale.setScalar(0.6);
 
       this.shards.push(shard);
       this.mesh.add(shard);
@@ -8463,15 +8465,32 @@ class PrismBoss extends Boss {
   updatePhase3(dt, now, playerPos) {
     const config = this.getPrismPhaseConfig();
 
-    // Phase 3 prism spin (faster than phase 1)
+    // Phase 3 prism spin (faster than phase 1, accelerating with damage)
+    const damageRatio = 1 - this.hp / this.maxHp;
+    const spinAccel = this.phase3SpinSpeed + damageRatio * 0.8;
     if (this.prismMesh) {
-      this.prismMesh.rotation.y += this.phase3SpinSpeed * dt;
+      this.prismMesh.rotation.y += spinAccel * dt;
+      // Pulsing scale: prism breathes faster as it takes damage
+      const breathe = 0.75 + 0.05 * Math.sin(now * (0.003 + damageRatio * 0.008));
+      this.prismMesh.scale.setScalar(breathe);
     }
     if (this.prismEdges) {
       this.prismEdges.rotation.y = this.prismMesh ? this.prismMesh.rotation.y : 0;
+      this.prismEdges.scale.setScalar(this.prismMesh ? this.prismMesh.scale.x : 0.75);
     }
 
-    // Vulnerable facet glow pulsing (capped at 0.75)
+    // Facet colors pulse between their original color and bright white
+    // to indicate damage frenzy
+    const frenzyPulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+    this.facetMaterials.forEach((mat, i) => {
+      if (i < 3 && i !== this.vulnerableFacetIndex) {
+        const origColor = new THREE.Color(this.facetColors[i]);
+        mat.color.copy(origColor).lerp(new THREE.Color(0xffffff), frenzyPulse * 0.3);
+        mat.opacity = 0.5 + frenzyPulse * 0.2;
+      }
+    });
+
+    // Vulnerable facet glow pulsing
     const glowMat = this.facetMaterials[this.vulnerableFacetIndex];
     if (glowMat) {
       const pulse = Math.min(0.75, 0.6 + 0.15 * Math.sin(now * 0.008));
@@ -8479,9 +8498,10 @@ class PrismBoss extends Boss {
       glowMat.color.setRGB(1.0, 1.0, 1.0);
     }
 
-    // Facet rotation timer (swap vulnerable facet, faster than phase 1)
+    // Facet rotation timer (faster as HP drops)
+    const rotateRate = this.phase3FacetRotateRate * (1 - damageRatio * 0.5);
     this.phase3FacetRotateTimer += dt;
-    if (this.phase3FacetRotateTimer >= this.phase3FacetRotateRate) {
+    if (this.phase3FacetRotateTimer >= rotateRate) {
       this.phase3FacetRotateTimer = 0;
       let newIdx;
       do {
@@ -8490,31 +8510,32 @@ class PrismBoss extends Boss {
       this.updateVulnerableFacet(newIdx);
     }
 
-    // Update shard positions (orbiting)
+    // Update shard positions (orbiting, faster than phase 2)
     this.shards.forEach(shard => {
       shard.userData.angle += shard.userData.orbitSpeed * dt;
       const a = shard.userData.angle;
       const r = shard.userData.orbitRadius;
       shard.position.set(
         Math.cos(a) * r,
-        shard.userData.orbitHeight,
+        shard.userData.orbitHeight + Math.sin(now * 0.004) * 0.3,
         Math.sin(a) * r
       );
       shard.lookAt(_look.copy(playerPos).setY(this.mesh.position.y + shard.userData.orbitHeight));
       shard.rotation.y += 2.0 * dt;
     });
 
-    // Shard shooting (slower rate than phase 2)
+    // Shooting: spiral burst pattern (3 shots in a spiral)
     this.phase3ShootTimer -= dt;
     if (this.phase3ShootTimer <= 0 && !this.isHealCharging) {
-      this.phase3ShootTimer = 2.0;  // Slower than phase 2
-      this.firePhase3ShardProjectiles(playerPos);
+      this.phase3ShootTimer = Math.max(0.8, 2.0 - damageRatio * 1.0); // Faster when damaged
+      this.firePhase3SpiralBurst(playerPos);
     }
 
-    // Heal charge mechanic (kept from original phase 3)
+    // Heal charge mechanic
     if (!this.isHealCharging) {
       this.healChargeTimer += dt;
-      if (this.healChargeTimer >= this.healChargeRate) {
+      const healRate = Math.max(8.0, config.healChargeRate - damageRatio * 5.0);
+      if (this.healChargeTimer >= healRate) {
         this.startHealCharge();
       }
     } else {
@@ -8537,7 +8558,7 @@ class PrismBoss extends Boss {
       }
     }
 
-    // Movement
+    // Movement (more erratic in phase 3)
     this.moveTimer += dt;
     if (this.moveTimer >= config.erraticness) {
       this.moveTimer = 0;
@@ -8549,21 +8570,36 @@ class PrismBoss extends Boss {
     this.mesh.position.y = this.fixedY;
   }
 
-  firePhase3ShardProjectiles(playerPos) {
-    // Only one shard fires per cycle (alternating)
-    const shard = this.shards[this.phase3ShootCounter % this.shards.length];
-    this.phase3ShootCounter = (this.phase3ShootCounter || 0) + 1;
-    if (!shard || !shard.visible) return;
+  firePhase3SpiralBurst(playerPos) {
+    // Fire 3 projectiles in a spiral pattern from the boss position
+    const bossPos = this.mesh.position.clone();
+    const count = 3;
+    const spiralSpread = 0.8;
 
-    const shardPos = shard.getWorldPosition(new THREE.Vector3());
-    if (this.telegraphing) {
-      this.showTelegraph('projectile', 0.2, 0xff44ff, shardPos);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + performance.now() * 0.001;
+      const target = playerPos.clone();
+      target.x += Math.cos(angle) * spiralSpread;
+      target.z += Math.sin(angle) * spiralSpread;
+      target.y += (Math.random() - 0.5) * 0.5;
+
+      const delay = i * 100;
+      this.later(delay, () => {
+        if (typeof spawnBossProjectile !== 'function') return;
+        spawnBossProjectile(bossPos.clone(), target);
+      });
     }
 
-    this.later(200, () => {
-      if (typeof spawnBossProjectile !== 'function') return;
-      spawnBossProjectile(shardPos, playerPos.clone());
-    });
+    // Also fire from orbiting shards occasionally
+    const shard = this.shards[this.phase3ShootCounter % this.shards.length];
+    this.phase3ShootCounter = (this.phase3ShootCounter || 0) + 1;
+    if (shard && shard.visible) {
+      const shardPos = shard.getWorldPosition(new THREE.Vector3());
+      this.later(count * 100 + 100, () => {
+        if (typeof spawnBossProjectile !== 'function') return;
+        spawnBossProjectile(shardPos, playerPos.clone());
+      });
+    }
   }
 
   startHealCharge() {
