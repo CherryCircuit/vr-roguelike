@@ -231,9 +231,12 @@ export function buildSynthwaveValleyScene(group, deps) {
   const hgCtx = horizonGlowCanvas.getContext('2d');
   const hgGrad = hgCtx.createLinearGradient(0, 0, 0, 512);
   // Canvas top (0) = cylinder top = transparent. Canvas bottom (512) = cylinder bottom = bright.
-  hgGrad.addColorStop(0.0, 'rgba(0,174,239,0)');      // Top: #00aeef transparent
-  hgGrad.addColorStop(0.85, 'rgba(0,174,239,0.85)');   // 85% up from bottom: #00aeef at 85% opacity
-  hgGrad.addColorStop(1.0, 'rgba(177,222,239,1)');     // Bottom edge: #b1deef at 100% opacity
+  hgGrad.addColorStop(0.0, 'rgba(0,174,239,0)');       // Top: zero
+  hgGrad.addColorStop(0.20, 'rgba(0,174,239,0.015)');   // Long slow tail
+  hgGrad.addColorStop(0.45, 'rgba(0,174,239,0.08)');    // Gentle build
+  hgGrad.addColorStop(0.65, 'rgba(0,174,239,0.30)');    // Accelerating
+  hgGrad.addColorStop(0.85, 'rgba(0,174,239,0.85)');    // Strong cyan
+  hgGrad.addColorStop(1.0, 'rgba(177,222,239,1)');      // Bottom: bright #b1deef
   hgCtx.fillStyle = hgGrad;
   hgCtx.fillRect(0, 0, 16, 512);
   const horizonGlowTex = new THREE.CanvasTexture(horizonGlowCanvas);
