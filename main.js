@@ -11593,6 +11593,9 @@ function render(timestamp) {
       if (synthVisualRefs.sunReflMat) {
         synthVisualRefs.sunReflMat.color.lerp(new THREE.Color(0xff0000), t * 0.1);
       }
+      if (synthVisualRefs.horizonGlowMat) {
+        synthVisualRefs.horizonGlowMat.color.lerp(new THREE.Color(0xff2200), t * 0.1);
+      }
 
       // 6. Tint mountain wrap cylinder to red during cinematic
       if (synthVisualRefs.mountainCylMat && game._cinOrigMountainColor) {

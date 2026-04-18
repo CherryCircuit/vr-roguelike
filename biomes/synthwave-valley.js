@@ -290,6 +290,7 @@ export function buildSynthwaveValleyScene(group, deps) {
 
   // Store refs for boss cinematic red tint
   synthVisualRefs.sunReflMat = sunReflMat;
+  synthVisualRefs.horizonGlowMat = horizonGlowMat;
   synthVisualRefs.mountainCylMat = mountainCylinderMat;
 
   // ── CLOUD DOME (baked to texture for Quest performance) ──
