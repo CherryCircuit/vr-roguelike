@@ -8508,7 +8508,25 @@ function updateLightningBeam(controller, index, stats, dt) {
 
         if (result.killed) {
           playExplosionSound();
-          handleEnemyKilled(enemyIndex, { killsWithoutHit: true });
+          const destroyData = handleEnemyKilled(enemyIndex, { killsWithoutHit: true, skipChain: false });
+          if (destroyData) {
+            // Track kills for hand stats (was missing, caused vampiric/hologram bug)
+            const hand = getHandForController(index);
+            game.handStats[hand].kills++;
+            if (destroyData.type) {
+              if (!game.handStats[hand].enemyKills) {
+                game.handStats[hand].enemyKills = {};
+              }
+              game.handStats[hand].enemyKills[destroyData.type] = (game.handStats[hand].enemyKills[destroyData.type] || 0) + 1;
+            }
+            // Vampiric healing
+            if (stats.vampiricInterval > 0 && game.totalKills % stats.vampiricInterval === 0) {
+              game.health = Math.min(game.maxHealth, game.health + 1);
+              if (DEBUG) console.log('[vampiric] Healed 1 HP (lightning)');
+              spawnHealthGainPopup(destroyData.position);
+              playHealSound();
+            }
+          }
         }
       }
     }
