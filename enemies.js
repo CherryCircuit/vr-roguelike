@@ -2361,6 +2361,7 @@ function initStatusVfxPool() {
     const sprite = new THREE.Sprite(mat.clone()); // Clone mat so opacity can differ per sprite
     sprite.scale.set(0.08, 0.08, 1);
     sprite.visible = false;
+    sprite.raycast = () => {}; // Prevent projectile raycaster from hitting VFX sprites
     sprite.userData = { vfxType: 'fire', phase: Math.random() * Math.PI * 2, orbitSpeed: 1.5 + Math.random() * 1.0, baseScale: 0.06 + Math.random() * 0.04 };
     statusVfxPool.push(sprite);
   }
@@ -2369,6 +2370,7 @@ function initStatusVfxPool() {
     const geo = statusVfxShockGeo.clone(); // Each arc needs its own geometry for independent positions
     const seg = new THREE.LineSegments(geo, statusVfxShockMat.clone());
     seg.visible = false;
+    seg.raycast = () => {}; // Prevent raycaster hits
     seg.userData = { vfxType: 'shock', flashTimer: 0, flashInterval: 0.08 + Math.random() * 0.12 };
     statusVfxPool.push(seg);
   }
@@ -2376,6 +2378,7 @@ function initStatusVfxPool() {
   for (let i = 0; i < 10; i++) {
     const mesh = new THREE.Mesh(statusVfxFreezeGeo, statusVfxFreezeMat.clone());
     mesh.visible = false;
+    mesh.raycast = () => {}; // Prevent raycaster hits
     mesh.userData = {
       vfxType: 'freeze',
       targetScale: 1,
