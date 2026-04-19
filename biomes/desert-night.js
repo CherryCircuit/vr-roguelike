@@ -176,22 +176,23 @@ export function buildDesertNightScene(group, deps) {
     return pyramidGroup;
   };
 
-  // Pyramid 1: large, left horizon — looming and ancient
+  // Pyramid 1: MASSIVE, left horizon — looming and ancient
+  // Visible from play area as a towering dark shape against the sky
   const pyramid1 = buildAlienPyramid({
-    x: -70, z: -80,
-    height: 18, width: 28,
+    x: -55, z: -50,
+    height: 45, width: 65,
     bodyColor: 0x0a0a0c,
-    edgeOpacity: 0.15,
+    edgeOpacity: 0.25,
   });
   pyramid1.name = 'desert-alien-pyramid-1';
   group.add(pyramid1);
 
-  // Pyramid 2: smaller, right horizon — further, more mysterious
+  // Pyramid 2: still huge, right horizon — further, more mysterious
   const pyramid2 = buildAlienPyramid({
-    x: 80, z: -70,
-    height: 10, width: 18,
+    x: 60, z: -45,
+    height: 30, width: 45,
     bodyColor: 0x080810,
-    edgeOpacity: 0.12,
+    edgeOpacity: 0.20,
   });
   pyramid2.name = 'desert-alien-pyramid-2';
   group.add(pyramid2);
@@ -217,18 +218,19 @@ export function buildDesertNightScene(group, deps) {
       }
     });
 
-    // --- Main ribcage: large, tilted, partially buried ---
-    model.scale.setScalar(3.0);
-    model.position.set(50, -0.5, -75);
+    // --- Main ribcage: MASSIVE, tilted, partially buried ---
+    // Scale 8x — this should tower over the player like a building
+    model.scale.setScalar(8.0);
+    model.position.set(40, -1.5, -55);
     model.rotation.set(0.3, -0.8, 0.15); // Tilted forward, yawed, slight roll
     model.frustumCulled = false;
     model.name = 'desert-ribcage-main';
     group.add(model);
 
-    // --- Scattered fragment: smaller piece, different angle ---
+    // --- Scattered fragment: still big, different angle ---
     const fragment = model.clone();
-    fragment.scale.setScalar(2.0);
-    fragment.position.set(-60, -0.8, -90);
+    fragment.scale.setScalar(5.0);
+    fragment.position.set(-45, -2.0, -65);
     fragment.rotation.set(-0.5, 1.2, -0.3); // More buried, different orientation
     fragment.name = 'desert-ribcage-fragment';
     group.add(fragment);
