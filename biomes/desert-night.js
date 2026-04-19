@@ -5,6 +5,7 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 export function buildDesertNightScene(group, deps) {
   const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials, synthVisualRefs } = deps;
@@ -137,6 +138,126 @@ export function buildDesertNightScene(group, deps) {
   dunePanels.forEach((panel, idx) => buildDunePanel(panel, idx));
 
   // Flash overlay removed — biomeTerrainMaterials overlay entries must also be removed.
+
+  // === ALIEN PYRAMIDS (distant mysterious silhouettes on the horizon) ===
+  const buildAlienPyramid = ({ x, z, height, width, bodyColor, edgeOpacity }) => {
+    const pyramidGroup = new THREE.Group();
+    pyramidGroup.name = `desert-alien-pyramid-${x}-${z}`;
+
+    // 4-sided cone = pyramid shape
+    const pyramidGeo = new THREE.ConeGeometry(1, 1, 4);
+    pyramidGeo.rotateY(Math.PI / 4); // Align edges to cardinal directions
+    const pyramidMat = new THREE.MeshBasicMaterial({ color: bodyColor });
+    const pyramidMesh = new THREE.Mesh(pyramidGeo, pyramidMat);
+    pyramidMesh.name = `desert-alien-pyramid-body-${x}-${z}`;
+    pyramidMesh.scale.set(width, height, width);
+    pyramidMesh.position.y = height / 2; // Sit on ground
+    pyramidMesh.frustumCulled = false;
+    pyramidGroup.add(pyramidMesh);
+    registerFadeMaterial(pyramidMat);
+
+    // Faint neon edge lines — the only thing making them readable against the dark sky
+    const edgeGeo = new THREE.EdgesGeometry(pyramidGeo, 1);
+    const edgeMat = new THREE.LineBasicMaterial({
+      color: duneOutlineColor, // 0xAB3A93 — matches dune outlines
+      transparent: true,
+      opacity: edgeOpacity,
+      depthWrite: false,
+    });
+    const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
+    edgeLines.name = `desert-alien-pyramid-edges-${x}-${z}`;
+    edgeLines.scale.copy(pyramidMesh.scale);
+    edgeLines.position.copy(pyramidMesh.position);
+    edgeLines.frustumCulled = false;
+    pyramidGroup.add(edgeLines);
+    registerFadeMaterial(edgeMat);
+
+    pyramidGroup.position.set(x, floorY, z);
+    return pyramidGroup;
+  };
+
+  // Pyramid 1: large, left horizon — looming and ancient
+  const pyramid1 = buildAlienPyramid({
+    x: -70, z: -80,
+    height: 18, width: 28,
+    bodyColor: 0x0a0a0c,
+    edgeOpacity: 0.15,
+  });
+  pyramid1.name = 'desert-alien-pyramid-1';
+  group.add(pyramid1);
+
+  // Pyramid 2: smaller, right horizon — further, more mysterious
+  const pyramid2 = buildAlienPyramid({
+    x: 80, z: -70,
+    height: 10, width: 18,
+    bodyColor: 0x080810,
+    edgeOpacity: 0.12,
+  });
+  pyramid2.name = 'desert-alien-pyramid-2';
+  group.add(pyramid2);
+
+  // === GIANT ALIEN RIBCAGE (distant horizon skeleton) ===
+  const gltfLoader = new GLTFLoader();
+  gltfLoader.load('./assets/models/rib_cage.glb', (gltf) => {
+    const model = gltf.scene;
+
+    // Collect meshes for edge overlay after traverse
+    const ribcageMeshes = [];
+    model.traverse((child) => {
+      if (child.isMesh) {
+        // Bone-white/ivory tone — weathered, ancient look under moonlight
+        child.material = new THREE.MeshLambertMaterial({
+          color: 0x8a7a6a,
+          flatShading: false,
+        });
+        child.frustumCulled = false;
+        child.castShadow = true;
+        registerFadeMaterial(child.material);
+        ribcageMeshes.push(child);
+      }
+    });
+
+    // --- Main ribcage: large, tilted, partially buried ---
+    model.scale.setScalar(3.0);
+    model.position.set(50, -0.5, -75);
+    model.rotation.set(0.3, -0.8, 0.15); // Tilted forward, yawed, slight roll
+    model.frustumCulled = false;
+    model.name = 'desert-ribcage-main';
+    group.add(model);
+
+    // --- Scattered fragment: smaller piece, different angle ---
+    const fragment = model.clone();
+    fragment.scale.setScalar(2.0);
+    fragment.position.set(-60, -0.8, -90);
+    fragment.rotation.set(-0.5, 1.2, -0.3); // More buried, different orientation
+    fragment.name = 'desert-ribcage-fragment';
+    group.add(fragment);
+
+    // --- Subtle pink edge highlights (matching dune outlines at low opacity) ---
+    const addRibcageEdges = (parent, opacity) => {
+      parent.traverse((child) => {
+        if (child.isMesh) {
+          const edgeGeo = new THREE.EdgesGeometry(child.geometry, 30);
+          const edgeMat = new THREE.LineBasicMaterial({
+            color: duneOutlineColor, // 0xAB3A93 — matches dune outlines
+            transparent: true,
+            opacity: opacity,
+            depthWrite: false,
+          });
+          const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
+          edgeLines.position.copy(child.position);
+          edgeLines.rotation.copy(child.rotation);
+          edgeLines.scale.copy(child.scale);
+          edgeLines.frustumCulled = false;
+          parent.add(edgeLines);
+          registerFadeMaterial(edgeMat);
+        }
+      });
+    };
+
+    addRibcageEdges(model, 0.1);
+    addRibcageEdges(fragment, 0.08);
+  });
 
   // === CACTUSES (8 procedural, simplified for perf) ===
   // Shared materials to avoid per-segment allocation

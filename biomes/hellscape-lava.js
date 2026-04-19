@@ -19,15 +19,7 @@ export function buildHellscapeLavaScene(group, deps) {
   // Red moonlight with shadows
   const moonLight = new THREE.DirectionalLight(0xff3333, 2.5);
   moonLight.position.set(20, 30, -100);
-  moonLight.castShadow = true;
-  moonLight.shadow.mapSize.width = 512;
-  moonLight.shadow.mapSize.height = 512;
-  moonLight.shadow.camera.near = 0.5;
-  moonLight.shadow.camera.far = 500;
-  moonLight.shadow.camera.left = -100;
-  moonLight.shadow.camera.right = 100;
-  moonLight.shadow.camera.top = 100;
-  moonLight.shadow.camera.bottom = -100;
+  moonLight.castShadow = false;  // Baked shadows used instead (Quest perf)
   group.add(moonLight);
 
   // Ambient light removed (moonLight provides sufficient illumination)
@@ -93,7 +85,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
 
   const terrain = new THREE.Mesh(geometry, material);
   terrain.name = 'hellscape-terrain';
-  terrain.receiveShadow = true;
+  // receiveShadow removed — using baked shadow planes instead
   terrain.frustumCulled = false; // Prevent disappearing when looking down
   terrain.position.y = floorY;
   terrain.position.x = -10.0;  // Shift terrain left so player spawns on riverbank (not riverbed)
@@ -196,8 +188,7 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
       model.traverse((child) => {
         if (child.isMesh) {
           child.material = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-          child.castShadow = true;
-          child.receiveShadow = true;
+          // castShadow/receiveShadow removed — using baked shadow planes instead
         }
       });
       // Base scale correction for Blender export (models often export large)
@@ -240,6 +231,51 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     { x: -15.371, y: 0.822, z: -117.774 },
     { x: -50.590, y: 0.822, z: -118.265 },
   ]);
+
+  // ========================================
+  // BAKED SHADOWS under dead trees
+  // ========================================
+  // Pre-computed shadow planes: zero per-frame cost, works on Quest
+  const shadowCanvas = document.createElement('canvas');
+  shadowCanvas.width = 256;
+  shadowCanvas.height = 256;
+  const sCtx = shadowCanvas.getContext('2d');
+  const sGrad = sCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  sGrad.addColorStop(0.0, 'rgba(5,1,1,0.6)');
+  sGrad.addColorStop(0.5, 'rgba(5,1,1,0.3)');
+  sGrad.addColorStop(1.0, 'rgba(5,1,1,0)');
+  sCtx.fillStyle = sGrad;
+  sCtx.fillRect(0, 0, 256, 256);
+  const shadowTexture = new THREE.CanvasTexture(shadowCanvas);
+
+  const allTreePositions = [
+    { x: -45.728, y: 0.321, z: -26.325, s: 1.2 },
+    { x: -50.390, y: 1.176, z: -63.963, s: 1.4 },
+    { x: 1.100,   y: 0.822, z: -29.656, s: 1.0 },
+    { x: -7.001,  y: 0.822, z: -56.803, s: 1.1 },
+    { x: -15.371, y: 0.822, z: -117.774, s: 1.5 },
+    { x: -50.590, y: 0.822, z: -118.265, s: 1.3 },
+  ];
+
+  const shadowGeo = new THREE.PlaneGeometry(12, 18);  // Elongated in Z for low moon angle
+
+  for (const tp of allTreePositions) {
+    const shadowMat = new THREE.MeshBasicMaterial({
+      map: shadowTexture,
+      transparent: true,
+      depthWrite: false,
+    });
+    const shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
+    shadowPlane.rotation.x = -Math.PI / 2;
+    shadowPlane.position.set(
+      tp.x + 3,     // Offset +X (away from light)
+      tp.y + 0.05,  // Just above ground to avoid z-fighting
+      tp.z + 8      // Offset +Z (toward player, away from moon)
+    );
+    shadowPlane.scale.setScalar(tp.s);
+    group.add(shadowPlane);
+    registerFadeMaterial(shadowMat);
+  }
 
   // (Stars removed - jittery dots not visible from player distance)
 

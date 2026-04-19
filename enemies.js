@@ -2286,6 +2286,169 @@ function getExplosionSprite() {
   return null; // Pool exhausted, skip this particle
 }
 
+// ── Status Effect Visual Pool ─────────────────────────────
+// Pooled visual effects for fire, shock, and freeze status on enemies.
+// Fire: additive-blended orange/red sprites orbiting the enemy.
+// Shock: bright yellow LineSegments flashing like tiny lightning arcs.
+// Freeze: translucent blue/white icosahedrons at enemy limbs.
+//
+// Total pool: ~24 objects (enough for several enemies with effects).
+// Follows the same stride-update pattern as the explosion pool.
+
+const STATUS_VFX_POOL_SIZE = 24;
+const statusVfxPool = [];
+let statusVfxReady = false;
+
+// Shared textures/materials for fire sprites
+let statusVfxFireTex = null;
+const statusVfxFireMat = [];   // Reusable SpriteMaterials (4)
+// Shared geometry for shock arcs
+let statusVfxShockGeo = null;
+let statusVfxShockMat = null; // Will be created in init
+// Shared geometry + material for freeze crystals
+let statusVfxFreezeGeo = null;
+let statusVfxFreezeMat = null;
+
+function initStatusVfxPool() {
+  // ── Fire sprite texture ──
+  const fireCanvas = document.createElement('canvas');
+  fireCanvas.width = 16; fireCanvas.height = 16;
+  const fCtx = fireCanvas.getContext('2d');
+  const fGrad = fCtx.createRadialGradient(8, 8, 0, 8, 8, 8);
+  fGrad.addColorStop(0, 'rgba(255,200,50,1)');
+  fGrad.addColorStop(0.4, 'rgba(255,100,0,0.8)');
+  fGrad.addColorStop(1, 'rgba(255,30,0,0)');
+  fCtx.fillStyle = fGrad;
+  fCtx.fillRect(0, 0, 16, 16);
+  statusVfxFireTex = new THREE.CanvasTexture(fireCanvas);
+
+  // Pre-create 4 fire SpriteMaterials (reuse across pool sprites)
+  for (let i = 0; i < 4; i++) {
+    statusVfxFireMat.push(new THREE.SpriteMaterial({
+      map: statusVfxFireTex,
+      transparent: true,
+      opacity: 1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }));
+  }
+
+  // ── Shock arc geometry (2-point line segment, positions updated per frame) ──
+  statusVfxShockGeo = new THREE.BufferGeometry();
+  statusVfxShockGeo.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 0,0,0], 3));
+  statusVfxShockMat = new THREE.LineBasicMaterial({
+    color: 0xffdd00,
+    transparent: true,
+    opacity: 1,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  // ── Freeze crystal geometry ──
+  statusVfxFreezeGeo = new THREE.IcosahedronGeometry(0.06, 0);
+  statusVfxFreezeMat = new THREE.MeshBasicMaterial({
+    color: 0x88ccff,
+    transparent: true,
+    opacity: 0.6,
+    blending: THREE.NormalBlending,
+    depthWrite: false,
+  });
+
+  // ── Build pool: 8 fire sprites, 6 shock arcs, 10 freeze crystals ──
+  // Fire sprites
+  for (let i = 0; i < 8; i++) {
+    const mat = statusVfxFireMat[i % 4];
+    const sprite = new THREE.Sprite(mat.clone()); // Clone mat so opacity can differ per sprite
+    sprite.scale.set(0.08, 0.08, 1);
+    sprite.visible = false;
+    sprite.userData = { vfxType: 'fire', phase: Math.random() * Math.PI * 2, orbitSpeed: 1.5 + Math.random() * 1.0, baseScale: 0.06 + Math.random() * 0.04 };
+    statusVfxPool.push(sprite);
+  }
+  // Shock arcs
+  for (let i = 0; i < 6; i++) {
+    const geo = statusVfxShockGeo.clone(); // Each arc needs its own geometry for independent positions
+    const seg = new THREE.LineSegments(geo, statusVfxShockMat.clone());
+    seg.visible = false;
+    seg.userData = { vfxType: 'shock', flashTimer: 0, flashInterval: 0.08 + Math.random() * 0.12 };
+    statusVfxPool.push(seg);
+  }
+  // Freeze crystals
+  for (let i = 0; i < 10; i++) {
+    const mesh = new THREE.Mesh(statusVfxFreezeGeo, statusVfxFreezeMat.clone());
+    mesh.visible = false;
+    mesh.userData = {
+      vfxType: 'freeze',
+      targetScale: 1,
+      currentScale: 0,
+      // Offset from enemy center: spread across body
+      offset: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.6,
+        Math.random() * 0.6 - 0.1,
+        (Math.random() - 0.5) * 0.6
+      ),
+    };
+    statusVfxPool.push(mesh);
+  }
+
+  statusVfxReady = true;
+}
+
+/**
+ * Grab `count` inactive pool objects of the given vfxType.
+ * Returns array of objects (may be shorter than count if pool is exhausted).
+ */
+function getStatusVfx(vfxType, count) {
+  const result = [];
+  for (const obj of statusVfxPool) {
+    if (!obj.visible && obj.userData.vfxType === vfxType) {
+      result.push(obj);
+      if (result.length >= count) break;
+    }
+  }
+  return result;
+}
+
+/**
+ * Return a status VFX object to the pool (hide it, detach from parent).
+ */
+function returnStatusVfx(obj) {
+  obj.visible = false;
+  if (obj.parent) obj.parent.remove(obj);
+  // Reset fire sprite opacity
+  if (obj.userData.vfxType === 'fire' && obj.material) {
+    obj.material.opacity = 0;
+  }
+  // Reset shock opacity
+  if (obj.userData.vfxType === 'shock' && obj.material) {
+    obj.material.opacity = 0;
+  }
+  // Reset freeze scale
+  if (obj.userData.vfxType === 'freeze') {
+    obj.userData.currentScale = 0;
+    obj.scale.setScalar(0);
+  }
+}
+
+/**
+ * Remove all active status VFX attached to an enemy (e.g. on death or removal).
+ */
+function clearEnemyStatusVfx(e) {
+  if (!e.mesh) return;
+  const toRemove = [];
+  e.mesh.traverse(child => {
+    if (child.userData && child.userData._statusVfx) toRemove.push(child);
+  });
+  toRemove.forEach(obj => {
+    obj.userData._statusVfx = false;
+    returnStatusVfx(obj);
+  });
+}
+
+// Scratch vectors for status VFX updates
+const _svPos = new THREE.Vector3();
+const _svUp = new THREE.Vector3(0, 1, 0);
+const _svOffset = new THREE.Vector3();
+
 // Temp vectors (avoid allocation in hot loops)
 const _dir = new THREE.Vector3();
 const _look = new THREE.Vector3();
@@ -2568,6 +2731,12 @@ export function initEnemies(scene) {
     initExplosionPool();
     // Add all pool sprites to scene (hidden by default)
     explosionPool.forEach(s => scene.add(s));
+  }
+
+  // Initialize status effect visual pool
+  if (!statusVfxReady) {
+    initStatusVfxPool();
+    // Pool objects are NOT added to scene directly; they are attached to enemy meshes as children.
   }
 
   // Initialize telegraphing system
@@ -3634,7 +3803,7 @@ const _redColor = new THREE.Color(0xff0000);
 function updateStatusEffects(e, dt) {
   const se = e.statusEffects;
 
-  // Fire DoT (Large)
+  // ── Fire DoT (Large) ──
   if (se.fire.remaining > 0) {
     se.fire.remaining -= dt;
     se.fire.tickTimer -= dt;
@@ -3648,7 +3817,7 @@ function updateStatusEffects(e, dt) {
     if (se.fire.remaining <= 0) { se.fire.stacks = 0; se.fire.tickTimer = 0; }
   }
 
-  // Shock DoT (Medium)
+  // ── Shock DoT (Medium) ──
   if (se.shock.remaining > 0) {
     se.shock.remaining -= dt;
     se.shock.tickTimer -= dt;
@@ -3662,7 +3831,7 @@ function updateStatusEffects(e, dt) {
     if (se.shock.remaining <= 0) { se.shock.stacks = 0; se.shock.tickTimer = 0; }
   }
 
-  // Freeze DoT (NO damage - CHILL only slows)
+  // ── Freeze DoT (NO damage - CHILL only slows) ──
   if (se.freeze.remaining > 0) {
     se.freeze.remaining -= dt;
     se.freeze.tickTimer -= dt;
@@ -3672,6 +3841,163 @@ function updateStatusEffects(e, dt) {
       e._lastDoT = { type: 'freeze', damage: 0 };
     }
     if (se.freeze.remaining <= 0) { se.freeze.stacks = 0; se.freeze.tickTimer = 0; }
+  }
+
+  // ── Status Effect Visuals ──
+  if (statusVfxReady && e.mesh) {
+    updateStatusEffectVisuals(e, dt);
+  }
+}
+
+// ── Status Effect Visual Update ───────────────────────────
+// Per-enemy: attach/update/remove fire sprites, shock arcs, freeze crystals.
+// Uses lazy attachment: first active frame grabs pool objects, attaches to e.mesh.
+// When status expires, visuals are returned to pool.
+
+// Track which VFX objects belong to each enemy (keyed by enemy._statusVfxId).
+let _statusVfxNextId = 1;
+const _statusVfxMap = new Map(); // enemy._statusVfxId → { fire: [objs], shock: [objs], freeze: [objs] }
+
+function ensureEnemyVfxId(e) {
+  if (!e._statusVfxId) e._statusVfxId = _statusVfxNextId++;
+  return e._statusVfxId;
+}
+
+function getEnemyVfx(e) {
+  const id = e._statusVfxId;
+  if (!id) return null;
+  return _statusVfxMap.get(id) || null;
+}
+
+function ensureEnemyVfx(e) {
+  const id = ensureEnemyVfxId(e);
+  let vfx = _statusVfxMap.get(id);
+  if (!vfx) {
+    vfx = { fire: [], shock: [], freeze: [] };
+    _statusVfxMap.set(id, vfx);
+  }
+  return vfx;
+}
+
+function updateStatusEffectVisuals(e, dt) {
+  const se = e.statusEffects;
+  const vfx = ensureEnemyVfx(e);
+  const now = performance.now() * 0.001; // seconds
+
+  // ── FIRE VISUALS ──
+  if (se.fire.remaining > 0 && se.fire.stacks > 0) {
+    // Lazy-attach fire sprites (3-5 depending on stacks)
+    const desiredCount = Math.min(5, 3 + Math.floor(se.fire.stacks / 2));
+    if (vfx.fire.length < desiredCount) {
+      const newSprites = getStatusVfx('fire', desiredCount - vfx.fire.length);
+      for (const sprite of newSprites) {
+        sprite.visible = true;
+        sprite.userData._statusVfx = true;
+        sprite.userData.phase = Math.random() * Math.PI * 2;
+        e.mesh.add(sprite);
+        vfx.fire.push(sprite);
+      }
+    }
+    // Update fire sprite positions: orbit around enemy center, rise, pulse
+    for (let i = 0; i < vfx.fire.length; i++) {
+      const sprite = vfx.fire[i];
+      const phase = sprite.userData.phase + now * sprite.userData.orbitSpeed;
+      const radius = 0.25 + 0.1 * Math.sin(phase * 0.7);
+      // Orbit in XZ plane, rise in Y
+      const x = Math.cos(phase + i * 1.2) * radius;
+      const z = Math.sin(phase + i * 1.2) * radius;
+      const y = 0.1 + 0.2 * Math.sin(phase * 1.3 + i) + (now * 0.15) % 0.5;
+      sprite.position.set(x, y, z);
+      // Pulse scale and opacity
+      const pulse = 0.8 + 0.4 * Math.sin(phase * 2.0);
+      const baseScale = sprite.userData.baseScale || 0.08;
+      sprite.scale.setScalar(baseScale * pulse);
+      // Fade out as fire expires
+      const fadeRatio = Math.min(1, se.fire.remaining / 0.5); // fade in last 0.5s
+      sprite.material.opacity = fadeRatio * pulse;
+    }
+  } else if (vfx.fire.length > 0) {
+    // Fire expired – return sprites to pool
+    for (const sprite of vfx.fire) {
+      returnStatusVfx(sprite);
+    }
+    vfx.fire.length = 0;
+  }
+
+  // ── SHOCK VISUALS ──
+  if (se.shock.remaining > 0 && se.shock.stacks > 0) {
+    const desiredCount = Math.min(3, 2 + Math.floor(se.shock.stacks / 3));
+    if (vfx.shock.length < desiredCount) {
+      const newArcs = getStatusVfx('shock', desiredCount - vfx.shock.length);
+      for (const arc of newArcs) {
+        arc.visible = true;
+        arc.userData._statusVfx = true;
+        e.mesh.add(arc);
+        vfx.shock.push(arc);
+      }
+    }
+    // Update shock arcs: random flash positions on enemy surface
+    for (let i = 0; i < vfx.shock.length; i++) {
+      const arc = vfx.shock[i];
+      arc.userData.flashTimer -= dt;
+      if (arc.userData.flashTimer <= 0) {
+        arc.userData.flashTimer = arc.userData.flashInterval;
+        // Random arc endpoints near enemy surface
+        const posAttr = arc.geometry.getAttribute('position');
+        for (let p = 0; p < 2; p++) {
+          posAttr.setXYZ(p,
+            (Math.random() - 0.5) * 0.5,
+            Math.random() * 0.7 - 0.1,
+            (Math.random() - 0.5) * 0.5
+          );
+        }
+        posAttr.needsUpdate = true;
+      }
+      // Random visibility for flicker effect
+      arc.material.opacity = (Math.random() > 0.3) ? 0.8 + Math.random() * 0.2 : 0;
+    }
+  } else if (vfx.shock.length > 0) {
+    // Shock expired – return arcs to pool
+    for (const arc of vfx.shock) {
+      returnStatusVfx(arc);
+    }
+    vfx.shock.length = 0;
+  }
+
+  // ── FREEZE/CHILL VISUALS ──
+  if (se.freeze.remaining > 0 && se.freeze.stacks > 0) {
+    const desiredCount = Math.min(4, 2 + Math.floor(se.freeze.stacks / 2));
+    if (vfx.freeze.length < desiredCount) {
+      const newCrystals = getStatusVfx('freeze', desiredCount - vfx.freeze.length);
+      for (const crystal of newCrystals) {
+        crystal.visible = true;
+        crystal.userData._statusVfx = true;
+        crystal.userData.currentScale = 0;
+        e.mesh.add(crystal);
+        vfx.freeze.push(crystal);
+      }
+    }
+    // Grow crystals from 0 to full size, pulse gently
+    for (const crystal of vfx.freeze) {
+      if (crystal.userData.currentScale < 1) {
+        crystal.userData.currentScale = Math.min(1, crystal.userData.currentScale + dt * 3);
+      }
+      const pulse = crystal.userData.currentScale * (0.9 + 0.1 * Math.sin(now * 2));
+      crystal.scale.setScalar(pulse);
+      crystal.position.copy(crystal.userData.offset);
+      // Slow rotation
+      crystal.rotation.y = now * 0.5;
+      crystal.rotation.x = now * 0.3;
+      // Fade out as freeze expires
+      const fadeRatio = Math.min(1, se.freeze.remaining / 0.5);
+      crystal.material.opacity = 0.6 * fadeRatio;
+    }
+  } else if (vfx.freeze.length > 0) {
+    // Freeze expired – return crystals to pool
+    for (const crystal of vfx.freeze) {
+      returnStatusVfx(crystal);
+    }
+    vfx.freeze.length = 0;
   }
 }
 
@@ -4028,6 +4354,9 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   }
 
   // Remove enemy mesh from scene
+  // Clean up any active status effect visuals first
+  clearEnemyStatusVfx(e);
+  if (e._statusVfxId) _statusVfxMap.delete(e._statusVfxId);
   sceneRef.remove(e.mesh);
   // Dispose all geometries including hitbox
   // For instanced enemies, voxel geometry lives in the InstancedMesh pool,
@@ -4103,6 +4432,9 @@ export function clearAllEnemies() {
   releaseAllSpiralSwimmerInstances();
 
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
+    // Clean up status VFX before removing mesh
+    clearEnemyStatusVfx(activeEnemies[i]);
+    if (activeEnemies[i]._statusVfxId) _statusVfxMap.delete(activeEnemies[i]._statusVfxId);
     sceneRef.remove(activeEnemies[i].mesh);
     // Dispose all geometries including hitbox
     // For instanced enemies, voxel geometry lives in pool, but hitboxes must be disposed

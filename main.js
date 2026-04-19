@@ -1485,6 +1485,9 @@ function init() {
   // Pre-allocate explosion visual pool for Quest perf
   initExplosionPool(scene);
 
+  // Biome transition burst particle system — initialized lazily on first biome change
+  // (constants defined later in file; initTransitionBurst called from triggerTransitionBurst)
+
   // Camera position is controlled by WebXR in VR mode, desktop mode sets it elsewhere
 
   // Renderer — optimized for Quest performance
@@ -2291,6 +2294,90 @@ function applyEnvironmentFade(fade) {
     const base = material.__fadeBase ?? 1;
     material.opacity = base * (1 - environmentFade);
   });
+}
+
+// ── Biome transition burst particle system ──
+const TRANSITION_BURST_COUNT = 24;
+let transitionBurst = null;
+let transitionBurstGeo = null;
+let transitionBurstActive = false;
+let transitionBurstAge = 0;
+const TRANSITION_BURST_DURATION = 1.2;
+
+function initTransitionBurst(scene) {
+  const positions = new Float32Array(TRANSITION_BURST_COUNT * 3);
+  transitionBurstGeo = new THREE.BufferGeometry();
+  transitionBurstGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    size: 0.3,
+    transparent: true,
+    opacity: 1.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    color: 0xffffff,
+    sizeAttenuation: true,
+  });
+  transitionBurst = new THREE.Points(transitionBurstGeo, mat);
+  transitionBurst.visible = false;
+  transitionBurst.frustumCulled = false;
+  scene.add(transitionBurst);
+}
+
+function triggerTransitionBurst(playerPos, oldTheme, scene) {
+  // Lazy init on first trigger (avoids const-before-init ordering issue)
+  if (!transitionBurst && scene) initTransitionBurst(scene);
+  if (!transitionBurst) return;
+  const colorMap = {
+    synthwave_valley: 0xff44cc,
+    desert_night: 0x88aacc,
+    alien_planet: 0x44ff88,
+    hellscape_lava: 0xff4400,
+  };
+  transitionBurst.material.color.setHex(colorMap[oldTheme] || 0xffffff);
+  const positions = transitionBurstGeo.attributes.position.array;
+  for (let i = 0; i < TRANSITION_BURST_COUNT; i++) {
+    const i3 = i * 3;
+    positions[i3] = playerPos.x;
+    positions[i3 + 1] = playerPos.y;
+    positions[i3 + 2] = playerPos.z;
+  }
+  transitionBurstGeo.attributes.position.needsUpdate = true;
+  transitionBurst.userData.velocities = new Float32Array(TRANSITION_BURST_COUNT * 3);
+  for (let i = 0; i < TRANSITION_BURST_COUNT; i++) {
+    const angle = (i / TRANSITION_BURST_COUNT) * Math.PI * 2;
+    const i3 = i * 3;
+    transitionBurst.userData.velocities[i3] = Math.cos(angle) * 8.0;
+    transitionBurst.userData.velocities[i3 + 1] = 1.0 + Math.random() * 2.0;
+    transitionBurst.userData.velocities[i3 + 2] = Math.sin(angle) * 8.0;
+  }
+  transitionBurst.visible = true;
+  transitionBurst.material.opacity = 1.0;
+  transitionBurstActive = true;
+  transitionBurstAge = 0;
+}
+
+function updateTransitionBurst(dt) {
+  if (!transitionBurstActive) return;
+  transitionBurstAge += dt;
+  const t = transitionBurstAge / TRANSITION_BURST_DURATION;
+  if (t >= 1.0) {
+    transitionBurstActive = false;
+    transitionBurst.visible = false;
+    return;
+  }
+  const positions = transitionBurstGeo.attributes.position.array;
+  const velocities = transitionBurst.userData.velocities;
+  for (let i = 0; i < TRANSITION_BURST_COUNT; i++) {
+    const i3 = i * 3;
+    positions[i3] += velocities[i3] * dt;
+    positions[i3 + 1] += velocities[i3 + 1] * dt;
+    positions[i3 + 2] += velocities[i3 + 2] * dt;
+    velocities[i3] *= 0.97;
+    velocities[i3 + 2] *= 0.97;
+  }
+  transitionBurst.material.opacity = 1.0 - t * t;
+  transitionBurst.material.size = 0.3 + t * 0.4;
+  transitionBurstGeo.attributes.position.needsUpdate = true;
 }
 
 // [CORE] Apply theme and rebuild biome for a level
@@ -7522,6 +7609,12 @@ function advanceLevelAfterUpgrade() {
   } else {
     game._levelConfig = getLevelConfig();
     captureLevelSpawnForward();
+    // Trigger biome transition burst using OLD biome colors
+    const oldBiome = getBiomeForLevel(game.level - 1);
+    const newBiome = getBiomeForLevel(game.level);
+    if (oldBiome !== newBiome) {
+      triggerTransitionBurst(getAdjustedCameraPosition(), oldBiome, scene);
+    }
     applyThemeForLevel(game.level);
     const shouldFade = shouldFadeForBiomeTransition(game.level - 1);
     
@@ -10724,6 +10817,7 @@ function render(timestamp) {
     updateAmbientParticles(rawDt, currentTheme, getAdjustedCameraPosition());
   }
   updateBiomeProps(now, rawDt);
+  updateTransitionBurst(rawDt);
   profiler.end('scenery');
   _mark('ambient_biome'); // ── end: ambient particles + biome props
 

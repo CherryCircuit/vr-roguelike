@@ -20,13 +20,33 @@ export function buildAlienPlanetScene(group, deps) {
   const nearPositions = nearGeo.attributes.position;
   let _seed = 42;
   const srand = () => { _seed = (_seed * 16807 + 0) % 2147483647; return (_seed - 1) / 2147483646; };
+  // River path helper: returns river center X at a given world Z
+  const getRiverCenterX = (worldZ) => {
+    if (worldZ < -60 || worldZ > 60) return 9999;
+    const t = (worldZ + 60) / 120;
+    return Math.sin(t * Math.PI * 2.5) * 12 + Math.sin(t * Math.PI * 5) * 4;
+  };
   for (let i = 0; i < nearPositions.count; i++) {
     const x = nearPositions.getX(i);
     const y = nearPositions.getY(i);
     const dist = Math.sqrt(x * x + y * y);
     const rawHeight = srand() * 0.7;
     const maxHeight = dist < 20 ? 0.2 : 0.7;
-    nearPositions.setZ(i, Math.min(rawHeight, maxHeight));
+    let height = Math.min(rawHeight, maxHeight);
+    // Carve river channel: lower vertices near the river path
+    const worldZ = -y; // Local Y maps to -world Z after mesh rotation
+    const riverCX = getRiverCenterX(worldZ);
+    if (riverCX < 9000) {
+      const distToRiver = Math.abs(x - riverCX);
+      const channelHalfWidth = 5.0;
+      if (distToRiver < channelHalfWidth) {
+        // Smoothstep: 0 at bank edge, 1 at channel center
+        const bankT = Math.max(0, Math.min(1, (channelHalfWidth - distToRiver) / (channelHalfWidth * 0.5)));
+        const smooth = bankT * bankT * (3.0 - 2.0 * bankT);
+        height -= 1.0 * smooth;
+      }
+    }
+    nearPositions.setZ(i, height);
   }
   nearGeo.computeVertexNormals();
   const groundMat = new THREE.ShaderMaterial({
@@ -99,6 +119,92 @@ export function buildAlienPlanetScene(group, deps) {
   nearGround.frustumCulled = false;
   group.add(nearGround);
   registerFadeMaterial(groundMat);
+
+  // ── GREEN GOOP RIVER (below ground level in carved channel) ──
+  const riverWidth = 8;
+  const riverLength = 120;
+  const riverGeo = new THREE.PlaneGeometry(riverWidth, riverLength, 12, 60);
+  riverGeo.rotateX(-Math.PI / 2);
+  // Curve the river plane to follow the sin path
+  const riverPositions = riverGeo.attributes.position;
+  for (let i = 0; i < riverPositions.count; i++) {
+    const localX = riverPositions.getX(i);
+    const localZ = riverPositions.getZ(i);
+    const worldZ = localZ;
+    const t = (worldZ + 60) / 120;
+    const riverCenterX = Math.sin(t * Math.PI * 2.5) * 12 + Math.sin(t * Math.PI * 5) * 4;
+    riverPositions.setX(i, localX + riverCenterX);
+  }
+  const greenRiverMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vPos;
+      void main() {
+        vUv = uv;
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      varying vec2 vUv;
+      varying vec3 vPos;
+      // Cheap noise for goop variation
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
+      void main() {
+        // Flowing goop animation
+        float flow = vUv.y * 2.0 + uTime * 0.2;
+        float n1 = noise(vec2(flow * 1.5, vPos.x * 0.5 + uTime * 0.05));
+        float n2 = noise(vec2(flow * 3.0 - vPos.x * 0.3, vPos.z * 0.1 + 1.5));
+        float combined = n1 * 0.6 + n2 * 0.4;
+
+        // Dark toxic green base with bright bioluminescent highlights
+        vec3 darkGoop = vec3(0.0, 0.12, 0.04);
+        vec3 brightGoop = vec3(0.0, 0.7, 0.25);
+        vec3 hotGoop = vec3(0.2, 1.0, 0.5);
+
+        vec3 col = mix(darkGoop, brightGoop, combined);
+
+        // Pulsing bioluminescent hotspots
+        float hotspot = pow(n1, 3.0);
+        float pulse = 0.7 + 0.3 * sin(uTime * 1.5 + n2 * 6.283);
+        col = mix(col, hotGoop, hotspot * 0.5 * pulse);
+
+        // Subtle edge glow (brighter at river banks)
+        float edgeDist = abs(vUv.x - 0.5) * 2.0;
+        float edgeGlow = smoothstep(0.6, 1.0, edgeDist) * 0.3;
+        col += vec3(0.0, edgeGlow * 0.5, edgeGlow * 0.2);
+
+        gl_FragColor = vec4(col * 1.1, 0.92);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const greenRiver = new THREE.Mesh(riverGeo, greenRiverMat);
+  greenRiver.name = 'alien-green-river';
+  greenRiver.position.y = floorY - 0.8; // Below ground in the carved channel
+  greenRiver.frustumCulled = false;
+  greenRiver.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 200);
+  greenRiver.renderOrder = 1;
+  group.add(greenRiver);
+  registerFadeMaterial(greenRiverMat);
 
   // Far ground plane (extends from near edge to scene boundary): simple flat quad
   const farGroundMat = new THREE.MeshLambertMaterial({ color: 0x0a0510 });
@@ -614,6 +720,9 @@ export function buildAlienPlanetScene(group, deps) {
 
     // City shader: update every frame (cheap - just uniform)
     cityShaderMat.uniforms.uTime.value = time;
+
+    // Green goop river: flowing animation
+    if (greenRiverMat) greenRiverMat.uniforms.uTime.value = time;
 
     // Cloud dome: update every frame (cheap - just uniform)
     // Cloud animation disabled for Quest performance - static clouds
