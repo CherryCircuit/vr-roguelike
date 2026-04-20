@@ -176,21 +176,20 @@ export function buildDesertNightScene(group, deps) {
     return pyramidGroup;
   };
 
-  // Pyramid 1: MASSIVE, left horizon — looming and ancient
-  // Visible from play area as a towering dark shape against the sky
+  // Pyramid 1: large, left horizon — looming silhouette below the moon
   const pyramid1 = buildAlienPyramid({
-    x: -55, z: -50,
-    height: 45, width: 65,
+    x: -80, z: -90,
+    height: 22, width: 35,
     bodyColor: 0x0a0a0c,
     edgeOpacity: 0.25,
   });
   pyramid1.name = 'desert-alien-pyramid-1';
   group.add(pyramid1);
 
-  // Pyramid 2: still huge, right horizon — further, more mysterious
+  // Pyramid 2: medium, right horizon — further, more mysterious
   const pyramid2 = buildAlienPyramid({
-    x: 60, z: -45,
-    height: 30, width: 45,
+    x: 85, z: -85,
+    height: 15, width: 25,
     bodyColor: 0x080810,
     edgeOpacity: 0.20,
   });
