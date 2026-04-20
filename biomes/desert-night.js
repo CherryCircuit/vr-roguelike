@@ -211,17 +211,16 @@ export function buildDesertNightScene(group, deps) {
           flatShading: false,
         });
         child.frustumCulled = false;
-        child.castShadow = true;
+        child.castShadow = false;
         registerFadeMaterial(child.material);
         ribcageMeshes.push(child);
       }
     });
 
-    // --- Main ribcage: MASSIVE, tilted, partially buried ---
-    // Scale 8x — this should tower over the player like a building
-    model.scale.setScalar(8.0);
-    model.position.set(40, -1.5, -55);
-    model.rotation.set(0.3, -0.8, 0.15); // Tilted forward, yawed, slight roll
+    // --- Main ribcage: positioned from Needle editor ---
+    model.scale.setScalar(38);
+    model.position.set(0, 10, -75);
+    model.rotation.set(-0.03, -0.94, -0.03);
     model.frustumCulled = false;
     model.name = 'desert-ribcage-main';
     group.add(model);
