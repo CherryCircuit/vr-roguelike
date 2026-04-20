@@ -176,28 +176,31 @@ export function buildDesertNightScene(group, deps) {
     return pyramidGroup;
   };
 
-  // Pyramid 1: large, left horizon
+    // Pyramid 1: large, left horizon
+  // Graeme moved body mesh in Needle from local (0,25,0) to (-30,20,80).
+  // Body ended up at world (-60,40,160). Group must be (-60,15,160) to place
+  // body (local 0,25,0) and edges (local 0,25,0) both at that world pos.
   const pyramid1 = buildAlienPyramid({
-    x: -30, z: 80,
+    x: 0, z: 0,
     height: 50, width: 50,
     bodyColor: 0x0a0a0c,
     edgeOpacity: 0.25,
   });
   pyramid1.name = 'desert-alien-pyramid-1';
-  // Group Y = target body Y - height/2 (body local offset)
-  pyramid1.position.set(-30, -5, 80);
+  pyramid1.position.set(-60, 15, 160);
   group.add(pyramid1);
 
   // Pyramid 2: medium, far right
+  // Body local was (0,18.75,0), Graeme set to (-150,15,30).
+  // Body world = (-300,30,60). Group = (-300,11.25,60).
   const pyramid2 = buildAlienPyramid({
-    x: -150, z: 30,
+    x: 0, z: 0,
     height: 37.5, width: 30,
     bodyColor: 0x080810,
     edgeOpacity: 0.20,
   });
   pyramid2.name = 'desert-alien-pyramid-2';
-  // Group Y = target body Y - height/2
-  pyramid2.position.set(-150, -3.75, 30);
+  pyramid2.position.set(-300, 11.25, 60);
   group.add(pyramid2);
 
   // === GIANT ALIEN RIBCAGE (distant horizon skeleton) ===
@@ -221,9 +224,10 @@ export function buildDesertNightScene(group, deps) {
       }
     });
 
-    // --- Main ribcage: positioned from Needle editor ---
+    // --- Main ribcage: Graeme moved model from local (0,0,0) to (-30,-5,-20) ---
+    // Model world became (-60,-10,-40). Group = (-60,-10,-40) for local (0,0,0).
     model.scale.setScalar(30);
-    model.position.set(-30, -5, -20);
+    model.position.set(-60, -10, -40);
     model.rotation.set(-0.45, 0, 0);
     model.frustumCulled = false;
     model.name = 'desert-ribcage-main';
