@@ -184,7 +184,8 @@ export function buildDesertNightScene(group, deps) {
     edgeOpacity: 0.25,
   });
   pyramid1.name = 'desert-alien-pyramid-1';
-  pyramid1.position.set(-30, 20, 80);
+  // Group Y = target body Y - height/2 (body local offset)
+  pyramid1.position.set(-30, -5, 80);
   group.add(pyramid1);
 
   // Pyramid 2: medium, far right
@@ -195,7 +196,8 @@ export function buildDesertNightScene(group, deps) {
     edgeOpacity: 0.20,
   });
   pyramid2.name = 'desert-alien-pyramid-2';
-  pyramid2.position.set(-150, 15, 30);
+  // Group Y = target body Y - height/2
+  pyramid2.position.set(-150, -3.75, 30);
   group.add(pyramid2);
 
   // === GIANT ALIEN RIBCAGE (distant horizon skeleton) ===
