@@ -176,27 +176,24 @@ export function buildDesertNightScene(group, deps) {
     return pyramidGroup;
   };
 
-      // Pyramid 1: group stays at origin, body + edges moved to Graeme's coords
+  // Pyramid 1: large, left horizon — looming silhouette below the moon
   const pyramid1 = buildAlienPyramid({
-    x: 0, z: 0,
-    height: 50, width: 50,
+    x: -80, z: -90,
+    height: 22, width: 35,
     bodyColor: 0x0a0a0c,
     edgeOpacity: 0.25,
   });
   pyramid1.name = 'desert-alien-pyramid-1';
-  // Move body and edges to Graeme's exact Needle coordinates
-  pyramid1.children.forEach(child => { child.position.set(-30, 20, 80); });
   group.add(pyramid1);
 
-  // Pyramid 2: group at origin, body + edges at Graeme's coords
+  // Pyramid 2: medium, right horizon — further, more mysterious
   const pyramid2 = buildAlienPyramid({
-    x: 0, z: 0,
-    height: 37.5, width: 30,
+    x: 85, z: -85,
+    height: 15, width: 25,
     bodyColor: 0x080810,
     edgeOpacity: 0.20,
   });
   pyramid2.name = 'desert-alien-pyramid-2';
-  pyramid2.children.forEach(child => { child.position.set(-150, 15, 30); });
   group.add(pyramid2);
 
   // === GIANT ALIEN RIBCAGE (distant horizon skeleton) ===
@@ -208,9 +205,9 @@ export function buildDesertNightScene(group, deps) {
     const ribcageMeshes = [];
     model.traverse((child) => {
       if (child.isMesh) {
-        // Weathered bone tone under moonlight
+        // Bone-white/ivory tone — weathered, ancient look under moonlight
         child.material = new THREE.MeshLambertMaterial({
-          color: 0x785f4a,
+          color: 0x8a7a6a,
           flatShading: false,
         });
         child.frustumCulled = false;
@@ -220,10 +217,11 @@ export function buildDesertNightScene(group, deps) {
       }
     });
 
-    // --- Main ribcage: Graeme's exact Needle coordinates ---
-    model.scale.setScalar(30);
-    model.position.set(-30, -5, -20);
-    model.rotation.set(-0.45, 0, 0);
+    // --- Main ribcage: MASSIVE, tilted, partially buried ---
+    // Scale 8x — this should tower over the player like a building
+    model.scale.setScalar(8.0);
+    model.position.set(40, -1.5, -55);
+    model.rotation.set(0.3, -0.8, 0.15); // Tilted forward, yawed, slight roll
     model.frustumCulled = false;
     model.name = 'desert-ribcage-main';
     group.add(model);
