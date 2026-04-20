@@ -3285,6 +3285,12 @@ function handleDesktopScoreboardClick() {
     const hover = getHoveredAction('desktop');
     if (hover && hover.userData.scoreboardAction) action = hover.userData.scoreboardAction;
   }
+  // Page navigation (may come from direct hit or hover fallback)
+  if (action === 'page_prev' || action === 'page_next') {
+    playMenuClick();
+    updateScoreboardScroll(action === 'page_next' ? 1 : -1);
+    return;
+  }
   if (action === 'back') {
     playMenuClick();
     hideScoreboard();
@@ -3547,6 +3553,12 @@ function handleScoreboardTrigger(controller) {
     const idx = getControllerIndex(controller);
     const hover = getHoveredAction(idx >= 0 ? `controller-${idx}` : 'controller');
     if (hover && hover.userData.scoreboardAction) action = hover.userData.scoreboardAction;
+  }
+  // Page navigation (may come from direct hit or hover fallback)
+  if (action === 'page_prev' || action === 'page_next') {
+    playMenuClick();
+    updateScoreboardScroll(action === 'page_next' ? 1 : -1);
+    return;
   }
   if (action === 'back') {
     playMenuClick();  // #7: Activate sound for BACK

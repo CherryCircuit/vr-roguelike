@@ -4081,17 +4081,10 @@ export function getScoreboardHit(raycaster) {
   const hits = raycaster.intersectObjects(actionMeshes, false);
   if (hits.length > 0) {
     const action = hits[0].object.userData.scoreboardAction;
-    if (action === 'page_prev') {
-      playMenuClick();  // #7: Activate sound for PREV PAGE
-      scoreboardPage = Math.max(0, scoreboardPage - 1);
-      renderScoreboardCanvas();
-      return null;
-    }
-    if (action === 'page_next') {
-      playMenuClick();  // #7: Activate sound for NEXT PAGE
-      const totalPages = Math.max(1, Math.ceil(scoreboardScores.length / SCOREBOARD_PAGE_SIZE));
-      scoreboardPage = Math.min(totalPages - 1, scoreboardPage + 1);
-      renderScoreboardCanvas();
+    // Page navigation — callers handle via updateScoreboardScroll
+    if (action === 'page_prev' || action === 'page_next') {
+      playMenuClick();
+      updateScoreboardScroll(action === 'page_next' ? 1 : -1);
       return null;
     }
     // #7: Activate sound for COUNTRY, CONTINENT, and BACK buttons
