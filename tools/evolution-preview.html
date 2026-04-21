@@ -5,41 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SPACE☢MICIDE — Weapon Evolution Preview</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #050008; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
-  canvas { display: block; width: 100vw; height: 100vh; }
-  /* Desktop-only toolbar (hidden in VR via z-index) */
-  #desktop-toolbar {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 6px 14px;
-    background: rgba(5,0,8,0.9); border-bottom: 1px solid rgba(0,255,255,0.15);
-    backdrop-filter: blur(6px);
-  }
-  #desktop-toolbar h1 {
-    font-size: 12px; font-weight: 600; letter-spacing: 1px;
-    background: linear-gradient(90deg, #0ff, #f0f);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  #desktop-toolbar select, #desktop-toolbar button {
-    background: rgba(0,255,255,0.08); border: 1px solid rgba(0,255,255,0.25);
-    color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer;
-  }
-  #desktop-toolbar button:hover { background: rgba(0,255,255,0.2); }
-  #desktop-toolbar .sep { width: 1px; height: 18px; background: rgba(255,255,255,0.12); }
-  #status {
-    position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
-    font-size: 12px; color: #666; z-index: 100;
-    background: rgba(5,0,8,0.85); padding: 5px 14px; border-radius: 16px;
-    border: 1px solid rgba(255,255,255,0.08); pointer-events: none;
-  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#050008;color:#fff;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden}
+  canvas{display:block;width:100vw;height:100vh}
+  #desktop-bar{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;gap:8px;padding:5px 12px;background:rgba(5,0,8,0.88);border-bottom:1px solid rgba(0,255,255,0.12);backdrop-filter:blur(6px)}
+  #desktop-bar h1{font-size:11px;font-weight:600;letter-spacing:1px;background:linear-gradient(90deg,#0ff,#f0f);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  #desktop-bar select,#desktop-bar button{background:rgba(0,255,255,0.08);border:1px solid rgba(0,255,255,0.2);color:#fff;padding:3px 8px;border-radius:3px;font-size:11px;cursor:pointer}
+  #desktop-bar button:hover{background:rgba(0,255,255,0.18)}
+  #desktop-bar .sep{width:1px;height:16px;background:rgba(255,255,255,0.1)}
+  #status{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);font-size:11px;color:#555;z-index:100;background:rgba(5,0,8,0.85);padding:4px 12px;border-radius:14px;border:1px solid rgba(255,255,255,0.06);pointer-events:none}
 </style>
 </head>
 <body>
-
-<div id="desktop-toolbar">
-  <h1>⚡ EVO PREVIEW</h1>
-  <div class="sep"></div>
+<div id="desktop-bar">
+  <h1>⚡ EVO PREVIEW</h1><div class="sep"></div>
   <select id="weapon-sel">
     <option value="standard_blaster">Standard Blaster → Twin Helix</option>
     <option value="buckshot">Buckshot → Dragon's Breath</option>
@@ -48,100 +27,57 @@
     <option value="plasma_carbine" selected>Plasma Carbine → Obliterator Beam</option>
     <option value="seeker_burst">Seeker Burst → Hive Mind</option>
   </select>
-  <button id="btn-show-cards">Show Cards</button>
+  <button id="btn-show">Show Cards</button>
   <button id="btn-reset">⟲ Reset</button>
 </div>
-<div id="status">Enter VR or click "Show Cards" to preview the evolution cinematic</div>
+<div id="status">Desktop: use toolbar above. VR: use 3D buttons in scene.</div>
 
 <script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
-  }
-}
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"}}
 </script>
 <script type="module">
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 // ══════════════════════════════════════════════════════════════
-// DATA
+// EVOLUTION DATA
 // ══════════════════════════════════════════════════════════════
 const EVOLUTIONS = {
-  standard_blaster: {
-    name: 'Twin Helix', from: 'Standard Blaster',
-    recipe: ['scope', 'double_shot', 'critical'],
-    sigColor: 0x00ffff, sigColorAlt: 0xff00ff,
-    desc: 'Fires TWO helix-woven projectiles that spiral around each other. Each hits independently.',
-    baseColor: 0x4488ff,
-  },
-  buckshot: {
-    name: "Dragon's Breath", from: 'Buckshot',
-    recipe: ['fire', 'buckshot_gentlemen', 'focused_frenzy'],
-    sigColor: 0xff4400, sigColorAlt: 0xffaa00,
-    desc: 'Molten pellets ignite enemies and leave burning trails on the ground. Wider spread, fire DoT.',
-    baseColor: 0xff8800,
-  },
-  lightning_rod: {
-    name: 'Tesla Tower', from: 'Lightning Rod',
-    recipe: ['shock', 'its_electric', 'barrel'],
-    sigColor: 0x4488ff, sigColorAlt: 0x88ccff,
-    desc: 'Creates stationary tesla coils that arc electricity to all enemies within 6m. Up to 2 coils.',
-    baseColor: 0xff00ff,
-  },
-  charge_cannon: {
-    name: 'Singularity Launcher', from: 'Charge Cannon',
-    recipe: ['quick_charge', 'death_ray', 'piercing'],
-    sigColor: 0x8800ff, sigColorAlt: 0xff00ff,
-    desc: 'Charged shots create micro-black-holes that pull enemies in, then detonate for massive AoE.',
-    baseColor: 0xff4444,
-  },
-  plasma_carbine: {
-    name: 'Obliterator Beam', from: 'Plasma Carbine',
-    recipe: ['hold_together', 'barrel', 'scope'],
-    sigColor: 0x00ff44, sigColorAlt: 0x88ff44,
-    desc: 'Wind-up ramps into a CONTINUOUS BEAM. Sweeps and deals constant damage. Overheats after 4s.',
-    baseColor: 0x00ffff,
-  },
-  seeker_burst: {
-    name: 'Hive Mind', from: 'Seeker Burst',
-    recipe: ['gimme_more', 'ricochet', 'double_shot'],
-    sigColor: 0xaa44ff, sigColorAlt: 0xff44ff,
-    desc: 'Spawns 8 micro-drones that orbit and independently dive-bomb enemies. Drones regenerate over 5s.',
-    baseColor: 0xaa88ff,
-  },
+  standard_blaster: { name:'Twin Helix', from:'Standard Blaster', recipe:['scope','double_shot','critical'], sigColor:0x00ffff, sigColorAlt:0xff00ff, desc:'Fires TWO helix-woven projectiles that spiral around each other.', baseColor:0x4488ff, auraColors:[0x00ffff,0xff00ff] },
+  buckshot: { name:"Dragon's Breath", from:'Buckshot', recipe:['fire','buckshot_gentlemen','focused_frenzy'], sigColor:0xff4400, sigColorAlt:0xffaa00, desc:'Molten pellets ignite enemies and leave burning trails.', baseColor:0xff8800, auraColors:[0xff4400,0xffaa00,0xff6600] },
+  lightning_rod: { name:'Tesla Tower', from:'Lightning Rod', recipe:['shock','its_electric','barrel'], sigColor:0x4488ff, sigColorAlt:0x88ccff, desc:'Creates tesla coils that arc electricity to all enemies within 6m.', baseColor:0xff00ff, auraColors:[0x4488ff,0x88ccff,0xffffff] },
+  charge_cannon: { name:'Singularity Launcher', from:'Charge Cannon', recipe:['quick_charge','death_ray','piercing'], sigColor:0x8800ff, sigColorAlt:0xff00ff, desc:'Charged shots create micro-black-holes that pull enemies in then detonate.', baseColor:0xff4444, auraColors:[0x8800ff,0xff00ff,0x440088] },
+  plasma_carbine: { name:'Obliterator Beam', from:'Plasma Carbine', recipe:['hold_together','barrel','scope'], sigColor:0x00ff44, sigColorAlt:0x88ff44, desc:'Wind-up ramps into a CONTINUOUS BEAM. Overheats after 4s.', baseColor:0x00ffff, auraColors:[0x00ff44,0x88ff44,0x00ff88] },
+  seeker_burst: { name:'Hive Mind', from:'Seeker Burst', recipe:['gimme_more','ricochet','double_shot'], sigColor:0xaa44ff, sigColorAlt:0xff44ff, desc:'Spawns 8 micro-drones that independently dive-bomb enemies.', baseColor:0xaa88ff, auraColors:[0xaa44ff,0xff44ff,0xcc88ff] },
 };
 
-// Real upgrade pool (subset for card display)
 const UPGRADES = {
-  scope:         { id: 'scope',         name: 'Scope',             desc: 'Damage +10 per stack',         color: '#00ff44', type: 'universal' },
-  barrel:        { id: 'barrel',        name: 'Barrel',            desc: 'Fire rate +15%',               color: '#ffaa00', type: 'universal' },
-  piercing:      { id: 'piercing',      name: 'Piercing',          desc: 'Shots pass through enemies',   color: '#00ffaa', type: 'universal' },
-  critical:      { id: 'critical',      name: 'Critical',          desc: '+15% chance for 2x damage',    color: '#ffff00', type: 'universal' },
-  double_shot:   { id: 'double_shot',   name: 'Double Shot',       desc: 'Fire an extra projectile',     color: '#ff44ff', type: 'universal' },
-  shock:         { id: 'shock',         name: 'Shock',             desc: 'Electrocutes: slows + DoT',    color: '#4488ff', type: 'universal' },
-  fire:          { id: 'fire',          name: 'Fire',              desc: 'Ignites: weakens + fire DoT',  color: '#ff4400', type: 'universal' },
-  freeze:        { id: 'freeze',        name: 'Freeze',            desc: 'Greatly slows enemies',        color: '#88ccff', type: 'universal' },
-  ricochet:      { id: 'ricochet',      name: 'Ricochet',          desc: 'Shots bounce to nearby enemy', color: '#aaffaa', type: 'universal' },
-  focused_frenzy:{ id: 'focused_frenzy',name: 'Focused Frenzy',    desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot' },
-  buckshot_gentlemen:{ id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot' },
-  its_electric:  { id: 'its_electric',  name: "It's Electric!",    desc: 'Lightning Rod: Chains to +2',  color: '#ff00ff', type: 'weapon_specific', weapon: 'lightning_rod' },
-  quick_charge:  { id: 'quick_charge',  name: "Ain't Nobody Got Time", desc: 'Charge Cannon: 2x charge speed', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
-  death_ray:     { id: 'death_ray',     name: 'Death Ray',         desc: 'Charge Cannon: +100% max dmg', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
-  hold_together: { id: 'hold_together', name: 'Hold It Together',  desc: 'Plasma Carbine: Faster wind-up', color: '#00ffff', type: 'weapon_specific', weapon: 'plasma_carbine' },
-  gimme_more:    { id: 'gimme_more',    name: 'Gimme Gimme More',  desc: 'Seeker Burst: +2 homing shots', color: '#aa88ff', type: 'weapon_specific', weapon: 'seeker_burst' },
+  scope:{id:'scope',name:'Scope',desc:'Damage +10 per stack',color:'#00ff44',type:'universal'},
+  barrel:{id:'barrel',name:'Barrel',desc:'Fire rate +15%',color:'#ffaa00',type:'universal'},
+  piercing:{id:'piercing',name:'Piercing',desc:'Shots pass through enemies',color:'#00ffaa',type:'universal'},
+  critical:{id:'critical',name:'Critical',desc:'+15% chance for 2x damage',color:'#ffff00',type:'universal'},
+  double_shot:{id:'double_shot',name:'Double Shot',desc:'Fire an extra projectile',color:'#ff44ff',type:'universal'},
+  shock:{id:'shock',name:'Shock',desc:'Electrocutes: slows + DoT',color:'#4488ff',type:'universal'},
+  fire:{id:'fire',name:'Fire',desc:'Ignites: weakens + fire DoT',color:'#ff4400',type:'universal'},
+  freeze:{id:'freeze',name:'Freeze',desc:'Greatly slows enemies',color:'#88ccff',type:'universal'},
+  ricochet:{id:'ricochet',name:'Ricochet',desc:'Shots bounce to nearby enemy',color:'#aaffaa',type:'universal'},
+  focused_frenzy:{id:'focused_frenzy',name:'Focused Frenzy',desc:'Buckshot: Tighter spread + faster fire',color:'#ff8800',type:'weapon_specific'},
+  buckshot_gentlemen:{id:'buckshot_gentlemen',name:'Buckshot Gentlemen',desc:'Buckshot: +4 pellets',color:'#ff8800',type:'weapon_specific'},
+  its_electric:{id:'its_electric',name:"It's Electric!",desc:'Lightning Rod: Chains to +2 enemies',color:'#ff00ff',type:'weapon_specific'},
+  quick_charge:{id:'quick_charge',name:"Ain't Nobody Got Time",desc:'Charge Cannon: 2x charge speed',color:'#ff4444',type:'weapon_specific'},
+  death_ray:{id:'death_ray',name:'Death Ray',desc:'Charge Cannon: +100% max damage',color:'#ff4444',type:'weapon_specific'},
+  hold_together:{id:'hold_together',name:'Hold It Together',desc:'Plasma Carbine: Faster wind-up',color:'#00ffff',type:'weapon_specific'},
+  gimme_more:{id:'gimme_more',name:'Gimme Gimme More',desc:'Seeker Burst: +2 homing shots',color:'#aa88ff',type:'weapon_specific'},
 };
+const WEAPON_ORDER = ['standard_blaster','buckshot','lightning_rod','charge_cannon','plasma_carbine','seeker_burst'];
 
 // ══════════════════════════════════════════════════════════════
 // SCENE
 // ══════════════════════════════════════════════════════════════
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x050008, 0.03);
-
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 100);
+scene.fog = new THREE.FogExp2(0x050008, 0.02);
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
 camera.position.set(0, 1.6, 0);
-
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -149,43 +85,28 @@ renderer.setClearColor(0x050008);
 renderer.xr.enabled = true;
 document.body.prepend(renderer.domElement);
 
-// VR Button
-const vrButton = VRButton.createButton(renderer, { optionalFeatures: ['local-floor', 'bounded-floor'] });
-document.body.appendChild(vrButton);
-if (!navigator.xr) {
-  navigator.xr?.isSessionSupported?.('immersive-vr')?.then(s => { if (!s) vrButton.remove(); }).catch(() => vrButton.remove());
-}
+const vrBtn = VRButton.createButton(renderer, { optionalFeatures: ['local-floor','bounded-floor'] });
+document.body.appendChild(vrBtn);
+if (navigator.xr) navigator.xr.isSessionSupported('immersive-vr').then(s => { if (!s) vrBtn.remove(); }).catch(() => {});
 
-// Lights
-scene.add(new THREE.AmbientLight(0x334466, 0.6));
-const pointLight = new THREE.PointLight(0x00ffff, 0.8, 25);
-pointLight.position.set(0, 3, -3);
-scene.add(pointLight);
-
-// Subtle grid floor
-const grid = new THREE.GridHelper(30, 60, 0x111133, 0x080818);
-grid.position.y = 0;
-scene.add(grid);
+scene.add(new THREE.AmbientLight(0x334466, 0.5));
+const ptLight = new THREE.PointLight(0x00ffff, 0.6, 30);
+ptLight.position.set(0, 4, -3);
+scene.add(ptLight);
+scene.add(new THREE.GridHelper(30, 60, 0x111133, 0x080818));
 
 // ══════════════════════════════════════════════════════════════
 // FONT
 // ══════════════════════════════════════════════════════════════
 let fontFamily = '"Courier New", monospace';
-async function loadFont() {
-  try {
-    const f = new FontFace('November', 'url(../assets/fonts/november.ttf)');
-    await f.load();
-    document.fonts.add(f);
-    fontFamily = 'November';
-    console.log('[evo] November font loaded');
-  } catch (e) { console.warn('[evo] Font fallback:', e); }
-}
-loadFont();
+(async () => {
+  try { const f = new FontFace('November','url(../assets/fonts/november.ttf)'); await f.load(); document.fonts.add(f); fontFamily = 'November'; }
+  catch(e) {}
+})();
 
 // ══════════════════════════════════════════════════════════════
-// TEXT / CARD UTILITIES
+// TEXT / CARD UTILITIES (matching real game)
 // ══════════════════════════════════════════════════════════════
-const _tmpColor = new THREE.Color();
 const cardGeo = new THREE.PlaneGeometry(1.2, 1.5);
 const cardBorderGeo = new THREE.EdgesGeometry(cardGeo);
 const skipGeo = new THREE.PlaneGeometry(1.0, 1.3);
@@ -201,215 +122,208 @@ function makeTextSprite(text, opts = {}) {
   ctx.font = font;
   let lines = [text];
   if (maxWidth) {
-    lines = [];
-    const words = text.split(' ');
-    let cur = '';
-    for (const w of words) {
-      const test = cur ? `${cur} ${w}` : w;
-      if (ctx.measureText(test).width > maxWidth && cur) { lines.push(cur); cur = w; }
-      else cur = test;
-    }
+    lines = []; const words = text.split(' '); let cur = '';
+    for (const w of words) { const t = cur ? `${cur} ${w}` : w; if (ctx.measureText(t).width > maxWidth && cur) { lines.push(cur); cur = w; } else cur = t; }
     if (cur) lines.push(cur);
   }
-  const textWidth = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
-  const lineHeight = fontSize * 1.3;
-  const textHeight = lines.length * lineHeight;
-  const pad = opts.glow ? 25 : 40;
-  canvas.width = textWidth + pad * 2;
-  canvas.height = textHeight + pad * 2;
-  ctx.font = font;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  const tw = maxWidth || Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width)));
+  const lh = fontSize * 1.3, th = lines.length * lh, pad = opts.glow ? 25 : 40;
+  canvas.width = tw + pad*2; canvas.height = th + pad*2;
+  ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (opts.glow) { ctx.shadowColor = opts.glowColor || opts.color || '#00ffff'; ctx.shadowBlur = 15; }
   if (opts.shadow) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    lines.forEach((line, i) => {
-      const y = canvas.height / 2 - ((lines.length - 1) * lineHeight / 2) + i * lineHeight;
-      ctx.fillText(line, canvas.width / 2 + 2, y + 2);
-    });
+    lines.forEach((l, i) => { ctx.fillText(l, canvas.width/2+2, canvas.height/2 - ((lines.length-1)*lh/2) + i*lh + 2); });
   }
   ctx.fillStyle = opts.color || '#00ffff';
-  lines.forEach((line, i) => {
-    const y = canvas.height / 2 - ((lines.length - 1) * lineHeight / 2) + i * lineHeight;
-    ctx.fillText(line, canvas.width / 2, y);
-  });
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.minFilter = THREE.LinearFilter;
+  lines.forEach((l, i) => { ctx.fillText(l, canvas.width/2, canvas.height/2 - ((lines.length-1)*lh/2) + i*lh); });
+  const tex = new THREE.CanvasTexture(canvas); tex.minFilter = THREE.LinearFilter;
   const aspect = canvas.width / canvas.height;
-  const w = (opts.scale || 0.3) * aspect;
-  const h = opts.scale || 0.3;
+  const s = opts.scale || 0.3;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(w, h, 1);
+  sprite.scale.set(s * aspect, s, 1);
   return sprite;
 }
 
-function getGlowTexture(r, g, b) {
-  const c = document.createElement('canvas');
-  c.width = 128; c.height = 128;
+function getGlowTex(r, g, b) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128;
   const ctx = c.getContext('2d');
-  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  const grad = ctx.createRadialGradient(64,64,0,64,64,64);
   grad.addColorStop(0, `rgba(${r},${g},${b},0.5)`);
   grad.addColorStop(0.4, `rgba(${r},${g},${b},0.2)`);
   grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 128, 128);
-  const tex = new THREE.CanvasTexture(c);
-  tex.minFilter = THREE.LinearFilter;
+  ctx.fillStyle = grad; ctx.fillRect(0,0,128,128);
+  const tex = new THREE.CanvasTexture(c); tex.minFilter = THREE.LinearFilter;
   return tex;
 }
 
-function createUpgradeCard(upgrade, position) {
+function makeUpgradeCard(upgrade, pos) {
   const group = new THREE.Group();
-  group.position.copy(position);
+  group.position.copy(pos);
   group.userData.upgradeId = upgrade.id;
-  const bc = typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff);
-  // Face
-  const card = new THREE.Mesh(cardGeo, new THREE.MeshBasicMaterial({
-    color: 0x110033, transparent: true, opacity: 0.91, side: THREE.DoubleSide, depthWrite: false,
-  }));
-  card.renderOrder = 1;
-  card.userData.isUpgradeCard = true;
-  card.userData.upgradeId = upgrade.id;
-  card.userData.borderColor = bc;
+  const bc = typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#',''),16) : (upgrade.color||0x00ffff);
+  const card = new THREE.Mesh(cardGeo, new THREE.MeshBasicMaterial({ color:0x110033, transparent:true, opacity:0.91, side:THREE.DoubleSide, depthWrite:false }));
+  card.renderOrder = 1; card.userData.isUpgradeCard = true; card.userData.upgradeId = upgrade.id; card.userData.borderColor = bc;
   group.add(card);
-  // Border
   group.add(new THREE.LineSegments(cardBorderGeo, new THREE.LineBasicMaterial({ color: bc })));
-  // Glow
-  const br = (bc >> 16) & 255, bg = (bc >> 8) & 255, bb = bc & 255;
-  const glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.56, 1.95),
-    new THREE.MeshBasicMaterial({ map: getGlowTexture(br, bg, bb), transparent: true, opacity: 0, depthTest: false, depthWrite: false })
-  );
-  glow.renderOrder = 998;
-  glow.position.z = -0.01;
-  card.add(glow);
-  card.userData._hoverGlow = glow;
-  // Name
-  const nameSprite = makeTextSprite(upgrade.name.toUpperCase(), { fontSize: 65, color: upgrade.color || '#00ffff', glow: true, glowColor: upgrade.color, scale: 1, maxWidth: 600 });
-  nameSprite.position.set(0, 0.55, 0.01);
-  group.add(nameSprite);
-  // Desc
-  const descSprite = makeTextSprite(upgrade.desc, { fontSize: 40, color: '#cccccc', scale: 1, maxWidth: 600, forceArial: true });
-  descSprite.position.set(0, 0.15, 0.01);
-  group.add(descSprite);
-  // Icon
-  const icon = new THREE.Mesh(iconGeo, new THREE.MeshBasicMaterial({ color: bc, wireframe: true }));
-  icon.position.set(0, -0.35, 0.05);
-  group.add(icon);
-  // EVO badge (if it's a recipe card)
+  const br=(bc>>16)&255, bg=(bc>>8)&255, bb=bc&255;
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.56,1.95), new THREE.MeshBasicMaterial({ map:getGlowTex(br,bg,bb), transparent:true, opacity:0, depthTest:false, depthWrite:false }));
+  glow.renderOrder = 998; glow.position.z = -0.01; card.add(glow); card.userData._hoverGlow = glow;
+  const name = makeTextSprite(upgrade.name.toUpperCase(), { fontSize:65, color:upgrade.color||'#00ffff', glow:true, glowColor:upgrade.color, scale:1, maxWidth:600 });
+  name.position.set(0, 0.55, 0.01); group.add(name);
+  const desc = makeTextSprite(upgrade.desc, { fontSize:40, color:'#cccccc', scale:1, maxWidth:600, forceArial:true });
+  desc.position.set(0, 0.15, 0.01); group.add(desc);
+  const icon = new THREE.Mesh(iconGeo, new THREE.MeshBasicMaterial({ color:bc, wireframe:true }));
+  icon.position.set(0, -0.35, 0.05); group.add(icon);
   if (upgrade._isRecipePiece) {
-    const badge = makeTextSprite('⚡ EVO', { fontSize: 36, color: '#ffcc00', glow: true, glowColor: '#ffcc00', scale: 0.3, maxWidth: 200 });
-    badge.position.set(0.35, 0.65, 0.02);
-    group.add(badge);
+    const badge = makeTextSprite('⚡ EVO', { fontSize:36, color:'#ffcc00', glow:true, glowColor:'#ffcc00', scale:0.3, maxWidth:200 });
+    badge.position.set(0.35, 0.65, 0.02); group.add(badge);
   }
   return group;
 }
 
-function createSkipCard(position) {
-  const group = new THREE.Group();
-  group.position.copy(position);
-  group.userData.upgradeId = 'SKIP';
-  const card = new THREE.Mesh(skipGeo, new THREE.MeshBasicMaterial({
-    color: 0x220044, transparent: true, opacity: 0.91, side: THREE.DoubleSide, depthWrite: false,
-  }));
-  card.renderOrder = 1;
-  card.userData.isUpgradeCard = true;
-  card.userData.upgradeId = 'SKIP';
-  card.userData.borderColor = 0x00ff88;
+function makeSkipCard(pos) {
+  const group = new THREE.Group(); group.position.copy(pos); group.userData.upgradeId = 'SKIP';
+  const card = new THREE.Mesh(skipGeo, new THREE.MeshBasicMaterial({ color:0x220044, transparent:true, opacity:0.91, side:THREE.DoubleSide, depthWrite:false }));
+  card.renderOrder = 1; card.userData.isUpgradeCard = true; card.userData.upgradeId = 'SKIP'; card.userData.borderColor = 0x00ff88;
   group.add(card);
-  group.add(new THREE.LineSegments(skipBorderGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
-  const glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.3, 1.69),
-    new THREE.MeshBasicMaterial({ map: getGlowTexture(0, 255, 136), transparent: true, opacity: 0, depthTest: false, depthWrite: false })
-  );
-  glow.renderOrder = 998;
-  glow.position.z = -0.01;
-  card.add(glow);
-  card.userData._hoverGlow = glow;
-  const nameSprite = makeTextSprite('SKIP', { fontSize: 65, color: '#00ff88', glow: true, glowColor: '#00ff88', scale: 1, maxWidth: 600 });
-  nameSprite.position.set(0, 0.44, 0.01);
-  group.add(nameSprite);
-  const descSprite = makeTextSprite('Skip upgrades and gain full health.', { fontSize: 40, color: '#88ffaa', scale: 0.65, maxWidth: 400, forceArial: true });
-  descSprite.position.set(0, -0.02, 0.01);
-  group.add(descSprite);
-  const icon = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), new THREE.MeshBasicMaterial({ color: 0xff0044, wireframe: true }));
-  icon.position.set(0, -0.44, 0.05);
-  group.add(icon);
+  group.add(new THREE.LineSegments(skipBorderGeo, new THREE.LineBasicMaterial({ color:0x00ff88 })));
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.3,1.69), new THREE.MeshBasicMaterial({ map:getGlowTex(0,255,136), transparent:true, opacity:0, depthTest:false, depthWrite:false }));
+  glow.renderOrder = 998; glow.position.z = -0.01; card.add(glow); card.userData._hoverGlow = glow;
+  const name = makeTextSprite('SKIP', { fontSize:65, color:'#00ff88', glow:true, glowColor:'#00ff88', scale:1, maxWidth:600 });
+  name.position.set(0, 0.44, 0.01); group.add(name);
+  const desc = makeTextSprite('Skip upgrades and gain full health.', { fontSize:40, color:'#88ffaa', scale:0.65, maxWidth:400, forceArial:true });
+  desc.position.set(0, -0.02, 0.01); group.add(desc);
+  const icon = new THREE.Mesh(new THREE.OctahedronGeometry(0.08,0), new THREE.MeshBasicMaterial({ color:0xff0044, wireframe:true }));
+  icon.position.set(0, -0.44, 0.05); group.add(icon);
   return group;
 }
 
-function createEvoCard(evo) {
+function makeEvoCard(evo) {
   const group = new THREE.Group();
-  const sigHex = '#' + evo.sigColor.toString(16).padStart(6, '0');
-  const card = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.4, 1.7),
-    new THREE.MeshBasicMaterial({ color: 0x0a1530, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false })
-  );
-  card.renderOrder = 1;
-  card.userData.isUpgradeCard = true;
-  card.userData.upgradeId = 'EVOLUTION';
-  card.userData.borderColor = evo.sigColor;
+  const sigHex = '#' + evo.sigColor.toString(16).padStart(6,'0');
+  const card = new THREE.Mesh(new THREE.PlaneGeometry(1.2,1.5), new THREE.MeshBasicMaterial({ color:0x110033, transparent:true, opacity:0.95, side:THREE.DoubleSide, depthWrite:false }));
+  card.renderOrder = 1; card.userData.isUpgradeCard = true; card.userData.upgradeId = 'EVOLUTION'; card.userData.borderColor = evo.sigColor;
   group.add(card);
-  // Double border (inner + outer)
-  const outerBorder = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.4, 1.7)), new THREE.LineBasicMaterial({ color: evo.sigColor }));
-  group.add(outerBorder);
-  const innerBorder = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.25, 1.55)), new THREE.LineBasicMaterial({ color: evo.sigColor }));
-  innerBorder.position.z = 0.001;
-  group.add(innerBorder);
+  // Double border for evo card
+  group.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.2,1.5)), new THREE.LineBasicMaterial({ color:evo.sigColor })));
+  const inner = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.05,1.35)), new THREE.LineBasicMaterial({ color:evo.sigColorAlt }));
+  inner.position.z = 0.001; group.add(inner);
   // Glow
-  const r = (evo.sigColor >> 16) & 255, g = (evo.sigColor >> 8) & 255, b = evo.sigColor & 255;
-  const glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.82, 2.21),
-    new THREE.MeshBasicMaterial({ map: getGlowTexture(r, g, b), transparent: true, opacity: 0.4, depthTest: false, depthWrite: false })
-  );
-  glow.renderOrder = 998;
-  glow.position.z = -0.01;
-  card.add(glow);
-  card.userData._hoverGlow = glow;
-  // Text
-  const label = makeTextSprite('⚡ EVOLUTION ⚡', { fontSize: 36, color: sigHex, glow: true, glowColor: sigHex, scale: 0.6, maxWidth: 600 });
-  label.position.set(0, 0.7, 0.01);
-  group.add(label);
-  const name = makeTextSprite(evo.name.toUpperCase(), { fontSize: 60, color: '#ffffff', glow: true, glowColor: sigHex, scale: 1, maxWidth: 600 });
-  name.position.set(0, 0.35, 0.01);
-  group.add(name);
-  const desc = makeTextSprite(evo.desc, { fontSize: 34, color: '#dddddd', scale: 0.9, maxWidth: 500, forceArial: true });
-  desc.position.set(0, -0.05, 0.01);
-  group.add(desc);
-  const from = makeTextSprite(`${evo.from} → ${evo.name}`, { fontSize: 30, color: '#888888', scale: 0.7, maxWidth: 500, forceArial: true });
-  from.position.set(0, -0.55, 0.01);
-  group.add(from);
+  const r=(evo.sigColor>>16)&255, g=(evo.sigColor>>8)&255, b=evo.sigColor&255;
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.56,1.95), new THREE.MeshBasicMaterial({ map:getGlowTex(r,g,b), transparent:true, opacity:0.3, depthTest:false, depthWrite:false }));
+  glow.renderOrder = 998; glow.position.z = -0.01; card.add(glow); card.userData._hoverGlow = glow;
+  // Same text layout as upgrade cards
+  const label = makeTextSprite('⚡ EVOLUTION', { fontSize:34, color:sigHex, glow:true, glowColor:sigHex, scale:0.5, maxWidth:400 });
+  label.position.set(0, 0.72, 0.01); group.add(label);
+  const name = makeTextSprite(evo.name.toUpperCase(), { fontSize:65, color:'#ffffff', glow:true, glowColor:sigHex, scale:1, maxWidth:600 });
+  name.position.set(0, 0.55, 0.01); group.add(name);
+  const desc = makeTextSprite(evo.desc, { fontSize:38, color:'#dddddd', scale:0.9, maxWidth:550, forceArial:true });
+  desc.position.set(0, 0.15, 0.01); group.add(desc);
+  const from = makeTextSprite(`${evo.from} → ${evo.name}`, { fontSize:30, color:'#888888', scale:0.65, maxWidth:500, forceArial:true });
+  from.position.set(0, -0.15, 0.01); group.add(from);
+  const icon = new THREE.Mesh(iconGeo, new THREE.MeshBasicMaterial({ color:evo.sigColor, wireframe:true }));
+  icon.position.set(0, -0.35, 0.05); group.add(icon);
   return group;
 }
 
 // ══════════════════════════════════════════════════════════════
-// WEAPON SPHERE (attached to VR controller or simulated)
+// 3D VR BUTTONS (always in scene, usable in VR)
 // ══════════════════════════════════════════════════════════════
-const weaponGroup = new THREE.Group();
-weaponGroup.name = 'weapon';
-scene.add(weaponGroup);
+const vrBtnGroup = new THREE.Group();
+vrBtnGroup.name = 'vr-buttons';
+scene.add(vrBtnGroup);
 
-const coreGeo = new THREE.SphereGeometry(0.03, 16, 16);
-const glowSphereGeo = new THREE.SphereGeometry(0.055, 16, 16);
-const coreMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
-const glowMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.2, depthWrite: false });
-const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-const glowMesh = new THREE.Mesh(glowSphereGeo, glowMat);
-weaponGroup.add(coreMesh);
-weaponGroup.add(glowMesh);
+function make3DButton(text, color, x, onClick) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, 0);
+  group.userData.isButton = true;
+  group.userData.onClick = onClick;
+  const bg = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.35), new THREE.MeshBasicMaterial({ color:0x0a0020, transparent:true, opacity:0.8, side:THREE.DoubleSide, depthWrite:false }));
+  bg.userData.isButton = true; bg.userData.onClick = onClick; bg.userData.borderColor = color;
+  group.add(bg);
+  group.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(0.8,0.35)), new THREE.LineBasicMaterial({ color })));
+  const label = makeTextSprite(text, { fontSize:40, color:'#'+color.toString(16).padStart(6,'0'), scale:0.25, maxWidth:300, forceArial:true });
+  label.position.z = 0.01; group.add(label);
+  // Hover glow
+  const r=(color>>16)&255, g=(color>>8)&255, b=color&255;
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.0,0.45), new THREE.MeshBasicMaterial({ map:getGlowTex(r,g,b), transparent:true, opacity:0, depthTest:false, depthWrite:false }));
+  glow.position.z = -0.01; bg.add(glow); bg.userData._hoverGlow = glow;
+  return group;
+}
 
-// Simulated controller for desktop (right hand, slightly down-right)
-const desktopCtrlPos = new THREE.Vector3(0.3, 1.0, -0.4);
+let selectedWeapon = 'plasma_carbine';
+let weaponIdx = 4;
+
+function cycleWeapon(dir) {
+  ensureAudio();
+  weaponIdx = (weaponIdx + dir + WEAPON_ORDER.length) % WEAPON_ORDER.length;
+  selectedWeapon = WEAPON_ORDER[weaponIdx];
+  updateWeaponLabel();
+  if (phase === 'idle') reset();
+}
+
+function updateWeaponLabel() {
+  const evo = getEvo();
+  weaponLabel.children[0].material.map.dispose();
+  weaponLabel.children[0].material.map = makeTextSprite(evo.from + ' → ' + evo.name, { fontSize:40, color:'#aaaaaa', scale:0.25, maxWidth:500, forceArial:true }).material.map;
+  // Actually sprites are different, let me just replace the sprite
+  while(weaponLabel.children.length) weaponLabel.remove(weaponLabel.children[0]);
+  const s = makeTextSprite(evo.from + ' → ' + evo.name, { fontSize:40, color:'#aaaaaa', scale:0.25, maxWidth:500, forceArial:true });
+  s.position.z = 0.01; weaponLabel.add(s);
+}
+
+const prevBtn = make3DButton('◄', 0x00ffff, -1.8, () => cycleWeapon(-1));
+const weaponLabel = new THREE.Group();
+weaponLabel.position.set(0, 0, 0);
+const nextBtn = make3DButton('►', 0x00ffff, 1.8, () => cycleWeapon(1));
+const showBtn = make3DButton('CARDS', 0xffcc00, -0.8, () => { ensureAudio(); showCards(); });
+const resetBtn3D = make3DButton('RESET', 0xff4444, 0.8, () => { ensureAudio(); reset(); setStatus('Ready.'); });
+
+vrBtnGroup.add(prevBtn, weaponLabel, nextBtn, showBtn, resetBtn3D);
+updateWeaponLabel();
+
+// Position VR buttons: fixed in world, above where cards will appear
+function positionVRButtons() {
+  const camPos = new THREE.Vector3();
+  camera.getWorldPosition(camPos);
+  const camDir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+  const center = camPos.clone().add(camDir.multiplyScalar(4));
+  center.y = camPos.y + 1.4; // above cards
+  vrBtnGroup.position.copy(center);
+  // Face camera (Y only)
+  const dx = camPos.x - center.x, dz = camPos.z - center.z;
+  vrBtnGroup.rotation.y = Math.atan2(dx, dz);
+}
+positionVRButtons();
+
+// ══════════════════════════════════════════════════════════════
+// WEAPON SPHERE
+// ══════════════════════════════════════════════════════════════
+const weaponGroup = new THREE.Group(); weaponGroup.name = 'weapon'; scene.add(weaponGroup);
+const coreMat = new THREE.MeshBasicMaterial({ color:0x00ffff });
+const glowSMat = new THREE.MeshBasicMaterial({ color:0x00ffff, transparent:true, opacity:0.2, depthWrite:false });
+weaponGroup.add(new THREE.Mesh(new THREE.SphereGeometry(0.03,16,16), coreMat));
+weaponGroup.add(new THREE.Mesh(new THREE.SphereGeometry(0.055,16,16), glowSMat));
+
+// Aura orbs (orbiting after evolution)
+const auraOrbs = [];
+const auraColors = [0x00ffff, 0xff00ff, 0x00ff88];
+for (let i = 0; i < 3; i++) {
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.015,8,8), new THREE.MeshBasicMaterial({ color:auraColors[i], transparent:true, opacity:0, depthWrite:false }));
+  weaponGroup.add(orb);
+  auraOrbs.push(orb);
+}
+
 let weaponAttached = true;
+const desktopCtrlPos = new THREE.Vector3(0.3, 1.0, -0.4);
 
-function updateWeaponAttachment() {
+function updateWeaponPos() {
   if (!weaponAttached) return;
   if (renderer.xr.isPresenting && controllerR) {
-    const pos = new THREE.Vector3();
-    controllerR.getWorldPosition(pos);
-    weaponGroup.position.copy(pos);
+    controllerR.getWorldPosition(weaponGroup.position);
   } else {
     weaponGroup.position.copy(desktopCtrlPos);
   }
@@ -418,70 +332,61 @@ function updateWeaponAttachment() {
 // ══════════════════════════════════════════════════════════════
 // XR CONTROLLERS
 // ══════════════════════════════════════════════════════════════
-let controllerL = null, controllerR = null;
-const raycaster = new THREE.Raycaster();
-const pointerL = new THREE.Vector2();
-const pointerR = new THREE.Vector2();
-
-controllerL = renderer.xr.getController(0);
-controllerR = renderer.xr.getController(1);
+const controllerL = renderer.xr.getController(0);
+const controllerR = renderer.xr.getController(1);
 if (controllerL) scene.add(controllerL);
 if (controllerR) scene.add(controllerR);
 
-// Aim lines
 [controllerL, controllerR].forEach((ctrl, i) => {
   if (!ctrl) return;
-  const col = i === 0 ? 0x00ffff : 0xff00ff;
+  const c = i===0 ? 0x00ffff : 0xff00ff;
   const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-10)]);
-  ctrl.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false })));
+  ctrl.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color:c, transparent:true, opacity:0.25, depthTest:false, depthWrite:false })));
 });
-
 controllerL?.addEventListener('selectstart', () => onVRSelect(controllerL));
 controllerR?.addEventListener('selectstart', () => onVRSelect(controllerR));
 
 // ══════════════════════════════════════════════════════════════
-// PARTICLES
+// PARTICLES (world-space)
 // ══════════════════════════════════════════════════════════════
 const particles = [];
-const particleGeo = new THREE.SphereGeometry(0.015, 6, 6);
+const pGeo = new THREE.SphereGeometry(0.012, 6, 6);
 
-function spawnParticle(pos, color, vel, life = 1) {
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false });
-  const mesh = new THREE.Mesh(particleGeo, mat);
-  mesh.position.copy(pos);
-  scene.add(mesh);
-  particles.push({ mesh, vel: vel.clone(), life, maxLife: life, mat });
+function spawnP(pos, color, vel, life=1) {
+  const mat = new THREE.MeshBasicMaterial({ color, transparent:true, opacity:1, depthWrite:false });
+  const m = new THREE.Mesh(pGeo, mat); m.position.copy(pos); scene.add(m);
+  particles.push({ m, v:vel.clone(), life, ml:life, mat });
 }
-
 function updateParticles(dt) {
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.life -= dt;
-    if (p.life <= 0) { scene.remove(p.mesh); p.mat.dispose(); particles.splice(i, 1); continue; }
-    p.mesh.position.addScaledVector(p.vel, dt);
-    p.mat.opacity = (p.life / p.maxLife);
-    p.mesh.scale.setScalar(p.life / p.maxLife);
+  for (let i=particles.length-1; i>=0; i--) {
+    const p = particles[i]; p.life -= dt;
+    if (p.life <= 0) { scene.remove(p.m); p.mat.dispose(); particles.splice(i,1); continue; }
+    p.m.position.addScaledVector(p.v, dt);
+    p.mat.opacity = p.life / p.ml;
+    p.m.scale.setScalar(p.life / p.ml);
   }
 }
+function clearParticles() { particles.forEach(p => { scene.remove(p.m); p.mat.dispose(); }); particles.length = 0; }
 
-function clearParticles() {
-  particles.forEach(p => { scene.remove(p.mesh); p.mat.dispose(); });
-  particles.length = 0;
-}
-
-function burstParticles(pos, color, count = 30, speed = 2) {
-  for (let i = 0; i < count; i++) {
-    const dir = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
-    spawnParticle(pos, color, dir.multiplyScalar(speed * (0.5 + Math.random())), 0.5 + Math.random() * 0.5);
+function burst(pos, color, n=30, spd=2) {
+  for (let i=0; i<n; i++) {
+    const d = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
+    spawnP(pos, color, d.multiplyScalar(spd*(0.5+Math.random())), 0.5+Math.random()*0.5);
   }
 }
-
-function ringParticles(pos, color, count = 24, radius = 0.5) {
-  for (let i = 0; i < count; i++) {
-    const angle = (i / count) * Math.PI * 2;
-    const pPos = pos.clone().add(new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius * 0.5, (Math.random()-0.5)*0.1));
-    const vel = new THREE.Vector3(Math.cos(angle) * 1.5, Math.sin(angle) * 1.5 + 0.5, (Math.random()-0.5)*0.3);
-    spawnParticle(pPos, color, vel, 0.6 + Math.random() * 0.4);
+function ring(pos, color, n=24, r=0.5) {
+  for (let i=0; i<n; i++) {
+    const a = (i/n)*Math.PI*2;
+    const pp = pos.clone().add(new THREE.Vector3(Math.cos(a)*r, 0, Math.sin(a)*r));
+    const v = new THREE.Vector3(Math.cos(a)*1.5, 0.3+Math.random()*0.5, Math.sin(a)*1.5);
+    spawnP(pp, color, v, 0.6+Math.random()*0.4);
+  }
+}
+function sparkleRing(pos, color, n=16, r=0.3) {
+  for (let i=0; i<n; i++) {
+    const a = Math.random()*Math.PI*2;
+    const pp = pos.clone().add(new THREE.Vector3((Math.random()-0.5)*r*2, (Math.random()-0.5)*r, (Math.random()-0.5)*r*2));
+    spawnP(pp, color, new THREE.Vector3((Math.random()-0.5)*0.5, Math.random()*0.8, (Math.random()-0.5)*0.5), 0.3+Math.random()*0.3);
   }
 }
 
@@ -489,288 +394,267 @@ function ringParticles(pos, color, count = 24, radius = 0.5) {
 // AUDIO
 // ══════════════════════════════════════════════════════════════
 let audioCtx = null;
-function getAudio() { if (!audioCtx) audioCtx = new (AudioContext || webkitAudioContext)(); return audioCtx; }
-function ensureAudio() { getAudio(); if (audioCtx.state === 'suspended') audioCtx.resume(); }
-
-function playTone(freq, dur, type = 'sine', vol = 0.12, detune = 0) {
-  const ctx = getAudio(), osc = ctx.createOscillator(), g = ctx.createGain();
-  osc.type = type; osc.frequency.value = freq; osc.detune.value = detune;
-  g.gain.setValueAtTime(vol, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
-  osc.connect(g); g.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + dur);
+function getAudio() { if (!audioCtx) audioCtx = new (AudioContext||webkitAudioContext)(); return audioCtx; }
+function ensureAudio() { getAudio(); if (audioCtx.state==='suspended') audioCtx.resume(); }
+function tone(f,d,t='sine',v=0.1,det=0) {
+  const c=getAudio(),o=c.createOscillator(),g=c.createGain();
+  o.type=t;o.frequency.value=f;o.detune.value=det;
+  g.gain.setValueAtTime(v,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);
+  o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d);
 }
-
-function playNoise(dur, vol = 0.1) {
-  const ctx = getAudio(), sz = ctx.sampleRate * dur, buf = ctx.createBuffer(1, sz, ctx.sampleRate);
-  const d = buf.getChannelData(0); for (let i = 0; i < sz; i++) d[i] = Math.random()*2-1;
-  const s = ctx.createBufferSource(); s.buffer = buf;
-  const g = ctx.createGain(); g.gain.setValueAtTime(vol, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
-  s.connect(g); g.connect(ctx.destination); s.start();
+function noise(d,v=0.1) {
+  const c=getAudio(),sz=c.sampleRate*d,b=c.createBuffer(1,sz,c.sampleRate),dd=b.getChannelData(0);
+  for(let i=0;i<sz;i++)dd[i]=Math.random()*2-1;
+  const s=c.createBufferSource();s.buffer=b;const g=c.createGain();
+  g.gain.setValueAtTime(v,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);
+  s.connect(g);g.connect(c.destination);s.start();
 }
-
-function playChord(base, dur = 1) {
-  playTone(base, dur, 'sine', 0.08);
-  playTone(base * 1.25, dur, 'sine', 0.06);
-  playTone(base * 1.5, dur, 'sine', 0.04);
-  playTone(base * 2, dur, 'triangle', 0.03);
-}
+function chord(b,d=1){tone(b,d,'sine',0.08);tone(b*1.25,d,'sine',0.06);tone(b*1.5,d,'sine',0.04);tone(b*2,d,'triangle',0.03);}
 
 const SFX = {
-  cardSelect: () => { playTone(880, 0.08, 'square', 0.08); playTone(1200, 0.06, 'sine', 0.04); },
-  cardDismiss: () => playTone(220, 0.3, 'sine', 0.04),
-  cardsZoomIn: () => { playTone(440, 0.4, 'sine', 0.06); playTone(660, 0.3, 'sine', 0.04, 5); },
-  rotHum: (t) => playTone(100 + t * 400, 0.15, 'sawtooth', 0.015 + t * 0.03),
-  whiteFlash: () => { playNoise(0.4, 0.18); playTone(1000, 0.3, 'square', 0.12); playChord(440, 0.8); },
-  evoReveal: () => { playTone(660, 0.5, 'sine', 0.08); playTone(880, 0.4, 'sine', 0.06); playChord(523, 1); },
-  detach: () => { playTone(220, 0.3, 'triangle', 0.08); playTone(330, 0.2, 'sine', 0.04); },
-  rainbowStart: () => playTone(150, 2, 'sawtooth', 0.02),
-  rainbowPeak: (f) => playTone(f, 0.2, 'sawtooth', 0.06),
-  transformBurst: () => { playNoise(0.5, 0.22); playChord(523, 1.5); playTone(80, 0.4, 'sine', 0.12); },
-  returnHand: () => playTone(440, 0.4, 'sine', 0.06),
-  hover: () => playTone(600, 0.05, 'sine', 0.03),
+  cardSelect: ()=>{tone(880,0.08,'square',0.08);tone(1200,0.06,'sine',0.04);},
+  cardDismiss: ()=>tone(220,0.3,'sine',0.04),
+  zoomIn: ()=>{tone(440,0.4,'sine',0.06);tone(660,0.3,'sine',0.04,5);},
+  rotHum: (t)=>tone(100+t*400,0.12,'sawtooth',0.012+t*0.025),
+  flash: ()=>{noise(0.4,0.18);tone(1000,0.3,'square',0.12);chord(440,0.8);},
+  evoReveal: ()=>{tone(660,0.5,'sine',0.08);tone(880,0.4,'sine',0.06);chord(523,1);},
+  detach: ()=>{tone(220,0.3,'triangle',0.08);tone(330,0.2,'sine',0.04);},
+  rainbowPeak: (f)=>tone(f,0.18,'sawtooth',0.06),
+  transformBurst: ()=>{noise(0.5,0.22);chord(523,1.5);tone(80,0.4,'sine',0.12);},
+  returnHand: ()=>tone(440,0.4,'sine',0.06),
+  hover: ()=>tone(600,0.04,'sine',0.025),
+  buttonClick: ()=>{tone(700,0.06,'square',0.06);tone(900,0.04,'sine',0.03);},
 };
 
 // ══════════════════════════════════════════════════════════════
-// CARD LAYOUT (matching real game exactly)
+// LAYOUT CONSTANTS (matching real game)
 // ══════════════════════════════════════════════════════════════
-const CARD_POSITIONS = [-2.25, -0.75, 0.75, 2.25]; // x positions, SKIP is rightmost
-const CARD_Y = 0;
-const CARD_Z = 0; // relative to cardGroup
+const CARD_XS = [-2.25, -0.75, 0.75, 2.25];
+const SCENE_Y_OFFSET = -0.725;
 
-// Card group — positioned 4m in front of player
-const cardGroup = new THREE.Group();
-cardGroup.name = 'upgrade-cards';
-scene.add(cardGroup);
-cardGroup.visible = false;
+// Groups
+const cardGroup = new THREE.Group(); cardGroup.name = 'upgrade-cards'; scene.add(cardGroup); cardGroup.visible = false;
+const fusionGroup = new THREE.Group(); fusionGroup.name = 'fusion'; scene.add(fusionGroup); fusionGroup.visible = false;
+const evoCardGroup = new THREE.Group(); evoCardGroup.name = 'evo-card'; scene.add(evoCardGroup); evoCardGroup.visible = false;
+const hudGroup = new THREE.Group(); hudGroup.name = 'hud'; scene.add(hudGroup);
 
-// Fusion group (for the spinning triangle)
-const fusionGroup = new THREE.Group();
-fusionGroup.name = 'fusion';
-scene.add(fusionGroup);
-fusionGroup.visible = false;
-
-// Evo card group
-const evoCardGroup = new THREE.Group();
-evoCardGroup.name = 'evo-card';
-scene.add(evoCardGroup);
-evoCardGroup.visible = false;
-
-// HUD text group
-const hudGroup = new THREE.Group();
-hudGroup.name = 'hud';
-scene.add(hudGroup);
-
-// Flash overlay (3D fullscreen quad)
-const flashGeo = new THREE.PlaneGeometry(50, 50);
-const flashMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthTest: false, depthWrite: false });
-const flashMesh = new THREE.Mesh(flashGeo, flashMat);
-flashMesh.renderOrder = 9999;
-scene.add(flashMesh);
+// Flash via setClearColor (works in VR)
+let flashBrightness = 0;
+let flashFading = false;
+function triggerFlash() { flashBrightness = 1; flashFading = true; }
 
 // ══════════════════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════════════════
-let phase = 'idle'; // idle | cards | fusion | evo_card | transform | done
+let phase = 'idle';
 let phaseTime = 0;
-let selectedWeapon = 'plasma_carbine';
 let currentCards = [];
-let hoveredCard = null;
-let activeHumId = null;
+let hoveredObj = null;
 let lastHumTime = 0;
 let selectedRecipeIdx = -1;
+let fusionCards = [];
+let fusionCenter = new THREE.Vector3();
+let transformTarget = new THREE.Vector3();
+let transformStart = new THREE.Vector3();
+let returnTarget = new THREE.Vector3();
+let evolved = false;
 
 function getEvo() { return EVOLUTIONS[selectedWeapon]; }
-
 function setStatus(t) { document.getElementById('status').textContent = t; }
 
-function addHudText(text, color = '#ffffff', y = 2.5) {
-  const s = makeTextSprite(text, { fontSize: 80, color, glow: true, glowColor: color, scale: 1.5, maxWidth: 800 });
-  s.position.set(0, y, -4);
-  hudGroup.add(s);
-  return s;
-}
-function clearHud() {
-  hudGroup.children.forEach(c => { c.traverse(m => { if (m.material?.map) m.material.map.dispose(); if (m.material) m.material.dispose(); }); });
-  hudGroup.clear();
-}
+function clearGrp(g) { g.children.forEach(c => { c.traverse(m => { if(m.material?.map) m.material.map.dispose(); if(m.material) m.material.dispose(); }); }); g.clear(); }
 
-function clearGroup(g) {
-  g.children.forEach(c => { c.traverse(m => { if (m.material?.map) m.material.map.dispose(); if (m.material) m.material.dispose(); }); });
-  g.clear();
+function addHud(text, color='#ffffff') {
+  const s = makeTextSprite(text, { fontSize:80, color, glow:true, glowColor:color, scale:1.5, maxWidth:800 });
+  s.position.set(0, 0, -4); hudGroup.add(s); return s;
 }
-
-function screenFlash(duration = 0.5) {
-  return new Promise(resolve => {
-    flashMat.opacity = 1;
-    const start = performance.now();
-    function fade() {
-      const t = Math.min((performance.now() - start) / (duration * 1000), 1);
-      flashMat.opacity = 1 - t;
-      if (t < 1) requestAnimationFrame(fade); else resolve();
-    }
-    fade();
-  });
-}
+function clearHud() { clearGrp(hudGroup); }
 
 // ══════════════════════════════════════════════════════════════
 // EASING
 // ══════════════════════════════════════════════════════════════
-function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
-function easeInOutCubic(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2; }
-function easeOutBack(t) { const c = 2.70158; return 1 + (c+1)*Math.pow(t-1,3) + c*Math.pow(t-1,2); }
-function easeInBack(t) { const c = 2.70158; return (c+1)*t*t*t - c*t*t; }
+const easeOutCubic = t => 1-Math.pow(1-t,3);
+const easeInOutCubic = t => t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+const easeOutBack = t => { const c=2.70158; return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2); };
+const easeInBack = t => { const c=2.70158; return (c+1)*t*t*t-c*t*t; };
 
 // ══════════════════════════════════════════════════════════════
-// SHOW UPGRADE CARDS
+// SHOW CARDS (position fixed in world, NOT following camera)
 // ══════════════════════════════════════════════════════════════
 function showCards() {
   reset();
   const evo = getEvo();
-  // Build 3 upgrade cards: always include the 3 recipe items
-  // Put the "final" recipe card in a random position (not the SKIP slot)
-  const recipeUpgrades = evo.recipe.map(id => {
-    const u = { ...UPGRADES[id] };
-    u._isRecipePiece = true;
-    return u;
-  });
-  // Shuffle which is the "final" piece
-  selectedRecipeIdx = Math.floor(Math.random() * 3);
+  selectedRecipeIdx = Math.floor(Math.random()*3);
 
-  currentCards = [];
-  clearGroup(cardGroup);
+  clearGrp(cardGroup);
+  // Position card group FIXED in world — at camera's current position + 4m forward
+  const camPos = new THREE.Vector3(); camera.getWorldPosition(camPos);
+  const camDir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+  const center = camPos.clone().add(camDir.multiplyScalar(4));
+  center.y = camPos.y + SCENE_Y_OFFSET + 0.9;
+  cardGroup.position.copy(center);
 
-  // Position card group 4m in front
-  cardGroup.position.set(0, 1.6 + (-0.725), -4); // matching game's SCENE_Y_OFFSET
+  // Also position VR buttons above cards (fixed)
+  vrBtnGroup.position.set(center.x, center.y + 1.5, center.z);
+  const dx = camPos.x - vrBtnGroup.position.x, dz = camPos.z - vrBtnGroup.position.z;
+  vrBtnGroup.rotation.y = Math.atan2(dx, dz);
 
-  recipeUpgrades.forEach((upg, i) => {
-    const pos = new THREE.Vector3(CARD_POSITIONS[i], CARD_Y, CARD_Z);
-    const card = createUpgradeCard(upg, pos);
+  // Build recipe cards
+  const recipeIds = evo.recipe;
+  recipeIds.forEach((id, i) => {
+    const u = { ...UPGRADES[id] }; u._isRecipePiece = true;
+    const card = makeUpgradeCard(u, new THREE.Vector3(CARD_XS[i], 0, 0));
     card.userData.isFinalRecipe = (i === selectedRecipeIdx);
     cardGroup.add(card);
     currentCards.push(card);
   });
+  // SKIP
+  const skip = makeSkipCard(new THREE.Vector3(CARD_XS[3], 0, 0));
+  cardGroup.add(skip);
+  currentCards.push(skip);
 
-  // SKIP card (rightmost)
-  const skipCard = createSkipCard(new THREE.Vector3(CARD_POSITIONS[3], CARD_Y, CARD_Z));
-  cardGroup.add(skipCard);
-  currentCards.push(skipCard);
-
-  // Warp-in animation (matching game's card entrance)
+  // Warp-in (matching game)
   currentCards.forEach((card, i) => {
-    const basePos = card.position.clone();
-    card.userData._warpBase = basePos;
+    card.userData._warpBase = card.position.clone();
     card.userData._warpActive = true;
-    card.userData._warpStart = performance.now() + i * 110; // stagger
+    card.userData._warpStart = performance.now() + i * 110;
     card.userData._hoverScale = 1;
-    card.position.y = basePos.y - 0.18;
+    card.position.y -= 0.18;
     card.rotation.x = -0.16;
     card.scale.setScalar(0.7);
   });
 
   cardGroup.visible = true;
   phase = 'cards';
-  phaseTime = 0;
   weaponAttached = true;
-
-  // Update weapon color to base
+  evolved = false;
   coreMat.color.setHex(evo.baseColor);
-  glowMat.color.setHex(evo.baseColor);
+  glowSMat.color.setHex(evo.baseColor);
+  glowSMat.opacity = 0.2;
+  auraOrbs.forEach(o => o.material.opacity = 0);
+  weaponGroup.scale.setScalar(1);
 
-  setStatus('Select an upgrade card — pick the recipe piece with the ⚡ EVO badge to trigger evolution');
+  setStatus('Select the ⚡ EVO card to trigger evolution');
 }
 
 // ══════════════════════════════════════════════════════════════
-// CARD WARP-IN ANIMATION
+// CARD WARP-IN
 // ══════════════════════════════════════════════════════════════
-function updateCardWarp() {
-  const now = performance.now();
-  const dur = 420;
-  let anyActive = false;
+function updateWarp() {
+  const now = performance.now(), dur = 420;
   currentCards.forEach(card => {
     if (!card.userData._warpActive) return;
-    const elapsed = now - card.userData._warpStart;
-    if (elapsed < 0) { anyActive = true; return; }
-    const t = Math.min(elapsed / dur, 1);
+    const el = now - card.userData._warpStart;
+    if (el < 0) return;
+    const t = Math.min(el/dur, 1);
     if (t >= 1) {
-      card.position.copy(card.userData._warpBase);
-      card.rotation.x = 0;
-      card.scale.setScalar(card.userData._hoverScale);
-      card.userData._warpActive = false;
-      return;
+      card.position.copy(card.userData._warpBase); card.rotation.x = 0;
+      card.scale.setScalar(card.userData._hoverScale); card.userData._warpActive = false; return;
     }
-    anyActive = true;
     const s = 0.7 + 0.3 * easeOutBack(t);
-    const yOff = (1 - easeOutCubic(t)) * 0.18;
-    const tilt = (1 - easeOutCubic(t)) * 0.16;
+    const yOff = (1-easeOutCubic(t)) * 0.18;
+    const tilt = (1-easeOutCubic(t)) * 0.16;
     card.position.set(card.userData._warpBase.x, card.userData._warpBase.y - yOff, card.userData._warpBase.z);
     card.rotation.x = -tilt;
-    card.scale.setScalar(s * card.userData._hoverScale);
+    card.scale.setScalar(s * (card.userData._hoverScale||1));
   });
 }
 
 // ══════════════════════════════════════════════════════════════
-// HOVER
+// HOVER (works in VR via controller raycasting)
 // ══════════════════════════════════════════════════════════════
-function findCardFace(obj) {
-  let cur = obj;
-  while (cur) {
-    if (cur.userData?.isUpgradeCard) return cur;
-    cur = cur.parent;
+const raycaster = new THREE.Raycaster();
+
+function getHoverTargets() {
+  const targets = [];
+  if (phase === 'cards' && cardGroup.visible) {
+    cardGroup.children.forEach(c => { c.traverse(m => { if(m.userData?.isUpgradeCard) targets.push(m); }); });
   }
-  return null;
+  if (phase === 'evo_card' && evoCardGroup.visible) {
+    evoCardGroup.children.forEach(c => { c.traverse(m => { if(m.userData?.isUpgradeCard) targets.push(m); }); });
+  }
+  // VR buttons always hoverable
+  vrBtnGroup.traverse(m => { if(m.userData?.isButton) targets.push(m); });
+  return targets;
 }
 
-function findCardGroup(obj) {
-  let cur = obj;
+function findCardGroupFromFace(face) {
+  let cur = face;
   while (cur) {
-    if (cur.userData?.upgradeId !== undefined && !cur.userData.isUpgradeCard) return cur;
+    if (cur.userData?.upgradeId !== undefined && !cur.userData?.isUpgradeCard) return cur;
     if (cur.parent === cardGroup || cur.parent === evoCardGroup) return cur;
     cur = cur.parent;
   }
   return null;
 }
 
+let prevHovered = null;
 function updateHover() {
-  if (phase !== 'cards' && phase !== 'evo_card') { hoveredCard = null; return; }
-  const targetGroup = phase === 'cards' ? cardGroup : evoCardGroup;
-  raycaster.setFromCamera(pointerR, camera);
-  const hits = raycaster.intersectObjects(targetGroup.children, true);
-  const face = hits.length > 0 ? findCardFace(hits[0].object) : null;
-  const group = hits.length > 0 ? findCardGroup(hits[0].object) : null;
+  const targets = getHoverTargets();
+  if (!targets.length) { hoveredObj = null; return; }
 
-  const newHovered = face || group;
-  if (newHovered !== hoveredCard) {
-    hoveredCard = newHovered;
-    if (hoveredCard) SFX.hover();
+  // Raycaster from VR controller or mouse
+  if (renderer.xr.isPresenting && controllerR) {
+    const mat4 = new THREE.Matrix4().identity().extractRotation(controllerR.matrixWorld);
+    raycaster.ray.origin.setFromMatrixPosition(controllerR.matrixWorld);
+    raycaster.ray.direction.set(0,0,-1).applyMatrix4(mat4);
   }
+  // For desktop, raycaster is set by mousemove event
+
+  const hits = raycaster.intersectObjects(targets, false);
+  const hit = hits.length > 0 ? hits[0].object : null;
+
+  // Determine what we're hovering over
+  let newHovered = null;
+  if (hit?.userData?.isUpgradeCard) {
+    // Find the parent card group
+    newHovered = findCardGroupFromFace(hit) || hit;
+  } else if (hit?.userData?.isButton) {
+    newHovered = hit;
+  }
+
+  if (newHovered !== prevHovered) {
+    if (newHovered) SFX.hover();
+    prevHovered = newHovered;
+  }
+  hoveredObj = newHovered;
 }
 
-function applyHover() {
+function applyHoverEffects() {
+  // Card hover
   currentCards.forEach(card => {
     const face = card.children.find(c => c.userData?.isUpgradeCard);
     if (!face) return;
-    if (face === hoveredCard) {
-      card.userData._hoverScale = THREE.MathUtils.lerp(card.userData._hoverScale || 1, 1.08, 0.15);
-      if (face.userData._hoverGlow) face.userData._hoverGlow.material.opacity = THREE.MathUtils.lerp(face.userData._hoverGlow.material.opacity, 0.65, 0.15);
-    } else {
-      card.userData._hoverScale = THREE.MathUtils.lerp(card.userData._hoverScale || 1, 1, 0.12);
-      if (face.userData._hoverGlow) face.userData._hoverGlow.material.opacity = THREE.MathUtils.lerp(face.userData._hoverGlow.material.opacity, 0, 0.12);
-    }
+    const isHov = (face === hoveredObj || card === hoveredObj);
+    const target = isHov ? 1.08 : 1;
+    card.userData._hoverScale = THREE.MathUtils.lerp(card.userData._hoverScale||1, target, 0.15);
+    if (face.userData._hoverGlow) face.userData._hoverGlow.material.opacity = THREE.MathUtils.lerp(face.userData._hoverGlow.material.opacity, isHov?0.65:0, isHov?0.15:0.12);
     if (!card.userData._warpActive) card.scale.setScalar(card.userData._hoverScale);
   });
+
   // Evo card hover
   if (phase === 'evo_card' && evoCardGroup.children[0]) {
-    const evoCard = evoCardGroup.children[0];
-    const face = evoCard.children.find(c => c.userData?.isUpgradeCard);
+    const ec = evoCardGroup.children[0];
+    const face = ec.children.find(c => c.userData?.isUpgradeCard);
     if (face) {
-      if (face === hoveredCard) {
-        evoCard.scale.lerp(new THREE.Vector3(1.08, 1.08, 1.08), 0.15);
-        if (face.userData._hoverGlow) face.userData._hoverGlow.material.opacity = THREE.MathUtils.lerp(face.userData._hoverGlow.material.opacity, 0.65, 0.15);
-      } else {
-        evoCard.scale.lerp(new THREE.Vector3(1, 1, 1), 0.12);
-        if (face.userData._hoverGlow) face.userData._hoverGlow.material.opacity = THREE.MathUtils.lerp(face.userData._hoverGlow.material.opacity, 0.3, 0.12);
-      }
+      const isHov = (face === hoveredObj || ec === hoveredObj);
+      const ts = isHov ? 1.08 : 1;
+      ec.scale.lerp(new THREE.Vector3(ts,ts,ts), 0.15);
+      if (face.userData._hoverGlow) face.userData._hoverGlow.material.opacity = THREE.MathUtils.lerp(face.userData._hoverGlow.material.opacity, isHov?0.65:0.3, 0.15);
     }
   }
+
+  // VR button hover
+  vrBtnGroup.children.forEach(btnGrp => {
+    btnGrp.traverse(m => {
+      if (m.userData?.isButton && m.userData._hoverGlow) {
+        const isHov = (m === hoveredObj);
+        m.userData._hoverGlow.material.opacity = THREE.MathUtils.lerp(m.userData._hoverGlow.material.opacity||0, isHov?0.5:0, 0.15);
+        const s = isHov ? 1.05 : 1;
+        m.parent.scale.lerp(new THREE.Vector3(s,s,s), 0.15);
+      }
+    });
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -779,343 +663,252 @@ function applyHover() {
 function onCardSelected(card) {
   if (phase !== 'cards') return;
   ensureAudio();
-
   if (card.userData.upgradeId === 'SKIP') {
-    SFX.cardDismiss();
-    setStatus('You skipped! Click "Show Cards" to try again.');
-    // Fade out cards
-    currentCards.forEach(c => c.visible = false);
-    setTimeout(() => showCards(), 1000);
-    return;
+    SFX.cardDismiss(); setStatus('Skipped!'); currentCards.forEach(c => c.visible = false);
+    setTimeout(() => showCards(), 1200); return;
   }
-
   if (!card.userData.isFinalRecipe) {
-    // Selected a recipe piece that isn't the "final" one
-    SFX.cardSelect();
-    setStatus(`${card.userData.upgradeId} collected! But it's not the final piece... Click "Show Cards" to reset.`);
+    SFX.cardSelect(); setStatus('Recipe piece collected — but not the final one!');
     currentCards.forEach(c => c.visible = false);
-    setTimeout(() => showCards(), 1500);
-    return;
+    setTimeout(() => showCards(), 1500); return;
   }
-
-  // Final recipe piece selected — start Phase 1!
   SFX.cardSelect();
   startFusion(card);
 }
 
 // ══════════════════════════════════════════════════════════════
-// PHASE 1: CARD FUSION
+// PHASE 1: FUSION
 // ══════════════════════════════════════════════════════════════
-let fusionCards = [];
-let fusionCenter = new THREE.Vector3();
-
-async function startFusion(selectedCard) {
-  phase = 'fusion';
-  phaseTime = 0;
-  clearParticles();
-  clearHud();
-
+async function startFusion(selCard) {
+  phase = 'fusion'; phaseTime = 0; clearParticles(); clearHud();
   const evo = getEvo();
-  setStatus('Card Fusion — other choices fading...');
 
-  // Get world position of the selected card as our center
-  const selWorldPos = new THREE.Vector3();
-  selectedCard.getWorldPosition(selWorldPos);
-  fusionCenter.copy(selWorldPos);
+  // Get world position of selected card
+  const wp = new THREE.Vector3(); selCard.getWorldPosition(wp);
+  fusionCenter.copy(wp);
 
-  // Hide non-selected cards (skip + other non-recipe cards)
-  currentCards.forEach(card => {
-    if (card === selectedCard) return;
-    if (card.userData.upgradeId === 'SKIP' || !card.userData.isFinalRecipe) {
-      // Shrink away
-      animateScale(card, 0.01, 0.4, easeInBack);
+  // Hide non-selected, non-recipe cards
+  currentCards.forEach(c => {
+    if (c === selCard) return;
+    if (c.userData.upgradeId === 'SKIP' || !c.userData.isFinalRecipe) {
+      animScale(c, 0.01, 0.4, easeInBack);
     }
   });
-
-  await wait(0.5);
-
-  // The selected card stays. Get the other 2 recipe cards.
-  const otherRecipeCards = currentCards.filter(c => c.userData.upgradeId !== 'SKIP' && c !== selectedCard);
-  const allThreeRecipeCards = [selectedCard, ...otherRecipeCards];
-
-  // Hide the card group, move the 3 recipe cards to fusion group
   cardGroup.visible = false;
-  clearGroup(fusionGroup);
-  fusionGroup.visible = true;
 
-  // Create fresh copies of all 3 recipe cards in the fusion group
-  fusionCards = [];
-  const recipeData = evo.recipe.map(id => { const u = { ...UPGRADES[id] }; u._isRecipePiece = true; return u; });
-
-  // Selected card at center, other two fly in from off-screen
-  const selectedCopy = createUpgradeCard(recipeData[selectedRecipeIdx], new THREE.Vector3(0, 0, 0));
-  selectedCopy.position.copy(selWorldPos);
-  fusionGroup.add(selectedCopy);
-  fusionCards.push(selectedCopy);
-
-  // Other 2 from off-screen
-  const startPositions = [
-    new THREE.Vector3(selWorldPos.x - 6, selWorldPos.y + 2, selWorldPos.z),
-    new THREE.Vector3(selWorldPos.x + 6, selWorldPos.y - 1, selWorldPos.z),
-  ];
-  const otherIndices = [0, 1, 2].filter(i => i !== selectedRecipeIdx);
-
-  for (let j = 0; j < 2; j++) {
-    const card = createUpgradeCard(recipeData[otherIndices[j]], new THREE.Vector3(0, 0, 0));
-    card.position.copy(startPositions[j]);
-    card.scale.setScalar(0.01);
-    card.lookAt(camera.position);
-    fusionGroup.add(card);
-    fusionCards.push(card);
-  }
-
-  SFX.cardsZoomIn();
+  await wait(0.4);
   setStatus('Recipe cards arriving...');
 
-  // Animate other 2 flying in
-  await Promise.all([
-    animatePosition(fusionCards[1], startPositions[0], fusionCenter, 0.6, easeOutBack),
-    animateScale(fusionCards[1], 1, 0.5, easeOutBack),
-    animatePosition(fusionCards[2], startPositions[1], fusionCenter, 0.6, easeOutBack),
-    animateScale(fusionCards[2], 1, 0.5, easeOutBack),
-  ]);
+  // Build 3 recipe cards in fusion group
+  clearGrp(fusionGroup);
+  fusionGroup.visible = true;
+  fusionCards = [];
+  const recipeData = evo.recipe.map(id => { const u = {...UPGRADES[id]}; u._isRecipePiece = true; return u; });
+  const otherIdxs = [0,1,2].filter(i => i !== selectedRecipeIdx);
 
-  await wait(0.3);
-  setStatus('Triangle rotation — accelerating...');
+  // Selected card at center
+  const sc = makeUpgradeCard(recipeData[selectedRecipeIdx], wp.clone());
+  fusionGroup.add(sc); fusionCards.push(sc);
+
+  // Other 2 from off-screen
+  const starts = [
+    wp.clone().add(new THREE.Vector3(-5, 1.5, 0)),
+    wp.clone().add(new THREE.Vector3(5, -1, 0)),
+  ];
+  for (let j = 0; j < 2; j++) {
+    const c = makeUpgradeCard(recipeData[otherIdxs[j]], starts[j].clone());
+    c.scale.setScalar(0.01);
+    // Face camera Y-only
+    billboardY(c);
+    fusionGroup.add(c); fusionCards.push(c);
+  }
+  SFX.zoomIn();
+  await Promise.all([
+    animPos(fusionCards[1], starts[0], wp, 0.6, easeOutBack),
+    animScale(fusionCards[1], 1, 0.5, easeOutBack),
+    animPos(fusionCards[2], starts[1], wp, 0.6, easeOutBack),
+    animScale(fusionCards[2], 1, 0.5, easeOutBack),
+  ]);
+  await wait(0.2);
+  setStatus('Triangle rotation accelerating...');
 }
 
 function updateFusion(dt) {
   phaseTime += dt;
   const evo = getEvo();
+  const rotStart = 0, rotEnd = 3.5, flashT = 3.5, evoStart = 4.0, evoEnd = 4.8;
 
-  // Phase timing
-  const convergeTime = 0; // already converged
-  const rotStart = 0;
-  const rotEnd = 3.5;
-  const flashStart = 3.5;
-  const evoStart = 4.0;
-  const evoEnd = 4.8;
-
-  // Rotation phase
   if (phaseTime >= rotStart && phaseTime <= rotEnd) {
-    const rotT = (phaseTime - rotStart) / (rotEnd - rotStart);
-    const rotSpeed = 0.5 + rotT * rotT * 8; // accelerating
-    const radius = 1.5 * (1 - rotT * 0.9); // shrinks from 1.5 to 0.15
-    const baseAngle = phaseTime * rotSpeed;
+    const t = (phaseTime - rotStart) / (rotEnd - rotStart);
+    const speed = 0.5 + t * t * 8;
+    const radius = 1.5 * (1 - t * 0.92);
+    const base = phaseTime * speed;
 
     fusionCards.forEach((card, i) => {
-      const angle = baseAngle + (i / 3) * Math.PI * 2;
-      // Orbit in horizontal plane (XZ in world space, viewed from front)
+      const angle = base + (i/3) * Math.PI * 2;
+      // ORBIT IN HORIZONTAL PLANE (same Y!) — XZ only
       card.position.x = fusionCenter.x + Math.cos(angle) * radius;
-      card.position.z = fusionCenter.z + Math.sin(angle) * radius * 0.6; // perspective foreshortening
-      card.position.y = fusionCenter.y + Math.sin(angle) * radius * 0.3; // slight vertical wobble
-      // Billboard: always face camera
-      card.lookAt(camera.position);
-
-      // Rainbow border glow
+      card.position.z = fusionCenter.z + Math.sin(angle) * radius;
+      card.position.y = fusionCenter.y; // SAME HEIGHT
+      // Billboard Y only
+      billboardY(card);
+      // Rainbow borders
       const hue = (phaseTime * 0.5 + i * 0.33) % 1;
-      const rainbow = new THREE.Color().setHSL(hue, 1, 0.5);
+      const rc = new THREE.Color().setHSL(hue, 1, 0.5);
       card.traverse(c => {
-        if (c.isLineSegments) c.material.color.copy(rainbow);
-        if (c.userData?._hoverGlow) {
-          c.userData._hoverGlow.material.opacity = rotT * 0.5;
-          c.userData._hoverGlow.material.color.copy(rainbow);
-        }
+        if (c.isLineSegments) c.material.color.copy(rc);
+        if (c.userData?._hoverGlow) { c.userData._hoverGlow.material.opacity = t*0.5; c.userData._hoverGlow.material.color.copy(rc); }
       });
-
-      // Scale pulse
-      const s = 1 + Math.sin(phaseTime * 3 + i) * 0.03 * rotT;
-      card.scale.setScalar(s);
+      card.scale.setScalar(1 + Math.sin(phaseTime*3+i)*0.02*t);
     });
 
     // Sparkle particles
-    if (Math.random() < rotT * 0.6) {
-      const a = Math.random() * Math.PI * 2;
-      const r = radius * (0.5 + Math.random());
-      const pPos = fusionCenter.clone().add(new THREE.Vector3(Math.cos(a)*r, Math.sin(a)*r*0.5, Math.sin(a)*r*0.6));
-      const hue2 = (phaseTime * 0.8) % 1;
-      spawnParticle(pPos, new THREE.Color().setHSL(hue2, 1, 0.7).getHex(), new THREE.Vector3(0, 0.5, 0), 0.4);
+    if (Math.random() < t * 0.5) {
+      const a = Math.random()*Math.PI*2, r = radius*(0.5+Math.random());
+      sparkleRing(fusionCenter.clone().add(new THREE.Vector3(Math.cos(a)*r, 0, Math.sin(a)*r)),
+        new THREE.Color().setHSL((phaseTime*0.8)%1, 1, 0.7).getHex(), 2, 0.1);
     }
 
-    // Hum SFX
-    if (phaseTime - lastHumTime > Math.max(0.08, 0.3 - rotT * 0.25)) {
-      SFX.rotHum(rotT);
-      lastHumTime = phaseTime;
-    }
-
-    setStatus(`Fusion ${(rotT * 100).toFixed(0)}%`);
+    // Hum
+    if (phaseTime - lastHumTime > Math.max(0.06, 0.25 - t*0.2)) { SFX.rotHum(t); lastHumTime = phaseTime; }
+    setStatus(`Fusion ${(t*100).toFixed(0)}%`);
   }
 
   // Flash
-  if (phaseTime >= flashStart && phaseTime < flashStart + 0.01) {
-    SFX.whiteFlash();
-    burstParticles(fusionCenter, 0xffffff, 50, 3);
-    burstParticles(fusionCenter, evo.sigColor, 30, 2);
-    ringParticles(fusionCenter, evo.sigColor, 24, 0.5);
+  if (phaseTime >= flashT && phaseTime < flashT + 0.05) {
+    SFX.flash();
+    burst(fusionCenter, 0xffffff, 50, 3);
+    burst(fusionCenter, evo.sigColor, 30, 2.5);
+    ring(fusionCenter, evo.sigColor, 24, 0.5);
+    triggerFlash();
     fusionCards.forEach(c => c.visible = false);
   }
 
-  // Evo card appear
+  // Evo card
   if (phaseTime >= evoStart && phase === 'fusion') {
     const at = Math.min((phaseTime - evoStart) / (evoEnd - evoStart), 1);
     if (!evoCardGroup.visible) {
-      clearGroup(evoCardGroup);
-      const evoCard = createEvoCard(evo);
-      evoCard.position.copy(fusionCenter);
-      evoCard.position.z -= 0.2;
-      evoCard.scale.setScalar(0.01);
-      evoCard.lookAt(camera.position);
-      evoCardGroup.add(evoCard);
-      evoCardGroup.visible = true;
-      fusionGroup.visible = false;
-      clearParticles();
+      clearGrp(evoCardGroup);
+      const ec = makeEvoCard(evo);
+      ec.position.copy(fusionCenter); ec.position.z -= 0.2;
+      ec.scale.setScalar(0.01);
+      billboardY(ec);
+      evoCardGroup.add(ec); evoCardGroup.visible = true;
+      fusionGroup.visible = false; clearParticles();
       SFX.evoReveal();
-      setStatus('⚡ Evolution card revealed! Hover and click/trigger to transform your weapon.');
+      setStatus('⚡ Hover and click/trigger the evolution card!');
     }
-    const eased = easeOutBack(at);
     const card = evoCardGroup.children[0];
-    if (card) {
-      card.scale.setScalar(eased);
-      card.lookAt(camera.position);
-    }
-    if (at >= 1) {
-      phase = 'evo_card';
-      phaseTime = 0;
-    }
+    if (card) { card.scale.setScalar(easeOutBack(at)); billboardY(card); }
+    if (at >= 1) { phase = 'evo_card'; phaseTime = 0; }
   }
+}
+
+// Billboard on Y axis only (card faces camera, stays level)
+function billboardY(obj) {
+  const cp = new THREE.Vector3(); camera.getWorldPosition(cp);
+  const wp = new THREE.Vector3(); obj.getWorldPosition(wp);
+  const dx = cp.x - wp.x, dz = cp.z - wp.z;
+  obj.rotation.y = Math.atan2(dx, dz);
+  obj.rotation.x = 0;
+  obj.rotation.z = 0;
 }
 
 // ══════════════════════════════════════════════════════════════
 // PHASE 2: WEAPON TRANSFORM
 // ══════════════════════════════════════════════════════════════
-let transformTarget = new THREE.Vector3();
-let transformStart = new THREE.Vector3();
-let returnTarget = new THREE.Vector3();
-
 function startTransform() {
   if (phase !== 'evo_card') return;
-  ensureAudio();
-  phase = 'transform';
-  phaseTime = 0;
-  clearHud();
-
+  ensureAudio(); phase = 'transform'; phaseTime = 0; clearHud();
   const evo = getEvo();
   evoCardGroup.visible = false;
-
-  // Record where the weapon currently is
   transformStart.copy(weaponGroup.position);
-
-  // Detach weapon from controller
   weaponAttached = false;
   SFX.detach();
-  setStatus('Weapon detaching...');
 
-  // Float out to midfield (1.5m in front at eye level)
   if (renderer.xr.isPresenting) {
-    const camPos = new THREE.Vector3();
-    camera.getWorldPosition(camPos);
-    const camDir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    transformTarget.copy(camPos).add(camDir.multiplyScalar(1.5));
-    transformTarget.y = camPos.y + 0.1; // slightly above eye level for visibility
+    const cp = new THREE.Vector3(); camera.getWorldPosition(cp);
+    const cd = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    transformTarget.copy(cp).add(cd.multiplyScalar(1.5));
+    transformTarget.y = cp.y + 0.1;
   } else {
     transformTarget.set(0, 1.7, -1.5);
   }
-
-  returnTarget.copy(transformStart); // where to return to
+  returnTarget.copy(transformStart);
 }
 
 function updateTransform(dt) {
   phaseTime += dt;
   const evo = getEvo();
-  const totalDur = 6.5;
 
-  // Detach fly-out: 0 - 1.0s
+  // 0-1s: detach fly-out
   if (phaseTime < 1.0) {
     const t = easeInOutCubic(phaseTime / 1.0);
     weaponGroup.position.lerpVectors(transformStart, transformTarget, t);
-    // Grow slightly as it moves
-    const s = 1 + t * 0.3;
-    weaponGroup.scale.setScalar(s);
-    if (phaseTime > 0.95) setStatus('Rainbow glow cycle...');
+    weaponGroup.scale.setScalar(1 + t * 0.3);
+    setStatus('Weapon detaching...');
   }
 
-  // Rainbow glow: 1.0 - 4.0s
+  // 1-4s: rainbow glow
   if (phaseTime >= 1.0 && phaseTime < 4.0) {
     const t = (phaseTime - 1.0) / 3.0;
     weaponGroup.position.copy(transformTarget);
-
-    // Rainbow color cycling — accelerating
-    const hueSpeed = 1 + t * t * 20;
+    const hueSpeed = 1 + t*t*20;
     const hue = (phaseTime * hueSpeed * 0.1) % 1;
-    const color = new THREE.Color().setHSL(hue, 1, 0.5 + t * 0.3);
-    coreMat.color.copy(color);
-    glowMat.color.copy(color);
-    glowMat.opacity = 0.2 + t * 0.5;
-
-    // Pulse scale
-    const pulse = 1.3 + Math.sin(phaseTime * (5 + t * 20)) * 0.15 * t;
+    const color = new THREE.Color().setHSL(hue, 1, 0.5 + t*0.3);
+    coreMat.color.copy(color); glowSMat.color.copy(color);
+    glowSMat.opacity = 0.2 + t*0.5;
+    const pulse = 1.3 + Math.sin(phaseTime*(5+t*20))*0.15*t;
     weaponGroup.scale.setScalar(pulse);
 
-    // Orbiting ring particles
-    if (Math.random() < 0.3 + t * 0.4) {
-      const angle = Math.random() * Math.PI * 2;
-      const r = 0.12;
-      const pPos = transformTarget.clone().add(new THREE.Vector3(Math.cos(angle)*r, Math.sin(angle)*r, (Math.random()-0.5)*0.08));
-      spawnParticle(pPos, color.getHex(), new THREE.Vector3(Math.cos(angle)*0.4, Math.sin(angle)*0.4+0.2, (Math.random()-0.5)*0.2), 0.4);
+    // Orbiting particles
+    if (Math.random() < 0.3+t*0.4) {
+      const a = Math.random()*Math.PI*2;
+      spawnP(transformTarget.clone().add(new THREE.Vector3(Math.cos(a)*0.12, Math.sin(a)*0.12, (Math.random()-0.5)*0.08)),
+        color.getHex(), new THREE.Vector3(Math.cos(a)*0.4, Math.sin(a)*0.4+0.2, (Math.random()-0.5)*0.2), 0.4);
     }
-
-    // SFX
-    if (phaseTime - lastHumTime > Math.max(0.06, 0.25 - t * 0.2)) {
-      SFX.rainbowPeak(300 + t * 1200);
-      lastHumTime = phaseTime;
-    }
-
-    setStatus(`Rainbow glow ${(t * 100).toFixed(0)}%`);
+    if (phaseTime - lastHumTime > Math.max(0.05, 0.2-t*0.18)) { SFX.rainbowPeak(300+t*1200); lastHumTime = phaseTime; }
+    setStatus(`Rainbow glow ${(t*100).toFixed(0)}%`);
   }
 
-  // BURST: at 4.0s
+  // BURST at 4.0s
   if (phaseTime >= 4.0 && phaseTime < 4.05) {
     SFX.transformBurst();
-    burstParticles(transformTarget, 0xffffff, 60, 3);
-    burstParticles(transformTarget, evo.sigColor, 40, 2.5);
-    ringParticles(transformTarget, evo.sigColorAlt, 32, 0.8);
-    screenFlash(0.4);
+    burst(transformTarget, 0xffffff, 60, 3);
+    burst(transformTarget, evo.sigColor, 40, 2.5);
+    ring(transformTarget, evo.sigColorAlt, 32, 0.8);
+    ring(transformTarget, evo.sigColor, 24, 0.5);
+    triggerFlash();
   }
 
-  // New weapon appears + shrinks back: 4.0 - 5.5s
+  // 4-5.5s: new weapon appears
   if (phaseTime >= 4.0 && phaseTime < 5.5) {
     const t = (phaseTime - 4.0) / 1.5;
-    // New colors
-    coreMat.color.setHex(evo.sigColor);
-    glowMat.color.setHex(evo.sigColorAlt);
-    glowMat.opacity = 0.35;
-    // Scale down from burst size to 1.3 (evolved = 30% bigger)
-    const s = 2.0 - 0.7 * easeOutCubic(t);
-    weaponGroup.scale.setScalar(s);
+    coreMat.color.setHex(evo.sigColor); glowSMat.color.setHex(evo.sigColorAlt); glowSMat.opacity = 0.35;
+    weaponGroup.scale.setScalar(2.0 - 0.7*easeOutCubic(t));
   }
 
-  // Return to hand: 5.5 - 6.5s
+  // 5.5-6.5s: return to hand
   if (phaseTime >= 5.5 && phaseTime < 6.5) {
     const t = easeInOutCubic((phaseTime - 5.5) / 1.0);
     weaponGroup.position.lerpVectors(transformTarget, returnTarget, t);
-    weaponGroup.scale.setScalar(1.3); // evolved size
-    if (phaseTime < 5.55) {
-      SFX.returnHand();
-      setStatus('Weapon returning to hand...');
-    }
+    weaponGroup.scale.setScalar(1.3);
+    if (phaseTime < 5.55) { SFX.returnHand(); setStatus('Returning to hand...'); }
   }
 
   // Done
-  if (phaseTime >= 6.5) {
-    weaponAttached = true;
+  if (phaseTime >= 6.5 && !evolved) {
+    weaponAttached = true; evolved = true;
     weaponGroup.scale.setScalar(1.3);
-    coreMat.color.setHex(evo.sigColor);
-    glowMat.color.setHex(evo.sigColorAlt);
-    glowMat.opacity = 0.3;
+    coreMat.color.setHex(evo.sigColor); glowSMat.color.setHex(evo.sigColorAlt); glowSMat.opacity = 0.3;
+    // Activate aura orbs
+    evo.auraColors.forEach((c, i) => {
+      if (auraOrbs[i]) { auraOrbs[i].material.color.setHex(c); auraOrbs[i].material.opacity = 0.7; }
+    });
     phase = 'done';
-    const sigHex = '#' + evo.sigColor.toString(16).padStart(6, '0');
-    addHudText(`⚡ ${evo.name.toUpperCase()}`, sigHex);
-    setStatus(`Evolution complete! ${evo.from} → ${evo.name}. Press Reset to try again.`);
+    const sh = '#' + evo.sigColor.toString(16).padStart(6,'0');
+    addHud(`⚡ ${evo.name.toUpperCase()}`, sh);
+    setStatus(`Evolution complete! ${evo.from} → ${evo.name}`);
   }
 }
 
@@ -1124,83 +917,85 @@ function updateTransform(dt) {
 // ══════════════════════════════════════════════════════════════
 function onDesktopClick(e) {
   ensureAudio();
-  const mouse = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  raycaster.setFromCamera(mouse, camera);
+  raycaster.setFromCamera(new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1), camera);
 
+  // Cards
   if (phase === 'cards' && cardGroup.visible) {
     const hits = raycaster.intersectObjects(cardGroup.children, true);
     if (hits.length > 0) {
-      const g = findCardGroup(hits[0].object);
+      const g = findCardGroupFromFace(hits[0].object);
       if (g) { onCardSelected(g); return; }
     }
   }
-
+  // Evo card
   if (phase === 'evo_card' && evoCardGroup.visible) {
     const hits = raycaster.intersectObjects(evoCardGroup.children, true);
     if (hits.length > 0) { startTransform(); return; }
   }
+  // VR buttons (desktop too)
+  const btnHits = raycaster.intersectObjects(vrBtnGroup.children, true);
+  if (btnHits.length > 0) {
+    let obj = btnHits[0].object;
+    while (obj && !obj.userData?.onClick) obj = obj.parent;
+    if (obj?.userData?.onClick) { obj.userData.onClick(); SFX.buttonClick(); return; }
+  }
 }
 
-function onVRSelect(controller) {
+function onVRSelect(ctrl) {
   ensureAudio();
-  const mat4 = new THREE.Matrix4().identity().extractRotation(controller.matrixWorld);
-  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(mat4);
+  const mat4 = new THREE.Matrix4().identity().extractRotation(ctrl.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+  raycaster.ray.direction.set(0,0,-1).applyMatrix4(mat4);
 
+  // Cards
   if (phase === 'cards' && cardGroup.visible) {
     const hits = raycaster.intersectObjects(cardGroup.children, true);
     if (hits.length > 0) {
-      const g = findCardGroup(hits[0].object);
+      const g = findCardGroupFromFace(hits[0].object);
       if (g) { onCardSelected(g); return; }
     }
   }
-
+  // Evo card
   if (phase === 'evo_card' && evoCardGroup.visible) {
     const hits = raycaster.intersectObjects(evoCardGroup.children, true);
     if (hits.length > 0) { startTransform(); return; }
   }
-}
-
-function onMouseMove(e) {
-  pointerR.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  // VR buttons
+  const btnHits = raycaster.intersectObjects(vrBtnGroup.children, true);
+  if (btnHits.length > 0) {
+    let obj = btnHits[0].object;
+    while (obj && !obj.userData?.onClick) obj = obj.parent;
+    if (obj?.userData?.onClick) { obj.userData.onClick(); SFX.buttonClick(); return; }
+  }
 }
 
 renderer.domElement.addEventListener('click', onDesktopClick);
-renderer.domElement.addEventListener('mousemove', onMouseMove);
+renderer.domElement.addEventListener('mousemove', e => {
+  raycaster.setFromCamera(new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1), camera);
+});
 
-// Desktop buttons
-document.getElementById('weapon-sel').addEventListener('change', e => { selectedWeapon = e.target.value; });
-document.getElementById('btn-show-cards').addEventListener('click', () => { ensureAudio(); showCards(); });
-document.getElementById('btn-reset').addEventListener('click', () => { ensureAudio(); reset(); setStatus('Ready. Click "Show Cards" to preview.'); });
+// Desktop toolbar
+document.getElementById('weapon-sel').addEventListener('change', e => {
+  selectedWeapon = e.target.value;
+  weaponIdx = WEAPON_ORDER.indexOf(selectedWeapon);
+  updateWeaponLabel();
+  if (phase === 'idle') reset();
+});
+document.getElementById('btn-show').addEventListener('click', () => { ensureAudio(); showCards(); });
+document.getElementById('btn-reset').addEventListener('click', () => { ensureAudio(); reset(); setStatus('Ready.'); });
 
 // ══════════════════════════════════════════════════════════════
 // ANIMATION HELPERS
 // ══════════════════════════════════════════════════════════════
-function wait(s) { return new Promise(r => setTimeout(r, s * 1000)); }
-
-function animateScale(obj, target, dur, ease = easeInOutCubic) {
-  return new Promise(resolve => {
-    const start = obj.scale.x;
-    const t0 = performance.now();
-    function step() {
-      const t = Math.min((performance.now() - t0) / (dur * 1000), 1);
-      obj.scale.setScalar(start + (target - start) * ease(t));
-      if (t < 1) requestAnimationFrame(step); else resolve();
-    }
-    step();
+function wait(s) { return new Promise(r => setTimeout(r, s*1000)); }
+function animScale(obj, tgt, dur, ease=easeInOutCubic) {
+  return new Promise(res => { const s=obj.scale.x, t0=performance.now();
+    (function step(){const t=Math.min((performance.now()-t0)/(dur*1000),1);obj.scale.setScalar(s+(tgt-s)*ease(t));if(t<1)requestAnimationFrame(step);else res();})();
   });
 }
-
-function animatePosition(obj, from, to, dur, ease = easeInOutCubic) {
-  return new Promise(resolve => {
-    const t0 = performance.now();
-    function step() {
-      const t = Math.min((performance.now() - t0) / (dur * 1000), 1);
-      const e = ease(t);
-      obj.position.lerpVectors(from, to, e);
-      if (t < 1) requestAnimationFrame(step); else resolve();
-    }
-    step();
+function animPos(obj, from, to, dur, ease=easeInOutCubic) {
+  return new Promise(res => { const t0=performance.now();
+    (function step(){const t=Math.min((performance.now()-t0)/(dur*1000),1);obj.position.lerpVectors(from,to,ease(t));if(t<1)requestAnimationFrame(step);else res();})();
   });
 }
 
@@ -1208,124 +1003,97 @@ function animatePosition(obj, from, to, dur, ease = easeInOutCubic) {
 // RESET
 // ══════════════════════════════════════════════════════════════
 function reset() {
-  phase = 'idle';
-  phaseTime = 0;
-  hoveredCard = null;
-  weaponAttached = true;
-  clearParticles();
-  clearHud();
-  clearGroup(cardGroup);
-  clearGroup(fusionGroup);
-  clearGroup(evoCardGroup);
-  cardGroup.visible = false;
-  fusionGroup.visible = false;
-  evoCardGroup.visible = false;
-  flashMat.opacity = 0;
+  phase = 'idle'; phaseTime = 0; hoveredObj = null; prevHovered = null;
+  weaponAttached = true; evolved = false;
+  clearParticles(); clearHud();
+  clearGrp(cardGroup); clearGrp(fusionGroup); clearGrp(evoCardGroup);
+  cardGroup.visible = false; fusionGroup.visible = false; evoCardGroup.visible = false;
+  flashBrightness = 0; flashFading = false;
+  renderer.setClearColor(0x050008);
   weaponGroup.scale.setScalar(1);
   const evo = getEvo();
-  coreMat.color.setHex(evo.baseColor);
-  glowMat.color.setHex(evo.baseColor);
-  glowMat.opacity = 0.2;
-  currentCards = [];
-  fusionCards = [];
+  coreMat.color.setHex(evo.baseColor); glowSMat.color.setHex(evo.baseColor); glowSMat.opacity = 0.2;
+  auraOrbs.forEach(o => o.material.opacity = 0);
+  currentCards = []; fusionCards = [];
 }
 
 // ══════════════════════════════════════════════════════════════
 // RENDER LOOP
 // ══════════════════════════════════════════════════════════════
 const clock = new THREE.Clock();
+
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
 
   // Weapon attachment
-  if (weaponAttached) updateWeaponAttachment();
+  if (weaponAttached) updateWeaponPos();
 
-  // Card warp animation
-  if (phase === 'cards') {
-    updateCardWarp();
-    applyHover();
-    updateHover();
-  }
+  // Card warp
+  if (phase === 'cards') { updateWarp(); updateHover(); applyHoverEffects(); }
 
-  // Fusion animation
-  if (phase === 'fusion') {
-    updateFusion(dt);
-  }
+  // Fusion
+  if (phase === 'fusion') updateFusion(dt);
 
   // Evo card idle
   if (phase === 'evo_card') {
     phaseTime += dt;
     const card = evoCardGroup.children[0];
     if (card) {
-      card.position.y += Math.sin(phaseTime * 1.5) * 0.0003;
-      card.lookAt(camera.position);
-      // Rainbow border cycling on evo card
+      card.position.y += Math.sin(phaseTime*1.5)*0.0003;
+      billboardY(card);
       const evo = getEvo();
-      const hue = (phaseTime * 0.3) % 1;
-      card.traverse(c => {
-        if (c.isLineSegments) {
-          const c1 = new THREE.Color(evo.sigColor);
-          const c2 = new THREE.Color(evo.sigColorAlt);
-          c.material.color.copy(c1.lerp(c2, (Math.sin(phaseTime * 2) + 1) / 2));
-        }
-      });
+      const c1 = new THREE.Color(evo.sigColor), c2 = new THREE.Color(evo.sigColorAlt);
+      card.traverse(ch => { if(ch.isLineSegments) ch.material.color.copy(c1.clone().lerp(c2,(Math.sin(phaseTime*2)+1)/2)); });
     }
-    applyHover();
-    updateHover();
+    updateHover(); applyHoverEffects();
   }
 
-  // Transform animation
-  if (phase === 'transform') {
-    updateTransform(dt);
-  }
+  // Transform
+  if (phase === 'transform') updateTransform(dt);
 
-  // Done state — gentle glow pulse on evolved weapon
+  // Done — aura orbs orbit weapon
   if (phase === 'done') {
-    const evo = getEvo();
-    glowMat.opacity = 0.25 + Math.sin(clock.elapsedTime * 3) * 0.08;
+    const t = clock.elapsedTime;
+    glowSMat.opacity = 0.25 + Math.sin(t*3)*0.08;
+    auraOrbs.forEach((orb, i) => {
+      if (orb.material.opacity <= 0) return;
+      const a = t * (1.5 + i*0.7) + (i/auraOrbs.length)*Math.PI*2;
+      orb.position.set(Math.cos(a)*0.1, Math.sin(a)*0.06, Math.sin(a)*0.1);
+      orb.material.opacity = 0.5 + Math.sin(t*4+i)*0.2;
+    });
     // Subtle aura particles
-    if (Math.random() < 0.05) {
-      const wPos = weaponGroup.position.clone();
-      const angle = Math.random() * Math.PI * 2;
-      spawnParticle(wPos.clone().add(new THREE.Vector3(Math.cos(angle)*0.08, Math.sin(angle)*0.08, 0)),
-        evo.sigColor, new THREE.Vector3(0, 0.3, 0), 0.5);
+    if (Math.random() < 0.04) {
+      const evo = getEvo();
+      const a = Math.random()*Math.PI*2;
+      spawnP(weaponGroup.position.clone().add(new THREE.Vector3(Math.cos(a)*0.08,Math.sin(a)*0.08,0)),
+        evo.sigColor, new THREE.Vector3(0,0.3,0), 0.5);
     }
+    updateHover(); applyHoverEffects(); // buttons still hoverable
   }
+
+  // Idle — buttons hoverable
+  if (phase === 'idle') { updateHover(); applyHoverEffects(); }
 
   // Particles
   updateParticles(dt);
 
-  // Flash mesh follows camera
-  flashMesh.position.copy(camera.position);
-  flashMesh.position.z -= 1;
-  flashMesh.quaternion.copy(camera.quaternion);
+  // Flash (works in VR via clear color)
+  if (flashFading) {
+    flashBrightness = Math.max(0, flashBrightness - dt * 4);
+    const b = flashBrightness;
+    renderer.setClearColor(new THREE.Color(0.02+b*0.98, 0, 0.03+b*0.97));
+    if (flashBrightness <= 0) { flashFading = false; renderer.setClearColor(0x050008); }
+  }
 
-  // HUD follows camera
+  // HUD follows camera (billboard)
   hudGroup.position.copy(camera.position);
   hudGroup.quaternion.copy(camera.quaternion);
-
-  // Card group follows camera in VR
-  if (renderer.xr.isPresenting) {
-    const camPos = new THREE.Vector3();
-    camera.getWorldPosition(camPos);
-    const camDir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-    const target = camPos.clone().add(camDir.multiplyScalar(4));
-    target.y = camPos.y - 0.725 + 0.9;
-    cardGroup.position.lerp(target, 0.1);
-
-    fusionGroup.position.copy(camera.position);
-    fusionGroup.quaternion.copy(camera.quaternion);
-    // Fusion center needs to track too
-    // (it's set once, should be fine since it's in world space relative to camera at fusion start)
-
-    evoCardGroup.position.lerp(target, 0.1);
-  }
 
   renderer.render(scene, camera);
 });
 
 window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
+  camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
