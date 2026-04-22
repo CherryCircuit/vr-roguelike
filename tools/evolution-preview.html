@@ -696,7 +696,7 @@ function onCardSelected(card) {
 // PHASE 1: FUSION
 // ══════════════════════════════════════════════════════════════
 async function startFusion(selCard) {
-  phase = 'fusion'; phaseTime = 0; clearParticles(); clearHud();
+  phase = 'fusion'; phaseTime = 0; lastHumTime = 0; clearParticles(); clearHud();
   const evo = getEvo();
 
   // Get world position of selected card
@@ -835,7 +835,7 @@ function billboardY(obj) {
 // ══════════════════════════════════════════════════════════════
 function startTransform() {
   if (phase !== 'evo_card') return;
-  ensureAudio(); phase = 'transform'; phaseTime = 0; clearHud();
+  ensureAudio(); phase = 'transform'; phaseTime = 0; lastHumTime = 0; clearHud();
   const evo = getEvo();
   evoCardGroup.visible = false;
   transformStart.copy(weaponGroup.position);
@@ -1019,7 +1019,7 @@ function animPos(obj, from, to, dur, ease=easeInOutCubic) {
 // RESET
 // ══════════════════════════════════════════════════════════════
 function reset() {
-  phase = 'idle'; phaseTime = 0; hoveredObj = null; prevHovered = null;
+  phase = 'idle'; phaseTime = 0; lastHumTime = 0; hoveredObj = null; prevHovered = null;
   weaponAttached = true; evolved = false;
   clearParticles(); clearHud();
   clearGrp(cardGroup); clearGrp(fusionGroup); clearGrp(evoCardGroup);
