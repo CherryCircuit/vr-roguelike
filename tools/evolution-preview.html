@@ -267,9 +267,10 @@ function cycleWeapon(dir) {
 
 function updateWeaponLabel() {
   const evo = getEvo();
-  weaponLabel.children[0].material.map.dispose();
-  weaponLabel.children[0].material.map = makeTextSprite(evo.from + ' → ' + evo.name, { fontSize:40, color:'#aaaaaa', scale:0.25, maxWidth:500, forceArial:true }).material.map;
-  // Actually sprites are different, let me just replace the sprite
+  // Dispose old texture if present
+  if (weaponLabel.children[0] && weaponLabel.children[0].material && weaponLabel.children[0].material.map) {
+    weaponLabel.children[0].material.map.dispose();
+  }
   while(weaponLabel.children.length) weaponLabel.remove(weaponLabel.children[0]);
   const s = makeTextSprite(evo.from + ' → ' + evo.name, { fontSize:40, color:'#aaaaaa', scale:0.25, maxWidth:500, forceArial:true });
   s.position.z = 0.01; weaponLabel.add(s);
