@@ -139,12 +139,23 @@ function makeTextSprite(text, opts = {}) {
   ctx.fillStyle = opts.color || '#00ffff';
   lines.forEach((l, i) => { ctx.fillText(l, canvas.width/2, canvas.height/2 - ((lines.length-1)*lh/2) + i*lh); });
   const tex = new THREE.CanvasTexture(canvas); tex.minFilter = THREE.LinearFilter;
-  const aspect = canvas.width / canvas.height;
   const s = opts.scale || 0.3;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false });
-  const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(s * aspect, s, 1);
-  return sprite;
+  let w, h;
+  if (maxWidth) {
+    // Match game's makeSprite: scale = desired width, size in world units via pixels
+    const unitPerPixel = s / maxWidth;
+    w = canvas.width * unitPerPixel;
+    h = canvas.height * unitPerPixel;
+  } else {
+    const aspect = canvas.width / canvas.height;
+    w = aspect * s;
+    h = s;
+  }
+  const geo = new THREE.PlaneGeometry(w, h);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: opts.depthTest !== undefined ? opts.depthTest : false, depthWrite: false, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = opts.renderOrder !== undefined ? opts.renderOrder : 999;
+  return mesh;
 }
 
 function getGlowTex(r, g, b) {
@@ -172,11 +183,15 @@ function makeUpgradeCard(upgrade, pos) {
   const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.56,1.95), new THREE.MeshBasicMaterial({ map:getGlowTex(br,bg,bb), transparent:true, opacity:0, depthTest:false, depthWrite:false }));
   glow.renderOrder = 998; glow.position.z = -0.01; card.add(glow); card.userData._hoverGlow = glow;
   const name = makeTextSprite(upgrade.name.toUpperCase(), { fontSize:65, color:upgrade.color||'#00ffff', glow:true, glowColor:upgrade.color, scale:1, maxWidth:600 });
-  name.position.set(0, 0.55, 0.01); group.add(name);
+  name.position.set(0, 0.54, 0.01); group.add(name);
   const desc = makeTextSprite(upgrade.desc, { fontSize:40, color:'#cccccc', scale:1, maxWidth:600, forceArial:true });
-  desc.position.set(0, 0.15, 0.01); group.add(desc);
+  desc.position.set(0, 0.16, 0.01); group.add(desc);
+  const stat = makeTextSprite(upgrade.stat||'', { fontSize:34, color:'#88ff88', scale:1, maxWidth:600, forceArial:true });
+  stat.position.set(0, -0.18, 0.01); group.add(stat);
+  const note = makeTextSprite(upgrade.note||'', { fontSize:25, color:'#ffdd00', scale:1, maxWidth:600, forceArial:true });
+  note.position.set(0, -0.36, 0.01); group.add(note);
   const icon = new THREE.Mesh(iconGeo, new THREE.MeshBasicMaterial({ color:bc, wireframe:true }));
-  icon.position.set(0, -0.35, 0.05); group.add(icon);
+  icon.position.set(0, -0.52, 0.05); group.add(icon);
   if (upgrade._isRecipePiece) {
     const badge = makeTextSprite('⚡ EVO', { fontSize:36, color:'#ffcc00', glow:true, glowColor:'#ffcc00', scale:0.3, maxWidth:200 });
     badge.position.set(0.35, 0.65, 0.02); group.add(badge);
@@ -194,10 +209,10 @@ function makeSkipCard(pos) {
   glow.renderOrder = 998; glow.position.z = -0.01; card.add(glow); card.userData._hoverGlow = glow;
   const name = makeTextSprite('SKIP', { fontSize:65, color:'#00ff88', glow:true, glowColor:'#00ff88', scale:1, maxWidth:600 });
   name.position.set(0, 0.44, 0.01); group.add(name);
-  const desc = makeTextSprite('Skip upgrades and gain full health.', { fontSize:40, color:'#88ffaa', scale:0.65, maxWidth:400, forceArial:true });
+  const desc = makeTextSprite('Skip upgrades and gain full health.', { fontSize:40, color:'#ffffff', scale:0.65, maxWidth:400, forceArial:true });
   desc.position.set(0, -0.02, 0.01); group.add(desc);
   const icon = new THREE.Mesh(new THREE.OctahedronGeometry(0.08,0), new THREE.MeshBasicMaterial({ color:0xff0044, wireframe:true }));
-  icon.position.set(0, -0.44, 0.05); group.add(icon);
+  icon.position.set(0, -0.42, 0.05); group.add(icon);
   return group;
 }
 
@@ -219,13 +234,13 @@ function makeEvoCard(evo) {
   const label = makeTextSprite('⚡ EVOLUTION', { fontSize:34, color:sigHex, glow:true, glowColor:sigHex, scale:0.5, maxWidth:400 });
   label.position.set(0, 0.72, 0.01); group.add(label);
   const name = makeTextSprite(evo.name.toUpperCase(), { fontSize:65, color:'#ffffff', glow:true, glowColor:sigHex, scale:1, maxWidth:600 });
-  name.position.set(0, 0.55, 0.01); group.add(name);
+  name.position.set(0, 0.54, 0.01); group.add(name);
   const desc = makeTextSprite(evo.desc, { fontSize:38, color:'#dddddd', scale:0.9, maxWidth:550, forceArial:true });
-  desc.position.set(0, 0.15, 0.01); group.add(desc);
+  desc.position.set(0, 0.16, 0.01); group.add(desc);
   const from = makeTextSprite(`${evo.from} → ${evo.name}`, { fontSize:30, color:'#888888', scale:0.65, maxWidth:500, forceArial:true });
   from.position.set(0, -0.15, 0.01); group.add(from);
   const icon = new THREE.Mesh(iconGeo, new THREE.MeshBasicMaterial({ color:evo.sigColor, wireframe:true }));
-  icon.position.set(0, -0.35, 0.05); group.add(icon);
+  icon.position.set(0, -0.52, 0.05); group.add(icon);
   return group;
 }
 
@@ -430,7 +445,7 @@ const SFX = {
 // ══════════════════════════════════════════════════════════════
 // LAYOUT CONSTANTS (matching real game)
 // ══════════════════════════════════════════════════════════════
-const CARD_XS = [-2.25, -0.75, 0.75, 2.25];
+const CARD_XS = [-2.02, -0.68, 0.68, 2.1];
 const SCENE_Y_OFFSET = -0.725;
 
 // Groups
