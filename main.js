@@ -7977,6 +7977,7 @@ function advanceLevelAfterUpgrade() {
   clearAllTeslaCoils();
   clearBossProjectiles();
   clearAllTelegraphs();
+  clearAllSingularities();
   clearAllAltWeaponEffects();
   clearAllDamageNumbers();
   clearAllComboPopups();
@@ -9237,6 +9238,218 @@ function clearAllTeslaCoils() {
   teslaCoils.length = 0;
 }
 
+// ── Evolved Weapon: Singularity Launcher (Charge Cannon → Singularity Launcher) ──
+// Charged shots create micro-black-holes that pull enemies in, then detonate.
+const singularities = []; // { position, mesh, createdAt, duration, pullRadius, pullForce, detonationDamage, phase, hand }
+
+function fireSingularityShot(controller, index, chargeTimeSec, stats, evo) {
+  const chargeRateMultiplier = stats.chargeRateMultiplier || 1;
+  const progress = chargeTimeToProgress(chargeTimeSec, chargeRateMultiplier);
+
+  // Only create singularity at 50%+ charge
+  if (progress < 0.5) {
+    // Weak shot: just fire a small projectile
+    const weakDamage = Math.round(stats.damage * progress * 2);
+    const origin = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    controller.getWorldPosition(origin);
+    controller.getWorldQuaternion(quat);
+    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+    spawnProjectile(origin, direction, index, { ...stats, damage: weakDamage }, undefined);
+    playShoothSound();
+    return;
+  }
+
+  // Max 3 singularities active at once
+  if (singularities.length >= 3) {
+    const oldest = singularities.shift();
+    scene.remove(oldest.mesh);
+    oldest.core.geometry.dispose();
+    oldest.core.material.dispose();
+    oldest.ring.geometry.dispose();
+    oldest.ring.material.dispose();
+    oldest.glow.geometry.dispose();
+    oldest.glow.material.dispose();
+  }
+
+  playChargeFireSound(progress);
+
+  // Place singularity 5m in front of controller
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const placePos = origin.clone().addScaledVector(forward, 5);
+  placePos.y = 1.0; // Waist height
+
+  // Create visual: purple-black distortion sphere
+  const group = new THREE.Group();
+
+  // Core: dark sphere
+  const coreGeo = new THREE.SphereGeometry(0.2, 16, 16);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0x220044,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  group.add(core);
+
+  // Event horizon ring
+  const ringGeo = new THREE.RingGeometry(0.4, 0.5, 24);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: evo.sigColor || 0x8800ff,
+    transparent: true,
+    opacity: 0.6,
+    side: THREE.DoubleSide,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI / 2;
+  group.add(ring);
+
+  // Outer glow
+  const glowGeo = new THREE.SphereGeometry(0.5, 12, 12);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x8800ff,
+    transparent: true,
+    opacity: 0.2,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  group.add(glow);
+
+  group.position.copy(placePos);
+  scene.add(group);
+
+  singularities.push({
+    position: placePos,
+    mesh: group,
+    core: core,
+    ring: ring,
+    glow: glow,
+    createdAt: performance.now(),
+    duration: evo.singularityDuration || 1500,
+    pullRadius: evo.pullRadius || 5,
+    pullForce: evo.pullForce || 8,
+    detonationDamage: evo.detonationDamage || 60,
+    progress: progress, // stronger charge = stronger singularity
+    phase: 'pull', // 'pull' then 'detonate'
+    hand: getHandForController(index),
+    active: true,
+  });
+}
+
+function updateSingularities(now, dt) {
+  const dtSec = dt / 1000; // convert ms dt to seconds for force calculations
+
+  for (let i = singularities.length - 1; i >= 0; i--) {
+    const sing = singularities[i];
+    const elapsed = now - sing.createdAt;
+
+    if (sing.phase === 'pull') {
+      // Pull enemies toward singularity
+      const nearby = enemySpatialHash.query(sing.position.x, sing.position.z, sing.pullRadius);
+      for (const enemy of nearby) {
+        if (!enemy || !enemy.mesh || enemy.hp <= 0) continue;
+        const toSing = new THREE.Vector3().subVectors(sing.position, enemy.mesh.position);
+        const dist = toSing.length();
+        if (dist < sing.pullRadius && dist > 0.3) {
+          // Force increases closer to center (inverse distance)
+          const forceMult = sing.pullForce * dtSec * (1 - dist / sing.pullRadius);
+          toSing.normalize().multiplyScalar(forceMult);
+          enemy.mesh.position.add(toSing);
+        }
+      }
+
+      // Animate: spin ring, pulse glow
+      sing.ring.rotation.z += dt * 0.01;
+      const pulse = 1 + Math.sin(elapsed * 0.01) * 0.3;
+      sing.glow.scale.setScalar(pulse);
+
+      // Check if pull phase is done (80% of duration)
+      if (elapsed > sing.duration * 0.8) {
+        sing.phase = 'detonate';
+
+        // Screen flash
+        renderer.setClearColor(0x8800ff, 1);
+        setTimeout(() => {
+          if (renderer) renderer.setClearColor(0x050008, 1);
+        }, 100);
+
+        // Camera shake
+        cameraShake = 0.2;
+        cameraShakeIntensity = 0.03;
+        originalCameraPos.copy(camera.position);
+      }
+    }
+
+    if (sing.phase === 'detonate') {
+      // Detonation: AoE damage to all enemies in range
+      const detRadius = sing.pullRadius * 0.8;
+      const nearby = enemySpatialHash.query(sing.position.x, sing.position.z, detRadius);
+      for (const enemy of nearby) {
+        if (!enemy || !enemy.mesh || enemy.hp <= 0) continue;
+        const distSq = enemy.mesh.position.distanceToSquared(sing.position);
+        if (distSq < detRadius * detRadius) {
+          const eIdx = activeEnemies.indexOf(enemy);
+          if (eIdx >= 0) {
+            // Damage falls off with distance
+            const dist = Math.sqrt(distSq);
+            const falloff = 1 - (dist / detRadius) * 0.5;
+            const dmg = Math.round(sing.detonationDamage * sing.progress * falloff);
+            hitEnemy(eIdx, dmg);
+          }
+        }
+      }
+
+      // Visual: expand and fade
+      sing.mesh.scale.setScalar(3);
+      sing.core.material.opacity = 0;
+      sing.glow.material.opacity = 0.5;
+      sing.ring.material.opacity = 0;
+
+      // Clean up after a brief moment
+      const meshRef = sing.mesh;
+      const coreRef = sing.core;
+      const ringRef = sing.ring;
+      const glowRef = sing.glow;
+      setTimeout(() => {
+        scene.remove(meshRef);
+        coreRef.geometry.dispose();
+        coreRef.material.dispose();
+        ringRef.geometry.dispose();
+        ringRef.material.dispose();
+        glowRef.geometry.dispose();
+        glowRef.material.dispose();
+      }, 200);
+
+      singularities.splice(i, 1);
+      playExplosionSound();
+      continue;
+    }
+
+    // Safety: remove if way past duration
+    if (elapsed > sing.duration * 2) {
+      scene.remove(sing.mesh);
+      disposeObject3D(sing.mesh);
+      singularities.splice(i, 1);
+    }
+  }
+}
+
+function clearAllSingularities() {
+  for (const sing of singularities) {
+    scene.remove(sing.mesh);
+    sing.core.geometry.dispose();
+    sing.core.material.dispose();
+    sing.ring.geometry.dispose();
+    sing.ring.material.dispose();
+    sing.glow.geometry.dispose();
+    sing.glow.material.dispose();
+  }
+  singularities.length = 0;
+}
+
 function updateLightningBeam(controller, index, stats, dt) {
   // Tesla Tower evolution: replace continuous beam with stationary coils
   const hand = getHandForController(index);
@@ -10150,6 +10363,14 @@ const _chargeVisualColor = new THREE.Color();
 // [CORE] Fire charge beam weapon
 function fireChargeBeam(controller, index, chargeTimeSec, stats, options = {}) {
   if (chargeTimeSec < CHARGE_SHOT_MIN_FIRE) return; // minimum charge to fire
+
+  // Singularity Launcher evolution: replace beam with gravity well
+  const _singHand = getHandForController(index);
+  const _singEvo = game.weaponEvolution[_singHand];
+  if (_singEvo && _singEvo.id === 'singularity_launcher') {
+    fireSingularityShot(controller, index, chargeTimeSec, stats, _singEvo);
+    return;
+  }
 
   const chargeRateMultiplier = stats.chargeRateMultiplier || 1;
   const damageMultiplier = stats.chargeDeathRayMultiplier || 1;
@@ -13120,6 +13341,7 @@ function render(timestamp) {
   profiler.mark('projectiles');
   updateProjectiles(dt);
   profiler.end('projectiles');
+  if (singularities.length > 0) updateSingularities(now, dt);
   updateFireTrails(now, dt);
   profiler.mark('voxelDebris');
   updateVoxelPhysics(dt, now);  // PHYSICS DEATH SYSTEM
