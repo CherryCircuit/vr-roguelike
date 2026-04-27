@@ -25,6 +25,8 @@ import {
   playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound, playComboSound,
   startLightningSound, stopLightningSound, pauseLightningSound,
+  startLightningOrbChargeSound, updateLightningOrbChargeSound, stopLightningOrbChargeSound,
+  playLightningOrbFireSound, startLightningOrbTravelLoop, stopLightningOrbTravelLoop,
   startLowHealthWarningSound, stopLowHealthWarningSound,
   playMusic, playBossMusic, stopMusic, fadeOutMusic,
   playKillsAlertSound, playTingSound, playSeekerBurstSound, playHealSound, playLevelCompleteSound,
@@ -376,6 +378,41 @@ const controllerTriggerPressed = [false, false];
 const upgradeTriggerLatched = [false, false];
 
 /**
+ * Pulse both VR controllers when the player takes damage.
+ * WebXR/Gamepad haptics are experimental and vary by browser, so every access
+ * is guarded and unsupported controllers silently no-op.
+ */
+function pulsePlayerHitHaptics(severity = 1) {
+  const intensity = THREE.MathUtils.clamp(0.45 + severity * 0.2, 0.35, 1.0);
+  const duration = Math.round(80 + THREE.MathUtils.clamp(severity, 0, 3) * 45);
+  for (let i = 0; i < controllers.length; i++) {
+    const gamepad = controllers[i]?.userData?.inputSource?.gamepad;
+    if (!gamepad) continue;
+    try {
+      const actuator = gamepad.hapticActuators?.[0];
+      if (actuator?.pulse) {
+        actuator.pulse(intensity, duration).catch(() => {});
+      } else if (gamepad.vibrationActuator?.playEffect) {
+        gamepad.vibrationActuator.playEffect('dual-rumble', {
+          startDelay: 0,
+          duration,
+          weakMagnitude: intensity,
+          strongMagnitude: intensity,
+        }).catch(() => {});
+      }
+    } catch (e) {
+      // Haptics support is partial; gameplay feedback continues via flash/SFX.
+    }
+  }
+}
+
+function applyPlayerDamage(amount, severity = amount) {
+  const dead = damagePlayer(amount);
+  pulsePlayerHitHaptics(severity);
+  return dead;
+}
+
+/**
  * Validate controller handedness after Quest sleep/wake.
  * If controllers swapped (e.g., right controller now shows as left),
  * re-map the controller references to match actual handedness.
@@ -530,6 +567,14 @@ const lightningBeams = [null, null];
 const lightningTimers = [0, 0];
 const LIGHTNING_BOLT_SEGMENTS = 8;
 const MAX_LIGHTNING_CHAINS = 6;
+const lightningOrbChargeStart = [null, null];
+const lightningOrbChargeVisuals = [null, null];
+const activeLightningOrbs = [];
+const LIGHTNING_ORB_MAX_POOL = 4;
+const LIGHTNING_ORB_SPEED = 8.5;
+const LIGHTNING_ORB_LIFETIME = 5000;
+const LIGHTNING_ORB_RADIUS_MIN = 0.18;
+const LIGHTNING_ORB_RADIUS_MAX = 0.6;
 
 // Charge shot state (per controller): time when trigger was pressed (ms) or null
 const chargeShotStartTime = [null, null];
@@ -2669,6 +2714,8 @@ function setupControllers() {
     
     controller.addEventListener('connected', (e) => {
       _log(`[controller] ${i} connected — ${e.data.handedness}`);
+      controller.userData.handedness = e.data.handedness;
+      controller.userData.inputSource = e.data;
       const display = blasterDisplays[i];
       if (display) {
         display.userData.hand = controller.userData.handedness;
@@ -2677,6 +2724,7 @@ function setupControllers() {
     });
     controller.addEventListener('disconnected', () => {
       _log(`[controller] ${i} disconnected`);
+      controller.userData.inputSource = null;
     });
 
     controller.add(createControllerVisual(i));
@@ -3774,6 +3822,17 @@ function handleCountrySelectTrigger(controller) {
 
 // [CORE] Handle trigger release (stop firing)
 function onTriggerRelease(index) {
+  if (lightningOrbChargeStart[index] !== null) {
+    const hand = getHandForController(index);
+    const stats = getWeaponStats(game.mainWeapon[hand], game.upgrades[hand]);
+    if (stats.lightning && isBossLightningLevel()) {
+      const chargeTimeSec = (performance.now() - lightningOrbChargeStart[index]) / 1000;
+      const controller = controllers[index];
+      if (controller) fireLightningOrb(controller, index, chargeTimeSec, stats);
+    }
+    clearLightningOrbCharge(index);
+  }
+
   // Charge shot: fire beam on release
   if (chargeShotStartTime[index] !== null) {
     const hand = getHandForController(index);
@@ -7318,6 +7377,7 @@ function completeLevel() {
 
   // Force-clear lightning beams so they don't persist through upgrade screen
   clearAllLightningBeams();
+  clearAllLightningOrbs();
   stopLightningSound();
 
   // Play victory fanfare
@@ -7500,6 +7560,7 @@ function clearAllAltWeaponEffects() {
   }
   explosionVisuals.length = 0;
   clearAllChargeBeamVisuals();
+  clearAllLightningOrbs();
 
   // Remove explosion pool meshes from scene and clear pool, then reinitialize
   for (let i = 0; i < explosionPool.length; i++) {
@@ -7589,6 +7650,7 @@ function showUpgradeScreen() {
 
   // Stop lightning sound during upgrade screen
   stopLightningSound();
+  clearAllLightningOrbs();
 
   // Fade out music before boss fights (levels 4→5, 9→10, 14→15, 19→20)
   if ([4, 9, 14, 19].includes(game.level)) {
@@ -7710,6 +7772,7 @@ function advanceLevelAfterUpgrade() {
   clearAllEnemies();
   clearAllProjectiles();
   clearAllLightningBeams();
+  clearAllLightningOrbs();
   clearAllChargeBeamVisuals();
   clearAllElectricArcs();
   clearBossProjectiles();
@@ -7847,6 +7910,9 @@ function togglePause() {
   if (game.state === State.PLAYING) {
     game.state = State.PAUSED;
     showPauseMenu();
+    clearAllLightningBeams();
+    pauseLightningSound();
+    clearAllLightningOrbs();
     // Release pointer lock when pausing
     if (document.pointerLockElement) {
       document.exitPointerLock();
@@ -7971,6 +8037,7 @@ function endGame(victory) {
   // Stop music and play game over track
   stopMusic();
   stopLightningSound();
+  clearAllLightningOrbs();
 
   if (victory) {
     showVictory(game.score, getAdjustedCameraPosition());
@@ -8629,7 +8696,7 @@ function updateLightningBeam(controller, index, stats, dt) {
   // Find enemies within lock-on range using spatial hash
   const nearbyEnemies = enemySpatialHash.query(_lightningOrigin.x, _lightningOrigin.z, stats.lightningRange);
   const targets = [];
-  const maxChains = 2 + Math.floor(stats.lightningRange / 8);
+  const maxChains = stats.lightningMaxTargets || 3;
   const lightningRangeSq = stats.lightningRange * stats.lightningRange;
 
   for (const e of nearbyEnemies) {
@@ -8768,6 +8835,9 @@ const _lightningToEnemy = new THREE.Vector3();
 const _lightningLastPos = new THREE.Vector3();
 const _lightningForwardEnd = new THREE.Vector3();
 const _lightningMidPoint = new THREE.Vector3();
+const _lightningOrbOrigin = new THREE.Vector3();
+const _lightningOrbQuat = new THREE.Quaternion();
+const _lightningOrbDir = new THREE.Vector3(0, 0, -1);
 
 // PERFORMANCE: Pooled lightning material (reused across bolts)
 const _lightningMaterial = new THREE.LineBasicMaterial({
@@ -8810,6 +8880,246 @@ function clearLightningBeam(index) {
   if (!beam) return;
   beam.visible = false;
   beam.geometry.setDrawRange(0, 0);
+}
+
+function isBossLightningLevel() {
+  return game._levelConfig?.isBoss || getBossTier(game.level) > 0;
+}
+
+function ensureLightningOrbChargeVisual(controller, index) {
+  let visual = lightningOrbChargeVisuals[index];
+  if (!visual) {
+    const group = new THREE.Group();
+    group.name = `lightning-orb-charge-${index}`;
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 16, 12),
+      basicMat(0xffff44, {
+        transparent: true,
+        opacity: 0.8,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      })
+    );
+    const glow = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 16, 12),
+      basicMat(0xff44ff, {
+        transparent: true,
+        opacity: 0.24,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      })
+    );
+    group.add(glow);
+    group.add(core);
+    group.position.set(0, 0, -0.18);
+    group.visible = false;
+    visual = { group, core, glow };
+    lightningOrbChargeVisuals[index] = visual;
+  }
+
+  if (controller && visual.group.parent !== controller) {
+    controller.add(visual.group);
+  }
+  return visual;
+}
+
+function updateLightningOrbCharge(controller, index, stats, now) {
+  if (lightningOrbChargeStart[index] === null) {
+    lightningOrbChargeStart[index] = now;
+    startLightningOrbChargeSound(index);
+  }
+
+  const chargeTime = (now - lightningOrbChargeStart[index]) / 1000;
+  const maxCharge = stats.lightningOrbChargeTime || 1.5;
+  const progress = Math.min(1, chargeTime / maxCharge);
+  const visual = ensureLightningOrbChargeVisual(controller, index);
+  const scale = THREE.MathUtils.lerp(0.55, 1.8, progress);
+  visual.group.visible = true;
+  visual.core.scale.setScalar(scale);
+  visual.glow.scale.setScalar(scale * 1.2);
+  visual.core.material.opacity = 0.55 + progress * 0.35;
+  visual.glow.material.opacity = 0.18 + progress * 0.28;
+  visual.group.rotation.y = now * 0.008;
+  updateLightningOrbChargeSound(index, progress);
+}
+
+function clearLightningOrbCharge(index) {
+  lightningOrbChargeStart[index] = null;
+  stopLightningOrbChargeSound(index);
+  const visual = lightningOrbChargeVisuals[index];
+  if (visual) visual.group.visible = false;
+}
+
+function acquireLightningOrbVisual() {
+  for (let i = 0; i < activeLightningOrbs.length; i++) {
+    if (!activeLightningOrbs[i].active) return activeLightningOrbs[i];
+  }
+  if (activeLightningOrbs.length >= LIGHTNING_ORB_MAX_POOL) {
+    releaseLightningOrb(activeLightningOrbs[0]);
+    return activeLightningOrbs[0];
+  }
+
+  const group = new THREE.Group();
+  group.name = 'lightning-boss-orb';
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 20, 14),
+    basicMat(0xffff66, {
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    })
+  );
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 20, 14),
+    basicMat(0xff44ff, {
+      transparent: true,
+      opacity: 0.3,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    })
+  );
+  group.add(glow);
+  group.add(core);
+  group.visible = false;
+  scene.add(group);
+
+  const orb = {
+    active: false,
+    group,
+    core,
+    glow,
+    position: new THREE.Vector3(),
+    velocity: new THREE.Vector3(),
+    radius: LIGHTNING_ORB_RADIUS_MIN,
+    createdAt: 0,
+    damage: 0,
+    hand: 'left',
+    controllerIndex: 0,
+    travelLoop: null,
+  };
+  activeLightningOrbs.push(orb);
+  return orb;
+}
+
+function releaseLightningOrb(orb) {
+  if (!orb) return;
+  orb.active = false;
+  orb.group.visible = false;
+  stopLightningOrbTravelLoop(orb.travelLoop);
+  orb.travelLoop = null;
+}
+
+function fireLightningOrb(controller, index, chargeTimeSec, stats) {
+  const maxCharge = stats.lightningOrbChargeTime || 1.5;
+  const progress = Math.max(0, Math.min(1, chargeTimeSec / maxCharge));
+  if (progress <= 0.05) return;
+
+  controller.getWorldPosition(_lightningOrbOrigin);
+  controller.getWorldQuaternion(_lightningOrbQuat);
+  _lightningOrbDir.set(0, 0, -1).applyQuaternion(_lightningOrbQuat).normalize();
+
+  const orb = acquireLightningOrbVisual();
+  orb.active = true;
+  orb.position.copy(_lightningOrbOrigin).addScaledVector(_lightningOrbDir, 0.25);
+  orb.velocity.copy(_lightningOrbDir).multiplyScalar(LIGHTNING_ORB_SPEED);
+  orb.radius = THREE.MathUtils.lerp(LIGHTNING_ORB_RADIUS_MIN, LIGHTNING_ORB_RADIUS_MAX, progress);
+  orb.createdAt = performance.now();
+  // Boss-mode Lightning Rod is deliberately capped so upgrades matter without
+  // deleting level bosses in one release.
+  orb.damage = Math.min(
+    stats.lightningOrbDamageCap || 280,
+    Math.round(stats.lightningDamage * THREE.MathUtils.lerp(6, 12, progress))
+  );
+  orb.hand = getHandForController(index);
+  orb.controllerIndex = index;
+  orb.group.position.copy(orb.position);
+  orb.group.scale.setScalar(orb.radius);
+  orb.group.visible = true;
+  orb.travelLoop = startLightningOrbTravelLoop(progress);
+  playLightningOrbFireSound(progress);
+}
+
+function clearAllLightningOrbs() {
+  for (let i = 0; i < activeLightningOrbs.length; i++) {
+    releaseLightningOrb(activeLightningOrbs[i]);
+  }
+  for (let i = 0; i < lightningOrbChargeStart.length; i++) {
+    clearLightningOrbCharge(i);
+  }
+}
+
+function updateLightningOrbs(dt, now) {
+  for (let i = activeLightningOrbs.length - 1; i >= 0; i--) {
+    const orb = activeLightningOrbs[i];
+    if (!orb.active) continue;
+
+    if (now - orb.createdAt > LIGHTNING_ORB_LIFETIME) {
+      releaseLightningOrb(orb);
+      continue;
+    }
+
+    orb.position.addScaledVector(orb.velocity, dt);
+    orb.group.position.copy(orb.position);
+    orb.group.rotation.y += dt * 8;
+    orb.core.material.opacity = 0.75 + Math.sin(now * 0.02) * 0.12;
+    orb.glow.material.opacity = 0.24 + Math.sin(now * 0.014) * 0.08;
+
+    const bossProjectiles = getBossProjectiles();
+    for (let pi = bossProjectiles.length - 1; pi >= 0; pi--) {
+      const bossProj = bossProjectiles[pi];
+      if (!bossProj) continue;
+      const hitRadius = orb.radius + (bossProj.hitRadius || 0.45);
+      if (orb.position.distanceToSquared(bossProj.position) <= hitRadius * hitRadius) {
+        spawnBossProjectileDestructionFX(bossProj.position.clone());
+        if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
+        bossProjectiles.splice(pi, 1);
+      }
+    }
+
+    for (let pi = projectiles.length - 1; pi >= 0; pi--) {
+      const hostile = projectiles[pi];
+      if (!isHostileProjectile(hostile)) continue;
+      const hitRadius = orb.radius + 0.35;
+      if (orb.position.distanceToSquared(hostile.position) <= hitRadius * hitRadius) {
+        triggerHostileProjectileExplosion(hostile.position.clone(), 0.35, 0);
+        disposeObject3D(hostile);
+        projectiles.splice(pi, 1);
+      }
+    }
+
+    const boss = getBoss();
+    if (!boss?.mesh) continue;
+    const bossRadius = boss.def?.behavior === 'eclipse' ? 4.0 : 2.2;
+    const hitRadius = orb.radius + bossRadius;
+    if (orb.position.distanceToSquared(boss.mesh.position) > hitRadius * hitRadius) continue;
+
+    const result = hitBoss(orb.damage, { isLightningOrb: true, handIndex: orb.controllerIndex });
+    spawnDamageNumber(boss.mesh.position.clone(), result.immune ? 0 : orb.damage, result.immune ? '#aaaaaa' : '#ffff44');
+    if (result.shieldReflected) {
+      const dead = applyPlayerDamage(1);
+      setKilledBy({ type: 'boss', name: boss.def?.name || 'Boss', enemyType: boss.def?.behavior || '' });
+      triggerHitFlash(true);
+      playDamageSound();
+      if (dead) endGame(false);
+    } else if (result.immune) {
+      playTingSound();
+    } else {
+      game.handStats[orb.hand].totalDamage += orb.damage;
+      playHitSound();
+      if (result.killed) {
+        playExplosionSound();
+        game.kills++;
+        trackKill(true);
+        game.killsWithoutHit++;
+        addScore(boss.scoreValue);
+        updateHUD(game);
+        checkKillsAlert();
+        startBossDeathCinematic(boss);
+      }
+    }
+    releaseLightningOrb(orb);
+  }
 }
 
 /**
@@ -9333,7 +9643,7 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats, options = {}) {
       if (result.shieldReflected) {
         spawnDamageNumber(boss.mesh.position.clone(), 0, '#ff00ff');
         playHitSound();
-        const dead = damagePlayer(1);
+        const dead = applyPlayerDamage(1);
         setKilledBy({ type: 'boss', name: boss.def?.name || 'Boss', enemyType: boss.def?.behavior || '' });
         triggerHitFlash(true);
         playDamageSound();
@@ -9791,7 +10101,7 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex, hitObj
   if (result.shieldReflected) {
     spawnDamageNumber(hitPoint, 0, '#ff00ff');  // Show 0 damage in magenta
     playHitSound();
-    const dead = damagePlayer(1);
+    const dead = applyPlayerDamage(1);
     setKilledBy({ type: 'boss', name: boss.def?.name || 'Boss', enemyType: boss.def?.behavior || '' });
     triggerHitFlash(true);
     playDamageSound();
@@ -9964,7 +10274,9 @@ function updateExplosionVisuals(dt, now) {
           ).length();
           
           if (dist < m.userData.radius && typeof damagePlayer === 'function') {
-            const _dead = damagePlayer(m.userData.damage);
+            const _dead = applyPlayerDamage(m.userData.damage);
+            triggerHitFlash(true);
+            playDamageSound();
             if (_dead && game.state === State.PLAYING) {
               const _boss = getBoss();
               setKilledBy({ type: 'environment', name: _boss?.def?.name || 'Toxic Pool', enemyType: 'toxic_pool' });
@@ -10047,7 +10359,9 @@ if (typeof window !== 'undefined') {
     const dist = playerPos.distanceTo(position);
     if (dist < radius) {
       if (typeof damagePlayer === 'function') {
-        const _dead = damagePlayer(damage);
+        const _dead = applyPlayerDamage(damage);
+        triggerHitFlash(true);
+        playDamageSound();
         if (_dead && game.state === State.PLAYING) {
           const _boss = getBoss();
           setKilledBy({ type: 'explosion', name: _boss?.def?.name || 'Explosion', enemyType: 'explosion' });
@@ -10280,7 +10594,9 @@ function updateProjectiles(dt) {
 
         if (dist < 1.0) {
           if (typeof damagePlayer === 'function') {
-            const _dead = damagePlayer(proj.userData.damage);
+            const _dead = applyPlayerDamage(proj.userData.damage);
+            triggerHitFlash(true);
+            playDamageSound();
             if (_dead && game.state === State.PLAYING) {
               if (proj.userData.isBossProjectile) {
                 const bossName = proj.userData.bossName || getBoss()?.def?.name || 'Boss';
@@ -11027,7 +11343,11 @@ function render(timestamp) {
             }
           }
         } else if (stats.lightning) {
-          updateLightningBeam(controllers[i], i, stats, dt);
+          if (isBossLightningLevel()) {
+            updateLightningOrbCharge(controllers[i], i, stats, now);
+          } else {
+            updateLightningBeam(controllers[i], i, stats, dt);
+          }
         } else if (stats.windUp) {
           // Plasma carbine wind-up mechanic
           if (plasmaCarbineSpinStart[i] === null) {
@@ -11066,6 +11386,9 @@ function render(timestamp) {
         if (lightningBeams[i]) {
           clearLightningBeam(i);
         }
+        if (lightningOrbChargeStart[i] !== null) {
+          clearLightningOrbCharge(i);
+        }
         // Clean up plasma carbine spin state
         plasmaCarbineSpinStart[i] = null;
       }
@@ -11101,7 +11424,11 @@ function render(timestamp) {
                 }
               }
             } else if (stats.lightning) {
-              updateLightningBeam(virtualController, 0, stats, dt);
+              if (isBossLightningLevel()) {
+                updateLightningOrbCharge(virtualController, 0, stats, now);
+              } else {
+                updateLightningBeam(virtualController, 0, stats, dt);
+              }
             } else if (stats.windUp) {
               // Plasma carbine wind-up mechanic
               if (plasmaCarbineSpinStart[0] === null) {
@@ -11148,7 +11475,11 @@ function render(timestamp) {
                 }
               }
             } else if (stats.lightning) {
-              updateLightningBeam(virtualController, 1, stats, dt);
+              if (isBossLightningLevel()) {
+                updateLightningOrbCharge(virtualController, 1, stats, now);
+              } else {
+                updateLightningBeam(virtualController, 1, stats, dt);
+              }
             } else if (stats.windUp) {
               // Plasma carbine wind-up mechanic
               if (plasmaCarbineSpinStart[1] === null) {
@@ -11185,6 +11516,15 @@ function render(timestamp) {
           if (virtualController) virtualController.userData.chargeReadySoundPlayed = false;
           chargeShotStartTime[0] = null;
         }
+        if (lightningOrbChargeStart[0] !== null) {
+          const virtualController = getVirtualController('left');
+          const stats = getWeaponStats(game.mainWeapon.left, game.upgrades.left);
+          if (virtualController && stats.lightning && isBossLightningLevel()) {
+            const chargeTimeSec = (now - lightningOrbChargeStart[0]) / 1000;
+            fireLightningOrb(virtualController, 0, chargeTimeSec, stats);
+          }
+          clearLightningOrbCharge(0);
+        }
         if (chargeShotStartTime[1] !== null) {
           // Fire the charge shot on release
           const virtualController = getVirtualController('right');
@@ -11197,6 +11537,15 @@ function render(timestamp) {
           hideChargeVisuals(1);
           if (virtualController) virtualController.userData.chargeReadySoundPlayed = false;
           chargeShotStartTime[1] = null;
+        }
+        if (lightningOrbChargeStart[1] !== null) {
+          const virtualController = getVirtualController('right');
+          const stats = getWeaponStats(game.mainWeapon.right, game.upgrades.right);
+          if (virtualController && stats.lightning && isBossLightningLevel()) {
+            const chargeTimeSec = (now - lightningOrbChargeStart[1]) / 1000;
+            fireLightningOrb(virtualController, 1, chargeTimeSec, stats);
+          }
+          clearLightningOrbCharge(1);
         }
         // Clear lightning beams
         if (lightningBeams[0]) {
@@ -11407,7 +11756,7 @@ function render(timestamp) {
       const _enemy = enemies[index];
       const _enemyType = _enemy?.type || 'unknown';
       destroyEnemy(index);
-      const dead = damagePlayer(1);
+      const dead = applyPlayerDamage(1);
       setKilledBy({ type: 'enemy', name: ENEMY_DISPLAY_NAMES[_enemyType] || _enemyType.toUpperCase(), enemyType: _enemyType });
       triggerHitFlash(true);
       playDamageSound();
@@ -11442,7 +11791,7 @@ function render(timestamp) {
 
       if (!boss._lastContactHit || now - boss._lastContactHit >= contactCooldown) {
         boss._lastContactHit = now;
-        const dead = damagePlayer(contactDamage);
+        const dead = applyPlayerDamage(contactDamage);
         setKilledBy({ type: 'boss', name: boss.def?.name || 'Boss', enemyType: boss.def?.behavior || '' });
         triggerHitFlash(true);
         playDamageSound();
@@ -11473,7 +11822,7 @@ function render(timestamp) {
         if (minionMesh.position.distanceTo(playerPos) < 1.0) {
           if (!minionMesh.userData._lastContactHit || now2 - minionMesh.userData._lastContactHit >= 1200) {
             minionMesh.userData._lastContactHit = now2;
-            const dead = damagePlayer(1);
+            const dead = applyPlayerDamage(1);
             setKilledBy({ type: 'boss', name: boss?.def?.name || 'Boss Minion', enemyType: boss?.def?.behavior || 'minion' });
             triggerHitFlash(true);
             playDamageSound();
@@ -11513,7 +11862,7 @@ function render(timestamp) {
       if (proj._instIdx !== undefined) releaseBossProjIndex(proj._instIdx);
       bossProjs.splice(i, 1);
 
-      const dead = damagePlayer(proj.damage || 1);
+      const dead = applyPlayerDamage(proj.damage || 1);
       const projBossName = proj.userData?.bossName || getBoss()?.def?.name || 'Boss';
       const projBossBehavior = proj.userData?.bossBehavior || getBoss()?.def?.behavior || '';
       setKilledBy({ type: 'boss', name: projBossName, enemyType: projBossBehavior });
@@ -12201,6 +12550,7 @@ function render(timestamp) {
   if (activeShields.length > 0) updateShields(now);
   if (activeStasisFields.length > 0) updateStasisFields(now, dt);
   if (activePlasmaOrbs.length > 0) updatePlasmaOrbs(now, dt);
+  if (activeLightningOrbs.length > 0) updateLightningOrbs(dt, now);
   updateExplosions(dt, now);
   updateVFX(dt);
   // Always update: handles both pooled explosions and non-pooled visuals.

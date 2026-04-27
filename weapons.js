@@ -57,7 +57,7 @@ export const MAIN_WEAPONS = {
       aoeRadius: 0,
       spreadAngle: 0,
       lightning: true,
-      lightningRange: 10,
+      lightningRange: 14,
       lightningTickInterval: 0.1,
     },
   },
@@ -546,6 +546,19 @@ export function getWeaponStats(mainWeaponId, upgrades) {
   
   // Apply universal damage modifiers
   if (u.overcharge) damage *= 1.2;
+
+  // Lightning Rod upgrades are applied here so card text, HUD previews, and
+  // gameplay all read from the same computed stat object.
+  let lightningRange = base.lightningRange || 0;
+  let lightningMaxTargets = base.lightning ? 3 : 0;
+  if (mainWeaponId === 'lightning_rod') {
+    const teslaStacks = u.tesla_coil || 0;
+    if (teslaStacks > 0) {
+      damage *= 1 + teslaStacks * 0.5;
+      lightningRange *= 1 + teslaStacks * 0.2;
+    }
+    lightningMaxTargets += (u.its_electric || 0) * 2;
+  }
   
   // Vampiric / Life Steal
   const vampiricStacks = (u.vampiric || 0) + (u.life_steal || 0) * 2;
@@ -580,9 +593,12 @@ export function getWeaponStats(mainWeaponId, upgrades) {
     effects,
     ricochetBounces: u.ricochet || 0,
     lightning: base.lightning || false,
-    lightningRange: base.lightningRange || 0,
+    lightningRange,
+    lightningMaxTargets,
     lightningTickInterval: base.lightningTickInterval || 0.2,
     lightningDamage: Math.round(damage),
+    lightningOrbChargeTime: 1.5,
+    lightningOrbDamageCap: 280,
     chargeShot: base.chargeShot || false,
     chargeTimeMax: base.chargeTimeMax || 5.0,
     chargeDamageMultiplier: base.chargeDamageMultiplier || 3.0,

@@ -728,6 +728,7 @@ export async function initHUD(camera, scene) {
     loadLayout('ready-screen'),
     loadLayout('scoreboard'),
     loadLayout('settings'),
+    loadLayout('bestiary'),
   ]);
 
   // ── Title Screen (world-space, fixed position) ──
@@ -1111,28 +1112,27 @@ export function updateTitle(now) {
 // ── Bestiary Screen ───────────────────────────────────────
 
 const BESTIARY_ENTRIES = [
-  { id: 'basic', name: 'Drone', firstLevel: 1, color: 0x00ff88, pattern: [[0,1,0],[1,1,1],[0,1,0]], voxelSize: 0.29, desc: 'A simple recon drone. Slow but steady, these units form the backbone of every wave.' },
-  { id: 'fast', name: 'Sneak', firstLevel: 3, color: 0xffff00, pattern: [[1],[1]], voxelSize: 0.24, desc: 'Lightning-fast interceptor. Fragile but hard to hit.' },
-  { id: 'jelly', name: 'Stack', firstLevel: 4, color: 0xff66ff, pattern: [[1],[1],[1],[1],[1]], voxelSize: 0.22, desc: 'Tall, unstable energy columns that shrink when damaged. Faster as they lose segments.' },
-  { id: 'tank', name: 'Sentinel', firstLevel: 6, color: 0x4488ff, pattern: [[1,1,1],[1,1,1]], voxelSize: 0.36, desc: 'Heavily armored assault unit. Slow but durable.' },
-  { id: 'spiral_swimmer', name: 'Spiral Swimmer', firstLevel: 7, color: 0x00ffcc, pattern: [[1]], voxelSize: 0.18, desc: 'Serpentine train of segments weaving in spirals. Break the chain.' },
-  { id: 'swarm', name: 'Dart', firstLevel: 8, color: 0xff8800, pattern: [[1]], voxelSize: 0.19, desc: 'Tiny seekers that hunt in packs. Weak alone, deadly together.' },
-  { id: 'mortar', name: 'Mortar', firstLevel: 9, color: 0xff0000, pattern: [[0,1,0],[1,0,1],[0,1,0],[0,1,0]], voxelSize: 0.24, desc: 'Long-range artillery lobbing explosive projectiles. Close the gap or dodge.' },
-  { id: 'conductor', name: 'Commander', firstLevel: 10, color: 0xff66cc, pattern: [[1,0,1],[0,1,0],[1,0,1]], voxelSize: 0.28, desc: 'Tactical node linking nearby enemies, boosting speed and reducing damage taken.' },
-  { id: 'mirror_knight', name: 'Mirror Knight', firstLevel: 12, color: 0xd0d0d0, pattern: [[1,1,1],[1,0,1],[1,1,1]], voxelSize: 0.32, desc: 'Reflective warrior that phases to dodge. Temporarily immune after hits.' },
-  { id: 'scrap_golem', name: 'Scrap Golem', firstLevel: 5, color: 0x886644, pattern: [[0,1,1,0],[1,1,1,1],[1,1,1,1],[0,1,1,0]], voxelSize: 0.35, desc: 'Hulking salvage assembly. Slams ground, summons scraplings.', isBoss: true },
-  { id: 'holo_phantom', name: 'Holo Phantom', firstLevel: 5, color: 0x00ffff, pattern: [[0,1,0],[1,1,1],[1,1,1],[0,1,0]], voxelSize: 0.3, desc: 'Ghostly projection that teleports and deploys decoys.', isBoss: true },
-  { id: 'pulse_emitter', name: 'Pulse Emitter', firstLevel: 5, color: 0xff0088, pattern: [[1,1,1],[1,0,1],[1,1,1]], voxelSize: 0.32, desc: 'Pulsing core with rhythmic shields. Strike between cycles.', isBoss: true },
-  { id: 'rust_serpent', name: 'Rust Serpent', firstLevel: 5, color: 0xcc4400, pattern: [[1,0,0,0,0],[1,1,0,0,0],[0,1,1,0,0],[0,0,1,1,0],[0,0,0,1,1]], voxelSize: 0.28, desc: 'Segmented serpent spitting toxic projectiles.', isBoss: true },
-  { id: 'static_wisp', name: 'Static Wisp', firstLevel: 5, color: 0xffff00, pattern: [[0,0,1,0,0],[0,1,1,1,0],[1,1,0,1,1],[0,1,1,1,0],[0,0,1,0,0]], voxelSize: 0.25, desc: 'Crackling entity arcing electricity between positions.', isBoss: true },
-  { id: 'skull_boss', name: 'NECRO', firstLevel: 5, color: 0xffffff, pattern: [[1]], voxelSize: 0.4, desc: 'Massive skull with animated hands. Destroy hands to expose skull.', isBoss: true },
-  { id: 'the_prism', name: 'THE PRISM', firstLevel: 10, color: 0xff44ff, pattern: [[1]], voxelSize: 0.35, desc: 'Crystalline entity refracting damage into rainbow shards. Summons prismatic walls.', isBoss: true },
-  { id: 'neon_minotaur', name: 'Blood Minotaur', firstLevel: 15, color: 0xd70200, pattern: [[1]], voxelSize: 0.4, desc: 'Charging juggernaut with shockwaves and blood shards.', isBoss: true },
-  { id: 'eclipse_engine', name: 'Eclipse Engine', firstLevel: 20, color: 0x33ccff, pattern: [[1]], voxelSize: 0.45, desc: 'The final boss. Seals reality, charges beams, summons walls. Break the seals.', isBoss: true },
+  { id: 'basic', name: 'Drone', firstLevel: 1, color: 0x00ff88, pattern: [[0,1,0],[1,1,1],[0,1,0]], voxelSize: 0.24, desc: 'Baseline chaser. Slow, direct, and dangerous in numbers.' },
+  { id: 'fast', name: 'Sneak', firstLevel: 3, color: 0xffff00, pattern: [[1],[1]], voxelSize: 0.22, desc: 'Fast interceptor with low health and a narrow silhouette.' },
+  { id: 'tank', name: 'Sentinel', firstLevel: 4, color: 0x4488ff, pattern: [[1,1,1],[1,1,1]], voxelSize: 0.28, desc: 'Armored block unit. Slower than drones but much harder to burn down.' },
+  { id: 'swarm', name: 'Dart', firstLevel: 6, color: 0xff8800, pattern: [[1]], voxelSize: 0.18, desc: 'Tiny pack hunter. Weak alone, but packs force quick target switching.' },
+  { id: 'spiral_swimmer', name: 'Spiral Swimmer', firstLevel: 11, color: 0x00ffcc, pattern: [[1]], voxelSize: 0.16, trainLength: 10, desc: 'Segment train that snakes through space. Break the chain before it crowds you.' },
+  { id: 'jelly', name: 'Stack', firstLevel: 13, color: 0x66ffcc, pattern: [[1],[1],[1],[1],[1]], voxelSize: 0.18, desc: 'Tall energy column. Losing segments makes it shorter and more frantic.' },
+  { id: 'conductor', name: 'Commander', firstLevel: 14, color: 0xff66cc, pattern: [[1,0,1],[0,1,0],[1,0,1]], voxelSize: 0.24, desc: 'Support node that links nearby enemies with speed and damage resistance.' },
+  { id: 'mortar', name: 'Mortar', firstLevel: 17, color: 0xff0000, pattern: [[0,1,0],[1,0,1],[0,1,0],[0,1,0]], voxelSize: 0.2, desc: 'Artillery unit that lobs hostile shots. Dodge the arc or shoot the projectile.' },
+  { id: 'skull_boss', name: 'BOSS: NECRO', firstLevel: 5, color: 0xffffff, desc: 'Giant skull and hands. Remove the hands before the skull becomes vulnerable.', isBoss: true },
+  { id: 'the_prism', name: 'BOSS: THE PRISM', firstLevel: 10, color: 0xff44ff, desc: 'Rotating crystal boss. Read the vulnerable color and avoid healing the wrong facet.', isBoss: true },
+  { id: 'neon_minotaur', name: 'BOSS: BLOOD MINOTAUR', firstLevel: 15, color: 0xd70200, desc: 'Charging juggernaut. Sidestep lunges, horns, shockwaves, and shard bursts.', isBoss: true },
+  { id: 'eclipse_engine', name: 'BOSS: ECLIPSE ENGINE', firstLevel: 20, color: 0x33ccff, desc: 'Final engine. Break seals, survive walls, and expose the heart.', isBoss: true },
 ];
 
-function buildVoxelModel(pattern, voxelSize, color) {
+function bestiaryObjectName(prefix, id, suffix) {
+  return `bestiary-${prefix}-${id}-${suffix}`;
+}
+
+function buildVoxelModel(pattern, voxelSize, color, id = 'unknown') {
   const group = new THREE.Group();
+  group.name = bestiaryObjectName('model', id, 'voxel-group');
   const geo = new THREE.BoxGeometry(voxelSize * 0.95, voxelSize * 0.95, voxelSize * 0.95);
   const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, depthWrite: false, fog: false });
   const rows = pattern.length;
@@ -1143,6 +1143,7 @@ function buildVoxelModel(pattern, voxelSize, color) {
     for (let c = 0; c < cols; c++) {
       if (pattern[r][c]) {
         const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = bestiaryObjectName('model', id, `voxel-r${r}-c${c}`);
         mesh.position.set((c - cx) * voxelSize, (cy - r) * voxelSize, 0);
         group.add(mesh);
       }
@@ -1153,105 +1154,256 @@ function buildVoxelModel(pattern, voxelSize, color) {
 
 function buildQuestionMark() {
   const group = new THREE.Group();
+  group.name = 'bestiary-model-undiscovered-question-mark';
   const mat = new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.6 });
   const curve = new THREE.TorusGeometry(0.15, 0.03, 8, 16, Math.PI * 1.5);
   const curveMesh = new THREE.Mesh(curve, mat);
+  curveMesh.name = 'bestiary-model-undiscovered-question-curve';
   curveMesh.position.y = 0.15;
   group.add(curveMesh);
   const dot = new THREE.SphereGeometry(0.04, 8, 8);
   const dotMesh = new THREE.Mesh(dot, mat);
+  dotMesh.name = 'bestiary-model-undiscovered-question-dot';
   dotMesh.position.y = -0.1;
   group.add(dotMesh);
   return group;
 }
 
-export function showBestiary(playerPos) {
-  // Clear previous content
-  while (bestiaryGroup.children.length) {
-    const child = bestiaryGroup.children[0];
-    bestiaryGroup.remove(child);
+function buildBestiaryTrainModel(entry) {
+  const group = new THREE.Group();
+  group.name = bestiaryObjectName('model', entry.id, 'train-group');
+  const segmentCount = entry.trainLength || 10;
+  const geo = new THREE.BoxGeometry(entry.voxelSize * 0.95, entry.voxelSize * 0.95, entry.voxelSize * 0.95);
+  const mat = new THREE.MeshBasicMaterial({
+    color: entry.color,
+    transparent: true,
+    opacity: 0.78,
+    depthWrite: false,
+    fog: false,
+  });
+
+  // Bestiary preview mirrors the in-game train silhouette: multiple connected
+  // voxels in a sinuous path instead of the data-only one-voxel pattern marker.
+  for (let i = 0; i < segmentCount; i++) {
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = bestiaryObjectName('model', entry.id, `train-segment-${i}`);
+    const t = i - (segmentCount - 1) / 2;
+    mesh.position.set(t * entry.voxelSize * 0.7, Math.sin(i * 0.75) * entry.voxelSize * 0.9, 0);
+    mesh.scale.setScalar(1 - i * 0.025);
+    group.add(mesh);
   }
+  return group;
+}
+
+function buildBestiaryBossModel(id) {
+  const group = new THREE.Group();
+  group.name = bestiaryObjectName('model', id, 'boss-group');
+  let boxIndex = 0;
+  const addBox = (x, y, z, sx, sy, sz, color, opacity = 0.82) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(sx, sy, sz),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, fog: false })
+    );
+    mesh.name = bestiaryObjectName('model', id, `boss-part-${boxIndex++}`);
+    mesh.position.set(x, y, z);
+    group.add(mesh);
+    return mesh;
+  };
+
+  if (id === 'skull_boss') {
+    [[0,0],[1,0],[-1,0],[0,1],[1,1],[-1,1],[0,-1]].forEach(([x, y]) => addBox(x * 0.18, y * 0.18, 0, 0.16, 0.16, 0.16, 0xffffff));
+    addBox(-0.18, 0.02, -0.02, 0.07, 0.07, 0.18, 0xff0044, 1);
+    addBox(0.18, 0.02, -0.02, 0.07, 0.07, 0.18, 0xff0044, 1);
+    addBox(-0.48, -0.02, 0, 0.22, 0.12, 0.12, 0xffffff, 0.7);
+    addBox(0.48, -0.02, 0, 0.22, 0.12, 0.12, 0xffffff, 0.7);
+  } else if (id === 'the_prism') {
+    const geo = new THREE.OctahedronGeometry(0.34, 0);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff44ff, transparent: true, opacity: 0.78, depthWrite: false, fog: false });
+    const prism = new THREE.Mesh(geo, mat);
+    prism.name = bestiaryObjectName('model', id, 'prism-core');
+    group.add(prism);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 }));
+    edges.name = bestiaryObjectName('model', id, 'prism-edges');
+    group.add(edges);
+  } else if (id === 'neon_minotaur') {
+    addBox(0, 0, 0, 0.38, 0.3, 0.22, 0xd70200);
+    addBox(0, 0.26, 0, 0.24, 0.2, 0.18, 0xff3333);
+    addBox(-0.24, 0.34, 0, 0.28, 0.06, 0.06, 0xffffff, 0.9);
+    addBox(0.24, 0.34, 0, 0.28, 0.06, 0.06, 0xffffff, 0.9);
+    addBox(-0.15, -0.3, 0, 0.1, 0.28, 0.1, 0x660000);
+    addBox(0.15, -0.3, 0, 0.1, 0.28, 0.1, 0x660000);
+  } else {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.32, 0.035, 8, 24),
+      new THREE.MeshBasicMaterial({ color: 0x33ccff, transparent: true, opacity: 0.75, depthWrite: false, fog: false })
+    );
+    ring.name = bestiaryObjectName('model', id, 'engine-ring');
+    group.add(ring);
+    addBox(0, 0, 0, 0.18, 0.18, 0.18, 0xffffff, 0.9);
+    for (let i = 0; i < 4; i++) {
+      const angle = i * Math.PI / 2;
+      addBox(Math.cos(angle) * 0.32, Math.sin(angle) * 0.32, 0, 0.12, 0.12, 0.12, 0x0099ff, 0.72);
+    }
+  }
+  group.userData.isBestiaryModel = true;
+  return group;
+}
+
+function buildBestiaryModel(entry) {
+  if (entry.id === 'spiral_swimmer') {
+    const model = buildBestiaryTrainModel(entry);
+    model.userData.isBestiaryModel = true;
+    return model;
+  }
+  const model = entry.isBoss
+    ? buildBestiaryBossModel(entry.id)
+    : buildVoxelModel(entry.pattern, entry.voxelSize, entry.color, entry.id);
+  model.userData.isBestiaryModel = true;
+  return model;
+}
+
+function colorToHex(color) {
+  return '#' + color.toString(16).padStart(6, '0');
+}
+
+export function showBestiary(playerPos) {
+  disposeGroupChildren(bestiaryGroup);
+  bestiaryBackBtn = null;
   bestiaryGroup.visible = true;
 
   // Position in front of player (same pattern as scoreboard)
   if (playerPos) {
     bestiaryGroup.position.copy(playerPos);
-    bestiaryGroup.position.y += 1.6 + SCENE_Y_OFFSET + 0.3;
+    bestiaryGroup.position.y += 1.6 + SCENE_Y_OFFSET + 0.1;
     bestiaryGroup.position.z -= 4;
   } else {
-    bestiaryGroup.position.set(0, 1.6 + SCENE_Y_OFFSET + 0.3, -4);
+    bestiaryGroup.position.set(0, 1.6 + SCENE_Y_OFFSET + 0.1, -4);
   }
   bestiaryGroup.rotation.set(0, 0, 0);
+  bestiaryGroup.scale.setScalar(0.8);
 
-  const highestLevel = parseInt(localStorage.getItem('spaceomicide_highest_level') || '0', 10);
+  const layout = layoutCache['bestiary']?.elements || {};
+  const le = (key, defaults) => ({ ...defaults, ...(layout[key] || {}) });
 
   // Title
+  const titleDef = le('title', { x: 0, y: 1.42, z: 0, fontSize: 90, scale: 0.525, color: 0x00ffff, glow: true });
+  titleDef.y = 1.62;
+  titleDef.fontSize = 90;
+  titleDef.scale = 0.525;
   const titleSprite = makeSprite('BESTIARY', {
-    fontSize: 70, color: '#00ffff', glow: true, glowColor: '#00ffff', glowSize: 5, scale: 0.35,
+    fontSize: titleDef.fontSize, color: colorToHex(titleDef.color), glow: titleDef.glow, glowColor: colorToHex(titleDef.color), glowSize: 5, scale: titleDef.scale,
   });
-  titleSprite.position.set(0, 0.9, 0);
+  titleSprite.name = 'bestiary-title-text';
+  titleSprite.position.set(titleDef.x, titleDef.y, titleDef.z);
   bestiaryGroup.add(titleSprite);
 
-  // Back button
-  const backGeo = new THREE.PlaneGeometry(1.0, 0.2);
-  const backMat = new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-  const backMesh = new THREE.Mesh(backGeo, backMat);
-  backMesh.position.set(0, -1.2, 0);
-  backMesh.userData.scoreboardAction = 'back';
-  bestiaryGroup.add(backMesh);
-  bestiaryGroup.add(new THREE.LineSegments(
-    new THREE.EdgesGeometry(backGeo),
-    new THREE.LineBasicMaterial({ color: 0xff4444 })
-  ));
-  const backText = makeSprite('BACK', {
-    fontSize: 60, color: '#ff4444', glow: true, glowColor: '#ff4444', scale: 0.2,
+  const bgGeo = new THREE.PlaneGeometry(9.35, 4.45);
+  bgGeo.name = 'bestiary-background-panel-geometry';
+  const bgMat = new THREE.MeshBasicMaterial({
+    color: 0x02050c,
+    transparent: true,
+    opacity: 0.42,
+    depthWrite: false,
+    side: THREE.DoubleSide,
   });
-  backText.position.set(0, -1.2, 0.02);
-  bestiaryGroup.add(backText);
+  bgMat.name = 'bestiary-background-panel-material';
+  const bgMesh = new THREE.Mesh(bgGeo, bgMat);
+  bgMesh.name = 'bestiary-background-panel';
+  bgMesh.position.set(0, -0.25, -0.65);
+  bgMesh.scale.set(1.25, 0.8, 1);
+  bgMesh.renderOrder = 0;
+  bestiaryGroup.add(bgMesh);
+
+  const backDef = le('backBtnGroup', { x: 0, y: -2.45, z: 0, w: 0.9, h: 0.35, color: 0x330000, opacity: 0.9, borderColor: 0xff4444 });
+  backDef.y = -2.45;
+  backDef.w = 0.9;
+  backDef.h = 0.35;
+  backDef.color = 0x330000;
+  backDef.opacity = 0.9;
+  backDef.borderColor = 0xff4444;
+  const backTextDef = le('backBtnText', { x: 0, y: -2.45, z: 0.01, fontSize: 52, scale: 0.2, color: 0xff6666, glow: false });
+  backTextDef.y = -2.45;
+  backTextDef.z = 0.01;
+  backTextDef.fontSize = 52;
+  backTextDef.scale = 0.2;
+  backTextDef.color = 0xff6666;
+  backTextDef.glow = false;
+  const backGroup = new THREE.Group();
+  backGroup.position.set(backDef.x, backDef.y, backDef.z);
+  backGroup.name = 'bestiary-back';
+  const backGeo = new THREE.PlaneGeometry(backDef.w, backDef.h);
+  const backMat = new THREE.MeshBasicMaterial({ color: backDef.color, transparent: true, opacity: backDef.opacity, side: THREE.DoubleSide });
+  const backMesh = new THREE.Mesh(backGeo, backMat);
+  backMesh.name = 'bestiary-back-button-background';
+  backMesh.userData.scoreboardAction = 'back';
+  backMesh.userData.borderColor = 0xff4444;
+  backGroup.add(backMesh);
+  const backBorder = new THREE.LineSegments(new THREE.EdgesGeometry(backGeo), new THREE.LineBasicMaterial({ color: 0xff4444 }));
+  backBorder.name = 'bestiary-back-button-border';
+  backGroup.add(backBorder);
+  const backText = makeSprite('BACK', {
+    fontSize: 52, color: '#ff6666', scale: 0.2,
+  });
+  backText.name = 'bestiary-back-button-text';
+  backText.position.set(backTextDef.x - backDef.x, backTextDef.y - backDef.y, 0.01);
+  backGroup.add(backText);
   bestiaryBackBtn = backMesh;
+  bestiaryGroup.add(backGroup);
 
-  // Enemy grid - 6 columns
-  const COLS = 6;
-  const CARD_W = 0.6;
-  const CARD_H = 0.5;
-  const startX = -((COLS - 1) * CARD_W) / 2;
-  const startY = 0.3;
+  // Two-row layout: regular enemies span wide across row 1, bosses sit in row 2.
+  // VR affordance: this intentionally uses a wider horizontal arc so players can
+  // look left/right instead of stacking a third row into the readable area.
+  const REGULAR_ROW_Y = 0.3;
+  const BOSS_ROW_Y = -1.1;
+  const REGULAR_CARD_W = 1.1;
+  const BOSS_CARD_W = 1.35;
+  const regularEntries = BESTIARY_ENTRIES.filter(entry => !entry.isBoss);
+  const bossEntries = BESTIARY_ENTRIES.filter(entry => entry.isBoss);
 
-  BESTIARY_ENTRIES.forEach((entry, i) => {
-    const col = i % COLS;
-    const row = Math.floor(i / COLS);
-    const x = startX + col * CARD_W;
-    const y = startY - row * CARD_H;
+  BESTIARY_ENTRIES.forEach((entry) => {
+    const rowEntries = entry.isBoss ? bossEntries : regularEntries;
+    const rowIndex = rowEntries.indexOf(entry);
+    const spacing = entry.isBoss ? BOSS_CARD_W : REGULAR_CARD_W;
+    const x = -((rowEntries.length - 1) * spacing) / 2 + rowIndex * spacing;
+    const y = entry.isBoss ? BOSS_ROW_Y : REGULAR_ROW_Y;
 
-    const discovered = highestLevel >= entry.firstLevel;
     const cardGroup = new THREE.Group();
+    cardGroup.name = bestiaryObjectName('entry', entry.id, 'card-group');
     cardGroup.position.set(x, y, 0);
 
-    // Model
-    const model = discovered
-      ? buildVoxelModel(entry.pattern, entry.voxelSize * 0.8, entry.color)
-      : buildQuestionMark();
-    model.scale.setScalar(0.6);
-    model.position.y = 0.05;
+    const model = buildBestiaryModel(entry);
+    model.renderOrder = 1;
+    const modelScale = entry.isBoss ? 0.54 : (
+      entry.id === 'spiral_swimmer' ? 0.85 :
+      (entry.id === 'conductor' || entry.id === 'mortar') ? 0.55 :
+      0.72
+    );
+    model.scale.setScalar(modelScale);
+    model.position.set(0, 0.3, 0);
     cardGroup.add(model);
 
-    // Name
-    const nameText = makeSprite(discovered ? entry.name : '???', {
-      fontSize: 40, color: discovered ? '#' + entry.color.toString(16).padStart(6, '0') : '#888888',
-      glow: discovered, glowColor: discovered ? '#' + entry.color.toString(16).padStart(6, '0') : '#444444',
-      scale: 0.18,
+    const nameText = makeSprite(entry.name, {
+      fontSize: 34, color: colorToHex(entry.color),
+      glow: true, glowColor: colorToHex(entry.color),
+      scale: 0.24,
     });
-    nameText.position.y = -0.1;
+    nameText.name = bestiaryObjectName('entry', entry.id, 'name-text');
+    nameText.position.y = -0.02;
     cardGroup.add(nameText);
 
-    // Description (discovered only)
-    if (discovered && entry.desc) {
-      const descText = makeSprite(entry.desc, {
-        fontSize: 22, color: '#aaaaaa', scale: 0.1, forceArial: true,
-      });
-      descText.position.y = -0.22;
-      cardGroup.add(descText);
-    }
+    const metaText = makeSprite(`L${entry.firstLevel}`, {
+      fontSize: 34, color: '#ffdd66', scale: 0.28, forceArial: true,
+    });
+    metaText.name = bestiaryObjectName('entry', entry.id, 'level-text');
+    metaText.position.set(0, -0.16, 0.01);
+    cardGroup.add(metaText);
+
+    const descText = makeSprite(entry.desc, {
+      fontSize: 34, color: '#c8d8dd', scale: 0.9, maxWidth: 390, forceArial: true,
+    });
+    descText.name = bestiaryObjectName('entry', entry.id, 'description-text');
+    descText.position.y = -0.43;
+    cardGroup.add(descText);
 
     bestiaryGroup.add(cardGroup);
   });
@@ -1259,10 +1411,8 @@ export function showBestiary(playerPos) {
 
 export function hideBestiary() {
   bestiaryGroup.visible = false;
-  while (bestiaryGroup.children.length) {
-    const child = bestiaryGroup.children[0];
-    bestiaryGroup.remove(child);
-  }
+  disposeGroupChildren(bestiaryGroup);
+  bestiaryBackBtn = null;
 }
 
 export function isBestiaryVisible() {
@@ -1277,11 +1427,9 @@ export function getBestiaryHit(raycaster) {
 
 export function updateBestiary(now) {
   if (!bestiaryGroup.visible) return;
-  bestiaryGroup.children.forEach(child => {
-    if (child.isGroup && child !== bestiaryBackBtn?.parent) {
-      child.children.forEach(sub => {
-        if (sub.isGroup) sub.rotation.y = now * 0.001;
-      });
+  bestiaryGroup.traverse(child => {
+    if (child.userData?.isBestiaryModel) {
+      child.rotation.y = now * 0.001;
     }
   });
 }
@@ -4448,6 +4596,13 @@ export function updateHUDHover(raycasters) {
   if (settingsGroup.visible) {
     settingsGroup.traverse(c => {
       if (c.userData && c.userData.isSettingsBtn) hoverables.push(c);
+    });
+  }
+
+  // 9. Bestiary BACK hit plane
+  if (bestiaryGroup.visible) {
+    bestiaryGroup.traverse(c => {
+      if (c.userData && c.userData.scoreboardAction) hoverables.push(c);
     });
   }
 

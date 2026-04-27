@@ -567,72 +567,75 @@ export function playNukeExplosionSound() {
 }
 
 // ── Player damage ──────────────────────────────────────────
+let playerDamageNoiseBuffer = null;
+
+function getPlayerDamageNoiseBuffer(ctx) {
+  if (playerDamageNoiseBuffer) return playerDamageNoiseBuffer;
+  const noiseBufferSize = Math.floor(ctx.sampleRate * 0.5);
+  playerDamageNoiseBuffer = ctx.createBuffer(1, noiseBufferSize, ctx.sampleRate);
+  const noiseData = playerDamageNoiseBuffer.getChannelData(0);
+  for (let i = 0; i < noiseBufferSize; i++) {
+    // Cached harsh noise keeps player-hit SFX distinct without allocating a
+    // fresh random buffer on every damage event.
+    noiseData[i] = Math.random() * 2 - 1;
+  }
+  return playerDamageNoiseBuffer;
+}
+
 export function playDamageSound() {
-  // Minecraft-style "OUCH" - sharp static crack with extended decay
-  // Extended from 0.12s to 0.22s for better feedback feel
   const ctx = getAudioContext();
   const t = ctx.currentTime;
 
-  // 1. WHITE NOISE BURST - the "crack" sound (like Minecraft hit)
-  const noiseBufferSize = Math.floor(ctx.sampleRate * 0.22); // 220ms (extended from 120ms)
-  const noiseBuffer = ctx.createBuffer(1, noiseBufferSize, ctx.sampleRate);
-  const noiseData = noiseBuffer.getChannelData(0);
-  for (let i = 0; i < noiseBufferSize; i++) {
-    noiseData[i] = Math.random() * 2 - 1; // White noise
-  }
-
+  // Player hurt alarm: noisy front edge plus a descending dissonant pair so it
+  // reads as health loss instead of the normal weapon impact crack.
   const noise = ctx.createBufferSource();
-  noise.buffer = noiseBuffer;
+  noise.buffer = getPlayerDamageNoiseBuffer(ctx);
+  noise.playbackRate.setValueAtTime(0.9, t);
 
-  // Sharp bandpass filter for "crack" character
   const noiseFilter = ctx.createBiquadFilter();
   noiseFilter.type = 'bandpass';
-  noiseFilter.frequency.setValueAtTime(2000, t); // Mid-high crack
-  noiseFilter.Q.setValueAtTime(2, t);
+  noiseFilter.frequency.setValueAtTime(1800, t);
+  noiseFilter.frequency.exponentialRampToValueAtTime(520, t + 0.36);
+  noiseFilter.Q.setValueAtTime(3.5, t);
 
-  // Noise envelope: INSTANT attack, extended decay
   const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.8, t); // LOUD initial crack (increased from 0.5)
-  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15); // Extended decay
+  noiseGain.gain.setValueAtTime(0.38, t);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
 
   noise.connect(noiseFilter);
   noiseFilter.connect(noiseGain);
   noiseGain.connect(getSfxOutput());
-
   noise.start(t);
-  noise.stop(t + 0.22);
+  noise.stop(t + 0.42);
 
-  // 2. LOW THUMP - body impact feel (extended decay)
   const thumpOsc = ctx.createOscillator();
   thumpOsc.type = 'sine';
-  thumpOsc.frequency.setValueAtTime(150, t);
-  thumpOsc.frequency.exponentialRampToValueAtTime(40, t + 0.2); // Extended drop
+  thumpOsc.frequency.setValueAtTime(120, t);
+  thumpOsc.frequency.exponentialRampToValueAtTime(34, t + 0.24);
 
   const thumpGain = ctx.createGain();
-  thumpGain.gain.setValueAtTime(0.4, t); // Strong initial thump
-  thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.2); // Extended decay
+  thumpGain.gain.setValueAtTime(0.42, t);
+  thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
 
   thumpOsc.connect(thumpGain);
   thumpGain.connect(getSfxOutput());
-
   thumpOsc.start(t);
-  thumpOsc.stop(t + 0.2);
+  thumpOsc.stop(t + 0.3);
 
-  // 3. HIGH CRACK - add sharpness (like a whip crack)
-  const crackOsc = ctx.createOscillator();
-  crackOsc.type = 'square';
-  crackOsc.frequency.setValueAtTime(800, t);
-  crackOsc.frequency.exponentialRampToValueAtTime(100, t + 0.08); // Extended drop
-
-  const crackGain = ctx.createGain();
-  crackGain.gain.setValueAtTime(0.15, t);
-  crackGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08); // Extended decay
-
-  crackOsc.connect(crackGain);
-  crackGain.connect(getSfxOutput());
-
-  crackOsc.start(t);
-  crackOsc.stop(t + 0.08);
+  const alarmFreqs = [760, 610];
+  for (let i = 0; i < alarmFreqs.length; i++) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 0 ? 'sawtooth' : 'square';
+    osc.frequency.setValueAtTime(alarmFreqs[i], t + i * 0.015);
+    osc.frequency.exponentialRampToValueAtTime(180 - i * 35, t + 0.33);
+    gain.gain.setValueAtTime(i === 0 ? 0.16 : 0.11, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.34);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.015);
+    osc.stop(t + 0.36);
+  }
 }
 
 // ── Enemy/Boss Projectile Fire Sound ─────────────────────────
@@ -1795,6 +1798,108 @@ export function stopLightningSound() {
     lightningVolumeTimeout = null;
   }
   lightningPaused = false;
+}
+
+// ── Lightning Rod boss orb sounds ───────────────────────────
+const lightningOrbChargeNodes = [null, null];
+
+export function startLightningOrbChargeSound(handIndex = 0) {
+  stopLightningOrbChargeSound(handIndex);
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const shimmer = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const shimmerGain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  // Boss-mode charge should not be confused with the charge cannon; this is a
+  // thinner electrical whine with a bright shimmer layer.
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(180, t);
+  shimmer.type = 'square';
+  shimmer.frequency.setValueAtTime(520, t);
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(900, t);
+  filter.Q.setValueAtTime(5, t);
+  gain.gain.setValueAtTime(0.001, t);
+  gain.gain.exponentialRampToValueAtTime(0.1, t + 0.08);
+  shimmerGain.gain.setValueAtTime(0.025, t);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(getSfxOutput());
+  shimmer.connect(shimmerGain);
+  shimmerGain.connect(getSfxOutput());
+  osc.start(t);
+  shimmer.start(t);
+  lightningOrbChargeNodes[handIndex] = { ctx, osc, shimmer, gain, shimmerGain, filter };
+}
+
+export function updateLightningOrbChargeSound(handIndex = 0, progress = 0) {
+  const node = lightningOrbChargeNodes[handIndex];
+  if (!node) return;
+  const t = node.ctx.currentTime;
+  const p = Math.max(0, Math.min(1, progress));
+  node.osc.frequency.setTargetAtTime(180 + p * 460, t, 0.035);
+  node.shimmer.frequency.setTargetAtTime(520 + p * 880, t, 0.035);
+  node.filter.frequency.setTargetAtTime(900 + p * 1600, t, 0.035);
+  node.gain.gain.setTargetAtTime(0.08 + p * 0.1, t, 0.04);
+  node.shimmerGain.gain.setTargetAtTime(0.02 + p * 0.04, t, 0.04);
+}
+
+export function stopLightningOrbChargeSound(handIndex = 0) {
+  const node = lightningOrbChargeNodes[handIndex];
+  if (!node) return;
+  const t = node.ctx.currentTime;
+  node.gain.gain.cancelScheduledValues(t);
+  node.shimmerGain.gain.cancelScheduledValues(t);
+  node.gain.gain.setTargetAtTime(0.001, t, 0.02);
+  node.shimmerGain.gain.setTargetAtTime(0.001, t, 0.02);
+  node.osc.stop(t + 0.08);
+  node.shimmer.stop(t + 0.08);
+  lightningOrbChargeNodes[handIndex] = null;
+}
+
+export function playLightningOrbFireSound(progress = 1) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const p = Math.max(0, Math.min(1, progress));
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(420 + p * 260, t);
+  osc.frequency.exponentialRampToValueAtTime(80, t + 0.24);
+  gain.gain.setValueAtTime(0.18 + p * 0.12, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 0.28);
+}
+
+export function startLightningOrbTravelLoop(progress = 1) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const p = Math.max(0, Math.min(1, progress));
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(170 + p * 90, t);
+  gain.gain.setValueAtTime(0.001, t);
+  gain.gain.exponentialRampToValueAtTime(0.035 + p * 0.025, t + 0.05);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  return { ctx, osc, gain };
+}
+
+export function stopLightningOrbTravelLoop(loop) {
+  if (!loop) return;
+  const t = loop.ctx.currentTime;
+  loop.gain.gain.cancelScheduledValues(t);
+  loop.gain.gain.setTargetAtTime(0.001, t, 0.02);
+  loop.osc.stop(t + 0.08);
 }
 
 // ── Music System ───────────────────────────────────────────
