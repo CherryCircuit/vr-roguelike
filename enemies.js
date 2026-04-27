@@ -11805,7 +11805,7 @@ export function spawnMortarProjectile(fromPos, targetPos, arcHeight = 2.0) {
     hitRadius: 0.3,
     lobbed: true,
     gravity: 9.8,
-    userData: { isMortarProjectile: true },
+    userData: { isBossProjectile: false, isMortarProjectile: true },
   });
 
   _bossProjMatrix.compose(fromPos, _identityQuat, _unitScale);

@@ -10286,6 +10286,8 @@ function updateProjectiles(dt) {
                 const bossName = proj.userData.bossName || getBoss()?.def?.name || 'Boss';
                 const bossBehavior = proj.userData.bossBehavior || getBoss()?.def?.behavior || '';
                 setKilledBy({ type: 'boss', name: bossName, enemyType: bossBehavior });
+              } else if (proj.userData.isMortarProjectile) {
+                setKilledBy({ type: 'enemy', name: 'Mortar', enemyType: 'mortar' });
               } else {
                 setKilledBy({ type: 'enemy', name: 'Enemy Projectile', enemyType: 'projectile' });
               }
