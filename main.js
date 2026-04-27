@@ -8917,8 +8917,10 @@ function ensureLightningOrbChargeVisual(controller, index) {
     lightningOrbChargeVisuals[index] = visual;
   }
 
-  if (controller && visual.group.parent !== controller) {
-    controller.add(visual.group);
+  // Desktop virtual controllers are plain objects (no .add()), so attach to camera instead
+  const parent = (controller && typeof controller.add === 'function') ? controller : camera;
+  if (parent && visual.group.parent !== parent) {
+    parent.add(visual.group);
   }
   return visual;
 }
