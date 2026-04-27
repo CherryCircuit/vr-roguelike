@@ -8757,6 +8757,60 @@ function updateHostileProjectileVisual(proj, now) {
 // COUPLING: weaponCooldowns, chargeShotStartTime, projectiles[]
 // ============================================================
 // [CORE] Fire main weapon (pistol, shotgun, etc.)
+// ── Evolved Weapon: Twin Helix (Standard Blaster → Twin Helix) ──
+// Fires two projectiles that spiral around each other in a double helix.
+function fireTwinHelix(controller, index, stats, evo) {
+  const now = performance.now();
+  if (now - weaponCooldowns[index] < (evo.fireInterval || stats.fireInterval)) return;
+  weaponCooldowns[index] = now;
+
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
+
+  const helixRadius = evo.helixRadius || 0.3;
+  const helixSpeed = evo.helixSpeed || 8;
+  const damage = evo.damage || stats.damage;
+  const shotId = startAccuracyShot(2, getHandForController(index));
+
+  if (ENABLE_MUZZLE_FLASH) {
+    showMuzzleFlash(origin, forward);
+  }
+
+  // Fire two projectiles with helix offset
+  for (let i = 0; i < 2; i++) {
+    const phaseOffset = i * Math.PI; // 180 degrees apart
+    const spawnPos = origin.clone();
+    const offset = right.clone().multiplyScalar(Math.cos(phaseOffset) * helixRadius * 0.3);
+    spawnPos.add(offset);
+
+    const proj = spawnProjectile(spawnPos, forward, index, {
+      ...stats,
+      damage: damage,
+      projectileCount: 1,
+    }, shotId, { suppressSound: true });
+
+    if (proj && proj.userData) {
+      proj.userData.isHelix = true;
+      proj.userData.helixIndex = i;
+      proj.userData.helixPhase = phaseOffset;
+      proj.userData.helixRadius = helixRadius;
+      proj.userData.helixSpeed = helixSpeed;
+      proj.userData.helixForward = forward.clone();
+      proj.userData.helixRight = right.clone();
+      proj.userData.helixUp = up.clone();
+      proj.userData.helixOrigin = spawnPos.clone();
+      proj.userData.helixTime = 0;
+    }
+  }
+
+  playShoothSound(2);
+}
+
 function fireMainWeapon(controller, index) {
   const now = performance.now();
   const hand = getHandForController(index);
@@ -8771,6 +8825,16 @@ function fireMainWeapon(controller, index) {
   // Charge shot mode - handled separately, fires on trigger release
   if (stats.chargeShot) {
     return;  // Charge shot fires on release, not on press
+  }
+
+  // ── Evolved weapons ──
+  const evo = game.weaponEvolution[hand];
+  if (evo) {
+    if (evo.id === 'twin_helix') {
+      fireTwinHelix(controller, index, stats, evo);
+      return;
+    }
+    // Future evolutions will be added here
   }
 
   // Check cooldown
@@ -10900,8 +10964,30 @@ function updateProjectiles(dt) {
     }
 
     // Move projectile (apply stasis slow effect)
-    const moveDistance = proj.userData.velocity.length() * adjustedDt;
-    proj.position.addScaledVector(proj.userData.velocity, adjustedDt);
+    let moveDistance;
+    if (proj.userData.isHelix) {
+      // Helix projectile: spiral movement
+      proj.userData.helixTime += adjustedDt;
+      const t = proj.userData.helixTime;
+      const helixRadius = proj.userData.helixRadius;
+      const helixSpeed = proj.userData.helixSpeed;
+      const phase = proj.userData.helixPhase;
+
+      const forwardProgress = proj.userData.velocity.length() * t;
+      const basePos = proj.userData.helixOrigin.clone()
+        .addScaledVector(proj.userData.helixForward, forwardProgress);
+
+      const offsetX = Math.cos(t * helixSpeed + phase) * helixRadius;
+      const offsetY = Math.sin(t * helixSpeed + phase) * helixRadius;
+      basePos.addScaledVector(proj.userData.helixRight, offsetX);
+      basePos.addScaledVector(proj.userData.helixUp, offsetY);
+
+      proj.position.copy(basePos);
+      moveDistance = proj.userData.velocity.length() * adjustedDt;
+    } else {
+      moveDistance = proj.userData.velocity.length() * adjustedDt;
+      proj.position.addScaledVector(proj.userData.velocity, adjustedDt);
+    }
 
     // Commit position to InstancedMesh (sync GPU buffer)
     if (proj.commit) {
