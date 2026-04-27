@@ -7596,6 +7596,9 @@ function clearAllAltWeaponEffects() {
     for (let i = 0; i < DEBRIS_GLOW_POOL_SIZE; i++) _debrisGlowFree.push(i);
   }
 
+  // Clear active tesla coils
+  clearAllTeslaCoils();
+
   _log('[cleanup] Cleared all alt-weapon effects and visuals');
 }
 
@@ -7971,6 +7974,7 @@ function advanceLevelAfterUpgrade() {
   clearAllLightningOrbs();
   clearAllChargeBeamVisuals();
   clearAllElectricArcs();
+  clearAllTeslaCoils();
   clearBossProjectiles();
   clearAllTelegraphs();
   clearAllAltWeaponEffects();
@@ -9087,7 +9091,161 @@ function fireMainWeapon(controller, index) {
 const LIGHTNING_FORWARD_RANGE = 0.5;  // Max forward beam length when no enemies in range (~1-2 feet, prevents cheesing boss fights)
 const LIGHTNING_BOSS_PROJ_RADIUS_SQ = 1.0;  // Hit radius squared for boss projectile intersection
 
+// ── Evolved Weapon: Tesla Tower (Lightning Rod → Tesla Tower) ──
+// Creates stationary electrical coils that arc to nearby enemies.
+const teslaCoils = []; // { position, mesh, core, ring, createdAt, duration, range, damage, arcInterval, lastArcTime, hand }
+
+function updateTeslaTower(controller, index, stats, evo, dt) {
+  const now = performance.now();
+  const hand = getHandForController(index);
+
+  // Update existing coils (tick damage, animations, expiry)
+  updateTeslaCoils(now);
+
+  // If trigger is pressed, try to place a new coil
+  if (controllerTriggerPressed[index]) {
+    const handCoils = teslaCoils.filter(c => c.hand === hand);
+    if (handCoils.length < (evo.maxCoils || 2)) {
+      // 1s cooldown between placements to prevent spam
+      const lastPlaceTime = handCoils.reduce((max, c) => Math.max(max, c.createdAt), 0);
+      if (now - lastPlaceTime > 1000) {
+        placeTeslaCoil(controller, index, evo, now);
+      }
+    }
+  }
+
+  // Keep lightning sound playing while coils are active
+  const hasActiveCoils = teslaCoils.some(c => c.hand === hand);
+  if (hasActiveCoils) {
+    startLightningSound();
+  }
+}
+
+function placeTeslaCoil(controller, index, evo, now) {
+  const hand = getHandForController(index);
+
+  // Place coil 4m in front of the controller
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+
+  const placeDistance = 4;
+  const placePos = origin.clone().addScaledVector(forward, placeDistance);
+  placePos.y = 0.5; // Hover slightly above ground
+
+  // Create visual: glowing orb with pulsing ring
+  const group = new THREE.Group();
+
+  const coreGeo = new THREE.SphereGeometry(0.15, 12, 12);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: evo.sigColor || 0x4488ff,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  group.add(core);
+
+  // Outer ring
+  const ringGeo = new THREE.RingGeometry(0.3, 0.35, 16);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0x88ccff,
+    transparent: true,
+    opacity: 0.5,
+    side: THREE.DoubleSide,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI / 2;
+  group.add(ring);
+
+  group.position.copy(placePos);
+  scene.add(group);
+
+  teslaCoils.push({
+    position: placePos,
+    mesh: group,
+    core: core,
+    ring: ring,
+    createdAt: now,
+    duration: evo.coilDuration || 3000,
+    range: evo.coilRange || 6,
+    damage: evo.arcDamage || 8,
+    arcInterval: evo.arcInterval || 500,
+    lastArcTime: 0,
+    hand: hand,
+    active: true,
+  });
+
+  playShoothSound();
+}
+
+function updateTeslaCoils(now) {
+  for (let i = teslaCoils.length - 1; i >= 0; i--) {
+    const coil = teslaCoils[i];
+    const elapsed = now - coil.createdAt;
+
+    // Expired — remove and clean up
+    if (elapsed > coil.duration) {
+      scene.remove(coil.mesh);
+      disposeMesh(coil.core, false);
+      disposeMesh(coil.ring, false);
+      teslaCoils.splice(i, 1);
+      continue;
+    }
+
+    // Pulse the ring
+    const pulse = 1 + Math.sin(elapsed * 0.005) * 0.2;
+    coil.ring.scale.setScalar(pulse);
+    coil.ring.material.opacity = 0.3 + Math.sin(elapsed * 0.008) * 0.2;
+
+    // Core rotation
+    coil.core.rotation.y += 0.02;
+
+    // Fade out in last 30% of lifetime
+    if (elapsed > coil.duration * 0.7) {
+      const fadeProgress = (elapsed - coil.duration * 0.7) / (coil.duration * 0.3);
+      coil.core.material.opacity = 0.9 * (1 - fadeProgress);
+    }
+
+    // Arc damage on interval
+    if (now - coil.lastArcTime >= coil.arcInterval) {
+      coil.lastArcTime = now;
+
+      const nearby = enemySpatialHash.query(coil.position.x, coil.position.z, coil.range);
+      for (const enemy of nearby) {
+        if (!enemy || !enemy.mesh || enemy.hp <= 0) continue;
+        const distSq = enemy.mesh.position.distanceToSquared(coil.position);
+        if (distSq < coil.range * coil.range) {
+          const eIdx = activeEnemies.indexOf(enemy);
+          if (eIdx >= 0) {
+            hitEnemy(eIdx, coil.damage);
+            applyEffects(eIdx, [{ type: 'shock', stacks: 1 }]);
+          }
+        }
+      }
+    }
+  }
+}
+
+function clearAllTeslaCoils() {
+  for (const coil of teslaCoils) {
+    scene.remove(coil.mesh);
+    disposeMesh(coil.core, false);
+    disposeMesh(coil.ring, false);
+  }
+  teslaCoils.length = 0;
+}
+
 function updateLightningBeam(controller, index, stats, dt) {
+  // Tesla Tower evolution: replace continuous beam with stationary coils
+  const hand = getHandForController(index);
+  const evo = game.weaponEvolution[hand];
+  if (evo && evo.id === 'tesla_tower') {
+    updateTeslaTower(controller, index, stats, evo, dt);
+    return;
+  }
+
   controller.getWorldPosition(_lightningOrigin);
   controller.getWorldQuaternion(_lightningQuat);
   _lightningDirCalc.set(0, 0, -1).applyQuaternion(_lightningQuat);
