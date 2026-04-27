@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game } from './game.js';
+import { getEvolutionProgress } from './weapons.js';
 import { playMenuHoverSound, playMenuClick, playBasicEnemySpawn } from './audio.js';
 import {
   TextPopupPool, initDamageNumbers, disposePools,
@@ -1802,6 +1803,25 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   weaponSprite.name = 'upgrade-cards-weapon-name';
   upgradeGroup.add(weaponSprite);
 
+  // Show evolution progress if any recipe pieces collected
+  try {
+    const mainWeaponId = game.mainWeapon[hand];
+    const progress = getEvolutionProgress(mainWeaponId, game.upgrades[hand]);
+    if (progress && progress.collected > 0) {
+      const dots = progress.recipeIds.map((id, i) =>
+        i < progress.collected ? '\u25CF' : '\u25CB'
+      ).join(' ');
+      const progressText = `${progress.evo.name}: ${progress.collected}/${progress.total}  ${dots}`;
+      const progressSprite = makeSprite(progressText, {
+        fontSize: 24,
+        color: '#' + progress.evo.sigColor.toString(16).padStart(6, '0'),
+        scale: 0.2,
+      });
+      progressSprite.position.set(0, 0.55, 0); // below weapon name
+      upgradeGroup.add(progressSprite);
+    }
+  } catch(e) { /* non-critical */ }
+
   // Cooldown text
   const cooldownDef = _uc('cooldownSprite', { x: 0, y: 0.876, z: 0, fontSize: 60, scale: 0.25, glow: false, color: 0xffff00 });
   const cooldownSprite = makeSprite('WAIT...', { fontSize: cooldownDef.fontSize, color: '#' + cooldownDef.color.toString(16).padStart(6, '0'), scale: cooldownDef.scale, glow: cooldownDef.glow });
@@ -2205,6 +2225,24 @@ function createUpgradeCard(upgrade, position, hand, style) {
   iconMesh.visible = true;
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
+
+  // Check if this upgrade is part of an evolution recipe
+  try {
+    const mainWeaponId = game.mainWeapon[hand];
+    const progress = getEvolutionProgress(mainWeaponId, game.upgrades[hand]);
+    if (progress && progress.recipeIds.includes(upgrade.id) && !progress.collectedIds.includes(upgrade.id)) {
+      // This is an uncollected recipe piece — add \u26A1 badge
+      const badgeSprite = makeSprite('\u26A1', {
+        fontSize: 36,
+        color: '#FFD700',
+        scale: 0.08,
+        glow: true,
+        glowColor: '#FFD700',
+      });
+      badgeSprite.position.set(0.14, 0.18, 0.01);
+      group.add(badgeSprite);
+    }
+  } catch(e) { /* non-critical, don't break card rendering */ }
 
   return group;
 }

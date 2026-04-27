@@ -23,6 +23,7 @@ export const State = {
   READY_SCREEN: 'ready_screen',
   BOSS_ALERT: 'boss_alert',
   BOSS_DEATH_CINEMATIC: 'boss_death_cinematic',
+  EVOLUTION_CINEMATIC: 'evolution_cinematic',
   PAUSED: 'paused',
 };
 

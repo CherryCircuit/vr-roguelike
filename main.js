@@ -2773,6 +2773,10 @@ const WEAPON_SPHERE_COLORS = {
 };
 
 function getWeaponSphereColor(weaponId, hand) {
+  // Check if weapon has evolved — use evolution signature color
+  const evo = game.weaponEvolution[hand];
+  if (evo) return evo.sigColor;
+
   const entry = WEAPON_SPHERE_COLORS[weaponId];
   if (!entry) return hand === 'right' ? NEON_PINK : NEON_CYAN;
   if (typeof entry === 'number') return entry;
@@ -7722,6 +7726,183 @@ function finalizeUpgradeSelection() {
   advanceLevelAfterUpgrade();
 }
 
+// ── Evolution Cinematic ──────────────────────────────
+let evoCinematicState = null; // { evo, hand, phase, elapsed, objects: {} }
+
+function startEvolutionCinematic(evo, hand) {
+  const controllerIndex = hand === 'left' ? 0 : 1;
+  const controller = controllers[controllerIndex];
+
+  if (!controller) {
+    // Fallback: no controller, skip cinematic
+    _log('[evolution] No controller, skipping cinematic');
+    finalizeUpgradeSelection();
+    return;
+  }
+
+  game.state = State.EVOLUTION_CINEMATIC;
+
+  evoCinematicState = {
+    evo,
+    hand,
+    controllerIndex,
+    phase: 'announce', // announce -> float_up -> transform -> return -> done
+    elapsed: 0,
+    phaseStart: performance.now(),
+    objects: {},
+  };
+
+  // Phase 1: Show announcement text
+  showFloatingMessage(`\u26A1 ${evo.name.toUpperCase()}`, {
+    duration: 2000,
+    color: '#' + evo.sigColor.toString(16).padStart(6, '0'),
+    fontSize: 60,
+  });
+
+  _log(`[evolution] Cinematic started for ${evo.name}`);
+}
+
+function updateEvolutionCinematic(now, dt) {
+  if (!evoCinematicState) return;
+
+  const { evo, hand, controllerIndex, phase, phaseStart, objects } = evoCinematicState;
+  const controller = controllers[controllerIndex];
+  const elapsed = (now - phaseStart) / 1000; // seconds
+
+  if (phase === 'announce') {
+    // 0-1.5s: announcement text shown
+    if (elapsed > 1.5) {
+      evoCinematicState.phase = 'float_up';
+      evoCinematicState.phaseStart = now;
+
+      // Get the weapon visual sphere from the controller
+      const visual = controller.children.find(c => c.name === `controller-visual-${hand}`);
+      const core = visual?.children.find(c => c.name === `controller-core-${hand}`);
+
+      if (core) {
+        // Store original position for return trip
+        objects.coreOriginalPos = core.position.clone();
+        objects.core = core;
+        objects.floatTarget = new THREE.Vector3(0, 0, -1.5); // float in front of player
+
+        // Change color to evolution signature
+        core.material.color.setHex(evo.sigColor);
+
+        // Add glow aura
+        const auraGeo = new THREE.SphereGeometry(0.08, 16, 16);
+        const auraMat = new THREE.MeshBasicMaterial({
+          color: evo.sigColor,
+          transparent: true,
+          opacity: 0.4,
+        });
+        const aura = new THREE.Mesh(auraGeo, auraMat);
+        aura.name = 'evo-aura';
+        core.add(aura);
+        objects.aura = aura;
+      }
+    }
+  }
+
+  else if (phase === 'float_up') {
+    // 0-1s: weapon floats up and out from hand
+    if (objects.core) {
+      const t = Math.min(1, elapsed / 1.0);
+      const eased = 1 - Math.pow(1 - t, 3); // ease out cubic
+      // Lerp the core's local position outward
+      objects.core.position.lerpVectors(
+        objects.coreOriginalPos,
+        new THREE.Vector3(0, 0.3, -0.8),
+        eased
+      );
+
+      // Pulse the aura
+      if (objects.aura) {
+        const pulse = 1 + Math.sin(elapsed * 10) * 0.3;
+        objects.aura.scale.setScalar(pulse);
+        objects.aura.material.opacity = 0.3 + Math.sin(elapsed * 8) * 0.2;
+      }
+    }
+
+    if (elapsed > 1.0) {
+      evoCinematicState.phase = 'transform';
+      evoCinematicState.phaseStart = now;
+
+      // Screen flash (white)
+      renderer.setClearColor(0xffffff, 1);
+      setTimeout(() => {
+        if (renderer) renderer.setClearColor(0x050008, 1);
+      }, 150);
+
+      // Controller vibration
+      if (navigator.getGamepads) {
+        const gamepad = navigator.getGamepads()[controllerIndex];
+        if (gamepad?.hapticActuators?.[0]) {
+          gamepad.hapticActuators[0].pulse(1.0, 200);
+        }
+      }
+
+      // Enlarge the core and set final color
+      if (objects.core) {
+        objects.core.scale.setScalar(1.3);
+        objects.core.material.color.setHex(evo.sigColor);
+      }
+    }
+  }
+
+  else if (phase === 'transform') {
+    // 0-1.5s: weapon pulses in evolved form
+    if (objects.core) {
+      const pulse = 1.3 + Math.sin(elapsed * 6) * 0.1;
+      objects.core.scale.setScalar(pulse);
+    }
+    if (objects.aura) {
+      objects.aura.scale.setScalar(1.5 + Math.sin(elapsed * 8) * 0.3);
+    }
+
+    if (elapsed > 1.5) {
+      evoCinematicState.phase = 'return';
+      evoCinematicState.phaseStart = now;
+    }
+  }
+
+  else if (phase === 'return') {
+    // 0-0.8s: weapon returns to hand
+    if (objects.core) {
+      const t = Math.min(1, elapsed / 0.8);
+      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease in-out quad
+      objects.core.position.lerpVectors(
+        new THREE.Vector3(0, 0.3, -0.8),
+        objects.coreOriginalPos,
+        eased
+      );
+    }
+
+    if (elapsed > 0.8) {
+      // Clean up aura
+      if (objects.aura) {
+        objects.aura.geometry.dispose();
+        objects.aura.material.dispose();
+        objects.core.remove(objects.aura);
+      }
+
+      // Restore core position
+      if (objects.core) {
+        objects.core.position.copy(objects.coreOriginalPos);
+        objects.core.scale.setScalar(1.0);
+      }
+
+      // Update controller sphere to evolved color
+      updateControllerSphereColor(controllerIndex);
+
+      // End cinematic
+      evoCinematicState = null;
+
+      // Now advance to next level
+      finalizeUpgradeSelection();
+    }
+  }
+}
+
 // [CORE] Select upgrade and advance to next level
 function selectUpgradeAndAdvance(upgrade, hand) {
   const targetHand = hand || pendingUpgradeHand;
@@ -7764,7 +7945,12 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   if (evo && !game.weaponEvolution[targetHand]) {
     game.weaponEvolution[targetHand] = evo;
     _log(`[evolution] ${mainWepId} evolved into ${evo.name}!`);
-    // TODO: Phase B will add evolution cinematic here
+
+    // Start evolution cinematic instead of advancing immediately
+    clearPendingUpgradeState();
+    hideUpgradeCards();
+    startEvolutionCinematic(evo, targetHand);
+    return; // Don't call finalizeUpgradeSelection yet
   }
 
   if (upgrade?.id === 'extra_nuke') {
@@ -11919,6 +12105,11 @@ function render(timestamp) {
   // ── Boss death cinematic ──
   else if (st === State.BOSS_DEATH_CINEMATIC) {
     updateBossDeathCinematic(clampedRawDt);  // Fix B: use clamped dt for game simulation
+  }
+
+  // ── Evolution cinematic ──
+  else if (st === State.EVOLUTION_CINEMATIC) {
+    updateEvolutionCinematic(now, clampedRawDt);
   }
 
   // ── Paused ──
