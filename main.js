@@ -7966,6 +7966,7 @@ function advanceLevelAfterUpgrade() {
   // Deferred cleanup from level complete - explosions already played during LEVEL_COMPLETE state
   clearAllEnemies();
   clearAllProjectiles();
+  clearAllFireTrails();
   clearAllLightningBeams();
   clearAllLightningOrbs();
   clearAllChargeBeamVisuals();
@@ -8811,6 +8812,145 @@ function fireTwinHelix(controller, index, stats, evo) {
   playShoothSound(2);
 }
 
+// ── Evolved Weapon: Dragon's Breath (Buckshot → Dragon's Breath) ──
+// Molten pellets that ignite enemies and leave fire trails on the ground.
+const fireTrails = []; // Active fire trails: { position, createdAt, duration, radius, damage }
+
+function spawnFireTrail(position, evo) {
+  // Cap at 10 active fire trails for Quest performance
+  if (fireTrails.length >= 10) {
+    const oldest = fireTrails.shift();
+    if (oldest.visualMesh) {
+      scene.remove(oldest.visualMesh);
+      oldest.visualMesh.geometry.dispose();
+      oldest.visualMesh.material.dispose();
+    }
+  }
+  const trail = {
+    position: position.clone(),
+    positionY: position.y,
+    createdAt: performance.now(),
+    duration: evo.fireTrailDuration || 2000,
+    radius: evo.fireTrailRadius || 0.5,
+    damage: evo.fireTrailDamage || 3,
+    tickInterval: 500,
+    lastTickTime: 0,
+    active: true,
+  };
+  fireTrails.push(trail);
+  createFireTrailVisual(trail);
+}
+
+function createFireTrailVisual(trail) {
+  const geo = new THREE.CircleGeometry(trail.radius, 8);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xff4400,
+    transparent: true,
+    opacity: 0.6,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(trail.position);
+  mesh.position.y = 0.01; // Just above ground
+  mesh.rotation.x = -Math.PI / 2; // Lay flat
+  mesh.name = 'fire-trail-visual';
+  scene.add(mesh);
+  trail.visualMesh = mesh;
+}
+
+function updateFireTrails(now, dt) {
+  for (let i = fireTrails.length - 1; i >= 0; i--) {
+    const trail = fireTrails[i];
+    const elapsed = now - trail.createdAt;
+
+    if (elapsed > trail.duration) {
+      if (trail.visualMesh) {
+        scene.remove(trail.visualMesh);
+        trail.visualMesh.geometry.dispose();
+        trail.visualMesh.material.dispose();
+      }
+      fireTrails.splice(i, 1);
+      continue;
+    }
+
+    // Fade out visual over duration
+    if (trail.visualMesh) {
+      const fadeProgress = elapsed / trail.duration;
+      trail.visualMesh.material.opacity = 0.6 * (1 - fadeProgress);
+    }
+
+    // Tick damage
+    if (now - trail.lastTickTime >= trail.tickInterval) {
+      trail.lastTickTime = now;
+
+      const nearby = enemySpatialHash.query(trail.position.x, trail.position.z, trail.radius);
+      for (const enemy of nearby) {
+        if (!enemy || !enemy.mesh || enemy.hp <= 0) continue;
+        const dx = enemy.mesh.position.x - trail.position.x;
+        const dz = enemy.mesh.position.z - trail.position.z;
+        if (dx * dx + dz * dz < trail.radius * trail.radius) {
+          const eIdx = activeEnemies.indexOf(enemy);
+          if (eIdx >= 0) {
+            hitEnemy(eIdx, trail.damage);
+            applyEffects(eIdx, [{ type: 'fire', stacks: 1 }]);
+          }
+        }
+      }
+    }
+  }
+}
+
+function clearAllFireTrails() {
+  for (const trail of fireTrails) {
+    if (trail.visualMesh) {
+      scene.remove(trail.visualMesh);
+      trail.visualMesh.geometry.dispose();
+      trail.visualMesh.material.dispose();
+    }
+  }
+  fireTrails.length = 0;
+}
+
+function fireDragonsBreath(controller, index, stats, evo) {
+  const now = performance.now();
+  if (now - weaponCooldowns[index] < stats.fireInterval) return;
+  weaponCooldowns[index] = now;
+
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+
+  if (ENABLE_MUZZLE_FLASH) {
+    showMuzzleFlash(origin, direction);
+  }
+
+  const count = stats.projectileCount;
+  const shotId = startAccuracyShot(count, getHandForController(index));
+
+  for (let i = 0; i < count; i++) {
+    const halfCone = (stats.spreadAngle || THREE.MathUtils.degToRad(8)) * 0.5;
+    const angle = Math.random() * halfCone;
+    let axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+    if (axis.lengthSq() < 0.0001) axis.set(0, 1, 0);
+    axis.cross(direction);
+    if (axis.lengthSq() < 0.0001) axis.set(1, 0, 0);
+    axis.normalize();
+    const shotDir = direction.clone().applyAxisAngle(axis, angle);
+
+    const proj = spawnProjectile(origin.clone(), shotDir, index, stats, shotId, { suppressSound: count > 1 });
+
+    // Tag as Dragon's Breath
+    if (proj && proj.userData) {
+      proj.userData.isDragonsBreath = true;
+      proj.userData.dragonsBreathEvo = evo;
+    }
+  }
+
+  playBuckshotSound(count);
+}
+
 function fireMainWeapon(controller, index) {
   const now = performance.now();
   const hand = getHandForController(index);
@@ -8834,7 +8974,10 @@ function fireMainWeapon(controller, index) {
       fireTwinHelix(controller, index, stats, evo);
       return;
     }
-    // Future evolutions will be added here
+    if (evo.id === 'dragons_breath') {
+      fireDragonsBreath(controller, index, stats, evo);
+      return;
+    }
   }
 
   // Check cooldown
@@ -10908,6 +11051,10 @@ function updateProjectiles(dt) {
 
     // Remove expired projectiles - return to pool
     if (age > proj.userData.lifetime) {
+      // Dragon's Breath: spawn fire trail where projectile expired
+      if (proj.userData.isDragonsBreath && proj.userData.dragonsBreathEvo) {
+        spawnFireTrail(proj.position.clone(), proj.userData.dragonsBreathEvo);
+      }
       resolveProjectileAccuracy(proj);
       if (proj.userData.isPooled) {
         returnProjectileToPool(proj);
@@ -11177,6 +11324,12 @@ function updateProjectiles(dt) {
         markProjectileHit(proj);
         handleHit(result.index, result.enemy, { ...proj.userData.stats, damage: proj.userData.stats.damage + naniteDamage }, preciseHit.point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint, hitInfo);
 
+        // Dragon's Breath: ignite + fire trail on hit
+        if (proj.userData.isDragonsBreath) {
+          applyEffects(result.index, [{ type: 'fire', stacks: 2 }]);
+          spawnFireTrail(preciseHit.point, proj.userData.dragonsBreathEvo);
+        }
+
         if (proj.userData.stats?.ricochetBounces > 0) {
           handleRicochet(preciseHit.point, proj.userData.stats, 0, proj.userData.controllerIndex);
         }
@@ -11213,6 +11366,12 @@ function updateProjectiles(dt) {
         false,
         { hitObject: directEnemyHit.enemy.mesh }
       );
+
+      // Dragon's Breath: ignite + fire trail on hit
+      if (proj.userData.isDragonsBreath) {
+        applyEffects(directEnemyHit.index, [{ type: 'fire', stacks: 2 }]);
+        spawnFireTrail(directEnemyHit.point, proj.userData.dragonsBreathEvo);
+      }
 
       if (proj.userData.stats?.ricochetBounces > 0) {
         handleRicochet(directEnemyHit.point, proj.userData.stats, 0, proj.userData.controllerIndex);
@@ -12803,6 +12962,7 @@ function render(timestamp) {
   profiler.mark('projectiles');
   updateProjectiles(dt);
   profiler.end('projectiles');
+  updateFireTrails(now, dt);
   profiler.mark('voxelDebris');
   updateVoxelPhysics(dt, now);  // PHYSICS DEATH SYSTEM
 
