@@ -584,6 +584,110 @@ let floorFlashTimer = 0;
 let floorFlashing = false;
 
 // ============================================================
+// CRASH REPORTER
+// Captures unhandled errors and sends them to /api/report-error
+// for Supabase storage + optional Telegram notification.
+// ============================================================
+
+let _crashReporterReady = false;
+let _sessionPlaythrough = 0;
+
+function initCrashReporter() {
+  if (typeof window === 'undefined') return;
+  if (_crashReporterReady) return;
+  _crashReporterReady = true;
+
+  window.addEventListener('error', (event) => {
+    sendCrashReport({
+      errorType: event.error?.constructor?.name || 'Error',
+      errorMessage: event.message || 'Unknown error',
+      stackTrace: event.error?.stack || '',
+    });
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason;
+    sendCrashReport({
+      errorType: reason?.constructor?.name || 'UnhandledRejection',
+      errorMessage: reason?.message || String(reason),
+      stackTrace: reason?.stack || '',
+    });
+  });
+
+  _log('[crash-reporter] Initialized — unhandled errors will auto-report');
+}
+
+function sendCrashReport({ errorType, errorMessage, stackTrace }) {
+  try {
+    // Don't report errors from the crash reporter itself
+    if (errorMessage?.includes('report-error')) return;
+
+    const report = {
+      errorType,
+      errorMessage,
+      stackTrace,
+      url: window.location?.href || '',
+      level: game?.level || null,
+      bossName: activeBoss?.name || game?.killedBy?.name || '',
+      bossPhase: activeBoss?.phase || null,
+      weapon: game?.mainWeapon?.left || '',
+      health: game?.health || null,
+      score: game?.score || null,
+      kills: game?.totalKills || null,
+      sessionPlaythrough: _sessionPlaythrough || null,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Capture renderer stats if available
+    if (renderer?.info) {
+      report.rendererInfo = {
+        geometries: renderer.info.memory?.geometries,
+        textures: renderer.info.memory?.textures,
+        programs: renderer.info.programs?.length,
+      };
+    }
+
+    // Capture performance if available
+    if (performance?.memory) {
+      report.memory = Math.round(performance.memory.usedJSHeapSize / 1048576 * 10) / 10;
+    }
+
+    report.userAgent = navigator?.userAgent || '';
+
+    // Fire-and-forget (don't block, don't await)
+    fetch('/api/report-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(report),
+      keepalive: true, // Ensures request survives page crash/unload
+    }).catch(() => {
+      // Silently fail — reporting is best-effort
+    });
+
+    console.error(`[crash-reporter] ${errorType}: ${errorMessage}`);
+  } catch (e) {
+    // Absolute last resort — never throw from error handler
+    console.error('[crash-reporter] Failed to report error:', e);
+  }
+}
+
+// Increment playthrough counter on each new game
+function trackPlaythrough() {
+  _sessionPlaythrough++;
+  _log('[crash-reporter] Playthrough #' + _sessionPlaythrough);
+}
+
+// Manual report — call from anywhere to report a non-fatal but noteworthy error
+// Usage: reportError('Boss spawn failed', error)
+function reportError(context, error) {
+  sendCrashReport({
+    errorType: error?.constructor?.name || 'ReportedError',
+    errorMessage: `${context}: ${error?.message || String(error)}`,
+    stackTrace: error?.stack || '',
+  });
+}
+
+// ============================================================
 // POOLED OBJECTS (HOT PATH OPTIMIZATION)
 // Pre-allocated Raycasters, Vector3, Quaternion to avoid GC
 // COUPLING: Reused across render loop, projectile updates, UI hover
@@ -1464,6 +1568,9 @@ init();
 // [CORE] Main initialization entry point
 function init() {
   _log('[SPACEOMICIDE] Initialising...');
+
+  // Initialize crash reporter early so errors during setup are caught
+  initCrashReporter();
 
   // Dev-only: load persisted debug settings in the dev launcher.
   // Live players should not pay localStorage / debug bootstrap costs here.
@@ -7113,6 +7220,7 @@ function captureLevelSpawnForward() {
 // [CORE] Start new game
 function startGame() {
   _log('[game] Starting new game');
+  trackPlaythrough();
   hideTitle();
 
   // Clean up any leftover boss minions from previous run
