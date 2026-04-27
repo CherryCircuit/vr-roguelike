@@ -7970,6 +7970,7 @@ function advanceLevelAfterUpgrade() {
   clearAllEnemies();
   clearAllProjectiles();
   clearAllFireTrails();
+  clearAllHiveDrones();
   clearAllLightningBeams();
   clearAllLightningOrbs();
   clearAllChargeBeamVisuals();
@@ -8905,6 +8906,209 @@ function updateFireTrails(now, dt) {
   }
 }
 
+// ── Evolved Weapon: Hive Mind (Seeker Burst → Hive Mind) ──
+// Spawns orbiting micro-drones that independently seek and dive-bomb enemies.
+const hiveDrones = []; // { mesh, state, orbitAngle, orbitSpeed, orbitRadius, target, diveSpeed, cooldown, createdAt, hand, controllerIndex }
+
+function fireHiveMind(controller, index, stats, evo) {
+  const now = performance.now();
+  const hand = getHandForController(index);
+
+  // Check how many active drones this hand has
+  const handDrones = hiveDrones.filter(d => d.hand === hand && d.state !== 'dead');
+  const maxDrones = evo.droneCount || 8;
+
+  if (handDrones.length >= maxDrones) {
+    // Already at max drones — command them to dive-bomb nearest enemies
+    commandDiveBomb(hand);
+    return;
+  }
+
+  // Spawn drones (2-3 per trigger press, up to max)
+  const toSpawn = Math.min(3, maxDrones - handDrones.length);
+  if (toSpawn <= 0) return;
+
+  // Cooldown check
+  if (now - weaponCooldowns[index] < stats.fireInterval) return;
+  weaponCooldowns[index] = now;
+
+  const controllerPos = new THREE.Vector3();
+  controller.getWorldPosition(controllerPos);
+
+  for (let i = 0; i < toSpawn; i++) {
+    const angle = Math.random() * Math.PI * 2;
+
+    // Drone visual: tiny glowing sphere
+    const geo = new THREE.SphereGeometry(0.04, 6, 6);
+    const mat = new THREE.MeshBasicMaterial({
+      color: evo.sigColor || 0xaa44ff,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'hive-drone';
+
+    // Position near controller
+    const spawnPos = controllerPos.clone();
+    spawnPos.x += (Math.random() - 0.5) * 0.3;
+    spawnPos.y += (Math.random() - 0.5) * 0.3 + 0.1;
+    spawnPos.z += (Math.random() - 0.5) * 0.3;
+    mesh.position.copy(spawnPos);
+    scene.add(mesh);
+
+    hiveDrones.push({
+      mesh: mesh,
+      state: 'orbiting', // 'orbiting', 'diving', 'returning', 'dead'
+      orbitAngle: angle,
+      orbitSpeed: 2 + Math.random() * 2,
+      orbitRadius: 0.4 + Math.random() * 0.3,
+      orbitHeight: -0.2 + Math.random() * 0.4,
+      target: null,
+      diveSpeed: 15 + Math.random() * 5,
+      cooldown: 0,
+      regenTime: evo.droneRegenTime || 5000,
+      createdAt: now,
+      hand: hand,
+      controllerIndex: index,
+      damage: evo.droneDamage || 6,
+    });
+  }
+
+  playSeekerBurstSound(false, toSpawn);
+}
+
+function commandDiveBomb(hand) {
+  // Find orbiting drones for this hand and send them at enemies
+  const orbiting = hiveDrones.filter(d => d.hand === hand && d.state === 'orbiting');
+
+  for (const drone of orbiting) {
+    // Find nearest enemy
+    const nearby = enemySpatialHash.query(drone.mesh.position.x, drone.mesh.position.z, 15);
+    let nearest = null;
+    let nearestDist = Infinity;
+
+    for (const enemy of nearby) {
+      if (!enemy || !enemy.mesh || enemy.hp <= 0) continue;
+      const dist = drone.mesh.position.distanceTo(enemy.mesh.position);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = enemy;
+      }
+    }
+
+    if (nearest) {
+      drone.state = 'diving';
+      drone.target = nearest;
+    }
+  }
+}
+
+function updateHiveDrones(now, dt, playerPos) {
+  const dtSec = dt / 1000;
+
+  for (let i = hiveDrones.length - 1; i >= 0; i--) {
+    const drone = hiveDrones[i];
+
+    if (drone.state === 'orbiting') {
+      // Orbit around the controller
+      const controller = controllers[drone.controllerIndex];
+      if (!controller || typeof controller.getWorldPosition !== 'function') {
+        // Desktop fallback: use playerPos (camera position)
+        drone.mesh.position.set(
+          playerPos.x + Math.cos(drone.orbitAngle) * drone.orbitRadius,
+          playerPos.y + drone.orbitHeight + 0.3,
+          playerPos.z + Math.sin(drone.orbitAngle) * drone.orbitRadius
+        );
+      } else {
+        const ctrlPos = new THREE.Vector3();
+        controller.getWorldPosition(ctrlPos);
+        drone.mesh.position.set(
+          ctrlPos.x + Math.cos(drone.orbitAngle) * drone.orbitRadius,
+          ctrlPos.y + drone.orbitHeight + 0.2,
+          ctrlPos.z + Math.sin(drone.orbitAngle) * drone.orbitRadius
+        );
+      }
+      drone.orbitAngle += drone.orbitSpeed * dtSec;
+
+      // Auto-dive at nearby enemies (passive aggression)
+      const nearby = enemySpatialHash.query(drone.mesh.position.x, drone.mesh.position.z, 5);
+      for (const enemy of nearby) {
+        if (!enemy || !enemy.mesh || enemy.hp <= 0) continue;
+        const dist = drone.mesh.position.distanceTo(enemy.mesh.position);
+        if (dist < 3) {
+          drone.state = 'diving';
+          drone.target = enemy;
+          break;
+        }
+      }
+    }
+
+    else if (drone.state === 'diving') {
+      if (!drone.target || !drone.target.mesh || drone.target.hp <= 0 || !drone.target.mesh.parent) {
+        // Target died, return to orbit
+        drone.state = 'returning';
+        drone.target = null;
+        continue;
+      }
+
+      // Move toward target
+      const toTarget = new THREE.Vector3().subVectors(drone.target.mesh.position, drone.mesh.position);
+      const dist = toTarget.length();
+
+      if (dist < 0.3) {
+        // Hit! Apply damage
+        const eIdx = activeEnemies.indexOf(drone.target);
+        if (eIdx >= 0) {
+          hitEnemy(eIdx, drone.damage);
+          spawnDamageNumber(drone.target.mesh.position.clone(), drone.damage, '#aa44ff');
+        }
+
+        // Drone sacrifices itself
+        scene.remove(drone.mesh);
+        drone.mesh.geometry.dispose();
+        drone.mesh.material.dispose();
+
+        // Schedule regen
+        drone.state = 'dead';
+        drone.deathTime = now;
+        hiveDrones.splice(i, 1);
+        continue;
+      }
+
+      toTarget.normalize().multiplyScalar(drone.diveSpeed * dtSec);
+      drone.mesh.position.add(toTarget);
+    }
+
+    else if (drone.state === 'returning') {
+      // Move back toward player
+      const toPlayer = new THREE.Vector3().subVectors(playerPos, drone.mesh.position);
+      const dist = toPlayer.length();
+
+      if (dist < 0.5) {
+        drone.state = 'orbiting';
+        drone.target = null;
+      } else {
+        toPlayer.normalize().multiplyScalar(10 * dtSec);
+        drone.mesh.position.add(toPlayer);
+      }
+    }
+  }
+
+  // Regen dead drones after regenTime
+  // (handled by next trigger press spawning new ones up to max)
+}
+
+function clearAllHiveDrones() {
+  for (const drone of hiveDrones) {
+    if (drone.mesh && drone.mesh.parent) {
+      scene.remove(drone.mesh);
+      drone.mesh.geometry.dispose();
+      drone.mesh.material.dispose();
+    }
+  }
+  hiveDrones.length = 0;
+}
+
 function clearAllFireTrails() {
   for (const trail of fireTrails) {
     if (trail.visualMesh) {
@@ -8981,6 +9185,10 @@ function fireMainWeapon(controller, index) {
     }
     if (evo.id === 'dragons_breath') {
       fireDragonsBreath(controller, index, stats, evo);
+      return;
+    }
+    if (evo.id === 'hive_mind') {
+      fireHiveMind(controller, index, stats, evo);
       return;
     }
   }
@@ -9448,6 +9656,139 @@ function clearAllSingularities() {
     sing.glow.material.dispose();
   }
   singularities.length = 0;
+}
+
+// ── Evolved Weapon: Obliterator Beam (Plasma Carbine → Obliterator Beam) ──
+// Continuous beam that overheats after 4 seconds.
+const obliteratorBeams = {}; // index -> { active, startTime, overheated, overheatStart, visual }
+
+function updateObliteratorBeam(controller, index, evo, stats, now, dt) {
+  let beam = obliteratorBeams[index];
+
+  // Check overheat cooldown
+  if (beam && beam.overheated) {
+    if (now - beam.overheatStart > (evo.overheatCooldown || 1500)) {
+      beam.overheated = false;
+    } else {
+      if (beam.visual) beam.visual.visible = false;
+      return;
+    }
+  }
+
+  // Check if we should overheat
+  if (beam && beam.active) {
+    const elapsed = now - beam.startTime;
+    if (elapsed > (evo.beamDuration || 4000)) {
+      beam.overheated = true;
+      beam.overheatStart = now;
+      beam.active = false;
+      if (beam.visual) beam.visual.visible = false;
+      playErrorSound();
+      return;
+    }
+  }
+
+  // Start beam if not active
+  if (!beam || !beam.active) {
+    obliteratorBeams[index] = {
+      active: true,
+      startTime: now,
+      overheated: false,
+      overheatStart: 0,
+      visual: beam ? beam.visual : null,
+    };
+  }
+
+  const currentBeam = obliteratorBeams[index];
+  const elapsed = now - currentBeam.startTime;
+  const maxDuration = evo.beamDuration || 4000;
+  const progress = elapsed / maxDuration;
+
+  // Get controller position and direction
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const beamEnd = origin.clone().addScaledVector(forward, 50);
+
+  // Damage enemies along the beam
+  const beamWidth = evo.beamWidth || 0.15;
+  const beamWidthSq = beamWidth * beamWidth;
+  const damagePerFrame = (evo.beamDamagePerFrame || 2) * dt;
+
+  getEnemies().forEach((enemy, i) => {
+    if (!enemy || !enemy.mesh || enemy.hp <= 0) return;
+    const distSq = pointToSegmentDistSq(enemy.mesh.position, origin, beamEnd);
+    if (distSq < beamWidthSq * 4) {
+      hitEnemy(i, Math.ceil(damagePerFrame));
+    }
+  });
+
+  // Hit boss if present
+  const boss = getBoss();
+  if (boss && boss.mesh) {
+    const distSq = pointToSegmentDistSq(boss.mesh.position, origin, beamEnd);
+    if (distSq < beamWidthSq * 4) {
+      hitBoss(Math.ceil(damagePerFrame * 2), { isObliteratorBeam: true });
+    }
+  }
+
+  // Visual beam
+  ensureObliteratorBeamVisual(index, origin, beamEnd, progress, evo);
+}
+
+function ensureObliteratorBeamVisual(index, origin, end, progress, evo) {
+  let beam = obliteratorBeams[index]?.visual;
+
+  if (!beam) {
+    const geo = new THREE.CylinderGeometry(0.03, 0.03, 1, 6);
+    const mat = new THREE.MeshBasicMaterial({
+      color: evo.sigColor || 0x00ff44,
+      transparent: true,
+      opacity: 0.8,
+    });
+    beam = new THREE.Mesh(geo, mat);
+    beam.name = 'obliterator-beam';
+    scene.add(beam);
+    if (obliteratorBeams[index]) obliteratorBeams[index].visual = beam;
+  }
+
+  beam.visible = true;
+
+  const midpoint = origin.clone().add(end).multiplyScalar(0.5);
+  beam.position.copy(midpoint);
+  beam.lookAt(end);
+  beam.rotateX(Math.PI / 2);
+
+  const length = origin.distanceTo(end);
+  beam.scale.set(1 + progress * 2, length, 1 + progress * 2);
+
+  // Color shifts from green to red as heat builds
+  const heatColor = new THREE.Color(evo.sigColor || 0x00ff44);
+  heatColor.lerp(new THREE.Color(0xff0000), progress * 0.7);
+  beam.material.color.copy(heatColor);
+  beam.material.opacity = 0.6 + progress * 0.3;
+}
+
+function hideObliteratorBeam(index) {
+  const beam = obliteratorBeams[index];
+  if (beam) {
+    beam.active = false;
+    if (beam.visual) beam.visual.visible = false;
+  }
+}
+
+function clearAllObliteratorBeams() {
+  for (const key of Object.keys(obliteratorBeams)) {
+    const beam = obliteratorBeams[key];
+    if (beam.visual) {
+      scene.remove(beam.visual);
+      beam.visual.geometry.dispose();
+      beam.visual.material.dispose();
+    }
+  }
+  Object.keys(obliteratorBeams).forEach(k => delete obliteratorBeams[k]);
 }
 
 function updateLightningBeam(controller, index, stats, dt) {
@@ -12170,6 +12511,12 @@ function render(timestamp) {
             updateLightningBeam(controllers[i], i, stats, dt);
           }
         } else if (stats.windUp) {
+          // Check for Obliterator Beam evolution (Plasma Carbine → continuous beam)
+          const _oblHand = getHandForController(i);
+          const _oblEvo = game.weaponEvolution[_oblHand];
+          if (_oblEvo && _oblEvo.id === 'obliterator_beam') {
+            updateObliteratorBeam(controllers[i], i, _oblEvo, stats, now, dt);
+          } else {
           // Plasma carbine wind-up mechanic
           if (plasmaCarbineSpinStart[i] === null) {
             // Start spinning
@@ -12193,6 +12540,7 @@ function render(timestamp) {
               }
             }
           }
+          } // end Obliterator Beam check
         } else {
           fireMainWeapon(controllers[i], i);
         }
@@ -12212,6 +12560,8 @@ function render(timestamp) {
         }
         // Clean up plasma carbine spin state
         plasmaCarbineSpinStart[i] = null;
+        // Hide obliterator beam on trigger release
+        hideObliteratorBeam(i);
       }
     }
 
@@ -12251,6 +12601,12 @@ function render(timestamp) {
                 updateLightningBeam(virtualController, 0, stats, dt);
               }
             } else if (stats.windUp) {
+              // Check for Obliterator Beam evolution (desktop left)
+              const _oblHand0 = getHandForController(0);
+              const _oblEvo0 = game.weaponEvolution[_oblHand0];
+              if (_oblEvo0 && _oblEvo0.id === 'obliterator_beam') {
+                updateObliteratorBeam(virtualController, 0, _oblEvo0, stats, now, dt);
+              } else {
               // Plasma carbine wind-up mechanic
               if (plasmaCarbineSpinStart[0] === null) {
                 plasmaCarbineSpinStart[0] = now;
@@ -12266,6 +12622,7 @@ function render(timestamp) {
                   }
                 }
               }
+              } // end Obliterator Beam check
             } else {
               fireMainWeapon(virtualController, 0);
             }
@@ -12302,6 +12659,12 @@ function render(timestamp) {
                 updateLightningBeam(virtualController, 1, stats, dt);
               }
             } else if (stats.windUp) {
+              // Check for Obliterator Beam evolution (desktop right)
+              const _oblHand1 = getHandForController(1);
+              const _oblEvo1 = game.weaponEvolution[_oblHand1];
+              if (_oblEvo1 && _oblEvo1.id === 'obliterator_beam') {
+                updateObliteratorBeam(virtualController, 1, _oblEvo1, stats, now, dt);
+              } else {
               // Plasma carbine wind-up mechanic
               if (plasmaCarbineSpinStart[1] === null) {
                 plasmaCarbineSpinStart[1] = now;
@@ -12317,6 +12680,7 @@ function render(timestamp) {
                   }
                 }
               }
+              } // end Obliterator Beam check
             } else {
               fireMainWeapon(virtualController, 1);
             }
@@ -12378,6 +12742,9 @@ function render(timestamp) {
         // Clear plasma carbine spin state
         plasmaCarbineSpinStart[0] = null;
         plasmaCarbineSpinStart[1] = null;
+        // Hide obliterator beams on trigger release
+        hideObliteratorBeam(0);
+        hideObliteratorBeam(1);
       }
     }
 
@@ -13343,6 +13710,7 @@ function render(timestamp) {
   profiler.end('projectiles');
   if (singularities.length > 0) updateSingularities(now, dt);
   updateFireTrails(now, dt);
+  if (hiveDrones.length > 0) updateHiveDrones(now, dt, getAdjustedCameraPosition());
   profiler.mark('voxelDebris');
   updateVoxelPhysics(dt, now);  // PHYSICS DEATH SYSTEM
 
