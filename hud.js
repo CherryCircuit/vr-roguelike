@@ -4081,13 +4081,6 @@ export function getScoreboardHit(raycaster) {
   const hits = raycaster.intersectObjects(actionMeshes, false);
   if (hits.length > 0) {
     const action = hits[0].object.userData.scoreboardAction;
-    // Page navigation — callers handle via updateScoreboardScroll
-    if (action === 'page_prev' || action === 'page_next') {
-      playMenuClick();
-      updateScoreboardScroll(action === 'page_next' ? 1 : -1);
-      return null;
-    }
-    // #7: Activate sound for COUNTRY, CONTINENT, and BACK buttons
     playMenuClick();
     return action;
   }
