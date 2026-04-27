@@ -377,6 +377,127 @@ export const SPECIAL_UPGRADE_POOL = [
   { id: 'mega_boom', name: 'Mega Boom', desc: 'Bigger AOE, +50% explosion dmg', color: '#ffaa00', type: 'universal' },
 ];
 
+// ── WEAPON EVOLUTIONS ───────────────────────────────────────
+
+export const WEAPON_EVOLUTIONS = {
+  standard_blaster: {
+    id: 'twin_helix',
+    name: 'Twin Helix',
+    from: 'Standard Blaster',
+    recipe: ['scope', 'double_shot', 'critical'],
+    sigColor: 0x00ffff,
+    sigColorAlt: 0xff00ff,
+    desc: 'Fires TWO helix-woven projectiles that spiral around each other.',
+    baseColor: 0x4488ff,
+    auraColors: [0x00ffff, 0xff00ff],
+    projectileCount: 2,
+    helixRadius: 0.3,
+    helixSpeed: 8,
+    damage: 10,
+    fireInterval: 160,
+  },
+  buckshot: {
+    id: 'dragons_breath',
+    name: "Dragon's Breath",
+    from: 'Buckshot',
+    recipe: ['fire', 'buckshot_gentlemen', 'focused_frenzy'],
+    sigColor: 0xff4400,
+    sigColorAlt: 0xffaa00,
+    desc: 'Molten pellets ignite enemies and leave burning trails.',
+    baseColor: 0xff8800,
+    auraColors: [0xff4400, 0xffaa00, 0xff6600],
+    igniteChance: 1.0,
+    igniteDuration: 3000,
+    fireTrailDuration: 2000,
+    fireTrailDamage: 3,
+    fireTrailRadius: 0.5,
+  },
+  lightning_rod: {
+    id: 'tesla_tower',
+    name: 'Tesla Tower',
+    from: 'Lightning Rod',
+    recipe: ['shock', 'its_electric', 'barrel'],
+    sigColor: 0x4488ff,
+    sigColorAlt: 0x88ccff,
+    desc: 'Creates tesla coils that arc electricity to all enemies within 6m.',
+    baseColor: 0xff00ff,
+    auraColors: [0x4488ff, 0x88ccff, 0xffffff],
+    coilDuration: 3000,
+    coilRange: 6,
+    maxCoils: 2,
+    arcDamage: 8,
+    arcInterval: 500,
+  },
+  charge_cannon: {
+    id: 'singularity_launcher',
+    name: 'Singularity Launcher',
+    from: 'Charge Cannon',
+    recipe: ['quick_charge', 'death_ray', 'piercing'],
+    sigColor: 0x8800ff,
+    sigColorAlt: 0xff00ff,
+    desc: 'Charged shots create micro-black-holes that pull enemies in then detonate.',
+    baseColor: 0xff4444,
+    auraColors: [0x8800ff, 0xff00ff, 0x440088],
+    singularityDuration: 1500,
+    pullRadius: 5,
+    pullForce: 8,
+    detonationDamage: 60,
+  },
+  plasma_carbine: {
+    id: 'obliterator_beam',
+    name: 'Obliterator Beam',
+    from: 'Plasma Carbine',
+    recipe: ['hold_together', 'barrel', 'scope'],
+    sigColor: 0x00ff44,
+    sigColorAlt: 0x88ff44,
+    desc: 'Wind-up ramps into a CONTINUOUS BEAM. Overheats after 4s.',
+    baseColor: 0x00ffff,
+    auraColors: [0x00ff44, 0x88ff44, 0x00ff88],
+    beamDuration: 4000,
+    overheatCooldown: 1500,
+    beamDamagePerFrame: 2,
+    beamWidth: 0.15,
+  },
+  seeker_burst: {
+    id: 'hive_mind',
+    name: 'Hive Mind',
+    from: 'Seeker Burst',
+    recipe: ['gimme_more', 'ricochet', 'double_shot'],
+    sigColor: 0xaa44ff,
+    sigColorAlt: 0xff44ff,
+    desc: 'Spawns 8 micro-drones that independently seek and dive-bomb enemies.',
+    baseColor: 0xaa88ff,
+    auraColors: [0xaa44ff, 0xff44ff, 0x8844cc],
+    droneCount: 8,
+    droneDamage: 6,
+    droneRegenTime: 5000,
+  },
+};
+
+export function getEvolutionForWeapon(weaponId) {
+  return WEAPON_EVOLUTIONS[weaponId] || null;
+}
+
+export function checkEvolutionReady(weaponId, upgrades) {
+  const evo = WEAPON_EVOLUTIONS[weaponId];
+  if (!evo) return null;
+  const allCollected = evo.recipe.every(recipeId => (upgrades[recipeId] || 0) > 0);
+  return allCollected ? evo : null;
+}
+
+export function getEvolutionProgress(weaponId, upgrades) {
+  const evo = WEAPON_EVOLUTIONS[weaponId];
+  if (!evo) return null;
+  const collected = evo.recipe.filter(recipeId => (upgrades[recipeId] || 0) > 0);
+  return {
+    evo,
+    collected: collected.length,
+    total: evo.recipe.length,
+    recipeIds: evo.recipe,
+    collectedIds: collected,
+  };
+}
+
 // ── HELPER FUNCTIONS ─────────────────────────────────────────
 
 function shuffleArray(array) {

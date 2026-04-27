@@ -125,6 +125,7 @@ export const game = {
   altCooldowns: { left: 0, right: 0 },  // ALT weapon cooldowns (ms)
   upgrades: { left: {}, right: {} },  // Upgrades per hand
   mainWeaponLocked: { left: false, right: false },  // Whether MAIN weapon is locked (chosen)
+  weaponEvolution: { left: null, right: null },
   
   stateTimer: 0,
   spawnTimer: 0,
@@ -215,6 +216,7 @@ export function resetGame() {
     altCooldowns: { left: 0, right: 0 },
     upgrades: { left: {}, right: {} },
     mainWeaponLocked: { left: false, right: false },
+    weaponEvolution: { left: null, right: null },
 
     // Biome chunk assignments
     biomeChunks: {},
@@ -460,6 +462,19 @@ export function setMainWeapon(weaponId, hand) {
 export function setAltWeapon(weaponId, hand) {
   const h = hand || 'left';
   game.altWeapon[h] = weaponId;
+}
+
+export function setWeaponEvolution(evolution, hand) {
+  const h = hand || 'left';
+  game.weaponEvolution[h] = evolution;
+}
+
+export function getWeaponEvolution(hand) {
+  return game.weaponEvolution[hand || 'left'];
+}
+
+export function isWeaponEvolved(hand) {
+  return game.weaponEvolution[hand || 'left'] !== null;
 }
 
 /**

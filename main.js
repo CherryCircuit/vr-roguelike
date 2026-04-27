@@ -16,8 +16,8 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, setWeaponEvolution, getWeaponEvolution, isWeaponEvolved, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook } from './game.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
@@ -7757,6 +7757,15 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   }
 
   addUpgrade(upgrade.id, targetHand);
+
+  // Check for weapon evolution
+  const mainWepId = game.mainWeapon[targetHand];
+  const evo = checkEvolutionReady(mainWepId, game.upgrades[targetHand]);
+  if (evo && !game.weaponEvolution[targetHand]) {
+    game.weaponEvolution[targetHand] = evo;
+    _log(`[evolution] ${mainWepId} evolved into ${evo.name}!`);
+    // TODO: Phase B will add evolution cinematic here
+  }
 
   if (upgrade?.id === 'extra_nuke') {
     game.nukes = (game.nukes || 0) + 1;
