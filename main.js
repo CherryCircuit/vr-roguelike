@@ -7923,6 +7923,12 @@ function setKilledBy(info) {
 // [CORE] End game (victory or game over)
 function endGame(victory) {
   _log(`[game] Game ${victory ? 'won' : 'over'} — score: ${game.score}`);
+  // Log renderer memory at game end for leak diagnosis
+  const mem = renderer?.info?.memory;
+  const jsHeap = performance.memory ? `JS:${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : '';
+  _log(`[MEM] At game end — playthrough #${_sessionPlaythrough}` +
+    (mem ? ` | GPU geo:${mem.geometries} tex:${mem.textures}` : '') +
+    (jsHeap ? ` ${jsHeap}` : ''));
   resetAllSlowMoState();
   game.state = victory ? State.VICTORY : State.GAME_OVER;
   game.finalScore = game.score;
@@ -10901,9 +10907,13 @@ function render(timestamp) {
   // PERFORMANCE: Log stats every 5 seconds in debug mode
   if (runtimeConfig.dev.perfMonitor && frameCount % 300 === 0) {
     const instancedCounts = Object.entries(instancedProjectiles).map(([t, p]) => `${t}:${p.mesh.count}/${p.maxCount}`).join(', ');
+    const mem = renderer?.info?.memory;
+    const jsHeap = performance.memory ? `JS:${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : '';
     _log(`[PERF] Projectiles: ${projectiles.length}/${MAX_PROJECTILES}, ` +
                 `InstancedMesh: {${instancedCounts}}, ` +
-                `Explosions: ${explosionVisuals.length}`);
+                `Explosions: ${explosionVisuals.length}` +
+                (mem ? ` | GPU geo:${mem.geometries} tex:${mem.textures}` : '') +
+                (jsHeap ? ` ${jsHeap}` : ''));
   }
 
   // Apply bullet-time slow-mo via smooth lerp, and death sequence
