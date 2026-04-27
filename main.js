@@ -7974,6 +7974,7 @@ function advanceLevelAfterUpgrade() {
   clearAllLightningBeams();
   clearAllLightningOrbs();
   clearAllChargeBeamVisuals();
+  clearAllObliteratorBeams();
   clearAllElectricArcs();
   clearAllTeslaCoils();
   clearBossProjectiles();
