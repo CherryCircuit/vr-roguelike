@@ -70,7 +70,7 @@ import {
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
-  updateUpgradeCards, getUpgradeCardHit, getHoveredUpgradeCardHit, getHoveredAction, showGameOver, showVictory, updateEndScreen,
+  updateUpgradeCards, getUpgradeCardHit, getHoveredUpgradeCardHit, getRefreshButtonHit, rerollUpgradeCards, getHoveredAction, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, setLowHealthScreenPulse, updateSpeedLines, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar, flashBossHealthBarGreen,
   getTitleButtonHit, showNameEntry, hideNameEntry, getNameEntryHit, updateKeyboardHover, getNameEntryName,
@@ -3554,6 +3554,16 @@ function handleDesktopUpgradeSelectClick() {
   const result = getUpgradeCardHit(raycaster) || getHoveredUpgradeCardHit('desktop');
   if (result) {
     selectUpgradeAndAdvance(result.upgrade, result.hand);
+    return;
+  }
+
+  // 🔄 Refresh button: reroll upgrade cards
+  if (getRefreshButtonHit(raycaster)) {
+    const newUpgrades = rerollUpgradeCards();
+    if (newUpgrades) {
+      pendingUpgrades = newUpgrades;
+      upgradeSelectionCooldown = 0.8; // short cooldown after reroll
+    }
   }
 }
 
@@ -12241,6 +12251,17 @@ function selectUpgrade(controller, index = -1) {
   if (result) {
     if (index >= 0) upgradeTriggerLatched[index] = true;
     selectUpgradeAndAdvance(result.upgrade, result.hand);
+    return;
+  }
+
+  // 🔄 Refresh button: reroll upgrade cards (VR)
+  if (getRefreshButtonHit(_uiRaycaster)) {
+    const newUpgrades = rerollUpgradeCards();
+    if (newUpgrades) {
+      pendingUpgrades = newUpgrades;
+      upgradeSelectionCooldown = 0.8;
+      playMenuClick();
+    }
   }
 }
 

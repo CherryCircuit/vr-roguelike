@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game } from './game.js';
-import { getEvolutionProgress } from './weapons.js';
+import { getEvolutionProgress, getRandomUpgrades, getRandomSpecialUpgrades } from './weapons.js';
 import { playMenuHoverSound, playMenuClick, playBasicEnemySpawn } from './audio.js';
 import {
   TextPopupPool, initDamageNumbers, disposePools,
@@ -212,6 +212,7 @@ function getSkipIconGeo() {
 }
 
 let upgradeCards = [];
+let _refreshButtonMesh = null; // 🔄 reroll button
 let upgradeChoices = [];
 
 // Cached cooldown sprite reference (avoids getObjectByName traversal every frame)
@@ -1871,6 +1872,56 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.add(skipCard);
   upgradeCards.push(skipCard);
 
+  // 🔄 Refresh button (feature branch dev cheat — only for normal upgrades, not weapon selection)
+  _refreshButtonMesh = null;
+  if (game.mainWeaponLocked[hand]) {
+  try {
+    const refreshBtnSize = 0.35;
+    const refreshGeo = new THREE.PlaneGeometry(refreshBtnSize, refreshBtnSize);
+    const refreshMat = new THREE.MeshBasicMaterial({
+      color: 0x333355,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      depthTest: false,
+    });
+    _refreshButtonMesh = new THREE.Mesh(refreshGeo, refreshMat);
+    _refreshButtonMesh.renderOrder = 999;
+    _refreshButtonMesh.userData.isRefreshButton = true;
+    // Position below the cards, centered
+    _refreshButtonMesh.position.set(0, -1.2, 0.01);
+    upgradeGroup.add(_refreshButtonMesh);
+
+    // 🔄 emoji label
+    const refreshLabel = makeSprite('\u{1F504}', {
+      fontSize: 48,
+      scale: 0.2,
+      glow: false,
+    });
+    refreshLabel.position.set(0, 0, 0.02);
+    _refreshButtonMesh.add(refreshLabel);
+    _refreshButtonMesh.userData.label = refreshLabel;
+
+    // Border
+    const refreshBorderMat = new THREE.LineBasicMaterial({ color: 0x6666aa });
+    const refreshBorder = new THREE.LineSegments(new THREE.EdgesGeometry(refreshGeo), refreshBorderMat);
+    refreshBorder.position.set(0, 0, 0.005);
+    _refreshButtonMesh.add(refreshBorder);
+  } catch (e) {
+    console.warn('[hud] Failed to create refresh button:', e);
+  }
+  } // end if (game.mainWeaponLocked[hand])
+
+  // Store reroll context on upgradeGroup for the refresh callback
+  if (game.mainWeaponLocked[hand]) {
+    upgradeGroup.userData.rerollContext = {
+    hand,
+    mainWeaponId: game.mainWeapon[hand],
+    isBoss: !!game.justBossKill,
+    };
+  }
+
   // Smooth card-level intro. Keep the expensive text uploads slightly delayed so
   // the motion itself stays clean instead of hitching while textures are created.
   const warpBaseTime = performance.now();
@@ -2352,6 +2403,7 @@ export function hideUpgradeCards() {
   _warpAnimating = false;
   _textQueueReleaseTime = 0;
   _cooldownSprite = null;
+  _refreshButtonMesh = null;
   disposeGroupChildren(upgradeGroup);
   upgradeGroup.visible = false;
   upgradeGroup.userData.hoveredSelections = {};
@@ -2361,6 +2413,19 @@ export function hideUpgradeCards() {
 
 export function updateUpgradeCards(now, cooldownRemaining) {
   flushCardTextQueue();
+
+  // Animate reroll pop-in
+  upgradeCards.forEach(card => {
+    if (card.userData._rerollAnim) {
+      const elapsed = performance.now() - card.userData._rerollAnim.start - card.userData._rerollAnim.delay;
+      if (elapsed < 0) return; // still in delay
+      const t = Math.min(elapsed / 250, 1); // 250ms animation
+      // Elastic ease-out
+      const ease = t === 1 ? 1 : 1 - Math.pow(2, -10 * t) * Math.cos((t * 10 - 0.75) * (2 * Math.PI / 3));
+      card.scale.setScalar(ease);
+      if (t >= 1) delete card.userData._rerollAnim;
+    }
+  });
 
   // Animate card icons (rotation) - only after intro completes
   upgradeCards.forEach(card => {
@@ -2426,6 +2491,94 @@ export function getUpgradeCardHit(raycaster) {
  */
 export function getHoveredUpgradeCardHit(sourceKey = 'desktop') {
   return upgradeGroup.userData.hoveredSelections?.[sourceKey] || null;
+}
+
+/**
+ * Check if a raycaster hits the 🔄 refresh button.
+ * @param {THREE.Raycaster} raycaster
+ * @returns {boolean}
+ */
+export function getRefreshButtonHit(raycaster) {
+  if (!upgradeGroup.visible || !raycaster || !_refreshButtonMesh) return false;
+  const hits = raycaster.intersectObject(_refreshButtonMesh, false);
+  return hits.length > 0;
+}
+
+/**
+ * Reroll the 3 upgrade cards with new random ones from the same pool.
+ * Keeps header, weapon name, cooldown sprite, skip card, and refresh button.
+ * Returns the new pendingUpgrades array.
+ */
+export function rerollUpgradeCards() {
+  const ctx = upgradeGroup.userData.rerollContext;
+  if (!ctx) return null;
+
+  // Get fresh random upgrades
+  const newUpgrades = ctx.isBoss
+    ? getRandomSpecialUpgrades(3, ctx.mainWeaponId)
+    : getRandomUpgrades(3, ctx.mainWeaponId);
+
+  if (!newUpgrades || newUpgrades.length === 0) return null;
+
+  // Remove old upgrade cards (first 3) but keep skip, refresh, header etc.
+  const oldCards = upgradeCards.splice(0, 3); // remove first 3 entries
+  oldCards.forEach(cardGroup => {
+    upgradeGroup.remove(cardGroup);
+    disposeGroupChildren(cardGroup);
+  });
+
+  // Re-read layout for card positions
+  const ucLayout = layoutCache['upgrade-cards']?.elements;
+  const positions = [0,1,2,3].map(i => {
+    const el = ucLayout?.[`card${i}`];
+    return new THREE.Vector3(el?.x ?? [-2.25,-0.75,0.75,2.25][i], el?.y ?? 0, el?.z ?? 0);
+  });
+
+  // Read card style (same as showUpgradeCards)
+  const _uc = (key, defaults) => {
+    const el = ucLayout?.[key];
+    if (!el) return defaults;
+    return { x: el.x ?? defaults.x, y: el.y ?? defaults.y, z: el.z ?? defaults.z,
+      scale: el.scale ?? defaults.scale, fontSize: el.fontSize ?? defaults.fontSize,
+      glow: el.glow ?? defaults.glow, color: el.color ?? defaults.color,
+      maxWidth: el.maxWidth ?? defaults.maxWidth };
+  };
+  const cardStyle = {
+    name: _uc('card0_name', { y: 0.54, z: 0.01, fontSize: 65, scale: 1, glow: true, maxWidth: 600 }),
+    desc: _uc('card0_desc', { y: 0.16, z: 0.01, fontSize: 40, scale: 1, maxWidth: 600 }),
+    stat: _uc('card0_stat', { y: -0.18, z: 0.01, fontSize: 34, scale: 1, maxWidth: 600 }),
+    note: _uc('card0_note', { y: -0.36, z: 0.01, fontSize: 25, scale: 1, maxWidth: 600 }),
+    icon: _uc('card0_icon', { y: -0.52, z: 0.05, scale: 0.08 }),
+  };
+
+  // Shuffle and create new cards
+  const shuffled = [...newUpgrades];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  const newCards = [];
+  shuffled.slice(0, 3).forEach((upg, i) => {
+    const card = createUpgradeCard(upg, positions[i], ctx.hand, cardStyle);
+    card.name = `upgrade-card-${i}`;
+    upgradeGroup.add(card);
+    newCards.push(card);
+  });
+
+  // Insert new cards at beginning of upgradeCards array (before skip)
+  upgradeCards = [...newCards, ...upgradeCards];
+
+  // Quick pop-in animation for new cards
+  newCards.forEach((cardGroup, i) => {
+    cardGroup.scale.setScalar(0.01);
+    cardGroup.userData._rerollAnim = { start: performance.now(), delay: i * 80 };
+  });
+
+  // Play click sound for feedback
+  try { playMenuClick(); } catch(e) {}
+
+  return newUpgrades;
 }
 
 // ── Game Over / Victory ────────────────────────────────────
