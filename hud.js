@@ -1872,9 +1872,8 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.add(skipCard);
   upgradeCards.push(skipCard);
 
-  // 🔄 Refresh button (feature branch dev cheat — only for normal upgrades, not weapon selection)
+  // 🔄 Refresh button (feature branch dev cheat)
   _refreshButtonMesh = null;
-  if (game.mainWeaponLocked[hand]) {
   try {
     const refreshBtnSize = 0.35;
     const refreshGeo = new THREE.PlaneGeometry(refreshBtnSize, refreshBtnSize);
@@ -1911,16 +1910,13 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   } catch (e) {
     console.warn('[hud] Failed to create refresh button:', e);
   }
-  } // end if (game.mainWeaponLocked[hand])
 
   // Store reroll context on upgradeGroup for the refresh callback
-  if (game.mainWeaponLocked[hand]) {
-    upgradeGroup.userData.rerollContext = {
+  upgradeGroup.userData.rerollContext = {
     hand,
     mainWeaponId: game.mainWeapon[hand],
     isBoss: !!game.justBossKill,
-    };
-  }
+  };
 
   // Smooth card-level intro. Keep the expensive text uploads slightly delayed so
   // the motion itself stays clean instead of hitching while textures are created.
