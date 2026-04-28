@@ -7740,14 +7740,19 @@ function finalizeUpgradeSelection() {
 }
 
 // ── Evolution Cinematic ──────────────────────────────
-let evoCinematicState = null; // { evo, hand, phase, elapsed, objects: {} }
+// Pre-allocated vectors to avoid per-frame GC
+const _evoV3a = new THREE.Vector3();
+const _evoV3b = new THREE.Vector3();
+const _evoQuat = new THREE.Quaternion();
+
+let evoCinematicState = null;
+// State shape: { evo, hand, controllerIndex, phase, phaseStart, objects, particles, cardMeshes, coreWorldPos, coreWorldQuat }
 
 function startEvolutionCinematic(evo, hand) {
   const controllerIndex = hand === 'left' ? 0 : 1;
   const controller = controllers[controllerIndex];
 
   if (!controller) {
-    // Fallback: no controller, skip cinematic
     _log('[evolution] No controller, skipping cinematic');
     finalizeUpgradeSelection();
     return;
@@ -7759,13 +7764,15 @@ function startEvolutionCinematic(evo, hand) {
     evo,
     hand,
     controllerIndex,
-    phase: 'announce', // announce -> float_up -> transform -> return -> done
-    elapsed: 0,
+    phase: 'announce',
     phaseStart: performance.now(),
     objects: {},
+    particles: [],
+    cardMeshes: [],
+    coreWorldPos: new THREE.Vector3(),
+    coreWorldQuat: new THREE.Quaternion(),
   };
 
-  // Phase 1: Show announcement text
   showFloatingMessage(`\u26A1 ${evo.name.toUpperCase()}`, {
     duration: 2000,
     color: '#' + evo.sigColor.toString(16).padStart(6, '0'),
@@ -7775,134 +7782,348 @@ function startEvolutionCinematic(evo, hand) {
   _log(`[evolution] Cinematic started for ${evo.name}`);
 }
 
+// Spawn a trail particle at world position
+function _evoSpawnParticle(pos, color, particles) {
+  if (particles.length >= 50) return; // cap
+  const geo = new THREE.SphereGeometry(0.015, 4, 4);
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(pos);
+  mesh.userData._born = performance.now();
+  mesh.userData._life = 500; // ms
+  scene.add(mesh);
+  particles.push(mesh);
+}
+
+// Update and cull particles
+function _evoUpdateParticles(particles, now) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    const age = now - p.userData._born;
+    if (age > p.userData._life) {
+      scene.remove(p);
+      p.geometry.dispose();
+      p.material.dispose();
+      particles.splice(i, 1);
+    } else {
+      p.material.opacity = 0.8 * (1 - age / p.userData._life);
+      p.scale.setScalar(1 - age / p.userData._life * 0.5);
+    }
+  }
+}
+
+function _evoCleanup(state) {
+  const { objects, particles, cardMeshes } = state;
+  // Remove particles
+  for (const p of particles) {
+    scene.remove(p);
+    p.geometry.dispose();
+    p.material.dispose();
+  }
+  particles.length = 0;
+  // Remove card meshes
+  for (const c of cardMeshes) {
+    scene.remove(c);
+    c.geometry.dispose();
+    c.material.dispose();
+  }
+  cardMeshes.length = 0;
+  // Remove aura
+  if (objects.aura) {
+    scene.remove(objects.aura);
+    objects.aura.geometry.dispose();
+    objects.aura.material.dispose();
+  }
+  // Remove rig group (contains core in scene space)
+  if (objects.rig) {
+    scene.remove(objects.rig);
+  }
+}
+
 function updateEvolutionCinematic(now, dt) {
   if (!evoCinematicState) return;
 
-  const { evo, hand, controllerIndex, phase, phaseStart, objects } = evoCinematicState;
+  const { evo, hand, controllerIndex, objects, particles, cardMeshes } = evoCinematicState;
   const controller = controllers[controllerIndex];
-  const elapsed = (now - phaseStart) / 1000; // seconds
+  const phase = evoCinematicState.phase;
+  const phaseStart = evoCinematicState.phaseStart;
+  const elapsed = (now - phaseStart) / 1000;
 
+  // Always update particles
+  _evoUpdateParticles(particles, now);
+
+  // ── Phase 1: ANNOUNCE (0-2s) ───────────────────────
   if (phase === 'announce') {
-    // 0-1.5s: announcement text shown
-    if (elapsed > 1.5) {
-      evoCinematicState.phase = 'float_up';
+    if (elapsed > 2.0) {
+      evoCinematicState.phase = 'gather';
       evoCinematicState.phaseStart = now;
 
-      // Get the weapon visual sphere from the controller
+      // Find the controller core sphere
       const visual = controller.children.find(c => c.name === `controller-visual-${hand}`);
       const core = visual?.children.find(c => c.name === `controller-core-${hand}`);
 
-      if (core) {
-        // Store original position for return trip
-        objects.coreOriginalPos = core.position.clone();
-        objects.core = core;
-        objects.floatTarget = new THREE.Vector3(0, 0, -1.5); // float in front of player
+      if (!core) {
+        _log('[evolution] Core not found, skipping cinematic');
+        evoCinematicState = null;
+        finalizeUpgradeSelection();
+        return;
+      }
 
-        // Change color to evolution signature
-        core.material.color.setHex(evo.sigColor);
+      // Store world position BEFORE reparenting
+      core.getWorldPosition(evoCinematicState.coreWorldPos);
+      core.getWorldQuaternion(evoCinematicState.coreWorldQuat);
 
-        // Add glow aura
-        const auraGeo = new THREE.SphereGeometry(0.08, 16, 16);
-        const auraMat = new THREE.MeshBasicMaterial({
-          color: evo.sigColor,
+      // Create a rig group in scene space
+      const rig = new THREE.Group();
+      rig.name = 'evo-rig';
+      scene.add(rig);
+
+      // Detach core from controller, attach to rig at world transform
+      scene.attach(core); // THREE.js attach preserves world transform
+      rig.add(core);
+      core.position.set(0, 0, 0);
+      core.quaternion.set(0, 0, 0, 1);
+
+      objects.core = core;
+      objects.rig = rig;
+      objects.rigWorldStart = evoCinematicState.coreWorldPos.clone();
+
+      // Target: 1.5m in front of camera at eye level
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+      objects.floatTarget = camera.position.clone().add(camDir.multiplyScalar(1.5));
+      objects.floatTarget.y = Math.max(objects.floatTarget.y, 1.2); // ensure visible
+
+      // Change core color to evolution signature
+      core.material.color.setHex(evo.sigColor);
+      core.material.emissive?.setHex(evo.sigColor);
+
+      // Add glow aura to rig (not core, to keep it independent)
+      const auraGeo = new THREE.SphereGeometry(0.08, 16, 16);
+      const auraMat = new THREE.MeshBasicMaterial({
+        color: evo.sigColor,
+        transparent: true,
+        opacity: 0.4,
+      });
+      const aura = new THREE.Mesh(auraGeo, auraMat);
+      aura.name = 'evo-aura';
+      rig.add(aura);
+      objects.aura = aura;
+
+      // Create 3 spinning cards
+      const cardColors = [evo.sigColor, evo.sigColorAlt || evo.sigColor, evo.baseColor || evo.sigColor];
+      for (let i = 0; i < 3; i++) {
+        const cardGeo = new THREE.BoxGeometry(0.12, 0.18, 0.01);
+        const cardMat = new THREE.MeshBasicMaterial({
+          color: cardColors[i],
           transparent: true,
-          opacity: 0.4,
+          opacity: 0.9,
         });
-        const aura = new THREE.Mesh(auraGeo, auraMat);
-        aura.name = 'evo-aura';
-        core.add(aura);
-        objects.aura = aura;
+        const card = new THREE.Mesh(cardGeo, cardMat);
+        card.name = `evo-card-${i}`;
+        card.userData.angleOffset = (i / 3) * Math.PI * 2;
+        rig.add(card);
+        cardMeshes.push(card);
       }
     }
   }
 
-  else if (phase === 'float_up') {
-    // 0-1s: weapon floats up and out from hand
-    if (objects.core) {
-      const t = Math.min(1, elapsed / 1.0);
-      const eased = 1 - Math.pow(1 - t, 3); // ease out cubic
-      // Lerp the core's local position outward
-      objects.core.position.lerpVectors(
-        objects.coreOriginalPos,
-        new THREE.Vector3(0, 0.3, -0.8),
-        eased
-      );
+  // ── Phase 2: GATHER (2-3.5s) — core floats to center ──
+  else if (phase === 'gather') {
+    const t = Math.min(1, elapsed / 1.5);
+    const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
 
-      // Pulse the aura
-      if (objects.aura) {
-        const pulse = 1 + Math.sin(elapsed * 10) * 0.3;
-        objects.aura.scale.setScalar(pulse);
-        objects.aura.material.opacity = 0.3 + Math.sin(elapsed * 8) * 0.2;
+    // Move rig from controller world pos toward float target
+    objects.rig.position.lerpVectors(objects.rigWorldStart, objects.floatTarget, eased);
+
+    // Pulse aura during gather
+    if (objects.aura) {
+      const pulse = 1 + Math.sin(elapsed * 10) * 0.3;
+      objects.aura.scale.setScalar(pulse);
+      objects.aura.material.opacity = 0.3 + Math.sin(elapsed * 8) * 0.15;
+    }
+
+    // Cards start visible but far away, spiraling in slowly
+    for (const card of cardMeshes) {
+      const angle = card.userData.angleOffset + elapsed * 1.5;
+      const radius = 1.5 * (1 - eased * 0.5); // spiral inward slowly
+      card.position.set(Math.cos(angle) * radius, Math.sin(angle * 0.5) * 0.2, Math.sin(angle) * radius);
+      card.rotation.z = angle;
+    }
+
+    if (elapsed > 1.5) {
+      evoCinematicState.phase = 'card_spin';
+      evoCinematicState.phaseStart = now;
+    }
+  }
+
+  // ── Phase 3: CARD_SPIN (3.5-6.5s) — cards orbit faster and faster ──
+  else if (phase === 'card_spin') {
+    // Acceleration curve: starts at 2 rad/s, ends at ~15 rad/s
+    const speedMultiplier = 2 + elapsed * 4.5;
+
+    // Keep rig at float target
+    objects.rig.position.copy(objects.floatTarget);
+
+    // Core pulses brighter as speed increases
+    if (objects.core) {
+      const bright = 1 + elapsed * 0.15;
+      objects.core.scale.setScalar(1 + Math.sin(elapsed * 8) * 0.1);
+    }
+    if (objects.aura) {
+      const pulse = 1.5 + elapsed * 0.3;
+      objects.aura.scale.setScalar(pulse);
+      objects.aura.material.opacity = Math.min(0.7, 0.3 + elapsed * 0.1);
+    }
+
+    // Spin cards around core, accelerating
+    const baseAngle = elapsed * speedMultiplier;
+    for (let i = 0; i < cardMeshes.length; i++) {
+      const card = cardMeshes[i];
+      const angle = card.userData.angleOffset + baseAngle;
+      const radius = 0.4; // tight orbit
+      card.position.set(Math.cos(angle) * radius, Math.sin(angle * 0.7) * 0.1, Math.sin(angle) * radius);
+      card.rotation.z = angle;
+
+      // Spawn trail particles every few frames
+      if (Math.random() < 0.15) {
+        _evoV3a.copy(objects.rig.position).add(card.position);
+        _evoSpawnParticle(_evoV3a, evo.sigColor, particles);
       }
     }
 
-    if (elapsed > 1.0) {
-      evoCinematicState.phase = 'transform';
+    if (elapsed > 3.0) {
+      evoCinematicState.phase = 'merge';
       evoCinematicState.phaseStart = now;
+    }
+  }
 
-      // Screen flash (white)
+  // ── Phase 4: MERGE (6.5-7.5s) — cards spiral in, white flash ──
+  else if (phase === 'merge') {
+    const t = Math.min(1, elapsed / 1.0);
+    const eased = 1 - Math.pow(1 - t, 2);
+
+    objects.rig.position.copy(objects.floatTarget);
+
+    // Cards spiral inward to core
+    const spiralRadius = 0.4 * (1 - eased);
+    const angle = elapsed * 20; // fast
+    for (const card of cardMeshes) {
+      card.position.set(Math.cos(angle) * spiralRadius, 0, Math.sin(angle) * spiralRadius);
+      card.rotation.z = angle;
+      card.material.opacity = 1 - eased * 0.5;
+      // Heavy particles during merge
+      if (Math.random() < 0.3) {
+        _evoV3a.copy(objects.rig.position).add(card.position);
+        _evoSpawnParticle(_evoV3a, evo.sigColor, particles);
+      }
+    }
+
+    // White flash at t=0.6
+    if (t > 0.6 && !objects._flashed) {
+      objects._flashed = true;
       renderer.setClearColor(0xffffff, 1);
       setTimeout(() => {
         if (renderer) renderer.setClearColor(0x050008, 1);
       }, 150);
 
       // Controller vibration
-      if (navigator.getGamepads) {
-        const gamepad = navigator.getGamepads()[controllerIndex];
-        if (gamepad?.hapticActuators?.[0]) {
-          gamepad.hapticActuators[0].pulse(1.0, 200);
-        }
-      }
+      try {
+        const gamepad = navigator.getGamepads?.()?.[controllerIndex];
+        gamepad?.hapticActuators?.[0]?.pulse?.(1.0, 300);
+      } catch (_) { /* non-critical */ }
+    }
 
-      // Enlarge the core and set final color
-      if (objects.core) {
-        objects.core.scale.setScalar(1.3);
-        objects.core.material.color.setHex(evo.sigColor);
+    // Core expands during flash
+    if (objects.core && t > 0.6) {
+      objects.core.scale.setScalar(1 + (t - 0.6) * 5); // up to 3x
+    }
+
+    // Remove cards after merge
+    if (t >= 1.0) {
+      for (const card of cardMeshes) {
+        scene.remove(card); // remove from rig
+        card.geometry.dispose();
+        card.material.dispose();
       }
+      cardMeshes.length = 0;
+
+      evoCinematicState.phase = 'reveal';
+      evoCinematicState.phaseStart = now;
     }
   }
 
-  else if (phase === 'transform') {
-    // 0-1.5s: weapon pulses in evolved form
+  // ── Phase 5: REVEAL (7.5-9s) — evolved weapon pulses + tagline ──
+  else if (phase === 'reveal') {
+    objects.rig.position.copy(objects.floatTarget);
+
+    // Core shrinks back to 1.3x with evolved color
     if (objects.core) {
-      const pulse = 1.3 + Math.sin(elapsed * 6) * 0.1;
-      objects.core.scale.setScalar(pulse);
+      const shrinkT = Math.min(1, elapsed / 0.5);
+      const scale = 3 - (3 - 1.3) * shrinkT;
+      objects.core.scale.setScalar(scale);
+      objects.core.material.color.setHex(evo.sigColor);
     }
-    if (objects.aura) {
-      objects.aura.scale.setScalar(1.5 + Math.sin(elapsed * 8) * 0.3);
+
+    // Sparkle particles radiating outward
+    if (elapsed < 1.0 && Math.random() < 0.2) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 0.1 + elapsed * 0.3;
+      _evoV3a.copy(objects.floatTarget).add(
+        _evoV3b.set(Math.cos(angle) * dist, Math.sin(angle) * dist * 0.5, Math.sin(angle) * dist)
+      );
+      _evoSpawnParticle(_evoV3a, evo.sigColor, particles);
+    }
+
+    // Show tagline after brief pause
+    if (elapsed > 0.3 && !objects._taglineShown) {
+      objects._taglineShown = true;
+      showFloatingMessage(`${evo.desc || ''}`, {
+        duration: 1500,
+        color: '#' + evo.sigColor.toString(16).padStart(6, '0'),
+        fontSize: 36,
+      });
     }
 
     if (elapsed > 1.5) {
       evoCinematicState.phase = 'return';
       evoCinematicState.phaseStart = now;
+
+      // Store current rig position as return start
+      objects.returnStart = objects.rig.position.clone();
+      // Get controller's current world position as return target
+      controller.getWorldPosition(_evoV3a);
+      objects.returnTarget = _evoV3a.clone();
     }
   }
 
+  // ── Phase 6: RETURN (9-10s) — weapon returns to hand ──
   else if (phase === 'return') {
-    // 0-0.8s: weapon returns to hand
-    if (objects.core) {
-      const t = Math.min(1, elapsed / 0.8);
-      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease in-out quad
-      objects.core.position.lerpVectors(
-        new THREE.Vector3(0, 0.3, -0.8),
-        objects.coreOriginalPos,
-        eased
-      );
+    const t = Math.min(1, elapsed / 1.0);
+    const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease in-out quad
+
+    // Lerp rig from float target back to controller world position
+    controller.getWorldPosition(_evoV3a);
+    objects.rig.position.lerpVectors(objects.returnStart, _evoV3a, eased);
+
+    // Fade aura
+    if (objects.aura) {
+      objects.aura.material.opacity = 0.4 * (1 - t);
     }
 
-    if (elapsed > 0.8) {
-      // Clean up aura
-      if (objects.aura) {
-        objects.aura.geometry.dispose();
-        objects.aura.material.dispose();
-        objects.core.remove(objects.aura);
-      }
-
-      // Restore core position
-      if (objects.core) {
-        objects.core.position.copy(objects.coreOriginalPos);
+    if (t >= 1.0) {
+      // Reparent core back to controller
+      const visual = controller.children.find(c => c.name === `controller-visual-${hand}`);
+      if (visual && objects.core) {
+        // Move core back to controller's local space
+        visual.attach(objects.core); // preserves world transform
+        objects.core.position.set(0, 0, 0);
+        objects.core.quaternion.set(0, 0, 0, 1);
         objects.core.scale.setScalar(1.0);
       }
+
+      // Full cleanup
+      _evoCleanup(evoCinematicState);
 
       // Update controller sphere to evolved color
       updateControllerSphereColor(controllerIndex);
@@ -7910,7 +8131,7 @@ function updateEvolutionCinematic(now, dt) {
       // End cinematic
       evoCinematicState = null;
 
-      // Now advance to next level
+      // Advance to next level
       finalizeUpgradeSelection();
     }
   }
