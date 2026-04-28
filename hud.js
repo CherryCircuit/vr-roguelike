@@ -213,6 +213,38 @@ function getSkipIconGeo() {
 
 let upgradeCards = [];
 let _refreshButtonMesh = null; // 🔄 reroll button
+let _refreshIconTexture = null; // cached icon texture
+
+// Pre-generate refresh icon texture from inline SVG (async, called once)
+async function _initRefreshIconTexture() {
+  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+    <g transform="translate(128,128)">
+      <!-- Top arc: 3 o'clock to 9 o'clock, counterclockwise on screen -->
+      <path d="M 48.3 -12.4 A 50 50 0 0 0 -48.3 -12.4" stroke="#aabbff" stroke-width="12" fill="none" stroke-linecap="round"/>
+      <polygon points="-48.3,-12.4 -38.7,-21.2 -52.3,-24.8" fill="#aabbff"/>
+      <!-- Bottom arc: 9 o'clock to 3 o'clock, counterclockwise on screen -->
+      <path d="M -48.3 12.4 A 50 50 0 0 0 48.3 12.4" stroke="#aabbff" stroke-width="12" fill="none" stroke-linecap="round"/>
+      <polygon points="48.3,12.4 52.3,24.8 38.7,21.2" fill="#aabbff"/>
+    </g>
+  </svg>`;
+  const svgBlob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  const img = await new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = svgUrl;
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 256;
+  canvas.getContext('2d').drawImage(img, 0, 0, 256, 256);
+  URL.revokeObjectURL(svgUrl);
+  _refreshIconTexture = new THREE.CanvasTexture(canvas);
+  _refreshIconTexture.minFilter = THREE.LinearFilter;
+  _refreshIconTexture.premultiplyAlpha = false;
+}
+// Kick off texture generation
+_initRefreshIconTexture().catch(e => console.warn('[hud] Failed to init refresh icon:', e));
 let upgradeChoices = [];
 
 // Cached cooldown sprite reference (avoids getObjectByName traversal every frame)
@@ -1875,7 +1907,7 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   // 🔄 Refresh button (feature branch dev cheat)
   _refreshButtonMesh = null;
   try {
-    const refreshBtnSize = 0.35;
+    const refreshBtnSize = 0.42;
     const refreshGeo = new THREE.PlaneGeometry(refreshBtnSize, refreshBtnSize);
     const refreshMat = new THREE.MeshBasicMaterial({
       color: 0x333355,
@@ -1892,13 +1924,16 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
     _refreshButtonMesh.position.set(0, -1.2, 0.01);
     upgradeGroup.add(_refreshButtonMesh);
 
-    // 🔄 emoji label
-    const refreshLabel = makeSprite('\u{1F504}', {
-      fontSize: 48,
-      scale: 0.2,
-      glow: false,
-    });
+    // 🔄 Refresh icon sprite
+    const refreshLabel = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: _refreshIconTexture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    refreshLabel.scale.set(0.42, 0.42, 1);
     refreshLabel.position.set(0, 0, 0.02);
+    refreshLabel.visible = !!_refreshIconTexture;
     _refreshButtonMesh.add(refreshLabel);
     _refreshButtonMesh.userData.label = refreshLabel;
 
