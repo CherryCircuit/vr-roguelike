@@ -28,7 +28,7 @@ const CHROME_ARGS = [
   '--enable-features=WebGL',
 ];
 
-const GAME_URL = 'http://localhost:8000';
+const GAME_URL = 'http://localhost:8000/dev.html';
 const TIMEOUT = 120000; // 2 min overall test timeout
 
 // Test result tracking

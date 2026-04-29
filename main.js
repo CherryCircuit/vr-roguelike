@@ -2320,6 +2320,17 @@ function disposeMaterialDeep(material) {
     }
   }
 
+  // ShaderMaterial uniforms can contain textures under custom names
+  // (e.g., uNoiseTexture, uGridTexture) that aren't in the standard maps list.
+  if (material.uniforms) {
+    for (const key of Object.keys(material.uniforms)) {
+      const val = material.uniforms[key]?.value;
+      if (val && val.isTexture && typeof val.dispose === 'function') {
+        val.dispose();
+      }
+    }
+  }
+
   if (typeof material.dispose === 'function') material.dispose();
 }
 
@@ -2401,6 +2412,8 @@ function disposeObject3D(obj) {
   unregisterFadeMaterialsForObject(obj);
 
   obj.traverse((child) => {
+    // Skip disposal of shared pool resources (drone projectiles share geo/mat)
+    if (child.userData?._sharedPool) return;
     if (child.geometry) child.geometry.dispose();
     if (child.material) disposeMaterialDeep(child.material);
   });
@@ -6622,6 +6635,37 @@ function destroyProximityMine(mine) {
 const activeAttackDrones = [];
 const MAX_ATTACK_DRONES = 2;
 
+// ── Drone projectile pool (reused geometry + material) ────
+let _droneProjGeo = null;
+let _droneProjMat = null;
+
+function _ensureDroneProjPool() {
+  if (!_droneProjGeo) {
+    _droneProjGeo = new THREE.SphereGeometry(0.04, 6, 6);
+  }
+  if (!_droneProjMat) {
+    _droneProjMat = basicMat(0x88ff88, { transparent: true, opacity: 0.8 });
+  }
+}
+
+function _getDroneProjectile(now) {
+  _ensureDroneProjPool();
+  const proj = new THREE.Mesh(_droneProjGeo, _droneProjMat);
+  proj.name = 'drone-projectile';
+  proj.userData._sharedPool = true; // don't dispose shared geo/mat
+  proj.userData.velocity = new THREE.Vector3();
+  proj.userData.createdAt = now;
+  proj.userData.lifetime = 1500;
+  proj.userData.damage = 0;
+  proj.userData.isDroneProjectile = true;
+  return proj;
+}
+
+function _disposeDroneProjPool() {
+  if (_droneProjGeo) { _droneProjGeo.dispose(); _droneProjGeo = null; }
+  if (_droneProjMat) { _droneProjMat.dispose(); _droneProjMat = null; }
+}
+
 function initAttackDronePool() {
   if (attackDronePoolInitialized || !scene) return;
 
@@ -6790,21 +6834,11 @@ function updateAttackDrones(now, dt, playerPos) {
       });
 
       if (nearestEnemy) {
-        // Fire projectile at enemy
-        const direction = new THREE.Vector3()
-          .subVectors(nearestEnemy.mesh.position, drone.mesh.position)
-          .normalize();
-
-        // Create small projectile
-        const projGeo = new THREE.SphereGeometry(0.04, 6, 6);
-        const projMat = basicMat(0x88ff88, {
-          transparent: true,
-          opacity: 0.8,
-        });
-        const proj = new THREE.Mesh(projGeo, projMat);
-        proj.name = 'drone-projectile';
+        // Fire projectile at enemy (reuse pooled geometry + material)
+        _evoV3a.subVectors(nearestEnemy.mesh.position, drone.mesh.position).normalize();
+        const proj = _getDroneProjectile(now);
         proj.position.copy(drone.mesh.position);
-        proj.userData.velocity = direction.clone().multiplyScalar(25);
+        proj.userData.velocity.copy(_evoV3a).multiplyScalar(25);
         proj.userData.createdAt = now;
         proj.userData.lifetime = 1500;
         proj.userData.damage = drone.damage;
@@ -7618,6 +7652,31 @@ registerResetHook(clearGeometryCaches);
 registerResetHook(clearHudGeoCache);
 
 // Clean up active charge explosions on game reset
+// Reset InstancedMesh projectile pools on full game restart
+registerResetHook(() => {
+  for (const [poolType, pool] of Object.entries(instancedProjectiles)) {
+    if (pool.mesh) {
+      pool.mesh.count = 0;
+      pool.mesh.instanceMatrix.needsUpdate = true;
+    }
+    pool.freeIndices = new Set();
+    if (projectileInstanceData[poolType]) {
+      for (let i = 0; i < projectileInstanceData[poolType].length; i++) {
+        projectileInstanceData[poolType][i] = { active: false };
+      }
+    }
+    // Reset glow planes too
+    if (pool.glowMesh) { pool.glowMesh.count = 0; pool.glowMesh.instanceMatrix.needsUpdate = true; }
+    if (pool.glowMeshRight) { pool.glowMeshRight.count = 0; pool.glowMeshRight.instanceMatrix.needsUpdate = true; }
+  }
+  // Reset debris glow pool
+  if (_debrisGlowPool) { _debrisGlowPool.count = 0; _debrisGlowPool.instanceMatrix.needsUpdate = true; }
+  // Reset drone proj pool
+  _disposeDroneProjPool();
+  // Reset boss helper pool
+  _disposeBossHelperPool();
+});
+
 registerResetHook(() => {
   for (let i = activeChargeExplosions.length - 1; i >= 0; i--) {
     const exp = activeChargeExplosions[i];
@@ -10303,6 +10362,44 @@ function updateExplosionVisuals(dt, now) {
 //  BOSS ATTACK HELPER FUNCTIONS
 // ============================================================
 
+// ── Shared geometry/material pool for boss helpers ───────
+const _bossHelperPool = {
+  debrisGeo: null,
+  debrisMat: null,
+  decoyGeo: null,
+  decoyMat: null,
+  pulseGeo: null,
+  pulseMat: null,
+  lightningGeo: null,
+  lightningMat: null,
+};
+
+function _getBossHelperGeo(type) {
+  switch (type) {
+    case 'debris':
+      if (!_bossHelperPool.debrisGeo) _bossHelperPool.debrisGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+      return _bossHelperPool.debrisGeo;
+    case 'decoy':
+      if (!_bossHelperPool.decoyGeo) _bossHelperPool.decoyGeo = new THREE.SphereGeometry(0.4, 8, 8);
+      return _bossHelperPool.decoyGeo;
+    case 'pulse':
+      if (!_bossHelperPool.pulseGeo) _bossHelperPool.pulseGeo = new THREE.SphereGeometry(0.3, 8, 8);
+      return _bossHelperPool.pulseGeo;
+    case 'lightning':
+      if (!_bossHelperPool.lightningGeo) _bossHelperPool.lightningGeo = new THREE.SphereGeometry(0.25, 6, 6);
+      return _bossHelperPool.lightningGeo;
+  }
+}
+
+function _disposeBossHelperPool() {
+  for (const key of Object.keys(_bossHelperPool)) {
+    if (_bossHelperPool[key]) {
+      _bossHelperPool[key].dispose();
+      _bossHelperPool[key] = null;
+    }
+  }
+}
+
 // Create shockwave for Scrap Golem
 if (typeof window !== 'undefined') {
   window.createBossShockwave = function(position, radius, damage) {
@@ -10326,12 +10423,11 @@ if (typeof window !== 'undefined') {
     const debrisCount = 5 + Math.floor(damage / 10);
     for (let i = 0; i < debrisCount; i++) {
       const angle = (i / debrisCount) * Math.PI * 2;
-      const debrisGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
-      const debrisMat = basicMat(0x886644, {
+      const debris = new THREE.Mesh(_getBossHelperGeo('debris'), basicMat(0x886644, {
         transparent: true,
         opacity: 0.9
-      });
-      const debris = new THREE.Mesh(debrisGeo, debrisMat);
+      }));
+      debris.userData._sharedPool = true; // geometry is pooled
       debris.position.copy(position);
       debris.position.y += 0.5;
       
@@ -10378,12 +10474,11 @@ if (typeof window !== 'undefined') {
   
   // Create shootable decoy for Holo Phantom
   window.createHoloDecoy = function(position, explosionDamage, explosionRadius) {
-    const decoyGeo = new THREE.SphereGeometry(0.4, 8, 8);
-    const decoyMat = basicMat(0x00ffff, {
+    const decoy = new THREE.Mesh(_getBossHelperGeo('decoy'), basicMat(0x00ffff, {
       transparent: true,
       opacity: 0.7
-    });
-    const decoy = new THREE.Mesh(decoyGeo, decoyMat);
+    }));
+    decoy.userData._sharedPool = true;
     decoy.name = 'boss-decoy';
     decoy.position.copy(position);
     decoy.userData.isBossProjectile = true;
@@ -10399,12 +10494,11 @@ if (typeof window !== 'undefined') {
   // Fire pulse wave for Pulse Emitter
   window.fireBossPulse = function(fromPos, targetPos, damage) {
     const direction = targetPos.clone().sub(fromPos).normalize();
-    const pulseGeo = new THREE.SphereGeometry(0.3, 8, 8);
-    const pulseMat = basicMat(0xff0088, {
+    const pulse = new THREE.Mesh(_getBossHelperGeo('pulse'), basicMat(0xff0088, {
       transparent: true,
       opacity: 0.9
-    });
-    const pulse = new THREE.Mesh(pulseGeo, pulseMat);
+    }));
+    pulse.userData._sharedPool = true;
     pulse.name = 'boss-pulse';
     pulse.position.copy(fromPos);
     pulse.userData.direction = direction;
@@ -10465,12 +10559,11 @@ if (typeof window !== 'undefined') {
     
     // Also create a projectile that can be shot down
     const direction = targetPos.clone().sub(fromPos).normalize();
-    const lightningGeo = new THREE.SphereGeometry(0.25, 6, 6);
-    const lightningMat = basicMat(0xffff00, {
+    const lightning = new THREE.Mesh(_getBossHelperGeo('lightning'), basicMat(0xffff00, {
       transparent: true,
       opacity: 0.95
-    });
-    const lightning = new THREE.Mesh(lightningGeo, lightningMat);
+    }));
+    lightning.userData._sharedPool = true;
     lightning.name = 'boss-lightning-proj';
     lightning.position.copy(fromPos);
     lightning.userData.direction = direction;
