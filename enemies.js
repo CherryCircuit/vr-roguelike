@@ -124,6 +124,7 @@ const _emissiveWhite = new THREE.Color(0xffffff);
 const _emissiveAmber = new THREE.Color(0xffaa00);
 const _scratchColor = new THREE.Color();
 const _handDamagedColor = new THREE.Color(0x660000); // SkullHand damage tint (per-frame hot path)
+const _bossDamageRed = new THREE.Color(0xff0000);    // base Boss takeDamage tint target
 const _prismWhite = new THREE.Color(0xffffff);         // PrismBoss frenzy pulse lerp target
 const _prismOrigColor = new THREE.Color();             // PrismBoss facet original color scratch
 const _scratchMat4 = new THREE.Matrix4();
@@ -1593,6 +1594,10 @@ const babySpiders = [];
 
 // Pulse Bomber projectiles (sonic rings)
 const pulseBomberRings = [];
+// Fix: callback so sonic rings can damage the player — main.js registers it
+// (enemies.js has no direct player-damage access)
+let _pulseRingHitCallback = null;
+export function setPulseRingHitCallback(fn) { _pulseRingHitCallback = fn; }
 
 /**
  * Record player position for Clone Mimic tracking.
@@ -1799,8 +1804,14 @@ export function updatePulseBomberRings(dt, now, playerPos) {
     ring.position.addScaledVector(ring.userData.velocity, dt);
 
     // Check collision with player
+    // Fix: the ring used to set hitPlayer and vanish — damage was never applied
     if (ring.position.distanceTo(playerPos) < ring.userData.radius + 0.3) {
-      ring.hitPlayer = true;
+      if (_pulseRingHitCallback) _pulseRingHitCallback(ring.userData.damage);
+      sceneRef.remove(ring);
+      ring.geometry.dispose();
+      ring.material.dispose();
+      pulseBomberRings.splice(i, 1);
+      continue;
     }
 
     // Fade out
@@ -1979,48 +1990,6 @@ function damageNearbyEnemies(position, damage, radius) {
   }
 }
 
-
-const electricArcs = [];
-/**
- * Clear all electric arcs spawned by a specific conductor.
- * Called when a conductor dies to immediately remove its buff visuals.
- * @param {number} conductorId - Unique ID of the conductor
- */
-function clearConductorArcs(conductorId) {
-  for (let i = electricArcs.length - 1; i >= 0; i--) {
-    const arc = electricArcs[i];
-    if (arc.conductorId === conductorId) {
-      sceneRef.remove(arc.mesh);
-      arc.mesh.geometry.dispose();
-      arc.mesh.material.dispose();
-      electricArcs.splice(i, 1);
-    }
-  }
-}
-
-/**
- * Clear all electric arcs connected to a specific buffed enemy.
- * Called when a buffed enemy dies to immediately remove its lightning visuals.
- * @param {number} targetEnemyId - Unique ID of the buffed enemy
- */
-function clearTargetEnemyArcs(targetEnemyId) {
-  for (let i = electricArcs.length - 1; i >= 0; i--) {
-    const arc = electricArcs[i];
-    if (arc.targetEnemyId === targetEnemyId) {
-      sceneRef.remove(arc.mesh);
-      arc.mesh.geometry.dispose();
-      arc.mesh.material.dispose();
-      electricArcs.splice(i, 1);
-    }
-  }
-}
-
-/**
- * Clear all electric arcs (for level transitions).
- */
-export function clearAllElectricArcs() {
-  electricArcs.length = 0;
-}
 
 /**
  * Update baby spiders.
@@ -4290,15 +4259,10 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
         setMaterialEmissiveSafe(c.material, _emissiveBlack, 0);
       }
     });
-    // Clear all electric arcs connected to this buffed enemy
-    clearTargetEnemyArcs(e.id);
   }
 
   // Conductor: Chain overload - kills all linked enemies
   if (e.isConductor) {
-    // Clear all electric arcs spawned by this conductor immediately
-    clearConductorArcs(e.id);
-
     if (e.linkedEnemies.length > 0) {
       // Snapshot linked enemy references before killing to avoid index corruption
       // (recursive destroyEnemy calls will splice activeEnemies, shifting indices)
@@ -4430,9 +4394,6 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
 export function clearAllEnemies() {
   // Clear geometry caches to prevent GPU object accumulation across game restarts
   clearGeometryCaches();
-
-  // Clear electric arcs (conductor arcs must not leak across level transitions)
-  clearAllElectricArcs();
 
   // Reset conductor glow pool
   if (conductorGlowPool) {
@@ -5118,9 +5079,13 @@ class Boss {
     if (this.voxelMaterials && this.voxelMaterials.length > 0) {
       this.updateVoxelTinting(damageRatio);
     } else {
+      // Fix: condition was inverted (!isBossBody) — the tint only hit the
+      // invisible hitbox, so base bosses showed NO damage feedback. Body voxels
+      // are the ones marked isBossBody.
       this.mesh.traverse(c => {
-        if (c.isMesh && c.material && !c.userData.isBossBody) {
-          c.material.color.copy(this.baseColor).lerp(new THREE.Color(0xff0000), damageRatio);
+        if (c.isMesh && c.material && c.userData.isBossBody) {
+          // Perf: module scratch Color (was new THREE.Color per hit per child)
+          c.material.color.copy(this.baseColor).lerp(_bossDamageRed, damageRatio);
         }
       });
     }
@@ -11514,7 +11479,10 @@ export function updateBossMinions(dt, playerPos) {
       m.mesh.userData.slideAngle = angle;
     }
     m.mesh.rotation.y = m.mesh.userData.slideAngle || 0;
-    _dir.copy(playerPos).sub(m.mesh.position).normalize();
+    // Fix: guard normalize on zero-length vector (minion spawned exactly on
+    // player → NaN components corrupt the mesh matrix)
+    _dir.copy(playerPos).sub(m.mesh.position);
+    if (_dir.lengthSq() > 1e-8) _dir.normalize();
     m.mesh.position.addScaledVector(_dir, (m.speed || 0.6) * dt);
     // Use distance-only clamp (not front-arc) to prevent minions from following player's look direction
     clampPositionToDistance(m.mesh.position, playerPos, 2.0, 18);
@@ -11878,7 +11846,10 @@ export function updateBossProjectiles(dt, now, playerPos) {
     } else {
       // Homing projectile: steer toward player
       const speed = proj.velocity.length();
-      _scratch.subVectors(playerPos, proj.position).normalize();
+      // Fix: guard normalize on zero-length vector (spawned exactly on player
+      // → NaN velocity corrupts the instance matrix)
+      _scratch.subVectors(playerPos, proj.position);
+      if (_scratch.lengthSq() > 1e-8) _scratch.normalize();
       const desiredVelocity = _scratch.multiplyScalar(speed);
       proj.velocity.lerp(desiredVelocity, Math.min(1, (proj.homingStrength || 2.5) * adjustedDt));
       if (proj.velocity.lengthSq() > 0.0001) {

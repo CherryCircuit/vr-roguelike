@@ -30,7 +30,6 @@ let pauseMenuElements = {
 
 let pauseMenuAnimation = {
   slideIn: 0,
-  targetSlideIn: 0,
   startTime: 0,
   chartAnimation: 0,
   numbersAnimated: false,
@@ -58,7 +57,6 @@ let pauseCountdownInitialized = false;
 let pauseMenuBasePosition = new THREE.Vector3();
 const PAUSE_MENU_SCALE = 0.78;          // ~40% smaller than previous 1.3 scale
 const PAUSE_MENU_DISTANCE = 2.6;        // Slightly farther from player in VR
-const PAUSE_MENU_RENDER_ORDER = 10000;  // Draw over floor HUD layers
 const PAUSE_MENU_FONT_MULTIPLIER = 2.5;
 
 // Render order constants for pause menu elements (layered back to front)
@@ -156,12 +154,21 @@ export function showPauseMenu() {
         pauseMenuGroup.remove(oldSection);
       }
       const newSection = createBlasterSection(hand);
-      newSection.position.set(hand === 'left' ? -1.7 : 1.7, 0.2, 0.02);
+      // Fix: rebuild path ignored layout overrides (hardcoded ±1.7) — mirror
+      // the first-build layout logic so custom positions survive re-opens
+      const layoutPos = pauseMenuLayout?.elements?.[hand === 'left' ? 'left_blaster_section' : 'right_blaster_section'];
+      if (layoutPos) {
+        newSection.position.set(layoutPos.x, layoutPos.y, layoutPos.z ?? 0.02);
+      } else {
+        newSection.position.set(hand === 'left' ? -1.7 : 1.7, 0.2, 0.02);
+      }
       pauseMenuGroup.add(newSection);
       pauseMenuElements[hand + 'BlasterSection'] = newSection;
     });
 
-    pauseMenuAnimation.targetSlideIn = 1;
+    // Fix: reset slideIn so re-opening re-runs the slide-in animation
+    // (targetSlideIn was dead state — nothing ever read it)
+    pauseMenuAnimation.slideIn = 0;
     pauseMenuAnimation.startTime = performance.now();
     pauseMenuAnimation.chartAnimation = 0;
     pauseMenuAnimation.numbersAnimated = false;
@@ -549,8 +556,9 @@ function createStatsSection() {
   group.add(titleText);
 
   // KILLS/SHOTS/HITS centered under the blaster sections
+  // Fix: game.runStats.totalKills doesn't exist — total kills live on game.totalKills
   const primaryStats = [
-    `KILLS: ${game.runStats.totalKills || game.totalKills || 0}`,
+    `KILLS: ${game.totalKills || 0}`,
     `SHOTS: ${game.runStats.shotsFired}`,
     `HITS: ${game.runStats.shotsHit}`,
   ];
@@ -885,60 +893,6 @@ function createResumeButton() {
 
   // Store button mesh reference for targeted raycasting
   pauseMenuElements.resumeBtnMesh = btnMesh;
-
-  return group;
-}
-
-function createPerfButton() {
-  const group = new THREE.Group();
-
-  const btnGeo = new THREE.PlaneGeometry(1.55, 0.34);
-  const btnMat = new THREE.MeshBasicMaterial({
-    color: 0x110033,
-    transparent: true,
-    opacity: 0.85,
-    side: THREE.DoubleSide,
-    depthTest: false,
-    depthWrite: false,
-  });
-  const btnMesh = new THREE.Mesh(btnGeo, btnMat);
-  btnMesh.userData.isPerfButton = true;
-  group.add(btnMesh);
-
-  const btnBorder = new THREE.LineSegments(
-    new THREE.EdgesGeometry(btnGeo),
-    new THREE.LineBasicMaterial({
-      color: 0x00ff00,
-      transparent: true,
-      opacity: 1.0,
-      depthTest: false,
-      depthWrite: false,
-    })
-  );
-  btnBorder.renderOrder = PAUSE_TEXT_RENDER_ORDER;
-  group.add(btnBorder);
-
-  // Get current profiler state
-  const profilerEnabled = (typeof window !== 'undefined' && window.frameProfiler && window.frameProfiler.enabled) || false;
-  const perfText = profilerEnabled ? 'PERF: ON' : 'PERF: OFF';
-
-  const text = makeSprite(perfText, {
-    fontSize: scalePauseFont(42),
-    color: profilerEnabled ? '#00ff00' : '#666666',
-    glow: true,
-    glowColor: profilerEnabled ? '#00ff00' : '#666666',
-    scale: scalePauseText(0.14),
-    renderOrder: PAUSE_TEXT_RENDER_ORDER
-  });
-  text.position.set(0, 0, 0.02);
-  group.add(text);
-
-  // Store button data for raycasting
-  group.userData = {
-    isPerfButton: true,
-    width: 2.0,
-    height: 0.5
-  };
 
   return group;
 }

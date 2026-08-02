@@ -573,7 +573,10 @@ export function getWeaponStats(mainWeaponId, upgrades) {
   if (u.shock) effects.push({ type: 'shock', stacks: u.shock });
   if (u.freeze) effects.push({ type: 'freeze', stacks: u.freeze });
   
-  const critMultiplier = (u.super_crit || 0) > 0 ? 3 : base.critMultiplier || 2;
+  // Fix: `let` instead of `const` — the (currently dormant) sniper branch above
+  // assigns critMultiplier = 4.5; with const it would throw a TDZ ReferenceError
+  // the moment that weapon gets wired up
+  let critMultiplier = (u.super_crit || 0) > 0 ? 3 : base.critMultiplier || 2;
   
   return {
     mainWeaponId,

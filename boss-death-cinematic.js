@@ -15,6 +15,9 @@ export const BOSS_DEATH_EXPLOSION_INTERVAL = 0.12;
 
 // Internal state
 let bossDeathFreezeTimer = 0;
+// Perf: console.log blocks the render thread on Quest — gate all cinematic
+// logging behind this (defaults to no-op)
+const bossDeathCinematicDebug = false ? console.log.bind(console, '[boss-cinematic]') : () => {};
 let bossDeathWhiteOverlay = null;
 let bossDeathBlackOverlay = null;
 let bossDeathOverlayDismissed = false;  // True after dismissBossDeathOverlay() is called
@@ -202,7 +205,9 @@ function createBossDeathWorldText(text) {
 export function startBossDeathCinematic(boss) {
   if (!boss || bossDeathCinematic.active) return;
 
-  console.log('[boss-cinematic] Starting boss death cinematic');
+  // Perf: console.log is synchronous on Quest and blocks the render thread —
+  // these fired on every boss kill. Replaced with a debug-gated helper.
+  bossDeathCinematicDebug('[boss-cinematic] Starting boss death cinematic');
 
   if (deps.resetAllSlowMoState) deps.resetAllSlowMoState();
   bossDeathCinematic.active = true;
@@ -247,9 +252,8 @@ export function startBossDeathCinematic(boss) {
   }
 
   if (!bossDeathCinematic.wasFinalBoss && deps.spawnBossDebris) deps.spawnBossDebris(boss);
-  if (typeof window !== 'undefined' && window.playBossDeath) {
-    window.playBossDeath();
-  }
+  // Note: removed legacy window.playBossDeath hook — it was never defined
+  // anywhere; the real death-knell path is deps.playSkullDeathKnell below
   // Play death knell for all bosses
   if (deps.playSkullDeathKnell) {
     deps.playSkullDeathKnell();
@@ -266,8 +270,11 @@ export function startBossDeathCinematic(boss) {
 
   if (deps.game && deps.State) {
     deps.game.state = deps.State.BOSS_DEATH_CINEMATIC;
+    // Fix: state transitions reset stateTimer per project convention
+    // (AGENTS.md §6) — stale timers leaked into the cinematic state
+    deps.game.stateTimer = 0;
   }
-  console.log('[boss-cinematic] State set to BOSS_DEATH_CINEMATIC');
+  bossDeathCinematicDebug('[boss-cinematic] State set to BOSS_DEATH_CINEMATIC');
 }
 
 /**

@@ -156,6 +156,11 @@ export function enable() {
   }
 
   // Request pointer lock for mouse look (but not if focus is in debug panel)
+  // Fix: moved the HUD/panel setup BEFORE this early-return — previously the
+  // return left desktop mode enabled but without crosshair/HUD
+  showDesktopHUD();
+  syncDebugPositionPanelVisibility();
+
   if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#debug-position-panel')) {
     return;
   }
@@ -172,10 +177,6 @@ export function enable() {
       });
     }
   }
-
-  // Show desktop mode indicator and debug panel
-  showDesktopHUD();
-  syncDebugPositionPanelVisibility();
 }
 
 /**
@@ -199,19 +200,6 @@ export function disable() {
 
   hideDesktopHUD();
   hideDebugPositionPanel();
-}
-
-/**
- * Toggle between VR and desktop mode.
- */
-function toggleMode() {
-  if (enabled) {
-    disable();
-    return false; // VR mode
-  } else {
-    enable();
-    return true; // Desktop mode
-  }
 }
 
 /**
@@ -1201,10 +1189,8 @@ function copyPositionToClipboard() {
  * Get current position string formatted for biome spawn.
  * Returns: "{ x: X, y: Y, z: Z }"
  */
-function getPositionString() {
-  const pos = player.position;
-  return `{ x: ${pos.x.toFixed(3)}, y: ${pos.y.toFixed(3)}, z: ${pos.z.toFixed(3)} }`;
-}
+// (getPositionString removed — no callers; the debug position panel
+//  implements its own readout inline)
 
 // ── HUD Helpers ────────────────────────────────────────────
 
@@ -1245,11 +1231,4 @@ function hideDesktopHUD() {
   if (crosshairElement) {
     crosshairElement.style.display = 'none';
   }
-}
-
-/**
- * Get control scheme name for display.
- */
-function getControlScheme() {
-  return enabled ? 'Desktop (Keyboard/Mouse)' : 'VR Controllers';
 }

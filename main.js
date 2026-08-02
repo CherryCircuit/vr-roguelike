@@ -44,6 +44,7 @@ import {
   playSkullDeathKnell, playSkullLaughSound,
   // Final boss sounds
   playFinalBossAwakenSound, playFinalBossCollapseGroan, playFinalBossVictorySting,
+  resumeAudioContext,
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
@@ -53,10 +54,10 @@ import {
   getBoss, spawnBoss, getBossNameForLevel, hitBoss, updateBoss, clearBoss, hitBossMinion, updateBossMinions,
   getBossMinions,
   updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward, setBossSpawnForward,
-  updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles, clearAllElectricArcs,
+  updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles,
   releaseBossProjIndex, clearBossMinions,
   clearAllTelegraphs, spawnHealthGainPopup,
-  clearGeometryCaches, setCameraRef
+  clearGeometryCaches, setCameraRef, setPulseRingHitCallback
 } from './enemies.js';
 import { setActiveStasisFields, getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -73,12 +74,11 @@ import {
   updateUpgradeCards, getUpgradeCardHit, getHoveredUpgradeCardHit, getHoveredAction, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, setLowHealthScreenPulse, updateSpeedLines, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
   showBossHealthBar, hideBossHealthBar, updateBossHealthBar, flashBossHealthBarGreen,
-  getTitleButtonHit, showNameEntry, hideNameEntry, getNameEntryHit, updateKeyboardHover, getNameEntryName,
+  getTitleButtonHit, showNameEntry, hideNameEntry, getNameEntryHit, getNameEntryName,
   desktopTypeChar, processKeyPress,
   showScoreboard, hideScoreboard, getScoreboardHit, updateScoreboardScroll,
   showCountrySelect, hideCountrySelect, getCountrySelectHit,
-  showDebugJumpScreen, getDebugJumpHit,
-  showReadyScreen, hideReadyScreen, updateReadyCountdownText, updateTitleDebugIndicator,
+  showReadyScreen, hideReadyScreen, updateReadyCountdownText,
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown, hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
   showSettings, hideSettings, isSettingsVisible, getSettingsHit, executeSettingsAction, getPreviousMenu,
   updateHUDHover,
@@ -225,9 +225,6 @@ const NEON_CYAN = 0x00ffff;
 
 // VR camera height fix: Shift entire scene down so XR camera at ~0.875m appears 1.6m above floor
 const SCENE_Y_OFFSET = -0.725;
-
-const LASER_RANGE = 50;
-const LASER_DURATION = 250;
 
 // ============================================================
 // FRAME PROFILER
@@ -583,8 +580,6 @@ const instancedProjectiles = {};  // poolType -> { mesh, glowMesh, haloMesh, max
 
 // Reusable temp objects (avoid GC pressure)
 const _projMatrix = new THREE.Matrix4();
-const _projPosition = new THREE.Vector3();
-const _projQuaternion = new THREE.Quaternion();
 const _projScale = new THREE.Vector3(1, 1, 1);
 const _projColor = new THREE.Color();
 
@@ -1248,28 +1243,6 @@ const vrPauseButtonPressed = new Map();
 let lastVRPauseToggleTime = 0;
 const VR_PAUSE_DEBOUNCE_MS = 350;
 
-const BIOME_LIGHTING = {
-  synthwave_valley: {
-    ambient: { color: 0x110022, intensity: 0.15 },
-    directional: { color: 0xff8844, intensity: 0.8, position: [50, 80, 30] },
-    point: { color: 0xffeedd, intensity: 1.5, distance: 20 },
-  },
-  desert_night: {
-    ambient: { color: 0x0a0a1a, intensity: 0.12 },
-    directional: { color: 0xaaccff, intensity: 0.2, position: [-40, 60, -30] },
-    point: { color: 0xddddff, intensity: 1.2, distance: 18 },
-  },
-  alien_planet: {
-    ambient: { color: 0x0a1a0a, intensity: 0.1 },
-    directional: { color: 0x44ffaa, intensity: 3.0, position: [-30, 50, 40] },
-    point: { color: 0x88ff88, intensity: 1.0, distance: 16 },
-  },
-  hellscape_lava: {
-    ambient: { color: 0x1a0505, intensity: 0.08 },
-    directional: { color: 0xff2222, intensity: 0.7, position: [20, 40, -50] },
-    point: { color: 0xff4444, intensity: 1.3, distance: 15 },
-  },
-};
 // BIOME_LIGHTING removed — all biomes provide their own lighting
 const AVAILABLE_BIOMES = ['synthwave_valley', 'desert_night', 'alien_planet', 'hellscape_lava'];
 
@@ -1754,25 +1727,28 @@ function init() {
   renderer.xr.addEventListener('sessionstart', () => {
     const isQuest = /OculusBrowser|Meta Quest/i.test(navigator.userAgent);
     renderer.xr.setFoveation(isQuest ? 0.4 : 0.2);
+    // Fix: entering VR can suspend the AudioContext (SFX would silently die)
+    resumeAudioContext();
     // Camera is added directly to scene - VR hands work correctly now
     // Validate controller handedness on session start
     validateControllerHandedness();
+
+    // Listen for controller changes (e.g., Quest sleep/wake causing hand swap)
+    // Fix: this used to run at init when getSession() is still null — the
+    // listener was never attached. Attach it here once the session exists.
+    const activeSession = renderer.xr.getSession();
+    if (activeSession && activeSession.inputSourcesChange && !activeSession.userData._swapListenerAttached) {
+      activeSession.userData._swapListenerAttached = true;
+      activeSession.inputSourcesChange.addEventListener('inputsourceschange', () => {
+        validateControllerHandedness();
+      });
+    }
   });
 
   // No camera rig reset needed - camera is direct child of scene
   renderer.xr.addEventListener('sessionend', () => {
     _log('[vr] Session ended');
   });
-
-  // Listen for controller changes (e.g., Quest sleep/wake causing hand swap)
-  if (renderer.xr.getSession) {
-    const session = renderer.xr.getSession();
-    if (session && session.inputSourcesChange) {
-      session.inputSourcesChange.addEventListener('inputsourceschange', () => {
-        validateControllerHandedness();
-      });
-    }
-  }
 
     // Don't show "VR NOT AVAILABLE" message - game works in desktop mode
   // Desktop controls will auto-enable if VR isn't available
@@ -1823,6 +1799,23 @@ function init() {
   // Init subsystems
   initEnemies(scene);
   setCameraRef(camera);
+  // Fix: wire Pulse Bomber sonic ring damage (was purely visual before)
+  setPulseRingHitCallback((damage) => {
+    const dead = applyPlayerDamage(damage);
+    setKilledBy({ type: 'enemy', name: 'Pulse Bomber', enemyType: 'pulse_bomber' });
+    triggerHitFlash(true);
+    playDamageSound();
+    cameraShake = 0.5;  // 0.5 second shake duration
+    cameraShakeIntensity = 0.05;  // shake magnitude
+    originalCameraPos.copy(camera.position);
+    triggerScreenShake(0.15, 500);
+    floorFlashing = true;
+    floorFlashTimer = 1.0;
+    window._timeScale = 1.0;
+    window._wasCloseEnemy = false;
+    timeScale = 1.0;
+    if (dead && game.state === State.PLAYING) endGame(false);
+  });
   initHUD(camera, scene);
   initWristHolograms();
   // Preload wrist layout JSONs so updateBlasterDisplay can read them
@@ -2046,9 +2039,6 @@ function init() {
     return true;
     };
   }
-
-  // PERFORMANCE: Initialize projectile pool
-  initProjectilePool();
 
   // Start at title
   resetGame();
@@ -2802,10 +2792,8 @@ function setupControllers() {
     controller.addEventListener('squeezestart', () => { onSqueezePress(controller, i); });
     controller.addEventListener('squeezeend', () => { onSqueezeRelease(i); });
     
-    // Pause via left controller secondary/menu button
-    if (i === 0) {
-      controller.addEventListener('secondary', () => { togglePause(); });
-    }
+    // Note: pause via menu button is handled by updateVRPauseButton() polling —
+    // three.js XRController has no 'secondary' event, so a listener here was dead
     
     controller.addEventListener('connected', (e) => {
       _log(`[controller] ${i} connected — ${e.data.handedness}`);
@@ -3160,9 +3148,21 @@ function updateBlasterDisplay(display, controllerIndex) {
   display.add(makeText(`${stats.kills}`, killsValEl, 0.04, 70, handColor));
   const dmgValEl = els?.dup_20_dup_19_wrist_kills;
   display.add(makeText(`${Math.round(stats.totalDamage)}`, dmgValEl, 0.04, 70, handColor));
-  const dps = stats.kills > 0 ? Math.round(stats.totalDamage / Math.max(1, stats.shots)) : 0;
+  // Fix: was `totalDamage / stats.shots` — stats.shots doesn't exist (NaN after
+  // first kill) and it's damage-per-shot, not DPS. Compute real weapon DPS:
+  // damage per trigger × triggers per second (fireInterval is in ms).
+  const weaponStats = getWeaponStats(weaponId, upgrades);
+  let dps = 0;
+  if (weaponStats) {
+    if (weaponId === 'charge_cannon') {
+      dps = null; // charge weapon: no continuous DPS — show 'CHG'
+    } else {
+      const fireIntervalMs = Math.max(1, weaponStats.fireInterval || 0);
+      dps = Math.round((weaponStats.damage || 0) * (weaponStats.projectileCount || 1) * (1000 / fireIntervalMs));
+    }
+  }
   const dpsValEl = els?.dup_22_dup_19_wrist_kills;
-  display.add(makeText(`${dps}`, dpsValEl, 0.04, 70, handColor));
+  display.add(makeText(dps === null ? 'CHG' : `${dps}`, dpsValEl, 0.04, 70, handColor));
 
   // Upgrade list
   const upgradeCount = Object.values(upgrades).reduce((sum, count) => sum + count, 0);
@@ -6108,6 +6108,7 @@ function fireStasisField(origin, direction, hand, altWeapon) {
     position: targetPosition,
     radius,
     expiresAt,
+    duration: altWeapon.duration || 5000,  // Fix: pulse phase reads this (was hardcoded 5000 in a degenerate ternary)
     slowFactor: altWeapon.slowFactor || 0.2,
     particles: pooledVisual.particles,
   });
@@ -6136,7 +6137,10 @@ function updateStasisFields(now, dt) {
     });
 
     // Pulsing opacity
-    const age = now - (field.expiresAt - (field.slowFactor ? 5000 : 5000));
+    // Fix: degenerate ternary (both branches were 5000) — the pulse phase is
+    // meant to follow the field's actual lifetime. Use stored field.duration
+    // (set at spawn) so pulse phase matches the field's real expiry.
+    const age = now - (field.expiresAt - (field.duration || 5000));
     const pulse = Math.sin(age * 0.005) * 0.1 + 0.3;
     field.material.opacity = pulse;
   }
@@ -7780,10 +7784,9 @@ registerResetHook(clearAllComboPopups);
 registerResetHook(clearAllKillChainPopups);
 registerResetHook(clearFloatingMessage);
 
-// Register enemy cleanup hooks (boss debris, electric arcs already called in clearAllEnemies,
+// Register enemy cleanup hooks (boss debris already called in clearAllEnemies,
 // but registered as separate hooks for safety on full game reset)
 registerResetHook(clearBossDebris);
-registerResetHook(clearAllElectricArcs);
 
 // Clear geometry/texture caches to prevent GPU object leaks on game restart
 registerResetHook(clearGeometryCaches);
@@ -7971,7 +7974,6 @@ function advanceLevelAfterUpgrade() {
   clearAllLightningBeams();
   clearAllLightningOrbs();
   clearAllChargeBeamVisuals();
-  clearAllElectricArcs();
   clearBossProjectiles();
   clearAllTelegraphs();
   clearAllAltWeaponEffects();
@@ -8302,7 +8304,6 @@ function initProjectilePool() {
 
   // ── Seeker burst bolts: tadpole/sperm shape via LatheGeometry ──
   // Profile curve (radius at each Z position), revolved around Y axis, then rotated to point -Z
-  const seekerProfile = new THREE.CurvePath();
   const seekerPts = [
     new THREE.Vector2(0.0, 0.0),    // z=-0.06 tip of head
     new THREE.Vector2(0.06, 0.03),  // z=-0.04 widest head (1.5x)
@@ -8428,7 +8429,7 @@ function initProjectilePool() {
     glowIM.instanceMatrix.needsUpdate = true;
   }
 
-  _log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(40), seeker(28), plasma_carbine(80) + glow planes');
+  _log('[performance] InstancedMesh projectile pools initialized: laser(120), buckshot(40), seeker(60), plasma_carbine(80) + glow planes');
 }
 
 // PERFORMANCE: Acquire an instance slot from the InstancedMesh pool.
@@ -8963,7 +8964,8 @@ function updateLightningBeam(controller, index, stats, dt) {
   const bossProjectiles = getBossProjectiles();
   if (bossProjectiles.length > 0) {
     // Use origin -> forwardEnd as the beam line for intersection
-    const beamStart = chainCount > 0 ? _lightningOrigin : _lightningOrigin;
+    // Fix: removed degenerate ternary (both branches were _lightningOrigin)
+    const beamStart = _lightningOrigin;
     const beamEnd = _lightningForwardEnd;
     for (let i = bossProjectiles.length - 1; i >= 0; i--) {
       const bossProj = bossProjectiles[i];
@@ -10414,18 +10416,20 @@ function handleAOE(center, radius, damage, controllerIndex) {
 /** Spawn a short-lived visible explosion (expanding sphere) at center. */
 // [CORE] Spawn explosion visual at position
 function spawnExplosionVisual(center, radius) {
-  // Play explosion sound
-  playExplosionSound();
-
-  // Bigger shake for explosions
-  triggerScreenShake(0.3, 300); // 0.3 shake for 300ms
-
   // PERFORMANCE: Use pooled explosion meshes instead of allocating new geometry each call
   let entry = null;
   for (let i = 0; i < EXPLOSION_POOL_SIZE; i++) {
     if (!explosionPool[i].active) { entry = explosionPool[i]; break; }
   }
+  // Fix: pool exhaustion used to still play sound + shake for a visual that
+  // never appears (common during multi-kill explosions). Bail out first.
   if (!entry) return; // All busy, skip (avoids accumulation)
+
+  // Play explosion sound
+  playExplosionSound();
+
+  // Bigger shake for explosions
+  triggerScreenShake(0.3, 300); // 0.3 shake for 300ms
 
   const duration = 350; // ms
   entry.active = true;

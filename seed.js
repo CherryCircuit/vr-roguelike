@@ -132,26 +132,23 @@ class SeedDeck {
 
   // Get all available enemies
   getAllEnemies() {
+    // Fix: list only IDs that exist in ENEMY_DEFS (enemies.js) — the previous
+    // list contained unimplemented types (geometry_shifter, pulse_bommer, etc.)
+    // that spawnEnemy silently no-ops on. Their behavior code still exists in
+    // enemies.js as dormant features; re-add the IDs here when they get ENEMY_DEFS
+    // entries: geometry_shifter, pulse_bomber, clone_mimic, spider_walker,
+    // portal_mantis, blackhole_totem, phoenix_husk, void_walker
     return [
-      // Basic enemies
+      // Implemented enemies
       'basic',
       'fast',
       'tank',
       'swarm',
-      
-      // Advanced enemies (v2.0)
+      'jelly',
       'spiral_swimmer',
-      'geometry_shifter',
-      'pulse_bomber',
-      'clone_mimic',
-      'spider_walker',
-      
-      // Elite enemies (v3.0)
       'mirror_knight',
-      'portal_mantis',
-      'blackhole_totem',
-      'phoenix_husk',
-      'void_walker',
+      'conductor',
+      'mortar',
     ];
   }
 
@@ -169,14 +166,19 @@ class SeedDeck {
       // Alt weapons
       'shield',
       'laser_mine',
+      'grenade',
+      'mine',
+      'drone',
+      'emp',
+      'teleport',
       'stasis_field',
-      'phase_dash',
       'plasma_orb',
+      'decoy',
       'black_hole',
-      'proximity_mine',
       'tether_harpoon',
       'nanite_swarm',
       'reflector_drone',
+      'phase_dash',
     ];
   }
 

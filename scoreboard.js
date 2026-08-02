@@ -22,10 +22,22 @@ function getSupabase() {
 
 // ── Score CRUD ──────────────────────────────────────────────
 
+// Fix: scoreboard fetches could hang forever on Quest's flaky network,
+// leaving the UI stuck on "SUBMITTING..." / "LOADING..."
+function withTimeout(promise, ms = 8000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out')), ms)),
+  ]);
+}
+
 export async function submitScore(name, score, levelReached, country) {
   scoreboardInfoLog(`[scoreboard] Submitting score for ${name}: ${score} (Level ${levelReached}, Country: ${country})`);
 
   try {
+    // Fix: AbortController so a dead network can't hang the fetch forever
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
     const response = await fetch('/api/submit-score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -35,7 +47,9 @@ export async function submitScore(name, score, levelReached, country) {
         levelReached,
         country,
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     const result = await response.json();
 
@@ -54,32 +68,42 @@ export async function submitScore(name, score, levelReached, country) {
 
 export async function fetchTopScores(limit = 100) {
   scoreboardInfoLog('[scoreboard] Fetching top scores...');
-  const { data, error } = await getSupabase()
-    .from('scores')
-    .select('name, score, level_reached, country, created_at')
-    .order('score', { ascending: false })
-    .limit(limit);
+  try {
+    const { data, error } = await withTimeout(getSupabase()
+      .from('scores')
+      .select('name, score, level_reached, country, created_at')
+      .order('score', { ascending: false })
+      .limit(limit));
 
-  if (error) {
-    console.error('[scoreboard] Fetch error:', error.message, error.details, error.hint);
+    if (error) {
+      console.error('[scoreboard] Fetch error:', error.message, error.details, error.hint);
+      return [];
+    }
+    scoreboardInfoLog(`[scoreboard] Fetch successful: ${data ? data.length : 0} scores found`);
+    return data || [];
+  } catch (err) {
+    console.error('[scoreboard] Fetch timeout/exception:', err);
     return [];
   }
-  scoreboardInfoLog(`[scoreboard] Fetch successful: ${data ? data.length : 0} scores found`);
-  return data || [];
 }
 
 export async function fetchScoresByCountry(country, limit = 100) {
-  const { data, error } = await getSupabase()
-    .from('scores')
-    .select('name, score, level_reached, country, created_at')
-    .eq('country', country)
-    .order('score', { ascending: false })
-    .limit(limit);
-  if (error) {
-    console.error('[scoreboard] Fetch by country error:', error.message);
+  try {
+    const { data, error } = await withTimeout(getSupabase()
+      .from('scores')
+      .select('name, score, level_reached, country, created_at')
+      .eq('country', country)
+      .order('score', { ascending: false })
+      .limit(limit));
+    if (error) {
+      console.error('[scoreboard] Fetch by country error:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.error('[scoreboard] Fetch by country timeout/exception:', err);
     return [];
   }
-  return data || [];
 }
 
 export async function fetchScoresByContinent(continent, limit = 100) {
@@ -88,17 +112,22 @@ export async function fetchScoresByContinent(continent, limit = 100) {
     .map(c => c.code);
   if (countryCodes.length === 0) return [];
 
-  const { data, error } = await getSupabase()
-    .from('scores')
-    .select('name, score, level_reached, country, created_at')
-    .in('country', countryCodes)
-    .order('score', { ascending: false })
-    .limit(limit);
-  if (error) {
-    console.error('[scoreboard] Fetch by continent error:', error.message);
+  try {
+    const { data, error } = await withTimeout(getSupabase()
+      .from('scores')
+      .select('name, score, level_reached, country, created_at')
+      .in('country', countryCodes)
+      .order('score', { ascending: false })
+      .limit(limit));
+    if (error) {
+      console.error('[scoreboard] Fetch by continent error:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.error('[scoreboard] Fetch by continent timeout/exception:', err);
     return [];
   }
-  return data || [];
 }
 
 // ── Profanity Filter ────────────────────────────────────────
@@ -291,6 +320,24 @@ export async function testConnection() {
       console.error('❌ Write error:', result?.error || 'Unknown error');
     } else {
       results.writeAccess = true;
+      // Fix: best-effort cleanup — the diagnostic used to leave a permanent
+      // fake TESTER row (score 99999) polluting the live leaderboard
+      try {
+        const created = result?.data?.[0]?.created_at;
+        if (created) {
+          const { error: delError } = await getSupabase()
+            .from('scores')
+            .delete()
+            .eq('created_at', created);
+          if (delError) {
+            results.errors.push(`Cleanup warning: ${delError.message} (row left in table)`);
+          } else {
+            console.log('✅ Test row cleaned up (not visible on leaderboard)');
+          }
+        }
+      } catch (cleanupErr) {
+        results.errors.push(`Cleanup exception: ${cleanupErr.message}`);
+      }
       console.log('✅ Write access working through secure endpoint\n');
     }
   } catch (err) {

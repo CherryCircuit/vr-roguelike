@@ -3,6 +3,7 @@
 // ============================================================
 
 let audioCtx = null;
+let _musicRetryAttached = false;  // Fix: one-shot autoplay retry flag
 const AUDIO_INFO_LOGS = false;
 const audioInfoLog = AUDIO_INFO_LOGS ? console.log.bind(console) : () => {};
 
@@ -25,6 +26,9 @@ function getAudioContext() {
     sfxMasterGain = audioCtx.createGain();
     sfxMasterGain.gain.value = sfxVolume;
     sfxMasterGain.connect(audioCtx.destination);
+    // Fix: contexts can start 'suspended' (autoplay policy / VR session
+    // switches) — try to resume so SFX don't silently die
+    resumeAudioContext();
   }
   return audioCtx;
 }
@@ -99,6 +103,17 @@ function resumeAudioContext() {
     ctx.resume();
   }
 }
+
+// Fix: resume the AudioContext when the tab regains visibility — VR session
+// switches / tab backgrounding can leave it suspended (all SFX silently die)
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) resumeAudioContext();
+  });
+}
+
+// Export so main.js can resume on WebXR sessionstart too
+export { resumeAudioContext };
 
 // ── Shoot sound (laser pew) — heavily randomized ───────────
 export function playShoothSound(projectileCount = 1) {
@@ -2043,7 +2058,21 @@ function playNextTrack() {
   });
 
   currentMusic.play().catch(err => {
-    console.warn('[music] Autoplay prevented, will start on first interaction');
+    // Fix: actually retry on first user interaction instead of never starting
+    console.warn('[music] Autoplay prevented — will start on first interaction');
+    if (!_musicRetryAttached) {
+      _musicRetryAttached = true;
+      const retry = () => {
+        if (currentMusic && currentMusic.paused && currentMusic.src) {
+          currentMusic.play().catch(() => {});
+        }
+        resumeAudioContext();
+        document.removeEventListener('pointerdown', retry);
+        document.removeEventListener('keydown', retry);
+      };
+      document.addEventListener('pointerdown', retry);
+      document.addEventListener('keydown', retry);
+    }
   });
 }
 

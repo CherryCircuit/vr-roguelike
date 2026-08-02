@@ -496,7 +496,9 @@ function computeWeaponDpsDisplay(weaponId, upgrades) {
   const fireInterval = stats.windUp && stats.windUpEndInterval ? stats.windUpEndInterval : stats.fireInterval;
   if (!fireInterval || fireInterval <= 0) return '0';
 
-  const shotsPerSecond = 1 / fireInterval;
+  // Fix: fireInterval is in MILLISECONDS (weapons.js) — 1/fireInterval gave
+  // ~0.008 shots/s, so the DPS display always showed "0"
+  const shotsPerSecond = 1000 / fireInterval;
   const damagePerTrigger = (stats.damage || 0) * (stats.projectileCount || 1);
   const dps = Math.round(shotsPerSecond * damagePerTrigger);
   return `${dps}`;
