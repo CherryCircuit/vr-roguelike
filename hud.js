@@ -1268,6 +1268,7 @@ function colorToHex(color) {
 
 export function showBestiary(playerPos) {
   disposeGroupChildren(bestiaryGroup);
+  _bestiaryModels = null;  // Perf: invalidate cached model list (group rebuilt below)
   bestiaryBackBtn = null;
   bestiaryGroup.visible = true;
 
@@ -1425,13 +1426,21 @@ export function getBestiaryHit(raycaster) {
   return hits.length > 0 ? 'back' : null;
 }
 
+// Perf: cached model list — updateBestiary used to traverse the whole
+// bestiaryGroup scene graph every frame looking for model children
+let _bestiaryModels = null;
+
 export function updateBestiary(now) {
   if (!bestiaryGroup.visible) return;
-  bestiaryGroup.traverse(child => {
-    if (child.userData?.isBestiaryModel) {
-      child.rotation.y = now * 0.001;
-    }
-  });
+  if (!_bestiaryModels) {
+    _bestiaryModels = [];
+    bestiaryGroup.traverse(child => {
+      if (child.userData?.isBestiaryModel) _bestiaryModels.push(child);
+    });
+  }
+  for (let i = 0; i < _bestiaryModels.length; i++) {
+    _bestiaryModels[i].rotation.y = now * 0.001;
+  }
 }
 
 // ── VR HUD (hearts, kill counter, level, score) ────────────
@@ -2562,6 +2571,11 @@ export function showVictory(score, playerPos) {
   });
 }
 
+// Perf: cached references — getObjectByName() does a full-name subtree scan
+// every call, and updateEndScreen ran it every frame while game over was shown
+let _endScreenRestartBlink = null;
+let _endScreenKillIcon = null;
+
 export function updateEndScreen(now) {
   if (gameOverGroup.userData.fadeInStart) {
     const elapsed = now - gameOverGroup.userData.fadeInStart;
@@ -2576,16 +2590,16 @@ export function updateEndScreen(now) {
     }
   }
 
-  const blink = gameOverGroup.getObjectByName('restartBlink');
-  if (blink) {
+  if (!_endScreenRestartBlink) _endScreenRestartBlink = gameOverGroup.getObjectByName('restartBlink');
+  if (_endScreenRestartBlink) {
     const fadeBase = gameOverGroup.userData.fadeInStart ? Math.min(1, (now - gameOverGroup.userData.fadeInStart) / (gameOverGroup.userData.fadeInDuration || 1)) : 1;
-    blink.material.opacity = fadeBase * (0.5 + Math.sin(now * 0.004) * 0.5);
+    _endScreenRestartBlink.material.opacity = fadeBase * (0.5 + Math.sin(now * 0.004) * 0.5);
   }
 
   // Rotate the kill icon
-  const killIcon = gameOverGroup.getObjectByName('killIcon');
-  if (killIcon) {
-    killIcon.rotation.y += 0.02; // Slow rotation
+  if (!_endScreenKillIcon) _endScreenKillIcon = gameOverGroup.getObjectByName('killIcon');
+  if (_endScreenKillIcon) {
+    _endScreenKillIcon.rotation.y += 0.02; // Slow rotation
   }
 }
 
@@ -2665,6 +2679,12 @@ let lastFpsUpdate = 0;
 
 export function updateFPS(now, opts = {}) {
   if (!fpsSprite) return;
+
+  // Perf: skip the ring-buffer eviction scan entirely when the FPS readout is
+  // hidden — the ~120-entry loop used to run every frame regardless
+  if (!opts.force && !game?.debugShowFPS && !opts.perfMonitor) {
+    return;
+  }
 
   const perfMonitor = opts.perfMonitor || (typeof window !== 'undefined' && window.debugPerfMonitor);
   const frameTimeMs = opts.frameTimeMs;

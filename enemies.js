@@ -123,10 +123,17 @@ const _emissiveBlack = new THREE.Color(0x000000);
 const _emissiveWhite = new THREE.Color(0xffffff);
 const _emissiveAmber = new THREE.Color(0xffaa00);
 const _scratchColor = new THREE.Color();
+const _handDamagedColor = new THREE.Color(0x660000); // SkullHand damage tint (per-frame hot path)
+const _prismWhite = new THREE.Color(0xffffff);         // PrismBoss frenzy pulse lerp target
+const _prismOrigColor = new THREE.Color();             // PrismBoss facet original color scratch
 const _scratchMat4 = new THREE.Matrix4();
 const _scratchMat4b = new THREE.Matrix4();
 const _scratchScale = new THREE.Vector3();
 const _explosionSpriteVel = new THREE.Vector3();
+// Perf: mortar telegraph particle scratch vectors (per-frame hot path)
+const _mortarSpawnOffset = new THREE.Vector3();
+const _mortarSpawnPos = new THREE.Vector3();
+const _mortarToCenter = new THREE.Vector3();
 const _dirtyEnemyPools = [];
 
 // VR-CRITICAL: updateEnemies() touches instanced pools every frame.
@@ -1147,6 +1154,7 @@ const _conductorGlowQuat = new THREE.Quaternion();
 const _conductorGlowMat = new THREE.Matrix4();
 const _conductorGlowScale = new THREE.Vector3();
 const _conductorGlowScale0 = new THREE.Vector3(0, 0, 0);
+const _conductorGlowZeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
 const _conductorGlowUp = new THREE.Vector3(0, 1, 0);
 const _conductorGlowLook = new THREE.Matrix4();
 
@@ -1248,8 +1256,10 @@ function updateConductorGlows(now) {
   }
 
   // Hide unused slots
+  // Perf: reuse a precomputed zero-scale matrix instead of allocating up to
+  // 30 new THREE.Matrix4 per frame
   for (let i = glowIdx; i < MAX_CONDUCTOR_GLOW; i++) {
-    conductorGlowPool.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0));
+    conductorGlowPool.setMatrixAt(i, _conductorGlowZeroMatrix);
   }
 
   conductorGlowPool.count = MAX_CONDUCTOR_GLOW;
@@ -3257,7 +3267,7 @@ export function updateEnemies(dt, now, playerPos) {
 
       _look.set(playerPos.x, e.mesh.position.y, playerPos.z);
       e.mesh.lookAt(_look);
-      updateStatusEffects(e, dt);
+      updateStatusEffects(e, dt, now);
 
       const heldDamageRatio = 1 - e.hp / e.maxHp;
       if (e.mesh.userData.instanceId !== undefined) {
@@ -3302,12 +3312,14 @@ export function updateEnemies(dt, now, playerPos) {
       e.mesh.position.y = Math.max(0.5, Math.min(3.5, e.mesh.position.y));
 
       // Animate trailing voxels to follow in spiral (non-instanced fallback)
+      // Perf: plain for loop (forEach closure was allocated per frame per train)
       if (e.trailingVoxels) {
-        e.trailingVoxels.forEach((voxel, idx) => {
-          const phase = e.spiralAngle - (idx + 1) * 0.4;
+        for (let vi = 0; vi < e.trailingVoxels.length; vi++) {
+          const voxel = e.trailingVoxels[vi];
+          const phase = e.spiralAngle - (vi + 1) * 0.4;
           voxel.position.x = Math.sin(phase) * e.spiralRadius * 0.5;
           voxel.position.y = Math.cos(phase) * e.spiralRadius * 0.3;
-        });
+        }
       }
 
       // Sync instanced train segments (if using instancing)
@@ -3495,7 +3507,8 @@ export function updateEnemies(dt, now, playerPos) {
         }
       } else {
         // Check if player is standing still (confuses the knight)
-        const playerVel = playerPos.clone().sub(e.mirrorLastPlayerDir);
+        // Perf: pre-allocated vector instead of playerPos.clone() per frame
+        const playerVel = _enemyScratch2.copy(playerPos).sub(e.mirrorLastPlayerDir);
         e.mirrorLastPlayerDir.copy(playerPos);
         if (playerVel.length() < 0.01) {
           e.mirrorStillTimer += dt;
@@ -3624,25 +3637,39 @@ export function updateEnemies(dt, now, playerPos) {
       }
       e.mesh.position.addScaledVector(perp, e.speed * 0.6 * speedMod * e.conductorStrafeDir * dt);
 
-      e.linkedEnemies = [];
-      e.conductorArcTimer -= dt;
+      e.conductorArcTimer -= dt;  // always tick arc cooldown, independent of re-link rate
 
-      for (let j = 0; j < activeEnemies.length; j++) {
-        if (i === j) continue;
-        const other = activeEnemies[j];
-        if (other.isConductor) continue;
-        const linkDist = e.mesh.position.distanceTo(other.mesh.position);
-        if (linkDist <= e.linkRadius) {
-          e.linkedEnemies.push(j);
-          other.linkedByConductor = true;
-          other.linkedDamageReduction = Math.max(other.linkedDamageReduction, e.linkDamageReduction);
-          other.speed = other.baseSpeed * (1 + e.linkSpeedBonus);
+      // PERFORMANCE: Re-link at 4Hz (staggered) instead of every frame.
+      // The old code rebuilt e.linkedEnemies (array alloc) and re-traversed
+      // every linked enemy's scene graph at 72fps — the link targets barely
+      // move in 250ms, and links are sticky (buff persists until death).
+      e.conductorLinkTimer = (e.conductorLinkTimer ?? 0) - dt;
+      if (e.conductorLinkTimer <= 0) {
+        e.conductorLinkTimer = 0.25;
 
-          other.mesh.traverse(c => {
-            if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
-              setMaterialEmissiveSafe(c.material, _emissivePink, 0.35);
+        e.linkedEnemies = [];
+        for (let j = 0; j < activeEnemies.length; j++) {
+          if (i === j) continue;
+          const other = activeEnemies[j];
+          if (other.isConductor) continue;
+          const linkDist = e.mesh.position.distanceTo(other.mesh.position);
+          if (linkDist <= e.linkRadius) {
+            e.linkedEnemies.push(j);
+            other.linkedByConductor = true;
+            other.linkedDamageReduction = Math.max(other.linkedDamageReduction, e.linkDamageReduction);
+            other.speed = other.baseSpeed * (1 + e.linkSpeedBonus);
+
+            // Perf: only traverse the scene graph when a NEW enemy gets linked
+            // (links persist once formed — emissive is set once)
+            if (!other._conductorLinkedBefore) {
+              other._conductorLinkedBefore = true;
+              other.mesh.traverse(c => {
+                if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
+                  setMaterialEmissiveSafe(c.material, _emissivePink, 0.35);
+                }
+              });
             }
-          });
+          }
         }
       }
 
@@ -3701,14 +3728,18 @@ export function updateEnemies(dt, now, playerPos) {
 
         // Spawn energy-gathering particles during telegraph
         if (e.mortarTelegraphParticles.length < 8 && Math.random() < 0.3) {
-          const particleOffset = new THREE.Vector3(
+          // Perf: pre-allocated spawn scratch instead of 2x clone per particle
+          _mortarSpawnOffset.set(
             (Math.random() - 0.5) * 2.0,
             (Math.random() - 0.5) * 2.0,
             (Math.random() - 0.5) * 2.0
           );
+          _mortarSpawnPos.copy(e.mesh.position).add(_mortarSpawnOffset);
           const particle = {
-            pos: e.mesh.position.clone().add(particleOffset),
-            vel: e.mesh.position.clone().sub(e.mesh.position.clone().add(particleOffset)).normalize().multiplyScalar(2.0),
+            pos: _mortarSpawnPos.clone(),
+            // Original formula: (meshPos - (meshPos + offset)).normalize() = -(offset) —
+            // particles fly from spawn point TOWARD the mortar
+            vel: _mortarSpawnOffset.clone().negate().normalize().multiplyScalar(2.0),
             life: 0.5 + Math.random() * 0.5,
             maxLife: 0.5 + Math.random() * 0.5,
           };
@@ -3719,9 +3750,10 @@ export function updateEnemies(dt, now, playerPos) {
         for (let pi = e.mortarTelegraphParticles.length - 1; pi >= 0; pi--) {
           const p = e.mortarTelegraphParticles[pi];
           p.life -= dt;
-          const toCenter = e.mesh.position.clone().sub(p.pos);
-          p.vel.add(toCenter.normalize().multiplyScalar(8.0 * dt));
-          p.pos.add(p.vel.clone().multiplyScalar(dt));
+          // Perf: scratch vectors instead of 2x clone per particle per frame
+          _mortarToCenter.subVectors(e.mesh.position, p.pos).normalize();
+          p.vel.addScaledVector(_mortarToCenter, 8.0 * dt);
+          p.pos.addScaledVector(p.vel, dt);
           if (p.life <= 0) {
             e.mortarTelegraphParticles.splice(pi, 1);
           }
@@ -3765,7 +3797,7 @@ export function updateEnemies(dt, now, playerPos) {
     }
 
     // ── Status effect ticking ──
-    updateStatusEffects(e, dt);
+    updateStatusEffects(e, dt, now);
 
     // ── Colour: lerp from base → red based on damage ──
     // For instanced enemies, sync color directly to InstancedMesh (e.material is null for instanced types)
@@ -3803,7 +3835,7 @@ export function updateEnemies(dt, now, playerPos) {
 
 const _redColor = new THREE.Color(0xff0000);
 
-function updateStatusEffects(e, dt) {
+function updateStatusEffects(e, dt, now) {
   const se = e.statusEffects;
 
   // ── Fire DoT (Large) ──
@@ -3848,7 +3880,8 @@ function updateStatusEffects(e, dt) {
 
   // ── Status Effect Visuals ──
   if (statusVfxReady && e.mesh) {
-    updateStatusEffectVisuals(e, dt);
+    // Perf: pass shared now (seconds) instead of performance.now() per enemy per frame
+    updateStatusEffectVisuals(e, dt, now * 0.001);
   }
 }
 
@@ -3882,10 +3915,9 @@ function ensureEnemyVfx(e) {
   return vfx;
 }
 
-function updateStatusEffectVisuals(e, dt) {
+function updateStatusEffectVisuals(e, dt, now) {
   const se = e.statusEffects;
   const vfx = ensureEnemyVfx(e);
-  const now = performance.now() * 0.001; // seconds
 
   // ── FIRE VISUALS ──
   if (se.fire.remaining > 0 && se.fire.stacks > 0) {
@@ -5842,8 +5874,8 @@ class SkullHand {
     this.group.traverse(c => {
       if (c.isMesh && c.material && c.userData.isHandBody) {
         _scratchColor.set(0xffffff);
-        const damagedColor = new THREE.Color(0x660000); // Dark red
-        c.material.color.copy(_scratchColor).lerp(damagedColor, damageRatio);
+        // Perf: module scratch Color (was new THREE.Color per mesh per frame)
+        c.material.color.copy(_scratchColor).lerp(_handDamagedColor, damageRatio);
       }
     });
   }
@@ -8838,8 +8870,9 @@ class PrismBoss extends Boss {
     const frenzyPulse = 0.5 + 0.5 * Math.sin(now * 0.006);
     this.facetMaterials.forEach((mat, i) => {
       if (i < 3 && i !== this.vulnerableFacetIndex) {
-        const origColor = new THREE.Color(this.facetColors[i]);
-        mat.color.copy(origColor).lerp(new THREE.Color(0xffffff), frenzyPulse * 0.3);
+        // Perf: scratch Colors instead of new THREE.Color per facet per frame
+        _prismOrigColor.setHex(this.facetColors[i]);
+        mat.color.copy(_prismOrigColor).lerp(_prismWhite, frenzyPulse * 0.3);
         mat.opacity = 0.5 + frenzyPulse * 0.2;
       }
     });

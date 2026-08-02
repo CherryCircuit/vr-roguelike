@@ -466,6 +466,77 @@ const activePhaseDashAfterimages = [];  // { mesh, position, expiresAt, damage, 
 // Spatial hash for fast enemy proximity queries (rebuilds each frame)
 const enemySpatialHash = new SpatialHash(15);  // 15 unit cells >= max query radius
 
+// Perf: scratch result arrays for spatial-hash queries — query() allocates a
+// fresh array per call; queryInto() + these reused arrays keep the render
+// loop allocation-free. Each call site gets its OWN scratch array because
+// results must stay live while the caller iterates them.
+const _hashScratchAfterimages = [];
+const _hashScratchOrbHoming = [];
+const _hashScratchOrbCollision = [];
+const _hashScratchOrbAoe = [];
+const _hashScratchGrenade = [];
+const _hashScratchMineProximity = [];
+const _hashScratchMineAoe = [];
+const _hashScratchLightning = [];
+const _hashScratchProjectiles = [];
+
+// Perf: hostile-projectile caches rebuilt once per frame in updateProjectiles().
+// The original code scanned ALL earlier entries of projectiles[] for every
+// player projectile (O(n²) per frame). Hostile entries are rare, so caching
+// them turns the scan into O(n + n·h). Must be maintained at every removal
+// site within the frame (see _dropHostileFromCache).
+const _hostileProjectilesInArray = [];
+const _hostileVisualsInExplosion = [];
+
+function _dropHostileFromCache(proj) {
+  if (!proj) return;
+  const li = _hostileProjectilesInArray.indexOf(proj);
+  if (li >= 0) _hostileProjectilesInArray.splice(li, 1);
+}
+
+// Perf: module-level scratch objects for render-loop math — eliminates
+// per-frame `new THREE.Vector3()/Color()` allocations (GC pressure in VR)
+const _upAxisUnit = new THREE.Vector3(0, 1, 0);           // seeker 180° flip axis
+const _goldColor = new THREE.Color(0xffd700);             // nanite reveal/DoT tint
+const _blackColor = new THREE.Color(0x000000);            // nanite un-reveal tint
+const _floorFlashColor = new THREE.Color(0xff0000);       // floor damage flash
+const _lowHealthWarningColor = new THREE.Color(0xaa0000); // low-health pulse
+const _envFadeMixColor = new THREE.Color(0x000000);       // environment fade mix
+const _envFadeBgColor = new THREE.Color(0x000000);        // environment fade background
+const _tetherDirection = new THREE.Vector3();             // tether line direction
+const _tetherToPlayer = new THREE.Vector3();              // tether yank direction
+const _tetherStartPos = new THREE.Vector3();              // tether start (player) pos
+const _tetherParticlePos = new THREE.Vector3();           // tether particle pos
+const _decoyTargetPos = new THREE.Vector3();              // decoy redirect target
+const _orbToEnemy = new THREE.Vector3();                  // plasma orb homing steer
+const _shieldPlayerPos = new THREE.Vector3();             // shield follow position
+const _hitStatsScratch = {};                              // reused stats object for handleHit
+
+// Perf: boss-alert cinematic target colors — the sequence runs 3-7.4s and
+// previously allocated ~20 new THREE.Color per frame (only used as stateless
+// lerp targets)
+const _cinRedGrid = new THREE.Color(0x880000);          // Dark crimson grid
+const _cinRedBase = new THREE.Color(0x1a0000);          // Very dark red base
+const _cinRedFog = new THREE.Color(0x220000);           // Dark red fog
+const _cinRedPulseA = new THREE.Color(0xcc0000);        // Normal red (former pink)
+const _cinRedPulseB = new THREE.Color(0x660000);        // Dark red (former cyan)
+const _cinRedTop = new THREE.Color(0x12000a);
+const _cinRedMid = new THREE.Color(0x32001a);
+const _cinRedHorizon = new THREE.Color(0x701a1a);
+const _cinRedGlow = new THREE.Color(0x6a0020);
+const _cinRedMoonGlow = new THREE.Color(0x301020);
+const _cinRedSunOuter = new THREE.Color(0xff2200);
+const _cinRedSunGlow = new THREE.Color(0xff3300);
+const _cinRedSunCore = new THREE.Color(0xff0000);
+const _cinRedSunRefl = new THREE.Color(0xff0000);
+const _cinRedHorizonGlow = new THREE.Color(0xff2200);
+const _cinRedMountain = new THREE.Color(0x882244);      // Dark red-purple tint
+const _cinRedDesertMoon = new THREE.Color(0xcc0000);
+const _cinRedDesertMoonGlow = new THREE.Color(0xff2200);
+const _cinRedAlienMoon = new THREE.Color(0xff2200);
+const _cinRedAlienBase = new THREE.Color(0x150005);
+const _cinRedAlienGreen = new THREE.Color(0xff2200);
+
 // Laser mine passive tracking
 let playerLastPosition = new THREE.Vector3();
 let playerStillnessStartTime = null;
@@ -969,6 +1040,7 @@ const _adjustedCameraPosScratch = new THREE.Vector3();
 
 // Fix 1.3: Cached scanlines element (set once at init, not every frame)
 let _cachedScanlinesEl = null;
+let _scanlinesDisplayShown = true;  // Perf: tracks last style.display write (avoid per-frame DOM writes)
 
 // Helper: Get camera position for UI positioning and enemy targeting
 // Returns the WORLD position of the camera (including camera rig offset)
@@ -2455,10 +2527,11 @@ function startEnvironmentFade(direction, duration, onComplete) {
 // [CORE] Apply current environment fade to registered materials
 function applyEnvironmentFade(fade) {
   environmentFade = Math.max(0, Math.min(1, fade));
-  const mixColor = new THREE.Color(0x000000);
+  // Perf: module scratch Colors (was new THREE.Color per call; called every frame during fades)
+  const mixColor = _envFadeMixColor;
 
   if (scene && currentTheme) {
-    const bg = new THREE.Color(currentTheme.skyColor).lerp(mixColor, environmentFade);
+    const bg = _envFadeBgColor.copy(currentTheme.skyColor).lerp(mixColor, environmentFade);
     if (scene.background && scene.background.copy) {
       scene.background.copy(bg);
     }
@@ -4146,9 +4219,10 @@ function updateShields(now) {
     }
     
     // Make shield follow player
-    const playerPos = camera.position.clone();
-    shield.mesh.position.copy(playerPos);
-    shield.position.copy(playerPos);
+    // Perf: scratch vector instead of camera.position.clone() per shield per frame
+    _shieldPlayerPos.copy(camera.position);
+    shield.mesh.position.copy(_shieldPlayerPos);
+    shield.position.copy(_shieldPlayerPos);
     
     // Fade out effect in last 0.5s
     const remaining = shield.expiresAt - now;
@@ -4591,15 +4665,23 @@ function updateDecoys(dt, now, playerPos) {
       if (distToDecoy < distToPlayer * 1.2 && distToDecoy < 15) {
         decoy.targetingEnemies.add(idx);
 
-        // Redirect enemy toward decoy
-        const toDecoy = new THREE.Vector3().subVectors(decoy.position, e.mesh.position).normalize();
-        e.targetPosition = decoy.position.clone();
+        // Redirect enemy toward decoy (note: direction math removed — original
+        // normalized a throwaway vector; enemies follow e.targetPosition)
+        // Perf: scratch vector instead of decoy.position.clone() per enemy per frame
+        e.targetPosition = _decoyTargetPos.copy(decoy.position);
       }
     });
 
     // Check if decoy is "destroyed" by nearby enemies
-    const tooCloseEnemies = enemies.filter(e => e.mesh.position.distanceTo(decoy.position) < 0.8);
-    if (tooCloseEnemies.length > 0) {
+    // Perf: in-place scan instead of enemies.filter() allocating a new array
+    let decoyDestroyed = false;
+    for (let ei = 0; ei < enemies.length; ei++) {
+      if (enemies[ei].mesh.position.distanceTo(decoy.position) < 0.8) {
+        decoyDestroyed = true;
+        break;
+      }
+    }
+    if (decoyDestroyed) {
       destroyDecoy(decoy, true);
       activeDecoys.splice(i, 1);
     }
@@ -4699,6 +4781,11 @@ function fireBlackHole(origin, direction, hand, altWeapon) {
 
 // Pooled temp vector for black hole pull (per-enemy per-frame)
 const _bhPullToCenter = new THREE.Vector3();
+// Perf: scratch parallel arrays for black-hole pull damage (avoids per-frame
+// `affectedEnemies = []` + {index, enemy, dist} object literals)
+const _bhAffectedIdx = [];
+const _bhAffectedEnemy = [];
+const _bhAffectedDist = [];
 
 // [CORE] Update mines and black holes
 function updateMinesAndBlackHoles(dt, now, playerPos) {
@@ -4759,12 +4846,20 @@ function updateMinesAndBlackHoles(dt, now, playerPos) {
 
     // Pull enemies toward center
     const enemies = getEnemies();
-    const affectedEnemies = [];
+    // Perf: scratch arrays instead of allocating a fresh array + objects per
+    // black hole per frame (only used transiently for the end-of-life damage)
+    _bhAffectedIdx.length = 0;
+    _bhAffectedEnemy.length = 0;
+    _bhAffectedDist.length = 0;
+    const affectedEnemies = _bhAffectedIdx;
 
-    enemies.forEach((e, idx) => {
+    for (let ei = 0; ei < enemies.length; ei++) {
+      const e = enemies[ei];
       const dist = e.mesh.position.distanceTo(bh.position);
       if (dist < bh.pullRadius) {
-        affectedEnemies.push({ index: idx, enemy: e, dist });
+        _bhAffectedIdx.push(ei);
+        _bhAffectedEnemy.push(e);
+        _bhAffectedDist.push(dist);
 
         // Pull strength increases toward center, fades at end
         const pullStrength = (1 - dist / bh.pullRadius) * (1 - progress * 0.5) * 8;
@@ -4772,11 +4867,11 @@ function updateMinesAndBlackHoles(dt, now, playerPos) {
         e.mesh.position.addScaledVector(_bhPullToCenter, pullStrength * dt);
 
         // Record that this enemy was affected (for stun)
-        if (!bh.affectedEnemies.has(idx)) {
-          bh.affectedEnemies.add(idx);
+        if (!bh.affectedEnemies.has(ei)) {
+          bh.affectedEnemies.add(ei);
         }
       }
-    });
+    }
 
     // Visual rotation and pulse
     bh.mesh.rotation.y += dt * 3;
@@ -4805,7 +4900,9 @@ function updateMinesAndBlackHoles(dt, now, playerPos) {
     if (progress >= 0.9 && !bh.damageApplied) {
       bh.damageApplied = true;
 
-      affectedEnemies.forEach(({ index, enemy, dist }) => {
+      affectedEnemies.forEach((index, ai) => {
+        const enemy = _bhAffectedEnemy[ai];
+        const dist = _bhAffectedDist[ai];
         const damageMultiplier = 1 - (dist / bh.pullRadius);
         const damage = Math.round(bh.damage * damageMultiplier);
         const result = hitEnemy(index, damage);
@@ -5131,7 +5228,8 @@ function updateNaniteSwarms(now, dt, playerPos) {
             e._naniteRevealed = true;
             // Add visible outline through walls
             if (e.mesh.material) {
-              setMaterialEmissiveSafe(e.mesh.material, new THREE.Color(0xffd700), 0.5);
+              // Perf: module scratch Color (was new THREE.Color per enemy per frame)
+              setMaterialEmissiveSafe(e.mesh.material, _goldColor, 0.5);
             }
           }
 
@@ -5155,7 +5253,7 @@ function updateNaniteSwarms(now, dt, playerPos) {
           e.mesh._originalOpacity = e.mesh.material.opacity;
         }
         if (e.mesh.material) {
-          setMaterialEmissiveSafe(e.mesh.material, new THREE.Color(0xffd700), 0.5);
+          setMaterialEmissiveSafe(e.mesh.material, _goldColor, 0.5);
         }
       }
     });
@@ -5172,7 +5270,8 @@ function destroyNaniteSwarm(swarm) {
     if (e._naniteRevealed) {
       e._naniteRevealed = false;
       if (e.mesh.material) {
-        setMaterialEmissiveSafe(e.mesh.material, new THREE.Color(0x000000), 0);
+        // Perf: module scratch Color (was new THREE.Color per enemy on destroy)
+        setMaterialEmissiveSafe(e.mesh.material, _blackColor, 0);
       }
     }
   });
@@ -5336,9 +5435,11 @@ function updateTethers(dt, now, playerPos) {
     }
 
     // Update tether line positions
-    const start = playerPos.clone();
-    start.y = Math.max(0.5, start.y);  // Clamp to reasonable height
-    const end = enemy.mesh.position.clone();
+    // Perf: scratch vectors instead of clone() per tether per frame
+    _tetherStartPos.copy(playerPos);
+    _tetherStartPos.y = Math.max(0.5, _tetherStartPos.y);  // Clamp to reasonable height
+    const start = _tetherStartPos;
+    const end = enemy.mesh.position;  // read-only reference for the line endpoints
 
     // Update main line
     const positions = tether.lineGeo.attributes.position.array;
@@ -5362,12 +5463,14 @@ function updateTethers(dt, now, playerPos) {
 
     // Animate particles along tether
     const tetherLength = start.distanceTo(end);
-    const direction = new THREE.Vector3().subVectors(end, start).normalize();
+    _tetherDirection.subVectors(end, start);
+    const tetherLengthSafe = _tetherDirection.length();
+    if (tetherLengthSafe > 1e-6) _tetherDirection.divideScalar(tetherLengthSafe);
 
     tether.particles.forEach(p => {
       const t = ((now * 0.001 * p.userData.speed + p.userData.offset) % 1);
-      const pos = start.clone().addScaledVector(direction, t * tetherLength);
-      p.position.copy(pos);
+      _tetherParticlePos.copy(start).addScaledVector(_tetherDirection, t * tetherLength);
+      p.position.copy(_tetherParticlePos);
       p.material.opacity = 0.7 * Math.sin(t * Math.PI);  // Fade at ends
     });
 
@@ -5378,8 +5481,10 @@ function updateTethers(dt, now, playerPos) {
     // Yank mechanic: pull enemy toward player when stretched
     if (stretch > 0) {
       const pullStrength = Math.min(1, stretch / 5) * tether.yankForce * dt;
-      const toPlayer = new THREE.Vector3().subVectors(start, end).normalize();
-      enemy.mesh.position.addScaledVector(toPlayer, pullStrength);
+      _tetherToPlayer.subVectors(start, end);
+      const yankLen = _tetherToPlayer.length();
+      if (yankLen > 1e-6) _tetherToPlayer.divideScalar(yankLen);
+      enemy.mesh.position.addScaledVector(_tetherToPlayer, pullStrength);
     }
 
     // Collision damage: check if tethered enemy hits other enemies
@@ -5591,7 +5696,9 @@ function updatePhaseDashAfterimages(now, dt) {
     if (age >= afterimage.expiresAt) {
       // Detonate - AOE damage using spatial hash
       const enemies = getEnemies();  // Still needed for index lookup
-      const nearby = enemySpatialHash.query(afterimage.position.x, afterimage.position.z, afterimage.aoeRadius);
+      _hashScratchAfterimages.length = 0;
+      enemySpatialHash.queryInto(_hashScratchAfterimages, afterimage.position.x, afterimage.position.z, afterimage.aoeRadius);
+      const nearby = _hashScratchAfterimages;
       for (const e of nearby) {
         const enemyIndex = enemies.indexOf(e);
         const dist = e.mesh.position.distanceTo(afterimage.position);
@@ -6174,7 +6281,9 @@ function updatePlasmaOrbs(now, dt) {
     }
 
     // Find nearest enemy for homing using spatial hash
-    const nearbyForHoming = enemySpatialHash.query(orb.mesh.position.x, orb.mesh.position.z, orb.homingRange);
+    _hashScratchOrbHoming.length = 0;
+    enemySpatialHash.queryInto(_hashScratchOrbHoming, orb.mesh.position.x, orb.mesh.position.z, orb.homingRange);
+    const nearbyForHoming = _hashScratchOrbHoming;
     let nearestEnemy = null;
     let nearestDist = orb.homingRange;
 
@@ -6188,11 +6297,10 @@ function updatePlasmaOrbs(now, dt) {
 
     // Homing behavior: steer towards nearest enemy
     if (nearestEnemy) {
-      const toEnemy = new THREE.Vector3()
-        .subVectors(nearestEnemy.mesh.position, orb.mesh.position)
-        .normalize();
+      // Perf: scratch vector instead of new Vector3 per orb per frame
+      _orbToEnemy.subVectors(nearestEnemy.mesh.position, orb.mesh.position).normalize();
       const homingStrength = 3.0; // Steering force
-      orb.velocity.lerp(toEnemy.multiplyScalar(orb.velocity.length()), homingStrength * dt);
+      orb.velocity.lerp(_orbToEnemy.multiplyScalar(orb.velocity.length()), homingStrength * dt);
     }
 
     // Move orb
@@ -6224,7 +6332,9 @@ function updatePlasmaOrbs(now, dt) {
     }
 
     // Check collision with enemies using spatial hash
-    const nearbyForCollision = enemySpatialHash.query(orb.mesh.position.x, orb.mesh.position.z, 0.5);
+    _hashScratchOrbCollision.length = 0;
+    enemySpatialHash.queryInto(_hashScratchOrbCollision, orb.mesh.position.x, orb.mesh.position.z, 0.5);
+    const nearbyForCollision = _hashScratchOrbCollision;
     for (const e of nearbyForCollision) {
       const dist = orb.mesh.position.distanceTo(e.mesh.position);
       if (dist < 0.3) { // Collision radius
@@ -6256,7 +6366,9 @@ function detonatePlasmaOrb(orb, enemyIndex) {
   // AOE damage to nearby enemies using spatial hash
   if (orb.aoeRadius > 0) {
     const enemies = getEnemies();  // Still needed for index lookup
-    const nearby = enemySpatialHash.query(orb.mesh.position.x, orb.mesh.position.z, orb.aoeRadius);
+    _hashScratchOrbAoe.length = 0;
+    enemySpatialHash.queryInto(_hashScratchOrbAoe, orb.mesh.position.x, orb.mesh.position.z, orb.aoeRadius);
+    const nearby = _hashScratchOrbAoe;
     for (const e of nearby) {
       const i = enemies.indexOf(e);
       if (i === enemyIndex) continue; // Skip the enemy we already hit
@@ -6432,7 +6544,9 @@ function detonateGrenade(grenade, index) {
 
   // AOE damage to enemies using spatial hash
   const enemies = getEnemies();  // Still needed for index lookup
-  const nearby = enemySpatialHash.query(grenade.mesh.position.x, grenade.mesh.position.z, grenade.aoeRadius);
+  _hashScratchGrenade.length = 0;
+  enemySpatialHash.queryInto(_hashScratchGrenade, grenade.mesh.position.x, grenade.mesh.position.z, grenade.aoeRadius);
+  const nearby = _hashScratchGrenade;
   for (const e of nearby) {
     const i = enemies.indexOf(e);
     const dist = e.mesh.position.distanceTo(grenade.mesh.position);
@@ -6593,7 +6707,9 @@ function updateProximityMines(now, dt) {
     if (!mine.isArmed) continue;
 
     // Check for enemy proximity using spatial hash
-    const nearby = enemySpatialHash.query(mine.position.x, mine.position.z, mine.triggerRadius);
+    _hashScratchMineProximity.length = 0;
+    enemySpatialHash.queryInto(_hashScratchMineProximity, mine.position.x, mine.position.z, mine.triggerRadius);
+    const nearby = _hashScratchMineProximity;
     for (const e of nearby) {
       const dist = e.mesh.position.distanceTo(mine.position);
       if (dist < mine.triggerRadius) {
@@ -6610,7 +6726,9 @@ function detonateProximityMine(mine, index) {
 
   // AOE damage to enemies using spatial hash
   const enemies = getEnemies();  // Still needed for index lookup
-  const nearby = enemySpatialHash.query(mine.position.x, mine.position.z, mine.aoeRadius);
+  _hashScratchMineAoe.length = 0;
+  enemySpatialHash.queryInto(_hashScratchMineAoe, mine.position.x, mine.position.z, mine.aoeRadius);
+  const nearby = _hashScratchMineAoe;
   for (const e of nearby) {
     const i = enemies.indexOf(e);
     const dist = e.mesh.position.distanceTo(mine.position);
@@ -8773,12 +8891,17 @@ function updateLightningBeam(controller, index, stats, dt) {
   _lightningForwardEnd.copy(_lightningOrigin).addScaledVector(_lightningDirCalc, LIGHTNING_FORWARD_RANGE);
 
   // Find enemies within lock-on range using spatial hash
-  const nearbyEnemies = enemySpatialHash.query(_lightningOrigin.x, _lightningOrigin.z, stats.lightningRange);
-  const targets = [];
+  // Perf: queryInto reuses a scratch array; parallel arrays + insertion sort
+  // avoid per-frame {enemy,distSq} objects and sort() comparator closure
+  _hashScratchLightning.length = 0;
+  enemySpatialHash.queryInto(_hashScratchLightning, _lightningOrigin.x, _lightningOrigin.z, stats.lightningRange);
+  _lightningTargetEnemies.length = 0;
+  _lightningTargetDistSq.length = 0;
   const maxChains = stats.lightningMaxTargets || 3;
   const lightningRangeSq = stats.lightningRange * stats.lightningRange;
 
-  for (const e of nearbyEnemies) {
+  for (let hi = 0; hi < _hashScratchLightning.length; hi++) {
+    const e = _hashScratchLightning[hi];
     // Verify enemy is still valid (alive, mesh present, and registered in enemy list)
     if (!e || !e.mesh || !e.mesh.parent || e.hp <= 0) continue;
     const distSq = e.mesh.position.distanceToSquared(_lightningOrigin);
@@ -8787,13 +8910,26 @@ function updateLightningBeam(controller, index, stats, dt) {
 
     // Within range and roughly in front (45° cone)
     if (distSq < lightningRangeSq && angle > 0.7) {
-      targets.push({ enemy: e, distSq });
+      _lightningTargetEnemies.push(e);
+      _lightningTargetDistSq.push(distSq);
     }
   }
 
-  // Sort by distance, take closest N
-  targets.sort((a, b) => a.distSq - b.distSq);
-  const chainCount = Math.min(targets.length, maxChains);
+  // Insertion sort by distance (few targets; parallel arrays stay in sync)
+  for (let si = 1; si < _lightningTargetDistSq.length; si++) {
+    const d = _lightningTargetDistSq[si];
+    const e = _lightningTargetEnemies[si];
+    let si2 = si - 1;
+    while (si2 >= 0 && _lightningTargetDistSq[si2] > d) {
+      _lightningTargetDistSq[si2 + 1] = _lightningTargetDistSq[si2];
+      _lightningTargetEnemies[si2 + 1] = _lightningTargetEnemies[si2];
+      si2--;
+    }
+    _lightningTargetDistSq[si2 + 1] = d;
+    _lightningTargetEnemies[si2 + 1] = e;
+  }
+
+  const chainCount = Math.min(_lightningTargetEnemies.length, maxChains);
 
   // Always show beam (sound + visuals)
   startLightningSound();
@@ -8810,8 +8946,8 @@ function updateLightningBeam(controller, index, stats, dt) {
     _lightningMidPoint.copy(_lightningOrigin).addScaledVector(_lightningDirCalc, 2.0);  // 2 units forward before curving
     offset = writeLightningBoltPositions(_lightningOrigin, _lightningMidPoint, positions, offset);
     for (let ti = 0; ti < chainCount; ti++) {
-      const targetPos = targets[ti].enemy.mesh.position;
-      const startPos = ti === 0 ? _lightningMidPoint : targets[ti - 1].enemy.mesh.position;
+      const targetPos = _lightningTargetEnemies[ti].mesh.position;
+      const startPos = ti === 0 ? _lightningMidPoint : _lightningTargetEnemies[ti - 1].mesh.position;
       offset = writeLightningBoltPositions(startPos, targetPos, positions, offset);
     }
   } else {
@@ -8850,7 +8986,7 @@ function updateLightningBeam(controller, index, stats, dt) {
 
       let accuracyHitRegistered = false;
       for (let ti = 0; ti < chainCount; ti++) {
-        const { enemy } = targets[ti];
+        const enemy = _lightningTargetEnemies[ti];
         const liveTarget = enemy?.mesh ? getEnemyByMesh(enemy.mesh) : null;
         const enemyIndex = liveTarget?.index;
         if (enemyIndex === undefined) continue;
@@ -8908,9 +9044,12 @@ const _lightningAltPerp = new THREE.Vector3();
 
 // PERFORMANCE: Scratch vectors for updateLightningBeam hot path
 const _lightningOrigin = new THREE.Vector3();
-const _lightningQuat = new THREE.Quaternion();
 const _lightningDirCalc = new THREE.Vector3();
 const _lightningToEnemy = new THREE.Vector3();
+// Perf: reused target lists for updateLightningBeam — avoids allocating a
+// `targets` array + {enemy,distSq} objects + sort() closure every frame
+const _lightningTargetEnemies = [];
+const _lightningTargetDistSq = [];
 const _lightningLastPos = new THREE.Vector3();
 const _lightningForwardEnd = new THREE.Vector3();
 const _lightningMidPoint = new THREE.Vector3();
@@ -9158,14 +9297,18 @@ function updateLightningOrbs(dt, now) {
       }
     }
 
-    for (let pi = projectiles.length - 1; pi >= 0; pi--) {
-      const hostile = projectiles[pi];
-      if (!isHostileProjectile(hostile)) continue;
+    // Perf: iterate the per-frame hostile cache instead of the full
+    // projectiles[] array (cache rebuilt in updateProjectiles each frame)
+    for (let hi = _hostileProjectilesInArray.length - 1; hi >= 0; hi--) {
+      const hostile = _hostileProjectilesInArray[hi];
+      if (!hostile) continue;
       const hitRadius = orb.radius + 0.35;
       if (orb.position.distanceToSquared(hostile.position) <= hitRadius * hitRadius) {
         triggerHostileProjectileExplosion(hostile.position.clone(), 0.35, 0);
         disposeObject3D(hostile);
-        projectiles.splice(pi, 1);
+        const hpIdx = projectiles.indexOf(hostile);
+        if (hpIdx >= 0) projectiles.splice(hpIdx, 1);
+        _hostileProjectilesInArray.splice(hi, 1);
       }
     }
 
@@ -10670,6 +10813,21 @@ function enemyNeedsPreciseProjectileHit(enemy) {
 function updateProjectiles(dt) {
   const now = performance.now();
 
+  // Perf: rebuild hostile caches once per frame (see declaration notes).
+  // Hostile entries in projectiles[]/explosionVisuals[] are rare (boss
+  // lightning, decoys, toxic pools, shields), so iterating caches instead of
+  // full arrays turns the per-projectile collision scans from O(n²) to O(n·h).
+  _hostileProjectilesInArray.length = 0;
+  for (let hi = 0; hi < projectiles.length; hi++) {
+    const p = projectiles[hi];
+    if (p && isHostileProjectile(p)) _hostileProjectilesInArray.push(p);
+  }
+  _hostileVisualsInExplosion.length = 0;
+  for (let vi = 0; vi < explosionVisuals.length; vi++) {
+    const v = explosionVisuals[vi];
+    if (v && v.userData.isBossProjectile) _hostileVisualsInExplosion.push(v);
+  }
+
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const proj = projectiles[i];
 
@@ -10687,6 +10845,7 @@ function updateProjectiles(dt) {
         if (age > proj.userData.duration) {
           triggerHostileProjectileExplosion(proj.position, 0.3, 0);
           disposeObject3D(proj);
+          _dropHostileFromCache(proj);  // Perf: keep hostile cache in sync
           projectiles.splice(i, 1);
           continue;
         }
@@ -10736,6 +10895,7 @@ function updateProjectiles(dt) {
           }
           triggerHostileProjectileExplosion(proj.position, 0.4, 0);
           disposeObject3D(proj);
+          _dropHostileFromCache(proj);  // Perf: keep hostile cache in sync
           projectiles.splice(i, 1);
           continue;
         }
@@ -10752,6 +10912,7 @@ function updateProjectiles(dt) {
             window.createExplosionAt(proj.position.clone(), proj.userData.explosionRadius, proj.userData.explosionDamage);
           }
           disposeObject3D(proj);
+          _dropHostileFromCache(proj);  // Perf: keep hostile cache in sync
           projectiles.splice(i, 1);
           continue;
         }
@@ -10763,6 +10924,7 @@ function updateProjectiles(dt) {
       } else {
         disposeObject3D(proj);
       }
+      _dropHostileFromCache(proj);  // Perf: keep hostile cache in sync
       projectiles.splice(i, 1);
       continue;
     }
@@ -10818,7 +10980,8 @@ function updateProjectiles(dt) {
         if (_seekDot > 0.9999) {
           proj.quaternion.identity();
         } else if (_seekDot < -0.9999) {
-          proj.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+          // Perf: reuse module scratch axis instead of allocating a Vector3 per frame
+          proj.quaternion.setFromAxisAngle(_upAxisUnit, Math.PI);
         } else {
           proj.quaternion.setFromUnitVectors(_projHomingQuatDir, _projHomingVelNorm);
         }
@@ -10891,7 +11054,9 @@ function updateProjectiles(dt) {
     let directMinionHit = null;
     let directMinionHitDistanceSq = Infinity;
 
-    const hashed = enemySpatialHash.query(projPos.x, projPos.z, hashRadius);
+    _hashScratchProjectiles.length = 0;
+    enemySpatialHash.queryInto(_hashScratchProjectiles, projPos.x, projPos.z, hashRadius);
+    const hashed = _hashScratchProjectiles;
     for (let ei = 0; ei < hashed.length; ei++) {
       const enemy = hashed[ei];
       if (!enemy || !enemy.mesh) continue;
@@ -11010,13 +11175,17 @@ function updateProjectiles(dt) {
           if (!enemy._naniteRevealed) {
             enemy._naniteRevealed = true;
             if (enemy.mesh.material) {
-              setMaterialEmissiveSafe(enemy.mesh.material, new THREE.Color(0xffd700), 0.5);
+              // Perf: module scratch Color (was new THREE.Color per hit)
+              setMaterialEmissiveSafe(enemy.mesh.material, _goldColor, 0.5);
             }
           }
         }
 
         markProjectileHit(proj);
-        handleHit(result.index, result.enemy, { ...proj.userData.stats, damage: proj.userData.stats.damage + naniteDamage }, preciseHit.point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint, hitInfo);
+        // Perf: Object.assign into scratch stats instead of { ...stats } spread per hit
+        Object.assign(_hitStatsScratch, proj.userData.stats);
+        _hitStatsScratch.damage = proj.userData.stats.damage + naniteDamage;
+        handleHit(result.index, result.enemy, _hitStatsScratch, preciseHit.point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint, hitInfo);
 
         if (proj.userData.stats?.ricochetBounces > 0) {
           handleRicochet(preciseHit.point, proj.userData.stats, 0, proj.userData.controllerIndex);
@@ -11039,15 +11208,19 @@ function updateProjectiles(dt) {
       if (naniteDamage > 0 && !directEnemyHit.enemy._naniteRevealed) {
         directEnemyHit.enemy._naniteRevealed = true;
         if (directEnemyHit.enemy.mesh.material) {
-          setMaterialEmissiveSafe(directEnemyHit.enemy.mesh.material, new THREE.Color(0xffd700), 0.5);
+          // Perf: module scratch Color (was new THREE.Color per hit)
+          setMaterialEmissiveSafe(directEnemyHit.enemy.mesh.material, _goldColor, 0.5);
         }
       }
 
       markProjectileHit(proj);
+      // Perf: Object.assign into scratch stats instead of { ...stats } spread per hit
+      Object.assign(_hitStatsScratch, proj.userData.stats);
+      _hitStatsScratch.damage = proj.userData.stats.damage + naniteDamage;
       handleHit(
         directEnemyHit.index,
         directEnemyHit.enemy,
-        { ...proj.userData.stats, damage: proj.userData.stats.damage + naniteDamage },
+        _hitStatsScratch,
         directEnemyHit.point,
         proj.userData.controllerIndex,
         proj.userData.isExploding,
@@ -11117,28 +11290,64 @@ function updateProjectiles(dt) {
         }
       }
 
-      for (let j = i - 1; j >= 0; j--) {
-        const bossProj = projectiles[j];
+      // Perf: was O(n²) nested loop over ALL earlier projectiles; now iterates
+      // the per-frame hostile cache (hostile entries are rare)
+      for (let hi = _hostileProjectilesInArray.length - 1; hi >= 0; hi--) {
+        const bossProj = _hostileProjectilesInArray[hi];
         if (!bossProj || !bossProj.userData) continue;
         
-        // Check if this is a boss projectile
-        if (bossProj.userData.isBossProjectile || bossProj.userData.damage) {
-          if (proj.position.distanceToSquared(bossProj.position) < 0.25) { // 0.5m collision radius
-            // Destroy hostile projectile with a small blast
-            triggerHostileProjectileExplosion(bossProj.position.clone(), 0.35, 0);
+        if (proj.position.distanceToSquared(bossProj.position) < 0.25) { // 0.5m collision radius
+          // Destroy hostile projectile with a small blast
+          triggerHostileProjectileExplosion(bossProj.position.clone(), 0.35, 0);
+          markProjectileHit(proj);
+          
+          // If it's a decoy, explode it
+          if (bossProj.userData.isDecoy && typeof window !== 'undefined' && window.createExplosionAt) {
+            window.createExplosionAt(bossProj.position.clone(), bossProj.userData.explosionRadius, bossProj.userData.explosionDamage);
+          }
+          
+          disposeObject3D(bossProj);
+          const hIdx = projectiles.indexOf(bossProj);
+          if (hIdx >= 0) projectiles.splice(hIdx, 1);
+          _hostileProjectilesInArray.splice(hi, 1);
+          
+          // Destroy player projectile (unless piercing)
+          // Fix: remove by reference — splicing the hostile at a LOWER index
+          // shifts this projectile's index, so projectiles.splice(i,1) would
+          // remove the wrong element
+          if (!proj.userData.stats?.piercing) {
             markProjectileHit(proj);
-            
-            // If it's a decoy, explode it
-            if (bossProj.userData.isDecoy && typeof window !== 'undefined' && window.createExplosionAt) {
-              window.createExplosionAt(bossProj.position.clone(), bossProj.userData.explosionRadius, bossProj.userData.explosionDamage);
+            resolveProjectileAccuracy(proj);
+            if (proj.userData.isPooled) {
+              returnProjectileToPool(proj);
+            } else {
+              disposeObject3D(proj);
             }
-            
-            disposeObject3D(bossProj);
-            projectiles.splice(j, 1);
+            const pi = projectiles.indexOf(proj);
+            if (pi >= 0) projectiles.splice(pi, 1);
+          }
+          
+          break; // Only hit one boss projectile
+        }
+      }
+      
+      // Also check collision with explosionVisuals (toxic pools, etc.)
+      // Perf: was a full scan of ALL explosionVisuals; now uses the hostile cache
+      if (proj.userData.stats && projectiles[i]) { // Make sure projectile still exists
+        for (let vi = _hostileVisualsInExplosion.length - 1; vi >= 0; vi--) {
+          const visual = _hostileVisualsInExplosion[vi];
+          if (!visual) continue;
+          if (proj.position.distanceToSquared(visual.position) < 1.0) { // 1.0m radius squared
+            // Destroy the visual
+            spawnExplosionVisual(visual.position.clone(), 0.3);
+            disposeObject3D(visual);
+            const vIdx = explosionVisuals.indexOf(visual);
+            if (vIdx >= 0) explosionVisuals.splice(vIdx, 1);
+            _hostileVisualsInExplosion.splice(vi, 1);
+            markProjectileHit(proj);
             
             // Destroy player projectile (unless piercing)
             if (!proj.userData.stats?.piercing) {
-              markProjectileHit(proj);
               resolveProjectileAccuracy(proj);
               if (proj.userData.isPooled) {
                 returnProjectileToPool(proj);
@@ -11148,36 +11357,7 @@ function updateProjectiles(dt) {
               projectiles.splice(i, 1);
             }
             
-            break; // Only hit one boss projectile
-          }
-        }
-      }
-      
-      // Also check collision with explosionVisuals (toxic pools, etc.)
-      if (proj.userData.stats && projectiles[i]) { // Make sure projectile still exists
-        for (let k = explosionVisuals.length - 1; k >= 0; k--) {
-          const visual = explosionVisuals[k];
-          if (visual.userData.isBossProjectile) {
-            if (proj.position.distanceToSquared(visual.position) < 1.0) { // 1.0m radius squared
-              // Destroy the visual
-              spawnExplosionVisual(visual.position.clone(), 0.3);
-              disposeObject3D(visual);
-              explosionVisuals.splice(k, 1);
-              markProjectileHit(proj);
-              
-              // Destroy player projectile (unless piercing)
-              if (!proj.userData.stats?.piercing) {
-                resolveProjectileAccuracy(proj);
-                if (proj.userData.isPooled) {
-                  returnProjectileToPool(proj);
-                } else {
-                  disposeObject3D(proj);
-                }
-                projectiles.splice(i, 1);
-              }
-              
-              break;
-            }
+            break;
           }
         }
       }
@@ -12278,68 +12458,58 @@ function render(timestamp) {
 
       // 4. Shift floor grid and base colors to locked red shades
       if (synthVisualRefs.terrainUniforms && game._cinOrigGridColor) {
-        const redGrid = new THREE.Color(0x880000);  // Dark crimson grid
-        const redBase = new THREE.Color(0x1a0000);  // Very dark red base
-        const redFog = new THREE.Color(0x220000);   // Dark red fog
-        const redPulseA = new THREE.Color(0xcc0000); // Normal red (former pink)
-        const redPulseB = new THREE.Color(0x660000); // Dark red (former cyan)
-        synthVisualRefs.terrainUniforms.uGridColor.value.copy(game._cinOrigGridColor).lerp(redGrid, t);
-        synthVisualRefs.terrainUniforms.uBaseColor.value.copy(game._cinOrigBaseColor).lerp(redBase, t);
-        synthVisualRefs.terrainUniforms.uFogColor.value.copy(game._cinOrigFogColor).lerp(redFog, t);
+        // Perf: module scratch Colors (were new THREE.Color per frame in cinematic)
+        synthVisualRefs.terrainUniforms.uGridColor.value.copy(game._cinOrigGridColor).lerp(_cinRedGrid, t);
+        synthVisualRefs.terrainUniforms.uBaseColor.value.copy(game._cinOrigBaseColor).lerp(_cinRedBase, t);
+        synthVisualRefs.terrainUniforms.uFogColor.value.copy(game._cinOrigFogColor).lerp(_cinRedFog, t);
         if (game._cinOrigPulseA) {
-          synthVisualRefs.terrainUniforms.uPulseColorA.value.copy(game._cinOrigPulseA).lerp(redPulseA, t);
+          synthVisualRefs.terrainUniforms.uPulseColorA.value.copy(game._cinOrigPulseA).lerp(_cinRedPulseA, t);
         }
         if (game._cinOrigPulseB) {
-          synthVisualRefs.terrainUniforms.uPulseColorB.value.copy(game._cinOrigPulseB).lerp(redPulseB, t);
+          synthVisualRefs.terrainUniforms.uPulseColorB.value.copy(game._cinOrigPulseB).lerp(_cinRedPulseB, t);
         }
       }
 
       // 4b. Fade skydome gradient to dark reds (~30% darker than original brightness)
       if (game._cinSkyMat && game._cinSkyMat.uniforms) {
         const su = game._cinSkyMat.uniforms;
-        const redTop = new THREE.Color(0x12000a);
-        const redMid = new THREE.Color(0x32001a);
-        const redHorizon = new THREE.Color(0x701a1a);
-        const redGlow = new THREE.Color(0x6a0020);
-        const redMoonGlow = new THREE.Color(0x301020);
         if (su.topColor && game._cinOrigSkyTopColor) {
-          su.topColor.value.copy(game._cinOrigSkyTopColor).lerp(redTop, t);
+          su.topColor.value.copy(game._cinOrigSkyTopColor).lerp(_cinRedTop, t);
         }
         if (su.midColor && game._cinOrigSkyMidColor) {
-          su.midColor.value.copy(game._cinOrigSkyMidColor).lerp(redMid, t);
+          su.midColor.value.copy(game._cinOrigSkyMidColor).lerp(_cinRedMid, t);
         }
         if (su.horizonColor && game._cinOrigSkyHorizonColor) {
-          su.horizonColor.value.copy(game._cinOrigSkyHorizonColor).lerp(redHorizon, t);
+          su.horizonColor.value.copy(game._cinOrigSkyHorizonColor).lerp(_cinRedHorizon, t);
         }
         if (su.glowColor && game._cinOrigSkyGlowColor) {
-          su.glowColor.value.copy(game._cinOrigSkyGlowColor).lerp(redGlow, t);
+          su.glowColor.value.copy(game._cinOrigSkyGlowColor).lerp(_cinRedGlow, t);
         }
         if (su.moonGlowColor && game._cinOrigSkyMoonGlowColor) {
-          su.moonGlowColor.value.copy(game._cinOrigSkyMoonGlowColor).lerp(redMoonGlow, t);
+          su.moonGlowColor.value.copy(game._cinOrigSkyMoonGlowColor).lerp(_cinRedMoonGlow, t);
         }
       }
 
       // 5. Shift sun glow materials to red
       if (synthVisualRefs.sunOuterGlowMat) {
-        synthVisualRefs.sunOuterGlowMat.color.lerp(new THREE.Color(0xff2200), t * 0.1);
+        synthVisualRefs.sunOuterGlowMat.color.lerp(_cinRedSunOuter, t * 0.1);
       }
       if (synthVisualRefs.sunGlowMat) {
-        synthVisualRefs.sunGlowMat.color.lerp(new THREE.Color(0xff3300), t * 0.1);
+        synthVisualRefs.sunGlowMat.color.lerp(_cinRedSunGlow, t * 0.1);
       }
       if (synthVisualRefs.sunCoreMat) {
-        synthVisualRefs.sunCoreMat.color.lerp(new THREE.Color(0xff0000), t * 0.1);
+        synthVisualRefs.sunCoreMat.color.lerp(_cinRedSunCore, t * 0.1);
       }
       if (synthVisualRefs.sunReflMat) {
-        synthVisualRefs.sunReflMat.color.lerp(new THREE.Color(0xff0000), t * 0.1);
+        synthVisualRefs.sunReflMat.color.lerp(_cinRedSunRefl, t * 0.1);
       }
       if (synthVisualRefs.horizonGlowMat) {
-        synthVisualRefs.horizonGlowMat.color.lerp(new THREE.Color(0xff2200), t * 0.1);
+        synthVisualRefs.horizonGlowMat.color.lerp(_cinRedHorizonGlow, t * 0.1);
       }
 
       // 6. Tint mountain wrap cylinder to red during cinematic
       if (synthVisualRefs.mountainCylMat && game._cinOrigMountainColor) {
-        const redMountain = new THREE.Color(0x882244);  // Dark red-purple tint
-        synthVisualRefs.mountainCylMat.color.copy(game._cinOrigMountainColor).lerp(redMountain, t);
+        synthVisualRefs.mountainCylMat.color.copy(game._cinOrigMountainColor).lerp(_cinRedMountain, t);
       }
 
       // 7. Desert biome: tint moon and moon glow red (Prism Boss)
@@ -12347,13 +12517,13 @@ function render(timestamp) {
         game._cinOrigDesertMoonColor = synthVisualRefs.desertMoonMat.color.clone();
       }
       if (synthVisualRefs.desertMoonMat && game._cinOrigDesertMoonColor) {
-        synthVisualRefs.desertMoonMat.color.copy(game._cinOrigDesertMoonColor).lerp(new THREE.Color(0xcc0000), t);
+        synthVisualRefs.desertMoonMat.color.copy(game._cinOrigDesertMoonColor).lerp(_cinRedDesertMoon, t);
       }
       if (synthVisualRefs.desertMoonGlowMat && !game._cinOrigDesertMoonGlowColor) {
         game._cinOrigDesertMoonGlowColor = synthVisualRefs.desertMoonGlowMat.color.clone();
       }
       if (synthVisualRefs.desertMoonGlowMat && game._cinOrigDesertMoonGlowColor) {
-        synthVisualRefs.desertMoonGlowMat.color.copy(game._cinOrigDesertMoonGlowColor).lerp(new THREE.Color(0xff2200), t);
+        synthVisualRefs.desertMoonGlowMat.color.copy(game._cinOrigDesertMoonGlowColor).lerp(_cinRedDesertMoonGlow, t);
       }
 
       // 8. Alien biome: tint city buildings and green light red (Minotaur)
@@ -12362,14 +12532,14 @@ function render(timestamp) {
         game._cinOrigAlienBaseColor = synthVisualRefs.alienCityShaderMat.uniforms.uBaseColor.value.clone();
       }
       if (synthVisualRefs.alienCityShaderMat && game._cinOrigAlienMoonColor) {
-        synthVisualRefs.alienCityShaderMat.uniforms.uMoonColor.value.copy(game._cinOrigAlienMoonColor).lerp(new THREE.Color(0xff2200), t);
-        synthVisualRefs.alienCityShaderMat.uniforms.uBaseColor.value.copy(game._cinOrigAlienBaseColor).lerp(new THREE.Color(0x150005), t);
+        synthVisualRefs.alienCityShaderMat.uniforms.uMoonColor.value.copy(game._cinOrigAlienMoonColor).lerp(_cinRedAlienMoon, t);
+        synthVisualRefs.alienCityShaderMat.uniforms.uBaseColor.value.copy(game._cinOrigAlienBaseColor).lerp(_cinRedAlienBase, t);
       }
       if (synthVisualRefs.alienGreenLight && !game._cinOrigAlienGreenLightColor) {
         game._cinOrigAlienGreenLightColor = synthVisualRefs.alienGreenLight.color.clone();
       }
       if (synthVisualRefs.alienGreenLight && game._cinOrigAlienGreenLightColor) {
-        synthVisualRefs.alienGreenLight.color.copy(game._cinOrigAlienGreenLightColor).lerp(new THREE.Color(0xff2200), t);
+        synthVisualRefs.alienGreenLight.color.copy(game._cinOrigAlienGreenLightColor).lerp(_cinRedAlienGreen, t);
       }
     }
   }
@@ -12618,7 +12788,8 @@ function render(timestamp) {
       // Lerp from bright red back to base color over 1 second
       const t = floorFlashTimer / 0.3;  // 0.3s flash duration (VR comfort)
       const flashIntensity = t;  // 0 to 1, fading out
-      const flashColor = new THREE.Color(0xff0000);
+      // Perf: module scratch Color (was new THREE.Color per frame while flashing)
+      const flashColor = _floorFlashColor;
       // Flash terrain materials
       biomeTerrainMaterials.forEach(item => {
         if (item.type === 'shader') {
@@ -12635,7 +12806,8 @@ function render(timestamp) {
     lowHealthPulseTimer += rawDt;
     const pulse = (Math.sin(lowHealthPulseTimer * 2.6) + 1) * 0.5;
     const intensity = 0.2 + pulse * 0.45;
-    const warningColor = new THREE.Color(0xaa0000);
+    // Perf: module scratch Color (was new THREE.Color per frame while pulsing)
+    const warningColor = _lowHealthWarningColor;
     floorMaterial.color.lerpColors(floorBaseColor, warningColor, intensity);
     // Also pulse terrain
     biomeTerrainMaterials.forEach(item => {
@@ -12745,7 +12917,15 @@ function render(timestamp) {
 
   // Hide scanlines overlay in VR — it creates a dark box that follows the head and obscures the view
   // Fix 1.3: Use cached element instead of per-frame query
-  if (_cachedScanlinesEl) _cachedScanlinesEl.style.display = renderer.xr.isPresenting ? 'none' : '';
+  // Perf: only write style.display when the value actually changes (DOM writes
+  // are layout-invalidating; this used to write every frame)
+  if (_cachedScanlinesEl) {
+    const shouldShow = !renderer.xr.isPresenting;
+    if (_scanlinesDisplayShown !== shouldShow) {
+      _scanlinesDisplayShown = shouldShow;
+      _cachedScanlinesEl.style.display = shouldShow ? '' : 'none';
+    }
+  }
 
   _mark('scanlines_misc'); // ── end: FPS, scanlines DOM
   // Fix 1.4: Gate visual tuning behind debug flag to avoid per-frame object allocation + material iteration

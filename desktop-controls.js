@@ -33,6 +33,8 @@ const keyHoldDurations = {
   q: 0,
   e: 0
 };
+// Perf: cached key list — Object.keys() allocates a fresh array every frame
+const KEY_HOLD_KEYS = Object.keys(keyHoldDurations);
 
 // Mouse state
 const mouse = {
@@ -265,9 +267,11 @@ export function update(dt) {
   player.isMoving = false;
 
   // Keep hold durations monotonic while a key is down and hard reset on release.
-  Object.keys(keyHoldDurations).forEach((key) => {
+  // Perf: plain loop over cached keys (Object.keys allocated per frame)
+  for (let ki = 0; ki < KEY_HOLD_KEYS.length; ki++) {
+    const key = KEY_HOLD_KEYS[ki];
     keyHoldDurations[key] = keys[key] ? keyHoldDurations[key] + dt : 0;
-  });
+  }
 
   // Allow debug movement whenever desktop mode is available
   if (debugMode || enabled) {
@@ -401,18 +405,23 @@ export function getWeaponState() {
   };
 }
 
+// Reused "virtual controller" for desktop firing — main.js calls
+// getVirtualController() every frame while firing, and each call used to
+// allocate a fresh object literal (GC pressure in the render loop).
+const _virtualController = {
+  getWorldPosition: (target) => { if (cameraRef) target.copy(cameraRef.position); return target; },
+  getWorldQuaternion: (target) => { if (cameraRef) target.copy(cameraRef.quaternion); return target; },
+  userData: { handedness: 'both' }
+};
+
 /**
  * Get "virtual controller" for compatibility with shootWeapon().
  * Returns an object with getWorldPosition() and getWorldQuaternion() methods.
  */
 export function getVirtualController(hand = 'both') {
   if (!enabled || !cameraRef) return null;
-
-  return {
-    getWorldPosition: (target) => { target.copy(cameraRef.position); return target; },
-    getWorldQuaternion: (target) => { target.copy(cameraRef.quaternion); return target; },
-    userData: { handedness: hand }
-  };
+  _virtualController.userData.handedness = hand;
+  return _virtualController;
 }
 
 // ── Event Listeners ────────────────────────────────────────
@@ -652,13 +661,15 @@ let debugLightsFrameCounter = 0;
 let debugLightsLastSceneLen = -1;
 const runtimeConfig = getRuntimeConfig();
 
+// Perf: UA regex result is constant for the page lifetime — test once instead
+// of every frame in shouldShowDebugPositionPanel()
+const _isQuestUA = /Quest|OculusBrowser|Oculus/i.test(navigator.userAgent || '');
+
 function shouldShowDebugPositionPanel() {
   // Default OFF unless explicitly enabled through DEBUG menu checkbox
   if (runtimeConfig.dev.positionPanel !== true) return false;
   // Skip debug panel on Quest/VR browsers for performance
-  const ua = navigator.userAgent || '';
-  if (/Quest|OculusBrowser|Oculus/i.test(ua)) return false;
-  return true;
+  return !_isQuestUA;
 }
 
 function syncDebugPositionPanelVisibility() {

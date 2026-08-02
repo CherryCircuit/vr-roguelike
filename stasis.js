@@ -12,10 +12,13 @@ export function setActiveStasisFields(fields) {
 }
 
 // Get slow factor for a position (1.0 = no slow, 0.2 = 80% slower)
+// Perf: called per enemy + per projectile per frame — early-out when no
+// fields exist and use distanceToSquared to skip sqrt
 export function getStasisSlowFactor(position) {
+  if (activeStasisFields.length === 0) return 1.0; // No slow effect
   for (const field of activeStasisFields) {
-    const dist = position.distanceTo(field.position);
-    if (dist < field.radius) {
+    const distSq = position.distanceToSquared(field.position);
+    if (distSq < field.radius * field.radius) {
       return field.slowFactor;
     }
   }
