@@ -4509,14 +4509,13 @@ export function clearAllEnemies() {
   statusBubbles.length = 0;
 
   // Clear explosion parts (death particle sprites)
+  // Fix: these sprites come from the PERSISTENT explosionPool, which is added
+  // to the scene once in initEnemies and SHARES two textures
+  // (explosionTexturePink/Cyan). Disposing material.map here destroyed the
+  // shared textures for every future explosion, and p.parent.remove(p) removed
+  // pool sprites from the scene permanently (they're never re-added). Hide only.
   for (let i = explosionParts.length - 1; i >= 0; i--) {
-    const p = explosionParts[i];
-    if (p.parent) p.parent.remove(p);
-    if (p.material) {
-      if (p.material.map) p.material.map.dispose();
-      p.material.dispose();
-    }
-    if (p.geometry) p.geometry.dispose();
+    explosionParts[i].visible = false;
   }
   explosionParts.length = 0;
 

@@ -945,6 +945,15 @@ function resolveAccuracyPellet(shotId) {
   }
 }
 
+// [CORE] Resolve a shot that never spawned projectiles (pool exhausted / dropped).
+// Every pellet of the shot must be resolved once, otherwise the accuracyShots
+// Map entry leaks (and the miss is never registered).
+function resolveDroppedShot(shotId, pelletCount) {
+  if (!shotId) return;
+  const count = Math.max(1, pelletCount || 1);
+  for (let i = 0; i < count; i++) resolveAccuracyPellet(shotId);
+}
+
 // Camera shake on damage
 let cameraShake = 0;
 let cameraShakeIntensity = 0;
@@ -4396,7 +4405,16 @@ function updateLaserMines(now, dt) {
 function triggerLaserMine(mine, nearestEnemy, allEnemies) {
   mine.triggered = true;
   mine.triggeredAt = performance.now();
-  
+
+  // Explosion sound + visual feedback always fire (mine still "explodes")
+  playExplosionSound();
+  mine.mesh.material.color.setHex(0xffffff);
+  mine.mesh.scale.setScalar(2);
+
+  // Fix: auto-detonation passes nearestEnemy=null (no enemy in range).
+  // Previously dereferenced nearestEnemy.mesh unconditionally → TypeError crash.
+  if (!nearestEnemy || !nearestEnemy.mesh) return;
+
   // Create laser beam from mine to nearest enemy
   const start = mine.position.clone();
   start.y = 0.5;  // Mine height
@@ -4440,9 +4458,6 @@ function triggerLaserMine(mine, nearestEnemy, allEnemies) {
       }
     }
   }
-  
-  // Explosion sound
-  playExplosionSound();
   
   // Visual feedback on mine
   mine.mesh.material.color.setHex(0xffffff);
@@ -7501,6 +7516,11 @@ function clearAllAltWeaponEffects() {
   for (let i = activeLaserMines.length - 1; i >= 0; i--) {
     const mine = activeLaserMines[i];
     if (mine.mesh) disposeMesh(mine.mesh);
+    // Fix: a triggered mine (mid-laser) also holds laserMesh (beam) and glowMesh —
+    // the update-loop cleanup disposes all three; mirror it here so level
+    // transitions don't leak the beam/glow visuals
+    if (mine.laserMesh) disposeMesh(mine.laserMesh);
+    if (mine.glowMesh) disposeMesh(mine.glowMesh);
   }
   activeLaserMines.length = 0;
 
@@ -9852,6 +9872,9 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   if (projectiles.length >= MAX_PROJECTILES) {
     const recycled = projectiles.shift();
     if (recycled) {
+      // Fix: resolve accuracy tracking before recycling — recycled shots never
+      // hit the update loop's resolve path, leaking accuracyShots Map entries
+      resolveProjectileAccuracy(recycled);
       returnProjectileToPool(recycled);
     }
   }
@@ -9892,6 +9915,9 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
     for (let i = 0; i < recycleLimit; i++) {
       const recycled = projectiles.shift();
       if (recycled) {
+        // Fix: same accuracy resolution as above — this forced-expire path also
+        // bypasses the update loop's resolve path
+        resolveProjectileAccuracy(recycled);
         returnProjectileToPool(recycled);
         mesh = getPooledProjectile(poolType, projectileColor);
         if (mesh) break;
@@ -9907,6 +9933,9 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
       window._droppedShots = (window._droppedShots || 0) + 1;
       console.warn(`[PROJECTILE] Shot dropped (pool exhausted). Total dropped: ${window._droppedShots}, poolType: ${poolType}`);
     }
+    // Fix: this shot registered accuracy pellets in startAccuracyShot but never
+    // spawned a projectile — resolve them so the Map entry can't leak
+    resolveDroppedShot(shotId, stats?.projectileCount);
     return;
   }
 
@@ -11847,7 +11876,11 @@ function render(timestamp) {
 
     // Fix 1.9: Profile player collision handling
     // Handle enemy collisions with player
-    collisions.forEach(index => {
+    // Fix: destroyEnemy() splices activeEnemies, shifting all higher indices.
+    // Iterate collisions in REVERSE (highest index first) so earlier indices
+    // stay valid — previously the 2nd+ colliding enemy destroyed the WRONG enemy.
+    for (let ci = collisions.length - 1; ci >= 0; ci--) {
+      const index = collisions[ci];
       const _enemy = enemies[index];
       const _enemyType = _enemy?.type || 'unknown';
       destroyEnemy(index);
@@ -11876,7 +11909,7 @@ function render(timestamp) {
       if (dead) {
         endGame(false);
       }
-    });
+    }
 
     // Boss collision with player
     if (boss && boss.mesh.position.distanceTo(playerPos) < 1.5) {
@@ -11979,19 +12012,28 @@ function render(timestamp) {
       if (dead) endGame(false);
     }
 
-    // Check for DoT damage on enemies (reuse from spatial hash rebuild above)
-    // enemies already declared
-    enemies.forEach((e, i) => {
+    // Check for dead enemies (DoT ticks, conductor chain kills, black hole deaths)
+    // Fix 1: collect references FIRST — destroyEnemy() splices activeEnemies,
+    // so indices captured during iteration go stale after the first kill.
+    // Fix 2: hp<=0 without _lastDoT (chain/black-hole kills) previously had no
+    // destroy signal and left "zombie" enemies alive forever — sweep them too.
+    const deadRefs = [];
+    for (let ei = 0; ei < enemies.length; ei++) {
+      const e = enemies[ei];
       if (e._lastDoT) {
         const colorMap = { fire: '#ff4400', shock: '#4488ff', freeze: '#88ccff' };
         spawnDamageNumber(e.mesh.position, e._lastDoT.damage, colorMap[e._lastDoT.type] || '#ffffff');
         delete e._lastDoT;
-
-        if (e.hp <= 0) {
-          handleEnemyKilled(i, { killsWithoutHit: true, skipChain: false });
-        }
       }
-    });
+      if (e.hp <= 0) deadRefs.push(e);
+    }
+    // Kill by reference: re-resolve the (possibly shifted) index after each kill
+    for (let di = 0; di < deadRefs.length; di++) {
+      const idx = enemies.indexOf(deadRefs[di]);
+      if (idx >= 0) {
+        handleEnemyKilled(idx, { killsWithoutHit: true, skipChain: false });
+      }
+    }
 
     // Update HUD (staggered — every 3rd frame to reduce geometry recreation cost)
     game._levelConfig = getLevelConfig();
