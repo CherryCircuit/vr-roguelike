@@ -26,6 +26,10 @@ import { spawnVoxelExplosion, activeVoxels } from './voxel-debris.js';
 import { startBossDeathCinematic } from './boss-death-cinematic.js';
 import { getStasisSlowFactor } from './stasis.js';
 import { pointToSegmentDistSq, updateChargeBeamVisuals, getHandForController } from './beam-weapons.js';
+// NOTE: intentional ES module cycle — projectile-system ↔ alt-weapons (both
+// directions, runtime-only usage), valid for native ES modules. See also the
+// beam-weapons cycle comment.
+import { checkPlasmaOrbDetonation, checkPlayerProjectileHitsDrone, checkProjectileNaniteInteraction } from './alt-weapons.js';
 
 // [DEBUG] Mirrors main.js — console.log blocks the render thread on Quest
 const DEBUG = false;
@@ -164,9 +168,6 @@ let endGame = () => null;
 let setKilledBy = () => null;
 let triggerScreenShake = () => null;
 let setMaterialEmissiveSafe = () => null;
-let checkPlasmaOrbDetonation = () => false;
-let checkPlayerProjectileHitsDrone = () => false;
-let checkProjectileNaniteInteraction = () => null;
 
 /**
  * Register runtime dependencies from main.js. Must be called once at init.
@@ -193,9 +194,6 @@ export function initProjectileSystem(deps) {
   if (typeof h.setKilledBy === 'function') setKilledBy = h.setKilledBy;
   if (typeof h.triggerScreenShake === 'function') triggerScreenShake = h.triggerScreenShake;
   if (typeof h.setMaterialEmissiveSafe === 'function') setMaterialEmissiveSafe = h.setMaterialEmissiveSafe;
-  if (typeof h.checkPlasmaOrbDetonation === 'function') checkPlasmaOrbDetonation = h.checkPlasmaOrbDetonation;
-  if (typeof h.checkPlayerProjectileHitsDrone === 'function') checkPlayerProjectileHitsDrone = h.checkPlayerProjectileHitsDrone;
-  if (typeof h.checkProjectileNaniteInteraction === 'function') checkProjectileNaniteInteraction = h.checkProjectileNaniteInteraction;
 }
 
 // Accuracy bonus shot tracking
