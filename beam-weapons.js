@@ -29,7 +29,7 @@ import { startBossDeathCinematic } from './boss-death-cinematic.js';
 // with a shared collision/utility module.
 import {
   handleHit, spawnBossProjectileDestructionFX, triggerHostileProjectileExplosion,
-  projectiles, _hostileProjectilesInArray,
+  projectiles, _hostileProjectilesInArray, explosionVisuals,
 } from './projectile-system.js';
 
 // [DEBUG] Mirrors main.js — console.log blocks the render thread on Quest

@@ -6,6 +6,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getStasisSlowFactor } from './stasis.js';
+// NOTE: documented ES module cycle — beam-weapons ↔ enemies (both directions,
+// runtime-only usage). Only used for the shock chain arc visual (Issue #216).
+import { spawnTransientLightningBolt } from './beam-weapons.js';
 import {
   playTingSound, playEnemyProjectileSound, playProjectileWarningSound,
   playBossProjectileFiredSound, playBossProjectileAlertSound,
@@ -4027,11 +4030,57 @@ export function applyEffects(enemyIndex, effects) {
       se.remaining = 2 + stacks * 0.5; // Standard duration: 2s base + 0.5s per stack
     }
 
+    // Issue #216: Lightning chains to 1 nearby enemy (15 dmg per stack).
+    // Each shock application arcs once — the marquee mechanic of the
+    // elemental ammo system (slow + DoT + chain).
+    if (type === 'shock' && stacks > 0) {
+      chainShockToNearbyEnemy(e, stacks);
+    }
+
     // Spawn speech bubble when effect is first applied
     if (wasInactive) {
       spawnStatusEffectBubble(e.mesh.position, type, se.stacks);
     }
   });
+}
+
+// Chain range for the shock arc (Issue #216: single chain, 15 dmg per stack)
+const SHOCK_CHAIN_RANGE = 6.0;
+const SHOCK_CHAIN_BASE_DMG = 15;
+
+/**
+ * Issue #216: chain shock damage to the nearest other enemy.
+ * Perf: linear scan over activeEnemies (~15 max concurrent) — only runs
+ * when shock is applied on a hit, so it is not in the per-frame hot path.
+ * Visual: pooled transient lightning bolt (beam-weapons.js).
+ */
+function chainShockToNearbyEnemy(source, stacks) {
+  if (!source || !source.mesh || !source.mesh.position) return;
+
+  const sourcePos = source.mesh.position;
+  const rangeSq = SHOCK_CHAIN_RANGE * SHOCK_CHAIN_RANGE;
+  let best = null;
+  let bestDistSq = rangeSq;
+
+  for (const other of activeEnemies) {
+    if (other === source) continue;
+    if (!other || !other.mesh || !other.mesh.position || other.hp <= 0) continue;
+    const distSq = sourcePos.distanceToSquared(other.mesh.position);
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq;
+      best = other;
+    }
+  }
+
+  if (!best) return; // No enemy in range — no chain
+
+  const chainDmg = Math.round(SHOCK_CHAIN_BASE_DMG * stacks);
+  const targetIndex = activeEnemies.indexOf(best);
+  if (targetIndex < 0) return;
+
+  hitEnemy(targetIndex, chainDmg);
+  // Arc visual between the shocked enemy and its chain target
+  spawnTransientLightningBolt(sourcePos, best.mesh.position);
 }
 
 /**
