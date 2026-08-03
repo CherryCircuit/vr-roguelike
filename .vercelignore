@@ -1,6 +1,8 @@
 # Development-only files — keep the production deployment lean.
 # The site needs: index.html, *.js modules, layouts/, biomes/, assets/,
 # logo.svg, logo.png, tutorial.png, favicon.ico, api/ (Vercel Functions).
+# NOTE: scripts/ is NOT ignored — vercel.json's buildCommand runs
+# scripts/stamp-version.mjs on the build container.
 
 node_modules
 .git
@@ -8,7 +10,6 @@ archive
 docs
 tests
 tools
-scripts
 tmp
 memory
 mnt
