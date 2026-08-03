@@ -22,7 +22,7 @@ import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
   playBossSpawn, playBossAlertSound, playMenuClick, playErrorSound, playBuckshotSound,
-  playProximityAlert, playSwarmProximityAlert, playUpgradeSound,
+  playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound, playComboSound,
   startLightningSound, stopLightningSound, pauseLightningSound,
   startLightningOrbChargeSound, updateLightningOrbChargeSound, stopLightningOrbChargeSound,
@@ -45,11 +45,13 @@ import {
   // Final boss sounds
   playFinalBossAwakenSound, playFinalBossCollapseGroan, playFinalBossVictorySting,
   resumeAudioContext,
+  // Reactive music layer (Issue #142) + threat spatial audio (Issue #184)
+  startReactiveMusic, updateReactiveMusic, updateThreatAudio,
 } from './audio.js';
 import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
-  applyEffects, getSpawnPosition, getEnemies, getFastEnemies, getSwarmEnemies,
+  applyEffects, getSpawnPosition, getEnemies,
   updatePhaseEchoes,
   getBoss, spawnBoss, getBossNameForLevel, hitBoss, updateBoss, clearBoss, hitBossMinion, updateBossMinions,
   getBossMinions,
@@ -1927,6 +1929,11 @@ function init() {
 
   // [DEBUG] Desktop controls for non-VR playtesting
   initDesktopControls(scene, camera, renderer);
+
+  // Reactive music layer (Issue #142): procedural stems layered over the
+  // CDN soundtrack. Runs for the session; per-frame updates duck it outside
+  // gameplay states, so no start/stop churn across state transitions.
+  startReactiveMusic();
 
   // [DEBUG] Set up pause/nuke callbacks for keyboard shortcuts
   setOnPauseCallback(togglePause);
@@ -11499,49 +11506,6 @@ function spawnEnemyWave(dt) {
   }
 }
 
-// [CORE] Update fast enemy proximity alerts
-function updateFastEnemyAlerts(dt, playerPos) {
-  const fastEnemies = getFastEnemies();
-  fastEnemies.forEach(e => {
-    const dist = e.mesh.position.distanceTo(playerPos);
-    if (dist < 10) {
-      e.alertTimer = (e.alertTimer || 0) - dt;
-      if (e.alertTimer <= 0) {
-        e.alertTimer = 0.2; // play alert every 0.2s
-
-        // Calculate pan based on enemy position relative to player
-        const dx = e.mesh.position.x - playerPos.x;
-        const dz = e.mesh.position.z - playerPos.z;
-        const angle = Math.atan2(dx, -dz);
-        const pan = Math.sin(angle);
-        const intensity = 1 - (dist / 10);
-
-        playProximityAlert(pan, intensity);
-      }
-    }
-  });
-
-  // Swarm enemies - more aggressive alerts
-  const swarmEnemies = getSwarmEnemies();
-  swarmEnemies.forEach(e => {
-    const dist = e.mesh.position.distanceTo(playerPos);
-    if (dist < 8) {  // Closer range for swarm
-      e.alertTimer = (e.alertTimer || 0) - dt;
-      if (e.alertTimer <= 0) {
-        e.alertTimer = 0.15; // More frequent alerts
-
-        const dx = e.mesh.position.x - playerPos.x;
-        const dz = e.mesh.position.z - playerPos.z;
-        const angle = Math.atan2(dx, -dz);
-        const pan = Math.sin(angle);
-        const intensity = 1 - (dist / 8);
-
-        playSwarmProximityAlert(pan, intensity);
-      }
-    }
-  });
-}
-
 // ============================================================
 // RENDER LOOP (THE BIG ONE)
 // Core game loop: time scaling, state machine, all subsystems
@@ -11639,6 +11603,17 @@ function render(timestamp) {
     st = State.BOSS_DEATH_CINEMATIC;
     game.state = st;
   }
+
+  // Reactive music ducking (Issue #142) — runs outside the state dispatch so
+  // stem targets always match the current state (drums stop on the upgrade
+  // screen, intensity swells for bosses, everything ducks on the title).
+  updateReactiveMusic({
+    playing: st === State.PLAYING,
+    enemyCount: getEnemies().length,
+    bossActive: !!getBoss(),
+    comboMultiplier: game.comboMultiplier || 1,
+    lowHealth: game.health <= 2,
+  });
 
   // ── Title screen ──
   _mark('pre_state_dispatch'); // ── end: controls, seek, vr pause, desktop controls
@@ -11914,8 +11889,9 @@ function render(timestamp) {
       }
     }
 
-    // Fast enemy proximity alerts
-    updateFastEnemyAlerts(dt, getAdjustedCameraPosition());
+    // Threat spatial audio (Issue #184): directional per-enemy-type cues
+    // via HRTF panners, listener synced to the camera for VR head tracking
+    updateThreatAudio(dt, getEnemies(), getAdjustedCameraPosition(), camera);
 
     // Update enemies - use adjusted camera position for VR mode
     // This ensures enemies target the correct height (1.6m) regardless of VR camera Y

@@ -78,6 +78,10 @@ export function setMusicVolume(pct) {
   if (currentMusic) {
     currentMusic.volume = musicVolume;
   }
+  // Reactive music layer master bus follows the music volume slider
+  if (musicMasterGain) {
+    musicMasterGain.gain.value = musicVolume;
+  }
   saveSettings();
   return pct;
 }
@@ -981,52 +985,6 @@ export function playMortarEnemySpawn() {
   osc2.stop(t + 0.3);
 }
 
-// ── Swarm proximity alert (more aggressive) ────────────────
-export function playSwarmProximityAlert(pan, intensity) {
-  const ctx = getAudioContext();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  const panner = ctx.createStereoPanner();
-
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(900 + intensity * 600, ctx.currentTime);
-
-  gain.gain.setValueAtTime(Math.min(0.2 * intensity, 0.35), ctx.currentTime);
-  gain.gain.setValueAtTime(0, ctx.currentTime + 0.08);
-
-  panner.pan.setValueAtTime(pan, ctx.currentTime);
-
-  osc.connect(gain);
-  gain.connect(panner);
-  panner.connect(getSfxOutput());
-
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.08);
-}
-
-// ── Proximity alert (panned) ───────────────────────────────
-export function playProximityAlert(pan, intensity) {
-  const ctx = getAudioContext();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  const panner = ctx.createStereoPanner();
-
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(600 + intensity * 400, ctx.currentTime);
-
-  gain.gain.setValueAtTime(Math.min(0.15 * intensity, 0.3), ctx.currentTime);
-  gain.gain.setValueAtTime(0, ctx.currentTime + 0.1);
-
-  panner.pan.setValueAtTime(pan, ctx.currentTime);
-
-  osc.connect(gain);
-  gain.connect(panner);
-  panner.connect(getSfxOutput());
-
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.1);
-}
-
 // ── Basic enemy spawn ──────────────────────────────────────
 export function playBasicEnemySpawn() {
   const ctx = getAudioContext();
@@ -1920,6 +1878,8 @@ export function stopLightningOrbTravelLoop(loop) {
 // ── Music System ───────────────────────────────────────────
 let currentMusic = null;
 let musicVolume = 0.33;
+// Master bus for the reactive music layer (Issue #142) — follows musicVolume
+let musicMasterGain = null;
 // Apply saved settings now that musicVolume is declared
 loadSettings();
 let currentPlaylist = [];
@@ -2567,4 +2527,562 @@ export function playBuffedHitSound() {
 
   osc.start(t);
   osc.stop(t + 0.12);
+}
+
+// ============================================================
+// REACTIVE MUSIC LAYER (Issue #142 — Hybrid 4-stem system)
+// Procedural stems (ambient pad, percussion, melody, intensity)
+// layered ON TOP of the streamed CDN soundtrack. All synthesis
+// uses Web Audio API — no external assets. Perf: the node graph
+// is created once at startReactiveMusic(); the step scheduler
+// emits short oscillator bursts (cheap) and stem gains are
+// crossfaded with setTargetAtTime (no per-frame allocation).
+// When CDN streaming is unavailable (offline / headless), the
+// stems alone provide the gameplay soundtrack.
+// ============================================================
+
+const REACTIVE_BPM = { calm: 100, combat: 120, frenzy: 140, boss: 160 };
+// A minor pentatonic (A2..A4) — melody notes; index pattern below
+const PENTATONIC = [110, 130.81, 146.83, 164.81, 196.0, 220, 261.63, 293.66, 329.63, 392.0];
+// Deterministic 16th-note melody pattern (no Math.random in scheduler)
+const MELODY_PATTERN = [0, 3, 1, 4, 2, 5, 1, 3, 0, 4, 2, 5, 3, 6, 2, 4];
+
+let reactiveMusic = {
+  running: false,
+  bpm: REACTIVE_BPM.calm,
+  targetBpm: REACTIVE_BPM.calm,
+  intensityHigh: false,
+  step: 0,
+  schedulerTimer: null,
+  stems: null,   // { ambient, percussion, melody, intensity } GainNodes
+  drones: null,  // continuous oscillator nodes (pad + intensity)
+  noiseBuffer: null,
+};
+
+// Master bus for reactive stems — follows the music volume slider
+function getMusicBus() {
+  if (!musicMasterGain) {
+    musicMasterGain = getAudioContext().createGain();
+    musicMasterGain.gain.value = musicVolume;
+    musicMasterGain.connect(getAudioContext().destination);
+  }
+  return musicMasterGain;
+}
+
+function createReactiveStem(initialGain) {
+  const g = getAudioContext().createGain();
+  g.gain.value = initialGain;
+  g.connect(getMusicBus());
+  return g;
+}
+
+function getReactiveNoiseBuffer() {
+  if (!reactiveMusic.noiseBuffer) {
+    const ctx = getAudioContext();
+    reactiveMusic.noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
+    const data = reactiveMusic.noiseBuffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  }
+  return reactiveMusic.noiseBuffer;
+}
+
+// Smoothly crossfade a stem gain toward a target volume
+function rampStem(gainNode, target, time, tc = 0.4) {
+  gainNode.gain.setTargetAtTime(target, time, tc);
+}
+
+// Start the reactive layer. Idempotent — safe to call every level start.
+export function startReactiveMusic() {
+  if (reactiveMusic.running) return;
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  reactiveMusic.stems = {
+    ambient: createReactiveStem(0),
+    percussion: createReactiveStem(0),
+    melody: createReactiveStem(0),
+    intensity: createReactiveStem(0),
+  };
+
+  // Ambient pad drone: two detuned saws (root + fifth) through a lowpass.
+  // The pad filter opens up when combat intensity rises.
+  const padGain = ctx.createGain();
+  padGain.gain.value = 0.5;
+  const padFilter = ctx.createBiquadFilter();
+  padFilter.type = 'lowpass';
+  padFilter.frequency.value = 600;
+  const padOscA = ctx.createOscillator();
+  padOscA.type = 'sawtooth';
+  padOscA.frequency.value = 110; // A2
+  padOscA.detune.value = 6;
+  const padOscB = ctx.createOscillator();
+  padOscB.type = 'sawtooth';
+  padOscB.frequency.value = 164.81; // E3 (fifth)
+  padOscB.detune.value = -6;
+  padOscA.connect(padFilter);
+  padOscB.connect(padFilter);
+  padFilter.connect(padGain);
+  padGain.connect(reactiveMusic.stems.ambient);
+  padOscA.start(t);
+  padOscB.start(t);
+
+  // Intensity drone: sub-bass saw + detuned octave for grit
+  const intGain = ctx.createGain();
+  intGain.gain.value = 0.35;
+  const intOscA = ctx.createOscillator();
+  intOscA.type = 'sawtooth';
+  intOscA.frequency.value = 55; // A1
+  const intOscB = ctx.createOscillator();
+  intOscB.type = 'sawtooth';
+  intOscB.frequency.value = 110.7; // detuned A2
+  intOscA.connect(intGain);
+  intOscB.connect(intGain);
+  intGain.connect(reactiveMusic.stems.intensity);
+  intOscA.start(t);
+  intOscB.start(t);
+
+  reactiveMusic.drones = { padGain, padFilter, intGain, padOscA, padOscB, intOscA, intOscB };
+  reactiveMusic.running = true;
+  reactiveMusic.bpm = REACTIVE_BPM.calm;
+  reactiveMusic.targetBpm = REACTIVE_BPM.calm;
+  reactiveMusic.step = 0;
+  getReactiveNoiseBuffer();
+
+  audioInfoLog('[reactive-music] Started 4-stem layer');
+  scheduleReactiveStep();
+}
+
+// Stop the reactive layer: fade stems to silence, stop the scheduler
+// and release continuous oscillators.
+export function stopReactiveMusic() {
+  if (!reactiveMusic.running) return;
+  reactiveMusic.running = false;
+  if (reactiveMusic.schedulerTimer) {
+    clearTimeout(reactiveMusic.schedulerTimer);
+    reactiveMusic.schedulerTimer = null;
+  }
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const stopAt = t + 0.5;
+  for (const key of Object.keys(reactiveMusic.stems)) {
+    reactiveMusic.stems[key].gain.setTargetAtTime(0, t, 0.05);
+  }
+  if (reactiveMusic.drones) {
+    reactiveMusic.drones.padGain.gain.setTargetAtTime(0, t, 0.05);
+    reactiveMusic.drones.intGain.gain.setTargetAtTime(0, t, 0.05);
+    for (const key of ['padOscA', 'padOscB', 'intOscA', 'intOscB']) {
+      try { reactiveMusic.drones[key].stop(stopAt); } catch (err) { /* already stopped */ }
+    }
+  }
+  reactiveMusic.stems = null;
+  reactiveMusic.drones = null;
+  audioInfoLog('[reactive-music] Stopped');
+}
+
+// Per-frame state push from main.js. All values are plain numbers so
+// audio.js stays decoupled from game.js. Crossfade targets computed
+// from the Issue #142 intensity table (CALM/COMBAT/FRENZY/BOSS).
+export function updateReactiveMusic(state) {
+  if (!reactiveMusic.running) return;
+  const s = state || {};
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const enemyCount = s.enemyCount || 0;
+  const boss = !!s.bossActive;
+  const combo = s.comboMultiplier || 1;
+  const lowHealth = !!s.lowHealth;
+
+  let amb = 0.04;
+  let perc = 0;
+  let mel = 0;
+  let inten = 0;
+  let targetBpm = REACTIVE_BPM.calm;
+
+  if (s.playing) {
+    // Percussion: floor of light drums during combat, scales with enemy count
+    perc = Math.min(0.22, enemyCount * 0.02);
+    if (enemyCount > 0 && perc < 0.08) perc = 0.08;
+    // Melody: arpeggios once the combo multiplier reaches 2x
+    mel = combo >= 2 ? Math.min(0.16, (combo - 1) * 0.04) : 0;
+    // Intensity: boss fight or low health
+    inten = boss ? 0.2 : lowHealth ? 0.14 : 0;
+    // Ambient pad swells with tension
+    amb = 0.06 + (boss ? 0.06 : 0) + (enemyCount > 8 ? 0.03 : 0);
+
+    if (boss) targetBpm = REACTIVE_BPM.boss;
+    else if (enemyCount >= 9) targetBpm = REACTIVE_BPM.frenzy;
+    else if (enemyCount >= 3) targetBpm = REACTIVE_BPM.combat;
+  }
+
+  reactiveMusic.targetBpm = targetBpm;
+  reactiveMusic.intensityHigh = boss || lowHealth || enemyCount >= 9;
+
+  rampStem(reactiveMusic.stems.ambient, amb, t);
+  rampStem(reactiveMusic.stems.percussion, perc, t);
+  rampStem(reactiveMusic.stems.melody, mel, t);
+  rampStem(reactiveMusic.stems.intensity, inten, t);
+  // Pad filter brightness follows intensity (muffled when calm)
+  if (reactiveMusic.drones) {
+    reactiveMusic.drones.padFilter.frequency.setTargetAtTime(600 + inten * 2600, t, 0.4);
+  }
+}
+
+// Debug/state getter — used by tests and the settings menu later
+export function getReactiveMusicState() {
+  const stems = reactiveMusic.stems ? {
+    ambient: +reactiveMusic.stems.ambient.gain.value.toFixed(3),
+    percussion: +reactiveMusic.stems.percussion.gain.value.toFixed(3),
+    melody: +reactiveMusic.stems.melody.gain.value.toFixed(3),
+    intensity: +reactiveMusic.stems.intensity.gain.value.toFixed(3),
+  } : null;
+  return {
+    running: reactiveMusic.running,
+    bpm: Math.round(reactiveMusic.bpm),
+    targetBpm: reactiveMusic.targetBpm,
+    step: reactiveMusic.step,
+    stems,
+  };
+}
+
+// Scheduler: 16th-note step clock driven by setTimeout (rAF is not
+// reliable in WebXR immersive mode — same pattern as fadeOutMusic).
+function scheduleReactiveStep() {
+  const stepMs = 15000 / reactiveMusic.bpm; // 60000 / bpm / 4
+  reactiveMusic.schedulerTimer = setTimeout(() => {
+    if (!reactiveMusic.running) return;
+    reactiveStep();
+    scheduleReactiveStep();
+  }, stepMs);
+}
+
+function reactiveStep() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime + 0.02; // small lookahead so envelopes start on time
+  reactiveMusic.step++;
+  const step16 = reactiveMusic.step % 16;
+  const beat = step16 % 4;
+
+  // Glide BPM toward the target (±1.5 BPM per 16th) for smooth transitions
+  const diff = reactiveMusic.targetBpm - reactiveMusic.bpm;
+  if (diff !== 0) {
+    reactiveMusic.bpm += Math.sign(diff) * Math.min(1.5, Math.abs(diff));
+  }
+
+  const stems = reactiveMusic.stems;
+  if (!stems) return;
+
+  const percLevel = stems.percussion.gain.value;
+  if (percLevel > 0.02) {
+    if (beat === 0) synthKick(t, percLevel);
+    if (step16 % 4 === 2) synthHat(t, false, percLevel);
+    if (step16 % 8 === 4 && percLevel > 0.1) synthSnare(t, percLevel);
+    if (reactiveMusic.intensityHigh && step16 % 2 === 1) synthHat(t, true, percLevel);
+  }
+
+  const melLevel = stems.melody.gain.value;
+  if (melLevel > 0.02 && step16 % 2 === 0) {
+    const freq = PENTATONIC[MELODY_PATTERN[step16 % MELODY_PATTERN.length]] * 2;
+    synthMelodyNote(freq, t, melLevel);
+  }
+}
+
+function synthKick(t, level) {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(150, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.1);
+  g.gain.setValueAtTime(0.5 * level, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+  osc.connect(g);
+  g.connect(reactiveMusic.stems.percussion);
+  osc.start(t);
+  osc.stop(t + 0.3);
+}
+
+function synthHat(t, open, level) {
+  const ctx = getAudioContext();
+  const src = ctx.createBufferSource();
+  src.buffer = getReactiveNoiseBuffer();
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 7000;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.18 * level, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + (open ? 0.18 : 0.05));
+  src.connect(hp);
+  hp.connect(g);
+  g.connect(reactiveMusic.stems.percussion);
+  src.start(t);
+  src.stop(t + 0.25);
+}
+
+function synthSnare(t, level) {
+  const ctx = getAudioContext();
+  const src = ctx.createBufferSource();
+  src.buffer = getReactiveNoiseBuffer();
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1800;
+  bp.Q.value = 0.8;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.25 * level, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  src.connect(bp);
+  bp.connect(g);
+  g.connect(reactiveMusic.stems.percussion);
+  src.start(t);
+  src.stop(t + 0.15);
+}
+
+function synthMelodyNote(freq, t, level) {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  osc.type = 'triangle';
+  osc.frequency.value = freq;
+  osc.detune.value = 4;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.16 * level, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  osc.connect(g);
+  g.connect(reactiveMusic.stems.melody);
+  osc.start(t);
+  osc.stop(t + 0.35);
+}
+
+// ============================================================
+// THREAT SPATIAL AUDIO (Issue #184)
+// Directional per-enemy-type alert cues via PannerNode (HRTF).
+// Emitters are pooled per enemy id (nearest MAX_THREAT_EMITTERS
+// win), so close enemies are heard as distinct, localized threats
+// around the stationary player. The Web Audio listener tracks the
+// camera, so cues stay directionally accurate as the player turns
+// their head in VR. Replaces the old stereo-pan fast/swarm alerts.
+// ============================================================
+
+const THREAT_PROFILES = {
+  basic:          { wave: 'sine',     f0: 440, f1: 660,  dur: 0.12, gain: 0.5,  range: 6,  interval: 0.35, style: 'sweep' },
+  fast:           { wave: 'square',   f0: 880, f1: 1320, dur: 0.09, gain: 0.45, range: 10, interval: 0.2,  style: 'sweep' },
+  swarm:          { wave: 'square',   f0: 700, f1: 1100, dur: 0.1,  gain: 0.5,  range: 8,  interval: 0.15, style: 'double' },
+  tank:           { wave: 'sawtooth', f0: 120, f1: 80,   dur: 0.3,  gain: 0.6,  range: 7,  interval: 0.4,  style: 'sweep' },
+  conductor:      { wave: 'sine',     f0: 520, f1: 780,  dur: 0.35, gain: 0.4,  range: 12, interval: 0.5,  style: 'wail' },
+  mortar:         { wave: 'triangle', f0: 620, f1: 480,  dur: 0.15, gain: 0.4,  range: 9,  interval: 0.5,  style: 'sweep' },
+  spiral_swimmer: { wave: 'sine',     f0: 500, f1: 620,  dur: 0.25, gain: 0.4,  range: 8,  interval: 0.45, style: 'wobble' },
+  jelly:          { wave: 'sine',     f0: 220, f1: 260,  dur: 0.2,  gain: 0.45, range: 7,  interval: 0.5,  style: 'wobble' },
+};
+const DEFAULT_THREAT_PROFILE = THREAT_PROFILES.basic;
+const MAX_THREAT_EMITTERS = 10; // HRTF panners are expensive on Quest — cap the pool
+
+// enemyId -> { panner, gain, nextAlert, lastPosUpdate, lastDist, profile }
+const threatEmitters = new Map();
+// Reused across frames to avoid per-frame Set allocation in the render loop
+const threatAliveIds = new Set();
+
+// Scratch vectors for listener orientation (no allocation in the render loop)
+const _lFwd = { x: 0, y: 0, z: 0 };
+const _lUp = { x: 0, y: 0, z: 0 };
+
+// Apply camera quaternion to (0,0,-1); result written to out. Quaternion
+// rotation formula: v' = v + 2w(q×v) + 2(q×(q×v))
+function quatForwardTo(q, out) {
+  const { x, y, z, w } = q;
+  out.x = -2 * w * y - 2 * z * x;
+  out.y = 2 * w * x - 2 * z * y;
+  out.z = -1 + 2 * (x * x + y * y);
+}
+
+// Apply camera quaternion to (0,1,0)
+function quatUpTo(q, out) {
+  const { x, y, z, w } = q;
+  out.x = -2 * w * z + 2 * y * x;
+  out.y = 1 - 2 * (z * z + x * x);
+  out.z = 2 * w * x + 2 * y * z;
+}
+
+function syncListenerFromCamera(camera) {
+  const ctx = getAudioContext();
+  const p = camera.position;
+  const q = camera.quaternion;
+  const L = ctx.listener;
+  if (L.positionX && L.forwardX) {
+    // Direct .value writes — cheaper than scheduling automation events
+    L.positionX.value = p.x;
+    L.positionY.value = p.y;
+    L.positionZ.value = p.z;
+    quatForwardTo(q, _lFwd);
+    quatUpTo(q, _lUp);
+    L.forwardX.value = _lFwd.x;
+    L.forwardY.value = _lFwd.y;
+    L.forwardZ.value = _lFwd.z;
+    L.upX.value = _lUp.x;
+    L.upY.value = _lUp.y;
+    L.upZ.value = _lUp.z;
+  } else if (L.setPosition) {
+    // Older Safari fallback
+    L.setPosition(p.x, p.y, p.z);
+  }
+}
+
+function getThreatEmitter(enemyId) {
+  let em = threatEmitters.get(enemyId);
+  if (!em) {
+    const ctx = getAudioContext();
+    const panner = ctx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 2;
+    panner.rolloffFactor = 0.6;
+    panner.maxDistance = 30;
+    const gain = ctx.createGain();
+    gain.gain.value = 1;
+    gain.connect(panner);
+    panner.connect(getSfxOutput());
+    em = { panner, gain, nextAlert: 0, lastPosUpdate: 0, lastDist: 0, profile: DEFAULT_THREAT_PROFILE };
+    threatEmitters.set(enemyId, em);
+  }
+  return em;
+}
+
+function releaseThreatEmitter(enemyId) {
+  const em = threatEmitters.get(enemyId);
+  if (!em) return;
+  threatEmitters.delete(enemyId);
+  try {
+    em.gain.disconnect();
+    em.panner.disconnect();
+  } catch (err) { /* already disconnected */ }
+}
+
+// Pool is full — evict the farthest emitter to make room
+function evictFarthestThreatEmitter() {
+  let farId = null;
+  let farDist = -1;
+  for (const [id, em] of threatEmitters) {
+    if (em.lastDist > farDist) {
+      farDist = em.lastDist;
+      farId = id;
+    }
+  }
+  if (farId !== null) releaseThreatEmitter(farId);
+}
+
+// Play one alert burst through an emitter's gain (panner handles position).
+// The oscillator is short-lived; the panner/gain are pooled per enemy.
+function playThreatBurst(outputGain, profile, intensity) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const level = Math.min(0.35, profile.gain * intensity);
+  const burst = (startT, dur) => {
+    const osc = ctx.createOscillator();
+    osc.type = profile.wave;
+    osc.frequency.setValueAtTime(profile.f0, startT);
+    osc.frequency.exponentialRampToValueAtTime(profile.f1, startT + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(level, startT);
+    g.gain.exponentialRampToValueAtTime(0.001, startT + dur);
+    osc.connect(g);
+    g.connect(outputGain);
+    osc.start(startT);
+    osc.stop(startT + dur + 0.02);
+  };
+
+  if (profile.style === 'double') {
+    // Swarm: two quick bursts read as "buzz"
+    burst(t, profile.dur);
+    burst(t + 0.09, profile.dur);
+  } else if (profile.style === 'wail') {
+    // Conductor: dual detuned sines = eerie wail
+    burst(t, profile.dur);
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(profile.f0 * 1.5, t);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(level * 0.5, t);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + profile.dur);
+    osc2.connect(g2);
+    g2.connect(outputGain);
+    osc2.start(t);
+    osc2.stop(t + profile.dur + 0.02);
+  } else if (profile.style === 'wobble') {
+    // Spiral/jelly: sweep up then back down = warbling
+    const osc = ctx.createOscillator();
+    osc.type = profile.wave;
+    osc.frequency.setValueAtTime(profile.f0, t);
+    osc.frequency.exponentialRampToValueAtTime(profile.f1, t + profile.dur * 0.5);
+    osc.frequency.exponentialRampToValueAtTime(profile.f0, t + profile.dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(level, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + profile.dur);
+    osc.connect(g);
+    g.connect(outputGain);
+    osc.start(t);
+    osc.stop(t + profile.dur + 0.02);
+  } else {
+    burst(t, profile.dur);
+  }
+}
+
+/**
+ * Per-frame threat audio update. Call from the render loop while PLAYING.
+ * @param dt frame delta in seconds
+ * @param enemies array of enemy objects ({id, type, hp, mesh:{position}})
+ * @param playerPos THREE.Vector3 of the player's gameplay position
+ * @param camera THREE camera (headset position/orientation on VR)
+ */
+export function updateThreatAudio(dt, enemies, playerPos, camera) {
+  const ctx = getAudioContext();
+  if (camera) syncListenerFromCamera(camera);
+  void dt;
+
+  if (!enemies || enemies.length === 0) {
+    if (threatEmitters.size > 0) {
+      for (const id of threatEmitters.keys()) releaseThreatEmitter(id);
+    }
+    return;
+  }
+
+  const now = performance.now();
+  threatAliveIds.clear();
+
+  for (const e of enemies) {
+    if (!e || !e.mesh || !e.mesh.position || !(e.hp > 0)) continue;
+    threatAliveIds.add(e.id);
+    const profile = THREAT_PROFILES[e.type] || DEFAULT_THREAT_PROFILE;
+    const dist = e.mesh.position.distanceTo(playerPos);
+    if (dist > profile.range) continue;
+
+    let em = threatEmitters.get(e.id);
+    if (!em) {
+      if (threatEmitters.size >= MAX_THREAT_EMITTERS) evictFarthestThreatEmitter();
+      em = getThreatEmitter(e.id);
+      em.profile = profile;
+    }
+
+    // Throttle panner position updates (~12/sec per emitter) — HRTF panning
+    // is expensive; moving the node every frame is not needed for accuracy.
+    if (now - em.lastPosUpdate > 80) {
+      em.panner.positionX.value = e.mesh.position.x;
+      em.panner.positionY.value = e.mesh.position.y;
+      em.panner.positionZ.value = e.mesh.position.z;
+      em.lastPosUpdate = now;
+    }
+    em.lastDist = dist;
+
+    if (now >= em.nextAlert) {
+      em.nextAlert = now + profile.interval * 1000;
+      playThreatBurst(em.gain, profile, 1 - (dist / profile.range));
+    }
+  }
+
+  // Reap emitters for enemies that died or left the arena.
+  // Map iteration tolerates deleting the current entry — no array allocs.
+  for (const id of threatEmitters.keys()) {
+    if (!threatAliveIds.has(id)) releaseThreatEmitter(id);
+  }
+}
+
+// Debug/state getter — used by tests
+export function getActiveThreatEmitterCount() {
+  return threatEmitters.size;
 }
