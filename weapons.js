@@ -3,6 +3,8 @@
 //  Defines MAIN weapons, ALT weapons, and upgrade system
 // ============================================================
 
+import { game } from './game.js';
+
 // ── MAIN WEAPONS (fired by select/top trigger) ───────────────
 export const MAIN_WEAPONS = {
   standard_blaster: {
@@ -577,6 +579,17 @@ export function getWeaponStats(mainWeaponId, upgrades) {
   // assigns critMultiplier = 4.5; with const it would throw a TDZ ReferenceError
   // the moment that weapon gets wired up
   let critMultiplier = (u.super_crit || 0) > 0 ? 3 : base.critMultiplier || 2;
+
+  // ── SYNERGY ENGINE (Issue #211): stat-level synergies ──
+  const synergies = detectSynergies(u);
+  // Lethal Precision: 2+ crit upgrades → crits deal 3x instead of 2x
+  if (synergies.some(s => s.id === 'lethal_precision')) {
+    critMultiplier = Math.max(critMultiplier, 3);
+  }
+  // Blood Letter: critical + vampiric → heal every 3 kills instead of 5
+  const finalVampiricInterval = synergies.some(s => s.id === 'blood_letter')
+    ? Math.min(vampiricInterval || 6, 3)
+    : vampiricInterval;
   
   return {
     mainWeaponId,
@@ -591,7 +604,7 @@ export function getWeaponStats(mainWeaponId, upgrades) {
     spreadAngle: base.spreadAngle || 0,
     homing: base.homing || false,
     homingRange: base.homingRange || 0,
-    vampiricInterval,
+    vampiricInterval: finalVampiricInterval,
     fireWeakenMult,
     effects,
     ricochetBounces: u.ricochet || 0,
@@ -634,4 +647,64 @@ export function getUpgradeDef(id) {
   return UPGRADE_POOL.find(u => u.id === id) || 
          SPECIAL_UPGRADE_POOL.find(u => u.id === id) || 
          null;
+}
+
+// ============================================================
+// SYNERGY ENGINE (Issue #211)
+// Pure detection: given one hand's upgrade map, return the active
+// synergies. Elemental combos cap at the highest tier (PRIME STATE
+// replaces the pairs — no multiplicative stacking). Stat-level
+// synergies (lethal_precision, blood_letter) modify getWeaponStats;
+// behavior-level synergies (thermal_shock, plasma_arc, cryo_conduction,
+// prime_state) are consumed by enemies.js via isSynergyActive().
+// ============================================================
+
+export const SYNERGY_DEFS = {
+  prime_state:       { name: 'PRIME STATE',      desc: '3x status damage + chain to ALL non-statused enemies', tier: 3 },
+  thermal_shock:     { name: 'Thermal Shock',    desc: 'Frozen enemies taking fire damage shatter for 50% max HP AoE', tier: 2 },
+  plasma_arc:        { name: 'Plasma Arc',       desc: 'Electrified enemies burn 50% faster; fire spreads via chains', tier: 2 },
+  cryo_conduction:   { name: 'Cryo-Conduction',  desc: 'Electrified enemies slow nearby enemies by 30%', tier: 2 },
+  lethal_precision:  { name: 'Lethal Precision', desc: 'Crits deal 3x instead of 2x', tier: 1 },
+  blood_letter:      { name: 'Blood Letter',     desc: 'Vampiric heals every 3 kills instead of 5', tier: 1 },
+};
+
+/**
+ * Detect active synergies for a hand's upgrade map.
+ * @param {Object} upgrades - game.upgrades.left / .right
+ * @returns {Array<{id, name, tier}>} active synergies (highest elemental tier wins)
+ */
+export function detectSynergies(upgrades) {
+  const u = upgrades || {};
+  const synergies = [];
+  const hasFire = (u.fire || 0) > 0;
+  const hasFreeze = (u.freeze || 0) > 0;
+  const hasShock = (u.shock || 0) > 0;
+
+  // Elemental — PRIME STATE replaces all pairs (no stacking)
+  if (hasFire && hasFreeze && hasShock) {
+    synergies.push({ id: 'prime_state', name: 'PRIME STATE', tier: 3 });
+  } else {
+    if (hasFire && hasFreeze) synergies.push({ id: 'thermal_shock', name: 'Thermal Shock', tier: 2 });
+    if (hasFire && hasShock) synergies.push({ id: 'plasma_arc', name: 'Plasma Arc', tier: 2 });
+    if (hasFreeze && hasShock) synergies.push({ id: 'cryo_conduction', name: 'Cryo-Conduction', tier: 2 });
+  }
+
+  // Critical mass
+  const critCount = (u.critical || 0) + (u.super_crit || 0) * 2;
+  if (critCount >= 2) synergies.push({ id: 'lethal_precision', name: 'Lethal Precision', tier: 1 });
+  if (critCount >= 1 && (u.vampiric || 0) > 0) synergies.push({ id: 'blood_letter', name: 'Blood Letter', tier: 1 });
+
+  return synergies;
+}
+
+/**
+ * True if EITHER hand has the given synergy active.
+ * Reads the game.synergies snapshot (recomputed on every upgrade pick by
+ * main.js) — safe for per-tick/per-frame checks in enemies.js.
+ */
+export function isSynergyActive(id) {
+  const syn = game?.synergies;
+  if (!syn) return false;
+  return (syn.left && syn.left.some(s => s.id === id)) ||
+         (syn.right && syn.right.some(s => s.id === id));
 }

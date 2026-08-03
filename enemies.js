@@ -9,6 +9,10 @@ import { getStasisSlowFactor } from './stasis.js';
 // NOTE: documented ES module cycle — beam-weapons ↔ enemies (both directions,
 // runtime-only usage). Only used for the shock chain arc visual (Issue #216).
 import { spawnTransientLightningBolt } from './beam-weapons.js';
+// Synergy Engine (Issue #211): elemental combo behaviors read the per-hand
+// synergy snapshot via isSynergyActive() (game.synergies, recomputed on
+// upgrade picks). weapons.js imports game.js only — no cycle here.
+import { isSynergyActive } from './weapons.js';
 import {
   playTingSound, playEnemyProjectileSound, playProjectileWarningSound,
   playBossProjectileFiredSound, playBossProjectileAlertSound,
@@ -3221,6 +3225,21 @@ export function updateEnemies(dt, now, playerPos) {
     const stasisSlow = getStasisSlowFactor(e.mesh.position);
     speedMod *= stasisSlow;
 
+    // Issue #211 — Cryo-Conduction: electrified (shock+freeze) enemies slow
+    // nearby enemies by 30%. Perf: gated on the synergy; scan is O(n) over
+    // the small concurrent enemy list and early-exits on the first emitter.
+    if (isSynergyActive('cryo_conduction') && se.shock.stacks === 0) {
+      for (const other of activeEnemies) {
+        if (other === e || !other.mesh || !other.mesh.position || other.hp <= 0) continue;
+        const os = other.statusEffects;
+        if (os.shock.stacks > 0 && os.freeze.stacks > 0 &&
+            e.mesh.position.distanceToSquared(other.mesh.position) < 9) { // 3m aura
+          speedMod *= 0.7;
+          break;
+        }
+      }
+    }
+
     // Final boss phase-2 formations freeze real enemies in a wall so the player
     // can shoot them before release. Keep them readable and skip normal AI while held.
     if (e._eclipseHeld) {
@@ -3815,11 +3834,23 @@ function updateStatusEffects(e, dt, now) {
     se.fire.remaining -= dt;
     se.fire.tickTimer -= dt;
     if (se.fire.tickTimer <= 0) {
-      se.fire.tickTimer = 0.5;
-      const fireDmg = Math.round(15 * se.fire.stacks);
+      // Issue #211 — Plasma Arc: electrified enemies burn 50% faster (0.25s ticks)
+      // PRIME STATE: 3x status damage
+      const primeActive = isSynergyActive('prime_state');
+      se.fire.tickTimer = (isSynergyActive('plasma_arc') && se.shock.stacks > 0) ? 0.25 : 0.5;
+      const fireDmg = Math.round(15 * se.fire.stacks * (primeActive ? 3 : 1));
       e.hp -= fireDmg;
       if (e.hp <= 0) e.hp = 0;
       e._lastDoT = { type: 'fire', damage: fireDmg };
+
+      // Issue #211 — Thermal Shock: frozen enemy taking fire damage shatters,
+      // dealing 50% of its max HP to nearby enemies (freeze consumed).
+      if (se.freeze.stacks > 0 && isSynergyActive('thermal_shock')) {
+        se.freeze.stacks = 0;
+        se.freeze.remaining = 0;
+        se.freeze.tickTimer = 0;
+        shatterEnemy(e);
+      }
     }
     if (se.fire.remaining <= 0) { se.fire.stacks = 0; se.fire.tickTimer = 0; }
   }
@@ -3830,7 +3861,8 @@ function updateStatusEffects(e, dt, now) {
     se.shock.tickTimer -= dt;
     if (se.shock.tickTimer <= 0) {
       se.shock.tickTimer = 0.5;
-      const shockDmg = Math.round(8 * se.shock.stacks);
+      // PRIME STATE: 3x status damage
+      const shockDmg = Math.round(8 * se.shock.stacks * (isSynergyActive('prime_state') ? 3 : 1));
       e.hp -= shockDmg;
       if (e.hp <= 0) e.hp = 0;
       e._lastDoT = { type: 'shock', damage: shockDmg };
@@ -4047,21 +4079,80 @@ export function applyEffects(enemyIndex, effects) {
 // Chain range for the shock arc (Issue #216: single chain, 15 dmg per stack)
 const SHOCK_CHAIN_RANGE = 6.0;
 const SHOCK_CHAIN_BASE_DMG = 15;
+// Thermal Shock shatter radius (Issue #211)
+const SHATTER_RANGE = 3.0;
+// Prime State chain cap (perf: avoid 20 arcs on a full arena)
+const PRIME_CHAIN_CAP = 6;
+
+/**
+ * Issue #211 — Thermal Shock: frozen enemy taking fire damage shatters,
+ * dealing 50% of its max HP to enemies within 3m. Ice-shard voxel burst
+ * visual + element-colored damage numbers (main.js _lastDoT sweep).
+ */
+function shatterEnemy(e) {
+  if (!e || !e.mesh || !e.mesh.position) return;
+  const pos = e.mesh.position;
+  const burst = Math.round(e.maxHp * 0.5);
+  const rangeSq = SHATTER_RANGE * SHATTER_RANGE;
+
+  // Ice-shard voxel burst at the shattered enemy
+  if (spawnVoxelExplosion) {
+    spawnVoxelExplosion(pos, 0x88ccff, 4, 'basic', false, false);
+  }
+
+  for (const other of activeEnemies) {
+    if (other === e || !other.mesh || !other.mesh.position || other.hp <= 0) continue;
+    if (pos.distanceToSquared(other.mesh.position) > rangeSq) continue;
+    other.hp = Math.max(0, other.hp - burst);
+    other._lastDoT = { type: 'shatter', damage: burst };
+  }
+}
 
 /**
  * Issue #216: chain shock damage to the nearest other enemy.
  * Perf: linear scan over activeEnemies (~15 max concurrent) — only runs
  * when shock is applied on a hit, so it is not in the per-frame hot path.
  * Visual: pooled transient lightning bolt (beam-weapons.js).
+ * Issue #211: PRIME STATE chains to ALL non-statused enemies in range
+ * (capped at PRIME_CHAIN_CAP); Plasma Arc spreads fire to chain targets.
  */
 function chainShockToNearbyEnemy(source, stacks) {
   if (!source || !source.mesh || !source.mesh.position) return;
 
   const sourcePos = source.mesh.position;
   const rangeSq = SHOCK_CHAIN_RANGE * SHOCK_CHAIN_RANGE;
+  const chainDmg = Math.round(SHOCK_CHAIN_BASE_DMG * stacks);
+  const plasmaArc = isSynergyActive('plasma_arc');
+  const primeState = isSynergyActive('prime_state');
+
+  const chainTo = (target, spreadFire) => {
+    const targetIndex = activeEnemies.indexOf(target);
+    if (targetIndex < 0) return;
+    hitEnemy(targetIndex, chainDmg);
+    // Issue #211 — Plasma Arc: fire spreads to enemies hit by lightning chains
+    if (spreadFire) {
+      applyEffects(targetIndex, [{ type: 'fire', stacks: 1 }]);
+    }
+    spawnTransientLightningBolt(sourcePos, target.mesh.position);
+  };
+
+  if (primeState) {
+    // Chain to ALL non-statused enemies in range
+    let chained = 0;
+    for (const other of activeEnemies) {
+      if (other === source || !other.mesh || !other.mesh.position || other.hp <= 0) continue;
+      if (sourcePos.distanceToSquared(other.mesh.position) > rangeSq) continue;
+      const os = other.statusEffects;
+      if (os && (os.fire.stacks > 0 || os.freeze.stacks > 0 || os.shock.stacks > 0)) continue;
+      chainTo(other, plasmaArc);
+      if (++chained >= PRIME_CHAIN_CAP) break;
+    }
+    return;
+  }
+
+  // Normal single chain: nearest other enemy within range
   let best = null;
   let bestDistSq = rangeSq;
-
   for (const other of activeEnemies) {
     if (other === source) continue;
     if (!other || !other.mesh || !other.mesh.position || other.hp <= 0) continue;
@@ -4074,13 +4165,10 @@ function chainShockToNearbyEnemy(source, stacks) {
 
   if (!best) return; // No enemy in range — no chain
 
-  const chainDmg = Math.round(SHOCK_CHAIN_BASE_DMG * stacks);
-  const targetIndex = activeEnemies.indexOf(best);
-  if (targetIndex < 0) return;
-
-  hitEnemy(targetIndex, chainDmg);
-  // Arc visual between the shocked enemy and its chain target
-  spawnTransientLightningBolt(sourcePos, best.mesh.position);
+  // Issue #211 — Plasma Arc: fire spreads to the chain target if the
+  // shocked source is already burning
+  const spreadFire = plasmaArc && source.statusEffects && source.statusEffects.fire.stacks > 0;
+  chainTo(best, spreadFire);
 }
 
 /**

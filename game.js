@@ -125,6 +125,11 @@ export const game = {
   altCooldowns: { left: 0, right: 0 },  // ALT weapon cooldowns (ms)
   upgrades: { left: {}, right: {} },  // Upgrades per hand
   mainWeaponLocked: { left: false, right: false },  // Whether MAIN weapon is locked (chosen)
+
+  // NEW: Synergy Engine (Issue #211) — snapshot of active synergies per hand,
+  // recomputed by main.js after every upgrade selection. Consumed by
+  // enemies.js (elemental behaviors) and weapons.js (stat synergies).
+  synergies: { left: [], right: [] },
   
   stateTimer: 0,
   spawnTimer: 0,
@@ -178,6 +183,8 @@ export const game = {
     nukesUsed: 0,
     critsLanded: 0,
     levelsCompleted: 0,
+    // Synergy Engine (Issue #211): ids of synergies discovered this run
+    synergiesDiscovered: [],
   },
 };
 
@@ -215,6 +222,9 @@ export function resetGame() {
     altCooldowns: { left: 0, right: 0 },
     upgrades: { left: {}, right: {} },
     mainWeaponLocked: { left: false, right: false },
+
+    // Synergy Engine snapshot resets with the run
+    synergies: { left: [], right: [] },
 
     // Biome chunk assignments
     biomeChunks: {},
@@ -259,6 +269,7 @@ export function resetGame() {
       nukesUsed: 0,
       critsLanded: 0,
       levelsCompleted: 0,
+      synergiesDiscovered: [],
     },
 
     // Reset slow-mo death camera

@@ -17,7 +17,7 @@ import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon } from './weapons.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
@@ -1591,6 +1591,9 @@ function init() {
   // gameplay states, so no start/stop churn across state transitions.
   startReactiveMusic();
 
+  // Initial synergy snapshot (empty at game start, filled after upgrade picks)
+  recomputeSynergies();
+
   // [DEBUG] Set up pause/nuke callbacks for keyboard shortcuts
   setOnPauseCallback(togglePause);
   setOnNukeCallback(activateNuke);
@@ -1644,6 +1647,9 @@ function init() {
     window.__test.getScene = () => scene;
     window.__test.activateNuke = activateNuke;
     window.__test.getNukeCount = () => game.nukes;
+    // Synergy Engine (Issue #211): recompute the snapshot after direct
+    // test manipulation of game.upgrades (normally runs on upgrade picks)
+    window.__test.recomputeSynergies = recomputeSynergies;
     const telemetryBridge = {
       enable: (options = {}) => enableTelemetry(options),
       disable: () => disableTelemetry(),
@@ -4169,7 +4175,31 @@ function finalizeUpgradeSelection() {
   playUpgradeSound();
   hideUpgradeCards();
   // hideAllWristHolograms(); // disabled - using original blasterDisplay system
+  recomputeSynergies();
   advanceLevelAfterUpgrade();
+}
+
+// ── SYNERGY ENGINE (Issue #211) ─────────────────────────────
+// Recompute the per-hand synergy snapshot after every upgrade pick
+// and toast first-time discoveries. Runs at init and after each
+// upgrade selection; enemies.js + weapons.js read game.synergies.
+function recomputeSynergies() {
+  const left = detectSynergies(game.upgrades.left);
+  const right = detectSynergies(game.upgrades.right);
+  game.synergies = { left, right };
+
+  // First-time discovery toast (per run)
+  for (const syn of [...left, ...right]) {
+    const discovered = game.runStats.synergiesDiscovered || [];
+    if (!discovered.includes(syn.id)) {
+      discovered.push(syn.id);
+      showFloatingMessage(`NEW SYNERGY DISCOVERED: ${syn.name}!`, {
+        duration: 2600,
+        color: syn.tier === 3 ? '#ffdd00' : '#ff88ff',
+        size: 0.9,
+      });
+    }
+  }
 }
 
 // [CORE] Select upgrade and advance to next level
@@ -5656,7 +5686,7 @@ function render(timestamp) {
     for (let ei = 0; ei < enemies.length; ei++) {
       const e = enemies[ei];
       if (e._lastDoT) {
-        const colorMap = { fire: '#ff4400', shock: '#4488ff', freeze: '#88ccff' };
+        const colorMap = { fire: '#ff4400', shock: '#4488ff', freeze: '#88ccff', shatter: '#aaddff' };
         spawnDamageNumber(e.mesh.position, e._lastDoT.damage, colorMap[e._lastDoT.type] || '#ffffff');
         delete e._lastDoT;
       }
