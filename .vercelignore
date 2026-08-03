@@ -1,0 +1,26 @@
+# Development-only files — keep the production deployment lean.
+# The site needs: index.html, *.js modules, layouts/, biomes/, assets/,
+# logo.svg, logo.png, tutorial.png, favicon.ico, api/ (Vercel Functions).
+
+node_modules
+.git
+archive
+docs
+tests
+tools
+scripts
+tmp
+memory
+mnt
+checkpoints
+supabase
+__pycache__
+.codex
+.nojekyll
+*.md
+dev.html
+dev-tools.js
+test-result.png
+bake-clouds.js
+blender-model-optimizer.py
+blender-vertex-color-exporter.py
