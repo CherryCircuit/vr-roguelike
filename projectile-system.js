@@ -113,6 +113,24 @@ export const evolvedFxHooks = {
   onDragonsBreathTrail: null,
 };
 
+// Scatter-Seek (Issue #218): enemies recently hit by buckshot pellets,
+// preferred as seeker targets when the seeker_burst+buckshot pairing is
+// active. Capped + age-pruned to avoid unbounded growth.
+export const recentBuckshotHits = [];
+const BUCKSHOT_HIT_CAP = 24;
+const BUCKSHOT_HIT_MAX_AGE_MS = 1000;
+
+export function recordBuckshotHit(enemyMesh) {
+  if (!enemyMesh) return;
+  const now = performance.now();
+  // Prune stale entries (cheap — capped array, rare pushes)
+  for (let i = recentBuckshotHits.length - 1; i >= 0; i--) {
+    if (now - recentBuckshotHits[i].time > BUCKSHOT_HIT_MAX_AGE_MS) recentBuckshotHits.splice(i, 1);
+  }
+  recentBuckshotHits.push({ mesh: enemyMesh, time: now });
+  if (recentBuckshotHits.length > BUCKSHOT_HIT_CAP) recentBuckshotHits.shift();
+}
+
 // Big Boom cooldown state (exploding-shot upgrade) — owned by handleHit
 const BIG_BOOM_COOLDOWN_MS = 2750;
 const lastExplodingShotTime = [0, 0];
@@ -569,6 +587,7 @@ function createProjectileProxy(poolType, instanceIndex, color) {
       explosionDamage: 0,
       naniteInfused: false,
       isDroneProjectile: false,
+      scatterSeek: false, // Issue #218: home to buckshot-hit targets
     },
     // Position accessor - returns a vector that we sync to the instance matrix
     get position() { return pos; },
@@ -758,6 +777,19 @@ function findSeekerTarget(proj) {
   if (homingRange <= 0) return null;
   const enemies = getEnemies();
 
+  // Issue #218 Scatter-Seek: prefer fresh buckshot-hit targets
+  if (proj.userData.scatterSeek) {
+    const now = performance.now();
+    for (const entry of recentBuckshotHits) {
+      if (now - entry.time > BUCKSHOT_HIT_MAX_AGE_MS) continue;
+      const mesh = entry.mesh;
+      if (!mesh || !mesh.parent) continue;
+      if (mesh.position.distanceToSquared(proj.position) <= homingRange * homingRange) {
+        return mesh;
+      }
+    }
+  }
+
   let nearestTarget = null;
   let nearestDistSq = homingRange * homingRange;
   for (let i = 0; i < enemies.length; i++) {
@@ -914,6 +946,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   mesh.userData.nextHomingTargetRefreshAt = 0;
   mesh.userData.tailPhase = stats.homing ? Math.random() * Math.PI * 2 : 0;
   mesh.userData.tailSpeed = stats.homing ? 16 + Math.random() * 5 : 0;
+  mesh.userData.scatterSeek = !!stats.scatterSeek; // Issue #218
   mesh.visible = true;
 
   // Orient bolt along direction
@@ -967,7 +1000,24 @@ function processSeekerBurstQueue(now) {
 // ============================================================
 
 // [CORE] Linear interpolation helper
+function countActiveStatusEffects(enemy) {
+  if (!enemy || !enemy.statusEffects) return 0;
+  let count = 0;
+  for (const key of Object.keys(enemy.statusEffects)) {
+    if ((enemy.statusEffects[key]?.stacks || 0) > 0) count++;
+  }
+  return count;
+}
+
+// [CORE] Linear interpolation helper
 function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExploding, hitWeakPoint, hitInfo) {
+  // Issue #218 Scatter-Seek: record buckshot pellet hits so seekers can home
+  // to them (same spread threshold as spawnProjectile).
+  const BUCKSHOT_SPREAD_THRESHOLD_HIT = 0.087;
+  if ((stats.spreadAngle || 0) > BUCKSHOT_SPREAD_THRESHOLD_HIT && !stats.homing) {
+    recordBuckshotHit(enemy.mesh);
+  }
+
   // Calculate damage
   let damage = stats.damage;
 
@@ -1037,16 +1087,27 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
     applyEffects(enemyIndex, stats.effects);
   }
 
-  // AOE explosion: only when this projectile was an "exploding" shot (once per 2.75s per hand), with higher damage + visible boom
-  if (stats.aoeRadius > 0 && isExploding) {
-    handleAOE(hitPoint, stats.aoeRadius, stats.damage * 1.2, controllerIndex);
+  // AOE explosion: exploding shots (once per 2.75s per hand) OR combo-forced
+  // explosions (Issue #218: Heat Wave / Overload) with a custom aoeDamage.
+  if (stats.aoeRadius > 0 && (isExploding || stats.forceExplosion)) {
+    handleAOE(hitPoint, stats.aoeRadius, stats.aoeDamage || stats.damage * 1.2, controllerIndex);
     spawnExplosionVisual(hitPoint, stats.aoeRadius);
   }
 
   // If killed
   if (result.killed) {
     playExplosionSound();
-    const destroyData = handleEnemyKilled(enemyIndex, { isCritical, overkill: result.overkill > 0, killsWithoutHit: true, skipChain: false });
+    // Issue #189 style attribution: pass kill source + style-flavored flags
+    const statusCombo = countActiveStatusEffects(enemy) >= 2;
+    const destroyData = handleEnemyKilled(enemyIndex, {
+      isCritical,
+      overkill: result.overkill > 0,
+      killsWithoutHit: true,
+      skipChain: false,
+      hand: controllerIndex !== undefined ? getHandForController(controllerIndex) : undefined,
+      isRicochet: !!stats.isRicochetHit,
+      statusCombo,
+    });
     if (destroyData) {
       // Track kills for hand stats
       if (controllerIndex !== undefined) {
@@ -1362,7 +1423,8 @@ function handleRicochet(fromPoint, stats, bounceCount, controllerIndex) {
   });
 
   if (closest) {
-    handleHit(closest.index, closest.enemy, { ...stats, damage: stats.damage * 0.5 }, closest.enemy.mesh.position, controllerIndex);
+    // isRicochetHit feeds Issue #189 style creativity scoring
+    handleHit(closest.index, closest.enemy, { ...stats, damage: stats.damage * 0.5, isRicochetHit: true }, closest.enemy.mesh.position, controllerIndex);
     handleRicochet(closest.enemy.mesh.position, stats, bounceCount + 1, controllerIndex);
   }
 }
@@ -2134,6 +2196,11 @@ export {
   updateProjectiles, updateExplosionVisuals, spawnExplosionVisual,
   isHostileProjectile, markProjectileHit, resolveProjectileAccuracy,
   handleHit, spawnBossProjectileDestructionFX, triggerHostileProjectileExplosion,
+  // Per-hand seeker burst cooldown — main.js's fireMainWeapon gates on it
+  // (Issue #218 test surfaced this as a latent production crash: the seeker
+  // fire path referenced it without an import).
+  seekerBurstCooldownEnd,
+  SEEKER_BURST_DELAY,
 };
 // Live hostile-projectile cache (per-frame, rebuilt in updateProjectiles) —
 // shared with beam-weapons.js for orb collision scans.

@@ -488,18 +488,20 @@ function onKeyDown(e) {
   }
 
   // Forward alphanumeric keys to name entry callback if registered
-  // (desktop keyboard typing for score entry)
+  // (desktop keyboard typing for score entry). The callback reports whether
+  // it CONSUMED the key — during gameplay it returns false so number keys
+  // (fire mode), WASD movement, and 'n' (nuke) keep working. Previously
+  // every alphanumeric key was swallowed while the callback was registered,
+  // which silently disabled all of those keys on desktop (latent bug found
+  // by the Issue #218 combo tests).
   if (onNameKeyCallback && key.length === 1 && key.match(/[a-z0-9]/)) {
-    onNameKeyCallback(key);
-    return;
+    if (onNameKeyCallback(key) === true) return;
   }
   if (onNameKeyCallback && (key === 'backspace' || key === 'delete')) {
-    onNameKeyCallback('backspace');
-    return;
+    if (onNameKeyCallback('backspace') === true) return;
   }
   if (onNameKeyCallback && key === 'enter') {
-    onNameKeyCallback('submit');
-    return;
+    if (onNameKeyCallback('submit') === true) return;
   }
   // Skip movement/fire keys when in a menu state (name entry, scoreboard, etc.)
   if (menuStateCallback && menuStateCallback()) return;

@@ -17,7 +17,7 @@ import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook, setWeaponEvolution, getWeaponEvolution, isWeaponEvolved } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress } from './weapons.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress, detectFireCombos, COMBO_DEFS } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
@@ -74,7 +74,7 @@ import {
   spawnExplosionVisual, isHostileProjectile, resolveDroppedShot,
   startAccuracyShot, spawnBossProjectileDestructionFX,
   triggerHostileProjectileExplosion, PROJECTILE_BOLT, MAX_PROJECTILES,
-  screenFx,
+  screenFx, seekerBurstCooldownEnd, SEEKER_BURST_DELAY,
 } from './projectile-system.js';
 // Alt weapons module (Issue #196 Phase 3 extraction): 20 special weapons,
 // their pools and active arrays.
@@ -794,6 +794,74 @@ function checkKillsAlert() {
     if (typeof playKillsAlertSound === 'function') playKillsAlertSound(remaining);
     killsAlertShownThisLevel = true;
   }
+}
+
+// ── Dual-Wield Combo state (Issue #218) ────────────────────
+// Per-controller fire tracking feeds detectFireCombos in fireMainWeapon.
+// Hold weapons (lightning/charge) record one fire event per trigger press
+// via comboFireLatch so timing combos work across weapon types.
+const comboFireTimes = [0, 0];
+const comboFireRateBoostUntil = [0, 0];   // Resonance: +10% fire rate for 1s
+const sustainedFireCount = [0, 0];        // Shots within the 1s Heat Wave window
+const sustainedFireWindowStart = [0, 0];
+const comboFireLatch = [false, false];    // One fire event per press for hold weapons
+// Build-based passives (Overload / Scatter-Seek) toast once per level
+let overloadToastShown = false;
+let scatterSeekToastShown = false;
+
+function recordComboFire(index) {
+  comboFireTimes[index] = performance.now();
+}
+
+// Apply a detected combo's modifiers to the shot's stats (+ feedback).
+function applyFireCombo(comboId, stats, index, now) {
+  switch (comboId) {
+    case 'dual_strike':
+      stats.damage = Math.round(stats.damage * 1.25);
+      break;
+    case 'resonance':
+      comboFireRateBoostUntil[index] = now + 1000;
+      break;
+    case 'drill':
+      stats.critChance = 1;
+      break;
+    case 'momentum':
+      stats.damage = Math.round(stats.damage * 1.2);
+      break;
+    case 'heat_wave':
+      stats.aoeRadius = 1.5;         // 50% of a 'big boom' radius (balance note)
+      stats.forceExplosion = true;   // bypasses the 2.75s big-boom cooldown
+      break;
+    case 'overload':
+      if (!stats.lightning) {
+        stats.aoeRadius = 1.2;
+        stats.aoeDamage = 30;
+        stats.forceExplosion = true;
+      }
+      if (!overloadToastShown) {
+        overloadToastShown = true;
+        showFloatingMessage(`⚡ ${COMBO_DEFS.overload.name}: ${COMBO_DEFS.overload.desc}`, {
+          duration: 1800, color: COMBO_DEFS.overload.color, size: 0.6,
+        });
+      }
+      return; // build-based: no per-shot popup
+    case 'scatter_seek':
+      stats.scatterSeek = true;
+      if (!scatterSeekToastShown) {
+        scatterSeekToastShown = true;
+        showFloatingMessage(`⚡ ${COMBO_DEFS.scatter_seek.name}: ${COMBO_DEFS.scatter_seek.desc}`, {
+          duration: 1800, color: COMBO_DEFS.scatter_seek.color, size: 0.6,
+        });
+      }
+      return; // build-based: no per-shot popup
+    default:
+      return;
+  }
+  // Timing-combo feedback: popup + sting
+  showFloatingMessage(`⚡ ${COMBO_DEFS[comboId].name}!`, {
+    duration: 1100, color: COMBO_DEFS[comboId].color, size: 0.7,
+  });
+  playComboSound(2);
 }
 
 // [CORE] Handle enemy killed event: score, effects, progression
@@ -1634,12 +1702,16 @@ function init() {
            st === State.PAUSED || st === State.READY_SCREEN || st === State.GAME_OVER;
   });
   setNameKeyCallback((key) => {
+    // Return true only when the key was actually consumed by name entry.
+    // Returning false lets gameplay keys (1-4 fire mode, WASD, nuke) pass
+    // through during PLAYING — see desktop-controls onKeyDown.
+    if (!nameEntryGroup.visible) return false;
     const result = desktopTypeChar(key);
     if (result && result.action === 'submit') {
       const name = result.name.trim();
       if (!isNameClean(name)) {
         _log('[scoreboard] Name rejected by profanity filter');
-        return;
+        return true;
       }
       setStoredName(name);
       hideNameEntry();
@@ -1662,6 +1734,7 @@ function init() {
         showScoreboard([], 'FAILED TO LOAD');
       });
     }
+    return true; // name entry visible: every key is consumed
   });
 
   registerRuntimeAction('setFpsVisible', (visible) => setFPSVisible(visible === true));
@@ -4160,6 +4233,9 @@ function showUpgradeScreen() {
   // and the forge lock releases once per level.
   game.alchemyEssence = 0;
   game.alchemyForgedThisLevel = false;
+  // Issue #218: build-based combo toasts re-announce once per level
+  overloadToastShown = false;
+  scatterSeekToastShown = false;
 
   // Dismiss boss death overlay so upgrade cards are visible
   dismissBossDeathOverlay();
@@ -5179,7 +5255,12 @@ function fireMainWeapon(controller, index) {
   const now = performance.now();
   const hand = getHandForController(index);
   const mainWeaponId = game.mainWeapon[hand];
-  const stats = getWeaponStats(mainWeaponId, game.upgrades[hand]);
+  let stats = getWeaponStats(mainWeaponId, game.upgrades[hand]);
+
+  // Issue #218: Resonance fire-rate boost applies to the cooldown gate
+  if (now < comboFireRateBoostUntil[index]) {
+    stats = { ...stats, fireInterval: stats.fireInterval * 0.9 };
+  }
 
   // Lightning beam mode - handled separately in update loop
   if (stats.lightning) {
@@ -5198,13 +5279,47 @@ function fireMainWeapon(controller, index) {
   const evo = game.weaponEvolution?.[hand];
   if (evo) {
     if (evo.id === 'obliterator_beam') return;
-    if (evo.id === 'twin_helix') { fireTwinHelix(controller, index, stats, evo); return; }
-    if (evo.id === 'dragons_breath') { fireDragonsBreath(controller, index, stats, evo); return; }
-    if (evo.id === 'hive_mind') { fireHiveMind(controller, index, stats, evo); return; }
+    if (evo.id === 'twin_helix') { fireTwinHelix(controller, index, stats, evo); recordComboFire(index); return; }
+    if (evo.id === 'dragons_breath') { fireDragonsBreath(controller, index, stats, evo); recordComboFire(index); return; }
+    if (evo.id === 'hive_mind') { fireHiveMind(controller, index, stats, evo); recordComboFire(index); return; }
   }
 
-  // Check cooldown
+  // Check cooldown (resonance boost already applied to stats.fireInterval)
   if (now - weaponCooldowns[index] < stats.fireInterval) return;
+  weaponCooldowns[index] = now;
+
+  // ── Dual-Wield Combos (Issue #218) ──
+  // Detect + apply combo modifiers to THIS shot before spawning. Detection
+  // reads the OTHER hand's most recent fire time (already recorded); this
+  // hand's fire is recorded afterwards so it can feed the next shot.
+  // NOTE: runs AFTER the cooldown gate so blocked fires can't inflate the
+  // sustained-fire counter or waste combo windows.
+  const otherIndex = index === 0 ? 1 : 0;
+  const otherWeaponId = game.mainWeapon[hand === 'left' ? 'right' : 'left'];
+  const otherDelta = now - comboFireTimes[otherIndex];
+
+  // Sustained-fire window: 5+ shots within 1s charges Heat Wave (6th+ shot)
+  if (now - sustainedFireWindowStart[index] > 1000) {
+    sustainedFireCount[index] = 0;
+    sustainedFireWindowStart[index] = now;
+  }
+  sustainedFireCount[index]++;
+
+  const comboList = detectFireCombos({
+    otherFiredDeltaMs: otherDelta,
+    sameWeapon: otherWeaponId === mainWeaponId,
+    sustainedShots: sustainedFireCount[index],
+    otherWeaponId,
+    selfLightning: !!stats.lightning,
+    seekerBuckshotPair: (mainWeaponId === 'seeker_burst' && otherWeaponId === 'buckshot') ||
+                        (mainWeaponId === 'buckshot' && otherWeaponId === 'seeker_burst'),
+  });
+  if (comboList.length > 0) {
+    for (const comboId of comboList) {
+      applyFireCombo(comboId, stats, index, now);
+    }
+  }
+  recordComboFire(index);
   weaponCooldowns[index] = now;
 
   const origin = new THREE.Vector3();
@@ -5777,6 +5892,9 @@ function render(timestamp) {
           if (chargeShotStartTime[i] === null) {
             // Start charging
             chargeShotStartTime[i] = now;
+            // Issue #218: record the charge press as a fire event
+            comboFireTimes[i] = now;
+            comboFireLatch[i] = true;
             startChargeSound(i);
             updateChargeVisuals(controllers[i], i, 0);  // Initialize visual at 0 charge
           } else {
@@ -5793,6 +5911,11 @@ function render(timestamp) {
             }
           }
         } else if (stats.lightning) {
+          // Issue #218: record one fire event per press for timing combos
+          if (!comboFireLatch[i]) {
+            comboFireTimes[i] = now;
+            comboFireLatch[i] = true;
+          }
           // Issue #143: Tesla Tower replaces the continuous beam
           const evo = game.weaponEvolution?.[hand];
           if (evo && evo.id === 'tesla_tower') {
@@ -5847,6 +5970,8 @@ function render(timestamp) {
         chargeShotStartTime[i] = null;
         clearLightningBeam(i);
         clearLightningOrbCharge(i);
+        // Issue #218: allow a new combo fire event on the next press
+        comboFireLatch[i] = false;
         // Issue #143: hide the evolved continuous beam on release
         hideObliteratorBeam(i);
         // Clean up plasma carbine spin state
@@ -5868,6 +5993,9 @@ function render(timestamp) {
               if (chargeShotStartTime[0] === null) {
                 // Start charging
                 chargeShotStartTime[0] = now;
+                // Issue #218: record the charge press as a fire event
+                comboFireTimes[0] = now;
+                comboFireLatch[0] = true;
                 startChargeSound(0);
                 updateChargeVisuals(virtualController, 0, 0);
               } else {
@@ -5884,6 +6012,11 @@ function render(timestamp) {
                 }
               }
             } else if (stats.lightning) {
+              // Issue #218: record one fire event per press for timing combos
+              if (!comboFireLatch[0]) {
+                comboFireTimes[0] = now;
+                comboFireLatch[0] = true;
+              }
               // Issue #143: Tesla Tower replaces the continuous beam
               const evo = game.weaponEvolution?.left;
               if (evo && evo.id === 'tesla_tower') {
@@ -5926,6 +6059,9 @@ function render(timestamp) {
               if (chargeShotStartTime[1] === null) {
                 // Start charging
                 chargeShotStartTime[1] = now;
+                // Issue #218: record the charge press as a fire event
+                comboFireTimes[1] = now;
+                comboFireLatch[1] = true;
                 startChargeSound(1);
                 updateChargeVisuals(virtualController, 1, 0);
               } else {
@@ -5942,6 +6078,11 @@ function render(timestamp) {
                 }
               }
             } else if (stats.lightning) {
+              // Issue #218: record one fire event per press for timing combos
+              if (!comboFireLatch[1]) {
+                comboFireTimes[1] = now;
+                comboFireLatch[1] = true;
+              }
               // Issue #143: Tesla Tower replaces the continuous beam
               const evo = game.weaponEvolution?.right;
               if (evo && evo.id === 'tesla_tower') {
@@ -6040,6 +6181,9 @@ function render(timestamp) {
         // Clear plasma carbine spin state
         plasmaCarbineSpinStart[0] = null;
         plasmaCarbineSpinStart[1] = null;
+        // Issue #218: allow new combo fire events on the next press
+        comboFireLatch[0] = false;
+        comboFireLatch[1] = false;
       }
     }
 

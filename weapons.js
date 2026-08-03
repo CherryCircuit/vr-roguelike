@@ -806,6 +806,44 @@ export function getUpgradePreview(weaponId, upgrades, upgradeDef, opts = {}) {
 }
 
 // ============================================================
+// DUAL-WIELD COMBOS (Issue #218)
+// Pure definitions + detection. Timing tracking and stat
+// application live in main.js fireMainWeapon (combos modify the
+// fired shot's stats before spawnProjectile).
+// ============================================================
+
+export const COMBO_DEFS = {
+  dual_strike:  { name: 'DUAL STRIKE',  desc: '+25% damage on both shots',           color: '#ff8800' },
+  resonance:    { name: 'RESONANCE',    desc: '+10% fire rate for 1s',               color: '#88ccff' },
+  drill:        { name: 'DRILL',        desc: 'Alternating shot: 100% crit',         color: '#ffdd00' },
+  momentum:     { name: 'MOMENTUM',     desc: 'Alternating shot: +20% damage',       color: '#ff6600' },
+  heat_wave:    { name: 'HEAT WAVE',    desc: 'Sustained fire — shot explodes',      color: '#ff4400' },
+  overload:     { name: 'OVERLOAD',     desc: 'Lightning pair — 30 dmg impact AOE',  color: '#4488ff' },
+  scatter_seek: { name: 'SCATTER-SEEK', desc: 'Seekers home to buckshot-hit targets', color: '#aa44ff' },
+};
+
+/**
+ * Detect which combos apply to a shot about to be fired.
+ * @param {Object} opts - { otherFiredDeltaMs, sameWeapon, sustainedShots,
+ *   otherWeaponId, selfLightning, seekerBuckshotPair }
+ * @returns {string[]} combo ids (dual_strike/resonance exclude each other;
+ *   drill+momentum fire together as the 'alternate' package)
+ */
+export function detectFireCombos(opts) {
+  const combos = [];
+  const otherDelta = opts.otherFiredDeltaMs;
+  if (otherDelta >= 0 && otherDelta < 100) {
+    combos.push(opts.sameWeapon ? 'resonance' : 'dual_strike');
+  } else if (otherDelta >= 100 && otherDelta < 300) {
+    combos.push('drill', 'momentum');
+  }
+  if (opts.sustainedShots >= 6) combos.push('heat_wave');
+  if (opts.otherWeaponId === 'lightning_rod' && !opts.selfLightning) combos.push('overload');
+  if (opts.seekerBuckshotPair) combos.push('scatter_seek');
+  return combos;
+}
+
+// ============================================================
 // WEAPON EVOLUTIONS (Issue #143)
 // Each MAIN weapon has one hidden evolution recipe — 3 specific
 // upgrades (mix of universal + weapon-specific). When the final
