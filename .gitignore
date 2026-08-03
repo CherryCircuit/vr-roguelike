@@ -11,3 +11,4 @@ mnt/project/music/*.ogg
 # Auto-generated screenshots from test/deploy scripts
 *-screenshot.png
 test-result.png
+tests/screenshots/*.png
