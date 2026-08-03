@@ -1,8 +1,11 @@
 # Development-only files — keep the production deployment lean.
 # The site needs: index.html, *.js modules, layouts/, biomes/, assets/,
-# logo.svg, logo.png, tutorial.png, favicon.ico, api/ (Vercel Functions).
-# NOTE: scripts/ is NOT ignored — vercel.json's buildCommand runs
-# scripts/stamp-version.mjs on the build container.
+# logo.svg, logo.png, tutorial.png, favicon.ico, bake-clouds.js,
+# api/ (Vercel Functions).
+# NOTE: scripts/ and bake-clouds.js are NOT ignored — vercel.json's
+# buildCommand runs scripts/stamp-version.mjs, and biomes/* import
+# bake-clouds.js at runtime. Run scripts/verify-deploy-assets.mjs
+# before pushing to catch files needed at runtime but ignored here.
 
 node_modules
 .git
@@ -22,6 +25,5 @@ __pycache__
 dev.html
 dev-tools.js
 test-result.png
-bake-clouds.js
 blender-model-optimizer.py
 blender-vertex-color-exporter.py
