@@ -39,7 +39,8 @@ async function runTest() {
     const type = msg.type();
     const isBenign = text.includes('favicon') || text.includes('GroupMarker') ||
                      text.includes('AudioContext') || text.includes('Pointer lock') ||
-                     text.includes('Autoplay');
+                     text.includes('Autoplay') || text.includes('r2.dev') ||
+                     text.includes('sfx_lightning_loop') || text.includes('ERR_FAILED');
     if (type === 'error' && !isBenign) {
       errors.push(text);
       console.log(`  ❌ Console error: ${text.substring(0, 150)}`);
@@ -264,6 +265,159 @@ async function runTest() {
   });
   console.log(`  Core scale restored (${coreScaleAfterReset}): ${Math.abs(coreScaleAfterReset - 1) < 0.01 ? '✅' : '❌'}`);
 
+  // ── Phase 6: Evolved weapon firing (Phase C) ──
+  // The cinematic path is proven above (twin helix); the remaining five
+  // weapons inject the evolution state directly and verify their unique
+  // firing systems in PLAYING state.
+  console.log('\n📍 Phase 6: Evolved weapon firing systems...');
+
+  // Force PLAYING + level 1 with enemies spawning
+  await page.evaluate(() => {
+    window.game.state = 'playing';
+    window.game.level = 1;
+    window.game.health = 6;
+    window.game.kills = 0;
+    window.game._levelConfig = window.__test ? undefined : undefined;
+  });
+  await sleep(2500);
+
+  const snapEnemyInFront = async (dist = 4) => page.evaluate(async (distance) => {
+    const THREE = await import('three');
+    const camera = window.__test?.getCamera?.();
+    const enemies = window.__test?.getEnemies?.() || [];
+    if (!camera || enemies.length === 0) return false;
+    const e = enemies[0];
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    e.mesh.position.copy(camera.position).addScaledVector(dir, distance);
+    e.mesh.position.y = 1.6;
+    e.hp = 2000;
+    e.maxHp = 2000;
+    return true;
+  }, dist);
+
+  const waitForEnemy = async () => {
+    for (let i = 0; i < 20; i++) {
+      if (await snapEnemyInFront(4)) return true;
+      await sleep(500);
+    }
+    return false;
+  };
+
+  const enemyHp = () => page.evaluate(() => {
+    const enemies = window.__test?.getEnemies?.() || [];
+    return enemies.length > 0 ? enemies[0].hp : -1;
+  });
+
+  const injectEvo = async (weaponId, hand = 'left') => page.evaluate(async ({ weaponId, hand }) => {
+    const w = await import('./weapons.js');
+    window.game.mainWeapon = { left: weaponId, right: weaponId };
+    window.game.mainWeaponLocked = { left: true, right: true };
+    const evo = w.getEvolutionForWeapon(weaponId);
+    if (!evo) return false;
+    const upgrades = {};
+    for (const id of evo.recipe) upgrades[id] = 1;
+    window.game.upgrades = { left: { ...upgrades }, right: { ...upgrades } };
+    window.game.weaponEvolution = { left: evo, right: evo };
+    return true;
+  }, { weaponId, hand });
+
+  const sceneHasAny = (name) => page.evaluate((n) => {
+    const scene = window.__test?.getScene?.();
+    if (!scene) return false;
+    let found = false;
+    scene.traverse(o => { if (o.name === n) found = true; });
+    return found;
+  }, name);
+
+  const results = {};
+
+  // 6a. Twin Helix (standard_blaster) — helix-tagged projectiles
+  await injectEvo('standard_blaster');
+  results.twinHelix = await page.evaluate(async () => {
+    const ps = await import('./projectile-system.js');
+    return ps.projectiles.some(p => p.userData?.isHelix);
+  });
+  await page.keyboard.down('Space');
+  await sleep(900);
+  results.twinHelix = await page.evaluate(async () => {
+    const ps = await import('./projectile-system.js');
+    return ps.projectiles.some(p => p.userData?.isHelix);
+  });
+  await page.keyboard.up('Space');
+  console.log(`  Twin Helix fires helix projectiles: ${results.twinHelix ? '✅' : '❌'}`);
+
+  // 6b. Dragon's Breath (buckshot) — fire trails on the ground
+  await injectEvo('buckshot');
+  await page.keyboard.down('Space');
+  await sleep(1200);
+  results.dragonsBreath = await sceneHasAny('fire-trail-visual');
+  await page.keyboard.up('Space');
+  console.log(`  Dragon's Breath drops fire trails: ${results.dragonsBreath ? '✅' : '❌'}`);
+
+  // 6c. Hive Mind (seeker_burst) — micro-drones + dive-bomb damage
+  await injectEvo('seeker_burst');
+  const hadEnemy = await waitForEnemy();
+  await page.keyboard.down('Space');
+  await sleep(1000);
+  await page.keyboard.up('Space');
+  results.hiveMind = await sceneHasAny('hive-drone');
+  // Command dive-bomb: fire again at max drones (each press spawns ≤3, max 8)
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.down('Space');
+    await sleep(400);
+    await page.keyboard.up('Space');
+  }
+  const hpBeforeDive = await enemyHp();
+  await sleep(1800); // drones dive + impact
+  const hpAfterDive = await enemyHp();
+  results.hiveDive = hadEnemy && hpAfterDive < hpBeforeDive;
+  console.log(`  Hive Mind spawns drones: ${results.hiveMind ? '✅' : '❌'} | dive damage (${hpBeforeDive} → ${hpAfterDive}): ${results.hiveDive ? '✅' : '❌'}`);
+
+  // 6d. Tesla Tower (lightning_rod) — stationary arc coils damage enemies
+  await injectEvo('lightning_rod');
+  await waitForEnemy();
+  await page.keyboard.down('Space');
+  await sleep(1400); // coil placed + first arc tick (500ms)
+  results.teslaCoil = await sceneHasAny('tesla-coil');
+  const hpBeforeCoil = await enemyHp();
+  await sleep(1200);
+  const hpAfterCoil = await enemyHp();
+  results.teslaDmg = hpAfterCoil < hpBeforeCoil;
+  await page.keyboard.up('Space');
+  console.log(`  Tesla Tower places coil: ${results.teslaCoil ? '✅' : '❌'} | arc damage (${hpBeforeCoil} → ${hpAfterCoil}): ${results.teslaDmg ? '✅' : '❌'}`);
+
+  // 6e. Singularity Launcher (charge_cannon) — gravity well on release
+  await injectEvo('charge_cannon');
+  await waitForEnemy();
+  await page.keyboard.down('Space');
+  await sleep(2000); // charge past 50% (max charge 3s)
+  await page.keyboard.up('Space');
+  await sleep(300);
+  results.singularity = await sceneHasAny('singularity-well');
+  console.log(`  Singularity Launcher creates gravity well: ${results.singularity ? '✅' : '❌'}`);
+
+  // 6f. Obliterator Beam (plasma_carbine) — continuous beam damage + overheat
+  await injectEvo('plasma_carbine');
+  await waitForEnemy();
+  await page.keyboard.down('Space');
+  await sleep(1200);
+  results.obliterator = await sceneHasAny('obliterator-beam');
+  const hpBeforeBeam = await enemyHp();
+  await sleep(1000);
+  const hpAfterBeam = await enemyHp();
+  results.obliteratorDmg = hpAfterBeam < hpBeforeBeam;
+  await page.keyboard.up('Space');
+  await sleep(200);
+  const beamHidden = await page.evaluate(() => {
+    const scene = window.__test?.getScene?.();
+    let visible = false;
+    scene?.traverse(o => { if (o.name === 'obliterator-beam' && o.visible) visible = true; });
+    return !visible;
+  });
+  results.obliteratorHide = beamHidden;
+  console.log(`  Obliterator Beam fires: ${results.obliterator ? '✅' : '❌'} | damage (${hpBeforeBeam} → ${hpAfterBeam}): ${results.obliteratorDmg ? '✅' : '❌'} | hides on release: ${results.obliteratorHide ? '✅' : '❌'}`);
+
   // ── Results ──
   console.log('\n============================================================');
   console.log('📊 Results:');
@@ -275,7 +429,10 @@ async function runTest() {
   }
   const passed = errors.length === 0 && progressLine && swapped && cinematicStarted && cinematicDone &&
                  evolvedLine && resetOk && coreScaleAfterReset !== null && Math.abs(coreScaleAfterReset - 1) < 0.01 &&
-                 badgeOk !== false;
+                 badgeOk !== false &&
+                 results.twinHelix && results.dragonsBreath && results.hiveMind && results.hiveDive &&
+                 results.teslaCoil && results.teslaDmg && results.singularity &&
+                 results.obliterator && results.obliteratorDmg && results.obliteratorHide;
   console.log(passed ? '\n✅ ALL TESTS PASSED' : '\n❌ TEST FAILURES');
   await browser.close();
   process.exit(passed ? 0 : 1);

@@ -104,6 +104,15 @@ export const screenFx = {
   floorFlashTimer: 0,
 };
 
+// Evolved-weapon hooks (Issue #143 Phase C): projectile-system can't import
+// evolutions.js (would cycle), so evolutions.js registers callbacks here —
+// same shared-mutable-object pattern as screenFx.
+export const evolvedFxHooks = {
+  // Called from a Dragon's Breath pellet's update every ~120ms so the
+  // pellet drops a burning trail on the ground while it flies.
+  onDragonsBreathTrail: null,
+};
+
 // Big Boom cooldown state (exploding-shot upgrade) — owned by handleHit
 const BIG_BOOM_COOLDOWN_MS = 2750;
 const lastExplodingShotTime = [0, 0];
@@ -926,6 +935,10 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
       playShoothSound();
     }
   }
+
+  // Return the pooled proxy so callers can tag it (Issue #143: evolved
+  // weapons set userData flags like isHelix / isDragonsBreath after spawn).
+  return mesh;
 }
 
 // Process seeker burst queue - fires queued shots at their scheduled time
@@ -1374,6 +1387,8 @@ const _projHomingVelNorm = new THREE.Vector3();
 const _hostileProjDesired = new THREE.Vector3();
 const _hostileProjCurrent = new THREE.Vector3();
 const _hostileProjSide = new THREE.Vector3();
+// Scratch vectors for Twin Helix parametric motion (Issue #143)
+const _helixPos = new THREE.Vector3();
 const _projectileRayDir = new THREE.Vector3();
 const _projectileNearbyMeshes = [];
 const _projectileSegmentStart = new THREE.Vector3();
@@ -1574,7 +1589,32 @@ function updateProjectiles(dt) {
 
     // Move projectile (apply stasis slow effect)
     const moveDistance = proj.userData.velocity.length() * adjustedDt;
-    proj.position.addScaledVector(proj.userData.velocity, adjustedDt);
+    if (proj.userData.isHelix) {
+      // Issue #143: Twin Helix — parametric double-helix motion around the
+      // forward axis (replaces linear travel; hit detection is position-based
+      // so it works unchanged). Pre-allocated scratch vectors for perf.
+      proj.userData.helixTime = (proj.userData.helixTime || 0) + adjustedDt;
+      const ht = proj.userData.helixTime;
+      const angle = ht * (proj.userData.helixSpeed || 8) + (proj.userData.helixPhase || 0);
+      const travel = (proj.userData.velocity.length() || 0) * ht;
+      _helixPos
+        .copy(proj.userData.helixOrigin)
+        .addScaledVector(proj.userData.helixForward, travel)
+        .addScaledVector(proj.userData.helixRight, Math.cos(angle) * (proj.userData.helixRadius || 0.3) * 0.3)
+        .addScaledVector(proj.userData.helixUp, Math.sin(angle) * (proj.userData.helixRadius || 0.3) * 0.3);
+      proj.position.copy(_helixPos);
+    } else {
+      proj.position.addScaledVector(proj.userData.velocity, adjustedDt);
+    }
+
+    // Issue #143: Dragon's Breath — molten pellets drop fire trails on the
+    // ground while flying (callback registered by evolutions.js)
+    if (proj.userData.isDragonsBreath && evolvedFxHooks.onDragonsBreathTrail) {
+      if (now - (proj.userData._lastTrailAt || 0) >= 120) {
+        proj.userData._lastTrailAt = now;
+        evolvedFxHooks.onDragonsBreathTrail(proj.position);
+      }
+    }
 
     // Commit position to InstancedMesh (sync GPU buffer)
     if (proj.commit) {

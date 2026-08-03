@@ -147,6 +147,15 @@ import {
 import {
   initWristHolograms, showWristHolograms, updateWristHolograms, hideAllWristHolograms
 } from './wrist-holograms.js';
+// Evolved weapon systems (Issue #143 Phase C): firing + update loops for the
+// six evolved weapons. Beam evolutions are driven by intercepts in the
+// hold/release paths below; projectile evolutions dispatch from fireMainWeapon.
+import {
+  initEvolutions, fireTwinHelix, fireDragonsBreath, fireHiveMind,
+  updateTeslaTower, fireSingularityShot,
+  updateObliteratorBeam, hideObliteratorBeam,
+  updateEvolvedSystems, clearAllEvolvedSystems,
+} from './evolutions.js';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
@@ -1458,8 +1467,7 @@ function init() {
   setupControllers();
 
   // Init boss death cinematic module with dependencies
-  initBossDeathCinematic({
-    scene,
+  initBossDeathCinematic({    scene,
     camera,
     game,
     State,
@@ -1561,6 +1569,13 @@ function init() {
   });
   initHUD(camera, scene);
   initWristHolograms();
+  // Evolved weapon systems (Issue #143): deps needed by the update loops
+  initEvolutions({
+    scene,
+    enemySpatialHash,
+    getController: (i) => controllers[i] || null,
+    spawnDamageNumber,
+  });
   // Preload wrist layout JSONs so updateBlasterDisplay can read them
   import('./hud.js').then(m => { m.loadLayout('upgrade-wrist-left'); m.loadLayout('upgrade-wrist-right'); });
   if (devRuntimeEnabled && runtimeConfig.dev.showFPS) {
@@ -3642,7 +3657,13 @@ function onTriggerRelease(index) {
     const stats = getWeaponStats(game.mainWeapon[hand], game.upgrades[hand]);
     if (stats.chargeShot) {
       const chargeTimeSec = (performance.now() - chargeShotStartTime[index]) / 1000;
-      fireChargeBeam(controllers[index], index, chargeTimeSec, stats);
+      // Issue #143: Singularity Launcher replaces the beam on release
+      const evo = game.weaponEvolution?.[hand];
+      if (evo && evo.id === 'singularity_launcher') {
+        fireSingularityShot(controllers[index], index, chargeTimeSec, stats, evo);
+      } else {
+        fireChargeBeam(controllers[index], index, chargeTimeSec, stats);
+      }
     }
     // Clean up charge sound and visuals
     stopChargeSound(index);
@@ -4700,6 +4721,10 @@ function cancelEvolutionCinematic() {
 }
 registerResetHook(cancelEvolutionCinematic);
 
+// Clear evolved-weapon systems (drones/trails/coils/singularities/beams) on
+// full game reset so no orphaned visuals survive into the next run.
+registerResetHook(clearAllEvolvedSystems);
+
 // Reset any evolved weapon-sphere scale residue after a full reset
 registerResetHook(() => {
   for (let i = 0; i < controllers.length; i++) {
@@ -4853,6 +4878,7 @@ function advanceLevelAfterUpgrade() {
   clearBossProjectiles();
   clearAllTelegraphs();
   clearAllAltWeaponEffects();
+  clearAllEvolvedSystems();
   clearAllDamageNumbers();
   clearAllComboPopups();
   clearAllKillChainPopups();
@@ -5163,6 +5189,18 @@ function fireMainWeapon(controller, index) {
   // Charge shot mode - handled separately, fires on trigger release
   if (stats.chargeShot) {
     return;  // Charge shot fires on release, not on press
+  }
+
+  // Issue #143: evolved weapons replace the base firing behavior.
+  // Beam/charge evolutions (tesla_tower, singularity_launcher) are driven by
+  // their hold/release loops; obliterator_beam is driven by the hold loop
+  // (fireMainWeapon must NOT fire projectiles for it).
+  const evo = game.weaponEvolution?.[hand];
+  if (evo) {
+    if (evo.id === 'obliterator_beam') return;
+    if (evo.id === 'twin_helix') { fireTwinHelix(controller, index, stats, evo); return; }
+    if (evo.id === 'dragons_breath') { fireDragonsBreath(controller, index, stats, evo); return; }
+    if (evo.id === 'hive_mind') { fireHiveMind(controller, index, stats, evo); return; }
   }
 
   // Check cooldown
@@ -5755,14 +5793,21 @@ function render(timestamp) {
             }
           }
         } else if (stats.lightning) {
-          if (isBossLightningLevel()) {
+          // Issue #143: Tesla Tower replaces the continuous beam
+          const evo = game.weaponEvolution?.[hand];
+          if (evo && evo.id === 'tesla_tower') {
+            updateTeslaTower(controllers[i], i, stats, evo, now);
+          } else if (isBossLightningLevel()) {
             updateLightningOrbCharge(controllers[i], i, stats, now);
           } else {
             updateLightningBeam(controllers[i], i, stats, dt);
           }
         } else if (stats.windUp) {
-          // Plasma carbine wind-up mechanic
-          if (plasmaCarbineSpinStart[i] === null) {
+          // Issue #143: Obliterator Beam replaces the projectile wind-up
+          const evo = game.weaponEvolution?.[hand];
+          if (evo && evo.id === 'obliterator_beam') {
+            updateObliteratorBeam(controllers[i], i, evo, stats, now, dt);
+          } else if (plasmaCarbineSpinStart[i] === null) {
             // Start spinning
             plasmaCarbineSpinStart[i] = now;
           } else {
@@ -5802,6 +5847,8 @@ function render(timestamp) {
         chargeShotStartTime[i] = null;
         clearLightningBeam(i);
         clearLightningOrbCharge(i);
+        // Issue #143: hide the evolved continuous beam on release
+        hideObliteratorBeam(i);
         // Clean up plasma carbine spin state
         plasmaCarbineSpinStart[i] = null;
       }
@@ -5837,14 +5884,21 @@ function render(timestamp) {
                 }
               }
             } else if (stats.lightning) {
-              if (isBossLightningLevel()) {
+              // Issue #143: Tesla Tower replaces the continuous beam
+              const evo = game.weaponEvolution?.left;
+              if (evo && evo.id === 'tesla_tower') {
+                updateTeslaTower(virtualController, 0, stats, evo, now);
+              } else if (isBossLightningLevel()) {
                 updateLightningOrbCharge(virtualController, 0, stats, now);
               } else {
                 updateLightningBeam(virtualController, 0, stats, dt);
               }
             } else if (stats.windUp) {
-              // Plasma carbine wind-up mechanic
-              if (plasmaCarbineSpinStart[0] === null) {
+              // Issue #143: Obliterator Beam replaces the projectile wind-up
+              const evo = game.weaponEvolution?.left;
+              if (evo && evo.id === 'obliterator_beam') {
+                updateObliteratorBeam(virtualController, 0, evo, stats, now, dt);
+              } else if (plasmaCarbineSpinStart[0] === null) {
                 plasmaCarbineSpinStart[0] = now;
               } else {
                 const spinTime = now - plasmaCarbineSpinStart[0];
@@ -5888,14 +5942,21 @@ function render(timestamp) {
                 }
               }
             } else if (stats.lightning) {
-              if (isBossLightningLevel()) {
+              // Issue #143: Tesla Tower replaces the continuous beam
+              const evo = game.weaponEvolution?.right;
+              if (evo && evo.id === 'tesla_tower') {
+                updateTeslaTower(virtualController, 1, stats, evo, now);
+              } else if (isBossLightningLevel()) {
                 updateLightningOrbCharge(virtualController, 1, stats, now);
               } else {
                 updateLightningBeam(virtualController, 1, stats, dt);
               }
             } else if (stats.windUp) {
-              // Plasma carbine wind-up mechanic
-              if (plasmaCarbineSpinStart[1] === null) {
+              // Issue #143: Obliterator Beam replaces the projectile wind-up
+              const evo = game.weaponEvolution?.right;
+              if (evo && evo.id === 'obliterator_beam') {
+                updateObliteratorBeam(virtualController, 1, evo, stats, now, dt);
+              } else if (plasmaCarbineSpinStart[1] === null) {
                 plasmaCarbineSpinStart[1] = now;
               } else {
                 const spinTime = now - plasmaCarbineSpinStart[1];
@@ -5922,7 +5983,13 @@ function render(timestamp) {
           const stats = getWeaponStats(game.mainWeapon.left, game.upgrades.left);
           if (virtualController && stats.chargeShot) {
             const chargeTimeSec = (now - chargeShotStartTime[0]) / 1000;
-            fireChargeBeam(virtualController, 0, chargeTimeSec, stats);
+            // Issue #143: Singularity Launcher replaces the beam on release
+            const evo = game.weaponEvolution?.left;
+            if (evo && evo.id === 'singularity_launcher') {
+              fireSingularityShot(virtualController, 0, chargeTimeSec, stats, evo);
+            } else {
+              fireChargeBeam(virtualController, 0, chargeTimeSec, stats);
+            }
           }
           stopChargeSound(0);
           hideChargeVisuals(0);
@@ -5943,7 +6010,13 @@ function render(timestamp) {
           const stats = getWeaponStats(game.mainWeapon.right, game.upgrades.right);
           if (virtualController && stats.chargeShot) {
             const chargeTimeSec = (now - chargeShotStartTime[1]) / 1000;
-            fireChargeBeam(virtualController, 1, chargeTimeSec, stats);
+            // Issue #143: Singularity Launcher replaces the beam on release
+            const evo = game.weaponEvolution?.right;
+            if (evo && evo.id === 'singularity_launcher') {
+              fireSingularityShot(virtualController, 1, chargeTimeSec, stats, evo);
+            } else {
+              fireChargeBeam(virtualController, 1, chargeTimeSec, stats);
+            }
           }
           stopChargeSound(1);
           hideChargeVisuals(1);
@@ -5961,6 +6034,9 @@ function render(timestamp) {
         // Clear lightning beams
         clearLightningBeam(0);
         clearLightningBeam(1);
+        // Issue #143: hide evolved continuous beams on release
+        hideObliteratorBeam(0);
+        hideObliteratorBeam(1);
         // Clear plasma carbine spin state
         plasmaCarbineSpinStart[0] = null;
         plasmaCarbineSpinStart[1] = null;
@@ -5996,6 +6072,10 @@ function render(timestamp) {
 
     // Update laser mines (guarded to skip when no active instances)
     if (activeLaserMines.length > 0) updateLaserMines(now, dt);
+
+    // Issue #143: evolved weapon update loops (fire trails, hive drones,
+    // tesla coils, singularity wells — all early-out when empty)
+    updateEvolvedSystems(now, dt, playerPos);
 
     // Apply bullet-time slow-mo and ramp-out (timer-based from commit 5bb0b69)
     if (slowMoRampOut) {

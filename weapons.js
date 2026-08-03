@@ -890,7 +890,7 @@ export const WEAPON_EVOLUTIONS = {
     auraColors: [0x00ff44, 0x88ff44, 0x00ff88],
     beamDuration: 4000,
     overheatCooldown: 1500,
-    beamDamagePerFrame: 2,
+    beamDamagePerFrame: 60, // damage per SECOND while the beam is active
     beamWidth: 0.15,
   },
   seeker_burst: {
