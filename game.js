@@ -136,6 +136,10 @@ export const game = {
   // showUpgradeScreen) and forging is limited to once per level.
   alchemyEssence: 0,
   alchemyForgedThisLevel: false,
+
+  // NEW: Weapon Evolution (Issue #143) — per-hand evolution def once the
+  // weapon's recipe is completed (null = not evolved).
+  weaponEvolution: { left: null, right: null },
   
   stateTimer: 0,
   spawnTimer: 0,
@@ -235,6 +239,9 @@ export function resetGame() {
     // Alchemy Bench state resets with the run
     alchemyEssence: 0,
     alchemyForgedThisLevel: false,
+
+    // Weapon Evolution state resets with the run
+    weaponEvolution: { left: null, right: null },
 
     // Biome chunk assignments
     biomeChunks: {},
@@ -481,6 +488,21 @@ export function setMainWeapon(weaponId, hand) {
 export function setAltWeapon(weaponId, hand) {
   const h = hand || 'left';
   game.altWeapon[h] = weaponId;
+}
+
+// ── Weapon Evolution helpers (Issue #143) ──────────────────
+
+export function setWeaponEvolution(evolution, hand) {
+  const h = hand || 'left';
+  game.weaponEvolution[h] = evolution;
+}
+
+export function getWeaponEvolution(hand) {
+  return game.weaponEvolution[hand || 'left'];
+}
+
+export function isWeaponEvolved(hand) {
+  return game.weaponEvolution[hand || 'left'] !== null;
 }
 
 /**

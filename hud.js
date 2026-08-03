@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, LEVELS } from './game.js';
 import { playMenuHoverSound, playMenuClick, playBasicEnemySpawn, playUpgradePreviewSound } from './audio.js';
-import { getUpgradePreview, SYNERGY_DEFS, getDissolvableUpgrades, ALCHEMY_CATEGORIES, ALCHEMY_FORGE_COST } from './weapons.js';
+import { getUpgradePreview, SYNERGY_DEFS, getDissolvableUpgrades, ALCHEMY_CATEGORIES, ALCHEMY_FORGE_COST, getEvolutionProgress } from './weapons.js';
 import {
   TextPopupPool, initDamageNumbers, disposePools,
   spawnDamageNumber, spawnCritIndicator, updateDamageNumbers,
@@ -1828,6 +1828,45 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   weaponSprite.name = 'upgrade-cards-weapon-name';
   upgradeGroup.add(weaponSprite);
 
+  // Evolution progress line (Issue #143) — shows the recipe progress dots
+  // below the cooldown text every time the card screen appears, or the
+  // evolved name once the weapon has transformed.
+  try {
+    const evolvedDef = game.weaponEvolution?.[hand];
+    const progress = getEvolutionProgress(weaponId, game.upgrades[hand] || {});
+    if (evolvedDef) {
+      const evoText = `⚡ ${evolvedDef.name.toUpperCase()} EVOLVED`;
+      const evoSprite = makeSprite(evoText, {
+        fontSize: 26,
+        color: '#' + (typeof evolvedDef.sigColor === 'number' ? evolvedDef.sigColor.toString(16).padStart(6, '0') : 'ffdd00'),
+        glow: true,
+        glowColor: '#' + (typeof evolvedDef.sigColor === 'number' ? evolvedDef.sigColor.toString(16).padStart(6, '0') : 'ffdd00'),
+        scale: 0.22,
+        depthTest: true,
+      });
+      evoSprite.userData.text = evoText;
+      evoSprite.position.set(0, 0.68, 0);
+      upgradeGroup.add(evoSprite);
+    } else if (progress && progress.collected > 0) {
+      const dots = progress.recipeIds.map((id, i) =>
+        i < progress.collected ? '\u25CF' : '\u25CB'
+      ).join(' ');
+      const progressText = `${progress.evo.name}: ${progress.collected}/${progress.total}  ${dots}`;
+      const progressSprite = makeSprite(progressText, {
+        fontSize: 24,
+        color: '#' + progress.evo.sigColor.toString(16).padStart(6, '0'),
+        scale: 0.2,
+        depthTest: true,
+        forceArial: true,
+      });
+      progressSprite.userData.text = progressText;
+      progressSprite.position.set(0, 0.68, 0);
+      upgradeGroup.add(progressSprite);
+    }
+  } catch (e) {
+    // Non-critical — never break the upgrade screen for a HUD nicety
+  }
+
   // Cooldown text
   const cooldownDef = _uc('cooldownSprite', { x: 0, y: 0.876, z: 0, fontSize: 60, scale: 0.25, glow: false, color: 0xffff00 });
   const cooldownSprite = makeSprite('WAIT...', { fontSize: cooldownDef.fontSize, color: '#' + cooldownDef.color.toString(16).padStart(6, '0'), scale: cooldownDef.scale, glow: cooldownDef.glow });
@@ -2143,8 +2182,18 @@ function createUpgradeCard(upgrade, position, hand, style) {
   attachUpgradeSelectionData(group, card, upgrade, hand);
   group.add(card);
 
+  // Issue #143: recipe cards get a gold border + ⚡ EVO badge so players can
+  // spot the pieces they're building toward. Golden border also covers the
+  // card when it IS a recipe piece (already collected) — badge only when
+  // uncollected so the player knows what to grab.
+  let isRecipePiece = false;
+  try {
+    const progress = getEvolutionProgress(game.mainWeapon?.[hand] || 'standard_blaster', game.upgrades[hand] || {});
+    isRecipePiece = !!(progress && progress.recipeIds.includes(upgrade.id));
+  } catch (e) { /* non-critical */ }
+
   // Border (shared geometry)
-  const borderColor = upgrade.sideGrade ? 0xffdd00 : (typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff));
+  const borderColor = upgrade.sideGrade ? 0xffdd00 : (isRecipePiece ? 0xffdd00 : (typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff)));
   const borderMat = new THREE.LineBasicMaterial({ color: borderColor });
   const border = new THREE.LineSegments(getCardBorderGeo(), borderMat);
   border.scale.set(1, 1, 1);
@@ -2231,6 +2280,31 @@ function createUpgradeCard(upgrade, position, hand, style) {
   iconMesh.visible = true;
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
+
+  // ⚡ EVO badge (Issue #143) — top-right of the card when this upgrade is a
+  // still-needed recipe piece. Scaled pulse driven by updateUpgradeCards.
+  if (isRecipePiece && !group.userData._recipeCollected) {
+    try {
+      const progress = getEvolutionProgress(game.mainWeapon?.[hand] || 'standard_blaster', game.upgrades[hand] || {});
+      const isUncollected = progress && !progress.collectedIds.includes(upgrade.id);
+      if (isUncollected) {
+        const badge = makeSprite('⚡ EVO', {
+          fontSize: 26,
+          color: '#FFD700',
+          glow: true,
+          glowColor: '#FFD700',
+          scale: 0.07,
+          depthTest: true,
+          forceArial: true,
+        });
+        badge.userData.text = '⚡ EVO';
+        badge.position.set(0.42, 0.56, 0.02);
+        badge.userData._evoBadge = true;
+        group.add(badge);
+        group.userData.evoBadge = badge;
+      }
+    } catch (e) { /* non-critical */ }
+  }
 
   return group;
 }
@@ -2365,6 +2439,12 @@ export function updateUpgradeCards(now, cooldownRemaining) {
     if (card.userData.iconMesh && !card.userData._warpActive) {
       card.userData.iconMesh.rotation.y += 0.02;
       card.userData.iconMesh.rotation.x += 0.01;
+    }
+    // ⚡ EVO badge pulse (Issue #143) — slow golden breathing on recipe cards
+    const badge = card.userData.evoBadge;
+    if (badge && !card.userData._warpActive) {
+      const pulse = 1 + Math.sin(now * 0.004) * 0.12;
+      badge.scale.set(pulse, pulse, 1);
     }
   });
 

@@ -16,8 +16,8 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
-import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST } from './weapons.js';
+import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook, setWeaponEvolution, getWeaponEvolution, isWeaponEvolved } from './game.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
@@ -1099,6 +1099,13 @@ async function settlePendingUpgradeIfNeeded(strategy) {
   if (game.state === State.UPGRADE_SELECT) {
     await waitForCondition(() => upgradeSelectionCooldown <= 0, { timeout: 5000, label: 'upgrade_cooldown' });
     await autoSelectUpgradeByStrategy(strategy);
+    // Issue #185: card picks now land on the post-select bar instead of
+    // advancing immediately — auto-selection must press CONTINUE so the
+    // progression flows (and the cinematic path, which finalizes on its own)
+    // both exit UPGRADE_SELECT as they did before the alchemy change.
+    if (isPostSelectVisible() && !evoCinematicState) {
+      finalizeUpgradeSelection();
+    }
     await waitForCondition(() => game.state !== State.UPGRADE_SELECT, { timeout: 15000, label: 'upgrade_exit' });
     await settlePostUpgradeState();
   }
@@ -1195,6 +1202,11 @@ async function concludeUpgradeSelection(strategy) {
   }
   await waitForCondition(() => upgradeSelectionCooldown <= 0, { timeout: 5000, label: 'upgrade_cooldown' });
   const selection = await autoSelectUpgradeByStrategy(strategy);
+  // Issue #185: press CONTINUE past the post-select bar so auto-flows exit
+  // the upgrade screen (evolutions finalize on their own and skip this).
+  if (isPostSelectVisible() && !evoCinematicState) {
+    finalizeUpgradeSelection();
+  }
   await waitForCondition(() => game.state !== State.UPGRADE_SELECT, { timeout: 15000, label: 'upgrade_exit' });
   await settlePostUpgradeState();
   return selection;
@@ -2546,8 +2558,10 @@ function updateControllerSphereColor(index) {
   const visual = controller.children.find(c => c.name === `controller-visual-${hand}`);
   if (!visual) return;
 
-  const weaponId = game.mainWeapon[hand];
-  const color = getWeaponSphereColor(weaponId, hand);
+  // Issue #143: evolved weapons get their signature color + a 30% larger
+  // sphere so the transformation is obvious at a glance.
+  const evo = game.weaponEvolution?.[hand];
+  const color = evo ? evo.sigColor : getWeaponSphereColor(game.mainWeapon[hand], hand);
 
   const core = visual.children.find(c => c.name === `controller-core-${hand}`);
   const glowSphere = visual.children.find(c => c.name === `controller-glow-${hand}`);
@@ -2556,6 +2570,8 @@ function updateControllerSphereColor(index) {
   if (core) core.material.color.setHex(color);
   if (glowSphere) glowSphere.material.color.setHex(color);
   if (aimLine) aimLine.material.color.setHex(color);
+  // 30% larger than the base sphere (0.03 → 0.039), per the issue spec
+  if (core) core.scale.setScalar(evo ? 1.3 : 1);
 }
 
 function updateAllControllerSphereColors() {
@@ -3312,6 +3328,8 @@ function handleDesktopCountrySelectClick() {
 
 function handleDesktopUpgradeSelectClick() {
   if (upgradeSelectionCooldown > 0) return;
+  // Issue #143: no card selection during the evolution cinematic
+  if (evoCinematicState) return;
 
   const raycaster = getAimRaycaster();
   if (!raycaster) return;
@@ -4264,8 +4282,434 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     _log(`[nuke] Extra nuke granted. Total: ${game.nukes}`);
   }
 
+  // Issue #143: if this pick completes the weapon's evolution recipe, run the
+  // fusion/transformation cinematic INSTEAD of the post-select bar. The
+  // cinematic ends with finalizeUpgradeSelection() so the level advances
+  // only after the player has witnessed the transformation.
+  const mainWepId = game.mainWeapon[targetHand];
+  const evo = checkEvolutionReady(mainWepId, game.upgrades[targetHand]);
+  if (evo && !isWeaponEvolved(targetHand)) {
+    setWeaponEvolution(evo, targetHand);
+    _log(`[evolution] ${mainWepId} evolved into ${evo.name}!`);
+    startEvolutionCinematic(evo, targetHand);
+    return;
+  }
+
+  // Progress toast for partial recipe pieces (non-final)
+  const progress = getEvolutionProgress(mainWepId, game.upgrades[targetHand]);
+  if (progress && !isWeaponEvolved(targetHand) && progress.collected > 0 && progress.collected < progress.total) {
+    showFloatingMessage(`⚡ ${progress.evo.name}: ${progress.collected}/${progress.total}`, {
+      duration: 1400,
+      color: '#' + progress.evo.sigColor.toString(16).padStart(6, '0'),
+      size: 0.55,
+    });
+  }
+
   showPostUpgradeActions(targetHand);
 }
+
+// ── EVOLUTION CINEMATIC (Issue #143) ───────────────────────
+// Six phases: announce → gather → card_spin → merge → reveal → return.
+// The weapon sphere detaches from the controller (scene.attach), 3 recipe
+// cards orbit it faster and faster, white-flash merge into the evolved
+// color, then the weapon floats back to the hand. Ends with
+// finalizeUpgradeSelection() (advance to next level).
+// Ported from feature/weapon-evolution branch, adapted to the refactored
+// main.js (controllers/scene/camera owned here, state machine unchanged).
+
+let evoCinematicState = null;
+// State: { evo, hand, controllerIndex, phase, phaseStart, objects, particles, cardMeshes, coreWorldPos, coreWorldQuat }
+
+// Pre-allocated scratch vectors (perf: no per-frame GC during cinematic)
+const _evoV3a = new THREE.Vector3();
+const _evoV3b = new THREE.Vector3();
+const _evoQuat = new THREE.Quaternion();
+
+function startEvolutionCinematic(evo, hand) {
+  const controllerIndex = hand === 'left' ? 0 : 1;
+  const controller = controllers[controllerIndex];
+
+  if (!controller) {
+    // Fallback: no controller attached (headless/desktop edge) — advance
+    // directly so the run never strands the player on the upgrade screen.
+    _log('[evolution] No controller, skipping cinematic');
+    finalizeUpgradeSelection();
+    return;
+  }
+
+  evoCinematicState = {
+    evo,
+    hand,
+    controllerIndex,
+    phase: 'announce',
+    phaseStart: performance.now(),
+    objects: {},
+    particles: [],
+    cardMeshes: [],
+    coreWorldPos: new THREE.Vector3(),
+    coreWorldQuat: new THREE.Quaternion(),
+  };
+
+  // Announce the evolution name (Issue #143 HUD fade-in)
+  showFloatingMessage(`⚡ ${evo.name.toUpperCase()}`, {
+    duration: 2000,
+    color: '#' + evo.sigColor.toString(16).padStart(6, '0'),
+    size: 0.8,
+  });
+  _log(`[evolution] Cinematic started for ${evo.name}`);
+}
+
+// Spawn a trail particle at world position (capped for Quest perf)
+function _evoSpawnParticle(pos, color, particles) {
+  if (particles.length >= 50) return;
+  const geo = new THREE.SphereGeometry(0.015, 4, 4);
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(pos);
+  mesh.userData._born = performance.now();
+  mesh.userData._life = 500;
+  scene.add(mesh);
+  particles.push(mesh);
+}
+
+// Update + cull cinematic particles
+function _evoUpdateParticles(particles, now) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    const age = now - p.userData._born;
+    if (age > p.userData._life) {
+      scene.remove(p);
+      p.geometry.dispose();
+      p.material.dispose();
+      particles.splice(i, 1);
+    } else {
+      p.material.opacity = 0.8 * (1 - age / p.userData._life);
+      p.scale.setScalar(1 - (age / p.userData._life) * 0.5);
+    }
+  }
+}
+
+// Full cleanup — all geometries/materials disposed (no leaks across runs)
+function _evoCleanup(state) {
+  const { objects, particles, cardMeshes } = state;
+  for (const p of particles) {
+    scene.remove(p);
+    p.geometry.dispose();
+    p.material.dispose();
+  }
+  particles.length = 0;
+  for (const c of cardMeshes) {
+    scene.remove(c);
+    c.geometry.dispose();
+    c.material.dispose();
+  }
+  cardMeshes.length = 0;
+  if (objects.aura) {
+    scene.remove(objects.aura);
+    objects.aura.geometry.dispose();
+    objects.aura.material.dispose();
+  }
+  if (objects.rig) {
+    scene.remove(objects.rig);
+  }
+}
+
+function updateEvolutionCinematic(now, dt) {
+  if (!evoCinematicState) return;
+
+  const { evo, hand, controllerIndex, objects, particles, cardMeshes } = evoCinematicState;
+  const controller = controllers[controllerIndex];
+  const phase = evoCinematicState.phase;
+  const phaseStart = evoCinematicState.phaseStart;
+  const elapsed = (now - phaseStart) / 1000;
+
+  _evoUpdateParticles(particles, now);
+
+  // ── Phase 1: ANNOUNCE (0-2s) ──
+  if (phase === 'announce') {
+    if (elapsed > 2.0) {
+      evoCinematicState.phase = 'gather';
+      evoCinematicState.phaseStart = now;
+
+      // Find the weapon sphere inside the controller visual group
+      const visual = controller.children.find(c => c.name === `controller-visual-${hand}`);
+      const core = visual?.children.find(c => c.name === `controller-core-${hand}`);
+
+      if (!core) {
+        _log('[evolution] Core not found, skipping cinematic');
+        evoCinematicState = null;
+        finalizeUpgradeSelection();
+        return;
+      }
+
+      // Capture world transform BEFORE reparenting (scene.attach preserves it)
+      core.getWorldPosition(evoCinematicState.coreWorldPos);
+      core.getWorldQuaternion(evoCinematicState.coreWorldQuat);
+
+      const rig = new THREE.Group();
+      rig.name = 'evo-rig';
+      scene.add(rig);
+
+      scene.attach(core);
+      rig.add(core);
+      core.position.set(0, 0, 0);
+      core.quaternion.set(0, 0, 0, 1);
+
+      objects.core = core;
+      objects.rig = rig;
+      objects.rigWorldStart = evoCinematicState.coreWorldPos.clone();
+
+      // Float target: 1.5m in front of camera at eye level
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+      objects.floatTarget = camera.position.clone().add(camDir.multiplyScalar(1.5));
+      objects.floatTarget.y = Math.max(objects.floatTarget.y, 1.2);
+
+      // Signature color on the core
+      core.material.color.setHex(evo.sigColor);
+      core.material.emissive?.setHex(evo.sigColor);
+
+      // Glow aura (child of rig, independent of core)
+      const auraGeo = new THREE.SphereGeometry(0.08, 16, 16);
+      const auraMat = new THREE.MeshBasicMaterial({
+        color: evo.sigColor,
+        transparent: true,
+        opacity: 0.4,
+      });
+      const aura = new THREE.Mesh(auraGeo, auraMat);
+      aura.name = 'evo-aura';
+      rig.add(aura);
+      objects.aura = aura;
+
+      // 3 recipe cards orbiting the core (colored by signature/base colors)
+      const cardColors = [evo.sigColor, evo.sigColorAlt || evo.sigColor, evo.baseColor || evo.sigColor];
+      for (let i = 0; i < 3; i++) {
+        const cardGeo = new THREE.BoxGeometry(0.12, 0.18, 0.01);
+        const cardMat = new THREE.MeshBasicMaterial({
+          color: cardColors[i],
+          transparent: true,
+          opacity: 0.9,
+        });
+        const card = new THREE.Mesh(cardGeo, cardMat);
+        card.name = `evo-card-${i}`;
+        card.userData.angleOffset = (i / 3) * Math.PI * 2;
+        rig.add(card);
+        cardMeshes.push(card);
+      }
+    }
+  }
+
+  // ── Phase 2: GATHER (2-3.5s) — core floats to center ──
+  else if (phase === 'gather') {
+    const t = Math.min(1, elapsed / 1.5);
+    const eased = 1 - Math.pow(1 - t, 3);
+    objects.rig.position.lerpVectors(objects.rigWorldStart, objects.floatTarget, eased);
+
+    if (objects.aura) {
+      const pulse = 1 + Math.sin(elapsed * 10) * 0.3;
+      objects.aura.scale.setScalar(pulse);
+      objects.aura.material.opacity = 0.3 + Math.sin(elapsed * 8) * 0.15;
+    }
+
+    for (const card of cardMeshes) {
+      const angle = card.userData.angleOffset + elapsed * 1.5;
+      const radius = 1.5 * (1 - eased * 0.5);
+      card.position.set(Math.cos(angle) * radius, Math.sin(angle * 0.5) * 0.2, Math.sin(angle) * radius);
+      card.rotation.z = angle;
+    }
+
+    if (elapsed > 1.5) {
+      evoCinematicState.phase = 'card_spin';
+      evoCinematicState.phaseStart = now;
+    }
+  }
+
+  // ── Phase 3: CARD_SPIN (3.5-6.5s) — accelerating orbit ──
+  else if (phase === 'card_spin') {
+    const speedMultiplier = 2 + elapsed * 4.5;
+    objects.rig.position.copy(objects.floatTarget);
+
+    if (objects.core) {
+      objects.core.scale.setScalar(1 + Math.sin(elapsed * 8) * 0.1);
+    }
+    if (objects.aura) {
+      const pulse = 1.5 + elapsed * 0.3;
+      objects.aura.scale.setScalar(pulse);
+      objects.aura.material.opacity = Math.min(0.7, 0.3 + elapsed * 0.1);
+    }
+
+    const baseAngle = elapsed * speedMultiplier;
+    for (let i = 0; i < cardMeshes.length; i++) {
+      const card = cardMeshes[i];
+      const angle = card.userData.angleOffset + baseAngle;
+      const radius = 0.4;
+      card.position.set(Math.cos(angle) * radius, Math.sin(angle * 0.7) * 0.1, Math.sin(angle) * radius);
+      card.rotation.z = angle;
+
+      // Trail particles (probabilistic to keep counts low)
+      if (Math.random() < 0.15) {
+        _evoV3a.copy(objects.rig.position).add(card.position);
+        _evoSpawnParticle(_evoV3a, evo.sigColor, particles);
+      }
+    }
+
+    if (elapsed > 3.0) {
+      evoCinematicState.phase = 'merge';
+      evoCinematicState.phaseStart = now;
+    }
+  }
+
+  // ── Phase 4: MERGE (6.5-7.5s) — spiral in + white flash ──
+  else if (phase === 'merge') {
+    const t = Math.min(1, elapsed / 1.0);
+    const eased = 1 - Math.pow(1 - t, 2);
+    objects.rig.position.copy(objects.floatTarget);
+
+    const spiralRadius = 0.4 * (1 - eased);
+    const angle = elapsed * 20;
+    for (const card of cardMeshes) {
+      card.position.set(Math.cos(angle) * spiralRadius, 0, Math.sin(angle) * spiralRadius);
+      card.rotation.z = angle;
+      card.material.opacity = 1 - eased * 0.5;
+      if (Math.random() < 0.3) {
+        _evoV3a.copy(objects.rig.position).add(card.position);
+        _evoSpawnParticle(_evoV3a, evo.sigColor, particles);
+      }
+    }
+
+    // White flash + haptics at the merge point
+    if (t > 0.6 && !objects._flashed) {
+      objects._flashed = true;
+      renderer.setClearColor(0xffffff, 1);
+      setTimeout(() => {
+        if (renderer) renderer.setClearColor(0x000000, 1);
+      }, 150);
+      try {
+        const gamepad = navigator.getGamepads?.()?.[controllerIndex];
+        gamepad?.hapticActuators?.[0]?.pulse?.(1.0, 300);
+      } catch (_) { /* non-critical */ }
+      playTingSound();
+    }
+
+    if (objects.core && t > 0.6) {
+      objects.core.scale.setScalar(1 + (t - 0.6) * 5);
+    }
+
+    if (t >= 1.0) {
+      for (const card of cardMeshes) {
+        scene.remove(card);
+        card.geometry.dispose();
+        card.material.dispose();
+      }
+      cardMeshes.length = 0;
+      evoCinematicState.phase = 'reveal';
+      evoCinematicState.phaseStart = now;
+    }
+  }
+
+  // ── Phase 5: REVEAL (7.5-9s) — evolved weapon pulses + tagline ──
+  else if (phase === 'reveal') {
+    objects.rig.position.copy(objects.floatTarget);
+
+    if (objects.core) {
+      const shrinkT = Math.min(1, elapsed / 0.5);
+      const scale = 3 - (3 - 1.3) * shrinkT;
+      objects.core.scale.setScalar(scale);
+      objects.core.material.color.setHex(evo.sigColor);
+    }
+
+    if (elapsed < 1.0 && Math.random() < 0.2) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 0.1 + elapsed * 0.3;
+      _evoV3a.copy(objects.floatTarget).add(
+        _evoV3b.set(Math.cos(angle) * dist, Math.sin(angle) * dist * 0.5, Math.sin(angle) * dist)
+      );
+      _evoSpawnParticle(_evoV3a, evo.sigColor, particles);
+    }
+
+    if (elapsed > 0.3 && !objects._taglineShown) {
+      objects._taglineShown = true;
+      showFloatingMessage(evo.desc || '', {
+        duration: 1500,
+        color: '#' + evo.sigColor.toString(16).padStart(6, '0'),
+        size: 0.5,
+      });
+    }
+
+    if (elapsed > 1.5) {
+      evoCinematicState.phase = 'return';
+      evoCinematicState.phaseStart = now;
+      objects.returnStart = objects.rig.position.clone();
+      controller.getWorldPosition(_evoV3a);
+      objects.returnTarget = _evoV3a.clone();
+    }
+  }
+
+  // ── Phase 6: RETURN (9-10s) — weapon floats back to hand ──
+  else if (phase === 'return') {
+    const t = Math.min(1, elapsed / 1.0);
+    const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+    controller.getWorldPosition(_evoV3a);
+    objects.rig.position.lerpVectors(objects.returnStart, _evoV3a, eased);
+
+    if (objects.aura) {
+      objects.aura.material.opacity = 0.4 * (1 - t);
+    }
+
+    if (t >= 1.0) {
+      const visual = controller.children.find(c => c.name === `controller-visual-${hand}`);
+      if (visual && objects.core) {
+        visual.attach(objects.core); // preserves world transform
+        objects.core.position.set(0, 0, 0);
+        objects.core.quaternion.set(0, 0, 0, 1);
+        objects.core.scale.setScalar(1.0);
+      }
+
+      _evoCleanup(evoCinematicState);
+
+      // Evolved weapon look: signature color + 30% larger sphere
+      updateControllerSphereColor(controllerIndex);
+
+      evoCinematicState = null;
+      _log(`[evolution] Cinematic complete — ${evo.name} equipped on ${hand}`);
+
+      // Advance to next level (post-select bar is bypassed for evolutions)
+      finalizeUpgradeSelection();
+    }
+  }
+}
+
+// Abort an in-flight cinematic cleanly (used on full game reset so the core
+// sphere never stays detached from the controller).
+function cancelEvolutionCinematic() {
+  if (!evoCinematicState) return;
+  const { hand, controllerIndex, objects } = evoCinematicState;
+  const controller = controllers[controllerIndex];
+  if (controller && objects.core) {
+    const visual = controller.children.find(c => c.name === `controller-visual-${hand}`);
+    if (visual && objects.core.parent !== visual) {
+      visual.attach(objects.core);
+      objects.core.position.set(0, 0, 0);
+      objects.core.quaternion.set(0, 0, 0, 1);
+      objects.core.scale.setScalar(1);
+    }
+  }
+  _evoCleanup(evoCinematicState);
+  evoCinematicState = null;
+}
+registerResetHook(cancelEvolutionCinematic);
+
+// Reset any evolved weapon-sphere scale residue after a full reset
+registerResetHook(() => {
+  for (let i = 0; i < controllers.length; i++) {
+    const controller = controllers[i];
+    const hand = i === 0 ? 'left' : 'right';
+    const visual = controller?.children.find(c => c.name === `controller-visual-${hand}`);
+    const core = visual?.children.find(c => c.name === `controller-core-${hand}`);
+    if (core) core.scale.setScalar(1);
+  }
+});
 
 // ── ALCHEMY BENCH (Issue #185) ─────────────────────────────
 // After a card pick the player lands on a post-select bar: CONTINUE advances
@@ -5037,6 +5481,9 @@ if (typeof window !== 'undefined') {
 // [CORE] Handle ricochet projectile bounce
 function selectUpgrade(controller, index = -1) {
   if (upgradeSelectionCooldown > 0) return;
+  // Issue #143: while the evolution cinematic plays, card selection is
+  // disabled — the player must witness the transformation first.
+  if (evoCinematicState) return;
 
   controller.getWorldPosition(_uiSelectOrigin);
   controller.getWorldQuaternion(_uiSelectQuat);
@@ -6269,6 +6716,10 @@ function render(timestamp) {
     // trapped behind bullet-time, death-freeze, or other gameplay time scaling.
     upgradeSelectionCooldown = Math.max(0, upgradeSelectionCooldown - clampedRawDt);
     updateUpgradeCards(now, upgradeSelectionCooldown);
+
+    // Issue #143: evolution cinematic runs on top of the upgrade screen
+    // (cheap no-op when no cinematic is active)
+    updateEvolutionCinematic(now, dt);
 
     // WebXR selectstart can occasionally drift around state transitions.
     // Poll held trigger state as a fallback so upgrades remain selectable even
