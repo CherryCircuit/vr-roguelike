@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, LEVELS } from './game.js';
-import { playMenuHoverSound, playMenuClick, playBasicEnemySpawn, playUpgradePreviewSound } from './audio.js';
+import { playMenuHoverSound, playMenuClick, playBasicEnemySpawn } from './audio.js';
 import { getUpgradePreview, SYNERGY_DEFS, getDissolvableUpgrades, ALCHEMY_CATEGORIES, ALCHEMY_FORGE_COST, getEvolutionProgress } from './weapons.js';
 import {
   TextPopupPool, initDamageNumbers, disposePools,
@@ -214,12 +214,13 @@ function getSkipIconGeo() {
 let upgradeCards = [];
 let upgradeChoices = [];
 
-// Upgrade Card Preview panel (Issue #215) — a single fixed panel below the
-// card row whose content is rebuilt ONLY when the hovered card changes.
+// Upgrade Card Preview panel (Issue #215) — camera-anchored tooltip in the
+// lower view. Content is rebuilt ONLY when the hovered card changes.
 // previewPanelKey caches which card is currently shown so hover re-entries
 // (and per-frame hover passes) never rebuild textures.
 let previewPanel = null;
 let previewPanelKey = null;
+let upgradeTooltipGroup = null; // camera child created in initHUD
 
 // Alchemy Bench + post-select bar (Issue #185) — child groups of upgradeGroup.
 // After a card is picked the post-select bar offers CONTINUE / ALCHEMY; the
@@ -237,6 +238,10 @@ const _tmpColor2 = new THREE.Color();
 const _tmpVec3 = new THREE.Vector3(1, 1, 1);
 // Track whether any warp animation is still active to skip the loop early
 let _warpAnimating = false;
+
+// Hover sound throttle (Issue #215 feedback): min gap between hover blips
+const HOVER_SOUND_MIN_INTERVAL_MS = 150;
+let _lastHoverSoundAt = 0;
 
 // Hit flash (red sphere inside camera)
 let hitFlash = null;
@@ -855,6 +860,13 @@ export async function initHUD(camera, scene) {
 
   // ── Style HUD (Issue #189): 4 thin meters + grade letter on the floor HUD ──
   createStyleHUD();
+
+  // ── Upgrade-card preview tooltip (Issue #215) — camera-anchored so the
+  // panel floats in the lower view at a fixed readable distance and can
+  // never clip through the floor. Display-only; not in any raycast list.
+  upgradeTooltipGroup = new THREE.Group();
+  upgradeTooltipGroup.name = 'upgrade-tooltip';
+  camera.add(upgradeTooltipGroup);
 
   // ── Speed Lines Overlay (radial streaks during slow-mo) ──
   if (ENABLE_SPEED_LINES) {
@@ -2454,10 +2466,10 @@ export function hideUpgradeCards() {
   upgradeGroup.userData.hoveredSelections = {};
   upgradeCards = [];
   upgradeChoices = [];
-  // Preview panel is a child of upgradeGroup — dispose it explicitly so the
-  // cached key never shows a stale panel after the screen is re-opened.
-  previewPanel = null;
-  previewPanelKey = null;
+  // Preview panel is camera-anchored — dispose it explicitly so the cached
+  // key never shows a stale panel after the screen is re-opened.
+  disposeUpgradePreviewPanel();
+  previewGraceUntil = 0;
   // Alchemy bench + post-select bar share the upgrade group; reset their
   // state so the next level's upgrade screen starts clean.
   postSelectGroup = null;
@@ -2532,15 +2544,19 @@ function getPreviewPanelBorderGeo() {
 }
 
 // Layout defaults — overridable via layouts/upgrade-cards.json previewPanel*
+// The panel is CAMERA-ANCHORED (a child of the camera, ~0.8m in front, lower
+// third of the view) so it can never clip through the floor and its text
+// renders at a fixed readable distance — unlike the old placement below the
+// card row, which pushed the panel through the floor with tiny glyphs.
 function getUpgradePreviewLayout() {
   const el = layoutCache['upgrade-cards']?.elements || {};
   const r = (key, def) => (el[key] ? { ...def, ...el[key] } : def);
   return {
-    panel: r('previewPanel', { x: 0, y: -1.78, z: 0.01, w: 2.05, h: 1.7, color: 0x110033, opacity: 0.92 }),
-    name: r('previewPanel_name', { y: 0.58, z: 0.02, fontSize: 36, scale: 0.3, maxWidth: 900 }),
-    line: r('previewPanel_line', { y: 0.2, z: 0.02, fontSize: 30, scale: 0.27, maxWidth: 900 }),
-    synergy: r('previewPanel_synergy', { y: 0.2, z: 0.02, fontSize: 28, scale: 0.25, maxWidth: 900 }),
-    dps: r('previewPanel_dps', { y: -0.74, z: 0.02, fontSize: 26, scale: 0.23, maxWidth: 900 }),
+    panel: r('previewPanel', { x: 0, y: -0.34, z: -0.8, w: 1.05, h: 0.42, color: 0x110033, opacity: 0.94 }),
+    name: r('previewPanel_name', { y: 0.13, z: 0.02, fontSize: 40, scale: 0.4, maxWidth: 540 }),
+    line: r('previewPanel_line', { y: -0.01, z: 0.02, fontSize: 30, scale: 0.32, maxWidth: 540 }),
+    synergy: r('previewPanel_synergy', { y: -0.01, z: 0.02, fontSize: 28, scale: 0.3, maxWidth: 540 }),
+    dps: r('previewPanel_dps', { y: -0.17, z: 0.02, fontSize: 26, scale: 0.28, maxWidth: 540 }),
   };
 }
 
@@ -2557,18 +2573,22 @@ function buildUpgradePreviewPanel(upgrade, hand) {
   disposeUpgradePreviewPanel();
   const L = getUpgradePreviewLayout();
 
+  // Camera-anchored: upgradeTooltipGroup is a child of the camera, so the
+  // panel floats in the lower part of the view, always at a readable
+  // distance and never through the floor. It is display-only (never in the
+  // hoverable/raycast lists) so it can't interfere with card selection.
   const panel = new THREE.Group();
   panel.name = 'upgrade-preview-panel';
   panel.position.set(L.panel.x, L.panel.y, L.panel.z);
-  upgradeGroup.add(panel);
+  upgradeTooltipGroup.add(panel);
   previewPanel = panel;
 
   // Backdrop + border, same visual language as the cards
   const bgGeo = getPreviewPanelGeo(L.panel.w, L.panel.h);
   const bgMat = new THREE.MeshBasicMaterial({
     color: L.panel.color ?? 0x110033, transparent: true,
-    opacity: L.panel.opacity ?? 0.92, side: THREE.DoubleSide,
-    depthWrite: false, depthTest: true,
+    opacity: L.panel.opacity ?? 0.94, side: THREE.DoubleSide,
+    depthWrite: false, depthTest: false,
   });
   const bg = new THREE.Mesh(bgGeo, bgMat);
   bg.renderOrder = 1;
@@ -2597,49 +2617,45 @@ function buildUpgradePreviewPanel(upgrade, hand) {
   const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
     fontSize: L.name.fontSize, color: upgrade.color || '#00ffff',
     glow: true, glowColor: upgrade.color, scale: L.name.scale,
-    maxWidth: L.name.maxWidth, depthTest: true,
+    maxWidth: L.name.maxWidth, depthTest: false,
   });
   nameSprite.userData.text = upgrade.name.toUpperCase();
   nameSprite.position.set(0, L.name.y, L.name.z);
   panel.add(nameSprite);
 
-  // Stat delta lines (green — every line is a 'what changes' readout)
+  // Stat delta lines (green — every line is a 'what changes' readout).
+  // Compact panel: 2 stat lines + 1 synergy hint + DPS footer.
   let y = L.line.y;
-  for (const line of preview.statLines.slice(0, 6)) {
+  const statCount = Math.min(2, preview.statLines.length);
+  for (const line of preview.statLines.slice(0, statCount)) {
     const text = `${line.label}: ${fmtPreviewValue(line.before, line.unit, line.bool)} → ${fmtPreviewValue(line.after, line.unit, line.bool)}${line.unit}`;
     const sprite = makeSprite(text, {
       fontSize: L.line.fontSize, color: '#88ff88', scale: L.line.scale,
-      maxWidth: L.line.maxWidth, depthTest: true, forceArial: true,
+      maxWidth: L.line.maxWidth, depthTest: false, forceArial: true,
     });
     sprite.userData.text = text;
     sprite.position.set(0, y, L.line.z);
     panel.add(sprite);
-    y -= 0.26;
+    y -= 0.08;
   }
 
   // Synergy hints — gold for newly-activated combos, dim for active ones
-  for (const syn of preview.newSynergies) {
-    const def = SYNERGY_DEFS[syn.id];
-    const text = `✦ NEW SYNERGY: ${syn.name}${def?.desc ? ` — ${def.desc}` : ''}`;
+  const synergyLine = preview.newSynergies.length > 0
+    ? { ...preview.newSynergies[0], _new: true }
+    : (preview.activeSynergies[0] ? { ...preview.activeSynergies[0], _new: false } : null);
+  if (synergyLine) {
+    const def = SYNERGY_DEFS[synergyLine.id];
+    const text = synergyLine._new
+      ? `✦ NEW SYNERGY: ${synergyLine.name}${def?.desc ? ` — ${def.desc}` : ''}`
+      : `✓ ACTIVE: ${synergyLine.name}`;
     const sprite = makeSprite(text, {
-      fontSize: L.synergy.fontSize, color: syn.tier === 3 ? '#ffdd00' : '#ff88ff',
-      scale: L.synergy.scale, maxWidth: L.synergy.maxWidth, depthTest: true, forceArial: true,
+      fontSize: L.synergy.fontSize,
+      color: synergyLine._new ? (synergyLine.tier === 3 ? '#ffdd00' : '#ff88ff') : '#8888aa',
+      scale: L.synergy.scale, maxWidth: L.synergy.maxWidth, depthTest: false, forceArial: true,
     });
     sprite.userData.text = text;
     sprite.position.set(0, y, L.synergy.z);
     panel.add(sprite);
-    y -= 0.26;
-  }
-  for (const syn of preview.activeSynergies) {
-    const text = `✓ ACTIVE: ${syn.name}`;
-    const sprite = makeSprite(text, {
-      fontSize: L.synergy.fontSize, color: '#8888aa',
-      scale: L.synergy.scale, maxWidth: L.synergy.maxWidth, depthTest: true, forceArial: true,
-    });
-    sprite.userData.text = text;
-    sprite.position.set(0, y, L.synergy.z);
-    panel.add(sprite);
-    y -= 0.26;
   }
 
   // DPS + kill-rate estimate footer
@@ -2647,14 +2663,11 @@ function buildUpgradePreviewPanel(upgrade, hand) {
   const dpsText = `DPS ${Math.round(preview.dps.before)} → ${Math.round(preview.dps.after)}  ·  EST KILLS/S ${kps(preview.killsPerSec.before)} → ${kps(preview.killsPerSec.after)}`;
   const dpsSprite = makeSprite(dpsText, {
     fontSize: L.dps.fontSize, color: '#00ffff', scale: L.dps.scale,
-    maxWidth: L.dps.maxWidth, depthTest: true, forceArial: true,
+    maxWidth: L.dps.maxWidth, depthTest: false, forceArial: true,
   });
   dpsSprite.userData.text = dpsText;
   dpsSprite.position.set(0, L.dps.y, L.dps.z);
   panel.add(dpsSprite);
-
-  // Subtle readout blip so the panel arrival has a voice
-  playUpgradePreviewSound();
 }
 
 function disposeUpgradePreviewPanel() {
@@ -2666,6 +2679,10 @@ function disposeUpgradePreviewPanel() {
   previewPanelKey = null;
 }
 
+// Grace window: don't tear the panel down (or rebuild it) on momentary
+// raycast flicker between frames — this also killed the rapid blip sound.
+let previewGraceUntil = 0;
+
 /**
  * Show/hide the preview panel based on the per-source hovered upgrade
  * selections collected by updateHUDHover. Rebuilds only when the hovered
@@ -2676,12 +2693,19 @@ function updateUpgradePreview(hoveredSelections) {
   // intro animation and the panel would sit on a moving layout.
   if (_warpAnimating) { disposeUpgradePreviewPanel(); return; }
   const keys = Object.keys(hoveredSelections || {});
-  if (keys.length === 0) { disposeUpgradePreviewPanel(); return; }
+  if (keys.length === 0) {
+    // Grace: keep the panel for a few frames when the ray briefly loses the
+    // card (VR controller jitter) so it doesn't flicker/rebuild repeatedly.
+    if (previewPanel && performance.now() < previewGraceUntil) return;
+    disposeUpgradePreviewPanel();
+    return;
+  }
   const selection = hoveredSelections[keys[0]];
   const upgrade = selection?.upgrade;
   if (!upgrade || !upgrade.id || upgrade.id === 'SKIP') { disposeUpgradePreviewPanel(); return; }
   const hand = selection.hand || upgradeGroup.userData.hand;
   const key = `${upgrade.id}|${hand}`;
+  previewGraceUntil = performance.now() + 300;
   if (previewPanelKey === key) return; // cache hit — already showing this card
   previewPanelKey = key;
   buildUpgradePreviewPanel(upgrade, hand);
@@ -2743,7 +2767,9 @@ function getAlchemyLayout() {
   const el = layoutCache['upgrade-cards']?.elements || {};
   const r = (key, def) => (el[key] ? { ...def, ...el[key] } : def);
   return {
-    bar: r('alchemyBar', { x: 0, y: -1.78, z: 0.05, w: 2.7, h: 1.15 }),
+    // y raised from -1.78 → -0.9: the old value put the bar at floor level
+    // (through the floor in VR). -0.9 keeps it visible below the cards.
+    bar: r('alchemyBar', { x: 0, y: -0.9, z: 0.1, w: 2.7, h: 1.15 }),
     bench: r('alchemyBench', { x: 0, y: 0.05, z: 0.08, w: 3.4, h: 2.2 }),
     headerY: r('alchemyHeader', { y: 0.8, z: 0.02, fontSize: 40, scale: 0.3 }).y,
     essenceY: r('alchemyEssence', { y: 0.8, z: 0.02, fontSize: 30, scale: 0.26 }).y,
@@ -2759,6 +2785,9 @@ export function showPostUpgradeBar(hand, canAlchemy) {
   const L = getAlchemyLayout();
   const group = new THREE.Group();
   group.name = 'post-select-bar';
+  // Raised so the bar sits ABOVE the floor and below the cards' lower edge
+  // (previously at -1.78 it sank through the floor). Text sizes bumped to
+  // card-like legibility.
   group.position.set(L.bar.x, L.bar.y, L.bar.z);
   upgradeGroup.add(group);
   postSelectGroup = group;
@@ -2766,7 +2795,7 @@ export function showPostUpgradeBar(hand, canAlchemy) {
 
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(L.bar.w, L.bar.h),
-    new THREE.MeshBasicMaterial({ color: 0x110033, transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+    new THREE.MeshBasicMaterial({ color: 0x110033, transparent: true, opacity: 0.94, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
   );
   bg.renderOrder = 1;
   group.add(bg);
@@ -2776,7 +2805,7 @@ export function showPostUpgradeBar(hand, canAlchemy) {
   ));
 
   const title = makeSprite('UPGRADE APPLIED — WHAT NEXT?', {
-    fontSize: 30, color: '#ffffff', scale: 0.24, maxWidth: 800, depthTest: true, forceArial: true,
+    fontSize: 40, color: '#ffffff', scale: 0.4, maxWidth: 760, depthTest: true, forceArial: true,
   });
   title.userData.text = 'UPGRADE APPLIED — WHAT NEXT?';
   title.position.set(0, 0.3, 0.02);
@@ -2784,12 +2813,12 @@ export function showPostUpgradeBar(hand, canAlchemy) {
 
   // CONTINUE (green) — advances to the next level
   makeAlchemyButton(group, 'CONTINUE →', { type: 'continue' }, -0.5, -0.12, {
-    w: 1.5, h: 0.3, color: 0x00ff88, name: 'alchemy-btn-continue',
+    w: 1.5, h: 0.32, color: 0x00ff88, name: 'alchemy-btn-continue', fontSize: 34, textScale: 0.3,
   });
   // ALCHEMY (amber) — only offered when there is something to dissolve
   if (canAlchemy) {
     makeAlchemyButton(group, '⚗ ALCHEMY', { type: 'alchemy' }, 1.05, -0.12, {
-      w: 1.5, h: 0.3, color: 0xffaa00, name: 'alchemy-btn-alchemy',
+      w: 1.5, h: 0.32, color: 0xffaa00, name: 'alchemy-btn-alchemy', fontSize: 34, textScale: 0.3,
     });
   }
 }
@@ -5509,9 +5538,15 @@ export function updateHUDHover(raycasters) {
     }
   });
 
-  // Play hover sound on new hover
+  // Play hover sound on new hover — throttled: VR controller jitter + the
+  // 30Hz hover pass could otherwise retrigger this many times per second,
+  // producing a rapid dingdingding (player-reported).
   if (newHover) {
-    playMenuHoverSound();
+    const _now = performance.now();
+    if (_now - _lastHoverSoundAt >= HOVER_SOUND_MIN_INTERVAL_MS) {
+      _lastHoverSoundAt = _now;
+      playMenuHoverSound();
+    }
   }
 
   // Update border highlights on pause menu and settings buttons

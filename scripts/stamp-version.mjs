@@ -3,6 +3,8 @@
 // Runs as the Vercel buildCommand (vercel.json) so the shipped
 // page always shows the actual deploy date instead of a stale
 // hand-edited string. Pure Node stdlib — no dependencies.
+// Timestamps are rendered in PACIFIC TIME (America/Los_Angeles)
+// so the hour/minutes match the player's local clock.
 // Usage: node scripts/stamp-version.mjs
 // ============================================================
 
@@ -14,11 +16,18 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const indexPath = join(root, 'index.html');
 const html = readFileSync(indexPath, 'utf8');
 
+// Pacific Time with DST handled by the IANA zone (America/Los_Angeles).
+// Intl is available in all Node versions Vercel's builder ships.
 const pad = (n) => String(n).padStart(2, '0');
-const d = new Date();
-const hour12 = d.getUTCHours() % 12 || 12;
-const ampm = d.getUTCHours() < 12 ? 'AM' : 'PM';
-const version = `v${d.getUTCFullYear()}.${pad(d.getUTCMonth() + 1)}.${pad(d.getUTCDate())}.${pad(hour12)}${pad(d.getUTCMinutes())}${ampm}`;
+const now = new Date();
+const parts = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Los_Angeles',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hour12: true,
+}).formatToParts(now);
+const get = (t) => (parts.find(p => p.type === t) || {}).value || '';
+const hour12 = String((parseInt(get('hour'), 10) % 12) || 12).padStart(2, '0');
+const version = `v${get('year')}.${get('month')}.${get('day')}.${hour12}${get('minute')}${get('dayPeriod') === 'AM' ? 'AM' : 'PM'}`;
 
 const next = html.replace(/(id="version-text">)(v[^<]*)(<\/p>)/, `$1${version}$3`);
 if (next === html) {

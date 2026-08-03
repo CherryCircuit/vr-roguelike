@@ -817,25 +817,29 @@ function recordComboFire(index) {
   comboFireTimes[index] = performance.now();
 }
 
-// Apply a detected combo's modifiers to the shot's stats (+ feedback).
+// Apply a detected combo's modifiers to the shot's stats.
+// NOTE: timing combos are deliberately SILENT — the effects speak for
+// themselves (damage numbers, explosions, fire-rate). Per-shot floating
+// messages + sounds spammed the view every trigger pull (player-reported),
+// so only the once-per-level build-based passives announce themselves.
 function applyFireCombo(comboId, stats, index, now) {
   switch (comboId) {
     case 'dual_strike':
       stats.damage = Math.round(stats.damage * 1.25);
-      break;
+      return;
     case 'resonance':
       comboFireRateBoostUntil[index] = now + 1000;
-      break;
+      return;
     case 'drill':
       stats.critChance = 1;
-      break;
+      return;
     case 'momentum':
       stats.damage = Math.round(stats.damage * 1.2);
-      break;
+      return;
     case 'heat_wave':
       stats.aoeRadius = 1.5;         // 50% of a 'big boom' radius (balance note)
       stats.forceExplosion = true;   // bypasses the 2.75s big-boom cooldown
-      break;
+      return;
     case 'overload':
       if (!stats.lightning) {
         stats.aoeRadius = 1.2;
@@ -848,7 +852,7 @@ function applyFireCombo(comboId, stats, index, now) {
           duration: 1800, color: COMBO_DEFS.overload.color, size: 0.6,
         });
       }
-      return; // build-based: no per-shot popup
+      return;
     case 'scatter_seek':
       stats.scatterSeek = true;
       if (!scatterSeekToastShown) {
@@ -857,15 +861,10 @@ function applyFireCombo(comboId, stats, index, now) {
           duration: 1800, color: COMBO_DEFS.scatter_seek.color, size: 0.6,
         });
       }
-      return; // build-based: no per-shot popup
+      return;
     default:
       return;
   }
-  // Timing-combo feedback: popup + sting
-  showFloatingMessage(`⚡ ${COMBO_DEFS[comboId].name}!`, {
-    duration: 1100, color: COMBO_DEFS[comboId].color, size: 0.7,
-  });
-  playComboSound(2);
 }
 
 // [CORE] Handle enemy killed event: score, effects, progression
