@@ -3,11 +3,18 @@
 //  Shared page bootstrap for both live and dev launchers.
 // ============================================================
 
-const GAME_VERSION = 'v2026.04.28.0602PM';
+// Fallback only — production index.html is stamped by the Vercel build
+// (scripts/stamp-version.mjs) and is the source of truth. This value is
+// used solely if the version-text element is ever empty.
+const GAME_VERSION = 'v2026.08.03.0625AM';
 
 function updateVersionText() {
   const versionEl = document.getElementById('version-text');
-  if (versionEl) versionEl.textContent = GAME_VERSION;
+  // Never overwrite the build-stamped version (fix: stale JS constant was
+  // clobbering the freshly stamped date on every load)
+  if (versionEl && !versionEl.textContent.trim()) {
+    versionEl.textContent = GAME_VERSION;
+  }
 }
 
 function installGlobalErrorOverlay() {
