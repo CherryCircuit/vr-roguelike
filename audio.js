@@ -1401,6 +1401,63 @@ export function playUpgradePreviewSound() {
   osc.stop(t + 0.12);
 }
 
+// ── Alchemy Bench sounds (Issue #185) ──────────────────────
+// Dissolve: crystalline shatter — a fast descending arpeggio of short
+// triangle blips, like an upgrade shattering into Essence.
+export function playDissolveSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0.12, t);
+  master.gain.exponentialRampToValueAtTime(0.01, t + 0.35);
+  master.connect(getSfxOutput());
+  // Descending fourths (880 → 660 → 495 → 330) — 'glass breaking' contour
+  const notes = [880, 660, 495, 330];
+  for (let i = 0; i < notes.length; i++) {
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(notes[i], t + i * 0.045);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.9, t + i * 0.045);
+    g.gain.exponentialRampToValueAtTime(0.01, t + i * 0.045 + 0.12);
+    osc.connect(g);
+    g.connect(master);
+    osc.start(t + i * 0.045);
+    osc.stop(t + i * 0.045 + 0.15);
+  }
+}
+
+// Forge: bubbling rise into a triumphant ding — new upgrade crystallizes.
+export function playForgeSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  // Bubbling: wobbling pitch ramp (essence being consumed)
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(180, t);
+  osc.frequency.linearRampToValueAtTime(520, t + 0.5);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.08, t);
+  g.gain.setValueAtTime(0.05, t + 0.4);
+  g.gain.exponentialRampToValueAtTime(0.01, t + 0.55);
+  osc.connect(g);
+  g.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 0.6);
+  // Ding: bright sine at the payoff moment
+  const ding = ctx.createOscillator();
+  ding.type = 'sine';
+  ding.frequency.setValueAtTime(1320, t + 0.45);
+  const dg = ctx.createGain();
+  dg.gain.setValueAtTime(0.0001, t + 0.45);
+  dg.gain.exponentialRampToValueAtTime(0.15, t + 0.48);
+  dg.gain.exponentialRampToValueAtTime(0.01, t + 0.9);
+  ding.connect(dg);
+  dg.connect(getSfxOutput());
+  ding.start(t + 0.45);
+  ding.stop(t + 0.95);
+}
+
 // ── Buckshot fire (heavy mechanical thud) ──────────────────
 export function playBuckshotSound(pelletCount = 1) {
   const ctx = getAudioContext();

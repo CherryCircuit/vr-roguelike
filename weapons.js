@@ -328,55 +328,57 @@ export const ALT_WEAPONS = {
 };
 
 // ── UPGRADE SYSTEM ───────────────────────────────────────────
+// NOTE: every def carries a `category` (damage|speed|crit|status|utility)
+// used by the Alchemy Bench's Targeted Infusion forge (Issue #185).
 export const UPGRADE_POOL = [
   // Universal upgrades (apply to ALL main weapons)
-  { id: 'scope', name: 'Scope', desc: 'Damage +10 per stack', color: '#00ff44', type: 'universal' },
-  { id: 'barrel', name: 'Barrel', desc: 'Fire rate +15%', color: '#ffaa00', type: 'universal' },
-  { id: 'piercing', name: 'Piercing', desc: 'Shots pass through enemies', color: '#00ffaa', type: 'universal' },
-  { id: 'critical', name: 'Critical', desc: '+15% chance for 2x damage', color: '#ffff00', type: 'universal' },
-  { id: 'double_shot', name: 'Double Shot', desc: 'Fire an extra projectile', color: '#ff44ff', type: 'universal' },
-  { id: 'vampiric', name: 'Vampiric', desc: 'Heal half-heart every 5 kills', color: '#cc0044', type: 'universal' },
+  { id: 'scope', name: 'Scope', desc: 'Damage +10 per stack', color: '#00ff44', type: 'universal', category: 'damage' },
+  { id: 'barrel', name: 'Barrel', desc: 'Fire rate +15%', color: '#ffaa00', type: 'universal', category: 'speed' },
+  { id: 'piercing', name: 'Piercing', desc: 'Shots pass through enemies', color: '#00ffaa', type: 'universal', category: 'utility' },
+  { id: 'critical', name: 'Critical', desc: '+15% chance for 2x damage', color: '#ffff00', type: 'universal', category: 'crit' },
+  { id: 'double_shot', name: 'Double Shot', desc: 'Fire an extra projectile', color: '#ff44ff', type: 'universal', category: 'damage' },
+  { id: 'vampiric', name: 'Vampiric', desc: 'Heal half-heart every 5 kills', color: '#cc0044', type: 'universal', category: 'utility' },
   
   // Status effect upgrades (universal)
-  { id: 'shock', name: 'Shock', desc: 'Electrocutes: slows + shock DoT', color: '#4488ff', type: 'universal' },
-  { id: 'fire', name: 'Fire', desc: 'Ignites: weakens + fire DoT', color: '#ff4400', type: 'universal' },
-  { id: 'freeze', name: 'Freeze', desc: 'Greatly slows enemies', color: '#88ccff', type: 'universal' },
-  { id: 'ricochet', name: 'Ricochet', desc: 'Shots bounce to nearby enemy', color: '#aaffaa', type: 'universal' },
+  { id: 'shock', name: 'Shock', desc: 'Electrocutes: slows + shock DoT', color: '#4488ff', type: 'universal', category: 'status' },
+  { id: 'fire', name: 'Fire', desc: 'Ignites: weakens + fire DoT', color: '#ff4400', type: 'universal', category: 'status' },
+  { id: 'freeze', name: 'Freeze', desc: 'Greatly slows enemies', color: '#88ccff', type: 'universal', category: 'status' },
+  { id: 'ricochet', name: 'Ricochet', desc: 'Shots bounce to nearby enemy', color: '#aaffaa', type: 'universal', category: 'status' },
 
   // Buckshot specific upgrades
-  { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot' },
-  { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot' },
-  { id: 'duck_hunt', name: 'Duck Hunt', desc: 'Buckshot: Critical hits stun', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot' },
+  { id: 'focused_frenzy', name: 'Focused Frenzy', desc: 'Buckshot: Tighter spread + faster fire', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot', category: 'speed' },
+  { id: 'buckshot_gentlemen', name: 'Buckshot Gentlemen', desc: 'Buckshot: +4 pellets', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot', category: 'damage' },
+  { id: 'duck_hunt', name: 'Duck Hunt', desc: 'Buckshot: Critical hits stun', color: '#ff8800', type: 'weapon_specific', weapon: 'buckshot', category: 'crit' },
   
   // Lightning Rod specific upgrades
-  { id: 'its_electric', name: 'It\'s Electric!', desc: 'Lightning Rod: Chains to +2 enemies', color: '#ff00ff', type: 'weapon_specific', weapon: 'lightning_rod' },
-  { id: 'tesla_coil', name: 'Tesla Coil', desc: 'Lightning Rod: +50% damage, +20% range', color: '#ff00ff', type: 'weapon_specific', weapon: 'lightning_rod' },
+  { id: 'its_electric', name: 'It\'s Electric!', desc: 'Lightning Rod: Chains to +2 enemies', color: '#ff00ff', type: 'weapon_specific', weapon: 'lightning_rod', category: 'damage' },
+  { id: 'tesla_coil', name: 'Tesla Coil', desc: 'Lightning Rod: +50% damage, +20% range', color: '#ff00ff', type: 'weapon_specific', weapon: 'lightning_rod', category: 'damage' },
   
   // Charge Cannon specific upgrades
-  { id: 'quick_charge', name: 'Ain\'t Nobody Got Time For That', desc: 'Charge Cannon: 2x charge speed', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
-  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Full charge kills cause AoE explosion + fire DoT', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
-  { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon' },
+  { id: 'quick_charge', name: 'Ain\'t Nobody Got Time For That', desc: 'Charge Cannon: 2x charge speed', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon', category: 'speed' },
+  { id: 'excess_heat', name: 'Excess Heat', desc: 'Charge Cannon: Full charge kills cause AoE explosion + fire DoT', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon', category: 'status' },
+  { id: 'death_ray', name: 'Death Ray', desc: 'Charge Cannon: +100% max charge damage', color: '#ff4444', type: 'weapon_specific', weapon: 'charge_cannon', category: 'damage' },
   
   // Plasma Carbine specific upgrades
-  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: 40% faster wind-up, higher max damage', color: '#00ffff', type: 'weapon_specific', weapon: 'plasma_carbine' },
+  { id: 'hold_together', name: 'Hold It Together', desc: 'Plasma Carbine: 40% faster wind-up, higher max damage', color: '#00ffff', type: 'weapon_specific', weapon: 'plasma_carbine', category: 'speed' },
   
   // Seeker Burst specific upgrades
-  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff', type: 'weapon_specific', weapon: 'seeker_burst' },
+  { id: 'gimme_more', name: 'Gimme Gimme More', desc: 'Seeker Burst: +2 homing shots per burst', color: '#aa88ff', type: 'weapon_specific', weapon: 'seeker_burst', category: 'damage' },
 
   // Nuke upgrade (universal — grants +1 nuke charge)
-  { id: 'extra_nuke', name: 'Extra Nuke', desc: '+1 nuke charge (alt-fire)', color: '#ffff44', type: 'universal' },
+  { id: 'extra_nuke', name: 'Extra Nuke', desc: '+1 nuke charge (alt-fire)', color: '#ffff44', type: 'universal', category: 'utility' },
 ];
 
 // Special upgrades (after boss victories)
 export const SPECIAL_UPGRADE_POOL = [
-  { id: 'mega_scope', name: 'Mega Scope', desc: 'Damage +25 per stack', color: '#00ff88', type: 'universal' },
-  { id: 'turbo_barrel', name: 'Turbo Barrel', desc: 'Fire rate +30%', color: '#ffcc00', type: 'universal' },
-  { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#ff66ff', type: 'universal' },
-  { id: 'super_crit', name: 'Super Crit', desc: '+25% chance for 3x damage', color: '#ffff88', type: 'universal' },
-  { id: 'life_steal', name: 'Life Steal', desc: 'Heal 1 HP every 3 kills', color: '#ff0044', type: 'universal' },
+  { id: 'mega_scope', name: 'Mega Scope', desc: 'Damage +25 per stack', color: '#00ff88', type: 'universal', category: 'damage' },
+  { id: 'turbo_barrel', name: 'Turbo Barrel', desc: 'Fire rate +30%', color: '#ffcc00', type: 'universal', category: 'speed' },
+  { id: 'triple_shot', name: 'Triple Shot', desc: 'Fire two extra projectiles', color: '#ff66ff', type: 'universal', category: 'damage' },
+  { id: 'super_crit', name: 'Super Crit', desc: '+25% chance for 3x damage', color: '#ffff88', type: 'universal', category: 'crit' },
+  { id: 'life_steal', name: 'Life Steal', desc: 'Heal 1 HP every 3 kills', color: '#ff0044', type: 'universal', category: 'utility' },
   // Removed chain_lightning - redundant with 'its_electric' (weapon-specific for lightning_rod)
-  { id: 'overcharge', name: 'Overcharge', desc: 'Piercing + 20% damage', color: '#00ffcc', type: 'universal' },
-  { id: 'mega_boom', name: 'Mega Boom', desc: 'Bigger AOE, +50% explosion dmg', color: '#ffaa00', type: 'universal' },
+  { id: 'overcharge', name: 'Overcharge', desc: 'Piercing + 20% damage', color: '#00ffcc', type: 'universal', category: 'damage' },
+  { id: 'mega_boom', name: 'Mega Boom', desc: 'Bigger AOE, +50% explosion dmg', color: '#ffaa00', type: 'universal', category: 'damage' },
 ];
 
 // ── HELPER FUNCTIONS ─────────────────────────────────────────
@@ -801,6 +803,108 @@ export function getUpgradePreview(weaponId, upgrades, upgradeDef, opts = {}) {
   };
 
   return { statLines, newSynergies, activeSynergies, dps: { before: dpsBefore, after: dpsAfter }, killsPerSec };
+}
+
+// ============================================================
+// ALCHEMY BENCH (Issue #185)
+// Pure rules for dissolving upgrades into Essence and forging
+// new ones. No DOM/three.js; game-state mutation lives in
+// main.js's alchemy handlers so these stay unit-testable.
+// ============================================================
+
+// Cost of every forge option (issue: 3 Essence)
+export const ALCHEMY_FORGE_COST = 3;
+
+// Targeted Infusion categories (issue: Damage / Speed / Crit / Status;
+// utility added so sustain upgrades have a home)
+export const ALCHEMY_CATEGORIES = {
+  damage: 'Damage',
+  speed: 'Speed',
+  crit: 'Crit',
+  status: 'Status',
+  utility: 'Utility',
+};
+
+/**
+ * Essence gained from dissolving ONE stack of an upgrade.
+ * Weapon-specific = 2; status effects are 1.5 per the issue table,
+ * rounded DOWN per dissolve → 1; standard universals = 1.
+ */
+export function getEssenceValue(upgradeDef) {
+  if (!upgradeDef) return 0;
+  if (upgradeDef.type === 'weapon_specific') return 2;
+  if (['shock', 'fire', 'freeze', 'ricochet'].includes(upgradeDef.id)) return 1; // 1.5 → 1
+  return 1;
+}
+
+/**
+ * List dissolvable upgrades for a hand's upgrade map.
+ * @param {Object} handUpgrades - game.upgrades.left / .right
+ * @returns {Array<{id, name, stacks, essencePerStack, color}>}
+ */
+export function getDissolvableUpgrades(handUpgrades) {
+  const out = [];
+  for (const [id, count] of Object.entries(handUpgrades || {})) {
+    if (count <= 0) continue;
+    const def = getUpgradeDef(id);
+    if (!def) continue;
+    out.push({
+      id,
+      name: def.name,
+      stacks: count,
+      essencePerStack: getEssenceValue(def),
+      color: def.color || '#00ffff',
+    });
+  }
+  return out;
+}
+
+/**
+ * Pick the upgrade a forge option would grant. PURE: caller passes the
+ * hand's main weapon id and owned upgrade map so tests can be explicit.
+ * @param {string} forgeType - mystery_brew|targeted_infusion|weapon_synthesis|desperate_measure
+ * @param {Object} opts - { mainWeaponId, owned, category }
+ * @returns {{upgrade: Object}|{refund: true}|null}
+ *   refund: weapon synthesis has no weapon-specific upgrades for the
+ *   main weapon — the issue grants 1 Essence back instead.
+ */
+export function getForgeUpgrade(forgeType, opts = {}) {
+  const mainWeaponId = opts.mainWeaponId || 'standard_blaster';
+  const owned = opts.owned || {};
+  switch (forgeType) {
+    case 'mystery_brew': {
+      // Random SPECIAL pool upgrade (normally boss-only), filtered to the
+      // main weapon's compatibility like getRandomSpecialUpgrades.
+      const pool = SPECIAL_UPGRADE_POOL.filter(u =>
+        u.type === 'universal' || (u.type === 'weapon_specific' && u.weapon === mainWeaponId)
+      );
+      if (pool.length === 0) return null;
+      return { upgrade: pool[Math.floor(Math.random() * pool.length)] };
+    }
+    case 'targeted_infusion': {
+      const pool = UPGRADE_POOL.filter(u => u.category === opts.category);
+      if (pool.length === 0) return null;
+      return { upgrade: pool[Math.floor(Math.random() * pool.length)] };
+    }
+    case 'weapon_synthesis': {
+      const pool = UPGRADE_POOL.filter(u => u.type === 'weapon_specific' && u.weapon === mainWeaponId);
+      if (pool.length === 0) return { refund: true };
+      return { upgrade: pool[Math.floor(Math.random() * pool.length)] };
+    }
+    case 'desperate_measure': {
+      // Random upgrade the hand does NOT already own (safety net vs dupes).
+      // Filtered to the main weapon's compatible pool — an upgrade for a
+      // DIFFERENT weapon would be dead weight, worse than 'underwhelming'.
+      const pool = UPGRADE_POOL.filter(u =>
+        !(owned[u.id] > 0) &&
+        (u.type === 'universal' || (u.type === 'weapon_specific' && u.weapon === mainWeaponId))
+      );
+      if (pool.length === 0) return null;
+      return { upgrade: pool[Math.floor(Math.random() * pool.length)] };
+    }
+    default:
+      return null;
+  }
 }
 
 // ============================================================

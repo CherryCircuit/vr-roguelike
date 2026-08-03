@@ -17,7 +17,7 @@ import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies } from './weapons.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
@@ -47,6 +47,8 @@ import {
   resumeAudioContext,
   // Reactive music layer (Issue #142) + threat spatial audio (Issue #184)
   startReactiveMusic, updateReactiveMusic, updateThreatAudio,
+  // Alchemy bench sounds (Issue #185)
+  playDissolveSound, playForgeSound,
 } from './audio.js';
 // Beam weapons module (Issue #196 Phase 1 extraction): charge cannon,
 // lightning rod beams/orbs, charge visuals, pending timer registry.
@@ -137,6 +139,10 @@ import {
   clearHudGeoCache,
   novemberFontFamily,
   layoutCache,
+  // Alchemy bench + post-select bar (Issue #185)
+  showPostUpgradeBar, showAlchemyBench, hideAlchemyBench, showAlchemyCategoryView,
+  isAlchemyBenchOpen, isPostSelectVisible,
+  getAlchemyBenchHit, getHoveredAlchemyAction,
 } from './hud.js';
 import {
   initWristHolograms, showWristHolograms, updateWristHolograms, hideAllWristHolograms
@@ -3311,6 +3317,19 @@ function handleDesktopUpgradeSelectClick() {
   if (!raycaster) return;
   raycaster._hudSourceKey = 'desktop';
 
+  // Issue #185: bench/post-bar priority, mirroring the VR trigger path
+  const benchHit = getAlchemyBenchHit(raycaster);
+  if (benchHit) {
+    handleAlchemyAction(benchHit);
+    return;
+  }
+  if (isAlchemyBenchOpen()) return;
+  if (isPostSelectVisible()) {
+    const hoveredAction = getHoveredAlchemyAction('desktop');
+    if (hoveredAction) handleAlchemyAction(hoveredAction);
+    return;
+  }
+
   // Desktop and VR should share the same "hovered card" fallback so local
   // playtesting catches the same interaction regressions players would feel in-headset.
   const result = getUpgradeCardHit(raycaster) || getHoveredUpgradeCardHit('desktop');
@@ -4098,6 +4117,11 @@ function showUpgradeScreen() {
   hideLevelComplete();
   resetHoloGlitch();
 
+  // Issue #185: Essence NEVER carries between levels ('use it or lose it')
+  // and the forge lock releases once per level.
+  game.alchemyEssence = 0;
+  game.alchemyForgedThisLevel = false;
+
   // Dismiss boss death overlay so upgrade cards are visible
   dismissBossDeathOverlay();
 
@@ -4222,14 +4246,14 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     _log(`[game] Selected MAIN weapon: ${upgrade.id} for ${targetHand} hand`);
     setMainWeapon(upgrade.id, targetHand);
     updateAllControllerSphereColors();
-    finalizeUpgradeSelection();
+    showPostUpgradeActions(targetHand);
     return;
   }
 
   if (upgrade?.type === 'alt') {
     _log(`[game] Selected ALT weapon: ${upgrade.id} for ${targetHand} hand`);
     setAltWeapon(upgrade.id, targetHand);
-    finalizeUpgradeSelection();
+    showPostUpgradeActions(targetHand);
     return;
   }
 
@@ -4240,7 +4264,138 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     _log(`[nuke] Extra nuke granted. Total: ${game.nukes}`);
   }
 
-  finalizeUpgradeSelection();
+  showPostUpgradeActions(targetHand);
+}
+
+// ── ALCHEMY BENCH (Issue #185) ─────────────────────────────
+// After a card pick the player lands on a post-select bar: CONTINUE advances
+// immediately (old behavior), ALCHEMY opens the bench where upgrades can be
+// dissolved into Essence and forged into new ones (once per level).
+
+// True when the player owns at least one upgrade stack on either hand
+// (the gate for offering the ALCHEMY button per the issue).
+function hasAnyUpgrades() {
+  return Object.keys(game.upgrades.left).length > 0 || Object.keys(game.upgrades.right).length > 0;
+}
+
+// Show the post-select bar after applying a card pick.
+function showPostUpgradeActions(hand) {
+  const targetHand = hand || pendingUpgradeHand || 'left';
+  showPostUpgradeBar(targetHand, hasAnyUpgrades());
+  playUpgradeSound();
+}
+
+// Single entry point for bench/post-bar action payloads from triggers.
+function handleAlchemyAction(action) {
+  if (!action || !action.type) return;
+
+  if (action.type === 'continue') {
+    // Leave the upgrade screen exactly as the old flow did
+    playMenuClick();
+    finalizeUpgradeSelection();
+    return;
+  }
+
+  if (action.type === 'alchemy') {
+    // Bench takes over the upgrade screen (cards stay behind, not selectable)
+    playMenuClick();
+    showAlchemyBench(action.hand);
+    return;
+  }
+
+  if (action.type === 'back') {
+    // Close the bench back to the post-select bar (category view or main)
+    playMenuClick();
+    hideAlchemyBench();
+    showPostUpgradeBar(alchemyPendingHand(), hasAnyUpgrades());
+    return;
+  }
+
+  if (action.type === 'dissolve') {
+    handleAlchemyDissolve(action.hand, action.upgradeId);
+    return;
+  }
+
+  if (action.type === 'forge') {
+    handleAlchemyForge(action.forgeType, action.category);
+    return;
+  }
+
+  // Targeted Infusion category picker is a sub-view of the bench
+  if (action.type === 'targeted') {
+    playMenuClick();
+    showAlchemyCategoryView();
+  }
+}
+
+// Track which hand the bench forges into / dissolves around (the hand that
+// received this level's upgrade screen).
+function alchemyPendingHand() {
+  return pendingUpgradeHand || 'left';
+}
+
+// Dissolve one stack of an upgrade into Essence. IRREVERSIBLE.
+function handleAlchemyDissolve(hand, upgradeId) {
+  const def = getUpgradeDef(upgradeId);
+  if (!def) { playErrorSound(); return; }
+  const map = game.upgrades[hand];
+  if (!map || !(map[upgradeId] > 0)) { playErrorSound(); return; }
+
+  map[upgradeId]--;
+  if (map[upgradeId] <= 0) delete map[upgradeId];
+  game.alchemyEssence += getEssenceValue(def);
+  _log(`[alchemy] Dissolved ${upgradeId} (${hand}) → essence ${game.alchemyEssence}`);
+
+  // Dissolving elemental upgrades can DEACTIVATE synergies (e.g. dropping
+  // freeze kills thermal_shock) — recompute the snapshot immediately.
+  recomputeSynergies();
+  playDissolveSound();
+  showAlchemyBench(alchemyPendingHand());
+}
+
+// Forge a new upgrade with 3 Essence. Once per level, per the issue.
+function handleAlchemyForge(forgeType, category) {
+  if (game.alchemyEssence < ALCHEMY_FORGE_COST) { playErrorSound(); return; }
+  if (game.alchemyForgedThisLevel) { playErrorSound(); return; }
+
+  const hand = alchemyPendingHand();
+  const result = getForgeUpgrade(forgeType, {
+    mainWeaponId: game.mainWeapon[hand] || 'standard_blaster',
+    owned: game.upgrades[hand] || {},
+    category,
+  });
+
+  // Weapon Synthesis safety net: no weapon-specific upgrades for this main
+  // weapon → refund 1 Essence (spend 3, get 1 back — issue's 'not profitable').
+  // The forge attempt still counts toward the once-per-level lock so the
+  // bench can't become an infinite reroll machine.
+  if (!result) { playErrorSound(); return; }
+  if (result.refund) {
+    game.alchemyEssence -= (ALCHEMY_FORGE_COST - 1);
+    game.alchemyForgedThisLevel = true;
+    showFloatingMessage('WEAPON SYNTHESIS: NO OPTIONS — 1 ESSENCE REFUNDED', {
+      duration: 2200, color: '#ff8844', size: 0.6,
+    });
+    playErrorSound();
+    showAlchemyBench(hand);
+    return;
+  }
+
+  game.alchemyEssence -= ALCHEMY_FORGE_COST;
+  game.alchemyForgedThisLevel = true;
+  addUpgrade(result.upgrade.id, hand);
+  recomputeSynergies();
+  showFloatingMessage(`FORGED: ${result.upgrade.name}!`, {
+    duration: 2400, color: '#ffdd00', size: 0.7,
+  });
+  _log(`[alchemy] Forged ${result.upgrade.id} (${forgeType}) for ${hand}`);
+  playForgeSound();
+  showAlchemyBench(hand);
+}
+
+// Swap the bench to the Targeted Infusion category picker.
+function showAlchemyBenchCategoryView() {
+  showAlchemyCategoryView();
 }
 
 // [CORE] Advance to next level after upgrade selection
@@ -4888,6 +5043,26 @@ function selectUpgrade(controller, index = -1) {
   _uiSelectDir.set(0, 0, -1).applyQuaternion(_uiSelectQuat);
   _uiRaycaster.set(_uiSelectOrigin, _uiSelectDir, 0, 10);
   const hoverSourceKey = index >= 0 ? `controller-${index}` : 'controller';
+
+  // Issue #185: the alchemy bench and post-select bar take priority over the
+  // cards. While the bench is open, cards are NOT selectable (they sit behind
+  // the bench panel) — the player must explicitly hit a bench button.
+  const benchHit = getAlchemyBenchHit(_uiRaycaster);
+  if (benchHit) {
+    if (index >= 0) upgradeTriggerLatched[index] = true;
+    handleAlchemyAction(benchHit);
+    return;
+  }
+  if (isAlchemyBenchOpen()) return; // bench covers the cards — no card picks
+
+  if (isPostSelectVisible()) {
+    const hoveredAction = getHoveredAlchemyAction(hoverSourceKey);
+    if (hoveredAction) {
+      if (index >= 0) upgradeTriggerLatched[index] = true;
+      handleAlchemyAction(hoveredAction);
+    }
+    return; // post-select: the picked card cannot be re-selected
+  }
 
   // Fix for the post-optimization regression: use the exact hovered card as a
   // fallback so trigger selection matches the card this controller is seeing.

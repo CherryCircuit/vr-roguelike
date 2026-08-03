@@ -80,10 +80,16 @@ async function runTest() {
   }, cardName);
 
   const hoverCard = async (cardName) => {
-    const ok = await aimCameraAt(cardName);
-    if (!ok) return false;
-    await sleep(500); // hover pass (30Hz throttle) + panel build
-    return true;
+    // Retry once: if the aim lands mid card-warp the card can move before
+    // the hover ray fires, leaving the ray aimed at empty space.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const ok = await aimCameraAt(cardName);
+      if (!ok) return false;
+      await sleep(500); // hover pass (30Hz throttle) + panel build
+      const hover = await getHoverState();
+      if (hover && Object.keys(hover).length > 0) return true;
+    }
+    return false;
   };
 
   const isUpgradeSelect = () => page.evaluate(() =>
@@ -178,12 +184,32 @@ async function runTest() {
   const panelHiddenOnSkip = texts === null;
   console.log(`  Panel hidden on SKIP hover: ${panelHiddenOnSkip ? '✅' : '❌'}`);
 
-  // Select first offered main weapon → advance
+  // Select first offered main weapon → post-select bar → CONTINUE → advance
   await page.evaluate(() => window.__test.progression.selectUpgradeByIndex(0));
+  await sleep(500);
+  const postBar = await page.evaluate(async () => {
+    const THREE = await import('three');
+    const scene = window.__test?.getScene?.();
+    const camera = window.__test?.getCamera?.();
+    const btn = scene?.getObjectByName('alchemy-btn-continue');
+    if (!btn || !camera) return 'missing';
+    camera.updateMatrixWorld(true);
+    const camPos = camera.position.clone();
+    const target = new THREE.Vector3();
+    btn.getWorldPosition(target);
+    const dir = new THREE.Vector3().subVectors(target, camPos);
+    if (dir.lengthSq() === 0) return 'nulldir';
+    dir.normalize();
+    camera.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), dir);
+    camera.rotation.setFromQuaternion(camera.quaternion);
+    return 'aimed';
+  });
+  await sleep(300);
+  await page.mouse.click(640, 400); // CONTINUE on the post-select bar
   await sleep(1500);
   const afterPick = await page.evaluate(() => ({ state: window.game.state, level: window.game.level }));
   const UPGRADE_SELECT = await page.evaluate(() => window.State?.UPGRADE_SELECT || 'upgrade_select');
-  console.log(`  After pick: state=${afterPick.state} level=${afterPick.level}`);
+  console.log(`  Post-select bar: ${postBar} — After CONTINUE: state=${afterPick.state} level=${afterPick.level}`);
   const pickedOk = afterPick.level === 2 && afterPick.state !== UPGRADE_SELECT;
   texts = await getPanelTexts();
   console.log(`  Advanced to level 2: ${pickedOk ? '✅' : '❌'}, panel gone: ${texts === null ? '✅' : '❌'}`);

@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, LEVELS } from './game.js';
 import { playMenuHoverSound, playMenuClick, playBasicEnemySpawn, playUpgradePreviewSound } from './audio.js';
-import { getUpgradePreview, SYNERGY_DEFS } from './weapons.js';
+import { getUpgradePreview, SYNERGY_DEFS, getDissolvableUpgrades, ALCHEMY_CATEGORIES, ALCHEMY_FORGE_COST } from './weapons.js';
 import {
   TextPopupPool, initDamageNumbers, disposePools,
   spawnDamageNumber, spawnCritIndicator, updateDamageNumbers,
@@ -220,6 +220,15 @@ let upgradeChoices = [];
 // (and per-frame hover passes) never rebuild textures.
 let previewPanel = null;
 let previewPanelKey = null;
+
+// Alchemy Bench + post-select bar (Issue #185) — child groups of upgradeGroup.
+// After a card is picked the post-select bar offers CONTINUE / ALCHEMY; the
+// bench REPLACES the card row while open (dissolve chips + forge options).
+let postSelectGroup = null;
+let alchemyBenchGroup = null;
+let alchemyBenchOpen = false;
+let alchemyCategoryView = false;
+let alchemyBenchHand = 'left';
 
 // Cached cooldown sprite reference (avoids getObjectByName traversal every frame)
 let _cooldownSprite = null;
@@ -2340,6 +2349,12 @@ export function hideUpgradeCards() {
   // cached key never shows a stale panel after the screen is re-opened.
   previewPanel = null;
   previewPanelKey = null;
+  // Alchemy bench + post-select bar share the upgrade group; reset their
+  // state so the next level's upgrade screen starts clean.
+  postSelectGroup = null;
+  alchemyBenchGroup = null;
+  alchemyBenchOpen = false;
+  alchemyCategoryView = false;
 }
 
 export function updateUpgradeCards(now, cooldownRemaining) {
@@ -2555,6 +2570,340 @@ function updateUpgradePreview(hoveredSelections) {
   if (previewPanelKey === key) return; // cache hit — already showing this card
   previewPanelKey = key;
   buildUpgradePreviewPanel(upgrade, hand);
+}
+
+// ── Alchemy Bench + Post-Select Bar (Issue #185) ────────────
+// Bench content is rebuilt on each dissolve/forge (rare one-shot events,
+// never per-frame). All action payloads ride userData.alchemyAction so the
+// unified hover/trigger system needs no special cases beyond registration.
+
+// Build a single tappable alchemy button: group → face mesh (hover target),
+// border, label. Hover scaling targets the button group via the generic
+// updateHUDHover parent-Group rule.
+function makeAlchemyButton(parent, label, action, x, y, opts = {}) {
+  const w = opts.w || 1.6;
+  const h = opts.h || 0.3;
+  const color = opts.color ?? 0x00ff88;
+  const group = new THREE.Group();
+  group.name = opts.name || 'alchemy-btn';
+  group.position.set(x, y, 0.02);
+  parent.add(group);
+
+  const faceGeo = new THREE.PlaneGeometry(w, h);
+  const faceMat = new THREE.MeshBasicMaterial({
+    color: 0x111133, transparent: true, opacity: 0.92,
+    side: THREE.DoubleSide, depthWrite: false, depthTest: true,
+  });
+  const face = new THREE.Mesh(faceGeo, faceMat);
+  face.renderOrder = 1;
+  face.userData.alchemyAction = action;
+  face.userData.borderColor = color;
+  face.userData.alchemyDisabled = !!opts.disabled;
+  group.add(face);
+
+  const border = new THREE.LineSegments(
+    new THREE.EdgesGeometry(faceGeo),
+    new THREE.LineBasicMaterial({ color })
+  );
+  group.add(border);
+
+  const sprite = makeSprite(label, {
+    fontSize: opts.fontSize || 26,
+    color: opts.disabled ? '#555566' : (opts.textColor || '#ffffff'),
+    scale: opts.textScale || 0.22,
+    maxWidth: opts.maxWidth || 700,
+    depthTest: true,
+    forceArial: true,
+  });
+  sprite.userData.text = label;
+  sprite.position.set(0, 0, 0.02);
+  group.add(sprite);
+
+  return group;
+}
+
+// Read the bench/bar layout entries (layouts/upgrade-cards.json alchemy*),
+// falling back to tuned defaults when the editor hasn't overridden them.
+function getAlchemyLayout() {
+  const el = layoutCache['upgrade-cards']?.elements || {};
+  const r = (key, def) => (el[key] ? { ...def, ...el[key] } : def);
+  return {
+    bar: r('alchemyBar', { x: 0, y: -1.78, z: 0.05, w: 2.7, h: 1.15 }),
+    bench: r('alchemyBench', { x: 0, y: 0.05, z: 0.08, w: 3.4, h: 2.2 }),
+    headerY: r('alchemyHeader', { y: 0.8, z: 0.02, fontSize: 40, scale: 0.3 }).y,
+    essenceY: r('alchemyEssence', { y: 0.8, z: 0.02, fontSize: 30, scale: 0.26 }).y,
+  };
+}
+
+/**
+ * Post-select bar: shown after the player picks a card. CONTINUE advances;
+ * ALCHEMY opens the bench (only when the player owns ≥1 upgrade anywhere).
+ */
+export function showPostUpgradeBar(hand, canAlchemy) {
+  disposePostUpgradeBar();
+  const L = getAlchemyLayout();
+  const group = new THREE.Group();
+  group.name = 'post-select-bar';
+  group.position.set(L.bar.x, L.bar.y, L.bar.z);
+  upgradeGroup.add(group);
+  postSelectGroup = group;
+  alchemyBenchHand = hand || 'left';
+
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(L.bar.w, L.bar.h),
+    new THREE.MeshBasicMaterial({ color: 0x110033, transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+  );
+  bg.renderOrder = 1;
+  group.add(bg);
+  group.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(bg.geometry),
+    new THREE.LineBasicMaterial({ color: 0xaa88ff })
+  ));
+
+  const title = makeSprite('UPGRADE APPLIED — WHAT NEXT?', {
+    fontSize: 30, color: '#ffffff', scale: 0.24, maxWidth: 800, depthTest: true, forceArial: true,
+  });
+  title.userData.text = 'UPGRADE APPLIED — WHAT NEXT?';
+  title.position.set(0, 0.3, 0.02);
+  group.add(title);
+
+  // CONTINUE (green) — advances to the next level
+  makeAlchemyButton(group, 'CONTINUE →', { type: 'continue' }, -0.5, -0.12, {
+    w: 1.5, h: 0.3, color: 0x00ff88, name: 'alchemy-btn-continue',
+  });
+  // ALCHEMY (amber) — only offered when there is something to dissolve
+  if (canAlchemy) {
+    makeAlchemyButton(group, '⚗ ALCHEMY', { type: 'alchemy' }, 1.05, -0.12, {
+      w: 1.5, h: 0.3, color: 0xffaa00, name: 'alchemy-btn-alchemy',
+    });
+  }
+}
+
+export function disposePostUpgradeBar() {
+  if (postSelectGroup) {
+    disposeGroupChildren(postSelectGroup);
+    if (postSelectGroup.parent) postSelectGroup.parent.remove(postSelectGroup);
+    postSelectGroup = null;
+  }
+}
+
+export function isPostSelectVisible() {
+  return !!postSelectGroup && postSelectGroup.visible;
+}
+
+/** Open (or refresh) the alchemy bench — full rebuild, rare event. */
+export function showAlchemyBench(hand) {
+  disposePostUpgradeBar();
+  alchemyBenchOpen = true;
+  // A fresh open always returns to the MAIN bench view (a forge from the
+  // category picker must land back on the forge list, not the picker).
+  alchemyCategoryView = false;
+  if (hand) alchemyBenchHand = hand;
+  rebuildAlchemyBench();
+}
+
+export function hideAlchemyBench() {
+  alchemyBenchOpen = false;
+  alchemyCategoryView = false;
+  if (alchemyBenchGroup) {
+    disposeGroupChildren(alchemyBenchGroup);
+    if (alchemyBenchGroup.parent) alchemyBenchGroup.parent.remove(alchemyBenchGroup);
+    alchemyBenchGroup = null;
+  }
+}
+
+/** Swap the open bench to the Targeted Infusion category picker. */
+export function showAlchemyCategoryView() {
+  alchemyCategoryView = true;
+  rebuildAlchemyBench();
+}
+
+export function isAlchemyBenchOpen() {
+  return alchemyBenchOpen;
+}
+
+// Rebuild the bench group from current game state (essence, forge lock,
+// dissolvable chips). Called on open and after every dissolve/forge.
+function rebuildAlchemyBench() {
+  if (alchemyBenchGroup) {
+    disposeGroupChildren(alchemyBenchGroup);
+    if (alchemyBenchGroup.parent) alchemyBenchGroup.parent.remove(alchemyBenchGroup);
+    alchemyBenchGroup = null;
+  }
+
+  const L = getAlchemyLayout();
+  const group = new THREE.Group();
+  group.name = 'alchemy-bench';
+  group.position.set(L.bench.x, L.bench.y, L.bench.z);
+  upgradeGroup.add(group);
+  alchemyBenchGroup = group;
+
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(L.bench.w, L.bench.h),
+    new THREE.MeshBasicMaterial({ color: 0x0f1026, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+  );
+  bg.renderOrder = 1;
+  group.add(bg);
+  group.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(bg.geometry),
+    new THREE.LineBasicMaterial({ color: 0xffaa00 })
+  ));
+
+  const header = makeSprite('ALCHEMY BENCH', {
+    fontSize: 34, color: '#ffaa00', glow: true, glowColor: '#ffaa00',
+    scale: 0.26, maxWidth: 700, depthTest: true,
+  });
+  header.userData.text = 'ALCHEMY BENCH';
+  header.position.set(-1.25, L.headerY, 0.02);
+  group.add(header);
+
+  const essence = game.alchemyEssence || 0;
+  const forged = game.alchemyForgedThisLevel;
+  const essenceText = `ESSENCE: ${essence}/${ALCHEMY_FORGE_COST}${forged ? ' · FORGED' : ''}`;
+  const essenceSprite = makeSprite(essenceText, {
+    fontSize: 30, color: essence >= ALCHEMY_FORGE_COST ? '#ffdd00' : '#8888aa',
+    scale: 0.24, maxWidth: 520, depthTest: true, forceArial: true,
+  });
+  essenceSprite.userData.text = essenceText;
+  essenceSprite.position.set(1.3, L.essenceY, 0.02);
+  group.add(essenceSprite);
+
+  if (alchemyCategoryView) {
+    // ── Targeted Infusion: category picker ──
+    // Two columns so the BACK button at bottom-center keeps a clear line of
+    // sight — a vertically-stacked single column would bury it under the
+    // last chip for camera rays coming from above.
+    const title = makeSprite('TARGETED INFUSION — PICK A CATEGORY', {
+      fontSize: 30, color: '#ffffff', scale: 0.24, maxWidth: 1000, depthTest: true, forceArial: true,
+    });
+    title.userData.text = 'TARGETED INFUSION — PICK A CATEGORY';
+    title.position.set(0, 0.42, 0.02);
+    group.add(title);
+    const cats = Object.keys(ALCHEMY_CATEGORIES);
+    const colOffsets = [-0.75, 0.75]; // 3 in the left column, 2 in the right
+    cats.forEach((cat, i) => {
+      const col = i < 3 ? 0 : 1;
+      const row = i < 3 ? i : i - 3;
+      const y = 0.14 - row * 0.26;
+      makeAlchemyButton(group, `${ALCHEMY_CATEGORIES[cat]}`, {
+        type: 'forge', forgeType: 'targeted_infusion', category: cat,
+      }, colOffsets[col], y, { w: 1.4, h: 0.26, color: 0x88ccff, textColor: '#ffffff', textScale: 0.21, name: `alchemy-btn-cat-${cat}` });
+    });
+    makeAlchemyButton(group, '← BACK', { type: 'back' }, 0, -0.86, {
+      w: 1.2, h: 0.26, color: 0xff4444, name: 'alchemy-btn-back',
+    });
+    return;
+  }
+
+  // ── Main bench: dissolve chips (both hands) + forge options ──
+  const leftTitle = makeSprite('DISSOLVE', {
+    fontSize: 28, color: '#00ffff', scale: 0.24, maxWidth: 600, depthTest: true, forceArial: true,
+  });
+  leftTitle.userData.text = 'DISSOLVE';
+  leftTitle.position.set(-1.3, 0.42, 0.02);
+  group.add(leftTitle);
+
+  // Chips: LEFT hand upgrades then RIGHT hand upgrades (issue: dissolve from either hand)
+  let chipY = 0.14;
+  const chipRows = [];
+  for (const hand of ['left', 'right']) {
+    const upgrades = getDissolvableUpgrades(game.upgrades[hand]);
+    const distinctCount = upgrades.length;
+    upgrades.forEach((upg, idx) => {
+      const isLastOnHand = distinctCount === 1 && upg.stacks === 1;
+      const label = `${hand.toUpperCase()} · ${upg.name} x${upg.stacks} (+${upg.essencePerStack})${isLastOnHand ? ' ⚠' : ''}`;
+      const chipColor = typeof upg.color === 'string' ? parseInt(upg.color.replace('#', ''), 16) : 0x00ffff;
+      chipRows.push({ hand, upgradeId: upg.id, label, color: chipColor, warn: isLastOnHand });
+    });
+  }
+  for (const row of chipRows.slice(0, 6)) {
+    const label = row.label + (row.warn ? ' LEAVES HAND BARE' : '');
+    makeAlchemyButton(group, label, { type: 'dissolve', hand: row.hand, upgradeId: row.upgradeId },
+      -1.3, chipY, { w: 1.9, h: 0.26, color: row.color, textColor: row.warn ? '#ff8888' : '#ffffff', textScale: 0.2, maxWidth: 800, name: `alchemy-btn-dissolve-${row.hand}-${row.upgradeId}` });
+    chipY -= 0.26;
+  }
+  if (chipRows.length === 0) {
+    const none = makeSprite('NO UPGRADES TO DISSOLVE', {
+      fontSize: 24, color: '#555566', scale: 0.2, maxWidth: 700, depthTest: true, forceArial: true,
+    });
+    none.userData.text = 'NO UPGRADES TO DISSOLVE';
+    none.position.set(-1.3, 0.14, 0.02);
+    group.add(none);
+  }
+
+  const forgeTitle = makeSprite('FORGE — 3 ESSENCE', {
+    fontSize: 28, color: '#ffdd00', scale: 0.24, maxWidth: 700, depthTest: true, forceArial: true,
+  });
+  forgeTitle.userData.text = 'FORGE — 3 ESSENCE';
+  forgeTitle.position.set(1.3, 0.42, 0.02);
+  group.add(forgeTitle);
+
+  const canForge = essence >= ALCHEMY_FORGE_COST && !forged;
+  const forgeOpts = [
+    { label: 'MYSTERY BREW', forgeType: 'mystery_brew', color: 0xff66ff },
+    { label: 'TARGETED INFUSION', action: { type: 'targeted' }, color: 0x88ccff },
+    { label: 'WEAPON SYNTHESIS', forgeType: 'weapon_synthesis', color: 0x00ffaa },
+    { label: 'DESPERATE MEASURE', forgeType: 'desperate_measure', color: 0xff8844 },
+  ];
+  let forgeY = 0.14;
+  for (const opt of forgeOpts) {
+    const label = forged ? `${opt.label} (USED)` : opt.label;
+    // Targeted Infusion opens the category picker instead of forging directly
+    const action = opt.action || { type: 'forge', forgeType: opt.forgeType };
+    makeAlchemyButton(group, label, action,
+      1.3, forgeY, { w: 1.9, h: 0.26, color: opt.color, textColor: canForge ? '#ffffff' : '#555566', textScale: 0.2, maxWidth: 800, disabled: !canForge, name: `alchemy-btn-forge-${opt.forgeType || 'targeted_infusion'}` });
+    forgeY -= 0.26;
+  }
+
+  // Warning line when the forge is locked
+  if (!canForge) {
+    const warnText = forged ? 'FORGING USED — 1 PER LEVEL' : 'NEED 3 ESSENCE — DISSOLVE TO EARN';
+    const warn = makeSprite(warnText, {
+      fontSize: 22, color: '#ff8844', scale: 0.19, maxWidth: 700, depthTest: true, forceArial: true,
+    });
+    warn.userData.text = warnText;
+    warn.position.set(1.3, -0.92, 0.02);
+    group.add(warn);
+  }
+
+  makeAlchemyButton(group, '← BACK', { type: 'back' }, 0, -0.92, {
+    w: 1.2, h: 0.26, color: 0xff4444, name: 'alchemy-btn-back',
+  });
+}
+
+/**
+ * Raycast the bench/post-select buttons. Returns the action payload or null.
+ * Disabled buttons are excluded so a locked forge option never fires.
+ */
+export function getAlchemyBenchHit(raycaster) {
+  if (!raycaster) return null;
+  const targets = [];
+  if (alchemyBenchGroup && alchemyBenchGroup.visible) {
+    alchemyBenchGroup.traverse(c => {
+      if (c.userData && c.userData.alchemyAction && !c.userData.alchemyDisabled) targets.push(c);
+    });
+  }
+  if (postSelectGroup && postSelectGroup.visible) {
+    postSelectGroup.traverse(c => {
+      if (c.userData && c.userData.alchemyAction && !c.userData.alchemyDisabled) targets.push(c);
+    });
+  }
+  if (targets.length === 0) return null;
+  const hits = raycaster.intersectObjects(targets, false);
+  for (const hit of hits) {
+    const action = hit.object.userData.alchemyAction;
+    if (action) return action;
+  }
+  return null;
+}
+
+/**
+ * Hover fallback for alchemy actions (same drift-safety as upgrade cards).
+ */
+export function getHoveredAlchemyAction(sourceKey) {
+  const hover = getHoveredAction(sourceKey);
+  if (!hover || hover.action !== 'alchemy') return null;
+  return hover.userData?.alchemyAction || null;
 }
 
 /**
@@ -4767,6 +5116,20 @@ export function updateHUDHover(raycasters) {
     });
   }
 
+  // 10. Alchemy bench + post-select bar (Issue #185)
+  // Disabled buttons (locked forge options) stay out of hoverables so they
+  // neither glow nor respond.
+  if (alchemyBenchGroup && alchemyBenchGroup.visible) {
+    alchemyBenchGroup.traverse(c => {
+      if (c.userData && c.userData.alchemyAction && !c.userData.alchemyDisabled) hoverables.push(c);
+    });
+  }
+  if (postSelectGroup && postSelectGroup.visible) {
+    postSelectGroup.traverse(c => {
+      if (c.userData && c.userData.alchemyAction && !c.userData.alchemyDisabled) hoverables.push(c);
+    });
+  }
+
   if (hoverables.length === 0) {
     upgradeGroup.userData.hoveredSelections = {};
     disposeUpgradePreviewPanel();
@@ -4798,7 +5161,8 @@ export function updateHUDHover(raycasters) {
                        (obj.userData.isTitleScoreboardBtn ? 'scoreboard' : null) ||
                        (obj.userData.isTitleSettingsBtn ? 'settings' : null) ||
                        (obj.userData.isTitleBestiaryBtn ? 'bestiary' : null) ||
-                       (obj.userData.isKeyboardKey ? obj.userData.keyValue : null);
+                       (obj.userData.isKeyboardKey ? obj.userData.keyValue : null) ||
+                       (obj.userData.alchemyAction ? 'alchemy' : null);
         if (action) {
           _hoveredActions[sourceKey] = { action, userData: obj.userData, object: obj };
         }

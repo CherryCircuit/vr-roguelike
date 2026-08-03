@@ -130,6 +130,12 @@ export const game = {
   // recomputed by main.js after every upgrade selection. Consumed by
   // enemies.js (elemental behaviors) and weapons.js (stat synergies).
   synergies: { left: [], right: [] },
+
+  // NEW: Alchemy Bench (Issue #185) — Essence earned by dissolving upgrades
+  // on the upgrade screen. Does NOT persist between levels (reset in
+  // showUpgradeScreen) and forging is limited to once per level.
+  alchemyEssence: 0,
+  alchemyForgedThisLevel: false,
   
   stateTimer: 0,
   spawnTimer: 0,
@@ -225,6 +231,10 @@ export function resetGame() {
 
     // Synergy Engine snapshot resets with the run
     synergies: { left: [], right: [] },
+
+    // Alchemy Bench state resets with the run
+    alchemyEssence: 0,
+    alchemyForgedThisLevel: false,
 
     // Biome chunk assignments
     biomeChunks: {},
