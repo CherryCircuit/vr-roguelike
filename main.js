@@ -140,6 +140,34 @@ const _log = DEBUG ? console.log.bind(console) : () => {};
 const _warn = DEBUG ? console.warn.bind(console) : () => {};
 
 // ============================================================
+// PENDING TIMER REGISTRY
+// Tracks setTimeout IDs so gameplay timers (e.g. charge-beam
+// triple-shot) can be cancelled on level transitions and game
+// reset. Fix for Issue #195/#204: stale timers firing into the
+// next level or during upgrade selection. Timers that only fire
+// when game.state === State.PLAYING are guarded, but explicit
+// cancellation closes the level-transition window completely.
+// ============================================================
+const pendingTimers = new Set();
+
+// Schedule a timeout that is tracked for cleanup.
+// Returns the timer ID (usable with clearTimeout).
+function scheduleTimeout(fn, ms) {
+  const id = setTimeout(() => {
+    pendingTimers.delete(id);
+    fn();
+  }, ms);
+  pendingTimers.add(id);
+  return id;
+}
+
+// Cancel every tracked timer. Called on level complete + game reset.
+function clearAllPendingTimers() {
+  for (const id of pendingTimers) clearTimeout(id);
+  pendingTimers.clear();
+}
+
+// ============================================================
 // MUZZLE FLASH EFFECT
 // Billboard sprite shown briefly on weapon fire.
 // Toggle with ENABLE_MUZZLE_FLASH.
@@ -7546,6 +7574,10 @@ function completeLevel() {
 
   game.state = State.LEVEL_COMPLETE;
 
+  // Cancel any pending combat timers (e.g. charge-beam triple-shot delay)
+  // so they can't fire during the upgrade screen or into the next level.
+  clearAllPendingTimers();
+
   // Force-clear lightning beams so they don't persist through upgrade screen
   clearAllLightningBeams();
   clearAllLightningOrbs();
@@ -7774,6 +7806,9 @@ function clearAllAltWeaponEffects() {
 // Register clearAllAltWeaponEffects as a resetGame() hook so voxels/effects
 // are properly cleared even on full game restart (not just level transitions).
 registerResetHook(clearAllAltWeaponEffects);
+
+// Cancel pending gameplay timers (triple-shot delay, etc.) on full game restart
+registerResetHook(clearAllPendingTimers);
 
 // Reset controller sphere colors to default (cyan left, pink right) on game reset
 registerResetHook(() => updateAllControllerSphereColors());
@@ -9993,19 +10028,25 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats, options = {}) {
   }
 
   // Triple shot: schedule a second beam 300ms later (only on initial fire, not on delayed shots)
+  // Timer is tracked in pendingTimers so it is cancelled on level complete / game reset
+  // (Issue #195/#204: stale timer used to fire into the next level).
   if ((game.upgrades[hand].triple_shot || 0) > 0 && !options._isDelayedShot) {
     const savedChargeTime = chargeTimeSec;
     const savedStats = { ...stats };
     const savedIndex = index;
     const savedController = controller;
-    setTimeout(() => {
+    scheduleTimeout(() => {
       // Guard: weapon still equipped, game still playing
       if (!game || game.state !== State.PLAYING) return;
       const currentHand = getHandForController(savedIndex);
       if (game.mainWeapon[currentHand] !== stats.mainWeaponId) return;
-      const ctrl = savedIndex < 2 ? controllers[savedIndex] : savedController;
-      if (ctrl) {
-        fireChargeBeam(ctrl, savedIndex, savedChargeTime, savedStats, { _isDelayedShot: true });
+      // Reuse the ORIGINAL controller the beam was fired from. On VR this is
+      // the same object as controllers[savedIndex]; on desktop it is the
+      // virtual controller — controllers[] are never positioned outside a VR
+      // session, so indexing them here fired the delayed beam from the wrong
+      // origin (Issue #195: stale/wrong controller on the delayed shot).
+      if (savedController) {
+        fireChargeBeam(savedController, savedIndex, savedChargeTime, savedStats, { _isDelayedShot: true });
       }
     }, 300);
   }
@@ -11683,7 +11724,12 @@ function render(timestamp) {
         } else {
           fireMainWeapon(controllers[i], i);
         }
-      } else {
+      } else if (renderer.xr.isPresenting) {
+        // VR-only trigger-release cleanup. The desktop fire path below has its
+        // own complete release/cleanup handling; without this isPresenting
+        // guard, chargeShotStartTime[] (and lightning/plasma state) was nulled
+        // every frame on desktop, so charge shots could never accumulate charge
+        // or fire on release (VR/desktop duplication divergence, see #164).
         // Trigger released - clean up charge state
         if (chargeShotStartTime[i] !== null) {
           stopChargeSound(i);
