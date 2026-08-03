@@ -495,7 +495,6 @@ const _hashScratchMineAoe = [];
 
 // Perf: module-level scratch objects for render-loop math — eliminates
 // per-frame `new THREE.Vector3()/Color()` allocations (GC pressure in VR)
-const _upAxisUnit = new THREE.Vector3(0, 1, 0);           // seeker 180° flip axis
 const _floorFlashColor = new THREE.Color(0xff0000);       // floor damage flash
 const _lowHealthWarningColor = new THREE.Color(0xaa0000); // low-health pulse
 const _envFadeMixColor = new THREE.Color(0x000000);       // environment fade mix
@@ -1495,6 +1494,7 @@ function init() {
     enemySpatialHash,
     basicMat,
     isXrPresenting: () => renderer.xr.isPresenting,
+    uiRaycaster: _uiRaycaster,
     hooks: {
       handleEnemyKilled,
       disposeMesh,

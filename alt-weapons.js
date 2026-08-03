@@ -14,7 +14,7 @@ import { game } from './game.js';
 import { getAltWeapon } from './weapons.js';
 import { getBoss, getEnemies, getEnemyByMesh, getEnemyMeshes, hitBoss, hitEnemy } from './enemies.js';
 import { clearAllChargeBeamVisuals, clearAllLightningOrbs, getHandForController } from './beam-weapons.js';
-import { initExplosionPool, resetDebrisGlow, spawnExplosionVisual, projectiles, explosionVisuals, explosionPool } from './projectile-system.js';
+import { initExplosionPool, resetDebrisGlow, spawnExplosionVisual, projectiles, explosionVisuals, explosionPool, _goldColor } from './projectile-system.js';
 import { activeVoxels } from './voxel-debris.js';
 import { playExplosionSound, playHitSound, playShoothSound } from './audio.js';
 import { spawnDamageNumber } from './damage-numbers.js';
@@ -50,7 +50,7 @@ let laserMineSpawnCooldown = 0;
 
 // Scratch objects moved from main.js with their alt-weapon systems (perf:
 // reused across frames — no per-frame allocation in the render loop)
-const _goldColor = new THREE.Color(0xffd700);             // nanite reveal/DoT tint
+// NOTE: _goldColor is imported from projectile-system.js (shared nanite tint)
 const _blackColor = new THREE.Color(0x000000);            // nanite un-reveal tint
 const _tetherDirection = new THREE.Vector3();             // tether line direction
 const _tetherToPlayer = new THREE.Vector3();              // tether yank direction

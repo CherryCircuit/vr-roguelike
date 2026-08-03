@@ -87,6 +87,9 @@ const _projMatrix = new THREE.Matrix4();
 const _projScale = new THREE.Vector3(1, 1, 1);
 const _projColor = new THREE.Color();
 const _hitStatsScratch = {};  // reused stats object for handleHit
+// Scratch vectors moved from main.js with their projectile systems
+const _upAxisUnit = new THREE.Vector3(0, 1, 0);           // seeker 180° flip axis
+export const _goldColor = new THREE.Color(0xffd700);      // nanite reveal/DoT tint
 
 // Debris glow plane pool (for boss projectile explosion bits)
 let _debrisGlowPool = null;       // InstancedMesh for billboarded orange glow
@@ -153,6 +156,7 @@ function registerPlayerProjectileMaterial(material) {
 let scene = null;
 let camera = null;
 let enemySpatialHash = null;
+let uiRaycaster = null; // shared raycast scratch (main.js upgrade-select + tank weak points)
 // WebXR presenting state (main.js's renderer) — used to skip desktop-only
 // camera jolts inside handleHit
 let isXrPresenting = () => false;
@@ -184,6 +188,7 @@ export function initProjectileSystem(deps) {
   enemySpatialHash = deps.enemySpatialHash || null;
   if (typeof deps.basicMat === 'function') basicMat = deps.basicMat;
   if (typeof deps.isXrPresenting === 'function') isXrPresenting = deps.isXrPresenting;
+  if (deps.uiRaycaster) uiRaycaster = deps.uiRaycaster;
   const h = deps.hooks || {};
   if (typeof h.handleEnemyKilled === 'function') handleEnemyKilled = h.handleEnemyKilled;
   if (typeof h.disposeMesh === 'function') disposeMesh = h.disposeMesh;
@@ -1691,11 +1696,11 @@ function updateProjectiles(dt) {
     }
 
     let preciseHit = null;
-    if (_projectileNearbyMeshes.length > 0) {
-      _uiRaycaster.set(_projectileSegmentStart, _projectileRayDir);
-      _uiRaycaster.near = 0;
-      _uiRaycaster.far = Math.max(moveDistance, 0.5) + 1.5;
-      const hits = _uiRaycaster.intersectObjects(_projectileNearbyMeshes, true);
+    if (_projectileNearbyMeshes.length > 0 && uiRaycaster) {
+      uiRaycaster.set(_projectileSegmentStart, _projectileRayDir);
+      uiRaycaster.near = 0;
+      uiRaycaster.far = Math.max(moveDistance, 0.5) + 1.5;
+      const hits = uiRaycaster.intersectObjects(_projectileNearbyMeshes, true);
       if (hits.length > 0) {
         preciseHit = hits[0];
       }
