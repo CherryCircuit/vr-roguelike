@@ -1,7 +1,7 @@
-// Boot the LIVE launcher (index.html — no window.__test/game globals) from the
-// simulated deployed set; assert zero console errors, zero failed requests,
-// and a canvas present after boot.
+// Boot the LIVE launcher and assert zero console errors / failed requests.
+// Usage: node tests/automation/deploy-sim-check.cjs <url>
 const puppeteer = require('puppeteer');
+const url = process.argv[2] || 'http://localhost:8015/index.html';
 (async () => {
   const errors = [];
   const failed = [];
@@ -18,10 +18,12 @@ const puppeteer = require('puppeteer');
   });
   page.on('pageerror', e => errors.push('PageError: ' + e.message));
   page.on('requestfailed', r => failed.push(r.url() + ' -> ' + (r.failure()?.errorText || '?')));
-  await page.goto('http://localhost:8015/index.html', { waitUntil: 'networkidle2', timeout: 20000 });
-  await new Promise(r => setTimeout(r, 4000));
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+  await new Promise(r => setTimeout(r, 5000));
   const canvas = await page.evaluate(() => !!document.querySelector('canvas'));
-  console.log('canvas:', canvas);
+  const version = await page.evaluate(() => document.body.innerText.match(/v[\d.]+/)?.[0] || 'n/a');
+  console.log('url:', url);
+  console.log('canvas:', canvas, '| version:', version);
   console.log('failed requests:', failed.length ? failed : 'none');
   console.log('console errors:', errors.length ? errors : 'none');
   await browser.close();
