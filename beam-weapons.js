@@ -8,7 +8,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { game, addScore, trackKill, getBossTier, registerAccuracyHit } from './game.js';
+import { game, State, addScore, trackKill, getBossTier, registerAccuracyHit } from './game.js';
 import { getWeaponStats } from './weapons.js';
 import {
   getEnemies, getBoss, hitBoss, hitEnemy, getEnemyByMesh, applyEffects,
@@ -29,7 +29,7 @@ import { startBossDeathCinematic } from './boss-death-cinematic.js';
 // with a shared collision/utility module.
 import {
   handleHit, spawnBossProjectileDestructionFX, triggerHostileProjectileExplosion,
-  projectiles, _hostileProjectilesInArray, explosionVisuals,
+  projectiles, _hostileProjectilesInArray, explosionVisuals, screenFx,
 } from './projectile-system.js';
 
 // [DEBUG] Mirrors main.js — console.log blocks the render thread on Quest
@@ -1177,15 +1177,15 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats, options = {}) {
         setKilledBy({ type: 'boss', name: boss.def?.name || 'Boss', enemyType: boss.def?.behavior || '' });
         triggerHitFlash(true);
         playDamageSound();
-        cameraShake = 0.3;
-        cameraShakeIntensity = 0.03;
-        originalCameraPos.copy(camera.position);
+        screenFx.cameraShake = 0.3;
+        screenFx.cameraShakeIntensity = 0.03;
+        screenFx.originalCameraPos.copy(camera.position);
 
         // Light screen shake on player damage
         triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
 
-        floorFlashing = true;
-        floorFlashTimer = 1.0;
+        screenFx.floorFlashing = true;
+        screenFx.floorFlashTimer = 1.0;
         if (dead) endGame(false);
         return;
       }

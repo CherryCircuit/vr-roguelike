@@ -59,6 +59,7 @@ const _tetherParticlePos = new THREE.Vector3();           // tether particle pos
 const _decoyTargetPos = new THREE.Vector3();              // decoy redirect target
 const _orbToEnemy = new THREE.Vector3();                  // plasma orb homing steer
 const _shieldPlayerPos = new THREE.Vector3();             // shield follow position
+const _evoV3a = new THREE.Vector3();                      // attack drone homing steer
 const _hashScratchAfterimages = [];
 const _hashScratchOrbHoming = [];
 const _hashScratchOrbCollision = [];

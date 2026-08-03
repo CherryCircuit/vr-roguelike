@@ -72,6 +72,7 @@ import {
   spawnExplosionVisual, isHostileProjectile, resolveDroppedShot,
   startAccuracyShot, spawnBossProjectileDestructionFX,
   triggerHostileProjectileExplosion, PROJECTILE_BOLT, MAX_PROJECTILES,
+  screenFx,
 } from './projectile-system.js';
 // Alt weapons module (Issue #196 Phase 3 extraction): 20 special weapons,
 // their pools and active arrays.
@@ -532,8 +533,7 @@ const _cinRedAlienGreen = new THREE.Color(0xff2200);
 const weaponCooldowns = [0, 0];
 
 // Big Boom: only one "exploding" shot per hand every 2.75s (ms)
-const BIG_BOOM_COOLDOWN_MS = 2750;
-const lastExplodingShotTime = [0, 0];
+// (state moved to projectile-system.js — exported live bindings)
 
 // Charge shot state (per controller): time when trigger was pressed (ms) or null
 const chargeShotStartTime = [null, null];
@@ -568,8 +568,7 @@ let levelFadeReady = false;
 let floorMaterial = null;
 let floorRef = null;
 let floorBaseColor = new THREE.Color(0x220044);
-let floorFlashTimer = 0;
-let floorFlashing = false;
+// floorFlashTimer/floorFlashing moved to projectile-system.js (screenFx object)
 
 // ============================================================
 // CRASH REPORTER
@@ -835,10 +834,8 @@ function handleEnemyKilled(enemyIndex, opts = {}) {
   return destroyData;
 }
 
-// Camera shake on damage
-let cameraShake = 0;
-let cameraShakeIntensity = 0;
-const originalCameraPos = new THREE.Vector3();
+// Camera shake on damage — state moved to projectile-system.js
+// (exported live bindings shared with beam-weapons.js)
 
 // Nuke flash overlay
 let nukeFlash = null;
@@ -1533,12 +1530,12 @@ function init() {
     setKilledBy({ type: 'enemy', name: 'Pulse Bomber', enemyType: 'pulse_bomber' });
     triggerHitFlash(true);
     playDamageSound();
-    cameraShake = 0.5;  // 0.5 second shake duration
-    cameraShakeIntensity = 0.05;  // shake magnitude
-    originalCameraPos.copy(camera.position);
+    screenFx.cameraShake = 0.5;  // 0.5 second shake duration
+    screenFx.cameraShakeIntensity = 0.05;  // shake magnitude
+    screenFx.originalCameraPos.copy(camera.position);
     triggerScreenShake(0.15, 500);
-    floorFlashing = true;
-    floorFlashTimer = 1.0;
+    screenFx.floorFlashing = true;
+    screenFx.floorFlashTimer = 1.0;
     window._timeScale = 1.0;
     window._wasCloseEnemy = false;
     timeScale = 1.0;
@@ -5555,16 +5552,16 @@ function render(timestamp) {
       playDamageSound();
 
       // Trigger camera shake
-      cameraShake = 0.5;  // 0.5 second shake duration
-      cameraShakeIntensity = 0.05;  // shake magnitude
-      originalCameraPos.copy(camera.position);
+      screenFx.cameraShake = 0.5;  // 0.5 second shake duration
+      screenFx.cameraShakeIntensity = 0.05;  // shake magnitude
+      screenFx.originalCameraPos.copy(camera.position);
 
       // Light screen shake on player damage
       triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
 
       // Trigger floor flash
-      floorFlashing = true;
-      floorFlashTimer = 1.0;
+      screenFx.floorFlashing = true;
+      screenFx.floorFlashTimer = 1.0;
 
       // Reset slow-mo state
       window._timeScale = 1.0;
@@ -5588,15 +5585,15 @@ function render(timestamp) {
         setKilledBy({ type: 'boss', name: boss.def?.name || 'Boss', enemyType: boss.def?.behavior || '' });
         triggerHitFlash(true);
         playDamageSound();
-        cameraShake = 0.6;
-        cameraShakeIntensity = 0.06;
-        originalCameraPos.copy(camera.position);
+        screenFx.cameraShake = 0.6;
+        screenFx.cameraShakeIntensity = 0.06;
+        screenFx.originalCameraPos.copy(camera.position);
 
         // Bigger shake for boss collision
         triggerScreenShake(0.3, 300); // 0.3 shake for 300ms
 
-        floorFlashing = true;
-        floorFlashTimer = 1.0;
+        screenFx.floorFlashing = true;
+        screenFx.floorFlashTimer = 1.0;
         // Reset slow-mo state
         window._timeScale = 1.0;
         window._wasCloseEnemy = false;
@@ -5620,8 +5617,8 @@ function render(timestamp) {
             triggerHitFlash(true);
             playDamageSound();
             triggerScreenShake(0.15, 200);
-            floorFlashing = true;
-            floorFlashTimer = 0.6;
+            screenFx.floorFlashing = true;
+            screenFx.floorFlashTimer = 0.6;
             if (dead) endGame(false);
           }
         }
@@ -5665,15 +5662,15 @@ function render(timestamp) {
       if (_boss && _boss.def && (_boss.def.behavior === 'skull' || _boss.def.behavior === 'minotaur' || _boss.def.behavior === 'prism')) {
         playSkullLaughSound();
       }
-      cameraShake = 0.4;
-      cameraShakeIntensity = 0.04;
-      originalCameraPos.copy(camera.position);
+      screenFx.cameraShake = 0.4;
+      screenFx.cameraShakeIntensity = 0.04;
+      screenFx.originalCameraPos.copy(camera.position);
 
       // Light screen shake on projectile damage
       triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
 
-      floorFlashing = true;
-      floorFlashTimer = 1.0;
+      screenFx.floorFlashing = true;
+      screenFx.floorFlashTimer = 1.0;
       if (dead) endGame(false);
     }
 
@@ -6208,21 +6205,21 @@ function render(timestamp) {
   // ── Camera shake on damage ──
   // NOTE: Skip camera position modification in VR - WebXR controls camera position
   // and modifying it directly causes fighting/alternation with headset tracking
-  if (cameraShake > 0 && !renderer.xr.isPresenting) {
-    cameraShake -= rawDt;
-    if (cameraShake <= 0) {
-      cameraShake = 0;
+  if (screenFx.cameraShake > 0 && !renderer.xr.isPresenting) {
+    screenFx.cameraShake -= rawDt;
+    if (screenFx.cameraShake <= 0) {
+      screenFx.cameraShake = 0;
     } else {
       // Apply random shake offset (desktop only)
-      const shake = cameraShakeIntensity * (cameraShake / 0.5);  // Fade out over duration
+      const shake = screenFx.cameraShakeIntensity * (screenFx.cameraShake / 0.5);  // Fade out over duration
       camera.position.x += (Math.random() - 0.5) * shake;
       camera.position.y += (Math.random() - 0.5) * shake;
       camera.position.z += (Math.random() - 0.5) * shake;
     }
-  } else if (cameraShake > 0) {
+  } else if (screenFx.cameraShake > 0) {
     // In VR, just decrement timer without modifying camera position
-    cameraShake -= rawDt;
-    if (cameraShake <= 0) cameraShake = 0;
+    screenFx.cameraShake -= rawDt;
+    if (screenFx.cameraShake <= 0) screenFx.cameraShake = 0;
   }
 
   // ── VR camera height is handled by XR reference space offset ──
@@ -6257,10 +6254,10 @@ function render(timestamp) {
   }
 
   // ── Floor damage flash (primary VR hit indicator) ──
-  if (floorFlashing) {
-    floorFlashTimer -= rawDt;
-    if (floorFlashTimer <= 0) {
-      floorFlashing = false;
+  if (screenFx.floorFlashing) {
+    screenFx.floorFlashTimer -= rawDt;
+    if (screenFx.floorFlashTimer <= 0) {
+      screenFx.floorFlashing = false;
       // Reset terrain flash
       biomeTerrainMaterials.forEach(item => {
         if (item.type === 'shader') {
@@ -6271,7 +6268,7 @@ function render(timestamp) {
       });
     } else {
       // Lerp from bright red back to base color over 1 second
-      const t = floorFlashTimer / 0.3;  // 0.3s flash duration (VR comfort)
+      const t = screenFx.floorFlashTimer / 0.3;  // 0.3s flash duration (VR comfort)
       const flashIntensity = t;  // 0 to 1, fading out
       // Perf: module scratch Color (was new THREE.Color per frame while flashing)
       const flashColor = _floorFlashColor;
@@ -6287,7 +6284,7 @@ function render(timestamp) {
   }
 
   // ── Low health pulse (only when not flashing) ──
-  if (!floorFlashing && lowHealthWarningActive && floorMaterial) {
+  if (!screenFx.floorFlashing && lowHealthWarningActive && floorMaterial) {
     lowHealthPulseTimer += rawDt;
     const pulse = (Math.sin(lowHealthPulseTimer * 2.6) + 1) * 0.5;
     const intensity = 0.2 + pulse * 0.45;

@@ -8,7 +8,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { game, State, addScore, trackCrit, trackKill, trackShot, trackShotHit, registerAccuracyHit, registerAccuracyMiss } from './game.js';
+import { game, State, addScore, trackCrit, trackKill, trackShot, trackShotHit, registerAccuracyHit, registerAccuracyMiss, damagePlayer } from './game.js';
 import {
   getEnemies, getEnemyByMesh, getEnemyCount, getBoss, getBossMinions,
   getBossProjectiles, hitEnemy, hitBoss, hitBossMinion, applyEffects,
@@ -90,6 +90,23 @@ const _hitStatsScratch = {};  // reused stats object for handleHit
 // Scratch vectors moved from main.js with their projectile systems
 const _upAxisUnit = new THREE.Vector3(0, 1, 0);           // seeker 180° flip axis
 export const _goldColor = new THREE.Color(0xffd700);      // nanite reveal/DoT tint
+
+// Shared camera-shake / floor-flash state — moved from main.js because both
+// beam-weapons.js (lightning shield reflect) and main.js's render loop write
+// and read it. NOTE: exported as a mutable OBJECT — ES module imported
+// bindings are read-only (even for `export let`), so writers mutate
+// properties instead of assigning the binding.
+export const screenFx = {
+  cameraShake: 0,
+  cameraShakeIntensity: 0,
+  originalCameraPos: new THREE.Vector3(),
+  floorFlashing: false,
+  floorFlashTimer: 0,
+};
+
+// Big Boom cooldown state (exploding-shot upgrade) — owned by handleHit
+const BIG_BOOM_COOLDOWN_MS = 2750;
+const lastExplodingShotTime = [0, 0];
 
 // Debris glow plane pool (for boss projectile explosion bits)
 let _debrisGlowPool = null;       // InstancedMesh for billboarded orange glow
@@ -1107,20 +1124,19 @@ function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex, hitObj
     setKilledBy({ type: 'boss', name: boss.def?.name || 'Boss', enemyType: boss.def?.behavior || '' });
     triggerHitFlash(true);
     playDamageSound();
-    cameraShake = 0.3;
-    cameraShakeIntensity = 0.03;
-    originalCameraPos.copy(camera.position);
+    screenFx.cameraShake = 0.3;
+    screenFx.cameraShakeIntensity = 0.03;
+    screenFx.originalCameraPos.copy(camera.position);
 
     // Light screen shake on player damage
     triggerScreenShake(0.15, 500); // 0.15 shake for 500ms
 
-    floorFlashing = true;
-    floorFlashTimer = 1.0;
+    screenFx.floorFlashing = true;
+    screenFx.floorFlashTimer = 1.0;
     if (DEBUG) console.log('[boss] Shield reflected damage!');
     if (dead) endGame(false);
     return;
   }
-
   // Immune hit (e.g., skull boss head before hands destroyed)
   if (result.immune) {
     spawnDamageNumber(hitPoint, 0, '#aaaaaa');  // Show 0 damage in gray
