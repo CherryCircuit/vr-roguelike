@@ -1381,6 +1381,26 @@ export function playErrorSound() {
   osc.stop(ctx.currentTime + 0.2);
 }
 
+// ── Upgrade card preview blip (Issue #215) ─────────────────
+// Short two-tone 'data readout' blip when the stat preview
+// panel appears. Softer than the menu hover so it doesn't
+// fight with hover sounds while sweeping the card row.
+export function playUpgradePreviewSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(660, t);
+  osc.frequency.setValueAtTime(990, t + 0.06);
+  gain.gain.setValueAtTime(0.06, t);
+  gain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 0.12);
+}
+
 // ── Buckshot fire (heavy mechanical thud) ──────────────────
 export function playBuckshotSound(pelletCount = 1) {
   const ctx = getAudioContext();

@@ -650,6 +650,160 @@ export function getUpgradeDef(id) {
 }
 
 // ============================================================
+// UPGRADE CARD PREVIEW (Issue #215)
+// Pure diff between the current loadout and the loadout + one
+// more stack of the candidate upgrade. No DOM/three.js — safe
+// for hud.js to call on hover change (never inside the render
+// loop; results are cached per hovered card by the caller).
+// ============================================================
+
+// Stat keys from getWeaponStats() output surfaced as
+// "before → after" lines, with display labels and units.
+// rate: value is 1000/fireInterval (shots per second)
+// pct:  value is a 0..1 fraction, shown as percent
+const PREVIEW_STAT_DEFS = [
+  { key: 'damage', label: 'DMG', unit: '' },
+  { key: 'fireInterval', label: 'FIRE RATE', unit: '/s', rate: true },
+  { key: 'projectileCount', label: 'SHOTS', unit: '' },
+  { key: 'critChance', label: 'CRIT', unit: '%', pct: true },
+  { key: 'critMultiplier', label: 'CRIT MULT', unit: 'x' },
+  { key: 'piercing', label: 'PIERCING', unit: '', bool: true },
+  { key: 'aoeRadius', label: 'AOE', unit: 'm' },
+  { key: 'lightningRange', label: 'RANGE', unit: 'm' },
+  { key: 'lightningMaxTargets', label: 'CHAINS', unit: '' },
+  { key: 'vampiricInterval', label: 'HEAL', unit: ' kills' },
+  { key: 'ricochetBounces', label: 'BOUNCES', unit: '' },
+  { key: 'chargeRateMultiplier', label: 'CHARGE SPEED', unit: 'x' },
+  { key: 'chargeDeathRayMultiplier', label: 'MAX CHARGE', unit: 'x' },
+  { key: 'windUpSpinTime', label: 'WIND-UP', unit: 'ms' },
+];
+
+// Status effect stack labels for the effects[] diff
+const PREVIEW_EFFECT_LABELS = { fire: 'IGNITE', shock: 'SHOCK', freeze: 'FREEZE' };
+
+// Rough per-second damage estimate from a computed stat object.
+// Purely comparative (before vs after) — not a balancing tool.
+function estimateDPS(stats) {
+  // Charge cannon is charge-based: one max-charge shot per charge cycle.
+  // +0.3s accounts for release timing/next-charge windup (magic number documented).
+  if (stats.chargeShot) {
+    const cycleSec = (stats.chargeTimeMax / (stats.chargeRateMultiplier || 1)) + 0.3;
+    const maxDmg = stats.damage * (stats.chargeDamageMultiplier || 1) * (stats.chargeDeathRayMultiplier || 1);
+    return maxDmg / cycleSec;
+  }
+  const interval = stats.fireInterval || 0;
+  if (interval <= 0) return 0;
+  const rate = 1000 / interval;
+  const critFactor = 1 + stats.critChance * ((stats.critMultiplier || 2) - 1);
+  return stats.damage * stats.projectileCount * rate * critFactor;
+}
+
+/**
+ * Build the preview payload for an upgrade card.
+ * @param {string} weaponId - MAIN weapon id of the hand receiving the upgrade.
+ * @param {Object} upgrades - game.upgrades[hand] (current stacks).
+ * @param {Object} upgradeDef - Upgrade/main/alt weapon definition.
+ * @param {Object} [opts] - { enemyHp, extraLines } — enemyHp scales the kill
+ *   estimate; extraLines append caller-side lines (e.g. NUKES for extra_nuke).
+ * @returns {{statLines: Array, newSynergies: Array, activeSynergies: Array,
+ *            dps: {before,after}, killsPerSec: {before,after}}|null}
+ */
+export function getUpgradePreview(weaponId, upgrades, upgradeDef, opts = {}) {
+  const u = upgrades || {};
+  const id = upgradeDef?.id;
+  if (!id) return null;
+
+  let base, next;
+  if (upgradeDef.type === 'main') {
+    // MAIN weapon choice (level 1→2): compare current weapon → offered weapon
+    // with the SAME upgrade stacks so the delta is the weapon swap itself.
+    base = getWeaponStats(weaponId, u);
+    next = getWeaponStats(upgradeDef.id, u);
+  } else if (upgradeDef.type === 'alt') {
+    // ALT weapons aren't in getWeaponStats — surface their cooldown/duration.
+    const cooldownS = (upgradeDef.cooldown || 0) / 1000;
+    const durationS = upgradeDef.duration ? (upgradeDef.duration / 1000) : null;
+    return {
+      statLines: [
+        { label: 'COOLDOWN', before: 0, after: cooldownS, unit: 's' },
+        ...(durationS ? [{ label: 'DURATION', before: 0, after: durationS, unit: 's' }] : []),
+      ],
+      newSynergies: [], activeSynergies: [],
+      dps: { before: 0, after: 0 },
+      killsPerSec: { before: 0, after: 0 },
+    };
+  } else {
+    // Normal upgrade: hypothetically add one stack and re-derive stats.
+    base = getWeaponStats(weaponId, u);
+    const hyp = { ...u, [id]: (u[id] || 0) + 1 };
+    next = getWeaponStats(weaponId, hyp);
+  }
+
+  // Before/after lines from the computed stat diff
+  const statLines = [];
+  const seenLabels = new Set();
+  for (const def of PREVIEW_STAT_DEFS) {
+    const before = def.rate ? (base.fireInterval > 0 ? 1000 / base.fireInterval : 0)
+                 : def.pct ? (base[def.key] || 0) * 100
+                 : (base[def.key] || 0);
+    const after = def.rate ? (next.fireInterval > 0 ? 1000 / next.fireInterval : 0)
+                : def.pct ? (next[def.key] || 0) * 100
+                : (next[def.key] || 0);
+    if (before === after || seenLabels.has(def.label)) continue;
+    seenLabels.add(def.label);
+    // Booleans (piercing) are stored as flags in getWeaponStats — normalize
+    // to 0/1 so the HUD always renders numbers, never 'true'/'false'.
+    statLines.push({
+      label: def.label,
+      before: def.bool ? (before ? 1 : 0) : before,
+      after: def.bool ? (after ? 1 : 0) : after,
+      unit: def.unit,
+      bool: def.bool || undefined, // lets the HUD render OFF → ON for flags
+    });
+  }
+
+  // Status effect stack changes (fire/shock/freeze upgrades don't move
+  // damage numbers but they do move the effects[] array).
+  for (const eff of next.effects || []) {
+    const beforeCount = (base.effects || []).find(e => e.type === eff.type)?.stacks || 0;
+    if (eff.stacks === beforeCount) continue;
+    const label = PREVIEW_EFFECT_LABELS[eff.type];
+    if (!label || seenLabels.has(label)) continue;
+    seenLabels.add(label);
+    statLines.push({ label, before: beforeCount, after: eff.stacks, unit: '' });
+  }
+
+  // Caller-provided lines (extra_nuke nuke counter, etc.)
+  for (const line of opts.extraLines || []) {
+    if (seenLabels.has(line.label)) continue;
+    seenLabels.add(line.label);
+    statLines.push(line);
+  }
+
+  // Synergy hints: which combos this pick would newly activate
+  // (and which are already running) — #211 synergy detection, pure.
+  const currentSynergies = detectSynergies(u);
+  const nextSynergies = detectSynergies(
+    upgradeDef.type === 'main' ? u : { ...u, [id]: (u[id] || 0) + 1 }
+  );
+  const newSynergies = nextSynergies.filter(s => !currentSynergies.some(c => c.id === s.id));
+  const activeSynergies = currentSynergies;
+
+  // DPS + kills-per-second (comparative only). enemyHp defaults to the
+  // basic enemy base HP (enemies.js ENEMY_DEFS.basic.baseHp = 30); the
+  // caller passes level-scaled hp so the estimate tracks difficulty.
+  const dpsBefore = estimateDPS(base);
+  const dpsAfter = estimateDPS(next);
+  const enemyHp = opts.enemyHp || 30;
+  const killsPerSec = {
+    before: dpsBefore > 0 ? dpsBefore / enemyHp : 0,
+    after: dpsAfter > 0 ? dpsAfter / enemyHp : 0,
+  };
+
+  return { statLines, newSynergies, activeSynergies, dps: { before: dpsBefore, after: dpsAfter }, killsPerSec };
+}
+
+// ============================================================
 // SYNERGY ENGINE (Issue #211)
 // Pure detection: given one hand's upgrade map, return the active
 // synergies. Elemental combos cap at the highest tier (PRIME STATE

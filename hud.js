@@ -5,8 +5,9 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { State, game } from './game.js';
-import { playMenuHoverSound, playMenuClick, playBasicEnemySpawn } from './audio.js';
+import { State, game, LEVELS } from './game.js';
+import { playMenuHoverSound, playMenuClick, playBasicEnemySpawn, playUpgradePreviewSound } from './audio.js';
+import { getUpgradePreview, SYNERGY_DEFS } from './weapons.js';
 import {
   TextPopupPool, initDamageNumbers, disposePools,
   spawnDamageNumber, spawnCritIndicator, updateDamageNumbers,
@@ -212,6 +213,13 @@ function getSkipIconGeo() {
 
 let upgradeCards = [];
 let upgradeChoices = [];
+
+// Upgrade Card Preview panel (Issue #215) — a single fixed panel below the
+// card row whose content is rebuilt ONLY when the hovered card changes.
+// previewPanelKey caches which card is currently shown so hover re-entries
+// (and per-frame hover passes) never rebuild textures.
+let previewPanel = null;
+let previewPanelKey = null;
 
 // Cached cooldown sprite reference (avoids getObjectByName traversal every frame)
 let _cooldownSprite = null;
@@ -2328,6 +2336,10 @@ export function hideUpgradeCards() {
   upgradeGroup.userData.hoveredSelections = {};
   upgradeCards = [];
   upgradeChoices = [];
+  // Preview panel is a child of upgradeGroup — dispose it explicitly so the
+  // cached key never shows a stale panel after the screen is re-opened.
+  previewPanel = null;
+  previewPanelKey = null;
 }
 
 export function updateUpgradeCards(now, cooldownRemaining) {
@@ -2359,6 +2371,190 @@ export function updateUpgradeCards(now, cooldownRemaining) {
       cd.visible = false;
     }
   }
+}
+
+// ── Upgrade Card Preview Panel (Issue #215) ────────────────
+// Fixed panel below the card row. Content is rebuilt only when the
+// hovered card changes (hover events are rare — zero per-frame work).
+// The panel is a child of upgradeGroup so it inherits position and is
+// disposed together with the cards.
+
+// Cached panel backdrop/border geometry (rebuilt only if size changes —
+// panel builds are rare hover events, so disposal on resize is fine)
+let _previewPanelGeo = null;
+let _previewPanelBorderGeo = null;
+let _previewPanelSize = null;
+
+function getPreviewPanelGeo(width, height) {
+  if (!_previewPanelGeo || !_previewPanelSize || _previewPanelSize.w !== width || _previewPanelSize.h !== height) {
+    if (_previewPanelGeo) {
+      _previewPanelGeo.dispose();
+      _previewPanelBorderGeo.dispose();
+    }
+    _previewPanelSize = { w: width, h: height };
+    _previewPanelGeo = new THREE.PlaneGeometry(width, height);
+    _previewPanelBorderGeo = new THREE.EdgesGeometry(_previewPanelGeo);
+  }
+  return _previewPanelGeo;
+}
+function getPreviewPanelBorderGeo() {
+  return _previewPanelBorderGeo;
+}
+
+// Layout defaults — overridable via layouts/upgrade-cards.json previewPanel*
+function getUpgradePreviewLayout() {
+  const el = layoutCache['upgrade-cards']?.elements || {};
+  const r = (key, def) => (el[key] ? { ...def, ...el[key] } : def);
+  return {
+    panel: r('previewPanel', { x: 0, y: -1.78, z: 0.01, w: 2.05, h: 1.7, color: 0x110033, opacity: 0.92 }),
+    name: r('previewPanel_name', { y: 0.58, z: 0.02, fontSize: 36, scale: 0.3, maxWidth: 900 }),
+    line: r('previewPanel_line', { y: 0.2, z: 0.02, fontSize: 30, scale: 0.27, maxWidth: 900 }),
+    synergy: r('previewPanel_synergy', { y: 0.2, z: 0.02, fontSize: 28, scale: 0.25, maxWidth: 900 }),
+    dps: r('previewPanel_dps', { y: -0.74, z: 0.02, fontSize: 26, scale: 0.23, maxWidth: 900 }),
+  };
+}
+
+// Format a preview value for display: one decimal for rate/length units,
+// whole numbers otherwise, OFF/ON for boolean flags (piercing).
+function fmtPreviewValue(value, unit, isBool) {
+  if (isBool) return value ? 'ON' : 'OFF';
+  if (typeof value !== 'number' || !isFinite(value)) return '?';
+  if (['/s', 's', 'm', 'x'].includes(unit)) return value.toFixed(1);
+  return String(Math.round(value));
+}
+
+function buildUpgradePreviewPanel(upgrade, hand) {
+  disposeUpgradePreviewPanel();
+  const L = getUpgradePreviewLayout();
+
+  const panel = new THREE.Group();
+  panel.name = 'upgrade-preview-panel';
+  panel.position.set(L.panel.x, L.panel.y, L.panel.z);
+  upgradeGroup.add(panel);
+  previewPanel = panel;
+
+  // Backdrop + border, same visual language as the cards
+  const bgGeo = getPreviewPanelGeo(L.panel.w, L.panel.h);
+  const bgMat = new THREE.MeshBasicMaterial({
+    color: L.panel.color ?? 0x110033, transparent: true,
+    opacity: L.panel.opacity ?? 0.92, side: THREE.DoubleSide,
+    depthWrite: false, depthTest: true,
+  });
+  const bg = new THREE.Mesh(bgGeo, bgMat);
+  bg.renderOrder = 1;
+  panel.add(bg);
+  const borderMat = new THREE.LineBasicMaterial({
+    color: typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff),
+  });
+  const border = new THREE.LineSegments(getPreviewPanelBorderGeo(), borderMat);
+  panel.add(border);
+
+  // Stats source: the hand receiving upgrades + the level that comes next.
+  // At upgrade-select time game.level is still the completed level, so
+  // LEVELS[game.level] is the upcoming one (LEVELS is 0-indexed).
+  const weaponId = game.mainWeapon?.[hand] || 'standard_blaster';
+  const nextLevel = LEVELS[game.level] || LEVELS[game.level - 1] || LEVELS[0];
+  // Basic enemy base HP = 30 (enemies.js ENEMY_DEFS.basic.baseHp), scaled by
+  // the next level's hpMultiplier — the 'est kills/s' number is comparative.
+  const enemyHp = 30 * (nextLevel?.hpMultiplier || 1);
+  const extraLines = upgrade.id === 'extra_nuke'
+    ? [{ label: 'NUKES', before: game.nukes || 0, after: (game.nukes || 0) + 1, unit: '' }]
+    : [];
+  const preview = getUpgradePreview(weaponId, game.upgrades[hand] || {}, upgrade, { enemyHp, extraLines });
+  if (!preview) return;
+
+  // Header: upgrade name in its accent color
+  const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
+    fontSize: L.name.fontSize, color: upgrade.color || '#00ffff',
+    glow: true, glowColor: upgrade.color, scale: L.name.scale,
+    maxWidth: L.name.maxWidth, depthTest: true,
+  });
+  nameSprite.userData.text = upgrade.name.toUpperCase();
+  nameSprite.position.set(0, L.name.y, L.name.z);
+  panel.add(nameSprite);
+
+  // Stat delta lines (green — every line is a 'what changes' readout)
+  let y = L.line.y;
+  for (const line of preview.statLines.slice(0, 6)) {
+    const text = `${line.label}: ${fmtPreviewValue(line.before, line.unit, line.bool)} → ${fmtPreviewValue(line.after, line.unit, line.bool)}${line.unit}`;
+    const sprite = makeSprite(text, {
+      fontSize: L.line.fontSize, color: '#88ff88', scale: L.line.scale,
+      maxWidth: L.line.maxWidth, depthTest: true, forceArial: true,
+    });
+    sprite.userData.text = text;
+    sprite.position.set(0, y, L.line.z);
+    panel.add(sprite);
+    y -= 0.26;
+  }
+
+  // Synergy hints — gold for newly-activated combos, dim for active ones
+  for (const syn of preview.newSynergies) {
+    const def = SYNERGY_DEFS[syn.id];
+    const text = `✦ NEW SYNERGY: ${syn.name}${def?.desc ? ` — ${def.desc}` : ''}`;
+    const sprite = makeSprite(text, {
+      fontSize: L.synergy.fontSize, color: syn.tier === 3 ? '#ffdd00' : '#ff88ff',
+      scale: L.synergy.scale, maxWidth: L.synergy.maxWidth, depthTest: true, forceArial: true,
+    });
+    sprite.userData.text = text;
+    sprite.position.set(0, y, L.synergy.z);
+    panel.add(sprite);
+    y -= 0.26;
+  }
+  for (const syn of preview.activeSynergies) {
+    const text = `✓ ACTIVE: ${syn.name}`;
+    const sprite = makeSprite(text, {
+      fontSize: L.synergy.fontSize, color: '#8888aa',
+      scale: L.synergy.scale, maxWidth: L.synergy.maxWidth, depthTest: true, forceArial: true,
+    });
+    sprite.userData.text = text;
+    sprite.position.set(0, y, L.synergy.z);
+    panel.add(sprite);
+    y -= 0.26;
+  }
+
+  // DPS + kill-rate estimate footer
+  const kps = (v) => (typeof v === 'number' ? v.toFixed(1) : '0.0');
+  const dpsText = `DPS ${Math.round(preview.dps.before)} → ${Math.round(preview.dps.after)}  ·  EST KILLS/S ${kps(preview.killsPerSec.before)} → ${kps(preview.killsPerSec.after)}`;
+  const dpsSprite = makeSprite(dpsText, {
+    fontSize: L.dps.fontSize, color: '#00ffff', scale: L.dps.scale,
+    maxWidth: L.dps.maxWidth, depthTest: true, forceArial: true,
+  });
+  dpsSprite.userData.text = dpsText;
+  dpsSprite.position.set(0, L.dps.y, L.dps.z);
+  panel.add(dpsSprite);
+
+  // Subtle readout blip so the panel arrival has a voice
+  playUpgradePreviewSound();
+}
+
+function disposeUpgradePreviewPanel() {
+  if (previewPanel) {
+    disposeGroupChildren(previewPanel);
+    if (previewPanel.parent) previewPanel.parent.remove(previewPanel);
+    previewPanel = null;
+  }
+  previewPanelKey = null;
+}
+
+/**
+ * Show/hide the preview panel based on the per-source hovered upgrade
+ * selections collected by updateHUDHover. Rebuilds only when the hovered
+ * card CHANGES (never every frame).
+ */
+function updateUpgradePreview(hoveredSelections) {
+  // No preview while cards are still warping in — textures would fight the
+  // intro animation and the panel would sit on a moving layout.
+  if (_warpAnimating) { disposeUpgradePreviewPanel(); return; }
+  const keys = Object.keys(hoveredSelections || {});
+  if (keys.length === 0) { disposeUpgradePreviewPanel(); return; }
+  const selection = hoveredSelections[keys[0]];
+  const upgrade = selection?.upgrade;
+  if (!upgrade || !upgrade.id || upgrade.id === 'SKIP') { disposeUpgradePreviewPanel(); return; }
+  const hand = selection.hand || upgradeGroup.userData.hand;
+  const key = `${upgrade.id}|${hand}`;
+  if (previewPanelKey === key) return; // cache hit — already showing this card
+  previewPanelKey = key;
+  buildUpgradePreviewPanel(upgrade, hand);
 }
 
 /**
@@ -4573,6 +4769,7 @@ export function updateHUDHover(raycasters) {
 
   if (hoverables.length === 0) {
     upgradeGroup.userData.hoveredSelections = {};
+    disposeUpgradePreviewPanel();
     return false;
   }
 
@@ -4612,6 +4809,9 @@ export function updateHUDHover(raycasters) {
   // Fix for upgrade trigger regression: cache hovered upgrade targets per input
   // source so each controller can only select the card it is actually aiming at.
   upgradeGroup.userData.hoveredSelections = hoveredUpgradeSelections;
+  // Issue #215: drive the preview panel off the same hover data (cheap — the
+  // panel only rebuilds when the hovered card changes).
+  updateUpgradePreview(hoveredUpgradeSelections);
 
   let newHover = false;
 
