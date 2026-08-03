@@ -1381,6 +1381,32 @@ export function playErrorSound() {
   osc.stop(ctx.currentTime + 0.2);
 }
 
+// ── Bullet Carnival grade-up sting (Issue #189) ────────────
+// Ascending arpeggio; higher tiers get a brighter, longer flourish.
+export function playStyleGradeUpSound(tier = 6) {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0.14, t);
+  master.gain.exponentialRampToValueAtTime(0.01, t + 0.7);
+  master.connect(getSfxOutput());
+  // Base arpeggio rises with the grade tier (D = low, SSS = high)
+  const root = 440 * Math.pow(2, (6 - Math.min(tier, 6)) / 12);
+  const notes = [root, root * 1.25, root * 1.5, root * 2];
+  for (let i = 0; i < notes.length; i++) {
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(notes[i], t + i * 0.07);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.8, t + i * 0.07);
+    g.gain.exponentialRampToValueAtTime(0.01, t + i * 0.07 + 0.25);
+    osc.connect(g);
+    g.connect(master);
+    osc.start(t + i * 0.07);
+    osc.stop(t + i * 0.07 + 0.3);
+  }
+}
+
 // ── Upgrade card preview blip (Issue #215) ─────────────────
 // Short two-tone 'data readout' blip when the stat preview
 // panel appears. Softer than the menu hover so it doesn't

@@ -140,6 +140,21 @@ export const game = {
   // NEW: Weapon Evolution (Issue #143) — per-hand evolution def once the
   // weapon's recipe is completed (null = not evolved).
   weaponEvolution: { left: null, right: null },
+
+  // NEW: Bullet Carnival style system (Issue #189) — four 0-100 meters
+  // (variety/precision/tempo/creativity) graded D→SSS; the grade drives a
+  // score multiplier, upgrade-card quality, and health drops. styleGrade is
+  // recomputed by main.js on every style event + decay tick.
+  styleState: {
+    variety: 0,
+    precision: 0,
+    tempo: 0,
+    creativity: 0,
+    lastKillHand: null,
+    lastKillWeapon: null,
+    lastKillTime: 0,
+  },
+  styleGrade: { grade: 'D', label: 'DULL', multiplier: 0.8, color: 0x444444, tier: 6 },
   
   stateTimer: 0,
   spawnTimer: 0,
@@ -242,6 +257,18 @@ export function resetGame() {
 
     // Weapon Evolution state resets with the run
     weaponEvolution: { left: null, right: null },
+
+    // Bullet Carnival style state resets with the run
+    styleState: {
+      variety: 0,
+      precision: 0,
+      tempo: 0,
+      creativity: 0,
+      lastKillHand: null,
+      lastKillWeapon: null,
+      lastKillTime: 0,
+    },
+    styleGrade: { grade: 'D', label: 'DULL', multiplier: 0.8, color: 0x444444, tier: 6 },
 
     // Biome chunk assignments
     biomeChunks: {},
@@ -393,7 +420,9 @@ export function getLevelConfig() {
 
 export function addScore(points) {
   const accuracyMult = game.accuracyMultiplier || 1;
-  game.score += Math.floor(points * accuracyMult);
+  // Issue #189: style multiplier stacks WITH the accuracy multiplier
+  const styleMult = game.styleGrade?.multiplier || 1;
+  game.score += Math.floor(points * accuracyMult * styleMult);
 }
 
 function getAccuracyMultiplier() {
@@ -409,6 +438,10 @@ export function registerAccuracyHit() {
   game.accuracyBonus = Math.min(100, game.accuracyBonus + bonusGain);
   game.lastHitTime = performance.now();
   updateAccuracyMultiplier();
+  // Issue #189: hits feed the Precision meter
+  if (game.styleState) {
+    game.styleState.precision = Math.min(100, game.styleState.precision + 3);
+  }
 }
 
 export function registerAccuracyMiss() {
@@ -419,6 +452,10 @@ export function registerAccuracyMiss() {
   const decayFactor = Math.max(0.15, baseDecay - extraDecay);  // Floor at 15% retained
   game.accuracyBonus = Math.max(0, Math.round(game.accuracyBonus * decayFactor));
   updateAccuracyMultiplier();
+  // Issue #189: misses drain Precision harder than natural decay
+  if (game.styleState) {
+    game.styleState.precision = Math.max(0, game.styleState.precision - 6);
+  }
 }
 
 export function damagePlayer(amount) {
@@ -464,6 +501,10 @@ export function trackShotHit(damage = 0, hand) {
 
 export function trackCrit() {
   game.runStats.critsLanded++;
+  // Issue #189: crits feed the Precision meter
+  if (game.styleState) {
+    game.styleState.precision = Math.min(100, game.styleState.precision + 5);
+  }
 }
 
 export function addUpgrade(id, hand) {

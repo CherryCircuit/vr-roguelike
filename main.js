@@ -17,7 +17,7 @@ import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook, setWeaponEvolution, getWeaponEvolution, isWeaponEvolved } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress, detectFireCombos, COMBO_DEFS } from './weapons.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress, detectFireCombos, COMBO_DEFS, computeStyleGrade } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
@@ -49,6 +49,8 @@ import {
   startReactiveMusic, updateReactiveMusic, updateThreatAudio,
   // Alchemy bench sounds (Issue #185)
   playDissolveSound, playForgeSound,
+  // Bullet Carnival grade sting (Issue #189)
+  playStyleGradeUpSound,
 } from './audio.js';
 // Beam weapons module (Issue #196 Phase 1 extraction): charge cannon,
 // lightning rod beams/orbs, charge visuals, pending timer registry.
@@ -143,6 +145,8 @@ import {
   showPostUpgradeBar, showAlchemyBench, hideAlchemyBench, showAlchemyCategoryView,
   isAlchemyBenchOpen, isPostSelectVisible,
   getAlchemyBenchHit, getHoveredAlchemyAction,
+  // Bullet Carnival style HUD (Issue #189)
+  triggerStyleFlash, updateStyleHUD,
 } from './hud.js';
 import {
   initWristHolograms, showWristHolograms, updateWristHolograms, hideAllWristHolograms
@@ -876,6 +880,16 @@ function handleEnemyKilled(enemyIndex, opts = {}) {
     trackKill();
     if (killsWithoutHit) game.killsWithoutHit++;
   }
+
+  // Issue #189: Bullet Carnival style scoring runs BEFORE scoring so the
+  // kill's own contribution (variety/tempo/precision/creativity) is reflected
+  // in the grade multiplier applied to THIS kill's score.
+  trackStyleOnKill(destroyData, {
+    hand: opts.hand,
+    isRicochet: opts.isRicochet,
+    statusCombo: opts.statusCombo,
+    overkill: opts.overkill,
+  });
   addScore(destroyData.scoreValue);
   updateHUD(game);
   if (countsForLevelProgress) checkKillsAlert();
@@ -914,8 +928,183 @@ function handleEnemyKilled(enemyIndex, opts = {}) {
     }
   }
 
+  // Issue #189: Bullet Carnival style scoring on every kill
+  // (trackStyleOnKill already ran before addScore above — the health-drop
+  // roll stays after so pickups spawn from the final death position).
+  // Issue #189: at S+ grade, 5% of kills drop a health pickup. Computed fresh
+  // so direct state changes (tests) and event timing both behave.
+  if (computeStyleGrade(game.styleState).tier <= 2 && Math.random() < 0.05) {
+    spawnHealthPickup(destroyData.position);
+  }
+
   return destroyData;
 }
+
+// ── BULLET CARNIVAL STYLE SYSTEM (Issue #189) ──────────────
+// Four 0-100 meters (variety/precision/tempo/creativity) grade the player's
+// combat style D→SSS. The grade multiplies score, upgrades card quality at
+// A+, and drops health at S+. Decay forces continuous play — you can't
+// coast at SSS.
+
+function trackStyleOnKill(destroyData, opts = {}) {
+  const style = game.styleState;
+  const now = performance.now();
+  const { hand, isRicochet, statusCombo, overkill } = opts;
+  const weaponId = hand ? (game.mainWeapon?.[hand] || null) : null;
+
+  // Variety: kill with a different hand/weapon than the last kill; repeating
+  // the same hand+weapon drains it (punishes one-trigger play)
+  if (hand && weaponId) {
+    if (hand !== style.lastKillHand || weaponId !== style.lastKillWeapon) {
+      style.variety = Math.min(100, style.variety + 15);
+    } else {
+      style.variety = Math.max(0, style.variety - 4);
+    }
+    style.lastKillHand = hand;
+    style.lastKillWeapon = weaponId;
+  }
+  // DoT/environment kills (no hand) are variety-neutral
+
+  // Tempo: kill within 2s of the previous kill
+  if (now - style.lastKillTime < 2000) {
+    style.tempo = Math.min(100, style.tempo + 12);
+  }
+  style.lastKillTime = now;
+
+  // Precision: small per-kill boost (large boosts come from accuracy/crits)
+  style.precision = Math.min(100, style.precision + 5);
+
+  // Creativity: special kill types
+  if (isRicochet) style.creativity = Math.min(100, style.creativity + 20);
+  if (statusCombo) style.creativity = Math.min(100, style.creativity + 25);
+  if (overkill) style.creativity = Math.min(100, style.creativity + 10);
+
+  onStyleStateChanged();
+}
+
+// Recompute grade after a style event; fire grade-up feedback.
+function onStyleStateChanged() {
+  const prev = game.styleGrade;
+  const next = computeStyleGrade(game.styleState);
+  game.styleGrade = next;
+  if (next.tier < prev.tier) {
+    triggerStyleGradeUp(next);
+  } else if (next.tier > prev.tier && styleTrailTintActive && next.tier > 2) {
+    // Silent grade-down below SS: drop the trail tint
+    applyStyleTrailTint(null);
+  }
+  if (next.tier <= 2 && !styleTrailTintActive) {
+    applyStyleTrailTint(next.color);
+  }
+}
+
+// Per-frame decay (2%/s, tempo 3%/s, creativity 1%/s — issue balance notes).
+// NOTE: dt is in SECONDS (rawDt = (now-lastTime)/1000 in render()).
+function updateStyleDecay(dt) {
+  const style = game.styleState;
+  const decay = 0.02 * dt * 1000; // 2% per second (dt in seconds → ×1000)
+  style.variety = Math.max(0, style.variety - decay);
+  style.precision = Math.max(0, style.precision - decay);
+  style.tempo = Math.max(0, style.tempo - decay * 1.5);
+  style.creativity = Math.max(0, style.creativity - decay * 0.5);
+  const next = computeStyleGrade(style);
+  if (next.tier !== game.styleGrade.tier) {
+    const wasSS = game.styleGrade.tier <= 2;
+    game.styleGrade = next;
+    if (wasSS && next.tier > 2 && styleTrailTintActive) applyStyleTrailTint(null);
+  }
+}
+
+// Grade-up moment: colored screen flash + letter popup + sting
+function triggerStyleGradeUp(grade) {
+  triggerStyleFlash(grade.color);
+  showFloatingMessage(`${grade.grade} ${grade.label}!`, {
+    duration: 1600,
+    color: '#' + grade.color.toString(16).padStart(6, '0'),
+    size: 0.9,
+  });
+  playStyleGradeUpSound(grade.tier);
+}
+
+// SS+ visual flair: tint player projectile materials toward the grade color
+let styleTrailTintActive = false;
+function applyStyleTrailTint(color) {
+  styleTrailTintActive = !!color;
+  for (const mat of playerProjectileMaterials) {
+    if (!mat) continue;
+    if (mat.userData.baseStyleColor === undefined) {
+      mat.userData.baseStyleColor = mat.color ? mat.color.getHex() : 0xffffff;
+    }
+    if (color) {
+      const target = new THREE.Color(color);
+      target.lerp(new THREE.Color(mat.userData.baseStyleColor), 0.6);
+      if (mat.color) mat.color.copy(target);
+    } else if (mat.color) {
+      mat.color.setHex(mat.userData.baseStyleColor);
+    }
+  }
+}
+
+// Health pickups (S+ drops): drift toward the stationary player, collect on
+// proximity, expire after 5s.
+const healthPickups = [];
+function spawnHealthPickup(position) {
+  if (!position) return;
+  const geo = new THREE.OctahedronGeometry(0.06, 0);
+  const mat = basicMat(0x00ff44, { transparent: true, opacity: 0.9 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.name = 'health-pickup';
+  mesh.position.copy(position);
+  mesh.position.y = Math.max(mesh.position.y, 0.8);
+  scene.add(mesh);
+  healthPickups.push({ mesh, born: performance.now(), lifetime: 5000 });
+}
+
+function updateHealthPickups(now, playerPos) {
+  for (let i = healthPickups.length - 1; i >= 0; i--) {
+    const p = healthPickups[i];
+    const age = now - p.born;
+    if (age > p.lifetime) {
+      scene.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
+      healthPickups.splice(i, 1);
+      continue;
+    }
+    // Slow drift toward the player + bob/pulse
+    const toPlayer = _adjustedCameraPosScratch.copy(playerPos).sub(p.mesh.position);
+    const dist = toPlayer.length();
+    if (dist > 0.2) {
+      p.mesh.position.addScaledVector(toPlayer.normalize(), Math.min(0.9, dist) * 0.02);
+    }
+    p.mesh.position.y = Math.max(0.8 + Math.sin(age * 0.006) * 0.05, p.mesh.position.y);
+    p.mesh.rotation.y += 0.05;
+    if (dist < 0.9) {
+      // Collect: heal one half-heart
+      game.health = Math.min(game.maxHealth, game.health + 1);
+      playHealSound();
+      spawnHealthGainPopup(p.mesh.position.clone());
+      triggerHealthGainAnimation();
+      scene.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
+      healthPickups.splice(i, 1);
+    }
+  }
+}
+
+function clearHealthPickups() {
+  for (const p of healthPickups) {
+    if (p.mesh.parent) scene.remove(p.mesh);
+    p.mesh.geometry.dispose();
+    p.mesh.material.dispose();
+  }
+  healthPickups.length = 0;
+}
+registerResetHook(clearHealthPickups);
+registerResetHook(() => {
+  if (styleTrailTintActive) applyStyleTrailTint(null);
+});
 
 // Camera shake on damage — state moved to projectile-system.js
 // (exported live bindings shared with beam-weapons.js)
@@ -4274,9 +4463,20 @@ function showUpgradeScreen() {
   if (game.mainWeaponLocked[hand]) {
     // Show upgrades filtered by equipped MAIN weapon
     _log(`[game] Showing upgrades for ${hand} hand (${mainWeaponId})`);
-    pendingUpgrades = game.justBossKill ? 
-      getRandomSpecialUpgrades(3, mainWeaponId) : 
-      getRandomUpgrades(3, mainWeaponId);
+    // Issue #189: at A+ grade one of the 3 cards is a SPECIAL upgrade
+    // (normally boss-only) — the real prize for sustained style play.
+    // Computed fresh so direct state changes and event timing both behave.
+    const styleGradeNow = computeStyleGrade(game.styleState);
+    if (styleGradeNow.tier <= 3) {
+      pendingUpgrades = getRandomUpgrades(2, mainWeaponId);
+      const special = getRandomSpecialUpgrades(1, mainWeaponId);
+      if (special.length > 0) pendingUpgrades.push(special[0]);
+      _log(`[style] A+ grade — replaced one card with a SPECIAL upgrade (${special[0]?.id || 'none'})`);
+    } else {
+      pendingUpgrades = game.justBossKill ?
+        getRandomSpecialUpgrades(3, mainWeaponId) :
+        getRandomUpgrades(3, mainWeaponId);
+    }
   } else {
     // MAIN weapon not locked yet - show all upgrades (shouldn't happen after level 2)
     _log(`[game] WARNING: MAIN weapon not locked for ${hand} hand at level ${game.level}`);
@@ -6220,6 +6420,11 @@ function render(timestamp) {
     // Issue #143: evolved weapon update loops (fire trails, hive drones,
     // tesla coils, singularity wells — all early-out when empty)
     updateEvolvedSystems(now, dt, playerPos);
+
+    // Issue #189: style meter decay + health pickup drift/collection
+    updateStyleDecay(dt);
+    updateHealthPickups(now, playerPos);
+    updateStyleHUD(game.styleState, game.styleGrade, now);
 
     // Apply bullet-time slow-mo and ramp-out (timer-based from commit 5bb0b69)
     if (slowMoRampOut) {

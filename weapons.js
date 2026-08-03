@@ -844,6 +844,37 @@ export function detectFireCombos(opts) {
 }
 
 // ============================================================
+// BULLET CARNIVAL STYLE GRADING (Issue #189)
+// Pure grade computation from the 4 style meters. Tier 0 = SSS,
+// tier 6 = D; A+ means tier <= 3, S+ means tier <= 2.
+// ============================================================
+
+export const STYLE_GRADES = [
+  { min: 95, grade: 'SSS', label: 'GODLIKE', multiplier: 3.0, color: 0xff00ff },
+  { min: 85, grade: 'SS',  label: 'STYLIN',  multiplier: 2.5, color: 0xff4400 },
+  { min: 70, grade: 'S',   label: 'AWESOME', multiplier: 2.0, color: 0xffaa00 },
+  { min: 55, grade: 'A',   label: 'GREAT',   multiplier: 1.5, color: 0x00ff88 },
+  { min: 40, grade: 'B',   label: 'GOOD',    multiplier: 1.25, color: 0x00aaff },
+  { min: 25, grade: 'C',   label: 'OK',      multiplier: 1.0, color: 0x888888 },
+  { min: 0,  grade: 'D',   label: 'DULL',    multiplier: 0.8, color: 0x444444 },
+];
+
+/**
+ * Compute the style grade from the 4 meter values (0-100 each).
+ * @returns {{grade, label, multiplier, color, tier}}
+ */
+export function computeStyleGrade(styleState) {
+  const s = styleState || {};
+  const avg = ((s.variety || 0) + (s.precision || 0) + (s.tempo || 0) + (s.creativity || 0)) / 4;
+  for (let i = 0; i < STYLE_GRADES.length; i++) {
+    if (avg >= STYLE_GRADES[i].min) {
+      return { ...STYLE_GRADES[i], tier: i };
+    }
+  }
+  return { ...STYLE_GRADES[STYLE_GRADES.length - 1], tier: STYLE_GRADES.length - 1 };
+}
+
+// ============================================================
 // WEAPON EVOLUTIONS (Issue #143)
 // Each MAIN weapon has one hidden evolution recipe — 3 specific
 // upgrades (mix of universal + weapon-specific). When the final

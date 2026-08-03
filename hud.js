@@ -244,6 +244,18 @@ let hitFlashOpacity = 0;
 let lowHealthScreenPulse = false;
 let lowHealthScreenPulseTimer = 0;
 
+// Bullet Carnival style HUD (Issue #189): 4 thin meter bars + grade letter
+let styleHudGroup = null;
+let styleBarMeshes = [];
+let styleLetterSprite = null;
+let styleLetterTier = -1;
+let styleFlash = null;
+let styleFlashOpacity = 0;
+let styleFlashColor = 0xff00ff;
+
+// Meter colors: variety cyan, precision green, tempo yellow, creativity magenta
+const STYLE_BAR_COLORS = [0x00ffff, 0x00ff88, 0xffdd00, 0xff44ff];
+
 // Speed lines overlay (radial streaks during slow-mo)
 const ENABLE_SPEED_LINES = false; // Disabled: no visible effect on Quest, wastes a draw call
 let speedLinesMesh = null;
@@ -820,6 +832,29 @@ export async function initHUD(camera, scene) {
   hitFlash.frustumCulled = false;  // Prevent disappearing when looking around
   hitFlash.position.set(0, 0, -0.25);  // Very close to camera for full coverage
   camera.add(hitFlash);
+
+  // ── Style grade flash (Issue #189) — grade-color overlay, same pattern ──
+  styleFlash = new THREE.Mesh(
+    new THREE.PlaneGeometry(6, 6),
+    new THREE.MeshBasicMaterial({
+      color: 0xff00ff,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.NormalBlending,
+    }),
+  );
+  styleFlash.name = 'style-flash';
+  styleFlash.renderOrder = 999;
+  styleFlash.visible = false;
+  styleFlash.frustumCulled = false;
+  styleFlash.position.set(0, 0, -0.24);
+  camera.add(styleFlash);
+
+  // ── Style HUD (Issue #189): 4 thin meters + grade letter on the floor HUD ──
+  createStyleHUD();
 
   // ── Speed Lines Overlay (radial streaks during slow-mo) ──
   if (ENABLE_SPEED_LINES) {
@@ -3268,6 +3303,92 @@ export function updateHitFlash(dt) {
   } else {
     hitFlash.visible = false;
   }
+
+  // Issue #189: style grade flash (same fade curve, grade-colored)
+  if (styleFlash) {
+    if (styleFlashOpacity > 0) {
+      styleFlash.visible = true;
+      styleFlash.material.color.setHex(styleFlashColor);
+      styleFlash.material.opacity = styleFlashOpacity;
+      styleFlashOpacity -= dt * 2.4;
+    } else {
+      styleFlash.visible = false;
+    }
+  }
+}
+
+// ── Bullet Carnival style HUD (Issue #189) ─────────────────
+
+// Minimal real-estate display: 4 thin bars + one grade letter, tucked at the
+// left edge of the floor HUD. Bars animate via scale only (no texture work);
+// the letter texture rebuilds ONLY on grade change.
+function createStyleHUD() {
+  styleHudGroup = new THREE.Group();
+  styleHudGroup.name = 'style-hud';
+  styleHudGroup.position.set(-2.15, 0.05, 1.35);
+  hudGroup.add(styleHudGroup);
+
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.2, 0.8),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
+  );
+  panel.name = 'style-hud-panel';
+  panel.renderOrder = 5;
+  styleHudGroup.add(panel);
+
+  for (let i = 0; i < 4; i++) {
+    const bar = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.02, 0.12),
+      new THREE.MeshBasicMaterial({ color: STYLE_BAR_COLORS[i], transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
+    );
+    bar.name = `style-bar-${i}`;
+    bar.renderOrder = 6;
+    bar.position.set(-0.07 + i * 0.04, -0.22, 0.01);
+    styleHudGroup.add(bar);
+    styleBarMeshes.push(bar);
+  }
+
+  styleLetterSprite = makeSprite('D', { fontSize: 44, color: '#444444', glow: true, scale: 0.13, depthTest: false });
+  styleLetterSprite.name = 'style-grade-letter';
+  styleLetterSprite.renderOrder = 7;
+  styleLetterSprite.position.set(0.055, -0.22, 0.02);
+  styleHudGroup.add(styleLetterSprite);
+  styleLetterSprite.userData.text = 'D';
+  styleLetterTier = -1;
+}
+
+export function updateStyleHUD(styleState, grade, now) {
+  if (!styleHudGroup || !styleState) return;
+
+  // Bars: fill from the bottom via scale.y + origin compensation
+  const values = [styleState.variety, styleState.precision, styleState.tempo, styleState.creativity];
+  for (let i = 0; i < 4; i++) {
+    const bar = styleBarMeshes[i];
+    if (!bar) continue;
+    const fill = Math.min(1, Math.max(0, (values[i] || 0) / 100));
+    bar.scale.y = Math.max(0.001, fill);
+    bar.position.y = -0.28 + fill * 0.06;
+  }
+
+  // Grade letter — rebuild texture ONLY when the tier changes
+  const tier = grade ? (grade.tier ?? 6) : 6;
+  if (tier !== styleLetterTier && styleLetterSprite) {
+    styleLetterTier = tier;
+    const g = grade || { grade: 'D', color: 0x444444 };
+    const colorHex = '#' + g.color.toString(16).padStart(6, '0');
+    if (styleLetterSprite.material.map) styleLetterSprite.material.map.dispose();
+    const { texture, aspect } = makeTextTexture(g.grade, { fontSize: 44, color: colorHex, glow: true, glowColor: colorHex });
+    styleLetterSprite.material.map = texture;
+    styleLetterSprite.material.needsUpdate = true;
+    styleLetterSprite.scale.set(aspect * 0.13, 0.13, 1);
+    styleLetterSprite.userData.text = g.grade;
+  }
+}
+
+/** Brief full-view flash in the grade color (Issue #189 grade-up moment). */
+export function triggerStyleFlash(colorHex) {
+  styleFlashColor = colorHex;
+  styleFlashOpacity = 0.4;
 }
 
 // ── Speed Lines ────────────────────────────────────────────
