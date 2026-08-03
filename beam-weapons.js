@@ -23,6 +23,14 @@ import {
 import { updateHUD, spawnKillChainPopup, triggerHitFlash } from './hud.js';
 import { spawnDamageNumber } from './damage-numbers.js';
 import { startBossDeathCinematic } from './boss-death-cinematic.js';
+// NOTE: intentional ES module cycle — beam-weapons → projectile-system → beam-weapons.
+// Both modules only call each other's functions at runtime (never during module
+// evaluation), which is valid for native ES modules. A future phase can break it
+// with a shared collision/utility module.
+import {
+  handleHit, spawnBossProjectileDestructionFX, triggerHostileProjectileExplosion,
+  projectiles, _hostileProjectilesInArray,
+} from './projectile-system.js';
 
 // [DEBUG] Mirrors main.js — console.log blocks the render thread on Quest
 const DEBUG = false;
@@ -95,15 +103,10 @@ let scene = null;
 let camera = null;
 let controllers = null;
 let enemySpatialHash = null;
-let projectiles = [];            // live ref to main.js's projectile array
-let _hostileProjectilesInArray = []; // live ref to main.js's hostile cache
 
 // Hooks into main.js (set via initBeamWeapons)
 let basicMat = (color, opts) => null;
-let handleHit = () => null;
 let handleEnemyKilled = () => null;
-let spawnBossProjectileDestructionFX = () => null;
-let triggerHostileProjectileExplosion = () => null;
 let disposeObject3D = () => null;
 let setKilledBy = () => null;
 let applyPlayerDamage = () => false;
@@ -115,10 +118,10 @@ let triggerScreenShake = () => null;
  * Register runtime dependencies from main.js. Must be called once at init
  * after controllers/scene/camera are created.
  * @param {Object} deps - { scene, camera, controllers, enemySpatialHash,
- *   projectiles, hostileProjectiles, basicMat, hooks: { handleHit,
- *   handleEnemyKilled, spawnBossProjectileDestructionFX,
- *   triggerHostileProjectileExplosion, disposeObject3D, setKilledBy,
- *   applyPlayerDamage, checkKillsAlert, endGame } }
+ *   basicMat, hooks: { handleEnemyKilled, disposeObject3D, setKilledBy,
+ *   applyPlayerDamage, checkKillsAlert, endGame, triggerScreenShake } }
+ * (handleHit/spawnBossProjectileDestructionFX/triggerHostileProjectileExplosion/
+ *  projectiles/_hostileProjectilesInArray are imported from projectile-system.js)
  */
 export function initBeamWeapons(deps) {
   if (!deps) return;
@@ -126,14 +129,9 @@ export function initBeamWeapons(deps) {
   camera = deps.camera || null;
   controllers = deps.controllers || null;
   enemySpatialHash = deps.enemySpatialHash || null;
-  if (deps.projectiles) projectiles = deps.projectiles;
-  if (deps.hostileProjectiles) _hostileProjectilesInArray = deps.hostileProjectiles;
   if (typeof deps.basicMat === 'function') basicMat = deps.basicMat;
   const h = deps.hooks || {};
-  if (typeof h.handleHit === 'function') handleHit = h.handleHit;
   if (typeof h.handleEnemyKilled === 'function') handleEnemyKilled = h.handleEnemyKilled;
-  if (typeof h.spawnBossProjectileDestructionFX === 'function') spawnBossProjectileDestructionFX = h.spawnBossProjectileDestructionFX;
-  if (typeof h.triggerHostileProjectileExplosion === 'function') triggerHostileProjectileExplosion = h.triggerHostileProjectileExplosion;
   if (typeof h.disposeObject3D === 'function') disposeObject3D = h.disposeObject3D;
   if (typeof h.setKilledBy === 'function') setKilledBy = h.setKilledBy;
   if (typeof h.applyPlayerDamage === 'function') applyPlayerDamage = h.applyPlayerDamage;
