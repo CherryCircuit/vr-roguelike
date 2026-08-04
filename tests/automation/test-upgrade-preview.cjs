@@ -1,11 +1,11 @@
 /**
- * Test: Upgrade Card Hover Preview (#215) — on-card text swap
+ * Test: Upgrade Card Hover Preview (#215) — single left-aligned stat block
  *
- *   - Hovering a MAIN weapon choice card swaps its desc/stat/note text for
- *     the stat deltas ("DMG: 10 (↓ -5)" / "FIRE RATE:" / "DPS:")
- *   - Hovering a different card swaps that card and restores the first
+ *   - Hovering a card shows ONE stat block (label/value/delta columns) and
+ *     hides the card's original desc/stat/note text
+ *   - Hovering a different card moves the block there and restores the first
  *   - Hovering SKIP does nothing (no crash, no preview)
- *   - Aiming away from the cards restores all original texts
+ *   - Aiming away hides the block and restores all original texts
  *   - Selecting a card advances directly (no post-select bar)
  *   - No console errors
  */
@@ -77,21 +77,24 @@ async function runTest() {
   const hoverCard = async (cardName) => {
     const ok = await aimAt(cardName);
     if (!ok) return false;
-    await sleep(600); // hover pass (30Hz throttle) + text swap
+    await sleep(600); // hover pass (30Hz throttle) + preview swap
     return true;
   };
 
-  // The card's desc/stat/note text sprites (userData.text holds current text)
-  const getCardTexts = (cardName) => page.evaluate((name) => {
+  // Preview block state: { blockVisible, blockHasMap, blockW, descVisible, descText }
+  const getPreviewState = (cardName) => page.evaluate((name) => {
     const scene = window.__test?.getScene?.();
     const card = scene?.getObjectByName(name);
     if (!card) return null;
-    const out = {};
-    for (const role of ['desc', 'stat', 'note']) {
-      const sprite = card.userData[`_cardText_${role}`];
-      if (sprite && sprite.userData && sprite.userData.text) out[role] = sprite.userData.text;
-    }
-    return out;
+    const block = card.userData._previewSprite;
+    const desc = card.userData._cardText_desc;
+    return {
+      blockVisible: !!block && block.visible,
+      blockHasMap: !!(block && block.material && block.material.map),
+      blockW: block && block.geometry ? block.geometry.parameters.width : 0,
+      descVisible: desc ? desc.visible : null,
+      descText: desc && desc.userData ? desc.userData.text : null,
+    };
   }, cardName);
 
   const isUpgradeSelect = () => page.evaluate(() =>
@@ -137,45 +140,38 @@ async function runTest() {
 
   const results = {};
 
-  // ── Phase 2: MAIN weapon choice cards show on-card stat deltas ──
+  // ── Phase 2: MAIN weapon choice cards show the stat block on hover ──
   console.log('\n📍 Phase 2: MAIN weapon choice hover preview...');
   await page.evaluate(() => window.__test.progression.forceLevelComplete({ autoSelect: false }));
   await waitForUpgradeSelect();
   await sleep(1600); // warp + cooldown
 
   await hoverCard('upgrade-card-0');
-  let texts = await getCardTexts('upgrade-card-0');
-  console.log(`  Card 0 texts: ${JSON.stringify(texts)}`);
-  results.previewOn = !!(texts && texts.desc && texts.desc.includes('DMG:') && texts.note && texts.note.includes('DPS:'));
-  console.log(`  Card shows DMG/DPS deltas on hover: ${results.previewOn ? '✅' : '❌'}`);
+  let st = await getPreviewState('upgrade-card-0');
+  console.log(`  Card 0 state: ${JSON.stringify(st)}`);
+  results.previewOn = !!(st && st.blockVisible && st.blockHasMap && st.blockW > 0.5 && st.descVisible === false);
+  console.log(`  Stat block shown, original text hidden: ${results.previewOn ? '✅' : '❌'}`);
 
-  // Hover card 1 → card 1 previews, card 0 restores (compare against the
-  // original text stashed on the card group by the HUD)
+  // Hover card 1 → block moves, card 0 restores
   await hoverCard('upgrade-card-1');
-  const card0After = await getCardTexts('upgrade-card-0');
-  const card0OrigDesc = await page.evaluate(() => {
-    const scene = window.__test?.getScene?.();
-    const card = scene?.getObjectByName('upgrade-card-0');
-    return card?.userData?._cardTextOrig_desc?.text || null;
-  });
-  texts = await getCardTexts('upgrade-card-1');
-  results.swapWorks = !!(texts && texts.desc && texts.desc.includes('DMG:'));
-  results.restoreWorks = !!(card0After && card0After.desc && card0OrigDesc &&
-                            !card0After.desc.includes('DMG:') && card0After.desc === card0OrigDesc);
-  console.log(`  Card 1 previews on hover: ${results.swapWorks ? '✅' : '❌'}`);
+  const card1 = await getPreviewState('upgrade-card-1');
+  const card0 = await getPreviewState('upgrade-card-0');
+  results.swapWorks = !!(card1 && card1.blockVisible);
+  results.restoreWorks = !!(card0 && card0.blockVisible === false && card0.descVisible === true);
+  console.log(`  Card 1 block on hover: ${results.swapWorks ? '✅' : '❌'}`);
   console.log(`  Card 0 restored after un-hover: ${results.restoreWorks ? '✅' : '❌'}`);
 
-  // Hover SKIP → no crash, skip card unchanged
+  // Hover SKIP → no crash, no block
   await hoverCard('upgrade-card-3');
-  const skipTexts = await getCardTexts('upgrade-card-3');
-  console.log(`  SKIP hover (no preview, no crash): ${skipTexts === null ? '✅ (no text roles)' : '✅'}`);
+  const skip = await getPreviewState('upgrade-card-3');
+  console.log(`  SKIP hover (no block, no crash): ${skip === null ? '✅ (no text roles)' : '✅'}`);
 
-  // Aim away → all cards restore
+  // Aim away → all blocks hidden, original text visible
   await aimAt([0, 6, 1]); // above the card row — nothing to hit
   await sleep(600);
-  const restored = await getCardTexts('upgrade-card-1');
-  results.aimAwayRestore = !!(restored && restored.desc && !restored.desc.includes('DMG:'));
-  console.log(`  Aiming away restores card 1: ${results.aimAwayRestore ? '✅' : '❌'}`);
+  const away = await getPreviewState('upgrade-card-1');
+  results.aimAwayRestore = !!(away && away.blockVisible === false && away.descVisible === true);
+  console.log(`  Aiming away hides block + restores card 1: ${results.aimAwayRestore ? '✅' : '❌'}`);
 
   // Select first offered main weapon → advances directly (no post-select bar)
   await page.evaluate(() => window.__test.progression.selectUpgradeByIndex(0));
@@ -190,7 +186,7 @@ async function runTest() {
   results.noPostBar = barGone;
   console.log(`  Advanced to level 2 directly (no post-select bar): ${results.advanced && results.noPostBar ? '✅' : '❌'} (state=${afterPick.state} level=${afterPick.level})`);
 
-  // ── Phase 3: Normal upgrade preview + restore-on-unhover ──
+  // ── Phase 3: Normal upgrade preview ──
   console.log('\n📍 Phase 3: Normal upgrade preview...');
   await page.evaluate(() => {
     window.game.nextUpgradeHand = 'left';
@@ -202,12 +198,9 @@ async function runTest() {
   await sleep(1600);
 
   await hoverCard('upgrade-card-0');
-  texts = await getCardTexts('upgrade-card-0');
-  console.log(`  Card 0 texts: ${JSON.stringify(texts)}`);
-  // Any stat-delta line ends with an arrow delta (↑ / ↓); the note slot is
-  // always the DPS line.
-  results.statsOnCard = !!(texts && texts.desc && /:.*(↑|↓)/.test(texts.desc) && texts.note && texts.note.includes('DPS:'));
-  console.log(`  Stat delta + DPS shown on the card itself: ${results.statsOnCard ? '✅' : '❌'}`);
+  st = await getPreviewState('upgrade-card-0');
+  results.statsOnCard = !!(st && st.blockVisible && st.blockHasMap && st.blockW > 0.5 && st.descVisible === false);
+  console.log(`  Stat block on the card itself: ${results.statsOnCard ? '✅' : '❌'}`);
 
   // Select the hovered card → advances directly, no console errors
   await page.evaluate(() => window.__test.progression.selectUpgradeByIndex(0));

@@ -1950,8 +1950,8 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
     (getDissolvableUpgrades(game.upgrades.left).length + getDissolvableUpgrades(game.upgrades.right).length);
   if (dissolvableCount > 0) {
     makeAlchemyButton(upgradeGroup, '⚗ ALCHEMY', { type: 'alchemy' }, 0, -1.05, {
-      w: 1.5, h: 0.3, color: 0xffaa00, name: 'alchemy-btn-alchemy',
-      fontSize: 32, textScale: 0.28,
+      w: 1.8, h: 0.36, color: 0xffaa00, name: 'alchemy-btn-alchemy',
+      fontSize: 38, textScale: 0.32,
     });
   }
 
@@ -2150,24 +2150,14 @@ function flushCardTextQueue() {
   if (_textQueue.length === 0 || performance.now() < _textQueueReleaseTime) return;
   const batch = _textQueue.splice(0, TEXT_PER_FRAME);
   for (const item of batch) {
-    // If the card is already in hover-preview mode when its text sprite is
-    // finally created, create it with the preview text directly (avoids a
-    // wasteful double texture build).
-    let text = item.text;
-    let opts = item.opts;
-    if (item.role && item.group.userData._previewActive) {
-      const line = item.group.userData.previewLines?.[item.role];
-      if (line) {
-        text = line.text;
-        opts = { ...item.opts, color: line.color };
-      }
-    }
-    const sprite = makeSprite(text, opts);
+    // Always create with the ORIGINAL text — hover previews hide/show these
+    // sprites and use a single stat-block sprite instead (Issue #215).
+    const sprite = makeSprite(item.text, item.opts);
     sprite.position.copy(item.pos);
     item.group.add(sprite);
     if (item.role) {
       sprite.userData.role = item.role;
-      sprite.userData.text = text;
+      sprite.userData.text = item.text;
       sprite.userData._textOpts = item.opts;
       item.group.userData[`_cardText_${item.role}`] = sprite;
     } else {
@@ -2356,34 +2346,38 @@ function createUpgradeCard(upgrade, position, hand, style) {
   group.add(iconMesh);
   group.userData.iconMesh = iconMesh;
 
-  // ⚡ EVO badge (Issue #143) — top-right of the card when this upgrade is a
-  // still-needed recipe piece. Scaled pulse driven by updateUpgradeCards.
+  // ⚡ EVO marker (Issue #143) — the floating badge was replaced per player
+  // feedback (it overlapped the card title). Now the card's TOP border is a
+  // thick color bar with the EVO text INSIDE it, in a contrasting ink color
+  // (black on light bars, white on dark ones).
   if (isRecipePiece && !group.userData._recipeCollected) {
     try {
       const progress = getEvolutionProgress(game.mainWeapon?.[hand] || 'standard_blaster', game.upgrades[hand] || {});
       const isUncollected = progress && !progress.collectedIds.includes(upgrade.id);
       if (isUncollected) {
-        // Badge sized via the maxWidth pattern so the GLYPHS render at card-
-        // name size (glyph height = fontSize × scale / maxWidth = 60×0.5/300
-        // = 0.1 units ≈ the card name glyphs). A bare scale without maxWidth
-        // scales the whole padded canvas, leaving the glyphs tiny.
-        const badge = makeSprite('⚡ EVO', {
-          fontSize: 60,
-          color: '#FFD700',
-          glow: true,
-          glowColor: '#FFD700',
-          scale: 0.5,
-          maxWidth: 300,
-          depthTest: true,
-          forceArial: true,
+        // Thick top bar in the recipe gold
+        const barGeo = new THREE.PlaneGeometry(1.2, 0.1);
+        const barMat = new THREE.MeshBasicMaterial({
+          color: 0xffdd00, transparent: true, opacity: 0.95,
+          side: THREE.DoubleSide, depthWrite: false, depthTest: true,
         });
-        badge.userData.text = '⚡ EVO';
-        // Top-right corner: bigger badge (≈0.28 wide × 0.16 tall) — tuck it
-        // against the card edge, clear of the name text at y 0.54.
-        badge.position.set(0.42, 0.6, 0.02);
-        badge.userData._evoBadge = true;
-        group.add(badge);
-        group.userData.evoBadge = badge;
+        const bar = new THREE.Mesh(barGeo, barMat);
+        bar.name = 'evo-bar';
+        bar.renderOrder = 1;
+        bar.position.set(0, 0.7, 0.005);
+        group.add(bar);
+
+        // Contrasting ink: luminance of gold is high → black text
+        const lum = (0.299 * 0xff + 0.587 * 0xdd + 0.114 * 0) / 255;
+        const inkColor = lum > 0.45 ? '#000000' : '#ffffff';
+        const evo = makeSprite('⚡ EVO', {
+          fontSize: 40, color: inkColor, scale: 0.45, maxWidth: 300,
+          depthTest: true, forceArial: true,
+        });
+        evo.name = 'evo-text';
+        evo.userData.text = '⚡ EVO';
+        evo.position.set(0, 0.7, 0.02);
+        group.add(evo);
       }
     } catch (e) { /* non-critical */ }
   }
@@ -2517,12 +2511,6 @@ export function updateUpgradeCards(now, cooldownRemaining) {
       card.userData.iconMesh.rotation.y += 0.02;
       card.userData.iconMesh.rotation.x += 0.01;
     }
-    // ⚡ EVO badge pulse (Issue #143) — slow golden breathing on recipe cards
-    const badge = card.userData.evoBadge;
-    if (badge && !card.userData._warpActive) {
-      const pulse = 1 + Math.sin(now * 0.004) * 0.12;
-      badge.scale.set(pulse, pulse, 1);
-    }
   });
 
   // Use cached reference instead of getObjectByName traversal every frame
@@ -2567,8 +2555,15 @@ function fmtPreviewValue(value, unit, isBool) {
 }
 
 // Build the on-card preview lines for an upgrade card.
-// Returns { desc, stat, note } where each is { text, color } or null.
-// desc/stat = the first two stat deltas, note = the DPS delta.
+// Returns { lines: [{label, value, delta, color}] } — a 3-column readout
+// (label / value / delta) rendered as ONE texture per the player's mockup:
+//
+//   DMG:            10        (▲ +42)
+//   FIRE RATE:   12.5/s  (▲ +6.9)
+//   DPS:              125     (▼ -5)
+//
+// Columns are drawn at explicit pixel positions so they align regardless of
+// font metrics (no monospace required).
 function buildCardPreviewLines(upgrade, hand) {
   const weaponId = game.mainWeapon?.[hand] || 'standard_blaster';
   const extraLines = upgrade.id === 'extra_nuke'
@@ -2577,96 +2572,123 @@ function buildCardPreviewLines(upgrade, hand) {
   const preview = getUpgradePreview(weaponId, game.upgrades[hand] || {}, upgrade, { extraLines });
   if (!preview) return null;
 
-  const fmtDelta = (before, after) => {
-    const delta = Math.round((after - before) * 10) / 10;
-    const arrow = delta >= 0 ? '↑' : '↓';
-    const sign = delta >= 0 ? '+' : '';
-    return `${arrow} ${sign}${delta}`;
+  const fmtDelta = (delta) => {
+    const d = Math.round(delta * 10) / 10;
+    const up = d >= 0;
+    const arrow = up ? '▲' : '▼';
+    const sign = up ? '+' : '-';
+    const num = Number.isInteger(d) ? String(Math.abs(d)) : Math.abs(d).toFixed(1);
+    return { text: `(${arrow} ${sign}${num})`, up };
   };
-  const statLines = preview.statLines.slice(0, 2).map(line => ({
-    text: `${line.label}: ${fmtPreviewValue(line.after, line.unit, line.bool)} (${fmtDelta(line.before, line.after)})`,
-    color: (line.after || 0) >= (line.before || 0) ? '#88ff88' : '#ff6666',
-  }));
-  const dpsDelta = Math.round(preview.dps.after - preview.dps.before);
-  const dps = {
-    text: `DPS: ${Math.round(preview.dps.after)} (${dpsDelta >= 0 ? '↑ +' : '↓ '}${Math.abs(dpsDelta)})`,
-    color: dpsDelta >= 0 ? '#88ff88' : '#ff6666',
-  };
-  return {
-    desc: statLines[0] || null,
-    stat: statLines[1] || null,
-    note: dps,
-  };
-}
 
-// Swap a sprite's canvas texture for new text. CRITICAL (the classic
-// skewed-text bug): each text block needs its OWN geometry sized to its
-// texture — reusing the old plane stretches/squashes the new glyphs. This
-// is the same rule the layout editor follows (geometry.dispose() + fresh
-// PlaneGeometry on every text change).
-function swapSpriteText(sprite, text, opts) {
-  if (!sprite || !sprite.material) return;
-  if (sprite.material.map) sprite.material.map.dispose();
-  const { texture, canvasWidth, canvasHeight } = makeTextTexture(text, opts);
-  sprite.material.map = texture;
-  sprite.material.needsUpdate = true;
-  const scale = opts.scale || 0.3;
-  let width, height;
-  if (opts.maxWidth) {
-    const unitPerPixel = scale / opts.maxWidth;
-    width = canvasWidth * unitPerPixel;
-    height = canvasHeight * unitPerPixel;
-  } else {
-    const aspect = canvasWidth / canvasHeight;
-    width = aspect * scale;
-    height = scale;
+  const lines = [];
+  for (const line of preview.statLines.slice(0, 2)) {
+    const d = fmtDelta(line.after - line.before);
+    lines.push({
+      label: `${line.label}:`,
+      value: `${fmtPreviewValue(line.after, line.unit, line.bool)}${line.unit || ''}`,
+      delta: d.text,
+      color: d.up ? '#7dff9e' : '#ff7d7d',
+    });
   }
-  if (sprite.geometry) sprite.geometry.dispose();
-  sprite.geometry = new THREE.PlaneGeometry(width, height);
+  const dps = fmtDelta(preview.dps.after - preview.dps.before);
+  lines.push({
+    label: 'DPS:',
+    value: String(Math.round(preview.dps.after)),
+    delta: dps.text,
+    color: dps.up ? '#7dff9e' : '#ff7d7d',
+  });
+  return { lines };
 }
 
-// Toggle a card's text between its original desc/stat/note and the preview
-// delta lines. No-op unless the hover state actually changed.
+// Draw the 3-column stat block onto one canvas texture. Each column gets an
+// explicit x position measured from the widest entry, so DMG/FIRE RATE/DPS
+// rows line up exactly. Returns { texture, canvasWidth, canvasHeight }.
+function makePreviewBlockTexture(lines, opts = {}) {
+  const fontSize = opts.fontSize || 38;
+  const font = `bold ${fontSize}px Arial, sans-serif`;
+  const lineHeight = fontSize * 1.35;
+  const padX = 18;
+  const padY = 14;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.font = font;
+
+  const maxLabelW = Math.max(...lines.map(l => ctx.measureText(l.label).width));
+  const maxValueW = Math.max(...lines.map(l => ctx.measureText(l.value).width));
+  const maxDeltaW = Math.max(...lines.map(l => ctx.measureText(l.delta).width));
+  const labelX = padX;
+  const valueRightX = labelX + maxLabelW + 18;
+  const deltaX = valueRightX + maxValueW + 20;
+
+  canvas.width = Math.ceil(deltaX + maxDeltaW + padX);
+  canvas.height = Math.ceil(lineHeight * lines.length + padY * 2);
+  ctx.font = font;
+  ctx.textBaseline = 'middle';
+
+  lines.forEach((line, i) => {
+    const y = padY + lineHeight * i + lineHeight / 2;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#e8e8e8';
+    ctx.fillText(line.label, labelX, y);
+    ctx.textAlign = 'right';
+    ctx.fillText(line.value, valueRightX, y);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = line.color;
+    ctx.fillText(line.delta, deltaX, y);
+  });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.premultiplyAlpha = false;
+  return { texture, canvasWidth: canvas.width, canvasHeight: canvas.height };
+}
+
+// Build the preview block sprite (single mesh + texture).
+function makePreviewBlockSprite(lines) {
+  const data = makePreviewBlockTexture(lines, { fontSize: 38 });
+  const renderWidth = 0.92; // fixed rendered width in world units
+  const unitPerPixel = renderWidth / data.canvasWidth;
+  const geo = new THREE.PlaneGeometry(renderWidth, data.canvasHeight * unitPerPixel);
+  const mat = new THREE.MeshBasicMaterial({
+    map: data.texture, transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = 999;
+  mesh.userData.text = 'preview-block';
+  return mesh;
+}
+
+// Toggle a card between its original desc/stat/note text and the single
+// left-aligned stat block. No-op unless the hover state actually changed.
 function setCardPreviewMode(group, active) {
   if (!group || group.userData._previewActive === active) return;
   group.userData._previewActive = active;
   const lines = group.userData.previewLines;
-  if (!lines) return;
-  for (const role of ['desc', 'stat', 'note']) {
-    const sprite = group.userData[`_cardText_${role}`];
-    if (active && lines[role]) {
-      if (sprite) {
-        swapSpriteText(sprite, lines[role].text, { ...sprite.userData._textOpts, color: lines[role].color });
-        sprite.userData.text = lines[role].text;
-      } else if (role === 'note' && group.userData._noteDef) {
-        // Cards without a sideGradeNote have no note sprite — create one
-        // lazily for the DPS line (Issue #215).
-        const def = group.userData._noteDef;
-        const s = makeSprite(lines[role].text, { ...def.opts, color: lines[role].color });
-        s.userData.text = lines[role].text;
-        s.userData.role = 'note';
-        s.userData._textOpts = def.opts;
-        s.userData._previewCreated = true;
-        s.position.copy(def.pos);
-        group.add(s);
-        group.userData[`_cardText_note`] = s;
-      }
-    } else if (!active) {
-      if (sprite && sprite.userData._previewCreated) {
-        // Remove the lazily-created preview sprite on restore
-        group.remove(sprite);
-        if (sprite.material && sprite.material.map) sprite.material.map.dispose();
-        if (sprite.geometry) sprite.geometry.dispose();
-        delete group.userData[`_cardText_note`];
-        continue;
-      }
-      if (sprite) {
-        const orig = group.userData[`_cardTextOrig_${role}`];
-        if (orig) {
-          swapSpriteText(sprite, orig.text, orig.opts);
-          sprite.userData.text = orig.text;
-        }
-      }
+  if (!lines || !lines.lines || lines.lines.length === 0) return;
+  if (active) {
+    // Hide the original text slots, show the stat block
+    for (const role of ['desc', 'stat', 'note']) {
+      const sprite = group.userData[`_cardText_${role}`];
+      if (sprite) sprite.visible = false;
+    }
+    if (!group.userData._previewSprite) {
+      const sprite = makePreviewBlockSprite(lines.lines);
+      // Left-align the block to the card's left text margin. The block's
+      // rendered width is 0.92 → center x = -0.5 + 0.92/2 ≈ -0.04.
+      sprite.position.set(-0.04, -0.02, 0.03);
+      group.add(sprite);
+      group.userData._previewSprite = sprite;
+    } else {
+      group.userData._previewSprite.visible = true;
+    }
+  } else {
+    for (const role of ['desc', 'stat', 'note']) {
+      const sprite = group.userData[`_cardText_${role}`];
+      if (sprite) sprite.visible = true;
+    }
+    if (group.userData._previewSprite) {
+      group.userData._previewSprite.visible = false;
     }
   }
 }
@@ -2696,10 +2718,11 @@ function updateCardHoverPreviews(hoveredSelections) {
 
 // Build a single tappable alchemy button: group → face mesh (hover target),
 // border, label. Hover scaling targets the button group via the generic
-// updateHUDHover parent-Group rule.
+// updateHUDHover parent-Group rule. Defaults are sized for VR legibility
+// (player feedback: bench text was far too tiny).
 function makeAlchemyButton(parent, label, action, x, y, opts = {}) {
-  const w = opts.w || 1.6;
-  const h = opts.h || 0.3;
+  const w = opts.w || 1.8;
+  const h = opts.h || 0.34;
   const color = opts.color ?? 0x00ff88;
   const group = new THREE.Group();
   group.name = opts.name || 'alchemy-btn';
@@ -2725,10 +2748,12 @@ function makeAlchemyButton(parent, label, action, x, y, opts = {}) {
   group.add(border);
 
   const sprite = makeSprite(label, {
-    fontSize: opts.fontSize || 26,
+    fontSize: opts.fontSize || 36,
     color: opts.disabled ? '#555566' : (opts.textColor || '#ffffff'),
-    scale: opts.textScale || 0.22,
-    maxWidth: opts.maxWidth || 700,
+    scale: opts.textScale || 0.3,
+    // NOTE: no maxWidth — with maxWidth, glyph size = fontSize×scale/maxWidth
+    // and a large maxWidth divided the glyphs by the padded canvas, making
+    // bench text unreadably small. Aspect-based sizing keeps glyphs ≈ scale.
     depthTest: true,
     forceArial: true,
   });
@@ -2748,7 +2773,8 @@ function getAlchemyLayout() {
     // y raised from -1.78 → -0.9: the old value put the bar at floor level
     // (through the floor in VR). -0.9 keeps it visible below the cards.
     bar: r('alchemyBar', { x: 0, y: -0.9, z: 0.1, w: 2.7, h: 1.15 }),
-    bench: r('alchemyBench', { x: 0, y: 0.05, z: 0.08, w: 3.4, h: 2.2 }),
+    // Panel widened so the bigger dissolve/forge buttons stay inside it
+    bench: r('alchemyBench', { x: 0, y: 0.05, z: 0.08, w: 4.4, h: 2.4 }),
     headerY: r('alchemyHeader', { y: 0.8, z: 0.02, fontSize: 40, scale: 0.3 }).y,
     essenceY: r('alchemyEssence', { y: 0.8, z: 0.02, fontSize: 30, scale: 0.26 }).y,
   };
@@ -2767,6 +2793,11 @@ export function showAlchemyBench(hand) {
   alchemyCategoryView = false;
   if (hand) alchemyBenchHand = hand;
   rebuildAlchemyBench();
+  // The bench REPLACES the card row — hide the cards (and the ALCHEMY
+  // button) so they can't render over the bench or be selected behind it.
+  upgradeGroup.children.forEach(child => {
+    if (child !== alchemyBenchGroup) child.visible = false;
+  });
 }
 
 export function hideAlchemyBench() {
@@ -2777,6 +2808,8 @@ export function hideAlchemyBench() {
     if (alchemyBenchGroup.parent) alchemyBenchGroup.parent.remove(alchemyBenchGroup);
     alchemyBenchGroup = null;
   }
+  // Restore the card row
+  upgradeGroup.children.forEach(child => { child.visible = true; });
 }
 
 /** Swap the open bench to the Targeted Infusion category picker. */
@@ -2817,8 +2850,8 @@ function rebuildAlchemyBench() {
   ));
 
   const header = makeSprite('ALCHEMY BENCH', {
-    fontSize: 34, color: '#ffaa00', glow: true, glowColor: '#ffaa00',
-    scale: 0.26, maxWidth: 700, depthTest: true,
+    fontSize: 44, color: '#ffaa00', glow: true, glowColor: '#ffaa00',
+    scale: 0.3, depthTest: true,
   });
   header.userData.text = 'ALCHEMY BENCH';
   header.position.set(-1.25, L.headerY, 0.02);
@@ -2828,8 +2861,8 @@ function rebuildAlchemyBench() {
   const forged = game.alchemyForgedThisLevel;
   const essenceText = `ESSENCE: ${essence}/${ALCHEMY_FORGE_COST}${forged ? ' · FORGED' : ''}`;
   const essenceSprite = makeSprite(essenceText, {
-    fontSize: 30, color: essence >= ALCHEMY_FORGE_COST ? '#ffdd00' : '#8888aa',
-    scale: 0.24, maxWidth: 520, depthTest: true, forceArial: true,
+    fontSize: 36, color: essence >= ALCHEMY_FORGE_COST ? '#ffdd00' : '#8888aa',
+    scale: 0.3, depthTest: true, forceArial: true,
   });
   essenceSprite.userData.text = essenceText;
   essenceSprite.position.set(1.3, L.essenceY, 0.02);
@@ -2841,7 +2874,7 @@ function rebuildAlchemyBench() {
     // sight — a vertically-stacked single column would bury it under the
     // last chip for camera rays coming from above.
     const title = makeSprite('TARGETED INFUSION — PICK A CATEGORY', {
-      fontSize: 30, color: '#ffffff', scale: 0.24, maxWidth: 1000, depthTest: true, forceArial: true,
+      fontSize: 36, color: '#ffffff', scale: 0.3, depthTest: true, forceArial: true,
     });
     title.userData.text = 'TARGETED INFUSION — PICK A CATEGORY';
     title.position.set(0, 0.42, 0.02);
@@ -2854,17 +2887,17 @@ function rebuildAlchemyBench() {
       const y = 0.14 - row * 0.26;
       makeAlchemyButton(group, `${ALCHEMY_CATEGORIES[cat]}`, {
         type: 'forge', forgeType: 'targeted_infusion', category: cat,
-      }, colOffsets[col], y, { w: 1.4, h: 0.26, color: 0x88ccff, textColor: '#ffffff', textScale: 0.21, name: `alchemy-btn-cat-${cat}` });
+      }, colOffsets[col], y, { w: 1.7, h: 0.3, color: 0x88ccff, textColor: '#ffffff', textScale: 0.3, name: `alchemy-btn-cat-${cat}` });
     });
     makeAlchemyButton(group, '← BACK', { type: 'back' }, 0, -0.86, {
-      w: 1.2, h: 0.26, color: 0xff4444, name: 'alchemy-btn-back',
+      w: 1.5, h: 0.3, color: 0xff4444, name: 'alchemy-btn-back',
     });
     return;
   }
 
   // ── Main bench: dissolve chips (both hands) + forge options ──
   const leftTitle = makeSprite('DISSOLVE', {
-    fontSize: 28, color: '#00ffff', scale: 0.24, maxWidth: 600, depthTest: true, forceArial: true,
+    fontSize: 34, color: '#00ffff', scale: 0.3, depthTest: true, forceArial: true,
   });
   leftTitle.userData.text = 'DISSOLVE';
   leftTitle.position.set(-1.3, 0.42, 0.02);
@@ -2883,15 +2916,15 @@ function rebuildAlchemyBench() {
       chipRows.push({ hand, upgradeId: upg.id, label, color: chipColor, warn: isLastOnHand });
     });
   }
-  for (const row of chipRows.slice(0, 6)) {
+  for (const row of chipRows.slice(0, 5)) {
     const label = row.label + (row.warn ? ' LEAVES HAND BARE' : '');
     makeAlchemyButton(group, label, { type: 'dissolve', hand: row.hand, upgradeId: row.upgradeId },
-      -1.3, chipY, { w: 1.9, h: 0.26, color: row.color, textColor: row.warn ? '#ff8888' : '#ffffff', textScale: 0.2, maxWidth: 800, name: `alchemy-btn-dissolve-${row.hand}-${row.upgradeId}` });
+      -1.3, chipY, { w: 2.0, h: 0.3, color: row.color, textColor: row.warn ? '#ff8888' : '#ffffff', textScale: 0.3, name: `alchemy-btn-dissolve-${row.hand}-${row.upgradeId}` });
     chipY -= 0.26;
   }
   if (chipRows.length === 0) {
     const none = makeSprite('NO UPGRADES TO DISSOLVE', {
-      fontSize: 24, color: '#555566', scale: 0.2, maxWidth: 700, depthTest: true, forceArial: true,
+      fontSize: 30, color: '#555566', scale: 0.26, depthTest: true, forceArial: true,
     });
     none.userData.text = 'NO UPGRADES TO DISSOLVE';
     none.position.set(-1.3, 0.14, 0.02);
@@ -2899,7 +2932,7 @@ function rebuildAlchemyBench() {
   }
 
   const forgeTitle = makeSprite('FORGE — 3 ESSENCE', {
-    fontSize: 28, color: '#ffdd00', scale: 0.24, maxWidth: 700, depthTest: true, forceArial: true,
+    fontSize: 34, color: '#ffdd00', scale: 0.3, depthTest: true, forceArial: true,
   });
   forgeTitle.userData.text = 'FORGE — 3 ESSENCE';
   forgeTitle.position.set(1.3, 0.42, 0.02);
@@ -2918,7 +2951,7 @@ function rebuildAlchemyBench() {
     // Targeted Infusion opens the category picker instead of forging directly
     const action = opt.action || { type: 'forge', forgeType: opt.forgeType };
     makeAlchemyButton(group, label, action,
-      1.3, forgeY, { w: 1.9, h: 0.26, color: opt.color, textColor: canForge ? '#ffffff' : '#555566', textScale: 0.2, maxWidth: 800, disabled: !canForge, name: `alchemy-btn-forge-${opt.forgeType || 'targeted_infusion'}` });
+      1.3, forgeY, { w: 2.0, h: 0.3, color: opt.color, textColor: canForge ? '#ffffff' : '#555566', textScale: 0.3, disabled: !canForge, name: `alchemy-btn-forge-${opt.forgeType || 'targeted_infusion'}` });
     forgeY -= 0.26;
   }
 
@@ -2926,7 +2959,7 @@ function rebuildAlchemyBench() {
   if (!canForge) {
     const warnText = forged ? 'FORGING USED — 1 PER LEVEL' : 'NEED 3 ESSENCE — DISSOLVE TO EARN';
     const warn = makeSprite(warnText, {
-      fontSize: 22, color: '#ff8844', scale: 0.19, maxWidth: 700, depthTest: true, forceArial: true,
+      fontSize: 30, color: '#ff8844', scale: 0.26, depthTest: true, forceArial: true,
     });
     warn.userData.text = warnText;
     warn.position.set(1.3, -0.92, 0.02);
@@ -2934,7 +2967,7 @@ function rebuildAlchemyBench() {
   }
 
   makeAlchemyButton(group, '← BACK', { type: 'back' }, 0, -0.92, {
-    w: 1.2, h: 0.26, color: 0xff4444, name: 'alchemy-btn-back',
+    w: 1.5, h: 0.3, color: 0xff4444, name: 'alchemy-btn-back',
   });
 }
 
@@ -2988,6 +3021,7 @@ export function getUpgradeCardHit(raycaster) {
   // boundary and intercept rays meant for a neighboring card.
   const faceMeshes = [];
   for (let i = 0; i < upgradeCards.length; i++) {
+    if (!upgradeCards[i].visible) continue; // hidden behind the bench
     const face = upgradeCards[i].children?.find(c => c.userData?.isUpgradeCard);
     if (face) faceMeshes.push(face);
   }
@@ -5154,6 +5188,8 @@ export function updateHUDHover(raycasters) {
     }
 
     upgradeCards.forEach(card => {
+      // Skip cards hidden behind the alchemy bench
+      if (!card.visible) return;
       const mesh = card.children.find(c => c.userData.isUpgradeCard);
       if (mesh) hoverables.push(mesh);
     });

@@ -148,19 +148,27 @@ async function runTest() {
   console.log(`  Progress line 'Twin Helix: 2/3 ●●○': ${progressLine ? '✅' : '❌'}`);
   if (!progressLine) console.log(`    got: ${texts.join(' | ')}`);
 
-  // EVO badge: check the critical card if offered (uncollected recipe piece)
+  // EVO top bar: check the critical card if offered (uncollected recipe
+  // piece) — the marker is now a thick gold bar + EVO text at the card top
   const offered = await page.evaluate(() => window.__test.progression.getPendingUpgrades());
   const criticalIdx = offered.findIndex(s => s.id === 'critical');
   let badgeOk = 'skipped (critical not offered)';
   if (criticalIdx >= 0) {
-    const hasBadge = await page.evaluate((idx) => {
+    const hasBar = await page.evaluate((idx) => {
       const scene = window.__test?.getScene?.();
       const card = scene?.getObjectByName(`upgrade-card-${idx}`);
-      return !!(card && card.userData.evoBadge);
+      if (!card) return false;
+      let bar = false;
+      let evoText = false;
+      card.traverse(c => {
+        if (c.name === 'evo-bar') bar = true;
+        if (c.name === 'evo-text') evoText = true;
+      });
+      return bar && evoText;
     }, criticalIdx);
-    badgeOk = hasBadge ? true : false;
+    badgeOk = hasBar ? true : false;
   }
-  console.log(`  EVO badge on uncollected recipe card: ${badgeOk === true ? '✅' : badgeOk === false ? '❌' : badgeOk}`);
+  console.log(`  EVO top bar on uncollected recipe card: ${badgeOk === true ? '✅' : badgeOk === false ? '❌' : badgeOk}`);
 
   // ── Phase 3: Select final piece → cinematic triggers ──
   console.log('\n📍 Phase 3: Final recipe card → cinematic...');
