@@ -17,7 +17,7 @@ import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook, setWeaponEvolution, getWeaponEvolution, isWeaponEvolved } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress, detectFireCombos, COMBO_DEFS, computeStyleGrade } from './weapons.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress, detectFireCombos, computeStyleGrade } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
@@ -809,19 +809,15 @@ const comboFireRateBoostUntil = [0, 0];   // Resonance: +10% fire rate for 1s
 const sustainedFireCount = [0, 0];        // Shots within the 1s Heat Wave window
 const sustainedFireWindowStart = [0, 0];
 const comboFireLatch = [false, false];    // One fire event per press for hold weapons
-// Build-based passives (Overload / Scatter-Seek) toast once per level
-let overloadToastShown = false;
-let scatterSeekToastShown = false;
-
 function recordComboFire(index) {
   comboFireTimes[index] = performance.now();
 }
 
 // Apply a detected combo's modifiers to the shot's stats.
-// NOTE: timing combos are deliberately SILENT — the effects speak for
-// themselves (damage numbers, explosions, fire-rate). Per-shot floating
-// messages + sounds spammed the view every trigger pull (player-reported),
-// so only the once-per-level build-based passives announce themselves.
+// ALL combos are SILENT (effects speak for themselves via damage numbers,
+// explosions, fire-rate). Even the once-per-level build-based toasts were
+// removed per player feedback — the Overload toast fired right after picking
+// Lightning Rod and was 'massive text in my face'.
 function applyFireCombo(comboId, stats, index, now) {
   switch (comboId) {
     case 'dual_strike':
@@ -846,21 +842,9 @@ function applyFireCombo(comboId, stats, index, now) {
         stats.aoeDamage = 30;
         stats.forceExplosion = true;
       }
-      if (!overloadToastShown) {
-        overloadToastShown = true;
-        showFloatingMessage(`⚡ ${COMBO_DEFS.overload.name}: ${COMBO_DEFS.overload.desc}`, {
-          duration: 1800, color: COMBO_DEFS.overload.color, size: 0.6,
-        });
-      }
       return;
     case 'scatter_seek':
       stats.scatterSeek = true;
-      if (!scatterSeekToastShown) {
-        scatterSeekToastShown = true;
-        showFloatingMessage(`⚡ ${COMBO_DEFS.scatter_seek.name}: ${COMBO_DEFS.scatter_seek.desc}`, {
-          duration: 1800, color: COMBO_DEFS.scatter_seek.color, size: 0.6,
-        });
-      }
       return;
     default:
       return;
@@ -1014,14 +998,10 @@ function updateStyleDecay(dt) {
   }
 }
 
-// Grade-up moment: colored screen flash + letter popup + sting
+// Grade-up moment: colored screen flash + sting. The floating "A GREAT!"
+// popup was removed per player feedback — camera-locked text in the face.
 function triggerStyleGradeUp(grade) {
   triggerStyleFlash(grade.color);
-  showFloatingMessage(`${grade.grade} ${grade.label}!`, {
-    duration: 1600,
-    color: '#' + grade.color.toString(16).padStart(6, '0'),
-    size: 0.9,
-  });
   playStyleGradeUpSound(grade.tier);
 }
 
@@ -4407,9 +4387,6 @@ function showUpgradeScreen() {
   // and the forge lock releases once per level.
   game.alchemyEssence = 0;
   game.alchemyForgedThisLevel = false;
-  // Issue #218: build-based combo toasts re-announce once per level
-  overloadToastShown = false;
-  scatterSeekToastShown = false;
 
   // Dismiss boss death overlay so upgrade cards are visible
   dismissBossDeathOverlay();
@@ -5072,9 +5049,8 @@ function handleAlchemyForge(forgeType, category) {
   if (result.refund) {
     game.alchemyEssence -= (ALCHEMY_FORGE_COST - 1);
     game.alchemyForgedThisLevel = true;
-    showFloatingMessage('WEAPON SYNTHESIS: NO OPTIONS — 1 ESSENCE REFUNDED', {
-      duration: 2200, color: '#ff8844', size: 0.6,
-    });
+    // Refund is communicated by the bench's essence counter — no floating
+    // toast (camera-locked text removed per player feedback).
     playErrorSound();
     showAlchemyBench(hand);
     return;
@@ -5084,9 +5060,6 @@ function handleAlchemyForge(forgeType, category) {
   game.alchemyForgedThisLevel = true;
   addUpgrade(result.upgrade.id, hand);
   recomputeSynergies();
-  showFloatingMessage(`FORGED: ${result.upgrade.name}!`, {
-    duration: 2400, color: '#ffdd00', size: 0.7,
-  });
   _log(`[alchemy] Forged ${result.upgrade.id} (${forgeType}) for ${hand}`);
   playForgeSound();
   showAlchemyBench(hand);

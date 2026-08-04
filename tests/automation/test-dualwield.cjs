@@ -47,6 +47,13 @@ async function runTest() {
     console.log(`  💥 Page error: ${err.message.substring(0, 150)}`);
   });
 
+  // Clear the arena before each firing phase — a spawned enemy in the flight
+  // path can intercept projectiles before the snapshot (intermittent flakes).
+  const clearEnemies = () => page.evaluate(async () => {
+    const enemies = await import('./enemies.js');
+    enemies.clearAllEnemies();
+  });
+
   const setWeapons = async (left, right) => page.evaluate(({ left, right }) => {
     window.game.mainWeapon = { left, right };
     window.game.mainWeaponLocked = { left: true, right: true };
@@ -120,6 +127,7 @@ async function runTest() {
 
   // ── Phase 2: Dual Strike (standard_blaster + buckshot) ──
   console.log('\n📍 Phase 2: Dual Strike (+25% on second shot)...');
+  await clearEnemies();
   await setWeapons('standard_blaster', 'buckshot');
   await sleep(300);
   // fireMode 'both' (default): left fires first, right fires same frame (<100ms)
@@ -132,6 +140,7 @@ async function runTest() {
 
   // ── Phase 3: Drill + Momentum (alternate fire) ──
   console.log('\n📍 Phase 3: Drill + Momentum (alternate fire, 100-300ms)...');
+  await clearEnemies();
   await setWeapons('standard_blaster', 'buckshot');
   await sleep(1500); // let combo timers from Phase 2 age out
   await page.keyboard.press('1'); // fireMode left
@@ -147,6 +156,7 @@ async function runTest() {
 
   // ── Phase 4: Heat Wave (sustained fire) ──
   console.log('\n📍 Phase 4: Heat Wave (6th+ rapid shot explodes)...');
+  await clearEnemies();
   await setWeapons('standard_blaster', 'standard_blaster');
   await sleep(1200);
   await page.keyboard.press('1'); // left only
@@ -157,6 +167,7 @@ async function runTest() {
 
   // ── Phase 5: Overload (lightning_rod + other) ──
   console.log('\n📍 Phase 5: Overload (lightning pair — 30 dmg impact AOE)...');
+  await clearEnemies();
   await setWeapons('lightning_rod', 'standard_blaster');
   await sleep(1200);
   await page.keyboard.press('1'); // left = lightning (records fire on press)
@@ -171,10 +182,13 @@ async function runTest() {
 
   // ── Phase 6: Scatter-Seek (seeker_burst + buckshot) ──
   console.log('\n📍 Phase 6: Scatter-Seek (seeker homes to buckshot hits)...');
+  await clearEnemies();
   await setWeapons('seeker_burst', 'buckshot');
-  await sleep(1200);
+  await sleep(800);
   await page.keyboard.press('1'); // left = seeker
-  await fireBoth(400);
+  await page.keyboard.down('Space');
+  await sleep(150); // one burst (3 shots at 45ms stagger)
+  await page.keyboard.up('Space');
   const scatter = await getProjectileStats(12);
   results.scatterSeek = scatter.projs.some(p => p.id === 'seeker_burst' && p.scatterSeek);
   console.log(`  Seeker projectiles tagged scatterSeek: ${results.scatterSeek ? '✅' : '❌'} (${scatter.projs.filter(p => p.id === 'seeker_burst' && p.scatterSeek).length} of ${scatter.projs.filter(p => p.id === 'seeker_burst').length})`);

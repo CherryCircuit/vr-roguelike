@@ -2363,18 +2363,24 @@ function createUpgradeCard(upgrade, position, hand, style) {
       const progress = getEvolutionProgress(game.mainWeapon?.[hand] || 'standard_blaster', game.upgrades[hand] || {});
       const isUncollected = progress && !progress.collectedIds.includes(upgrade.id);
       if (isUncollected) {
-        // Badge at 150% of the original size (player feedback: too small)
+        // Badge sized via the maxWidth pattern so the GLYPHS render at card-
+        // name size (glyph height = fontSize × scale / maxWidth = 60×0.5/300
+        // = 0.1 units ≈ the card name glyphs). A bare scale without maxWidth
+        // scales the whole padded canvas, leaving the glyphs tiny.
         const badge = makeSprite('⚡ EVO', {
-          fontSize: 26,
+          fontSize: 60,
           color: '#FFD700',
           glow: true,
           glowColor: '#FFD700',
-          scale: 0.105,
+          scale: 0.5,
+          maxWidth: 300,
           depthTest: true,
           forceArial: true,
         });
         badge.userData.text = '⚡ EVO';
-        badge.position.set(0.42, 0.56, 0.02);
+        // Top-right corner: bigger badge (≈0.28 wide × 0.16 tall) — tuck it
+        // against the card edge, clear of the name text at y 0.54.
+        badge.position.set(0.42, 0.6, 0.02);
         badge.userData._evoBadge = true;
         group.add(badge);
         group.userData.evoBadge = badge;
@@ -2593,21 +2599,30 @@ function buildCardPreviewLines(upgrade, hand) {
   };
 }
 
-// Swap a sprite's canvas texture for new text, keeping the same geometry
-// math makeSprite uses (maxWidth-based unit-per-pixel scaling).
+// Swap a sprite's canvas texture for new text. CRITICAL (the classic
+// skewed-text bug): each text block needs its OWN geometry sized to its
+// texture — reusing the old plane stretches/squashes the new glyphs. This
+// is the same rule the layout editor follows (geometry.dispose() + fresh
+// PlaneGeometry on every text change).
 function swapSpriteText(sprite, text, opts) {
   if (!sprite || !sprite.material) return;
   if (sprite.material.map) sprite.material.map.dispose();
   const { texture, canvasWidth, canvasHeight } = makeTextTexture(text, opts);
   sprite.material.map = texture;
   sprite.material.needsUpdate = true;
+  const scale = opts.scale || 0.3;
+  let width, height;
   if (opts.maxWidth) {
-    const unitPerPixel = opts.scale / opts.maxWidth;
-    sprite.scale.set(canvasWidth * unitPerPixel, canvasHeight * unitPerPixel, 1);
+    const unitPerPixel = scale / opts.maxWidth;
+    width = canvasWidth * unitPerPixel;
+    height = canvasHeight * unitPerPixel;
   } else {
-    const { aspect } = makeTextTexture(text, opts);
-    sprite.scale.set(aspect * opts.scale, opts.scale, 1);
+    const aspect = canvasWidth / canvasHeight;
+    width = aspect * scale;
+    height = scale;
   }
+  if (sprite.geometry) sprite.geometry.dispose();
+  sprite.geometry = new THREE.PlaneGeometry(width, height);
 }
 
 // Toggle a card's text between its original desc/stat/note and the preview
