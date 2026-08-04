@@ -141,12 +141,12 @@ import {
   clearHudGeoCache,
   novemberFontFamily,
   layoutCache,
-  // Alchemy bench + post-select bar (Issue #185)
-  showPostUpgradeBar, showAlchemyBench, hideAlchemyBench, showAlchemyCategoryView,
-  isAlchemyBenchOpen, isPostSelectVisible,
+  // Alchemy bench (Issue #185)
+  showAlchemyBench, hideAlchemyBench, showAlchemyCategoryView,
+  isAlchemyBenchOpen,
   getAlchemyBenchHit, getHoveredAlchemyAction,
-  // Bullet Carnival style HUD (Issue #189)
-  triggerStyleFlash, updateStyleHUD,
+  // Bullet Carnival style flash (Issue #189)
+  triggerStyleFlash,
 } from './hud.js';
 import {
   initWristHolograms, showWristHolograms, updateWristHolograms, hideAllWristHolograms
@@ -1364,13 +1364,9 @@ async function settlePendingUpgradeIfNeeded(strategy) {
   if (game.state === State.UPGRADE_SELECT) {
     await waitForCondition(() => upgradeSelectionCooldown <= 0, { timeout: 5000, label: 'upgrade_cooldown' });
     await autoSelectUpgradeByStrategy(strategy);
-    // Issue #185: card picks now land on the post-select bar instead of
-    // advancing immediately — auto-selection must press CONTINUE so the
-    // progression flows (and the cinematic path, which finalizes on its own)
-    // both exit UPGRADE_SELECT as they did before the alchemy change.
-    if (isPostSelectVisible() && !evoCinematicState) {
-      finalizeUpgradeSelection();
-    }
+    // Card picks advance immediately (the old post-select bar was removed),
+    // so auto-selection exits UPGRADE_SELECT on its own; the evolution
+    // cinematic finalizes when it completes.
     await waitForCondition(() => game.state !== State.UPGRADE_SELECT, { timeout: 15000, label: 'upgrade_exit' });
     await settlePostUpgradeState();
   }
@@ -1467,11 +1463,6 @@ async function concludeUpgradeSelection(strategy) {
   }
   await waitForCondition(() => upgradeSelectionCooldown <= 0, { timeout: 5000, label: 'upgrade_cooldown' });
   const selection = await autoSelectUpgradeByStrategy(strategy);
-  // Issue #185: press CONTINUE past the post-select bar so auto-flows exit
-  // the upgrade screen (evolutions finalize on their own and skip this).
-  if (isPostSelectVisible() && !evoCinematicState) {
-    finalizeUpgradeSelection();
-  }
   await waitForCondition(() => game.state !== State.UPGRADE_SELECT, { timeout: 15000, label: 'upgrade_exit' });
   await settlePostUpgradeState();
   return selection;
@@ -3618,11 +3609,6 @@ function handleDesktopUpgradeSelectClick() {
     return;
   }
   if (isAlchemyBenchOpen()) return;
-  if (isPostSelectVisible()) {
-    const hoveredAction = getHoveredAlchemyAction('desktop');
-    if (hoveredAction) handleAlchemyAction(hoveredAction);
-    return;
-  }
 
   // Desktop and VR should share the same "hovered card" fallback so local
   // playtesting catches the same interaction regressions players would feel in-headset.
@@ -4523,16 +4509,12 @@ function recomputeSynergies() {
   const right = detectSynergies(game.upgrades.right);
   game.synergies = { left, right };
 
-  // First-time discovery toast (per run)
+  // First-time discovery is tracked silently — the old floating toast was
+  // removed per player feedback (massive camera-locked text on upgrade picks).
   for (const syn of [...left, ...right]) {
     const discovered = game.runStats.synergiesDiscovered || [];
     if (!discovered.includes(syn.id)) {
       discovered.push(syn.id);
-      showFloatingMessage(`NEW SYNERGY DISCOVERED: ${syn.name}!`, {
-        duration: 2600,
-        color: syn.tier === 3 ? '#ffdd00' : '#ff88ff',
-        size: 0.9,
-      });
     }
   }
 }
@@ -4552,6 +4534,7 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   if (upgrade?.id === 'SKIP') {
     game.health = game.maxHealth;
     _log('[game] Skipped upgrade, health restored to full');
+    playUpgradeSound();
     finalizeUpgradeSelection();
     return;
   }
@@ -4560,14 +4543,16 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     _log(`[game] Selected MAIN weapon: ${upgrade.id} for ${targetHand} hand`);
     setMainWeapon(upgrade.id, targetHand);
     updateAllControllerSphereColors();
-    showPostUpgradeActions(targetHand);
+    playUpgradeSound();
+    finalizeUpgradeSelection();
     return;
   }
 
   if (upgrade?.type === 'alt') {
     _log(`[game] Selected ALT weapon: ${upgrade.id} for ${targetHand} hand`);
     setAltWeapon(upgrade.id, targetHand);
-    showPostUpgradeActions(targetHand);
+    playUpgradeSound();
+    finalizeUpgradeSelection();
     return;
   }
 
@@ -4579,9 +4564,8 @@ function selectUpgradeAndAdvance(upgrade, hand) {
   }
 
   // Issue #143: if this pick completes the weapon's evolution recipe, run the
-  // fusion/transformation cinematic INSTEAD of the post-select bar. The
-  // cinematic ends with finalizeUpgradeSelection() so the level advances
-  // only after the player has witnessed the transformation.
+  // fusion/transformation cinematic INSTEAD of advancing immediately. The
+  // cinematic ends with finalizeUpgradeSelection().
   const mainWepId = game.mainWeapon[targetHand];
   const evo = checkEvolutionReady(mainWepId, game.upgrades[targetHand]);
   if (evo && !isWeaponEvolved(targetHand)) {
@@ -4591,17 +4575,8 @@ function selectUpgradeAndAdvance(upgrade, hand) {
     return;
   }
 
-  // Progress toast for partial recipe pieces (non-final)
-  const progress = getEvolutionProgress(mainWepId, game.upgrades[targetHand]);
-  if (progress && !isWeaponEvolved(targetHand) && progress.collected > 0 && progress.collected < progress.total) {
-    showFloatingMessage(`⚡ ${progress.evo.name}: ${progress.collected}/${progress.total}`, {
-      duration: 1400,
-      color: '#' + progress.evo.sigColor.toString(16).padStart(6, '0'),
-      size: 0.55,
-    });
-  }
-
-  showPostUpgradeActions(targetHand);
+  playUpgradeSound();
+  finalizeUpgradeSelection();
 }
 
 // ── EVOLUTION CINEMATIC (Issue #143) ───────────────────────
@@ -5012,33 +4987,14 @@ registerResetHook(() => {
 });
 
 // ── ALCHEMY BENCH (Issue #185) ─────────────────────────────
-// After a card pick the player lands on a post-select bar: CONTINUE advances
-// immediately (old behavior), ALCHEMY opens the bench where upgrades can be
-// dissolved into Essence and forged into new ones (once per level).
+// The bench is reached from the ALCHEMY button on the card screen (the old
+// post-select bar was removed per player feedback). The bench replaces the
+// card row while open; BACK returns to the cards; picking a card advances
+// the level directly.
 
-// True when the player owns at least one upgrade stack on either hand
-// (the gate for offering the ALCHEMY button per the issue).
-function hasAnyUpgrades() {
-  return Object.keys(game.upgrades.left).length > 0 || Object.keys(game.upgrades.right).length > 0;
-}
-
-// Show the post-select bar after applying a card pick.
-function showPostUpgradeActions(hand) {
-  const targetHand = hand || pendingUpgradeHand || 'left';
-  showPostUpgradeBar(targetHand, hasAnyUpgrades());
-  playUpgradeSound();
-}
-
-// Single entry point for bench/post-bar action payloads from triggers.
+// Single entry point for bench action payloads from triggers.
 function handleAlchemyAction(action) {
   if (!action || !action.type) return;
-
-  if (action.type === 'continue') {
-    // Leave the upgrade screen exactly as the old flow did
-    playMenuClick();
-    finalizeUpgradeSelection();
-    return;
-  }
 
   if (action.type === 'alchemy') {
     // Bench takes over the upgrade screen (cards stay behind, not selectable)
@@ -5048,10 +5004,9 @@ function handleAlchemyAction(action) {
   }
 
   if (action.type === 'back') {
-    // Close the bench back to the post-select bar (category view or main)
+    // Close the bench back to the card screen (category view or main)
     playMenuClick();
     hideAlchemyBench();
-    showPostUpgradeBar(alchemyPendingHand(), hasAnyUpgrades());
     return;
   }
 
@@ -5854,15 +5809,6 @@ function selectUpgrade(controller, index = -1) {
   }
   if (isAlchemyBenchOpen()) return; // bench covers the cards — no card picks
 
-  if (isPostSelectVisible()) {
-    const hoveredAction = getHoveredAlchemyAction(hoverSourceKey);
-    if (hoveredAction) {
-      if (index >= 0) upgradeTriggerLatched[index] = true;
-      handleAlchemyAction(hoveredAction);
-    }
-    return; // post-select: the picked card cannot be re-selected
-  }
-
   // Fix for the post-optimization regression: use the exact hovered card as a
   // fallback so trigger selection matches the card this controller is seeing.
   const result = getUpgradeCardHit(_uiRaycaster) || getHoveredUpgradeCardHit(hoverSourceKey);
@@ -6423,7 +6369,6 @@ function render(timestamp) {
     // Issue #189: style meter decay + health pickup drift/collection
     updateStyleDecay(dt);
     updateHealthPickups(now, playerPos);
-    updateStyleHUD(game.styleState, game.styleGrade, now);
 
     // Apply bullet-time slow-mo and ramp-out (timer-based from commit 5bb0b69)
     if (slowMoRampOut) {

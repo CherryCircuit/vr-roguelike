@@ -4,7 +4,7 @@
  *   - Pure grade boundaries (D→SSS)
  *   - Kill tracking: variety rises on first kill, drains on same-hand streaks;
  *     tempo rises on rapid kills; grade improves after a kill streak
- *   - Grade-up moment: style-flash fires, grade letter changes, sting plays
+ *   - Grade-up moment: style-flash fires, sting plays
  *   - SSS: score multiplier (3x), health pickups drop (stubbed Math.random),
  *     projectile trail tint applied
  *   - Meter decay: meters fall over time without action
@@ -194,7 +194,7 @@ async function runTest() {
   console.log(`  Variety drains on same-hand streak (~46): ${results.varietyStreak ? '✅' : '❌'} (${style.state.variety.toFixed(1)})`);
   console.log(`  Tempo rose on rapid kill (~12): ${results.tempoRapid ? '✅' : '❌'} (${style.state.tempo.toFixed(1)})`);
 
-  // ── Phase 4: Grade improves + grade-up flash + letter ──
+  // ── Phase 4: Grade improves + grade-up flash ──
   console.log('\n📍 Phase 4: Grade-up moment...');
   await prepareEnemy();
   // Seed 48s (avg 48 → grade B pre-kill); the kill adds +15/+8/+12/+10 →
@@ -225,15 +225,6 @@ async function runTest() {
   }
   results.styleFlash = flashSeen;
   console.log(`  Grade-up flash fired: ${results.styleFlash ? '✅' : '❌'}`);
-  const letter = await page.evaluate(() => {
-    const scene = window.__test?.getScene?.();
-    const hud = scene?.getObjectByName('style-hud');
-    let text = null;
-    hud?.traverse(c => { if (c.userData && c.userData.text) text = c.userData.text; });
-    return text;
-  });
-  results.letter = letter && letter !== 'D';
-  console.log(`  Grade letter updated (${letter}): ${results.letter ? '✅' : '❌'}`);
 
   // ── Phase 5: SSS rewards (multiplier, health drops, trail tint) ──
   console.log('\n📍 Phase 5: SSS rewards...');
@@ -261,40 +252,26 @@ async function runTest() {
     };
     ps.handleHit(idx, e, stats, e.mesh.position.clone(), 0, false, false, {});
   });
-  await sleep(400); // let the grade letter texture update (next frames)
+  await sleep(400); // let the grade settle
   const after = await page.evaluate(() => ({
     score: window.game.score,
     grade: window.game.styleGrade.grade,
-    letter: (() => {
-      const scene = window.__test?.getScene?.();
-      const hud = scene?.getObjectByName('style-hud');
-      let t = null;
-      hud?.traverse(c => { if (c.userData && c.userData.text) t = c.userData.text; });
-      return t;
-    })(),
   }));
   // The meters decay continuously, so a single delayed read can land at SS.
   // Poll: reseed 100s + read the recomputed grade until SSS is observed.
+  // (The style-HUD letter display was removed per player feedback — the
+  // grade itself is what matters here.)
   let sssGrade = after.grade === 'SSS';
-  let sssLetter = after.letter === 'SSS';
-  if (!sssGrade || !sssLetter) {
-    for (let i = 0; i < 12 && (!sssGrade || !sssLetter); i++) {
+  if (!sssGrade) {
+    for (let i = 0; i < 12 && !sssGrade; i++) {
       await page.evaluate(() => {
         window.game.styleState = { variety: 100, precision: 100, tempo: 100, creativity: 100, lastKillHand: null, lastKillWeapon: null, lastKillTime: 0 };
       });
       await sleep(80);
-      const polled = await page.evaluate(() => {
-        const scene = window.__test?.getScene?.();
-        const hud = scene?.getObjectByName('style-hud');
-        let t = null;
-        hud?.traverse(c => { if (c.userData && c.userData.text) t = c.userData.text; });
-        return { grade: window.game.styleGrade.grade, letter: t };
-      });
-      sssGrade = sssGrade || polled.grade === 'SSS';
-      sssLetter = sssLetter || polled.letter === 'SSS';
+      sssGrade = await page.evaluate(() => window.game.styleGrade.grade === 'SSS');
     }
   }
-  results.sssGrade = sssGrade && sssLetter;
+  results.sssGrade = sssGrade;
   const hasPickup = await page.evaluate(() => {
     const scene = window.__test?.getScene?.();
     let found = false;
@@ -303,7 +280,7 @@ async function runTest() {
   });
   results.scoreMult = after.score - scoreBefore >= 30; // 10 × 3.0 × accuracy(≥1)
   results.healthDrop = hasPickup;
-  console.log(`  SSS grade + letter: ${results.sssGrade ? '✅' : '❌'} (${after.grade}/${after.letter})`);
+  console.log(`  SSS grade reached: ${results.sssGrade ? '✅' : '❌'} (${after.grade})`);
   console.log(`  Score multiplier ≥3x (${after.score - scoreBefore} pts): ${results.scoreMult ? '✅' : '❌'}`);
   console.log(`  Health pickup dropped (S+): ${results.healthDrop ? '✅' : '❌'}`);
 
@@ -393,7 +370,7 @@ async function runTest() {
   }
   const passed = errors.length === 0 && results.gradeBoundaries && results.varietyFirst &&
                  results.varietyStreak && results.tempoRapid && results.gradeUp && results.styleFlash &&
-                 results.letter && results.sssGrade && results.scoreMult && results.healthDrop &&
+                 results.sssGrade && results.scoreMult && results.healthDrop &&
                  results.trailTint && results.decay && results.specialCard && results.reset;
   console.log(passed ? '\n✅ ALL TESTS PASSED' : '\n❌ TEST FAILURES');
   await browser.close();

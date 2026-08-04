@@ -1,7 +1,7 @@
 /**
  * Test: Upgrade Alchemy Bench (#185)
  *
- *   - Card pick opens the post-select bar (CONTINUE + ALCHEMY)
+ *   - The card screen has an ALCHEMY button (no post-select bar)
  *   - ALCHEMY opens the bench; Essence starts at 0, forge locked
  *   - Dissolve math: +1 per standard stack, +2 per weapon-specific
  *   - Weapon Synthesis refunds 1 Essence when the main weapon has no
@@ -142,10 +142,8 @@ async function runTest() {
     await page.evaluate(() => window.__test.progression.forceLevelComplete({ autoSelect: false }));
     if (!await waitForUpgradeSelect()) return 'no_upgrade_screen';
     await sleep(1600); // warp + cooldown
-    await page.evaluate(() => window.__test.progression.selectUpgradeByIndex(0));
-    await sleep(500);
-    // Post-select bar visible → open the bench
-    if (!await groupExists('post-select-bar')) return 'no_post_select';
+    // The ALCHEMY button sits on the card screen itself (the old
+    // post-select bar was removed)
     if (!await clickAlchemyButton('alchemy-btn-alchemy')) return 'no_alchemy_btn';
     if (!await groupExists('alchemy-bench')) return 'bench_not_open';
     return 'ok';
@@ -206,11 +204,12 @@ async function runTest() {
   const forgeBlocked = essenceAfterBlocked === 2;
   console.log(`  Second forge blocked (essence stays 2): ${forgeBlocked ? '✅' : '❌'}`);
 
-  // Back → post-select → CONTINUE → level 2
+  // Back → card screen → pick a card → advances directly to level 2
   await clickAlchemyButton('alchemy-btn-back');
-  const backToBar = await groupExists('post-select-bar');
-  console.log(`  Back returns to post-select bar: ${backToBar ? '✅' : '❌'}`);
-  await clickAlchemyButton('alchemy-btn-continue');
+  const benchClosed = !(await groupExists('alchemy-bench'));
+  const alchemyBtnBack = await groupExists('alchemy-btn-alchemy');
+  console.log(`  Back returns to card screen (bench closed, ALCHEMY button back): ${benchClosed && alchemyBtnBack ? '✅' : '❌'}`);
+  await page.evaluate(() => window.__test.progression.selectUpgradeByIndex(0));
   await sleep(1500);
   const afterContinue = await page.evaluate(() => ({ state: window.game.state, level: window.game.level }));
   console.log(`  After CONTINUE: state=${afterContinue.state} level=${afterContinue.level}`);
@@ -245,11 +244,11 @@ async function runTest() {
   const usedLabel = texts && texts.some(t => t.includes('(USED)'));
   console.log(`  Forge buttons locked with (USED): ${usedLabel ? '✅' : '❌'}`);
 
-  // Finish: back → continue → level 3
+  // Finish: back → card screen → pick a card → level 3
   await clickAlchemyButton('alchemy-btn-back');
-  const backToBar2 = await groupExists('post-select-bar');
-  console.log(`  Back returns to post-select bar (2): ${backToBar2 ? '✅' : '❌'}`);
-  await clickAlchemyButton('alchemy-btn-continue');
+  const backToCards2 = await groupExists('alchemy-btn-alchemy');
+  console.log(`  Back returns to card screen (2): ${backToCards2 ? '✅' : '❌'}`);
+  await page.evaluate(() => window.__test.progression.selectUpgradeByIndex(0));
   await sleep(1500);
   const final = await page.evaluate(() => ({ state: window.game.state, level: window.game.level }));
   console.log(`  Final: state=${final.state} level=${final.level}`);
@@ -265,9 +264,9 @@ async function runTest() {
     errors.slice(0, 5).forEach(e => console.log(`     - ${e.substring(0, 120)}`));
   }
   const passed = errors.length === 0 && benchOpened && scopeDissolved && essence3 && refund &&
-                 dissolveAfterForge && forgeBlocked && backToBar && advanced &&
+                 dissolveAfterForge && forgeBlocked && benchClosed && advanced &&
                  essenceReset && forgeEnabled && catView && statusForged && usedLabel &&
-                 backToBar2 && finished;
+                 backToCards2 && finished;
   console.log(passed ? '\n✅ ALL TESTS PASSED' : '\n❌ TEST FAILURES');
   await browser.close();
   process.exit(passed ? 0 : 1);

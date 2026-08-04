@@ -705,10 +705,10 @@ function estimateDPS(stats) {
  * @param {string} weaponId - MAIN weapon id of the hand receiving the upgrade.
  * @param {Object} upgrades - game.upgrades[hand] (current stacks).
  * @param {Object} upgradeDef - Upgrade/main/alt weapon definition.
- * @param {Object} [opts] - { enemyHp, extraLines } — enemyHp scales the kill
- *   estimate; extraLines append caller-side lines (e.g. NUKES for extra_nuke).
+ * @param {Object} [opts] - { extraLines } — extraLines append caller-side
+ *   lines (e.g. NUKES for extra_nuke).
  * @returns {{statLines: Array, newSynergies: Array, activeSynergies: Array,
- *            dps: {before,after}, killsPerSec: {before,after}}|null}
+ *            dps: {before,after}}|null}
  */
 export function getUpgradePreview(weaponId, upgrades, upgradeDef, opts = {}) {
   const u = upgrades || {};
@@ -732,7 +732,6 @@ export function getUpgradePreview(weaponId, upgrades, upgradeDef, opts = {}) {
       ],
       newSynergies: [], activeSynergies: [],
       dps: { before: 0, after: 0 },
-      killsPerSec: { before: 0, after: 0 },
     };
   } else {
     // Normal upgrade: hypothetically add one stack and re-derive stats.
@@ -791,18 +790,12 @@ export function getUpgradePreview(weaponId, upgrades, upgradeDef, opts = {}) {
   const newSynergies = nextSynergies.filter(s => !currentSynergies.some(c => c.id === s.id));
   const activeSynergies = currentSynergies;
 
-  // DPS + kills-per-second (comparative only). enemyHp defaults to the
-  // basic enemy base HP (enemies.js ENEMY_DEFS.basic.baseHp = 30); the
-  // caller passes level-scaled hp so the estimate tracks difficulty.
+  // DPS comparison (pure number — no kill estimates, those were removed per
+  // player feedback that the EST KILLS readout was noise).
   const dpsBefore = estimateDPS(base);
   const dpsAfter = estimateDPS(next);
-  const enemyHp = opts.enemyHp || 30;
-  const killsPerSec = {
-    before: dpsBefore > 0 ? dpsBefore / enemyHp : 0,
-    after: dpsAfter > 0 ? dpsAfter / enemyHp : 0,
-  };
 
-  return { statLines, newSynergies, activeSynergies, dps: { before: dpsBefore, after: dpsAfter }, killsPerSec };
+  return { statLines, newSynergies, activeSynergies, dps: { before: dpsBefore, after: dpsAfter } };
 }
 
 // ============================================================

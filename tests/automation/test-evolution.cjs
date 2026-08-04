@@ -2,8 +2,8 @@
  * Test: Weapon Evolution (#143) — Phase A+B
  *
  *   - Recipe progress line shows on the upgrade screen (Twin Helix: 2/3 ●●○)
- *   - Selecting the final recipe piece triggers the cinematic INSTEAD of the
- *     post-select bar (state stays upgrade_select, evo-rig appears)
+ *   - Selecting the final recipe piece triggers the cinematic INSTEAD of
+ *     advancing (state stays upgrade_select, evo-rig appears)
  *   - Cinematic completes → weapon evolved (state advanced, weaponEvolution
  *     set, controller core 30% larger + signature color, rig cleaned up)
  *   - Next upgrade screen shows the "EVOLVED" line
@@ -236,10 +236,9 @@ async function runTest() {
   const evolvedLine = texts.some(t => /TWIN HELIX EVOLVED/.test(t));
   console.log(`  'TWIN HELIX EVOLVED' line: ${evolvedLine ? '✅' : '❌'}`);
 
-  // Select a card to leave the screen cleanly (right hand — not evolved)
+  // Select a card to leave the screen cleanly — advances directly (the old
+  // post-select bar was removed)
   await page.evaluate(() => window.__test.progression.selectUpgradeByIndex(0));
-  await sleep(400);
-  await aimAndClick('alchemy-btn-continue');
   await sleep(1200);
 
   // Reset clears evolution state

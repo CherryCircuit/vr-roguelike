@@ -203,7 +203,8 @@ function getSkipCardBorderGeo() {
   return _skipCardBorderGeo;
 }
 function getCardIconGeo() {
-  if (!_cardIconGeo) _cardIconGeo = new THREE.OctahedronGeometry(0.12, 0);
+  // 0.18 radius = 150% of the original 0.12 (player feedback: icon too small)
+  if (!_cardIconGeo) _cardIconGeo = new THREE.OctahedronGeometry(0.18, 0);
   return _cardIconGeo;
 }
 function getSkipIconGeo() {
@@ -214,18 +215,13 @@ function getSkipIconGeo() {
 let upgradeCards = [];
 let upgradeChoices = [];
 
-// Upgrade Card Preview panel (Issue #215) — camera-anchored tooltip in the
-// lower view. Content is rebuilt ONLY when the hovered card changes.
-// previewPanelKey caches which card is currently shown so hover re-entries
-// (and per-frame hover passes) never rebuild textures.
-let previewPanel = null;
-let previewPanelKey = null;
-let upgradeTooltipGroup = null; // camera child created in initHUD
+// Upgrade Card Hover Preview (Issue #215) — on-card text swap. No separate
+// panel object or group exists anymore; see setCardPreviewMode().
 
-// Alchemy Bench + post-select bar (Issue #185) — child groups of upgradeGroup.
-// After a card is picked the post-select bar offers CONTINUE / ALCHEMY; the
-// bench REPLACES the card row while open (dissolve chips + forge options).
-let postSelectGroup = null;
+// Alchemy Bench (Issue #185) — a child group of upgradeGroup that REPLACES
+// the card row while open (dissolve chips + forge options). The old
+// post-select bar was removed per player feedback; the bench is opened from
+// the ALCHEMY button on the card screen itself.
 let alchemyBenchGroup = null;
 let alchemyBenchOpen = false;
 let alchemyCategoryView = false;
@@ -249,17 +245,10 @@ let hitFlashOpacity = 0;
 let lowHealthScreenPulse = false;
 let lowHealthScreenPulseTimer = 0;
 
-// Bullet Carnival style HUD (Issue #189): 4 thin meter bars + grade letter
-let styleHudGroup = null;
-let styleBarMeshes = [];
-let styleLetterSprite = null;
-let styleLetterTier = -1;
+// Bullet Carnival style flash (Issue #189) — brief grade-color overlay
 let styleFlash = null;
 let styleFlashOpacity = 0;
 let styleFlashColor = 0xff00ff;
-
-// Meter colors: variety cyan, precision green, tempo yellow, creativity magenta
-const STYLE_BAR_COLORS = [0x00ffff, 0x00ff88, 0xffdd00, 0xff44ff];
 
 // Speed lines overlay (radial streaks during slow-mo)
 const ENABLE_SPEED_LINES = false; // Disabled: no visible effect on Quest, wastes a draw call
@@ -858,15 +847,6 @@ export async function initHUD(camera, scene) {
   styleFlash.position.set(0, 0, -0.24);
   camera.add(styleFlash);
 
-  // ── Style HUD (Issue #189): 4 thin meters + grade letter on the floor HUD ──
-  createStyleHUD();
-
-  // ── Upgrade-card preview tooltip (Issue #215) — camera-anchored so the
-  // panel floats in the lower view at a fixed readable distance and can
-  // never clip through the floor. Display-only; not in any raycast list.
-  upgradeTooltipGroup = new THREE.Group();
-  upgradeTooltipGroup.name = 'upgrade-tooltip';
-  camera.add(upgradeTooltipGroup);
 
   // ── Speed Lines Overlay (radial streaks during slow-mo) ──
   if (ENABLE_SPEED_LINES) {
@@ -1963,6 +1943,18 @@ export function showUpgradeCards(upgrades, playerPos, hand) {
   upgradeGroup.add(skipCard);
   upgradeCards.push(skipCard);
 
+  // Issue #185: ALCHEMY button on the card screen itself (replaces the old
+  // post-select bar — the bar's tiny-text/forced-button flow was removed per
+  // player feedback). Only offered when there is something to dissolve.
+  const dissolvableCount =
+    (getDissolvableUpgrades(game.upgrades.left).length + getDissolvableUpgrades(game.upgrades.right).length);
+  if (dissolvableCount > 0) {
+    makeAlchemyButton(upgradeGroup, '⚗ ALCHEMY', { type: 'alchemy' }, 0, -1.05, {
+      w: 1.5, h: 0.3, color: 0xffaa00, name: 'alchemy-btn-alchemy',
+      fontSize: 32, textScale: 0.28,
+    });
+  }
+
   // Smooth card-level intro. Keep the expensive text uploads slightly delayed so
   // the motion itself stays clean instead of hitching while textures are created.
   const warpBaseTime = performance.now();
@@ -2146,17 +2138,41 @@ function easeOutBack(t) {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
-function queueTextSprite(group, text, opts, pos) {
-  _textQueue.push({ group, text, opts, pos });
+function queueTextSprite(group, text, opts, pos, role) {
+  _textQueue.push({ group, text, opts, pos, role });
+  // Stash the original so hover previews can restore it later (Issue #215)
+  if (role) {
+    group.userData[`_cardTextOrig_${role}`] = { text, opts };
+  }
 }
 
 function flushCardTextQueue() {
   if (_textQueue.length === 0 || performance.now() < _textQueueReleaseTime) return;
   const batch = _textQueue.splice(0, TEXT_PER_FRAME);
   for (const item of batch) {
-    const sprite = makeSprite(item.text, item.opts);
+    // If the card is already in hover-preview mode when its text sprite is
+    // finally created, create it with the preview text directly (avoids a
+    // wasteful double texture build).
+    let text = item.text;
+    let opts = item.opts;
+    if (item.role && item.group.userData._previewActive) {
+      const line = item.group.userData.previewLines?.[item.role];
+      if (line) {
+        text = line.text;
+        opts = { ...item.opts, color: line.color };
+      }
+    }
+    const sprite = makeSprite(text, opts);
     sprite.position.copy(item.pos);
     item.group.add(sprite);
+    if (item.role) {
+      sprite.userData.role = item.role;
+      sprite.userData.text = text;
+      sprite.userData._textOpts = item.opts;
+      item.group.userData[`_cardText_${item.role}`] = sprite;
+    } else {
+      sprite.userData.text = item.text;
+    }
   }
 }
 
@@ -2227,6 +2243,12 @@ function createUpgradeCard(upgrade, position, hand, style) {
   // Fix for upgrade-screen selection regression: store selection data on both
   // the card face and the parent group so hover, trigger, and descendant hits match.
   attachUpgradeSelectionData(group, card, upgrade, hand);
+
+  // Issue #215: precompute the on-card hover preview lines (first two stat
+  // deltas + DPS). Swapped in/out by setCardPreviewMode on hover change.
+  try {
+    group.userData.previewLines = buildCardPreviewLines(upgrade, hand);
+  } catch (e) { /* non-critical — card just shows its normal text */ }
   group.add(card);
 
   // Issue #143: recipe cards get a gold border + ⚡ EVO badge so players can
@@ -2281,7 +2303,8 @@ function createUpgradeCard(upgrade, position, hand, style) {
     maxWidth: s.name?.maxWidth || 600,
   }, new THREE.Vector3(0, s.name?.y || 0.55, s.name?.z || 0.01));
 
-  // Description text - queued (forceArial for legibility)
+  // Description text - queued (forceArial for legibility). role='desc' lets
+  // the hover preview swap this slot for the first stat delta.
   queueTextSprite(group, upgrade.desc, {
     fontSize: s.desc?.fontSize || 40,
     color: '#cccccc',
@@ -2289,7 +2312,7 @@ function createUpgradeCard(upgrade, position, hand, style) {
     depthTest: true,
     maxWidth: s.desc?.maxWidth || 600,
     forceArial: true,
-  }, new THREE.Vector3(0, s.desc?.y || 0.15, s.desc?.z || 0.01));
+  }, new THREE.Vector3(0, s.desc?.y || 0.15, s.desc?.z || 0.01), 'desc');
 
   // Running total text for stackable upgrades - queued (forceArial for legibility)
   const totalText = getUpgradeTotalText(upgrade, hand);
@@ -2301,19 +2324,24 @@ function createUpgradeCard(upgrade, position, hand, style) {
       depthTest: true,
       maxWidth: s.stat?.maxWidth || 600,
       forceArial: true,
-    }, new THREE.Vector3(0, s.stat?.y || -0.05, s.stat?.z || 0.01));
+    }, new THREE.Vector3(0, s.stat?.y || -0.05, s.stat?.z || 0.01), 'stat');
   }
 
-  // Side-grade note - queued (forceArial for legibility)
+  // Side-grade note - queued (forceArial for legibility). role='note' lets
+  // the hover preview swap this slot for the DPS delta. Cards without a
+  // sideGradeNote get a lazy note sprite when the preview needs one.
+  const notePos = new THREE.Vector3(0, s.note?.y || -0.15, s.note?.z || 0.01);
+  const noteOpts = {
+    fontSize: s.note?.fontSize || 25,
+    color: '#ffdd00',
+    scale: s.note?.scale || 1,
+    depthTest: true,
+    maxWidth: s.note?.maxWidth || 600,
+    forceArial: true,
+  };
+  group.userData._noteDef = { pos: notePos, opts: noteOpts };
   if (upgrade.sideGradeNote) {
-    queueTextSprite(group, upgrade.sideGradeNote, {
-      fontSize: s.note?.fontSize || 25,
-      color: '#ffdd00',
-      scale: s.note?.scale || 1,
-      depthTest: true,
-      maxWidth: s.note?.maxWidth || 600,
-      forceArial: true,
-    }, new THREE.Vector3(0, s.note?.y || -0.15, s.note?.z || 0.01));
+    queueTextSprite(group, upgrade.sideGradeNote, noteOpts, notePos, 'note');
   }
 
   // Simple colored icon (shared geometry, delayed reveal)
@@ -2335,12 +2363,13 @@ function createUpgradeCard(upgrade, position, hand, style) {
       const progress = getEvolutionProgress(game.mainWeapon?.[hand] || 'standard_blaster', game.upgrades[hand] || {});
       const isUncollected = progress && !progress.collectedIds.includes(upgrade.id);
       if (isUncollected) {
+        // Badge at 150% of the original size (player feedback: too small)
         const badge = makeSprite('⚡ EVO', {
           fontSize: 26,
           color: '#FFD700',
           glow: true,
           glowColor: '#FFD700',
-          scale: 0.07,
+          scale: 0.105,
           depthTest: true,
           forceArial: true,
         });
@@ -2466,13 +2495,8 @@ export function hideUpgradeCards() {
   upgradeGroup.userData.hoveredSelections = {};
   upgradeCards = [];
   upgradeChoices = [];
-  // Preview panel is camera-anchored — dispose it explicitly so the cached
-  // key never shows a stale panel after the screen is re-opened.
-  disposeUpgradePreviewPanel();
-  previewGraceUntil = 0;
-  // Alchemy bench + post-select bar share the upgrade group; reset their
-  // state so the next level's upgrade screen starts clean.
-  postSelectGroup = null;
+  // Alchemy bench shares the upgrade group; reset its state so the next
+  // level's upgrade screen starts clean.
   alchemyBenchGroup = null;
   alchemyBenchOpen = false;
   alchemyCategoryView = false;
@@ -2515,50 +2539,17 @@ export function updateUpgradeCards(now, cooldownRemaining) {
   }
 }
 
-// ── Upgrade Card Preview Panel (Issue #215) ────────────────
-// Fixed panel below the card row. Content is rebuilt only when the
-// hovered card changes (hover events are rare — zero per-frame work).
-// The panel is a child of upgradeGroup so it inherits position and is
-// disposed together with the cards.
-
-// Cached panel backdrop/border geometry (rebuilt only if size changes —
-// panel builds are rare hover events, so disposal on resize is fine)
-let _previewPanelGeo = null;
-let _previewPanelBorderGeo = null;
-let _previewPanelSize = null;
-
-function getPreviewPanelGeo(width, height) {
-  if (!_previewPanelGeo || !_previewPanelSize || _previewPanelSize.w !== width || _previewPanelSize.h !== height) {
-    if (_previewPanelGeo) {
-      _previewPanelGeo.dispose();
-      _previewPanelBorderGeo.dispose();
-    }
-    _previewPanelSize = { w: width, h: height };
-    _previewPanelGeo = new THREE.PlaneGeometry(width, height);
-    _previewPanelBorderGeo = new THREE.EdgesGeometry(_previewPanelGeo);
-  }
-  return _previewPanelGeo;
-}
-function getPreviewPanelBorderGeo() {
-  return _previewPanelBorderGeo;
-}
-
-// Layout defaults — overridable via layouts/upgrade-cards.json previewPanel*
-// The panel is CAMERA-ANCHORED (a child of the camera, ~0.8m in front, lower
-// third of the view) so it can never clip through the floor and its text
-// renders at a fixed readable distance — unlike the old placement below the
-// card row, which pushed the panel through the floor with tiny glyphs.
-function getUpgradePreviewLayout() {
-  const el = layoutCache['upgrade-cards']?.elements || {};
-  const r = (key, def) => (el[key] ? { ...def, ...el[key] } : def);
-  return {
-    panel: r('previewPanel', { x: 0, y: -0.34, z: -0.8, w: 1.05, h: 0.42, color: 0x110033, opacity: 0.94 }),
-    name: r('previewPanel_name', { y: 0.13, z: 0.02, fontSize: 40, scale: 0.4, maxWidth: 540 }),
-    line: r('previewPanel_line', { y: -0.01, z: 0.02, fontSize: 30, scale: 0.32, maxWidth: 540 }),
-    synergy: r('previewPanel_synergy', { y: -0.01, z: 0.02, fontSize: 28, scale: 0.3, maxWidth: 540 }),
-    dps: r('previewPanel_dps', { y: -0.17, z: 0.02, fontSize: 26, scale: 0.28, maxWidth: 540 }),
-  };
-}
+// ── Upgrade Card Hover Preview (Issue #215) ────────────────
+// NO separate preview panel — the camera-locked box was removed per player
+// feedback (it rendered in front of the floor HUD and was universally
+// hated). Instead, hovering a card swaps the card's OWN desc/stat/note text
+// fields for the stat deltas, in the card's own font treatment:
+//
+//   DMG: 10 (↓ -5)          FIRE RATE: 12.5/s (↑ +6.9)
+//   DPS: 125 (↑ +42)
+//
+// Un-hovering restores the original text. Textures only rebuild on hover
+// CHANGE, never per frame.
 
 // Format a preview value for display: one decimal for rate/length units,
 // whole numbers otherwise, OFF/ON for boolean flags (piercing).
@@ -2569,146 +2560,118 @@ function fmtPreviewValue(value, unit, isBool) {
   return String(Math.round(value));
 }
 
-function buildUpgradePreviewPanel(upgrade, hand) {
-  disposeUpgradePreviewPanel();
-  const L = getUpgradePreviewLayout();
-
-  // Camera-anchored: upgradeTooltipGroup is a child of the camera, so the
-  // panel floats in the lower part of the view, always at a readable
-  // distance and never through the floor. It is display-only (never in the
-  // hoverable/raycast lists) so it can't interfere with card selection.
-  const panel = new THREE.Group();
-  panel.name = 'upgrade-preview-panel';
-  panel.position.set(L.panel.x, L.panel.y, L.panel.z);
-  upgradeTooltipGroup.add(panel);
-  previewPanel = panel;
-
-  // Backdrop + border, same visual language as the cards
-  const bgGeo = getPreviewPanelGeo(L.panel.w, L.panel.h);
-  const bgMat = new THREE.MeshBasicMaterial({
-    color: L.panel.color ?? 0x110033, transparent: true,
-    opacity: L.panel.opacity ?? 0.94, side: THREE.DoubleSide,
-    depthWrite: false, depthTest: false,
-  });
-  const bg = new THREE.Mesh(bgGeo, bgMat);
-  bg.renderOrder = 1;
-  panel.add(bg);
-  const borderMat = new THREE.LineBasicMaterial({
-    color: typeof upgrade.color === 'string' ? parseInt(upgrade.color.replace('#', ''), 16) : (upgrade.color || 0x00ffff),
-  });
-  const border = new THREE.LineSegments(getPreviewPanelBorderGeo(), borderMat);
-  panel.add(border);
-
-  // Stats source: the hand receiving upgrades + the level that comes next.
-  // At upgrade-select time game.level is still the completed level, so
-  // LEVELS[game.level] is the upcoming one (LEVELS is 0-indexed).
+// Build the on-card preview lines for an upgrade card.
+// Returns { desc, stat, note } where each is { text, color } or null.
+// desc/stat = the first two stat deltas, note = the DPS delta.
+function buildCardPreviewLines(upgrade, hand) {
   const weaponId = game.mainWeapon?.[hand] || 'standard_blaster';
-  const nextLevel = LEVELS[game.level] || LEVELS[game.level - 1] || LEVELS[0];
-  // Basic enemy base HP = 30 (enemies.js ENEMY_DEFS.basic.baseHp), scaled by
-  // the next level's hpMultiplier — the 'est kills/s' number is comparative.
-  const enemyHp = 30 * (nextLevel?.hpMultiplier || 1);
   const extraLines = upgrade.id === 'extra_nuke'
     ? [{ label: 'NUKES', before: game.nukes || 0, after: (game.nukes || 0) + 1, unit: '' }]
     : [];
-  const preview = getUpgradePreview(weaponId, game.upgrades[hand] || {}, upgrade, { enemyHp, extraLines });
-  if (!preview) return;
+  const preview = getUpgradePreview(weaponId, game.upgrades[hand] || {}, upgrade, { extraLines });
+  if (!preview) return null;
 
-  // Header: upgrade name in its accent color
-  const nameSprite = makeSprite(upgrade.name.toUpperCase(), {
-    fontSize: L.name.fontSize, color: upgrade.color || '#00ffff',
-    glow: true, glowColor: upgrade.color, scale: L.name.scale,
-    maxWidth: L.name.maxWidth, depthTest: false,
-  });
-  nameSprite.userData.text = upgrade.name.toUpperCase();
-  nameSprite.position.set(0, L.name.y, L.name.z);
-  panel.add(nameSprite);
-
-  // Stat delta lines (green — every line is a 'what changes' readout).
-  // Compact panel: 2 stat lines + 1 synergy hint + DPS footer.
-  let y = L.line.y;
-  const statCount = Math.min(2, preview.statLines.length);
-  for (const line of preview.statLines.slice(0, statCount)) {
-    const text = `${line.label}: ${fmtPreviewValue(line.before, line.unit, line.bool)} → ${fmtPreviewValue(line.after, line.unit, line.bool)}${line.unit}`;
-    const sprite = makeSprite(text, {
-      fontSize: L.line.fontSize, color: '#88ff88', scale: L.line.scale,
-      maxWidth: L.line.maxWidth, depthTest: false, forceArial: true,
-    });
-    sprite.userData.text = text;
-    sprite.position.set(0, y, L.line.z);
-    panel.add(sprite);
-    y -= 0.08;
-  }
-
-  // Synergy hints — gold for newly-activated combos, dim for active ones
-  const synergyLine = preview.newSynergies.length > 0
-    ? { ...preview.newSynergies[0], _new: true }
-    : (preview.activeSynergies[0] ? { ...preview.activeSynergies[0], _new: false } : null);
-  if (synergyLine) {
-    const def = SYNERGY_DEFS[synergyLine.id];
-    const text = synergyLine._new
-      ? `✦ NEW SYNERGY: ${synergyLine.name}${def?.desc ? ` — ${def.desc}` : ''}`
-      : `✓ ACTIVE: ${synergyLine.name}`;
-    const sprite = makeSprite(text, {
-      fontSize: L.synergy.fontSize,
-      color: synergyLine._new ? (synergyLine.tier === 3 ? '#ffdd00' : '#ff88ff') : '#8888aa',
-      scale: L.synergy.scale, maxWidth: L.synergy.maxWidth, depthTest: false, forceArial: true,
-    });
-    sprite.userData.text = text;
-    sprite.position.set(0, y, L.synergy.z);
-    panel.add(sprite);
-  }
-
-  // DPS + kill-rate estimate footer
-  const kps = (v) => (typeof v === 'number' ? v.toFixed(1) : '0.0');
-  const dpsText = `DPS ${Math.round(preview.dps.before)} → ${Math.round(preview.dps.after)}  ·  EST KILLS/S ${kps(preview.killsPerSec.before)} → ${kps(preview.killsPerSec.after)}`;
-  const dpsSprite = makeSprite(dpsText, {
-    fontSize: L.dps.fontSize, color: '#00ffff', scale: L.dps.scale,
-    maxWidth: L.dps.maxWidth, depthTest: false, forceArial: true,
-  });
-  dpsSprite.userData.text = dpsText;
-  dpsSprite.position.set(0, L.dps.y, L.dps.z);
-  panel.add(dpsSprite);
+  const fmtDelta = (before, after) => {
+    const delta = Math.round((after - before) * 10) / 10;
+    const arrow = delta >= 0 ? '↑' : '↓';
+    const sign = delta >= 0 ? '+' : '';
+    return `${arrow} ${sign}${delta}`;
+  };
+  const statLines = preview.statLines.slice(0, 2).map(line => ({
+    text: `${line.label}: ${fmtPreviewValue(line.after, line.unit, line.bool)} (${fmtDelta(line.before, line.after)})`,
+    color: (line.after || 0) >= (line.before || 0) ? '#88ff88' : '#ff6666',
+  }));
+  const dpsDelta = Math.round(preview.dps.after - preview.dps.before);
+  const dps = {
+    text: `DPS: ${Math.round(preview.dps.after)} (${dpsDelta >= 0 ? '↑ +' : '↓ '}${Math.abs(dpsDelta)})`,
+    color: dpsDelta >= 0 ? '#88ff88' : '#ff6666',
+  };
+  return {
+    desc: statLines[0] || null,
+    stat: statLines[1] || null,
+    note: dps,
+  };
 }
 
-function disposeUpgradePreviewPanel() {
-  if (previewPanel) {
-    disposeGroupChildren(previewPanel);
-    if (previewPanel.parent) previewPanel.parent.remove(previewPanel);
-    previewPanel = null;
+// Swap a sprite's canvas texture for new text, keeping the same geometry
+// math makeSprite uses (maxWidth-based unit-per-pixel scaling).
+function swapSpriteText(sprite, text, opts) {
+  if (!sprite || !sprite.material) return;
+  if (sprite.material.map) sprite.material.map.dispose();
+  const { texture, canvasWidth, canvasHeight } = makeTextTexture(text, opts);
+  sprite.material.map = texture;
+  sprite.material.needsUpdate = true;
+  if (opts.maxWidth) {
+    const unitPerPixel = opts.scale / opts.maxWidth;
+    sprite.scale.set(canvasWidth * unitPerPixel, canvasHeight * unitPerPixel, 1);
+  } else {
+    const { aspect } = makeTextTexture(text, opts);
+    sprite.scale.set(aspect * opts.scale, opts.scale, 1);
   }
-  previewPanelKey = null;
 }
 
-// Grace window: don't tear the panel down (or rebuild it) on momentary
-// raycast flicker between frames — this also killed the rapid blip sound.
-let previewGraceUntil = 0;
-
-/**
- * Show/hide the preview panel based on the per-source hovered upgrade
- * selections collected by updateHUDHover. Rebuilds only when the hovered
- * card CHANGES (never every frame).
- */
-function updateUpgradePreview(hoveredSelections) {
-  // No preview while cards are still warping in — textures would fight the
-  // intro animation and the panel would sit on a moving layout.
-  if (_warpAnimating) { disposeUpgradePreviewPanel(); return; }
-  const keys = Object.keys(hoveredSelections || {});
-  if (keys.length === 0) {
-    // Grace: keep the panel for a few frames when the ray briefly loses the
-    // card (VR controller jitter) so it doesn't flicker/rebuild repeatedly.
-    if (previewPanel && performance.now() < previewGraceUntil) return;
-    disposeUpgradePreviewPanel();
-    return;
+// Toggle a card's text between its original desc/stat/note and the preview
+// delta lines. No-op unless the hover state actually changed.
+function setCardPreviewMode(group, active) {
+  if (!group || group.userData._previewActive === active) return;
+  group.userData._previewActive = active;
+  const lines = group.userData.previewLines;
+  if (!lines) return;
+  for (const role of ['desc', 'stat', 'note']) {
+    const sprite = group.userData[`_cardText_${role}`];
+    if (active && lines[role]) {
+      if (sprite) {
+        swapSpriteText(sprite, lines[role].text, { ...sprite.userData._textOpts, color: lines[role].color });
+        sprite.userData.text = lines[role].text;
+      } else if (role === 'note' && group.userData._noteDef) {
+        // Cards without a sideGradeNote have no note sprite — create one
+        // lazily for the DPS line (Issue #215).
+        const def = group.userData._noteDef;
+        const s = makeSprite(lines[role].text, { ...def.opts, color: lines[role].color });
+        s.userData.text = lines[role].text;
+        s.userData.role = 'note';
+        s.userData._textOpts = def.opts;
+        s.userData._previewCreated = true;
+        s.position.copy(def.pos);
+        group.add(s);
+        group.userData[`_cardText_note`] = s;
+      }
+    } else if (!active) {
+      if (sprite && sprite.userData._previewCreated) {
+        // Remove the lazily-created preview sprite on restore
+        group.remove(sprite);
+        if (sprite.material && sprite.material.map) sprite.material.map.dispose();
+        if (sprite.geometry) sprite.geometry.dispose();
+        delete group.userData[`_cardText_note`];
+        continue;
+      }
+      if (sprite) {
+        const orig = group.userData[`_cardTextOrig_${role}`];
+        if (orig) {
+          swapSpriteText(sprite, orig.text, orig.opts);
+          sprite.userData.text = orig.text;
+        }
+      }
+    }
   }
-  const selection = hoveredSelections[keys[0]];
-  const upgrade = selection?.upgrade;
-  if (!upgrade || !upgrade.id || upgrade.id === 'SKIP') { disposeUpgradePreviewPanel(); return; }
-  const hand = selection.hand || upgradeGroup.userData.hand;
-  const key = `${upgrade.id}|${hand}`;
-  previewGraceUntil = performance.now() + 300;
-  if (previewPanelKey === key) return; // cache hit — already showing this card
-  previewPanelKey = key;
-  buildUpgradePreviewPanel(upgrade, hand);
+}
+
+// Per-frame driver: which cards are hovered (any input source) → swap their
+// text. Runs off the same hoveredSelections cache as selection, so hover and
+// preview always agree.
+function updateCardHoverPreviews(hoveredSelections) {
+  if (_warpAnimating) return; // cards still flying in — hold off
+  const hoveredKeys = new Set();
+  for (const k of Object.keys(hoveredSelections || {})) {
+    const sel = hoveredSelections[k];
+    const upg = sel?.upgrade;
+    if (upg && upg.id) hoveredKeys.add(`${upg.id}|${sel.hand || ''}`);
+  }
+  for (const card of upgradeCards) {
+    const sel = card.userData.upgradeSelection;
+    const key = sel?.upgrade?.id ? `${sel.upgrade.id}|${sel.hand || ''}` : null;
+    setCardPreviewMode(card, key !== null && hoveredKeys.has(key));
+  }
 }
 
 // ── Alchemy Bench + Post-Select Bar (Issue #185) ────────────
@@ -2777,67 +2740,12 @@ function getAlchemyLayout() {
 }
 
 /**
- * Post-select bar: shown after the player picks a card. CONTINUE advances;
- * ALCHEMY opens the bench (only when the player owns ≥1 upgrade anywhere).
+ * Open (or refresh) the alchemy bench — full rebuild, rare event.
+ * The old post-select bar (CONTINUE/ALCHEMY after picking a card) was
+ * removed per player feedback — the bench is reached from the ALCHEMY
+ * button on the card screen itself, and picking a card advances directly.
  */
-export function showPostUpgradeBar(hand, canAlchemy) {
-  disposePostUpgradeBar();
-  const L = getAlchemyLayout();
-  const group = new THREE.Group();
-  group.name = 'post-select-bar';
-  // Raised so the bar sits ABOVE the floor and below the cards' lower edge
-  // (previously at -1.78 it sank through the floor). Text sizes bumped to
-  // card-like legibility.
-  group.position.set(L.bar.x, L.bar.y, L.bar.z);
-  upgradeGroup.add(group);
-  postSelectGroup = group;
-  alchemyBenchHand = hand || 'left';
-
-  const bg = new THREE.Mesh(
-    new THREE.PlaneGeometry(L.bar.w, L.bar.h),
-    new THREE.MeshBasicMaterial({ color: 0x110033, transparent: true, opacity: 0.94, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
-  );
-  bg.renderOrder = 1;
-  group.add(bg);
-  group.add(new THREE.LineSegments(
-    new THREE.EdgesGeometry(bg.geometry),
-    new THREE.LineBasicMaterial({ color: 0xaa88ff })
-  ));
-
-  const title = makeSprite('UPGRADE APPLIED — WHAT NEXT?', {
-    fontSize: 40, color: '#ffffff', scale: 0.4, maxWidth: 760, depthTest: true, forceArial: true,
-  });
-  title.userData.text = 'UPGRADE APPLIED — WHAT NEXT?';
-  title.position.set(0, 0.3, 0.02);
-  group.add(title);
-
-  // CONTINUE (green) — advances to the next level
-  makeAlchemyButton(group, 'CONTINUE →', { type: 'continue' }, -0.5, -0.12, {
-    w: 1.5, h: 0.32, color: 0x00ff88, name: 'alchemy-btn-continue', fontSize: 34, textScale: 0.3,
-  });
-  // ALCHEMY (amber) — only offered when there is something to dissolve
-  if (canAlchemy) {
-    makeAlchemyButton(group, '⚗ ALCHEMY', { type: 'alchemy' }, 1.05, -0.12, {
-      w: 1.5, h: 0.32, color: 0xffaa00, name: 'alchemy-btn-alchemy', fontSize: 34, textScale: 0.3,
-    });
-  }
-}
-
-export function disposePostUpgradeBar() {
-  if (postSelectGroup) {
-    disposeGroupChildren(postSelectGroup);
-    if (postSelectGroup.parent) postSelectGroup.parent.remove(postSelectGroup);
-    postSelectGroup = null;
-  }
-}
-
-export function isPostSelectVisible() {
-  return !!postSelectGroup && postSelectGroup.visible;
-}
-
-/** Open (or refresh) the alchemy bench — full rebuild, rare event. */
 export function showAlchemyBench(hand) {
-  disposePostUpgradeBar();
   alchemyBenchOpen = true;
   // A fresh open always returns to the MAIN bench view (a forge from the
   // category picker must land back on the forge list, not the picker).
@@ -3027,8 +2935,11 @@ export function getAlchemyBenchHit(raycaster) {
       if (c.userData && c.userData.alchemyAction && !c.userData.alchemyDisabled) targets.push(c);
     });
   }
-  if (postSelectGroup && postSelectGroup.visible) {
-    postSelectGroup.traverse(c => {
+  // The card screen's ALCHEMY button is also an alchemy target (not just the
+  // bench) — it carries userData.alchemyAction on its face mesh. When the
+  // bench is open it covers the cards, so skip the button scan then.
+  if (upgradeGroup.visible && !alchemyBenchOpen) {
+    upgradeGroup.traverse(c => {
       if (c.userData && c.userData.alchemyAction && !c.userData.alchemyDisabled) targets.push(c);
     });
   }
@@ -3346,73 +3257,11 @@ export function updateHitFlash(dt) {
   }
 }
 
-// ── Bullet Carnival style HUD (Issue #189) ─────────────────
-
-// Minimal real-estate display: 4 thin bars + one grade letter, tucked at the
-// left edge of the floor HUD. Bars animate via scale only (no texture work);
-// the letter texture rebuilds ONLY on grade change.
-function createStyleHUD() {
-  styleHudGroup = new THREE.Group();
-  styleHudGroup.name = 'style-hud';
-  styleHudGroup.position.set(-2.15, 0.05, 1.35);
-  hudGroup.add(styleHudGroup);
-
-  const panel = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.2, 0.8),
-    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
-  );
-  panel.name = 'style-hud-panel';
-  panel.renderOrder = 5;
-  styleHudGroup.add(panel);
-
-  for (let i = 0; i < 4; i++) {
-    const bar = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.02, 0.12),
-      new THREE.MeshBasicMaterial({ color: STYLE_BAR_COLORS[i], transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, depthTest: false })
-    );
-    bar.name = `style-bar-${i}`;
-    bar.renderOrder = 6;
-    bar.position.set(-0.07 + i * 0.04, -0.22, 0.01);
-    styleHudGroup.add(bar);
-    styleBarMeshes.push(bar);
-  }
-
-  styleLetterSprite = makeSprite('D', { fontSize: 44, color: '#444444', glow: true, scale: 0.13, depthTest: false });
-  styleLetterSprite.name = 'style-grade-letter';
-  styleLetterSprite.renderOrder = 7;
-  styleLetterSprite.position.set(0.055, -0.22, 0.02);
-  styleHudGroup.add(styleLetterSprite);
-  styleLetterSprite.userData.text = 'D';
-  styleLetterTier = -1;
-}
-
-export function updateStyleHUD(styleState, grade, now) {
-  if (!styleHudGroup || !styleState) return;
-
-  // Bars: fill from the bottom via scale.y + origin compensation
-  const values = [styleState.variety, styleState.precision, styleState.tempo, styleState.creativity];
-  for (let i = 0; i < 4; i++) {
-    const bar = styleBarMeshes[i];
-    if (!bar) continue;
-    const fill = Math.min(1, Math.max(0, (values[i] || 0) / 100));
-    bar.scale.y = Math.max(0.001, fill);
-    bar.position.y = -0.28 + fill * 0.06;
-  }
-
-  // Grade letter — rebuild texture ONLY when the tier changes
-  const tier = grade ? (grade.tier ?? 6) : 6;
-  if (tier !== styleLetterTier && styleLetterSprite) {
-    styleLetterTier = tier;
-    const g = grade || { grade: 'D', color: 0x444444 };
-    const colorHex = '#' + g.color.toString(16).padStart(6, '0');
-    if (styleLetterSprite.material.map) styleLetterSprite.material.map.dispose();
-    const { texture, aspect } = makeTextTexture(g.grade, { fontSize: 44, color: colorHex, glow: true, glowColor: colorHex });
-    styleLetterSprite.material.map = texture;
-    styleLetterSprite.material.needsUpdate = true;
-    styleLetterSprite.scale.set(aspect * 0.13, 0.13, 1);
-    styleLetterSprite.userData.text = g.grade;
-  }
-}
+// ── Bullet Carnival style flash (Issue #189) ───────────────
+// The old 4-meter bars + grade letter were removed per player feedback —
+// they sat far off to the left of the play area with no clear purpose.
+// The style system still rewards score/upgrades/health drops silently;
+// only the brief grade-color flash remains as feedback.
 
 /** Brief full-view flash in the grade color (Issue #189 grade-up moment). */
 export function triggerStyleFlash(colorHex) {
@@ -5349,20 +5198,23 @@ export function updateHUDHover(raycasters) {
   // 10. Alchemy bench + post-select bar (Issue #185)
   // Disabled buttons (locked forge options) stay out of hoverables so they
   // neither glow nor respond.
+  // Alchemy bench + the card screen's ALCHEMY button (Issue #185). Disabled
+  // buttons (locked forge options) stay out of hoverables so they neither
+  // glow nor respond.
   if (alchemyBenchGroup && alchemyBenchGroup.visible) {
     alchemyBenchGroup.traverse(c => {
       if (c.userData && c.userData.alchemyAction && !c.userData.alchemyDisabled) hoverables.push(c);
     });
   }
-  if (postSelectGroup && postSelectGroup.visible) {
-    postSelectGroup.traverse(c => {
+  if (upgradeGroup.visible && !alchemyBenchOpen) {
+    upgradeGroup.traverse(c => {
       if (c.userData && c.userData.alchemyAction && !c.userData.alchemyDisabled) hoverables.push(c);
     });
   }
 
   if (hoverables.length === 0) {
     upgradeGroup.userData.hoveredSelections = {};
-    disposeUpgradePreviewPanel();
+    updateCardHoverPreviews({});
     return false;
   }
 
@@ -5403,9 +5255,9 @@ export function updateHUDHover(raycasters) {
   // Fix for upgrade trigger regression: cache hovered upgrade targets per input
   // source so each controller can only select the card it is actually aiming at.
   upgradeGroup.userData.hoveredSelections = hoveredUpgradeSelections;
-  // Issue #215: drive the preview panel off the same hover data (cheap — the
-  // panel only rebuilds when the hovered card changes).
-  updateUpgradePreview(hoveredUpgradeSelections);
+  // Issue #215: swap hovered cards' text to the stat deltas (cheap — only
+  // acts when a card's hover state actually changed).
+  updateCardHoverPreviews(hoveredUpgradeSelections);
 
   let newHover = false;
 
