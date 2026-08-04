@@ -947,6 +947,7 @@ function spawnProjectile(origin, direction, controllerIndex, stats, shotId, opti
   mesh.userData.tailPhase = stats.homing ? Math.random() * Math.PI * 2 : 0;
   mesh.userData.tailSpeed = stats.homing ? 16 + Math.random() * 5 : 0;
   mesh.userData.scatterSeek = !!stats.scatterSeek; // Issue #218
+  mesh.userData.spawnPos = origin.clone(); // Issue #213 Point Blank range ramp
   mesh.visible = true;
 
   // Orient bolt along direction
@@ -1020,6 +1021,14 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
 
   // Calculate damage
   let damage = stats.damage;
+
+  // Issue #213 Point Blank (buckshot mastery): damage ramps the closer the
+  // pellet is to its spawn point (2x under 3m, 1.5x under 6m)
+  if (stats.pointBlank) {
+    const travel = stats.travelDist || 0;
+    if (travel < 3) damage *= 2;
+    else if (travel < 6) damage *= 1.5;
+  }
 
   // Tank weak point (one random voxel takes double damage)
   if (hitWeakPoint) damage *= 2;
@@ -1902,6 +1911,10 @@ function updateProjectiles(dt) {
       // Perf: Object.assign into scratch stats instead of { ...stats } spread per hit
       Object.assign(_hitStatsScratch, proj.userData.stats);
       _hitStatsScratch.damage = proj.userData.stats.damage + naniteDamage;
+      // Issue #213: travel distance for the Point Blank close-range ramp
+      _hitStatsScratch.travelDist = proj.userData.spawnPos
+        ? proj.position.distanceTo(proj.userData.spawnPos)
+        : 0;
       handleHit(
         directEnemyHit.index,
         directEnemyHit.enemy,

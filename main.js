@@ -59,7 +59,7 @@ import {
   getHandForController, isLightningOrbCharging, getLightningOrbChargeSec,
   fireChargeBeam, fireLightningOrb, updateLightningOrbCharge, clearLightningOrbCharge,
   updateLightningBeam, clearLightningBeam, clearAllLightningBeams, clearAllLightningOrbs,
-  updateLightningOrbs, isBossLightningLevel,
+  updateLightningOrbs, isBossLightningLevel, chargeTimeToDamage,
   updateChargeVisuals, hideChargeVisuals, clearAllChargeBeamVisuals,
   updateChargeExplosions, updateChargeBeamVisuals,
   chargeTimeToProgress, pointToSegmentDistSq, spawnTransientLightningBolt,
@@ -160,6 +160,11 @@ import {
   updateObliteratorBeam, hideObliteratorBeam,
   updateEvolvedSystems, clearAllEvolvedSystems,
 } from './evolutions.js';
+// Weapon mastery (Issue #213): permanent per-weapon progression
+import {
+  loadMastery, saveMastery, addMasteryKill, getMasteryTierIndex,
+  getMasteryCardId, getBestMastery, getMasteryTier,
+} from './mastery.js';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
@@ -805,6 +810,9 @@ function checkKillsAlert() {
 // Hold weapons (lightning/charge) record one fire event per trigger press
 // via comboFireLatch so timing combos work across weapon types.
 const comboFireTimes = [0, 0];
+// Issue #213 Last Light: consecutive-shot counter per hand (5x on the 10th)
+const masteryShotCount = [0, 0];
+const masteryShotTime = [0, 0];
 const comboFireRateBoostUntil = [0, 0];   // Resonance: +10% fire rate for 1s
 const sustainedFireCount = [0, 0];        // Shots within the 1s Heat Wave window
 const sustainedFireWindowStart = [0, 0];
@@ -873,6 +881,11 @@ function handleEnemyKilled(enemyIndex, opts = {}) {
     statusCombo: opts.statusCombo,
     overkill: opts.overkill,
   });
+
+  // Issue #213: permanent per-weapon kill tracking (hand-attributed kills)
+  if (opts.hand && game.mainWeapon[opts.hand]) {
+    addMasteryKill(game.mainWeapon[opts.hand]);
+  }
   addScore(destroyData.scoreValue);
   updateHUD(game);
   if (countsForLevelProgress) checkKillsAlert();
@@ -1803,6 +1816,8 @@ function init() {
     getController: (i) => controllers[i] || null,
     spawnDamageNumber,
   });
+  // Weapon mastery (Issue #213): load persistent progression
+  loadMastery();
   // Preload wrist layout JSONs so updateBlasterDisplay can read them
   import('./hud.js').then(m => { m.loadLayout('upgrade-wrist-left'); m.loadLayout('upgrade-wrist-right'); });
   if (devRuntimeEnabled && runtimeConfig.dev.showFPS) {
@@ -3884,11 +3899,12 @@ function onTriggerRelease(index) {
     const stats = getWeaponStats(game.mainWeapon[hand], game.upgrades[hand]);
     if (stats.chargeShot) {
       const chargeTimeSec = (performance.now() - chargeShotStartTime[index]) / 1000;
-      // Issue #143: Singularity Launcher replaces the beam on release
+      // Issue #143: Singularity Launcher replaces the beam on release;
+      // Issue #213: the Overkill mastery card splits max-charge shots into 3.
       const evo = game.weaponEvolution?.[hand];
       if (evo && evo.id === 'singularity_launcher') {
         fireSingularityShot(controllers[index], index, chargeTimeSec, stats, evo);
-      } else {
+      } else if (!fireMasteryCharge(controllers[index], index, chargeTimeSec, stats, hand)) {
         fireChargeBeam(controllers[index], index, chargeTimeSec, stats);
       }
     }
@@ -4429,7 +4445,16 @@ function showUpgradeScreen() {
     // (normally boss-only) — the real prize for sustained style play.
     // Computed fresh so direct state changes and event timing both behave.
     const styleGradeNow = computeStyleGrade(game.styleState);
-    if (styleGradeNow.tier <= 3) {
+    // Issue #213: at Master tier the weapon's unique mastery card is offered
+    // (once — never re-offered once owned).
+    const masteryCardId = getMasteryCardId(mainWeaponId);
+    const ownsMasteryCard = masteryCardId && (game.upgrades[hand]?.[masteryCardId] || 0) > 0;
+    if (masteryCardId && !ownsMasteryCard && getMasteryTierIndex(mainWeaponId) >= 3) {
+      pendingUpgrades = getRandomUpgrades(2, mainWeaponId);
+      const card = getUpgradeDef(masteryCardId);
+      if (card) pendingUpgrades.push(card);
+      _log(`[mastery] Master tier — mastery card offered (${masteryCardId})`);
+    } else if (styleGradeNow.tier <= 3) {
       pendingUpgrades = getRandomUpgrades(2, mainWeaponId);
       const special = getRandomSpecialUpgrades(1, mainWeaponId);
       if (special.length > 0) pendingUpgrades.push(special[0]);
@@ -5070,6 +5095,33 @@ function showAlchemyBenchCategoryView() {
   showAlchemyCategoryView();
 }
 
+// Issue #213 Overkill mastery card: a max-charge shot splits into 3 spread
+// projectiles instead of the single charge beam. Returns true when handled.
+function fireMasteryCharge(controller, index, chargeTimeSec, stats, hand) {
+  if (!(game.upgrades[hand]?.overkill > 0)) return false;
+  const progress = chargeTimeToProgress(chargeTimeSec, stats.chargeRateMultiplier || 1);
+  if (progress < 0.99) return false;
+
+  const totalDamage = Math.round(
+    chargeTimeToDamage(chargeTimeSec, stats.chargeRateMultiplier || 1, stats.chargeDeathRayMultiplier || 1)
+  );
+  const origin = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  controller.getWorldPosition(origin);
+  controller.getWorldQuaternion(quat);
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+  const shotId = startAccuracyShot(3, getHandForController(index));
+  for (let i = -1; i <= 1; i++) {
+    const dir = forward.clone().applyAxisAngle(right, i * 0.05); // ±~3° spread
+    spawnProjectile(origin.clone(), dir, index, {
+      ...stats, damage: Math.round(totalDamage / 3), projectileCount: 1,
+    }, shotId, { suppressSound: true });
+  }
+  playChargeFireSound(1);
+  return true;
+}
+
 // [CORE] Advance to next level after upgrade selection
 function advanceLevelAfterUpgrade() {
   // Deferred cleanup from level complete - explosions already played during LEVEL_COMPLETE state
@@ -5086,6 +5138,9 @@ function advanceLevelAfterUpgrade() {
   clearAllComboPopups();
   clearAllKillChainPopups();
   clearFloatingMessage();
+  // Issue #213: persist mastery on level transitions (debounced writes can't
+  // lose progress on a quit mid-run)
+  saveMastery();
   stopLightningSound();
 
   game.level++;
@@ -5448,6 +5503,30 @@ function fireMainWeapon(controller, index) {
   }
   recordComboFire(index);
   weaponCooldowns[index] = now;
+
+  // ── Mastery Cards (Issue #213) ──
+  // Effects read game.upgrades[hand] directly (cards are normal upgrades).
+  const masteries = game.upgrades[hand] || {};
+  // Last Light: every 10th consecutive shot (≤1.2s apart) deals 5x damage
+  if (masteries.last_light > 0) {
+    if (now - masteryShotTime[index] > 1200) masteryShotCount[index] = 0;
+    masteryShotCount[index]++;
+    masteryShotTime[index] = now;
+    if (masteryShotCount[index] % 10 === 0) stats.damage = Math.round(stats.damage * 5);
+  }
+  // Point Blank: shotgun damage ramps at close range (applied in handleHit)
+  if (masteries.point_blank > 0 && mainWeaponId === 'buckshot') {
+    stats.pointBlank = true;
+  }
+  // Swarm Intelligence: seekers deal double damage
+  if (masteries.swarm_intelligence > 0 && mainWeaponId === 'seeker_burst') {
+    stats.damage = Math.round(stats.damage * 2);
+  }
+  // Melting Point: plasma sustained fire (held ≥3s) ignites enemies
+  if (masteries.melting_point > 0 && mainWeaponId === 'plasma_carbine' &&
+      plasmaCarbineSpinStart[index] !== null && (now - plasmaCarbineSpinStart[index]) >= 3000) {
+    stats.effects = [...stats.effects, { type: 'fire', stacks: 1 }];
+  }
 
   const origin = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -6242,11 +6321,12 @@ function render(timestamp) {
           const stats = getWeaponStats(game.mainWeapon.left, game.upgrades.left);
           if (virtualController && stats.chargeShot) {
             const chargeTimeSec = (now - chargeShotStartTime[0]) / 1000;
-            // Issue #143: Singularity Launcher replaces the beam on release
+            // Issue #143: Singularity Launcher replaces the beam on release;
+            // Issue #213: the Overkill mastery card splits max-charge shots.
             const evo = game.weaponEvolution?.left;
             if (evo && evo.id === 'singularity_launcher') {
               fireSingularityShot(virtualController, 0, chargeTimeSec, stats, evo);
-            } else {
+            } else if (!fireMasteryCharge(virtualController, 0, chargeTimeSec, stats, 'left')) {
               fireChargeBeam(virtualController, 0, chargeTimeSec, stats);
             }
           }
@@ -6269,11 +6349,12 @@ function render(timestamp) {
           const stats = getWeaponStats(game.mainWeapon.right, game.upgrades.right);
           if (virtualController && stats.chargeShot) {
             const chargeTimeSec = (now - chargeShotStartTime[1]) / 1000;
-            // Issue #143: Singularity Launcher replaces the beam on release
+            // Issue #143: Singularity Launcher replaces the beam on release;
+            // Issue #213: the Overkill mastery card splits max-charge shots.
             const evo = game.weaponEvolution?.right;
             if (evo && evo.id === 'singularity_launcher') {
               fireSingularityShot(virtualController, 1, chargeTimeSec, stats, evo);
-            } else {
+            } else if (!fireMasteryCharge(virtualController, 1, chargeTimeSec, stats, 'right')) {
               fireChargeBeam(virtualController, 1, chargeTimeSec, stats);
             }
           }
@@ -6302,6 +6383,20 @@ function render(timestamp) {
         // Issue #218: allow new combo fire events on the next press
         comboFireLatch[0] = false;
         comboFireLatch[1] = false;
+      }
+    }
+
+    // Issue #213: Expert+ weapons get a pulsing mastery glow on their
+    // controller sphere (subtle; non-Expert weapons ease back to 0.2)
+    for (let hi = 0; hi < 2; hi++) {
+      const hnd = hi === 0 ? 'left' : 'right';
+      const v = controllers[hi]?.children.find(c => c.name === `controller-visual-${hnd}`);
+      const glow = v?.children.find(c => c.name === `controller-glow-${hnd}`);
+      if (!glow || !glow.material) continue;
+      if (getMasteryTierIndex(game.mainWeapon[hnd]) >= 2) {
+        glow.material.opacity = 0.25 + Math.sin(now * 0.008 + hi * 1.7) * 0.15;
+      } else {
+        glow.material.opacity += (0.2 - glow.material.opacity) * 0.05;
       }
     }
 

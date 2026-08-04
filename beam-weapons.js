@@ -56,6 +56,8 @@ function scheduleTimeout(fn, ms) {
 }
 
 // Cancel every tracked timer. Called on level complete + game reset.
+export { chargeTimeToDamage };
+
 export function clearAllPendingTimers() {
   for (const id of pendingTimers) clearTimeout(id);
   pendingTimers.clear();
@@ -313,12 +315,24 @@ function updateLightningBeam(controller, index, stats, dt) {
         playHitSound();
         if (stats.effects && stats.effects.length > 0) applyEffects(enemyIndex, stats.effects);
 
+        // Issue #213 Tesla's Domain mastery card: visible ground arcs on each
+        // lightning tick (from the struck enemy down to the floor)
+        const lightningHand = getHandForController(index);
+        if ((game.upgrades[lightningHand]?.teslas_domain || 0) > 0 && enemy?.mesh) {
+          spawnTransientLightningBolt(
+            enemy.mesh.position.clone(),
+            new THREE.Vector3(enemy.mesh.position.x, 0.05, enemy.mesh.position.z),
+            200
+          );
+        }
+
         if (result.killed) {
           playExplosionSound();
-          const destroyData = handleEnemyKilled(enemyIndex, { killsWithoutHit: true, skipChain: false });
+          // hand attribution feeds mastery kills (Issue #213)
+          const destroyData = handleEnemyKilled(enemyIndex, { killsWithoutHit: true, skipChain: false, hand: lightningHand });
           if (destroyData) {
             // Track kills for hand stats (was missing, caused vampiric/hologram bug)
-            const hand = getHandForController(index);
+            const hand = lightningHand;
             game.handStats[hand].kills++;
             if (destroyData.type) {
               if (!game.handStats[hand].enemyKills) {

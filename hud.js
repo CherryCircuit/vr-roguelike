@@ -8,6 +8,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, LEVELS } from './game.js';
 import { playMenuHoverSound, playMenuClick, playBasicEnemySpawn } from './audio.js';
 import { getUpgradePreview, SYNERGY_DEFS, getDissolvableUpgrades, ALCHEMY_CATEGORIES, ALCHEMY_FORGE_COST, getEvolutionProgress } from './weapons.js';
+import { getBestMastery } from './mastery.js';
 import {
   TextPopupPool, initDamageNumbers, disposePools,
   spawnDamageNumber, spawnCritIndicator, updateDamageNumbers,
@@ -3106,6 +3107,26 @@ export function showGameOver(score, playerPos, killedBy) {
   s2.position.set(scoreDef.x, scoreDef.y, scoreDef.z);
   s2.name = 'scoreSprite';
   gameOverGroup.add(s2);
+
+  // Issue #213: permanent mastery title for the player's best equipped
+  // weapon ("MASTERY: LIGHTNING ROD ⚡ EXPERT") — shown from Adept tier up.
+  try {
+    const best = getBestMastery([game.mainWeapon?.left, game.mainWeapon?.right]);
+    if (best && best.tierIndex > 0) {
+      const mDef = _go('masteryLine', { x: 0, y: -0.3, z: 0, fontSize: 34, scale: 0.34, color: 0xffdd00 });
+      const label = `${String(best.weaponId).toUpperCase().replace('_', ' ')} ⚡ ${best.tier.toUpperCase()}`;
+      const mSprite = makeSprite(`MASTERY: ${label}`, {
+        fontSize: mDef.fontSize,
+        color: '#' + mDef.color.toString(16).padStart(6, '0'),
+        glow: true,
+        scale: mDef.scale,
+      });
+      mSprite.position.set(mDef.x, mDef.y, mDef.z);
+      mSprite.name = 'masteryLine';
+      mSprite.userData.text = label;
+      gameOverGroup.add(mSprite);
+    }
+  } catch (e) { /* non-critical */ }
 
   // Kill info display (between SCORE and PRESS TRIGGER)
   if (killedBy) {

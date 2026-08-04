@@ -4,6 +4,7 @@
 // ============================================================
 
 import { game } from './game.js';
+import { getMasteryTierIndex } from './mastery.js';
 
 // ── MAIN WEAPONS (fired by select/top trigger) ───────────────
 export const MAIN_WEAPONS = {
@@ -330,6 +331,38 @@ export const ALT_WEAPONS = {
 // ── UPGRADE SYSTEM ───────────────────────────────────────────
 // NOTE: every def carries a `category` (damage|speed|crit|status|utility)
 // used by the Alchemy Bench's Targeted Infusion forge (Issue #185).
+
+// Mastery cards (Issue #213): unique upgrades offered ONLY when a weapon is
+// at Master tier (500+ kills). Not in UPGRADE_POOL — injected into the card
+// screen by main.js showUpgradeScreen. Effects are applied in main.js /
+// projectile-system.js when game.upgrades[hand][id] > 0.
+export const MASTERY_CARDS = {
+  last_light: {
+    id: 'last_light', name: 'Last Light', color: '#ffdd00', type: 'mastery', weapon: 'standard_blaster',
+    desc: 'Every 10th consecutive shot deals 5x damage',
+  },
+  point_blank: {
+    id: 'point_blank', name: 'Point Blank', color: '#ff8800', type: 'mastery', weapon: 'buckshot',
+    desc: 'Shotgun damage ramps up at close range',
+  },
+  teslas_domain: {
+    id: 'teslas_domain', name: "Tesla's Domain", color: '#4488ff', type: 'mastery', weapon: 'lightning_rod',
+    desc: 'Lightning arcs visibly across the ground',
+  },
+  overkill: {
+    id: 'overkill', name: 'Overkill', color: '#ff4444', type: 'mastery', weapon: 'charge_cannon',
+    desc: 'Max-charge shots split into 3',
+  },
+  melting_point: {
+    id: 'melting_point', name: 'Melting Point', color: '#00ffff', type: 'mastery', weapon: 'plasma_carbine',
+    desc: 'Sustained fire ignites enemies',
+  },
+  swarm_intelligence: {
+    id: 'swarm_intelligence', name: 'Swarm Intelligence', color: '#aa44ff', type: 'mastery', weapon: 'seeker_burst',
+    desc: 'Seekers deal double damage',
+  },
+};
+
 export const UPGRADE_POOL = [
   // Universal upgrades (apply to ALL main weapons)
   { id: 'scope', name: 'Scope', desc: 'Damage +10 per stack', color: '#00ff44', type: 'universal', category: 'damage' },
@@ -551,6 +584,11 @@ export function getWeaponStats(mainWeaponId, upgrades) {
   // Apply universal damage modifiers
   if (u.overcharge) damage *= 1.2;
 
+  // Issue #213: Adept+ mastery tier grants +10% damage with this weapon
+  if (getMasteryTierIndex(mainWeaponId) >= 1) {
+    damage = Math.round(damage * 1.1);
+  }
+
   // Lightning Rod upgrades are applied here so card text, HUD previews, and
   // gameplay all read from the same computed stat object.
   let lightningRange = base.lightningRange || 0;
@@ -646,8 +684,9 @@ export function getWeaponStats(mainWeaponId, upgrades) {
  * Get upgrade definition by ID
  */
 export function getUpgradeDef(id) {
-  return UPGRADE_POOL.find(u => u.id === id) || 
-         SPECIAL_UPGRADE_POOL.find(u => u.id === id) || 
+  return UPGRADE_POOL.find(u => u.id === id) ||
+         SPECIAL_UPGRADE_POOL.find(u => u.id === id) ||
+         MASTERY_CARDS[id] ||
          null;
 }
 

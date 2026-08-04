@@ -9,6 +9,7 @@ import {
   loadLayout,
 } from './hud.js';
 import { getMusicVolume, getSFXVolume, setMusicVolume, setSFXVolume, playMenuClick, playMenuHoverSound, getCurrentTrackName, skipToNextTrack, skipToPrevTrack, getPlaylistInfo } from './audio.js';
+import { resetMastery } from './mastery.js';
 
 export const settingsGroup = new THREE.Group();
 settingsGroup.name = 'settings-menu';
@@ -75,6 +76,8 @@ let musicDownBtn = null;
 let sfxUpBtn = null;
 let sfxDownBtn = null;
 let backBtn = null;
+let resetMasteryBtn = null;
+let resetMasteryArmedAt = 0; // two-click arm: 0 = not armed
 let prevTrackBtn = null;
 let nextTrackBtn = null;
 let trackNameSprite = null;
@@ -365,6 +368,18 @@ async function buildSettingsPanel() {
   settingsGroup.add(back.group);
   if (back.group.children[2]) back.group.children[2].position.set(backTextEl.x - backEl.x, backTextEl.y - backEl.y, backTextEl.z - backEl.z);
 
+  // ── RESET MASTERY button (Issue #213) — two-click arm so it's not
+  // accidentally triggered (irreversible)
+  const resetEl = le(layout, 'reset_mastery_btn', { x: 0, y: -0.92, z: 0.02, w: 1.9, h: 0.3, color: 0x997700 });
+  const resetTextEl = le(layout, 'reset_mastery_text', { x: 0, y: -0.94, z: 0.04, scale: 0.26, fontSize: 34 });
+  const resetBtn = makeBtn('RESET MASTERY', resetEl.w, resetEl.h, resetEl.borderColor || resetEl.color || 0x997700, resetTextEl.fontSize || 34, resetTextEl.scale || 0.12, resetTextEl.color, resetEl.color, resetEl.opacity);
+  resetBtn.group.position.set(resetEl.x, resetEl.y, resetEl.z);
+  resetBtn.mesh.userData.isSettingsBtn = true;
+  resetBtn.mesh.userData.settingsAction = 'resetMastery';
+  resetMasteryBtn = resetBtn.mesh;
+  settingsGroup.add(resetBtn.group);
+  if (resetBtn.group.children[2]) resetBtn.group.children[2].position.set(resetTextEl.x - resetEl.x, resetTextEl.y - resetEl.y, resetTextEl.z - resetEl.z);
+
   // ── Decorative border rects from layout ──
   // Render the custom border rects (top/bottom/left/right) if present
   const borderRects = ['custom_rect_2', 'dup_3_custom_rect_2', 'dup_4_custom_rect_2', 'dup_5_dup_4_custom_rect_2'];
@@ -557,6 +572,26 @@ export function executeSettingsAction(action) {
     case 'sfxDown': {
       const vol = setSFXVolume(getSFXVolume() - 5);
       if (sfxVolSprite) updateSpriteText(sfxVolSprite, `${vol}%`, { fontSize: sfxVolEl?.fontSize || SETTINGS_FONT_SIZE, color: sfxVolColor || '#ffffff', glow: true, glowColor: titleColor || '#00ffff', scale: sfxVolEl?.scale || 0.3 });
+      return false;
+    }
+    case 'resetMastery': {
+      // Two-click arm: first click arms (4s window), second click executes
+      const now = performance.now();
+      if (now - resetMasteryArmedAt > 4000) {
+        resetMasteryArmedAt = now;
+        if (resetMasteryBtn && resetMasteryBtn.userData) {
+          const sprite = resetMasteryBtn.parent?.children?.find(c => c.userData && c.userData.text);
+          if (sprite) updateSpriteText(sprite, 'RESET AGAIN?', { fontSize: 34, color: '#ff8844', scale: 0.26 });
+        }
+        return false;
+      }
+      resetMasteryArmedAt = 0;
+      resetMastery();
+      playMenuClick();
+      if (resetMasteryBtn) {
+        const sprite = resetMasteryBtn.parent?.children?.find(c => c.userData && c.userData.text);
+        if (sprite) updateSpriteText(sprite, 'MASTERY RESET', { fontSize: 34, color: '#88ff88', scale: 0.26 });
+      }
       return false;
     }
     case 'back':
