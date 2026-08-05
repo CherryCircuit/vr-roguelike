@@ -211,6 +211,11 @@ import {
   initInputRouter, handleTriggerPress, handleTriggerRelease,
   handleSqueezePress, handleSqueezeRelease, handleDesktopClick as routeDesktopClick,
 } from './input-router.js';
+// Breach Events (Issue #138): mid-level arena hazards
+import {
+  initBreachEvents, updateBreachEvents, resetBreachState,
+  startBreachEvent, isBreachEmpActive,
+} from './breach-events.js';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
@@ -816,6 +821,11 @@ function recordComboFire(index) {
 // computeWeaponStats on the next fire.
 const momentumKillStacks = [0, 0];
 const momentumKillLastAt = [0, 0];
+
+// Issue #138 breach-event bookkeeping (per-level, main.js side)
+let _lastBreachLevel = -1;
+let _levelPlayStart = 0;
+let _breachTriggeredThisLevel = false;
 
 // ── Echo Phantom aim recording (Issue #169) ────────────────
 // Records each hand's aim direction every 100ms (3s window) + fire events.
@@ -1987,6 +1997,18 @@ function init() {
     screenFx.cameraShakeIntensity = 0.015;
     triggerScreenShake(0.06, 200);
     if (dead && game.state === State.PLAYING) endGame(false);
+  });
+
+  // Issue #138: breach events (mid-level arena hazards)
+  initBreachEvents({
+    scene,
+    getEnemies,
+    getBoss,
+    getPlayerPos: () => camera.position,
+    applyPlayerDamage,
+    hitEnemy,
+    spawnEnemy,
+    showFloatingMessage,
   });
   initHUD(camera, scene);
   initWristHolograms();
@@ -4969,6 +4991,8 @@ function triggerScreenShake(intensity, duration) {
 // TWIN-MESH: Core mesh + Fresnel glow mesh for visibility.
 // [CORE] Initialize instanced mesh projectile pools
 function fireMainWeapon(controller, index) {
+  // Issue #138: EMP wave disables all weapon fire (dodge-and-survive)
+  if (isBreachEmpActive()) return;
   const now = performance.now();
   const hand = getHandForController(index);
   const mainWeaponId = game.mainWeapon[hand];
@@ -5699,6 +5723,18 @@ function render(timestamp) {
 
   // Issue #169: record controller aim for Echo Phantoms (every 100ms)
   sampleAimHistory(rawDt, now);
+
+  // Issue #138: breach events — one per level, min 10s in, seeded choice
+  if (game.level !== _lastBreachLevel) {
+    _lastBreachLevel = game.level;
+    resetBreachState();
+    _levelPlayStart = now;
+  }
+  if (!_breachTriggeredThisLevel && now - _levelPlayStart > 10000 && !getBoss()) {
+    _breachTriggeredThisLevel = true;
+    startBreachEvent(game.seed, game.level);
+  }
+  updateBreachEvents(dt, now);
 
     // SAFEGUARD: Ensure blaster displays are visible during gameplay
     // Prevents text/billboard elements from disappearing
