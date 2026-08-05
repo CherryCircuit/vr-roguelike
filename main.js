@@ -54,6 +54,8 @@ import {
   // Eclipse Engine corruption layer (Issue #172)
   playEclipseCorruptSound, playEclipsePurgeSound,
   playEclipsePhase2StartSound, playEclipseSelfDamageSound,
+  // Void Marks (Issue #139)
+  playInheritSound, playPurgeSound,
 } from './audio.js';
 // Beam weapons module (Issue #196 Phase 1 extraction): charge cannon,
 // lightning rod beams/orbs, charge visuals, pending timer registry.
@@ -216,6 +218,11 @@ import {
   initBreachEvents, updateBreachEvents, resetBreachState,
   startBreachEvent, isBreachEmpActive,
 } from './breach-events.js';
+// Void Marks (Issue #139): deaths leave inheritable scars in future runs
+import {
+  initVoidMarks, recordVoidMark, spawnLevelVoidMarks, updateVoidMarks,
+  tryVoidMarkInherit, tryVoidMarkPurge, isVoidMarkInRange,
+} from './void-marks.js';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
@@ -1886,7 +1893,12 @@ function init() {
     trigger: {
       settingsTrigger: handleSettingsTrigger,
       titleTrigger: handleTitleTrigger,
-      playingTrigger: fireMainWeapon,
+      playingTrigger: (controller, index) => {
+        // Issue #139: a trigger near a Void Mark INHERITS from the ghost run
+        // instead of firing
+        if (tryVoidMarkInherit()) return;
+        fireMainWeapon(controller, index);
+      },
       upgradeTrigger: selectUpgrade,
       gameOverTrigger: (controller, index) => {
         // Cooldown gate keeps the game-over screen from advancing on
@@ -2009,6 +2021,21 @@ function init() {
     hitEnemy,
     spawnEnemy,
     showFloatingMessage,
+  });
+
+  // Issue #139: void marks (death persistence + inherit/purge)
+  initVoidMarks({
+    scene,
+    getPlayerPos: () => camera.position,
+    getBiomeForLevel,
+    getUpgradeDef,
+    addUpgrade,
+    getRandomSpecialUpgrades,
+    addScore,
+    showFloatingMessage,
+    hideFloatingMessage,
+    playInheritSound,
+    playPurgeSound,
   });
   initHUD(camera, scene);
   initWristHolograms();
@@ -3546,6 +3573,9 @@ const NUKE_COOLDOWN = 500;
 // [CORE] Nuke activation: kill all enemies
 function activateNuke() {
   if (game.state !== State.PLAYING) return false;
+  // Issue #139: nuking near a Void Mark PURGES it for score instead —
+  // the nuke itself is not spent
+  if (tryVoidMarkPurge()) return true;
   if (!game.nukes || game.nukes <= 0) return false;
 
   const now = performance.now();
@@ -4932,6 +4962,11 @@ function endGame(victory) {
   // Issue #172: purge any active eclipses (game over must never leave a
   // corrupted loadout state behind)
   purgeAllEclipses();
+
+  // Issue #139: record the death as a Void Mark for future runs
+  if (!victory) {
+    recordVoidMark(camera.position, game.level, game.upgrades, game.killedBy);
+  }
   clearAllEnemies();
   clearBoss();
   clearBossProjectiles();
@@ -5729,12 +5764,15 @@ function render(timestamp) {
     _lastBreachLevel = game.level;
     resetBreachState();
     _levelPlayStart = now;
+    // Issue #139: spawn void marks matching this level/biome
+    spawnLevelVoidMarks(game.level, camera.position);
   }
   if (!_breachTriggeredThisLevel && now - _levelPlayStart > 10000 && !getBoss()) {
     _breachTriggeredThisLevel = true;
     startBreachEvent(game.seed, game.level);
   }
   updateBreachEvents(dt, now);
+  updateVoidMarks(dt, now);
 
     // SAFEGUARD: Ensure blaster displays are visible during gameplay
     // Prevents text/billboard elements from disappearing

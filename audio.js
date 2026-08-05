@@ -1292,6 +1292,42 @@ export function playEclipsePurgeSound() {
 }
 
 /** Bombardier spray (Issue #199): sustained noise "whoosh" through a rising bandpass. */
+/** Void Marks (Issue #139): warm inherit chime + cold purge drop. */
+export function playInheritSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  [440, 660, 880].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t + i * 0.06);
+    gain.gain.setValueAtTime(0.0, t + i * 0.06);
+    gain.gain.linearRampToValueAtTime(0.07, t + 0.07 + i * 0.06);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5 + i * 0.06);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.06);
+    osc.stop(t + 0.55 + i * 0.06);
+  });
+}
+
+export function playPurgeSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(180, t);
+  osc.frequency.exponentialRampToValueAtTime(40, t + 0.5);
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.11, t + 0.05);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 0.75);
+}
+
 /** The Masquerade (Issue #200): body-swap whoosh + glass chime. */
 export function playMasqueradeTransferSound() {
   const ctx = getAudioContext();
