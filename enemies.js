@@ -25,6 +25,7 @@ import {
   playTendrilGrowSound, playTendrilHitSound, playTendrilBreakSound,
   playEchoSpawnSound, playEchoFireSound,
   playLeechLatchSound, playLeechBurstSound,
+  playConductorMovementSound, playConductorDisruptionSound,
 } from './audio.js';
 // Issue #199: the bombardier plants at the biome floor height (custom biomes
 // sit below y=0). environment-orchestration.js does not import enemies.js —
@@ -4078,7 +4079,7 @@ export function updateEnemies(dt, now, playerPos) {
       }
     }
 
-    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier && !e.isVoidAnchor && !e.isVoidTendril && !e.isEchoPhantom && !e.isLeech) {
+    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier && !e.isVoidAnchor && !e.isVoidTendril && !e.isEchoPhantom && !e.isLeech && !e._conductorHeld) {
       e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
     }
 
@@ -11751,6 +11752,315 @@ class EclipseEngineBoss extends Boss {
   }
 }
 
+// ── CONDUCTOR ASCENDANT (Issue #170) ───────────────────────
+// Tier 3 boss that never attacks directly — it conducts choreographed
+// formations of real enemies. 80% shield until a movement is disrupted
+// (kill enough of its "orchestra"). Movements: spiral / wave / grid /
+// pincer, in a randomized order, repeating with mixed types below 50% HP.
+class ConductorAscendantBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    this.movements = this._shuffle(['spiral', 'wave', 'grid', 'pincer']);
+    this.movementIndex = 0;
+    this.movementTimer = 0;
+    this.movementDuration = def.movementDuration || 15000;
+    this.currentMovementType = null;
+    this._formationEnemies = [];
+    this._formationMeta = null;
+    this._shieldActive = true;
+    this._shieldReduction = def.shieldReduction || 0.8;
+    this._disruptionTimer = 0; // > 0 = shield down + vulnerable
+    this._restTimer = 0;
+    this._phase2 = false;
+    this._spiralAngle = Math.random() * Math.PI * 2;
+    this._gridAngle = 0;
+    this._gridRotateTimer = 0;
+    this._waveRowIndex = 0;
+    this._waveRowTimer = 0;
+    this.fixedY = 4.2;
+    this.minDistance = 10;
+    this.maxDistance = 16;
+
+    this._startNextMovement();
+  }
+
+  _shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // Composition per movement (mixed enemy types in phase 2)
+  _movementTypes(type) {
+    if (!this._phase2) {
+      return { spiral: ['fast'], wave: ['basic'], grid: ['tank'], pincer: ['swarm'] }[type] || ['basic'];
+    }
+    return { spiral: ['fast', 'jelly'], wave: ['basic', 'swarm'], grid: ['tank', 'fast'], pincer: ['swarm', 'fast'] }[type] || ['basic'];
+  }
+
+  _movementCount(type) {
+    return { spiral: 12, wave: 16, grid: 9, pincer: 24 }[type] || 8;
+  }
+
+  _startNextMovement() {
+    if (this.movementIndex >= this.movements.length) {
+      // Full symphony complete → rest, then repeat
+      this._restTimer = 5000;
+      this.movementIndex = 0;
+      this.movements = this._shuffle(this.movements);
+      return;
+    }
+    const type = this.movements[this.movementIndex];
+    this.currentMovementType = type;
+    this.movementTimer = 0;
+    this.movementDuration = this._phase2 ? 12000 : 15000;
+    this._waveRowIndex = 0;
+    this._waveRowTimer = 0;
+    this._gridAngle = 0;
+    this._gridRotateTimer = 0;
+    this._formationEnemies = [];
+    this._spawnFormation(type);
+    playConductorMovementSound();
+    if (this.telegraphing) {
+      this.telegraphing.start('pulse', 1.0, this._movementColors()[type], this.mesh.position.clone());
+    }
+  }
+
+  _movementColors() {
+    return { spiral: 0xffd700, wave: 0x4488ff, grid: 0xff4444, pincer: 0x44ff88 };
+  }
+
+  _spawnFormation(type) {
+    const playerPos = cameraRef ? cameraRef.position.clone() : new THREE.Vector3(0, 1.6, 0);
+    const types = this._movementTypes(type);
+    const count = this._movementCount(type);
+    const meta = { type, count, released: false, pincerSide: {} };
+
+    for (let i = 0; i < count; i++) {
+      const enemyType = types[i % types.length];
+      let pos;
+      if (type === 'spiral') {
+        const ang = this._spiralAngle + (i / count) * Math.PI * 2;
+        pos = new THREE.Vector3(playerPos.x + Math.cos(ang) * 18, 1.4, playerPos.z + Math.sin(ang) * 18);
+      } else if (type === 'wave') {
+        const row = Math.floor(i / 6); // 3 rows of ~5-6
+        const col = i % 6;
+        pos = new THREE.Vector3(playerPos.x + (col - 2.5) * 2.2, 1.4, playerPos.z - 8 - row * 4);
+      } else if (type === 'grid') {
+        const row = Math.floor(i / 3);
+        const col = i % 3;
+        pos = new THREE.Vector3(playerPos.x + (col - 1) * 4.5, 1.4, playerPos.z - 6 - row * 2.5);
+      } else {
+        // pincer: two groups at ±90°
+        const side = i < count / 2 ? 1 : -1;
+        const idx = i % (count / 2);
+        pos = new THREE.Vector3(
+          playerPos.x + side * 14,
+          1.4,
+          playerPos.z - 8 + idx * 2.2,
+        );
+        meta.pincerSide[i] = side;
+      }
+      const enemy = spawnEnemy(enemyType, pos, this.levelConfig);
+      // Push the slot even when spawn fails (caps can return null) so
+      // _conductorIndex stays aligned with the array indices
+      if (enemy) {
+        enemy._bossSummoned = true;   // kills don't advance the level
+        enemy._conductorHeld = true;  // boss drives this enemy's position
+        enemy._conductorType = type;
+        enemy._conductorIndex = i;
+      }
+      this._formationEnemies.push(enemy);
+    }
+    this._formationMeta = meta;
+  }
+
+  _liveFormation() {
+    return this._formationEnemies.filter(e => e && e.hp > 0 && e.mesh);
+  }
+
+  _releaseFormation() {
+    for (const e of this._formationEnemies) {
+      if (e && e.hp > 0) e._conductorHeld = false;
+    }
+    this._formationEnemies = [];
+    this._formationMeta = null;
+  }
+
+  // Disruption conditions per movement type
+  _checkDisruption() {
+    const meta = this._formationMeta;
+    if (!meta) return false;
+    const live = this._liveFormation();
+    const killed = meta.count - live.length;
+    if (meta.type === 'spiral') return killed >= 4;
+    if (meta.type === 'wave') {
+      // Center enemy of ANY row dead → collapse that row (rows are 6/5/5:
+      // centers at indices 3, 8, 13)
+      const centers = [3, 8, 13];
+      for (const ci of centers) {
+        const center = this._formationEnemies[ci];
+        if (center && center.hp <= 0) return true;
+      }
+      return false;
+    }
+    if (meta.type === 'grid') return killed >= 3;
+    if (meta.type === 'pincer') {
+      // 6+ killed from ONE side
+      const sideKills = { pos: 0, neg: 0 };
+      this._formationEnemies.forEach((e, i) => {
+        if (e && e.hp <= 0 && meta.pincerSide[i]) {
+          sideKills[meta.pincerSide[i] === 1 ? 'pos' : 'neg']++;
+        }
+      });
+      return sideKills.pos >= 6 || sideKills.neg >= 6;
+    }
+    return false;
+  }
+
+  _disruptMovement() {
+    this._shieldActive = false;
+    this._disruptionTimer = 3000;
+    this.mesh.rotation.z = 0.3; // stumble
+    playConductorDisruptionSound();
+    // Release any surviving formation enemies (the movement is broken)
+    this._releaseFormation();
+    if (this.telegraphing) {
+      this.telegraphing.start('pulse', 0.8, 0xffffff, this.mesh.position.clone());
+    }
+  }
+
+  // Drive formation positions per movement type
+  _updateFormation(dt, now, playerPos) {
+    const meta = this._formationMeta;
+    if (!meta) return;
+    const live = this._liveFormation();
+
+    if (meta.type === 'spiral') {
+      // Spiral inward, rotating; speed increases as the radius shrinks
+      const radius = Math.max(3, 18 - (now * 0.004 - this._spiralAngle * 0.1));
+      for (const e of live) {
+        const baseAng = this._spiralAngle + (e._conductorIndex / meta.count) * Math.PI * 2 + now * 0.0012;
+        const target = new THREE.Vector3(
+          playerPos.x + Math.cos(baseAng) * radius,
+          1.4,
+          playerPos.z + Math.sin(baseAng) * radius,
+        );
+        e.mesh.position.lerp(target, Math.min(1, dt * 2.5));
+      }
+    } else if (meta.type === 'wave') {
+      // Rows advance in sequence (back → middle → front) with brief pauses
+      this._waveRowTimer += dt;
+      if (this._waveRowTimer >= 0.9 && this._waveRowIndex < 3) {
+        this._waveRowIndex++;
+        this._waveRowTimer = 0;
+      }
+      for (const e of live) {
+        const row = Math.floor(e._conductorIndex / 6);
+        if (row > this._waveRowIndex) continue;
+        const target = new THREE.Vector3(e.mesh.position.x, 1.4, playerPos.z - 2 - (row * 2.5));
+        e.mesh.position.lerp(target, Math.min(1, dt * 1.6));
+      }
+    } else if (meta.type === 'grid') {
+      // Wall advances; rotates 90° every 3s (1.5s after a corner dies)
+      this._gridRotateTimer += dt;
+      const cornersDead = this._formationEnemies.filter((e, i) => {
+        if (!e) return false;
+        const row = Math.floor(i / 3), col = i % 3;
+        return (row === 0 || row === 2) && (col === 0 || col === 2) && e.hp <= 0;
+      }).length;
+      const rotateInterval = cornersDead > 0 ? 1.5 : 3.0;
+      if (this._gridRotateTimer >= rotateInterval) {
+        this._gridRotateTimer = 0;
+        this._gridAngle += Math.PI / 2;
+      }
+      for (const e of live) {
+        const row = Math.floor(e._conductorIndex / 3);
+        const col = e._conductorIndex % 3;
+        const cos = Math.cos(this._gridAngle), sin = Math.sin(this._gridAngle);
+        const lx = (col - 1) * 4.5, lz = -row * 2.5 - 6;
+        const wx = lx * cos - lz * sin;
+        const wz = lx * sin + lz * cos;
+        const target = new THREE.Vector3(playerPos.x + wx, 1.4, playerPos.z + wz);
+        e.mesh.position.lerp(target, Math.min(1, dt * 2.0));
+      }
+    } else if (meta.type === 'pincer') {
+      // Two groups converge from ±90° (disruption releases the formation to
+      // normal AI, so no retreat logic needed here)
+      for (const e of live) {
+        const side = meta.pincerSide[e._conductorIndex];
+        const target = new THREE.Vector3(playerPos.x + side * 4, 1.4, e.mesh.position.z);
+        e.mesh.position.lerp(target, Math.min(1, dt * 1.8));
+      }
+    }
+  }
+
+  updateConductor(dt, now, playerPos) {
+    // Disruption window: shield down → recovery → next movement
+    if (this._disruptionTimer > 0) {
+      this._disruptionTimer -= dt * 1000;
+      if (this._disruptionTimer <= 0) {
+        this._disruptionTimer = 0;
+        this._shieldActive = true;
+        this.mesh.rotation.z = 0;
+        this.movementIndex++;
+        this._startNextMovement();
+      }
+      return;
+    }
+
+    // Rest between symphonies
+    if (this._restTimer > 0) {
+      this._restTimer -= dt * 1000;
+      if (this._restTimer <= 0) this._startNextMovement();
+      return;
+    }
+
+    // Phase 2 at 50% HP: faster movements, tougher shield, mixed types
+    if (!this._phase2 && this.hp <= this.maxHp * 0.5) {
+      this._phase2 = true;
+      this._shieldReduction = 0.9;
+      playConductorDisruptionSound();
+      this._releaseFormation();
+      this._startNextMovement();
+      return;
+    }
+
+    if (!this._formationMeta) {
+      this._startNextMovement();
+      return;
+    }
+
+    this.movementTimer += dt * 1000;
+    this._updateFormation(dt, now, playerPos);
+
+    // Movement timeout → disruption (the orchestra plays itself out)
+    if (this.movementTimer >= this.movementDuration) {
+      this._disruptMovement();
+      return;
+    }
+    if (this._checkDisruption()) {
+      this._disruptMovement();
+    }
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    // Slow orbit at range; never attacks directly
+    this.updateConductor(dt, now, playerPos);
+  }
+
+  takeDamage(amount, hitInfo = {}) {
+    if (this.transitioning) return { killed: false, immune: true };
+    if (this._shieldActive && this._disruptionTimer <= 0) {
+      amount *= 1 - this._shieldReduction;
+    }
+    return super.takeDamage(Math.max(1, Math.round(amount)), hitInfo);
+  }
+}
+
 const BOSS_DEFS = {
   // Teleporting boss (Level 5)
   // Level 5 bosses (Tier 1 - INTRO)
@@ -11913,6 +12223,30 @@ const BOSS_DEFS = {
     slamRate: 5.0,
     shardRate: 0.6,
     weakPoints: true
+  },
+
+  // Issue #170: Tier 3 boss that conducts choreographed enemy formations.
+  // 80% shield until a movement is disrupted; never attacks directly.
+  conductor_ascendant: {
+    name: 'CONDUCTOR ASCENDANT',
+    pattern: [
+      [0, 1, 0],
+      [0, 1, 0],
+      [1, 1, 1],
+      [0, 1, 0],
+      [0, 1, 0],
+      [0, 1, 0],
+    ],
+    voxelSize: 0.3,
+    baseHp: 600,
+    phases: 2,
+    color: 0x1a1a2e,
+    scoreValue: 350,
+    behavior: 'conductor',
+    hitboxRadius: 0.6,
+    weakPoints: false,
+    movementDuration: 15000,
+    shieldReduction: 0.8,
   },
 
   // Level 20 Final Bosses (Tier 4 - VERY TOUGH)
@@ -12121,6 +12455,9 @@ export function spawnBoss(bossId, levelConfig, camera) {
       break;
     case 'eclipse':
       boss = new EclipseEngineBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'conductor':
+      boss = new ConductorAscendantBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
     default:
       boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);

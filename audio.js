@@ -1292,6 +1292,46 @@ export function playEclipsePurgeSound() {
 }
 
 /** Bombardier spray (Issue #199): sustained noise "whoosh" through a rising bandpass. */
+/** Conductor Ascendant (Issue #170): movement sting + disruption dissonance. */
+export function playConductorMovementSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  // Short ascending triad — "the movement begins"
+  [330, 415, 495].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 0 ? 'square' : 'sawtooth';
+    osc.frequency.setValueAtTime(freq, t + i * 0.05);
+    gain.gain.setValueAtTime(0.0, t + i * 0.05);
+    gain.gain.linearRampToValueAtTime(0.06, t + 0.06 + i * 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5 + i * 0.05);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.05);
+    osc.stop(t + 0.6 + i * 0.05);
+  });
+}
+
+export function playConductorDisruptionSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  // Dissonant cluster — the orchestra falls apart
+  [200, 310, 465].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(freq, t + i * 0.03);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.6, t + 0.4);
+    gain.gain.setValueAtTime(0.0, t + i * 0.03);
+    gain.gain.linearRampToValueAtTime(0.08, t + 0.05 + i * 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.03);
+    osc.stop(t + 0.65);
+  });
+}
+
 /** Parasitic Leech (Issue #167): suction latch + wet burst. */
 export function playLeechLatchSound() {
   const ctx = getAudioContext();
