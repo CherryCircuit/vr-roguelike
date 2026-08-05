@@ -164,10 +164,14 @@ async function runTest() {
     if (!boss) return { ok: false, reason: 'no boss' };
     const idxBefore = boss.movementIndex;
     // Released formation enemies swarm the player — keep health topped up
-    // so the run can't end mid-test (endGame clears the boss)
+    // (buffed max so a 24-swarm release can't end the run mid-test)
+    window.game.maxHealth = 30;
+    window.game.health = 30;
     const keepAlive = setInterval(() => {
-      window.game.health = Math.min(window.game.maxHealth, window.game.health + 1);
-    }, 400);
+      window.game.health = window.game.maxHealth;
+      window._timeScale = 1.0;
+      window.game.timeScale = 1.0;
+    }, 250);
     // Wait for the 3s disruption window to expire + next movement to start
     const start = performance.now();
     while (performance.now() - start < 6000) {
@@ -191,9 +195,13 @@ async function runTest() {
     const boss = enemies.getBoss();
     if (!boss) return { ok: false, reason: 'no boss' };
     boss.hp = Math.floor(boss.maxHp * 0.4);
+    window.game.maxHealth = 30;
+    window.game.health = 30;
     const keepAlive = setInterval(() => {
-      window.game.health = Math.min(window.game.maxHealth, window.game.health + 1);
-    }, 400);
+      window.game.health = window.game.maxHealth;
+      window._timeScale = 1.0;
+      window.game.timeScale = 1.0;
+    }, 250);
     const start = performance.now();
     while (performance.now() - start < 4000) {
       if (boss._phase2) break;

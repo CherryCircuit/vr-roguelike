@@ -29,7 +29,7 @@ import {
   playEchoSpawnSound, playEchoFireSound,
   playLeechLatchSound, playLeechBurstSound,
   playConductorMovementSound, playConductorDisruptionSound,
-  playMirrorShatterSound,
+  playMirrorShatterSound, playMasqueradeTransferSound,
 } from './audio.js';
 // Issue #199: the bombardier plants at the biome floor height (custom biomes
 // sit below y=0). environment-orchestration.js does not import enemies.js —
@@ -5122,6 +5122,19 @@ export function setOnEnemyDestroyedCallback(callback) {
 export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   const e = activeEnemies[index];
   if (!e) return null;
+
+  // Issue #200: The Masquerade's disguise host "dies" via body-swap, not
+  // destruction. Intercept before any normal death handling runs; the boss
+  // handler detaches the mesh, this function removes the corpse from the list.
+  if (e._masqueradeHost && activeBoss && activeBoss.def?.behavior === 'masquerade' &&
+      activeBoss.masqueradeActive && activeBoss.handleHostKilled) {
+    if (activeBoss.handleHostKilled(e)) {
+      activeEnemies.splice(index, 1);
+      invalidateEnemyCache();
+      return null;
+    }
+    // Not handled → fall through to a real death (boss HP hit 0)
+  }
 
   // Release InstancedMesh slot for basic enemies
   if (e.type === 'basic' && e.mesh.userData.instanceId !== undefined) {
@@ -12233,6 +12246,323 @@ class MirrorGauntletBoss extends Boss {
   }
 }
 
+// ── THE MASQUERADE (Issue #200) ────────────────────────────
+let _masqueradeMinionHitCallback = null;
+export function setMasqueradeMinionHitCallback(fn) { _masqueradeMinionHitCallback = fn; }
+
+// Tier 3 hidden boss: spawns disguised as a normal enemy (body-swaps when
+// "killed" up to 2 times), then reveals a voxel mask that alternates
+// comedy (fast spiral bolts) and tragedy (charged beam) expressions.
+// Phase 3: cross-pattern fire + mask-swap teleports behind the player.
+class MasqueradeBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    this.masqueradeActive = true;  // phase 1: hidden
+    this.maskVisible = false;
+    this.hostEnemy = null;
+    this.transfersUsed = 0;
+    this.flickerTimer = 3.0;
+    this.expression = 'comedy';    // comedy | tragedy
+    this.expressionTimer = 4.0;
+    this.fireTimer = 2.5;
+    this.summonsTimer = 12.0;
+    this.disguiseMinions = [];
+    this.crossAngle = 0;
+    this.crossTimer = 2.0;
+    this.swapTimer = 6.0;
+    this.finalStand = false;
+    this.orbitAngle = Math.random() * Math.PI * 2;
+    this.fixedY = 3.2;
+    this.minDistance = 8;
+    this.maxDistance = 10;
+
+    this._buildMaskMesh();
+    this.mesh.visible = false; // hidden during the disguise phase
+
+    // The disguise: a normal basic enemy hosting the boss's HP
+    this._enterDisguise();
+  }
+
+  _buildMaskMesh() {
+    // Theatrical half-mask: a flat voxel mask (gold comedy side by default)
+    const geo = getGeo(0.28);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.95, fog: false });
+    const mask = new THREE.Group();
+    for (let y = 0; y < 4; y++) {
+      for (let x = -2; x <= 2; x++) {
+        if (Math.abs(x) === 2 && (y === 0 || y === 3)) continue; // taper
+        const vox = new THREE.Mesh(geo, mat);
+        vox.position.set(x * 0.3, y * 0.3, 0);
+        mask.add(vox);
+      }
+    }
+    // Eyes (glow)
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false });
+    for (const ex of [-0.6, 0.6]) {
+      const eye = new THREE.Mesh(getGeo(0.14), eyeMat);
+      eye.position.set(ex, 0.75, 0.16);
+      mask.add(eye);
+    }
+    this.maskMesh = mask;
+    this.maskBodyMat = mat;
+    this.maskGroup = new THREE.Group();
+    this.maskGroup.add(mask);
+    this.mesh.add(this.maskGroup);
+  }
+
+  // Phase 1: spawn/select a disguise host (a normal basic enemy). The host
+  // body has normal enemy HP — killing it costs the BOSS 25% per swap.
+  _enterDisguise() {
+    this.masqueradeActive = true;
+    this.maskVisible = false;
+    this.mesh.visible = false;
+    const host = spawnEnemy('basic', new THREE.Vector3(0, 1.6, -10), this.levelConfig);
+    if (host) {
+      host._masqueradeHost = true;
+      host.hp = 30;
+      host.maxHp = 30;
+      host.baseSpeed = 2.4; // 10% faster tell
+      host.speed = 2.4;
+      // Lighter tint tell
+      for (const m of host._cachedMaterials || []) {
+        if (m.color) m.color.setHex(0x44ffbb);
+      }
+      this.hostEnemy = host;
+    }
+  }
+
+  // Intercepted from destroyEnemy: the "killed" host body-swaps instead
+  handleHostKilled(host) {
+    if (!this.masqueradeActive || this.hp <= 0) return false;
+
+    // Dissolve the old body
+    if (host.mesh?.parent) host.mesh.parent.remove(host.mesh);
+    host.mesh?.traverse((part) => { if (part.material) part.material.dispose(); });
+    host._masqueradeHost = false;
+
+    if (this.hp <= 0) return false; // real death
+
+    // Transfer cost + cap: after 2 transfers (or below 50% HP) → reveal
+    this.transfersUsed++;
+    this.hp = Math.max(1, this.hp - Math.round(this.maxHp * 0.25));
+    playMasqueradeTransferSound();
+
+    if (this.transfersUsed >= 2 || this.hp <= this.maxHp * 0.5) {
+      this._reveal();
+      return true;
+    }
+
+    // Transfer into a random living enemy (purple flash on the new host)
+    const candidates = activeEnemies.filter(e => e && e.hp > 0 && e.mesh && !e._masqueradeHost && !e._bossSummoned);
+    if (candidates.length === 0) {
+      this._reveal();
+      return true;
+    }
+    const newHost = candidates[Math.floor(Math.random() * candidates.length)];
+    newHost._masqueradeHost = true;
+    newHost.hp = 30;
+    newHost.maxHp = 30;
+    for (const m of newHost._cachedMaterials || []) {
+      if (m.color) m.color.setHex(0x44ffbb);
+    }
+    this.hostEnemy = newHost;
+    return true;
+  }
+
+  _reveal() {
+    this.masqueradeActive = false;
+    this.maskVisible = true;
+    this.mesh.visible = true;
+    if (this.hostEnemy) {
+      this.hostEnemy._masqueradeHost = false;
+      this.hostEnemy = null;
+    }
+    this.mesh.position.set(0, 4, -10);
+    playSkullLaughSound();
+  }
+
+  _fireComedySpiral(playerPos, now) {
+    for (let i = 0; i < 3; i++) {
+      const angle = now * 0.004 + i * (Math.PI * 2 / 3);
+      const target = new THREE.Vector3(
+        playerPos.x + Math.cos(angle) * 6,
+        playerPos.y + Math.sin(angle) * 2,
+        playerPos.z + Math.sin(angle) * 6,
+      );
+      spawnBossProjectile(this.mesh.position.clone(), target, false, 0, 8);
+    }
+  }
+
+  _fireTragedyBeam(playerPos) {
+    // Charged heavy shot (the beam approximated with a single devastating
+    // projectile + telegraph — a real beam is beyond this scope)
+    if (this.telegraphing) {
+      this.telegraphing.start('charge', 1.6, 0xaa44ff, this.mesh.position.clone());
+    }
+    spawnBossProjectile(this.mesh.position.clone(), playerPos.clone(), false, 0, 30);
+  }
+
+  _fireCrossPattern(playerPos, now) {
+    for (let i = 0; i < 4; i++) {
+      const angle = this.crossAngle + (i * Math.PI) / 2;
+      const target = new THREE.Vector3(
+        playerPos.x + Math.cos(angle) * 8,
+        playerPos.y,
+        playerPos.z + Math.sin(angle) * 8,
+      );
+      spawnBossProjectile(this.mesh.position.clone(), target, false, 0, 12);
+    }
+  }
+
+  _summonDisguiseMinions(playerPos) {
+    for (let i = 0; i < 3; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const pos = new THREE.Vector3(
+        playerPos.x + Math.cos(angle) * 12,
+        1.4,
+        playerPos.z + Math.sin(angle) * 12,
+      );
+      const minion = spawnEnemy('basic', pos, this.levelConfig);
+      if (minion) {
+        minion._bossSummoned = true;
+        minion._masqueradeMinion = true;
+        for (const m of minion._cachedMaterials || []) {
+          if (m.color) m.color.setHex(0x33ddaa);
+        }
+        this.disguiseMinions.push(minion);
+      }
+    }
+  }
+
+  _updateDisguiseMinions(playerPos, now) {
+    for (let i = this.disguiseMinions.length - 1; i >= 0; i--) {
+      const minion = this.disguiseMinions[i];
+      if (!minion || !minion.mesh || minion.hp <= 0) {
+        this.disguiseMinions.splice(i, 1);
+        continue;
+      }
+      // Reached the player → contact damage + heal the boss 5%
+      if (minion.mesh.position.distanceTo(playerPos) < 1.6) {
+        if (_masqueradeMinionHitCallback) _masqueradeMinionHitCallback(1);
+        this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.05);
+        const idx = activeEnemies.indexOf(minion);
+        if (idx >= 0) destroyEnemy(idx);
+        this.disguiseMinions.splice(i, 1);
+      }
+    }
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    // Phase 1 disguise: flicker tell every 3s (host HP is its own decoy HP)
+    if (this.masqueradeActive) {
+      if (this.hostEnemy && this.hostEnemy.hp > 0) {
+        this.flickerTimer -= dt;
+        if (this.flickerTimer <= 0) {
+          this.flickerTimer = 3.0;
+          for (const m of this.hostEnemy._cachedMaterials || []) {
+            m.opacity = 0.5;
+            setTimeout(() => { if (m) m.opacity = 0.9; }, 100);
+          }
+        }
+        return;
+      }
+      // Host gone without a transfer (edge) → reveal
+      this._reveal();
+      return;
+    }
+
+    // Revealed: orbit + mask behavior
+    if (!this.maskVisible) return;
+
+    this.orbitAngle += dt * 0.5;
+    const height = 2 + Math.abs(Math.sin(now * 0.0013)) * 3;
+    const target = new THREE.Vector3(
+      playerPos.x + Math.cos(this.orbitAngle) * 9,
+      height,
+      playerPos.z + Math.sin(this.orbitAngle) * 9,
+    );
+    this.mesh.position.lerp(target, Math.min(1, dt * 1.5));
+    this.mesh.lookAt(playerPos);
+
+    // Phases
+    const hpRatio = this.hp / this.maxHp;
+    const phase3 = hpRatio <= 0.25;
+    this.finalStand = hpRatio <= 0.05;
+
+    // Expression alternation (comedy gold / tragedy purple)
+    this.expressionTimer -= dt;
+    if (this.expressionTimer <= 0) {
+      this.expressionTimer = 4.0;
+      this.expression = this.expression === 'comedy' ? 'tragedy' : 'comedy';
+      this.maskBodyMat.color.setHex(this.expression === 'comedy' ? 0xffd700 : 0x9944ff);
+      if (this.telegraphing) {
+        this.telegraphing.start('pulse', 0.6, this.expression === 'comedy' ? 0xffd700 : 0x9944ff, this.mesh.position.clone());
+      }
+    }
+
+    // Firing
+    this.fireTimer -= dt;
+    if (this.fireTimer <= 0) {
+      if (phase3) {
+        this.fireTimer = 2.0;
+        this.crossAngle += 0.3 * dt * 2;
+        this._fireCrossPattern(playerPos, now);
+      } else if (this.expression === 'comedy') {
+        this.fireTimer = 1.0;
+        this._fireComedySpiral(playerPos, now);
+      } else {
+        this.fireTimer = 2.4;
+        this._fireTragedyBeam(playerPos);
+      }
+    }
+
+    // Phase 2: disguise minions every 12s (heal the boss on contact)
+    if (!phase3) {
+      this.summonsTimer -= dt;
+      if (this.summonsTimer <= 0) {
+        this.summonsTimer = 12.0;
+        this._summonDisguiseMinions(playerPos);
+      }
+    }
+    this._updateDisguiseMinions(playerPos, now);
+
+    // Phase 3: mask-swap teleport behind the player every 6s
+    if (phase3) {
+      this.swapTimer -= dt;
+      if (this.swapTimer <= 0) {
+        this.swapTimer = 6.0;
+        // Behind the player: mirror the spawn forward reference
+        const behind = _bossSpawnForwardRef.clone().multiplyScalar(-8);
+        this.mesh.position.set(playerPos.x + behind.x, height, playerPos.z + behind.z);
+        if (this.telegraphing) {
+          this.telegraphing.start('teleport', 0.5, 0xff44aa, this.mesh.position.clone());
+        }
+      }
+    }
+  }
+
+  takeDamage(amount, hitInfo = {}) {
+    // While disguised, the HOST takes the damage — the mask is unhittable
+    if (this.masqueradeActive) {
+      if (this.hostEnemy && this.hostEnemy.hp > 0) {
+        this.hostEnemy.hp = Math.max(0, this.hostEnemy.hp - amount);
+      }
+      return { killed: false, immune: true };
+    }
+    return super.takeDamage(amount, hitInfo);
+  }
+
+  destroy() {
+    if (this.hostEnemy && this.hostEnemy.mesh?.parent) {
+      this.hostEnemy.mesh.parent.remove(this.hostEnemy.mesh);
+    }
+    this.hostEnemy = null;
+    this.disguiseMinions = [];
+    super.destroy();
+  }
+}
+
 // ── CONDUCTOR ASCENDANT (Issue #170) ───────────────────────
 // Tier 3 boss that never attacks directly — it conducts choreographed
 // formations of real enemies. 80% shield until a movement is disrupted
@@ -12719,6 +13049,24 @@ const BOSS_DEFS = {
     afterimageInterval: 8.0,
   },
 
+  // Issue #200: Tier 3 hidden boss — spawns disguised as a normal enemy,
+  // body-swaps when "killed", then reveals a voxel mask that alternates
+  // comedy (fast spiral bolts) and tragedy (charged beam) expressions.
+  the_masquerade: {
+    name: 'THE MASQUERADE',
+    pattern: [[1]], // Custom mask built in the class
+    voxelSize: 0.25,
+    baseHp: 3200,
+    phases: 3,
+    color: 0xffaa00,
+    scoreValue: 400,
+    behavior: 'masquerade',
+    hitboxRadius: 0.8,
+    weakPoints: false,
+    disguiseTransferCost: 0.25,
+    maxTransfers: 2,
+  },
+
   // The Prism (Level 10, replaces tier 2 pool)
   the_prism: {
     name: 'The Prism',
@@ -12991,6 +13339,9 @@ export function spawnBoss(bossId, levelConfig, camera) {
       break;
     case 'mirror':
       boss = new MirrorGauntletBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'masquerade':
+      boss = new MasqueradeBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
     default:
       boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);

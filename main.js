@@ -114,7 +114,8 @@ import {
   setBombardierConeHitCallback, countActiveBombardiers,
   setVoidAnchorPulseCallback, countActiveVoidAnchors,
   countActiveVoidTendrils, spawnEchoPhantom, countActiveEchoPhantoms,
-  setLeechDrainCallback, countActiveLeeches
+  setLeechDrainCallback, countActiveLeeches,
+  setMasqueradeMinionHitCallback
 } from './enemies.js';
 import { getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -1969,6 +1970,17 @@ function init() {
   setLeechDrainCallback((damage) => {
     const dead = applyPlayerDamage(damage);
     setKilledBy({ type: 'enemy', name: 'PARASITIC LEECH', enemyType: 'leech' });
+    triggerHitFlash(true);
+    playDamageSound();
+    screenFx.cameraShake = 0.15;
+    screenFx.cameraShakeIntensity = 0.015;
+    triggerScreenShake(0.06, 200);
+    if (dead && game.state === State.PLAYING) endGame(false);
+  });
+  // Issue #200: Masquerade disguise-minion contact damage
+  setMasqueradeMinionHitCallback((damage) => {
+    const dead = applyPlayerDamage(damage);
+    setKilledBy({ type: 'enemy', name: 'MASQUERADE MINION', enemyType: 'basic' });
     triggerHitFlash(true);
     playDamageSound();
     screenFx.cameraShake = 0.15;

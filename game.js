@@ -70,8 +70,8 @@ const BOSS_POOLS = {
   1: ['skull_boss', 'the_maw'],
   // Level 10: The Prism + Mirror Gauntlet
   2: ['the_prism', 'mirror_gauntlet'],
-  // Level 15: Neon Minotaur + Conductor Ascendant
-  3: ['neon_minotaur', 'conductor_ascendant'],
+  // Level 15: Neon Minotaur + Conductor Ascendant + The Masquerade
+  3: ['neon_minotaur', 'conductor_ascendant', 'the_masquerade'],
   // Level 20: Authored final boss
   4: ['eclipse_engine'],
 };
