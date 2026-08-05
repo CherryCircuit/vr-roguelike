@@ -190,6 +190,16 @@ import {
   setBiomeClearedForBossCinematic, currentTheme, synthVisualRefs, floorMaterial,
   biomeTerrainMaterials, AVAILABLE_BIOMES, isEnvironmentFadeActive, biomeSceneGroup,
 } from './environment-orchestration.js';
+// Flow countdowns (Issue #196 Phase 4): ready-screen + pause-resume 3-2-1 state machines
+import {
+  initFlowCountdowns, startReadyCountdown, resetReadyCountdown, updateReadyCountdown,
+  isReadyCountdownActive, startPauseCountdown, updatePauseCountdown,
+} from './flow-countdowns.js';
+// Input router (Issue #196 Phase 4): state→handler dispatch tables
+import {
+  initInputRouter, handleTriggerPress, handleTriggerRelease,
+  handleSqueezePress, handleSqueezeRelease, handleDesktopClick as routeDesktopClick,
+} from './input-router.js';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
@@ -500,10 +510,7 @@ let lastTime = 0;
 let frameCount = 0;  // For staggering updates
 
 // Ready screen countdown
-const READY_COUNTDOWN_SECONDS = 3;
-let readyCountdownActive = false;
-let readyCountdownStartTime = 0;
-let readyCountdownLastValue = READY_COUNTDOWN_SECONDS;
+// Ready-screen + pause countdown state moved to flow-countdowns.js (#196 Phase 4)
 
 const enemySpatialHash = new SpatialHash(15);  // 15 unit cells >= max query radius
 
@@ -710,12 +717,7 @@ let pendingUpgradeHand = null;
 // Game over cooldown
 let gameOverCooldown = 0;
 
-// Pause menu state
-let pauseCountdown = 0;
-let pauseCountdownActive = false;
-let pauseCountdownStartTime = 0;
-let pauseCountdownLastValue = 0;
-const PAUSE_COUNTDOWN_DURATION = 3.0;
+// Pause countdown state moved to flow-countdowns.js (#196 Phase 4)
 
 // Bullet-time slow-mo (restored from commit 5bb0b69)
 let slowMoActive = false;
@@ -1777,6 +1779,71 @@ function init() {
     sceneYOffset: SCENE_Y_OFFSET,
   });
 
+  // Init flow countdowns (Issue #196 Phase 4): ready + pause 3-2-1 machines.
+  // Completion callbacks own the actual state transitions.
+  initFlowCountdowns({
+    updateReadyCountdownText,
+    playCountdown321,
+    hideReadyScreen,
+    hideHUD,
+    showHUD,
+    hidePauseMenu,
+    showPauseCountdown,
+    updatePauseCountdownDisplay,
+    hidePauseCountdown,
+    onReadyCountdownComplete: beginGameplayFromReady,
+    onPauseCountdownComplete: resumeFromPauseCountdown,
+  });
+
+  // Init input router (Issue #196 Phase 4): state→handler dispatch tables.
+  // Heavy per-state handlers stay here; the router owns only the routing.
+  initInputRouter({
+    isSettingsVisible,
+    trigger: {
+      settingsTrigger: handleSettingsTrigger,
+      titleTrigger: handleTitleTrigger,
+      playingTrigger: fireMainWeapon,
+      upgradeTrigger: selectUpgrade,
+      gameOverTrigger: (controller, index) => {
+        // Cooldown gate keeps the game-over screen from advancing on
+        // double-trigger (original onTriggerPress behavior)
+        if (gameOverCooldown <= 0) handleGameOverTrigger(controller, index);
+      },
+      nameEntryTrigger: handleNameEntryTrigger,
+      scoreboardTrigger: handleScoreboardTrigger,
+      countrySelectTrigger: handleCountrySelectTrigger,
+      readyTrigger: handleReadyScreenTrigger,
+      pauseTrigger: handlePauseTrigger,
+    },
+    desktop: {
+      settingsTrigger: handleDesktopSettingsClick,
+      titleTrigger: () => {
+        // Bestiary check only exists on desktop (original handleDesktopClick)
+        if (isBestiaryVisible()) handleDesktopBestiaryClick();
+        else handleDesktopTitleClick();
+      },
+      upgradeTrigger: handleDesktopUpgradeSelectClick,
+      gameOverTrigger: () => {
+        if (gameOverCooldown <= 0) handleDesktopGameOverClick();
+      },
+      nameEntryTrigger: handleDesktopNameEntryClick,
+      scoreboardTrigger: handleDesktopScoreboardClick,
+      countrySelectTrigger: handleDesktopCountrySelectClick,
+      readyTrigger: handleDesktopReadyScreenClick,
+      pauseTrigger: handleDesktopPauseClick,
+    },
+    squeeze: {
+      playingSqueezePress: (controller, index) => {
+        // Nuke takes priority: if player has nukes, squeeze activates nuke
+        if (game.nukes > 0) {
+          if (activateNuke()) return;
+        }
+        fireAltWeapon(controller, index);
+      },
+    },
+    triggerRelease: onTriggerRelease,
+  });
+
   // Init subsystems
   initEnemies(scene);
   setCameraRef(camera);
@@ -2197,7 +2264,7 @@ function updateVRPauseButton(now) {
 // ============================================================
 // CONTROLLER SETUP & INPUT HANDLING
 // VR controllers, trigger press/release, squeeze, desktop click
-// HOT PATH: onTriggerPress called every frame when trigger held
+// HOT PATH: handleTriggerPress (input-router.js) routes every frame when trigger held
 // COUPLING: Directly calls fireMainWeapon, fireAltWeapon
 // ============================================================
 // [CORE] VR controller setup and event binding
@@ -2209,17 +2276,17 @@ function setupControllers() {
     controller.addEventListener('selectstart', () => {
       controllerTriggerPressed[i] = true;
       upgradeTriggerLatched[i] = false;
-      onTriggerPress(controller, i);
+      handleTriggerPress(controller, i);
     });
     controller.addEventListener('selectend', () => {
       controllerTriggerPressed[i] = false;
       upgradeTriggerLatched[i] = false;
-      onTriggerRelease(i);
+      handleTriggerRelease(i);
     });
     
     // ALT weapon triggers (bottom/squeeze trigger)
-    controller.addEventListener('squeezestart', () => { onSqueezePress(controller, i); });
-    controller.addEventListener('squeezeend', () => { onSqueezeRelease(i); });
+    controller.addEventListener('squeezestart', () => { handleSqueezePress(controller, i); });
+    controller.addEventListener('squeezeend', () => { handleSqueezeRelease(i); });
     
     // Note: pause via menu button is handled by updateVRPauseButton() polling —
     // three.js XRController has no 'secondary' event, so a listener here was dead
@@ -2250,7 +2317,7 @@ function setupControllers() {
     if (e.target && e.target.closest && (e.target.closest('#debug-panel') || e.target.closest('#debug-toggle'))) {
       return;
     }
-    handleDesktopClick();
+    routeDesktopClick();
   });
 }
 
@@ -2628,40 +2695,8 @@ function updateBlasterDisplay(display, controllerIndex) {
 // Scoreboard flow context
 var scoreboardFromGameOver = false;  // true = came from game over, false = came from title
 
-// [CORE] Handle VR/desktop controller trigger press
-function onTriggerPress(controller, index) {
-  const st = game.state;
-
-  if (st === State.TITLE) {
-    if (isSettingsVisible()) {
-      handleSettingsTrigger(controller);
-    } else {
-      handleTitleTrigger(controller);
-    }
-  } else if (st === State.PLAYING) {
-    fireMainWeapon(controller, index);  // Changed from shootWeapon
-  } else if (st === State.UPGRADE_SELECT) {
-    selectUpgrade(controller, index);
-  } else if (st === State.GAME_OVER || st === State.VICTORY) {
-    if (gameOverCooldown <= 0) {
-      handleGameOverTrigger(controller);
-    }
-  } else if (st === State.NAME_ENTRY) {
-    handleNameEntryTrigger(controller);
-  } else if (st === State.SCOREBOARD || st === State.REGIONAL_SCORES) {
-    handleScoreboardTrigger(controller);
-  } else if (st === State.COUNTRY_SELECT) {
-    handleCountrySelectTrigger(controller);
-  } else if (st === State.READY_SCREEN) {
-    handleReadyScreenTrigger(controller);
-  } else if (st === State.PAUSED) {
-    if (isSettingsVisible()) {
-      handleSettingsTrigger(controller);
-    } else {
-      handlePauseTrigger(controller);
-    }
-  }
-}
+// [CORE] VR trigger press routing moved to input-router.js (#196 Phase 4);
+// the per-state handlers below are registered into the router at init.
 
 function handlePauseTrigger(controller) {
   const origin = new THREE.Vector3();
@@ -2774,41 +2809,8 @@ function handleTitleTrigger(controller) {
 
 // ── Desktop Controls Handlers ───────────────────────────────
 // [DEBUG] Desktop mouse click handlers for non-VR playtesting
-function handleDesktopClick() {
-  if (!isDesktopEnabled()) return;
-
-  const st = game.state;
-
-  if (st === State.TITLE) {
-    if (isSettingsVisible()) {
-      handleDesktopSettingsClick();
-    } else if (isBestiaryVisible()) {
-      handleDesktopBestiaryClick();
-    } else {
-      handleDesktopTitleClick();
-    }
-  } else if (st === State.UPGRADE_SELECT) {
-    handleDesktopUpgradeSelectClick();
-  } else if (st === State.GAME_OVER || st === State.VICTORY) {
-    if (gameOverCooldown <= 0) {
-      handleDesktopGameOverClick();
-    }
-  } else if (st === State.NAME_ENTRY) {
-    handleDesktopNameEntryClick();
-  } else if (st === State.SCOREBOARD || st === State.REGIONAL_SCORES) {
-    handleDesktopScoreboardClick();
-  } else if (st === State.COUNTRY_SELECT) {
-    handleDesktopCountrySelectClick();
-  } else if (st === State.READY_SCREEN) {
-    handleDesktopReadyScreenClick();
-  } else if (st === State.PAUSED) {
-    if (isSettingsVisible()) {
-      handleDesktopSettingsClick();
-    } else {
-      handleDesktopPauseClick();
-    }
-  }
-}
+// [CORE] Desktop click routing moved to input-router.js (#196 Phase 4);
+// the desktop handlers below are registered into the router at init.
 
 function handleDesktopTitleClick() {
   const raycaster = getAimRaycaster();
@@ -3082,7 +3084,7 @@ function handleDesktopUpgradeSelectClick() {
 }
 
 function handleDesktopReadyScreenClick() {
-  if (readyCountdownActive) return;
+  if (isReadyCountdownActive()) return;
   playMenuClick();
   startReadyCountdown();
 }
@@ -3478,24 +3480,8 @@ function activateNuke() {
 // proximity mines, attack drones, EMP, teleport
 // COUPLING: Updates scene, activeShields/activeLaserMines/etc arrays
 // ============================================================
-// [CORE] Handle squeeze press (alt weapon fire)
-function onSqueezePress(controller, index) {
-  const st = game.state;
-  
-  if (st === State.PLAYING) {
-    // Nuke takes priority: if player has nukes, squeeze activates nuke
-    if (game.nukes > 0) {
-      if (activateNuke()) return;
-    }
-    fireAltWeapon(controller, index);
-  }
-}
-
-// [CORE] Handle squeeze release
-function onSqueezeRelease(index) {
-  // Currently no release logic needed for ALT weapons
-  // Could add charge-up ALT weapons in future
-}
+// [CORE] Squeeze press/release routing moved to input-router.js
+// (#196 Phase 4); the PLAYING handler is registered at init.
 
 // ============================================================
 //  ALT WEAPON FIRING
@@ -3589,17 +3575,11 @@ function cycleDebugBiomeWithFade() {
   });
 }
 
-// [CORE] Reset ready countdown timer
-function resetReadyCountdown() {
-  readyCountdownActive = false;
-  readyCountdownStartTime = 0;
-  readyCountdownLastValue = READY_COUNTDOWN_SECONDS;
-  updateReadyCountdownText(null);
-}
+// [CORE] Ready countdown timer state moved to flow-countdowns.js (#196
+// Phase 4); beginGameplayFromReady is registered as its completion callback.
 
-// [CORE] Begin gameplay from ready screen
+// [CORE] Begin gameplay from ready screen (called when the 3-2-1 completes)
 function beginGameplayFromReady() {
-  readyCountdownActive = false;
   updateReadyCountdownText(null);
   hideReadyScreen();
   hideHUD();
@@ -3612,35 +3592,9 @@ function beginGameplayFromReady() {
   game.spawnTimer = 1.0;
 }
 
-// [CORE] Start ready countdown before gameplay
-function startReadyCountdown() {
-  if (readyCountdownActive) return;
-  readyCountdownActive = true;
-  readyCountdownStartTime = performance.now();
-  readyCountdownLastValue = READY_COUNTDOWN_SECONDS;
-  updateReadyCountdownText(`${READY_COUNTDOWN_SECONDS}`);
-  playCountdown321();  // 321 sound triggers on the "3"
-}
-
-// [CORE] Update ready countdown display
-function updateReadyCountdown(now) {
-  if (!readyCountdownActive) return;
-  const elapsed = (now - readyCountdownStartTime) / 1000;
-  const remaining = READY_COUNTDOWN_SECONDS - elapsed;
-  if (remaining <= 0) {
-    beginGameplayFromReady();
-    return;
-  }
-  const displayValue = Math.ceil(remaining);
-  if (displayValue !== readyCountdownLastValue) {
-    readyCountdownLastValue = displayValue;
-    updateReadyCountdownText(`${displayValue}`);
-  }
-}
-
 // [CORE] Handle ready screen VR trigger
 function handleReadyScreenTrigger(controller) {
-  if (readyCountdownActive) return;
+  if (isReadyCountdownActive()) return;
   playMenuClick();
   startReadyCountdown();
 }
@@ -4753,50 +4707,24 @@ function togglePause() {
   }
 }
 
-// [CORE] Start pause countdown before resuming
-function startPauseCountdown() {
-  if (pauseCountdownActive) return;
-  hidePauseMenu();
-  pauseCountdownActive = true;
-  pauseCountdownStartTime = performance.now();
-  pauseCountdownLastValue = Math.ceil(PAUSE_COUNTDOWN_DURATION);
-  pauseCountdown = PAUSE_COUNTDOWN_DURATION;
-  showPauseCountdown(pauseCountdown);
-  updatePauseCountdownDisplay(pauseCountdown);
-  playCountdown321();  // 321 sound triggers on the "3"
-}
+// [CORE] Pause countdown state machine moved to flow-countdowns.js (#196
+// Phase 4); resumeFromPauseCountdown is registered as its completion callback.
 
-// [CORE] Update pause countdown display
-function updatePauseCountdown(now) {
-  if (!pauseCountdownActive) return;
-  const elapsed = (now - pauseCountdownStartTime) / 1000;
-  const remaining = PAUSE_COUNTDOWN_DURATION - elapsed;
-  if (remaining <= 0) {
-    pauseCountdownActive = false;
-    pauseCountdown = 0;
-    hidePauseCountdown();
-    game.state = State.PLAYING;
-    // Validate controller handedness after resuming from pause (Quest sleep/wake)
-    if (renderer.xr.isPresenting) {
-      validateControllerHandedness();
-    }
-    // Re-request pointer lock when resuming (suppress error if user just exited)
-    if (!renderer.xr.isPresenting && isDesktopEnabled()) {
-      try {
-        document.body.requestPointerLock?.();
-      } catch (e) {
-        // SecurityError is expected if user just exited pointer lock via ESC
-        console.debug('[pause] Pointer lock request deferred (user exit)');
-      }
-    }
-    return;
+// [CORE] Resume gameplay when the pause 3-2-1 completes
+function resumeFromPauseCountdown() {
+  game.state = State.PLAYING;
+  // Validate controller handedness after resuming from pause (Quest sleep/wake)
+  if (renderer.xr.isPresenting) {
+    validateControllerHandedness();
   }
-
-  pauseCountdown = remaining;
-  const displayValue = Math.ceil(remaining);
-  if (displayValue !== pauseCountdownLastValue) {
-    pauseCountdownLastValue = displayValue;
-    updatePauseCountdownDisplay(pauseCountdown);
+  // Re-request pointer lock when resuming (suppress error if user just exited)
+  if (!renderer.xr.isPresenting && isDesktopEnabled()) {
+    try {
+      document.body.requestPointerLock?.();
+    } catch (e) {
+      // SecurityError is expected if user just exited pointer lock via ESC
+      console.debug('[pause] Pointer lock request deferred (user exit)');
+    }
   }
 }
 
