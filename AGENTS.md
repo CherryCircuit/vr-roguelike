@@ -277,6 +277,10 @@ Ask for clarification when:
 - **flow-countdowns.js / input-router.js** - ready+pause 3-2-1 state machines and
   state→handler input dispatch tables (#196 Phase 4); deps injected, game.js is the
   only module they import
+- **breach-events.js** - mid-level arena hazards (#138); `initBreachEvents(deps)`; seeded
+  per-level events, emp gate via `isBreachEmpActive()`
+- **void-marks.js** - death persistence (#139); `initVoidMarks(deps)`; localStorage
+  'void_marks' (max 20), inherit/purge hooks
 - **beam-weapons.js / projectile-system.js / alt-weapons.js** - extracted modules, use the
   `initX(deps)` dependency-injection pattern (see §17)
 - **hud.js** - sprite-based UI (use existing createTextSprite pattern)
@@ -430,9 +434,10 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 
 ## 16. TESTING & VERIFICATION COMMANDS (gate before every commit)
 
-**Server** (tests hit `http://localhost:8000/dev.html`): `python3 -m http.server 8000`
+**Server** (tests hit `http://localhost:8001/dev.html`): `python3 -m http.server 8001`
+  (moved off :8000 after an unrelated uvicorn service claimed it — all 26 suites target :8001)
 
-**All 15 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
+**All 26 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
 - `test-bugfixes.cjs` — boot + 15s gameplay + reset loop
 - `test-timer-cleanup.cjs` — charge cannon + triple-shot timer
 - `test-audio-pack.cjs` — reactive music stems + threat emitters
@@ -452,6 +457,17 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 - `test-combos.cjs` — deferred combos (#211/#218): detection, Soul Chain heals,
   Pinball Wizard bounce targeting, Momentum damage/decay, Tesla Tower chain
   extension, Final Solution black hole, Swarm Leader drones, HUD combo glow
+- `test-bombardier.cjs` — floor-turret enemy (#199): plant, cone damage, death burst
+- `test-void-anchor.cjs` — gravity-well enemy (#198): plant, growth, projectile bending
+- `test-void-tendril.cjs` — barrier enemy (#171): growth, shot blocking, fire weakness
+- `test-echo-phantom.cjs` — aim-replay enemy (#169): playback, friendly-fire shots, fade
+- `test-leech.cjs` — parasite enemy (#167): latch, drain, burst into minions
+- `test-conductor.cjs` — conducting boss (#170): formations, shield, disruption, phase 2
+- `test-maw.cjs` — arena-eating boss (#168): floor crumble, chomp core 3x window
+- `test-mirror.cjs` — loadout-copy boss (#197): 70% mirror shots, phases, afterimages
+- `test-masquerade.cjs` — hidden boss (#200): disguise, body-swap, reveal, cross fire
+- `test-breach.cjs` — arena hazards (#138): seeded events, flare/gravity/rift/EMP
+- `test-void-marks.cjs` — death persistence (#139): spawn, inherit, purge, record
 
 **Known quirks:**
 - **Run suites individually, not back-to-back in one shell loop** — batch runs flake on
@@ -501,9 +517,9 @@ or verify the live site directly:
   extracting code. The identifier sweep (`verify-module-identifiers.mjs`) automates this.
 - **Extracted modules** (beam-weapons, projectile-system, alt-weapons, boss-death-
   cinematic, eclipse, threat-compass, environment-orchestration, flow-countdowns,
-  input-router) use the `initX(deps)` dependency-injection pattern, called from
-  main.js init. Live-binding exports (arrays, objects) are mutated in place, not
-  reassigned.
+  input-router, breach-events, void-marks) use the `initX(deps)` dependency-injection
+  pattern, called from main.js init. Live-binding exports (arrays, objects) are
+  mutated in place, not reassigned.
 - **mastery.js**: per-weapon kill counts persisted in localStorage under
   `spaceomicide_mastery` (debounced 5s writes + flush on level advance; in-memory
   fallback when storage is unavailable — never throw from this module).

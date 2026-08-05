@@ -1,7 +1,7 @@
 # SESSION HANDOFF — Feature/Fix Sprint (pick up here with a fresh context)
 
 Paste this whole file's contents (plus `AGENTS.md` is auto-loaded from the repo) into a
-new opencode session. Everything below is verified current as of commit `3ec7cb5` (pushed).
+new opencode session. Everything below is verified current as of commit `7825c6c` (pushed).
 
 ---
 
@@ -32,6 +32,8 @@ and module architecture rules live in AGENTS.md §16-17.
 | `environment-orchestration.js` | ~460 | Biome/theme/fade/star lifecycle (#196 P5): owns env state, main.js reads exports |
 | `flow-countdowns.js` | ~140 | Ready + pause 3-2-1 state machines (#196 P4, reduced) |
 | `input-router.js` | ~150 | State→handler dispatch tables for trigger/click/squeeze (#196 P4, reduced) |
+| `breach-events.js` | ~330 | Mid-level arena hazards (#138): 5 seeded events, EMP fire gate |
+| `void-marks.js` | ~330 | Death persistence (#139): localStorage scars, inherit/purge |
 | `game.js` | ~616 | Central state (`game` object incl. `game.synergies`), resetGame, hooks |
 | `audio.js`, `hud.js`, `damage-numbers.js`, `voxel-debris.js`, `stasis.js`, `boss-death-cinematic.js` | | Supporting modules |
 
@@ -41,70 +43,63 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 
 ## DONE THIS SESSION (chronological, all pushed to `main`)
 
-1. **`e002d02` — Deferred combos (#211/#218)**: all six combos from the #211
-   deferred list + HUD combo glow.
-   - Detected in `detectSynergies` (weapons.js) — weapon-specific upgrade ids
-     imply the weapon, so no weapon arg was needed:
-     `soul_chain` (vampiric+ricochet), `pinball_wizard` (ricochet+pierce/overcharge),
-     `momentum_chain` (overcharge alone), `tesla_tower` (tesla_coil+shock),
-     `final_solution` (quick_charge+death_ray), `swarm_leader` (gimme_more).
-   - **Soul Chain** (projectile-system): `game.ricochetKillCount` counts ricochet
-     kills on their own interval; heals via the same threshold as direct kills.
-   - **Pinball Wizard** (projectile-system): `handleRicochet` takes an
-     `excludeEnemies` set (from `proj.userData.hitEnemies`) so pierced shots
-     bounce onto NEW targets; falls back to closest when no new target exists.
-   - **Momentum** (main.js): per-hand kill stacks, +5% damage each, 2s window,
-     cap 5x; applied in `computeWeaponStats` with lazy decay (no timers);
-     cleared on reset.
-   - **Tesla Tower** (beam-weapons): `maxChains +2` AND each target sparks a
-     secondary chain to one nearby non-chained enemy (cap 4). Fixed a
-     chainCount-cap bug where secondaries were added after the cap was read
-     and never dealt damage.
-   - **Final Solution** (beam-weapons + alt-weapons): `spawnBlackHoleAt(position,
-     opts)` factored out of the mine black hole (shared visual/pull/collapse);
-     full-charge kills spawn one (2s pull, 60 dmg explosion).
-   - **Swarm Leader** (projectile-system): seekers that expire WITHOUT a target
-     become orbiting protective drones (cap 6, 6s duration) that destroy enemy
-     projectiles on contact; `clearSwarmDrones` on pool reset; `getSwarmDroneCount`
-     test seam.
-   - **HUD combo glow** (hud.js): timing combos are silent (1e82927), so
-     `triggerComboGlow(color)` flashes the accuracy bar in the combo color for
-     0.6s (called from `applyFireCombo`).
-   - New test `test-combos.cjs` (detection, Soul Chain heal math, Pinball bounce
-     targeting, Momentum damage + decay, Tesla Tower 5-vs-3 chain damage,
-     Final Solution black hole spawn, Swarm Leader drone lifecycle, glow
-     visibility/fade). Verified: all 15 suites green (batch flakes on
-     timer-cleanup/alchemy/mastery — all green solo, known contention quirk),
-     identifier sweep clean, deploy-sim clean on :8019.
+A marathon session — every commit below is verified with its own puppeteer suite
+(now 26 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
 
-2. **`d516744` + `f7b44d2` — #196 Phases 4-5 (reduced scope)**:
-   - **Phase 5 (`f7b44d2`)** — `environment-orchestration.js`: pure-move extraction
-     of the biome/theme/fade/star lifecycle (applyThemeForLevel, clearBiomeScene,
-     purgeBiomeForBossCinematic, fade system + render-loop ticker
-     `updateEnvironmentFade`, stars, transition bursts, disposal helpers
-     disposeMesh/disposeObject3D/setMaterialEmissiveSafe/registerFadeMaterial).
-     Environment state now lives there; main.js READS exported bindings
-     (currentTheme, floorMaterial, biomeSceneGroup, synthVisualRefs,
-     biomeTerrainMaterials, AVAILABLE_BIOMES) and writes only via
-     `setBiomeClearedForBossCinematic`. Flow-owned flags (levelFadeReady) stayed
-     in main.js. main.js 7,719 → ~7,100 lines.
-   - **Phase 4 (`d516744`, reduced)** — `flow-countdowns.js` (ready + pause 3-2-1
-     state machines; timing only, HUD/audio/state transitions injected as
-     callbacks) and `input-router.js` (state→handler dispatch tables for VR
-     trigger, desktop click, alt-fire squeeze; settings-visible shortcut for
-     TITLE/PAUSED; game-over cooldown gate kept via registration wrappers).
-     main.js → ~7,050 lines.
-   - **Why reduced scope**: the remaining main.js is orchestration glue (159
-     functions, 146 mutable lets, 4 duplicated state-dispatch chains); ES module
-     bindings are read-only so every moved mutable needs restructuring (screenFx
-     pattern), and full state-machine extraction would rewiring ~50 cross-module
-     callback sites for low value. Environment extraction is genuinely mechanical
-     (biome-scenes/scenery already existed); the countdown machines + routing
-     tables are the only flow pieces with clean boundaries.
-   - Verified: all 15 suites green, identifier sweep clean (main.js + both new
-     modules zero flags), deploy-assets resolve, deploy-sim clean on :8017/:8018.
+1. **`7825c6c` — #139 Void Marks**: deaths record to localStorage (`void_marks`,
+   max 20); future runs at the same level+biome spawn a spectral hologram at the
+   death spot. TRIGGER = inherit one random universal upgrade from the ghost run
+   (boss deaths → special pool); NUKE = purge for +500×level score. Consumed
+   either way. `void-marks.js` DI module; inherit hooks the trigger router,
+   purge hooks activateNuke (nuke not spent).
+2. **`9bce161` — #138 Breach Events**: ~40% of levels after 3 trigger one seeded
+   arena event (never boss levels, never stacked, min 10s in, 3s telegraph).
+   Five starters: solar_flare (zone burns player+enemies 2 DPS), gravity_inversion
+   (enemies float), asteroid_rain (5-8 impacts, 50 AoE), dimensional_rift (pull +
+   3 weak rift echoes), emp_wave (fire disabled). `breach-events.js` DI module.
+3. **`cc28829` — #200 The Masquerade** (tier-3 boss): disguised as a basic enemy,
+   body-swaps on "kill" (25% HP per swap, max 2, purple flash + whoosh), then
+   reveals a voxel mask alternating comedy (gold spiral bolts) / tragedy (purple
+   charged shot), disguise minions heal it on contact; <25% HP: 4-way cross fire
+   + teleports behind the player. `destroyEnemy` intercepts the host death.
+4. **`f08a8ef` — #197 Mirror Gauntlet** (tier-2 boss): chrome sphere firing 70%-damage
+   copies of YOUR weapons (blaster bolts / buckshot spread / seeker triples /
+   charge shots / plasma sprays). Phase 2 reveals a voxel humanoid, fires both
+   hands, blinks every 4s. Phase 3: 1.5x rate + hostile afterimages.
+   `spawnBossProjectile` gained an optional damage param.
+5. **`5414180` — #168 The Maw** (tier-1 boss) + a real bug fix: the reflector-drone
+   reflection was called in main.js's hostile-projectile loop without an import —
+   a ReferenceError froze the whole frame loop the first time any boss projectile
+   hit the player (pre-existing; export + import fixed). The Maw: 80 floor tiles
+   crumble inward over 3 phases, orbits closer (14/11/8m), spawns basic/fast/swarm
+   minions, chomp wind-ups expose a glowing core (3x damage, immune when closed).
+6. **`da1d214` — #170 Conductor Ascendant** (tier-3 boss): conducts randomized
+   symphonies of real enemies — spiral fasts / wave basics / grid tanks / pincer
+   swarms — with per-movement disruption thresholds that drop an 80% shield for
+   3s; <50% HP: mixed types, 12s movements, 90% shield.
+7. **`3813ec9` — #169 Echo Phantom**: aim-replay enemy. main.js records per-hand
+   aim every 100ms (3s window) + fire events; the phantom replays your shots as
+   cyan projectiles that damage OTHER enemies (accidental ally), fades after 4s.
+   Spawns after 5+ shots in 3s (level 11+).
+8. **`32a5e16` + `1bf6ab1` — #167 Parasitic Leech** (and the test-port move):
+   latches within 2m, orbits at 1.5m, drains 0.5 HP/s while swelling, bursts into
+   3-4 minions after 3 HP stolen (freeze halves the drain). **All 26 suites now
+   target :8001** — an unrelated uvicorn service took :8000.
+9. **`cb8f199` — #171 Void Tendril**: spatial-control enemy growing a 60° arc
+   barrier (3-12m from the player) that CONSUMES player projectiles; 3 hits to
+   break (fire status: 1), then the 2-HP anchor is exposed. Weighted spawn.
+10. **`f012904` — #198 Void Anchor**: stationary gravity well (3→5m over 8s) that
+    bends player projectiles toward it at 15°/s (seekers resist); pulses damage
+    at full size. Per-frame scratch-anchor list in updateProjectiles.
+11. **`82a728f` — #199 Bombardier Beetle**: floor-turret — flies in, plants,
+    sprays a tracking 45° cone (1 HP/0.3s in it), dies in a 2m friendly-fire
+    burst. Capped 1/2/3 by level.
+12. **`e002d02` — deferred combos** + **`d516744`/`f7b44d2` — #196 Phases 4-5**:
+    see the earlier sections of this file (Soul Chain, Pinball Wizard, Momentum,
+    Tesla Tower, Final Solution, Swarm Leader, HUD glow; environment-orchestration,
+    flow-countdowns, input-router).
 
-## RECENTLY COMPLETED (prior sessions, all on `main`)
+## RECENTLY COMPLETED## RECENTLY COMPLETED (prior sessions, all on `main`)
 
 - **#206 Threat Compass** (`3ec7cb5`, `e145dc7`): ground-glow threat indicator —
   shader lobes, biome tint, scratch-buffer lobes, test-threat-compass.cjs.
@@ -167,7 +162,23 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
    via the console, while the mesh still rendered black and uniform assertions
    still passed. When a shader "works but is black", dump the FULL console error
    and check for reserved identifiers (`active`, `attribute`, `varying`…).
-10. **Extractions leak moved locals** — after moving module state out of main.js,
+10. **Port 8000 can be grabbed by other services** — an unrelated uvicorn took it
+    mid-session. All suites target :8001 now; before killing a process on a test
+    port, check `ps -p <pid>` — it may not be yours.
+11. **Proximity slow-mo bleeds test timing** — damage near enemies lerps
+    `window._timeScale` down each frame, silently slowing boss/event timers.
+    Tests that wait on timed boss phases must force `window._timeScale = 1.0` +
+    `game.timeScale = 1.0` continuously (every 200ms) and block enemy spawns
+    (`game.spawnTimer = 9999`). Also: buff the test player (`maxHealth = 30`) —
+    a 6-HP player dies between health restores and endGame clears the boss.
+12. **New enemy/boss integration seams**: spawnEnemy caps can return null (push a
+    null slot to keep indices aligned); boss formations flag enemies
+    `_conductorHeld`/`_bossSummoned`; hidden-boss body-swaps intercept
+    `destroyEnemy` BEFORE the normal death path; `spawnBossProjectile` takes an
+    optional damage param; the reflector-drone reflection bug (missing import,
+    frame loop froze on first boss-projectile hit) is fixed — keep hostile-projectile
+    loop callbacks imported.
+13. **Extractions leak moved locals** — after moving module state out of main.js,
     the identifier sweep did NOT flag leftover references (`environmentFadeState`,
     `biomeTerrainMaterials` survived the sweep because they were never window
     globals — they're just gone locals). Only the runtime caught them. After any
@@ -176,14 +187,17 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 
 ## TESTING WORKFLOW (the gate before every commit)
 
-1. Start the server: `python3 -m http.server 8000` (background) — tests hit
-   `http://localhost:8000/dev.html`.
+1. Start the server: `python3 -m http.server 8001` (background) — tests hit
+   `http://localhost:8001/dev.html`. (:8000 was claimed by an unrelated uvicorn
+   service — do NOT kill it; all suites target :8001.)
 2. Run each suite individually (~30-90s each, puppeteer headless):
    `node tests/automation/<suite>.cjs` for: test-bugfixes, test-timer-cleanup,
    test-audio-pack, test-elemental, test-synergy, test-tank-hit, test-upgrade-preview,
    test-alchemy, test-evolution, test-dualwield, test-style, test-mastery, test-eclipse,
-   test-threat-compass, test-combos.
-   (15 suites total. Do NOT chain them in one shell loop — see Critical Lessons #2.)
+   test-threat-compass, test-combos, test-bombardier, test-void-anchor,
+   test-void-tendril, test-echo-phantom, test-leech, test-conductor, test-maw,
+   test-mirror, test-masquerade, test-breach, test-void-marks.
+   (26 suites total. Do NOT chain them in one shell loop — see Critical Lessons #2.)
 3. Static checks: `node --check <touched files>`,
    `node scripts/verify-module-identifiers.mjs`,
    `node scripts/verify-deploy-assets.mjs` (deploy-affecting changes only).
@@ -199,16 +213,15 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 
 **Done:** #204 · #142+#184 · #196 Phases 1-3 · #216 · #211 · #215 · #185 · #143 ·
 #189 · #218 · #213 weapon mastery · #172 Eclipse Engine Phase 2 · #206 Threat
-Compass · #196 Phases 4-5 (reduced) · **deferred combos (#211/#218, this session)** ·
-deploy/stability fixes.
+Compass · #196 Phases 4-5 (reduced) · deferred combos (#211/#218) · #199 · #198 ·
+#171 · #169 · #167 · #170 · #168 · #197 · #200 · #138 · #139 — **everything through
+#139, this session** · deploy/stability fixes.
 
-**Remaining packs (recommended order):**
-1. **Back of the line (from earlier triage):** new enemies/bosses (#199, #198, #171,
-   #169, #167, #170, #168, #197, #200), #138 Breach Events, #139 Void Marks, #210
-   Constellation Map, #212 Lore, #183 Death Haiku, #209 Death Panorama, #201 Phase
-   Echoes, #178/#177 death effects, #179/#208/#180 atmosphere, #191 Rhythm Core, #190
-   Execution Cascade, #188 Void Gauntlet, #182 Weapon Soul, #155 Prestige Hand,
-   #154/#158/#160 weapon upgrades, #157 Bullet Weaving, #153 Mutator Cards.
+**Remaining (recommended order):** #210 Constellation Map, #212 Lore, #183 Death
+Haiku, #209 Death Panorama, #201 Phase Echoes, #178/#177 death effects, #179/#208/
+#180 atmosphere, #191 Rhythm Core, #190 Execution Cascade, #188 Void Gauntlet,
+#182 Weapon Soul, #155 Prestige Hand, #154/#158/#160 weapon upgrades, #157 Bullet
+Weaving, #153 Mutator Cards.
 
 **Closed/merged issue notes:** #217/#213 weapon mastery → keep #213 (done); #214 music →
 keep #142; #187/#151 elemental combos → keep #211; #141/#152 scoring → keep #189;
@@ -220,11 +233,11 @@ recent features) — this file is the single source of truth for project state.
 
 ## QUICK-START CHECKLIST FOR THE NEXT SESSION
 
-1. `git pull` / verify HEAD is the deferred-combos commit (see DONE THIS SESSION).
-2. `python3 -m http.server 8000 &` then run all 15 test suites individually to confirm
-   green baseline (see Testing Workflow).
+1. `git pull` / verify HEAD is `7825c6c` (see DONE THIS SESSION).
+2. `python3 -m http.server 8001 &` then run all 26 test suites individually to
+   confirm green baseline (see Testing Workflow).
 3. Read `AGENTS.md` if you haven't (auto-loaded; §16-17 cover automation + modules).
-4. Pick the next pack (recommended: an item from the back-of-line list — the entire
-   roadmap queue is now open triage). test-combos.cjs is the most recent example of a
-   multi-mechanic test; detectSynergies in weapons.js is the combo-detection seam.
+4. Pick the next pack (recommended: #210 Constellation Map or #183 Death Haiku —
+   the remaining queue is all S-sized items). test-void-marks.cjs is the most recent
+   small DI-module + test example; breach-events.js shows the seeded-event pattern.
 5. Follow the Testing Workflow above before every commit.
