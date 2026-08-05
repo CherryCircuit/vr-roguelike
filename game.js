@@ -68,8 +68,8 @@ export function getBossTier(level) {
 const BOSS_POOLS = {
   // Level 5: Skull Boss + The Maw
   1: ['skull_boss', 'the_maw'],
-  // Level 10: The Prism
-  2: ['the_prism'],
+  // Level 10: The Prism + Mirror Gauntlet
+  2: ['the_prism', 'mirror_gauntlet'],
   // Level 15: Neon Minotaur + Conductor Ascendant
   3: ['neon_minotaur', 'conductor_ascendant'],
   // Level 20: Authored final boss

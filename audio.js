@@ -1292,6 +1292,26 @@ export function playEclipsePurgeSound() {
 }
 
 /** Bombardier spray (Issue #199): sustained noise "whoosh" through a rising bandpass. */
+/** Mirror Gauntlet (Issue #197): glass-shard phase shift. */
+export function playMirrorShatterSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  [2400, 3200, 4100].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, t + i * 0.03);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.55, t + 0.3 + i * 0.03);
+    gain.gain.setValueAtTime(0.0, t + i * 0.03);
+    gain.gain.linearRampToValueAtTime(0.05, t + 0.02 + i * 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4 + i * 0.03);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.03);
+    osc.stop(t + 0.45 + i * 0.03);
+  });
+}
+
 /** Conductor Ascendant (Issue #170): movement sting + disruption dissonance. */
 export function playConductorMovementSound() {
   const ctx = getAudioContext();

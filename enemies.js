@@ -12,7 +12,10 @@ import { spawnTransientLightningBolt } from './beam-weapons.js';
 // Synergy Engine (Issue #211): elemental combo behaviors read the per-hand
 // synergy snapshot via isSynergyActive() (game.synergies, recomputed on
 // upgrade picks). weapons.js imports game.js only — no cycle here.
-import { isSynergyActive } from './weapons.js';
+import { isSynergyActive, getWeaponStats } from './weapons.js';
+// Issue #197 Mirror Gauntlet reads the player's live loadout (game.js is the
+// bottom of the dep graph — no cycle)
+import { game } from './game.js';
 import {
   playTingSound, playEnemyProjectileSound, playProjectileWarningSound,
   playBossProjectileFiredSound, playBossProjectileAlertSound,
@@ -26,6 +29,7 @@ import {
   playEchoSpawnSound, playEchoFireSound,
   playLeechLatchSound, playLeechBurstSound,
   playConductorMovementSound, playConductorDisruptionSound,
+  playMirrorShatterSound,
 } from './audio.js';
 // Issue #199: the bombardier plants at the biome floor height (custom biomes
 // sit below y=0). environment-orchestration.js does not import enemies.js —
@@ -11972,6 +11976,263 @@ class MawBoss extends Boss {
   }
 }
 
+// ── MIRROR GAUNTLET (Issue #197) ───────────────────────────
+// Tier 2 alternative boss: scans your weapons and fires exact copies of
+// YOUR loadout at you (70% damage). Phase 2: both hands + blink. Phase 3:
+// 1.5x rate + both hands + hostile afterimages.
+class MirrorGauntletBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    this.orbitAngle = Math.random() * Math.PI * 2;
+    this.mirrorFireTimer = 1.2;
+    this.mirrorFireInterval = 1.4;
+    this.blinkTimer = 4.0;
+    this.afterimageTimer = 8.0;
+    this.afterimages = [];
+    this.innerFigureVisible = false;
+    this.shieldRing = [];
+    this.phase = 1;
+    this.weaponDamageMult = def.weaponDamageMult || 0.7;
+    this.fixedY = 3.2;
+    this.minDistance = 8;
+    this.maxDistance = 12;
+
+    this._buildChromeSphere();
+  }
+
+  // Chrome sphere body (replaces the base pattern mesh)
+  _buildChromeSphere() {
+    while (this.mesh.children.length > 0) {
+      const child = this.mesh.children[0];
+      this.mesh.remove(child);
+      child.traverse?.((part) => { if (part.material) part.material.dispose(); });
+    }
+    const sphereGeo = new THREE.SphereGeometry(1.0, 14, 10);
+    const sphereMat = new THREE.MeshBasicMaterial({ color: 0xccccee, transparent: true, opacity: 0.85, fog: false });
+    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+    sphere.userData.isBossBody = true;
+    this.mesh.add(sphere);
+
+    // Inner voxel humanoid (revealed in phase 2)
+    const innerGeo = getGeo(0.26);
+    this.innerFigure = new THREE.Group();
+    const innerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, fog: false });
+    for (let y = 0; y < 5; y++) {
+      for (let x = -1; x <= 1; x++) {
+        const vox = new THREE.Mesh(innerGeo, innerMat);
+        vox.position.set(x * 0.3, y * 0.3, 0);
+        this.innerFigure.add(vox);
+      }
+    }
+    this.innerFigure.visible = false;
+    this.mesh.add(this.innerFigure);
+
+    // Chrome shield ring (8 orbiting cubes, cosmetic)
+    const ringGeo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xeeeeff, fog: false });
+    for (let i = 0; i < 8; i++) {
+      const cube = new THREE.Mesh(ringGeo, ringMat);
+      cube.userData.ringAngle = (i / 8) * Math.PI * 2;
+      this.shieldRing.push(cube);
+      this.mesh.add(cube);
+    }
+
+    const hitbox = new THREE.Mesh(
+      getHitboxGeo(2.4, 2.4, 2.4),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    );
+    hitbox.userData.isBossHitbox = true;
+    this.mesh.add(hitbox);
+  }
+
+  _playerWeaponStats(hand) {
+    const weaponId = game.mainWeapon?.[hand] || 'standard_blaster';
+    const upgrades = game.upgrades?.[hand] || {};
+    let stats = getWeaponStats(weaponId, upgrades);
+    if (!stats) {
+      stats = getWeaponStats('standard_blaster', {});
+    }
+    return { weaponId, stats };
+  }
+
+  // Fire a mirror volley for one hand: projectiles mimic the player's weapon
+  _fireMirrorWeapon(hand, playerPos, now) {
+    const { weaponId, stats } = this._playerWeaponStats(hand);
+    const dmg = Math.max(1, Math.round((stats.damage || 1) * this.weaponDamageMult));
+    const origin = this.getWorldFireOrigin(hand);
+
+    const fireBolt = (target, dmgOverride) => {
+      spawnBossProjectile(origin.clone(), target.clone(), false, 0, dmgOverride ?? dmg);
+    };
+
+    if (weaponId === 'buckshot') {
+      for (let i = 0; i < 6; i++) {
+        const spread = new THREE.Vector3(
+          playerPos.x + (Math.random() - 0.5) * 1.6,
+          playerPos.y + (Math.random() - 0.5) * 1.2,
+          playerPos.z,
+        );
+        fireBolt(spread, Math.max(1, Math.round(dmg * 0.7)));
+      }
+    } else if (weaponId === 'seeker_burst') {
+      for (let i = 0; i < 3; i++) {
+        const spread = new THREE.Vector3(
+          playerPos.x + (i - 1) * 1.1,
+          playerPos.y,
+          playerPos.z,
+        );
+        fireBolt(spread, Math.max(1, Math.round(dmg * 0.7)));
+      }
+    } else if (weaponId === 'charge_cannon') {
+      fireBolt(playerPos, Math.round(dmg * 1.5)); // one devastating shot
+    } else if (weaponId === 'plasma_carbine' || weaponId === 'lightning_rod') {
+      for (let i = 0; i < 3; i++) {
+        const spread = new THREE.Vector3(
+          playerPos.x + (Math.random() - 0.5) * 1.2,
+          playerPos.y + (Math.random() - 0.5) * 1.0,
+          playerPos.z,
+        );
+        fireBolt(spread, Math.max(1, Math.round(dmg * 0.8)));
+      }
+    } else {
+      fireBolt(playerPos); // standard blaster: single bolt
+    }
+  }
+
+  getWorldFireOrigin(hand) {
+    const origin = new THREE.Vector3();
+    this.mesh.getWorldPosition(origin);
+    origin.y += 0.4;
+    origin.x += (hand === 'right' ? 0.7 : -0.7);
+    return origin;
+  }
+
+  _fireMirrorVolley(playerPos, now) {
+    if (this.phase >= 2) {
+      // Both hands
+      this._fireMirrorWeapon('left', playerPos, now);
+      this._fireMirrorWeapon('right', playerPos, now);
+    } else {
+      // Alternate hands per volley
+      const hand = Math.floor(now / 1000) % 2 === 0 ? 'left' : 'right';
+      this._fireMirrorWeapon(hand, playerPos, now);
+    }
+  }
+
+  _spawnAfterimages(playerPos, now) {
+    for (let i = 0; i < 3; i++) {
+      const mesh = new THREE.Mesh(
+        getGeo(0.22),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, fog: false }),
+      );
+      const angle = this.orbitAngle + (i - 1) * 0.8;
+      mesh.position.set(
+        playerPos.x + Math.cos(angle) * 9,
+        1.6,
+        playerPos.z + Math.sin(angle) * 9,
+      );
+      this.sceneRef.add(mesh);
+      this.afterimages.push({ mesh, fireAt: now + 500 + i * 150, fired: false, born: now, liveUntil: now + 1500 });
+    }
+  }
+
+  _updateAfterimages(dt, now, playerPos) {
+    for (let i = this.afterimages.length - 1; i >= 0; i--) {
+      const ai = this.afterimages[i];
+      if (now >= ai.fireAt && !ai.fired) {
+        ai.fired = true;
+        spawnBossProjectile(ai.mesh.position.clone(), playerPos.clone(), false, 0, 4);
+      }
+      if (now >= ai.liveUntil) {
+        this.sceneRef.remove(ai.mesh);
+        ai.mesh.geometry.dispose();
+        ai.mesh.material.dispose();
+        this.afterimages.splice(i, 1);
+      }
+    }
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    // Phases
+    const hpRatio = this.hp / this.maxHp;
+    if (hpRatio <= 0.33 && this.phase !== 3) {
+      this.phase = 3;
+      this.mirrorFireInterval = 0.93; // 1.5x faster
+      playMirrorShatterSound();
+    } else if (hpRatio <= 0.66 && this.phase !== 2) {
+      this.phase = 2;
+      this.innerFigure.visible = true;
+      playMirrorShatterSound();
+    }
+
+    // Orbit
+    this.orbitAngle += dt * 0.4;
+    const target = new THREE.Vector3(
+      playerPos.x + Math.cos(this.orbitAngle) * 10.5,
+      this.fixedY + Math.sin(now * 0.0012) * 0.7,
+      playerPos.z + Math.sin(this.orbitAngle) * 10.5,
+    );
+    this.mesh.position.lerp(target, Math.min(1, dt * 1.4));
+
+    // Shield ring spins
+    for (const cube of this.shieldRing) {
+      cube.userData.ringAngle += dt * 1.6;
+      cube.position.set(
+        Math.cos(cube.userData.ringAngle) * 1.6,
+        Math.sin(cube.userData.ringAngle * 0.7) * 1.2,
+        Math.sin(cube.userData.ringAngle) * 1.6,
+      );
+    }
+
+    // Phase 2: blink teleport every 4s
+    if (this.phase >= 2) {
+      this.blinkTimer -= dt;
+      if (this.blinkTimer <= 0) {
+        this.blinkTimer = 4.0;
+        const blinkAngle = Math.random() * Math.PI * 2;
+        this.mesh.position.set(
+          playerPos.x + Math.cos(blinkAngle) * 9,
+          this.fixedY,
+          playerPos.z + Math.sin(blinkAngle) * 9,
+        );
+        if (this.telegraphing) {
+          this.telegraphing.start('teleport', 0.5, 0xffffff, this.mesh.position.clone());
+        }
+      }
+    }
+
+    // Phase 3: afterimages
+    if (this.phase >= 3) {
+      this.afterimageTimer -= dt;
+      if (this.afterimageTimer <= 0) {
+        this.afterimageTimer = 8.0;
+        this._spawnAfterimages(playerPos, now);
+      }
+    }
+    this._updateAfterimages(dt, now, playerPos);
+
+    // Mirror fire volleys
+    this.mirrorFireTimer -= dt;
+    if (this.mirrorFireTimer <= 0) {
+      this.mirrorFireTimer = this.mirrorFireInterval;
+      this._fireMirrorVolley(playerPos, now);
+    }
+
+    this.mesh.lookAt(playerPos);
+  }
+
+  destroy() {
+    for (const ai of this.afterimages) {
+      this.sceneRef.remove(ai.mesh);
+      ai.mesh.geometry.dispose();
+      ai.mesh.material.dispose();
+    }
+    this.afterimages = [];
+    super.destroy();
+  }
+}
+
 // ── CONDUCTOR ASCENDANT (Issue #170) ───────────────────────
 // Tier 3 boss that never attacks directly — it conducts choreographed
 // formations of real enemies. 80% shield until a movement is disrupted
@@ -12438,6 +12699,26 @@ const BOSS_DEFS = {
     chompExposeTime: 0.8,
   },
 
+  // Issue #197: Tier 2 alternative boss that fires exact copies of YOUR
+  // weapons (70% damage). Phase 2: both hands + blink. Phase 3: 1.5x rate.
+  mirror_gauntlet: {
+    name: 'MIRROR GAUNTLET',
+    pattern: [[1]], // Custom chrome sphere built in the class
+    voxelSize: 0.25,
+    baseHp: 2600,
+    phases: 3,
+    color: 0xccccee,
+    scoreValue: 200,
+    behavior: 'mirror',
+    hitboxRadius: 1.0,
+    weakPoints: false,
+    weaponDamageMult: 0.7,
+    orbitDistance: 11,
+    dashInterval: 4.0,
+    afterimageCount: 3,
+    afterimageInterval: 8.0,
+  },
+
   // The Prism (Level 10, replaces tier 2 pool)
   the_prism: {
     name: 'The Prism',
@@ -12707,6 +12988,9 @@ export function spawnBoss(bossId, levelConfig, camera) {
       break;
     case 'maw':
       boss = new MawBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'mirror':
+      boss = new MirrorGauntletBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
     default:
       boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);
@@ -13350,7 +13634,7 @@ function computeLobbedVelocity(fromPos, targetPos, arcHeight = 3.5, speed = 6.0)
   };
 }
 
-export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeight = 3.5) {
+export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeight = 3.5, damage = 1) {
   // Don't spawn if no active boss (prevents leaked projectiles during transitions)
   if (!activeBoss) return;
 
@@ -13401,8 +13685,8 @@ export function spawnBossProjectile(fromPos, targetPos, lobbed = false, arcHeigh
     homingStrength,
     wigglePhase: Math.random() * Math.PI * 2,
     wiggleAmplitude,
-    damage: 1,
-    explosionDamage: 1,
+    damage: damage || 1,
+    explosionDamage: damage || 1,
     explosionRadius: 0.3,
     hitRadius: 0.8,
     minFlightTime: lobbed ? 0 : 0.3,
