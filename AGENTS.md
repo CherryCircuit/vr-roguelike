@@ -269,6 +269,8 @@ Ask for clarification when:
 - **mastery.js** - weapon mastery persistence and tier math (see §17)
 - **eclipse.js** - Eclipse Engine corruption layer (#172); `initEclipseSystem(deps)` pattern;
   pure `applyEclipseToStats(stats, ids)` transform — never import game state directly
+- **threat-compass.js** - ground-glow threat indicator (#206); `initThreatCompass(deps)` pattern;
+  shader lobes + biome tint; zero per-frame allocations (scratch Float32Array)
 - **beam-weapons.js / projectile-system.js / alt-weapons.js** - extracted modules, use the
   `initX(deps)` dependency-injection pattern (see §17)
 - **hud.js** - sprite-based UI (use existing createTextSprite pattern)
@@ -424,7 +426,7 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 
 **Server** (tests hit `http://localhost:8000/dev.html`): `python3 -m http.server 8000`
 
-**All 13 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
+**All 14 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
 - `test-bugfixes.cjs` — boot + 15s gameplay + reset loop
 - `test-timer-cleanup.cjs` — charge cannon + triple-shot timer
 - `test-audio-pack.cjs` — reactive music stems + threat emitters
@@ -439,6 +441,8 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 - `test-eclipse.cjs` — Eclipse Engine upgrade corruption (#172): pure transform,
   50% HP trigger, escalation, shock counterplay, fire-pipeline damage, HUD warning,
   self-damage drains + crit reflect
+- `test-threat-compass.cjs` — ground-glow threat indicator (#206): mesh wiring,
+  state visibility, lobe math vs real enemy positions, zero-lobe case, biome tint
 
 **Known quirks:**
 - **Run suites individually, not back-to-back in one shell loop** — batch runs flake on
@@ -487,9 +491,9 @@ or verify the live site directly:
   on the live site — always ask "does this reference a dev-only global?" after
   extracting code. The identifier sweep (`verify-module-identifiers.mjs`) automates this.
 - **Extracted modules** (beam-weapons, projectile-system, alt-weapons, boss-death-
-  cinematic, eclipse) use the `initX(deps)` dependency-injection pattern, called from
-  main.js init. Live-binding exports (arrays, objects) are mutated in place, not
-  reassigned.
+  cinematic, eclipse, threat-compass) use the `initX(deps)` dependency-injection
+  pattern, called from main.js init. Live-binding exports (arrays, objects) are
+  mutated in place, not reassigned.
 - **mastery.js**: per-weapon kill counts persisted in localStorage under
   `spaceomicide_mastery` (debounced 5s writes + flush on level advance; in-memory
   fallback when storage is unavailable — never throw from this module).

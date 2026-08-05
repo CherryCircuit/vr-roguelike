@@ -28,6 +28,7 @@ and module architecture rules live in AGENTS.md §16-17.
 | `weapons.js` | ~1,210 | Weapon/upgrade defs, `getWeaponStats(weaponId, upgrades)`, **`detectSynergies`**, **`MASTERY_CARDS`** |
 | `mastery.js` | ~110 | Per-weapon mastery: tier math, localStorage persistence, best-mastery helper |
 | `eclipse.js` | ~340 | Eclipse Engine corruption layer (#172): eclipse state, `applyEclipseToStats`, drains, purge |
+| `threat-compass.js` | ~300 | Ground-glow threat indicator (#206): shader lobes, biome tint, scratch-buffer lobes |
 | `game.js` | ~616 | Central state (`game` object incl. `game.synergies`), resetGame, hooks |
 | `audio.js`, `hud.js`, `damage-numbers.js`, `voxel-debris.js`, `stasis.js`, `boss-death-cinematic.js` | | Supporting modules |
 
@@ -37,49 +38,38 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 
 ## DONE THIS SESSION (chronological, all pushed to `main`)
 
-1. **`<TBD-COMMIT>` — #172 Eclipse Engine Phase 2** (upgrade corruption; current HEAD):
-   the final boss now corrupts your upgrades during the back half of the fight.
-   - **New module `eclipse.js`** (`initEclipseSystem(deps)` DI pattern, §17): effect
-     defs, active-eclipse state, pure `applyEclipseToStats(stats, eclipseIds)`
-     transform (no-op same-ref when clean), self-damage drains, purge. Never imports
-     game state — all deps injected.
-   - **Boss layer in `EclipseEngineBoss`** (enemies.js): SEPARATE from the existing
-     phase 1/2/3 structure — activates at 50% HP on top of the current phase
-     (purple shell tint while active). Escalation: 50-33% = 12s/10s/1 stack,
-     33-14% = 10s/10s/2, last stand <14% = 8s/12s/2. SHOCK status hits on the boss
-     extend the interval +3s for 4s (counterplay). Purges on boss death/destroy.
-   - **Effects (eclipsable = universal stat upgrades only, never mastery cards or
-     weapon-specific)**: damage upgrades → 30% damage penalty; barrel/turbo → 70%
-     slower fire; double/triple shot → projectiles halve + veer 14-34° random
-     (stats.eclipsedScatter read in fireMainWeapon); crit → 15% of crits reflect 1
-     HP back at the player (projectile-system handleHit/handleBossHit) and lose
-     the crit; pierce/overcharge → piercing sealed; vampiric/life_steal → no
-     healing + 1 HP drain/2s; fire/shock/freeze → status ammo stripped + 1 HP
-     drain/2s (capped 2/tick ≈ 1 dmg/s max).
-   - **Fire pipeline**: `computeWeaponStats(hand)` wrapper in main.js replaces all 9
-     fire-time `getWeaponStats` call sites; beams/charge/evolved weapons receive the
-     same corrupted stats. Alt weapons (nukes, shields…) are intentionally NOT
-     covered.
-   - **HUD**: `showEclipseWarning`/`updateEclipseWarning`/`hideEclipseWarning`
-     sprite banner on its own camera-attached group with 1s-countdown re-render
-     (not the issue's DOM sketch — VR HUD is all sprites). Purge = white
-     `triggerStyleFlash` + bright pop sound.
-   - **Audio**: 4 new procedural sounds in audio.js (`playEclipsePhase2StartSound`,
-     `playEclipseCorruptSound`, `playEclipsePurgeSound`, `playEclipseSelfDamageSound`).
-     No continuous drone loop — looping oscillators add frame-budget risk for
-     marginal payoff.
-   - **Wrist-hologram corruption tint SKIPPED** (deviation from plan): wrist
-     holograms only render during UPGRADE_SELECT, never during the boss fight, so
-     the tint would have been dead code. The corrupted-upgrade indicator lives in
-     the HUD warning banner instead.
-   - New test `test-eclipse.cjs` (pure transform + purity, pickEclipseTarget,
-     50% HP trigger, scheduler auto-trigger, escalation, shock window, purge on
-     destroy, real fired-projectile damage 25↔35 revert, HUD visibility/countdown/
-     expiry, drains, crit reflect). Verified: all 13 suites green (test-evolution
-     flaked once, green on solo re-run — known quirk), deploy-sim clean on :8015,
-     verify-deploy-assets resolves eclipse.js.
+1. **`<TBD-COMMIT>` — #206 Threat Compass** (ground glow; current HEAD): a subtle
+   pulsing glow on the floor beneath the player that shifts toward the nearest
+   dangers — diegetic spatial awareness for VR (no minimap/arrow UI).
+   - **New module `threat-compass.js`** (`initThreatCompass(deps)` DI pattern, §17):
+     8m disc on the biome floor, custom ShaderMaterial. Up to 8 gaussian lobes
+     (angle+intensity) computed each frame from the live enemy list via a scratch
+     `Float32Array` insertion sort — zero per-frame allocations (VR-CRITICAL).
+   - **Shader**: fixed-size loop (no `break` — WebGL1/2-safe on Quest; the GLSL
+     reserved word `active` broke compile, renamed to `lobeGate`); amber→red color
+     ramp by closest-threat intensity; pulse speed scales with closeness; alpha
+     capped 0.35.
+   - **Integration** (main.js): init at boot; per-frame update in the PLAYING
+     branch after the enemy/spatial-hash pass; `setThreatCompassVisible(st ===
+     PLAYING)` each frame (hidden on title/upgrades/pause/game-over); mesh tracks
+     camera XZ + `getBiomeFloorY()`; biome tint via `setThreatCompassTheme(biomeId)`
+     in `applyThemeForLevel` (synthwave pink / desert blue-white / alien toxic
+     green / hellscape volcanic orange).
+   - **Audio synergy NOT needed**: #184 threat spatial audio already covers the
+     audio warning layer — no new sounds.
+   - New test `test-threat-compass.cjs` (mesh exists + visible in PLAYING, hidden
+     in PAUSED + restores, lobe count/angles/intensity ordering vs real enemy
+     positions, zero-lobe case, biome tint, zero console errors). Verified: all 14
+     suites green, deploy-sim clean on :8016, verify-deploy-assets resolves
+     threat-compass.js.
 
 ## RECENTLY COMPLETED (prior sessions, all on `main`)
+
+- **#172 Eclipse Engine Phase 2** (`c355a56`, `bbd8ff1`): eclipse.js corruption
+  layer — the final boss eclipses your universal upgrades below 50% HP (damage
+  penalty, slower fire, projectile scatter, crit reflect, vampiric/status
+  self-drain), escalating intervals + SHOCK counterplay, HUD warning banner with
+  countdown, 4 new sounds, test-eclipse.cjs.
 
 - **#213 Weapon Mastery** (`de882a3`): mastery.js tiers (Novice→Master), six mastery
   cards, kill tracking, game-over title, RESET MASTERY setting, test-mastery.cjs.
@@ -127,6 +117,12 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
    `node tests/automation/deploy-sim-check.cjs https://spaceomicide.vercel.app`
    (parameterized in `e23f9f6`). Version stamp is auto-generated at build time
    (`scripts/stamp-version.mjs` via vercel.json) in Pacific time.
+9. **GLSL reserved words bite silently** — `active` is reserved in GLSL ES 3.00
+   (and rejected by some WebGL1 compilers): the threat-compass shader failed to
+   compile with `'active' : Illegal use of reserved word` and THREE only logged it
+   via the console, while the mesh still rendered black and uniform assertions
+   still passed. When a shader "works but is black", dump the FULL console error
+   and check for reserved identifiers (`active`, `attribute`, `varying`…).
 
 ## TESTING WORKFLOW (the gate before every commit)
 
@@ -135,8 +131,9 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 2. Run each suite individually (~30-90s each, puppeteer headless):
    `node tests/automation/<suite>.cjs` for: test-bugfixes, test-timer-cleanup,
    test-audio-pack, test-elemental, test-synergy, test-tank-hit, test-upgrade-preview,
-   test-alchemy, test-evolution, test-dualwield, test-style, test-mastery, test-eclipse.
-   (13 suites total. Do NOT chain them in one shell loop — see Critical Lessons #2.)
+   test-alchemy, test-evolution, test-dualwield, test-style, test-mastery, test-eclipse,
+   test-threat-compass.
+   (14 suites total. Do NOT chain them in one shell loop — see Critical Lessons #2.)
 3. Static checks: `node --check <touched files>`,
    `node scripts/verify-module-identifiers.mjs`,
    `node scripts/verify-deploy-assets.mjs` (deploy-affecting changes only).
@@ -151,17 +148,16 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 ## ROADMAP STATUS
 
 **Done:** #204 · #142+#184 · #196 Phases 1-3 · #216 · #211 · #215 · #185 · #143 ·
-#189 · #218 · #213 weapon mastery · **#172 Eclipse Engine Phase 2 (this session)** ·
-deploy/stability fixes.
+#189 · #218 · #213 weapon mastery · #172 Eclipse Engine Phase 2 · **#206 Threat
+Compass (this session)** · deploy/stability fixes.
 
 **Remaining packs (recommended order):**
-1. **#206 Threat Compass** (S) — quick standalone win, any time.
-2. **#196 Phases 4-5** (game flow/input + environment extraction) — lower value; main.js
+1. **#196 Phases 4-5** (game flow/input + environment extraction) — lower value; main.js
    is now mostly flow orchestration.
-3. **Deferred combos (flagged in #211/#218 commits)**: weapon-specific combos (Tesla
+2. **Deferred combos (flagged in #211/#218 commits)**: weapon-specific combos (Tesla
    Tower, Final Solution, Swarm Leader), kill-chain combos (Soul Chain, Pinball Wizard,
    Momentum), HUD icon glow.
-4. **Back of the line (from earlier triage):** new enemies/bosses (#199, #198, #171,
+3. **Back of the line (from earlier triage):** new enemies/bosses (#199, #198, #171,
    #169, #167, #170, #168, #197, #200), #138 Breach Events, #139 Void Marks, #210
    Constellation Map, #212 Lore, #183 Death Haiku, #209 Death Panorama, #201 Phase
    Echoes, #178/#177 death effects, #179/#208/#180 atmosphere, #191 Rhythm Core, #190
@@ -178,11 +174,12 @@ recent features) — this file is the single source of truth for project state.
 
 ## QUICK-START CHECKLIST FOR THE NEXT SESSION
 
-1. `git pull` / verify HEAD is the #172 commit (see DONE THIS SESSION).
-2. `python3 -m http.server 8000 &` then run all 13 test suites individually to confirm
+1. `git pull` / verify HEAD is the #206 commit (see DONE THIS SESSION).
+2. `python3 -m http.server 8000 &` then run all 14 test suites individually to confirm
    green baseline (see Testing Workflow).
 3. Read `AGENTS.md` if you haven't (auto-loaded; §16-17 cover automation + modules).
-4. Pick the next pack (recommended: #206 Threat Compass — the last S-sized standalone
-   win). Explore the eclipse.js DI pattern + EclipseEngineBoss corruption layer as the
-   most recent boss-flow reference before writing code.
+4. Pick the next pack (recommended: #196 Phases 4-5, or a deferred combo from
+   #211/#218 — the remaining queue is all lower-value extraction/polish items).
+   threat-compass.js is the most recent example of a small self-contained
+   `initX(deps)` module with a shader + scratch buffers.
 5. Follow the Testing Workflow above before every commit.

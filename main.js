@@ -175,6 +175,10 @@ import {
   initEclipseSystem, updateEclipse, purgeAllEclipses,
   getActiveEclipseIds, applyEclipseToStats,
 } from './eclipse.js';
+// Threat Compass (Issue #206): ground glow pointing at nearest dangers
+import {
+  initThreatCompass, updateThreatCompass, setThreatCompassVisible, setThreatCompassTheme,
+} from './threat-compass.js';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
@@ -1813,6 +1817,16 @@ function init() {
     playEclipseSelfDamageSound,
   });
 
+  // Init threat compass (Issue #206): ground glow toward nearest dangers.
+  // getFloorY resolves the biome floor each frame so the disc tracks the
+  // current arena's floor height.
+  initThreatCompass({
+    scene,
+    getEnemies,
+    getCamera: () => camera,
+    getFloorY: getBiomeFloorY,
+  });
+
   // Init subsystems
   initEnemies(scene);
   setCameraRef(camera);
@@ -2620,8 +2634,12 @@ function applyThemeForLevel(level) {
     starsBiomeId = biomeId;
   }
 
+  // Rebuild biome scene + lighting for the level
   rebuildBiomeScene(biome, theme);
   applyBiomeLighting(biome);
+
+  // Issue #206: recolor the threat-compass glow to match the new biome
+  setThreatCompassTheme(biomeId);
 
   applyEnvironmentFade(environmentFade);
 }
@@ -6096,6 +6114,10 @@ function render(timestamp) {
     game.state = st;
   }
 
+  // Issue #206: threat compass renders only during active combat — hidden
+  // on the title, upgrade screens, pause, game over, etc.
+  setThreatCompassVisible(st === State.PLAYING);
+
   // Reactive music ducking (Issue #142) — runs outside the state dispatch so
   // stem targets always match the current state (drums stop on the upgrade
   // screen, intensity swells for bosses, everything ducks on the title).
@@ -6636,6 +6658,10 @@ function render(timestamp) {
       }
     }
     _mark('enemy_update'); // ── end: enemy updates + spatial hash
+
+    // Issue #206: threat compass lobes from the freshly-updated enemy
+    // positions (cheap: one pass + 8-slot insertion sort into scratch)
+    updateThreatCompass(dt, now);
 
     // Fix 1.9: Profile boss updates
     profiler.mark('boss');
