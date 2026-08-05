@@ -46,7 +46,7 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 A marathon session — every commit below is verified with its own puppeteer suite
 (now 26 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
 
-0. **`<<NEXT>>` — post-marathon bugfix trio** (three real production bugs found by
+0. **`2e10f9b` — post-marathon bugfix trio** (three real production bugs found by
    the player, all rooted in the #196 extraction + stale biome Y coordinates):
    - **Black title screen + logo/version overlap**: `applyThemeForLevel(1)` ran
      BEFORE `initEnvironment()` wired `_deps.scene`, so the boot-time biome build
