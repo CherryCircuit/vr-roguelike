@@ -1749,9 +1749,12 @@ function init() {
   }
 
   // Build world
+  // NOTE: applyThemeForLevel(1) must run AFTER initEnvironment() below —
+  // the extracted module (#196 Phase 5) only builds the biome when its
+  // deps.scene is wired. Running it here (pre-init) silently skipped the
+  // synthwave scene at boot, leaving the title screen black with the
+  // camera at y=0 (3D title logo overlapped the HTML logo/version).
   createEnvironment();
-  applyThemeForLevel(1);
-  applyEnvironmentFade(0);
   setupControllers();
 
   // Init boss death cinematic module with dependencies
@@ -1869,6 +1872,13 @@ function init() {
     getVisualTuning,
     sceneYOffset: SCENE_Y_OFFSET,
   });
+
+  // CRITICAL: initial theme must be applied AFTER initEnvironment wires the
+  // scene dep (see the note at createEnvironment above). This builds the
+  // synthwave backdrop behind the title screen and lets the per-frame
+  // synthwave camera-height clamp (desktop) take effect.
+  applyThemeForLevel(1);
+  applyEnvironmentFade(0);
 
   // Init flow countdowns (Issue #196 Phase 4): ready + pause 3-2-1 machines.
   // Completion callbacks own the actual state transitions.

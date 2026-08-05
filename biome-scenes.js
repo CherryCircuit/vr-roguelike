@@ -119,22 +119,18 @@ export function rebuildBiomeScene(deps) {
 
 /**
  * Get the physics floor Y for current biome (matches visual floor HUD height)
- * @param {string} biomeSceneBiome - Current biome ID
- * @param {number} SCENE_Y_OFFSET - Scene Y offset constant
- * @returns {number} Floor Y position
+ * All biome scene groups are normalized so their floor SURFACE sits at world
+ * y=0 (floor HUD at y=0 sits flush; desktop camera clamp = 1.6 eye height).
+ * The old per-biome constants + SCENE_Y_OFFSET mirrored the pre-normalization
+ * group positions (legacy Needle coords) and returned ~-0.6..-0.9 — 0.6m
+ * BELOW the visible floor, which buried the threat compass, boss debris,
+ * The Maw's floor tiles, and the floor-planting bombardier/void-anchor.
+ * @param {string} biomeSceneBiome - Current biome ID (kept for signature compat)
+ * @param {number} SCENE_Y_OFFSET - Legacy scene offset (kept for compat)
+ * @returns {number} Floor Y position (always 0.0)
  */
 export function getBiomeFloorY(biomeSceneBiome, SCENE_Y_OFFSET) {
-  const floorY = (() => {
-    switch (biomeSceneBiome) {
-      case 'synthwave_valley': return 0.10;
-      case 'desert_night': return -0.20;
-      case 'alien_planet': return -0.28;
-      case 'hellscape_lava': return 0.05;
-      default: return 0.05;
-    }
-  })();
-  // Apply scene Y offset for VR camera height fix
-  return floorY + SCENE_Y_OFFSET;
+  return 0.0;
 }
 
 /**

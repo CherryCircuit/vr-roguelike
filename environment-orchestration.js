@@ -709,7 +709,8 @@ function rebuildBiomeScene(biomeId, theme) {
 }
 
 // Get physics floor Y for current biome (matches visual floor HUD height)
-// [CORE] Get biome floor Y coordinate
+// [CORE] Get biome floor Y coordinate — all biome floors are normalized to
+// world y=0, so this returns 0.0 (biomeSceneBiome kept for signature compat).
 export function getBiomeFloorY() {
   return getBiomeFloorYModule(biomeSceneBiome, _deps.sceneYOffset);
 }

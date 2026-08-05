@@ -10,7 +10,11 @@ import { bakeCloudsToCanvas } from '../bake-clouds.js';
 export function buildAlienPlanetScene(group, deps) {
   const { registerFadeMaterial, floorMaterial, biomeTerrainMaterials, synthVisualRefs } = deps;
   const floorHeight = (floorMaterial && floorMaterial.userData && floorMaterial.userData.floorHeight) || -0.01;
-  const floorY = floorHeight - 0.3; // Move everything down 0.3 units to fix floor HUD being under floor
+  // floorY is the group-LOCAL ground height. The -0.3 lowers the ground
+  // planes inside the group (river channel etc.); the group's own Y offset
+  // (+0.31, see bottom) lifts the surface to world y=0 so it matches every
+  // other biome's floor plane.
+  const floorY = floorHeight - 0.3;
 
   // Ground plane split into LOD: near (high-detail with shader) + far (simple flat)
   // Uses a simple ShaderMaterial with cheap hash-based noise instead of flat MeshLambertMaterial
@@ -746,6 +750,9 @@ export function buildAlienPlanetScene(group, deps) {
 
   group.rotation.y = -0.062; // yaw: 3.55°
 
-  // Alien floor HUD height: group.position.y = -0.28
-  group.position.set(6.628, -0.28, -13.926);
+  // Alien floor normalized to world y=0 (was -0.28; the near/far ground
+  // planes ride floorY = -0.31 inside the group, so +0.31 puts the surface
+  // at 0.0 like every other biome — floor HUD sits flush, camera eye
+  // height stays constant across biome transitions).
+  group.position.set(6.628, 0.31, -13.926);
 }

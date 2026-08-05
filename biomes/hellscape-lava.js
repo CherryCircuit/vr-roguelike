@@ -473,9 +473,12 @@ varying vec3 vPosition; varying float vElevation; uniform float uTime;`);
     // (Flame pillar animation removed)
   };
 
-  // Hellscape floor HUD height: group.position.y = 0.05
+  // Hellscape floor normalized to world y=0 (was -1.55) so the player's
+  // feet sit on the valley floor ("riverbanks") and the floor HUD at y=0
+  // sits flush — same invariant as every other biome. The lava river
+  // channel stays carved below the floor surface.
   // Shifted -Z so corridor is in front of player (player looks down -Z)
-  group.position.set(11.599, -1.55, -42.0);
+  group.position.set(11.599, 0.01, -42.0);
   group.rotation.y = 0.248; // yaw: 14.21°
 }
 

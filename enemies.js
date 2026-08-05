@@ -2497,9 +2497,15 @@ export function collectVoidAnchors() {
 // Void Anchor AI: drift to plant target → plant → grow the well → pulse
 function updateVoidAnchor(e, dt, now, playerPos) {
   if (!e.anchorPlanted) {
-    // Choose the planting spot once: 8-14m from the PLAYER at a random angle
+    // Choose the planting spot once: 8-14m from the PLAYER, biased toward
+    // the player's forward arc (anchors used to plant at a fully random
+    // angle and drifted off to the side/behind the player, reading as a
+    // broken enemy). The anchor drifts toward its spawn bearing (±30°),
+    // and spawns already come from the front arc via getSpawnPosition.
     if (!e.anchorPlantTarget) {
-      const angle = Math.random() * Math.PI * 2;
+      const toSpawn = Math.atan2(e.mesh.position.z - playerPos.z, e.mesh.position.x - playerPos.x);
+      const jitter = (Math.random() - 0.5) * (Math.PI / 3); // ±30°
+      const angle = toSpawn + jitter;
       const dist = e.anchorPlantDistMin + Math.random() * (e.anchorPlantDistMax - e.anchorPlantDistMin);
       e.anchorPlantTarget = new THREE.Vector3(
         playerPos.x + Math.cos(angle) * dist,

@@ -448,9 +448,12 @@ export function buildDesertNightScene(group, deps) {
   moonGroup.position.set(-45, 35, -60);
   group.add(moonGroup);
 
-  // Desert floor HUD height: Y = -0.20, rotated 25 degrees (-0.436 rad)
+  // Desert floor normalized to world y=0 so the floor HUD (y=0) sits flush
+  // and the player-camera eye height stays constant across biome transitions
+  // (synthwave floor is also at 0.0). The dunes' flat center then lands
+  // exactly at floor level. rotated 25 degrees (-0.436 rad)
   group.rotation.y = -0.436; // yaw: -25 degrees
-  group.position.set(-2.12, -0.20, -4.82);  // Moved 5 units +X and +Z
+  group.position.set(-2.12, 0.01, -4.82);  // Moved 5 units +X and +Z
 
 
 

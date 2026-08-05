@@ -46,6 +46,28 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 A marathon session — every commit below is verified with its own puppeteer suite
 (now 26 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
 
+0. **`<<NEXT>>` — post-marathon bugfix trio** (three real production bugs found by
+   the player, all rooted in the #196 extraction + stale biome Y coordinates):
+   - **Black title screen + logo/version overlap**: `applyThemeForLevel(1)` ran
+     BEFORE `initEnvironment()` wired `_deps.scene`, so the boot-time biome build
+     was a silent no-op — the camera sat at y=0 and the 3D title logo projected
+     onto the HTML logo/version zone. Moved the theme apply to after initEnvironment.
+   - **Bombardier plants below the floor / compass & boss debris buried**:
+     `getBiomeFloorY()` returned `floorY + SCENE_Y_OFFSET` with stale per-biome
+     constants (~-0.6..-0.9) — 0.6m BELOW the actual visual floors, so floor-
+     planting enemies (bombardier, void anchor, The Maw tiles), the threat
+     compass disc, and boss debris all sank under the ground.
+   - **Synthwave→Desert camera/floor mismatch**: biome group Y positions were
+     legacy Needle coords (desert -0.20, alien -0.28, hellscape -1.55), leaving
+     each floor at a different world height while the stationary camera stays at
+     eye level. Normalized ALL biome floor surfaces to world y=0 (floor HUD at
+     y=0 "sits flush"; synthwave was already 0.0) and made `getBiomeFloorY()`
+     return 0.0. Also biased the void anchor's plant angle toward the player's
+     forward arc (±30° of spawn bearing instead of a full random 2π) so it
+     stops drifting off to the side.
+     Verified: raycast floor = 0.0 in all 4 biomes; bombardier plants at y=0.2,
+     anchor at y=0.9 in front, compass at floor+0.03; 12 suites + deploy-sim green.
+
 1. **`7825c6c` — #139 Void Marks**: deaths record to localStorage (`void_marks`,
    max 20); future runs at the same level+biome spawn a spectral hologram at the
    death spot. TRIGGER = inherit one random universal upgrade from the ghost run
@@ -184,6 +206,16 @@ A marathon session — every commit below is verified with its own puppeteer sui
     globals — they're just gone locals). Only the runtime caught them. After any
     extraction: `rg` EVERY moved name across main.js (both reads and writes), not
     just the identifiers the sweep checks.
+14. **init-order breaks are silent in extracted modules** — `applyThemeForLevel(1)`
+    ran before `initEnvironment()` and returned early on `!_deps.scene`, so the
+    title screen booted black with zero console errors. When an extracted module
+    is initialized via `initX(deps)`, audit the CALL ORDER of every module
+    function that consumes `_deps` at boot.
+15. **Floor Y is a world-coordinate invariant** — all four biome floor surfaces
+    are now normalized to world y=0 (floor HUD at 0.0 sits flush; camera eye
+    height 1.6; `getBiomeFloorY()` returns 0.0). Never add a per-biome Y offset
+    to a biome group again without re-normalizing its floor to 0.0 — the
+    stationary player's camera can't follow a moving floor.
 
 ## TESTING WORKFLOW (the gate before every commit)
 
