@@ -72,7 +72,7 @@ A marathon session — every commit below is verified with its own puppeteer sui
      delta — no absolute-world-Y authors inside the scenes. Name-collision
      artifacts (GLB clones share mesh names) were ruled out by keying on UUID.
 
-0b. **`<<NEXT>>` — follow-up player-feedback batch** (three small issues):
+0b. **`3bae8bd` — follow-up player-feedback batch** (three small issues):
     - **Void-mark inherit prompt was a giant in-your-face banner** (the old
       `showFloatingMessage` style the UX passes removed): shrunk to a compact
       two-line hint (fontSize 26, scale 0.2, offsetY 0.62, offsetZ -1.3,
