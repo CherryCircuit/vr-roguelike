@@ -107,7 +107,8 @@ import {
   releaseBossProjIndex, clearBossMinions,
   clearAllTelegraphs, spawnHealthGainPopup,
   clearGeometryCaches, setCameraRef, setPulseRingHitCallback,
-  setBombardierConeHitCallback, countActiveBombardiers
+  setBombardierConeHitCallback, countActiveBombardiers,
+  setVoidAnchorPulseCallback, countActiveVoidAnchors
 } from './enemies.js';
 import { getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -1902,6 +1903,19 @@ function init() {
     triggerScreenShake(0.1, 300);
     screenFx.floorFlashing = true;
     screenFx.floorFlashTimer = 0.6;
+    if (dead && game.state === State.PLAYING) endGame(false);
+  });
+  // Issue #198: Void Anchor full-size pulse damage (subtle pressure to
+  // deal with the well) — same damage pipeline as enemy contact
+  setVoidAnchorPulseCallback((damage) => {
+    const dead = applyPlayerDamage(damage);
+    setKilledBy({ type: 'enemy', name: 'VOID ANCHOR', enemyType: 'void_anchor' });
+    triggerHitFlash(true);
+    playDamageSound();
+    screenFx.cameraShake = 0.2;
+    screenFx.cameraShakeIntensity = 0.02;
+    screenFx.originalCameraPos.copy(camera.position);
+    triggerScreenShake(0.08, 250);
     if (dead && game.state === State.PLAYING) endGame(false);
   });
   initHUD(camera, scene);
@@ -5402,6 +5416,13 @@ function spawnEnemyWave(dt) {
       if (type === 'bombardier') {
         const bombardierCap = game.level <= 10 ? 1 : game.level <= 15 ? 2 : 3;
         if (countActiveBombardiers() >= bombardierCap) return;
+      }
+
+      // Void Anchor (Issue #198): cap concurrent gravity wells (1 at 8-11,
+      // 2 at 12+) — overlapping wells make shots impossible to compensate
+      if (type === 'void_anchor') {
+        const anchorCap = game.level <= 11 ? 1 : 2;
+        if (countActiveVoidAnchors() >= anchorCap) return;
       }
 
       // Calculate vertical spawn angle based on level

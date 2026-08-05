@@ -21,7 +21,7 @@ import {
   playHealSound as playBossHealSound,
   playFinalBossSealBreakSound, playFinalBossChargeSound, playFinalBossAscendSound,
   playFinalBossExposeSound, playFinalBossSummonWallSound, playFinalBossReleaseWallSound,
-  playBombardierSpraySound,
+  playBombardierSpraySound, playVoidAnchorPlantSound,
 } from './audio.js';
 // Issue #199: the bombardier plants at the biome floor height (custom biomes
 // sit below y=0). environment-orchestration.js does not import enemies.js —
@@ -196,6 +196,11 @@ const PATTERNS = {
   ],
   bombardier: [
     '111',
+    '1.1',
+  ],
+  void_anchor: [
+    '1.1',
+    '...',
     '1.1',
   ],
 };
@@ -381,6 +386,27 @@ const ENEMY_DEFS = {
     sprayTrackSpeed: 1.5,
     deathExplosionRadius: 2.0,
     deathExplosionDamage: 20,
+  },
+
+  // Issue #198: stationary gravity well that bends the player's aim —
+  // projectiles curve toward it. Purely tactical; no contact damage.
+  void_anchor: {
+    pattern: parsePattern(PATTERNS.void_anchor),
+    voxelSize: 0.30,
+    baseHp: 120,
+    baseSpeed: 0.8,
+    color: 0x6600aa,
+    depth: 1,
+    scoreValue: 18,
+    hitboxRadius: 0.55,
+    telegraphType: 'glow',
+    isVoidAnchor: true,
+    anchorPlantDistMin: 8,
+    anchorPlantDistMax: 14,
+    gravityRadius: 5.0,
+    gravityBendRate: 0.26, // radians per second (~15°/s)
+    growthTime: 8.0,       // seconds to reach full radius
+    pulseDamageInterval: 3.0,
   },
 };
 
@@ -2054,6 +2080,98 @@ export function countActiveBombardiers() {
   return n;
 }
 
+// ── Void Anchor (Issue #198) ───────────────────────────────
+// Stationary gravity well that bends the player's projectiles toward it.
+// Pulse damage at full size flows through _voidAnchorPulseCallback.
+
+let _voidAnchorPulseCallback = null;
+export function setVoidAnchorPulseCallback(fn) { _voidAnchorPulseCallback = fn; }
+
+/** Live void anchor count (main.js wave spawner caps concurrent ones). */
+export function countActiveVoidAnchors() {
+  let n = 0;
+  for (const e of activeEnemies) {
+    if (e.isVoidAnchor && e.hp > 0) n++;
+  }
+  return n;
+}
+
+/**
+ * Collect planted void anchors into a scratch list for projectile bending.
+ * Called per frame from projectile-system BEFORE the projectile loop.
+ * @returns {number} anchor count (entries written into _scratchVoidAnchors)
+ */
+const _scratchVoidAnchors = [];
+export function collectVoidAnchors() {
+  _scratchVoidAnchors.length = 0;
+  for (const e of activeEnemies) {
+    if (e.isVoidAnchor && e.anchorPlanted && e.hp > 0 && e.anchorGravityRadius > 0.1) {
+      _scratchVoidAnchors.push(e);
+    }
+  }
+  return _scratchVoidAnchors;
+}
+
+// Void Anchor AI: drift to plant target → plant → grow the well → pulse
+function updateVoidAnchor(e, dt, now, playerPos) {
+  if (!e.anchorPlanted) {
+    // Choose the planting spot once: 8-14m from the PLAYER at a random angle
+    if (!e.anchorPlantTarget) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = e.anchorPlantDistMin + Math.random() * (e.anchorPlantDistMax - e.anchorPlantDistMin);
+      e.anchorPlantTarget = new THREE.Vector3(
+        playerPos.x + Math.cos(angle) * dist,
+        getBiomeFloorY() + 0.9,
+        playerPos.z + Math.sin(angle) * dist,
+      );
+    }
+    e.mesh.position.lerp(e.anchorPlantTarget, Math.min(1, dt * 2));
+    if (e.anchorGroundRing) {
+      e.anchorGroundRing.position.y = e.mesh.position.y - 0.7;
+      e.anchorGroundRing.rotation.z += dt * 2;
+    }
+    if (e.mesh.position.distanceTo(e.anchorPlantTarget) < 0.3) {
+      e.anchorPlanted = true;
+      e.anchorPlantTime = performance.now();
+      e.anchorGravityRadius = 3.0; // grows from 3m
+      if (e.anchorGroundRing) e.anchorGroundRing.visible = false;
+      if (e.gravitySphere) {
+        e.gravitySphere.visible = true;
+        e.gravitySphere.scale.setScalar(3.0);
+      }
+      playVoidAnchorPlantSound();
+    }
+    return;
+  }
+
+  // Planted: grow the well from 3m to gravityRadius over growthTime
+  const growth = Math.min(1, (now - e.anchorPlantTime) / (e.growthTime * 1000));
+  e.anchorGravityRadius = 3.0 + (e.gravityRadius - 3.0) * growth;
+  if (e.gravitySphere) e.gravitySphere.scale.setScalar(e.anchorGravityRadius);
+
+  // Orbiters circle the core
+  const nowSec = now * 0.001;
+  for (let oi = 0; oi < e.anchorOrbiters.length; oi++) {
+    const orb = e.anchorOrbiters[oi];
+    const a = nowSec * orb.userData.orbitSpeed + orb.userData.orbitPhase;
+    const r = orb.userData.orbitRadius;
+    orb.position.set(
+      Math.cos(a) * r,
+      Math.sin(a * 0.7 + orb.userData.orbitTilt) * 0.4,
+      Math.sin(a) * r,
+    );
+  }
+
+  // At full size: pulse damage every pulseDamageInterval (subtle pressure)
+  if (growth >= 1) {
+    e.anchorPulseTimer += dt;
+    if (e.anchorPulseTimer >= e.pulseDamageInterval) {
+      e.anchorPulseTimer = 0;
+      if (_voidAnchorPulseCallback) _voidAnchorPulseCallback(1);
+    }
+  }
+}
+
 // Build a flat floor wedge (sector of a circle) for the cone visuals
 function buildBombardierConeGeometry(halfAngle, range) {
   const segments = 16;
@@ -3335,6 +3453,22 @@ export function spawnEnemy(type, position, levelConfig) {
     sprayTrackSpeed: def.sprayTrackSpeed || 1.5,
     deathExplosionRadius: def.deathExplosionRadius || 2.0,
     deathExplosionDamage: def.deathExplosionDamage || 20,
+
+    // Void Anchor (Issue #198): stationary gravity well
+    isVoidAnchor: def.isVoidAnchor || false,
+    anchorPlanted: false,
+    anchorPlantTarget: null,
+    anchorPlantTime: 0,
+    anchorGravityRadius: 0,
+    anchorPulseTimer: 0,
+    anchorOrbiters: [],
+    anchorGroundRing: null,
+    anchorPlantDistMin: def.anchorPlantDistMin || 8,
+    anchorPlantDistMax: def.anchorPlantDistMax || 14,
+    gravityRadius: def.gravityRadius || 5.0,
+    gravityBendRate: def.gravityBendRate || 0.26,
+    growthTime: def.growthTime || 8.0,
+    pulseDamageInterval: def.pulseDamageInterval || 3.0,
   };
   enemy._cachedMaterials = [];
   group.traverse(c => {
@@ -3362,6 +3496,42 @@ export function spawnEnemy(type, position, levelConfig) {
     enemy.bombardierConeFlame.visible = false;
     group.add(enemy.bombardierConePreview);
     group.add(enemy.bombardierConeFlame);
+  }
+
+  // Void Anchor (Issue #198): ground-telegraph ring while drifting to its
+  // planting spot + translucent gravity sphere + orbiting particles.
+  if (enemy.isVoidAnchor) {
+    const ringGeo = new THREE.RingGeometry(0.9, 1.1, 32);
+    enemy.anchorGroundRing = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({
+      color: 0xaa44ff, transparent: true, opacity: 0.5, side: THREE.DoubleSide,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    }));
+    enemy.anchorGroundRing.rotation.x = -Math.PI / 2;
+    enemy.anchorGroundRing.visible = true;
+    group.add(enemy.anchorGroundRing);
+
+    const sphereGeo = new THREE.SphereGeometry(1, 20, 14);
+    const sphereMat = new THREE.MeshBasicMaterial({
+      color: 0x6600aa, transparent: true, opacity: 0.12, side: THREE.DoubleSide,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    });
+    enemy.gravitySphere = new THREE.Mesh(sphereGeo, sphereMat);
+    enemy.gravitySphere.visible = false;
+    group.add(enemy.gravitySphere);
+
+    // Shared tiny orbiter geometry; per-anchor materials
+    const orbGeo = new THREE.SphereGeometry(0.07, 8, 6);
+    for (let oi = 0; oi < 6; oi++) {
+      const orb = new THREE.Mesh(orbGeo, new THREE.MeshBasicMaterial({
+        color: 0xcc88ff, transparent: true, opacity: 0.9, fog: false,
+      }));
+      orb.userData.orbitPhase = (oi / 6) * Math.PI * 2;
+      orb.userData.orbitRadius = 0.8 + (oi % 3) * 0.3;
+      orb.userData.orbitSpeed = 1.2 + (oi % 2) * 0.8;
+      orb.userData.orbitTilt = (oi % 2) * 0.9;
+      enemy.anchorOrbiters.push(orb);
+      group.add(orb);
+    }
   }
 
   if (ENABLE_SPAWN_WARP) applySpawnWarp(enemy);
@@ -3473,7 +3643,7 @@ export function updateEnemies(dt, now, playerPos) {
       }
     }
 
-    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier) {
+    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier && !e.isVoidAnchor) {
       e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
     }
 
@@ -3972,6 +4142,12 @@ export function updateEnemies(dt, now, playerPos) {
     // Bombardier (Issue #199): floor-turret that sprays tracking damage cones
     if (e.isBombardier) {
       updateBombardier(e, dt, now, playerPos, dist, speedMod);
+    }
+
+    // Void Anchor (Issue #198): stationary gravity well — drifts, plants,
+    // grows, pulses
+    if (e.isVoidAnchor) {
+      updateVoidAnchor(e, dt, now, playerPos);
     }
 
     // Face player (horizontal only)

@@ -1292,6 +1292,26 @@ export function playEclipsePurgeSound() {
 }
 
 /** Bombardier spray (Issue #199): sustained noise "whoosh" through a rising bandpass. */
+/** Void Anchor planting (Issue #198): low bass thrum — the well "locks in". */
+export function playVoidAnchorPlantSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(55, t);
+  osc.frequency.exponentialRampToValueAtTime(38, t + 0.9);
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.14, t + 0.12);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 1.2);
+}
+
+/** Bombardier spray (Issue #199): sustained noise "whoosh" through a rising bandpass. */
 export function playBombardierSpraySound() {
   const ctx = getAudioContext();
   const t = ctx.currentTime;

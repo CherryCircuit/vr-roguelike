@@ -12,7 +12,7 @@ import { game, State, addScore, trackCrit, trackKill, trackShot, trackShotHit, r
 import {
   getEnemies, getEnemyByMesh, getEnemyCount, getBoss, getBossMinions,
   getBossProjectiles, hitEnemy, hitBoss, hitBossMinion, applyEffects,
-  releaseBossProjIndex, spawnHealthGainPopup,
+  releaseBossProjIndex, spawnHealthGainPopup, collectVoidAnchors,
 } from './enemies.js';
 import {
   playBossProjectileDestroySound, playBuckshotSound, playBuffedHitSound,
@@ -1604,6 +1604,9 @@ const _projectileSegmentStart = new THREE.Vector3();
 const _projectileSegmentEnd = new THREE.Vector3();
 const _projectileClosestPoint = new THREE.Vector3();
 const _projectileBestHitPoint = new THREE.Vector3();
+// Issue #198 Void Anchor gravity bending (filled once per frame)
+const _voidAnchors = [];
+const _voidAnchorDir = new THREE.Vector3();
 
 function enemyNeedsPreciseProjectileHit(enemy) {
   return !!enemy && (enemy.type === 'tank' || enemy.isTrain);
@@ -1619,6 +1622,10 @@ function enemyNeedsPreciseProjectileHit(enemy) {
 // [CORE] Update all projectiles (movement, collision, lifetime)
 function updateProjectiles(dt) {
   const now = performance.now();
+
+  // Issue #198: refresh the planted-anchor list once per frame (max 2 alive)
+  _voidAnchors.length = 0;
+  collectVoidAnchors().forEach(a => _voidAnchors.push(a));
 
   // Perf: rebuild hostile caches once per frame (see declaration notes).
   // Hostile entries in projectiles[]/explosionVisuals[] are rare (boss
@@ -1803,6 +1810,24 @@ function updateProjectiles(dt) {
     }
 
     // Move projectile (apply stasis slow effect)
+    // Issue #198 Void Anchor: bend velocity toward planted wells BEFORE the
+    // movement step (seekers resist — their homing overrides the field)
+    if (_voidAnchors.length > 0) {
+      if (!proj.userData.homingRange || proj.userData.homingRange <= 0) {
+        for (let ai = 0; ai < _voidAnchors.length; ai++) {
+          const a = _voidAnchors[ai];
+          const radius = a.anchorGravityRadius;
+          _voidAnchorDir.subVectors(a.mesh.position, proj.position);
+          const vDist = _voidAnchorDir.length();
+          if (vDist >= radius || vDist < 0.001) continue;
+          const bend = a.gravityBendRate * (1 - vDist / radius) * adjustedDt;
+          const vSpeed = proj.userData.velocity.length();
+          if (vSpeed <= 0.001) continue;
+          _voidAnchorDir.divideScalar(vDist).multiplyScalar(vSpeed);
+          proj.userData.velocity.lerp(_voidAnchorDir, Math.min(1, bend));
+        }
+      }
+    }
     const moveDistance = proj.userData.velocity.length() * adjustedDt;
     if (proj.userData.isHelix) {
       // Issue #143: Twin Helix — parametric double-helix motion around the

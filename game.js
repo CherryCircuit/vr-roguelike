@@ -47,6 +47,7 @@ function getEnemyTypes(level) {
   if (level >= 4) types.push('tank');
   if (level >= 6) types.push('swarm');
   if (level >= 7) types.push('bombardier'); // Issue #199 (capped alive by main.js)
+  if (level >= 8) types.push('void_anchor'); // Issue #198 (capped alive by main.js)
   if (level >= 11) types.push('spiral_swimmer');
   if (level >= 13) types.push('jelly');
   if (level >= 14) types.push('conductor');
