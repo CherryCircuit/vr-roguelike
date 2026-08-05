@@ -41,7 +41,43 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 
 ## DONE THIS SESSION (chronological, all pushed to `main`)
 
-1. **`d516744` + `f7b44d2` — #196 Phases 4-5 (reduced scope)**:
+1. **`e002d02` — Deferred combos (#211/#218)**: all six combos from the #211
+   deferred list + HUD combo glow.
+   - Detected in `detectSynergies` (weapons.js) — weapon-specific upgrade ids
+     imply the weapon, so no weapon arg was needed:
+     `soul_chain` (vampiric+ricochet), `pinball_wizard` (ricochet+pierce/overcharge),
+     `momentum_chain` (overcharge alone), `tesla_tower` (tesla_coil+shock),
+     `final_solution` (quick_charge+death_ray), `swarm_leader` (gimme_more).
+   - **Soul Chain** (projectile-system): `game.ricochetKillCount` counts ricochet
+     kills on their own interval; heals via the same threshold as direct kills.
+   - **Pinball Wizard** (projectile-system): `handleRicochet` takes an
+     `excludeEnemies` set (from `proj.userData.hitEnemies`) so pierced shots
+     bounce onto NEW targets; falls back to closest when no new target exists.
+   - **Momentum** (main.js): per-hand kill stacks, +5% damage each, 2s window,
+     cap 5x; applied in `computeWeaponStats` with lazy decay (no timers);
+     cleared on reset.
+   - **Tesla Tower** (beam-weapons): `maxChains +2` AND each target sparks a
+     secondary chain to one nearby non-chained enemy (cap 4). Fixed a
+     chainCount-cap bug where secondaries were added after the cap was read
+     and never dealt damage.
+   - **Final Solution** (beam-weapons + alt-weapons): `spawnBlackHoleAt(position,
+     opts)` factored out of the mine black hole (shared visual/pull/collapse);
+     full-charge kills spawn one (2s pull, 60 dmg explosion).
+   - **Swarm Leader** (projectile-system): seekers that expire WITHOUT a target
+     become orbiting protective drones (cap 6, 6s duration) that destroy enemy
+     projectiles on contact; `clearSwarmDrones` on pool reset; `getSwarmDroneCount`
+     test seam.
+   - **HUD combo glow** (hud.js): timing combos are silent (1e82927), so
+     `triggerComboGlow(color)` flashes the accuracy bar in the combo color for
+     0.6s (called from `applyFireCombo`).
+   - New test `test-combos.cjs` (detection, Soul Chain heal math, Pinball bounce
+     targeting, Momentum damage + decay, Tesla Tower 5-vs-3 chain damage,
+     Final Solution black hole spawn, Swarm Leader drone lifecycle, glow
+     visibility/fade). Verified: all 15 suites green (batch flakes on
+     timer-cleanup/alchemy/mastery — all green solo, known contention quirk),
+     identifier sweep clean, deploy-sim clean on :8019.
+
+2. **`d516744` + `f7b44d2` — #196 Phases 4-5 (reduced scope)**:
    - **Phase 5 (`f7b44d2`)** — `environment-orchestration.js`: pure-move extraction
      of the biome/theme/fade/star lifecycle (applyThemeForLevel, clearBiomeScene,
      purgeBiomeForBossCinematic, fade system + render-loop ticker
@@ -65,7 +101,7 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
      callback sites for low value. Environment extraction is genuinely mechanical
      (biome-scenes/scenery already existed); the countdown machines + routing
      tables are the only flow pieces with clean boundaries.
-   - Verified: all 14 suites green, identifier sweep clean (main.js + both new
+   - Verified: all 15 suites green, identifier sweep clean (main.js + both new
      modules zero flags), deploy-assets resolve, deploy-sim clean on :8017/:8018.
 
 ## RECENTLY COMPLETED (prior sessions, all on `main`)
@@ -146,8 +182,8 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
    `node tests/automation/<suite>.cjs` for: test-bugfixes, test-timer-cleanup,
    test-audio-pack, test-elemental, test-synergy, test-tank-hit, test-upgrade-preview,
    test-alchemy, test-evolution, test-dualwield, test-style, test-mastery, test-eclipse,
-   test-threat-compass.
-   (14 suites total. Do NOT chain them in one shell loop — see Critical Lessons #2.)
+   test-threat-compass, test-combos.
+   (15 suites total. Do NOT chain them in one shell loop — see Critical Lessons #2.)
 3. Static checks: `node --check <touched files>`,
    `node scripts/verify-module-identifiers.mjs`,
    `node scripts/verify-deploy-assets.mjs` (deploy-affecting changes only).
@@ -163,13 +199,11 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 
 **Done:** #204 · #142+#184 · #196 Phases 1-3 · #216 · #211 · #215 · #185 · #143 ·
 #189 · #218 · #213 weapon mastery · #172 Eclipse Engine Phase 2 · #206 Threat
-Compass · **#196 Phases 4-5 (reduced, this session)** · deploy/stability fixes.
+Compass · #196 Phases 4-5 (reduced) · **deferred combos (#211/#218, this session)** ·
+deploy/stability fixes.
 
 **Remaining packs (recommended order):**
-1. **Deferred combos (flagged in #211/#218 commits)**: weapon-specific combos (Tesla
-   Tower, Final Solution, Swarm Leader), kill-chain combos (Soul Chain, Pinball Wizard,
-   Momentum), HUD icon glow.
-2. **Back of the line (from earlier triage):** new enemies/bosses (#199, #198, #171,
+1. **Back of the line (from earlier triage):** new enemies/bosses (#199, #198, #171,
    #169, #167, #170, #168, #197, #200), #138 Breach Events, #139 Void Marks, #210
    Constellation Map, #212 Lore, #183 Death Haiku, #209 Death Panorama, #201 Phase
    Echoes, #178/#177 death effects, #179/#208/#180 atmosphere, #191 Rhythm Core, #190
@@ -186,12 +220,11 @@ recent features) — this file is the single source of truth for project state.
 
 ## QUICK-START CHECKLIST FOR THE NEXT SESSION
 
-1. `git pull` / verify HEAD is the #196 Phases 4-5 commit (see DONE THIS SESSION).
-2. `python3 -m http.server 8000 &` then run all 14 test suites individually to confirm
+1. `git pull` / verify HEAD is the deferred-combos commit (see DONE THIS SESSION).
+2. `python3 -m http.server 8000 &` then run all 15 test suites individually to confirm
    green baseline (see Testing Workflow).
 3. Read `AGENTS.md` if you haven't (auto-loaded; §16-17 cover automation + modules).
-4. Pick the next pack (recommended: the deferred combos — weapon-specific Tesla
-   Tower/Final Solution/Swarm Leader + kill-chain Soul Chain/Pinball Wizard/Momentum +
-   HUD icon glow). input-router.js/flow-countdowns.js are the most recent examples of
-   small DI modules; detectFireCombos/applyFireCombo in main.js are the combo seams.
+4. Pick the next pack (recommended: an item from the back-of-line list — the entire
+   roadmap queue is now open triage). test-combos.cjs is the most recent example of a
+   multi-mechanic test; detectSynergies in weapons.js is the combo-detection seam.
 5. Follow the Testing Workflow above before every commit.

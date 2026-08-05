@@ -432,7 +432,7 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 
 **Server** (tests hit `http://localhost:8000/dev.html`): `python3 -m http.server 8000`
 
-**All 14 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
+**All 15 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
 - `test-bugfixes.cjs` — boot + 15s gameplay + reset loop
 - `test-timer-cleanup.cjs` — charge cannon + triple-shot timer
 - `test-audio-pack.cjs` — reactive music stems + threat emitters
@@ -449,6 +449,9 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
   self-damage drains + crit reflect
 - `test-threat-compass.cjs` — ground-glow threat indicator (#206): mesh wiring,
   state visibility, lobe math vs real enemy positions, zero-lobe case, biome tint
+- `test-combos.cjs` — deferred combos (#211/#218): detection, Soul Chain heals,
+  Pinball Wizard bounce targeting, Momentum damage/decay, Tesla Tower chain
+  extension, Final Solution black hole, Swarm Leader drones, HUD combo glow
 
 **Known quirks:**
 - **Run suites individually, not back-to-back in one shell loop** — batch runs flake on
