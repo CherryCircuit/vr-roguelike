@@ -22,6 +22,7 @@ import {
   playFinalBossSealBreakSound, playFinalBossChargeSound, playFinalBossAscendSound,
   playFinalBossExposeSound, playFinalBossSummonWallSound, playFinalBossReleaseWallSound,
   playBombardierSpraySound, playVoidAnchorPlantSound,
+  playTendrilGrowSound, playTendrilHitSound, playTendrilBreakSound,
 } from './audio.js';
 // Issue #199: the bombardier plants at the biome floor height (custom biomes
 // sit below y=0). environment-orchestration.js does not import enemies.js —
@@ -201,6 +202,10 @@ const PATTERNS = {
   void_anchor: [
     '1.1',
     '...',
+    '1.1',
+  ],
+  void_tendril: [
+    '111',
     '1.1',
   ],
 };
@@ -407,6 +412,28 @@ const ENEMY_DEFS = {
     gravityBendRate: 0.26, // radians per second (~15°/s)
     growthTime: 8.0,       // seconds to reach full radius
     pulseDamageInterval: 3.0,
+  },
+
+  // Issue #171: spatial-control enemy — grows a dark-energy barrier across
+  // a 60° arc that BLOCKS player projectiles. No direct damage; it denies
+  // firing angles while other enemies close in.
+  void_tendril: {
+    pattern: parsePattern(PATTERNS.void_tendril),
+    voxelSize: 0.26,
+    baseHp: 2,             // anchor HP after the barrier breaks
+    baseSpeed: 0,
+    color: 0x220044,
+    depth: 1,
+    scoreValue: 20,
+    hitboxRadius: 0.5,
+    telegraphType: 'glow',
+    isVoidTendril: true,
+    tendrilArc: Math.PI / 3,   // 60 degrees
+    tendrilRange: 12,
+    tendrilBarrierHP: 3,
+    tendrilGrowthRate: 0.5,    // 2s growth
+    tendrilRotateSpeed: 0.15,  // rad/s
+    tendrilInnerRadius: 3,     // shots within 3m of the player are NOT blocked (spawn-safe)
   },
 };
 
@@ -2080,6 +2107,81 @@ export function countActiveBombardiers() {
   return n;
 }
 
+// ── Void Tendril (Issue #171) ──────────────────────────────
+// Spatial-control enemy: grows a dark-energy barrier across a 60° arc that
+// consumes player projectiles. No direct damage — it denies firing angles.
+
+/** Live tendril count (main.js wave spawner caps concurrent ones). */
+export function countActiveVoidTendrils() {
+  let n = 0;
+  for (const e of activeEnemies) {
+    if (e.isVoidTendril && e.hp > 0) n++;
+  }
+  return n;
+}
+
+// Tendril AI: grow the barrier over 2s, then slowly rotate it around the
+// player. Barrier collision is handled in projectile-system via
+// hitTendrilBarrier() below.
+function updateVoidTendril(e, dt, now, playerPos) {
+  if (!e.tendrilBarrierMesh) return;
+
+  // Grow 0→1 over ~2s (thin line → full wall)
+  if (e.tendrilGrowth < 1) {
+    e.tendrilGrowth = Math.min(1, e.tendrilGrowth + e.tendrilGrowthRate * dt);
+    if (e.tendrilGrowth >= 1) {
+      e.tendrilBarrierActive = true;
+      playTendrilGrowSound();
+    }
+  }
+  // Slow rotation around the player (~8.6°/s)
+  e.tendrilAngle += e.tendrilRotateSpeed * dt;
+
+  // Position the wall mid-arc (6m out), facing the player, scaled by growth
+  const midDist = 6;
+  const mx = playerPos.x + Math.cos(e.tendrilAngle) * midDist;
+  const mz = playerPos.z + Math.sin(e.tendrilAngle) * midDist;
+  e.tendrilBarrierMesh.position.set(mx, playerPos.y - 0.3, mz);
+  e.tendrilBarrierMesh.rotation.y = e.tendrilAngle + Math.PI / 2;
+  e.tendrilBarrierMesh.scale.x = Math.max(0.02, e.tendrilGrowth);
+  e.tendrilBarrierMesh.visible = true;
+}
+
+/**
+ * Check a player projectile against all tendril barriers. Consumes the shot
+ * when it enters a grown barrier's arc (3-12m from the player, ±30°).
+ * FIRE status on the tendril halves the barrier's remaining hits.
+ * @returns {boolean} true when the projectile was consumed by a barrier
+ */
+export function hitTendrilBarrier(projPos, playerPos) {
+  for (const e of activeEnemies) {
+    if (!e.isVoidTendril || !e.tendrilBarrierActive || e.hp <= 0) continue;
+    const dx = projPos.x - playerPos.x;
+    const dz = projPos.z - playerPos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < e.tendrilInnerRadius || dist > e.tendrilRange) continue;
+    let diff = Math.atan2(dz, dx) - e.tendrilAngle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    if (Math.abs(diff) > e.tendrilArc / 2) continue;
+
+    // Barrier hit: fire status burns through it faster (1 hit instead of 3)
+    const fireBurning = e.statusEffects?.fire?.stacks > 0;
+    e.tendrilBarrierHP -= fireBurning ? e.tendrilBarrierHP : 1;
+    playTendrilHitSound();
+    if (e.tendrilBarrierMesh?.material) {
+      e.tendrilBarrierMesh.material.opacity = 1;
+    }
+    if (e.tendrilBarrierHP <= 0) {
+      e.tendrilBarrierActive = false;
+      if (e.tendrilBarrierMesh) e.tendrilBarrierMesh.visible = false;
+      playTendrilBreakSound();
+    }
+    return true;
+  }
+  return false;
+}
+
 // ── Void Anchor (Issue #198) ───────────────────────────────
 // Stationary gravity well that bends the player's projectiles toward it.
 // Pulse damage at full size flows through _voidAnchorPulseCallback.
@@ -3469,6 +3571,19 @@ export function spawnEnemy(type, position, levelConfig) {
     gravityBendRate: def.gravityBendRate || 0.26,
     growthTime: def.growthTime || 8.0,
     pulseDamageInterval: def.pulseDamageInterval || 3.0,
+
+    // Void Tendril (Issue #171): grows a projectile-blocking barrier
+    isVoidTendril: def.isVoidTendril || false,
+    tendrilAngle: 0,
+    tendrilArc: def.tendrilArc || Math.PI / 3,
+    tendrilRange: def.tendrilRange || 12,
+    tendrilBarrierHP: def.tendrilBarrierHP || 3,
+    tendrilGrowth: 0,
+    tendrilGrowthRate: def.tendrilGrowthRate || 0.5,
+    tendrilRotateSpeed: def.tendrilRotateSpeed || 0.15,
+    tendrilInnerRadius: def.tendrilInnerRadius || 3,
+    tendrilBarrierActive: false,
+    tendrilBarrierMesh: null,
   };
   enemy._cachedMaterials = [];
   group.traverse(c => {
@@ -3532,6 +3647,25 @@ export function spawnEnemy(type, position, levelConfig) {
       enemy.anchorOrbiters.push(orb);
       group.add(orb);
     }
+  }
+
+  // Void Tendril (Issue #171): dark curved barrier wall that blocks shots.
+  // Player-centric (rotates around the player); scale.x animates growth.
+  if (enemy.isVoidTendril) {
+    const wallGeo = new THREE.PlaneGeometry(7, 2.5, 16, 1);
+    // Curve the plane into a shallow arc
+    const wPos = wallGeo.attributes.position;
+    for (let wi = 0; wi < wPos.count; wi++) {
+      const wx = wPos.getX(wi);
+      const t = wx / 3.5; // -1..1
+      wPos.setZ(wi, -Math.abs(wx) * 0.18 + t * t * 0.3);
+    }
+    enemy.tendrilBarrierMesh = new THREE.Mesh(wallGeo, new THREE.MeshBasicMaterial({
+      color: 0x110022, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
+      depthWrite: false, fog: false,
+    }));
+    enemy.tendrilBarrierMesh.visible = false;
+    group.add(enemy.tendrilBarrierMesh);
   }
 
   if (ENABLE_SPAWN_WARP) applySpawnWarp(enemy);
@@ -3643,7 +3777,7 @@ export function updateEnemies(dt, now, playerPos) {
       }
     }
 
-    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier && !e.isVoidAnchor) {
+    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier && !e.isVoidAnchor && !e.isVoidTendril) {
       e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
     }
 
@@ -4148,6 +4282,11 @@ export function updateEnemies(dt, now, playerPos) {
     // grows, pulses
     if (e.isVoidAnchor) {
       updateVoidAnchor(e, dt, now, playerPos);
+    }
+
+    // Void Tendril (Issue #171): grows + rotates a projectile-blocking barrier
+    if (e.isVoidTendril) {
+      updateVoidTendril(e, dt, now, playerPos);
     }
 
     // Face player (horizontal only)

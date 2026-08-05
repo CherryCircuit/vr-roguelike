@@ -1292,6 +1292,61 @@ export function playEclipsePurgeSound() {
 }
 
 /** Bombardier spray (Issue #199): sustained noise "whoosh" through a rising bandpass. */
+/** Void Tendril barrier (Issue #171): three procedural sounds. */
+export function playTendrilGrowSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(60, t);
+  osc.frequency.exponentialRampToValueAtTime(120, t + 0.6);
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.09, t + 0.15);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 0.9);
+}
+
+export function playTendrilHitSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(900, t);
+  osc.frequency.exponentialRampToValueAtTime(500, t + 0.08);
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.06, t + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 0.13);
+}
+
+export function playTendrilBreakSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  // Shatter: descending detuned pair + short noise pop
+  [620, 440].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 0 ? 'triangle' : 'square';
+    osc.frequency.setValueAtTime(freq, t + i * 0.02);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.4, t + 0.3 + i * 0.02);
+    gain.gain.setValueAtTime(0.0, t + i * 0.02);
+    gain.gain.linearRampToValueAtTime(0.08, t + 0.03 + i * 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35 + i * 0.02);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.02);
+    osc.stop(t + 0.4 + i * 0.02);
+  });
+}
+
 /** Void Anchor planting (Issue #198): low bass thrum — the well "locks in". */
 export function playVoidAnchorPlantSound() {
   const ctx = getAudioContext();

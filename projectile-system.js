@@ -12,7 +12,7 @@ import { game, State, addScore, trackCrit, trackKill, trackShot, trackShotHit, r
 import {
   getEnemies, getEnemyByMesh, getEnemyCount, getBoss, getBossMinions,
   getBossProjectiles, hitEnemy, hitBoss, hitBossMinion, applyEffects,
-  releaseBossProjIndex, spawnHealthGainPopup, collectVoidAnchors,
+  releaseBossProjIndex, spawnHealthGainPopup, collectVoidAnchors, hitTendrilBarrier,
 } from './enemies.js';
 import {
   playBossProjectileDestroySound, playBuckshotSound, playBuffedHitSound,
@@ -1881,6 +1881,19 @@ function updateProjectiles(dt) {
     if (proj.userData.controllerIndex !== undefined && checkPlayerProjectileHitsDrone(proj.position, proj.userData.controllerIndex)) {
       markProjectileHit(proj);
       resolveProjectileAccuracy(proj);
+      if (proj.userData.isPooled) {
+        returnProjectileToPool(proj);
+      } else {
+        disposeObject3D(proj);
+      }
+      projectiles.splice(i, 1);
+      continue;
+    }
+
+    // Issue #171 Void Tendril: grown barriers consume player projectiles in
+    // their arc (3-12m from the player). Only player shots (have stats).
+    // Barrier arc is player-centric, so camera.position XZ is the origin.
+    if (proj.userData.stats && hitTendrilBarrier(proj.position, camera.position)) {
       if (proj.userData.isPooled) {
         returnProjectileToPool(proj);
       } else {

@@ -108,7 +108,8 @@ import {
   clearAllTelegraphs, spawnHealthGainPopup,
   clearGeometryCaches, setCameraRef, setPulseRingHitCallback,
   setBombardierConeHitCallback, countActiveBombardiers,
-  setVoidAnchorPulseCallback, countActiveVoidAnchors
+  setVoidAnchorPulseCallback, countActiveVoidAnchors,
+  countActiveVoidTendrils
 } from './enemies.js';
 import { getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -5423,6 +5424,14 @@ function spawnEnemyWave(dt) {
       if (type === 'void_anchor') {
         const anchorCap = game.level <= 11 ? 1 : 2;
         if (countActiveVoidAnchors() >= anchorCap) return;
+      }
+
+      // Void Tendril (Issue #171): weighted spawn (10% at 9-12, 15% at 13+)
+      // + hard cap of 2 concurrent barriers
+      if (type === 'void_tendril') {
+        if (countActiveVoidTendrils() >= 2) return;
+        const tendrilChance = game.level >= 13 ? 0.15 : 0.10;
+        if (Math.random() > tendrilChance) return;
       }
 
       // Calculate vertical spawn angle based on level
