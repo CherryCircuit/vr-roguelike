@@ -2277,6 +2277,11 @@ function createUpgradeCard(upgrade, position, hand, style) {
   const border = new THREE.LineSegments(getCardBorderGeo(), borderMat);
   border.scale.set(1, 1, 1);
   border.userData._warpPiece = 'border';
+  // Culling insurance: the shared EdgesGeometry bounding sphere is computed
+  // lazily on first cull; a stale/edge-case sphere can pop the border out of
+  // view on slight camera tilts (reported on the EVO cards). These are UI
+  // elements in front of the camera — never cull them.
+  border.frustumCulled = false;
   group.add(border);
   
   // Store border color on card for hover glow matching
@@ -2384,6 +2389,7 @@ function createUpgradeCard(upgrade, position, hand, style) {
         const bar = new THREE.Mesh(barGeo, barMat);
         bar.name = 'evo-bar';
         bar.renderOrder = 1;
+        bar.frustumCulled = false; // UI in front of the camera — never cull
         bar.position.set(0, 0.7, 0.005);
         group.add(bar);
 
@@ -2396,6 +2402,7 @@ function createUpgradeCard(upgrade, position, hand, style) {
         });
         evo.name = 'evo-text';
         evo.userData.text = '⚡ EVO';
+        evo.frustumCulled = false; // UI in front of the camera — never cull
         evo.position.set(0, 0.7, 0.02);
         group.add(evo);
       }
@@ -2444,6 +2451,7 @@ function createSkipCard(position, style) {
   const skipBorder = new THREE.LineSegments(getSkipCardBorderGeo(), new THREE.LineBasicMaterial({ color: borderColor }));
   skipBorder.scale.set(1, 1, 1);
   skipBorder.userData._warpPiece = 'border';
+  skipBorder.frustumCulled = false; // UI in front of the camera — never cull
   group.add(skipBorder);
   
   // Store border color on card for hover glow matching (green for skip)
@@ -3874,6 +3882,11 @@ export function showFloatingMessage(text, options = {}) {
     glow: true,
     glowColor: options.glowColor || options.color || '#ffffff',
     scale: options.scale || 0.45,
+    // Pass through so callers can word-wrap long hints into compact lines
+    // (e.g. the void-mark prompt) instead of one screen-wide banner.
+    maxWidth: options.maxWidth || null,
+    depthTest: options.depthTest,
+    forceArial: options.forceArial,
   });
   sprite.position.set(0, 0, 0);
   floatingMessageGroup.add(sprite);

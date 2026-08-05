@@ -181,8 +181,13 @@ export function updateVoidMarks(dt, now) {
     _promptShown = true;
     const mark = interactable.userData.voidMark.mark;
     const offer = _getOfferLabel(mark);
-    _deps.showFloatingMessage(`VOID MARK — ${offer} [TRIGGER: INHERIT / NUKE: PURGE]`, {
-      sticky: true, color: '#aa66ff', glowColor: '#4400aa', fontSize: 40, scale: 0.4, offsetY: 0.45,
+    // Small unobtrusive hint (player feedback: the old prompt was a huge
+    // in-your-face banner that overflowed the view). Sized like the eclipse
+    // warning banner but placed higher/further so it never blocks targets.
+    // maxWidth word-wraps it into two compact lines.
+    _deps.showFloatingMessage(`VOID MARK — ${offer} · TRIGGER: INHERIT · NUKE: PURGE`, {
+      sticky: true, color: '#aa66ff', glowColor: '#4400aa',
+      fontSize: 26, scale: 0.2, offsetY: 0.62, offsetZ: -1.3, maxWidth: 300,
     });
   } else if (!interactable && _promptShown) {
     _promptShown = false;

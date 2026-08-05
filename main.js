@@ -5715,6 +5715,18 @@ function render(timestamp) {
     if (currentTheme && currentTheme.customScene === 'synthwave_valley' && camera.position.y < 1.6) {
       camera.position.y = 1.6;
     }
+    // Desktop mode: XR controllers have no pose, so their visuals (pink/cyan
+    // cores + wrist hologram planes) sit at world origin under the player
+    // and read as stray artifacts. Desktop input uses the virtual controller,
+    // so hide the whole controller visual while not presenting VR.
+    for (let i = 0; i < controllers.length; i++) {
+      if (controllers[i].visible) controllers[i].visible = false;
+    }
+  } else {
+    // In VR the controllers are tracked to the hands — keep them visible.
+    for (let i = 0; i < controllers.length; i++) {
+      if (!controllers[i].visible) controllers[i].visible = true;
+    }
   }
   _mark('desktop_controls'); // ── end: desktop controls update
 

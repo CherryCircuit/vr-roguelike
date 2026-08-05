@@ -67,6 +67,29 @@ A marathon session — every commit below is verified with its own puppeteer sui
      stops drifting off to the side.
      Verified: raycast floor = 0.0 in all 4 biomes; bombardier plants at y=0.2,
      anchor at y=0.9 in front, compass at floor+0.03; 12 suites + deploy-sim green.
+   - **Group-rigidity proof**: a live-page test shifted each biome group +0.5 and
+     confirmed EVERY mesh/points/line (152 objects) moved by exactly the group
+     delta — no absolute-world-Y authors inside the scenes. Name-collision
+     artifacts (GLB clones share mesh names) were ruled out by keying on UUID.
+
+0b. **`<<NEXT>>` — follow-up player-feedback batch** (three small issues):
+    - **Void-mark inherit prompt was a giant in-your-face banner** (the old
+      `showFloatingMessage` style the UX passes removed): shrunk to a compact
+      two-line hint (fontSize 26, scale 0.2, offsetY 0.62, offsetZ -1.3,
+      maxWidth 300 — now word-wrapped via a new maxWidth pass-through in
+      `showFloatingMessage`).
+    - **Pink/purple planes at world origin under the player**: the XR controller
+      visuals (cyan/pink cores + wrist-hologram planes) have no pose in desktop
+      mode and sat at (0,0,0). Hidden while `!renderer.xr.isPresenting` (desktop
+      input uses the virtual controller); re-shown in VR where they track hands.
+    - **Frustum-culling insurance**: the user's past "objects vanish when the
+      camera tilts up 1-3°" symptom. Headless real-frustum tests proved the
+      upgrade-card border/EVO bar are NOT culled at any tilt (they're world-fixed
+      UI at z=-4; the "purple bowl" that vanishes on tilt is the threat-compass
+      ground disc + synthwave horizon-glow ring — both `frustumCulled:false`,
+      they simply leave the view geometrically). Added `frustumCulled = false`
+      to the card border LineSegments + EVO bar/text anyway (cheap, matches the
+      repo's past culling fixes 18e2b14/e7389bd).
 
 1. **`7825c6c` — #139 Void Marks**: deaths record to localStorage (`void_marks`,
    max 20); future runs at the same level+biome spawn a spectral hologram at the
