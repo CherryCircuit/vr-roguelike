@@ -1,7 +1,7 @@
 # SESSION HANDOFF — Feature/Fix Sprint (pick up here with a fresh context)
 
 Paste this whole file's contents (plus `AGENTS.md` is auto-loaded from the repo) into a
-new opencode session. Everything below is verified current as of commit `de882a3` (pushed).
+new opencode session. Everything below is verified current as of commit `c355a56` (pushed).
 
 ---
 
