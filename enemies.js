@@ -21,7 +21,12 @@ import {
   playHealSound as playBossHealSound,
   playFinalBossSealBreakSound, playFinalBossChargeSound, playFinalBossAscendSound,
   playFinalBossExposeSound, playFinalBossSummonWallSound, playFinalBossReleaseWallSound,
+  playBombardierSpraySound,
 } from './audio.js';
+// Issue #199: the bombardier plants at the biome floor height (custom biomes
+// sit below y=0). environment-orchestration.js does not import enemies.js —
+// no cycle.
+import { getBiomeFloorY } from './environment-orchestration.js';
 // Issue #172: Eclipse Engine corruption layer (upgrade-possession mechanic).
 // eclipse.js is standalone with injected deps — no cycle here.
 import {
@@ -186,9 +191,12 @@ const PATTERNS = {
   ],
   mortar: [
     '.1.',
+    '111',
+    '.1.',
+  ],
+  bombardier: [
+    '111',
     '1.1',
-    '.1.',
-    '.1.',
   ],
 };
 
@@ -348,6 +356,31 @@ const ENEMY_DEFS = {
     mortarStrafeSpeed: 0.8,
     mortarPreferredDistMin: 8.0,
     mortarPreferredDistMax: 14.0,
+  },
+
+  // Issue #199: floor-turret that flies in, plants, and sprays a tracking
+  // damage cone at the player. Dies in a small flame burst (friendly fire).
+  bombardier: {
+    pattern: parsePattern(PATTERNS.bombardier),
+    voxelSize: 0.28,
+    baseHp: 45,
+    baseSpeed: 2.0,
+    color: 0xcc5500,
+    depth: 1,
+    scoreValue: 15,
+    hitboxRadius: 0.5,
+    telegraphType: 'glow',
+    isBombardier: true,
+    landingDistMin: 6,
+    landingDistMax: 8,
+    sprayInterval: 2.5,
+    sprayWindup: 0.6,
+    sprayConeAngle: Math.PI / 4, // 45 degrees
+    sprayRange: 5.0,
+    sprayDamageInterval: 0.3,
+    sprayTrackSpeed: 1.5,
+    deathExplosionRadius: 2.0,
+    deathExplosionDamage: 20,
   },
 };
 
@@ -2003,6 +2036,117 @@ function damageNearbyEnemies(position, damage, radius) {
   }
 }
 
+// ── Bombardier Beetle (Issue #199) ─────────────────────────
+// Floor-turret enemy: flies in, plants on the floor, then sprays a
+// tracking damage cone. Dies in a small flame burst (friendly fire).
+// Player damage flows through _bombardierConeHitCallback (wired in
+// main.js to applyPlayerDamage, mirroring the Pulse Bomber ring).
+
+let _bombardierConeHitCallback = null;
+export function setBombardierConeHitCallback(fn) { _bombardierConeHitCallback = fn; }
+
+/** Live bombardier count (main.js wave spawner caps concurrent ones). */
+export function countActiveBombardiers() {
+  let n = 0;
+  for (const e of activeEnemies) {
+    if (e.isBombardier && e.hp > 0) n++;
+  }
+  return n;
+}
+
+// Build a flat floor wedge (sector of a circle) for the cone visuals
+function buildBombardierConeGeometry(halfAngle, range) {
+  const segments = 16;
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  for (let i = 0; i <= segments; i++) {
+    const ang = -halfAngle + (i / segments) * 2 * halfAngle;
+    shape.lineTo(Math.sin(ang) * range, Math.cos(ang) * range);
+  }
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape);
+}
+
+// True when the player stands inside the bombardier's active cone
+function isPlayerInBombardierCone(e, playerPos) {
+  const dx = playerPos.x - e.mesh.position.x;
+  const dz = playerPos.z - e.mesh.position.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist > e.sprayRange) return false;
+  let diff = Math.atan2(dz, dx) - e.bombardierSprayAngle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return Math.abs(diff) <= e.sprayConeAngle / 2;
+}
+
+// Bombardier AI: fly → plant → wind-up → spray cycle
+function updateBombardier(e, dt, now, playerPos, dist, speedMod) {
+  if (!e.bombardierPlanted) {
+    // Fly toward the player until within landing range, then plant
+    if (dist <= e.bombardierLandingDist) {
+      e.bombardierPlanted = true;
+      e.mesh.position.y = getBiomeFloorY() + 0.2;
+      e.bombardierSprayTimer = 0.5; // beat before the first spray
+      e.bombardierSprayAngle = Math.atan2(playerPos.z - e.mesh.position.z, playerPos.x - e.mesh.position.x);
+      e.mesh.lookAt(playerPos);
+    } else {
+      e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
+    }
+    return;
+  }
+
+  // Planted: rotate the spray cone toward the player (max sprayTrackSpeed rad/s)
+  const targetAngle = Math.atan2(playerPos.z - e.mesh.position.z, playerPos.x - e.mesh.position.x);
+  let angleDiff = targetAngle - e.bombardierSprayAngle;
+  while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+  while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+  e.bombardierSprayAngle += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), e.sprayTrackSpeed * dt);
+
+  // Wind-up: preview cone + charge sound sprayWindup seconds before the spray
+  e.bombardierSprayTimer += dt;
+  if (!e.bombardierWindup && e.bombardierSprayTimer >= e.sprayInterval - e.sprayWindup) {
+    e.bombardierWindup = true;
+    if (e.bombardierConePreview) {
+      e.bombardierConePreview.rotation.y = e.bombardierSprayAngle - e.mesh.rotation.y;
+      e.bombardierConePreview.visible = true;
+    }
+    playMortarCharge();
+  }
+
+  if (e.bombardierSprayTimer >= e.sprayInterval) {
+    e.bombardierSprayTimer = 0;
+    e.bombardierWindup = false;
+    e.bombardierSprayActive = true;
+    e.bombardierSprayDuration = 0;
+    e.bombardierSprayDamageTimer = 0;
+    if (e.bombardierConePreview) e.bombardierConePreview.visible = false;
+    if (e.bombardierConeFlame) {
+      e.bombardierConeFlame.rotation.y = e.bombardierSprayAngle - e.mesh.rotation.y;
+      e.bombardierConeFlame.visible = true;
+    }
+    playBombardierSpraySound();
+  }
+
+  // Active spray: 1 HP per sprayDamageInterval while the player is in the cone
+  if (e.bombardierSprayActive) {
+    e.bombardierSprayDuration += dt;
+    if (e.bombardierConeFlame) {
+      e.bombardierConeFlame.rotation.y = e.bombardierSprayAngle - e.mesh.rotation.y;
+    }
+    if (isPlayerInBombardierCone(e, playerPos)) {
+      e.bombardierSprayDamageTimer += dt;
+      if (e.bombardierSprayDamageTimer >= e.sprayDamageInterval) {
+        e.bombardierSprayDamageTimer = 0;
+        if (_bombardierConeHitCallback) _bombardierConeHitCallback(1);
+      }
+    }
+    if (e.bombardierSprayDuration >= 1.5) {
+      e.bombardierSprayActive = false;
+      if (e.bombardierConeFlame) e.bombardierConeFlame.visible = false;
+    }
+  }
+}
+
 
 /**
  * Update baby spiders.
@@ -3168,15 +3312,57 @@ export function spawnEnemy(type, position, levelConfig) {
     mortarTelegraphTimer: 0,
     mortarTelegraphing: false,
     mortarTelegraphParticles: [],
-  };
 
-  // Cache material references to avoid traverse() in the update hot path
+    // Bombardier (Issue #199): floor-turret that sprays damage cones
+    isBombardier: def.isBombardier || false,
+    bombardierPlanted: false,
+    bombardierLandingDist: def.isBombardier
+      ? def.landingDistMin + Math.random() * (def.landingDistMax - def.landingDistMin)
+      : 7,
+    bombardierSprayTimer: 0,
+    bombardierSprayActive: false,
+    bombardierSprayDuration: 0,
+    bombardierSprayDamageTimer: 0,
+    bombardierSprayAngle: 0,
+    bombardierWindup: false,
+    bombardierConePreview: null,
+    bombardierConeFlame: null,
+    sprayInterval: def.sprayInterval || 2.5,
+    sprayWindup: def.sprayWindup || 0.6,
+    sprayConeAngle: def.sprayConeAngle || Math.PI / 4,
+    sprayRange: def.sprayRange || 5.0,
+    sprayDamageInterval: def.sprayDamageInterval || 0.3,
+    sprayTrackSpeed: def.sprayTrackSpeed || 1.5,
+    deathExplosionRadius: def.deathExplosionRadius || 2.0,
+    deathExplosionDamage: def.deathExplosionDamage || 20,
+  };
   enemy._cachedMaterials = [];
   group.traverse(c => {
     if (c.isMesh && c.material && !c.userData.isEnemyHitbox) {
       enemy._cachedMaterials.push(c.material);
     }
   });
+
+  // Bombardier (Issue #199): floor cone visuals attached to the enemy group
+  // (auto-disposed with it). Windup preview (30% opacity) + flame cone.
+  if (enemy.isBombardier) {
+    const coneGeo = buildBombardierConeGeometry(enemy.sprayConeAngle, enemy.sprayRange);
+    enemy.bombardierConePreview = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({
+      color: 0xff8800, transparent: true, opacity: 0.3, side: THREE.DoubleSide,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    }));
+    enemy.bombardierConeFlame = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({
+      color: 0xff4400, transparent: true, opacity: 0.5, side: THREE.DoubleSide,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    }));
+    // Lay the wedge flat on the floor, pointing +Z (enemy lookAt forward)
+    enemy.bombardierConePreview.rotation.x = Math.PI / 2;
+    enemy.bombardierConeFlame.rotation.x = Math.PI / 2;
+    enemy.bombardierConePreview.visible = false;
+    enemy.bombardierConeFlame.visible = false;
+    group.add(enemy.bombardierConePreview);
+    group.add(enemy.bombardierConeFlame);
+  }
 
   if (ENABLE_SPAWN_WARP) applySpawnWarp(enemy);
 
@@ -3287,7 +3473,7 @@ export function updateEnemies(dt, now, playerPos) {
       }
     }
 
-    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar) {
+    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier) {
       e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
     }
 
@@ -3781,6 +3967,11 @@ export function updateEnemies(dt, now, playerPos) {
     // Phase Wraith legacy support (removed, replaced by Mortar)
     if (e.isPhase && e.phaseHidden) {
       continue;
+    }
+
+    // Bombardier (Issue #199): floor-turret that sprays tracking damage cones
+    if (e.isBombardier) {
+      updateBombardier(e, dt, now, playerPos, dist, speedMod);
     }
 
     // Face player (horizontal only)
@@ -4383,6 +4574,12 @@ export function destroyEnemy(index, isCritical = false, isOverkill = false) {
   // Black Hole Totem: Damages nearby enemies on death
   if (e.isBlackhole) {
     damageNearbyEnemies(pos, e.deathExplosionDamage, 5.0);
+  }
+
+  // Bombardier (Issue #199): dies in a small 2m flame burst that damages
+  // nearby enemies (friendly fire — killing one near a cluster is strategic)
+  if (e.isBombardier) {
+    damageNearbyEnemies(pos, e.deathExplosionDamage, e.deathExplosionRadius);
   }
 
   // Cleanup: if this enemy is linked by a conductor, remove it from that conductor's list

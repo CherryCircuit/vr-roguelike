@@ -106,7 +106,8 @@ import {
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles,
   releaseBossProjIndex, clearBossMinions,
   clearAllTelegraphs, spawnHealthGainPopup,
-  clearGeometryCaches, setCameraRef, setPulseRingHitCallback
+  clearGeometryCaches, setCameraRef, setPulseRingHitCallback,
+  setBombardierConeHitCallback, countActiveBombardiers
 } from './enemies.js';
 import { getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -1886,6 +1887,21 @@ function init() {
     window._timeScale = 1.0;
     window._wasCloseEnemy = false;
     timeScale = 1.0;
+    if (dead && game.state === State.PLAYING) endGame(false);
+  });
+  // Issue #199: Bombardier cone damage (floor-turret spray) — mirror of the
+  // Pulse Bomber ring wiring above
+  setBombardierConeHitCallback((damage) => {
+    const dead = applyPlayerDamage(damage);
+    setKilledBy({ type: 'enemy', name: 'BOMBARDIER BEETLE', enemyType: 'bombardier' });
+    triggerHitFlash(true);
+    playDamageSound();
+    screenFx.cameraShake = 0.3;
+    screenFx.cameraShakeIntensity = 0.02;
+    screenFx.originalCameraPos.copy(camera.position);
+    triggerScreenShake(0.1, 300);
+    screenFx.floorFlashing = true;
+    screenFx.floorFlashTimer = 0.6;
     if (dead && game.state === State.PLAYING) endGame(false);
   });
   initHUD(camera, scene);
@@ -5380,6 +5396,13 @@ function spawnEnemyWave(dt) {
         types = ['swarm', 'tank'];
       }
       const type = types[Math.floor(Math.random() * types.length)];
+
+      // Bombardier (Issue #199): cap concurrent floor-turrets by level
+      // (1 at 7-10, 2 at 11-15, 3 at 16+) so fire lanes never overlap
+      if (type === 'bombardier') {
+        const bombardierCap = game.level <= 10 ? 1 : game.level <= 15 ? 2 : 3;
+        if (countActiveBombardiers() >= bombardierCap) return;
+      }
 
       // Calculate vertical spawn angle based on level
       let verticalAngle = 0;

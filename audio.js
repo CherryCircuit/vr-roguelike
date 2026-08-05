@@ -1291,6 +1291,30 @@ export function playEclipsePurgeSound() {
   noise.stop(t + 0.13);
 }
 
+/** Bombardier spray (Issue #199): sustained noise "whoosh" through a rising bandpass. */
+export function playBombardierSpraySound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  const noise = ctx.createBufferSource();
+  noise.buffer = getPlayerDamageNoiseBuffer(ctx);
+  noise.loop = true; // 0.5s cached buffer loops for the 1.5s spray
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(500, t);
+  filter.frequency.exponentialRampToValueAtTime(2200, t + 0.35);
+  filter.Q.setValueAtTime(2.5, t);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.12, t + 0.08);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 1.3);
+  noise.connect(filter);
+  filter.connect(gain);
+  gain.connect(getSfxOutput());
+  noise.start(t);
+  noise.stop(t + 1.3);
+}
+
 /** Eclipse self-damage: damage sound but "wrong" (detuned double-hit). */
 export function playEclipseSelfDamageSound() {
   const ctx = getAudioContext();
