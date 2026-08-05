@@ -18,7 +18,7 @@
  */
 const puppeteer = require('puppeteer');
 
-const GAME_URL = 'http://localhost:8000/dev.html';
+const GAME_URL = 'http://localhost:8001/dev.html';
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 

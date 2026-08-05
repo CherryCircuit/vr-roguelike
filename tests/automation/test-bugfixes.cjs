@@ -5,7 +5,7 @@
  */
 const puppeteer = require('puppeteer');
 
-const GAME_URL = 'http://localhost:8000/dev.html';
+const GAME_URL = 'http://localhost:8001/dev.html';
 const SCREENSHOT_DIR = 'tests/screenshots/';
 
 async function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
