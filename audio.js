@@ -1292,6 +1292,45 @@ export function playEclipsePurgeSound() {
 }
 
 /** Bombardier spray (Issue #199): sustained noise "whoosh" through a rising bandpass. */
+/** Echo Phantom (Issue #169): mirror-shatter spawn + ghostly echo fire. */
+export function playEchoSpawnSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  // Shatter: short high detuned ping pair
+  [1400, 1900].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t + i * 0.02);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.6, t + 0.25 + i * 0.02);
+    gain.gain.setValueAtTime(0.0, t + i * 0.02);
+    gain.gain.linearRampToValueAtTime(0.05, t + 0.02 + i * 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3 + i * 0.02);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.02);
+    osc.stop(t + 0.35 + i * 0.02);
+  });
+}
+
+export function playEchoFireSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  // Ghostly version of a gunshot: pitched-up blip with a wobble
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(520, t);
+  osc.frequency.exponentialRampToValueAtTime(240, t + 0.14);
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.07, t + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 0.2);
+}
+
 /** Void Tendril barrier (Issue #171): three procedural sounds. */
 export function playTendrilGrowSound() {
   const ctx = getAudioContext();

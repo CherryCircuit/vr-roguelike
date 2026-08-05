@@ -23,11 +23,17 @@ import {
   playFinalBossExposeSound, playFinalBossSummonWallSound, playFinalBossReleaseWallSound,
   playBombardierSpraySound, playVoidAnchorPlantSound,
   playTendrilGrowSound, playTendrilHitSound, playTendrilBreakSound,
+  playEchoSpawnSound, playEchoFireSound,
 } from './audio.js';
 // Issue #199: the bombardier plants at the biome floor height (custom biomes
 // sit below y=0). environment-orchestration.js does not import enemies.js —
 // no cycle.
 import { getBiomeFloorY } from './environment-orchestration.js';
+// Issue #169 Echo Phantoms fire player-side projectiles (they damage other
+// enemies, never the player). enemies ↔ projectile-system is a documented
+// cycle family edge (projectile-system already imports enemies.js) —
+// runtime-only usage, valid in native ES modules.
+import { spawnProjectile } from './projectile-system.js';
 // Issue #172: Eclipse Engine corruption layer (upgrade-possession mechanic).
 // eclipse.js is standalone with injected deps — no cycle here.
 import {
@@ -207,6 +213,12 @@ const PATTERNS = {
   void_tendril: [
     '111',
     '1.1',
+  ],
+  echo_phantom: [
+    '.1.',
+    '111',
+    '111',
+    '.1.',
   ],
 };
 
@@ -434,6 +446,24 @@ const ENEMY_DEFS = {
     tendrilGrowthRate: 0.5,    // 2s growth
     tendrilRotateSpeed: 0.15,  // rad/s
     tendrilInnerRadius: 3,     // shots within 3m of the player are NOT blocked (spawn-safe)
+  },
+
+  // Issue #169: translucent copy of the player that replays their last 3s
+  // of aim — fires echo projectiles that damage OTHER enemies (accidental
+  // ally). Fades out after 4s. Spawned with aim data by main.js.
+  echo_phantom: {
+    pattern: parsePattern(PATTERNS.echo_phantom),
+    voxelSize: 0.22,
+    baseHp: 30,
+    baseSpeed: 0,
+    color: 0x44aaff,
+    depth: 1,
+    scoreValue: 10,
+    hitboxRadius: 0.5,
+    telegraphType: 'glow',
+    isEchoPhantom: true,
+    echoLifetime: 4.0,
+    echoProjectileDamage: 6,
   },
 };
 
@@ -2107,6 +2137,114 @@ export function countActiveBombardiers() {
   return n;
 }
 
+// ── Echo Phantom (Issue #169) ──────────────────────────────
+// Translucent copy of the player that replays their last 3s of aim. Echo
+// projectiles damage OTHER enemies (never the player) — an accidental ally.
+
+/** Live echo phantom count (main.js wave spawner caps concurrent ones). */
+export function countActiveEchoPhantoms() {
+  let n = 0;
+  for (const e of activeEnemies) {
+    if (e.isEchoPhantom && e.hp > 0) n++;
+  }
+  return n;
+}
+
+/**
+ * Spawn an echo phantom carrying a snapshot of one hand's aim history.
+ * Called from main.js when the player has been firing heavily.
+ * @param {THREE.Vector3} position - arena-edge spawn point
+ * @param {string} hand - 'left' | 'right' (which hand's aim to replay)
+ * @param {Array} snapshot - [{position, direction, timestamp, fire?}]
+ */
+export function spawnEchoPhantom(position, hand, snapshot) {
+  // Minimal config: the phantom's HP/speed are fixed by the def (no level
+  // scaling — it's a pure hazard, not a wave enemy)
+  const e = spawnEnemy('echo_phantom', position.clone(), { hpMultiplier: 1, speedMultiplier: 1 });
+  if (!e) return null;
+  e.echoSnapshot = snapshot || [];
+  e.echoSpawnTime = performance.now();
+  e.echoCursor = 0;
+  e.echoCursorTimer = 0;
+  e.echoFading = false;
+  // Translucent ghost styling (additive blue)
+  for (const mat of e._cachedMaterials) {
+    mat.transparent = true;
+    mat.opacity = 0.4;
+    mat.blending = THREE.AdditiveBlending;
+  }
+  playEchoSpawnSound();
+  return e;
+}
+
+// Echo Phantom AI: advance the playback cursor, aim like the recording, fire
+// an echo projectile for each recorded shot, fade after 4s.
+function updateEchoPhantom(e, dt, now, playerPos) {
+  if (!e.echoSnapshot || e.echoSnapshot.length === 0) return;
+
+  // Fade out after the lifetime, then die
+  if (e.echoFading) {
+    for (const mat of e._cachedMaterials) {
+      mat.opacity = Math.max(0, mat.opacity - dt * 2);
+    }
+    if (e._cachedMaterials[0]?.opacity <= 0) {
+      const idx = activeEnemies.indexOf(e);
+      if (idx >= 0) destroyEnemy(idx);
+    }
+    return;
+  }
+  const elapsed = now - e.echoSpawnTime;
+  if (elapsed > e.echoLifetime * 1000) {
+    e.echoFading = true;
+    return;
+  }
+
+  // Playback: advance one sample per 100ms
+  e.echoCursorTimer += dt;
+  while (e.echoCursorTimer >= 0.1) {
+    e.echoCursorTimer -= 0.1;
+    e.echoCursor++;
+  }
+  const sample = e.echoSnapshot[Math.min(e.echoCursor, e.echoSnapshot.length - 1)];
+  if (!sample) return;
+
+  // Face the recorded aim direction (world-space replay of the player's aim)
+  if (sample.direction) {
+    e.mesh.lookAt(
+      e.mesh.position.x + sample.direction.x,
+      e.mesh.position.y + sample.direction.y,
+      e.mesh.position.z + sample.direction.z,
+    );
+  }
+
+  // Fire echo projectiles for the player's recorded shots, at the same
+  // relative timing (each fire sample spawns one shot)
+  const startIdx = Math.max(0, e.echoCursor - 2);
+  for (let si = startIdx; si <= e.echoCursor; si++) {
+    const s = e.echoSnapshot[si];
+    if (!s || !s.fire || s._echoFired) continue;
+    s._echoFired = true;
+    const dir = s.direction ? s.direction.clone().normalize() : new THREE.Vector3(0, 0, -1);
+    const origin = e.mesh.position.clone();
+    origin.y += 0.9;
+    const echoStats = {
+      damage: e.echoProjectileDamage, critChance: 0, critMultiplier: 2,
+      fireWeakenMult: 1, effects: [], aoeRadius: 0, projectileCount: 1,
+      spreadAngle: 0, homing: false, ricochetBounces: 0, piercing: false,
+      vampiricInterval: 0, scatterSeek: false, forceExplosion: false,
+      isRicochetHit: false, projectileSpeed: 9, projectileColor: 0x44aaff,
+    };
+    const mesh = spawnProjectile(origin, dir, 0, echoStats, `echo-${e.id}-${si}-${Date.now()}`);
+    // Tint the glow planes cyan (spawnProjectile uses white pool textures)
+    if (mesh && mesh.children) {
+      mesh.children.forEach((child) => {
+        if (child.material) child.material.color?.setHex(0x44aaff);
+      });
+    }
+    playEchoFireSound();
+  }
+}
+
 // ── Void Tendril (Issue #171) ──────────────────────────────
 // Spatial-control enemy: grows a dark-energy barrier across a 60° arc that
 // consumes player projectiles. No direct damage — it denies firing angles.
@@ -3584,6 +3722,16 @@ export function spawnEnemy(type, position, levelConfig) {
     tendrilInnerRadius: def.tendrilInnerRadius || 3,
     tendrilBarrierActive: false,
     tendrilBarrierMesh: null,
+
+    // Echo Phantom (Issue #169): replays the player's recorded aim
+    isEchoPhantom: def.isEchoPhantom || false,
+    echoSnapshot: null,     // [{position, direction, timestamp, fire?}]
+    echoSpawnTime: 0,
+    echoCursor: 0,          // playback sample index
+    echoCursorTimer: 0,
+    echoLifetime: def.echoLifetime || 4.0,
+    echoProjectileDamage: def.echoProjectileDamage || 6,
+    echoFading: false,
   };
   enemy._cachedMaterials = [];
   group.traverse(c => {
@@ -3777,7 +3925,7 @@ export function updateEnemies(dt, now, playerPos) {
       }
     }
 
-    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier && !e.isVoidAnchor && !e.isVoidTendril) {
+    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier && !e.isVoidAnchor && !e.isVoidTendril && !e.isEchoPhantom) {
       e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
     }
 
@@ -4287,6 +4435,11 @@ export function updateEnemies(dt, now, playerPos) {
     // Void Tendril (Issue #171): grows + rotates a projectile-blocking barrier
     if (e.isVoidTendril) {
       updateVoidTendril(e, dt, now, playerPos);
+    }
+
+    // Echo Phantom (Issue #169): replays the player's last 3s of aim
+    if (e.isEchoPhantom) {
+      updateEchoPhantom(e, dt, now, playerPos);
     }
 
     // Face player (horizontal only)

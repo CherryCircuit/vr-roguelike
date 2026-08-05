@@ -109,7 +109,7 @@ import {
   clearGeometryCaches, setCameraRef, setPulseRingHitCallback,
   setBombardierConeHitCallback, countActiveBombardiers,
   setVoidAnchorPulseCallback, countActiveVoidAnchors,
-  countActiveVoidTendrils
+  countActiveVoidTendrils, spawnEchoPhantom, countActiveEchoPhantoms
 } from './enemies.js';
 import { getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -810,6 +810,47 @@ function recordComboFire(index) {
 // computeWeaponStats on the next fire.
 const momentumKillStacks = [0, 0];
 const momentumKillLastAt = [0, 0];
+
+// ── Echo Phantom aim recording (Issue #169) ────────────────
+// Records each hand's aim direction every 100ms (3s window) + fire events.
+// Echo Phantoms play this back to "replay your last attack pattern".
+const AIM_HISTORY_DURATION = 3000;
+const AIM_HISTORY_SAMPLE_RATE = 100;
+const _aimHistory = { left: [], right: [] };
+let _aimSampleAccum = 0;
+
+function sampleAimHistory(dt, now) {
+  _aimSampleAccum += dt * 1000;
+  if (_aimSampleAccum < AIM_HISTORY_SAMPLE_RATE) return;
+  _aimSampleAccum = 0;
+
+  for (const hand of ['left', 'right']) {
+    const history = _aimHistory[hand];
+    // Prune old samples
+    while (history.length > 0 && now - history[0].timestamp > AIM_HISTORY_DURATION) {
+      history.shift();
+    }
+    const vc = getVirtualController(hand);
+    if (!vc || !vc.position) continue;
+    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(vc.quaternion);
+    if (history.length >= AIM_HISTORY_DURATION / AIM_HISTORY_SAMPLE_RATE) history.shift();
+    history.push({ position: vc.position.clone(), direction: dir, timestamp: now });
+  }
+}
+
+// Record a fire event per hand (pruned to the 3s window)
+function recordAimFire(hand, now) {
+  const history = _aimHistory[hand];
+  history.push({ fire: true, timestamp: now });
+  while (history.length > 0 && now - history[0].timestamp > AIM_HISTORY_DURATION) {
+    history.shift();
+  }
+}
+
+/** Snapshot of one hand's aim history (for the echo phantom at spawn). */
+function getAimHistorySnapshot(hand) {
+  return _aimHistory[hand].map(s => ({ ...s }));
+}
 
 // Apply a detected combo's modifiers to the shot's stats.
 // ALL combos are SILENT (effects speak for themselves via damage numbers,
@@ -4936,6 +4977,9 @@ function fireMainWeapon(controller, index) {
   if (now - weaponCooldowns[index] < stats.fireInterval) return;
   weaponCooldowns[index] = now;
 
+  // Issue #169: record the fire event for Echo Phantom playback
+  recordAimFire(hand, now);
+
   // ── Dual-Wield Combos (Issue #218) ──
   // Detect + apply combo modifiers to THIS shot before spawning. Detection
   // reads the OTHER hand's most recent fire time (already recorded); this
@@ -5434,6 +5478,22 @@ function spawnEnemyWave(dt) {
         if (Math.random() > tendrilChance) return;
       }
 
+      // Echo Phantom (Issue #169): only appears after the player fires 5+
+      // shots in 3s (max 2, one per hand's aim), 15% per spawn tick
+      if (type === 'echo_phantom') {
+        if (countActiveEchoPhantoms() >= 2) return;
+        const recentFires = _aimHistory.left.filter(s => s.fire).length +
+          _aimHistory.right.filter(s => s.fire).length;
+        if (recentFires < 5) return;
+        if (Math.random() > 0.15) return;
+        const hand = Math.random() < 0.5 ? 'left' : 'right';
+        const snapshot = getAimHistorySnapshot(hand);
+        if (snapshot.length === 0) return;
+        const echoPos = getSpawnPosition(cfg.airSpawns, 0, null);
+        spawnEchoPhantom(echoPos, hand, snapshot);
+        return; // echo replaces this tick's normal spawn
+      }
+
       // Calculate vertical spawn angle based on level
       let verticalAngle = 0;
       if (game.level >= 16) verticalAngle = 30;
@@ -5596,10 +5656,13 @@ function render(timestamp) {
     // Update kills remaining alert (auto-hide after timeout)
     updateKillsAlert(now);
 
-    // Issue #172: eclipse corruption ticking (durations + self-damage
-    // drains) and the corrupted-upgrade HUD countdown
-    updateEclipse(dt, now);
-    updateEclipseWarning(now);
+  // Issue #172: eclipse corruption ticking (durations + self-damage
+  // drains) and the corrupted-upgrade HUD countdown
+  updateEclipse(dt, now);
+  updateEclipseWarning(now);
+
+  // Issue #169: record controller aim for Echo Phantoms (every 100ms)
+  sampleAimHistory(rawDt, now);
 
     // SAFEGUARD: Ensure blaster displays are visible during gameplay
     // Prevents text/billboard elements from disappearing
