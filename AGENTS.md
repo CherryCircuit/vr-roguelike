@@ -271,6 +271,12 @@ Ask for clarification when:
   pure `applyEclipseToStats(stats, ids)` transform — never import game state directly
 - **threat-compass.js** - ground-glow threat indicator (#206); `initThreatCompass(deps)` pattern;
   shader lobes + biome tint; zero per-frame allocations (scratch Float32Array)
+- **environment-orchestration.js** - biome/theme/fade/star lifecycle (#196 Phase 5); owns
+  environment state; main.js READS exported bindings (currentTheme, floorMaterial, …) but
+  never writes them
+- **flow-countdowns.js / input-router.js** - ready+pause 3-2-1 state machines and
+  state→handler input dispatch tables (#196 Phase 4); deps injected, game.js is the
+  only module they import
 - **beam-weapons.js / projectile-system.js / alt-weapons.js** - extracted modules, use the
   `initX(deps)` dependency-injection pattern (see §17)
 - **hud.js** - sprite-based UI (use existing createTextSprite pattern)
@@ -491,9 +497,10 @@ or verify the live site directly:
   on the live site — always ask "does this reference a dev-only global?" after
   extracting code. The identifier sweep (`verify-module-identifiers.mjs`) automates this.
 - **Extracted modules** (beam-weapons, projectile-system, alt-weapons, boss-death-
-  cinematic, eclipse, threat-compass) use the `initX(deps)` dependency-injection
-  pattern, called from main.js init. Live-binding exports (arrays, objects) are
-  mutated in place, not reassigned.
+  cinematic, eclipse, threat-compass, environment-orchestration, flow-countdowns,
+  input-router) use the `initX(deps)` dependency-injection pattern, called from
+  main.js init. Live-binding exports (arrays, objects) are mutated in place, not
+  reassigned.
 - **mastery.js**: per-weapon kill counts persisted in localStorage under
   `spaceomicide_mastery` (debounced 5s writes + flush on level advance; in-memory
   fallback when storage is unavailable — never throw from this module).

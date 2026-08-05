@@ -29,6 +29,9 @@ and module architecture rules live in AGENTS.md §16-17.
 | `mastery.js` | ~110 | Per-weapon mastery: tier math, localStorage persistence, best-mastery helper |
 | `eclipse.js` | ~340 | Eclipse Engine corruption layer (#172): eclipse state, `applyEclipseToStats`, drains, purge |
 | `threat-compass.js` | ~300 | Ground-glow threat indicator (#206): shader lobes, biome tint, scratch-buffer lobes |
+| `environment-orchestration.js` | ~460 | Biome/theme/fade/star lifecycle (#196 P5): owns env state, main.js reads exports |
+| `flow-countdowns.js` | ~140 | Ready + pause 3-2-1 state machines (#196 P4, reduced) |
+| `input-router.js` | ~150 | State→handler dispatch tables for trigger/click/squeeze (#196 P4, reduced) |
 | `game.js` | ~616 | Central state (`game` object incl. `game.synergies`), resetGame, hooks |
 | `audio.js`, `hud.js`, `damage-numbers.js`, `voxel-debris.js`, `stasis.js`, `boss-death-cinematic.js` | | Supporting modules |
 
@@ -38,32 +41,37 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 
 ## DONE THIS SESSION (chronological, all pushed to `main`)
 
-1. **`<TBD-COMMIT>` — #206 Threat Compass** (ground glow; current HEAD): a subtle
-   pulsing glow on the floor beneath the player that shifts toward the nearest
-   dangers — diegetic spatial awareness for VR (no minimap/arrow UI).
-   - **New module `threat-compass.js`** (`initThreatCompass(deps)` DI pattern, §17):
-     8m disc on the biome floor, custom ShaderMaterial. Up to 8 gaussian lobes
-     (angle+intensity) computed each frame from the live enemy list via a scratch
-     `Float32Array` insertion sort — zero per-frame allocations (VR-CRITICAL).
-   - **Shader**: fixed-size loop (no `break` — WebGL1/2-safe on Quest; the GLSL
-     reserved word `active` broke compile, renamed to `lobeGate`); amber→red color
-     ramp by closest-threat intensity; pulse speed scales with closeness; alpha
-     capped 0.35.
-   - **Integration** (main.js): init at boot; per-frame update in the PLAYING
-     branch after the enemy/spatial-hash pass; `setThreatCompassVisible(st ===
-     PLAYING)` each frame (hidden on title/upgrades/pause/game-over); mesh tracks
-     camera XZ + `getBiomeFloorY()`; biome tint via `setThreatCompassTheme(biomeId)`
-     in `applyThemeForLevel` (synthwave pink / desert blue-white / alien toxic
-     green / hellscape volcanic orange).
-   - **Audio synergy NOT needed**: #184 threat spatial audio already covers the
-     audio warning layer — no new sounds.
-   - New test `test-threat-compass.cjs` (mesh exists + visible in PLAYING, hidden
-     in PAUSED + restores, lobe count/angles/intensity ordering vs real enemy
-     positions, zero-lobe case, biome tint, zero console errors). Verified: all 14
-     suites green, deploy-sim clean on :8016, verify-deploy-assets resolves
-     threat-compass.js.
+1. **`d516744` + `f7b44d2` — #196 Phases 4-5 (reduced scope)**:
+   - **Phase 5 (`f7b44d2`)** — `environment-orchestration.js`: pure-move extraction
+     of the biome/theme/fade/star lifecycle (applyThemeForLevel, clearBiomeScene,
+     purgeBiomeForBossCinematic, fade system + render-loop ticker
+     `updateEnvironmentFade`, stars, transition bursts, disposal helpers
+     disposeMesh/disposeObject3D/setMaterialEmissiveSafe/registerFadeMaterial).
+     Environment state now lives there; main.js READS exported bindings
+     (currentTheme, floorMaterial, biomeSceneGroup, synthVisualRefs,
+     biomeTerrainMaterials, AVAILABLE_BIOMES) and writes only via
+     `setBiomeClearedForBossCinematic`. Flow-owned flags (levelFadeReady) stayed
+     in main.js. main.js 7,719 → ~7,100 lines.
+   - **Phase 4 (`d516744`, reduced)** — `flow-countdowns.js` (ready + pause 3-2-1
+     state machines; timing only, HUD/audio/state transitions injected as
+     callbacks) and `input-router.js` (state→handler dispatch tables for VR
+     trigger, desktop click, alt-fire squeeze; settings-visible shortcut for
+     TITLE/PAUSED; game-over cooldown gate kept via registration wrappers).
+     main.js → ~7,050 lines.
+   - **Why reduced scope**: the remaining main.js is orchestration glue (159
+     functions, 146 mutable lets, 4 duplicated state-dispatch chains); ES module
+     bindings are read-only so every moved mutable needs restructuring (screenFx
+     pattern), and full state-machine extraction would rewiring ~50 cross-module
+     callback sites for low value. Environment extraction is genuinely mechanical
+     (biome-scenes/scenery already existed); the countdown machines + routing
+     tables are the only flow pieces with clean boundaries.
+   - Verified: all 14 suites green, identifier sweep clean (main.js + both new
+     modules zero flags), deploy-assets resolve, deploy-sim clean on :8017/:8018.
 
 ## RECENTLY COMPLETED (prior sessions, all on `main`)
+
+- **#206 Threat Compass** (`3ec7cb5`, `e145dc7`): ground-glow threat indicator —
+  shader lobes, biome tint, scratch-buffer lobes, test-threat-compass.cjs.
 
 - **#172 Eclipse Engine Phase 2** (`c355a56`, `bbd8ff1`): eclipse.js corruption
   layer — the final boss eclipses your universal upgrades below 50% HP (damage
@@ -123,6 +131,12 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
    via the console, while the mesh still rendered black and uniform assertions
    still passed. When a shader "works but is black", dump the FULL console error
    and check for reserved identifiers (`active`, `attribute`, `varying`…).
+10. **Extractions leak moved locals** — after moving module state out of main.js,
+    the identifier sweep did NOT flag leftover references (`environmentFadeState`,
+    `biomeTerrainMaterials` survived the sweep because they were never window
+    globals — they're just gone locals). Only the runtime caught them. After any
+    extraction: `rg` EVERY moved name across main.js (both reads and writes), not
+    just the identifiers the sweep checks.
 
 ## TESTING WORKFLOW (the gate before every commit)
 
@@ -148,16 +162,14 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 ## ROADMAP STATUS
 
 **Done:** #204 · #142+#184 · #196 Phases 1-3 · #216 · #211 · #215 · #185 · #143 ·
-#189 · #218 · #213 weapon mastery · #172 Eclipse Engine Phase 2 · **#206 Threat
-Compass (this session)** · deploy/stability fixes.
+#189 · #218 · #213 weapon mastery · #172 Eclipse Engine Phase 2 · #206 Threat
+Compass · **#196 Phases 4-5 (reduced, this session)** · deploy/stability fixes.
 
 **Remaining packs (recommended order):**
-1. **#196 Phases 4-5** (game flow/input + environment extraction) — lower value; main.js
-   is now mostly flow orchestration.
-2. **Deferred combos (flagged in #211/#218 commits)**: weapon-specific combos (Tesla
+1. **Deferred combos (flagged in #211/#218 commits)**: weapon-specific combos (Tesla
    Tower, Final Solution, Swarm Leader), kill-chain combos (Soul Chain, Pinball Wizard,
    Momentum), HUD icon glow.
-3. **Back of the line (from earlier triage):** new enemies/bosses (#199, #198, #171,
+2. **Back of the line (from earlier triage):** new enemies/bosses (#199, #198, #171,
    #169, #167, #170, #168, #197, #200), #138 Breach Events, #139 Void Marks, #210
    Constellation Map, #212 Lore, #183 Death Haiku, #209 Death Panorama, #201 Phase
    Echoes, #178/#177 death effects, #179/#208/#180 atmosphere, #191 Rhythm Core, #190
@@ -174,12 +186,12 @@ recent features) — this file is the single source of truth for project state.
 
 ## QUICK-START CHECKLIST FOR THE NEXT SESSION
 
-1. `git pull` / verify HEAD is the #206 commit (see DONE THIS SESSION).
+1. `git pull` / verify HEAD is the #196 Phases 4-5 commit (see DONE THIS SESSION).
 2. `python3 -m http.server 8000 &` then run all 14 test suites individually to confirm
    green baseline (see Testing Workflow).
 3. Read `AGENTS.md` if you haven't (auto-loaded; §16-17 cover automation + modules).
-4. Pick the next pack (recommended: #196 Phases 4-5, or a deferred combo from
-   #211/#218 — the remaining queue is all lower-value extraction/polish items).
-   threat-compass.js is the most recent example of a small self-contained
-   `initX(deps)` module with a shader + scratch buffers.
+4. Pick the next pack (recommended: the deferred combos — weapon-specific Tesla
+   Tower/Final Solution/Swarm Leader + kill-chain Soul Chain/Pinball Wizard/Momentum +
+   HUD icon glow). input-router.js/flow-countdowns.js are the most recent examples of
+   small DI modules; detectFireCombos/applyFireCombo in main.js are the combo seams.
 5. Follow the Testing Workflow above before every commit.
