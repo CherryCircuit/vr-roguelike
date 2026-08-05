@@ -1292,6 +1292,57 @@ export function playEclipsePurgeSound() {
 }
 
 /** Bombardier spray (Issue #199): sustained noise "whoosh" through a rising bandpass. */
+/** Parasitic Leech (Issue #167): suction latch + wet burst. */
+export function playLeechLatchSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(220, t);
+  osc.frequency.exponentialRampToValueAtTime(90, t + 0.12);
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.09, t + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 0.2);
+}
+
+export function playLeechBurstSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+  // Wet pop: descending wobble + noise burst
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(180, t);
+  osc.frequency.exponentialRampToValueAtTime(45, t + 0.25);
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.12, t + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 0.32);
+
+  const noise = ctx.createBufferSource();
+  noise.buffer = getPlayerDamageNoiseBuffer(ctx);
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'lowpass';
+  hp.frequency.setValueAtTime(600, t);
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.0, t);
+  ng.gain.linearRampToValueAtTime(0.08, t + 0.02);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  noise.connect(hp);
+  hp.connect(ng);
+  ng.connect(getSfxOutput());
+  noise.start(t);
+  noise.stop(t + 0.16);
+}
+
 /** Echo Phantom (Issue #169): mirror-shatter spawn + ghostly echo fire. */
 export function playEchoSpawnSound() {
   const ctx = getAudioContext();

@@ -48,6 +48,7 @@ function getEnemyTypes(level) {
   if (level >= 6) types.push('swarm');
   if (level >= 7) types.push('bombardier'); // Issue #199 (capped alive by main.js)
   if (level >= 8) types.push('void_anchor'); // Issue #198 (capped alive by main.js)
+  if (level >= 8) types.push('leech'); // Issue #167 (weighted spawn by main.js)
   if (level >= 9) types.push('void_tendril'); // Issue #171 (weighted spawn by main.js)
   if (level >= 11) types.push('echo_phantom'); // Issue #169 (aim-replay spawn by main.js)
   if (level >= 11) types.push('spiral_swimmer');

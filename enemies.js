@@ -24,6 +24,7 @@ import {
   playBombardierSpraySound, playVoidAnchorPlantSound,
   playTendrilGrowSound, playTendrilHitSound, playTendrilBreakSound,
   playEchoSpawnSound, playEchoFireSound,
+  playLeechLatchSound, playLeechBurstSound,
 } from './audio.js';
 // Issue #199: the bombardier plants at the biome floor height (custom biomes
 // sit below y=0). environment-orchestration.js does not import enemies.js —
@@ -219,6 +220,14 @@ const PATTERNS = {
     '111',
     '111',
     '.1.',
+  ],
+  leech: [
+    '11',
+    '.1',
+    '.1',
+  ],
+  leech_minion: [
+    '1',
   ],
 };
 
@@ -464,6 +473,48 @@ const ENEMY_DEFS = {
     isEchoPhantom: true,
     echoLifetime: 4.0,
     echoProjectileDamage: 6,
+  },
+
+  // Issue #167: latches onto the player's spot, drains HP, and bursts into
+  // smaller leeches if ignored. Triage threat — kill it or pay.
+  leech: {
+    pattern: parsePattern(PATTERNS.leech),
+    voxelSize: 0.22,
+    baseHp: 26,
+    baseSpeed: 4.2,
+    color: 0x44ff66,
+    depth: 1,
+    scoreValue: 12,
+    hitboxRadius: 0.45,
+    telegraphType: 'glow',
+    isLeech: true,
+    canBurst: true,
+    latchRange: 2.0,
+    latchOrbitSpeed: 0.3,
+    drainInterval: 1.0,
+    drainAmount: 0.5,
+    burstThreshold: 3,
+    minionHpRatio: 0.5,
+  },
+
+  // Burst minions: smaller, faster, half the HP, no recursive burst
+  leech_minion: {
+    pattern: parsePattern(PATTERNS.leech_minion),
+    voxelSize: 0.18,
+    baseHp: 13,
+    baseSpeed: 5.2,
+    color: 0x66ff88,
+    depth: 1,
+    scoreValue: 6,
+    hitboxRadius: 0.35,
+    telegraphType: 'glow',
+    isLeech: true,
+    canBurst: false,
+    latchRange: 2.0,
+    latchOrbitSpeed: 0.5,
+    drainInterval: 1.0,
+    drainAmount: 0.25,
+    burstThreshold: 99,
   },
 };
 
@@ -2245,6 +2296,92 @@ function updateEchoPhantom(e, dt, now, playerPos) {
   }
 }
 
+// ── Parasitic Leech (Issue #167) ───────────────────────────
+// Rushes the player, latches on, drains HP while swelling, then bursts
+// into smaller leeches if ignored. Player damage flows through
+// _leechDrainCallback (wired in main.js).
+
+let _leechDrainCallback = null;
+export function setLeechDrainCallback(fn) { _leechDrainCallback = fn; }
+
+/** Live leech count (parents + minions; wave spawner keeps it sane). */
+export function countActiveLeeches() {
+  let n = 0;
+  for (const e of activeEnemies) {
+    if (e.isLeech && e.hp > 0) n++;
+  }
+  return n;
+}
+
+// Leech AI: rush → latch → orbit + drain → burst
+function updateLeech(e, dt, now, playerPos, speedMod) {
+  const dist = e.mesh.position.distanceTo(playerPos);
+
+  if (!e.isLatched) {
+    // Rush the player's position like a fast enemy
+    e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
+    if (dist <= e.latchRange) {
+      e.isLatched = true;
+      e.lastDrainTick = now;
+      playLeechLatchSound();
+    }
+    return;
+  }
+
+  // Latched: orbit the player's spot at 1.5m radius
+  e.latchOrbitAngle += e.latchOrbitSpeed * dt;
+  e.mesh.position.set(
+    playerPos.x + Math.cos(e.latchOrbitAngle) * 1.5,
+    0.5,
+    playerPos.z + Math.sin(e.latchOrbitAngle) * 1.5,
+  );
+
+  // Drain tick: fractional HP accumulates into whole HP sent to the player
+  if (now - e.lastDrainTick >= e.drainInterval * 1000) {
+    e.lastDrainTick = now;
+    // CHILL (freeze status) halves the drain rate
+    const chilled = (e.statusEffects?.freeze?.stacks || 0) > 0;
+    const drain = chilled ? e.drainAmount * 0.5 : e.drainAmount;
+    e.drainAccum += drain;
+    e.stolenHp += drain;
+    if (e.drainAccum >= 1) {
+      e.drainAccum -= 1;
+      if (_leechDrainCallback) _leechDrainCallback(1);
+    }
+    // Swell with stolen HP (visible urgency)
+    e.drainVisualScale = 1 + (e.stolenHp / e.burstThreshold) * 0.5;
+    e.mesh.scale.setScalar(e.drainVisualScale);
+
+    // Burst when enough HP was stolen
+    if (e.canBurst && e.stolenHp >= e.burstThreshold) {
+      triggerLeechBurst(e, playerPos);
+      return;
+    }
+  }
+}
+
+// Pop the leech into 3-4 smaller minions (no recursive bursts)
+function triggerLeechBurst(e, playerPos) {
+  const burstPos = e.mesh.position.clone();
+  const idx = activeEnemies.indexOf(e);
+  if (idx >= 0) destroyEnemy(idx);
+  spawnVoxelExplosion(burstPos, 0x44ff66, 10);
+  playLeechBurstSound();
+
+  const count = 3 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    const pos = burstPos.clone().add(
+      new THREE.Vector3(Math.cos(angle) * 0.5, 0, Math.sin(angle) * 0.5),
+    );
+    const minion = spawnEnemy('leech_minion', pos, { hpMultiplier: 1, speedMultiplier: 1 });
+    if (!minion) continue;
+    minion.canBurst = false;
+    minion.isLatched = false;
+    minion.hp = Math.max(1, Math.round(minion.maxHp * (e.minionHpRatio || 0.5)));
+  }
+}
+
 // ── Void Tendril (Issue #171) ──────────────────────────────
 // Spatial-control enemy: grows a dark-energy barrier across a 60° arc that
 // consumes player projectiles. No direct damage — it denies firing angles.
@@ -3732,6 +3869,22 @@ export function spawnEnemy(type, position, levelConfig) {
     echoLifetime: def.echoLifetime || 4.0,
     echoProjectileDamage: def.echoProjectileDamage || 6,
     echoFading: false,
+
+    // Parasitic Leech (Issue #167): latch → drain → burst
+    isLeech: def.isLeech || false,
+    isLatched: false,
+    canBurst: def.canBurst !== false,
+    stolenHp: 0,
+    lastDrainTick: 0,
+    drainAccum: 0,
+    drainVisualScale: 1,
+    latchRange: def.latchRange || 2.0,
+    latchOrbitSpeed: def.latchOrbitSpeed || 0.3,
+    latchOrbitAngle: Math.random() * Math.PI * 2,
+    drainInterval: def.drainInterval || 1.0,
+    drainAmount: def.drainAmount || 0.5,
+    burstThreshold: def.burstThreshold || 3,
+    minionHpRatio: def.minionHpRatio || 0.5,
   };
   enemy._cachedMaterials = [];
   group.traverse(c => {
@@ -3925,7 +4078,7 @@ export function updateEnemies(dt, now, playerPos) {
       }
     }
 
-    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier && !e.isVoidAnchor && !e.isVoidTendril && !e.isEchoPhantom) {
+    if (!e.isMirror && !e.isConductor && !e.isPhase && !e.isMortar && !e.isBombardier && !e.isVoidAnchor && !e.isVoidTendril && !e.isEchoPhantom && !e.isLeech) {
       e.mesh.position.addScaledVector(_dir, e.speed * speedMod * dt);
     }
 
@@ -4440,6 +4593,11 @@ export function updateEnemies(dt, now, playerPos) {
     // Echo Phantom (Issue #169): replays the player's last 3s of aim
     if (e.isEchoPhantom) {
       updateEchoPhantom(e, dt, now, playerPos);
+    }
+
+    // Parasitic Leech (Issue #167): rush → latch → drain → burst
+    if (e.isLeech) {
+      updateLeech(e, dt, now, playerPos, speedMod);
     }
 
     // Face player (horizontal only)

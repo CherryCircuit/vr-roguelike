@@ -109,7 +109,8 @@ import {
   clearGeometryCaches, setCameraRef, setPulseRingHitCallback,
   setBombardierConeHitCallback, countActiveBombardiers,
   setVoidAnchorPulseCallback, countActiveVoidAnchors,
-  countActiveVoidTendrils, spawnEchoPhantom, countActiveEchoPhantoms
+  countActiveVoidTendrils, spawnEchoPhantom, countActiveEchoPhantoms,
+  setLeechDrainCallback, countActiveLeeches
 } from './enemies.js';
 import { getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -1958,6 +1959,17 @@ function init() {
     screenFx.cameraShakeIntensity = 0.02;
     screenFx.originalCameraPos.copy(camera.position);
     triggerScreenShake(0.08, 250);
+    if (dead && game.state === State.PLAYING) endGame(false);
+  });
+  // Issue #167: leech HP drain (latched parasites) — same damage pipeline
+  setLeechDrainCallback((damage) => {
+    const dead = applyPlayerDamage(damage);
+    setKilledBy({ type: 'enemy', name: 'PARASITIC LEECH', enemyType: 'leech' });
+    triggerHitFlash(true);
+    playDamageSound();
+    screenFx.cameraShake = 0.15;
+    screenFx.cameraShakeIntensity = 0.015;
+    triggerScreenShake(0.06, 200);
     if (dead && game.state === State.PLAYING) endGame(false);
   });
   initHUD(camera, scene);
@@ -5492,6 +5504,14 @@ function spawnEnemyWave(dt) {
         const echoPos = getSpawnPosition(cfg.airSpawns, 0, null);
         spawnEchoPhantom(echoPos, hand, snapshot);
         return; // echo replaces this tick's normal spawn
+      }
+
+      // Parasitic Leech (Issue #167): weighted spawn (15% at 8-12, 20% at
+      // 13+), soft cap of 4 concurrent (parents + minions)
+      if (type === 'leech') {
+        if (countActiveLeeches() >= 4) return;
+        const leechChance = game.level >= 13 ? 0.20 : 0.15;
+        if (Math.random() > leechChance) return;
       }
 
       // Calculate vertical spawn angle based on level
