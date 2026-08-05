@@ -17,7 +17,7 @@ import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook, setWeaponEvolution, getWeaponEvolution, isWeaponEvolved } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress, detectFireCombos, computeStyleGrade } from './weapons.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress, detectFireCombos, computeStyleGrade, COMBO_DEFS } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
@@ -151,6 +151,8 @@ import {
   triggerStyleFlash,
   // Eclipse Engine corruption warning (Issue #172)
   showEclipseWarning, updateEclipseWarning, hideEclipseWarning,
+  // Combo icon glow (Issue #218 deferred)
+  triggerComboGlow,
 } from './hud.js';
 import {
   initWristHolograms, showWristHolograms, updateWristHolograms, hideAllWristHolograms
@@ -800,12 +802,24 @@ function recordComboFire(index) {
   comboFireTimes[index] = performance.now();
 }
 
+// Momentum kill-chain (Issue #211): per-hand kill streak damage stacks.
+// Each kill adds +5% damage for 2s (cap 5x); decayed lazily in
+// computeWeaponStats on the next fire.
+const momentumKillStacks = [0, 0];
+const momentumKillLastAt = [0, 0];
+
 // Apply a detected combo's modifiers to the shot's stats.
 // ALL combos are SILENT (effects speak for themselves via damage numbers,
 // explosions, fire-rate). Even the once-per-level build-based toasts were
 // removed per player feedback — the Overload toast fired right after picking
 // Lightning Rod and was 'massive text in my face'.
 function applyFireCombo(comboId, stats, index, now) {
+  // Issue #218 deferred: timing combos are silent (no popup) — flash the
+  // accuracy bar in the combo color as the only feedback
+  const comboDef = COMBO_DEFS[comboId];
+  if (comboDef && comboDef.color) {
+    triggerComboGlow(parseInt(comboDef.color.replace('#', ''), 16));
+  }
   switch (comboId) {
     case 'dual_strike':
       stats.damage = Math.round(stats.damage * 1.25);
@@ -864,6 +878,16 @@ function handleEnemyKilled(enemyIndex, opts = {}) {
   // Issue #213: permanent per-weapon kill tracking (hand-attributed kills)
   if (opts.hand && game.mainWeapon[opts.hand]) {
     addMasteryKill(game.mainWeapon[opts.hand]);
+  }
+
+  // Momentum kill-chain (Issue #211): kills while overcharge is owned add
+  // +5% damage per stack for 2s (cap 5x). Per-hand, so only the overcharge
+  // hand's shots get the boost.
+  if (opts.hand && game.synergies?.[opts.hand]?.some(s => s.id === 'momentum_chain')) {
+    const handIdx = opts.hand === 'right' ? 1 : 0;
+    if (performance.now() - momentumKillLastAt[handIdx] > 2000) momentumKillStacks[handIdx] = 0;
+    momentumKillStacks[handIdx] = Math.min(5, momentumKillStacks[handIdx] + 1);
+    momentumKillLastAt[handIdx] = performance.now();
   }
   addScore(destroyData.scoreValue);
   updateHUD(game);
@@ -3808,6 +3832,14 @@ registerResetHook(resetChargeSystems);
 // Issue #172: purge any active eclipses on full game restart
 registerResetHook(purgeAllEclipses);
 
+// Issue #211: clear Momentum kill-chain stacks on full game restart
+registerResetHook(() => {
+  momentumKillStacks[0] = 0;
+  momentumKillStacks[1] = 0;
+  momentumKillLastAt[0] = 0;
+  momentumKillLastAt[1] = 0;
+});
+
 // Reset nuke flash opacity on full game restart
 registerResetHook(() => {
   if (nukeFlash) {
@@ -5038,6 +5070,16 @@ function fireMainWeapon(controller, index) {
 // eclipsed, so this is zero-cost outside the Eclipse Engine fight.
 function computeWeaponStats(hand) {
   const stats = getWeaponStats(game.mainWeapon[hand], game.upgrades[hand]);
+  // Momentum kill-chain (Issue #211): each kill adds +5% damage for 2s,
+  // stacks up to 5x (lazy decay — no timer, checked on next fire)
+  const handIdx = hand === 'right' ? 1 : 0;
+  if (momentumKillStacks[handIdx] > 0) {
+    if (performance.now() - momentumKillLastAt[handIdx] > 2000) {
+      momentumKillStacks[handIdx] = 0;
+    } else {
+      stats.damage = Math.max(1, Math.round(stats.damage * (1 + 0.05 * momentumKillStacks[handIdx])));
+    }
+  }
   const eclipsed = getActiveEclipseIds(hand);
   return eclipsed.length > 0 ? applyEclipseToStats(stats, eclipsed) : stats;
 }

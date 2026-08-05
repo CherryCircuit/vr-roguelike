@@ -1164,6 +1164,14 @@ export const SYNERGY_DEFS = {
   cryo_conduction:   { name: 'Cryo-Conduction',  desc: 'Electrified enemies slow nearby enemies by 30%', tier: 2 },
   lethal_precision:  { name: 'Lethal Precision', desc: 'Crits deal 3x instead of 2x', tier: 1 },
   blood_letter:      { name: 'Blood Letter',     desc: 'Vampiric heals every 3 kills instead of 5', tier: 1 },
+  // Deferred combos (flagged in #211): kill-chain + weapon-specific synergies.
+  // Consumed by projectile-system.js / beam-weapons.js / main.js.
+  soul_chain:        { name: 'Soul Chain',       desc: 'Ricochet kills also count toward vampiric heals', tier: 1 },
+  pinball_wizard:    { name: 'Pinball Wizard',   desc: 'Pierced enemies ricochet onto NEW targets', tier: 1 },
+  momentum_chain:    { name: 'Momentum',         desc: 'Kills add +5% damage for 2s (stacks 5x)', tier: 1 },
+  tesla_tower:       { name: 'Tesla Tower',      desc: 'Lightning chains to 2 more enemies; chains chain', tier: 1 },
+  final_solution:    { name: 'Final Solution',   desc: 'Full-charge kills open a black hole that explodes', tier: 1 },
+  swarm_leader:      { name: 'Swarm Leader',     desc: 'Lost seekers become orbiting protective drones', tier: 1 },
 };
 
 /**
@@ -1191,6 +1199,31 @@ export function detectSynergies(upgrades) {
   const critCount = (u.critical || 0) + (u.super_crit || 0) * 2;
   if (critCount >= 2) synergies.push({ id: 'lethal_precision', name: 'Lethal Precision', tier: 1 });
   if (critCount >= 1 && (u.vampiric || 0) > 0) synergies.push({ id: 'blood_letter', name: 'Blood Letter', tier: 1 });
+
+  // Kill-chain combos (Issue #211 §3)
+  if ((u.vampiric || 0) > 0 && (u.ricochet || 0) > 0) {
+    synergies.push({ id: 'soul_chain', name: 'Soul Chain', tier: 1 });
+  }
+  if ((u.ricochet || 0) > 0 && ((u.piercing || 0) > 0 || (u.overcharge || 0) > 0)) {
+    synergies.push({ id: 'pinball_wizard', name: 'Pinball Wizard', tier: 1 });
+  }
+  // "Any + Overcharge" — overcharge alone grants Momentum (kill-chain)
+  if ((u.overcharge || 0) > 0) {
+    synergies.push({ id: 'momentum_chain', name: 'Momentum', tier: 1 });
+  }
+
+  // Weapon-specific combos (Issue #211 §4). Weapon-specific upgrade ids
+  // imply the weapon (tesla_coil→lightning_rod, etc.), so the main weapon
+  // id is not needed here.
+  if ((u.tesla_coil || 0) > 0 && hasShock) {
+    synergies.push({ id: 'tesla_tower', name: 'Tesla Tower', tier: 1 });
+  }
+  if ((u.quick_charge || 0) > 0 && (u.death_ray || 0) > 0) {
+    synergies.push({ id: 'final_solution', name: 'Final Solution', tier: 1 });
+  }
+  if ((u.gimme_more || 0) > 0) {
+    synergies.push({ id: 'swarm_leader', name: 'Swarm Leader', tier: 1 });
+  }
 
   return synergies;
 }

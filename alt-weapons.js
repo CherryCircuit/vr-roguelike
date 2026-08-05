@@ -1111,6 +1111,21 @@ function triggerBlackHole(mine, mineIndex) {
     destroyBlackHole(oldest);
   }
 
+  buildBlackHole(mine.mesh.position, {
+    duration: mine.blackHoleDuration,
+    damage: mine.damage,
+    pullRadius: mine.pullRadius,
+    stunDuration: mine.stunDuration,
+  });
+
+  playExplosionSound();
+  triggerScreenShake(0.4, 300);
+}
+
+// [CORE] Build a black hole entity (shared by the mine alt-weapon and the
+// Final Solution combo). Creates the visual, registers with activeBlackHoles
+// (updateBlackHoles drives pull + collapse), returns the entity.
+function buildBlackHole(position, opts) {
   // Create black hole visual
   const bhGroup = new THREE.Group();
 
@@ -1180,7 +1195,7 @@ function triggerBlackHole(mine, mineIndex) {
   glow.name = 'black-hole-mine-glow';
   bhGroup.add(glow);
 
-  bhGroup.position.copy(mine.mesh.position);
+  bhGroup.position.copy(position);
   bhGroup.position.y = 0.5;
 
   const blackHole = {
@@ -1191,10 +1206,10 @@ function triggerBlackHole(mine, mineIndex) {
     ringMat,
     position: bhGroup.position.clone(),
     createdAt: performance.now(),
-    duration: mine.blackHoleDuration,
-    damage: mine.damage,
-    pullRadius: mine.pullRadius,
-    stunDuration: mine.stunDuration,
+    duration: opts.duration,
+    damage: opts.damage,
+    pullRadius: opts.pullRadius,
+    stunDuration: opts.stunDuration,
     affectedEnemies: new Set(),
     damageApplied: false,
   };
@@ -1202,8 +1217,26 @@ function triggerBlackHole(mine, mineIndex) {
   scene.add(bhGroup);
   activeBlackHoles.push(blackHole);
 
+  return blackHole;
+}
+
+/**
+ * Spawn a black hole at a world position (Final Solution combo, Issue #211).
+ * Shares the mine black hole's visual + updateBlackHoles pull/collapse logic.
+ * @param {THREE.Vector3} position - world position (y lifted to 0.5)
+ * @param {Object} opts - { duration, damage, pullRadius, stunDuration }
+ */
+export function spawnBlackHoleAt(position, opts = {}) {
+  const blackHole = buildBlackHole(position, {
+    duration: opts.duration ?? 2000,
+    damage: opts.damage ?? 60,
+    pullRadius: opts.pullRadius ?? 6,
+    stunDuration: opts.stunDuration ?? 0.8,
+  });
+  if (!blackHole) return null;
   playExplosionSound();
   triggerScreenShake(0.4, 300);
+  return blackHole;
 }
 
 // [CORE] Destroy black hole and cleanup

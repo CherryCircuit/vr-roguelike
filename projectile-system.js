@@ -1151,6 +1151,21 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
         spawnHealthGainPopup(destroyData.position);  // Spawn +💖 popup at enemy position
         playHealSound();  // Play healing sound
       }
+
+      // Soul Chain (Issue #211): ricochet kills also count toward the
+      // vampiric heal threshold — every N ricochet kills heals 1 HP
+      if (stats.isRicochetHit && stats.vampiricInterval > 0 && controllerIndex !== undefined) {
+        const soulHand = getHandForController(controllerIndex);
+        const soulChainActive = game.synergies?.[soulHand]?.some(s => s.id === 'soul_chain');
+        if (soulChainActive) {
+          game.ricochetKillCount++;
+          if (game.ricochetKillCount % stats.vampiricInterval === 0) {
+            game.health = Math.min(game.maxHealth, game.health + 1);
+            spawnHealthGainPopup(destroyData.position);
+            playHealSound();
+          }
+        }
+      }
     }
   }
 }
@@ -1447,25 +1462,117 @@ const _bossHelperPool = {
   lightningMat: null,
 };
 
-function handleRicochet(fromPoint, stats, bounceCount, controllerIndex) {
+// Per-hand synergy check (game.synergies snapshot recomputed on upgrade picks)
+function handHasSynergy(controllerIndex, synergyId) {
+  if (controllerIndex === undefined) return false;
+  const hand = getHandForController(controllerIndex);
+  return !!(game.synergies?.[hand]?.some(s => s.id === synergyId));
+}
+
+// ── Swarm Leader drones (Issue #211) ────────────────────────
+// Lost seekers convert into small protective drones that orbit the player
+// and destroy enemy projectiles on contact. Shared geo/mat (spawned rarely,
+// capped); cleaned up on pool reset.
+const _swarmDrones = []; // { mesh, orbitPhase, createdAt }
+const SWARM_DRONE_CAP = 6;
+const SWARM_DRONE_DURATION = 6000;
+const SWARM_DRONE_ORBIT_RADIUS = 1.4;
+const SWARM_DRONE_BLOCK_RADIUS_SQ = 0.35; // ~0.59m kill radius
+let _swarmDroneGeo = null;
+let _swarmDroneMat = null;
+
+function spawnSwarmDrone(position) {
+  if (_swarmDrones.length >= SWARM_DRONE_CAP) return;
+  if (!_swarmDroneGeo) _swarmDroneGeo = new THREE.OctahedronGeometry(0.12, 0);
+  if (!_swarmDroneMat) {
+    _swarmDroneMat = new THREE.MeshBasicMaterial({ color: 0x83ff2b, transparent: true, opacity: 0.9 });
+  }
+  const mesh = new THREE.Mesh(_swarmDroneGeo, _swarmDroneMat);
+  mesh.position.copy(position);
+  mesh.userData.createdAt = performance.now();
+  scene.add(mesh);
+  _swarmDrones.push(mesh);
+}
+
+function updateSwarmDrones(dt, now) {
+  for (let i = _swarmDrones.length - 1; i >= 0; i--) {
+    const drone = _swarmDrones[i];
+    // Expire: remove mesh (shared geo/mat stays for the next drone)
+    if (now - drone.userData.createdAt > SWARM_DRONE_DURATION) {
+      scene.remove(drone);
+      _swarmDrones.splice(i, 1);
+      continue;
+    }
+    // Orbit the player (camera XZ) with a gentle bob
+    const orbitAngle = (now * 0.002) + i * (Math.PI * 2 / SWARM_DRONE_CAP);
+    drone.position.set(
+      camera.position.x + Math.cos(orbitAngle) * SWARM_DRONE_ORBIT_RADIUS,
+      camera.position.y - 0.5 + Math.sin(now * 0.003 + i) * 0.15,
+      camera.position.z + Math.sin(orbitAngle) * SWARM_DRONE_ORBIT_RADIUS,
+    );
+    // Block enemy projectiles on contact (same destruction path as the beam)
+    const bossProjs = getBossProjectiles();
+    for (let j = bossProjs.length - 1; j >= 0; j--) {
+      const bossProj = bossProjs[j];
+      if (!bossProj) continue;
+      if (drone.position.distanceToSquared(bossProj.position) < SWARM_DRONE_BLOCK_RADIUS_SQ) {
+        spawnBossProjectileDestructionFX(bossProj.position.clone());
+        if (bossProj._instIdx !== undefined) releaseBossProjIndex(bossProj._instIdx);
+        bossProjs.splice(j, 1);
+      }
+    }
+  }
+}
+
+export function clearSwarmDrones() {
+  for (const drone of _swarmDrones) {
+    scene.remove(drone);
+  }
+  _swarmDrones.length = 0;
+}
+
+/** Test seam: how many protective drones are currently orbiting. */
+export function getSwarmDroneCount() {
+  return _swarmDrones.length;
+}
+
+/**
+ * Bounce a ricochet shot to the nearest enemy. When `excludeEnemies` is
+ * provided (Pinball Wizard synergy), already-hit enemies are skipped so
+ * pierced shots ricochet onto NEW targets instead of re-hitting the enemy
+ * they just passed through.
+ */
+export function handleRicochet(fromPoint, stats, bounceCount, controllerIndex, excludeEnemies = null) {
   if (bounceCount >= stats.ricochetBounces) return;
 
   const enemies = getEnemies();
   let closest = null;
   let closestDist = 8;
+  let fallback = null;
+  let fallbackDist = 8;
 
   enemies.forEach((e, i) => {
+    if (!e?.mesh) return;
     const dist = e.mesh.position.distanceTo(fromPoint);
     if (dist < closestDist) {
+      // Pinball Wizard: skip enemies this projectile already hit; keep the
+      // closest as a fallback when no new target exists (pre-synergy behavior)
+      if (excludeEnemies && excludeEnemies.has(i)) {
+        fallback = { index: i, enemy: e };
+        fallbackDist = dist;
+        return;
+      }
       closestDist = dist;
       closest = { index: i, enemy: e };
     }
   });
+  const target = closest || fallback;
+  if (excludeEnemies && !closest) return; // only already-hit enemies nearby — no bounce
 
-  if (closest) {
+  if (target) {
     // isRicochetHit feeds Issue #189 style creativity scoring
-    handleHit(closest.index, closest.enemy, { ...stats, damage: stats.damage * 0.5, isRicochetHit: true }, closest.enemy.mesh.position, controllerIndex);
-    handleRicochet(closest.enemy.mesh.position, stats, bounceCount + 1, controllerIndex);
+    handleHit(target.index, target.enemy, { ...stats, damage: stats.damage * 0.5, isRicochetHit: true }, target.enemy.mesh.position, controllerIndex);
+    handleRicochet(target.enemy.mesh.position, stats, bounceCount + 1, controllerIndex, excludeEnemies);
   }
 }
 
@@ -1633,6 +1740,12 @@ function updateProjectiles(dt) {
 
     // Remove expired projectiles - return to pool
     if (age > proj.userData.lifetime) {
+      // Issue #211 Swarm Leader: seekers that expired WITHOUT ever locking a
+      // target become orbiting protective drones (they block enemy projectiles)
+      if (proj.userData.homingRange > 0 && !proj.userData.homingTarget &&
+          handHasSynergy(proj.userData.controllerIndex, 'swarm_leader')) {
+        spawnSwarmDrone(proj.position);
+      }
       resolveProjectileAccuracy(proj);
       if (proj.userData.isPooled) {
         returnProjectileToPool(proj);
@@ -1913,7 +2026,9 @@ function updateProjectiles(dt) {
         handleHit(result.index, result.enemy, _hitStatsScratch, preciseHit.point, proj.userData.controllerIndex, proj.userData.isExploding, hitWeakPoint, hitInfo);
 
         if (proj.userData.stats?.ricochetBounces > 0) {
-          handleRicochet(preciseHit.point, proj.userData.stats, 0, proj.userData.controllerIndex);
+          // Issue #211 Pinball Wizard: pierced shots ricochet onto NEW targets
+          handleRicochet(preciseHit.point, proj.userData.stats, 0, proj.userData.controllerIndex,
+            handHasSynergy(proj.userData.controllerIndex, 'pinball_wizard') ? proj.userData.hitEnemies : null);
         }
 
         if (!proj.userData.stats?.piercing) {
@@ -1958,7 +2073,9 @@ function updateProjectiles(dt) {
       );
 
       if (proj.userData.stats?.ricochetBounces > 0) {
-        handleRicochet(directEnemyHit.point, proj.userData.stats, 0, proj.userData.controllerIndex);
+        // Issue #211 Pinball Wizard: pierced shots ricochet onto NEW targets
+        handleRicochet(directEnemyHit.point, proj.userData.stats, 0, proj.userData.controllerIndex,
+          handHasSynergy(proj.userData.controllerIndex, 'pinball_wizard') ? proj.userData.hitEnemies : null);
       }
 
       if (!proj.userData.stats?.piercing) {
@@ -2092,6 +2209,9 @@ function updateProjectiles(dt) {
       }
     }
   }
+
+  // Issue #211 Swarm Leader: orbit + block pass for protective drones
+  updateSwarmDrones(dt, now);
 }
 
 // [CORE] Handle VR upgrade card selection
@@ -2217,6 +2337,9 @@ export function resetProjectilePools() {
     _debrisGlowFree = [];
     for (let i = 0; i < DEBRIS_GLOW_POOL_SIZE; i++) _debrisGlowFree.push(i);
   }
+
+  // Issue #211: clear protective Swarm Leader drones on full game restart
+  clearSwarmDrones();
 }
 
 /**

@@ -111,6 +111,9 @@ export const game = {
   maxHealth: 6,
   kills: 0,
   totalKills: 0,
+  // Soul Chain (Issue #211): ricochet kills counted on their own interval —
+  // they heal the player at the same threshold as direct kills
+  ricochetKillCount: 0,
   score: 0,
   nukes: 3,
   
@@ -237,7 +240,10 @@ export function resetGame() {
     level: 1,
     health: 6,
     kills: 0,
-    totalKills: 0,
+  totalKills: 0,
+  // Soul Chain (Issue #211): ricochet kills counted on their own interval —
+  // they heal the player at the same threshold as direct kills
+  ricochetKillCount: 0,
     score: 0,
     nukes: 3,
 

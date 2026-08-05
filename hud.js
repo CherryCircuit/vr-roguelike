@@ -1754,6 +1754,10 @@ export function updateHUD(gameState) {
     comboSprite.visible = false;
     comboCooldownSprite.visible = false;
   }
+
+  // Issue #218 deferred: combo glow flash — runs AFTER the accuracy block
+  // (which rewrites the bar color each frame) so the tint survives
+  updateComboGlow(now);
 }
 
 // ── Level Complete / Transition Text ───────────────────────
@@ -3352,6 +3356,37 @@ export function updateHitFlash(dt) {
 export function triggerStyleFlash(colorHex) {
   styleFlashColor = colorHex;
   styleFlashOpacity = 0.4;
+}
+
+// ── Combo icon glow (Issue #218 deferred) ───────────────────
+// Timing combos are deliberately silent (no popup/sting — see 1e82927);
+// the glow tints the accuracy bar + combo text in the combo's color for
+// ~0.6s so the player still gets visual feedback without the spam.
+let comboGlowActive = false;
+let comboGlowColor = 0xff8800;
+let comboGlowStartTime = 0;
+const COMBO_GLOW_DURATION = 600;
+
+export function triggerComboGlow(colorHex) {
+  comboGlowActive = true;
+  comboGlowColor = typeof colorHex === 'number' ? colorHex : 0xff8800;
+  comboGlowStartTime = performance.now();
+}
+
+function updateComboGlow(now) {
+  if (!comboGlowActive) return;
+  const elapsed = now - comboGlowStartTime;
+  if (elapsed >= COMBO_GLOW_DURATION) {
+    comboGlowActive = false;
+    return;
+  }
+  // Show the accuracy bar during the flash (it is hidden when the accuracy
+  // bonus is 0 — combos still trigger then)
+  comboCooldownSprite.visible = true;
+  // Tint the accuracy-multiplier bar in the combo color, fading back
+  const t = 1 - elapsed / COMBO_GLOW_DURATION; // 1 → 0
+  comboCooldownSprite.material.color.setHex(comboGlowColor);
+  comboCooldownSprite.material.opacity = 0.3 + t * 0.6;
 }
 
 // ── Speed Lines ────────────────────────────────────────────

@@ -31,6 +31,9 @@ import {
   handleHit, spawnBossProjectileDestructionFX, triggerHostileProjectileExplosion,
   projectiles, _hostileProjectilesInArray, explosionVisuals, screenFx,
 } from './projectile-system.js';
+// Issue #211 Final Solution: reuses the black-hole pull/collapse system
+// (documented intentional cycle: beam-weapons ↔ alt-weapons, runtime-only)
+import { spawnBlackHoleAt } from './alt-weapons.js';
 
 // [DEBUG] Mirrors main.js — console.log blocks the render thread on Quest
 const DEBUG = false;
@@ -204,8 +207,13 @@ function updateLightningBeam(controller, index, stats, dt) {
   enemySpatialHash.queryInto(_hashScratchLightning, _lightningOrigin.x, _lightningOrigin.z, stats.lightningRange);
   _lightningTargetEnemies.length = 0;
   _lightningTargetDistSq.length = 0;
-  const maxChains = stats.lightningMaxTargets || 3;
+  let maxChains = stats.lightningMaxTargets || 3;
   const lightningRangeSq = stats.lightningRange * stats.lightningRange;
+  // Issue #211 Tesla Tower: lightning chains to 2 more enemies AND every
+  // chained enemy sparks a secondary chain to one nearby non-chained enemy
+  const teslaHand = getHandForController(index);
+  const teslaTowerActive = game.synergies?.[teslaHand]?.some(s => s.id === 'tesla_tower');
+  if (teslaTowerActive) maxChains += 2;
 
   for (let hi = 0; hi < _hashScratchLightning.length; hi++) {
     const e = _hashScratchLightning[hi];
@@ -236,7 +244,39 @@ function updateLightningBeam(controller, index, stats, dt) {
     _lightningTargetEnemies[si2 + 1] = e;
   }
 
-  const chainCount = Math.min(_lightningTargetEnemies.length, maxChains);
+  // Tesla Tower secondary chains: each primary target sparks to one nearby
+  // enemy not already chained (cap 4 secondaries; chainCount absorbs them).
+  // NOTE: must run BEFORE chainCount is read so secondaries join the chain.
+  let secondaryAdded = 0;
+  if (teslaTowerActive && _lightningTargetEnemies.length > 0) {
+    const chained = new Set(_lightningTargetEnemies);
+    const secondaryRange = stats.lightningRange * 0.8;
+    for (let ti = 0; ti < _lightningTargetEnemies.length && secondaryAdded < 4; ti++) {
+      const primary = _lightningTargetEnemies[ti];
+      const allEnemies = getEnemies();
+      let best = null;
+      let bestDist = secondaryRange;
+      for (let ei = 0; ei < allEnemies.length; ei++) {
+        const e = allEnemies[ei];
+        if (!e?.mesh || chained.has(e)) continue;
+        const d = e.mesh.position.distanceTo(primary.mesh.position);
+        if (d < bestDist) {
+          bestDist = d;
+          best = e;
+        }
+      }
+      if (best) {
+        chained.add(best);
+        _lightningTargetEnemies.push(best);
+        _lightningTargetDistSq.push(best.mesh.position.distanceToSquared(_lightningOrigin));
+        secondaryAdded++;
+      }
+    }
+  }
+
+  // Secondaries extend the chain beyond maxChains (they are ADDED targets,
+  // not replacements) — without this they'd be capped out of the damage loop
+  const chainCount = Math.min(_lightningTargetEnemies.length, maxChains + secondaryAdded);
 
   // Always show beam (sound + visuals)
   startLightningSound();
@@ -1308,6 +1348,15 @@ function fireChargeBeam(controller, index, chargeTimeSec, stats, options = {}) {
         // No element damage, just the visual
       }
     });
+  }
+
+  // Issue #211 Final Solution: a full-charge kill opens a black hole at the
+  // kill site — it pulls nearby enemies for 2s, then explodes (shared
+  // black-hole system from alt-weapons)
+  if (isFullCharge && aoeKillPositions.length > 0 &&
+      game.synergies?.[hand]?.some(s => s.id === 'final_solution')) {
+    const killPos = aoeKillPositions[aoeKillPositions.length - 1];
+    spawnBlackHoleAt(killPos, { duration: 2000, pullRadius: 6, damage: 60, stunDuration: 0.8 });
   }
 
   // Triple shot: schedule a second beam 300ms later (only on initial fire, not on delayed shots)
