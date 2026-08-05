@@ -2077,7 +2077,7 @@ function updateReflectorDrones(now, dt, playerPos) {
  * @returns {boolean} true if projectile was reflected
  */
 // [CORE] Check reflector drone projectile reflection
-function checkReflectorDroneReflection(projPos, isBossProjectile = false) {
+export function checkReflectorDroneReflection(projPos, isBossProjectile = false) {
   for (const drone of activeReflectorDrones) {
     const dist = projPos.distanceTo(drone.mesh.position);
     if (dist < 0.5) {  // Within drone shield radius

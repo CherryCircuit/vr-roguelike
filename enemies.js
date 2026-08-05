@@ -11752,6 +11752,226 @@ class EclipseEngineBoss extends Boss {
   }
 }
 
+// ── THE MAW (Issue #168) ───────────────────────────────────
+// Tier 1 alternative boss: a devouring void that closes in. The arena
+// floor crumbles inward over 3 phases, the Maw orbits closer, spawns
+// minions, and exposes a glowing core during chomp wind-ups (3x damage).
+class MawBoss extends Boss {
+  constructor(def, levelConfig, sceneRef, telegraphing) {
+    super(def, levelConfig, sceneRef, telegraphing);
+
+    this.arenaRadius = 20;
+    this.targetArenaRadius = 20;
+    this.floorTiles = [];
+    this.crumbleTimer = 0;
+    this.crumbleInterval = 8000;
+    this.chompTimer = def.chompInterval || 5.0;
+    this.chompPhase = 'idle'; // idle | windup | exposed
+    this.chompPhaseTimer = 0;
+    this.coreExposed = false;
+    this.orbitAngle = Math.random() * Math.PI * 2;
+    this.fixedY = 3.5;
+    this.minDistance = 6;
+    this.maxDistance = 14;
+
+    // Glowing core: exposed (visible + hittable) only during chomp wind-ups.
+    // Invisible meshes are skipped by raycasts, so the 3x window is exact.
+    this.coreMesh = new THREE.Mesh(
+      getGeo(0.35),
+      new THREE.MeshBasicMaterial({ color: 0xff0044, transparent: true, opacity: 0.95, fog: false }),
+    );
+    this.coreMesh.position.set(0, 0, 0.6);
+    this.coreMesh.userData.isWeakPoint = true;
+    this.coreMesh.userData.isMawCore = true;
+    this.coreMesh.visible = false;
+    this.mesh.add(this.coreMesh);
+
+    this._buildArenaFloor();
+    this.phase = 1;
+  }
+
+  // ── Arena floor: 5 rings × 16 tiles around the player ──
+  _buildArenaFloor() {
+    const tileGeo = new THREE.PlaneGeometry(3.4, 3.4);
+    for (let ring = 0; ring < 5; ring++) {
+      const radius = 4 + ring * 4; // 4, 8, 12, 16, 20
+      for (let i = 0; i < 16; i++) {
+        const angle = (i / 16) * Math.PI * 2;
+        const mesh = new THREE.Mesh(tileGeo, new THREE.MeshBasicMaterial({
+          color: 0x1a1030, transparent: true, opacity: 0.55,
+          depthWrite: false, fog: false,
+        }));
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(Math.cos(angle) * radius, getBiomeFloorY() + 0.02, Math.sin(angle) * radius);
+        this.sceneRef.add(mesh);
+        this.floorTiles.push({ mesh, ring, alive: true, crumbling: false, crumbleStart: 0 });
+      }
+    }
+  }
+
+  _triggerCrumbleWave() {
+    // Crumble the two outermost alive rings (crack → fall → remove)
+    let outerRing = -1;
+    for (const t of this.floorTiles) {
+      if (t.alive && t.ring > outerRing) outerRing = t.ring;
+    }
+    if (outerRing < 0) return;
+    for (const t of this.floorTiles) {
+      if (t.alive && t.ring >= outerRing - 1 && !t.crumbling) {
+        t.crumbling = true;
+        t.crumbleStart = performance.now();
+        t.mesh.material.color.setHex(0xff6600); // crack warning
+      }
+    }
+    playFinalBossSummonWallSound(); // deep rumble
+  }
+
+  _updateCrumble(dt, now) {
+    // Smoothly shrink the arena radius toward the phase target
+    this.arenaRadius += (this.targetArenaRadius - this.arenaRadius) * 0.01;
+    this.crumbleTimer += dt * 1000;
+    if (this.crumbleTimer >= this.crumbleInterval) {
+      this.crumbleTimer = 0;
+      this._triggerCrumbleWave();
+    }
+
+    // Animate crumbling tiles: darken 1.5s → fall + fade → remove at 2s
+    for (const t of this.floorTiles) {
+      if (!t.crumbling || !t.alive) continue;
+      const age = now - t.crumbleStart;
+      if (age >= 2000) {
+        t.alive = false;
+        t.mesh.visible = false;
+      } else if (age >= 1500) {
+        const fall = (age - 1500) / 500;
+        t.mesh.position.y -= dt * 3;
+        t.mesh.material.opacity = 0.55 * (1 - fall);
+      }
+    }
+  }
+
+  _updatePhase(dt, now, playerPos) {
+    const hpRatio = this.hp / this.maxHp;
+    if (hpRatio <= 0.33) {
+      if (this.phase !== 3) {
+        this.phase = 3;
+        this.targetArenaRadius = 8;
+        this.crumbleInterval = 5000;
+        this.minionSpawnRate = 0.006;
+        this.maxDistance = 8;
+        this.minDistance = 4;
+      }
+    } else if (hpRatio <= 0.66) {
+      if (this.phase !== 2) {
+        this.phase = 2;
+        this.targetArenaRadius = 14;
+        this.crumbleInterval = 8000;
+        this.minionSpawnRate = 0.004;
+        this.maxDistance = 11;
+      }
+    } else if (this.phase !== 1) {
+      this.phase = 1;
+      this.targetArenaRadius = 20;
+      this.crumbleInterval = 8000;
+      this.minionSpawnRate = 0.003;
+      this.maxDistance = 14;
+    }
+
+    // Orbit the player at the phase's range
+    this.orbitAngle += dt * 0.35;
+    const dist = Math.max(this.minDistance, Math.min(this.maxDistance, this.arenaRadius * 0.7));
+    const target = new THREE.Vector3(
+      playerPos.x + Math.cos(this.orbitAngle) * dist,
+      this.fixedY + Math.sin(now * 0.001) * 0.8,
+      playerPos.z + Math.sin(this.orbitAngle) * dist,
+    );
+    this.mesh.position.lerp(target, Math.min(1, dt * 1.2));
+    this.mesh.lookAt(playerPos);
+  }
+
+  // Chomp cycle: idle → windup (core opens, red flash) → chomp projectile
+  // fired + core exposed for 0.8s → idle
+  _updateChomp(dt, now, playerPos) {
+    this.chompPhaseTimer += dt;
+    if (this.chompPhase === 'idle') {
+      if (this.chompPhaseTimer >= this.chompTimer) {
+        this.chompPhaseTimer = 0;
+        this.chompPhase = 'windup';
+        this.coreExposed = true;
+        this.coreMesh.visible = true;
+        playFinalBossChargeSound();
+        if (this.telegraphing) {
+          this.telegraphing.start('charge', 1.4, 0xff0044, this.mesh.position.clone());
+        }
+      }
+    } else if (this.chompPhase === 'windup') {
+      if (this.chompPhaseTimer >= 1.5) {
+        this.chompPhaseTimer = 0;
+        this.chompPhase = 'exposed';
+        spawnBossProjectile(this.getMawMouthPosition(), playerPos.clone());
+        playFinalBossSealBreakSound(); // teeth clack
+      }
+    } else if (this.chompPhase === 'exposed') {
+      if (this.chompPhaseTimer >= 0.8) {
+        this.chompPhase = 'idle';
+        this.chompPhaseTimer = 0;
+        this.coreExposed = false;
+        this.coreMesh.visible = false;
+      }
+    }
+  }
+
+  getMawMouthPosition() {
+    const mouth = new THREE.Vector3();
+    this.mesh.getWorldPosition(mouth);
+    mouth.y += 0.4;
+    return mouth;
+  }
+
+  onMinionSpawn(playerPos) {
+    const type = this.phase >= 3 ? 'swarm' : this.phase === 2 ? 'fast' : 'basic';
+    const angle = Math.random() * Math.PI * 2;
+    const radius = this.arenaRadius * 0.9;
+    const pos = new THREE.Vector3(
+      playerPos.x + Math.cos(angle) * radius,
+      1.4,
+      playerPos.z + Math.sin(angle) * radius,
+    );
+    const enemy = spawnEnemy(type, pos, this.levelConfig);
+    if (enemy) enemy._bossSummoned = true;
+  }
+
+  updateBehavior(dt, now, playerPos) {
+    this._updateCrumble(dt, now);
+    this._updatePhase(dt, now, playerPos);
+    this._updateChomp(dt, now, playerPos);
+  }
+
+  takeDamage(amount, hitInfo = {}) {
+    // Core hits deal 3x while exposed; the core mesh is invisible otherwise,
+    // so only the expose window can register weak-point hits
+    if (hitInfo.isWeakPoint) {
+      if (!this.coreExposed) return { killed: false, immune: true };
+      amount *= 3;
+      const info = { ...hitInfo };
+      delete info.isWeakPoint; // avoid the base class's own 2x
+      return super.takeDamage(amount, info);
+    }
+    return super.takeDamage(amount, hitInfo);
+  }
+
+  destroy() {
+    // Tear down the arena floor with the boss
+    for (const t of this.floorTiles) {
+      if (t.mesh.parent) t.mesh.parent.remove(t.mesh);
+      t.mesh.geometry.dispose();
+      t.mesh.material.dispose();
+    }
+    this.floorTiles = [];
+    super.destroy();
+  }
+}
+
 // ── CONDUCTOR ASCENDANT (Issue #170) ───────────────────────
 // Tier 3 boss that never attacks directly — it conducts choreographed
 // formations of real enemies. 80% shield until a movement is disrupted
@@ -12192,6 +12412,32 @@ const BOSS_DEFS = {
     weakPoints: false // Custom weak points (hands first, then head)
   },
 
+  // Issue #168: Tier 1 alternative boss — a devouring void that closes in.
+  // The arena floor crumbles inward over 3 phases; the Maw orbits closer,
+  // spawns minions, and exposes a glowing core during chomp wind-ups.
+  the_maw: {
+    name: 'THE MAW',
+    pattern: [
+      [1, 1, 1, 1, 1],
+      [1, 0, 0, 0, 1],
+      [1, 0, 0, 0, 1],
+      [1, 0, 0, 0, 1],
+      [1, 1, 1, 1, 1],
+    ],
+    voxelSize: 0.5,
+    baseHp: 1500,
+    phases: 3,
+    color: 0x330066,
+    scoreValue: 150,
+    behavior: 'maw',
+    hitboxRadius: 1.2,
+    weakPoints: false,
+    minionSpawnRate: 4.0,
+    chompInterval: 5.0,
+    chompWindup: 1.5,
+    chompExposeTime: 0.8,
+  },
+
   // The Prism (Level 10, replaces tier 2 pool)
   the_prism: {
     name: 'The Prism',
@@ -12458,6 +12704,9 @@ export function spawnBoss(bossId, levelConfig, camera) {
       break;
     case 'conductor':
       boss = new ConductorAscendantBoss(def, levelConfig, sceneRef, telegraphingSystem);
+      break;
+    case 'maw':
+      boss = new MawBoss(def, levelConfig, sceneRef, telegraphingSystem);
       break;
     default:
       boss = new Boss(def, levelConfig, sceneRef, telegraphingSystem);

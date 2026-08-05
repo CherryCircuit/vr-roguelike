@@ -93,6 +93,10 @@ import {
   activeShields, activeLaserMines, activeStasisFields, activePlasmaOrbs,
   activePhaseDashAfterimages, activeDecoys, activeBlackHoles, activeMines,
   activeTethers, activeNaniteSwarms, activeReflectorDrones, activeGrenades,
+  // Fix: reflector-drone reflection was called in the hostile projectile
+  // loop without an import — threw a ReferenceError the first time any boss
+  // projectile actually reached the player (frame loop froze)
+  checkReflectorDroneReflection,
   activeProximityMines, activeAttackDrones, activeEMPVisuals, activeTeleportEffects,
 } from './alt-weapons.js';
 import {
