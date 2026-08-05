@@ -51,6 +51,9 @@ import {
   playDissolveSound, playForgeSound,
   // Bullet Carnival grade sting (Issue #189)
   playStyleGradeUpSound,
+  // Eclipse Engine corruption layer (Issue #172)
+  playEclipseCorruptSound, playEclipsePurgeSound,
+  playEclipsePhase2StartSound, playEclipseSelfDamageSound,
 } from './audio.js';
 // Beam weapons module (Issue #196 Phase 1 extraction): charge cannon,
 // lightning rod beams/orbs, charge visuals, pending timer registry.
@@ -147,6 +150,8 @@ import {
   getAlchemyBenchHit, getHoveredAlchemyAction,
   // Bullet Carnival style flash (Issue #189)
   triggerStyleFlash,
+  // Eclipse Engine corruption warning (Issue #172)
+  showEclipseWarning, updateEclipseWarning, hideEclipseWarning,
 } from './hud.js';
 import {
   initWristHolograms, showWristHolograms, updateWristHolograms, hideAllWristHolograms
@@ -165,6 +170,11 @@ import {
   loadMastery, saveMastery, addMasteryKill, getMasteryTierIndex,
   getMasteryCardId, getBestMastery, getMasteryTier,
 } from './mastery.js';
+// Eclipse Engine corruption layer (Issue #172): upgrade-possession mechanic
+import {
+  initEclipseSystem, updateEclipse, purgeAllEclipses,
+  getActiveEclipseIds, applyEclipseToStats,
+} from './eclipse.js';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
@@ -1785,6 +1795,22 @@ function init() {
       setMaterialEmissiveSafe,
       triggerScreenShake,
     },
+  });
+
+  // Init eclipse corruption layer (Issue #172) with its injected deps.
+  // Guards inside eclipse.js make this a safe no-op if any dep is missing.
+  initEclipseSystem({
+    getUpgrades: () => game.upgrades,
+    applyPlayerDamage,
+    triggerHitFlash,
+    triggerStyleFlash,
+    showEclipseWarning,
+    hideEclipseWarning,
+    showFloatingMessage,
+    playEclipseCorruptSound,
+    playEclipsePurgeSound,
+    playEclipsePhase2StartSound,
+    playEclipseSelfDamageSound,
   });
 
   // Init subsystems
@@ -3884,7 +3910,7 @@ function handleCountrySelectTrigger(controller) {
 function onTriggerRelease(index) {
   if (isLightningOrbCharging(index)) {
     const hand = getHandForController(index);
-    const stats = getWeaponStats(game.mainWeapon[hand], game.upgrades[hand]);
+    const stats = computeWeaponStats(hand);
     if (stats.lightning && isBossLightningLevel()) {
       const chargeTimeSec = getLightningOrbChargeSec(index, performance.now());
       const controller = controllers[index];
@@ -3896,7 +3922,7 @@ function onTriggerRelease(index) {
   // Charge shot: fire beam on release
   if (chargeShotStartTime[index] !== null) {
     const hand = getHandForController(index);
-    const stats = getWeaponStats(game.mainWeapon[hand], game.upgrades[hand]);
+    const stats = computeWeaponStats(hand);
     if (stats.chargeShot) {
       const chargeTimeSec = (performance.now() - chargeShotStartTime[index]) / 1000;
       // Issue #143: Singularity Launcher replaces the beam on release;
@@ -4381,6 +4407,9 @@ registerResetHook(() => {
 // Reset charge explosions + beam/lightning visuals on full game restart
 // (ownership moved to beam-weapons.js in the Issue #196 refactor)
 registerResetHook(resetChargeSystems);
+
+// Issue #172: purge any active eclipses on full game restart
+registerResetHook(purgeAllEclipses);
 
 // Reset nuke flash opacity on full game restart
 registerResetHook(() => {
@@ -5375,6 +5404,9 @@ function endGame(victory) {
       }),
     }).catch(() => {}); // Fire-and-forget
   }
+  // Issue #172: purge any active eclipses (game over must never leave a
+  // corrupted loadout state behind)
+  purgeAllEclipses();
   clearAllEnemies();
   clearBoss();
   clearBossProjectiles();
@@ -5437,7 +5469,7 @@ function fireMainWeapon(controller, index) {
   const now = performance.now();
   const hand = getHandForController(index);
   const mainWeaponId = game.mainWeapon[hand];
-  let stats = getWeaponStats(mainWeaponId, game.upgrades[hand]);
+  let stats = computeWeaponStats(hand);
 
   // Issue #218: Resonance fire-rate boost applies to the cooldown gate
   if (now < comboFireRateBoostUntil[index]) {
@@ -5594,17 +5626,29 @@ function fireMainWeapon(controller, index) {
     // Suppress per-projectile sounds and play a single batched sound below
     // to avoid audio overload from projectile sound stacking (Issue #10).
     const multiProjectile = count > 1;
+    // Issue #172: eclipsed projectile upgrades make every shot veer at a
+    // wide random angle — the upgrade "scatters" instead of grouping.
+    const scattered = !!stats.eclipsedScatter;
     for (let i = 0; i < count; i++) {
       let spawnOrigin = origin.clone();
+      let fireDirection = direction;
 
-      if (count > 1 && !isBuckshot) {
+      if (scattered) {
+        const scatterAngle = THREE.MathUtils.degToRad(14 + Math.random() * 20); // 14-34° veer
+        const scatterRight = (Math.random() - 0.5) * 2;
+        const scatterUp = (Math.random() - 0.5) * 2;
+        fireDirection = direction.clone()
+          .addScaledVector(rightAxis, scatterRight * Math.sin(scatterAngle))
+          .addScaledVector(upAxis, scatterUp * Math.sin(scatterAngle))
+          .normalize();
+      } else if (count > 1 && !isBuckshot) {
         // Position shots side-by-side with small gap, all parallel
         // Spread evenly around center: for 2 shots [-0.5, 0.5], for 3 [-1, 0, 1], etc.
         const offsetIndex = i - (count - 1) / 2;
         spawnOrigin.addScaledVector(rightAxis, offsetIndex * gap);
       }
 
-      spawnProjectile(spawnOrigin, direction, index, stats, shotId, { suppressSound: multiProjectile });
+      spawnProjectile(spawnOrigin, fireDirection, index, stats, shotId, { suppressSound: multiProjectile });
     }
     // Play a single batched sound for multi-projectile shots
     if (multiProjectile) {
@@ -5615,6 +5659,16 @@ function fireMainWeapon(controller, index) {
       }
     }
   }
+}
+
+// Issue #172: compute a hand's weapon stats, then apply any active eclipse
+// corruption. Pure pipeline — getWeaponStats stays untouched (AGENTS.md
+// §14); applyEclipseToStats returns the same object when nothing is
+// eclipsed, so this is zero-cost outside the Eclipse Engine fight.
+function computeWeaponStats(hand) {
+  const stats = getWeaponStats(game.mainWeapon[hand], game.upgrades[hand]);
+  const eclipsed = getActiveEclipseIds(hand);
+  return eclipsed.length > 0 ? applyEclipseToStats(stats, eclipsed) : stats;
 }
 
 function lerp(a, b, t) {
@@ -6072,6 +6126,11 @@ function render(timestamp) {
     // Update kills remaining alert (auto-hide after timeout)
     updateKillsAlert(now);
 
+    // Issue #172: eclipse corruption ticking (durations + self-damage
+    // drains) and the corrupted-upgrade HUD countdown
+    updateEclipse(dt, now);
+    updateEclipseWarning(now);
+
     // SAFEGUARD: Ensure blaster displays are visible during gameplay
     // Prevents text/billboard elements from disappearing
     blasterDisplays.forEach(d => { if (d) d.visible = false; });  // Hidden during gameplay
@@ -6082,8 +6141,7 @@ function render(timestamp) {
     for (let i = 0; i < 2; i++) {
       if (controllerTriggerPressed[i]) {
         const hand = getHandForController(i);
-        const mainWeaponId = game.mainWeapon[hand];
-        const stats = getWeaponStats(mainWeaponId, game.upgrades[hand]);
+        const stats = computeWeaponStats(hand);
 
         if (stats.chargeShot) {
           if (chargeShotStartTime[i] === null) {
@@ -6185,7 +6243,7 @@ function render(timestamp) {
         if (desktopWeapon.fireMode === 'left' || desktopWeapon.fireMode === 'both') {
           const virtualController = getVirtualController('left');
           if (virtualController) {
-            const stats = getWeaponStats(game.mainWeapon.left, game.upgrades.left);
+            const stats = computeWeaponStats('left');
             if (stats.chargeShot) {
               if (chargeShotStartTime[0] === null) {
                 // Start charging
@@ -6251,7 +6309,7 @@ function render(timestamp) {
         if (desktopWeapon.fireMode === 'right' || desktopWeapon.fireMode === 'both') {
           const virtualController = getVirtualController('right');
           if (virtualController) {
-            const stats = getWeaponStats(game.mainWeapon.right, game.upgrades.right);
+            const stats = computeWeaponStats('right');
             if (stats.chargeShot) {
               if (chargeShotStartTime[1] === null) {
                 // Start charging
@@ -6318,7 +6376,7 @@ function render(timestamp) {
         if (chargeShotStartTime[0] !== null) {
           // Fire the charge shot on release
           const virtualController = getVirtualController('left');
-          const stats = getWeaponStats(game.mainWeapon.left, game.upgrades.left);
+          const stats = computeWeaponStats('left');
           if (virtualController && stats.chargeShot) {
             const chargeTimeSec = (now - chargeShotStartTime[0]) / 1000;
             // Issue #143: Singularity Launcher replaces the beam on release;
@@ -6337,7 +6395,7 @@ function render(timestamp) {
         }
         if (isLightningOrbCharging(0)) {
           const virtualController = getVirtualController('left');
-          const stats = getWeaponStats(game.mainWeapon.left, game.upgrades.left);
+          const stats = computeWeaponStats('left');
           if (virtualController && stats.lightning && isBossLightningLevel()) {
             fireLightningOrb(virtualController, 0, getLightningOrbChargeSec(0, now), stats);
           }
@@ -6346,7 +6404,7 @@ function render(timestamp) {
         if (chargeShotStartTime[1] !== null) {
           // Fire the charge shot on release
           const virtualController = getVirtualController('right');
-          const stats = getWeaponStats(game.mainWeapon.right, game.upgrades.right);
+          const stats = computeWeaponStats('right');
           if (virtualController && stats.chargeShot) {
             const chargeTimeSec = (now - chargeShotStartTime[1]) / 1000;
             // Issue #143: Singularity Launcher replaces the beam on release;
@@ -6365,7 +6423,7 @@ function render(timestamp) {
         }
         if (isLightningOrbCharging(1)) {
           const virtualController = getVirtualController('right');
-          const stats = getWeaponStats(game.mainWeapon.right, game.upgrades.right);
+          const stats = computeWeaponStats('right');
           if (virtualController && stats.lightning && isBossLightningLevel()) {
             fireLightningOrb(virtualController, 1, getLightningOrbChargeSec(1, now), stats);
           }
@@ -6591,6 +6649,9 @@ function render(timestamp) {
       // Check if boss was killed
       if (boss.hp <= 0) {
         _log(`[boss] Boss defeated!`);
+        // Issue #172: end all eclipses the moment the boss dies — the
+        // purge wave is part of the collapse (boss.destroy() also purges).
+        purgeAllEclipses();
         startBossDeathCinematic(boss);
       }
     } else {

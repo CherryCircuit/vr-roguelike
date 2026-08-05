@@ -1192,6 +1192,127 @@ export function playFinalBossAscendSound() {
   });
 }
 
+// ── Eclipse Engine corruption layer (Issue #172) ────────────
+
+/** Phase 2 trigger: deep void bass drop — the arena "opens up". */
+export function playEclipsePhase2StartSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // Descending bass drop (reverse-cymbal feel)
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(140, t);
+  osc.frequency.exponentialRampToValueAtTime(38, t + 1.1);
+  gain.gain.setValueAtTime(0.0, t);
+  gain.gain.linearRampToValueAtTime(0.16, t + 0.12);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+  osc.connect(gain);
+  gain.connect(getSfxOutput());
+  osc.start(t);
+  osc.stop(t + 1.5);
+
+  // Airy "void" hiss layered on top (cached noise buffer — no allocation)
+  const noise = ctx.createBufferSource();
+  noise.buffer = getPlayerDamageNoiseBuffer(ctx);
+  const filter = ctx.createBiquadFilter();
+  const noiseGain = ctx.createGain();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(700, t);
+  filter.frequency.exponentialRampToValueAtTime(90, t + 1.2);
+  noiseGain.gain.setValueAtTime(0.0, t);
+  noiseGain.gain.linearRampToValueAtTime(0.09, t + 0.1);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+  noise.connect(filter);
+  filter.connect(noiseGain);
+  noiseGain.connect(getSfxOutput());
+  noise.start(t);
+  noise.stop(t + 1.4);
+}
+
+/** Corruption activate: glitchy stutter — the upgrade "turns". */
+export function playEclipseCorruptSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  // 8 rapid stutter blips sweeping downward (digital corruption feel)
+  for (let i = 0; i < 8; i++) {
+    const start = t + i * 0.07;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i % 2 === 0 ? 'square' : 'sawtooth';
+    osc.frequency.setValueAtTime(880 - i * 70, start);
+    osc.frequency.exponentialRampToValueAtTime(320, start + 0.06);
+    gain.gain.setValueAtTime(0.0, start);
+    gain.gain.linearRampToValueAtTime(0.07, start + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.06);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(start);
+    osc.stop(start + 0.07);
+  }
+}
+
+/** Purge: bright ice-crack — the upgrade returns with a satisfying pop. */
+export function playEclipsePurgeSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  [520, 780, 1170].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq * 0.85, t + i * 0.03);
+    osc.frequency.exponentialRampToValueAtTime(freq, t + 0.1 + i * 0.03);
+    gain.gain.setValueAtTime(0.0, t + i * 0.03);
+    gain.gain.linearRampToValueAtTime(0.09, t + 0.04 + i * 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35 + i * 0.03);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + i * 0.03);
+    osc.stop(t + 0.4 + i * 0.03);
+  });
+
+  // Short noise "pop" on top (crystal crack)
+  const noise = ctx.createBufferSource();
+  noise.buffer = getPlayerDamageNoiseBuffer(ctx);
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.setValueAtTime(2400, t);
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.0, t);
+  ng.gain.linearRampToValueAtTime(0.06, t + 0.01);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  noise.connect(hp);
+  hp.connect(ng);
+  ng.connect(getSfxOutput());
+  noise.start(t);
+  noise.stop(t + 0.13);
+}
+
+/** Eclipse self-damage: damage sound but "wrong" (detuned double-hit). */
+export function playEclipseSelfDamageSound() {
+  const ctx = getAudioContext();
+  const t = ctx.currentTime;
+
+  [0, 0.045].forEach((offset, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    // Detuned pair: one slightly flat, one slightly sharp — sounds corrupted
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150 - i * 12, t + offset);
+    osc.frequency.exponentialRampToValueAtTime(70, t + offset + 0.18);
+    gain.gain.setValueAtTime(0.0, t + offset);
+    gain.gain.linearRampToValueAtTime(0.09, t + offset + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.22);
+    osc.connect(gain);
+    gain.connect(getSfxOutput());
+    osc.start(t + offset);
+    osc.stop(t + offset + 0.25);
+  });
+}
+
 export function playFinalBossExposeSound() {
   const ctx = getAudioContext();
   const t = ctx.currentTime;

@@ -1,7 +1,7 @@
 # SESSION HANDOFF — Feature/Fix Sprint (pick up here with a fresh context)
 
 Paste this whole file's contents (plus `AGENTS.md` is auto-loaded from the repo) into a
-new opencode session. Everything below is verified current as of commit `9215aba` (pushed).
+new opencode session. Everything below is verified current as of commit `de882a3` (pushed).
 
 ---
 
@@ -13,19 +13,22 @@ import map in index.html), all audio procedural (Web Audio), all visuals procedu
 Deployed to Vercel from GitHub (repo `CherryCircuit/vr-roguelike`, live at
 `spaceomicide.vercel.app`). `AGENTS.md` in the repo root has the project rules —
 READ IT. Key rules: no build step, VR perf is critical (72fps), comment code thoroughly,
-test incrementally, search online resources before implementing.
+test incrementally, search online resources before implementing. Automation conventions
+and module architecture rules live in AGENTS.md §16-17.
 
-## CURRENT MODULE LAYOUT
+## CURRENT MODULE LAYOUT (approximate line counts)
 
 | File | Lines | Role |
 |---|---|---|
-| `main.js` | ~6,600 | Game flow/state machine, render loop, input, HUD orchestration, upgrade selection, telemetry |
-| `beam-weapons.js` | ~1,340 | Charge cannon + lightning rod (extracted #196 P1) |
-| `projectile-system.js` | ~2,100 | Projectile spawn/update/hit pipeline, instanced pools, accuracy, explosions, **screenFx** (extracted #196 P2) |
+| `main.js` | ~7,660 | Game flow/state machine, render loop, input, HUD orchestration, upgrade selection, telemetry |
+| `beam-weapons.js` | ~1,360 | Charge cannon + lightning rod (extracted #196 P1) |
+| `projectile-system.js` | ~2,220 | Projectile spawn/update/hit pipeline, instanced pools, accuracy, explosions, **screenFx** (extracted #196 P2) |
 | `alt-weapons.js` | ~3,630 | All 20 alt weapons + pools (extracted #196 P3) |
-| `enemies.js` | ~12,200 | Enemies, bosses, status effects, **synergy elemental behaviors** (never extracted; oldest module) |
-| `weapons.js` | ~710 | Weapon/upgrade defs, `getWeaponStats`, **`detectSynergies`** |
-| `game.js` | ~543 | Central state (`game` object incl. `game.synergies`), resetGame, hooks |
+| `enemies.js` | ~12,180 | Enemies, bosses, status effects, **synergy elemental behaviors** (never extracted; oldest module) |
+| `weapons.js` | ~1,210 | Weapon/upgrade defs, `getWeaponStats(weaponId, upgrades)`, **`detectSynergies`**, **`MASTERY_CARDS`** |
+| `mastery.js` | ~110 | Per-weapon mastery: tier math, localStorage persistence, best-mastery helper |
+| `eclipse.js` | ~340 | Eclipse Engine corruption layer (#172): eclipse state, `applyEclipseToStats`, drains, purge |
+| `game.js` | ~616 | Central state (`game` object incl. `game.synergies`), resetGame, hooks |
 | `audio.js`, `hud.js`, `damage-numbers.js`, `voxel-debris.js`, `stasis.js`, `boss-death-cinematic.js` | | Supporting modules |
 
 **Cross-module cycles (intentional, documented in code, runtime-only usage — valid in
@@ -34,161 +37,152 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 
 ## DONE THIS SESSION (chronological, all pushed to `main`)
 
-1. **`89d58d2` — Audio pack (#142 reactive 4-stem music layer + #184 threat spatial audio)**
-   - Hybrid per user choice: procedural stems (ambient pad/percussion/melody/intensity)
-     layered OVER the CDN soundtrack; BPM glides 100/120/140/160 by intensity state;
-     ducks outside PLAYING. `startReactiveMusic()` at init, per-frame
-     `updateReactiveMusic({playing, enemyCount, bossActive, comboMultiplier, lowHealth})`.
-   - Threat audio: pooled HRTF PannerNodes per enemy type (8 profiles in
-     `THREAT_PROFILES`), listener synced to camera each frame, cap 10 emitters.
-   - New file `tests/automation/test-audio-pack.cjs`.
+1. **`<TBD-COMMIT>` — #172 Eclipse Engine Phase 2** (upgrade corruption; current HEAD):
+   the final boss now corrupts your upgrades during the back half of the fight.
+   - **New module `eclipse.js`** (`initEclipseSystem(deps)` DI pattern, §17): effect
+     defs, active-eclipse state, pure `applyEclipseToStats(stats, eclipseIds)`
+     transform (no-op same-ref when clean), self-damage drains, purge. Never imports
+     game state — all deps injected.
+   - **Boss layer in `EclipseEngineBoss`** (enemies.js): SEPARATE from the existing
+     phase 1/2/3 structure — activates at 50% HP on top of the current phase
+     (purple shell tint while active). Escalation: 50-33% = 12s/10s/1 stack,
+     33-14% = 10s/10s/2, last stand <14% = 8s/12s/2. SHOCK status hits on the boss
+     extend the interval +3s for 4s (counterplay). Purges on boss death/destroy.
+   - **Effects (eclipsable = universal stat upgrades only, never mastery cards or
+     weapon-specific)**: damage upgrades → 30% damage penalty; barrel/turbo → 70%
+     slower fire; double/triple shot → projectiles halve + veer 14-34° random
+     (stats.eclipsedScatter read in fireMainWeapon); crit → 15% of crits reflect 1
+     HP back at the player (projectile-system handleHit/handleBossHit) and lose
+     the crit; pierce/overcharge → piercing sealed; vampiric/life_steal → no
+     healing + 1 HP drain/2s; fire/shock/freeze → status ammo stripped + 1 HP
+     drain/2s (capped 2/tick ≈ 1 dmg/s max).
+   - **Fire pipeline**: `computeWeaponStats(hand)` wrapper in main.js replaces all 9
+     fire-time `getWeaponStats` call sites; beams/charge/evolved weapons receive the
+     same corrupted stats. Alt weapons (nukes, shields…) are intentionally NOT
+     covered.
+   - **HUD**: `showEclipseWarning`/`updateEclipseWarning`/`hideEclipseWarning`
+     sprite banner on its own camera-attached group with 1s-countdown re-render
+     (not the issue's DOM sketch — VR HUD is all sprites). Purge = white
+     `triggerStyleFlash` + bright pop sound.
+   - **Audio**: 4 new procedural sounds in audio.js (`playEclipsePhase2StartSound`,
+     `playEclipseCorruptSound`, `playEclipsePurgeSound`, `playEclipseSelfDamageSound`).
+     No continuous drone loop — looping oscillators add frame-budget risk for
+     marginal payoff.
+   - **Wrist-hologram corruption tint SKIPPED** (deviation from plan): wrist
+     holograms only render during UPGRADE_SELECT, never during the boss fight, so
+     the tint would have been dead code. The corrupted-upgrade indicator lives in
+     the HUD warning banner instead.
+   - New test `test-eclipse.cjs` (pure transform + purity, pickEclipseTarget,
+     50% HP trigger, scheduler auto-trigger, escalation, shock window, purge on
+     destroy, real fired-projectile damage 25↔35 revert, HUD visibility/countdown/
+     expiry, drains, crit reflect). Verified: all 13 suites green (test-evolution
+     flaked once, green on solo re-run — known quirk), deploy-sim clean on :8015,
+     verify-deploy-assets resolves eclipse.js.
 
-2. **`0e08005` — Refactor #196 Phase 1: beam-weapons.js** (charge cannon + lightning rod
-   + pending-timer registry + `getHandForController`). Dependency-injection pattern:
-   `initBeamWeapons(deps)` called from main.js init (mirrors `initBossDeathCinematic`).
+## RECENTLY COMPLETED (prior sessions, all on `main`)
 
-3. **`252d8b4` — Refactor #196 Phase 2: projectile-system.js** (spawn/update/hit,
-   instanced pools, accuracy, explosions, hostile cache, debris glow, seeker queue).
-   `initProjectileSystem(deps)`. Live-binding exports: `projectiles`,
-   `explosionVisuals`, `explosionPool`, `instancedProjectiles`, `seekerBurstQueue`,
-   `playerProjectileMaterials`, `_hostileProjectilesInArray`.
-
-4. **`7c67a03` — Refactor #196 Phase 3: alt-weapons.js** (all 20 weapons).
-   `initAltWeapons(deps)`. Exports all `active*` arrays + update fns.
-   (`939e869` cleanup: test screenshots gitignored.)
-
-5. **`87ebb5e` — #216 Elemental Ammo: lightning chain + verification** — discovered the
-   elemental system (fire/freeze/shock upgrades, DoT, slows, status VFX pool, status
-   bubbles) was already ~90% built. Added the missing **shock chain** mechanic
-   (`chainShockToNearbyEnemy` in enemies.js, 15 dmg/stack to nearest enemy within 6m,
-   transient bolt arc). Fixed latent `explosionVisuals` bug in beam-weapons.
-   New test `test-elemental.cjs`.
-
-6. **`c16c4af` — #211 Synergy Engine** — `detectSynergies(upgrades)` in weapons.js,
-   `game.synergies` snapshot recomputed by main.js `recomputeSynergies()` on every
-   upgrade pick + init, per-run "NEW SYNERGY DISCOVERED" toast. Elemental combos in
-   enemies.js: **Thermal Shock** (frozen + fire DoT → shatter, 50% maxHP AoE 3m),
-   **Plasma Arc** (electrified burn 2x faster; fire spreads via chains), **Cryo-Conduction**
-   (shock+freeze enemies emit 3m 30% slow aura), **PRIME STATE** (3x status damage;
-   chains to ALL non-statused enemies in range, cap 6). Stat synergies in
-   getWeaponStats: **Lethal Precision** (crit 3x), **Blood Letter** (heal every 3 kills).
-   Dev test hook `window.__test.recomputeSynergies`. New test `test-synergy.cjs`.
-
-7. **Deploy fixes** (`d960a45`, `2165fdd`, `df0fe6d`, `8b8550e`, `01c5cd3`):
-   - Version text was hand-baked in index.html AND clobbered at runtime by
-     `launcher-common.js` GAME_VERSION → now auto-stamped by Vercel build command
-     (`scripts/stamp-version.mjs` via vercel.json `buildCommand` + `outputDirectory "."`)
-     and launcher-common only fills in if empty.
-   - `.vercelignore` was excluding files the game needs at runtime (bake-clouds.js 404
-     broke the game on prod). Added `scripts/verify-deploy-assets.mjs` — checks every
-     relative import/index.html reference resolves inside the deployed file set.
-   - `.vercelignore` pitfalls learned: buildCommand files must NOT be ignored; setting
-     buildCommand makes Vercel require explicit `outputDirectory`.
-
-8. **`8240c4a` — PRODUCTION CRASH FIX**: `_uiRaycaster is not defined` on tank weak-point
-   hits (user-reported). My Phase-2 identifier sweep had filtered `_ui`-prefixed names as
-   noise. Fixed via `uiRaycaster` dep + null guard. New test `test-tank-hit.cjs` (spawns
-   real tank at level 4, shoots through the weak-point raycast path).
-
-9. **`9215aba` — Hidden-coupling audit** (current HEAD): new static checker
-   `scripts/verify-module-identifiers.mjs` found 6 latent bugs in the extracted modules:
-   - `State` not imported in beam-weapons (triple-shot guard crashed on live site only —
-     dev tests masked it via `window.State`; SAME trap as the version-text bug)
-   - `cameraShake`/`cameraShakeIntensity`/`originalCameraPos`/`floorFlashing`/
-     `floorFlashTimer` referenced from beam-weapons + projectile-system but owned by
-     main.js → refactored to a shared **`screenFx`** object exported from
-     projectile-system
-   - `BIG_BOOM_COOLDOWN_MS`/`lastExplodingShotTime` moved into projectile-system
-   - `damagePlayer` silently no-opped in projectile-system (typeof guard) → now imported
-     from game.js
-   - `_evoV3a` never declared in alt-weapons (drone homing crash) → declared
+- **#213 Weapon Mastery** (`de882a3`): mastery.js tiers (Novice→Master), six mastery
+  cards, kill tracking, game-over title, RESET MASTERY setting, test-mastery.cjs.
+- **#215 Upgrade Card Preview + #185 Alchemy Bench + #189 Bullet Carnival + #218
+  Dual-Wield Combos + #143 Weapon Evolution** (`c695d53`, `746eceb`, `39eb4ec`,
+  `3f4bd5f`, `5ce5ece`, `2407142`): card preview panel (stat deltas/synergy hints/DPS),
+  dissolve+forge alchemy, fusion cinematic + all six evolved weapons, D→SSS combat
+  grading, simultaneous/alternate/sustained/cross combos. Follow-up UX polish rounds
+  `1e82927`, `67a6b9a`, `449dd37`, `a489902` (Pacific-time stamp, on-card hover stats,
+  no camera popups, text rendering, floating toasts, card layout).
+- **Earlier**: audio pack (#142+#184), #196 refactor Phases 1-3, #216 elemental ammo,
+  #211 synergy engine, deploy/stability fixes (see git log for details).
 
 ## CRITICAL LESSONS (do not relearn these the hard way)
 
-1. **ES module imported bindings are READ-ONLY even for `export let`** — importers CANNOT
-   assign to them (both Node and Chrome throw "Assignment to constant variable"). Shared
-   mutable state between modules must be a **shared object whose properties are mutated**
-   (the `screenFx` pattern). If a test passes in dev but a binding assignment fails, check
-   this first.
-2. **Dev environment masks prod-only bugs**: dev.html sets `window.State`, `window.game`,
-   `window.__test` (testAPI). Free identifiers like `State` resolve via `window` in dev
-   but throw on the live site. Always ask "does this reference a dev-only global?" after
-   extracting code.
-3. **Identifier sweep filters are dangerous** — the `_ui` filter hid the `_uiRaycaster`
-   crash. Now automated: run `scripts/verify-module-identifiers.mjs` on any touched module.
-4. **Test coverage must match the feature**: tank weak points need a tank test, elemental
-   effects need elemental tests, etc. The 6 test files below each cover a real gameplay
-   path — extend them rather than trusting generic smoke tests.
-5. **Vercel + .vercelignore gotchas**: ignored files are absent during the build (build
-   commands need their files un-ignored); adding a buildCommand requires
-   `outputDirectory`; always verify the deployed asset set with
-   `verify-deploy-assets.mjs` before pushing deploy-affecting changes, and boot the game
-   from the simulated deployed set (see Testing).
-6. **Vercel deploy date**: the version stamp runs at build time; stale dates in browsers
-   are usually browser cache, but check launcher-common.js isn't overwriting (fixed).
-7. **module.exports vs ESM**: all files are browser ESM with relative imports; bare
-   specifiers (three) resolve via the import map in index.html (and __repro.html-style
-   test pages must include the import map).
+1. **Test constants drift with seeded bonuses** — the mastery Adept bonus (+10%) changed
+   blaster damage 15→17, and the 10th-shot Last Light hit became 85 (17×5), not 75.
+   Seeker base damage is 12, not 8. The mastery title sprite's `userData.text` has no
+   'MASTERY: ' prefix (the check is `/⚡/` + `/MASTER/`). Always debug-dump actual
+   runtime values (`ps.projectiles.map(p => p.userData?.stats?.damage)`) BEFORE writing
+   the assertion constants. Debug-dump showed Last Light actually worked all along.
+2. **Batch test runs flake on load contention** — `test-evolution.cjs` fails only when
+   run back-to-back with other suites; always green in isolation. Run suites
+   individually; re-run any failure solo before investigating.
+3. **Resource 404s report generic console text** — the death-stats API 404s on the
+   static dev server (Vercel-only route) and the console message has no URL in its
+   text. Filter the benign case via `msg.location().url.includes('death-stats')`.
+4. **Test coverage must match the feature**: tank weak points need a tank test,
+   elemental effects need elemental tests, mastery needs a mastery test. The 13 test
+   files each cover a real gameplay path — extend them rather than trusting generic
+   smoke tests.
+5. **Durable architecture rules are in AGENTS.md §16-17** — automation conventions
+   (input mapping, seeding, benign console noise, `page.evaluate` dynamic imports) and
+   module rules (read-only bindings, dev-global masking, `initX(deps)` pattern,
+   `getWeaponStats` signature, intentional cross-module cycles).
+6. **Projectile pools recycle entries** — `ps.projectiles` retains stale
+   `userData.stats` on recycled pool entries; snapshots after a state change must
+   filter `p.visible && (p.userData?.createdAt || 0) >= t0` or the OLD damage value
+   false-fails the assertion (test-eclipse Phase 4).
+7. **Wrist holograms only render during UPGRADE_SELECT** — anything boss-fight
+   related (eclipse corruption tint etc.) is invisible there; put the indicator in
+   the HUD sprite layer instead. Don't plan features around hidden UI.
+8. **Vercel deploy verification**: `git push origin main` triggers deploy; poll
+   `gh api repos/CherryCircuit/vr-roguelike/deployments` and boot the live site with
+   `node tests/automation/deploy-sim-check.cjs https://spaceomicide.vercel.app`
+   (parameterized in `e23f9f6`). Version stamp is auto-generated at build time
+   (`scripts/stamp-version.mjs` via vercel.json) in Pacific time.
 
 ## TESTING WORKFLOW (the gate before every commit)
 
 1. Start the server: `python3 -m http.server 8000` (background) — tests hit
    `http://localhost:8000/dev.html`.
-2. Run ALL suites (each ~30-90s, puppeteer headless):
-   - `node tests/automation/test-bugfixes.cjs` — boots game, 15s gameplay, reset loop
-   - `node tests/automation/test-timer-cleanup.cjs` — charge cannon + triple-shot timer
-   - `node tests/automation/test-audio-pack.cjs` — reactive music stems + threat emitters
-   - `node tests/automation/test-elemental.cjs` — fire DoT / shock chain / freeze
-   - `node tests/automation/test-synergy.cjs` — all 4 elemental combos + stat synergies
-   - `node tests/automation/test-tank-hit.cjs` — tank weak-point raycast path
-3. Static checks: `node --check <files>`, `node scripts/verify-module-identifiers.mjs`,
-   `node scripts/verify-deploy-assets.mjs`.
-4. Deploy simulation (when deploy-affecting): copy the exact deployed file set
-   (respect .vercelignore) to /tmp, serve on :801x, boot index.html via puppeteer, assert
-   zero console errors + zero failed requests + canvas present. Note: the LIVE launcher
-   (index.html) has no `window.__test`/`window.game` — use dynamic imports
-   (`await import('./game.js')`) in sim scripts instead.
+2. Run each suite individually (~30-90s each, puppeteer headless):
+   `node tests/automation/<suite>.cjs` for: test-bugfixes, test-timer-cleanup,
+   test-audio-pack, test-elemental, test-synergy, test-tank-hit, test-upgrade-preview,
+   test-alchemy, test-evolution, test-dualwield, test-style, test-mastery, test-eclipse.
+   (13 suites total. Do NOT chain them in one shell loop — see Critical Lessons #2.)
+3. Static checks: `node --check <touched files>`,
+   `node scripts/verify-module-identifiers.mjs`,
+   `node scripts/verify-deploy-assets.mjs` (deploy-affecting changes only).
+4. Deploy simulation (when deploy-affecting): copy the exact deployed file set (respect
+   .vercelignore) to /tmp, serve on :801x, boot index.html via puppeteer, assert zero
+   console errors + zero failed requests + canvas present — or run deploy-sim-check
+   against the live URL after pushing. The LIVE launcher (index.html) has no
+   `window.__test`/`window.game` — use dynamic imports in sim scripts.
 5. Commit one feature per commit, descriptive messages referencing issue numbers.
-6. `git push origin main` triggers Vercel deploy (check GitHub checks after).
+6. `git push origin main` triggers Vercel deploy (poll GitHub deployments).
 
 ## ROADMAP STATUS
 
-**Done:** #204 timer cleanup · #142+#184 audio pack · #196 Phases 1-3 (refactor) ·
-#216 elemental ammo · #211 synergy engine · deploy/stability fixes.
+**Done:** #204 · #142+#184 · #196 Phases 1-3 · #216 · #211 · #215 · #185 · #143 ·
+#189 · #218 · #213 weapon mastery · **#172 Eclipse Engine Phase 2 (this session)** ·
+deploy/stability fixes.
 
 **Remaining packs (recommended order):**
-1. **#215 Upgrade Card Preview + #185 Upgrade Alchemy** (upgrade screen pack, M) —
-   builds directly on the synergy system (card previews should show synergy hints, which
-   #211 explicitly wants). Both touch the upgrade-card UI in main.js/hud.js.
-2. **#143 Weapon Evolution** (L) — transform weapons via recipes; triggers at card
-   selection.
-3. **#189 Bullet Carnival + #218 Dual-Wield Combos** (combat feel pack, L).
-4. **#213 Weapon Mastery** (L) — cross-run progression (new module, localStorage).
-5. **#172 Eclipse Engine Phase 2** (M).
-6. **#206 Threat Compass** (S) — quick standalone win, any time.
-7. **#196 Phases 4-5** (game flow/input + environment extraction) — lower value; main.js
+1. **#206 Threat Compass** (S) — quick standalone win, any time.
+2. **#196 Phases 4-5** (game flow/input + environment extraction) — lower value; main.js
    is now mostly flow orchestration.
+3. **Deferred combos (flagged in #211/#218 commits)**: weapon-specific combos (Tesla
+   Tower, Final Solution, Swarm Leader), kill-chain combos (Soul Chain, Pinball Wizard,
+   Momentum), HUD icon glow.
+4. **Back of the line (from earlier triage):** new enemies/bosses (#199, #198, #171,
+   #169, #167, #170, #168, #197, #200), #138 Breach Events, #139 Void Marks, #210
+   Constellation Map, #212 Lore, #183 Death Haiku, #209 Death Panorama, #201 Phase
+   Echoes, #178/#177 death effects, #179/#208/#180 atmosphere, #191 Rhythm Core, #190
+   Execution Cascade, #188 Void Gauntlet, #182 Weapon Soul, #155 Prestige Hand,
+   #154/#158/#160 weapon upgrades, #157 Bullet Weaving, #153 Mutator Cards.
 
-**Deferred within #211 (flagged in commit):** weapon-specific combos (Tesla Tower, Final
-Solution, Swarm Leader), kill-chain combos (Soul Chain, Pinball Wizard, Momentum), HUD
-icon glow. **Back of the line (from earlier triage):** new enemies/bosses (#199, #198,
-#171, #169, #167, #170, #168, #197, #200), #138 Breach Events, #139 Void Marks, #210
-Constellation Map, #212 Lore, #183 Death Haiku, #209 Death Panorama, #201 Phase Echoes,
-#178/#177 death effects, #179/#208/#180 atmosphere, #191 Rhythm Core, #190 Execution
-Cascade, #188 Void Gauntlet, #182 Weapon Soul, #155 Prestige Hand, #154/#158/#160 weapon
-upgrades, #157 Bullet Weaving, #153 Mutator Cards.
+**Closed/merged issue notes:** #217/#213 weapon mastery → keep #213 (done); #214 music →
+keep #142; #187/#151 elemental combos → keep #211; #141/#152 scoring → keep #189;
+#137/#159 → keep #218; #176 → keep #205; #207 → keep #181; #146/#164 → keep #196;
+#195 → merged into #204; #156 → keep #219.
 
-**Closed/merged issue notes:** #217/#213 weapon mastery → keep #213; #214 music → keep
-#142; #187/#151 elemental combos → keep #211; #141/#152 scoring → keep #189; #137/#159 →
-keep #218; #176 → keep #205; #207 → keep #181; #146/#164 → keep #196; #195 → merged into
-#204; #156 → keep #219.
+**Note:** `WORKING.md` is stale (2026-04-05, predates the module extraction and all
+recent features) — this file is the single source of truth for project state.
 
 ## QUICK-START CHECKLIST FOR THE NEXT SESSION
 
-1. `git pull` / verify HEAD is `9215aba`.
-2. `python3 -m http.server 8000 &` then run all 6 test suites to confirm green baseline.
-3. Read `AGENTS.md` if you haven't (auto-loaded).
-4. Pick the next pack (recommended: #215+#185 upgrade screen pack) and explore the
-   upgrade-card flow in main.js (`showUpgradeScreen`, `finalizeUpgradeSelection`,
-   `selectUpgradeAndAdvance`, hud.js card rendering) before writing code.
+1. `git pull` / verify HEAD is the #172 commit (see DONE THIS SESSION).
+2. `python3 -m http.server 8000 &` then run all 13 test suites individually to confirm
+   green baseline (see Testing Workflow).
+3. Read `AGENTS.md` if you haven't (auto-loaded; §16-17 cover automation + modules).
+4. Pick the next pack (recommended: #206 Threat Compass — the last S-sized standalone
+   win). Explore the eclipse.js DI pattern + EclipseEngineBoss corruption layer as the
+   most recent boss-flow reference before writing code.
 5. Follow the Testing Workflow above before every commit.

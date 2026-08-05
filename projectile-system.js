@@ -1039,6 +1039,18 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
     damage *= (stats.critMultiplier || 2);
     isCrit = true;
     trackCrit();
+    // Issue #172: eclipsed crit upgrades reflect — the shot loses its crit
+    // and the player takes 1 damage instead (15% of crits; survivable over
+    // the 10s eclipse, impossible to ignore at high fire rate)
+    if (stats.critReflect && Math.random() < 0.15) {
+      isCrit = false;
+      damage /= (stats.critMultiplier || 2);
+      const dead = applyPlayerDamage(1);
+      screenFx.cameraShake = Math.max(screenFx.cameraShake || 0, 0.25);
+      screenFx.cameraShakeIntensity = 0.03;
+      triggerScreenShake(0.1, 300);
+      if (dead) endGame(false);
+    }
   }
 
   // Impact freeze for critical hits or weak points
@@ -1146,13 +1158,32 @@ function handleHit(enemyIndex, enemy, stats, hitPoint, controllerIndex, isExplod
 // [CORE] Handle projectile hit on boss
 function handleBossHit(boss, stats, hitPoint, controllerIndex, handIndex, hitObject) {
   let damage = stats.damage;
+  let isCrit = false;
   if (stats.critChance > 0 && Math.random() < stats.critChance) {
     damage *= (stats.critMultiplier || 2);
+    isCrit = true;
     trackCrit();
+    // Issue #172: eclipsed crit upgrades reflect — the shot loses its crit
+    // and the player takes 1 damage instead (15% of crits)
+    if (stats.critReflect && Math.random() < 0.15) {
+      isCrit = false;
+      damage /= (stats.critMultiplier || 2);
+      const dead = applyPlayerDamage(1);
+      screenFx.cameraShake = Math.max(screenFx.cameraShake || 0, 0.25);
+      screenFx.cameraShakeIntensity = 0.03;
+      triggerScreenShake(0.1, 300);
+      if (dead) {
+        endGame(false);
+        return;
+      }
+    }
   }
 
   // Extract facet/shard/weak point info from hit object for PrismBoss
   const bossHitInfo = { handIndex };
+  // Issue #172: pass the shot's status effects so the Eclipse Engine can
+  // react (SHOCK hits extend the corruption interval — the counterplay)
+  if (stats.effects && stats.effects.length) bossHitInfo.effects = stats.effects;
   if (hitObject && hitObject.userData) {
     if (hitObject.userData.facetIndex !== undefined) bossHitInfo.facetIndex = hitObject.userData.facetIndex;
     if (hitObject.userData.isWeakPoint) bossHitInfo.isWeakPoint = true;

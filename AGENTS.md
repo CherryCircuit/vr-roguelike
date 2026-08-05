@@ -105,7 +105,8 @@ Task: "Add Stats.js FPS monitor to WebXR scene"
 Read these files first:
 - **`game.js`**: Central state machine and data
 - **`main.js`**: Game loop and Three.js scene
-- **`CLAUDE.md`**: Project architecture and patterns
+- **`HANDOFF.md`**: Current project state, roadmap, testing workflow, module layout
+- **`AGENTS.md` §16-17**: Automation/test conventions and module architecture rules
 
 **Key patterns in this codebase:**
 
@@ -254,16 +255,22 @@ Ask for clarification when:
 
 1. **No build step** - don't add webpack, babel, etc. Uses browser ES6 modules.
 2. **No external assets** - all audio is Web Audio API, all visuals are procedural
-3. **No npm packages** - everything loads from CDN (Three.js, Supabase)
+3. **No npm packages at runtime** - THREE/Supabase load from CDN via the import map
+   in index.html. (Dev/test tooling is the exception: `package.json` has puppeteer.)
 4. **VR performance is critical** - 60fps minimum, 72fps target
 5. **Test in VR** - desktop preview doesn't catch VR-specific bugs
 6. **Controllers are first-class** - mouse/keyboard are debug features only
 
 **File modification rules:**
-- **main.js** - render loop and scene setup (touch carefully, it's complex)
+- **main.js** - render loop, game flow, HUD orchestration (touch carefully, it's complex)
 - **game.js** - state machine (follow existing patterns)
-- **enemies.js** - pooling patterns (reuse the pool pattern)
-- **upgrades.js** - pure functions only (no side effects)
+- **enemies.js** - pooling patterns (reuse the pool pattern); largest/oldest module, never extracted
+- **weapons.js** - pure weapon/upgrade defs + `getWeaponStats(weaponId, upgrades)` + synergies
+- **mastery.js** - weapon mastery persistence and tier math (see §17)
+- **eclipse.js** - Eclipse Engine corruption layer (#172); `initEclipseSystem(deps)` pattern;
+  pure `applyEclipseToStats(stats, ids)` transform — never import game state directly
+- **beam-weapons.js / projectile-system.js / alt-weapons.js** - extracted modules, use the
+  `initX(deps)` dependency-injection pattern (see §17)
 - **hud.js** - sprite-based UI (use existing createTextSprite pattern)
 - **audio.js** - procedural Web Audio (no external files)
 
@@ -413,7 +420,89 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 - Do NOT flag intentional patterns: pooling, state machines, instanced meshes. These are architectural choices, not bugs.
 - If no genuine issues found, say "No issues found" rather than inventing low-value feedback.
 
-## 15. FINAL REMINDER
+## 16. TESTING & VERIFICATION COMMANDS (gate before every commit)
+
+**Server** (tests hit `http://localhost:8000/dev.html`): `python3 -m http.server 8000`
+
+**All 13 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
+- `test-bugfixes.cjs` — boot + 15s gameplay + reset loop
+- `test-timer-cleanup.cjs` — charge cannon + triple-shot timer
+- `test-audio-pack.cjs` — reactive music stems + threat emitters
+- `test-elemental.cjs` — fire DoT / shock chain / freeze
+- `test-synergy.cjs` — elemental combos + stat synergies
+- `test-tank-hit.cjs` — tank weak-point raycast path
+- `test-upgrade-preview.cjs`, `test-alchemy.cjs` — upgrade card preview + alchemy bench
+- `test-evolution.cjs` — fusion cinematic + all six evolved weapons
+- `test-dualwield.cjs` — dual-wield combo system
+- `test-style.cjs` — D→SSS combat grading
+- `test-mastery.cjs` — mastery tiers/persistence/cards/title
+- `test-eclipse.cjs` — Eclipse Engine upgrade corruption (#172): pure transform,
+  50% HP trigger, escalation, shock counterplay, fire-pipeline damage, HUD warning,
+  self-damage drains + crit reflect
+
+**Known quirks:**
+- **Run suites individually, not back-to-back in one shell loop** — batch runs flake on
+  load contention (test-evolution fails only in batch; green in isolation). A failed
+  suite is always re-run solo before investigating.
+- **Benign console noise to filter, don't fix**: the death-stats API 404s on the static
+  dev server (Vercel-only route) and favicon 404s. Filter by
+  `msg.location().url.includes('death-stats')` — the console *text* for resource 404s is
+  generic and doesn't contain the URL.
+- **The live launcher (index.html) has no `window.__test`/`window.game`** — in
+  deploy-sim scripts use dynamic imports (`await import('./game.js')`) inside
+  `page.evaluate`. dev.html is the only page with the dev globals.
+
+**Static checks:** `node --check <touched modules>` ·
+`node scripts/verify-module-identifiers.mjs` (run after touching ANY module) ·
+`node scripts/verify-deploy-assets.mjs` (before deploy-affecting changes).
+
+**Deploy simulation:** serve the exact deployed file set (respect .vercelignore) on
+:801x and boot index.html asserting zero console errors/failed requests/canvas present,
+or verify the live site directly:
+`node tests/automation/deploy-sim-check.cjs https://spaceomicide.vercel.app`.
+`git push origin main` triggers Vercel; poll `gh api repos/CherryCircuit/vr-roguelike/deployments`.
+
+**Automation conventions (established in test-mastery.cjs):**
+- Desktop input mapping: Space = fire, `'1'`/`'2'` = left/right hand focus (fireMode
+  left/right/both), hold keys via `page.keyboard.down` + duration. Camera pitch is
+  `camera.rotation.z` — aim the camera UP before firing or projectiles die at spawn
+  before you can inspect them.
+- Seed deterministic state with `page.evaluateOnNewDocument` writing localStorage
+  before the page loads (mastery tier seeds).
+- **Read actual runtime values from the page before writing assertions** — seeded
+  bonuses shift constants (Adept +10% made blaster damage 15→17; seeker base is 12, not
+  8; the mastery title sprite's userData.text has no 'MASTERY: ' prefix). Debug-dump
+  first (`ps.projectiles.map(p => p.userData?.stats?.damage)`), assert second.
+- Test anatomy: per-assertion booleans in a `results` object + emoji ✅/❌ lines,
+  console-error tracker with benign filter, screenshot on failure, exit code 1 on any ❌.
+
+## 17. MODULE ARCHITECTURE RULES
+
+- **Imported ES module bindings are READ-ONLY** — importers cannot assign to `export
+  let` (Chrome/Node throw "Assignment to constant variable"). Shared mutable state
+  between modules must be a **shared object whose properties are mutated** (the
+  `screenFx` pattern exported from projectile-system.js).
+- **Dev globals mask prod-only bugs**: dev.html sets `window.State`, `window.game`,
+  `window.__test`. Free identifiers like `State` resolve via `window` in dev but throw
+  on the live site — always ask "does this reference a dev-only global?" after
+  extracting code. The identifier sweep (`verify-module-identifiers.mjs`) automates this.
+- **Extracted modules** (beam-weapons, projectile-system, alt-weapons, boss-death-
+  cinematic, eclipse) use the `initX(deps)` dependency-injection pattern, called from
+  main.js init. Live-binding exports (arrays, objects) are mutated in place, not
+  reassigned.
+- **mastery.js**: per-weapon kill counts persisted in localStorage under
+  `spaceomicide_mastery` (debounced 5s writes + flush on level advance; in-memory
+  fallback when storage is unavailable — never throw from this module).
+- **Cross-module cycles are intentional** (beam-weapons ↔ projectile-system ↔
+  alt-weapons; enemies → weapons) — runtime-only usage, valid in native ES modules.
+  Don't "fix" them.
+- **`getWeaponStats(weaponId, upgrades)`** — first arg is the weapon ID string
+  ('standard_blaster', 'seeker_burst', ...), second the per-hand upgrades object.
+  Keep it pure — no side effects.
+- No build step: bare specifiers (three) resolve via the import map in index.html; any
+  test/repro page must include the import map too.
+
+## 18. FINAL REMINDER
 
 **You are building a VR game that people play in headsets.**
 
@@ -433,4 +522,4 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 
 ---
 
-*Updated: 2026-02-15*
+*Updated: 2026-08-04*

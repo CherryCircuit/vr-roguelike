@@ -22,6 +22,12 @@ import {
   playFinalBossSealBreakSound, playFinalBossChargeSound, playFinalBossAscendSound,
   playFinalBossExposeSound, playFinalBossSummonWallSound, playFinalBossReleaseWallSound,
 } from './audio.js';
+// Issue #172: Eclipse Engine corruption layer (upgrade-possession mechanic).
+// eclipse.js is standalone with injected deps — no cycle here.
+import {
+  applyEclipse, getActiveEclipseCount, pickEclipseTarget,
+  purgeAllEclipses, startEclipseCorruption,
+} from './eclipse.js';
 import { novemberFontFamily } from './hud.js';
 
 // [Visual Overhaul] Import VFX system for voxel explosions
@@ -9505,6 +9511,17 @@ class EclipseEngineBoss extends Boss {
     this.phase3ShockwaveTimer = 0;
     this.phase1SealAttackIndex = 0;
 
+    // Issue #172: upgrade-corruption layer. Deliberately SEPARATE from the
+    // phase 1/2/3 structure — it activates at 50% HP and layers on top of
+    // the existing wall/armor/last-stand phases.
+    this.eclipseActive = false;
+    this.eclipseThreshold = this.maxHp * 0.5;
+    this._eclipseTimer = 0;
+    this._eclipseInterval = 12000; // ms between corruption triggers (escalates)
+    this._eclipseDurationSec = 10; // how long each eclipse lasts
+    this._maxEclipses = 1; // simultaneous corrupted upgrades
+    this._shockHitAt = -Infinity; // last SHOCK status hit (counterplay)
+
     this.shellMeshes = [];
     this.heartMeshes = [];
     this.crownMeshes = [];
@@ -10397,15 +10414,20 @@ class EclipseEngineBoss extends Boss {
     if (this.spireGroup) this.spireGroup.rotation.z = Math.sin(this.visualPulse * 0.3) * 0.04;
 
     const damageRatio = 1 - (this.hp / this.maxHp);
-    const shellColor = this.transitioning
-      ? 0xffc766
-      : this.phase === 1
-        ? 0x33ccff
-        : this.phase === 2
-          ? 0xff7a33
-          : this.lastStand
-            ? 0xfff1c2
-            : 0xff5533;
+    // Issue #172: while corruption is active the shell bleeds deep purple —
+    // the fight's "upgrades are hostile right now" color language. Overrides
+    // the phase colors so the state is readable from across the arena.
+    const shellColor = this.eclipseActive && this.hp > 0
+      ? 0x9944ff
+      : this.transitioning
+        ? 0xffc766
+        : this.phase === 1
+          ? 0x33ccff
+          : this.phase === 2
+            ? 0xff7a33
+            : this.lastStand
+              ? 0xfff1c2
+              : 0xff5533;
     const heartColor = this.coreExposed || this.lastStand ? 0xfff5c8 : this.phase === 3 ? 0xffb15c : 0xff6c96;
     const heartOpacity = this.coreExposed || this.lastStand ? 0.98 : this.phase === 3 ? 0.45 : 0.3;
 
@@ -10660,7 +10682,69 @@ class EclipseEngineBoss extends Boss {
     }
   }
 
+  // ── Issue #172: upgrade-corruption layer ──────────────────
+  // The boss doesn't fight your HP here — it fights your loadout. Every
+  // few seconds one of your upgrades is "eclipsed" and turns against you
+  // (damage → penalty, status ammo → self DoT, crits → reflect, etc.).
+  // All effect definitions/state live in eclipse.js; this class owns only
+  // the pacing (when to trigger, HP escalation, shock counterplay).
+
+  startEclipsePhase() {
+    if (this.eclipseActive) return;
+    this.eclipseActive = true;
+    // First corruption lands quickly (4s) so the mechanic is unmistakable,
+    // then the escalating intervals from the balance table take over.
+    this._eclipseTimer = 4000;
+    this._eclipseInterval = 12000;
+    this._eclipseDurationSec = 10;
+    this._maxEclipses = 1;
+    startEclipseCorruption();
+  }
+
+  _updateEclipseTiming() {
+    const hpRatio = this.hp / this.maxHp;
+    // Issue #172 balance table, mapped onto this fight's existing phases:
+    // 50-33% HP = every 12s / 10s duration / 1 at a time
+    // 33-14% HP = every 10s / 10s / up to 2 stacked
+    // <14% (last stand) = every 8s / 12s / up to 2 stacked
+    if (hpRatio <= 0.33) {
+      this._eclipseInterval = 8000;
+      this._eclipseDurationSec = 12;
+      this._maxEclipses = 2;
+    } else if (hpRatio <= 0.66) {
+      this._eclipseInterval = 10000;
+      this._eclipseDurationSec = 10;
+      this._maxEclipses = 2;
+    } else {
+      this._eclipseInterval = 12000;
+      this._eclipseDurationSec = 10;
+      this._maxEclipses = 1;
+    }
+  }
+
+  updateEclipseLayer(dt) {
+    if (!this.eclipseActive || this.hp <= 0) return;
+
+    this._updateEclipseTiming();
+
+    // Counterplay (#172): SHOCK status hits on the boss extend the time
+    // between eclipses by 3s (for 4s after the hit) — rewards status builds.
+    const shockExtension = (performance.now() - this._shockHitAt) < 4000 ? 3000 : 0;
+    this._eclipseTimer += dt * 1000;
+
+    if (this._eclipseTimer >= this._eclipseInterval + shockExtension &&
+        getActiveEclipseCount() < this._maxEclipses) {
+      this._eclipseTimer = 0;
+      const target = pickEclipseTarget();
+      // No eclipsable upgrades → skip the cycle (nothing to corrupt, no
+      // fake warning). A run with zero universal upgrades is nearly
+      // impossible by level 20, but the fight must not break either way.
+      if (target) applyEclipse(target, this._eclipseDurationSec);
+    }
+  }
+
   updateBehavior(dt, now, playerPos) {
+    this.updateEclipseLayer(dt);
     this.updateVisualState(dt);
 
     if (this.transitioning) {
@@ -10789,6 +10873,17 @@ class EclipseEngineBoss extends Boss {
       return { killed: false, immune: true };
     }
 
+    // Issue #172 corruption layer:
+    // - SHOCK hits extend the eclipse interval (counterplay); checked on
+    //   every hit (weak nodes and body alike) while the layer is active.
+    // - The first crossing of 50% HP activates the corruption phase.
+    if (hitInfo.effects?.some((e) => e.type === 'shock')) {
+      this._shockHitAt = performance.now();
+    }
+    if (!this.eclipseActive && this.hp <= this.eclipseThreshold) {
+      this.startEclipsePhase();
+    }
+
     if (hitInfo.eclipseNodeId !== undefined && hitInfo.eclipseNodeType) {
       return this.damageWeakNode(hitInfo, amount);
     }
@@ -10811,6 +10906,9 @@ class EclipseEngineBoss extends Boss {
   }
 
   destroy() {
+    // Issue #172: kill any active eclipses so corruption can't leak into the
+    // next level (main.js also purges on boss death — belt and suspenders).
+    purgeAllEclipses();
     this._destroyed = true;
     this._timers.forEach(clearTimeout);
     this._timers.clear();

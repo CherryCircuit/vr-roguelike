@@ -110,6 +110,15 @@ export const pauseCountdownGroup = new THREE.Group();
 pauseCountdownGroup.name = 'pause-countdown';
 const floatingMessageGroup = new THREE.Group();
 floatingMessageGroup.name = 'floating-message';
+// Issue #172: corrupted-upgrade banner (Eclipse Engine). Camera-attached
+// like floatingMessageGroup; shows which upgrade is eclipsed + countdown.
+const eclipseWarningGroup = new THREE.Group();
+eclipseWarningGroup.name = 'eclipse-warning';
+let eclipseWarningSprite = null;
+let eclipseWarningText = '';
+let eclipseWarningColor = '#ff0044';
+let eclipseWarningExpiresAt = 0;
+let eclipseWarningLastSecond = -1;
 
 // ── Layout Loading ──
 // Loads layout JSON from layouts/ directory. Falls back to hardcoded positions if fetch fails.
@@ -773,6 +782,12 @@ export async function initHUD(camera, scene) {
   floatingMessageGroup.position.set(0, 0.1, -0.8);
   camera.add(floatingMessageGroup);
 
+  // Issue #172: eclipse warning sits slightly above the floating message so
+  // the two never collide (e.g. "UPGRADES CORRUPTED" callout + the warning)
+  eclipseWarningGroup.visible = false;
+  eclipseWarningGroup.position.set(0, 0.62, -1.1);
+  camera.add(eclipseWarningGroup);
+
   [levelTextGroup, upgradeGroup, gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup, readyGroup].forEach(g => {
     g.visible = false;
     g.rotation.set(0, 0, 0);
@@ -796,7 +811,7 @@ export async function initHUD(camera, scene) {
   // Disable frustum culling on all UI groups to prevent disappearing when looking around
   // UI elements have unreliable bounding boxes/spheres that cause false culling
   [
-    titleGroup, hudGroup, floatingMessageGroup, levelTextGroup, upgradeGroup,
+    titleGroup, hudGroup, floatingMessageGroup, eclipseWarningGroup, levelTextGroup, upgradeGroup,
     gameOverGroup, nameEntryGroup, scoreboardGroup, countrySelectGroup,
     readyGroup, pauseMenuGroup, pauseCountdownGroup, settingsGroup, bestiaryGroup
   ].forEach(g => { if (g) g.frustumCulled = false; });
@@ -3858,6 +3873,62 @@ export function updateFloatingMessage(now) {
   }
 }
 
+// ── Eclipse Warning (Issue #172) ───────────────────────────
+// Sprite banner showing which upgrade the Eclipse Engine corrupted, with a
+// live countdown. The issue's sketch used a DOM element — this game renders
+// ALL HUD in WebXR-space sprites, so this mirrors showFloatingMessage.
+
+export function showEclipseWarning(text, colorHex, durationMs) {
+  eclipseWarningText = text;
+  eclipseWarningColor = colorHex || '#ff0044';
+  eclipseWarningExpiresAt = performance.now() + (durationMs || 10000);
+  eclipseWarningLastSecond = -1;
+
+  disposeGroupChildren(eclipseWarningGroup);
+  eclipseWarningSprite = makeSprite(`⚡ ${text}`, {
+    fontSize: 40,
+    color: eclipseWarningColor,
+    glow: true,
+    glowColor: eclipseWarningColor,
+    scale: 0.38,
+  });
+  eclipseWarningSprite.position.set(0, 0, 0);
+  eclipseWarningGroup.add(eclipseWarningSprite);
+  eclipseWarningGroup.visible = true;
+}
+
+export function updateEclipseWarning(now) {
+  if (!eclipseWarningGroup.visible) return;
+  const remainingSec = Math.ceil((eclipseWarningExpiresAt - now) / 1000);
+  if (remainingSec <= 0) {
+    hideEclipseWarning();
+    return;
+  }
+  // Re-render the sprite once per second (cheap — not per frame; updateSpriteText
+  // also caches identical renders via its cache key)
+  if (remainingSec !== eclipseWarningLastSecond) {
+    eclipseWarningLastSecond = remainingSec;
+    if (eclipseWarningSprite) {
+      updateSpriteText(eclipseWarningSprite, `⚡ ${eclipseWarningText} — ${remainingSec}s`, {
+        fontSize: 40,
+        color: eclipseWarningColor,
+        glow: true,
+        glowColor: eclipseWarningColor,
+        scale: 0.38,
+      });
+    }
+  }
+}
+
+export function hideEclipseWarning() {
+  disposeGroupChildren(eclipseWarningGroup);
+  eclipseWarningGroup.visible = false;
+  eclipseWarningSprite = null;
+  eclipseWarningText = '';
+  eclipseWarningExpiresAt = 0;
+  eclipseWarningLastSecond = -1;
+}
+
 export function hideBossAlert() {
   disposeGroupChildren(levelTextGroup);
   levelTextGroup.visible = false;
@@ -5526,6 +5597,10 @@ export function clearFloatingMessage() {
   floatingMessageHideAt = null;
   floatingMessageSticky = false;
 }
+
+// Issue #172: clearFloatingMessage is registered as a reset hook in main.js;
+// the eclipse warning gets the same treatment (hideEclipseWarning is also
+// invoked via eclipse.js purgeAllEclipses on reset).
 
 // Export nameEntryGroup and pauseMenuGroup for use in other modules
 export { nameEntryGroup, bestiaryGroup };
