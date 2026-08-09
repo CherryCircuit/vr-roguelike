@@ -181,7 +181,7 @@ A marathon session — every commit below is verified with its own puppeteer sui
     - test-mirror: both hands now get scope so the 70%-damage assertion isn't
       a wall-clock race (the boss alternates hands per volley).
 
-0f. **`<<NEXT>>` — round-6 feedback batch**:
+0f. **`ff4decb` — round-6 feedback batch**:
     - **Training menu**: menu width shrunk (5.6) with columns hugging the
       center; ENEMIES/BOSSES/TRAINING GROUND headings doubled; LOADOUT button
       fixed (showTrainingMenu was resetting the view on rebuild); the menu
