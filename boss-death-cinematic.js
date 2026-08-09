@@ -5,6 +5,7 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { game } from './game.js';
 
 // Timing constants for the cinematic sequence
 export const BOSS_DEATH_FREEZE = 0.18;
@@ -204,6 +205,10 @@ function createBossDeathWorldText(text) {
  */
 export function startBossDeathCinematic(boss) {
   if (!boss || bossDeathCinematic.active) return;
+  // Training Ground: no cinematic — it fades the whole holodeck to black and
+  // purges the arena (player feedback). The training boss-death path clears
+  // the boss directly; this guards the other kill paths (beams, projectiles).
+  if (game && game.trainingMode) return;
 
   // Perf: console.log is synchronous on Quest and blocks the render thread —
   // these fired on every boss kill. Replaced with a debug-gated helper.

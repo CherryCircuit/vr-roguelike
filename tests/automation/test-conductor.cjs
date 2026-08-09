@@ -204,12 +204,12 @@ async function runTest() {
     }, 250);
     const start = performance.now();
     while (performance.now() - start < 4000) {
-      if (boss._phase2) break;
+      if (boss.phase >= 2) break;
       await new Promise(r => setTimeout(r, 100));
     }
     clearInterval(keepAlive);
     window.game.health = 6;
-    return { ok: boss._phase2 && boss._shieldReduction === 0.9, phase2: boss._phase2, reduction: boss._shieldReduction };
+    return { ok: boss.phase === 2 && boss._shieldReduction === 0.9, phase2: boss.phase, reduction: boss._shieldReduction };
   });
   console.log(`  Phase 2 at 50% HP (90% shield): ${results.phase2.ok ? '✅' : '❌'} (${JSON.stringify(results.phase2)})`);
 

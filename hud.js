@@ -81,6 +81,27 @@ async function loadNovemberFont() {
   }
 }
 
+// ── Digital Clock font (training-ground counters) ──────────
+// "Digital Clock" by LunasFont (FontStruct non-commercial license — the game
+// is free). Rendered onto canvas for the per-button wave counters.
+let digitalFontLoaded = false;
+export let digitalFontFamily = '"Courier New", monospace';
+
+export async function loadDigitalFont() {
+  if (digitalFontLoaded) return true;
+  try {
+    const font = new FontFace('DigitalClock', 'url(assets/fonts/digital-clock.ttf)');
+    await font.load();
+    document.fonts.add(font);
+    digitalFontLoaded = true;
+    digitalFontFamily = 'DigitalClock';
+    return true;
+  } catch (err) {
+    console.warn('[hud] Failed to load Digital Clock font:', err);
+    return false;
+  }
+}
+
 // ── Module state ───────────────────────────────────────────
 let sceneRef;
 export let cameraRef;
@@ -213,8 +234,9 @@ function getSkipCardBorderGeo() {
   return _skipCardBorderGeo;
 }
 function getCardIconGeo() {
-  // 0.18 radius = 150% of the original 0.12 (player feedback: icon too small)
-  if (!_cardIconGeo) _cardIconGeo = new THREE.OctahedronGeometry(0.18, 0);
+  // 50% smaller than the old 0.18 (player feedback: the spinning prism was
+  // oversized vs the SKIP card's 0.08 icon).
+  if (!_cardIconGeo) _cardIconGeo = new THREE.OctahedronGeometry(0.09, 0);
   return _cardIconGeo;
 }
 function getSkipIconGeo() {
@@ -1429,8 +1451,6 @@ export function showBestiary(playerPos) {
   }
   bestiaryGroup.rotation.set(0, 0, 0);
   bestiaryGroup.scale.setScalar(0.8);
-  bestiaryScrollRegular = 0;
-  bestiaryScrollBoss = 0;
 
   const layout = layoutCache['bestiary']?.elements || {};
   const le = (key, defaults) => ({ ...defaults, ...(layout[key] || {}) });
@@ -1450,7 +1470,7 @@ export function showBestiary(playerPos) {
   // CURVED backdrop (player feedback: the old flat plane didn't match the
   // arc) — a section of a huge cylinder wrapped around the player, centered
   // on -Z so it hugs the card arc like a curved monitor.
-  const bgGeo = new THREE.CylinderGeometry(2.85, 2.85, 4.0, 48, 1, true, -0.85, 1.7);
+  const bgGeo = new THREE.CylinderGeometry(4.95, 4.95, 4.4, 48, 1, true, -Math.PI / 2 - 1.2, 2.4);
   bgGeo.name = 'bestiary-background-panel-geometry';
   const bgMat = new THREE.MeshBasicMaterial({
     color: 0x02050c,
@@ -1462,19 +1482,19 @@ export function showBestiary(playerPos) {
   bgMat.name = 'bestiary-background-panel-material';
   const bgMesh = new THREE.Mesh(bgGeo, bgMat);
   bgMesh.name = 'bestiary-background-panel';
-  bgMesh.position.y = -0.4;
+  bgMesh.position.y = -0.15;
   bgMesh.renderOrder = 0;
   bestiaryGroup.add(bgMesh);
 
-  const backDef = le('backBtnGroup', { x: 0, y: -2.45, z: 0, w: 0.9, h: 0.35, color: 0x330000, opacity: 0.9, borderColor: 0xff4444 });
-  backDef.y = -2.45;
+  const backDef = le('backBtnGroup', { x: 0, y: -2.3, z: 0, w: 0.9, h: 0.35, color: 0x330000, opacity: 0.9, borderColor: 0xff4444 });
+  backDef.y = -2.3;
   backDef.w = 0.9;
   backDef.h = 0.35;
   backDef.color = 0x330000;
   backDef.opacity = 0.9;
   backDef.borderColor = 0xff4444;
-  const backTextDef = le('backBtnText', { x: 0, y: -2.45, z: 0.01, fontSize: 52, scale: 0.2, color: 0xff6666, glow: false });
-  backTextDef.y = -2.45;
+  const backTextDef = le('backBtnText', { x: 0, y: -2.3, z: 0.01, fontSize: 52, scale: 0.2, color: 0xff6666, glow: false });
+  backTextDef.y = -2.3;
   backTextDef.z = 0.01;
   backTextDef.fontSize = 52;
   backTextDef.scale = 0.2;
@@ -1502,92 +1522,83 @@ export function showBestiary(playerPos) {
   bestiaryBackBtn = backMesh;
   bestiaryGroup.add(backGroup);
 
-  // Scrollable arcs that wrap AROUND the player like a curved monitor:
-  // 7 cards visible per row, spanning ±45° at close range, scrolled with the
-  // thumbstick / mouse wheel to browse all entries (player feedback: the
-  // flat row was far away, bunched, and its backdrop wasn't curved).
-  const BESTIARY_VISIBLE = 7;
+  // Arcs that wrap AROUND the player like a curved monitor — ALL entries
+  // visible (no scrolling — the user wants to see the whole menagerie), at
+  // a comfortable distance, with each card rotated to FACE the player (the
+  // old rotation.y = +angle turned cards AWAY on each flank).
   const REGULAR_ROW_Y = 0.55;
   const BOSS_ROW_Y = -0.95;
-  const REGULAR_RADIUS = 2.35;
-  const BOSS_RADIUS = 2.75;
-  const BESTIARY_ARC = 1.30; // radians (±37°…±45° across the visible window)
+  const REGULAR_RADIUS = 4.2;
+  const BOSS_RADIUS = 4.6;
+  const REGULAR_ARC = 1.40; // radians total (~±40°)
+  const BOSS_ARC = 1.05;    // radians total (~±30°)
   const regularEntries = BESTIARY_ENTRIES.filter(entry => !entry.isBoss);
   const bossEntries = BESTIARY_ENTRIES.filter(entry => entry.isBoss);
 
-  const hint = makeSprite('SCROLL (THUMBSTICK / WHEEL) TO BROWSE', {
+  const hint = makeSprite('ALL 22 ENTRIES · LOOK LEFT AND RIGHT TO SEE THE ARC', {
     fontSize: 30, color: '#8899bb', scale: 0.24, forceArial: true,
   });
   hint.name = 'bestiary-scroll-hint';
   hint.position.set(0, 2.05, 0);
   bestiaryGroup.add(hint);
 
-  // Initial visible window of each arc row
-  buildBestiaryArcRowExternal(regularEntries, bestiaryScrollRegular, REGULAR_ROW_Y, REGULAR_RADIUS, false);
-  buildBestiaryArcRowExternal(bossEntries, bestiaryScrollBoss, BOSS_ROW_Y, BOSS_RADIUS, true);
+  buildBestiaryArcRow(regularEntries, REGULAR_ROW_Y, REGULAR_RADIUS, REGULAR_ARC, false);
+  buildBestiaryArcRow(bossEntries, BOSS_ROW_Y, BOSS_RADIUS, BOSS_ARC, true);
 }
 
-// Bestiary horizontal scroll (thumbstick/wheel). Scrolls both rows.
-let bestiaryScrollRegular = 0;
-let bestiaryScrollBoss = 0;
-export function scrollBestiary(delta) {
-  if (!bestiaryGroup.visible) return;
-  const regularEntries = BESTIARY_ENTRIES.filter(entry => !entry.isBoss);
-  const bossEntries = BESTIARY_ENTRIES.filter(entry => entry.isBoss);
-  const maxReg = Math.max(0, regularEntries.length - 7);
-  const maxBoss = Math.max(0, bossEntries.length - 7);
-  bestiaryScrollRegular = Math.max(0, Math.min(maxReg, bestiaryScrollRegular + delta));
-  bestiaryScrollBoss = Math.max(0, Math.min(maxBoss, bestiaryScrollBoss + delta));
-  // Rebuild the visible arc windows
-  [...bestiaryGroup.children].forEach(child => {
-    if (child.name && child.name.includes('card-group')) {
-      bestiaryGroup.remove(child);
-      child.traverse(c => {
-        if (c.geometry) c.geometry.dispose();
-        if (c.material) {
-          if (Array.isArray(c.material)) c.material.forEach(m => m.dispose());
-          else c.material.dispose();
-        }
-      });
-    }
-  });
-  // Rebuild both rows (the shell/title/back survive — they have distinct names)
-  const regularEntries2 = BESTIARY_ENTRIES.filter(entry => !entry.isBoss);
-  const bossEntries2 = BESTIARY_ENTRIES.filter(entry => entry.isBoss);
-  buildBestiaryArcRowExternal(regularEntries2, bestiaryScrollRegular, 0.55, 2.35, false);
-  buildBestiaryArcRowExternal(bossEntries2, bestiaryScrollBoss, -0.95, 2.75, true);
-  _bestiaryModels = null; // invalidate the model cache for updateBestiary
-}
-
-// Row builder accessible from scrollBestiary (showBestiary's closure builder
-// is scoped there; this mirrors it for rebuilds).
-function buildBestiaryArcRowExternal(entries, scroll, rowY, radius, isBoss) {
-  const visible = entries.slice(scroll, scroll + 7);
-  visible.forEach((entry, i) => {
-    const n = visible.length;
-    const angle = n > 1 ? -1.30 / 2 + (i / (n - 1)) * 1.30 : 0;
+function buildBestiaryArcRow(entries, rowY, radius, arc, isBoss) {
+  entries.forEach((entry, i) => {
+    const n = entries.length;
+    const angle = n > 1 ? -arc / 2 + (i / (n - 1)) * arc : 0;
     const x = Math.sin(angle) * radius;
-    const z = -Math.cos(angle) * radius + radius * 0.1;
+    const z = -Math.cos(angle) * radius + radius * 0.08;
+
     const cardGroup = new THREE.Group();
     cardGroup.name = bestiaryObjectName('entry', entry.id, 'card-group');
     cardGroup.position.set(x, rowY, z);
-    cardGroup.rotation.y = angle;
+    // FACE THE PLAYER: the card's forward (-Z local) must point back toward
+    // the origin. Local -Z rotated by yaw θ is (-sinθ, -cosθ); we need it to
+    // equal the direction to origin (-sin(a), cos(a)) → θ = π - a (the old
+    // θ = -a faced AWAY on every flank — player feedback).
+    cardGroup.rotation.y = Math.PI - angle;
+
     const model = buildBestiaryModel(entry);
     model.renderOrder = 1;
-    const modelScale = isBoss ? 0.42 : (entry.id === 'spiral_swimmer' ? 0.7 : (entry.id === 'conductor' || entry.id === 'mortar') ? 0.42 : 0.55);
+    const modelScale = isBoss ? 0.46 : (
+      entry.id === 'spiral_swimmer' ? 0.75 :
+      (entry.id === 'conductor' || entry.id === 'mortar') ? 0.46 :
+      0.6
+    );
     model.scale.setScalar(modelScale);
     model.position.set(0, 0.24, 0);
     cardGroup.add(model);
-    const nameText = makeSprite(entry.name, { fontSize: 34, color: colorToHex(entry.color), glow: true, glowColor: colorToHex(entry.color), scale: 0.24 });
+
+    const nameText = makeSprite(entry.name, {
+      fontSize: 34, color: colorToHex(entry.color),
+      glow: true, glowColor: colorToHex(entry.color),
+      scale: 0.24,
+    });
+    nameText.name = bestiaryObjectName('entry', entry.id, 'name-text');
     nameText.position.y = -0.04;
     cardGroup.add(nameText);
-    const metaText = makeSprite(`L${entry.firstLevel}`, { fontSize: 34, color: '#ffdd66', scale: 0.28, forceArial: true });
+
+    const metaText = makeSprite(`L${entry.firstLevel}`, {
+      fontSize: 34, color: '#ffdd66', scale: 0.28, forceArial: true,
+    });
+    metaText.name = bestiaryObjectName('entry', entry.id, 'level-text');
     metaText.position.set(0, -0.19, 0.01);
     cardGroup.add(metaText);
-    const descText = makeSprite(entry.desc, { fontSize: 34, color: '#c8d8dd', scale: 0.9, maxWidth: 470, forceArial: true });
+
+    // Description: wider box, TOP-ALIGNED under the level badge (its height
+    // varies with word-wrap, so the center offsets by half the sprite height).
+    const descText = makeSprite(entry.desc, {
+      fontSize: 34, color: '#c8d8dd', scale: 0.75, maxWidth: 470, forceArial: true,
+    });
+    descText.name = bestiaryObjectName('entry', entry.id, 'description-text');
     const descH = descText.geometry.parameters.height;
-    descText.position.y = -0.31 - descH / 2;
+    descText.position.y = -0.3 - descH / 2;
     cardGroup.add(descText);
+
     bestiaryGroup.add(cardGroup);
   });
 }

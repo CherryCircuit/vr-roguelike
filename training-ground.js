@@ -17,7 +17,7 @@
 
 import * as THREE from 'three';
 import { game, State, getLevelConfig, setWeaponEvolution, addUpgrade } from './game.js';
-import { makeSizedText, showHUD, hudGroup } from './hud.js';
+import { makeSizedText, showHUD, hudGroup, digitalFontFamily } from './hud.js';
 import { WEAPON_EVOLUTIONS, getUpgradeDef, UPGRADE_POOL, SPECIAL_UPGRADE_POOL } from './weapons.js';
 
 const DEBUG = false;
@@ -67,6 +67,9 @@ const MENU_TEXT_RO = 1002;
  */
 export function initTrainingGround(deps) {
   _deps = deps || null;
+  // Load the digital-clock font for the wave counters (async; counters fall
+  // back to monospace until it's ready, then redraw on the next queue click).
+  import('./hud.js').then(m => m.loadDigitalFont?.()).catch(() => {});
   _log('[training-ground] initialized');
 }
 
@@ -103,6 +106,13 @@ export function startTraining() {
   game.kills = 0;
   game.score = 0;
   game.health = game.maxHealth;
+  // Random music from ANY level category (player feedback) — playMusic
+  // already shuffles the playlist; the settings menu (pause → SETTINGS)
+  // lets the player skip tracks / adjust volume.
+  if (_hasDep('playMusic')) {
+    const cats = ['levels1to5', 'levels6to10', 'levels11to14', 'levels16to19'];
+    _deps.playMusic(cats[Math.floor(Math.random() * cats.length)]);
+  }
   // The combat loop (enemies, projectiles, bosses) runs in the PLAYING
   // branch — training reuses it wholesale.
   game.state = State.PLAYING;
@@ -128,8 +138,14 @@ export function exitTraining() {
   if (_oldLevelConfig) game._levelConfig = _oldLevelConfig;
   _oldLevelConfig = null;
   _trainingConfig = null;
-  if (_hasDep('applyThemeForLevel')) _deps.applyThemeForLevel(game.level || 1);
+  // Clear the field AND the boss health bar (player feedback: it stayed on
+  // screen after EXIT until the next run started).
   if (_hasDep('clearAllEnemies')) _deps.clearAllEnemies();
+  if (_hasDep('clearBoss')) _deps.clearBoss();
+  if (_hasDep('hideBossHealthBar')) _deps.hideBossHealthBar();
+  _activeWave = [];
+  _pendingWave = [];
+  if (_hasDep('applyThemeForLevel')) _deps.applyThemeForLevel(game.level || 1);
   _active = false;
   _log('[training-ground] exited training');
 }
@@ -140,10 +156,10 @@ export function toggleTrainingMenu() {
   if (_menuOpen) hideTrainingMenu(); else showTrainingMenu();
 }
 
-export function showTrainingMenu() {
+export function showTrainingMenu(resetView = true) {
   if (!_active || _menuOpen) return;
   _menuOpen = true;
-  _loadoutView = false;
+  if (resetView) _loadoutView = false; // fresh open → combat view
   _enemyScroll = 0;
   _loadoutScroll = 0;
   // The menu must draw over the floor HUD: hide the HUD while browsing
@@ -244,7 +260,9 @@ function buildTrainingMenu() {
   _deps.scene.add(group);
   _menuGroup = group;
 
-  const panelW = 7.2;
+  // Narrower panel — the columns hug the center now that the buttons are
+  // compact (player feedback: no reason for a huge menu).
+  const panelW = 5.6;
   const panelH = 3.9;
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(panelW, panelH),
@@ -266,14 +284,85 @@ function buildTrainingMenu() {
   }
 }
 
-function buildCombatView(group) {
-  const title = makeLabel(group, 'TRAINING GROUND', 0, 1.68, { fontSize: 58, color: '#00ff88', glyphSize: 0.085 });
-  const sub = makeLabel(group, 'BUILD A WAVE — THEN PRESS GO', 0, 1.32, { fontSize: 36, color: '#8899bb', glyphSize: 0.05, forceArial: true });
+// ── Digital wave counter (player feedback): an old-alarm-clock style
+// lime-on-black 2-digit display beside each enemy/boss button. Brightens
+// with a flash when it updates and pulses while the count is active.
+const _counterFlashPhase = Math.random() * Math.PI * 2;
+function makeDigitalCounter(value) {
+  const group = new THREE.Group();
+  group.name = 'wave-counter';
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.16, 0.19),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+  );
+  bg.renderOrder = MENU_BTN_RO;
+  group.add(bg);
+  const border = new THREE.LineSegments(
+    new THREE.EdgesGeometry(bg.geometry),
+    new THREE.LineBasicMaterial({ color: 0x226622, transparent: true, opacity: 0.9 })
+  );
+  border.renderOrder = MENU_BTN_RO;
+  group.add(border);
 
-  // ── ENEMIES column (scrollable) — buttons ADD to the pending wave ──
-  const enemyHeader = makeLabel(group, 'ENEMIES', -2.6, 0.98, { fontSize: 44, color: '#ff8866' });
+  const canvas = document.createElement('canvas');
+  canvas.width = 48;
+  canvas.height = 56;
+  const tex = new THREE.CanvasTexture(canvas);
+  const textMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.13, 0.15),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: true })
+  );
+  textMesh.renderOrder = MENU_TEXT_RO;
+  textMesh.position.z = 0.01;
+  group.add(textMesh);
+
+  const ctx = canvas.getContext('2d');
+  const draw = (v, flash) => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = '28px ' + digitalFontFamily;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const str = String(v).padStart(2, '0');
+    // Lime green digits; flash → white-hot overlay
+    ctx.fillStyle = flash ? '#c8ffd8' : '#44ff66';
+    ctx.shadowColor = '#44ff66';
+    ctx.shadowBlur = flash ? 12 : 4;
+    ctx.fillText(str, canvas.width / 2, canvas.height / 2 + 1);
+    tex.needsUpdate = true;
+  };
+  draw(value, true);
+  group.userData.counter = { value, draw, flashStart: performance.now() };
+  return group;
+}
+
+function updateCounters(now) {
+  if (!_menuGroup) return;
+  _menuGroup.traverse(c => {
+    const ud = c.userData?.counter;
+    if (!ud) return;
+    // Flash decay after an update (300ms) then a gentle brightness loop
+    const flashT = Math.min(1, (now - ud.flashStart) / 300);
+    const flash = 1 - flashT;
+    const active = ud.value > 0;
+    const loop = active ? 0.55 + 0.3 * Math.sin(now * 0.004 + _counterFlashPhase) : 0.35;
+    c.traverse(child => {
+      if (child.isMesh && child.material?.map) {
+        child.material.opacity = Math.max(0.25, loop + flash * 0.4);
+      }
+    });
+  });
+}
+
+function buildCombatView(group) {
+  const title = makeLabel(group, 'TRAINING GROUND', 0, 1.68, { fontSize: 92, color: '#00ff88', glyphSize: 0.17 });
+  const sub = makeLabel(group, 'BUILD A WAVE — THEN PRESS GO', 0, 1.32, { fontSize: 38, color: '#8899bb', glyphSize: 0.052, forceArial: true });
+
+  // ── ENEMIES column (scrollable) — buttons + digital counters ──
+  const enemyHeader = makeLabel(group, 'ENEMIES', -1.9, 0.98, { fontSize: 88, color: '#ff8866', glyphSize: 0.13 });
   const enemyList = new THREE.Group();
-  enemyList.position.set(-2.6, 0.76, 0.01);
+  enemyList.position.set(-1.9, 0.76, 0.01);
   group.add(enemyList);
   const ENEMY_IDS = [
     ['basic', 'DRONE'], ['fast', 'SNEAK'], ['tank', 'SENTINEL'], ['swarm', 'DART'],
@@ -283,17 +372,20 @@ function buildCombatView(group) {
   ];
   const visibleEnemies = 6;
   ENEMY_IDS.forEach(([id, label], i) => {
+    const row = new THREE.Group();
+    row.position.set(-0.28, -i * 0.2, 0); // button left, counter right
+    enemyList.add(row);
     const pendingCount = _pendingWave.find(p => p.kind === 'enemy' && p.type === id)?.count || 0;
-    const face = makeButton(enemyList, `${label}${pendingCount > 0 ? `  (${pendingCount})` : ''}`, {
-      type: 'queue_enemy', id,
-    }, 0, -i * 0.18, { w: 0.72, h: 0.16, color: 0xff8866, fontSize: 42, glyphSize: 0.055 });
-    face.userData._row = i;
+    makeButton(row, label, { type: 'queue_enemy', id }, -0.28, 0, { w: 0.78, h: 0.17, color: 0xff8866, fontSize: 40, glyphSize: 0.054 });
+    const counter = makeDigitalCounter(pendingCount);
+    counter.position.set(0.33, 0, 0.02);
+    row.add(counter);
   });
   enemyList.userData.maxRows = ENEMY_IDS.length - visibleEnemies;
   enemyList.userData.scrollKey = 'enemy';
 
-  // ── BOSSES column — buttons ADD a boss to the pending wave ──
-  const bossHeader = makeLabel(group, 'BOSSES', 2.55, 0.98, { fontSize: 44, color: '#ff88ff' });
+  // ── BOSSES column — buttons + digital counters ──
+  const bossHeader = makeLabel(group, 'BOSSES', 1.9, 0.98, { fontSize: 88, color: '#ff88ff', glyphSize: 0.13 });
   const BOSS_IDS = [
     ['skull_boss', 'NECRO'], ['the_maw', 'THE MAW'], ['the_prism', 'THE PRISM'],
     ['mirror_gauntlet', 'MIRROR GAUNTLET'], ['neon_minotaur', 'BLOOD MINOTAUR'],
@@ -302,48 +394,43 @@ function buildCombatView(group) {
   ];
   let by = 0.74;
   BOSS_IDS.forEach(([id, label]) => {
+    const row = new THREE.Group();
+    row.position.set(-0.28, by, 0);
+    group.add(row);
     const pendingCount = _pendingWave.find(p => p.kind === 'boss' && p.type === id)?.count || 0;
-    makeButton(group, `${label}${pendingCount > 0 ? `  (${pendingCount})` : ''}`, { type: 'queue_boss', id }, 2.55, by, { w: 1.05, h: 0.18, color: 0xff88ff, fontSize: 40, glyphSize: 0.056 });
-    by -= 0.22;
+    makeButton(row, label, { type: 'queue_boss', id }, -0.28, 0, { w: 1.0, h: 0.18, color: 0xff88ff, fontSize: 38, glyphSize: 0.056 });
+    const counter = makeDigitalCounter(pendingCount);
+    counter.position.set(0.45, 0, 0.02);
+    row.add(counter);
+    by -= 0.23;
   });
 
-  // ── CENTER column: wave size + CURRENT WAVE + GO ──
-  const waveHeader = makeLabel(group, 'WAVE SIZE', 0, 1.32, { fontSize: 44, color: '#ffdd00', glyphSize: 0.06 });
-  makeButton(group, `SIZE: ${_waveSize}`, { type: 'noop' }, -0.32, 1.04, { w: 0.85, h: 0.26, color: 0xffdd00, fontSize: 44, glyphSize: 0.06 });
-  makeButton(group, '+5', { type: 'wave_add', amount: 5 }, 0.42, 1.04, { w: 0.42, h: 0.26, color: 0xffdd00, fontSize: 40, glyphSize: 0.055 });
-  makeButton(group, '+1', { type: 'wave_add', amount: 1 }, 0.42, 0.72, { w: 0.42, h: 0.24, color: 0xffdd00, fontSize: 38, glyphSize: 0.052 });
-  makeButton(group, '-1', { type: 'wave_add', amount: -1 }, -0.32, 0.72, { w: 0.42, h: 0.24, color: 0xffdd00, fontSize: 38, glyphSize: 0.052 });
-  makeButton(group, '-5', { type: 'wave_add', amount: -5 }, -0.32, 1.04, { w: 0.42, h: 0.26, color: 0xffdd00, fontSize: 40, glyphSize: 0.055 });
-
-  // CURRENT WAVE summary (pending picks)
-  const queueLabel = makeLabel(group, 'CURRENT WAVE', 0, 0.36, { fontSize: 34, color: '#88ddff', glyphSize: 0.05 });
-  const queueText = _pendingWave.length
-    ? _pendingWave.map(p => `${p.type.toUpperCase().replace(/_/g, ' ')} ×${p.count}`).join('   ').slice(0, 40)
-    : 'NOTHING QUEUED — PICK ENEMIES OR BOSSES';
-  const queueSummary = makeSizedText(queueText, {
-    fontSize: 30, color: '#aaddff', glyphSize: 0.04, depthTest: true, forceArial: true, maxWidth: 320,
-  });
-  queueSummary.renderOrder = MENU_TEXT_RO;
-  queueSummary.position.set(0, 0.14, 0.02);
-  group.add(queueSummary);
+  // ── CENTER: WAVE SIZE section (compact, no overlap, moved down) ──
+  const waveHeader = makeLabel(group, 'WAVE SIZE', 0, 0.62, { fontSize: 56, color: '#ffdd00', glyphSize: 0.085 });
+  // Compact stepper: -5 | -1 | SIZE | +1 | +5 (each 0.28 wide, 0.36 apart)
+  makeButton(group, '-5', { type: 'wave_add', amount: -5 }, -0.75, 0.3, { w: 0.28, h: 0.24, color: 0xffdd00, fontSize: 34, glyphSize: 0.06 });
+  makeButton(group, '-1', { type: 'wave_add', amount: -1 }, -0.39, 0.3, { w: 0.28, h: 0.24, color: 0xffdd00, fontSize: 34, glyphSize: 0.06 });
+  makeButton(group, `SIZE: ${_waveSize}`, { type: 'noop' }, 0, 0.3, { w: 0.62, h: 0.26, color: 0xffdd00, fontSize: 44, glyphSize: 0.07 });
+  makeButton(group, '+1', { type: 'wave_add', amount: 1 }, 0.39, 0.3, { w: 0.28, h: 0.24, color: 0xffdd00, fontSize: 34, glyphSize: 0.06 });
+  makeButton(group, '+5', { type: 'wave_add', amount: 5 }, 0.75, 0.3, { w: 0.28, h: 0.24, color: 0xffdd00, fontSize: 34, glyphSize: 0.06 });
 
   // GO + actions
   const waveActive = _activeWave.length > 0 || _pendingWave.some(p => p.kind === 'enemy');
-  makeButton(group, waveActive ? 'GO (WAVE RUNNING)' : 'GO!', { type: 'go_wave' }, 0, -0.2, { w: 1.5, h: 0.28, color: 0x00ff88, fontSize: 48, glyphSize: 0.07 });
-  makeButton(group, 'CLEAR WAVE', { type: 'clear_wave' }, 0, -0.58, { w: 1.5, h: 0.24, color: 0xff6644, fontSize: 38, glyphSize: 0.055 });
-  makeButton(group, 'LOADOUT →', { type: 'goto_loadout' }, 0, -0.94, { w: 1.5, h: 0.24, color: 0x44aaff, fontSize: 38, glyphSize: 0.055 });
-  makeButton(group, 'EXIT TRAINING', { type: 'exit_training' }, 0, -1.3, { w: 1.5, h: 0.24, color: 0xff4444, fontSize: 38, glyphSize: 0.055 });
+  makeButton(group, waveActive ? 'GO (WAVE RUNNING)' : 'GO!', { type: 'go_wave' }, 0, -0.18, { w: 1.5, h: 0.28, color: 0x00ff88, fontSize: 48, glyphSize: 0.07 });
+  makeButton(group, 'CLEAR WAVE', { type: 'clear_wave' }, 0, -0.56, { w: 1.5, h: 0.24, color: 0xff6644, fontSize: 38, glyphSize: 0.055 });
+  makeButton(group, 'LOADOUT →', { type: 'goto_loadout' }, 0, -0.92, { w: 1.5, h: 0.24, color: 0x44aaff, fontSize: 38, glyphSize: 0.055 });
+  makeButton(group, 'EXIT TRAINING', { type: 'exit_training' }, 0, -1.28, { w: 1.5, h: 0.24, color: 0xff4444, fontSize: 38, glyphSize: 0.055 });
 
-  const tip = makeLabel(group, 'GO CLOSES THIS MENU — THUMBSTICK OR T REOPENS IT', 0, -1.62, { fontSize: 28, color: '#6688aa', glyphSize: 0.038, forceArial: true });
+  const tip = makeLabel(group, 'GO CLOSES THIS MENU — THUMBSTICK OR T REOPENS IT', 0, -1.66, { fontSize: 30, color: '#6688aa', glyphSize: 0.04, forceArial: true });
 }
 
 function buildLoadoutView(group) {
   const title = makeLabel(group, 'LOADOUT — BUILD YOUR ARSENAL', 0, 1.68, { fontSize: 52, color: '#44aaff', glyphSize: 0.08 });
 
   // ── UPGRADES column (scrollable) ──
-  const upHeader = makeLabel(group, 'UPGRADES (BOTH HANDS)', -2.6, 0.98, { fontSize: 38, color: '#44ffaa', glyphSize: 0.052 });
+  const upHeader = makeLabel(group, 'UPGRADES (BOTH HANDS)', -1.9, 0.98, { fontSize: 38, color: '#44ffaa', glyphSize: 0.052 });
   const upList = new THREE.Group();
-  upList.position.set(-2.6, 0.76, 0.01);
+  upList.position.set(-1.9, 0.76, 0.01);
   group.add(upList);
   const allUpgrades = [...UPGRADE_POOL, ...SPECIAL_UPGRADE_POOL].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i);
   allUpgrades.forEach((u, i) => {
@@ -353,13 +440,13 @@ function buildLoadoutView(group) {
   upList.userData.scrollKey = 'loadout';
 
   // ── EVOLUTIONS column ──
-  const evoHeader = makeLabel(group, 'EVOLUTIONS', 2.55, 0.98, { fontSize: 38, color: '#ffdd00', glyphSize: 0.052 });
+  const evoHeader = makeLabel(group, 'EVOLUTIONS', 1.9, 0.98, { fontSize: 38, color: '#ffdd00', glyphSize: 0.052 });
   let ey = 0.74;
   Object.entries(WEAPON_EVOLUTIONS).forEach(([weaponId, evo]) => {
     makeButton(group, evo.name.toUpperCase(), {
       type: 'evolve', weaponId, evoId: evo.id,
-    }, 2.55, ey, { w: 1.15, h: 0.2, color: evo.sigColor || 0xffdd00, fontSize: 38, glyphSize: 0.056 });
-    const from = makeLabel(group, `from ${(evo.from || weaponId).toUpperCase()}`, 2.55, ey - 0.11, { fontSize: 26, color: '#8899bb', glyphSize: 0.034, forceArial: true });
+    }, 1.9, ey, { w: 1.15, h: 0.2, color: evo.sigColor || 0xffdd00, fontSize: 38, glyphSize: 0.056 });
+    const from = makeLabel(group, `from ${(evo.from || weaponId).toUpperCase()}`, 1.9, ey - 0.11, { fontSize: 26, color: '#8899bb', glyphSize: 0.034, forceArial: true });
     ey -= 0.3;
   });
 
@@ -649,7 +736,13 @@ export function handleTrainingAction(action) {
     }
 
     case 'clear_wave': {
+      // FULL reset: clear the pending queue AND the entire field (enemies +
+      // bosses + boss health bar) — player feedback.
       _pendingWave = [];
+      _activeWave = [];
+      if (_hasDep('clearAllEnemies')) _deps.clearAllEnemies();
+      if (_hasDep('clearBoss')) _deps.clearBoss();
+      if (_hasDep('hideBossHealthBar')) _deps.hideBossHealthBar();
       rebuildMenu();
       return true;
     }
@@ -725,7 +818,7 @@ export function handleTrainingAction(action) {
 
 function rebuildMenu() {
   hideTrainingMenu();
-  showTrainingMenu();
+  showTrainingMenu(false); // preserve the current view (combat/loadout)
 }
 
 // ── Wave release ────────────────────────────────────────────
@@ -772,8 +865,10 @@ function spawnEnemyAt(type) {
   if (!_hasDep('spawnEnemy')) return;
   const cfg = _trainingConfig || _deps.getLevelConfig?.() || game._levelConfig;
   const cam = _deps.camera;
-  // Ring around the player, front-biased (enemies approach from ahead)
-  const angle = -Math.PI * 0.75 + Math.random() * Math.PI * 1.5;
+  // STRICT front-arc spawn rule (matches the main game's getSpawnPosition:
+  // ±50° from the player's forward). Player feedback: enemies were spawning
+  // behind the player in the training ground.
+  const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
   const dist = 10 + Math.random() * 6;
   const pos = new THREE.Vector3(
     cam.position.x + Math.sin(angle) * dist,
@@ -842,7 +937,10 @@ function scrollMenus(delta) {
 /** Per-frame menu pulse + wave release (called from main.js while training). */
 export function updateTrainingMenu(now, dt) {
   updateHolodeck(now);
-  updateWaveRelease(dt);
+  // The menu PAUSES the wave: no releases while it's open (player feedback —
+  // opening the menu mid-fight should freeze the action).
+  if (!_menuOpen) updateWaveRelease(dt);
+  updateCounters(now);
 }
 
 // Test seam: expose wave size for automation.

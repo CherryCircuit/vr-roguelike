@@ -142,7 +142,7 @@ import {
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown, hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
   showSettings, hideSettings, isSettingsVisible, getSettingsHit, executeSettingsAction, getPreviousMenu,
   updateHUDHover,
-  showBestiary, hideBestiary, isBestiaryVisible, getBestiaryHit, updateBestiary, scrollBestiary,
+  showBestiary, hideBestiary, isBestiaryVisible, getBestiaryHit, updateBestiary,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, showBossAlert, hideBossAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
   resetHoloGlitch,
@@ -1798,11 +1798,6 @@ function init() {
       scrollTrainingMenus(e.deltaY > 0 ? 1 : -1);
       return;
     }
-    if (isBestiaryVisible()) {
-      e.preventDefault();
-      scrollBestiary(e.deltaY > 0 ? 1 : -1);
-      return;
-    }
   }, { passive: false });
 
   // T toggles the Training Ground menu (desktop). Works on the live launcher
@@ -2121,9 +2116,12 @@ function init() {
     spawnEnemy,
     spawnBoss,
     clearAllEnemies,
+    clearBoss,
     showBossHealthBar,
+    hideBossHealthBar,
     playMenuClick,
     playMenuHoverSound,
+    playMusic,
     clearBiomeScene,
     applyThemeForLevel,
     recomputeSynergies,
@@ -2516,29 +2514,6 @@ function updateEvolutionsScrollInput(now) {
     }
   } else {
     _evoScrollAccum = 0;
-  }
-}
-
-// Bestiary arc scroll via the Quest thumbstick (same edge-trigger pattern).
-function updateBestiaryScrollInput(now) {
-  if (!isBestiaryVisible()) return;
-  const session = renderer?.xr?.getSession?.();
-  if (!session) return;
-  let axis = 0;
-  session.inputSources.forEach(source => {
-    const gamepad = source.gamepad;
-    if (!gamepad?.axes || gamepad.axes.length < 2) return;
-    const y = gamepad.axes[1] ?? 0;
-    if (Math.abs(y) > 0.25 && Math.abs(y) > Math.abs(axis)) axis = y;
-  });
-  if (axis !== 0) {
-    _bestiaryScrollAccum += axis * 0.02;
-    if (Math.abs(_bestiaryScrollAccum) >= 1) {
-      scrollBestiary(_bestiaryScrollAccum > 0 ? 1 : -1);
-      _bestiaryScrollAccum = 0;
-    }
-  } else {
-    _bestiaryScrollAccum = 0;
   }
 }
 
@@ -6070,8 +6045,6 @@ function render(timestamp) {
   if (st === State.TITLE) {
     updateTitle(now);
     updateBestiary(now);
-    // Bestiary arc scrolls via the Quest thumbstick while visible
-    updateBestiaryScrollInput(now);
     const level = consumeDebugJump();
     if (level) {
       debugJumpToLevel(level);

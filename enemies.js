@@ -5955,6 +5955,14 @@ class Boss {
     this.minDistance = def.minDistance || 6;
     this.maxDistance = def.maxDistance || 18;
 
+    // Generic phase-transition system (player feedback): the classic bosses
+    // get an invulnerable "rage" window when health crosses a phase
+    // threshold. New bosses opt in via _usesGenericPhaseTransitions so the
+    // authored transitions (NECRO/Minotaur/Prism/Eclipse) don't double up.
+    this._usesGenericPhaseTransitions = false;
+    this._phaseTransitionTimer = 0;
+    this._phaseTransitionDuration = 2.5;
+
     // Timer ownership for safe cancellation on destroy/phase change
     this._timers = new Set();
     this._destroyed = false;
@@ -6049,6 +6057,13 @@ class Boss {
   takeDamage(amount, hitInfo = {}) {
     let isWeakPointHit = false;
 
+    // Generic phase transition: invulnerable while the boss "gets angrier"
+    // (player feedback — new bosses need the same rage window the classic
+    // bosses have).
+    if (this._usesGenericPhaseTransitions && this._phaseTransitionTimer > 0) {
+      return { killed: false, phaseChanged: false, isWeakPointHit: false, immune: true };
+    }
+
     // Check if weak point was hit
     if (hitInfo.isWeakPoint) {
       amount *= 2;
@@ -6094,6 +6109,15 @@ class Boss {
       } else if (this.hp <= phaseThreshold2) {
         this.phase = 2;
       }
+    }
+
+    // Kick off the generic rage window when the phase flips (new bosses).
+    if (this._usesGenericPhaseTransitions && this.phase !== prevPhase && this.hp > 0) {
+      this._phaseTransitionTimer = this._phaseTransitionDuration;
+      if (this.telegraphing) {
+        this.telegraphing.start('pulse', 1.2, 0xff8800, this.mesh.position.clone());
+      }
+      playSkullPhaseSound();
     }
 
     return {
@@ -6147,6 +6171,12 @@ class Boss {
     // Update cooldowns
     if (this.telegraphCooldown > 0) {
       this.telegraphCooldown -= dt;
+    }
+
+    // Generic phase-transition timer (new bosses' invulnerable rage window)
+    if (this._phaseTransitionTimer > 0) {
+      this._phaseTransitionTimer -= dt;
+      if (this._phaseTransitionTimer <= 0) this._phaseTransitionTimer = 0;
     }
 
     // Behavior-specific updates
@@ -8411,36 +8441,36 @@ class MinotaurBoss extends Boss {
     // Alternate side: left of player, then right of player, repeat
     this.lungeSide *= -1;
 
-    // Calculate player's forward direction (horizontal only)
-    const fwd = new THREE.Vector3(0, 0, -1);
-    if (typeof cameraRef !== 'undefined' && cameraRef) {
-      fwd.set(0, 0, -1).applyQuaternion(cameraRef.quaternion);
-      fwd.y = 0;
-      fwd.normalize();
-    }
-    const right = new THREE.Vector3(-fwd.z, 0, fwd.x); // perpendicular right
+    // The zip sweeps ALONG AN ARC around the player at a fixed radius
+    // (player feedback: the old chord interpolation grazed the min-distance
+    // clamp mid-sweep and the boss hung up on the invisible wall near the
+    // arc edge). Angle-based motion keeps the whole sweep outside the clamp.
+    const fwd = _bossSpawnForwardRef.clone();
+    fwd.y = 0;
+    if (fwd.lengthSq() < 0.0001) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
 
-    // Start position: current position
-    this.lungeStartPos.copy(this.mesh.position);
+    // Current polar angle of the boss around the player (relative to forward)
+    const rel = this.mesh.position.clone().sub(playerPos);
+    rel.y = 0;
+    this.lungeR = Math.max(this.minDistance + 2, Math.min(this.maxDistance - 2, rel.length() || 10));
+    this.lungeAngleStart = Math.atan2(rel.dot(right), rel.dot(fwd));
 
-    // End position: opposite side of player
-    const lateralDist = 8; // How far left/right from player
-    const fwdDist = 6;     // How far in front of player
-    const endBase = playerPos.clone().add(fwd.clone().multiplyScalar(fwdDist));
-    const lateralOffset = right.clone().multiplyScalar(this.lungeSide * lateralDist);
-    endBase.add(lateralOffset);
+    // End near-but-not-past the arc edge on the opposite side: 85% of the
+    // half-arc (frontArc=120 → ±60°, so the zip lands at ±51°).
+    const halfArc = (this.frontArc * Math.PI / 180) / 2;
+    const margin = halfArc * 0.85;
+    this.lungeAngleEnd = this.lungeSide * margin;
+    this.lungeR = Math.min(this.lungeR, 12);
 
-    // Y logic for diagonal lunges
+    // Y logic for diagonal lunges (phase 2/3 add verticality)
     const diagonalEvery = phaseConfig.diagonalEvery;
     const isDiagonalLunge = diagonalEvery < Infinity &&
       (this.lungeCount + 1) % diagonalEvery === 0;
-
-    this.lungeEndPos.copy(endBase);
-    if (isDiagonalLunge) {
-      this.lungeEndPos.y = this.currentY < 4 ? 5 : 1.5;
-    } else {
-      this.lungeEndPos.y = this.currentY;
-    }
+    this.lungeDiagonal = isDiagonalLunge;
+    this.lungeStartY = this.mesh.position.y;
+    this.lungeEndY = isDiagonalLunge ? (this.currentY < 4 ? 5 : 1.5) : this.currentY;
   }
 
   updateLunge(dt, playerPos, phaseConfig) {
@@ -8451,9 +8481,21 @@ class MinotaurBoss extends Boss {
     const easedT = 1 - (1 - t) * (1 - t);
     const blendT = t * 0.6 + easedT * 0.4; // Mostly linear, slight ease for feel
 
-    // Interpolate position directly
-    this.mesh.position.lerpVectors(this.lungeStartPos, this.lungeEndPos, blendT);
-    this.currentY = this.mesh.position.y;
+    // Interpolate the ANGLE along the arc (never closer to the player than
+    // the lunge radius, so the front-arc/distance clamps can't fight it).
+    const fwd = _bossSpawnForwardRef.clone();
+    fwd.y = 0;
+    if (fwd.lengthSq() < 0.0001) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    const a = this.lungeAngleStart + (this.lungeAngleEnd - this.lungeAngleStart) * blendT;
+    const y = this.lungeStartY + (this.lungeEndY - this.lungeStartY) * blendT;
+    this.mesh.position.set(
+      playerPos.x + (fwd.x * Math.cos(a) + right.x * Math.sin(a)) * this.lungeR,
+      y,
+      playerPos.z + (fwd.z * Math.cos(a) + right.z * Math.sin(a)) * this.lungeR,
+    );
+    this.currentY = y;
 
     // Fire projectiles during the fast part (first 30% of lunge)
     if (t < 0.3 && !this.shardFiredThisLunge) {
@@ -8469,7 +8511,7 @@ class MinotaurBoss extends Boss {
     // Lunge complete
     if (t >= 1.0) {
       this.lungeCount++;
-      this.currentY = this.lungeEndPos.y;
+      this.currentY = this.lungeEndY;
       this.lungePhase = 'recovery';
       this.lungeTimer = this.lungeRecoveryTime;
     }
@@ -11814,6 +11856,8 @@ class MawBoss extends Boss {
 
     this._buildArenaFloor();
     this.phase = 1;
+    // Generic 3-phase rage windows (player feedback)
+    this._usesGenericPhaseTransitions = true;
   }
 
   // ── Arena floor: 5 rings × 16 tiles around the player ──
@@ -11956,13 +12000,22 @@ class MawBoss extends Boss {
 
   onMinionSpawn(playerPos) {
     const type = this.phase >= 3 ? 'swarm' : this.phase === 2 ? 'fast' : 'basic';
-    const angle = Math.random() * Math.PI * 2;
+    // STRICT front-arc rule (the main game's ±50° spawn angle) — the old
+    // full 360° ring put minions behind the player (player feedback).
+    const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
     const radius = this.arenaRadius * 0.9;
     const pos = new THREE.Vector3(
-      playerPos.x + Math.cos(angle) * radius,
+      playerPos.x + Math.sin(angle) * radius,
       1.4,
-      playerPos.z + Math.sin(angle) * radius,
+      playerPos.z - Math.cos(angle) * radius,
     );
+    // Cap concurrent boss-summoned minions so the arena never fills up and
+    // the frame rate collapses (player feedback: 1FPS at 20+ live minions).
+    let summoned = 0;
+    for (const e of activeEnemies) {
+      if (e._bossSummoned && e.hp > 0) summoned++;
+    }
+    if (summoned >= 8) return;
     const enemy = spawnEnemy(type, pos, this.levelConfig);
     if (enemy) enemy._bossSummoned = true;
   }
@@ -12015,6 +12068,8 @@ class MirrorGauntletBoss extends Boss {
     this.innerFigureVisible = false;
     this.shieldRing = [];
     this.phase = 1;
+    // Generic 3-phase rage windows (player feedback)
+    this._usesGenericPhaseTransitions = true;
     this.weaponDamageMult = def.weaponDamageMult || 0.7;
     this.fixedY = 3.2;
     this.minDistance = 8;
@@ -12268,6 +12323,7 @@ class MasqueradeBoss extends Boss {
     super(def, levelConfig, sceneRef, telegraphing);
 
     this.masqueradeActive = true;  // phase 1: hidden
+    this._usesGenericPhaseTransitions = true;
     this.maskVisible = false;
     this.hostEnemy = null;
     this.transfersUsed = 0;
@@ -12426,11 +12482,13 @@ class MasqueradeBoss extends Boss {
 
   _summonDisguiseMinions(playerPos) {
     for (let i = 0; i < 3; i++) {
-      const angle = Math.random() * Math.PI * 2;
+      // FRONT-ARC minions (the old 360° ring spawned disguise minions behind
+      // the player).
+      const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
       const pos = new THREE.Vector3(
-        playerPos.x + Math.cos(angle) * 12,
+        playerPos.x + Math.sin(angle) * 12,
         1.4,
-        playerPos.z + Math.sin(angle) * 12,
+        playerPos.z - Math.cos(angle) * 12,
       );
       const minion = spawnEnemy('basic', pos, this.levelConfig);
       if (minion) {
@@ -12589,6 +12647,7 @@ class ConductorAscendantBoss extends Boss {
     this._formationEnemies = [];
     this._formationMeta = null;
     this._shieldActive = true;
+    this._phase3 = false;
     this._shieldReduction = def.shieldReduction || 0.8;
     this._disruptionTimer = 0; // > 0 = shield down + vulnerable
     this._restTimer = 0;
@@ -12622,7 +12681,10 @@ class ConductorAscendantBoss extends Boss {
   }
 
   _movementCount(type) {
-    return { spiral: 12, wave: 16, grid: 9, pincer: 24 }[type] || 8;
+    // Tightened from {spiral:12, wave:16, grid:9, pincer:24} — too many
+    // minions at once tanked the frame rate (player feedback) and the pincer
+    // groups sat behind the player.
+    return { spiral: 10, wave: 12, grid: 8, pincer: 16 }[type] || 8;
   }
 
   _startNextMovement() {
@@ -12636,7 +12698,9 @@ class ConductorAscendantBoss extends Boss {
     const type = this.movements[this.movementIndex];
     this.currentMovementType = type;
     this.movementTimer = 0;
-    this.movementDuration = this._phase2 ? 12000 : 15000;
+    // Phase pacing: 1 → 15s, 2 → 12s, 3 → 8s symphonies (player feedback:
+    // the conductor needs real 3-phase escalation).
+    this.movementDuration = this.phase >= 3 ? 8000 : this.phase === 2 ? 12000 : 15000;
     this._waveRowIndex = 0;
     this._waveRowTimer = 0;
     this._gridAngle = 0;
@@ -12655,6 +12719,9 @@ class ConductorAscendantBoss extends Boss {
 
   _spawnFormation(type) {
     const playerPos = cameraRef ? cameraRef.position.clone() : new THREE.Vector3(0, 1.6, 0);
+    // Never stack formations: release any survivors of the previous movement
+    // so the field never accumulates a wall of minions (player feedback).
+    this._releaseFormation();
     const types = this._movementTypes(type);
     const count = this._movementCount(type);
     const meta = { type, count, released: false, pincerSide: {} };
@@ -12663,10 +12730,12 @@ class ConductorAscendantBoss extends Boss {
       const enemyType = types[i % types.length];
       let pos;
       if (type === 'spiral') {
-        const ang = this._spiralAngle + (i / count) * Math.PI * 2;
-        pos = new THREE.Vector3(playerPos.x + Math.cos(ang) * 18, 1.4, playerPos.z + Math.sin(ang) * 18);
+        // FRONT-ARC spiral: spread across ±75° from the player's forward
+        // (the old full 360° spiral put enemies behind the player).
+        const ang = -1.309 + (i / count) * 2.618; // ±75°
+        pos = new THREE.Vector3(playerPos.x + Math.sin(ang) * 18, 1.4, playerPos.z - Math.cos(ang) * 18);
       } else if (type === 'wave') {
-        const row = Math.floor(i / 6); // 3 rows of ~5-6
+        const row = Math.floor(i / 6); // 2 rows of 6
         const col = i % 6;
         pos = new THREE.Vector3(playerPos.x + (col - 2.5) * 2.2, 1.4, playerPos.z - 8 - row * 4);
       } else if (type === 'grid') {
@@ -12674,13 +12743,15 @@ class ConductorAscendantBoss extends Boss {
         const col = i % 3;
         pos = new THREE.Vector3(playerPos.x + (col - 1) * 4.5, 1.4, playerPos.z - 6 - row * 2.5);
       } else {
-        // pincer: two groups at ±90°
+        // Pincer: two groups at ±50° (the strict front-arc rule — the old
+        // ±90° groups flanked the player and read as spawning behind).
         const side = i < count / 2 ? 1 : -1;
         const idx = i % (count / 2);
+        const sideAngle = side * (50 * Math.PI / 180);
         pos = new THREE.Vector3(
-          playerPos.x + side * 14,
+          playerPos.x + Math.sin(sideAngle) * 13,
           1.4,
-          playerPos.z - 8 + idx * 2.2,
+          playerPos.z - Math.cos(sideAngle) * 13 + idx * 1.9,
         );
         meta.pincerSide[i] = side;
       }
@@ -12839,11 +12910,20 @@ class ConductorAscendantBoss extends Boss {
       return;
     }
 
-    // Phase 2 at 50% HP: faster movements, tougher shield, mixed types
-    if (!this._phase2 && this.hp <= this.maxHp * 0.5) {
-      this._phase2 = true;
-      this._shieldReduction = 0.9;
-      playConductorDisruptionSound();
+    // Shield strength by phase (escalating with each rage window)
+    this._shieldReduction = this.phase >= 3 ? 0.95 : this.phase === 2 ? 0.9 : 0.8;
+
+    // 3-phase escalation (player feedback — the conductor had only 2 phases):
+    // the base takeDamage flips this.phase at 66%/33% HP with an invulnerable
+    // rage window; here we translate it into faster/tougher symphonies.
+    const wantPhase = this.hp <= this.maxHp * (1 / 3) ? 3 : this.hp <= this.maxHp * (2 / 3) ? 2 : 1;
+    if (this.phase !== wantPhase && this.hp > 0) {
+      this.phase = wantPhase;
+      this._phaseTransitionTimer = this._phaseTransitionDuration;
+      if (this.telegraphing) {
+        this.telegraphing.start('pulse', 1.2, 0xff8800, this.mesh.position.clone());
+      }
+      playSkullPhaseSound();
       this._releaseFormation();
       this._startNextMovement();
       return;
@@ -13123,7 +13203,7 @@ const BOSS_DEFS = {
     ],
     voxelSize: 0.3,
     baseHp: 600,
-    phases: 2,
+    phases: 32,
     color: 0x1a1a2e,
     scoreValue: 350,
     behavior: 'conductor',

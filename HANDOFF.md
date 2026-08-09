@@ -181,7 +181,46 @@ A marathon session — every commit below is verified with its own puppeteer sui
     - test-mirror: both hands now get scope so the 70%-damage assertion isn't
       a wall-clock race (the boss alternates hands per volley).
 
-0f. **`193b478` — big UX batch (player feedback round 3)**:
+0f. **`<<NEXT>>` — round-6 feedback batch**:
+    - **Training menu**: menu width shrunk (5.6) with columns hugging the
+      center; ENEMIES/BOSSES/TRAINING GROUND headings doubled; LOADOUT button
+      fixed (showTrainingMenu was resetting the view on rebuild); the menu
+      PAUSES the wave while open; CLEAR WAVE now does a FULL reset (queue +
+      every enemy/boss + boss bar); CURRENT WAVE text indicator removed —
+      each enemy/boss button now has a DIGITAL alarm-clock counter (lime on
+      black, "Digital Clock" font by LunasFont added to assets/fonts,
+      non-commercial license) that flashes on update and pulses while active;
+      WAVE SIZE stepper shrunk 40% with 25% bigger text, overlap fixed, moved
+      down; enemy spawns use the STRICT ±50° front-arc rule (the old ±135°
+      ring spawned behind the player).
+    - **Bestiary**: all 21 entries visible on two arcs (R 4.2/4.6), every card
+      now FACES the player (rotation.y = π − angle; the old −angle faced away
+      on both flanks), curved cylinder backdrop re-centered on −Z (the old
+      thetaStart put the wall off to the side / behind the player), BACK
+      button raised into view.
+    - **A**: EXIT from training now clears the boss health bar + boss.
+    - **B**: THE MAW's minions now spawn on the front arc with a cap of 8
+      concurrent boss-summoned minions (was unlimited, 360°, 1FPS).
+    - **C**: boss deaths in training no longer fade the holodeck to black —
+      startBossDeathCinematic early-returns when game.trainingMode (beams/
+      projectile kill paths were bypassing the main-loop guard).
+    - **D**: BLOOD MINOTAUR lunge rewritten as an ARC sweep at fixed radius
+      (angle interpolation) — the old chord interpolation grazed the
+      min-distance clamp mid-sweep (closest approach ≈ minDistance) and the
+      boss hung up near the invisible wall. Lunges now land at ±51° inside
+      the front arc; phase 2/3 diagonal height + speed preserved.
+    - **E**: training plays a random level-music category; the settings menu
+      (volume + track skip) is reachable via pause → SETTINGS.
+    - **F**: all four new bosses now have REAL 3-phase fights with invulnerable
+      "rage" windows — a generic phase-transition system in the base Boss
+      (2.5s immune + pulse + roar at each 66%/33% threshold) enabled for
+      Maw/Mirror/Conductor/Masquerade; the Conductor went from 2 to 3 phases
+      (15s/12s/8s symphonies, 0.8/0.9/0.95 shield).
+    - **G**: upgrade-card spinning prism icon halved (0.18 → 0.09, matching
+      the SKIP card).
+    - test-conductor updated for the new phase model.
+
+0g. **`193b478` — big UX batch (player feedback round 3)**:
     - **Hover preview 2-row layout**: the 3 side-by-side columns overlapped on
       long labels (FIRE RATE: over 9/s). Each stat is now a heading line with an
       indented bold value + colored delta below it. SHOTS → PROJECTILES.
