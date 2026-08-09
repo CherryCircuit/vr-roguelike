@@ -220,7 +220,7 @@ A marathon session — every commit below is verified with its own puppeteer sui
       the SKIP card).
     - test-conductor updated for the new phase model.
 
-0g. **`<<NEXT>>` — round-7 feedback batch** (training menu polish):
+0g. **`ac7556d` — round-7 feedback batch** (training menu polish):
     - Enemy/boss button+counter rows now CENTERED under their column titles
       (the pairs drifted off-center and clipped the panel edge).
     - LOADOUT view rebuilt: per-hand upgrade columns — LEFT BLASTER gets two
