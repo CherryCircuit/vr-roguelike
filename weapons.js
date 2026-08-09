@@ -705,7 +705,7 @@ export function getUpgradeDef(id) {
 const PREVIEW_STAT_DEFS = [
   { key: 'damage', label: 'DMG', unit: '' },
   { key: 'fireInterval', label: 'FIRE RATE', unit: '/s', rate: true },
-  { key: 'projectileCount', label: 'SHOTS', unit: '' },
+  { key: 'projectileCount', label: 'PROJECTILES', unit: '' },
   { key: 'critChance', label: 'CRIT', unit: '%', pct: true },
   { key: 'critMultiplier', label: 'CRIT MULT', unit: 'x' },
   { key: 'piercing', label: 'PIERCING', unit: '', bool: true },

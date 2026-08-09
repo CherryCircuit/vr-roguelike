@@ -78,6 +78,13 @@ async function runTest() {
     return true;
   };
 
+  // New flow (Issue #185 redesign): dissolve/forge clicks open a CONFIRM
+  // popup first. clickAndConfirm clicks the button, then CONFIRM.
+  const clickAndConfirm = async (btnName) => {
+    if (!await clickAlchemyButton(btnName)) return false;
+    return clickAlchemyButton('alchemy-popup-confirm');
+  };
+
   // All text sprites under the named group (userData.text carries labels).
   const textsIn = (groupName) => page.evaluate((name) => {
     const scene = window.__test?.getScene?.();
@@ -165,26 +172,33 @@ async function runTest() {
   const benchOpened = result === 'ok' && texts && texts.some(t => t.includes('ESSENCE: 0/3'));
   console.log(`  Bench open, essence 0/3: ${benchOpened ? '✅' : '❌'}`);
 
-  // Dissolve scope stack #1 → essence 1
-  await clickAlchemyButton('alchemy-btn-dissolve-left-scope');
+  // Dissolve scope stack #1 → essence 1 (confirm popup first)
+  await clickAndConfirm('alchemy-btn-dissolve-left-scope');
   texts = await textsIn('alchemy-bench');
   const scopeDissolved = texts && texts.some(t => t.includes('ESSENCE: 1/3'));
   console.log(`  Dissolve scope (0 → 1 essence): ${scopeDissolved ? '✅' : '❌'}`);
 
   // Dissolve fire (status) → essence 2; then second scope → essence 3
-  await clickAlchemyButton('alchemy-btn-dissolve-left-fire');
-  await clickAlchemyButton('alchemy-btn-dissolve-left-scope');
+  await clickAndConfirm('alchemy-btn-dissolve-left-fire');
+  await clickAndConfirm('alchemy-btn-dissolve-left-scope');
   texts = await textsIn('alchemy-bench');
   const essence3 = texts && texts.some(t => t.includes('ESSENCE: 3/3'));
-  const leftBare = texts && texts.some(t => t.includes('LEAVES HAND BARE'));
   console.log(`  Essence 3/3 after 3 dissolves: ${essence3 ? '✅' : '❌'}`);
   console.log(`  Right-hand barrel still listed: ${texts && texts.some(t => t.includes('Barrel')) ? '✅' : '❌'}`);
 
   // Weapon Synthesis on standard_blaster → refund (spend 3, get 1 back)
   await clickAlchemyButton('alchemy-btn-forge-weapon_synthesis');
+  const refundPopup = await page.evaluate(() => {
+    const scene = window.__test?.getScene?.();
+    const popup = scene?.getObjectByName('alchemy-popup');
+    let hasRefundText = false;
+    popup?.traverse(c => { if (c.userData && c.userData.text && String(c.userData.text).includes('refunds 1 essence')) hasRefundText = true; });
+    return !!popup && hasRefundText;
+  });
+  await clickAlchemyButton('alchemy-popup-confirm');
   texts = await textsIn('alchemy-bench');
   const refund = texts && texts.some(t => t.includes('ESSENCE: 1/3')) && texts.some(t => t.includes('USED'));
-  console.log(`  Synthesis refund (3 → 1, forge used): ${refund ? '✅' : '❌'}`);
+  console.log(`  Synthesis refund popup + apply (3 → 1, forge used): ${refundPopup && refund ? '✅' : '❌'}`);
   const gameState = await page.evaluate(() => ({
     essence: window.game.alchemyEssence,
     forged: window.game.alchemyForgedThisLevel,
@@ -193,7 +207,7 @@ async function runTest() {
   console.log(`  game state: essence=${gameState.essence} forged=${gameState.forged} left=${JSON.stringify(gameState.upgrades)}`);
 
   // Dissolve after forging is allowed (essence 1 → 2)
-  await clickAlchemyButton('alchemy-btn-dissolve-right-barrel');
+  await clickAndConfirm('alchemy-btn-dissolve-right-barrel');
   texts = await textsIn('alchemy-bench');
   const dissolveAfterForge = texts && texts.some(t => t.includes('ESSENCE: 2/3'));
   console.log(`  Dissolve after forge allowed (1 → 2): ${dissolveAfterForge ? '✅' : '❌'}`);
@@ -224,18 +238,18 @@ async function runTest() {
 
   // 3 dissolvable scope stacks → 3 essence → forge buttons enabled
   for (let i = 0; i < 3; i++) {
-    await clickAlchemyButton('alchemy-btn-dissolve-left-scope');
+    await clickAndConfirm('alchemy-btn-dissolve-left-scope');
   }
   texts = await textsIn('alchemy-bench');
   const forgeEnabled = texts && texts.some(t => t.includes('ESSENCE: 3/3'));
   console.log(`  Essence 3/3 again: ${forgeEnabled ? '✅' : '❌'}`);
 
-  // Targeted Infusion → category picker → STATUS category → real forge
+  // Targeted Infusion → category picker → STATUS category → preview popup → confirm
   await clickAlchemyButton('alchemy-btn-forge-targeted_infusion');
   const catView = await groupExists('alchemy-btn-cat-status');
   console.log(`  Category picker shown: ${catView ? '✅' : '❌'}`);
   const before = await page.evaluate(() => ({ ...window.game.upgrades.left }));
-  await clickAlchemyButton('alchemy-btn-cat-status');
+  await clickAndConfirm('alchemy-btn-cat-status');
   const after = await page.evaluate(() => ({ ...window.game.upgrades.left }));
   const statusIds = ['fire', 'shock', 'freeze', 'ricochet', 'excess_heat'];
   const statusForged = statusIds.some(id => (after[id] || 0) > (before[id] || 0));

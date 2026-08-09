@@ -91,6 +91,57 @@ A marathon session — every commit below is verified with its own puppeteer sui
       to the card border LineSegments + EVO bar/text anyway (cheap, matches the
       repo's past culling fixes 18e2b14/e7389bd).
 
+0c. **`<<NEXT>>` — big UX batch (player feedback round 3)**:
+    - **Hover preview 2-row layout**: the 3 side-by-side columns overlapped on
+      long labels (FIRE RATE: over 9/s). Each stat is now a heading line with an
+      indented bold value + colored delta below it. SHOTS → PROJECTILES.
+    - **Alchemy bench redesign**: 3 columns — dissolve LEFT / FORGE / dissolve
+      RIGHT, per-column titles + descriptions, "LEAVES HAND BARE" and hand
+      prefixes removed, ALCHEMY button emoji dropped, button labels word-wrap
+      (new makeAlchemyLabelSprite scales by single-line canvas height so glyphs
+      don't shrink). Forge + dissolve now open a CONFIRM POPUP (3D spinning
+      icon, wrapped info, CONFIRM/BACK): forge rolls the result ONCE at preview
+      and confirm applies that exact upgrade; dissolve shows the
+      "dissolved upgrades are destroyed" warning. popup_back discards.
+    - **EVOLUTIONS menu**: new EVOLUTIONS button under the cards → scrollable
+      panel (Quest thumbstick Y + desktop wheel) listing all six evolutions with
+      name, source weapon, progress bar (x/total), and the recipe upgrades to
+      watch for (✓ collected / ○ missing). Scroll math in
+      updateEvolutionsScroll (content Y offset, clamped).
+    - **Card menu animations**: cards shrink out when ALCHEMY/EVOLUTIONS open
+      and grow back on close (reverse of the warp intro) via a 200ms
+      card-transition state ticked in updateUpgradeCards.
+    - **Pause menu**: blaster sections redesigned — upgrades moved UP right
+      under the weapon name in a 2-column list at the same size as the ENEMIES
+      section; all text ~50% bigger (22px→33px); stats + enemies pushed down to
+      fixed anchor rows so long upgrade lists never overlap them.
+    - **Settings menu**: the four decorative border rects defaulted to
+      visible:true at (0,0,0) — stacked cyan bars through the center. Defaults
+      now hidden; real top/bottom/left/right border rects added to settings.json.
+      Hover glow now derives from the button's own borderColor (was always cyan
+      — makeBtn sets userData.borderColor alias).
+    - **Desktop camera shake removed** — replaced with one-shot VR controller
+      haptic pulses on damage (edge-triggered on the shake timer;
+      pulseControllerHaptics). Damage feedback remains the hit-flash vignette.
+    - **EVO bar real fix + redesign**: ROOT CAUSE found by pixel-bisection —
+      the bar and the card face shared renderOrder 1, so three.js broke the tie
+      by view-space CENTER depth; the bar at the card's top became "farther"
+      than the card center at pitch ≥ +1° and the 91%-opaque card face blended
+      over it. renderOrder 999 keeps it visible at every pitch (verified
+      -15°..+25°). Retitled to "EVOLUTION" (no ⚡) and moved to a small gold
+      extension ON TOP of the card (y=0.8).
+    - **Bestiary expanded**: the new enemies (Bombardier, Void Anchor, Void
+      Tendril, Echo Phantom, Leech) and bosses (Maw, Mirror Gauntlet, Conductor,
+      Masquerade) now have entries + descriptions + voxel models (boss row
+      spacing tightened for 8 entries).
+    - **Boss-name mismatch fixed**: game.js's tier pools include the new bosses,
+      but enemies.js's getBossNameForLevel used a stale 4-boss pool and always
+      returned pool[0] (NECRO at level 5). The boss id is now rolled ONCE at the
+      alert (game._pendingBossId) and reused at spawn so the name always matches.
+    - **Debug sandbox (dev-only)**: O key or the debug panel button opens a 3D
+      spawn/eval menu (works in desktop AND VR) — spawn any enemy/boss, add any
+      upgrade, from inside the game, for in-headset review.
+
 1. **`7825c6c` — #139 Void Marks**: deaths record to localStorage (`void_marks`,
    max 20); future runs at the same level+biome spawn a spectral hologram at the
    death spot. TRIGGER = inherit one random universal upgrade from the ghost run

@@ -482,6 +482,54 @@
       "text": "RESET MASTERY",
       "fontSize": 34,
       "color": 16755200
+    },
+    "custom_rect_2": {
+      "x": 0,
+      "y": 1.1,
+      "z": 0.001,
+      "w": 3.2,
+      "h": 0.04,
+      "type": "rect",
+      "visible": true,
+      "color": 65535,
+      "opacity": 0.8,
+      "_colorHex": "#00ffff"
+    },
+    "dup_3_custom_rect_2": {
+      "x": 0,
+      "y": -1.1,
+      "z": 0.001,
+      "w": 3.2,
+      "h": 0.04,
+      "type": "rect",
+      "visible": true,
+      "color": 65535,
+      "opacity": 0.8,
+      "_colorHex": "#00ffff"
+    },
+    "dup_4_custom_rect_2": {
+      "x": -1.55,
+      "y": 0,
+      "z": 0.001,
+      "w": 0.04,
+      "h": 2.2,
+      "type": "rect",
+      "visible": true,
+      "color": 65535,
+      "opacity": 0.8,
+      "_colorHex": "#00ffff"
+    },
+    "dup_5_dup_4_custom_rect_2": {
+      "x": 1.55,
+      "y": 0,
+      "z": 0.001,
+      "w": 0.04,
+      "h": 2.2,
+      "type": "rect",
+      "visible": true,
+      "color": 65535,
+      "opacity": 0.8,
+      "_colorHex": "#00ffff"
     }
   },
   "exportedAt": "2026-04-17T01:14:47.725Z",

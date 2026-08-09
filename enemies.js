@@ -13269,15 +13269,23 @@ export function setCameraRef(camera) {
 }
 
 /**
- * Spawn a boss of the given type
+ * Resolve the boss display name from a boss id (or the classic fallback pool).
+ * NOTE: game.js owns the real tier pools (includes The Maw / Mirror Gauntlet /
+ * Conductor / Masquerade). This lookup only formats a NAME — main.js rolls the
+ * boss id once at alert time and reuses it for the spawn so the alert always
+ * matches the boss that actually appears.
  */
-export function getBossNameForLevel(level) {
+export function getBossNameForLevel(level, bossId) {
+  if (bossId) {
+    const def = BOSS_DEFS[bossId];
+    if (def) return def.name;
+  }
   if (level % 5 !== 0) return '';
   const tier = level / 5;
   const pool = BOSS_POOLS[tier];
   if (!pool || pool.length === 0) return '';
-  const bossId = pool[0];
-  const def = BOSS_DEFS[bossId];
+  const bossIdFallback = pool[0];
+  const def = BOSS_DEFS[bossIdFallback];
   return def ? def.name : '';
 }
 

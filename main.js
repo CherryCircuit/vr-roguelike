@@ -17,7 +17,7 @@ import { AnaglyphEffect } from 'three/addons/effects/AnaglyphEffect.js';
 import { StereoEffect } from 'three/addons/effects/StereoEffect.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { State, game, resetGame, getLevelConfig, getBossTier, getRandomBossIdForLevel, addScore, registerAccuracyHit, registerAccuracyMiss, damagePlayer, addUpgrade, setMainWeapon, setAltWeapon, getNextUpgradeHand, needsMainWeaponChoice, LEVELS, loadDebugSettings, saveDebugSettings, startGameWithSeed, getBiomeForLevel, trackKill, trackShot, trackShotHit, trackCrit, registerResetHook, setWeaponEvolution, getWeaponEvolution, isWeaponEvolved } from './game.js';
-import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress, detectFireCombos, computeStyleGrade, COMBO_DEFS } from './weapons.js';
+import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponStats, MAIN_WEAPONS, ALT_WEAPONS, getMainWeapon, getAltWeapon, detectSynergies, getEssenceValue, getForgeUpgrade, ALCHEMY_FORGE_COST, checkEvolutionReady, getEvolutionForWeapon, getEvolutionProgress, detectFireCombos, computeStyleGrade, COMBO_DEFS, UPGRADE_POOL, SPECIAL_UPGRADE_POOL } from './weapons.js';
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
@@ -129,6 +129,7 @@ import {
 } from './boss-death-cinematic.js';
 import {
   initHUD, showTitle, hideTitle, updateTitle, showHUD, hideHUD, updateHUD,
+  makeSprite,
   showLevelComplete, hideLevelComplete, showUpgradeCards, hideUpgradeCards,
   updateUpgradeCards, getUpgradeCardHit, getHoveredUpgradeCardHit, getHoveredAction, showGameOver, showVictory, updateEndScreen,
   hideGameOver, triggerHitFlash, updateHitFlash, setLowHealthScreenPulse, updateSpeedLines, spawnDamageNumber, spawnCritIndicator, updateDamageNumbers, updateFPS,
@@ -156,8 +157,10 @@ import {
   layoutCache,
   // Alchemy bench (Issue #185)
   showAlchemyBench, hideAlchemyBench, showAlchemyCategoryView,
-  isAlchemyBenchOpen,
+  isAlchemyBenchOpen, showAlchemyConfirmPopup, hideAlchemyPopup, isAlchemyPopupOpen,
   getAlchemyBenchHit, getHoveredAlchemyAction,
+  // Evolutions menu (Issue #143 redesign)
+  showEvolutionsMenu, hideEvolutionsMenu, isEvolutionsOpen, updateEvolutionsScroll,
   // Bullet Carnival style flash (Issue #189)
   triggerStyleFlash,
   // Eclipse Engine corruption warning (Issue #172)
@@ -1197,6 +1200,24 @@ function getAdjustedCameraPosition() {
 let screenShakeIntensity = 0;
 let screenShakeTime = 0;
 
+// Damage haptics: edge-trigger flag + pulse helper (VR-only; desktop has no
+// controllers). WebXR gamepad hapticActuator.pulse is fire-and-forget.
+let _shakeHapticsFired = false;
+function pulseControllerHaptics(strength = 0.8, durationMs = 120) {
+  const session = renderer?.xr?.getSession?.();
+  if (!session) return;
+  for (const source of session.inputSources || []) {
+    const actuator = source?.gamepad?.hapticActuator;
+    if (actuator && typeof actuator.pulse === 'function') {
+      try {
+        actuator.pulse(strength, durationMs);
+      } catch (e) {
+        // Some drivers throw on rapid re-pulse — ignore, haptics are best-effort
+      }
+    }
+  }
+}
+
 // Boss death cinematic state is now in boss-death-cinematic.js module
 
 // ============================================================
@@ -1757,6 +1778,25 @@ function init() {
   createEnvironment();
   setupControllers();
 
+  // Desktop wheel scrolls the EVOLUTIONS menu (Issue #143 redesign). Only
+  // active while that menu is open, so it never fights the desktop-controls
+  // wheel-to-switch-weapon handler during PLAYING.
+  window.addEventListener('wheel', (e) => {
+    if (!isEvolutionsOpen()) return;
+    e.preventDefault();
+    updateEvolutionsScroll(e.deltaY > 0 ? 1 : -1);
+  }, { passive: false });
+
+  // Dev-only: O toggles the debug sandbox menu (spawn enemies/bosses/upgrades)
+  if (devRuntimeEnabled) {
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'o' || e.key === 'O') {
+        if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+        toggleSandbox();
+      }
+    });
+  }
+
   // Init boss death cinematic module with dependencies
   initBossDeathCinematic({    scene,
     camera,
@@ -1904,6 +1944,13 @@ function init() {
       settingsTrigger: handleSettingsTrigger,
       titleTrigger: handleTitleTrigger,
       playingTrigger: (controller, index) => {
+        // Debug sandbox intercept (dev-only spawn/review menu)
+        if (isSandboxOpen()) {
+          const rc = getAimRaycaster();
+          const hit = rc ? getSandboxHit(rc) : null;
+          if (hit) handleSandboxAction(hit);
+          return;
+        }
         // Issue #139: a trigger near a Void Mark INHERITS from the ghost run
         // instead of firing
         if (tryVoidMarkInherit()) return;
@@ -2153,6 +2200,7 @@ function init() {
 
   registerRuntimeAction('setFpsVisible', (visible) => setFPSVisible(visible === true));
   registerRuntimeAction('cycleBiomeWithFade', () => cycleDebugBiomeWithFade());
+  registerRuntimeAction('toggleSandbox', () => toggleSandbox());
 
   // Dev/test automation surfaces stay out of the live launcher.
   if (devRuntimeEnabled && runtimeConfig.dev.testAPI && typeof window !== 'undefined') {
@@ -2402,7 +2450,36 @@ function renderDesktopDebugEffect(tuning) {
   return false;
 }
 
-// [CORE] Update VR pause button state
+// Evolutions-menu scroll via the Quest thumbstick (edge-triggered on the Y
+// axis; deadzone + repeat rate so a held stick scrolls continuously but a
+// wobbly stick doesn't fire every frame). No-op outside the evolutions menu.
+let _evoScrollAccum = 0;
+function updateEvolutionsScrollInput(now) {
+  if (!isEvolutionsOpen()) return;
+  const session = renderer?.xr?.getSession?.();
+  if (!session) return;
+
+  let axis = 0;
+  session.inputSources.forEach(source => {
+    const gamepad = source.gamepad;
+    if (!gamepad?.axes || gamepad.axes.length < 2) return;
+    // Thumbstick Y (axis 1; some mappings use axis 3 for the second stick)
+    const y = gamepad.axes[1] ?? 0;
+    if (Math.abs(y) > 0.25 && Math.abs(y) > Math.abs(axis)) axis = y;
+  });
+
+  if (axis !== 0) {
+    _evoScrollAccum += axis * 0.02;
+    if (Math.abs(_evoScrollAccum) >= 1) {
+      const dir = _evoScrollAccum > 0 ? -1 : 1; // stick up → scroll up (content down)
+      updateEvolutionsScroll(dir);
+      _evoScrollAccum = 0;
+    }
+  } else {
+    _evoScrollAccum = 0;
+  }
+}
+
 function updateVRPauseButton(now) {
   const session = renderer?.xr?.getSession?.();
   if (!session) {
@@ -3241,6 +3318,22 @@ function handleDesktopCountrySelectClick() {
   }
 }
 
+// Raycast the debug sandbox menu buttons (dev-only; no-op when closed).
+function getSandboxHit(raycaster) {
+  if (!sandboxOpen || !sandboxGroup || !raycaster) return null;
+  const targets = [];
+  sandboxGroup.traverse(c => {
+    if (c.userData && c.userData.alchemyAction) targets.push(c);
+  });
+  if (targets.length === 0) return null;
+  const hits = raycaster.intersectObjects(targets, false);
+  for (const hit of hits) {
+    const action = hit.object.userData.alchemyAction;
+    if (action) return action;
+  }
+  return null;
+}
+
 function handleDesktopUpgradeSelectClick() {
   if (upgradeSelectionCooldown > 0) return;
   // Issue #143: no card selection during the evolution cinematic
@@ -3249,6 +3342,13 @@ function handleDesktopUpgradeSelectClick() {
   const raycaster = getAimRaycaster();
   if (!raycaster) return;
   raycaster._hudSourceKey = 'desktop';
+
+  // Debug sandbox takes priority while open (spawn/review menu)
+  const sandboxHit = getSandboxHit(raycaster);
+  if (sandboxHit) {
+    handleSandboxAction(sandboxHit);
+    return;
+  }
 
   // Issue #185: bench/post-bar priority, mirroring the VR trigger path
   const benchHit = getAlchemyBenchHit(raycaster);
@@ -4608,11 +4708,166 @@ registerResetHook(() => {
   }
 });
 
+// ── DEBUG SANDBOX (dev-only spawn/eval menu) ───────────────
+// A 3D menu (dev.html only) letting the player spawn any enemy/boss and add
+// any upgrade from inside the game — desktop AND VR — so new content can be
+// reviewed in-headset. Toggled from the debug panel or the O key. Buttons
+// ride userData.alchemyAction so the existing hover/trigger plumbing works.
+
+let sandboxGroup = null;
+let sandboxOpen = false;
+
+const SANDBOX_ENEMIES = [
+  ['basic', 'DRONE'], ['fast', 'SNEAK'], ['tank', 'SENTINEL'], ['swarm', 'DART'],
+  ['spiral_swimmer', 'SPIRAL'], ['jelly', 'STACK'], ['conductor', 'COMMANDER'], ['mortar', 'MORTAR'],
+  ['bombardier', 'BOMBARDIER'], ['void_anchor', 'VOID ANCHOR'], ['void_tendril', 'VOID TENDRIL'],
+  ['echo_phantom', 'ECHO PHANTOM'], ['leech', 'LEECH'],
+];
+
+const SANDBOX_BOSSES = [
+  ['skull_boss', 'NECRO'], ['the_maw', 'THE MAW'], ['the_prism', 'THE PRISM'],
+  ['mirror_gauntlet', 'MIRROR GAUNTLET'], ['neon_minotaur', 'BLOOD MINOTAUR'],
+  ['conductor_ascendant', 'CONDUCTOR'], ['the_masquerade', 'MASQUERADE'],
+  ['eclipse_engine', 'ECLIPSE ENGINE'],
+];
+
+function isSandboxOpen() {
+  return sandboxOpen;
+}
+
+function toggleSandbox() {
+  if (sandboxOpen) hideSandbox(); else showSandbox();
+}
+
+function showSandbox() {
+  if (sandboxOpen) return;
+  sandboxOpen = true;
+  if (!sandboxGroup) buildSandboxMenu();
+  sandboxGroup.visible = true;
+  _log('[sandbox] open');
+}
+
+function hideSandbox() {
+  sandboxOpen = false;
+  if (sandboxGroup) sandboxGroup.visible = false;
+}
+
+function buildSandboxMenu() {
+  const group = new THREE.Group();
+  group.name = 'sandbox-menu';
+  group.position.set(0, 1.55, -2.6);
+  scene.add(group);
+  sandboxGroup = group;
+
+  const panelW = 6.2, panelH = 3.4;
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(panelW, panelH),
+    new THREE.MeshBasicMaterial({ color: 0x0a1028, transparent: true, opacity: 0.94, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+  );
+  bg.renderOrder = 1;
+  group.add(bg);
+  group.add(new THREE.LineSegments(new THREE.EdgesGeometry(bg.geometry), new THREE.LineBasicMaterial({ color: 0x00ff88 })));
+
+  const title = makeSandboxLabel('SANDBOX — SPAWN & EVALUATE (DEV)', 36, '#00ff88');
+  title.position.set(0, 1.5, 0.02);
+  group.add(title);
+
+  const cols = [
+    { x: -2.1, title: 'ENEMIES', color: 0xff6644, items: SANDBOX_ENEMIES, kind: 'enemy' },
+    { x: 0, title: 'BOSSES', color: 0xff44ff, items: SANDBOX_BOSSES, kind: 'boss' },
+    { x: 2.1, title: 'UPGRADES', color: 0x44ffaa, items: null, kind: 'upgrade' },
+  ];
+
+  cols.forEach(col => {
+    const t = makeSandboxLabel(col.title, 30, '#' + col.color.toString(16).padStart(6, '0'));
+    t.position.set(col.x, 1.28, 0.02);
+    group.add(t);
+    let y = 1.02;
+    if (col.items) {
+      col.items.forEach(([id, label]) => {
+        makeSandboxButton(group, label, { type: 'sandbox', kind: col.kind, id }, col.x, y, col.color);
+        y -= 0.15;
+      });
+    } else {
+      // Upgrades: all pool upgrades (universal + weapon_specific + specials)
+      const allUpgrades = [...UPGRADE_POOL, ...SPECIAL_UPGRADE_POOL];
+      allUpgrades.slice(0, 22).forEach(u => {
+        makeSandboxButton(group, u.name.toUpperCase(), { type: 'sandbox', kind: 'upgrade', id: u.id }, col.x, y, col.color);
+        y -= 0.15;
+      });
+    }
+  });
+
+  makeSandboxButton(group, 'CLOSE', { type: 'sandbox_close' }, 0, -1.55, 0xff4444, 1.4);
+}
+
+function makeSandboxLabel(text, fontSize, color) {
+  return makeSprite(text, { fontSize, color, scale: 0.28, depthTest: true, forceArial: true });
+}
+
+function makeSandboxButton(parent, label, action, x, y, color, w) {
+  const width = w || 1.9;
+  const group = new THREE.Group();
+  group.position.set(x, y, 0.02);
+  parent.add(group);
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, 0.13),
+    new THREE.MeshBasicMaterial({ color: 0x111133, transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+  );
+  face.renderOrder = 2;
+  face.userData.alchemyAction = action;
+  face.userData.borderColor = color;
+  group.add(face);
+  const sprite = makeSprite(label, { fontSize: 22, color: '#ffffff', scale: 0.16, depthTest: true, forceArial: true, maxWidth: Math.floor(width * 130) });
+  sprite.position.set(0, 0, 0.03);
+  group.add(sprite);
+}
+
+// Execute a sandbox action: spawn an enemy/boss or add an upgrade.
+function handleSandboxAction(action) {
+  if (!action) return;
+  if (action.type === 'sandbox_close') { playMenuClick(); hideSandbox(); return; }
+  if (action.type !== 'sandbox') return;
+  playMenuClick();
+
+  const spawnPos = getSandboxSpawnPosition();
+  if (action.kind === 'enemy') {
+    const cfg = game._levelConfig || getLevelConfig();
+    const e = spawnEnemy(action.id, spawnPos, cfg);
+    _log(`[sandbox] spawned enemy ${action.id}: ${e ? 'ok' : 'FAILED'}`);
+  } else if (action.kind === 'boss') {
+    const boss = spawnBoss(action.id, game._levelConfig || getLevelConfig());
+    if (boss) {
+      showBossHealthBar(boss);
+      playBossSpawn();
+    }
+    _log(`[sandbox] spawned boss ${action.id}: ${boss ? 'ok' : 'FAILED'}`);
+  } else if (action.kind === 'upgrade') {
+    const hand = getNextUpgradeHand ? getNextUpgradeHand() : 'left';
+    addUpgrade(action.id, hand);
+    recomputeSynergies();
+    _log(`[sandbox] added upgrade ${action.id} → ${hand}`);
+  }
+}
+
+// Spawn point ~9m in front of the camera at eye level.
+function getSandboxSpawnPosition() {
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  return camera.position.clone().addScaledVector(dir, 9);
+}
+
 // ── ALCHEMY BENCH (Issue #185) ─────────────────────────────
 // The bench is reached from the ALCHEMY button on the card screen (the old
 // post-select bar was removed per player feedback). The bench replaces the
 // card row while open; BACK returns to the cards; picking a card advances
 // the level directly.
+
+// Pending popup state: the upgrade rolled at preview time (forge) and the
+// hand/upgrade chosen for dissolve. Cleared on confirm/back so a stale
+// popup can never double-apply after a bench rebuild.
+let _alchemyPendingForge = null;
+let _alchemyPendingDissolve = null;
 
 // Single entry point for bench action payloads from triggers.
 function handleAlchemyAction(action) {
@@ -4625,19 +4880,120 @@ function handleAlchemyAction(action) {
     return;
   }
 
+  if (action.type === 'evolutions') {
+    // Evolutions menu takes over the upgrade screen (cards shrink away)
+    playMenuClick();
+    showEvolutionsMenu();
+    return;
+  }
+
+  if (action.type === 'evolutions_back') {
+    playMenuClick();
+    hideEvolutionsMenu();
+    return;
+  }
+
   if (action.type === 'back') {
     // Close the bench back to the card screen (category view or main)
     playMenuClick();
+    _alchemyPendingForge = null;
+    _alchemyPendingDissolve = null;
     hideAlchemyBench();
     return;
   }
 
-  if (action.type === 'dissolve') {
-    handleAlchemyDissolve(action.hand, action.upgradeId);
+  if (action.type === 'popup_back') {
+    // Close the confirm popup without applying anything
+    playMenuClick();
+    _alchemyPendingForge = null;
+    _alchemyPendingDissolve = null;
+    hideAlchemyPopup();
+    return;
+  }
+
+  if (action.type === 'dissolve_preview') {
+    // Show the confirm popup for a dissolve (nothing spent yet)
+    const def = getUpgradeDef(action.upgradeId);
+    if (!def) { playErrorSound(); return; }
+    const map = game.upgrades[action.hand];
+    if (!map || !(map[action.upgradeId] > 0)) { playErrorSound(); return; }
+    playMenuClick();
+    _alchemyPendingDissolve = { hand: action.hand, upgradeId: action.upgradeId };
+    const colorHex = typeof def.color === 'string' ? def.color : '#00ffff';
+    const colorNum = parseInt(colorHex.replace('#', ''), 16);
+    showAlchemyConfirmPopup({
+      title: `DISSOLVE ${def.name.toUpperCase()}`,
+      desc: `Gain ${getEssenceValue(def)} essence. Note: dissolved upgrades are destroyed.`,
+      color: colorNum,
+      confirmAction: { type: 'dissolve_confirm' },
+    });
+    return;
+  }
+
+  if (action.type === 'dissolve_confirm') {
+    if (!_alchemyPendingDissolve) { playErrorSound(); return; }
+    handleAlchemyDissolve(_alchemyPendingDissolve.hand, _alchemyPendingDissolve.upgradeId);
+    _alchemyPendingDissolve = null;
+    return;
+  }
+
+  if (action.type === 'forge_preview') {
+    // Roll the forge result ONCE and show it in the popup; CONFIRM applies
+    // it, BACK discards it. Nothing is spent at preview time.
+    if (game.alchemyEssence < ALCHEMY_FORGE_COST) { playErrorSound(); return; }
+    if (game.alchemyForgedThisLevel) { playErrorSound(); return; }
+    const hand = alchemyPendingHand();
+    const result = getForgeUpgrade(action.forgeType, {
+      mainWeaponId: game.mainWeapon[hand] || 'standard_blaster',
+      owned: game.upgrades[hand] || {},
+      category: action.category,
+    });
+    if (!result) { playErrorSound(); return; }
+    if (result.refund) {
+      // Weapon Synthesis with nothing compatible: refund 1 Essence. Inform
+      // through the popup so the player knows why the forge was a loss.
+      playMenuClick();
+      showAlchemyConfirmPopup({
+        title: 'WEAPON SYNTHESIS — EMPTY',
+        desc: 'No weapon-specific upgrades for your current main weapon. Forge refunds 1 essence.',
+        color: 0xff8844,
+        confirmAction: { type: 'forge_confirm', forgeType: action.forgeType, refund: true },
+      });
+      return;
+    }
+    _alchemyPendingForge = { forgeType: action.forgeType, upgrade: result.upgrade, category: action.category };
+    playMenuClick();
+    const colorHex = typeof result.upgrade.color === 'string' ? result.upgrade.color : '#ffdd00';
+    const colorNum = parseInt(colorHex.replace('#', ''), 16);
+    showAlchemyConfirmPopup({
+      title: `FORGE: ${result.upgrade.name.toUpperCase()}`,
+      desc: result.upgrade.desc || 'A new upgrade for your blaster.',
+      color: colorNum,
+      confirmAction: { type: 'forge_confirm' },
+    });
+    return;
+  }
+
+  if (action.type === 'forge_confirm') {
+    if (action.refund) {
+      // The roll already failed at preview time — apply the refund now.
+      if (game.alchemyEssence < ALCHEMY_FORGE_COST) { playErrorSound(); return; }
+      if (game.alchemyForgedThisLevel) { playErrorSound(); return; }
+      game.alchemyEssence -= (ALCHEMY_FORGE_COST - 1);
+      game.alchemyForgedThisLevel = true;
+      playErrorSound();
+      hideAlchemyPopup();
+      showAlchemyBench(alchemyPendingHand());
+      return;
+    }
+    if (!_alchemyPendingForge) { playErrorSound(); return; }
+    handleAlchemyForge(_alchemyPendingForge.forgeType, _alchemyPendingForge.upgrade);
+    _alchemyPendingForge = null;
     return;
   }
 
   if (action.type === 'forge') {
+    // Legacy direct-forge path (tests) — applies immediately
     handleAlchemyForge(action.forgeType, action.category);
     return;
   }
@@ -4674,13 +5030,16 @@ function handleAlchemyDissolve(hand, upgradeId) {
   showAlchemyBench(alchemyPendingHand());
 }
 
-// Forge a new upgrade with 3 Essence. Once per level, per the issue.
-function handleAlchemyForge(forgeType, category) {
+// Forge the upgrade rolled at preview time. `preRolled` lets the confirm
+// popup apply the SAME upgrade it showed (no re-roll on confirm).
+function handleAlchemyForge(forgeType, preRolled, category) {
   if (game.alchemyEssence < ALCHEMY_FORGE_COST) { playErrorSound(); return; }
   if (game.alchemyForgedThisLevel) { playErrorSound(); return; }
 
   const hand = alchemyPendingHand();
-  const result = getForgeUpgrade(forgeType, {
+  // preRolled is the upgrade OBJECT from the preview popup — normalize to the
+  // {upgrade} shape the rest of this function expects.
+  const result = preRolled ? { upgrade: preRolled } : getForgeUpgrade(forgeType, {
     mainWeaponId: game.mainWeapon[hand] || 'standard_blaster',
     owned: game.upgrades[hand] || {},
     category,
@@ -4788,6 +5147,7 @@ function advanceLevelAfterUpgrade() {
       game._bossCinematicCleaned = false;
       game._alertSound2 = false;
       game._cinFinalBoss = null;
+      game._pendingBossId = null; // rolled fresh at the alert below
       game._cinFinalMoonGroup = null;
       game._cinFinalMoonCore = null;
       game._cinFinalMoonGlow = null;
@@ -4800,7 +5160,10 @@ function advanceLevelAfterUpgrade() {
       const bossTier = getBossTier(game.level);
       playBossMusic(bossTier);
       playBossAlertSound();
-      game._pendingBossName = getBossNameForLevel(game.level);
+      // Roll the boss id ONCE here so the alert name always matches the boss
+      // that actually spawns (the pools now include the new tier bosses).
+      game._pendingBossId = getRandomBossIdForLevel(game.level);
+      game._pendingBossName = getBossNameForLevel(game.level, game._pendingBossId);
       showBossAlert(
         game.level >= 20 ? '⚠ FINAL BOSS ⚠' : '⚠ INCOMING BOSS ⚠',
         game.level >= 20 ? 'ECLIPSE ENGINE' : (game._pendingBossName || '')
@@ -5492,6 +5855,13 @@ function selectUpgrade(controller, index = -1) {
   // Issue #185: the alchemy bench and post-select bar take priority over the
   // cards. While the bench is open, cards are NOT selectable (they sit behind
   // the bench panel) — the player must explicitly hit a bench button.
+  // Debug sandbox intercepts first while open (spawn/review menu).
+  const sandboxHit = getSandboxHit(_uiRaycaster);
+  if (sandboxHit) {
+    if (index >= 0) upgradeTriggerLatched[index] = true;
+    handleSandboxAction(sandboxHit);
+    return;
+  }
   const benchHit = getAlchemyBenchHit(_uiRaycaster);
   if (benchHit) {
     if (index >= 0) upgradeTriggerLatched[index] = true;
@@ -5526,8 +5896,11 @@ function spawnEnemyWave(dt) {
   // Boss level: spawn boss once, no normal waves
   if (cfg.isBoss) {
     if (!getBoss()) {
-      const bossId = getRandomBossIdForLevel(game.level);
+      // Reuse the id rolled at alert time so the alert name matches (falls
+      // back to a fresh roll if the alert path was skipped).
+      const bossId = game._pendingBossId || getRandomBossIdForLevel(game.level);
       if (bossId) {
+        game._pendingBossId = bossId;
         spawnBoss(bossId, cfg);
         playBossSpawn();
         if (bossId === 'eclipse_engine') {
@@ -6537,8 +6910,10 @@ function render(timestamp) {
       }
 
       if (!getBoss()) {
-        const bossId = getRandomBossIdForLevel(game.level);
+        // Reuse the alert-time roll so the alert name matches the spawn
+        const bossId = game._pendingBossId || getRandomBossIdForLevel(game.level);
         if (bossId) {
+          game._pendingBossId = bossId;
           spawnBoss(bossId, game._levelConfig);
           hideBossHealthBar();
         }
@@ -6888,6 +7263,9 @@ function render(timestamp) {
     upgradeSelectionCooldown = Math.max(0, upgradeSelectionCooldown - clampedRawDt);
     updateUpgradeCards(now, upgradeSelectionCooldown);
 
+    // Evolutions menu scroll: Quest thumbstick Y (edge-triggered)
+    updateEvolutionsScrollInput(now);
+
     // Issue #143: evolution cinematic runs on top of the upgrade screen
     // (cheap no-op when no cinematic is active)
     updateEvolutionCinematic(now, dt);
@@ -6986,24 +7364,21 @@ function render(timestamp) {
   // ── Environment fade transitions (state owned by environment-orchestration.js) ──
   updateEnvironmentFade(rawDt);
 
-  // ── Camera shake on damage ──
-  // NOTE: Skip camera position modification in VR - WebXR controls camera position
-  // and modifying it directly causes fighting/alternation with headset tracking
-  if (screenFx.cameraShake > 0 && !renderer.xr.isPresenting) {
-    screenFx.cameraShake -= rawDt;
-    if (screenFx.cameraShake <= 0) {
-      screenFx.cameraShake = 0;
-    } else {
-      // Apply random shake offset (desktop only)
-      const shake = screenFx.cameraShakeIntensity * (screenFx.cameraShake / 0.5);  // Fade out over duration
-      camera.position.x += (Math.random() - 0.5) * shake;
-      camera.position.y += (Math.random() - 0.5) * shake;
-      camera.position.z += (Math.random() - 0.5) * shake;
+  // ── Damage feedback ──
+  // Desktop camera shake REMOVED (player feedback: shaking the view reads as
+  // a bug, and VR can't shake the headset anyway). Damage is already shown by
+  // the red hit-flash vignette. In VR we pulse the controller haptics once
+  // per hit instead — edge-triggered on the shake timer so the pulse fires at
+  // the hit moment, not every frame.
+  if (screenFx.cameraShake > 0) {
+    if (!_shakeHapticsFired) {
+      _shakeHapticsFired = true;
+      pulseControllerHaptics(0.8, 120);
     }
-  } else if (screenFx.cameraShake > 0) {
-    // In VR, just decrement timer without modifying camera position
     screenFx.cameraShake -= rawDt;
     if (screenFx.cameraShake <= 0) screenFx.cameraShake = 0;
+  } else {
+    _shakeHapticsFired = false;
   }
 
   // ── VR camera height is handled by XR reference space offset ──

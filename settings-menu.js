@@ -127,6 +127,7 @@ function makeBtn(label, width = 0.4, height = 0.25, borderColor = 0x00ffff, font
   const mesh = new THREE.Mesh(geo, settingsMaterial(bg, op));
   mesh.renderOrder = SETTINGS_RENDER_ORDER;
   mesh.userData.btnBorderColor = borderColor;
+  mesh.userData.borderColor = borderColor; // alias: hover glow reads borderColor
   group.add(mesh);
   const border = new THREE.LineSegments(
     new THREE.EdgesGeometry(geo),
@@ -381,10 +382,13 @@ async function buildSettingsPanel() {
   if (resetBtn.group.children[2]) resetBtn.group.children[2].position.set(resetTextEl.x - resetEl.x, resetTextEl.y - resetEl.y, resetTextEl.z - resetEl.z);
 
   // ── Decorative border rects from layout ──
-  // Render the custom border rects (top/bottom/left/right) if present
+  // Render the custom border rects (top/bottom/left/right) if present.
+  // NOTE: the default was visible:true at (0,0,0) — with no matching layout
+  // entries that stacked FOUR cyan bars straight through the middle of the
+  // menu. Defaults are now hidden; the real border rects live in the layout.
   const borderRects = ['custom_rect_2', 'dup_3_custom_rect_2', 'dup_4_custom_rect_2', 'dup_5_dup_4_custom_rect_2'];
   borderRects.forEach(key => {
-    const rectEl = le(layout, key, { x: 0, y: 0, z: 0, w: 3.2, h: 0.05, color: 65535, visible: true });
+    const rectEl = le(layout, key, { x: 0, y: 0, z: 0, w: 3.2, h: 0.05, color: 65535, visible: false });
     if (rectEl.visible) {
       const rectGeo = new THREE.PlaneGeometry(rectEl.w, rectEl.h);
       const rectMat = new THREE.MeshBasicMaterial({
