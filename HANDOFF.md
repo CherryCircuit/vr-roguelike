@@ -153,7 +153,7 @@ A marathon session — every commit below is verified with its own puppeteer sui
       NUKE: PURGE") shown when in range, readable where the ghost died.
     - Regression: 10 suites green; deploy-sim green.
 
-0e. **`<<NEXT>>` — round-5 feedback batch** (crash fix + training/bestiary polish):
+0e. **`6bbade7` — round-5 feedback batch** (crash fix + training/bestiary polish):
     - **Prism boss crash FIXED** (game-breaker): `takeDamage`'s damage-tint
       traverse called `.color.copy()` on ShaderMaterial meshes (Prism facets)
       → "Cannot read properties of undefined (reading 'copy')". Guard now
