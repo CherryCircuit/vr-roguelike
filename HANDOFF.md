@@ -118,7 +118,7 @@ A marathon session — every commit below is verified with its own puppeteer sui
       spawn 5× drone→Twin Helix kills them→Maw boss spawns→invincible→exit;
       12 regression suites green; deploy-sim green.
 
-0d. **`<<NEXT>>` — round-4 feedback batch** (training ground + menus):
+0d. **`5b48323` — round-4 feedback batch** (training ground + menus):
     - **Tiny-text cured systemically**: new `makeSizedText` (hud.js) sizes
       sprites by GLYPH size (sprite height × fontSize/canvasHeight) instead of
       sprite height — applied to training menu buttons/labels, evolutions rows,
