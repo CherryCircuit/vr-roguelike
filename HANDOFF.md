@@ -153,7 +153,35 @@ A marathon session — every commit below is verified with its own puppeteer sui
       NUKE: PURGE") shown when in range, readable where the ghost died.
     - Regression: 10 suites green; deploy-sim green.
 
-0e. **`193b478` — big UX batch (player feedback round 3)**:
+0e. **`<<NEXT>>` — round-5 feedback batch** (crash fix + training/bestiary polish):
+    - **Prism boss crash FIXED** (game-breaker): `takeDamage`'s damage-tint
+      traverse called `.color.copy()` on ShaderMaterial meshes (Prism facets)
+      → "Cannot read properties of undefined (reading 'copy')". Guard now
+      checks `c.material.color.copy` exists (also hardened the Skull-boss
+      hand tint). Verified: spawn Prism in training, 5 hits, no crash.
+    - **Training menu**: floor HUD now hidden while the menu is open (its
+      depthTest:false sprites drew over the menu regardless of renderOrder);
+      buttons narrowed ~3× (enemy 0.72, boss 1.05, center ≤1.5); text boxes
+      now FILL the button (maxWidth derived from button width × fontSize/glyph
+      — the old fixed maxWidth wrapped text on a 15×-wider button); fonts
+      bumped again (button glyphs 0.055–0.07); GO! closes the menu so the
+      player can fight (reopen via thumbstick/T).
+    - **Holodeck sign**: moved to (0, 2.15, -5.2) and ~200% larger glyphs
+      (0.34 title / 0.13 hint) so it's legible and clear of the floor.
+    - **Holodeck grid**: pulses LIME (0x88ff44) ↔ dark FOREST GREEN (0x1a5c1a)
+      instead of pink/blue — "cool digital green grid".
+    - **Evolutions menu + alchemy bench**: another font pass (evolutions name
+      glyph 0.085, recipe 0.046 filling the row width; alchemy headings 0.085,
+      descriptions 0.05, chips 0.05 with narrower buttons; text boxes derived
+      from button widths).
+    - **Bestiary**: rebuilt as TWO SCROLLABLE ARCS at close range (regulars
+      R 2.35, bosses R 2.75, ±45°, 7 cards visible per row) with a CURVED
+      cylinder backdrop (the flat plane is gone); scrolls via thumbstick /
+      mouse wheel; models/names/levels + top-aligned descriptions.
+    - test-mirror: both hands now get scope so the 70%-damage assertion isn't
+      a wall-clock race (the boss alternates hands per volley).
+
+0f. **`193b478` — big UX batch (player feedback round 3)**:
     - **Hover preview 2-row layout**: the 3 side-by-side columns overlapped on
       long labels (FIRE RATE: over 9/s). Each stat is now a heading line with an
       indented bold value + colored delta below it. SHOTS → PROJECTILES.

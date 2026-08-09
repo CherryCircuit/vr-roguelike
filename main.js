@@ -142,7 +142,7 @@ import {
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown, hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
   showSettings, hideSettings, isSettingsVisible, getSettingsHit, executeSettingsAction, getPreviousMenu,
   updateHUDHover,
-  showBestiary, hideBestiary, isBestiaryVisible, getBestiaryHit, updateBestiary,
+  showBestiary, hideBestiary, isBestiaryVisible, getBestiaryHit, updateBestiary, scrollBestiary,
   showKillsRemainingAlert, updateKillsAlert, hideKillsAlert, showBossAlert, hideBossAlert,
   spawnKillChainPopup, triggerHeartHitAnimation, triggerHealthGainAnimation, triggerAccuracyHurt, updateKillChainPopups,
   resetHoloGlitch,
@@ -1785,9 +1785,8 @@ function init() {
   createEnvironment();
   setupControllers();
 
-  // Desktop wheel scrolls the EVOLUTIONS menu (Issue #143 redesign) and the
-  // Training Ground menu lists. Only active while one of those is open, so it
-  // never fights the desktop-controls wheel-to-switch-weapon handler.
+  // Desktop wheel scrolls the EVOLUTIONS menu, the Training Ground menus, and
+  // the Bestiary arc. Only active while one of those is open/visible.
   window.addEventListener('wheel', (e) => {
     if (isEvolutionsOpen()) {
       e.preventDefault();
@@ -1797,6 +1796,11 @@ function init() {
     if (isTrainingActive() && isTrainingMenuOpen()) {
       e.preventDefault();
       scrollTrainingMenus(e.deltaY > 0 ? 1 : -1);
+      return;
+    }
+    if (isBestiaryVisible()) {
+      e.preventDefault();
+      scrollBestiary(e.deltaY > 0 ? 1 : -1);
       return;
     }
   }, { passive: false });
@@ -2488,6 +2492,7 @@ function renderDesktopDebugEffect(tuning) {
 // axis; deadzone + repeat rate so a held stick scrolls continuously but a
 // wobbly stick doesn't fire every frame). No-op outside the evolutions menu.
 let _evoScrollAccum = 0;
+let _bestiaryScrollAccum = 0;
 function updateEvolutionsScrollInput(now) {
   if (!isEvolutionsOpen()) return;
   const session = renderer?.xr?.getSession?.();
@@ -2511,6 +2516,29 @@ function updateEvolutionsScrollInput(now) {
     }
   } else {
     _evoScrollAccum = 0;
+  }
+}
+
+// Bestiary arc scroll via the Quest thumbstick (same edge-trigger pattern).
+function updateBestiaryScrollInput(now) {
+  if (!isBestiaryVisible()) return;
+  const session = renderer?.xr?.getSession?.();
+  if (!session) return;
+  let axis = 0;
+  session.inputSources.forEach(source => {
+    const gamepad = source.gamepad;
+    if (!gamepad?.axes || gamepad.axes.length < 2) return;
+    const y = gamepad.axes[1] ?? 0;
+    if (Math.abs(y) > 0.25 && Math.abs(y) > Math.abs(axis)) axis = y;
+  });
+  if (axis !== 0) {
+    _bestiaryScrollAccum += axis * 0.02;
+    if (Math.abs(_bestiaryScrollAccum) >= 1) {
+      scrollBestiary(_bestiaryScrollAccum > 0 ? 1 : -1);
+      _bestiaryScrollAccum = 0;
+    }
+  } else {
+    _bestiaryScrollAccum = 0;
   }
 }
 
@@ -6042,6 +6070,8 @@ function render(timestamp) {
   if (st === State.TITLE) {
     updateTitle(now);
     updateBestiary(now);
+    // Bestiary arc scrolls via the Quest thumbstick while visible
+    updateBestiaryScrollInput(now);
     const level = consumeDebugJump();
     if (level) {
       debugJumpToLevel(level);

@@ -68,9 +68,12 @@ async function runTest() {
     window.game.health = 6;
     window.game.level = 10;
     window.game.mainWeaponLocked = { left: true, right: true };
-    // Blaster with scope upgrades: 15 + 2×10 = 35 → mirror fires 24 (70%)
+    // Blaster with scope upgrades: 15 + 2×10 = 35 → mirror fires 25 (70%).
+    // BOTH hands get scope so the assertion is deterministic — the mirror
+    // alternates hands per volley (Math.floor(now/1000) % 2), so a single
+    // upgraded hand made the first projectile's damage a wall-clock race.
     window.game.mainWeapon = { left: 'standard_blaster', right: 'standard_blaster' };
-    window.game.upgrades = { left: { scope: 2 }, right: {} };
+    window.game.upgrades = { left: { scope: 2 }, right: { scope: 2 } };
   });
   await page.evaluate(async () => {
     const d = await import('./desktop-controls.js');

@@ -6073,7 +6073,10 @@ class Boss {
       // invisible hitbox, so base bosses showed NO damage feedback. Body voxels
       // are the ones marked isBossBody.
       this.mesh.traverse(c => {
-        if (c.isMesh && c.material && c.userData.isBossBody) {
+        // Guard: some boss meshes use ShaderMaterial/Line materials with no
+        // .color (Prism facets) — tinting them crashed takeDamage with
+        // "Cannot read properties of undefined (reading 'copy')".
+        if (c.isMesh && c.material && c.material.color && c.material.color.copy && c.userData.isBossBody) {
           // Perf: module scratch Color (was new THREE.Color per hit per child)
           c.material.color.copy(this.baseColor).lerp(_bossDamageRed, damageRatio);
         }
@@ -6827,7 +6830,7 @@ class SkullHand {
     // Update color based on damage - darken toward dark red
     const damageRatio = 1 - this.hp / this.maxHp;
     this.group.traverse(c => {
-      if (c.isMesh && c.material && c.userData.isHandBody) {
+      if (c.isMesh && c.material && c.material.color && c.material.color.copy && c.userData.isHandBody) {
         _scratchColor.set(0xffffff);
         // Perf: module scratch Color (was new THREE.Color per mesh per frame)
         c.material.color.copy(_scratchColor).lerp(_handDamagedColor, damageRatio);

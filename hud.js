@@ -1419,16 +1419,18 @@ export function showBestiary(playerPos) {
   bestiaryBackBtn = null;
   bestiaryGroup.visible = true;
 
-  // Position in front of player (same pattern as scoreboard)
+  // Position at the player; the arc wraps AROUND them (no z offset — the
+  // cards sit on a close arc like a curved monitor).
   if (playerPos) {
     bestiaryGroup.position.copy(playerPos);
     bestiaryGroup.position.y += 1.6 + SCENE_Y_OFFSET + 0.1;
-    bestiaryGroup.position.z -= 4;
   } else {
-    bestiaryGroup.position.set(0, 1.6 + SCENE_Y_OFFSET + 0.1, -4);
+    bestiaryGroup.position.set(0, 1.6 + SCENE_Y_OFFSET + 0.1, 0);
   }
   bestiaryGroup.rotation.set(0, 0, 0);
   bestiaryGroup.scale.setScalar(0.8);
+  bestiaryScrollRegular = 0;
+  bestiaryScrollBoss = 0;
 
   const layout = layoutCache['bestiary']?.elements || {};
   const le = (key, defaults) => ({ ...defaults, ...(layout[key] || {}) });
@@ -1445,21 +1447,22 @@ export function showBestiary(playerPos) {
   titleSprite.position.set(titleDef.x, titleDef.y, titleDef.z);
   bestiaryGroup.add(titleSprite);
 
-  const bgGeo = new THREE.PlaneGeometry(9.35, 4.45);
+  // CURVED backdrop (player feedback: the old flat plane didn't match the
+  // arc) — a section of a huge cylinder wrapped around the player, centered
+  // on -Z so it hugs the card arc like a curved monitor.
+  const bgGeo = new THREE.CylinderGeometry(2.85, 2.85, 4.0, 48, 1, true, -0.85, 1.7);
   bgGeo.name = 'bestiary-background-panel-geometry';
   const bgMat = new THREE.MeshBasicMaterial({
     color: 0x02050c,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.45,
     depthWrite: false,
-    side: THREE.DoubleSide,
+    side: THREE.BackSide,
   });
   bgMat.name = 'bestiary-background-panel-material';
   const bgMesh = new THREE.Mesh(bgGeo, bgMat);
   bgMesh.name = 'bestiary-background-panel';
-  // Behind the arc (cards sit at z ≈ -2.8…-3.7)
-  bgMesh.position.set(0, -0.25, -4.4);
-  bgMesh.scale.set(1.45, 0.9, 1);
+  bgMesh.position.y = -0.4;
   bgMesh.renderOrder = 0;
   bestiaryGroup.add(bgMesh);
 
@@ -1499,82 +1502,92 @@ export function showBestiary(playerPos) {
   bestiaryBackBtn = backMesh;
   bestiaryGroup.add(backGroup);
 
-  // Two arcs that wrap AROUND the player like a curved monitor (player
-  // feedback): regular enemies arc wide at R=4.2, bosses at R=4.6 with
-  // generous angular spacing so nothing overlaps. Cards rotate to face the
-  // player; descriptions are wider and TOP-ALIGNED below the level badge.
+  // Scrollable arcs that wrap AROUND the player like a curved monitor:
+  // 7 cards visible per row, spanning ±45° at close range, scrolled with the
+  // thumbstick / mouse wheel to browse all entries (player feedback: the
+  // flat row was far away, bunched, and its backdrop wasn't curved).
+  const BESTIARY_VISIBLE = 7;
   const REGULAR_ROW_Y = 0.55;
   const BOSS_ROW_Y = -0.95;
-  const REGULAR_RADIUS = 4.2;
-  const BOSS_RADIUS = 4.6;
-  const REGULAR_ARC = 1.30; // radians total (±37°…±75° across 14 entries)
-  const BOSS_ARC = 1.05;    // radians total across 8 entries
+  const REGULAR_RADIUS = 2.35;
+  const BOSS_RADIUS = 2.75;
+  const BESTIARY_ARC = 1.30; // radians (±37°…±45° across the visible window)
   const regularEntries = BESTIARY_ENTRIES.filter(entry => !entry.isBoss);
   const bossEntries = BESTIARY_ENTRIES.filter(entry => entry.isBoss);
 
-  const placeInArc = (entry) => {
-    const rowEntries = entry.isBoss ? bossEntries : regularEntries;
-    const rowIndex = rowEntries.indexOf(entry);
-    const arc = entry.isBoss ? BOSS_ARC : REGULAR_ARC;
-    const radius = entry.isBoss ? BOSS_RADIUS : REGULAR_RADIUS;
-    const n = rowEntries.length;
-    const angle = n > 1 ? -arc / 2 + (rowIndex / (n - 1)) * arc : 0;
-    const y = entry.isBoss ? BOSS_ROW_Y : REGULAR_ROW_Y;
-    return {
-      x: Math.sin(angle) * radius,
-      z: -Math.cos(angle) * radius + radius * 0.12, // shallow wrap, not a full ring
-      rotY: angle,
-      y,
-    };
-  };
+  const hint = makeSprite('SCROLL (THUMBSTICK / WHEEL) TO BROWSE', {
+    fontSize: 30, color: '#8899bb', scale: 0.24, forceArial: true,
+  });
+  hint.name = 'bestiary-scroll-hint';
+  hint.position.set(0, 2.05, 0);
+  bestiaryGroup.add(hint);
 
-  BESTIARY_ENTRIES.forEach((entry) => {
-    const pos = placeInArc(entry);
+  // Initial visible window of each arc row
+  buildBestiaryArcRowExternal(regularEntries, bestiaryScrollRegular, REGULAR_ROW_Y, REGULAR_RADIUS, false);
+  buildBestiaryArcRowExternal(bossEntries, bestiaryScrollBoss, BOSS_ROW_Y, BOSS_RADIUS, true);
+}
 
+// Bestiary horizontal scroll (thumbstick/wheel). Scrolls both rows.
+let bestiaryScrollRegular = 0;
+let bestiaryScrollBoss = 0;
+export function scrollBestiary(delta) {
+  if (!bestiaryGroup.visible) return;
+  const regularEntries = BESTIARY_ENTRIES.filter(entry => !entry.isBoss);
+  const bossEntries = BESTIARY_ENTRIES.filter(entry => entry.isBoss);
+  const maxReg = Math.max(0, regularEntries.length - 7);
+  const maxBoss = Math.max(0, bossEntries.length - 7);
+  bestiaryScrollRegular = Math.max(0, Math.min(maxReg, bestiaryScrollRegular + delta));
+  bestiaryScrollBoss = Math.max(0, Math.min(maxBoss, bestiaryScrollBoss + delta));
+  // Rebuild the visible arc windows
+  [...bestiaryGroup.children].forEach(child => {
+    if (child.name && child.name.includes('card-group')) {
+      bestiaryGroup.remove(child);
+      child.traverse(c => {
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) {
+          if (Array.isArray(c.material)) c.material.forEach(m => m.dispose());
+          else c.material.dispose();
+        }
+      });
+    }
+  });
+  // Rebuild both rows (the shell/title/back survive — they have distinct names)
+  const regularEntries2 = BESTIARY_ENTRIES.filter(entry => !entry.isBoss);
+  const bossEntries2 = BESTIARY_ENTRIES.filter(entry => entry.isBoss);
+  buildBestiaryArcRowExternal(regularEntries2, bestiaryScrollRegular, 0.55, 2.35, false);
+  buildBestiaryArcRowExternal(bossEntries2, bestiaryScrollBoss, -0.95, 2.75, true);
+  _bestiaryModels = null; // invalidate the model cache for updateBestiary
+}
+
+// Row builder accessible from scrollBestiary (showBestiary's closure builder
+// is scoped there; this mirrors it for rebuilds).
+function buildBestiaryArcRowExternal(entries, scroll, rowY, radius, isBoss) {
+  const visible = entries.slice(scroll, scroll + 7);
+  visible.forEach((entry, i) => {
+    const n = visible.length;
+    const angle = n > 1 ? -1.30 / 2 + (i / (n - 1)) * 1.30 : 0;
+    const x = Math.sin(angle) * radius;
+    const z = -Math.cos(angle) * radius + radius * 0.1;
     const cardGroup = new THREE.Group();
     cardGroup.name = bestiaryObjectName('entry', entry.id, 'card-group');
-    cardGroup.position.set(pos.x, pos.y, pos.z);
-    cardGroup.rotation.y = pos.rotY;
-
+    cardGroup.position.set(x, rowY, z);
+    cardGroup.rotation.y = angle;
     const model = buildBestiaryModel(entry);
     model.renderOrder = 1;
-    const modelScale = entry.isBoss ? 0.5 : (
-      entry.id === 'spiral_swimmer' ? 0.8 :
-      (entry.id === 'conductor' || entry.id === 'mortar') ? 0.5 :
-      0.62
-    );
+    const modelScale = isBoss ? 0.42 : (entry.id === 'spiral_swimmer' ? 0.7 : (entry.id === 'conductor' || entry.id === 'mortar') ? 0.42 : 0.55);
     model.scale.setScalar(modelScale);
-    model.position.set(0, 0.28, 0);
+    model.position.set(0, 0.24, 0);
     cardGroup.add(model);
-
-    const nameText = makeSprite(entry.name, {
-      fontSize: 34, color: colorToHex(entry.color),
-      glow: true, glowColor: colorToHex(entry.color),
-      scale: 0.24,
-    });
-    nameText.name = bestiaryObjectName('entry', entry.id, 'name-text');
-    nameText.position.y = -0.02;
+    const nameText = makeSprite(entry.name, { fontSize: 34, color: colorToHex(entry.color), glow: true, glowColor: colorToHex(entry.color), scale: 0.24 });
+    nameText.position.y = -0.04;
     cardGroup.add(nameText);
-
-    const metaText = makeSprite(`L${entry.firstLevel}`, {
-      fontSize: 34, color: '#ffdd66', scale: 0.28, forceArial: true,
-    });
-    metaText.name = bestiaryObjectName('entry', entry.id, 'level-text');
-    metaText.position.set(0, -0.16, 0.01);
+    const metaText = makeSprite(`L${entry.firstLevel}`, { fontSize: 34, color: '#ffdd66', scale: 0.28, forceArial: true });
+    metaText.position.set(0, -0.19, 0.01);
     cardGroup.add(metaText);
-
-    // Wider description, TOP-ALIGNED below the level badge: the sprite's
-    // TOP edge sits at -0.26 (its height varies with word-wrap, so the
-    // center is offset by half the sprite height — no more overlap with
-    // the level text).
-    const descText = makeSprite(entry.desc, {
-      fontSize: 34, color: '#c8d8dd', scale: 0.9, maxWidth: 470, forceArial: true,
-    });
-    descText.name = bestiaryObjectName('entry', entry.id, 'description-text');
+    const descText = makeSprite(entry.desc, { fontSize: 34, color: '#c8d8dd', scale: 0.9, maxWidth: 470, forceArial: true });
     const descH = descText.geometry.parameters.height;
-    descText.position.y = -0.26 - descH / 2;
+    descText.position.y = -0.31 - descH / 2;
     cardGroup.add(descText);
-
     bestiaryGroup.add(cardGroup);
   });
 }
@@ -1601,7 +1614,7 @@ let _bestiaryModels = null;
 
 export function updateBestiary(now) {
   if (!bestiaryGroup.visible) return;
-  if (!_bestiaryModels) {
+  if (!_bestiaryModels || _bestiaryModels.length === 0) {
     _bestiaryModels = [];
     bestiaryGroup.traverse(child => {
       if (child.userData?.isBestiaryModel) _bestiaryModels.push(child);
@@ -3134,14 +3147,14 @@ function buildEvolutionsMenu() {
 
   // Title (centered, big) + scroll hint
   const header = makeSizedText('EVOLUTIONS', {
-    fontSize: 56, color: '#ffdd00', glow: true, glowColor: '#ffdd00',
-    glyphSize: 0.09, depthTest: true,
+    fontSize: 64, color: '#ffdd00', glow: true, glowColor: '#ffdd00',
+    glyphSize: 0.12, depthTest: true,
   });
   header.position.set(0, 1.28, 0.02);
   group.add(header);
 
   const hint = makeSizedText(`SCROLL TO BROWSE — ${Object.keys(WEAPON_EVOLUTIONS).length} EVOLUTIONS`, {
-    fontSize: 30, color: '#8888aa', glyphSize: 0.038, depthTest: true, forceArial: true,
+    fontSize: 36, color: '#8888aa', glyphSize: 0.055, depthTest: true, forceArial: true,
   });
   hint.position.set(0, 0.98, 0.02);
   group.add(hint);
@@ -3231,15 +3244,15 @@ function buildEvolutionsRows() {
 
     // LEFT-ALIGNED evolution name (glyph-sized) + source weapon beside it
     const nameSprite = makeSizedText(`${evo.name.toUpperCase()}`, {
-      fontSize: 44, color: sigColor, glow: true, glowColor: sigColor,
-      glyphSize: 0.055, depthTest: true, forceArial: true,
+      fontSize: 56, color: sigColor, glow: true, glowColor: sigColor,
+      glyphSize: 0.085, depthTest: true, forceArial: true,
     });
     // left-align: center the sprite so its LEFT edge sits at EVO_LEFT_X
     nameSprite.position.set(EVO_LEFT_X + nameSprite.geometry.parameters.width / 2, rowY + 0.12, 0.02);
     evolutionsContent.add(nameSprite);
 
     const fromSprite = makeSizedText(`from ${(evo.from || weaponId).toUpperCase()}`, {
-      fontSize: 26, color: '#8899bb', glyphSize: 0.03, depthTest: true, forceArial: true,
+      fontSize: 30, color: '#8899bb', glyphSize: 0.042, depthTest: true, forceArial: true,
     });
     fromSprite.position.set(EVO_LEFT_X + fromSprite.geometry.parameters.width / 2, rowY - 0.05, 0.02);
     evolutionsContent.add(fromSprite);
@@ -3264,8 +3277,8 @@ function buildEvolutionsRows() {
       evolutionsContent.add(fill);
     }
     const fracSprite = makeSizedText(`${collected.size}/${total}`, {
-      fontSize: 30, color: progressFrac >= 1 ? '#88ff88' : '#cccccc',
-      glyphSize: 0.042, depthTest: true, forceArial: true,
+      fontSize: 36, color: progressFrac >= 1 ? '#88ff88' : '#cccccc',
+      glyphSize: 0.06, depthTest: true, forceArial: true,
     });
     fracSprite.position.set(barX + barW / 2 + fracSprite.geometry.parameters.width / 2 + 0.1, rowY + 0.12, 0.02);
     evolutionsContent.add(fracSprite);
@@ -3276,8 +3289,10 @@ function buildEvolutionsRows() {
       const label = def ? def.name.toUpperCase() : id.toUpperCase();
       return collected.has(id) ? `✓ ${label}` : `○ ${label}`;
     }).join('  ·  ');
+    // Text box fills the space between the left edge and the progress bar
     const recipeSprite = makeSizedText(recipeNames, {
-      fontSize: 26, color: '#c0c0d8', glyphSize: 0.032, depthTest: true, forceArial: true, maxWidth: 380,
+      fontSize: 30, color: '#c0c0d8', glyphSize: 0.046, depthTest: true, forceArial: true,
+      maxWidth: Math.floor((barX - 0.1 - EVO_LEFT_X) * (30 / 0.046) * 0.92),
     });
     recipeSprite.position.set(EVO_LEFT_X + recipeSprite.geometry.parameters.width / 2, rowY - 0.16, 0.02);
     evolutionsContent.add(recipeSprite);
@@ -3484,8 +3499,8 @@ function rebuildAlchemyBench() {
 
   // Header: CENTERED title (player feedback) + essence counter text
   const header = makeSizedText('ALCHEMY BENCH', {
-    fontSize: 56, color: '#ffaa00', glow: true, glowColor: '#ffaa00',
-    glyphSize: 0.085, depthTest: true,
+    fontSize: 64, color: '#ffaa00', glow: true, glowColor: '#ffaa00',
+    glyphSize: 0.11, depthTest: true,
   });
   header.position.set(0, 1.24, 0.02);
   group.add(header);
@@ -3494,8 +3509,8 @@ function rebuildAlchemyBench() {
   const forged = game.alchemyForgedThisLevel;
   const essenceText = `ESSENCE: ${essence}/${ALCHEMY_FORGE_COST}${forged ? ' · FORGED' : ''}`;
   const essenceSprite = makeSizedText(essenceText, {
-    fontSize: 32, color: essence >= ALCHEMY_FORGE_COST ? '#ffdd00' : '#8888aa',
-    glyphSize: 0.04, depthTest: true, forceArial: true,
+    fontSize: 38, color: essence >= ALCHEMY_FORGE_COST ? '#ffdd00' : '#8888aa',
+    glyphSize: 0.055, depthTest: true, forceArial: true,
   });
   essenceSprite.position.set(0, 1.06, 0.02);
   group.add(essenceSprite);
@@ -3503,15 +3518,15 @@ function rebuildAlchemyBench() {
   // Column helper: heading + descriptive line under it (glyph-sized text)
   const addColumnHeader = (x, titleText, descText, color) => {
     const t = makeSizedText(titleText, {
-      fontSize: 44, color, glow: true, glowColor: color,
-      glyphSize: 0.06, depthTest: true, forceArial: true,
+      fontSize: 54, color, glow: true, glowColor: color,
+      glyphSize: 0.085, depthTest: true, forceArial: true,
     });
     t.position.set(x, 0.86, 0.02);
     group.add(t);
     const d = makeSizedText(descText, {
-      fontSize: 26, color: '#a0a0c0', glyphSize: 0.036, depthTest: true, forceArial: true, maxWidth: 300,
+      fontSize: 32, color: '#b0b0d0', glyphSize: 0.05, depthTest: true, forceArial: true, maxWidth: 340,
     });
-    d.position.set(x, 0.62, 0.02);
+    d.position.set(x, 0.6, 0.02);
     group.add(d);
   };
 
@@ -3570,7 +3585,7 @@ function rebuildAlchemyBench() {
       const chipColor = typeof upg.color === 'string' ? parseInt(upg.color.replace('#', ''), 16) : 0x00ffff;
       makeAlchemyButton(group, `${upg.name} x${upg.stacks} (+${upg.essencePerStack} E)`, {
         type: 'dissolve_preview', hand, upgradeId: upg.id,
-      }, x, y, { w: chipW, h: 0.3, color: chipColor, textColor: '#ffffff', glyphSize: 0.04, name: `alchemy-btn-dissolve-${hand}-${upg.id}` });
+      }, x, y, { w: 1.45, h: 0.3, color: chipColor, textColor: '#ffffff', glyphSize: 0.05, name: `alchemy-btn-dissolve-${hand}-${upg.id}` });
       y -= 0.34;
     });
   };
@@ -3590,7 +3605,7 @@ function rebuildAlchemyBench() {
     const label = forged ? `${opt.label} (USED)` : opt.label;
     const action = opt.action || { type: 'forge_preview', forgeType: opt.forgeType };
     makeAlchemyButton(group, label, action,
-      0, forgeY, { w: 2.1, h: 0.3, color: opt.color, textColor: canForge ? '#ffffff' : '#555566', glyphSize: 0.042, disabled: !canForge, name: `alchemy-btn-forge-${opt.forgeType || 'targeted_infusion'}` });
+      0, forgeY, { w: 1.6, h: 0.3, color: opt.color, textColor: canForge ? '#ffffff' : '#555566', glyphSize: 0.05, disabled: !canForge, name: `alchemy-btn-forge-${opt.forgeType || 'targeted_infusion'}` });
     forgeY -= 0.34;
   }
 
