@@ -260,9 +260,9 @@ function buildTrainingMenu() {
   _deps.scene.add(group);
   _menuGroup = group;
 
-  // Narrower panel — the columns hug the center now that the buttons are
-  // compact (player feedback: no reason for a huge menu).
-  const panelW = 5.6;
+  // Narrower panel for the COMBAT view; the LOADOUT view is wider (4 upgrade
+  // columns + center evolutions) — player feedback.
+  const panelW = _loadoutView ? 6.7 : 5.6;
   const panelH = 3.9;
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(panelW, panelH),
@@ -359,10 +359,12 @@ function buildCombatView(group) {
   const title = makeLabel(group, 'TRAINING GROUND', 0, 1.68, { fontSize: 92, color: '#00ff88', glyphSize: 0.17 });
   const sub = makeLabel(group, 'BUILD A WAVE — THEN PRESS GO', 0, 1.32, { fontSize: 38, color: '#8899bb', glyphSize: 0.052, forceArial: true });
 
-  // ── ENEMIES column (scrollable) — buttons + digital counters ──
-  const enemyHeader = makeLabel(group, 'ENEMIES', -1.9, 0.98, { fontSize: 88, color: '#ff8866', glyphSize: 0.13 });
+  // ── ENEMIES column (scrollable) — buttons + digital counters, the whole
+  // button+counter row CENTERED under the ENEMIES title (player feedback).
+  const enemyTitleX = -1.9;
+  const enemyHeader = makeLabel(group, 'ENEMIES', enemyTitleX, 0.98, { fontSize: 88, color: '#ff8866', glyphSize: 0.13 });
   const enemyList = new THREE.Group();
-  enemyList.position.set(-1.9, 0.76, 0.01);
+  enemyList.position.set(enemyTitleX, 0.76, 0.01);
   group.add(enemyList);
   const ENEMY_IDS = [
     ['basic', 'DRONE'], ['fast', 'SNEAK'], ['tank', 'SENTINEL'], ['swarm', 'DART'],
@@ -371,21 +373,28 @@ function buildCombatView(group) {
     ['void_tendril', 'VOID TENDRIL'], ['echo_phantom', 'ECHO PHANTOM'], ['leech', 'LEECH'],
   ];
   const visibleEnemies = 6;
+  // Row geometry: button (0.78) + gap (0.15) + counter (0.16) = 1.09 wide,
+  // the pair CENTERED on the column x → in a row group at x=0 the button
+  // sits at −0.155 and the counter at +0.465 (player feedback: the old rows
+  // drifted off-center and clipped the panel edge).
   ENEMY_IDS.forEach(([id, label], i) => {
     const row = new THREE.Group();
-    row.position.set(-0.28, -i * 0.2, 0); // button left, counter right
+    row.position.set(0, -i * 0.2, 0);
     enemyList.add(row);
     const pendingCount = _pendingWave.find(p => p.kind === 'enemy' && p.type === id)?.count || 0;
-    makeButton(row, label, { type: 'queue_enemy', id }, -0.28, 0, { w: 0.78, h: 0.17, color: 0xff8866, fontSize: 40, glyphSize: 0.054 });
+    makeButton(row, label, { type: 'queue_enemy', id }, -0.155, 0, { w: 0.78, h: 0.17, color: 0xff8866, fontSize: 40, glyphSize: 0.054 });
     const counter = makeDigitalCounter(pendingCount);
-    counter.position.set(0.33, 0, 0.02);
+    counter.position.set(0.465, 0, 0.02);
     row.add(counter);
   });
   enemyList.userData.maxRows = ENEMY_IDS.length - visibleEnemies;
   enemyList.userData.scrollKey = 'enemy';
+  enemyList.userData.baseY = 0.76;
+  enemyList.userData.rowH = 0.2;
 
-  // ── BOSSES column — buttons + digital counters ──
-  const bossHeader = makeLabel(group, 'BOSSES', 1.9, 0.98, { fontSize: 88, color: '#ff88ff', glyphSize: 0.13 });
+  // ── BOSSES column — same centered-pair treatment (button 1.0 + counter) ──
+  const bossTitleX = 1.9;
+  const bossHeader = makeLabel(group, 'BOSSES', bossTitleX, 0.98, { fontSize: 88, color: '#ff88ff', glyphSize: 0.13 });
   const BOSS_IDS = [
     ['skull_boss', 'NECRO'], ['the_maw', 'THE MAW'], ['the_prism', 'THE PRISM'],
     ['mirror_gauntlet', 'MIRROR GAUNTLET'], ['neon_minotaur', 'BLOOD MINOTAUR'],
@@ -395,12 +404,12 @@ function buildCombatView(group) {
   let by = 0.74;
   BOSS_IDS.forEach(([id, label]) => {
     const row = new THREE.Group();
-    row.position.set(-0.28, by, 0);
+    row.position.set(0, by, 0); // pair centered on the BOSSES column x
     group.add(row);
     const pendingCount = _pendingWave.find(p => p.kind === 'boss' && p.type === id)?.count || 0;
-    makeButton(row, label, { type: 'queue_boss', id }, -0.28, 0, { w: 1.0, h: 0.18, color: 0xff88ff, fontSize: 38, glyphSize: 0.056 });
+    makeButton(row, label, { type: 'queue_boss', id }, -0.155, 0, { w: 1.0, h: 0.18, color: 0xff88ff, fontSize: 38, glyphSize: 0.056 });
     const counter = makeDigitalCounter(pendingCount);
-    counter.position.set(0.45, 0, 0.02);
+    counter.position.set(0.575, 0, 0.02);
     row.add(counter);
     by -= 0.23;
   });
@@ -424,36 +433,86 @@ function buildCombatView(group) {
   const tip = makeLabel(group, 'GO CLOSES THIS MENU — THUMBSTICK OR T REOPENS IT', 0, -1.66, { fontSize: 30, color: '#6688aa', glyphSize: 0.04, forceArial: true });
 }
 
+// Short display names for the LOADOUT upgrade buttons (long pool names would
+// wrap on the compact buttons).
+const LOADOUT_SHORT_NAMES = {
+  'buckshot_gentlemen': 'GENTLEMEN', 'duck_hunt': 'DUCK HUNT', 'its_electric': 'ELECTRIC',
+  'tesla_coil': 'TESLA COIL', 'quick_charge': 'QUICK CHARGE', 'excess_heat': 'HEAT',
+  'death_ray': 'DEATH RAY', 'hold_together': 'HOLD TOGETHER', 'gimme_more': 'GIM ME MORE',
+  'mega_scope': 'MEGA SCOPE', 'turbo_barrel': 'TURBO BARREL', 'triple_shot': 'TRIPLE SHOT',
+  'super_crit': 'SUPER CRIT', 'life_steal': 'LIFE STEAL', 'overcharge': 'OVERCHARGE',
+  'mega_boom': 'MEGA BOOM', 'focused_frenzy': 'FRENZY', 'extra_nuke': 'NUKE',
+  'rapid_fire': 'RAPID FIRE', 'damage_up': 'DAMAGE', 'spread_shot': 'SPREAD',
+  'homing': 'HOMING', 'magnetize': 'MAGNET', 'charge_shot': 'CHARGE', 'bounce': 'BOUNCE',
+  'chain_lightning': 'CHAIN', 'dream_fragment': 'DREAM',
+};
+
 function buildLoadoutView(group) {
   const title = makeLabel(group, 'LOADOUT — BUILD YOUR ARSENAL', 0, 1.68, { fontSize: 52, color: '#44aaff', glyphSize: 0.08 });
 
-  // ── UPGRADES column (scrollable) ──
-  const upHeader = makeLabel(group, 'UPGRADES (BOTH HANDS)', -1.9, 0.98, { fontSize: 38, color: '#44ffaa', glyphSize: 0.052 });
-  const upList = new THREE.Group();
-  upList.position.set(-1.9, 0.76, 0.01);
-  group.add(upList);
   const allUpgrades = [...UPGRADE_POOL, ...SPECIAL_UPGRADE_POOL].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i);
-  allUpgrades.forEach((u, i) => {
-    makeButton(upList, u.name.toUpperCase(), { type: 'add_upgrade', id: u.id }, 0, -i * 0.18, { w: 0.92, h: 0.16, color: 0x44ffaa, fontSize: 38, glyphSize: 0.05 });
-  });
-  upList.userData.maxRows = Math.max(0, allUpgrades.length - 6);
-  upList.userData.scrollKey = 'loadout';
 
-  // ── EVOLUTIONS column ──
-  const evoHeader = makeLabel(group, 'EVOLUTIONS', 1.9, 0.98, { fontSize: 38, color: '#ffdd00', glyphSize: 0.052 });
+  // Row geometry for the compact per-hand columns: button (0.6) + gap (0.08)
+  // + counter (0.14) = 0.82 wide, centered on the column x → button x−0.11,
+  // counter x+0.38.
+  const UP_ROW_HALF = 0.41;
+  const buildHandColumn = (hand, colX, col2X, yStart) => {
+    const column1 = new THREE.Group();
+    column1.position.set(colX, yStart, 0.01);
+    group.add(column1);
+    const column2 = new THREE.Group();
+    column2.position.set(col2X, yStart, 0.01);
+    group.add(column2);
+    let rowIdx = 0;
+    allUpgrades.forEach((u) => {
+      const col = rowIdx % 2 === 0 ? column1 : column2;
+      const y = -Math.floor(rowIdx / 2) * 0.205;
+      const row = new THREE.Group();
+      row.position.set(-UP_ROW_HALF + 0.3, y, 0);
+      col.add(row);
+      const count = game.upgrades?.[hand]?.[u.id] || 0;
+      const label = LOADOUT_SHORT_NAMES[u.id] || u.name.toUpperCase();
+      makeButton(row, label, { type: 'add_upgrade_hand', id: u.id, hand }, -0.11, 0, {
+        w: 0.6, h: 0.16, color: 0x44ffaa, fontSize: 30, glyphSize: 0.043,
+      });
+      const counter = makeDigitalCounter(count);
+      counter.position.set(0.38, 0, 0.02);
+      row.add(counter);
+      rowIdx++;
+    });
+    const maxRows = Math.ceil(allUpgrades.length / 2) - 9;
+    column1.userData.maxRows = Math.max(0, maxRows);
+    column1.userData.scrollKey = 'loadout-left';
+    column1.userData.baseY = yStart;
+    column1.userData.rowH = 0.205;
+    column2.userData.maxRows = Math.max(0, maxRows);
+    column2.userData.scrollKey = 'loadout-right';
+    column2.userData.baseY = yStart;
+    column2.userData.rowH = 0.205;
+  };
+
+  // LEFT BLASTER — two upgrade columns with live counters
+  const leftTitle = makeLabel(group, 'LEFT BLASTER', -2.05, 0.98, { fontSize: 54, color: '#00ffff', glyphSize: 0.075 });
+  buildHandColumn('left', -2.6, -1.55, 0.76);
+
+  // RIGHT BLASTER — two upgrade columns with live counters
+  const rightTitle = makeLabel(group, 'RIGHT BLASTER', 2.05, 0.98, { fontSize: 54, color: '#00ffff', glyphSize: 0.075 });
+  buildHandColumn('right', 1.55, 2.6, 0.76);
+
+  // EVOLUTIONS in the center column
+  const evoHeader = makeLabel(group, 'EVOLUTIONS', 0, 0.98, { fontSize: 54, color: '#ffdd00', glyphSize: 0.075 });
   let ey = 0.74;
   Object.entries(WEAPON_EVOLUTIONS).forEach(([weaponId, evo]) => {
     makeButton(group, evo.name.toUpperCase(), {
       type: 'evolve', weaponId, evoId: evo.id,
-    }, 1.9, ey, { w: 1.15, h: 0.2, color: evo.sigColor || 0xffdd00, fontSize: 38, glyphSize: 0.056 });
-    const from = makeLabel(group, `from ${(evo.from || weaponId).toUpperCase()}`, 1.9, ey - 0.11, { fontSize: 26, color: '#8899bb', glyphSize: 0.034, forceArial: true });
-    ey -= 0.3;
+    }, 0, ey, { w: 1.35, h: 0.2, color: evo.sigColor || 0xffdd00, fontSize: 34, glyphSize: 0.052 });
+    ey -= 0.26;
   });
 
-  // ── Actions ──
-  makeButton(group, 'RESET LOADOUT', { type: 'reset_loadout' }, 0, 0.1, { w: 1.3, h: 0.22, color: 0xff8844, fontSize: 38, glyphSize: 0.055 });
-  makeButton(group, '← COMBAT', { type: 'goto_combat' }, 0, -0.26, { w: 1.3, h: 0.22, color: 0x44aaff, fontSize: 38, glyphSize: 0.055 });
-  makeButton(group, 'EXIT TRAINING', { type: 'exit_training' }, 0, -0.62, { w: 1.3, h: 0.22, color: 0xff4444, fontSize: 38, glyphSize: 0.055 });
+  // ── Bottom action bar ──
+  makeButton(group, 'RESET LOADOUT', { type: 'reset_loadout' }, -1.6, -1.55, { w: 1.4, h: 0.24, color: 0xff8844, fontSize: 38, glyphSize: 0.055 });
+  makeButton(group, '← COMBAT', { type: 'goto_combat' }, 0, -1.55, { w: 1.4, h: 0.24, color: 0x44aaff, fontSize: 38, glyphSize: 0.055 });
+  makeButton(group, 'EXIT TRAINING', { type: 'exit_training' }, 1.6, -1.55, { w: 1.4, h: 0.24, color: 0xff4444, fontSize: 38, glyphSize: 0.055 });
 }
 
 function disposeMenuGroup(group) {
@@ -769,21 +828,15 @@ export function handleTrainingAction(action) {
       return true;
     }
 
-    case 'add_upgrade': {
+    case 'add_upgrade_hand': {
+      // Per-hand upgrade (player feedback): each blaster gets its own set of
+      // upgrade buttons with a live digital counter of how many it owns.
       const def = getUpgradeDef(action.id);
       if (!def) return true;
-      // Universal upgrades → both hands; weapon-specific → matching hand
-      if (def.type === 'weapon_specific' && def.weapon) {
-        for (const hand of ['left', 'right']) {
-          if ((game.mainWeapon?.[hand] || '') === def.weapon) {
-            addUpgrade(def.id, hand);
-          }
-        }
-      } else {
-        addUpgrade(def.id, 'left');
-        addUpgrade(def.id, 'right');
-      }
+      const hand = action.hand === 'right' ? 'right' : 'left';
+      addUpgrade(def.id, hand);
       if (_hasDep('recomputeSynergies')) _deps.recomputeSynergies();
+      rebuildMenu();
       return true;
     }
 
@@ -927,10 +980,12 @@ function scrollMenus(delta) {
   lists.forEach(list => {
     const max = list.userData.maxRows || 0;
     if (max <= 0) return;
+    const baseY = list.userData.baseY ?? 0.86;
+    const rowH = list.userData.rowH ?? 0.17;
     let scroll = list.userData._scroll || 0;
     scroll = Math.max(0, Math.min(max, scroll + (delta > 0 ? 1 : -1)));
     list.userData._scroll = scroll;
-    list.position.y = 0.86 + scroll * 0.17;
+    list.position.y = baseY + scroll * rowH;
   });
 }
 

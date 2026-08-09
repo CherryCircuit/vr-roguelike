@@ -220,7 +220,19 @@ A marathon session — every commit below is verified with its own puppeteer sui
       the SKIP card).
     - test-conductor updated for the new phase model.
 
-0g. **`193b478` — big UX batch (player feedback round 3)**:
+0g. **`<<NEXT>>` — round-7 feedback batch** (training menu polish):
+    - Enemy/boss button+counter rows now CENTERED under their column titles
+      (the pairs drifted off-center and clipped the panel edge).
+    - LOADOUT view rebuilt: per-hand upgrade columns — LEFT BLASTER gets two
+      upgrade columns with a LIVE digital counter per upgrade (shows how many
+      of each that hand owns; clicking adds +1 to that hand), RIGHT BLASTER
+      mirrors it; EVOLUTIONS moved to the CENTER column; RESET LOADOUT /
+      ← COMBAT / EXIT TRAINING sit in a bottom action bar. Panel widens for
+      the loadout view (6.7). Compact short-names for long upgrade labels;
+      per-column scroll metadata (baseY/rowH) so scrolling works in the new
+      layout.
+
+0h. **`193b478` — big UX batch (player feedback round 3)**:
     - **Hover preview 2-row layout**: the 3 side-by-side columns overlapped on
       long labels (FIRE RATE: over 9/s). Each stat is now a heading line with an
       indented bold value + colored delta below it. SHOTS → PROJECTILES.
