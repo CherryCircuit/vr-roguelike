@@ -91,7 +91,7 @@ A marathon session — every commit below is verified with its own puppeteer sui
       to the card border LineSegments + EVO bar/text anyway (cheap, matches the
       repo's past culling fixes 18e2b14/e7389bd).
 
-0c. **`<<NEXT>>` — Training Ground** (the "holodeck", replaces the dev sandbox):
+0c. **`658fd3e` — Training Ground** (the "holodeck", replaces the dev sandbox):
     - **TRAINING GROUND button on the title screen** (between the blink text
       and the button row) — a full player-facing practice arena, not a dev
       tool. The old O-key/debug-panel sandbox was removed.
