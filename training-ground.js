@@ -17,7 +17,7 @@
 
 import * as THREE from 'three';
 import { game, State, getLevelConfig, setWeaponEvolution, addUpgrade } from './game.js';
-import { makeSprite, showHUD } from './hud.js';
+import { makeSizedText, showHUD } from './hud.js';
 import { WEAPON_EVOLUTIONS, getUpgradeDef, UPGRADE_POOL, SPECIAL_UPGRADE_POOL } from './weapons.js';
 
 const DEBUG = false;
@@ -42,6 +42,20 @@ let _holodeckGroup = null;
 let _hoveredButton = null;    // hovered button mesh (scale/border highlight)
 let _oldLevelConfig = null;
 let _trainingConfig = null;
+
+// Wave queue: the player builds a battle in the menu, then presses GO.
+// Bosses in the queue spawn immediately at GO; enemies are released in
+// staggered batches (like a real level) so the fight develops over time.
+let _pendingWave = [];        // [{ kind:'enemy'|'boss', type, count }]
+let _activeWave = [];         // remaining enemies to release { type, count }
+let _waveReleaseTimer = 0;    // seconds until the next batch
+const WAVE_BATCH_SIZE = 3;    // enemies released per batch
+const WAVE_BATCH_INTERVAL = 1.2; // seconds between batches
+
+// Menu render orders: MUST sit above the floor HUD (makeSprite default 999).
+const MENU_BG_RO = 1000;
+const MENU_BTN_RO = 1001;
+const MENU_TEXT_RO = 1002;
 
 // ── Public API ──────────────────────────────────────────────
 
@@ -147,9 +161,16 @@ export function hideTrainingMenu() {
 
 // ── Menu construction ───────────────────────────────────────
 
+// Glyph-sized button label: the recurring "tiny text" problem comes from
+// makeSprite's `scale` being the SPRITE height (padding/lines shrink glyphs).
+// makeSizedText sizes by GLYPH size so text is legible at arm's length.
+const BTN_GLYPH = 0.048;      // button labels
+const BTN_GLYPH_SMALL = 0.036; // secondary/queue labels
+const HEADING_GLYPH = 0.06;
+
 function makeButton(parent, label, action, x, y, opts = {}) {
   const w = opts.w || 1.85;
-  const h = opts.h || 0.14;
+  const h = opts.h || 0.16;
   const color = opts.color ?? 0x00ff88;
   const group = new THREE.Group();
   group.position.set(x, y, 0.02);
@@ -161,7 +182,7 @@ function makeButton(parent, label, action, x, y, opts = {}) {
       side: THREE.DoubleSide, depthWrite: false, depthTest: true,
     })
   );
-  face.renderOrder = 2;
+  face.renderOrder = MENU_BTN_RO;
   face.userData.trainingAction = action;
   face.userData.borderColor = color;
   face.userData._btnGroup = group;
@@ -170,31 +191,33 @@ function makeButton(parent, label, action, x, y, opts = {}) {
     new THREE.EdgesGeometry(face.geometry),
     new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 })
   );
-  border.renderOrder = 2;
+  border.renderOrder = MENU_BTN_RO;
   group.add(border);
-  const sprite = makeSprite(label, {
-    fontSize: opts.fontSize || 24,
+  const sprite = makeSizedText(label, {
+    fontSize: opts.fontSize || 40,
     color: opts.textColor || '#ffffff',
-    scale: opts.textScale || 0.16,
+    glyphSize: opts.glyphSize || BTN_GLYPH,
     depthTest: true,
     forceArial: true,
-    maxWidth: Math.floor(w * 120),
+    maxWidth: Math.floor(w * 52),
   });
+  sprite.renderOrder = MENU_TEXT_RO;
   sprite.position.set(0, 0, 0.03);
   group.add(sprite);
   return face;
 }
 
 function makeLabel(parent, text, x, y, opts = {}) {
-  const s = makeSprite(text, {
-    fontSize: opts.fontSize || 30,
+  const s = makeSizedText(text, {
+    fontSize: opts.fontSize || 44,
     color: opts.color || '#ffffff',
     glow: opts.glow !== false,
     glowColor: opts.color || '#ffffff',
-    scale: opts.scale || 0.24,
+    glyphSize: opts.glyphSize || HEADING_GLYPH,
     depthTest: true,
     forceArial: !!opts.forceArial,
   });
+  s.renderOrder = MENU_TEXT_RO;
   s.position.set(x, y, 0.02);
   parent.add(s);
   return s;
@@ -206,23 +229,23 @@ function buildTrainingMenu() {
   // Camera-relative like the upgrade cards: in front of the player
   const cam = _hasDep('camera') ? _deps.camera : null;
   const baseY = cam ? cam.position.y : 1.6;
-  group.position.set(0, baseY + 0.55, -2.9);
+  group.position.set(0, baseY + 0.4, -2.9);
   _deps.scene.add(group);
   _menuGroup = group;
 
-  const panelW = 7.0;
-  const panelH = 4.0;
+  const panelW = 7.2;
+  const panelH = 3.9;
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(panelW, panelH),
     new THREE.MeshBasicMaterial({ color: 0x0a0f22, transparent: true, opacity: 0.96, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
   );
-  bg.renderOrder = 1;
+  bg.renderOrder = MENU_BG_RO;
   group.add(bg);
   const border = new THREE.LineSegments(
     new THREE.EdgesGeometry(bg.geometry),
     new THREE.LineBasicMaterial({ color: 0x00ff88 })
   );
-  border.renderOrder = 1;
+  border.renderOrder = MENU_BG_RO;
   group.add(border);
 
   if (_loadoutView) {
@@ -233,16 +256,13 @@ function buildTrainingMenu() {
 }
 
 function buildCombatView(group) {
-  const title = makeLabel(group, 'TRAINING GROUND', 0, 1.72, { fontSize: 46, color: '#00ff88' });
-  title.userData.text = 'TRAINING GROUND';
-  const sub = makeLabel(group, 'SPAWN SPARRING PARTNERS — THEN TEST YOUR ARSENAL', 0, 1.38, { fontSize: 22, color: '#8899bb', scale: 0.18, forceArial: true });
-  sub.userData.text = 'SPAWN SPARRING PARTNERS — THEN TEST YOUR ARSENAL';
+  const title = makeLabel(group, 'TRAINING GROUND', 0, 1.68, { fontSize: 54, color: '#00ff88' });
+  const sub = makeLabel(group, 'BUILD A WAVE — THEN PRESS GO', 0, 1.3, { fontSize: 34, color: '#8899bb', glyphSize: 0.042, forceArial: true });
 
-  // ── ENEMIES column (scrollable) ──
-  const enemyHeader = makeLabel(group, 'ENEMIES', -2.55, 1.08, { fontSize: 30, color: '#ff8866' });
-  enemyHeader.userData.text = 'ENEMIES';
+  // ── ENEMIES column (scrollable) — buttons ADD to the pending wave ──
+  const enemyHeader = makeLabel(group, 'ENEMIES', -2.65, 0.98, { fontSize: 44, color: '#ff8866' });
   const enemyList = new THREE.Group();
-  enemyList.position.set(-2.55, 0.86, 0.01);
+  enemyList.position.set(-2.65, 0.76, 0.01);
   group.add(enemyList);
   const ENEMY_IDS = [
     ['basic', 'DRONE'], ['fast', 'SNEAK'], ['tank', 'SENTINEL'], ['swarm', 'DART'],
@@ -252,84 +272,90 @@ function buildCombatView(group) {
   ];
   const visibleEnemies = 6;
   ENEMY_IDS.forEach(([id, label], i) => {
-    const face = makeButton(enemyList, `${label}  (+${_waveSize})`, {
-      type: 'spawn_enemy', id,
-    }, 0, -i * 0.17, { w: 1.95, h: 0.15, color: 0xff8866, fontSize: 23, textScale: 0.15 });
+    const pendingCount = _pendingWave.find(p => p.kind === 'enemy' && p.type === id)?.count || 0;
+    const face = makeButton(enemyList, `${label}${pendingCount > 0 ? `  (${pendingCount})` : ''}`, {
+      type: 'queue_enemy', id,
+    }, 0, -i * 0.17, { w: 2.0, h: 0.15, color: 0xff8866, fontSize: 34, glyphSize: 0.042 });
     face.userData._row = i;
   });
   enemyList.userData.maxRows = ENEMY_IDS.length - visibleEnemies;
   enemyList.userData.scrollKey = 'enemy';
 
-  // Scroll hints (thumbstick/wheel)
-  const scrollHint = makeLabel(group, 'SCROLL: THUMBSTICK / WHEEL', -2.55, -1.15, { fontSize: 18, color: '#667799', scale: 0.14, forceArial: true });
-  scrollHint.userData.text = 'SCROLL: THUMBSTICK / WHEEL';
-
-  // ── BOSSES column ──
-  const bossHeader = makeLabel(group, 'BOSSES', 2.55, 1.08, { fontSize: 30, color: '#ff88ff' });
-  bossHeader.userData.text = 'BOSSES';
+  // ── BOSSES column — buttons ADD a boss to the pending wave ──
+  const bossHeader = makeLabel(group, 'BOSSES', 2.65, 0.98, { fontSize: 44, color: '#ff88ff' });
   const BOSS_IDS = [
     ['skull_boss', 'NECRO'], ['the_maw', 'THE MAW'], ['the_prism', 'THE PRISM'],
     ['mirror_gauntlet', 'MIRROR GAUNTLET'], ['neon_minotaur', 'BLOOD MINOTAUR'],
     ['conductor_ascendant', 'CONDUCTOR'], ['the_masquerade', 'MASQUERADE'],
     ['eclipse_engine', 'ECLIPSE ENGINE'],
   ];
-  let by = 0.86;
+  let by = 0.74;
   BOSS_IDS.forEach(([id, label]) => {
-    makeButton(group, label, { type: 'spawn_boss', id }, 2.55, by, { w: 2.1, h: 0.16, color: 0xff88ff, fontSize: 24, textScale: 0.16 });
-    by -= 0.19;
+    const pendingCount = _pendingWave.find(p => p.kind === 'boss' && p.type === id)?.count || 0;
+    makeButton(group, `${label}${pendingCount > 0 ? `  (${pendingCount})` : ''}`, { type: 'queue_boss', id }, 2.65, by, { w: 2.2, h: 0.17, color: 0xff88ff, fontSize: 36, glyphSize: 0.046 });
+    by -= 0.21;
   });
 
-  // ── CENTER column: wave size + actions ──
-  const waveHeader = makeLabel(group, 'WAVE SIZE', 0, 1.08, { fontSize: 30, color: '#ffdd00' });
-  waveHeader.userData.text = 'WAVE SIZE';
-  makeButton(group, `SIZE: ${_waveSize}`, { type: 'noop' }, 0, 0.86, { w: 1.3, h: 0.22, color: 0xffdd00, fontSize: 30, textScale: 0.2 });
-  makeButton(group, '+5', { type: 'wave_add', amount: 5 }, 0.72, 0.86, { w: 0.55, h: 0.22, color: 0xffdd00, fontSize: 28, textScale: 0.2 });
-  makeButton(group, '+1', { type: 'wave_add', amount: 1 }, 0.72, 0.56, { w: 0.55, h: 0.2, color: 0xffdd00, fontSize: 26, textScale: 0.18 });
-  makeButton(group, '-1', { type: 'wave_add', amount: -1 }, -0.72, 0.56, { w: 0.55, h: 0.2, color: 0xffdd00, fontSize: 26, textScale: 0.18 });
-  makeButton(group, '-5', { type: 'wave_add', amount: -5 }, -0.72, 0.86, { w: 0.55, h: 0.22, color: 0xffdd00, fontSize: 28, textScale: 0.2 });
+  // ── CENTER column: wave size + CURRENT WAVE + GO ──
+  const waveHeader = makeLabel(group, 'WAVE SIZE', 0, 1.3, { fontSize: 44, color: '#ffdd00', glyphSize: 0.055 });
+  makeButton(group, `SIZE: ${_waveSize}`, { type: 'noop' }, -0.5, 1.02, { w: 1.0, h: 0.24, color: 0xffdd00, fontSize: 44, glyphSize: 0.055 });
+  makeButton(group, '+5', { type: 'wave_add', amount: 5 }, 0.55, 1.02, { w: 0.5, h: 0.24, color: 0xffdd00, fontSize: 40, glyphSize: 0.05 });
+  makeButton(group, '+1', { type: 'wave_add', amount: 1 }, 0.55, 0.72, { w: 0.5, h: 0.22, color: 0xffdd00, fontSize: 38, glyphSize: 0.048 });
+  makeButton(group, '-1', { type: 'wave_add', amount: -1 }, -1.05, 0.72, { w: 0.5, h: 0.22, color: 0xffdd00, fontSize: 38, glyphSize: 0.048 });
+  makeButton(group, '-5', { type: 'wave_add', amount: -5 }, -1.05, 1.02, { w: 0.5, h: 0.24, color: 0xffdd00, fontSize: 40, glyphSize: 0.05 });
 
-  makeButton(group, 'CLEAR ENEMIES', { type: 'clear_enemies' }, 0, 0.18, { w: 1.9, h: 0.2, color: 0xff6644, fontSize: 26, textScale: 0.18 });
-  makeButton(group, 'LOADOUT →', { type: 'goto_loadout' }, 0, -0.12, { w: 1.9, h: 0.2, color: 0x44aaff, fontSize: 26, textScale: 0.18 });
-  makeButton(group, 'EXIT TRAINING', { type: 'exit_training' }, 0, -0.45, { w: 1.9, h: 0.2, color: 0xff4444, fontSize: 26, textScale: 0.18 });
+  // CURRENT WAVE summary (pending picks)
+  const queueLabel = makeLabel(group, 'CURRENT WAVE', 0, 0.38, { fontSize: 36, color: '#88ddff', glyphSize: 0.05 });
+  const queueText = _pendingWave.length
+    ? _pendingWave.map(p => `${p.type.toUpperCase().replace(/_/g, ' ')} ×${p.count}`).join('   ').slice(0, 52)
+    : 'NOTHING QUEUED — PICK ENEMIES OR BOSSES';
+  const queueSummary = makeSizedText(queueText, {
+    fontSize: 32, color: '#aaddff', glyphSize: 0.038, depthTest: true, forceArial: true, maxWidth: 320,
+  });
+  queueSummary.renderOrder = MENU_TEXT_RO;
+  queueSummary.position.set(0, 0.16, 0.02);
+  group.add(queueSummary);
 
-  const tip = makeLabel(group, 'TIP: CLOSE THIS MENU TO FIGHT — YOU ARE INVINCIBLE HERE', 0, -1.35, { fontSize: 18, color: '#6688aa', scale: 0.14, forceArial: true });
-  tip.userData.text = 'TIP: CLOSE THIS MENU TO FIGHT — YOU ARE INVINCIBLE HERE';
+  // GO + actions
+  const waveActive = _activeWave.length > 0 || _pendingWave.some(p => p.kind === 'enemy');
+  makeButton(group, waveActive ? 'GO (WAVE RUNNING)' : 'GO!', { type: 'go_wave' }, 0, -0.14, { w: 2.0, h: 0.26, color: 0x00ff88, fontSize: 46, glyphSize: 0.06 });
+  makeButton(group, 'CLEAR WAVE', { type: 'clear_wave' }, 0, -0.5, { w: 2.0, h: 0.22, color: 0xff6644, fontSize: 38, glyphSize: 0.05 });
+  makeButton(group, 'LOADOUT →', { type: 'goto_loadout' }, 0, -0.86, { w: 2.0, h: 0.22, color: 0x44aaff, fontSize: 38, glyphSize: 0.05 });
+  makeButton(group, 'EXIT TRAINING', { type: 'exit_training' }, 0, -1.2, { w: 2.0, h: 0.22, color: 0xff4444, fontSize: 38, glyphSize: 0.05 });
+
+  const tip = makeLabel(group, 'YOU ARE INVINCIBLE — THUMBSTICK CLICK OR T OPENS THIS MENU', 0, -1.55, { fontSize: 28, color: '#6688aa', glyphSize: 0.034, forceArial: true });
 }
 
 function buildLoadoutView(group) {
-  const title = makeLabel(group, 'LOADOUT — BUILD YOUR ARSENAL', 0, 1.72, { fontSize: 42, color: '#44aaff' });
-  title.userData.text = 'LOADOUT — BUILD YOUR ARSENAL';
+  const title = makeLabel(group, 'LOADOUT — BUILD YOUR ARSENAL', 0, 1.68, { fontSize: 50, color: '#44aaff' });
 
   // ── UPGRADES column (scrollable) ──
-  const upHeader = makeLabel(group, 'UPGRADES (BOTH HANDS)', -2.55, 1.08, { fontSize: 28, color: '#44ffaa' });
-  upHeader.userData.text = 'UPGRADES (BOTH HANDS)';
+  const upHeader = makeLabel(group, 'UPGRADES (BOTH HANDS)', -2.65, 0.98, { fontSize: 40, color: '#44ffaa' });
   const upList = new THREE.Group();
-  upList.position.set(-2.55, 0.86, 0.01);
+  upList.position.set(-2.65, 0.76, 0.01);
   group.add(upList);
   const allUpgrades = [...UPGRADE_POOL, ...SPECIAL_UPGRADE_POOL].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i);
   allUpgrades.forEach((u, i) => {
-    makeButton(upList, u.name.toUpperCase(), { type: 'add_upgrade', id: u.id }, 0, -i * 0.17, { w: 1.95, h: 0.15, color: 0x44ffaa, fontSize: 21, textScale: 0.14 });
+    makeButton(upList, u.name.toUpperCase(), { type: 'add_upgrade', id: u.id }, 0, -i * 0.17, { w: 2.0, h: 0.15, color: 0x44ffaa, fontSize: 32, glyphSize: 0.04 });
   });
   upList.userData.maxRows = Math.max(0, allUpgrades.length - 6);
   upList.userData.scrollKey = 'loadout';
 
   // ── EVOLUTIONS column ──
-  const evoHeader = makeLabel(group, 'EVOLUTIONS', 2.55, 1.08, { fontSize: 28, color: '#ffdd00' });
-  evoHeader.userData.text = 'EVOLUTIONS';
-  let ey = 0.86;
+  const evoHeader = makeLabel(group, 'EVOLUTIONS', 2.65, 0.98, { fontSize: 40, color: '#ffdd00' });
+  let ey = 0.74;
   Object.entries(WEAPON_EVOLUTIONS).forEach(([weaponId, evo]) => {
-    makeButton(group, `${evo.name.toUpperCase()}`, {
+    makeButton(group, evo.name.toUpperCase(), {
       type: 'evolve', weaponId, evoId: evo.id,
-    }, 2.55, ey, { w: 2.1, h: 0.18, color: evo.sigColor || 0xffdd00, fontSize: 24, textScale: 0.16 });
-    const from = makeLabel(group, `from ${(evo.from || weaponId).toUpperCase()}`, 2.55, ey - 0.08, { fontSize: 16, color: '#8899bb', scale: 0.12, forceArial: true });
-    from.userData.text = `from ${(evo.from || weaponId).toUpperCase()}`;
-    ey -= 0.27;
+    }, 2.65, ey, { w: 2.2, h: 0.2, color: evo.sigColor || 0xffdd00, fontSize: 36, glyphSize: 0.05 });
+    const from = makeLabel(group, `from ${(evo.from || weaponId).toUpperCase()}`, 2.65, ey - 0.1, { fontSize: 26, color: '#8899bb', glyphSize: 0.03, forceArial: true });
+    ey -= 0.29;
   });
 
   // ── Actions ──
-  makeButton(group, 'RESET LOADOUT', { type: 'reset_loadout' }, 0, 0.1, { w: 1.9, h: 0.2, color: 0xff8844, fontSize: 26, textScale: 0.18 });
-  makeButton(group, '← COMBAT', { type: 'goto_combat' }, 0, -0.22, { w: 1.9, h: 0.2, color: 0x44aaff, fontSize: 26, textScale: 0.18 });
-  makeButton(group, 'EXIT TRAINING', { type: 'exit_training' }, 0, -0.55, { w: 1.9, h: 0.2, color: 0xff4444, fontSize: 26, textScale: 0.18 });
+  makeButton(group, 'RESET LOADOUT', { type: 'reset_loadout' }, 0, 0.1, { w: 1.9, h: 0.2, color: 0xff8844, fontSize: 36, glyphSize: 0.05 });
+  makeButton(group, '← COMBAT', { type: 'goto_combat' }, 0, -0.24, { w: 1.9, h: 0.2, color: 0x44aaff, fontSize: 36, glyphSize: 0.05 });
+  makeButton(group, 'EXIT TRAINING', { type: 'exit_training' }, 0, -0.58, { w: 1.9, h: 0.2, color: 0xff4444, fontSize: 36, glyphSize: 0.05 });
 }
 
 function disposeMenuGroup(group) {
@@ -348,10 +374,14 @@ function buildHolodeck() {
   const group = new THREE.Group();
   group.name = 'holodeck-room';
 
-  // Grid shader: glowing lines over a black void, fogged with distance.
+  // Grid shader with a synthwave-style pulse: glowing grid lines whose color
+  // breathes pink→blue→green over time, fogged with distance into the void.
   const gridShader = {
     uniforms: {
       uColor: { value: new THREE.Color(0x00ff88) },
+      uPulseA: { value: new THREE.Color(0xff44cc) },
+      uPulseB: { value: new THREE.Color(0x00d9ff) },
+      uTime: { value: 0 },
       uFogColor: { value: new THREE.Color(0x02060c) },
     },
     vertexShader: `
@@ -363,6 +393,9 @@ function buildHolodeck() {
     `,
     fragmentShader: `
       uniform vec3 uColor;
+      uniform vec3 uPulseA;
+      uniform vec3 uPulseB;
+      uniform float uTime;
       uniform vec3 uFogColor;
       varying vec3 vWorldPos;
       void main() {
@@ -378,12 +411,18 @@ function buildHolodeck() {
           (step(1.0 - lineW * 3.0, bold1 * 2.0) + step(1.0 - lineW * 3.0, bold2 * 2.0)) * 1.6
         );
         grid = clamp(grid, 0.0, 1.0);
-        // Distance fade → black void (the "endless" look)
+        // Synthwave-style pulse: color breathes between two hues, and the
+        // line brightness ripples outward from the player (magic-arena feel).
+        float wave = 0.5 + 0.5 * sin(uTime * 1.8);
+        vec3 pulseColor = mix(uPulseA, uPulseB, wave);
+        vec3 col = mix(uColor, pulseColor, 0.65);
         float dist = length(vWorldPos.xz);
+        float ripple = 0.75 + 0.25 * sin(uTime * 2.2 - dist * 0.35);
+        col *= ripple;
+        // Distance fade → black void (the "endless" look)
         float fade = 1.0 - smoothstep(20.0, 140.0, dist);
-        vec3 col = uColor * grid * fade;
         col = mix(col, uFogColor, 0.4);
-        gl_FragColor = vec4(col, 1.0);
+        gl_FragColor = vec4(col * grid * fade, 1.0);
       }
     `,
   };
@@ -427,6 +466,32 @@ function buildHolodeck() {
   glow.name = 'holodeck-center-glow';
   group.add(glow);
 
+  // World-space instructions sign out on the field (NEVER camera-pinned —
+  // player feedback: camera-locked text blocks the whole view).
+  const signGroup = new THREE.Group();
+  signGroup.name = 'holodeck-sign';
+  signGroup.position.set(0, 1.75, -7.5);
+  const signTitle = makeSizedText('TRAINING GROUND', {
+    fontSize: 72, color: '#00ff88', glow: true, glowColor: '#00ff88',
+    glyphSize: 0.16, depthTest: true, forceArial: true,
+  });
+  signTitle.position.set(0, 0.35, 0);
+  signGroup.add(signTitle);
+  const signHint = makeSizedText('YOU ARE INVINCIBLE — THUMBSTICK CLICK OR T OPENS THE TRAINING MENU', {
+    fontSize: 40, color: '#88ffcc', glow: true, glowColor: '#00aa66',
+    glyphSize: 0.06, depthTest: true, forceArial: true, maxWidth: 900,
+  });
+  signHint.position.set(0, -0.05, 0);
+  signGroup.add(signHint);
+  const signSub = makeSizedText('BUILD A WAVE · PRESS GO · TEST YOUR ARSENAL', {
+    fontSize: 34, color: '#6688aa', glow: true, glowColor: '#224466',
+    glyphSize: 0.045, depthTest: true, forceArial: true,
+  });
+  signSub.position.set(0, -0.35, 0);
+  signGroup.add(signSub);
+  group.add(signGroup);
+  _holodeckSignTime = 0;
+
   if (_deps.scene.background && _deps.scene.background.isColor) {
     _deps.scene.background.set(0x02060c);
   } else {
@@ -434,6 +499,18 @@ function buildHolodeck() {
   }
   _deps.scene.add(group);
   _holodeckGroup = group;
+}
+
+// Pulse the holodeck grid shader (called per frame while training is active).
+let _holodeckSignTime = 0;
+function updateHolodeck(now) {
+  if (!_holodeckGroup) return;
+  const t = now * 0.001;
+  _holodeckGroup.traverse(child => {
+    if (child.material?.uniforms?.uTime) {
+      child.material.uniforms.uTime.value = t;
+    }
+  });
 }
 
 function makeRadialGlowTexture() {
@@ -541,13 +618,32 @@ export function handleTrainingAction(action) {
       return true;
     }
 
-    case 'spawn_enemy': {
-      spawnEnemyWave(action.id, _waveSize);
+    case 'queue_enemy': {
+      // Add _waveSize of this enemy to the pending wave (merged per type)
+      const entry = _pendingWave.find(p => p.kind === 'enemy' && p.type === action.id);
+      if (entry) entry.count = Math.min(30, entry.count + _waveSize);
+      else _pendingWave.push({ kind: 'enemy', type: action.id, count: _waveSize });
+      rebuildMenu();
       return true;
     }
 
-    case 'spawn_boss': {
-      spawnBossInTraining(action.id);
+    case 'queue_boss': {
+      // Bosses spawn at GO; queueing again adds one more
+      const entry = _pendingWave.find(p => p.kind === 'boss' && p.type === action.id);
+      if (entry) entry.count += 1;
+      else _pendingWave.push({ kind: 'boss', type: action.id, count: 1 });
+      rebuildMenu();
+      return true;
+    }
+
+    case 'clear_wave': {
+      _pendingWave = [];
+      rebuildMenu();
+      return true;
+    }
+
+    case 'go_wave': {
+      startPendingWave();
       return true;
     }
 
@@ -620,26 +716,58 @@ function rebuildMenu() {
   showTrainingMenu();
 }
 
-// ── Spawning ────────────────────────────────────────────────
+// ── Wave release ────────────────────────────────────────────
 
-function spawnEnemyWave(type, count) {
+// GO: bosses in the pending wave spawn immediately; enemies move into the
+// active release queue and are trickled out in batches (like a real level).
+function startPendingWave() {
+  if (_pendingWave.length === 0) return;
+  for (const p of _pendingWave) {
+    if (p.kind === 'boss') {
+      for (let i = 0; i < p.count; i++) spawnBossInTraining(p.type);
+    } else {
+      const entry = _activeWave.find(e => e.type === p.type);
+      if (entry) entry.count += p.count;
+      else _activeWave.push({ type: p.type, count: p.count });
+    }
+  }
+  _pendingWave = [];
+  _waveReleaseTimer = 0.5; // first batch lands quickly
+  rebuildMenu();
+}
+
+// Tick the active wave: release batches of enemies over time. Called every
+// frame from main.js while training is active (menu open or not).
+function updateWaveRelease(dt) {
+  if (_activeWave.length === 0) return;
+  _waveReleaseTimer -= dt;
+  if (_waveReleaseTimer > 0) return;
+
+  let released = 0;
+  for (let i = _activeWave.length - 1; i >= 0 && released < WAVE_BATCH_SIZE; i--) {
+    const entry = _activeWave[i];
+    const batch = Math.min(entry.count, WAVE_BATCH_SIZE - released);
+    for (let b = 0; b < batch; b++) spawnEnemyAt(entry.type);
+    entry.count -= batch;
+    released += batch;
+    if (entry.count <= 0) _activeWave.splice(i, 1);
+  }
+  _waveReleaseTimer = WAVE_BATCH_INTERVAL;
+}
+
+function spawnEnemyAt(type) {
   if (!_hasDep('spawnEnemy')) return;
   const cfg = _trainingConfig || _deps.getLevelConfig?.() || game._levelConfig;
   const cam = _deps.camera;
-  const spawnCount = Math.min(count, 30);
-  for (let i = 0; i < spawnCount; i++) {
-    // Ring around the player, front-biased (enemies approach from ahead)
-    const angle = -Math.PI * 0.75 + Math.random() * Math.PI * 1.5;
-    const dist = 9 + Math.random() * 7;
-    const pos = new THREE.Vector3(
-      cam.position.x + Math.sin(angle) * dist,
-      cam.position.y + 0.1,
-      cam.position.z - Math.cos(angle) * dist,
-    );
-    const e = _deps.spawnEnemy(type, pos, cfg);
-    if (!e) break;
-  }
-  _log(`[training-ground] spawned ${spawnCount}× ${type}`);
+  // Ring around the player, front-biased (enemies approach from ahead)
+  const angle = -Math.PI * 0.75 + Math.random() * Math.PI * 1.5;
+  const dist = 10 + Math.random() * 6;
+  const pos = new THREE.Vector3(
+    cam.position.x + Math.sin(angle) * dist,
+    cam.position.y + 0.1,
+    cam.position.z - Math.cos(angle) * dist,
+  );
+  _deps.spawnEnemy(type, pos, cfg);
 }
 
 function spawnBossInTraining(bossId) {
@@ -698,10 +826,10 @@ function scrollMenus(delta) {
   });
 }
 
-/** Per-frame menu pulse (called from main.js while training is active). */
-export function updateTrainingMenu(now) {
-  if (!_menuOpen || !_menuGroup) return;
-  // Nothing per-frame needed beyond hover — kept as a hook.
+/** Per-frame menu pulse + wave release (called from main.js while training). */
+export function updateTrainingMenu(now, dt) {
+  updateHolodeck(now);
+  updateWaveRelease(dt);
 }
 
 // Test seam: expose wave size for automation.

@@ -10,6 +10,7 @@
 // ============================================================
 
 import * as THREE from 'three';
+import { makeSizedText } from './hud.js';
 
 const DEBUG = false;
 const _log = DEBUG ? console.log.bind(console) : () => {};
@@ -120,6 +121,28 @@ export function spawnLevelVoidMarks(level, playerPos) {
     glow.position.y = 0.7;
     group.add(glow);
 
+    // World-space info label above the mark (player feedback: the old prompt
+    // was camera-pinned, unreadable, and unexplained). Shown in-range; the
+    // mark's offer + controls read at a glance where the ghost died.
+    const offerLabel = _getOfferLabel(mark);
+    const label = makeSizedText(`VOID MARK — ${offerLabel}`, {
+      fontSize: 44, color: '#cc88ff', glow: true, glowColor: '#6600cc',
+      glyphSize: 0.055, depthTest: true, forceArial: true,
+    });
+    label.name = 'void-mark-label';
+    label.position.set(0, 2.3, 0);
+    label.visible = false;
+    group.add(label);
+
+    const hintLabel = makeSizedText('TRIGGER: INHERIT · NUKE: PURGE', {
+      fontSize: 34, color: '#8866cc', glow: true, glowColor: '#4400aa',
+      glyphSize: 0.04, depthTest: true, forceArial: true,
+    });
+    hintLabel.name = 'void-mark-hint';
+    hintLabel.position.set(0, 2.05, 0);
+    hintLabel.visible = false;
+    group.add(hintLabel);
+
     const pos = new THREE.Vector3(mark.position.x, 0.3, mark.position.z);
     // Clamp into the arena so marks never spawn off-world
     pos.x = Math.max(-16, Math.min(16, pos.x));
@@ -177,22 +200,20 @@ export function isVoidMarkInRange() {
 export function updateVoidMarks(dt, now) {
   if (_activeMarks.length === 0) return;
   const interactable = _updateMarks(dt, now);
-  if (interactable && !_promptShown && _hasDep('showFloatingMessage')) {
-    _promptShown = true;
-    const mark = interactable.userData.voidMark.mark;
-    const offer = _getOfferLabel(mark);
-    // Small unobtrusive hint (player feedback: the old prompt was a huge
-    // in-your-face banner that overflowed the view). Sized like the eclipse
-    // warning banner but placed higher/further so it never blocks targets.
-    // maxWidth word-wraps it into two compact lines.
-    _deps.showFloatingMessage(`VOID MARK — ${offer} · TRIGGER: INHERIT · NUKE: PURGE`, {
-      sticky: true, color: '#aa66ff', glowColor: '#4400aa',
-      fontSize: 26, scale: 0.2, offsetY: 0.62, offsetZ: -1.3, maxWidth: 300,
-    });
-  } else if (!interactable && _promptShown) {
-    _promptShown = false;
-    if (_hasDep('hideFloatingMessage')) _deps.hideFloatingMessage();
+  // World-space label above the mark (shown only in prompt range). The old
+  // camera-pinned showFloatingMessage was removed per player feedback — text
+  // never gets pinned to the camera.
+  for (const group of _activeMarks) {
+    if (!group.parent) continue;
+    const inRange = group.position.distanceTo(
+      _hasDep('getPlayerPos') ? _deps.getPlayerPos() : new THREE.Vector3()
+    ) < PROMPT_RANGE;
+    const label = group.getObjectByName('void-mark-label');
+    const hint = group.getObjectByName('void-mark-hint');
+    if (label) label.visible = inRange;
+    if (hint) hint.visible = inRange;
   }
+  _promptShown = !!interactable;
 }
 
 function _getOfferLabel(mark) {

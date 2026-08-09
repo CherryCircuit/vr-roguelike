@@ -487,6 +487,34 @@ export function makeSprite(text, opts = {}) {
   return mesh;
 }
 
+// Glyph-sized text sprite: sizes the mesh so the GLYPHS are a fixed world
+// size regardless of fontSize/line count/padding — the cure for the recurring
+// "tiny text" problem (glyph size = fontSize × spriteHeight/canvasHeight, and
+// makeSprite's `scale` is the SPRITE height, so padding/lines shrank glyphs).
+// opts.glyphSize (default 0.05 world units) is the cap-height-ish glyph size.
+export function makeSizedText(text, opts = {}) {
+  const { texture, canvasWidth, canvasHeight } = makeTextTexture(text, opts);
+  const glyph = opts.glyphSize || 0.05;
+  const fontSize = opts.fontSize || 60;
+  const spriteHeight = (glyph * canvasHeight) / fontSize;
+  const spriteWidth = (canvasWidth * spriteHeight) / canvasHeight;
+
+  const geometry = new THREE.PlaneGeometry(spriteWidth, spriteHeight);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: opts.opacity !== undefined ? opts.opacity : 1,
+    depthTest: opts.depthTest !== undefined ? opts.depthTest : true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geometry, mat);
+  mesh.renderOrder = opts.renderOrder !== undefined ? opts.renderOrder : 999;
+  mesh.userData.text = text;
+  return mesh;
+}
+
 // ── Logo shimmer shader ──────────────────────────────────
 const logoShimmerVert = `
   varying vec2 vUv;
@@ -1150,11 +1178,12 @@ async function createTitleScreen() {
   titleGroup.add(bestiaryBtnGrp);
   titleBestiaryBtn = bestiaryBtnMesh;
 
-  // Training Ground button — sits between the blink text and the button row
+  // Training Ground button — same size as the SCOREBOARD button (1.0×0.25),
+  // placed BELOW the button row so nothing overlaps (player feedback).
   const trainingBtnGrp = new THREE.Group();
-  trainingBtnGrp.position.set(0, -0.4, 0);
+  trainingBtnGrp.position.set(0, -0.97, 0);
   trainingBtnGrp.name = 'trainingBtnGroup';
-  const trainingBtnGeo = new THREE.PlaneGeometry(1.9, 0.3);
+  const trainingBtnGeo = new THREE.PlaneGeometry(1.0, 0.25);
   const trainingBtnMat = new THREE.MeshBasicMaterial({ color: 0x003322, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
   const trainingBtnMesh = new THREE.Mesh(trainingBtnGeo, trainingBtnMat);
   trainingBtnMesh.userData.isTitleTrainingBtn = true;
@@ -1164,8 +1193,8 @@ async function createTitleScreen() {
     new THREE.EdgesGeometry(trainingBtnGeo),
     new THREE.LineBasicMaterial({ color: 0x00ff88 })
   ));
-  const trainingBtnText = makeSprite('TRAINING GROUND', {
-    fontSize: 42, color: '#00ff88', glow: true, glowColor: '#00ff88', scale: 0.26,
+  const trainingBtnText = makeSizedText('TRAINING GROUND', {
+    fontSize: 36, color: '#00ff88', glow: true, glowColor: '#00ff88', glyphSize: 0.06, depthTest: true,
   });
   trainingBtnText.position.set(0, 0, 0.02);
   trainingBtnGrp.add(trainingBtnText);
@@ -1428,8 +1457,9 @@ export function showBestiary(playerPos) {
   bgMat.name = 'bestiary-background-panel-material';
   const bgMesh = new THREE.Mesh(bgGeo, bgMat);
   bgMesh.name = 'bestiary-background-panel';
-  bgMesh.position.set(0, -0.25, -0.65);
-  bgMesh.scale.set(1.25, 0.8, 1);
+  // Behind the arc (cards sit at z ≈ -2.8…-3.7)
+  bgMesh.position.set(0, -0.25, -4.4);
+  bgMesh.scale.set(1.45, 0.9, 1);
   bgMesh.renderOrder = 0;
   bestiaryGroup.add(bgMesh);
 
@@ -1469,36 +1499,52 @@ export function showBestiary(playerPos) {
   bestiaryBackBtn = backMesh;
   bestiaryGroup.add(backGroup);
 
-  // Two-row layout: regular enemies span wide across row 1, bosses sit in row 2.
-  // VR affordance: this intentionally uses a wider horizontal arc so players can
-  // look left/right instead of stacking a third row into the readable area.
-  const REGULAR_ROW_Y = 0.3;
-  const BOSS_ROW_Y = -1.1;
-  const REGULAR_CARD_W = 1.1;
-  const BOSS_CARD_W = 0.95; // 8 boss entries now — tighter spacing keeps the row on-screen
+  // Two arcs that wrap AROUND the player like a curved monitor (player
+  // feedback): regular enemies arc wide at R=4.2, bosses at R=4.6 with
+  // generous angular spacing so nothing overlaps. Cards rotate to face the
+  // player; descriptions are wider and TOP-ALIGNED below the level badge.
+  const REGULAR_ROW_Y = 0.55;
+  const BOSS_ROW_Y = -0.95;
+  const REGULAR_RADIUS = 4.2;
+  const BOSS_RADIUS = 4.6;
+  const REGULAR_ARC = 1.30; // radians total (±37°…±75° across 14 entries)
+  const BOSS_ARC = 1.05;    // radians total across 8 entries
   const regularEntries = BESTIARY_ENTRIES.filter(entry => !entry.isBoss);
   const bossEntries = BESTIARY_ENTRIES.filter(entry => entry.isBoss);
 
-  BESTIARY_ENTRIES.forEach((entry) => {
+  const placeInArc = (entry) => {
     const rowEntries = entry.isBoss ? bossEntries : regularEntries;
     const rowIndex = rowEntries.indexOf(entry);
-    const spacing = entry.isBoss ? BOSS_CARD_W : REGULAR_CARD_W;
-    const x = -((rowEntries.length - 1) * spacing) / 2 + rowIndex * spacing;
+    const arc = entry.isBoss ? BOSS_ARC : REGULAR_ARC;
+    const radius = entry.isBoss ? BOSS_RADIUS : REGULAR_RADIUS;
+    const n = rowEntries.length;
+    const angle = n > 1 ? -arc / 2 + (rowIndex / (n - 1)) * arc : 0;
     const y = entry.isBoss ? BOSS_ROW_Y : REGULAR_ROW_Y;
+    return {
+      x: Math.sin(angle) * radius,
+      z: -Math.cos(angle) * radius + radius * 0.12, // shallow wrap, not a full ring
+      rotY: angle,
+      y,
+    };
+  };
+
+  BESTIARY_ENTRIES.forEach((entry) => {
+    const pos = placeInArc(entry);
 
     const cardGroup = new THREE.Group();
     cardGroup.name = bestiaryObjectName('entry', entry.id, 'card-group');
-    cardGroup.position.set(x, y, 0);
+    cardGroup.position.set(pos.x, pos.y, pos.z);
+    cardGroup.rotation.y = pos.rotY;
 
     const model = buildBestiaryModel(entry);
     model.renderOrder = 1;
-    const modelScale = entry.isBoss ? 0.54 : (
-      entry.id === 'spiral_swimmer' ? 0.85 :
-      (entry.id === 'conductor' || entry.id === 'mortar') ? 0.55 :
-      0.72
+    const modelScale = entry.isBoss ? 0.5 : (
+      entry.id === 'spiral_swimmer' ? 0.8 :
+      (entry.id === 'conductor' || entry.id === 'mortar') ? 0.5 :
+      0.62
     );
     model.scale.setScalar(modelScale);
-    model.position.set(0, 0.3, 0);
+    model.position.set(0, 0.28, 0);
     cardGroup.add(model);
 
     const nameText = makeSprite(entry.name, {
@@ -1517,11 +1563,16 @@ export function showBestiary(playerPos) {
     metaText.position.set(0, -0.16, 0.01);
     cardGroup.add(metaText);
 
+    // Wider description, TOP-ALIGNED below the level badge: the sprite's
+    // TOP edge sits at -0.26 (its height varies with word-wrap, so the
+    // center is offset by half the sprite height — no more overlap with
+    // the level text).
     const descText = makeSprite(entry.desc, {
-      fontSize: 34, color: '#c8d8dd', scale: 0.9, maxWidth: 390, forceArial: true,
+      fontSize: 34, color: '#c8d8dd', scale: 0.9, maxWidth: 470, forceArial: true,
     });
     descText.name = bestiaryObjectName('entry', entry.id, 'description-text');
-    descText.position.y = -0.43;
+    const descH = descText.geometry.parameters.height;
+    descText.position.y = -0.26 - descH / 2;
     cardGroup.add(descText);
 
     bestiaryGroup.add(cardGroup);
@@ -2613,6 +2664,11 @@ export function updateUpgradeCards(now, cooldownRemaining) {
 
   // Animate the alchemy confirm popup's 3D icon
   updateAlchemyPopupIcons();
+  // Animate the alchemy bench's essence squares
+  updateAlchemyBench(now);
+
+  // Evolutions menu pop in/out animation
+  tickEvolutionsPop();
 
   // Card shrink/grow transitions (alchemy bench / evolutions menu)
   tickCardTransition();
@@ -2868,33 +2924,20 @@ function makeAlchemyButton(parent, label, action, x, y, opts = {}) {
   return group;
 }
 
-// Label sprite for alchemy buttons with word-wrap support. The old path
-// (makeSprite without maxWidth) rendered one long line that spilled past the
-// button face when the label was long; with maxWidth the glyphs shrank to
-// illegibility. This builds the wrapped canvas and scales by the SINGLE-LINE
-// canvas height so glyph size stays identical to a one-line button.
+// Label sprite for alchemy buttons with word-wrap support. Glyph-sized via
+// makeSizedText so labels stay legible regardless of line count/padding
+// (the recurring tiny-text problem — makeSprite's `scale` is sprite height).
 function makeAlchemyLabelSprite(label, opts = {}) {
-  const fontSize = opts.fontSize || 36;
-  const { texture, canvasWidth, canvasHeight } = makeTextTexture(label, {
-    fontSize,
-    maxWidth: opts.maxWidth || 260,
-    forceArial: true,
+  const sprite = makeSizedText(label, {
+    fontSize: opts.fontSize || 34,
     color: opts.color || '#ffffff',
-  });
-  const singleLineH = fontSize * 1.3 + 80; // padding 40×2 (non-glow)
-  const unitPerPixel = (opts.textScale || 0.3) / singleLineH;
-  const geo = new THREE.PlaneGeometry(canvasWidth * unitPerPixel, canvasHeight * unitPerPixel);
-  const mat = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    opacity: 1,
+    glyphSize: opts.glyphSize || 0.042,
     depthTest: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
+    forceArial: true,
+    maxWidth: opts.maxWidth || 240,
   });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.renderOrder = 2; // above the button face (renderOrder 1)
-  return mesh;
+  sprite.renderOrder = 2;
+  return sprite;
 }
 
 // Read the bench/bar layout entries (layouts/upgrade-cards.json alchemy*),
@@ -2942,6 +2985,9 @@ export function hideAlchemyBench() {
   alchemyBenchOpen = false;
   alchemyCategoryView = false;
   hideAlchemyPopup();
+  // Drop the essence-square refs BEFORE disposing (updateAlchemyBench ticks
+  // every frame — stale disposed meshes would crash on .material.uniforms).
+  _alchemyEssenceSquares = [];
   if (alchemyBenchGroup) {
     disposeGroupChildren(alchemyBenchGroup);
     if (alchemyBenchGroup.parent) alchemyBenchGroup.parent.remove(alchemyBenchGroup);
@@ -2973,46 +3019,87 @@ export function isAlchemyPopupOpen() {
 
 // ── Evolutions Menu (Issue #143 redesign) ──────────────────
 // A scrollable panel (reached from the EVOLUTIONS button under the upgrade
-// cards) showing progress toward ALL six evolutions: name, source weapon,
-// a progress bar, and the recipe upgrades to watch for. Scrolled with the
-// Quest thumbstick (or the desktop wheel). Content is a child group whose Y
-// is offset by updateEvolutionsScroll.
+// cards) showing progress toward ALL evolutions: name, source weapon, a
+// progress bar, and the recipe upgrades to watch for. Design (player
+// feedback): the scrollable content lives in a CROPPED box between the title
+// and the BACK button with a scroll bar, rows are left-aligned and tight,
+// fonts are glyph-sized (no more tiny text), and the panel pops in/out.
 
 let evolutionsGroup = null;
 let evolutionsContent = null;
 let evolutionsOpen = false;
-let evolutionsScrollOffset = 0;
-const EVOLUTIONS_ROW_H = 0.62;
-const EVOLUTIONS_CONTENT_H = 5.0;
+let evolutionsScrollRow = 0;      // current top row index
+let evolutionsScrollbarThumb = null;
+const EVO_ROWS_VISIBLE = 3;       // rows shown at once
+const EVO_ROW_H = 0.46;
+const EVO_CONTENT_TOP = 0.55;     // content box top (group-local y)
+const EVO_CONTENT_BOTTOM = -0.85; // content box bottom
+const EVO_LEFT_X = -1.72;         // left-aligned text edge
+
+// Pop animation state (open: 0.8→1 easeOutBack; close: 1→0.8 then dispose)
+let _evolutionsPop = null; // { state:'in'|'out', start }
+const EVO_POP_MS = 220;
 
 export function isEvolutionsOpen() {
   return evolutionsOpen;
 }
 
 export function hideEvolutionsMenu() {
+  if (!evolutionsOpen) return;
   evolutionsOpen = false;
-  evolutionsScrollOffset = 0;
+  _evolutionsPop = { state: 'out', start: performance.now() };
+  evolutionsScrollRow = 0;
+}
+
+function disposeEvolutionsGroup() {
   if (evolutionsGroup) {
     disposeGroupChildren(evolutionsGroup);
     if (evolutionsGroup.parent) evolutionsGroup.parent.remove(evolutionsGroup);
     evolutionsGroup = null;
     evolutionsContent = null;
+    evolutionsScrollbarThumb = null;
   }
-  showCardsWithAnimation();
+}
+
+// Tick the pop animation (called from updateUpgradeCards).
+function tickEvolutionsPop() {
+  if (!_evolutionsPop) return;
+  const t = Math.min(1, (performance.now() - _evolutionsPop.start) / EVO_POP_MS);
+  if (_evolutionsPop.state === 'in') {
+    if (evolutionsGroup) {
+      const ease = 1 + 1.7 * Math.pow(t - 1, 3) + 0.7 * Math.pow(t - 1, 2); // easeOutBack
+      evolutionsGroup.scale.setScalar(Math.max(0.05, 0.8 * ease));
+    }
+    if (t >= 1) _evolutionsPop = null;
+  } else {
+    if (evolutionsGroup) {
+      const ease = 1 - t * t * (3 - 2 * t);
+      evolutionsGroup.scale.setScalar(Math.max(0.05, ease));
+    }
+    if (t >= 1) {
+      _evolutionsPop = null;
+      disposeEvolutionsGroup();
+      showCardsWithAnimation();
+    }
+  }
 }
 
 /** Scroll the evolutions content (delta in rows; thumbstick/wheel). */
 export function updateEvolutionsScroll(delta) {
-  if (!evolutionsGroup || !evolutionsContent) return;
-  const maxOffset = Math.max(0, EVOLUTIONS_CONTENT_H - 2.3);
-  evolutionsScrollOffset = Math.max(0, Math.min(maxOffset, evolutionsScrollOffset + delta * 0.28));
-  evolutionsContent.position.y = 1.05 - evolutionsScrollOffset;
+  if (!evolutionsOpen) return;
+  const entryCount = Object.keys(WEAPON_EVOLUTIONS).length;
+  const maxRow = Math.max(0, entryCount - EVO_ROWS_VISIBLE);
+  const next = Math.max(0, Math.min(maxRow, evolutionsScrollRow + delta));
+  if (next === evolutionsScrollRow) return;
+  evolutionsScrollRow = next;
+  buildEvolutionsRows();
 }
 
 export function showEvolutionsMenu() {
   if (alchemyBenchOpen) hideAlchemyBench();
   evolutionsOpen = true;
-  evolutionsScrollOffset = 0;
+  evolutionsScrollRow = 0;
+  _evolutionsPop = { state: 'in', start: performance.now() };
   buildEvolutionsMenu();
   // Cards shrink away while the menu is investigated (mirror of the bench)
   hideCardsWithAnimation(() => {
@@ -3023,24 +3110,20 @@ export function showEvolutionsMenu() {
 }
 
 function buildEvolutionsMenu() {
-  if (evolutionsGroup) {
-    disposeGroupChildren(evolutionsGroup);
-    if (evolutionsGroup.parent) evolutionsGroup.parent.remove(evolutionsGroup);
-    evolutionsGroup = null;
-    evolutionsContent = null;
-  }
+  disposeEvolutionsGroup();
 
   const group = new THREE.Group();
   group.name = 'evolutions-menu';
   group.position.set(0, 0.05, 0.08);
+  group.scale.setScalar(0.8);
   upgradeGroup.add(group);
   evolutionsGroup = group;
 
-  const panelW = 4.6;
-  const panelH = 2.5;
+  const panelW = 4.8;
+  const panelH = 3.0;
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(panelW, panelH),
-    new THREE.MeshBasicMaterial({ color: 0x0f1026, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+    new THREE.MeshBasicMaterial({ color: 0x0f1026, transparent: true, opacity: 0.96, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
   );
   bg.renderOrder = 1;
   group.add(bg);
@@ -3049,26 +3132,72 @@ function buildEvolutionsMenu() {
     new THREE.LineBasicMaterial({ color: 0xffdd00 })
   ));
 
-  const header = makeSprite('EVOLUTIONS', {
-    fontSize: 44, color: '#ffdd00', glow: true, glowColor: '#ffdd00',
-    scale: 0.3, depthTest: true,
+  // Title (centered, big) + scroll hint
+  const header = makeSizedText('EVOLUTIONS', {
+    fontSize: 56, color: '#ffdd00', glow: true, glowColor: '#ffdd00',
+    glyphSize: 0.09, depthTest: true,
   });
-  header.userData.text = 'EVOLUTIONS';
-  header.position.set(-1.2, 1.02, 0.02);
+  header.position.set(0, 1.28, 0.02);
   group.add(header);
 
-  const hint = makeSprite('SCROLL TO BROWSE ALL EVOLUTIONS', {
-    fontSize: 22, color: '#8888aa', scale: 0.18, depthTest: true, forceArial: true,
+  const hint = makeSizedText(`SCROLL TO BROWSE — ${Object.keys(WEAPON_EVOLUTIONS).length} EVOLUTIONS`, {
+    fontSize: 30, color: '#8888aa', glyphSize: 0.038, depthTest: true, forceArial: true,
   });
-  hint.userData.text = 'SCROLL TO BROWSE ALL EVOLUTIONS';
-  hint.position.set(1.15, 1.02, 0.02);
+  hint.position.set(0, 0.98, 0.02);
   group.add(hint);
 
-  // Scrollable content: one row per evolution
+  // Content box frame (the rows are cropped inside this region)
+  const boxW = 4.2;
+  const boxH = EVO_CONTENT_TOP - EVO_CONTENT_BOTTOM;
+  const boxCenterY = (EVO_CONTENT_TOP + EVO_CONTENT_BOTTOM) / 2;
+  const boxBg = new THREE.Mesh(
+    new THREE.PlaneGeometry(boxW, boxH),
+    new THREE.MeshBasicMaterial({ color: 0x0a0c1e, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+  );
+  boxBg.renderOrder = 1;
+  boxBg.position.set(0, boxCenterY, 0.01);
+  group.add(boxBg);
+  const boxBorder = new THREE.LineSegments(
+    new THREE.EdgesGeometry(boxBg.geometry),
+    new THREE.LineBasicMaterial({ color: 0x554411, transparent: true, opacity: 0.8 })
+  );
+  boxBorder.renderOrder = 2;
+  group.add(boxBorder);
+
+  // Scroll bar rail + thumb on the right side of the box
+  const rail = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.03, boxH),
+    new THREE.MeshBasicMaterial({ color: 0x333355, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+  );
+  rail.renderOrder = 3;
+  rail.position.set(2.0, boxCenterY, 0.02);
+  group.add(rail);
+  const thumb = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.06, 0.5),
+    new THREE.MeshBasicMaterial({ color: 0xffdd00, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+  );
+  thumb.renderOrder = 3;
+  thumb.position.set(2.0, 0, 0.025);
+  group.add(thumb);
+  evolutionsScrollbarThumb = thumb;
+
   const content = new THREE.Group();
-  content.position.set(0, 1.05, 0.02);
   group.add(content);
   evolutionsContent = content;
+
+  // Back button (below the box)
+  const backBtn = makeAlchemyButton(group, '← BACK', { type: 'evolutions_back' }, 0, -1.28, {
+    w: 1.5, h: 0.32, color: 0xff4444, name: 'evolutions-btn-back',
+  });
+  backBtn.group && undefined; // (makeAlchemyButton adds itself)
+
+  buildEvolutionsRows();
+}
+
+// Build ONLY the visible window of rows (cropped to the box) + scrollbar.
+function buildEvolutionsRows() {
+  if (!evolutionsContent) return;
+  disposeGroupChildren(evolutionsContent);
 
   const evoEntries = Object.entries(WEAPON_EVOLUTIONS);
   const collectedMap = new Map(); // weaponId -> collected recipe ids (both hands)
@@ -3082,82 +3211,87 @@ function buildEvolutionsMenu() {
     totalMap.set(weaponId, progress.total);
   }
 
-  let rowY = 0;
-  for (const [weaponId, evo] of evoEntries) {
+  const visible = evoEntries.slice(evolutionsScrollRow, evolutionsScrollRow + EVO_ROWS_VISIBLE);
+  // Row Ys stack downward from the top of the content box
+  visible.forEach(([weaponId, evo], i) => {
+    const rowY = EVO_CONTENT_TOP - 0.14 - i * EVO_ROW_H;
     const collected = collectedMap.get(weaponId) || new Set();
     const total = totalMap.get(weaponId) || evo.recipe.length;
     const progressFrac = total > 0 ? collected.size / total : 0;
     const sigColor = '#' + (typeof evo.sigColor === 'number' ? evo.sigColor.toString(16).padStart(6, '0') : 'ffdd00');
 
-    // Row background
+    // Row background strip
     const rowBg = new THREE.Mesh(
-      new THREE.PlaneGeometry(4.2, EVOLUTIONS_ROW_H - 0.08),
+      new THREE.PlaneGeometry(3.85, EVO_ROW_H - 0.06),
       new THREE.MeshBasicMaterial({ color: 0x181a36, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
     );
     rowBg.renderOrder = 2;
     rowBg.position.set(0, rowY, 0.005);
-    content.add(rowBg);
+    evolutionsContent.add(rowBg);
 
-    // Evolution name + source weapon
-    const nameSprite = makeSprite(`${evo.name.toUpperCase()}`, {
-      fontSize: 32, color: sigColor, glow: true, glowColor: sigColor, scale: 0.24, depthTest: true, forceArial: true,
+    // LEFT-ALIGNED evolution name (glyph-sized) + source weapon beside it
+    const nameSprite = makeSizedText(`${evo.name.toUpperCase()}`, {
+      fontSize: 44, color: sigColor, glow: true, glowColor: sigColor,
+      glyphSize: 0.055, depthTest: true, forceArial: true,
     });
-    nameSprite.userData.text = evo.name.toUpperCase();
-    nameSprite.position.set(-1.7, rowY + 0.18, 0.02);
-    content.add(nameSprite);
+    // left-align: center the sprite so its LEFT edge sits at EVO_LEFT_X
+    nameSprite.position.set(EVO_LEFT_X + nameSprite.geometry.parameters.width / 2, rowY + 0.12, 0.02);
+    evolutionsContent.add(nameSprite);
 
-    const fromSprite = makeSprite(`from ${(evo.from || weaponId).toUpperCase()}`, {
-      fontSize: 22, color: '#8888aa', scale: 0.17, depthTest: true, forceArial: true,
+    const fromSprite = makeSizedText(`from ${(evo.from || weaponId).toUpperCase()}`, {
+      fontSize: 26, color: '#8899bb', glyphSize: 0.03, depthTest: true, forceArial: true,
     });
-    fromSprite.userData.text = `from ${(evo.from || weaponId).toUpperCase()}`;
-    fromSprite.position.set(-1.7, rowY - 0.05, 0.02);
-    content.add(fromSprite);
+    fromSprite.position.set(EVO_LEFT_X + fromSprite.geometry.parameters.width / 2, rowY - 0.05, 0.02);
+    evolutionsContent.add(fromSprite);
 
-    // Progress bar (background + fill)
-    const barW = 1.6;
+    // Progress bar + x/total on the right side of the row
+    const barW = 1.3;
+    const barX = 0.55;
     const barBg = new THREE.Mesh(
-      new THREE.PlaneGeometry(barW, 0.12),
+      new THREE.PlaneGeometry(barW, 0.13),
       new THREE.MeshBasicMaterial({ color: 0x222244, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
     );
     barBg.renderOrder = 2;
-    barBg.position.set(0.35, rowY + 0.18, 0.02);
-    content.add(barBg);
+    barBg.position.set(barX, rowY + 0.12, 0.02);
+    evolutionsContent.add(barBg);
     if (progressFrac > 0) {
       const fill = new THREE.Mesh(
-        new THREE.PlaneGeometry(Math.max(0.05, barW * progressFrac), 0.12),
+        new THREE.PlaneGeometry(Math.max(0.06, barW * progressFrac), 0.13),
         new THREE.MeshBasicMaterial({ color: evo.sigColor || 0xffdd00, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
       );
       fill.renderOrder = 3;
-      fill.position.set(0.35 - (barW / 2) + (barW * progressFrac) / 2, rowY + 0.18, 0.025);
-      content.add(fill);
+      fill.position.set(barX - (barW / 2) + (barW * progressFrac) / 2, rowY + 0.12, 0.025);
+      evolutionsContent.add(fill);
     }
-    const fracSprite = makeSprite(`${collected.size}/${total}`, {
-      fontSize: 22, color: progressFrac >= 1 ? '#88ff88' : '#cccccc', scale: 0.17, depthTest: true, forceArial: true,
+    const fracSprite = makeSizedText(`${collected.size}/${total}`, {
+      fontSize: 30, color: progressFrac >= 1 ? '#88ff88' : '#cccccc',
+      glyphSize: 0.042, depthTest: true, forceArial: true,
     });
-    fracSprite.userData.text = `${collected.size}/${total}`;
-    fracSprite.position.set(1.55, rowY + 0.18, 0.02);
-    content.add(fracSprite);
+    fracSprite.position.set(barX + barW / 2 + fracSprite.geometry.parameters.width / 2 + 0.1, rowY + 0.12, 0.02);
+    evolutionsContent.add(fracSprite);
 
-    // Recipe upgrades to watch for
+    // Recipe upgrades to watch for (left-aligned under the name)
     const recipeNames = evo.recipe.map(id => {
       const def = getUpgradeDef(id);
       const label = def ? def.name.toUpperCase() : id.toUpperCase();
       return collected.has(id) ? `✓ ${label}` : `○ ${label}`;
     }).join('  ·  ');
-    const recipeSprite = makeAlchemyLabelSprite(recipeNames, {
-      fontSize: 20, color: '#c0c0d8', textScale: 0.16, maxWidth: 380,
+    const recipeSprite = makeSizedText(recipeNames, {
+      fontSize: 26, color: '#c0c0d8', glyphSize: 0.032, depthTest: true, forceArial: true, maxWidth: 380,
     });
-    recipeSprite.position.set(0.35, rowY - 0.1, 0.02);
-    content.add(recipeSprite);
-
-    rowY -= EVOLUTIONS_ROW_H;
-  }
-
-  // Back button
-  const backBtn = makeAlchemyButton(group, '← BACK', { type: 'evolutions_back' }, 0, -1.02, {
-    w: 1.5, h: 0.3, color: 0xff4444, name: 'evolutions-btn-back',
+    recipeSprite.position.set(EVO_LEFT_X + recipeSprite.geometry.parameters.width / 2, rowY - 0.16, 0.02);
+    evolutionsContent.add(recipeSprite);
   });
-  backBtn.group && undefined; // (makeAlchemyButton adds itself)
+
+  // Scrollbar thumb position: fraction of the total scroll range
+  const maxRow = Math.max(0, evoEntries.length - EVO_ROWS_VISIBLE);
+  const frac = maxRow > 0 ? evolutionsScrollRow / maxRow : 0;
+  const boxH = EVO_CONTENT_TOP - EVO_CONTENT_BOTTOM;
+  const thumbH = Math.max(0.18, boxH * (EVO_ROWS_VISIBLE / evoEntries.length));
+  if (evolutionsScrollbarThumb) {
+    evolutionsScrollbarThumb.scale.y = thumbH;
+    evolutionsScrollbarThumb.position.y = EVO_CONTENT_BOTTOM + frac * (boxH - thumbH) + thumbH / 2;
+  }
 }
 
 // ── Card menu transitions (Issue #185/#143 UX) ─────────────
@@ -3323,6 +3457,7 @@ function rebuildAlchemyBench() {
     if (alchemyBenchGroup.parent) alchemyBenchGroup.parent.remove(alchemyBenchGroup);
     alchemyBenchGroup = null;
   }
+  _alchemyEssenceSquares = [];
   // A popup never survives a rebuild (dissolve/forge already closed it).
   hideAlchemyPopup();
 
@@ -3334,8 +3469,8 @@ function rebuildAlchemyBench() {
   alchemyBenchGroup = group;
 
   // Panel + border
-  const panelW = 5.4;
-  const panelH = 2.5;
+  const panelW = 5.8;
+  const panelH = 2.9;
   const bg = new THREE.Mesh(
     new THREE.PlaneGeometry(panelW, panelH),
     new THREE.MeshBasicMaterial({ color: 0x0f1026, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
@@ -3347,47 +3482,44 @@ function rebuildAlchemyBench() {
     new THREE.LineBasicMaterial({ color: 0xffaa00 })
   ));
 
-  // Header: title + essence counter
-  const header = makeSprite('ALCHEMY BENCH', {
-    fontSize: 44, color: '#ffaa00', glow: true, glowColor: '#ffaa00',
-    scale: 0.3, depthTest: true,
+  // Header: CENTERED title (player feedback) + essence counter text
+  const header = makeSizedText('ALCHEMY BENCH', {
+    fontSize: 56, color: '#ffaa00', glow: true, glowColor: '#ffaa00',
+    glyphSize: 0.085, depthTest: true,
   });
-  header.userData.text = 'ALCHEMY BENCH';
-  header.position.set(-1.35, 1.02, 0.02);
+  header.position.set(0, 1.24, 0.02);
   group.add(header);
 
   const essence = game.alchemyEssence || 0;
   const forged = game.alchemyForgedThisLevel;
   const essenceText = `ESSENCE: ${essence}/${ALCHEMY_FORGE_COST}${forged ? ' · FORGED' : ''}`;
-  const essenceSprite = makeSprite(essenceText, {
-    fontSize: 36, color: essence >= ALCHEMY_FORGE_COST ? '#ffdd00' : '#8888aa',
-    scale: 0.3, depthTest: true, forceArial: true,
+  const essenceSprite = makeSizedText(essenceText, {
+    fontSize: 32, color: essence >= ALCHEMY_FORGE_COST ? '#ffdd00' : '#8888aa',
+    glyphSize: 0.04, depthTest: true, forceArial: true,
   });
-  essenceSprite.userData.text = essenceText;
-  essenceSprite.position.set(1.5, 1.02, 0.02);
+  essenceSprite.position.set(0, 1.06, 0.02);
   group.add(essenceSprite);
 
-  // Column helper: title + descriptive line under it
+  // Column helper: heading + descriptive line under it (glyph-sized text)
   const addColumnHeader = (x, titleText, descText, color) => {
-    const t = makeSprite(titleText, {
-      fontSize: 32, color, scale: 0.28, depthTest: true, forceArial: true,
+    const t = makeSizedText(titleText, {
+      fontSize: 44, color, glow: true, glowColor: color,
+      glyphSize: 0.06, depthTest: true, forceArial: true,
     });
-    t.userData.text = titleText;
-    t.position.set(x, 0.72, 0.02);
+    t.position.set(x, 0.86, 0.02);
     group.add(t);
-    const d = makeAlchemyLabelSprite(descText, {
-      fontSize: 22, color: '#8a8aa8', textScale: 0.16, maxWidth: 300,
+    const d = makeSizedText(descText, {
+      fontSize: 26, color: '#a0a0c0', glyphSize: 0.036, depthTest: true, forceArial: true, maxWidth: 300,
     });
-    d.position.set(x, 0.44, 0.02);
+    d.position.set(x, 0.62, 0.02);
     group.add(d);
   };
 
   if (alchemyCategoryView) {
     // ── Targeted Infusion: category picker ──
-    const title = makeSprite('TARGETED INFUSION — PICK A CATEGORY', {
-      fontSize: 36, color: '#ffffff', scale: 0.3, depthTest: true, forceArial: true,
+    const title = makeSizedText('TARGETED INFUSION — PICK A CATEGORY', {
+      fontSize: 44, color: '#ffffff', glyphSize: 0.06, depthTest: true, forceArial: true,
     });
-    title.userData.text = 'TARGETED INFUSION — PICK A CATEGORY';
     title.position.set(0, 0.9, 0.02);
     group.add(title);
     const cats = Object.keys(ALCHEMY_CATEGORIES);
@@ -3395,37 +3527,40 @@ function rebuildAlchemyBench() {
     cats.forEach((cat, i) => {
       const col = i < 3 ? 0 : 1;
       const row = i < 3 ? i : i - 3;
-      const y = 0.4 - row * 0.3;
+      const y = 0.4 - row * 0.34;
       makeAlchemyButton(group, ALCHEMY_CATEGORIES[cat], {
         type: 'forge_preview', forgeType: 'targeted_infusion', category: cat,
-      }, colOffsets[col], y, { w: 1.7, h: 0.3, color: 0x88ccff, textColor: '#ffffff', textScale: 0.3, name: `alchemy-btn-cat-${cat}` });
+      }, colOffsets[col], y, { w: 1.7, h: 0.3, color: 0x88ccff, textColor: '#ffffff', glyphSize: 0.046, name: `alchemy-btn-cat-${cat}` });
     });
-    makeAlchemyButton(group, '← BACK', { type: 'back' }, 0, -0.98, {
-      w: 1.5, h: 0.3, color: 0xff4444, name: 'alchemy-btn-back',
+    makeAlchemyButton(group, '← BACK', { type: 'back' }, 0, -1.1, {
+      w: 1.5, h: 0.32, color: 0xff4444, name: 'alchemy-btn-back',
     });
     return;
   }
 
-  // ── Main bench: 3 columns — dissolve LEFT / FORGE / dissolve RIGHT ──
+  // ── Main bench: 3 columns — LEFT BLASTER / FORGE / RIGHT BLASTER ──
   const canForge = essence >= ALCHEMY_FORGE_COST && !forged;
-  const colX = { left: -1.95, center: 0, right: 1.95 };
-  const chipW = 1.75;
+  const colX = { left: -2.0, center: 0, right: 2.0 };
+  const chipW = 1.85;
 
-  addColumnHeader(colX.left, 'DISSOLVE LEFT BLASTER',
-    'Convert LEFT BLASTER upgrades into essence. Dissolved upgrades are destroyed.', '#00ffff');
-  addColumnHeader(colX.right, 'DISSOLVE RIGHT BLASTER',
-    'Convert RIGHT BLASTER upgrades into essence. Dissolved upgrades are destroyed.', '#00ffff');
-  addColumnHeader(colX.center, `FORGE — ${ALCHEMY_FORGE_COST} ESSENCE`,
-    'Spend essence to forge a new upgrade. Once per level.', '#ffdd00');
+  addColumnHeader(colX.left, 'LEFT BLASTER',
+    'Dissolve LEFT BLASTER upgrades into essence. Dissolved upgrades are destroyed.', '#00ffff');
+  addColumnHeader(colX.right, 'RIGHT BLASTER',
+    'Dissolve RIGHT BLASTER upgrades into essence. Dissolved upgrades are destroyed.', '#00ffff');
+  addColumnHeader(colX.center, 'FORGE',
+    `Spend ${ALCHEMY_FORGE_COST} essence to forge a new upgrade. Once per level.`, '#ffdd00');
 
-  // Dissolve chips per hand, one column each (no ⚠ warning, no hand prefix —
-  // the column header says which hand).
+  // Essence squares (magic shader) sit right under the FORGE heading
+  buildEssenceSquares(group, essence, colX.center, 0.34);
+
+  // Dissolve chips per hand, one column each (no hand prefix — the column
+  // heading says which hand).
   const buildDissolveColumn = (hand, x) => {
     const upgrades = getDissolvableUpgrades(game.upgrades[hand]);
-    let y = 0.1;
+    let y = 0.24;
     if (upgrades.length === 0) {
-      const none = makeSprite('NO UPGRADES', {
-        fontSize: 26, color: '#555566', scale: 0.24, depthTest: true, forceArial: true,
+      const none = makeSizedText('NO UPGRADES', {
+        fontSize: 30, color: '#555566', glyphSize: 0.04, depthTest: true, forceArial: true,
       });
       none.position.set(x, 0.1, 0.02);
       group.add(none);
@@ -3435,51 +3570,128 @@ function rebuildAlchemyBench() {
       const chipColor = typeof upg.color === 'string' ? parseInt(upg.color.replace('#', ''), 16) : 0x00ffff;
       makeAlchemyButton(group, `${upg.name} x${upg.stacks} (+${upg.essencePerStack} E)`, {
         type: 'dissolve_preview', hand, upgradeId: upg.id,
-      }, x, y, { w: chipW, h: 0.3, color: chipColor, textColor: '#ffffff', textScale: 0.28, name: `alchemy-btn-dissolve-${hand}-${upg.id}` });
-      y -= 0.28;
+      }, x, y, { w: chipW, h: 0.3, color: chipColor, textColor: '#ffffff', glyphSize: 0.04, name: `alchemy-btn-dissolve-${hand}-${upg.id}` });
+      y -= 0.34;
     });
   };
   buildDissolveColumn('left', colX.left);
   buildDissolveColumn('right', colX.right);
 
-  // Forge options in the center column. Targeted Infusion opens the category
-  // picker first (choose a category → preview → confirm); the others roll a
-  // preview immediately.
+  // Forge options in the center column — generously spaced so the wrapped
+  // labels never overlap (player feedback).
   const forgeOpts = [
     { label: 'MYSTERY BREW', forgeType: 'mystery_brew', color: 0xff66ff, desc: 'A random special upgrade.' },
     { label: 'TARGETED INFUSION', action: { type: 'targeted' }, color: 0x88ccff, desc: 'Pick a category to infuse.' },
     { label: 'WEAPON SYNTHESIS', forgeType: 'weapon_synthesis', color: 0x00ffaa, desc: "Your main weapon's own upgrades." },
     { label: 'DESPERATE MEASURE', forgeType: 'desperate_measure', color: 0xff8844, desc: 'An upgrade you do not own.' },
   ];
-  let forgeY = 0.1;
+  let forgeY = 0.12;
   for (const opt of forgeOpts) {
     const label = forged ? `${opt.label} (USED)` : opt.label;
     const action = opt.action || { type: 'forge_preview', forgeType: opt.forgeType };
     makeAlchemyButton(group, label, action,
-      0, forgeY, { w: 1.9, h: 0.3, color: opt.color, textColor: canForge ? '#ffffff' : '#555566', textScale: 0.28, disabled: !canForge, name: `alchemy-btn-forge-${opt.forgeType || 'targeted_infusion'}` });
-    forgeY -= 0.28;
+      0, forgeY, { w: 2.1, h: 0.3, color: opt.color, textColor: canForge ? '#ffffff' : '#555566', glyphSize: 0.042, disabled: !canForge, name: `alchemy-btn-forge-${opt.forgeType || 'targeted_infusion'}` });
+    forgeY -= 0.34;
   }
 
   // Warning line when the forge is locked
   if (!canForge) {
     const warnText = forged ? 'FORGING USED — 1 PER LEVEL' : `NEED ${ALCHEMY_FORGE_COST} ESSENCE — DISSOLVE TO EARN`;
-    const warn = makeSprite(warnText, {
-      fontSize: 28, color: '#ff8844', scale: 0.24, depthTest: true, forceArial: true,
+    const warn = makeSizedText(warnText, {
+      fontSize: 30, color: '#ff8844', glyphSize: 0.04, depthTest: true, forceArial: true,
     });
-    warn.userData.text = warnText;
-    warn.position.set(0, -0.55, 0.02);
+    warn.position.set(0, -0.62, 0.02);
     group.add(warn);
   }
 
-  makeAlchemyButton(group, '← BACK', { type: 'back' }, 0, -1.02, {
-    w: 1.5, h: 0.3, color: 0xff4444, name: 'alchemy-btn-back',
+  makeAlchemyButton(group, '← BACK', { type: 'back' }, 0, -1.22, {
+    w: 1.5, h: 0.32, color: 0xff4444, name: 'alchemy-btn-back',
   });
 }
 
-/**
- * Raycast the bench/post-select buttons. Returns the action payload or null.
- * Disabled buttons are excluded so a locked forge option never fires.
- */
+// ── Essence squares: 3 slots that fill with a magical animated shader ──
+// Empty = dark bordered square; filled = shimmering blue magic; all three
+// filled = the shader shifts GREEN. Animated per frame via updateAlchemyBench.
+let _alchemyEssenceSquares = [];
+
+function buildEssenceSquares(group, essence, x, y) {
+  const slot = 0.2;
+  const gap = 0.32;
+  const startX = x - gap;
+  for (let i = 0; i < ALCHEMY_FORGE_COST; i++) {
+    const sqX = startX + i * gap;
+    const active = essence > i;
+    const allFilled = essence >= ALCHEMY_FORGE_COST;
+    const mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      uniforms: {
+        uTime: { value: 0 },
+        uActive: { value: active ? 1 : 0 },
+        uAllFilled: { value: allFilled ? 1 : 0 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform float uActive;
+        uniform float uAllFilled;
+        varying vec2 vUv;
+        void main() {
+          vec2 p = vUv - 0.5;
+          float dist = length(p);
+          float r = 0.5;
+          if (dist > r) discard;
+          // Empty slot: dark glass
+          vec3 emptyCol = vec3(0.07, 0.08, 0.16);
+          // Filled: magical shimmer — swirling light + pulsing edge
+          float swirl = 0.5 + 0.5 * sin(atan(p.y, p.x) * 3.0 + uTime * 2.2 - dist * 8.0);
+          float pulse = 0.7 + 0.3 * sin(uTime * 3.0 + dist * 12.0);
+          vec3 blue = vec3(0.2, 0.55, 1.0);
+          vec3 green = vec3(0.25, 1.0, 0.55);
+          vec3 magicCol = mix(blue, green, uAllFilled);
+          float glow = (0.55 + 0.45 * swirl) * pulse;
+          float edge = smoothstep(r, r - 0.08, dist);
+          vec3 col = emptyCol + magicCol * glow * edge * uActive;
+          float alpha = 0.25 + 0.75 * uActive;
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
+    });
+    const sq = new THREE.Mesh(new THREE.PlaneGeometry(slot, slot), mat);
+    sq.renderOrder = 3;
+    sq.position.set(sqX, y, 0.025);
+    group.add(sq);
+    // Fancy border
+    const border = new THREE.LineSegments(
+      new THREE.EdgesGeometry(sq.geometry),
+      new THREE.LineBasicMaterial({ color: active ? (allFilled ? 0x44ff88 : 0x44aaff) : 0x444466, transparent: true, opacity: 0.9 })
+    );
+    border.renderOrder = 3;
+    border.position.set(sqX, y, 0.03);
+    group.add(border);
+    _alchemyEssenceSquares.push({ mesh: sq, border, active, allFilled });
+  }
+}
+
+// Animate the essence squares' magic shader (called from updateUpgradeCards).
+function updateAlchemyBench(now) {
+  if (_alchemyEssenceSquares.length === 0) return;
+  const t = now * 0.001;
+  for (const sq of _alchemyEssenceSquares) {
+    if (sq.mesh.material.uniforms) {
+      sq.mesh.material.uniforms.uTime.value = t;
+    }
+  }
+}
+
+
 export function getAlchemyBenchHit(raycaster) {
   if (!raycaster) return null;
   const targets = [];
@@ -5772,6 +5984,7 @@ export function updateHUDHover(raycasters) {
     if (titleDiagBtn) hoverables.push(titleDiagBtn);
     if (titleSettingsBtn) hoverables.push(titleSettingsBtn);
     if (titleBestiaryBtn) hoverables.push(titleBestiaryBtn);
+    if (titleTrainingBtn) hoverables.push(titleTrainingBtn);
   }
 
   // 2. Upgrade Cards

@@ -118,7 +118,42 @@ A marathon session — every commit below is verified with its own puppeteer sui
       spawn 5× drone→Twin Helix kills them→Maw boss spawns→invincible→exit;
       12 regression suites green; deploy-sim green.
 
-0d. **`193b478` — big UX batch (player feedback round 3)**:
+0d. **`<<NEXT>>` — round-4 feedback batch** (training ground + menus):
+    - **Tiny-text cured systemically**: new `makeSizedText` (hud.js) sizes
+      sprites by GLYPH size (sprite height × fontSize/canvasHeight) instead of
+      sprite height — applied to training menu buttons/labels, evolutions rows,
+      alchemy headings/descriptions/buttons, essence counter, bestiary. All
+      the old 0.03-glyph text is now 0.045–0.06.
+    - **Training Ground**: HTML logo/version overlay hidden on entry; menu
+      renderOrder 1000+ (above the floor HUD's 999); the "you are invincible"
+      hint is a WORLD-SPACE sign out on the field (never camera-pinned);
+      holodeck floor got the synthwave pulsing-grid shader (pink↔blue breathe +
+      outward ripple + distance fade); WAVE QUEUE system — enemy/boss buttons
+      add to a pending wave (counts shown), GO releases bosses immediately and
+      trickles enemies out in batches of 3 every 1.2s like a real level.
+    - **Evolutions menu redesign**: pop in/out animation (easeOutBack scale);
+      content now sits in a CROPPED box between the title and BACK with a
+      scroll bar + thumb (row-window rendering, 3 rows visible); left-aligned
+      rows, tightened spacing, glyph-sized fonts.
+    - **Alchemy bench**: centered "ALCHEMY BENCH" title; headings LEFT
+      BLASTER / FORGE / RIGHT BLASTER; essence is now THREE bordered squares
+      that fill with an animated blue magic shader (swirl + pulse), shifting
+      GREEN when all three are filled; forge buttons re-spaced (no overlap);
+      headings/descriptions glyph-sized.
+    - **Title TRAINING button**: same size as SCOREBOARD (1.0×0.25), moved
+      below the button row (no overlap), added to the hoverables so it
+      scales/glows like every other button.
+    - **Bestiary**: entries now arc AROUND the player (curved-monitor wrap,
+      cards rotate to face you), bosses get generous angular spacing (no
+      overlap), descriptions widened (maxWidth 470) and TOP-ALIGNED below the
+      level badge (the old centered desc overlapped the level text); backdrop
+      panel moved behind the arc.
+    - **Void-mark prompt**: camera-pinned floating message REMOVED — each mark
+      carries world-space labels ("VOID MARK — <offer>" + "TRIGGER: INHERIT ·
+      NUKE: PURGE") shown when in range, readable where the ghost died.
+    - Regression: 10 suites green; deploy-sim green.
+
+0e. **`193b478` — big UX batch (player feedback round 3)**:
     - **Hover preview 2-row layout**: the 3 side-by-side columns overlapped on
       long labels (FIRE RATE: over 9/s). Each stat is now a heading line with an
       indented bold value + colored delta below it. SHOTS → PROJECTILES.

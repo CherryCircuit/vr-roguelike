@@ -3115,10 +3115,12 @@ function handleTitleTrigger(controller) {
   if (btnHit === 'training') {
     playMenuClick();
     hideTitle();
+    // Hide the HTML logo/version overlay (startGame does this for runs)
+    const noVr = document.getElementById('no-vr');
+    const info = document.getElementById('info');
+    if (noVr) noVr.style.display = 'none';
+    if (info) info.style.display = 'none';
     startTraining();
-    showFloatingMessage('TRAINING GROUND — YOU ARE INVINCIBLE · THUMBSTICK CLICK OR T FOR THE TRAINING MENU', {
-      duration: 6000, color: '#00ff88', glowColor: '#00ff88', fontSize: 30, scale: 0.22, offsetY: 0.3,
-    });
     return;
   }
   playMenuClick();
@@ -3169,10 +3171,12 @@ function handleDesktopTitleClick() {
   if (btnHit === 'training') {
     playMenuClick();
     hideTitle();
+    // Hide the HTML logo/version overlay (startGame does this for runs)
+    const noVr = document.getElementById('no-vr');
+    const info = document.getElementById('info');
+    if (noVr) noVr.style.display = 'none';
+    if (info) info.style.display = 'none';
     startTraining();
-    showFloatingMessage('TRAINING GROUND — YOU ARE INVINCIBLE · THUMBSTICK CLICK OR T FOR THE TRAINING MENU', {
-      duration: 6000, color: '#00ff88', glowColor: '#00ff88', fontSize: 30, scale: 0.22, offsetY: 0.3,
-    });
     return;
   }
   playMenuClick();
@@ -6052,7 +6056,7 @@ function render(timestamp) {
     // Training Ground: menu scroll (thumbstick), hover, and menu pulse
     if (isTrainingActive()) {
       updateTrainingScrollInput(now);
-      updateTrainingMenu(now);
+      updateTrainingMenu(now, dt);
       if (isTrainingMenuOpen()) {
         const hoverRC = getAimRaycaster();
         if (hoverRC) updateTrainingHover(hoverRC);
