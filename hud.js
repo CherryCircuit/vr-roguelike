@@ -276,6 +276,7 @@ let titleBlinkSprite = null;
 let titleScoreboardBtn = null;
 let titleSettingsBtn = null;
 let titleBestiaryBtn = null;
+let titleTrainingBtn = null;
 let bestiaryBackBtn = null;
 
 const bestiaryGroup = new THREE.Group();
@@ -1148,6 +1149,28 @@ async function createTitleScreen() {
   bestiaryBtnGrp.add(bestiaryBtnText);
   titleGroup.add(bestiaryBtnGrp);
   titleBestiaryBtn = bestiaryBtnMesh;
+
+  // Training Ground button — sits between the blink text and the button row
+  const trainingBtnGrp = new THREE.Group();
+  trainingBtnGrp.position.set(0, -0.4, 0);
+  trainingBtnGrp.name = 'trainingBtnGroup';
+  const trainingBtnGeo = new THREE.PlaneGeometry(1.9, 0.3);
+  const trainingBtnMat = new THREE.MeshBasicMaterial({ color: 0x003322, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+  const trainingBtnMesh = new THREE.Mesh(trainingBtnGeo, trainingBtnMat);
+  trainingBtnMesh.userData.isTitleTrainingBtn = true;
+  trainingBtnMesh.userData.borderColor = 0x00ff88;
+  trainingBtnGrp.add(trainingBtnMesh);
+  trainingBtnGrp.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(trainingBtnGeo),
+    new THREE.LineBasicMaterial({ color: 0x00ff88 })
+  ));
+  const trainingBtnText = makeSprite('TRAINING GROUND', {
+    fontSize: 42, color: '#00ff88', glow: true, glowColor: '#00ff88', scale: 0.26,
+  });
+  trainingBtnText.position.set(0, 0, 0.02);
+  trainingBtnGrp.add(trainingBtnText);
+  titleGroup.add(trainingBtnGrp);
+  titleTrainingBtn = trainingBtnMesh;
 }
 
 export function showTitle() {
@@ -4050,6 +4073,12 @@ export function getTitleButtonHit(raycaster) {
     if (hits.length > 0) return 'bestiary';
   }
 
+  // Check training ground button
+  if (titleTrainingBtn) {
+    const hits = raycaster.intersectObject(titleTrainingBtn, false);
+    if (hits.length > 0) return 'training';
+  }
+
   return null;
 }
 
@@ -5908,6 +5937,7 @@ export function updateHUDHover(raycasters) {
                        (obj.userData.isTitleScoreboardBtn ? 'scoreboard' : null) ||
                        (obj.userData.isTitleSettingsBtn ? 'settings' : null) ||
                        (obj.userData.isTitleBestiaryBtn ? 'bestiary' : null) ||
+                       (obj.userData.isTitleTrainingBtn ? 'training' : null) ||
                        (obj.userData.isKeyboardKey ? obj.userData.keyValue : null) ||
                        (obj.userData.alchemyAction ? 'alchemy' : null);
         if (action) {

@@ -91,7 +91,34 @@ A marathon session — every commit below is verified with its own puppeteer sui
       to the card border LineSegments + EVO bar/text anyway (cheap, matches the
       repo's past culling fixes 18e2b14/e7389bd).
 
-0c. **`<<NEXT>>` — big UX batch (player feedback round 3)**:
+0c. **`<<NEXT>>` — Training Ground** (the "holodeck", replaces the dev sandbox):
+    - **TRAINING GROUND button on the title screen** (between the blink text
+      and the button row) — a full player-facing practice arena, not a dev
+      tool. The old O-key/debug-panel sandbox was removed.
+    - **Holodeck arena**: while training is active the biome is swapped for an
+      endless grid room — a 400m glowing grid floor + faint grid dome walls +
+      center glow, dark backdrop (Star-Trek-holodeck look). Restored on exit.
+    - **Reuses the entire combat loop**: `game.trainingMode = true` keeps state
+      PLAYING; enemies/bosses/projectiles/evolutions all behave normally. The
+      player is INVINCIBLE (`damagePlayer` early-returns; health bar never
+      drops). No auto waves, no kill-target level complete, no boss-death
+      cinematic (bosses clear cleanly), so the arena never advances.
+    - **Training menu** (thumbstick-click / T / pause-button-free toggle):
+      COMBAT view — 13 enemy types (scrollable list via thumbstick/wheel),
+      8 bosses, a WAVE SIZE stepper (+5/+1/-1/-5, 1–30) that the enemy
+      buttons spawn, CLEAR ENEMIES / LOADOUT → / EXIT. LOADOUT view — every
+      upgrade (both hands; weapon-specifics to their hand) + all six
+      EVOLUTIONS (applied to both hands) + RESET LOADOUT. Menu is modal while
+      open (no firing), buttons hover-highlight, spawns appear 9–16m ahead.
+    - **Training config**: hpMultiplier ×3 (~level-9 meat) so enemies/bosses
+      survive long enough to test damage output; killTarget 9999.
+    - Wired: VR trigger, desktop click, thumbstick Y scroll, wheel, T key;
+      exit restores the biome + resetGame to title. New module
+      `training-ground.js` (initX pattern). Verified live: title→holodeck→
+      spawn 5× drone→Twin Helix kills them→Maw boss spawns→invincible→exit;
+      12 regression suites green; deploy-sim green.
+
+0d. **`193b478` — big UX batch (player feedback round 3)**:
     - **Hover preview 2-row layout**: the 3 side-by-side columns overlapped on
       long labels (FIRE RATE: over 9/s). Each stat is now a heading line with an
       indented bold value + colored delta below it. SHOTS → PROJECTILES.

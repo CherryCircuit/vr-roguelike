@@ -125,13 +125,6 @@ function installDevPanel() {
     });
   }
 
-  const sandboxBtn = document.getElementById('debug-sandbox');
-  if (sandboxBtn) {
-    sandboxBtn.addEventListener('click', () => {
-      invokeRuntimeAction('toggleSandbox');
-    });
-  }
-
   if (seedInput) {
     seedInput.addEventListener('change', function onSeedChange() {
       const value = this.value.trim();

@@ -21,7 +21,7 @@ import { getRandomUpgrades, getRandomSpecialUpgrades, getUpgradeDef, getWeaponSt
 import {
   playShoothSound, playHitSound, playExplosionSound, playDamageSound, playNukeExplosionSound,
   playFastEnemySpawn, playSwarmEnemySpawn, playBasicEnemySpawn, playTankEnemySpawn, playMortarEnemySpawn,
-  playBossSpawn, playBossAlertSound, playMenuClick, playErrorSound, playBuckshotSound,
+  playBossSpawn, playBossAlertSound, playMenuClick, playMenuHoverSound, playErrorSound, playBuckshotSound,
   playUpgradeSound,
   playSlowMoSound, playSlowMoReverseSound, playComboSound,
   startLightningSound, stopLightningSound, pauseLightningSound,
@@ -226,6 +226,13 @@ import {
   initVoidMarks, recordVoidMark, spawnLevelVoidMarks, updateVoidMarks,
   tryVoidMarkInherit, tryVoidMarkPurge, isVoidMarkInRange,
 } from './void-marks.js';
+
+import {
+  initTrainingGround, startTraining, exitTraining, isTrainingActive,
+  isTrainingMenuOpen, toggleTrainingMenu, getTrainingMenuHit,
+  updateTrainingHover, updateTrainingMenu, updateTrainingScrollInput,
+  scrollTrainingMenus, handleTrainingAction,
+} from './training-ground.js';
 
 import {
   initDesktopControls, update as updateDesktopControls, getWeaponState,
@@ -990,7 +997,7 @@ function handleEnemyKilled(enemyIndex, opts = {}) {
   }
 
   // Level complete check
-  if (!skipLevelComplete && countsForLevelProgress) {
+  if (!skipLevelComplete && countsForLevelProgress && !game.trainingMode) {
     const cfg = game._levelConfig;
     if (cfg && !cfg.isBoss && game.kills >= cfg.killTarget) {
       completeLevel();
@@ -1778,24 +1785,31 @@ function init() {
   createEnvironment();
   setupControllers();
 
-  // Desktop wheel scrolls the EVOLUTIONS menu (Issue #143 redesign). Only
-  // active while that menu is open, so it never fights the desktop-controls
-  // wheel-to-switch-weapon handler during PLAYING.
+  // Desktop wheel scrolls the EVOLUTIONS menu (Issue #143 redesign) and the
+  // Training Ground menu lists. Only active while one of those is open, so it
+  // never fights the desktop-controls wheel-to-switch-weapon handler.
   window.addEventListener('wheel', (e) => {
-    if (!isEvolutionsOpen()) return;
-    e.preventDefault();
-    updateEvolutionsScroll(e.deltaY > 0 ? 1 : -1);
+    if (isEvolutionsOpen()) {
+      e.preventDefault();
+      updateEvolutionsScroll(e.deltaY > 0 ? 1 : -1);
+      return;
+    }
+    if (isTrainingActive() && isTrainingMenuOpen()) {
+      e.preventDefault();
+      scrollTrainingMenus(e.deltaY > 0 ? 1 : -1);
+      return;
+    }
   }, { passive: false });
 
-  // Dev-only: O toggles the debug sandbox menu (spawn enemies/bosses/upgrades)
-  if (devRuntimeEnabled) {
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'o' || e.key === 'O') {
-        if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
-        toggleSandbox();
-      }
-    });
-  }
+  // T toggles the Training Ground menu (desktop). Works on the live launcher
+  // too — the training ground is a player feature, not a dev tool.
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 't' || e.key === 'T') {
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      if (isTrainingActive()) toggleTrainingMenu();
+    }
+  });
+
 
   // Init boss death cinematic module with dependencies
   initBossDeathCinematic({    scene,
@@ -1944,11 +1958,11 @@ function init() {
       settingsTrigger: handleSettingsTrigger,
       titleTrigger: handleTitleTrigger,
       playingTrigger: (controller, index) => {
-        // Debug sandbox intercept (dev-only spawn/review menu)
-        if (isSandboxOpen()) {
+        // Training Ground: the training menu consumes triggers while open
+        if (isTrainingActive() && isTrainingMenuOpen()) {
           const rc = getAimRaycaster();
-          const hit = rc ? getSandboxHit(rc) : null;
-          if (hit) handleSandboxAction(hit);
+          const hit = rc ? getTrainingMenuHit(rc) : null;
+          if (hit) handleTrainingAction(hit);
           return;
         }
         // Issue #139: a trigger near a Void Mark INHERITS from the ghost run
@@ -2094,6 +2108,27 @@ function init() {
     playInheritSound,
     playPurgeSound,
   });
+
+  // Training Ground: main-menu practice arena ("the holodeck")
+  initTrainingGround({
+    scene,
+    camera,
+    renderer,
+    spawnEnemy,
+    spawnBoss,
+    clearAllEnemies,
+    showBossHealthBar,
+    playMenuClick,
+    playMenuHoverSound,
+    clearBiomeScene,
+    applyThemeForLevel,
+    recomputeSynergies,
+    getLevelConfig,
+    exitToTitle: () => {
+      resetGame();
+      showTitle();
+    },
+  });
   initHUD(camera, scene);
   initWristHolograms();
   // Evolved weapon systems (Issue #143): deps needed by the update loops
@@ -2200,7 +2235,6 @@ function init() {
 
   registerRuntimeAction('setFpsVisible', (visible) => setFPSVisible(visible === true));
   registerRuntimeAction('cycleBiomeWithFade', () => cycleDebugBiomeWithFade());
-  registerRuntimeAction('toggleSandbox', () => toggleSandbox());
 
   // Dev/test automation surfaces stay out of the live launcher.
   if (devRuntimeEnabled && runtimeConfig.dev.testAPI && typeof window !== 'undefined') {
@@ -2514,6 +2548,14 @@ function updateVRPauseButton(now) {
   if (!pausePressedThisFrame) return;
   if (now - lastVRPauseToggleTime < VR_PAUSE_DEBOUNCE_MS) return;
 
+  // Training Ground: the thumbstick click opens/closes the training menu
+  // instead of pausing (the menu is the training HUD).
+  if (isTrainingActive() && game.state === State.PLAYING) {
+    lastVRPauseToggleTime = now;
+    toggleTrainingMenu();
+    return;
+  }
+
   if (game.state === State.PLAYING || game.state === State.PAUSED) {
     lastVRPauseToggleTime = now;
     togglePause();
@@ -2575,6 +2617,13 @@ function setupControllers() {
   document.addEventListener('mousedown', (e) => {
     if (!isDesktopEnabled() || e.button !== 0) return;
     if (e.target && e.target.closest && (e.target.closest('#debug-panel') || e.target.closest('#debug-toggle'))) {
+      return;
+    }
+    // Training Ground: while the menu is open, clicks interact with it
+    if (isTrainingActive() && isTrainingMenuOpen()) {
+      const rc = getAimRaycaster();
+      const hit = rc ? getTrainingMenuHit(rc) : null;
+      if (hit) handleTrainingAction(hit);
       return;
     }
     routeDesktopClick();
@@ -3028,7 +3077,7 @@ function handleTitleTrigger(controller) {
   if (!btnHit) {
     const idx = getControllerIndex(controller);
     const hover = getHoveredAction(idx >= 0 ? `controller-${idx}` : 'controller');
-    if (hover && (hover.action === 'scoreboard' || hover.action === 'settings' || hover.action === 'diagnostics' || hover.action === 'bestiary')) btnHit = hover.action;
+    if (hover && (hover.action === 'scoreboard' || hover.action === 'settings' || hover.action === 'diagnostics' || hover.action === 'bestiary' || hover.action === 'training')) btnHit = hover.action;
   }
   // Check if bestiary is open
   if (isBestiaryVisible()) {
@@ -3063,6 +3112,15 @@ function handleTitleTrigger(controller) {
     showBestiary(new THREE.Vector3(0, 1.6, 0));
     return;
   }
+  if (btnHit === 'training') {
+    playMenuClick();
+    hideTitle();
+    startTraining();
+    showFloatingMessage('TRAINING GROUND — YOU ARE INVINCIBLE · THUMBSTICK CLICK OR T FOR THE TRAINING MENU', {
+      duration: 6000, color: '#00ff88', glowColor: '#00ff88', fontSize: 30, scale: 0.22, offsetY: 0.3,
+    });
+    return;
+  }
   playMenuClick();
   startGame();
 }
@@ -3084,7 +3142,7 @@ function handleDesktopTitleClick() {
   let btnHit = getTitleButtonHit(raycaster);
   if (!btnHit) {
     const hover = getHoveredAction('desktop');
-    if (hover && (hover.action === 'scoreboard' || hover.action === 'settings' || hover.action === 'diagnostics' || hover.action === 'bestiary')) btnHit = hover.action;
+    if (hover && (hover.action === 'scoreboard' || hover.action === 'settings' || hover.action === 'diagnostics' || hover.action === 'bestiary' || hover.action === 'training')) btnHit = hover.action;
   }
   if (btnHit === 'scoreboard') {
     playMenuClick();
@@ -3106,6 +3164,15 @@ function handleDesktopTitleClick() {
     playMenuClick();
     hideTitle();
     showBestiary(new THREE.Vector3(0, 1.6, 0));
+    return;
+  }
+  if (btnHit === 'training') {
+    playMenuClick();
+    hideTitle();
+    startTraining();
+    showFloatingMessage('TRAINING GROUND — YOU ARE INVINCIBLE · THUMBSTICK CLICK OR T FOR THE TRAINING MENU', {
+      duration: 6000, color: '#00ff88', glowColor: '#00ff88', fontSize: 30, scale: 0.22, offsetY: 0.3,
+    });
     return;
   }
   playMenuClick();
@@ -3318,22 +3385,6 @@ function handleDesktopCountrySelectClick() {
   }
 }
 
-// Raycast the debug sandbox menu buttons (dev-only; no-op when closed).
-function getSandboxHit(raycaster) {
-  if (!sandboxOpen || !sandboxGroup || !raycaster) return null;
-  const targets = [];
-  sandboxGroup.traverse(c => {
-    if (c.userData && c.userData.alchemyAction) targets.push(c);
-  });
-  if (targets.length === 0) return null;
-  const hits = raycaster.intersectObjects(targets, false);
-  for (const hit of hits) {
-    const action = hit.object.userData.alchemyAction;
-    if (action) return action;
-  }
-  return null;
-}
-
 function handleDesktopUpgradeSelectClick() {
   if (upgradeSelectionCooldown > 0) return;
   // Issue #143: no card selection during the evolution cinematic
@@ -3342,13 +3393,6 @@ function handleDesktopUpgradeSelectClick() {
   const raycaster = getAimRaycaster();
   if (!raycaster) return;
   raycaster._hudSourceKey = 'desktop';
-
-  // Debug sandbox takes priority while open (spawn/review menu)
-  const sandboxHit = getSandboxHit(raycaster);
-  if (sandboxHit) {
-    handleSandboxAction(sandboxHit);
-    return;
-  }
 
   // Issue #185: bench/post-bar priority, mirroring the VR trigger path
   const benchHit = getAlchemyBenchHit(raycaster);
@@ -3985,6 +4029,15 @@ function resetAllSlowMoState() {
 // [CORE] Complete current level, show upgrade/victory
 function completeLevel() {
   if (isBossDeathCinematicActive()) return;
+  // Training Ground: bosses/enemies are sparring partners — killing them
+  // never advances the level or leaves the holodeck.
+  if (game.trainingMode) {
+    hideKillsAlert();
+    clearBoss();
+    clearBossProjectiles();
+    game.kills = 0;
+    return;
+  }
 
   _log(`[game] Level ${game.level} complete`);
 
@@ -4707,155 +4760,6 @@ registerResetHook(() => {
     if (core) core.scale.setScalar(1);
   }
 });
-
-// ── DEBUG SANDBOX (dev-only spawn/eval menu) ───────────────
-// A 3D menu (dev.html only) letting the player spawn any enemy/boss and add
-// any upgrade from inside the game — desktop AND VR — so new content can be
-// reviewed in-headset. Toggled from the debug panel or the O key. Buttons
-// ride userData.alchemyAction so the existing hover/trigger plumbing works.
-
-let sandboxGroup = null;
-let sandboxOpen = false;
-
-const SANDBOX_ENEMIES = [
-  ['basic', 'DRONE'], ['fast', 'SNEAK'], ['tank', 'SENTINEL'], ['swarm', 'DART'],
-  ['spiral_swimmer', 'SPIRAL'], ['jelly', 'STACK'], ['conductor', 'COMMANDER'], ['mortar', 'MORTAR'],
-  ['bombardier', 'BOMBARDIER'], ['void_anchor', 'VOID ANCHOR'], ['void_tendril', 'VOID TENDRIL'],
-  ['echo_phantom', 'ECHO PHANTOM'], ['leech', 'LEECH'],
-];
-
-const SANDBOX_BOSSES = [
-  ['skull_boss', 'NECRO'], ['the_maw', 'THE MAW'], ['the_prism', 'THE PRISM'],
-  ['mirror_gauntlet', 'MIRROR GAUNTLET'], ['neon_minotaur', 'BLOOD MINOTAUR'],
-  ['conductor_ascendant', 'CONDUCTOR'], ['the_masquerade', 'MASQUERADE'],
-  ['eclipse_engine', 'ECLIPSE ENGINE'],
-];
-
-function isSandboxOpen() {
-  return sandboxOpen;
-}
-
-function toggleSandbox() {
-  if (sandboxOpen) hideSandbox(); else showSandbox();
-}
-
-function showSandbox() {
-  if (sandboxOpen) return;
-  sandboxOpen = true;
-  if (!sandboxGroup) buildSandboxMenu();
-  sandboxGroup.visible = true;
-  _log('[sandbox] open');
-}
-
-function hideSandbox() {
-  sandboxOpen = false;
-  if (sandboxGroup) sandboxGroup.visible = false;
-}
-
-function buildSandboxMenu() {
-  const group = new THREE.Group();
-  group.name = 'sandbox-menu';
-  group.position.set(0, 1.55, -2.6);
-  scene.add(group);
-  sandboxGroup = group;
-
-  const panelW = 6.2, panelH = 3.4;
-  const bg = new THREE.Mesh(
-    new THREE.PlaneGeometry(panelW, panelH),
-    new THREE.MeshBasicMaterial({ color: 0x0a1028, transparent: true, opacity: 0.94, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
-  );
-  bg.renderOrder = 1;
-  group.add(bg);
-  group.add(new THREE.LineSegments(new THREE.EdgesGeometry(bg.geometry), new THREE.LineBasicMaterial({ color: 0x00ff88 })));
-
-  const title = makeSandboxLabel('SANDBOX — SPAWN & EVALUATE (DEV)', 36, '#00ff88');
-  title.position.set(0, 1.5, 0.02);
-  group.add(title);
-
-  const cols = [
-    { x: -2.1, title: 'ENEMIES', color: 0xff6644, items: SANDBOX_ENEMIES, kind: 'enemy' },
-    { x: 0, title: 'BOSSES', color: 0xff44ff, items: SANDBOX_BOSSES, kind: 'boss' },
-    { x: 2.1, title: 'UPGRADES', color: 0x44ffaa, items: null, kind: 'upgrade' },
-  ];
-
-  cols.forEach(col => {
-    const t = makeSandboxLabel(col.title, 30, '#' + col.color.toString(16).padStart(6, '0'));
-    t.position.set(col.x, 1.28, 0.02);
-    group.add(t);
-    let y = 1.02;
-    if (col.items) {
-      col.items.forEach(([id, label]) => {
-        makeSandboxButton(group, label, { type: 'sandbox', kind: col.kind, id }, col.x, y, col.color);
-        y -= 0.15;
-      });
-    } else {
-      // Upgrades: all pool upgrades (universal + weapon_specific + specials)
-      const allUpgrades = [...UPGRADE_POOL, ...SPECIAL_UPGRADE_POOL];
-      allUpgrades.slice(0, 22).forEach(u => {
-        makeSandboxButton(group, u.name.toUpperCase(), { type: 'sandbox', kind: 'upgrade', id: u.id }, col.x, y, col.color);
-        y -= 0.15;
-      });
-    }
-  });
-
-  makeSandboxButton(group, 'CLOSE', { type: 'sandbox_close' }, 0, -1.55, 0xff4444, 1.4);
-}
-
-function makeSandboxLabel(text, fontSize, color) {
-  return makeSprite(text, { fontSize, color, scale: 0.28, depthTest: true, forceArial: true });
-}
-
-function makeSandboxButton(parent, label, action, x, y, color, w) {
-  const width = w || 1.9;
-  const group = new THREE.Group();
-  group.position.set(x, y, 0.02);
-  parent.add(group);
-  const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(width, 0.13),
-    new THREE.MeshBasicMaterial({ color: 0x111133, transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
-  );
-  face.renderOrder = 2;
-  face.userData.alchemyAction = action;
-  face.userData.borderColor = color;
-  group.add(face);
-  const sprite = makeSprite(label, { fontSize: 22, color: '#ffffff', scale: 0.16, depthTest: true, forceArial: true, maxWidth: Math.floor(width * 130) });
-  sprite.position.set(0, 0, 0.03);
-  group.add(sprite);
-}
-
-// Execute a sandbox action: spawn an enemy/boss or add an upgrade.
-function handleSandboxAction(action) {
-  if (!action) return;
-  if (action.type === 'sandbox_close') { playMenuClick(); hideSandbox(); return; }
-  if (action.type !== 'sandbox') return;
-  playMenuClick();
-
-  const spawnPos = getSandboxSpawnPosition();
-  if (action.kind === 'enemy') {
-    const cfg = game._levelConfig || getLevelConfig();
-    const e = spawnEnemy(action.id, spawnPos, cfg);
-    _log(`[sandbox] spawned enemy ${action.id}: ${e ? 'ok' : 'FAILED'}`);
-  } else if (action.kind === 'boss') {
-    const boss = spawnBoss(action.id, game._levelConfig || getLevelConfig());
-    if (boss) {
-      showBossHealthBar(boss);
-      playBossSpawn();
-    }
-    _log(`[sandbox] spawned boss ${action.id}: ${boss ? 'ok' : 'FAILED'}`);
-  } else if (action.kind === 'upgrade') {
-    const hand = getNextUpgradeHand ? getNextUpgradeHand() : 'left';
-    addUpgrade(action.id, hand);
-    recomputeSynergies();
-    _log(`[sandbox] added upgrade ${action.id} → ${hand}`);
-  }
-}
-
-// Spawn point ~9m in front of the camera at eye level.
-function getSandboxSpawnPosition() {
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  return camera.position.clone().addScaledVector(dir, 9);
-}
 
 // ── ALCHEMY BENCH (Issue #185) ─────────────────────────────
 // The bench is reached from the ALCHEMY button on the card screen (the old
@@ -5889,6 +5793,8 @@ function selectUpgrade(controller, index = -1) {
 // [CORE] Spawn enemy wave based on level config
 function spawnEnemyWave(dt) {
   if (game.state !== State.PLAYING) return;
+  // Training Ground: no automatic waves — the player spawns what they want
+  if (game.trainingMode) return;
 
   const cfg = game._levelConfig;
   if (!cfg) return;
@@ -6139,9 +6045,19 @@ function render(timestamp) {
   }
 
   // ── Playing ──
-  else if (st === State.PLAYING) {
+   else if (st === State.PLAYING) {
     // Track time played
     game.runStats.timePlayed += rawDt;
+
+    // Training Ground: menu scroll (thumbstick), hover, and menu pulse
+    if (isTrainingActive()) {
+      updateTrainingScrollInput(now);
+      updateTrainingMenu(now);
+      if (isTrainingMenuOpen()) {
+        const hoverRC = getAimRaycaster();
+        if (hoverRC) updateTrainingHover(hoverRC);
+      }
+    }
 
     // Update kills remaining alert (auto-hide after timeout)
     updateKillsAlert(now);
@@ -6274,9 +6190,17 @@ function render(timestamp) {
 
     // Desktop controls firing (keyboard/mouse)
     if (isDesktopEnabled()) {
-      const desktopWeapon = getWeaponState();
+      // Training Ground: the menu is modal — no firing while it's open
+      if (isTrainingActive() && isTrainingMenuOpen()) {
+        // keep charge state clean
+        for (let i = 0; i < 2; i++) {
+          chargeShotStartTime[i] = null;
+          clearLightningBeam(i);
+        }
+      } else {
+        const desktopWeapon = getWeaponState();
 
-      if (desktopWeapon.triggerPressed) {
+        if (desktopWeapon.triggerPressed) {
         // Handle fire mode: left, right, or both
         if (desktopWeapon.fireMode === 'left' || desktopWeapon.fireMode === 'both') {
           const virtualController = getVirtualController('left');
@@ -6479,6 +6403,7 @@ function render(timestamp) {
         // Issue #218: allow new combo fire events on the next press
         comboFireLatch[0] = false;
         comboFireLatch[1] = false;
+      }
       }
     }
 
@@ -6691,10 +6616,18 @@ function render(timestamp) {
       // Check if boss was killed
       if (boss.hp <= 0) {
         _log(`[boss] Boss defeated!`);
-        // Issue #172: end all eclipses the moment the boss dies — the
-        // purge wave is part of the collapse (boss.destroy() also purges).
-        purgeAllEclipses();
-        startBossDeathCinematic(boss);
+        // Training Ground: skip the cinematic (it would purge the holodeck
+        // biome and advance the level) — just clear the boss cleanly.
+        if (game.trainingMode) {
+          clearBoss();
+          clearBossProjectiles();
+          hideBossHealthBar();
+        } else {
+          // Issue #172: end all eclipses the moment the boss dies — the
+          // purge wave is part of the collapse (boss.destroy() also purges).
+          purgeAllEclipses();
+          startBossDeathCinematic(boss);
+        }
       }
     } else {
       hideBossHealthBar();

@@ -470,6 +470,9 @@ export function registerAccuracyMiss() {
 }
 
 export function damagePlayer(amount) {
+  // Training Ground: the player is invincible so loadouts can be tested
+  // freely (health bar never drops, no death/endGame path).
+  if (game.trainingMode) return false;
   game.health = Math.max(0, game.health - amount);
   game.killsWithoutHit = 0;
   game.runStats.damageTaken += amount;
