@@ -1,5 +1,5 @@
 {
-  "screen": "upgrade-cards",
+  "screen": "evolutions",
   "elements": {
     "header": {
       "x": 0,
@@ -143,7 +143,7 @@
       "color": 8978312,
       "_colorHex": "#88ff88",
       "scale": 1,
-      "text": "(+30% \u2192 +45%) or even ahhasdj ggssgfd kgoha",
+      "text": "(+30% → +45%) or even ahhasdj ggssgfd kgoha",
       "fontSize": 34,
       "glow": false,
       "forceArial": true,
@@ -175,7 +175,7 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 11961.8724,
+      "ry": 11965.3444,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
@@ -254,7 +254,7 @@
       "color": 8978312,
       "_colorHex": "#88ff88",
       "scale": 1,
-      "text": "(+10 \u2192 +20)",
+      "text": "(+10 → +20)",
       "fontSize": 34,
       "glow": false,
       "forceArial": true,
@@ -266,7 +266,7 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 12410.4332,
+      "ry": 12413.9052,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
@@ -357,7 +357,7 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 12408.0315,
+      "ry": 12411.5035,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
@@ -429,7 +429,7 @@
       "z": 0.05,
       "align": "center",
       "rx": 0,
-      "ry": 170.528,
+      "ry": 174,
       "rz": 0,
       "type": "wire-octa",
       "visible": true,
@@ -439,120 +439,90 @@
       "scale": 0.08
     }
   },
-  "exportedAt": "2026-04-17T03:42:25.609Z",
-  "groups": {
-    "Group 2": [
-      "card1",
-      "card1_name",
-      "card1_desc",
-      "card1_stat",
-      "card1_icon"
-    ],
-    "Group 3": [
-      "card2",
-      "card2_name",
-      "card2_desc",
-      "card2_stat",
-      "card2_icon"
-    ],
-    "Group 4": [
-      "card3",
-      "card3_name",
-      "card3_desc",
-      "card3_icon"
-    ]
-  },
-  "_localPositions": {
-    "Group 2": {
-      "_center": {
-        "x": -0.68,
-        "y": 0,
-        "z": 0.022
-      },
-      "card1": {
-        "x": 0,
-        "y": 0,
-        "z": -0.022
-      },
-      "card1_name": {
-        "x": 0,
-        "y": 0.54,
-        "z": -0.002
-      },
-      "card1_desc": {
-        "x": 0,
-        "y": 0.16,
-        "z": -0.002
-      },
-      "card1_stat": {
-        "x": 0,
-        "y": -0.18,
-        "z": -0.002
-      },
-      "card1_icon": {
-        "x": 0,
-        "y": -0.52,
-        "z": 0.028
-      }
+  "exportedAt": "2026-09-21T00:10:58.754Z",
+  "lists": {
+    "alchemy": {
+      "panelW": 6,
+      "panelH": 3.4,
+      "headerY": 1.56,
+      "essenceY": 1.36,
+      "colLeftX": -2.1,
+      "colCenterX": 0,
+      "colRightX": 2.1,
+      "colHeaderY": 1.14,
+      "colDescY": 0.9,
+      "chipW": 1.5,
+      "chipH": 0.3,
+      "chipRowH": 0.36,
+      "chipTopY": 0.5,
+      "chipGlyph": 0.05,
+      "forgeW": 1.6,
+      "forgeH": 0.34,
+      "forgeRowH": 0.42,
+      "forgeTopY": 0.3,
+      "forgeGlyph": 0.05,
+      "essenceSlot": 0.2,
+      "essenceGap": 0.32,
+      "essenceSquaresY": 0.64,
+      "warnY": -1.3,
+      "backX": 0,
+      "backY": -1.55,
+      "backW": 1.5,
+      "backH": 0.32,
+      "catCol1X": -0.75,
+      "catCol2X": 0.75,
+      "catTitleY": 1,
+      "catTopY": 0.5,
+      "catRowH": 0.38,
+      "catW": 1.7,
+      "catH": 0.32,
+      "catGlyph": 0.046,
+      "popupX": 0,
+      "popupY": 0.15,
+      "popupZ": 0.12,
+      "popupW": 3.4,
+      "popupH": 1.7,
+      "popupTitleY": 0.62,
+      "popupDescY": 0.28,
+      "popupIconY": -0.18,
+      "popupBtnY": -0.6,
+      "popupBtnW": 1.3,
+      "popupBtnH": 0.32,
+      "popupBtnDX": 0.95
     },
-    "Group 3": {
-      "_center": {
-        "x": 0.68,
-        "y": 0,
-        "z": 0.022
-      },
-      "card2": {
-        "x": 0,
-        "y": 0,
-        "z": -0.022
-      },
-      "card2_name": {
-        "x": 0,
-        "y": 0.54,
-        "z": -0.002
-      },
-      "card2_desc": {
-        "x": 0,
-        "y": 0.16,
-        "z": -0.002
-      },
-      "card2_stat": {
-        "x": 0,
-        "y": -0.18,
-        "z": -0.002
-      },
-      "card2_icon": {
-        "x": 0,
-        "y": -0.52,
-        "z": 0.028
-      }
-    },
-    "Group 4": {
-      "_center": {
-        "x": 2.1,
-        "y": 0,
-        "z": 0.022
-      },
-      "card3": {
-        "x": 0,
-        "y": 0,
-        "z": -0.0225
-      },
-      "card3_name": {
-        "x": 0,
-        "y": 0.44,
-        "z": -0.0025
-      },
-      "card3_desc": {
-        "x": 0,
-        "y": -0.02,
-        "z": -0.0025
-      },
-      "card3_icon": {
-        "x": 0,
-        "y": -0.42,
-        "z": 0.0275
-      }
+    "evolutions": {
+      "panelX": 0,
+      "panelY": 0.05,
+      "panelZ": 0.08,
+      "panelW": 4.8,
+      "panelH": 3,
+      "titleY": 1.28,
+      "hintY": 0.98,
+      "boxW": 4.2,
+      "boxTop": 0.55,
+      "boxBottom": -0.85,
+      "railX": 2,
+      "railW": 0.03,
+      "thumbX": 2,
+      "backX": 0,
+      "backY": -1.28,
+      "backW": 1.5,
+      "backH": 0.32,
+      "leftX": -1.72,
+      "rowH": 0.46,
+      "visibleRows": 3,
+      "rowTopPad": 0.14,
+      "rowBgW": 3.85,
+      "barX": 0.55,
+      "barW": 1.3,
+      "barH": 0.13,
+      "nameY": 0.12,
+      "fromY": -0.05,
+      "recipeY": -0.16,
+      "nameGlyph": 0.085,
+      "fromGlyph": 0.042,
+      "recipeGlyph": 0.046,
+      "fracGlyph": 0.06
     }
   }
 }

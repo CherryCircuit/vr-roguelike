@@ -89,17 +89,27 @@ async function runTest() {
     const inConfig = cfg?.enemyTypes?.includes('leech') || false;
     enemies.clearAllEnemies();
     const camera = window.__test?.getCamera?.();
-    // Spawn 1m from the player → latches immediately on the first update
-    const l = enemies.spawnEnemy('leech', camera.position.clone().add(new THREE.Vector3(1, 0.5, 0)), window.game._levelConfig || undefined);
+    // Spawn OUTSIDE the latch range (2m) and let the leech rush in and latch
+    // naturally. Spawning at 1m (inside latchRange) made updateLeech move
+    // before the latch check and overshoot into the 0.9m player-collision
+    // radius, where main.js destroyed it as a collision — a test artifact
+    // rather than the real rush→latch behavior.
+    const l = enemies.spawnEnemy('leech', camera.position.clone().add(new THREE.Vector3(0, 0.5, -4)), window.game._levelConfig || undefined);
     if (!l) return { ok: false, reason: 'spawn failed', inConfig };
-    await new Promise(r => setTimeout(r, 400));
+    // Poll for the natural latch instead of a fixed sleep (frame-rate dependent).
+    const t0 = performance.now();
+    while (performance.now() - t0 < 3000) {
+      if (l.isLatched) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    const stillAlive = enemies.getEnemies().includes(l);
     // 2D distance (the leech orbits at y=0.5 — vertical offset would skew it)
     const dx = l.mesh.position.x - camera.position.x;
     const dz = l.mesh.position.z - camera.position.z;
     const distToPlayer = Math.hypot(dx, dz);
     return {
-      ok: l.isLatched && distToPlayer < 1.8, // orbiting at 1.5m radius
-      inConfig, latched: l.isLatched, distToPlayer,
+      ok: l.isLatched && stillAlive && distToPlayer < 1.8, // orbiting at 1.5m radius
+      inConfig, latched: l.isLatched, stillAlive, distToPlayer,
     };
   });
   console.log(`  Level 8 config includes leech: ${results.latch.inConfig ? '✅' : '❌'}`);

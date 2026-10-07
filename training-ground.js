@@ -17,7 +17,7 @@
 
 import * as THREE from 'three';
 import { game, State, getLevelConfig, setWeaponEvolution, addUpgrade } from './game.js';
-import { makeSizedText, showHUD, hudGroup, digitalFontFamily } from './hud.js';
+import { makeSizedText, showHUD, hudGroup, digitalFontFamily, loadLayout } from './hud.js';
 import { WEAPON_EVOLUTIONS, getUpgradeDef, UPGRADE_POOL, SPECIAL_UPGRADE_POOL } from './weapons.js';
 
 const DEBUG = false;
@@ -42,6 +42,31 @@ let _holodeckGroup = null;
 let _hoveredButton = null;    // hovered button mesh (scale/border highlight)
 let _oldLevelConfig = null;
 let _trainingConfig = null;
+
+// ── Layout-driven geometry (layouts/training-ground.json) ───
+// Every static element + generated-list template is read from the layout so
+// the layout editor can tune positions/sizes/fonts. Defaults below are the
+// fallbacks used if the JSON is missing.
+let _layout = null;
+let _layoutPromise = null;
+function el(id, def) {
+  const e = _layout?.elements?.[id];
+  return e ? { ...def, ...e } : def;
+}
+function listTpl(id, def) {
+  const l = _layout?.lists?.[id];
+  return l ? { ...def, ...l } : def;
+}
+function _hex(n) { return '#' + (n >>> 0).toString(16).padStart(6, '0').slice(-6); }
+async function ensureTrainingLayout() {
+  if (_layout) return _layout;
+  if (!_layoutPromise) {
+    _layoutPromise = loadLayout('training-ground')
+      .then((d) => { _layout = d || {}; return _layout; })
+      .catch(() => { _layout = {}; return _layout; });
+  }
+  return _layoutPromise;
+}
 
 // Wave queue: the player builds a battle in the menu, then presses GO.
 // Bosses in the queue spawn immediately at GO; enemies are released in
@@ -70,6 +95,8 @@ export function initTrainingGround(deps) {
   // Load the digital-clock font for the wave counters (async; counters fall
   // back to monospace until it's ready, then redraw on the next queue click).
   import('./hud.js').then(m => m.loadDigitalFont?.()).catch(() => {});
+  // Preload the layout so the first menu open is already laid out.
+  ensureTrainingLayout();
   _log('[training-ground] initialized');
 }
 
@@ -156,7 +183,7 @@ export function toggleTrainingMenu() {
   if (_menuOpen) hideTrainingMenu(); else showTrainingMenu();
 }
 
-export function showTrainingMenu(resetView = true) {
+export async function showTrainingMenu(resetView = true) {
   if (!_active || _menuOpen) return;
   _menuOpen = true;
   if (resetView) _loadoutView = false; // fresh open → combat view
@@ -165,6 +192,8 @@ export function showTrainingMenu(resetView = true) {
   // The menu must draw over the floor HUD: hide the HUD while browsing
   // (some HUD sprites are depthTest:false and would otherwise render on top).
   if (hudGroup) hudGroup.visible = false;
+  await ensureTrainingLayout();
+  if (!_menuOpen) return; // hidden again while the layout loaded
   buildTrainingMenu();
 }
 
@@ -260,14 +289,15 @@ function buildTrainingMenu() {
   _deps.scene.add(group);
   _menuGroup = group;
 
-  // Narrower panel for the COMBAT view; the LOADOUT view is wider (4 upgrade
-  // columns + center evolutions) — player feedback.
-  const panelW = _loadoutView ? 6.7 : 5.6;
-  const panelH = 3.9;
+  // Panel geometry from the layout (COMBAT is narrower than LOADOUT).
+  const panelEl = el(_loadoutView ? 'panelLoadout' : 'panelCombat', {
+    x: 0, y: 0, w: _loadoutView ? 6.7 : 5.6, h: 3.9, color: 0x0a0f22, opacity: 0.96,
+  });
   const bg = new THREE.Mesh(
-    new THREE.PlaneGeometry(panelW, panelH),
-    new THREE.MeshBasicMaterial({ color: 0x0a0f22, transparent: true, opacity: 0.96, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+    new THREE.PlaneGeometry(panelEl.w, panelEl.h),
+    new THREE.MeshBasicMaterial({ color: panelEl.color ?? 0x0a0f22, transparent: true, opacity: panelEl.opacity ?? 0.96, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
   );
+  bg.position.set(panelEl.x ?? 0, panelEl.y ?? 0, 0);
   bg.renderOrder = MENU_BG_RO;
   group.add(bg);
   const border = new THREE.LineSegments(
@@ -356,81 +386,95 @@ function updateCounters(now) {
 }
 
 function buildCombatView(group) {
-  const title = makeLabel(group, 'TRAINING GROUND', 0, 1.68, { fontSize: 92, color: '#00ff88', glyphSize: 0.17 });
-  const sub = makeLabel(group, 'BUILD A WAVE — THEN PRESS GO', 0, 1.32, { fontSize: 38, color: '#8899bb', glyphSize: 0.052, forceArial: true });
+  const titleEl = el('title', { x: 0, y: 1.68, fontSize: 92, glyphSize: 0.17, color: 0x00ff88, text: 'TRAINING GROUND' });
+  if (titleEl.visible !== false) makeLabel(group, titleEl.text, titleEl.x, titleEl.y, { fontSize: titleEl.fontSize, color: _hex(titleEl.color), glyphSize: titleEl.glyphSize });
+  const subEl = el('sub', { x: 0, y: 1.32, fontSize: 38, glyphSize: 0.052, color: 0x8899bb, text: 'BUILD A WAVE — THEN PRESS GO' });
+  if (subEl.visible !== false) makeLabel(group, subEl.text, subEl.x, subEl.y, { fontSize: subEl.fontSize, color: _hex(subEl.color), glyphSize: subEl.glyphSize, forceArial: true });
 
-  // ── ENEMIES column (scrollable) — buttons + digital counters, the whole
-  // button+counter row CENTERED under the ENEMIES title (player feedback).
-  const enemyTitleX = -1.9;
-  const enemyHeader = makeLabel(group, 'ENEMIES', enemyTitleX, 0.98, { fontSize: 88, color: '#ff8866', glyphSize: 0.13 });
-  const enemyList = new THREE.Group();
-  enemyList.position.set(enemyTitleX, 0.76, 0.01);
-  group.add(enemyList);
+  // ── ENEMIES column (layout-driven list template) ──
+  const enemyH = el('enemiesHeading', { x: -1.9, y: 0.98, fontSize: 88, glyphSize: 0.13, color: 0xff8866, text: 'ENEMIES' });
+  makeLabel(group, enemyH.text, enemyH.x, enemyH.y, { fontSize: enemyH.fontSize, color: _hex(enemyH.color), glyphSize: enemyH.glyphSize });
+  const eTpl = listTpl('enemy', { x: -1.9, y: 0.76, rowH: 0.2, btnDX: -0.155, ctrDX: 0.465, btnW: 0.78, btnH: 0.17, fontSize: 40, glyphSize: 0.054, color: 0xff8866, visibleRows: 6 });
   const ENEMY_IDS = [
     ['basic', 'DRONE'], ['fast', 'SNEAK'], ['tank', 'SENTINEL'], ['swarm', 'DART'],
     ['spiral_swimmer', 'SPIRAL SWIMMER'], ['jelly', 'STACK'], ['conductor', 'COMMANDER'],
     ['mortar', 'MORTAR'], ['bombardier', 'BOMBARDIER'], ['void_anchor', 'VOID ANCHOR'],
     ['void_tendril', 'VOID TENDRIL'], ['echo_phantom', 'ECHO PHANTOM'], ['leech', 'LEECH'],
   ];
-  const visibleEnemies = 6;
-  // Row geometry: button (0.78) + gap (0.15) + counter (0.16) = 1.09 wide,
-  // the pair CENTERED on the column x → in a row group at x=0 the button
-  // sits at −0.155 and the counter at +0.465 (player feedback: the old rows
-  // drifted off-center and clipped the panel edge).
+  const enemyList = new THREE.Group();
+  enemyList.position.set(eTpl.x, eTpl.y, 0.01);
+  group.add(enemyList);
   ENEMY_IDS.forEach(([id, label], i) => {
     const row = new THREE.Group();
-    row.position.set(0, -i * 0.2, 0);
+    row.position.set(0, -i * eTpl.rowH, 0);
     enemyList.add(row);
     const pendingCount = _pendingWave.find(p => p.kind === 'enemy' && p.type === id)?.count || 0;
-    makeButton(row, label, { type: 'queue_enemy', id }, -0.155, 0, { w: 0.78, h: 0.17, color: 0xff8866, fontSize: 40, glyphSize: 0.054 });
+    makeButton(row, label, { type: 'queue_enemy', id }, eTpl.btnDX, 0, { w: eTpl.btnW, h: eTpl.btnH, color: eTpl.color, fontSize: eTpl.fontSize, glyphSize: eTpl.glyphSize });
     const counter = makeDigitalCounter(pendingCount);
-    counter.position.set(0.465, 0, 0.02);
+    counter.position.set(eTpl.ctrDX, 0, 0.02);
     row.add(counter);
   });
-  enemyList.userData.maxRows = ENEMY_IDS.length - visibleEnemies;
+  enemyList.userData.maxRows = Math.max(0, ENEMY_IDS.length - eTpl.visibleRows);
   enemyList.userData.scrollKey = 'enemy';
-  enemyList.userData.baseY = 0.76;
-  enemyList.userData.rowH = 0.2;
+  enemyList.userData.baseY = eTpl.y;
+  enemyList.userData.rowH = eTpl.rowH;
 
-  // ── BOSSES column — same centered-pair treatment (button 1.0 + counter) ──
-  const bossTitleX = 1.9;
-  const bossHeader = makeLabel(group, 'BOSSES', bossTitleX, 0.98, { fontSize: 88, color: '#ff88ff', glyphSize: 0.13 });
+  // ── BOSSES column (layout-driven list template) ──
+  const bossH = el('bossesHeading', { x: 1.9, y: 0.98, fontSize: 88, glyphSize: 0.13, color: 0xff88ff, text: 'BOSSES' });
+  makeLabel(group, bossH.text, bossH.x, bossH.y, { fontSize: bossH.fontSize, color: _hex(bossH.color), glyphSize: bossH.glyphSize });
+  const bTpl = listTpl('boss', { x: 1.9, y: 0.74, rowH: 0.23, btnDX: -0.155, ctrDX: 0.575, btnW: 1.0, btnH: 0.18, fontSize: 38, glyphSize: 0.056, color: 0xff88ff, visibleRows: 8 });
   const BOSS_IDS = [
     ['skull_boss', 'NECRO'], ['the_maw', 'THE MAW'], ['the_prism', 'THE PRISM'],
     ['mirror_gauntlet', 'MIRROR GAUNTLET'], ['neon_minotaur', 'BLOOD MINOTAUR'],
     ['conductor_ascendant', 'CONDUCTOR'], ['the_masquerade', 'MASQUERADE'],
     ['eclipse_engine', 'ECLIPSE ENGINE'],
   ];
-  let by = 0.74;
-  BOSS_IDS.forEach(([id, label]) => {
+  const bossList = new THREE.Group();
+  bossList.position.set(bTpl.x, bTpl.y, 0.01);
+  group.add(bossList);
+  BOSS_IDS.forEach(([id, label], i) => {
     const row = new THREE.Group();
-    row.position.set(0, by, 0); // pair centered on the BOSSES column x
-    group.add(row);
+    row.position.set(0, -i * bTpl.rowH, 0);
+    bossList.add(row);
     const pendingCount = _pendingWave.find(p => p.kind === 'boss' && p.type === id)?.count || 0;
-    makeButton(row, label, { type: 'queue_boss', id }, -0.155, 0, { w: 1.0, h: 0.18, color: 0xff88ff, fontSize: 38, glyphSize: 0.056 });
+    makeButton(row, label, { type: 'queue_boss', id }, bTpl.btnDX, 0, { w: bTpl.btnW, h: bTpl.btnH, color: bTpl.color, fontSize: bTpl.fontSize, glyphSize: bTpl.glyphSize });
     const counter = makeDigitalCounter(pendingCount);
-    counter.position.set(0.575, 0, 0.02);
+    counter.position.set(bTpl.ctrDX, 0, 0.02);
     row.add(counter);
-    by -= 0.23;
   });
+  bossList.userData.maxRows = Math.max(0, BOSS_IDS.length - bTpl.visibleRows);
+  bossList.userData.scrollKey = 'boss';
+  bossList.userData.baseY = bTpl.y;
+  bossList.userData.rowH = bTpl.rowH;
 
-  // ── CENTER: WAVE SIZE section (compact, no overlap, moved down) ──
-  const waveHeader = makeLabel(group, 'WAVE SIZE', 0, 0.62, { fontSize: 56, color: '#ffdd00', glyphSize: 0.085 });
-  // Compact stepper: -5 | -1 | SIZE | +1 | +5 (each 0.28 wide, 0.36 apart)
-  makeButton(group, '-5', { type: 'wave_add', amount: -5 }, -0.75, 0.3, { w: 0.28, h: 0.24, color: 0xffdd00, fontSize: 34, glyphSize: 0.06 });
-  makeButton(group, '-1', { type: 'wave_add', amount: -1 }, -0.39, 0.3, { w: 0.28, h: 0.24, color: 0xffdd00, fontSize: 34, glyphSize: 0.06 });
-  makeButton(group, `SIZE: ${_waveSize}`, { type: 'noop' }, 0, 0.3, { w: 0.62, h: 0.26, color: 0xffdd00, fontSize: 44, glyphSize: 0.07 });
-  makeButton(group, '+1', { type: 'wave_add', amount: 1 }, 0.39, 0.3, { w: 0.28, h: 0.24, color: 0xffdd00, fontSize: 34, glyphSize: 0.06 });
-  makeButton(group, '+5', { type: 'wave_add', amount: 5 }, 0.75, 0.3, { w: 0.28, h: 0.24, color: 0xffdd00, fontSize: 34, glyphSize: 0.06 });
+  // ── CENTER controls (layout-driven) ──
+  const waveEl = el('waveHeading', { x: 0, y: 0.62, fontSize: 56, glyphSize: 0.085, color: 0xffdd00, text: 'WAVE SIZE' });
+  if (waveEl.visible !== false) makeLabel(group, waveEl.text, waveEl.x, waveEl.y, { fontSize: waveEl.fontSize, color: _hex(waveEl.color), glyphSize: waveEl.glyphSize });
 
-  // GO + actions
+  const stepEls = ['waveMinus5', 'waveMinus1', 'wavePlus1', 'wavePlus5'].map((id, k) => {
+    const def = el(id, { x: 0, y: 0.3, w: 0.28, h: 0.24, fontSize: 34, glyphSize: 0.06, color: 0xffdd00, text: ['-5', '-1', '+1', '+5'][k] });
+    return def;
+  });
+  const stepAmounts = [-5, -1, 1, 5];
+  stepEls.forEach((d, k) => {
+    if (d.visible === false) return;
+    makeButton(group, d.text, { type: 'wave_add', amount: stepAmounts[k] }, d.x, d.y, { w: d.w, h: d.h, color: d.color, fontSize: d.fontSize, glyphSize: d.glyphSize });
+  });
+  const sizeEl = el('waveSize', { x: 0, y: 0.3, w: 0.62, h: 0.26, fontSize: 44, glyphSize: 0.07, color: 0xffdd00, text: 'SIZE: 5' });
+  makeButton(group, `SIZE: ${_waveSize}`, { type: 'noop' }, sizeEl.x, sizeEl.y, { w: sizeEl.w, h: sizeEl.h, color: sizeEl.color, fontSize: sizeEl.fontSize, glyphSize: sizeEl.glyphSize });
+
   const waveActive = _activeWave.length > 0 || _pendingWave.some(p => p.kind === 'enemy');
-  makeButton(group, waveActive ? 'GO (WAVE RUNNING)' : 'GO!', { type: 'go_wave' }, 0, -0.18, { w: 1.5, h: 0.28, color: 0x00ff88, fontSize: 48, glyphSize: 0.07 });
-  makeButton(group, 'CLEAR WAVE', { type: 'clear_wave' }, 0, -0.56, { w: 1.5, h: 0.24, color: 0xff6644, fontSize: 38, glyphSize: 0.055 });
-  makeButton(group, 'LOADOUT →', { type: 'goto_loadout' }, 0, -0.92, { w: 1.5, h: 0.24, color: 0x44aaff, fontSize: 38, glyphSize: 0.055 });
-  makeButton(group, 'EXIT TRAINING', { type: 'exit_training' }, 0, -1.28, { w: 1.5, h: 0.24, color: 0xff4444, fontSize: 38, glyphSize: 0.055 });
+  const goEl = el('go', { x: 0, y: -0.18, w: 1.5, h: 0.28, fontSize: 48, glyphSize: 0.07, color: 0x00ff88, text: 'GO!' });
+  makeButton(group, waveActive ? 'GO (WAVE RUNNING)' : goEl.text, { type: 'go_wave' }, goEl.x, goEl.y, { w: goEl.w, h: goEl.h, color: goEl.color, fontSize: goEl.fontSize, glyphSize: goEl.glyphSize });
+  const clearEl = el('clear', { x: 0, y: -0.56, w: 1.5, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0xff6644, text: 'CLEAR WAVE' });
+  makeButton(group, clearEl.text, { type: 'clear_wave' }, clearEl.x, clearEl.y, { w: clearEl.w, h: clearEl.h, color: clearEl.color, fontSize: clearEl.fontSize, glyphSize: clearEl.glyphSize });
+  const loadEl = el('loadout', { x: 0, y: -0.92, w: 1.5, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0x44aaff, text: 'LOADOUT →' });
+  makeButton(group, loadEl.text, { type: 'goto_loadout' }, loadEl.x, loadEl.y, { w: loadEl.w, h: loadEl.h, color: loadEl.color, fontSize: loadEl.fontSize, glyphSize: loadEl.glyphSize });
+  const exitEl = el('exit', { x: 0, y: -1.28, w: 1.5, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0xff4444, text: 'EXIT TRAINING' });
+  makeButton(group, exitEl.text, { type: 'exit_training' }, exitEl.x, exitEl.y, { w: exitEl.w, h: exitEl.h, color: exitEl.color, fontSize: exitEl.fontSize, glyphSize: exitEl.glyphSize });
 
-  const tip = makeLabel(group, 'GO CLOSES THIS MENU — THUMBSTICK OR T REOPENS IT', 0, -1.66, { fontSize: 30, color: '#6688aa', glyphSize: 0.04, forceArial: true });
+  const tipEl = el('tip', { x: 0, y: -1.66, fontSize: 30, glyphSize: 0.04, color: 0x6688aa, text: 'GO CLOSES THIS MENU — THUMBSTICK OR T REOPENS IT' });
+  if (tipEl.visible !== false) makeLabel(group, tipEl.text, tipEl.x, tipEl.y, { fontSize: tipEl.fontSize, color: _hex(tipEl.color), glyphSize: tipEl.glyphSize, forceArial: true });
 }
 
 // Short display names for the LOADOUT upgrade buttons (long pool names would
@@ -448,71 +492,76 @@ const LOADOUT_SHORT_NAMES = {
 };
 
 function buildLoadoutView(group) {
-  const title = makeLabel(group, 'LOADOUT — BUILD YOUR ARSENAL', 0, 1.68, { fontSize: 52, color: '#44aaff', glyphSize: 0.08 });
+  const titleEl = el('loadoutTitle', { x: 0, y: 1.68, fontSize: 52, glyphSize: 0.08, color: 0x44aaff, text: 'LOADOUT — BUILD YOUR ARSENAL' });
+  if (titleEl.visible !== false) makeLabel(group, titleEl.text, titleEl.x, titleEl.y, { fontSize: titleEl.fontSize, color: _hex(titleEl.color), glyphSize: titleEl.glyphSize });
 
   const allUpgrades = [...UPGRADE_POOL, ...SPECIAL_UPGRADE_POOL].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i);
 
-  // Row geometry for the compact per-hand columns: button (0.6) + gap (0.08)
-  // + counter (0.14) = 0.82 wide, centered on the column x → button x−0.11,
-  // counter x+0.38.
-  const UP_ROW_HALF = 0.41;
-  const buildHandColumn = (hand, colX, col2X, yStart) => {
+  const buildHandColumn = (hand, tpl, scrollKey) => {
     const column1 = new THREE.Group();
-    column1.position.set(colX, yStart, 0.01);
+    column1.position.set(tpl.col1X, tpl.y, 0.01);
     group.add(column1);
     const column2 = new THREE.Group();
-    column2.position.set(col2X, yStart, 0.01);
+    column2.position.set(tpl.col2X, tpl.y, 0.01);
     group.add(column2);
     let rowIdx = 0;
     allUpgrades.forEach((u) => {
       const col = rowIdx % 2 === 0 ? column1 : column2;
-      const y = -Math.floor(rowIdx / 2) * 0.205;
+      const y = -Math.floor(rowIdx / 2) * tpl.rowH;
       const row = new THREE.Group();
-      row.position.set(-UP_ROW_HALF + 0.3, y, 0);
+      row.position.set(0, y, 0);
       col.add(row);
       const count = game.upgrades?.[hand]?.[u.id] || 0;
       const label = LOADOUT_SHORT_NAMES[u.id] || u.name.toUpperCase();
-      makeButton(row, label, { type: 'add_upgrade_hand', id: u.id, hand }, -0.11, 0, {
-        w: 0.6, h: 0.16, color: 0x44ffaa, fontSize: 30, glyphSize: 0.043,
+      makeButton(row, label, { type: 'add_upgrade_hand', id: u.id, hand }, tpl.btnDX, 0, {
+        w: tpl.btnW, h: tpl.btnH, color: tpl.color, fontSize: tpl.fontSize, glyphSize: tpl.glyphSize,
       });
       const counter = makeDigitalCounter(count);
-      counter.position.set(0.38, 0, 0.02);
+      counter.position.set(tpl.ctrDX, 0, 0.02);
       row.add(counter);
       rowIdx++;
     });
-    const maxRows = Math.ceil(allUpgrades.length / 2) - 9;
-    column1.userData.maxRows = Math.max(0, maxRows);
-    column1.userData.scrollKey = 'loadout-left';
-    column1.userData.baseY = yStart;
-    column1.userData.rowH = 0.205;
-    column2.userData.maxRows = Math.max(0, maxRows);
-    column2.userData.scrollKey = 'loadout-right';
-    column2.userData.baseY = yStart;
-    column2.userData.rowH = 0.205;
+    const maxRows = Math.max(0, Math.ceil(allUpgrades.length / 2) - tpl.visibleRows);
+    for (const [c, key] of [[column1, scrollKey + '-a'], [column2, scrollKey + '-b']]) {
+      c.userData.maxRows = maxRows;
+      c.userData.scrollKey = key;
+      c.userData.baseY = tpl.y;
+      c.userData.rowH = tpl.rowH;
+    }
   };
 
+  const leftTpl = listTpl('upgradeLeft', { col1X: -2.6, col2X: -1.55, y: 0.76, rowH: 0.205, btnDX: -0.11, ctrDX: 0.38, btnW: 0.6, btnH: 0.16, fontSize: 30, glyphSize: 0.043, color: 0x44ffaa, visibleRows: 9 });
+  const rightTpl = listTpl('upgradeRight', { col1X: 1.55, col2X: 2.6, y: 0.76, rowH: 0.205, btnDX: -0.11, ctrDX: 0.38, btnW: 0.6, btnH: 0.16, fontSize: 30, glyphSize: 0.043, color: 0x44ffaa, visibleRows: 9 });
+
   // LEFT BLASTER — two upgrade columns with live counters
-  const leftTitle = makeLabel(group, 'LEFT BLASTER', -2.05, 0.98, { fontSize: 54, color: '#00ffff', glyphSize: 0.075 });
-  buildHandColumn('left', -2.6, -1.55, 0.76);
+  const leftTitle = el('leftTitle', { x: -2.05, y: 0.98, fontSize: 54, glyphSize: 0.075, color: 0x00ffff, text: 'LEFT BLASTER' });
+  makeLabel(group, leftTitle.text, leftTitle.x, leftTitle.y, { fontSize: leftTitle.fontSize, color: _hex(leftTitle.color), glyphSize: leftTitle.glyphSize });
+  buildHandColumn('left', leftTpl, 'loadout-left');
 
   // RIGHT BLASTER — two upgrade columns with live counters
-  const rightTitle = makeLabel(group, 'RIGHT BLASTER', 2.05, 0.98, { fontSize: 54, color: '#00ffff', glyphSize: 0.075 });
-  buildHandColumn('right', 1.55, 2.6, 0.76);
+  const rightTitle = el('rightTitle', { x: 2.05, y: 0.98, fontSize: 54, glyphSize: 0.075, color: 0x00ffff, text: 'RIGHT BLASTER' });
+  makeLabel(group, rightTitle.text, rightTitle.x, rightTitle.y, { fontSize: rightTitle.fontSize, color: _hex(rightTitle.color), glyphSize: rightTitle.glyphSize });
+  buildHandColumn('right', rightTpl, 'loadout-right');
 
   // EVOLUTIONS in the center column
-  const evoHeader = makeLabel(group, 'EVOLUTIONS', 0, 0.98, { fontSize: 54, color: '#ffdd00', glyphSize: 0.075 });
-  let ey = 0.74;
+  const evoHeading = el('evoHeading', { x: 0, y: 0.98, fontSize: 54, glyphSize: 0.075, color: 0xffdd00, text: 'EVOLUTIONS' });
+  makeLabel(group, evoHeading.text, evoHeading.x, evoHeading.y, { fontSize: evoHeading.fontSize, color: _hex(evoHeading.color), glyphSize: evoHeading.glyphSize });
+  const evoTpl = listTpl('evolution', { x: 0, y: 0.74, rowH: 0.26, btnW: 1.35, btnH: 0.2, fontSize: 34, glyphSize: 0.052, visibleRows: 6 });
+  let ey = evoTpl.y;
   Object.entries(WEAPON_EVOLUTIONS).forEach(([weaponId, evo]) => {
     makeButton(group, evo.name.toUpperCase(), {
       type: 'evolve', weaponId, evoId: evo.id,
-    }, 0, ey, { w: 1.35, h: 0.2, color: evo.sigColor || 0xffdd00, fontSize: 34, glyphSize: 0.052 });
-    ey -= 0.26;
+    }, evoTpl.x, ey, { w: evoTpl.btnW, h: evoTpl.btnH, color: evo.sigColor || 0xffdd00, fontSize: evoTpl.fontSize, glyphSize: evoTpl.glyphSize });
+    ey -= evoTpl.rowH;
   });
 
   // ── Bottom action bar ──
-  makeButton(group, 'RESET LOADOUT', { type: 'reset_loadout' }, -1.6, -1.55, { w: 1.4, h: 0.24, color: 0xff8844, fontSize: 38, glyphSize: 0.055 });
-  makeButton(group, '← COMBAT', { type: 'goto_combat' }, 0, -1.55, { w: 1.4, h: 0.24, color: 0x44aaff, fontSize: 38, glyphSize: 0.055 });
-  makeButton(group, 'EXIT TRAINING', { type: 'exit_training' }, 1.6, -1.55, { w: 1.4, h: 0.24, color: 0xff4444, fontSize: 38, glyphSize: 0.055 });
+  const resetEl = el('resetLoadout', { x: -1.6, y: -1.55, w: 1.4, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0xff8844, text: 'RESET LOADOUT' });
+  makeButton(group, resetEl.text, { type: 'reset_loadout' }, resetEl.x, resetEl.y, { w: resetEl.w, h: resetEl.h, color: resetEl.color, fontSize: resetEl.fontSize, glyphSize: resetEl.glyphSize });
+  const backEl = el('backToCombat', { x: 0, y: -1.55, w: 1.4, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0x44aaff, text: '← COMBAT' });
+  makeButton(group, backEl.text, { type: 'goto_combat' }, backEl.x, backEl.y, { w: backEl.w, h: backEl.h, color: backEl.color, fontSize: backEl.fontSize, glyphSize: backEl.glyphSize });
+  const exit2El = el('exitLoadout', { x: 1.6, y: -1.55, w: 1.4, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0xff4444, text: 'EXIT TRAINING' });
+  makeButton(group, exit2El.text, { type: 'exit_training' }, exit2El.x, exit2El.y, { w: exit2El.w, h: exit2El.h, color: exit2El.color, fontSize: exit2El.fontSize, glyphSize: exit2El.glyphSize });
 }
 
 function disposeMenuGroup(group) {

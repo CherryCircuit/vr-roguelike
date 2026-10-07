@@ -51,38 +51,73 @@ async function runTest() {
   });
 
   // Aim the desktop camera (the aiming ray is camera-center based) at a
-  // named alchemy button, then click at screen center to fire its action.
+  // named alchemy button. Returns false if the button is absent.
+  const aimAt = (btnName) => page.evaluate(async (name) => {
+    const THREE = await import('three');
+    const scene = window.__test?.getScene?.();
+    const camera = window.__test?.getCamera?.();
+    if (!scene || !camera) return false;
+    const btn = scene.getObjectByName(name);
+    if (!btn) return false;
+    camera.updateMatrixWorld(true);
+    const camPos = camera.position.clone();
+    const target = new THREE.Vector3();
+    btn.getWorldPosition(target);
+    const dir = new THREE.Vector3().subVectors(target, camPos);
+    if (dir.lengthSq() === 0) return false;
+    dir.normalize();
+    camera.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), dir);
+    camera.rotation.setFromQuaternion(camera.quaternion);
+    return true;
+  }, btnName);
+
+  // Click a named alchemy button: aim, let the hover pass register, RE-AIM
+  // immediately before the click, then click screen center. The re-aim fixes
+  // a flake where a menu rebuild/animation shifted the button between the
+  // first aim and the click (category selection landed on a neighbor).
   const clickAlchemyButton = async (btnName) => {
-    const ok = await page.evaluate(async (name) => {
-      const THREE = await import('three');
-      const scene = window.__test?.getScene?.();
-      const camera = window.__test?.getCamera?.();
-      if (!scene || !camera) return false;
-      const btn = scene.getObjectByName(name);
-      if (!btn) return false;
-      camera.updateMatrixWorld(true);
-      const camPos = camera.position.clone();
-      const target = new THREE.Vector3();
-      btn.getWorldPosition(target);
-      const dir = new THREE.Vector3().subVectors(target, camPos);
-      if (dir.lengthSq() === 0) return false;
-      dir.normalize();
-      camera.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), dir);
-      camera.rotation.setFromQuaternion(camera.quaternion);
-      return true;
-    }, btnName);
-    if (!ok) return false;
-    await sleep(300); // hover pass
+    if (!await aimAt(btnName)) return false;
+    await sleep(250); // hover pass
+    if (!await aimAt(btnName)) return false;
+    await sleep(150);
     await page.mouse.click(640, 400);
     await sleep(400);
     return true;
   };
 
   // New flow (Issue #185 redesign): dissolve/forge clicks open a CONFIRM
-  // popup first. clickAndConfirm clicks the button, then CONFIRM.
+  // popup first. clickAndConfirm clicks the button, WAITS for the popup to
+  // actually appear, confirms, then waits for it to close. The old fixed
+  // sleeps were racy: dissolves sometimes landed before the popup was
+  // interactive, so only 2 of 3 stacks applied (flaky suite).
+  const waitForGroupState = async (name, want, timeoutMs) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const present = await page.evaluate(
+        (n) => !!window.__test?.getScene?.()?.getObjectByName(n), name);
+      if (present === want) return true;
+      await sleep(50);
+    }
+    return false;
+  };
   const clickAndConfirm = async (btnName) => {
-    if (!await clickAlchemyButton(btnName)) return false;
-    return clickAlchemyButton('alchemy-popup-confirm');
+    // Retry the button click if the confirm popup never opened (the
+    // camera-center raycast can miss under headless swiftshader). Safe to
+    // retry: nothing is applied until CONFIRM is pressed.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (!await clickAlchemyButton(btnName)) return false;
+      if (await waitForGroupState('alchemy-popup', true, 1500)) {
+        await clickAlchemyButton('alchemy-popup-confirm');
+        if (!await waitForGroupState('alchemy-popup', false, 1500)) {
+          // CONFIRM click missed while the popup stayed open — try once more.
+          await clickAlchemyButton('alchemy-popup-confirm');
+          await waitForGroupState('alchemy-popup', false, 1500);
+        }
+        return true;
+      }
+      await sleep(150);
+    }
+    return false;
   };
 
   // All text sprites under the named group (userData.text carries labels).
@@ -246,6 +281,7 @@ async function runTest() {
 
   // Targeted Infusion → category picker → STATUS category → preview popup → confirm
   await clickAlchemyButton('alchemy-btn-forge-targeted_infusion');
+  await sleep(600); // let the category sub-view finish popping in before aiming
   const catView = await groupExists('alchemy-btn-cat-status');
   console.log(`  Category picker shown: ${catView ? '✅' : '❌'}`);
   const before = await page.evaluate(() => ({ ...window.game.upgrades.left }));

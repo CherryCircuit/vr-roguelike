@@ -1,6 +1,14 @@
 {
   "type": "module",
+  "scripts": {
+    "serve": "node scripts/serve.mjs 8001",
+    "test": "node tests/automation/test-bugfixes.cjs",
+    "test:suite": "node scripts/test-suite.mjs"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.37.5"
   }
 }

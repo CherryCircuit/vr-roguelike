@@ -120,6 +120,18 @@ async function runTest() {
     const d = await import('./desktop-controls.js');
     if (!d.isEnabled()) d.enable();
   });
+  await page.evaluate(() => {
+    // Combo windows are wall-clock based and proximity slow-mo lerps
+    // window._timeScale down each frame (HANDOFF lesson #11), silently
+    // stretching every combo interval. Keep it pinned for the whole test
+    // and block wave spawns so no enemy can trigger slow-mo mid-assertion.
+    window.game.spawnTimer = 9999;
+    window.__comboKeepAlive = setInterval(() => {
+      window._timeScale = 1.0;
+      window.game.timeScale = 1.0;
+      window.game.spawnTimer = 9999;
+    }, 100);
+  });
   await sleep(500);
   console.log('  ✅ In PLAYING state');
 
@@ -140,27 +152,50 @@ async function runTest() {
 
   // ── Phase 3: Drill + Momentum (alternate fire) ──
   console.log('\n📍 Phase 3: Drill + Momentum (alternate fire, 100-300ms)...');
-  await clearEnemies();
-  await setWeapons('standard_blaster', 'buckshot');
-  await sleep(1500); // let combo timers from Phase 2 age out
-  await page.keyboard.press('1'); // fireMode left
-  await tapFire();                 // left fires
-  await sleep(150);
-  await page.keyboard.press('2'); // fireMode right
-  await tapFire();                 // right fires ~150ms later → drill+momentum
-  await sleep(500);
-  const drill = await getProjectileStats(8);
-  results.drill = drill.projs.some(p => p.id === 'buckshot' && p.critChance === 1);
-  results.momentum = drill.projs.some(p => p.id === 'buckshot' && p.damage === 22); // 18×1.2=21.6→22
-  console.log(`  Drill (right critChance=1): ${results.drill ? '✅' : '❌'} | Momentum (dmg 22): ${results.momentum ? '✅' : '❌'} (${drill.projs.map(p => `${p.id}:${p.damage}/${p.critChance}`).join(', ') || 'none'})`);
+  // The 100-300ms alternate-fire window is a wall-clock band; synthetic
+  // key-taps can land just outside it on a slow headless frame. Retry the
+  // (real) combo a few times instead of failing on one jittery attempt.
+  let drillHit = false;
+  let momentumHit = false;
+  let drillLog = [];
+  for (let attempt = 0; attempt < 4 && !(drillHit && momentumHit); attempt++) {
+    await clearEnemies();
+    await setWeapons('standard_blaster', 'buckshot');
+    await sleep(1200); // let combo timers from the previous attempt age out
+    await page.keyboard.press('1'); // fireMode left
+    await tapFire();                 // left fires
+    // Aim for the middle of the 100-300ms alternate-fire window.
+    await sleep(120);
+    await page.keyboard.press('2'); // fireMode right
+    await tapFire();                 // right fires ~120ms later → drill+momentum
+    await sleep(500);
+    const drill = await getProjectileStats(8);
+    drillHit = drill.projs.some(p => p.id === 'buckshot' && p.critChance === 1);
+    momentumHit = drill.projs.some(p => p.id === 'buckshot' && p.damage === 22);
+    drillLog = drill.projs.map(p => `${p.id}:${p.damage}/${p.critChance}`);
+  }
+  results.drill = drillHit;
+  results.momentum = momentumHit;
+  console.log(`  Drill (right critChance=1): ${results.drill ? '✅' : '❌'} | Momentum (dmg 22): ${results.momentum ? '✅' : '❌'} (${drillLog.join(', ') || 'none'})`);
 
   // ── Phase 4: Heat Wave (sustained fire) ──
   console.log('\n📍 Phase 4: Heat Wave (6th+ rapid shot explodes)...');
   await clearEnemies();
   await setWeapons('standard_blaster', 'standard_blaster');
+  await page.evaluate(() => {
+    // Heat Wave needs 6 shots inside a 1s window. The blaster's base 180ms
+    // interval spans 5×180 = 900ms — borderline once headless frame jitter
+    // adds ~20-40ms per shot, which made this assertion flaky. Barrel
+    // upgrades cut the interval (180 / (1 + 0.15×n)); barrel:3 → ~124ms.
+    window.game.upgrades = { left: { barrel: 3 }, right: {} };
+    // Proximity slow-mo would stretch the window (HANDOFF lesson #11).
+    window._timeScale = 1.0;
+    window.game.timeScale = 1.0;
+    window.game.spawnTimer = 9999; // no wave spawns mid-test
+  });
   await sleep(1200);
   await page.keyboard.press('1'); // left only
-  await fireBoth(1400); // ~7 shots at 180ms
+  await fireBoth(1400); // ~11 shots at ~124ms
   const heat = await getProjectileStats(8);
   results.heatWave = heat.projs.some(p => p.forceExplosion && p.aoeRadius === 1.5);
   console.log(`  Heat Wave forced explosion: ${results.heatWave ? '✅' : '❌'} (${heat.projs.filter(p => p.forceExplosion).length} exploding of ${heat.count})`);

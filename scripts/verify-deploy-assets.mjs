@@ -50,7 +50,10 @@ function isIgnored(relPath, patterns) {
 function walk(dir, patterns, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const abs = join(dir, entry.name);
-    const rel = posix.normalize(relative(root, abs));
+    // Normalize to posix separators: relative() emits backslashes on Windows,
+    // and posix.normalize() does NOT convert them, which made every subdir
+    // reference (e.g. biomes/*.js, bake-clouds.js) look "missing" locally.
+    const rel = posix.normalize(relative(root, abs).split(sep).join('/'));
     if (isIgnored(rel, patterns)) continue;
     if (entry.isDirectory()) {
       walk(abs, patterns, out);

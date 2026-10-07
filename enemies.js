@@ -12233,13 +12233,19 @@ class MirrorGauntletBoss extends Boss {
   updateBehavior(dt, now, playerPos) {
     // Phases
     const hpRatio = this.hp / this.maxHp;
-    if (hpRatio <= 0.33 && this.phase !== 3) {
-      this.phase = 3;
-      this.mirrorFireInterval = 0.93; // 1.5x faster
-      playMirrorShatterSound();
-    } else if (hpRatio <= 0.66 && this.phase !== 2) {
+    // Ascending guards keep the transitions monotonic. The previous
+    // `phase !== 3` / `else if phase !== 2` form re-matched the 66% branch
+    // after phase 3 was set, so below 33% HP the phase flip-flopped 2↔3
+    // every frame — phase-3 overclock (0.93s interval) and afterimages ran
+    // intermittently while `boss.phase` read 2 (test-mirror caught this).
+    if (this.phase < 2 && hpRatio <= 0.66) {
       this.phase = 2;
       this.innerFigure.visible = true;
+      playMirrorShatterSound();
+    }
+    if (this.phase < 3 && hpRatio <= 0.33) {
+      this.phase = 3;
+      this.mirrorFireInterval = 0.93; // 1.5x faster
       playMirrorShatterSound();
     }
 

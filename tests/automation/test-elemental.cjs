@@ -101,9 +101,22 @@ async function runTest() {
     await browser.close();
     process.exit(1);
   }
+  // Now that the two test enemies exist, pin slow-mo/timeScale and block
+  // further wave spawns so enemy drift and proximity slow-mo can't stretch
+  // the status/DoT timing windows (HANDOFF lesson #11).
+  await page.evaluate(() => {
+    window.game.spawnTimer = 9999;
+    window.__elemKeepAlive = setInterval(() => {
+      window._timeScale = 1.0;
+      window.game.timeScale = 1.0;
+      window.game.spawnTimer = 9999;
+    }, 100);
+  });
 
-  const resetStatus = () => page.evaluate(() => {
+  const resetStatus = () => page.evaluate(async () => {
+    const THREE = await import('three');
     const enemies = window.__test?.getEnemies?.() || [];
+    const cam = window.__test?.getCamera?.();
     for (const e of enemies) {
       if (!e.statusEffects) continue;
       for (const key of Object.keys(e.statusEffects)) {
@@ -112,6 +125,17 @@ async function runTest() {
       }
       e.hp = 1000;
     }
+    // Keep the two test enemies on the crosshair line: they drift toward the
+    // player over the suite's runtime, leave the firing path, or reach the
+    // 0.9m collision radius and get destroyed (flaky freeze/shock phases).
+    const fwd = cam ? cam.getWorldDirection(new THREE.Vector3()) : null;
+    const place = (e, dist) => {
+      if (!e || !e.mesh || !cam || !fwd) return;
+      e.mesh.position.copy(cam.position).add(fwd.clone().multiplyScalar(dist));
+      e.mesh.updateMatrixWorld(true);
+    };
+    place(window.__e0, 4);
+    place(window.__e1, 5);
   });
 
   // ── Phase 3: FIRE — DoT ticks ──

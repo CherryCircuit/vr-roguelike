@@ -256,7 +256,9 @@ Ask for clarification when:
 1. **No build step** - don't add webpack, babel, etc. Uses browser ES6 modules.
 2. **No external assets** - all audio is Web Audio API, all visuals are procedural
 3. **No npm packages at runtime** - THREE/Supabase load from CDN via the import map
-   in index.html. (Dev/test tooling is the exception: `package.json` has puppeteer.)
+   in index.html. (Dev/test tooling is the exception: `package.json` declares
+   `puppeteer` as a devDependency and provides `npm run serve`, `npm test`, and
+   `npm run test:suite -- <name>` scripts.)
 4. **VR performance is critical** - 60fps minimum, 72fps target
 5. **Test in VR** - desktop preview doesn't catch VR-specific bugs
 6. **Controllers are first-class** - mouse/keyboard are debug features only

@@ -2,17 +2,77 @@
   "screen": "bestiary",
   "elements": {
     "title": {
-      "x": 0, "y": 0.9, "z": 0, "align": "center", "type": "text", "visible": true, "anchor": "center",
-      "color": 65535, "_colorHex": "#00ffff", "scale": 0.35, "text": "BESTIARY", "fontSize": 70, "glow": true
+      "x": 0,
+      "y": 0.9,
+      "z": 0,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
+      "color": 65535,
+      "_colorHex": "#00ffff",
+      "scale": 0.35,
+      "text": "BESTIARY",
+      "fontSize": 70,
+      "glow": true
     },
     "backBtnGroup": {
-      "x": 0, "y": -0.85, "z": 0, "align": "center", "type": "rect", "visible": true, "anchor": "center",
-      "color": 3355443, "_colorHex": "#333333", "w": 1.0, "h": 0.2, "opacity": 0.85, "borderColor": 16711680
+      "x": 0,
+      "y": -0.85,
+      "z": 0,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "rect",
+      "visible": true,
+      "anchor": "center",
+      "color": 3355443,
+      "_colorHex": "#333333",
+      "w": 1,
+      "h": 0.2,
+      "opacity": 0.85,
+      "borderColor": 16711680
     },
     "backBtnText": {
-      "x": 0, "y": -0.85, "z": 0.02, "align": "center", "type": "text", "visible": true, "anchor": "center",
-      "color": 16711680, "_colorHex": "#ff0000", "scale": 0.2, "text": "BACK", "fontSize": 60, "glow": true
+      "x": 0,
+      "y": -0.85,
+      "z": 0.02,
+      "align": "center",
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "type": "text",
+      "visible": true,
+      "anchor": "center",
+      "color": 16711680,
+      "_colorHex": "#ff0000",
+      "scale": 0.2,
+      "text": "BACK",
+      "fontSize": 60,
+      "glow": true
     }
   },
-  "exportedAt": "2026-04-17T18:00:00.000Z"
+  "exportedAt": "2026-09-20T21:21:54.260Z",
+  "arc": {
+    "regularRowY": 0.55,
+    "regularRadius": 5.6,
+    "regularArc": 2.4,
+    "bossRowY": -1.05,
+    "bossRadius": 6.2,
+    "bossArc": 1.8,
+    "nameFontSize": 34,
+    "nameScale": 0.9,
+    "nameMaxWidth": 360,
+    "levelFontSize": 34,
+    "levelScale": 0.3,
+    "descFontSize": 34,
+    "descScale": 0.85,
+    "descMaxWidth": 440,
+    "regularModelScale": 0.6,
+    "bossModelScale": 0.46
+  }
 }

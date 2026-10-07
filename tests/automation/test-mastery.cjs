@@ -161,9 +161,20 @@ async function runTest() {
   const offered = await page.evaluate(() => window.__test.progression.getPendingUpgrades());
   results.masteryCard = offered.some(s => s.id === 'teslas_domain');
   console.log(`  Tesla's Domain offered at Master tier: ${results.masteryCard ? '✅' : '❌'} (${offered.slice(0, 3).map(s => s.id).join(', ')})`);
-  // Leave the screen
-  await page.evaluate(() => window.__test.progression.selectUpgradeByIndex(0));
-  await sleep(1200);
+  // Leave the screen. The card warp/selection cooldown can still be running
+  // right after the screen appears, so a single select can be silently
+  // ignored — the suite then fired into an open upgrade menu (Phase 5 all
+  // failed with state stuck at 'upgrade_select'). Retry until it advances.
+  let leftScreen = false;
+  for (let attempt = 0; attempt < 10 && !leftScreen; attempt++) {
+    await page.evaluate(() => window.__test.progression.selectUpgradeByIndex(0));
+    const selStart = Date.now();
+    while (Date.now() - selStart < 1500) {
+      if (await page.evaluate(() => window.game?.state) !== 'upgrade_select') { leftScreen = true; break; }
+      await sleep(150);
+    }
+  }
+  console.log(`  Left upgrade screen: ${leftScreen ? '✅' : '❌'}`);
 
   // ── Phase 5: Card effects ──
   console.log('\n📍 Phase 5: Card effects...');

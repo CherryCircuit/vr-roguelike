@@ -89,18 +89,23 @@
                 <option value="settings">Settings</option>
                 <option value="scoreboard">Scoreboard</option>
                 <option value="bestiary">Bestiary</option>
+                <option value="training-ground">Training Ground</option>
+                <option value="alchemy">Alchemy Bench</option>
+                <option value="evolutions">Evolutions Menu</option>
                 <option value="upgrade-wrist-left">Upgrade Wrist (Left)</option>
                 <option value="upgrade-wrist-right">Upgrade Wrist (Right)</option>
             </select>
         </div>
         <div id="toolbar">
             <button class="primary" onclick="exportJSON()">Export</button>
+            <button class="primary" onclick="saveToRepo()" title="Write layouts/&lt;screen&gt;.json through the dev server (npm run serve), so the game picks it up on reload">Save to Repo</button>
             <button onclick="copyJSON()">Copy JSON</button>
             <button onclick="document.getElementById('impF').click()">Import</button>
             <input type="file" id="impF" accept=".json" style="display:none" onchange="importJSON(event)">
             <button onclick="undo()">Undo</button>
             <button class="danger" onclick="resetAll()">Reset</button>
         </div>
+        <div id="save-status" style="display:none;font-size:11px;margin:-4px 0 8px;padding:4px 8px;border-radius:3px;"></div>
         <div id="create-section">
             <button class="create" onclick="createNewRect()">+ Rect</button>
             <button class="create" onclick="createNewText()">+ Text</button>
@@ -109,6 +114,16 @@
         </div>
         <div class="note" id="note-text"></div>
         <div class="pr" style="margin-bottom:8px;justify-content:flex-start;align-items:center;gap:6px"><input type="checkbox" id="showBounds" checked onchange="toggleBounds()" style="width:auto;flex:0 0 auto"><label style="width:auto;color:#aaa;font-size:11px;margin-left:0;text-align:left;flex:0 0 auto">Show bounding boxes</label></div>
+        <div id="arc-section" style="display:none;margin-bottom:8px;background:#2a2a2a;padding:8px;border-radius:4px;">
+            <div class="sec" style="margin-top:0;border-top:none;">Bestiary Arc (entry spread)</div>
+            <div id="arc-controls"></div>
+            <div style="font-size:10px;color:#888;margin-top:4px;">radius/arc are shared by every card in the row. Increase arc or radius to add horizontal spacing.</div>
+        </div>
+        <div id="list-section" style="display:none;margin-bottom:8px;background:#2a2a2a;padding:8px;border-radius:4px;">
+            <div class="sec" style="margin-top:0;border-top:none;">Generated Lists</div>
+            <div id="list-controls"></div>
+            <div style="font-size:10px;color:#888;margin-top:4px;">Row templates for the generated button+counter lists. x/y are the list origin; rowH is vertical spacing.</div>
+        </div>
         <div id="sel-info">
             <h3>SELECTED</h3>
             <div id="sel-name">Click an element</div>
@@ -125,6 +140,7 @@
                 </div>
                 <div class="pr" id="row-fontsize"><label>Font Size</label><input type="number" step="1" min="8" max="200" id="inp-fontsize" onchange="onFontSizeInput()"></div>
                 <div class="pr" id="row-maxwidth"><label>Max Width</label><input type="number" step="10" min="0" max="2000" id="inp-maxwidth" onchange="onMaxWidthInput()" placeholder="0 = auto"></div>
+                <div class="pr" id="row-glyph" style="display:none"><label>Glyph Size</label><input type="number" step="0.005" min="0" max="1" id="inp-glyph" onchange="onGlyphInput()" placeholder="0 = use Scale"></div>
                 <div class="pr"><label></label><small style="color:#888">fontSize = sharpness. Scale = size. Max Width = text wrap width (0 = auto).</small></div>
             </div>
             <div id="color-section">
@@ -549,6 +565,353 @@
     };
 
     // ══════════════════════════════════════════════════
+    //  BESTIARY ARC (entry spread) — mirrors hud.js BESTIARY_ARC_DEFAULTS
+    //  These are the row geometry numbers that cause the horizontal overlap;
+    //  editing them here + Save to Repo writes bestiary.json's `arc` block.
+    // ══════════════════════════════════════════════════
+    const BESTIARY_ARC_DEFAULTS = {
+        regularRowY: 0.55, regularRadius: 5.6, regularArc: 2.4,
+        bossRowY: -1.05, bossRadius: 6.2, bossArc: 1.8,
+        nameFontSize: 34, nameScale: 0.9, nameMaxWidth: 360,
+        levelFontSize: 34, levelScale: 0.3,
+        descFontSize: 34, descScale: 0.85, descMaxWidth: 440,
+        regularModelScale: 0.6, bossModelScale: 0.46,
+    };
+    const BESTIARY_ARC_FIELDS = [
+        ['regularRadius', 'Regular radius', 0.1],
+        ['regularArc', 'Regular arc (rad)', 0.05],
+        ['regularRowY', 'Regular row Y', 0.02],
+        ['bossRadius', 'Boss radius', 0.1],
+        ['bossArc', 'Boss arc (rad)', 0.05],
+        ['bossRowY', 'Boss row Y', 0.02],
+        ['nameFontSize', 'Name font size', 1],
+        ['nameScale', 'Name width', 0.02],
+        ['nameMaxWidth', 'Name wrap px', 10],
+        ['levelFontSize', 'Level font size', 1],
+        ['levelScale', 'Level width', 0.01],
+        ['descFontSize', 'Desc font size', 1],
+        ['descScale', 'Desc width', 0.02],
+        ['descMaxWidth', 'Desc wrap px', 10],
+    ];
+    let bestiaryArc = { ...BESTIARY_ARC_DEFAULTS };
+    let bestiaryArcGroup = null;
+    const BESTIARY_PREVIEW_REGULAR = ['Drone', 'Sneak', 'Sentinel', 'Dart', 'Spiral Swimmer', 'Stack', 'Commander', 'Mortar', 'Bombardier Beetle', 'Void Anchor', 'Void Tendril', 'Echo Phantom', 'Parasitic Leech'];
+    const BESTIARY_PREVIEW_BOSS = ['BOSS: NECRO', 'BOSS: THE MAW', 'BOSS: THE PRISM', 'BOSS: MIRROR GAUNTLET', 'BOSS: BLOOD MINOTAUR', 'BOSS: CONDUCTOR ASCENDANT', 'BOSS: THE MASQUERADE', 'BOSS: ECLIPSE ENGINE'];
+
+    function buildArcControls() {
+        const host = document.getElementById('arc-controls');
+        if (!host) return;
+        host.innerHTML = '';
+        BESTIARY_ARC_FIELDS.forEach(([key, label, step]) => {
+            const row = document.createElement('div');
+            row.className = 'pr';
+            const l = document.createElement('label');
+            l.textContent = label; l.style.width = '108px';
+            const inp = document.createElement('input');
+            inp.type = 'number'; inp.step = String(step); inp.value = bestiaryArc[key];
+            inp.onchange = () => {
+                const v = parseFloat(inp.value);
+                if (Number.isFinite(v)) { bestiaryArc[key] = v; buildBestiaryArcPreview(); }
+            };
+            row.appendChild(l); row.appendChild(inp);
+            host.appendChild(row);
+        });
+        const reset = document.createElement('button');
+        reset.textContent = 'Reset arc';
+        reset.onclick = () => { bestiaryArc = { ...BESTIARY_ARC_DEFAULTS }; buildArcControls(); buildBestiaryArcPreview(); };
+        host.appendChild(reset);
+    }
+
+    function buildBestiaryArcPreview() {
+        if (bestiaryArcGroup) { scene.remove(bestiaryArcGroup); bestiaryArcGroup = null; }
+        if (currentScreen !== 'bestiary') return;
+        const g = new THREE.Group();
+        g.name = 'bestiary-arc-preview';
+        const arc = bestiaryArc;
+        const makeTextMesh = (text, fontSize, scale, colorHex, glow, opts) => {
+            const r = renderTextMesh(text, fontSize, scale, colorHex, glow, opts || {});
+            return new THREE.Mesh(r.geo, r.mat);
+        };
+        const buildRow = (names, rowY, radius, arcSpan, isBoss) => {
+            const n = names.length;
+            names.forEach((name, i) => {
+                const a = n > 1 ? -arcSpan / 2 + (i / (n - 1)) * arcSpan : 0;
+                const x = Math.sin(a) * radius;
+                const z = -Math.cos(a) * radius + radius * 0.08;
+                const card = new THREE.Group();
+                card.position.set(x, rowY, z);
+                card.rotation.y = -a; // face the origin (matches the in-game fix)
+                const nm = makeTextMesh(name, arc.nameFontSize, arc.nameScale, isBoss ? '#ff88ff' : '#00ffff', true, { maxWidth: arc.nameMaxWidth });
+                nm.position.y = -0.08; card.add(nm);
+                const lvl = makeTextMesh(isBoss ? 'L10' : 'L1', arc.levelFontSize, arc.levelScale, '#ffdd66', false, {});
+                lvl.position.set(0, -0.34, 0.01); card.add(lvl);
+                const box = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), new THREE.MeshBasicMaterial({ color: isBoss ? 0xff66cc : 0x44ffaa, wireframe: true, transparent: true, opacity: 0.6 }));
+                box.position.set(0, 0.24, 0); card.add(box);
+                g.add(card);
+            });
+        };
+        buildRow(BESTIARY_PREVIEW_REGULAR, arc.regularRowY, arc.regularRadius, arc.regularArc, false);
+        buildRow(BESTIARY_PREVIEW_BOSS, arc.bossRowY, arc.bossRadius, arc.bossArc, true);
+        scene.add(g);
+        bestiaryArcGroup = g;
+    }
+
+    // ══════════════════════════════════════════════════
+    //  TRAINING GROUND (static elements + generated list templates)
+    // ══════════════════════════════════════════════════
+    const TRAINING_GROUND_DEFS = [
+        { id: 'panelCombat', name: 'Panel (Combat)', type: 'rect', color: 0x0a0f22, w: 5.6, h: 3.9, x: 0, y: 0, z: 0, opacity: 0.96, borderColor: 0x00ff88 },
+        { id: 'panelLoadout', name: 'Panel (Loadout)', type: 'rect', color: 0x0a0f22, w: 6.7, h: 3.9, x: 0, y: 0, z: 0, opacity: 0.96, borderColor: 0x00ff88 },
+        { id: 'title', name: 'Title', type: 'text', text: 'TRAINING GROUND', color: 0x00ff88, fontSize: 92, scale: 0.3, glyphSize: 0.17, glow: true, x: 0, y: 1.68, z: 0.02 },
+        { id: 'sub', name: 'Subtitle', type: 'text', text: 'BUILD A WAVE — THEN PRESS GO', color: 0x8899bb, fontSize: 38, scale: 0.2, glyphSize: 0.052, forceArial: true, x: 0, y: 1.32, z: 0.02 },
+        { id: 'enemiesHeading', name: 'ENEMIES Heading', type: 'text', text: 'ENEMIES', color: 0xff8866, fontSize: 88, scale: 0.3, glyphSize: 0.13, glow: true, x: -1.9, y: 0.98, z: 0.02 },
+        { id: 'bossesHeading', name: 'BOSSES Heading', type: 'text', text: 'BOSSES', color: 0xff88ff, fontSize: 88, scale: 0.3, glyphSize: 0.13, glow: true, x: 1.9, y: 0.98, z: 0.02 },
+        { id: 'waveHeading', name: 'WAVE SIZE Heading', type: 'text', text: 'WAVE SIZE', color: 0xffdd00, fontSize: 56, scale: 0.2, glyphSize: 0.085, glow: true, x: 0, y: 0.62, z: 0.02 },
+        { id: 'waveMinus5', name: 'Wave -5', type: 'rect', color: 0xffdd00, w: 0.28, h: 0.24, x: -0.75, y: 0.3, z: 0.02 },
+        { id: 'waveMinus1', name: 'Wave -1', type: 'rect', color: 0xffdd00, w: 0.28, h: 0.24, x: -0.39, y: 0.3, z: 0.02 },
+        { id: 'waveSize', name: 'Wave SIZE', type: 'rect', color: 0xffdd00, w: 0.62, h: 0.26, x: 0, y: 0.3, z: 0.02 },
+        { id: 'wavePlus1', name: 'Wave +1', type: 'rect', color: 0xffdd00, w: 0.28, h: 0.24, x: 0.39, y: 0.3, z: 0.02 },
+        { id: 'wavePlus5', name: 'Wave +5', type: 'rect', color: 0xffdd00, w: 0.28, h: 0.24, x: 0.75, y: 0.3, z: 0.02 },
+        { id: 'go', name: 'GO!', type: 'rect', color: 0x00ff88, w: 1.5, h: 0.28, x: 0, y: -0.18, z: 0.02 },
+        { id: 'clear', name: 'CLEAR WAVE', type: 'rect', color: 0xff6644, w: 1.5, h: 0.24, x: 0, y: -0.56, z: 0.02 },
+        { id: 'loadout', name: 'LOADOUT →', type: 'rect', color: 0x44aaff, w: 1.5, h: 0.24, x: 0, y: -0.92, z: 0.02 },
+        { id: 'exit', name: 'EXIT TRAINING', type: 'rect', color: 0xff4444, w: 1.5, h: 0.24, x: 0, y: -1.28, z: 0.02 },
+        { id: 'tip', name: 'Tip', type: 'text', text: 'GO CLOSES THIS MENU — THUMBSTICK OR T REOPENS IT', color: 0x6688aa, fontSize: 30, scale: 0.12, glyphSize: 0.04, forceArial: true, x: 0, y: -1.66, z: 0.02 },
+        { id: 'loadoutTitle', name: 'Loadout Title', type: 'text', text: 'LOADOUT — BUILD YOUR ARSENAL', color: 0x44aaff, fontSize: 52, scale: 0.3, glyphSize: 0.08, glow: true, x: 0, y: 1.68, z: 0.02 },
+        { id: 'leftTitle', name: 'LEFT BLASTER', type: 'text', text: 'LEFT BLASTER', color: 0x00ffff, fontSize: 54, scale: 0.3, glyphSize: 0.075, glow: true, x: -2.05, y: 0.98, z: 0.02 },
+        { id: 'rightTitle', name: 'RIGHT BLASTER', type: 'text', text: 'RIGHT BLASTER', color: 0x00ffff, fontSize: 54, scale: 0.3, glyphSize: 0.075, glow: true, x: 2.05, y: 0.98, z: 0.02 },
+        { id: 'evoHeading', name: 'EVOLUTIONS Heading', type: 'text', text: 'EVOLUTIONS', color: 0xffdd00, fontSize: 54, scale: 0.3, glyphSize: 0.075, glow: true, x: 0, y: 0.98, z: 0.02 },
+        { id: 'resetLoadout', name: 'RESET LOADOUT', type: 'rect', color: 0xff8844, w: 1.4, h: 0.24, x: -1.6, y: -1.55, z: 0.02 },
+        { id: 'backToCombat', name: '← COMBAT', type: 'rect', color: 0x44aaff, w: 1.4, h: 0.24, x: 0, y: -1.55, z: 0.02 },
+        { id: 'exitLoadout', name: 'EXIT TRAINING (loadout)', type: 'rect', color: 0xff4444, w: 1.4, h: 0.24, x: 1.6, y: -1.55, z: 0.02 },
+    ];
+    const TRAINING_LIST_DEFS = {
+        enemy: { label: 'Enemies (list)', fields: ['x', 'y', 'rowH', 'btnDX', 'ctrDX', 'btnW', 'btnH', 'fontSize', 'glyphSize', 'visibleRows'] },
+        boss: { label: 'Bosses (list)', fields: ['x', 'y', 'rowH', 'btnDX', 'ctrDX', 'btnW', 'btnH', 'fontSize', 'glyphSize', 'visibleRows'] },
+        upgradeLeft: { label: 'Left Upgrades (list)', fields: ['col1X', 'col2X', 'y', 'rowH', 'btnDX', 'ctrDX', 'btnW', 'btnH', 'fontSize', 'glyphSize', 'visibleRows'] },
+        upgradeRight: { label: 'Right Upgrades (list)', fields: ['col1X', 'col2X', 'y', 'rowH', 'btnDX', 'ctrDX', 'btnW', 'btnH', 'fontSize', 'glyphSize', 'visibleRows'] },
+        evolution: { label: 'Evolutions (list)', fields: ['x', 'y', 'rowH', 'btnW', 'btnH', 'fontSize', 'glyphSize', 'visibleRows'] },
+    };
+    let screenLists = {};
+    let loadedLists = null;
+    let loadedElements = null;
+    let listPreviewGroup = null;
+
+    SCREEN_CONFIGS['training-ground'] = {
+        defs: TRAINING_GROUND_DEFS,
+        cameraPos: [0, 0, 5.2],
+        cameraTarget: [0, 0, 0],
+        useHudGroup: false,
+        gridRotation: Math.PI / 2,
+        hasGroups: false,
+        hasAnchors: false,
+        hasVisibility: true,
+        label: 'Training Ground',
+        exportName: 'training-ground.json',
+        exportEditor: 'training-ground',
+        listDefs: TRAINING_LIST_DEFS,
+    };
+
+    // Alchemy bench shares layouts/upgrade-cards.json (layoutFile/saveName
+    // override) — its params live under lists.alchemy.
+    const ALCHEMY_LIST_DEFS = {
+        alchemy: {
+            label: 'Alchemy Bench (list)',
+            fields: ['panelW', 'panelH', 'headerY', 'essenceY', 'colLeftX', 'colCenterX', 'colRightX',
+                'colHeaderY', 'colDescY', 'chipW', 'chipH', 'chipRowH', 'chipTopY', 'chipGlyph',
+                'forgeW', 'forgeH', 'forgeRowH', 'forgeTopY', 'forgeGlyph', 'essenceSlot', 'essenceGap',
+                'essenceSquaresY', 'warnY', 'backX', 'backY', 'backW', 'backH',
+                'catCol1X', 'catCol2X', 'catTitleY', 'catTopY', 'catRowH', 'catW', 'catH', 'catGlyph',
+                'popupX', 'popupY', 'popupZ', 'popupW', 'popupH', 'popupTitleY', 'popupDescY',
+                'popupIconY', 'popupBtnY', 'popupBtnW', 'popupBtnH', 'popupBtnDX'],
+        },
+    };
+    SCREEN_CONFIGS['alchemy'] = {
+        defs: [],
+        layoutFile: 'upgrade-cards',
+        saveName: 'upgrade-cards',
+        cameraPos: [0, 0, 5.2],
+        cameraTarget: [0, 0, 0],
+        useHudGroup: false,
+        gridRotation: Math.PI / 2,
+        hasGroups: false,
+        hasAnchors: false,
+        hasVisibility: true,
+        label: 'Alchemy Bench',
+        exportName: 'upgrade-cards.json',
+        exportEditor: 'alchemy',
+        listDefs: ALCHEMY_LIST_DEFS,
+    };
+
+    // Evolutions menu also shares layouts/upgrade-cards.json (lists.evolutions).
+    const EVOLUTIONS_LIST_DEFS = {
+        evolutions: {
+            label: 'Evolutions Menu (list)',
+            fields: ['panelX', 'panelY', 'panelZ', 'panelW', 'panelH', 'titleY', 'hintY', 'boxW', 'boxTop',
+                'boxBottom', 'railX', 'railW', 'thumbX', 'backX', 'backY', 'backW', 'backH', 'leftX', 'rowH',
+                'visibleRows', 'rowTopPad', 'rowBgW', 'barX', 'barW', 'barH', 'nameY', 'fromY', 'recipeY',
+                'nameGlyph', 'fromGlyph', 'recipeGlyph', 'fracGlyph'],
+        },
+    };
+    SCREEN_CONFIGS['evolutions'] = {
+        defs: [],
+        layoutFile: 'upgrade-cards',
+        saveName: 'upgrade-cards',
+        cameraPos: [0, 0, 5.2],
+        cameraTarget: [0, 0, 0],
+        useHudGroup: false,
+        gridRotation: Math.PI / 2,
+        hasGroups: false,
+        hasAnchors: false,
+        hasVisibility: true,
+        label: 'Evolutions Menu',
+        exportName: 'upgrade-cards.json',
+        exportEditor: 'evolutions',
+        listDefs: EVOLUTIONS_LIST_DEFS,
+    };
+
+    function buildListControls() {
+        const host = document.getElementById('list-controls');
+        if (!host) return;
+        host.innerHTML = '';
+        const defs = SCREEN_CONFIGS[currentScreen]?.listDefs;
+        if (!defs) return;
+        for (const [listId, spec] of Object.entries(defs)) {
+            const hdr = document.createElement('div');
+            hdr.style.cssText = 'font-size:11px;color:#9af;font-weight:700;margin:6px 0 2px;';
+            hdr.textContent = spec.label;
+            host.appendChild(hdr);
+            const vals = screenLists[listId] || {};
+            for (const f of spec.fields) {
+                const row = document.createElement('div');
+                row.className = 'pr';
+                const l = document.createElement('label');
+                l.textContent = f; l.style.width = '78px';
+                const inp = document.createElement('input');
+                inp.type = 'number'; inp.step = '0.01'; inp.value = (vals[f] ?? '');
+                inp.onchange = () => {
+                    const v = parseFloat(inp.value);
+                    if (Number.isFinite(v)) { screenLists[listId] = { ...(screenLists[listId] || {}), [f]: v }; buildListPreview(); }
+                };
+                row.appendChild(l); row.appendChild(inp);
+                host.appendChild(row);
+            }
+        }
+    }
+
+    function buildListPreview() {
+        if (listPreviewGroup) { scene.remove(listPreviewGroup); listPreviewGroup = null; }
+        if (currentScreen === 'alchemy') { buildAlchemyPreviewGroup(); return; }
+        if (currentScreen === 'evolutions') { buildEvolutionsPreviewGroup(); return; }
+        if (currentScreen !== 'training-ground') return;
+        const g = new THREE.Group();
+        g.name = 'training-list-preview';
+        const btn = (w, h, color, opacity = 0.9) => new THREE.Mesh(
+            new THREE.PlaneGeometry(w, h),
+            new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide }),
+        );
+        const L = screenLists;
+        const addRows = (rows, tpl, color) => {
+            if (!tpl || tpl.x == null && tpl.col1X == null) return;
+            const xs = tpl.col1X != null ? [tpl.col1X, tpl.col2X] : [tpl.x];
+            const perCol = xs.length > 1 ? Math.ceil(rows / 2) : rows;
+            rows.forEach((_, i) => {
+                const col = xs.length > 1 ? (i % 2) : 0;
+                const y = (tpl.y || 0) - Math.floor(i / (xs.length > 1 ? 2 : 1)) * (tpl.rowH || 0.2);
+                const b = btn(tpl.btnW || 0.7, tpl.btnH || 0.16, color);
+                b.position.set((xs[col] || 0) + (tpl.btnDX || 0), y, 0.03);
+                g.add(b);
+                const c = btn(0.16, 0.19, 0x000000, 0.85);
+                c.position.set((xs[col] || 0) + (tpl.ctrDX || 0.4), y, 0.04);
+                g.add(c);
+            });
+        };
+        addRows(Array(13).fill(0), L.enemy, 0xff8866);
+        addRows(Array(8).fill(0), L.boss, 0xff88ff);
+        addRows(Array(28).fill(0), L.upgradeLeft, 0x44ffaa);
+        addRows(Array(28).fill(0), L.upgradeRight, 0x44ffaa);
+        // Evolution list (single column, no counters)
+        const ev = L.evolution;
+        if (ev && ev.x != null) {
+            for (let i = 0; i < 6; i++) {
+                const b = btn(ev.btnW || 1.35, ev.btnH || 0.2, 0xffdd00);
+                b.position.set(ev.x, (ev.y || 0) - i * (ev.rowH || 0.26), 0.03);
+                g.add(b);
+            }
+        }
+        scene.add(g);
+        listPreviewGroup = g;
+    }
+
+    function buildAlchemyPreviewGroup() {
+        const A = screenLists.alchemy || {};
+        if (A.panelW == null) return;
+        const g = new THREE.Group();
+        g.name = 'alchemy-list-preview';
+        const rect = (w, h, color, x, y, opacity = 0.9) => {
+            const m = new THREE.Mesh(
+                new THREE.PlaneGeometry(w, h),
+                new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide }),
+            );
+            m.position.set(x, y, 0.03);
+            g.add(m);
+        };
+        rect(A.panelW, A.panelH, 0x0f1026, 0, 0, 0.95);
+        // dissolve chips (3 sample rows per hand)
+        for (let i = 0; i < 3; i++) {
+            rect(A.chipW, A.chipH, 0x00ffff, A.colLeftX, A.chipTopY - i * A.chipRowH);
+            rect(A.chipW, A.chipH, 0x00ffff, A.colRightX, A.chipTopY - i * A.chipRowH);
+        }
+        // forge buttons
+        for (let i = 0; i < 4; i++) rect(A.forgeW, A.forgeH, 0xff66ff, A.colCenterX, A.forgeTopY - i * A.forgeRowH);
+        // essence squares
+        for (let i = 0; i < 3; i++) rect(A.essenceSlot, A.essenceSlot, 0x44aaff, A.colCenterX - A.essenceGap + i * A.essenceGap, A.essenceSquaresY);
+        // back + confirm popup
+        rect(A.backW, A.backH, 0xff4444, A.backX, A.backY);
+        rect(A.popupW, A.popupH, 0x141a3a, A.popupX, A.popupY, 0.97);
+        rect(A.popupBtnW, A.popupBtnH, 0x00ff88, A.popupX - A.popupBtnDX, A.popupY + A.popupBtnY);
+        rect(A.popupBtnW, A.popupBtnH, 0xff4444, A.popupX + A.popupBtnDX, A.popupY + A.popupBtnY);
+        scene.add(g);
+        listPreviewGroup = g;
+    }
+
+    function buildEvolutionsPreviewGroup() {
+        const E = screenLists.evolutions || {};
+        if (E.panelW == null) return;
+        const g = new THREE.Group();
+        g.name = 'evolutions-list-preview';
+        const rect = (w, h, color, x, y, z = 0.03, opacity = 0.9) => {
+            const m = new THREE.Mesh(
+                new THREE.PlaneGeometry(w, h),
+                new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide }),
+            );
+            m.position.set(x, y, z);
+            g.add(m);
+        };
+        rect(E.panelW, E.panelH, 0x0f1026, 0, 0, 0.03, 0.96);
+        rect(E.boxW, E.boxTop - E.boxBottom, 0x0a0c1e, 0, (E.boxTop + E.boxBottom) / 2, 0.02, 0.85);
+        // rows (visibleRows sample rows)
+        const rows = Math.max(1, E.visibleRows || 3);
+        for (let i = 0; i < rows; i++) {
+            const rowY = E.boxTop - E.rowTopPad - i * E.rowH;
+            rect(E.rowBgW, E.rowH - 0.06, 0x181a36, 0, rowY, 0.03, 0.8);
+            // progress bar + fill sample
+            rect(E.barW, E.barH, 0x222244, E.barX, rowY + E.nameY, 0.04);
+            rect(E.barW * 0.5, E.barH, 0xffdd00, E.barX - E.barW / 2 + E.barW * 0.25, rowY + E.nameY, 0.045);
+            // name/from/recipe placeholders (left-aligned bars)
+            rect(1.2, 0.14, 0x66ffcc, E.leftX + 0.6, rowY + E.nameY, 0.04);
+            rect(0.8, 0.07, 0x8899bb, E.leftX + 0.4, rowY + E.fromY, 0.04);
+            rect(1.6, 0.07, 0xc0c0d8, E.leftX + 0.8, rowY + E.recipeY, 0.04);
+        }
+        // rail + thumb sample + back
+        rect(E.railW, E.boxTop - E.boxBottom, 0x333355, E.railX, (E.boxTop + E.boxBottom) / 2, 0.04, 0.8);
+        rect(0.06, 0.5, 0xffdd00, E.thumbX, E.boxBottom + 0.3, 0.045, 0.9);
+        rect(E.backW, E.backH, 0xff4444, E.backX, E.backY, 0.04);
+        scene.add(g);
+        listPreviewGroup = g;
+    }
+
+    // ══════════════════════════════════════════════════
     //  THREE.JS SETUP
     // ══════════════════════════════════════════════════
 
@@ -729,7 +1092,12 @@
         // When maxWidth is set, scale relative to width so text doesn't squish
         // when more lines are added. Without maxWidth, use height-based scale (original).
         let w, h;
-        if (maxWidth) {
+        if (opts.glyphSize) {
+            // Glyph-sized (matches hud.js makeSizedText): the glyph height is
+            // fixed, so the sprite size tracks fontSize/line-count/padding.
+            h = (opts.glyphSize * th) / fontSize;
+            w = (tw * h) / th;
+        } else if (maxWidth) {
             const unitPerPixel = scale / maxWidth;
             w = tw * unitPerPixel;
             h = th * unitPerPixel;
@@ -1324,6 +1692,9 @@
             document.getElementById('row-fontsize').style.display = '';
             document.getElementById('inp-maxwidth').value = def.maxWidth || '';
             document.getElementById('row-maxwidth').style.display = '';
+            // Glyph-sized text (makeSizedText): only shown for elements that use it.
+            document.getElementById('row-glyph').style.display = (def.glyphSize != null) ? '' : 'none';
+            if (def.glyphSize != null) document.getElementById('inp-glyph').value = def.glyphSize;
             const hexColor = '#' + def.color.toString(16).padStart(6, '0');
             document.getElementById('inp-color').value = hexColor;
             document.getElementById('inp-color-hex').value = hexColor;
@@ -1344,6 +1715,7 @@
             document.getElementById('inp-text').disabled = true;
             document.getElementById('row-fontsize').style.display = 'none';
             document.getElementById('row-maxwidth').style.display = 'none';
+            document.getElementById('row-glyph').style.display = 'none';
             fontSection.classList.add('disabled');
             colorSection.classList.add('disabled');
             fontInput.disabled = true;
@@ -1365,6 +1737,7 @@
             document.getElementById('inp-text').disabled = true;
             document.getElementById('row-fontsize').style.display = 'none';
             document.getElementById('row-maxwidth').style.display = 'none';
+            document.getElementById('row-glyph').style.display = 'none';
             fontSection.classList.add('disabled');
             fontInput.disabled = true;
             colorSection.classList.remove('disabled');
@@ -1384,6 +1757,7 @@
             document.getElementById('inp-text').disabled = true;
             document.getElementById('row-fontsize').style.display = 'none';
             document.getElementById('row-maxwidth').style.display = 'none';
+            document.getElementById('row-glyph').style.display = 'none';
             fontSection.classList.add('disabled');
             fontInput.disabled = true;
             colorSection.classList.remove('disabled');
@@ -1724,6 +2098,20 @@
         autoSave();
     };
 
+    window.onGlyphInput = function() {
+        const pid = primarySelectedId();
+        if (!pid) return;
+        const def = els[pid]?.userData?.def;
+        if (!def || def.type !== 'text') return;
+        pushUndo();
+        const val = parseFloat(document.getElementById('inp-glyph').value);
+        def.glyphSize = (isNaN(val) || val <= 0) ? undefined : Math.min(1, val);
+        document.getElementById('inp-glyph').value = def.glyphSize ?? '';
+        rebuildMesh(pid);
+        updateList();
+        autoSave();
+    };
+
     // ══════════════════════════════════════════════════
     //  VISIBILITY TOGGLES
     // ══════════════════════════════════════════════════
@@ -1760,6 +2148,7 @@
                 if (idx >= 0) DEFS.splice(idx, 1);
             }
             delete els[id];
+            if (loadedElements) delete loadedElements[id]; // don't resurrect on save
             delete elVisible[id];
             delete elAnchor[id];
             if (INIT[id]) delete INIT[id];
@@ -2103,6 +2492,17 @@
 
     function applyLayoutData(d) {
         if (!d || !d.elements) return false;
+        loadedElements = d.elements;
+        if (d.arc && currentScreen === 'bestiary') {
+            bestiaryArc = { ...BESTIARY_ARC_DEFAULTS, ...d.arc };
+            buildArcControls();
+            buildBestiaryArcPreview();
+        }
+        if (d.lists) {
+            loadedLists = d.lists;
+            screenLists = { ...d.lists };
+            if (SCREEN_CONFIGS[currentScreen]?.listDefs) { buildListControls(); buildListPreview(); }
+        }
         Object.keys(d.elements).forEach(id => {
             if (!els[id]) return;
             const m = els[id], dd = m.userData.def, v = d.elements[id];
@@ -2115,11 +2515,13 @@
             if (v.color != null) { dd.color = v.color; m.userData.origColor = v.color; }
             if (v.borderColor != null) { dd.borderColor = v.borderColor; m.userData.origBorderColor = v.borderColor; const _bc = m.children?.find(c => c.userData.isRectBorder); if (_bc?.material) _bc.material.color.setHex(dd.borderColor); }
             if (dd.type === 'text' && v.text !== undefined) {
-                dd.text = v.text; dd.scale = v.scale;
+                dd.text = v.text;
+                if (v.scale != null) dd.scale = v.scale;
                 if (v.fontSize !== undefined) dd.fontSize = v.fontSize;
                 if (v.glow !== undefined) dd.glow = v.glow;
                 if (v.maxWidth !== undefined) dd.maxWidth = v.maxWidth;
                 else if (dd.maxWidth) dd.maxWidth = undefined;
+                if (v.glyphSize !== undefined) dd.glyphSize = v.glyphSize;
                 if (v.forceArial !== undefined) dd.forceArial = v.forceArial;
             }
             else if (dd.type === 'hearts') { dd.scale = v.scale || 1.0; }
@@ -2165,7 +2567,8 @@
 
     async function loadBundledLayout(screenId) {
         try {
-            const resp = await fetch(`../layouts/${screenId}.json`, { cache: 'no-store' });
+            const file = SCREEN_CONFIGS[screenId]?.layoutFile || screenId;
+            const resp = await fetch(`../layouts/${file}.json`, { cache: 'no-store' });
             if (!resp.ok) return false;
             const d = await resp.json();
             return applyLayoutData(d);
@@ -2197,6 +2600,17 @@
             elements: {},
             exportedAt: new Date().toISOString()
         };
+        // Preserve elements owned by a sibling editor screen that shares this
+        // file (e.g. the alchemy screen has no defs but shares
+        // upgrade-cards.json) — otherwise saving would wipe them.
+        if (loadedElements) {
+            for (const id of Object.keys(loadedElements)) {
+                if (!els[id]) data.elements[id] = loadedElements[id];
+            }
+        }
+        if (currentScreen === 'bestiary') data.arc = { ...bestiaryArc };
+        if (SCREEN_CONFIGS[currentScreen]?.listDefs) data.lists = { ...screenLists };
+        else if (loadedLists) data.lists = loadedLists; // preserve lists owned by a sibling screen (e.g. alchemy in upgrade-cards)
         if (cfg.useHudGroup) {
             data.hudGroupPosition = { x: 0, y: 0, z: -3 };
             data.hudGroupRotation = { x: -70, y: 0, z: 0 };
@@ -2213,12 +2627,13 @@
                 _colorHex: colorHex,  // Human-readable for verification
             };
             if (d.type === 'text') {
-                data.elements[id].scale = +(d.scale.toFixed(4));
+                data.elements[id].scale = d.scale != null ? +d.scale.toFixed(4) : 0;
                 data.elements[id].text = d.text;
                 data.elements[id].fontSize = d.fontSize;
                 data.elements[id].glow = !!d.glow;
                 if (d.forceArial) data.elements[id].forceArial = true;
                 if (d.maxWidth != null) data.elements[id].maxWidth = d.maxWidth;
+                if (d.glyphSize != null) data.elements[id].glyphSize = d.glyphSize;
             } else if (d.type === 'hearts') {
                 data.elements[id].scale = +((d.scale || 1.0).toFixed(4));
             } else if (d.type === 'wire-octa' || d.type === 'cube' || d.type === 'sphere') {
@@ -2285,6 +2700,37 @@
         }
         return data;
     }
+
+    function showSaveStatus(msg, ok) {
+        const el = document.getElementById('save-status');
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.background = ok ? '#123d12' : '#3d1212';
+        el.style.color = ok ? '#8fe08f' : '#e08f8f';
+        el.textContent = msg;
+        clearTimeout(showSaveStatus._t);
+        showSaveStatus._t = setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
+    // Write layouts/<screen>.json through the dev server's /__layout endpoint
+    // (scripts/serve.mjs). The game loads those files on start, so a reload
+    // applies the edit. Falls back to a clear message if not served.
+    window.saveToRepo = async function() {
+        const data = buildExportData();
+        const saveName = SCREEN_CONFIGS[currentScreen]?.saveName || currentScreen;
+        try {
+            const resp = await fetch(`/__layout/${encodeURIComponent(saveName)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data, null, 2),
+            });
+            const j = await resp.json().catch(() => ({}));
+            if (resp.ok && j.ok) showSaveStatus(`Saved ${j.file} — reload the game to apply`, true);
+            else showSaveStatus(`Save failed: ${j.error || resp.status}`, false);
+        } catch (err) {
+            showSaveStatus(`Save failed — run "npm run serve" and open this page from that server. (${err.message})`, false);
+        }
+    };
 
     window.saveLayout = function() {
         const cfg = SCREEN_CONFIGS[currentScreen];
@@ -2443,6 +2889,9 @@
 
         clearScreen();
         currentScreen = screenId;
+        loadedLists = null;
+        loadedElements = null;
+        screenLists = {};
         const cfg = SCREEN_CONFIGS[screenId];
 
         // Set up scene for this screen
@@ -2484,6 +2933,19 @@
                 ? '<kbd>Shift+Click</kbd> multi-select. Anchor controls scale origin. Elements render at exact in-game size.'
                 : 'Elements render at exact in-game size. <kbd>Click</kbd> select, <kbd>Gizmo</kbd> move.';
         updateUI(); updateList();
+
+        // Bestiary: show arc controls + live entry-spread preview; other
+        // screens hide them and drop the preview group.
+        const arcSec = document.getElementById('arc-section');
+        if (arcSec) arcSec.style.display = (screenId === 'bestiary') ? 'block' : 'none';
+        if (screenId === 'bestiary') { buildArcControls(); buildBestiaryArcPreview(); }
+        else if (bestiaryArcGroup) { scene.remove(bestiaryArcGroup); bestiaryArcGroup = null; }
+
+        const listSec = document.getElementById('list-section');
+        const hasLists = !!cfg.listDefs;
+        if (listSec) listSec.style.display = hasLists ? 'block' : 'none';
+        if (hasLists) { buildListControls(); buildListPreview(); }
+        else if (listPreviewGroup) { scene.remove(listPreviewGroup); listPreviewGroup = null; }
     };
 
     // ══════════════════════════════════════════════════
