@@ -93,7 +93,7 @@
     },
     "wrist_header": {
       "x": 0,
-      "y": 0.094,
+      "y": 0.087,
       "z": 0.006,
       "align": "center",
       "rx": 0,
@@ -105,11 +105,11 @@
       "color": 65535,
       "scale": 0.03,
       "text": "LEFT BLASTER",
-      "fontSize": 50,
+      "fontSize": 40,
       "glow": false
     },
     "wrist_kills": {
-      "x": -0.062,
+      "x": -0.058,
       "y": 0.054,
       "z": 0.018,
       "align": "center",
@@ -122,7 +122,7 @@
       "color": 65535,
       "scale": 0.03,
       "text": "KILLS:",
-      "fontSize": 50,
+      "fontSize": 40,
       "glow": false
     },
     "wrist_dmg": {
@@ -139,12 +139,12 @@
       "color": 65535,
       "scale": 0.03,
       "text": "TOAL DMG:",
-      "fontSize": 50,
+      "fontSize": 40,
       "glow": false
     },
     "wrist_upgrade_count": {
       "x": 0,
-      "y": -0.007,
+      "y": -0.008,
       "z": 0.006,
       "align": "center",
       "rx": 0,
@@ -156,12 +156,12 @@
       "color": 65535,
       "scale": 0.05,
       "text": "UPGRADES\n",
-      "fontSize": 50,
+      "fontSize": 40,
       "glow": false
     },
     "dup_18_wrist_header": {
       "x": 0,
-      "y": 0.116,
+      "y": 0.103,
       "z": 0.012,
       "align": "center",
       "rx": 0,
@@ -171,13 +171,13 @@
       "visible": true,
       "anchor": "center",
       "color": 14417919,
-      "scale": 0.05,
+      "scale": 0.04,
       "text": "CHARGE CANNON",
-      "fontSize": 100,
+      "fontSize": 70,
       "glow": false
     },
     "dup_19_wrist_kills": {
-      "x": -0.063,
+      "x": -0.059,
       "y": 0.04,
       "z": 0.018,
       "align": "center",
@@ -190,7 +190,7 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "42",
-      "fontSize": 70,
+      "fontSize": 50,
       "glow": false
     },
     "dup_20_dup_19_wrist_kills": {
@@ -207,11 +207,11 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "1200",
-      "fontSize": 70,
+      "fontSize": 50,
       "glow": false
     },
     "dup_21_wrist_dmg": {
-      "x": 0.064,
+      "x": 0.058,
       "y": 0.054,
       "z": 0.018,
       "align": "center",
@@ -224,11 +224,11 @@
       "color": 65535,
       "scale": 0.03,
       "text": "DPS:",
-      "fontSize": 50,
+      "fontSize": 40,
       "glow": false
     },
     "dup_22_dup_19_wrist_kills": {
-      "x": 0.063,
+      "x": 0.057,
       "y": 0.04,
       "z": 0.018,
       "align": "center",
@@ -241,12 +241,12 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "225",
-      "fontSize": 70,
+      "fontSize": 50,
       "glow": false
     },
     "dup_23_wrist_upgrade_count": {
       "x": -0.05,
-      "y": -0.03,
+      "y": -0.026,
       "z": 0.012,
       "align": "center",
       "rx": 0,
@@ -258,13 +258,13 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "DOUBLE SHOT",
-      "fontSize": 40,
+      "fontSize": 30,
       "glow": false,
       "maxWidth": 330
     },
     "dup_24_dup_23_wrist_upgrade_count": {
       "x": 0.05,
-      "y": -0.03,
+      "y": -0.026,
       "z": 0.012,
       "align": "center",
       "rx": 0,
@@ -276,13 +276,13 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "AIN'T NOBODY GOT TIME FOR THAT",
-      "fontSize": 40,
+      "fontSize": 30,
       "glow": false,
       "maxWidth": 330
     },
     "dup_25_dup_23_wrist_upgrade_count": {
       "x": -0.05,
-      "y": -0.06,
+      "y": -0.052,
       "z": 0.012,
       "align": "center",
       "rx": 0,
@@ -294,13 +294,13 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "AIN'T NOBODY GOT\nTIME FOR THAT",
-      "fontSize": 40,
+      "fontSize": 30,
       "glow": false,
       "maxWidth": 330
     },
     "dup_26_dup_24_dup_23_wrist_upgrade_count": {
       "x": 0.05,
-      "y": -0.06,
+      "y": -0.052,
       "z": 0.012,
       "align": "center",
       "rx": 0,
@@ -312,13 +312,13 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "SHOCK (x2)",
-      "fontSize": 40,
+      "fontSize": 30,
       "glow": false,
       "maxWidth": 330
     },
     "dup_27_dup_25_dup_23_wrist_upgrade_count": {
       "x": -0.05,
-      "y": -0.09,
+      "y": -0.078,
       "z": 0.012,
       "align": "center",
       "rx": 0,
@@ -330,13 +330,13 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "VAMPIRIC",
-      "fontSize": 40,
+      "fontSize": 30,
       "glow": false,
       "maxWidth": 330
     },
     "dup_28_dup_26_dup_24_dup_23_wrist_upgrade_count": {
       "x": 0.05,
-      "y": -0.09,
+      "y": -0.078,
       "z": 0.012,
       "align": "center",
       "rx": 0,
@@ -348,13 +348,13 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "SCOPE (x3)",
-      "fontSize": 40,
+      "fontSize": 30,
       "glow": false,
       "maxWidth": 330
     },
     "dup_29_dup_28_dup_26_dup_24_dup_23_wrist_upgrade_count": {
       "x": 0.05,
-      "y": -0.12,
+      "y": -0.104,
       "z": 0.012,
       "align": "center",
       "rx": 0,
@@ -366,13 +366,13 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "TURBO BARREL",
-      "fontSize": 40,
+      "fontSize": 30,
       "glow": false,
       "maxWidth": 330
     },
     "dup_30_dup_27_dup_25_dup_23_wrist_upgrade_count": {
       "x": -0.05,
-      "y": -0.12,
+      "y": -0.104,
       "z": 0.012,
       "align": "center",
       "rx": 0,
@@ -384,7 +384,7 @@
       "color": 14417919,
       "scale": 0.03,
       "text": "TRIPLE SHOT",
-      "fontSize": 40,
+      "fontSize": 30,
       "glow": false,
       "maxWidth": 330
     },

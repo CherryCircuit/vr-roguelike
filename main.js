@@ -231,7 +231,7 @@ import {
   initTrainingGround, startTraining, exitTraining, isTrainingActive,
   isTrainingMenuOpen, toggleTrainingMenu, getTrainingMenuHit,
   updateTrainingHover, updateTrainingMenu, updateTrainingScrollInput,
-  scrollTrainingMenus, handleTrainingAction,
+  scrollTrainingMenus, handleTrainingAction, raycastTrainingMenu,
 } from './training-ground.js';
 
 import {
@@ -736,6 +736,14 @@ const _uiHoverRaycasters = [new THREE.Raycaster(), new THREE.Raycaster()];
 const _uiHoverOrigins = [new THREE.Vector3(), new THREE.Vector3()];
 const _uiHoverQuats = [new THREE.Quaternion(), new THREE.Quaternion()];
 const _uiHoverDirs = [new THREE.Vector3(), new THREE.Vector3()];
+
+// Training Ground selector beams: one raycaster per controller for the
+// holodeck menu. The menu is a world-space panel, so each hand needs its own
+// pointer — there is no desktop mouse ray to lean on inside VR.
+const _trainMenuRaycasters = [new THREE.Raycaster(), new THREE.Raycaster()];
+const _trainMenuOrigins = [new THREE.Vector3(), new THREE.Vector3()];
+const _trainMenuQuats = [new THREE.Quaternion(), new THREE.Quaternion()];
+const _trainMenuDirs = [new THREE.Vector3(), new THREE.Vector3()];
 
 
 // Low health warning
@@ -1957,9 +1965,12 @@ function init() {
       settingsTrigger: handleSettingsTrigger,
       titleTrigger: handleTitleTrigger,
       playingTrigger: (controller, index) => {
-        // Training Ground: the training menu consumes triggers while open
+        // Training Ground: the training menu consumes triggers while open.
+        // Must raycast from the CONTROLLER (index), not the desktop centre
+        // camera: getAimRaycaster() is null in VR, so the holodeck menu was
+        // unclickable in-headset (player report).
         if (isTrainingActive() && isTrainingMenuOpen()) {
-          const rc = getAimRaycaster();
+          const rc = aimControllerRaycaster(index, 6);
           const hit = rc ? getTrainingMenuHit(rc) : null;
           if (hit) handleTrainingAction(hit);
           return;
@@ -2612,6 +2623,9 @@ function setupControllers() {
     });
 
     controller.add(createControllerVisual(i));
+    // Cache the visual parts for the training-menu pointer pass.
+    const visual = controller.children.find(c => c.userData?.parts);
+    if (visual) controller.userData.pointerParts = visual.userData.parts;
     scene.add(controller);
     controllers.push(controller);
   }
@@ -2688,6 +2702,83 @@ function updateAllControllerSphereColors() {
   updateControllerSphereColor(1);
 }
 
+/**
+ * Aim a pooled raycaster down a controller's barrel.
+ * Used by the Training Ground menu, whose panel is world-space geometry: in
+ * VR the desktop centre-camera ray (getAimRaycaster) returns null, which is
+ * why the holodeck menu used to be completely dead with controllers.
+ * @param {number} index controller index (0 = left, 1 = right)
+ * @param {number} maxDistance ray length in metres
+ * @returns {THREE.Raycaster|null}
+ */
+function aimControllerRaycaster(index, maxDistance = 6) {
+  const controller = controllers[index];
+  const rc = _trainMenuRaycasters[index];
+  if (!controller || !rc) return null;
+  controller.getWorldPosition(_trainMenuOrigins[index]);
+  controller.getWorldQuaternion(_trainMenuQuats[index]);
+  _trainMenuDirs[index].set(0, 0, -1).applyQuaternion(_trainMenuQuats[index]);
+  rc.set(_trainMenuOrigins[index], _trainMenuDirs[index], 0, maxDistance);
+  return rc;
+}
+
+/**
+ * Training Ground pointer mode.
+ * Player feedback: "my controllers remain guns rather than switching to
+ * selectors". While the holodeck menu is open each controller becomes a
+ * selector — the aim beam brightens and stops on the button face, the weapon
+ * ball shrinks to a reticle dot. Everything is restored the frame the menu
+ * closes (or training ends).
+ * VR-CRITICAL: runs every frame while training is active — no allocations,
+ * only cached refs and uniform writes.
+ * @returns {THREE.Raycaster[]} live pointer raycasters (empty when closed)
+ */
+/**
+ * Restore the normal controller look (faint aim aid, full-size weapon ball).
+ * Split out so the render loop can call it the frame training is left — the
+ * PLAYING branch stops running then, so its pointer pass cannot clean up.
+ */
+function restoreControllerPointerVisuals() {
+  for (let i = 0; i < controllers.length; i++) {
+    const parts = controllers[i]?.userData?.pointerParts;
+    if (!parts) continue;
+    const { core, glow, aimLine } = parts;
+    if (aimLine) { aimLine.material.opacity = 0.3; aimLine.scale.z = 1; }
+    if (glow) glow.material.opacity = 0.2;
+    if (core) core.scale.setScalar(game.weaponEvolution?.[getHandForController(i)] ? 1.3 : 1);
+  }
+}
+
+const _trainPointerRcs = []; // reused scratch (per-frame call, no GC)
+let _trainPointersWereSelectors = false;
+function updateTrainingMenuPointers() {
+  const menuOpen = isTrainingActive() && isTrainingMenuOpen();
+  _trainPointersWereSelectors = menuOpen;
+  _trainPointerRcs.length = 0;
+  if (!menuOpen) {
+    restoreControllerPointerVisuals();
+    return _trainPointerRcs;
+  }
+  for (let i = 0; i < controllers.length; i++) {
+    const parts = controllers[i]?.userData?.pointerParts;
+    if (!parts) continue;
+    const { core, glow, aimLine } = parts;
+
+    const rc = aimControllerRaycaster(i, 6);
+    if (rc) _trainPointerRcs.push(rc);
+    const hit = rc ? raycastTrainingMenu(rc) : null;
+    if (aimLine) {
+      aimLine.material.opacity = 0.95;
+      // The beam geometry runs 0 → -10m, so scale.z = dist/10 lands its tip
+      // exactly on the button (or short of it when nothing is in the way).
+      aimLine.scale.z = hit ? Math.max(0.01, hit.distance / 10) : 0.55;
+    }
+    if (core) core.scale.setScalar(0.55);
+    if (glow) glow.material.opacity = 0.45;
+  }
+  return _trainPointerRcs;
+}
+
 function createControllerVisual(index) {
   const hand = index === 0 ? 'left' : 'right';
   const color = index === 0 ? NEON_CYAN : NEON_PINK;
@@ -2720,6 +2811,10 @@ function createControllerVisual(index) {
   group.add(display);
   blasterDisplays[index] = display;
 
+  // Cache the pointer parts so the training-menu pointer pass never has to
+  // scan the controller's children (or compare names) in the render loop.
+  group.userData.parts = { core, glow, aimLine };
+
   return group;
 }
 
@@ -2743,7 +2838,9 @@ function createBlasterDisplay(controllerIndex) {
 
   // Read bg dimensions from layout if available (async, may not be loaded yet)
   const layoutKey = `upgrade-wrist-${hand}`;
-  const els = layoutCache[layoutKey]?.elements;
+  // Fall back to the LEFT blaster's layout metrics so a missing/unloaded
+  // right-hand layout can never render tiny text on one hand only.
+  const els = layoutCache[layoutKey]?.elements || layoutCache['upgrade-wrist-left']?.elements;
   const bgEl = els?.wrist_holo_bg;
   const bgW = bgEl?.w || 0.21;
   const bgH = bgEl?.h || 0.26;
@@ -2875,10 +2972,11 @@ function updateBlasterDisplay(display, controllerIndex) {
   const oldText = display.children.filter(c => c.userData.isText);
   oldText.forEach(t => { t.geometry?.dispose(); t.material?.dispose(); if (t.material.map) t.material.map.dispose(); display.remove(t); });
 
-  // Load layout data for this hand
+  // Load layout data for this hand (LEFT metrics are the fallback so both
+  // blasters can never drift apart: player feedback was right-hand text at a
+  // different size/position than the left).
   const layoutKey = `upgrade-wrist-${hand}`;
-  const layout = layoutCache[layoutKey];
-  const els = layout?.elements;
+  const els = layoutCache[layoutKey]?.elements || layoutCache['upgrade-wrist-left']?.elements;
 
   // Fallback font constants
   const november = novemberFontFamily;
@@ -5766,13 +5864,9 @@ function selectUpgrade(controller, index = -1) {
   // Issue #185: the alchemy bench and post-select bar take priority over the
   // cards. While the bench is open, cards are NOT selectable (they sit behind
   // the bench panel) — the player must explicitly hit a bench button.
-  // Debug sandbox intercepts first while open (spawn/review menu).
-  const sandboxHit = getSandboxHit(_uiRaycaster);
-  if (sandboxHit) {
-    if (index >= 0) upgradeTriggerLatched[index] = true;
-    handleSandboxAction(sandboxHit);
-    return;
-  }
+  // NOTE: the old debug sandbox intercept lived here; commit 658fd3e replaced
+  // it with the Training Ground module but left the call behind, so every
+  // upgrade pick threw "getSandboxHit is not defined" (crash report #3/#5/#6).
   const benchHit = getAlchemyBenchHit(_uiRaycaster);
   if (benchHit) {
     if (index >= 0) upgradeTriggerLatched[index] = true;
@@ -6040,6 +6134,14 @@ function render(timestamp) {
     lowHealth: game.health <= 2,
   });
 
+  // Training Ground: leaving the holodeck (or exiting via its menu) must hand
+  // the controllers back as weapons. The PLAYING branch only runs while
+  // training is active, so the cross-fade out is cleaned up here.
+  if (_trainPointersWereSelectors && !(isTrainingActive() && isTrainingMenuOpen())) {
+    restoreControllerPointerVisuals();
+    _trainPointersWereSelectors = false;
+  }
+
   // ── Title screen ──
   _mark('pre_state_dispatch'); // ── end: controls, seek, vr pause, desktop controls
   if (st === State.TITLE) {
@@ -6060,10 +6162,10 @@ function render(timestamp) {
     if (isTrainingActive()) {
       updateTrainingScrollInput(now);
       updateTrainingMenu(now, dt);
-      if (isTrainingMenuOpen()) {
-        const hoverRC = getAimRaycaster();
-        if (hoverRC) updateTrainingHover(hoverRC);
-      }
+      // Pointer beams: one per controller (VR selectors) + hover highlight.
+      // The same raycasters feed the hover pass — no second raycast pass.
+      const trainPointers = updateTrainingMenuPointers();
+      if (trainPointers.length > 0) updateTrainingHover(trainPointers);
     }
 
     // Update kills remaining alert (auto-hide after timeout)
@@ -6100,6 +6202,18 @@ function render(timestamp) {
 
     // Full-auto shooting / Lightning beams / Charge shots (VR controllers)
     for (let i = 0; i < 2; i++) {
+      // Training Ground: the menu is modal — triggers act as selectors, so the
+      // held-trigger auto-fire loop must not keep shooting through the panel
+      // (VR parity with the desktop gate below).
+      if (isTrainingActive() && isTrainingMenuOpen()) {
+        chargeShotStartTime[i] = null;
+        clearLightningBeam(i);
+        clearLightningOrbCharge(i);
+        hideObliteratorBeam(i);
+        comboFireLatch[i] = false;
+        plasmaCarbineSpinStart[i] = null;
+        continue;
+      }
       if (controllerTriggerPressed[i]) {
         const hand = getHandForController(i);
         const stats = computeWeaponStats(hand);

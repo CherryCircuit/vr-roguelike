@@ -1496,7 +1496,13 @@ export function showBestiary(playerPos) {
   // CURVED backdrop (player feedback: the old flat plane didn't match the
   // arc) — a section of a huge cylinder wrapped around the player, centered
   // on -Z so it hugs the card arc like a curved monitor.
-  const bgGeo = new THREE.CylinderGeometry(4.95, 4.95, 4.4, 48, 1, true, -Math.PI / 2 - 1.2, 2.4);
+  // CylinderGeometry lays its vertices at x = r·sin(θ), z = r·cos(θ), so the
+  // arc centre sits at θ = thetaStart + thetaLength/2. It must be θ = π (i.e.
+  // straight ahead at -Z); the old thetaStart (-π/2 - 1.2) put the centre at
+  // θ = -π/2 → (x = -r, z = 0), which parked the panel off the player's LEFT
+  // (the reported "dark background is not in front of me" bug).
+  const bgArc = 2.4; // radians of arc (~137°)
+  const bgGeo = new THREE.CylinderGeometry(4.95, 4.95, 4.4, 48, 1, true, Math.PI - bgArc / 2, bgArc);
   bgGeo.name = 'bestiary-background-panel-geometry';
   const bgMat = new THREE.MeshBasicMaterial({
     color: 0x02050c,

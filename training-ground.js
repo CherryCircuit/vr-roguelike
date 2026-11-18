@@ -42,6 +42,13 @@ let _holodeckGroup = null;
 let _hoveredButton = null;    // hovered button mesh (scale/border highlight)
 let _oldLevelConfig = null;
 let _trainingConfig = null;
+// Cached button faces for raycasting. Rebuilt whenever the menu is built, so
+// the hit test no longer traverses the whole menu group on every query
+// (hit + hover + one per controller per frame = 4+ traversals per frame).
+let _menuTargets = [];
+// Placement captured when the menu opens (world pos + yaw). Rebuilds reuse it
+// so the panel does not jump around while the player clicks through buttons.
+let _menuAnchor = null;
 
 // ── Layout-driven geometry (layouts/training-ground.json) ───
 // Every static element + generated-list template is read from the layout so
@@ -186,7 +193,13 @@ export function toggleTrainingMenu() {
 export async function showTrainingMenu(resetView = true) {
   if (!_active || _menuOpen) return;
   _menuOpen = true;
-  if (resetView) _loadoutView = false; // fresh open → combat view
+  if (resetView) {
+    _loadoutView = false; // fresh open → combat view
+    // Capture where the player is looking so the panel always opens in FRONT
+    // of them (the holodeck is walk-around; a fixed world-space panel ended up
+    // behind the player once they moved).
+    _menuAnchor = computeMenuAnchor();
+  }
   _enemyScroll = 0;
   _loadoutScroll = 0;
   // The menu must draw over the floor HUD: hide the HUD while browsing
@@ -195,6 +208,32 @@ export async function showTrainingMenu(resetView = true) {
   await ensureTrainingLayout();
   if (!_menuOpen) return; // hidden again while the layout loaded
   buildTrainingMenu();
+}
+
+/**
+ * Where the menu panel should live: 2.9m along the player's horizontal gaze,
+ * yawed to face them. Falls back to the old fixed spot when the camera dep is
+ * unavailable (headless tests).
+ */
+function computeMenuAnchor() {
+  const cam = _hasDep('camera') ? _deps.camera : null;
+  if (!cam) return { x: 0, y: 2.0, z: -2.9, yaw: 0 };
+  const pos = new THREE.Vector3();
+  cam.getWorldPosition(pos);
+  const dir = new THREE.Vector3();
+  cam.getWorldDirection(dir);
+  dir.y = 0;
+  if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
+  dir.normalize();
+  return {
+    x: pos.x + dir.x * 2.9,
+    y: pos.y + 0.4,
+    z: pos.z + dir.z * 2.9,
+    // The panel's front is +Z and its text is drawn on that side, so rotate
+    // so +Z points BACK along the gaze (toward the player). Yawing to
+    // atan2(dir.x, dir.z) would face it away and mirror every label.
+    yaw: Math.atan2(-dir.x, -dir.z),
+  };
 }
 
 export function hideTrainingMenu() {
@@ -206,6 +245,7 @@ export function hideTrainingMenu() {
     _menuGroup = null;
   }
   _hoveredButton = null;
+  _menuTargets = [];
 }
 
 // ── Menu construction ───────────────────────────────────────
@@ -243,6 +283,8 @@ function makeButton(parent, label, action, x, y, opts = {}) {
   face.userData.borderColor = color;
   face.userData._btnGroup = group;
   group.add(face);
+  // Cache the hittable face for the raycast pass (see _menuTargets).
+  _menuTargets.push(face);
   const border = new THREE.LineSegments(
     new THREE.EdgesGeometry(face.geometry),
     new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 })
@@ -282,12 +324,13 @@ function makeLabel(parent, text, x, y, opts = {}) {
 function buildTrainingMenu() {
   const group = new THREE.Group();
   group.name = 'training-menu';
-  // Camera-relative like the upgrade cards: in front of the player
-  const cam = _hasDep('camera') ? _deps.camera : null;
-  const baseY = cam ? cam.position.y : 1.6;
-  group.position.set(0, baseY + 0.4, -2.9);
+  // Camera-relative like the upgrade cards: in front of the player, facing them
+  const anchor = _menuAnchor || computeMenuAnchor();
+  group.position.set(anchor.x, anchor.y, anchor.z);
+  group.rotation.y = anchor.yaw;
   _deps.scene.add(group);
   _menuGroup = group;
+  _menuTargets = []; // makeButton() repopulates this for the raycast pass
 
   // Panel geometry from the layout (COMBAT is narrower than LOADOUT).
   const panelEl = el(_loadoutView ? 'panelLoadout' : 'panelCombat', {
@@ -582,41 +625,49 @@ function buildHolodeck() {
 
   // Grid shader with a digital-green pulse (player feedback: lime → dark
   // forest green, like a cool holodeck grid — not pink/blue).
-  const gridShader = {
-    uniforms: {
-      uColor: { value: new THREE.Color(0x44ff88) },
-      uPulseA: { value: new THREE.Color(0x88ff44) },   // lime
-      uPulseB: { value: new THREE.Color(0x1a5c1a) },   // dark forest green
-      uTime: { value: 0 },
-      uFogColor: { value: new THREE.Color(0x02060c) },
-    },
-    vertexShader: `
+  //
+  // AA fix (feedback: the far grid shimmered / looked harsh): the old shader
+  // used hard `step()` lines, so once a line got thinner than one pixel it
+  // aliased into moiré. Lines are now drawn analytically with `fwidth()` —
+  // the line keeps a constant ~1-2px width in screen space and fades out
+  // instead of snapping — and the grid is faded to the void well before the
+  // horizon so nothing sharp is left at distance.
+  const gridVertexShader = `
       varying vec3 vWorldPos;
       void main() {
         vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
-    `,
-    fragmentShader: `
+    `;
+  const gridFragmentShader = `
       uniform vec3 uColor;
       uniform vec3 uPulseA;
       uniform vec3 uPulseB;
       uniform float uTime;
       uniform vec3 uFogColor;
+      uniform float uFadeStart;
+      uniform float uFadeEnd;
+      uniform float uLinePx;
+      uniform float uAlpha;
       varying vec3 vWorldPos;
+
+      // Analytic anti-aliased grid line: 0 between lines, 1 on a line.
+      // fwidth() = world units per pixel, so widthPx is a real screen-space
+      // width — the line stays visible-but-soft at distance instead of
+      // alias-snapping on and off.
+      float gridLine(float coord, float spacing, float widthPx) {
+        float scaled = coord / spacing;
+        float distPx = abs(fract(scaled - 0.5) - 0.5) / max(fwidth(scaled), 1e-5);
+        return 1.0 - smoothstep(0.0, widthPx, distPx);
+      }
+
       void main() {
-        float grid = 0.0;
-        // Fine lines + bold lines every 5 cells
-        float f1 = abs(fract(vWorldPos.x / 2.0) - 0.5);
-        float f2 = abs(fract(vWorldPos.z / 2.0) - 0.5);
-        float bold1 = abs(fract(vWorldPos.x / 10.0) - 0.5);
-        float bold2 = abs(fract(vWorldPos.z / 10.0) - 0.5);
-        float lineW = 0.02;
-        grid = max(
-          step(1.0 - lineW, f1 * 2.0) + step(1.0 - lineW, f2 * 2.0),
-          (step(1.0 - lineW * 3.0, bold1 * 2.0) + step(1.0 - lineW * 3.0, bold2 * 2.0)) * 1.6
-        );
-        grid = clamp(grid, 0.0, 1.0);
+        // Fine lines (every 2m) + bold lines (every 10m)
+        float fine = max(gridLine(vWorldPos.x, 2.0, uLinePx),
+                         gridLine(vWorldPos.z, 2.0, uLinePx));
+        float bold = max(gridLine(vWorldPos.x, 10.0, uLinePx * 1.8),
+                         gridLine(vWorldPos.z, 10.0, uLinePx * 1.8));
+        float grid = clamp(fine * 0.75 + bold, 0.0, 1.0);
         // Digital green pulse: lines breathe lime ↔ forest green, with a
         // ripple radiating outward from the player.
         float wave = 0.5 + 0.5 * sin(uTime * 1.8);
@@ -625,22 +676,60 @@ function buildHolodeck() {
         float dist = length(vWorldPos.xz);
         float ripple = 0.75 + 0.25 * sin(uTime * 2.2 - dist * 0.35);
         col *= ripple;
-        // Distance fade → black void (the "endless" look)
-        float fade = 1.0 - smoothstep(20.0, 140.0, dist);
-        col = mix(col, uFogColor, 0.4);
-        gl_FragColor = vec4(col * grid * fade, 1.0);
+        // Distance fade → black void (the "endless" look). Soft 2-stop fade:
+        // lines thin, dim, then vanish long before the plane's 200m edge.
+        float fade = 1.0 - smoothstep(uFadeStart, uFadeEnd, dist);
+        fade *= fade; // ease-out so the horizon melts instead of clipping
+        // Blend the whole field into the fog colour (same as the scene
+        // background) so the plane's edge is invisible in every direction.
+        vec3 outCol = mix(uFogColor, col * grid, fade);
+        gl_FragColor = vec4(outCol, uAlpha * fade);
       }
-    `,
-  };
+    `;
+  // Grid fade distances (metres from the arena centre). The floor is fully
+  // faded by 62m — aliasing from the huge plane never reaches the player.
+  const FLOOR_FADE_START = 14;
+  const FLOOR_FADE_END = 62;
+  // The wall dome is 180m out, so it gets a longer leash; it only ever shows
+  // as a faint horizon haze.
+  const WALL_FADE_START = 40;
+  const WALL_FADE_END = 170;
 
-  // Floor
-  const floorGeo = new THREE.PlaneGeometry(400, 400);
-  const floorMat = new THREE.ShaderMaterial({
-    ...gridShader,
-    side: THREE.DoubleSide,
-    depthWrite: true,
-    depthTest: true,
+  // Each mesh needs its OWN uniforms object — spreading a shared `uniforms`
+  // reference made the floor and wall fight over the same uniform values.
+  const makeGridMaterial = (opts) => new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(0x44ff88) },
+      uPulseA: { value: new THREE.Color(0x88ff44) },   // lime
+      uPulseB: { value: new THREE.Color(0x1a5c1a) },   // dark forest green
+      uTime: { value: 0 },
+      uFogColor: { value: new THREE.Color(0x02060c) },
+      uFadeStart: { value: opts.fadeStart },
+      uFadeEnd: { value: opts.fadeEnd },
+      uLinePx: { value: opts.linePx ?? 1.25 },
+      uAlpha: { value: opts.alpha ?? 1 },
+    },
+    vertexShader: gridVertexShader,
+    fragmentShader: gridFragmentShader,
     fog: false,
+    ...opts.rest,
+  });
+
+  // Floor — OPAQUE on purpose: a transparent 400m plane would sort against
+  // every other transparent object in the scene (glow pools, sprites) and
+  // cause draw-order popping. The RGB fade to uFogColor already melts the
+  // horizon into the background.
+  const floorGeo = new THREE.PlaneGeometry(400, 400);
+  const floorMat = makeGridMaterial({
+    fadeStart: FLOOR_FADE_START,
+    fadeEnd: FLOOR_FADE_END,
+    alpha: 1,
+    rest: {
+      side: THREE.DoubleSide,
+      depthWrite: true,
+      depthTest: true,
+      transparent: false,
+    },
   });
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
@@ -650,11 +739,17 @@ function buildHolodeck() {
   // Far "walls" as a grid dome (BackSide sphere with the grid shader) —
   // a faint grid horizon so the room feels enclosed like a holodeck.
   const wallGeo = new THREE.SphereGeometry(180, 24, 12);
-  const wallMat = new THREE.ShaderMaterial({
-    ...gridShader,
-    side: THREE.BackSide,
-    depthWrite: false,
-    depthTest: true,
+  const wallMat = makeGridMaterial({
+    fadeStart: WALL_FADE_START,
+    fadeEnd: WALL_FADE_END,
+    linePx: 1.1,
+    alpha: 0.9,
+    rest: {
+      side: THREE.BackSide,
+      depthWrite: false,
+      depthTest: true,
+      transparent: true,
+    },
   });
   const wall = new THREE.Mesh(wallGeo, wallMat);
   wall.position.y = 90;
@@ -756,38 +851,54 @@ function disposeHolodeck() {
 
 // ── Input: raycast + hover + actions ────────────────────────
 
-/** Raycast the training menu buttons. Returns the action payload or null. */
-export function getTrainingMenuHit(raycaster) {
-  if (!_menuOpen || !_menuGroup || !raycaster) return null;
-  const targets = [];
-  _menuGroup.traverse(c => {
-    if (c.userData && c.userData.trainingAction) targets.push(c);
-  });
-  if (targets.length === 0) return null;
-  const hits = raycaster.intersectObjects(targets, false);
+/**
+ * Raycast the training menu buttons.
+ * Returns { action, distance, point } for the closest button, or null.
+ * `distance` lets the caller stop the pointer beam on the button face.
+ */
+export function raycastTrainingMenu(raycaster) {
+  if (!_menuOpen || !_menuGroup || !raycaster || _menuTargets.length === 0) return null;
+  const hits = raycaster.intersectObjects(_menuTargets, false);
   for (const hit of hits) {
     const action = hit.object.userData.trainingAction;
-    if (action) return action;
+    if (action) {
+      return { action, object: hit.object, distance: hit.distance, point: hit.point };
+    }
   }
   return null;
 }
 
-/** Hover pass for the training menu (scale + border brighten). */
-export function updateTrainingHover(raycaster) {
-  if (!_menuOpen || !_menuGroup || !raycaster) return;
-  const targets = [];
-  _menuGroup.traverse(c => {
-    if (c.userData && c.userData.trainingAction) targets.push(c);
-  });
-  const hits = raycaster.intersectObjects(targets, false);
-  const hovered = hits.length > 0 ? hits[0].object : null;
+/** Raycast the training menu buttons. Returns the action payload or null. */
+export function getTrainingMenuHit(raycaster) {
+  const r = raycastTrainingMenu(raycaster);
+  return r ? r.action : null;
+}
+
+/**
+ * Hover pass for the training menu (scale + border brighten).
+ * Accepts one raycaster or an array of them (one per controller) and
+ * highlights the closest button any pointer is touching.
+ */
+export function updateTrainingHover(raycasters) {
+  if (!_menuOpen || !_menuGroup) return;
+  const list = Array.isArray(raycasters) ? raycasters : [raycasters];
+  let hovered = null;
+  let hoveredDist = Infinity;
+  for (const rc of list) {
+    if (!rc) continue;
+    const hit = raycastTrainingMenu(rc);
+    if (hit && hit.distance < hoveredDist) {
+      hoveredDist = hit.distance;
+      hovered = hit.object;
+    }
+  }
 
   if (hovered && hovered !== _hoveredButton && _hasDep('playMenuHoverSound')) {
     _deps.playMenuHoverSound();
   }
   _hoveredButton = hovered;
 
-  targets.forEach(btn => {
+  _menuTargets.forEach(btn => {
     const group = btn.userData._btnGroup;
     if (!group) return;
     const isHovered = btn === hovered;
@@ -1001,11 +1112,16 @@ export function updateTrainingScrollInput(now) {
   session.inputSources.forEach(source => {
     const gp = source.gamepad;
     if (!gp?.axes || gp.axes.length < 2) return;
-    const y = gp.axes[1] ?? 0;
-    if (Math.abs(y) > 0.25 && Math.abs(y) > Math.abs(axis)) axis = y;
+    // Thumbstick Y. Meta Quest reports the stick on axes[3]; other mappings
+    // (and the desktop test rig) use axes[1] — take whichever is pushed.
+    const y1 = Math.abs(gp.axes[1] ?? 0) > 0.25 ? (gp.axes[1] ?? 0) : 0;
+    const y3 = gp.axes.length > 3 && Math.abs(gp.axes[3] ?? 0) > 0.25 ? (gp.axes[3] ?? 0) : 0;
+    const y = Math.abs(y1) > Math.abs(y3) ? y1 : y3;
+    if (y !== 0 && Math.abs(y) > Math.abs(axis)) axis = y;
   });
   if (axis !== 0) {
-    _scrollAccum += axis * 0.02;
+    // 0.05/frame → one row per ~0.3s on a held stick at 72fps
+    _scrollAccum += axis * 0.05;
     if (Math.abs(_scrollAccum) >= 1) {
       scrollMenus(axis > 0 ? 1 : -1);
       _scrollAccum = 0;

@@ -437,9 +437,9 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 ## 16. TESTING & VERIFICATION COMMANDS (gate before every commit)
 
 **Server** (tests hit `http://localhost:8001/dev.html`): `python3 -m http.server 8001`
-  (moved off :8000 after an unrelated uvicorn service claimed it — all 26 suites target :8001)
+  (moved off :8000 after an unrelated uvicorn service claimed it — all 27 suites target :8001)
 
-**All 26 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
+**All 27 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
 - `test-bugfixes.cjs` — boot + 15s gameplay + reset loop
 - `test-timer-cleanup.cjs` — charge cannon + triple-shot timer
 - `test-audio-pack.cjs` — reactive music stems + threat emitters
@@ -470,6 +470,9 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 - `test-masquerade.cjs` — hidden boss (#200): disguise, body-swap, reveal, cross fire
 - `test-breach.cjs` — arena hazards (#138): seeded events, flare/gravity/rift/EMP
 - `test-void-marks.cjs` — death persistence (#139): spawn, inherit, purge, record
+- `test-training-vr.cjs` — Training Ground driven from a CONTROLLER ray (pointer
+  beams, WAVE SIZE / queue / GO), VR upgrade-card pick, and the removed
+  `getSandboxHit` upgrade-selection crash (both trigger paths)
 
 **Known quirks:**
 - **Run suites individually, not back-to-back in one shell loop** — batch runs flake on

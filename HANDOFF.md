@@ -44,7 +44,46 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 ## DONE THIS SESSION (chronological, all pushed to `main`)
 
 A marathon session — every commit below is verified with its own puppeteer suite
-(now 26 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
+(now 27 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
+
+0i. **round-8 feedback batch** (game-crashing upgrade bug + 4 polish items, from
+    the player's in-headset session):
+    - **GAME CRASH on every upgrade pick — ROOT CAUSE**: `selectUpgrade()` still
+      called `getSandboxHit()` / `handleSandboxAction()`, which commit `658fd3e`
+      deleted along with the dev sandbox. Every VR trigger during
+      UPGRADE_SELECT (the `selectstart` route AND the held-trigger poll in the
+      render loop) threw `ReferenceError: getSandboxHit is not defined`. That
+      killed card picks, the ALCHEMY bench and the EVOLUTIONS menu (all three
+      go through `selectUpgrade`). Dead block removed.
+    - **Training Ground unusable in VR**: the menu raycast used
+      `getAimRaycaster()` — the desktop centre-camera ray, which returns `null`
+      when desktop controls are off, so every trigger did nothing. New
+      `aimControllerRaycaster(index)` (pooled, per-hand) drives the trigger hit,
+      the hover pass and a real SELECTOR mode: the aim beam brightens to 95%
+      opacity, stops on the button face, the weapon ball shrinks to a reticle
+      dot, and triggers no longer keep shooting through the panel. Menu now
+      opens 2.9m along the gaze and yawed to face the player (walking away used
+      to leave it behind you), with the placement captured once per open so
+      rebuilds don't jump. Button faces are cached (`_menuTargets`) instead of
+      re-traversing the menu 4× per frame; thumbstick scroll also accepts
+      axes[3] (Quest mapping).
+    - **Holodeck grid aliasing**: replaced the hard `step()` grid with analytic
+      `fwidth()` anti-aliased lines (constant ~1-2px width, so distant lines
+      soften instead of shimmering into moiré), split floor/wall materials into
+      separate uniform sets, and fade to the fog colour by 62m (floor) / 170m
+      (dome).
+    - **Bestiary backdrop off to the left**: `CylinderGeometry` places vertices
+      at `x=r·sinθ, z=r·cosθ`, so the arc centre is `thetaStart + len/2`. It was
+      `-π/2 - 1.2` → centre at `(-r, 0)` (the player's LEFT). Now
+      `π - len/2` → centred at -Z, straight ahead (mean x = 0 verified).
+    - **Right blaster wrist panel text**: `layouts/upgrade-wrist-right.json` had
+      drifted to bigger fonts (50/70/40 vs the left's 40/50/30) and offset rows.
+      Synced the rendered element metrics to the LEFT layout (the one that looks
+      right) and made `updateBlasterDisplay`/`createBlasterDisplay` fall back to
+      the left metrics if a right-hand layout fails to load.
+    - New suite `test-training-vr.cjs` (27th) covers the trigger crash on both
+      paths, a real controller card pick, wrist-display parity, controller-driven
+      training menu (beam/WAVE SIZE/queue/GO), grid uniforms, backdrop centring.
 
 0. **`2e10f9b` — post-marathon bugfix trio** (three real production bugs found by
    the player, all rooted in the #196 extraction + stale biome Y coordinates):
