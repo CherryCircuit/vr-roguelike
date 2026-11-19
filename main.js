@@ -4051,19 +4051,13 @@ function handleReadyScreenTrigger(controller) {
 // startGame, completeLevel, togglePause, endGame, debug jump
 // COUPLING: Transitions game.state, calls HUD show/hide, audio
 // ============================================================
-// [CORE] Capture the level's FIXED spawn/front axis (once per level)
+// [CORE] Capture level spawn forward direction (fixed world -Z)
 function captureLevelSpawnForward() {
-  // The spawn cone, boss framing and every front-arc clamp share this single
-  // axis for the whole level. It is captured at level start (the player is
-  // facing the arena at that moment) and NEVER follows head turns — head-turn
-  // based spawning made "in front" mean something different every second.
-  camera.getWorldDirection(_levelSpawnForward);
-  _levelSpawnForward.y = 0;
-  if (_levelSpawnForward.lengthSq() < 1e-6) {
-    _levelSpawnForward.copy(DEFAULT_LEVEL_SPAWN_FORWARD);
-  } else {
-    _levelSpawnForward.normalize();
-  }
+  // Hard-coded world -Z, exactly as the game shipped before the alchemy /
+  // evolution work. Nothing here reads the camera: spawns, boss framing and
+  // every front-arc clamp stay on this axis for the whole session, so head
+  // turns and stance can never move the spawn cone.
+  _levelSpawnForward.copy(DEFAULT_LEVEL_SPAWN_FORWARD);
   setBossSpawnForward(_levelSpawnForward);
   // Issue #196 Phase 5: flag lives in environment-orchestration.js
   setBiomeClearedForBossCinematic(false);

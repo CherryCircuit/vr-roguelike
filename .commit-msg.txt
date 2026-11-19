@@ -1,18 +1,15 @@
-fix: spawn cone is a FIXED level front again (150 deg), never the head direction
+fix: restore historical spawn cone (world -Z, 100 deg, no camera)
 
-Round-9 made spawning follow the live head direction. That was wrong: turning
-your head redefined "in front", so enemies still arrived outside the level's
-framing. Restored a fixed front axis:
+Rounds 9/9b made spawning depend on the headset. It must not depend on head
+position at all. Values were taken from commit 746eceb~1 (the last revision
+before the alchemy bench landed), read directly from that tree:
 
-- getSpawnPosition() uses getSpawnForward(): the level front captured ONCE at
-  level start (captureLevelSpawnForward) and never the live view.
-- Removed setPlayerForward() and the per-frame view ref so no placement path
-  can read the head direction.
-- Cone widened to 150 deg total (+/-75 deg). Vertical rules restored: bodies
-  spawn at floor+1.1 (hard floor at floor+0.8) and the cone tilts up with the
-  level's verticalAngle (10/20/30 deg) so late waves arc in from above.
-- Boss/mortar/minion/leech/boss-spawn clamps and breach hazards all default to
-  the same fixed axis; the training ground captures its own fixed front when
-  training starts.
-- Enemy visibility audit now measures against getSpawnForward() and includes
-  phases where the head is turned 175/200 degrees away from the level front.
+- getSpawnPosition(): world -Z, 100 deg total (+/-50), origin at world origin,
+  y=1.5 (air 0.5..3) + level verticalAngle lift (10/20/30). No camera reads.
+  Only addition: hard floor clamp (body never below arena floor).
+- captureLevelSpawnForward(): back to the historical constant
+  DEFAULT_LEVEL_SPAWN_FORWARD - no camera read. Boss framing, mortars, minions,
+  leech bursts and breach hazards all share that constant.
+- training ground: same fixed +/-50 cone around world -Z.
+- enemy visibility audit: head turned 0/80/175/-20/200 deg; every spawn still
+  inside +/-55 of world -Z (max measured: 50 deg).

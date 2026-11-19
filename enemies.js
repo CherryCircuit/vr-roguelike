@@ -547,7 +547,7 @@ const _frontDir = new THREE.Vector3();
 const _frontRight = new THREE.Vector3();
 const _frontFlat = new THREE.Vector3();
 const _frontUp = new THREE.Vector3(0, 1, 0);
-// Spawn-basis scratch (getSpawnPosition runs on every spawn, never per frame)
+// Spawn-basis scratch (kept for future use; the spawn cone is world -Z now)
 const _spawnFwd = new THREE.Vector3();
 const _spawnRight = new THREE.Vector3();
 const _WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -14409,64 +14409,56 @@ export function getEnemies() {
 }
 
 /**
- * Fixed front arc used for ALL enemy placement: 150° wide (±75°).
- * Wide enough that enemies still come from your periphery, narrow enough that
- * nothing spawns behind you.
+ * Front arc used for enemy SPAWN placement: 100° total (±50°).
+ * This is the value the game shipped with for months (checked against commit
+ * 746eceb~1, before the alchemy/evolution work) — ±75° put targets too far to
+ * the sides.
  */
-const SPAWN_ARC_DEG = 150;
+const SPAWN_ARC_DEG = 100;
 
 /**
- * Get a random spawn position inside the FIXED front cone.
+ * Get a random spawn position in a 100° cone in front of the player.
  *
- * The cone is anchored to the level's front (`_bossSpawnForwardRef`, captured
- * once when the level starts) and NOT to where the headset happens to be
- * pointing. View-based spawning was a mistake: turning your head mid-wave made
- * the game quietly redefine "in front", and enemies then arrived outside the
- * level's framing (player report: "enemies spawn based on where I look — that
- * is incorrect").
+ * The cone is FIXED: world -Z, centred on the world origin — exactly the
+ * pre-alchemy implementation. It does not read the camera at all, so head
+ * turns, recentering and stance have no effect on where enemies appear.
+ * (See `getSpawnForward()` for the same axis; breach hazards/minions share it.)
  *
- * Vertical rules (original design, restored):
- *  - never below the floor (+0.8m body clearance)
- *  - higher levels tilt the spawn cone UP by their verticalAngle (10/20/30°),
- *    so late waves arc in from above instead of all arriving at eye level.
+ * Two guards were added on top of the historical maths:
+ *  - the body can never sit below the arena floor
+ *  - nothing else changed: y=1.5 for ground spawns (0.5..3 for air spawns) and
+ *    the cone tilts up by the level's verticalAngle (10/20/30°).
  */
 export function getSpawnPosition(airSpawns, verticalAngle = 0, distanceRange = null) {
-  getSpawnForward(_spawnFwd);
-  _spawnRight.crossVectors(_spawnFwd, _WORLD_UP).normalize();
-
   const angle = (Math.random() - 0.5) * (SPAWN_ARC_DEG * Math.PI / 180);
   const minDist = distanceRange?.min ?? 14.4;
   const maxDist = distanceRange?.max ?? 20.0;
   const distance = minDist + Math.random() * (maxDist - minDist);
 
-  // Origin: the player's horizontal position (room-scale VR can offset it).
-  // The ARC stays fixed per level; only the centre point follows you.
-  const ox = cameraRef ? cameraRef.position.x : 0;
-  const oz = cameraRef ? cameraRef.position.z : 0;
-  const sin = Math.sin(angle) * distance;
-  const cos = Math.cos(angle) * distance;
-  const x = ox + _spawnFwd.x * cos + _spawnRight.x * sin;
-  const z = oz + _spawnFwd.z * cos + _spawnRight.z * sin;
+  const x = Math.sin(angle) * distance;
+  const z = -Math.cos(angle) * distance;
+  let y = 1.5;
 
-  // Vertical: bodies sit above the floor, and the whole cone tilts upward with
-  // the level's vertical angle (0° early → 30° late).
-  const floorY = getBiomeFloorY();
-  const groundY = floorY + 1.1;
-  let y = groundY + (airSpawns ? Math.random() * 2.0 : 0);
-  if (verticalAngle > 0) {
-    // Random elevation inside 0..verticalAngle of the cone
-    const vertRad = (Math.random() * verticalAngle) * Math.PI / 180;
-    y += Math.sin(vertRad) * distance;
+  if (airSpawns) {
+    y = 0.5 + Math.random() * 2.5;
   }
+
+  // Apply vertical angle for difficulty progression
+  if (verticalAngle > 0) {
+    const vertRad = verticalAngle * Math.PI / 180;
+    const baseY = y;
+    y = baseY + Math.sin(vertRad) * distance * Math.random();
+  }
+
   // Hard floor: geometry must never dip below the arena floor.
-  y = Math.max(y, floorY + 0.8);
+  y = Math.max(y, getBiomeFloorY() + 0.8);
 
   return new THREE.Vector3(x, y, z);
 }
 
 /**
- * The level's fixed front axis (horizontal unit vector).
- * Captured once at level start, so it never follows head turns.
+ * The fixed front axis (world -Z). Constant for the whole session — no camera,
+ * no head tracking. Used by the spawn cone, front-arc clamps and hazards.
  */
 export function getSpawnForward(target) {
   const out = target || new THREE.Vector3();
@@ -14479,11 +14471,12 @@ export function getSpawnForward(target) {
 
 /**
  * @deprecated Use getSpawnForward(). Kept because breach-events wires this
- * name; it now returns the FIXED level front (not the live view direction).
+ * name; it returns the same fixed world -Z axis.
  */
 export function getPlayerForward(target) {
   return getSpawnForward(target);
 }
+
 
 
 

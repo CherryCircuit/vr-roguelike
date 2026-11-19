@@ -30,18 +30,16 @@ const puppeteer = require('puppeteer');
 const GAME_URL = 'http://localhost:8001/dev.html';
 const VERBOSE = process.env.VIS_VERBOSE === '1';
 
-// Each phase: `yaw` is the stance when the level STARTS (this becomes the
-// level's fixed front), `lookYaw` is where the player turns their head AFTER
-// the level starts. Spawns must stay inside the fixed front cone regardless of
-// lookYaw — head-turn-relative spawning is a bug.
+// Spawns are FIXED to world -Z (see getSpawnForward). Each phase just turns the
+// head to a different angle while playing, to prove placement ignores it.
 const PHASES = [
-  { label: 'L1  front 0°    look 0°', level: 1, yaw: 0, lookYaw: 0 },
-  { label: 'L8  front 80°   look 80°', level: 8, yaw: 80, lookYaw: 80 },
-  { label: 'L13 front -95°  look 175°', level: 13, yaw: -95, lookYaw: 175 },
-  { label: 'L18 front 160°  look -20°', level: 18, yaw: 160, lookYaw: -20 },
+  { label: 'L1  head 0°', level: 1, yaw: 0, lookYaw: 0 },
+  { label: 'L8  head 80°', level: 8, yaw: 80, lookYaw: 80 },
+  { label: 'L13 head 175°', level: 13, yaw: -95, lookYaw: 175 },
+  { label: 'L18 head -20°', level: 18, yaw: 160, lookYaw: -20 },
 ];
 
-const CONE_DEG = 78;    // spawn arc is 150° total (±75) + small tolerance
+const CONE_DEG = 55;    // spawn arc is 100° total (±50) + small tolerance
 const BEHIND_DEG = 90;  // hard failure
 const PHASE_MS = 15000; // natural-combat sampling per phase
 const SWEEP_MS = 9000;  // per-type sweep sampling
@@ -350,7 +348,7 @@ async function runTest() {
   }
 
   // ── Per-type sweep: every enemy type through the game's own spawn path ──
-  console.log('\n📍 per-type sweep (L20, front 70°, looking 200°)');
+  console.log('\n📍 per-type sweep (L20, head 200°)');
   await setFacing(70);
   await page.evaluate(async () => {
     await window.__test.progression.startAt({ level: 20 });

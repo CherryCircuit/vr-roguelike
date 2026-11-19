@@ -46,6 +46,24 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 A marathon session — every commit below is verified with its own puppeteer suite
 (now 29 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
 
+0k. **round-10: enemy spawning is world-fixed again (the pre-alchemy behaviour)**
+    — rounds 9/9b made spawning depend on the headset. It must not. Restored
+    and locked down against commit `746eceb~1` (the last commit before the
+    alchemy bench, confirmed by reading that revision):
+    - `getSpawnPosition()` is the historical function again: **world -Z,
+      100° total (±50°)**, centred on the world origin, y=1.5 (air spawns
+      0.5..3) plus the level's `verticalAngle` (10/20/30°) lift. It reads no
+      camera at all. Only addition: a hard floor clamp so a body can never dip
+      below the arena floor.
+    - `captureLevelSpawnForward()` is the historical one-liner again:
+      `_levelSpawnForward.copy(DEFAULT_LEVEL_SPAWN_FORWARD)` — no camera read.
+      Boss framing and every front-arc clamp (bosses, mortars, minions, leech
+      bursts, breach hazards) use that same constant.
+    - Training ground: fixed world -Z cone at ±50°, same as the main game.
+    - Audit phases now turn the head to 0°/80°/175°/-20°/200° and still require
+      every spawn within ±55° of world -Z: max measured spawn angle across all
+      types is 50°.
+
 0k. **round-10: FIXED spawn cone (correction to 0j)** — the 0j change made
     spawning follow the *live head direction*, which is wrong: turning your head
     redefined "in front" every second and enemies still arrived outside the

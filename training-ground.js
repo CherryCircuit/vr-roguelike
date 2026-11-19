@@ -129,17 +129,9 @@ export function startTraining() {
   _loadoutView = false;
   _waveSize = 5;
 
-  // Fixed front axis for the whole training session (spawns never follow the
-  // headset): captured once here, like a level's spawn forward.
-  const cam = _hasDep('camera') ? _deps.camera : null;
-  if (cam) {
-    cam.getWorldDirection(_trainForward);
-    _trainForward.y = 0;
-    if (_trainForward.lengthSq() < 1e-6) _trainForward.set(0, 0, -1);
-    else _trainForward.normalize();
-  } else {
-    _trainForward.set(0, 0, -1);
-  }
+  // Fixed front axis for the whole training session: world -Z, same as the
+  // main game. No camera read — the spawn cone must not depend on head turn.
+  _trainForward.set(0, 0, -1);
 
   // Build a meaty training config (≈ level 9 hpMultiplier) so enemies and
   // bosses survive long enough to test damage output against.
@@ -1075,10 +1067,9 @@ function spawnEnemyAt(type) {
   if (!_hasDep('spawnEnemy')) return;
   const cfg = _trainingConfig || _deps.getLevelConfig?.() || game._levelConfig;
   const cam = _deps.camera;
-  // FIXED front arc for the session (captured at startTraining) — 150° wide
-  // like the main game. Head-turn-relative spawning is deliberately avoided:
-  // targets must never appear behind you.
-  const angle = (Math.random() - 0.5) * (150 * Math.PI / 180);
+  // FIXED front arc (world -Z, 100° total = ±50°) — identical to the main
+  // game. No head dependence: targets must never appear behind you.
+  const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
   const dist = 10 + Math.random() * 6;
   _trainSpawnFwd.copy(_trainForward);
   _trainSpawnRight.crossVectors(_trainSpawnFwd, _WORLD_UP).normalize();
