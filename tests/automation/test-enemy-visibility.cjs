@@ -30,16 +30,18 @@ const puppeteer = require('puppeteer');
 const GAME_URL = 'http://localhost:8001/dev.html';
 const VERBOSE = process.env.VIS_VERBOSE === '1';
 
-// Player facings. Each phase starts the level AFTER the facing is set, so the
-// encounter framing is captured with that facing.
+// Each phase: `yaw` is the stance when the level STARTS (this becomes the
+// level's fixed front), `lookYaw` is where the player turns their head AFTER
+// the level starts. Spawns must stay inside the fixed front cone regardless of
+// lookYaw — head-turn-relative spawning is a bug.
 const PHASES = [
-  { label: 'L1  face 0°', level: 1, yaw: 0 },
-  { label: 'L8  face 80°', level: 8, yaw: 80 },
-  { label: 'L13 face -95°', level: 13, yaw: -95 },
-  { label: 'L18 face 160°', level: 18, yaw: 160 },
+  { label: 'L1  front 0°    look 0°', level: 1, yaw: 0, lookYaw: 0 },
+  { label: 'L8  front 80°   look 80°', level: 8, yaw: 80, lookYaw: 80 },
+  { label: 'L13 front -95°  look 175°', level: 13, yaw: -95, lookYaw: 175 },
+  { label: 'L18 front 160°  look -20°', level: 18, yaw: 160, lookYaw: -20 },
 ];
 
-const CONE_DEG = 65;    // intended front cone for spawns (±, matches the game clamp)
+const CONE_DEG = 78;    // spawn arc is 150° total (±75) + small tolerance
 const BEHIND_DEG = 90;  // hard failure
 const PHASE_MS = 15000; // natural-combat sampling per phase
 const SWEEP_MS = 9000;  // per-type sweep sampling
@@ -54,6 +56,7 @@ async function installProbe(page, cfg) {
   return page.evaluate(async (cfg) => {
     const THREE = await import('three');
     const env = await import('./environment-orchestration.js');
+    const enemiesMod = await import('./enemies.js');
 
     const cam = window.__test.getCamera();
     const P = {
@@ -111,10 +114,9 @@ async function installProbe(page, cfg) {
 
     const sample = () => {
       const list = window.__test.getEnemies() || [];
-      cam.getWorldDirection(P.fwd);
-      P.fwd.y = 0;
-      if (P.fwd.lengthSq() < 1e-6) P.fwd.set(0, 0, -1);
-      P.fwd.normalize();
+      // Angles are measured against the LEVEL'S FIXED FRONT (not the head) —
+      // that is the axis spawns and clamps must obey.
+      enemiesMod.getSpawnForward(P.fwd);
 
       for (let i = 0; i < list.length; i++) {
         const e = list[i];
@@ -124,13 +126,16 @@ async function installProbe(page, cfg) {
         P.samples++;
 
         const uid = e.mesh.uuid;
+        const isPre = !!P.pre[uid];
         const pos = e.mesh.position;
         const dx = pos.x - cam.position.x;
         const dz = pos.z - cam.position.z;
         const distXZ = Math.hypot(dx, dz) || 0.0001;
         const dot = Math.min(1, Math.max(-1, (dx * P.fwd.x + dz * P.fwd.z) / distXZ));
         const angle = Math.acos(dot) * 180 / Math.PI;
-        if (angle > s.maxAngle) s.maxAngle = angle;
+        // Enemies that were already on the field before this phase's front was
+        // captured say nothing about placement — skip their angle stats.
+        if (!isPre && angle > s.maxAngle) s.maxAngle = angle;
 
         // ── spawn bookkeeping: first time this enemy is seen ──
         if (!P.seen[uid]) {
@@ -180,13 +185,11 @@ async function installProbe(page, cfg) {
           }
         }
 
-        if (angle > cfg.behind) {
+        if (!isPre && angle > cfg.behind) {
           // Leeches/spiders that LATCH ride on the player, so being outside the
-          // front cone is intended — do not count those. Enemies that were
-          // already on the field when this phase started are also excluded
-          // (they spawned under a different facing).
+          // front cone is intended — do not count those.
           const attached = e.isLatched === true || e.spiderState === 'latched';
-          if (!attached && !P.pre[uid]) {
+          if (!attached) {
             s.behind++;
             P.behind++;
             if (cfg.verbose && s.worst.length < 3) {
@@ -319,12 +322,14 @@ async function runTest() {
 
   for (const phase of PHASES) {
     console.log(`\n📍 ${phase.label}`);
+    // Stance at level start → this becomes the level's FIXED front.
     await setFacing(phase.yaw);
     await page.evaluate(async (lvl) => {
       await window.__test.progression.startAt({ level: lvl });
     }, phase.level);
     await sleep(900);
-    await setFacing(phase.yaw);
+    // Turn the head AFTER the level started: the spawn arc must NOT follow it.
+    await setFacing(phase.lookYaw);
     // Faster waves so an 15s window still fills the arena (test-only).
     await page.evaluate(() => {
       window.game.health = 99;
@@ -345,15 +350,18 @@ async function runTest() {
   }
 
   // ── Per-type sweep: every enemy type through the game's own spawn path ──
-  console.log('\n📍 per-type sweep (L20, face 70°)');
+  console.log('\n📍 per-type sweep (L20, front 70°, looking 200°)');
   await setFacing(70);
   await page.evaluate(async () => {
     await window.__test.progression.startAt({ level: 20 });
   });
   await sleep(900);
-  await setFacing(70);
+  await setFacing(200); // head turned away from the fixed front
+  await page.evaluate(() => { window.game.health = 99; });
+  // Install the probe FIRST so the per-type spawns below are measured as
+  // spawns (angles against the fixed front) rather than pre-existing enemies.
+  await installProbe(page, cfg);
   await page.evaluate(async () => {
-    window.game.health = 99;
     const en = await import('./enemies.js');
     const cfgL = window.game._levelConfig;
     for (const type of ['basic', 'fast', 'tank', 'swarm', 'spiral_swimmer', 'jelly', 'conductor',
@@ -362,7 +370,6 @@ async function runTest() {
       en.spawnEnemy(type, pos, cfgL);
     }
   });
-  await installProbe(page, cfg);
   await sleep(SWEEP_MS);
   const sweep = await readProbe(page);
   console.log(`  frames=${sweep.totals.frames} samples=${sweep.totals.samples} spawns=${sweep.totals.spawns}` +

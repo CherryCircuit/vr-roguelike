@@ -109,7 +109,7 @@ import {
   updatePhaseEchoes,
   getBoss, spawnBoss, getBossNameForLevel, hitBoss, updateBoss, clearBoss, hitBossMinion, updateBossMinions,
   getBossMinions,
-  updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setPlayerForward, setBossSpawnForward,
+  updateBossProjectiles, getBossProjectiles, updateStatusBubbles, setBossSpawnForward,
   updateBossDebris, clearBossDebris, spawnBossDebris, setVFXReference, clearBossProjectiles,
   releaseBossProjIndex, clearBossMinions,
   clearAllTelegraphs, spawnHealthGainPopup,
@@ -4051,11 +4051,12 @@ function handleReadyScreenTrigger(controller) {
 // startGame, completeLevel, togglePause, endGame, debug jump
 // COUPLING: Transitions game.state, calls HUD show/hide, audio
 // ============================================================
-// [CORE] Capture level spawn forward direction for boss alignment
+// [CORE] Capture the level's FIXED spawn/front axis (once per level)
 function captureLevelSpawnForward() {
-  // Use where the player is ACTUALLY facing when the level starts (VR players
-  // stand and turn — the old hardcoded world -Z framed boss fights behind
-  // them, and their minions then spawned behind the player too).
+  // The spawn cone, boss framing and every front-arc clamp share this single
+  // axis for the whole level. It is captured at level start (the player is
+  // facing the arena at that moment) and NEVER follows head turns — head-turn
+  // based spawning made "in front" mean something different every second.
   camera.getWorldDirection(_levelSpawnForward);
   _levelSpawnForward.y = 0;
   if (_levelSpawnForward.lengthSq() < 1e-6) {
@@ -6034,9 +6035,9 @@ function spawnEnemyWave(dt) {
 }
 
 // ============================================================
-// Shared camera-forward scratch for the render loop (survived the Issue #196
-// beam-weapons extraction — it lives outside that module's scope)
-const _playerForward = new THREE.Vector3();
+// (The old _playerForward scratch fed setPlayerForward every frame; spawn and
+// front-arc placement now use the level's fixed front instead, so the live
+// view direction is no longer a placement input.)
 
 // RENDER LOOP (THE BIG ONE)
 // Core game loop: time scaling, state machine, all subsystems
@@ -6577,14 +6578,9 @@ function render(timestamp) {
     // Update enemies - use adjusted camera position for VR mode
     // This ensures enemies target the correct height (1.6m) regardless of VR camera Y
     const playerPos = getAdjustedCameraPosition();
-    camera.getWorldDirection(_playerForward);
-    _playerForward.y = 0;
-    if (_playerForward.lengthSq() < 0.0001) {
-      _playerForward.set(0, 0, -1);
-    } else {
-      _playerForward.normalize();
-    }
-    setPlayerForward(_playerForward);
+    // NOTE: the enemy SPAWN cone is NOT driven from here any more. Spawn/arc
+    // placement uses the level's fixed front (captured once at level start by
+    // captureLevelSpawnForward) so head turns never redefine "in front".
 
     // Update decoys and black holes (guarded to skip when no active instances)
     if (activeDecoys.length > 0) updateDecoys(dt, now, playerPos);

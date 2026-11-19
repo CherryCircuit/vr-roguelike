@@ -538,8 +538,10 @@ const MAX_ENEMY_DEBRIS = 25;  // Cap for performance (reduced from 50)
 const bossDebris = [];
 const MAX_DEBRIS = 25;  // Cap for performance (reduced from 56)
 
-// Player forward direction for front-arc constraints
-const _playerForwardRef = new THREE.Vector3(0, 0, -1);
+// The level's FIXED front axis. Set once per level from the player's stance at
+// level start; every spawn, boss framing and front-arc clamp reads this. There
+// is deliberately NO per-frame "player forward" ref: head-turn-relative
+// placement made "in front" drift with the player's gaze.
 const _bossSpawnForwardRef = new THREE.Vector3(0, 0, -1);
 const _frontDir = new THREE.Vector3();
 const _frontRight = new THREE.Vector3();
@@ -549,15 +551,6 @@ const _frontUp = new THREE.Vector3(0, 1, 0);
 const _spawnFwd = new THREE.Vector3();
 const _spawnRight = new THREE.Vector3();
 const _WORLD_UP = new THREE.Vector3(0, 1, 0);
-
-export function setPlayerForward(forward) {
-  if (forward) {
-    _playerForwardRef.copy(forward);
-    if (_playerForwardRef.lengthSq() < 0.0001) {
-      _playerForwardRef.set(0, 0, -1);
-    }
-  }
-}
 
 export function setBossSpawnForward(forward) {
   if (!forward) {
@@ -588,7 +581,13 @@ function applyEnemyRenderOrder(root) {
   });
 }
 
-function clampPositionToFrontArc(position, playerPos, minDist = 3, maxDist = 20, arcDeg = 120, forwardOverride = null) {  _frontDir.copy(forwardOverride || _playerForwardRef);
+/**
+ * Clamp a position into the FIXED front cone around the level's front axis.
+ * Defaults to the level front (`_bossSpawnForwardRef`) — never the live view —
+ * so minions and repositioning enemies cannot drift behind the player.
+ */
+function clampPositionToFrontArc(position, playerPos, minDist = 3, maxDist = 20, arcDeg = 120, forwardOverride = null) {
+  _frontDir.copy(forwardOverride || _bossSpawnForwardRef);
   _frontDir.y = 0;
   if (_frontDir.lengthSq() < 0.0001) {
     _frontDir.set(0, 0, -1);
@@ -14410,60 +14409,82 @@ export function getEnemies() {
 }
 
 /**
- * Get a random spawn position in a 100° cone in front of the player.
+ * Fixed front arc used for ALL enemy placement: 150° wide (±75°).
+ * Wide enough that enemies still come from your periphery, narrow enough that
+ * nothing spawns behind you.
+ */
+const SPAWN_ARC_DEG = 150;
+
+/**
+ * Get a random spawn position inside the FIXED front cone.
+ *
+ * The cone is anchored to the level's front (`_bossSpawnForwardRef`, captured
+ * once when the level starts) and NOT to where the headset happens to be
+ * pointing. View-based spawning was a mistake: turning your head mid-wave made
+ * the game quietly redefine "in front", and enemies then arrived outside the
+ * level's framing (player report: "enemies spawn based on where I look — that
+ * is incorrect").
+ *
+ * Vertical rules (original design, restored):
+ *  - never below the floor (+0.8m body clearance)
+ *  - higher levels tilt the spawn cone UP by their verticalAngle (10/20/30°),
+ *    so late waves arc in from above instead of all arriving at eye level.
  */
 export function getSpawnPosition(airSpawns, verticalAngle = 0, distanceRange = null) {
-  // Player-relative placement. The old version laid enemies out around the
-  // world -Z axis, so the moment a VR player physically turned (or the level
-  // framed a different direction) enemies spawned BEHIND them and walked in
-  // out of sight. `_playerForwardRef` is refreshed from the camera every frame
-  // by main.js, so this always uses where the player is actually looking.
-  _spawnFwd.copy(_playerForwardRef);
-  _spawnFwd.y = 0;
-  if (_spawnFwd.lengthSq() < 1e-6) _spawnFwd.set(0, 0, -1);
-  else _spawnFwd.normalize();
+  getSpawnForward(_spawnFwd);
   _spawnRight.crossVectors(_spawnFwd, _WORLD_UP).normalize();
 
-  const angle = (Math.random() - 0.5) * (100 * Math.PI / 180); // ±50° of facing
+  const angle = (Math.random() - 0.5) * (SPAWN_ARC_DEG * Math.PI / 180);
   const minDist = distanceRange?.min ?? 14.4;
   const maxDist = distanceRange?.max ?? 20.0;
   const distance = minDist + Math.random() * (maxDist - minDist);
 
   // Origin: the player's horizontal position (room-scale VR can offset it).
+  // The ARC stays fixed per level; only the centre point follows you.
   const ox = cameraRef ? cameraRef.position.x : 0;
   const oz = cameraRef ? cameraRef.position.z : 0;
   const sin = Math.sin(angle) * distance;
   const cos = Math.cos(angle) * distance;
   const x = ox + _spawnFwd.x * cos + _spawnRight.x * sin;
   const z = oz + _spawnFwd.z * cos + _spawnRight.z * sin;
-  let y = 1.5;
 
-  if (airSpawns) {
-    y = 0.5 + Math.random() * 2.5;
-  }
-
-  // Apply vertical angle for difficulty progression
+  // Vertical: bodies sit above the floor, and the whole cone tilts upward with
+  // the level's vertical angle (0° early → 30° late).
+  const floorY = getBiomeFloorY();
+  const groundY = floorY + 1.1;
+  let y = groundY + (airSpawns ? Math.random() * 2.0 : 0);
   if (verticalAngle > 0) {
-    const vertRad = verticalAngle * Math.PI / 180;
-    const baseY = y;
-    y = baseY + Math.sin(vertRad) * distance * Math.random();
+    // Random elevation inside 0..verticalAngle of the cone
+    const vertRad = (Math.random() * verticalAngle) * Math.PI / 180;
+    y += Math.sin(vertRad) * distance;
   }
+  // Hard floor: geometry must never dip below the arena floor.
+  y = Math.max(y, floorY + 0.8);
 
   return new THREE.Vector3(x, y, z);
 }
 
 /**
- * Current player facing as a horizontal unit vector (for other modules that
- * need to place things in front of the player — breach hazards, training).
+ * The level's fixed front axis (horizontal unit vector).
+ * Captured once at level start, so it never follows head turns.
  */
-export function getPlayerForward(target) {
+export function getSpawnForward(target) {
   const out = target || new THREE.Vector3();
-  out.copy(_playerForwardRef);
+  out.copy(_bossSpawnForwardRef);
   out.y = 0;
   if (out.lengthSq() < 1e-6) out.set(0, 0, -1);
   else out.normalize();
   return out;
 }
+
+/**
+ * @deprecated Use getSpawnForward(). Kept because breach-events wires this
+ * name; it now returns the FIXED level front (not the live view direction).
+ */
+export function getPlayerForward(target) {
+  return getSpawnForward(target);
+}
+
 
 
 /** Get all fast enemies (for proximity alerts) */

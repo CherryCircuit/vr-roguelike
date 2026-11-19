@@ -87,6 +87,8 @@ const WAVE_BATCH_INTERVAL = 1.2; // seconds between batches
 const _trainSpawnFwd = new THREE.Vector3();
 const _trainSpawnRight = new THREE.Vector3();
 const _WORLD_UP = new THREE.Vector3(0, 1, 0);
+// Fixed front axis for this training session (set in startTraining).
+const _trainForward = new THREE.Vector3(0, 0, -1);
 
 // Menu render orders: MUST sit above the floor HUD (makeSprite default 999).
 const MENU_BG_RO = 1000;
@@ -126,6 +128,18 @@ export function startTraining() {
   _menuOpen = false;
   _loadoutView = false;
   _waveSize = 5;
+
+  // Fixed front axis for the whole training session (spawns never follow the
+  // headset): captured once here, like a level's spawn forward.
+  const cam = _hasDep('camera') ? _deps.camera : null;
+  if (cam) {
+    cam.getWorldDirection(_trainForward);
+    _trainForward.y = 0;
+    if (_trainForward.lengthSq() < 1e-6) _trainForward.set(0, 0, -1);
+    else _trainForward.normalize();
+  } else {
+    _trainForward.set(0, 0, -1);
+  }
 
   // Build a meaty training config (≈ level 9 hpMultiplier) so enemies and
   // bosses survive long enough to test damage output against.
@@ -1061,15 +1075,12 @@ function spawnEnemyAt(type) {
   if (!_hasDep('spawnEnemy')) return;
   const cfg = _trainingConfig || _deps.getLevelConfig?.() || game._levelConfig;
   const cam = _deps.camera;
-  // STRICT front-arc spawn rule, relative to where the player is LOOKING:
-  // ±50° around the camera's horizontal forward (the holodeck is walk-around,
-  // so a world -Z arc put targets behind the player as soon as they turned).
-  const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
+  // FIXED front arc for the session (captured at startTraining) — 150° wide
+  // like the main game. Head-turn-relative spawning is deliberately avoided:
+  // targets must never appear behind you.
+  const angle = (Math.random() - 0.5) * (150 * Math.PI / 180);
   const dist = 10 + Math.random() * 6;
-  cam.getWorldDirection(_trainSpawnFwd);
-  _trainSpawnFwd.y = 0;
-  if (_trainSpawnFwd.lengthSq() < 1e-6) _trainSpawnFwd.set(0, 0, -1);
-  else _trainSpawnFwd.normalize();
+  _trainSpawnFwd.copy(_trainForward);
   _trainSpawnRight.crossVectors(_trainSpawnFwd, _WORLD_UP).normalize();
   const sin = Math.sin(angle) * dist;
   const cos = Math.cos(angle) * dist;

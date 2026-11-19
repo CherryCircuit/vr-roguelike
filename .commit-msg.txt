@@ -1,25 +1,18 @@
-feat: player-relative enemy spawns + readable scrolling menus
+fix: spawn cone is a FIXED level front again (150 deg), never the head direction
 
-Enemy visibility (new test-enemy-visibility.cjs audit drove every fix):
-- getSpawnPosition() and boss framing now follow the player's FACING instead
-  of the world -Z axis, so turning in VR no longer spawns waves behind you
-- boss minions, leech burst minions and breach hazards (flare, meteors, rift)
-  are clamped to the front arc
-- bombardier plants its body on the floor (was 30cm buried); the rift breach
-  no longer pulls enemies down through the floor
-- non-instanced enemy bodies use renderOrder 10 like the instanced pools, so
-  biome overlays (sun reflection, horizon glow) cannot hide them
-- updateEnemies skips holes left by nested destroyEnemy splices (frame crash)
+Round-9 made spawning follow the live head direction. That was wrong: turning
+your head redefined "in front", so enemies still arrived outside the level's
+framing. Restored a fixed front axis:
 
-Menus:
-- ALCHEMY/EVOLUTIONS are tested before the card-selection cooldown, so they
-  respond on the first press after a level change (was ~1.5s of dead buttons)
-- evolutions + alchemy rebuilt as compact opaque panels above the floor, with
-  scrolling windows instead of pages; label canvas width fixed (was ~6x too
-  small and wrapped every alchemy label inside its button)
-- cards/HUD hidden behind the panel, opaque quads instead of stacked
-  translucent layers, no per-frame essence shader or counter traversal
-- training menu redesigned: 5-row scrolling columns, in-label queue counts
-  (dropped 21 counter textures), no rows drawn outside the panel
-- new test-menus.cjs: first-press open, pairwise button overlap, panel bounds,
-  scroll windows
+- getSpawnPosition() uses getSpawnForward(): the level front captured ONCE at
+  level start (captureLevelSpawnForward) and never the live view.
+- Removed setPlayerForward() and the per-frame view ref so no placement path
+  can read the head direction.
+- Cone widened to 150 deg total (+/-75 deg). Vertical rules restored: bodies
+  spawn at floor+1.1 (hard floor at floor+0.8) and the cone tilts up with the
+  level's verticalAngle (10/20/30 deg) so late waves arc in from above.
+- Boss/mortar/minion/leech/boss-spawn clamps and breach hazards all default to
+  the same fixed axis; the training ground captures its own fixed front when
+  training starts.
+- Enemy visibility audit now measures against getSpawnForward() and includes
+  phases where the head is turned 175/200 degrees away from the level front.

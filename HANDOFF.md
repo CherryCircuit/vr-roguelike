@@ -46,6 +46,24 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 A marathon session — every commit below is verified with its own puppeteer suite
 (now 29 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
 
+0k. **round-10: FIXED spawn cone (correction to 0j)** — the 0j change made
+    spawning follow the *live head direction*, which is wrong: turning your head
+    redefined "in front" every second and enemies still arrived outside the
+    level's framing. Restored a **fixed front axis per level**:
+    - `getSpawnPosition()` uses `getSpawnForward()` — the level front captured
+      ONCE by `captureLevelSpawnForward()` (camera stance at level start) and
+      never the live view. `setPlayerForward()` / the per-frame view ref were
+      deleted so no placement path can read the head direction again.
+    - Cone widened to **150° total (±75°)**, with vertical rules restored: bodies
+      spawn at floor+1.1 (never below floor+0.8) and the cone tilts UP with the
+      level's `verticalAngle` (10°/20°/30°) — late waves arc in from above.
+    - Every front-arc clamp (bosses, mortars, boss/leech minions, breach hazards)
+      now defaults to that same fixed axis; the training ground captures its own
+      fixed front at `startTraining()`.
+    - Audit updated: it now measures against `getSpawnForward()` and runs phases
+      where the head is turned 175°/200° AWAY from the level front, proving the
+      spawn arc does not follow the view (0 spawns behind / outside ±78°).
+
 0j. **round-9: enemy placement audit + menu overhaul** (player feedback round 9):
     - **Enemy visibility audit** (`test-enemy-visibility.cjs`): a per-frame
       in-page probe over 4 levels × 4 fixed player facings plus a per-type
