@@ -1,0 +1,25 @@
+feat: player-relative enemy spawns + readable scrolling menus
+
+Enemy visibility (new test-enemy-visibility.cjs audit drove every fix):
+- getSpawnPosition() and boss framing now follow the player's FACING instead
+  of the world -Z axis, so turning in VR no longer spawns waves behind you
+- boss minions, leech burst minions and breach hazards (flare, meteors, rift)
+  are clamped to the front arc
+- bombardier plants its body on the floor (was 30cm buried); the rift breach
+  no longer pulls enemies down through the floor
+- non-instanced enemy bodies use renderOrder 10 like the instanced pools, so
+  biome overlays (sun reflection, horizon glow) cannot hide them
+- updateEnemies skips holes left by nested destroyEnemy splices (frame crash)
+
+Menus:
+- ALCHEMY/EVOLUTIONS are tested before the card-selection cooldown, so they
+  respond on the first press after a level change (was ~1.5s of dead buttons)
+- evolutions + alchemy rebuilt as compact opaque panels above the floor, with
+  scrolling windows instead of pages; label canvas width fixed (was ~6x too
+  small and wrapped every alchemy label inside its button)
+- cards/HUD hidden behind the panel, opaque quads instead of stacked
+  translucent layers, no per-frame essence shader or counter traversal
+- training menu redesigned: 5-row scrolling columns, in-label queue counts
+  (dropped 21 counter textures), no rows drawn outside the panel
+- new test-menus.cjs: first-press open, pairwise button overlap, panel bounds,
+  scroll windows

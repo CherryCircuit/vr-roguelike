@@ -44,7 +44,48 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 ## DONE THIS SESSION (chronological, all pushed to `main`)
 
 A marathon session — every commit below is verified with its own puppeteer suite
-(now 27 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
+(now 29 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
+
+0j. **round-9: enemy placement audit + menu overhaul** (player feedback round 9):
+    - **Enemy visibility audit** (`test-enemy-visibility.cjs`): a per-frame
+      in-page probe over 4 levels × 4 fixed player facings plus a per-type
+      sweep. It measures, per enemy type: spawn angle vs the player's facing
+      (behind / outside the ±65° cone), every-sample angle (behind), body
+      bounds vs the biome floor, occlusion by biome geometry (raycast from the
+      camera), plus "active but invisible". Data drove every fix below.
+    - **Spawns now follow the player's FACING**: `getSpawnPosition()` used the
+      world -Z axis (and the camera-xz origin), so turning in VR — or a level
+      framed in another direction — spawned whole waves behind the player.
+      Boss framing (`captureLevelSpawnForward`) captures the camera's actual
+      forward; boss/leech minions and breach hazards (flare, meteors, rift) are
+      pinned to the front arc; the training ground's own spawner uses the
+      camera basis too.
+    - **Under-floor / hidden enemies**: the bombardier planted its ORIGIN at
+      floor+0.2 with a 0.5 hitbox (30cm buried) — it now plants its body on the
+      floor; the rift breach pulled enemies downward (now horizontal only).
+      Non-instanced enemy bodies (jelly, bombardier, anchor, tendril, leech,
+      echo, minions) now use renderOrder 10 like the InstancedMesh pools, so
+      biome overlays (sun reflection 1, horizon glow 0.5) cannot wash them out.
+    - **updateEnemies** skips array holes left by nested destroyEnemy splices
+      (was throwing "reading '_warpActive' of undefined" and killing the frame).
+    - **ALCHEMY/EVOLUTIONS dead-button fix**: `selectUpgrade` now tests the
+      bench/evolutions buttons BEFORE the card-selection cooldown. The cooldown
+      (1.5s after every level-up) swallowed the first presses, which read as
+      "the buttons only work once".
+    - **Menu overhaul** (evolutions + alchemy + training): compact opaque
+      panels (3.4–3.8 × 2.2 at ~4m) that sit above the floor, single-line
+      labels (the alchemy label canvas width was ~6× too small, wrapping every
+      label into 2-3 lines inside a short button — the root of the
+      "overlapping/ugly" menus), real scrolling windows instead of pages, and
+      the rest of the UI hidden behind the panel. Performance: opaque quads
+      instead of stacked translucent layers, no per-frame shader essence squares,
+      no per-frame counter traverse, rows built once and only moved/toggled on
+      scroll. The training menu dropped its 21 canvas-texture "alarm clock"
+      counters (the queue count lives in the button label) and its lists are
+      windowed so hidden rows never draw outside the panel.
+    - New suite `test-menus.cjs` (29th): first-press open after a level change,
+      no overlapping buttons (pairwise AABB), panels above the floor/inside the
+      panel bounds, bench + evolutions scrolling, windowed training lists.
 
 0i. **round-8 feedback batch** (game-crashing upgrade bug + 4 polish items, from
     the player's in-headset session):

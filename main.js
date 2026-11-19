@@ -159,7 +159,7 @@ import {
   // Alchemy bench (Issue #185)
   showAlchemyBench, hideAlchemyBench, showAlchemyCategoryView,
   isAlchemyBenchOpen, showAlchemyConfirmPopup, hideAlchemyPopup, isAlchemyPopupOpen,
-  getAlchemyBenchHit, getHoveredAlchemyAction,
+  getAlchemyBenchHit, getHoveredAlchemyAction, updateAlchemyScroll,
   // Evolutions menu (Issue #143 redesign)
   showEvolutionsMenu, hideEvolutionsMenu, isEvolutionsOpen, updateEvolutionsScroll,
   // Bullet Carnival style flash (Issue #189)
@@ -1794,12 +1794,17 @@ function init() {
   createEnvironment();
   setupControllers();
 
-  // Desktop wheel scrolls the EVOLUTIONS menu, the Training Ground menus, and
-  // the Bestiary arc. Only active while one of those is open/visible.
+  // Desktop wheel scrolls the ALCHEMY bench, the EVOLUTIONS menu, the Training
+  // Ground menus, and the Bestiary arc. Only active while one is open/visible.
   window.addEventListener('wheel', (e) => {
     if (isEvolutionsOpen()) {
       e.preventDefault();
       updateEvolutionsScroll(e.deltaY > 0 ? 1 : -1);
+      return;
+    }
+    if (isAlchemyBenchOpen()) {
+      e.preventDefault();
+      updateAlchemyScroll(e.deltaY > 0 ? 1 : -1);
       return;
     }
     if (isTrainingActive() && isTrainingMenuOpen()) {
@@ -2506,7 +2511,7 @@ function renderDesktopDebugEffect(tuning) {
 let _evoScrollAccum = 0;
 let _bestiaryScrollAccum = 0;
 function updateEvolutionsScrollInput(now) {
-  if (!isEvolutionsOpen()) return;
+  if (!isEvolutionsOpen() && !isAlchemyBenchOpen()) return;
   const session = renderer?.xr?.getSession?.();
   if (!session) return;
 
@@ -2523,7 +2528,9 @@ function updateEvolutionsScrollInput(now) {
     _evoScrollAccum += axis * 0.02;
     if (Math.abs(_evoScrollAccum) >= 1) {
       const dir = _evoScrollAccum > 0 ? -1 : 1; // stick up → scroll up (content down)
-      updateEvolutionsScroll(dir);
+      // Route to whichever panel is open (both scroll the same way).
+      if (isEvolutionsOpen()) updateEvolutionsScroll(dir);
+      else if (isAlchemyBenchOpen()) updateAlchemyScroll(dir);
       _evoScrollAccum = 0;
     }
   } else {
@@ -5862,7 +5869,6 @@ if (typeof window !== 'undefined') {
 
 // [CORE] Handle ricochet projectile bounce
 function selectUpgrade(controller, index = -1) {
-  if (upgradeSelectionCooldown > 0) return;
   // Issue #143: while the evolution cinematic plays, card selection is
   // disabled — the player must witness the transformation first.
   if (evoCinematicState) return;
@@ -5873,9 +5879,17 @@ function selectUpgrade(controller, index = -1) {
   _uiRaycaster.set(_uiSelectOrigin, _uiSelectDir, 0, 10);
   const hoverSourceKey = index >= 0 ? `controller-${index}` : 'controller';
 
-  // Issue #185: the alchemy bench and post-select bar take priority over the
+  // Issue #185: the alchemy bench and its buttons take priority over the
   // cards. While the bench is open, cards are NOT selectable (they sit behind
   // the bench panel) — the player must explicitly hit a bench button.
+  //
+  // IMPORTANT: menu buttons are tested BEFORE the card-selection cooldown.
+  // The cooldown exists to stop a held trigger from instantly picking a card
+  // on the screen that just appeared; applying it to ALCHEMY/EVOLUTIONS made
+  // those buttons feel dead for the first ~1.5s after every level-up (player
+  // report: "I could press EVOLUTIONS once, then after a level change it
+  // wouldn't work"). Menu buttons never advance the run, so they can be
+  // instant.
   // NOTE: the old debug sandbox intercept lived here; commit 658fd3e replaced
   // it with the Training Ground module but left the call behind, so every
   // upgrade pick threw "getSandboxHit is not defined" (crash report #3/#5/#6).
@@ -5885,6 +5899,8 @@ function selectUpgrade(controller, index = -1) {
     handleAlchemyAction(benchHit);
     return;
   }
+
+  if (upgradeSelectionCooldown > 0) return;
   if (isAlchemyBenchOpen()) return; // bench covers the cards — no card picks
 
   // Fix for the post-optimization regression: use the exact hovered card as a
@@ -7778,3 +7794,5 @@ function onWindowResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   resizeDesktopStereoEffects();
 }
+
+

@@ -437,9 +437,9 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 ## 16. TESTING & VERIFICATION COMMANDS (gate before every commit)
 
 **Server** (tests hit `http://localhost:8001/dev.html`): `python3 -m http.server 8001`
-  (moved off :8000 after an unrelated uvicorn service claimed it — all 27 suites target :8001)
+  (moved off :8000 after an unrelated uvicorn service claimed it — all 29 suites target :8001)
 
-**All 27 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
+**All 29 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
 - `test-bugfixes.cjs` — boot + 15s gameplay + reset loop
 - `test-timer-cleanup.cjs` — charge cannon + triple-shot timer
 - `test-audio-pack.cjs` — reactive music stems + threat emitters
@@ -473,6 +473,13 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 - `test-training-vr.cjs` — Training Ground driven from a CONTROLLER ray (pointer
   beams, WAVE SIZE / queue / GO), VR upgrade-card pick, and the removed
   `getSandboxHit` upgrade-selection crash (both trigger paths)
+- `test-enemy-visibility.cjs` — enemy placement audit: per-frame in-page probe
+  over 4 levels × 4 player facings + a per-type sweep, measuring spawn angle
+  (never behind / outside the cone), behind-player samples, under-floor body
+  bounds, occlusion by biome geometry and renderability
+- `test-menus.cjs` — ALCHEMY/EVOLUTIONS open on the FIRST press after a level
+  change, panels sit above the floor and inside the view, no two visible
+  buttons overlap, long lists scroll, training lists are windowed
 
 **Known quirks:**
 - **Run suites individually, not back-to-back in one shell loop** — batch runs flake on

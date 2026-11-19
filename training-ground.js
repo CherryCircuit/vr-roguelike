@@ -277,9 +277,11 @@ function makeButton(parent, label, action, x, y, opts = {}) {
   parent.add(group);
   const face = new THREE.Mesh(
     new THREE.PlaneGeometry(w, h),
+    // Opaque face (no alpha blending over the panel) — a queued/active button
+    // gets a brighter fill so the wave queue reads at a glance.
     new THREE.MeshBasicMaterial({
-      color: 0x111133, transparent: true, opacity: 0.92,
-      side: THREE.DoubleSide, depthWrite: false, depthTest: true,
+      color: opts.active ? 0x24305a : 0x141a33,
+      side: THREE.DoubleSide, depthWrite: true, depthTest: true,
     })
   );
   face.renderOrder = MENU_BTN_RO;
@@ -336,20 +338,19 @@ function buildTrainingMenu() {
   _menuGroup = group;
   _menuTargets = []; // makeButton() repopulates this for the raycast pass
 
-  // Panel geometry from the layout (COMBAT is narrower than LOADOUT).
-  const panelEl = el(_loadoutView ? 'panelLoadout' : 'panelCombat', {
-    x: 0, y: 0, w: _loadoutView ? 6.7 : 5.6, h: 3.9, color: 0x0a0f22, opacity: 0.96,
-  });
+  // Panel: one OPAQUE quad (translucent stacks cost VR fill rate for nothing).
   const bg = new THREE.Mesh(
-    new THREE.PlaneGeometry(panelEl.w, panelEl.h),
-    new THREE.MeshBasicMaterial({ color: panelEl.color ?? 0x0a0f22, transparent: true, opacity: panelEl.opacity ?? 0.96, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
+    new THREE.PlaneGeometry(MENU_PANEL.w, MENU_PANEL.h),
+    new THREE.MeshBasicMaterial({
+      color: 0x0a0c18, side: THREE.DoubleSide, depthWrite: true, depthTest: true,
+    })
   );
-  bg.position.set(panelEl.x ?? 0, panelEl.y ?? 0, 0);
+  bg.position.set(0, 0, 0);
   bg.renderOrder = MENU_BG_RO;
   group.add(bg);
   const border = new THREE.LineSegments(
     new THREE.EdgesGeometry(bg.geometry),
-    new THREE.LineBasicMaterial({ color: 0x00ff88 })
+    new THREE.LineBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.85 })
   );
   border.renderOrder = MENU_BG_RO;
   group.add(border);
@@ -364,84 +365,41 @@ function buildTrainingMenu() {
 // ── Digital wave counter (player feedback): an old-alarm-clock style
 // lime-on-black 2-digit display beside each enemy/boss button. Brightens
 // with a flash when it updates and pulses while the count is active.
-const _counterFlashPhase = Math.random() * Math.PI * 2;
-function makeDigitalCounter(value) {
-  const group = new THREE.Group();
-  group.name = 'wave-counter';
-  const bg = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.16, 0.19),
-    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, depthTest: true })
-  );
-  bg.renderOrder = MENU_BTN_RO;
-  group.add(bg);
-  const border = new THREE.LineSegments(
-    new THREE.EdgesGeometry(bg.geometry),
-    new THREE.LineBasicMaterial({ color: 0x226622, transparent: true, opacity: 0.9 })
-  );
-  border.renderOrder = MENU_BTN_RO;
-  group.add(border);
+// (Digital wave counters removed — the queue count now lives inside each
+// button's label, which removed 21 canvas textures, 21 quads and a per-frame
+// menu traverse while the menu was open.)
 
-  const canvas = document.createElement('canvas');
-  canvas.width = 48;
-  canvas.height = 56;
-  const tex = new THREE.CanvasTexture(canvas);
-  const textMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.13, 0.15),
-    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: true })
-  );
-  textMesh.renderOrder = MENU_TEXT_RO;
-  textMesh.position.z = 0.01;
-  group.add(textMesh);
 
-  const ctx = canvas.getContext('2d');
-  const draw = (v, flash) => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.font = '28px ' + digitalFontFamily;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const str = String(v).padStart(2, '0');
-    // Lime green digits; flash → white-hot overlay
-    ctx.fillStyle = flash ? '#c8ffd8' : '#44ff66';
-    ctx.shadowColor = '#44ff66';
-    ctx.shadowBlur = flash ? 12 : 4;
-    ctx.fillText(str, canvas.width / 2, canvas.height / 2 + 1);
-    tex.needsUpdate = true;
-  };
-  draw(value, true);
-  group.userData.counter = { value, draw, flashStart: performance.now() };
-  return group;
-}
+// (Digital wave counters removed — the queue count now lives inside each
+// button's label, which removed 21 canvas textures, 21 quads and a per-frame
+// menu traverse while the menu was open.)
 
-function updateCounters(now) {
-  if (!_menuGroup) return;
-  _menuGroup.traverse(c => {
-    const ud = c.userData?.counter;
-    if (!ud) return;
-    // Flash decay after an update (300ms) then a gentle brightness loop
-    const flashT = Math.min(1, (now - ud.flashStart) / 300);
-    const flash = 1 - flashT;
-    const active = ud.value > 0;
-    const loop = active ? 0.55 + 0.3 * Math.sin(now * 0.004 + _counterFlashPhase) : 0.35;
-    c.traverse(child => {
-      if (child.isMesh && child.material?.map) {
-        child.material.opacity = Math.max(0.25, loop + flash * 0.4);
-      }
-    });
+
+// ── Menu metrics ───────────────────────────────────────────
+// Compact, opaque, eye-level panel. Everything below is in MENU-LOCAL metres
+// (the panel is 3.8 x 2.3, placed 2.9m in front of the player). The digital
+// "alarm clock" counters were removed: 21 extra canvas textures + 21 quads for
+// numbers that read better inside the button label, and the old panel ran off
+// the bottom of the view.
+const MENU_PANEL = { w: 3.8, h: 2.3 };
+const MENU_COL = { left: -1.16, center: 0, right: 1.16 };
+const MENU_HEADER_Y = 0.56;
+const MENU_LIST_TOP = 0.34;
+const MENU_ROW_H = 0.26;
+const MENU_BTN_H = 0.235;
+const MENU_VISIBLE_ROWS = 5;
+const MENU_GLYPH_BTN = 0.042;
+const MENU_GLYPH_HEADER = 0.052;
+const MENU_GLYPH_TITLE = 0.075;
+
+function buildCombatView(parent) {
+  makeLabel(parent, 'TRAINING GROUND', 0, 0.96, { fontSize: 72, color: '#00ff88', glyphSize: MENU_GLYPH_TITLE });
+  makeLabel(parent, 'BUILD A WAVE — PRESS GO · STICK SCROLLS LISTS', 0, 0.80, {
+    fontSize: 30, color: '#8f9cc4', glyphSize: 0.038, forceArial: true,
   });
-}
 
-function buildCombatView(group) {
-  const titleEl = el('title', { x: 0, y: 1.68, fontSize: 92, glyphSize: 0.17, color: 0x00ff88, text: 'TRAINING GROUND' });
-  if (titleEl.visible !== false) makeLabel(group, titleEl.text, titleEl.x, titleEl.y, { fontSize: titleEl.fontSize, color: _hex(titleEl.color), glyphSize: titleEl.glyphSize });
-  const subEl = el('sub', { x: 0, y: 1.32, fontSize: 38, glyphSize: 0.052, color: 0x8899bb, text: 'BUILD A WAVE — THEN PRESS GO' });
-  if (subEl.visible !== false) makeLabel(group, subEl.text, subEl.x, subEl.y, { fontSize: subEl.fontSize, color: _hex(subEl.color), glyphSize: subEl.glyphSize, forceArial: true });
-
-  // ── ENEMIES column (layout-driven list template) ──
-  const enemyH = el('enemiesHeading', { x: -1.9, y: 0.98, fontSize: 88, glyphSize: 0.13, color: 0xff8866, text: 'ENEMIES' });
-  makeLabel(group, enemyH.text, enemyH.x, enemyH.y, { fontSize: enemyH.fontSize, color: _hex(enemyH.color), glyphSize: enemyH.glyphSize });
-  const eTpl = listTpl('enemy', { x: -1.9, y: 0.76, rowH: 0.2, btnDX: -0.155, ctrDX: 0.465, btnW: 0.78, btnH: 0.17, fontSize: 40, glyphSize: 0.054, color: 0xff8866, visibleRows: 6 });
+  // ── ENEMIES column (scrollable) ──
+  makeLabel(parent, 'ENEMIES', MENU_COL.left, MENU_HEADER_Y, { fontSize: 48, color: '#ff8866', glyphSize: MENU_GLYPH_HEADER });
   const ENEMY_IDS = [
     ['basic', 'DRONE'], ['fast', 'SNEAK'], ['tank', 'SENTINEL'], ['swarm', 'DART'],
     ['spiral_swimmer', 'SPIRAL SWIMMER'], ['jelly', 'STACK'], ['conductor', 'COMMANDER'],
@@ -449,27 +407,26 @@ function buildCombatView(group) {
     ['void_tendril', 'VOID TENDRIL'], ['echo_phantom', 'ECHO PHANTOM'], ['leech', 'LEECH'],
   ];
   const enemyList = new THREE.Group();
-  enemyList.position.set(eTpl.x, eTpl.y, 0.01);
-  group.add(enemyList);
+  enemyList.position.set(MENU_COL.left, MENU_LIST_TOP, 0.01);
+  parent.add(enemyList);
   ENEMY_IDS.forEach(([id, label], i) => {
     const row = new THREE.Group();
-    row.position.set(0, -i * eTpl.rowH, 0);
+    row.position.set(0, -i * MENU_ROW_H, 0);
     enemyList.add(row);
     const pendingCount = _pendingWave.find(p => p.kind === 'enemy' && p.type === id)?.count || 0;
-    makeButton(row, label, { type: 'queue_enemy', id }, eTpl.btnDX, 0, { w: eTpl.btnW, h: eTpl.btnH, color: eTpl.color, fontSize: eTpl.fontSize, glyphSize: eTpl.glyphSize });
-    const counter = makeDigitalCounter(pendingCount);
-    counter.position.set(eTpl.ctrDX, 0, 0.02);
-    row.add(counter);
+    makeButton(row, pendingCount > 0 ? `${label} ×${pendingCount}` : label, { type: 'queue_enemy', id }, 0, 0, {
+      w: 1.0, h: MENU_BTN_H, color: 0xff8866, fontSize: 40, glyphSize: MENU_GLYPH_BTN,
+      active: pendingCount > 0,
+    });
   });
-  enemyList.userData.maxRows = Math.max(0, ENEMY_IDS.length - eTpl.visibleRows);
+  enemyList.userData.maxRows = Math.max(0, ENEMY_IDS.length - MENU_VISIBLE_ROWS);
   enemyList.userData.scrollKey = 'enemy';
-  enemyList.userData.baseY = eTpl.y;
-  enemyList.userData.rowH = eTpl.rowH;
+  enemyList.userData.baseY = MENU_LIST_TOP;
+  enemyList.userData.rowH = MENU_ROW_H;
+  applyListWindow(enemyList);
 
-  // ── BOSSES column (layout-driven list template) ──
-  const bossH = el('bossesHeading', { x: 1.9, y: 0.98, fontSize: 88, glyphSize: 0.13, color: 0xff88ff, text: 'BOSSES' });
-  makeLabel(group, bossH.text, bossH.x, bossH.y, { fontSize: bossH.fontSize, color: _hex(bossH.color), glyphSize: bossH.glyphSize });
-  const bTpl = listTpl('boss', { x: 1.9, y: 0.74, rowH: 0.23, btnDX: -0.155, ctrDX: 0.575, btnW: 1.0, btnH: 0.18, fontSize: 38, glyphSize: 0.056, color: 0xff88ff, visibleRows: 8 });
+  // ── BOSSES column (scrollable) ──
+  makeLabel(parent, 'BOSSES', MENU_COL.right, MENU_HEADER_Y, { fontSize: 48, color: '#ff88ff', glyphSize: MENU_GLYPH_HEADER });
   const BOSS_IDS = [
     ['skull_boss', 'NECRO'], ['the_maw', 'THE MAW'], ['the_prism', 'THE PRISM'],
     ['mirror_gauntlet', 'MIRROR GAUNTLET'], ['neon_minotaur', 'BLOOD MINOTAUR'],
@@ -477,53 +434,58 @@ function buildCombatView(group) {
     ['eclipse_engine', 'ECLIPSE ENGINE'],
   ];
   const bossList = new THREE.Group();
-  bossList.position.set(bTpl.x, bTpl.y, 0.01);
-  group.add(bossList);
+  bossList.position.set(MENU_COL.right, MENU_LIST_TOP, 0.01);
+  parent.add(bossList);
   BOSS_IDS.forEach(([id, label], i) => {
     const row = new THREE.Group();
-    row.position.set(0, -i * bTpl.rowH, 0);
+    row.position.set(0, -i * MENU_ROW_H, 0);
     bossList.add(row);
     const pendingCount = _pendingWave.find(p => p.kind === 'boss' && p.type === id)?.count || 0;
-    makeButton(row, label, { type: 'queue_boss', id }, bTpl.btnDX, 0, { w: bTpl.btnW, h: bTpl.btnH, color: bTpl.color, fontSize: bTpl.fontSize, glyphSize: bTpl.glyphSize });
-    const counter = makeDigitalCounter(pendingCount);
-    counter.position.set(bTpl.ctrDX, 0, 0.02);
-    row.add(counter);
+    makeButton(row, pendingCount > 0 ? `${label} ×${pendingCount}` : label, { type: 'queue_boss', id }, 0, 0, {
+      w: 1.0, h: MENU_BTN_H, color: 0xff88ff, fontSize: 38, glyphSize: MENU_GLYPH_BTN,
+      active: pendingCount > 0,
+    });
   });
-  bossList.userData.maxRows = Math.max(0, BOSS_IDS.length - bTpl.visibleRows);
+  bossList.userData.maxRows = Math.max(0, BOSS_IDS.length - MENU_VISIBLE_ROWS);
   bossList.userData.scrollKey = 'boss';
-  bossList.userData.baseY = bTpl.y;
-  bossList.userData.rowH = bTpl.rowH;
+  bossList.userData.baseY = MENU_LIST_TOP;
+  bossList.userData.rowH = MENU_ROW_H;
+  applyListWindow(bossList);
 
-  // ── CENTER controls (layout-driven) ──
-  const waveEl = el('waveHeading', { x: 0, y: 0.62, fontSize: 56, glyphSize: 0.085, color: 0xffdd00, text: 'WAVE SIZE' });
-  if (waveEl.visible !== false) makeLabel(group, waveEl.text, waveEl.x, waveEl.y, { fontSize: waveEl.fontSize, color: _hex(waveEl.color), glyphSize: waveEl.glyphSize });
-
-  const stepEls = ['waveMinus5', 'waveMinus1', 'wavePlus1', 'wavePlus5'].map((id, k) => {
-    const def = el(id, { x: 0, y: 0.3, w: 0.28, h: 0.24, fontSize: 34, glyphSize: 0.06, color: 0xffdd00, text: ['-5', '-1', '+1', '+5'][k] });
-    return def;
+  // ── CENTER: wave size stepper + actions ──
+  makeLabel(parent, 'WAVE SIZE', MENU_COL.center, MENU_HEADER_Y, { fontSize: 46, color: '#ffdd00', glyphSize: MENU_GLYPH_HEADER });
+  for (const d of [{ text: '-5', x: -0.51, amount: -5 }, { text: '-1', x: -0.3, amount: -1 }]) {
+    makeButton(parent, d.text, { type: 'wave_add', amount: d.amount }, d.x, MENU_LIST_TOP, {
+      w: 0.18, h: MENU_BTN_H, color: 0xffdd00, fontSize: 36, glyphSize: 0.048,
+    });
+  }
+  makeButton(parent, `SIZE ${_waveSize}`, { type: 'noop' }, 0, MENU_LIST_TOP, {
+    w: 0.4, h: MENU_BTN_H, color: 0xffdd00, fontSize: 38, glyphSize: 0.048,
   });
-  const stepAmounts = [-5, -1, 1, 5];
-  stepEls.forEach((d, k) => {
-    if (d.visible === false) return;
-    makeButton(group, d.text, { type: 'wave_add', amount: stepAmounts[k] }, d.x, d.y, { w: d.w, h: d.h, color: d.color, fontSize: d.fontSize, glyphSize: d.glyphSize });
-  });
-  const sizeEl = el('waveSize', { x: 0, y: 0.3, w: 0.62, h: 0.26, fontSize: 44, glyphSize: 0.07, color: 0xffdd00, text: 'SIZE: 5' });
-  makeButton(group, `SIZE: ${_waveSize}`, { type: 'noop' }, sizeEl.x, sizeEl.y, { w: sizeEl.w, h: sizeEl.h, color: sizeEl.color, fontSize: sizeEl.fontSize, glyphSize: sizeEl.glyphSize });
+  for (const d of [{ text: '+1', x: 0.3, amount: 1 }, { text: '+5', x: 0.51, amount: 5 }]) {
+    makeButton(parent, d.text, { type: 'wave_add', amount: d.amount }, d.x, MENU_LIST_TOP, {
+      w: 0.18, h: MENU_BTN_H, color: 0xffdd00, fontSize: 36, glyphSize: 0.048,
+    });
+  }
 
   const waveActive = _activeWave.length > 0 || _pendingWave.some(p => p.kind === 'enemy');
-  const goEl = el('go', { x: 0, y: -0.18, w: 1.5, h: 0.28, fontSize: 48, glyphSize: 0.07, color: 0x00ff88, text: 'GO!' });
-  makeButton(group, waveActive ? 'GO (WAVE RUNNING)' : goEl.text, { type: 'go_wave' }, goEl.x, goEl.y, { w: goEl.w, h: goEl.h, color: goEl.color, fontSize: goEl.fontSize, glyphSize: goEl.glyphSize });
-  const clearEl = el('clear', { x: 0, y: -0.56, w: 1.5, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0xff6644, text: 'CLEAR WAVE' });
-  makeButton(group, clearEl.text, { type: 'clear_wave' }, clearEl.x, clearEl.y, { w: clearEl.w, h: clearEl.h, color: clearEl.color, fontSize: clearEl.fontSize, glyphSize: clearEl.glyphSize });
-  const loadEl = el('loadout', { x: 0, y: -0.92, w: 1.5, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0x44aaff, text: 'LOADOUT →' });
-  makeButton(group, loadEl.text, { type: 'goto_loadout' }, loadEl.x, loadEl.y, { w: loadEl.w, h: loadEl.h, color: loadEl.color, fontSize: loadEl.fontSize, glyphSize: loadEl.glyphSize });
-  const exitEl = el('exit', { x: 0, y: -1.28, w: 1.5, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0xff4444, text: 'EXIT TRAINING' });
-  makeButton(group, exitEl.text, { type: 'exit_training' }, exitEl.x, exitEl.y, { w: exitEl.w, h: exitEl.h, color: exitEl.color, fontSize: exitEl.fontSize, glyphSize: exitEl.glyphSize });
-
-  const tipEl = el('tip', { x: 0, y: -1.66, fontSize: 30, glyphSize: 0.04, color: 0x6688aa, text: 'GO CLOSES THIS MENU — THUMBSTICK OR T REOPENS IT' });
-  if (tipEl.visible !== false) makeLabel(group, tipEl.text, tipEl.x, tipEl.y, { fontSize: tipEl.fontSize, color: _hex(tipEl.color), glyphSize: tipEl.glyphSize, forceArial: true });
+  makeButton(parent, waveActive ? 'GO (WAVE RUNNING)' : 'GO!', { type: 'go_wave' }, 0, -0.06, {
+    w: 1.15, h: 0.3, color: 0x00ff88, fontSize: 52, glyphSize: 0.062,
+  });
+  makeButton(parent, 'CLEAR WAVE', { type: 'clear_wave' }, 0, -0.36, {
+    w: 1.15, h: MENU_BTN_H, color: 0xff6644, fontSize: 40, glyphSize: MENU_GLYPH_BTN,
+  });
+  makeButton(parent, 'LOADOUT →', { type: 'goto_loadout' }, 0, -0.62, {
+    w: 1.15, h: MENU_BTN_H, color: 0x44aaff, fontSize: 40, glyphSize: MENU_GLYPH_BTN,
+  });
+  makeButton(parent, 'EXIT TRAINING', { type: 'exit_training' }, 0, -0.88, {
+    w: 1.15, h: MENU_BTN_H, color: 0xff4444, fontSize: 40, glyphSize: MENU_GLYPH_BTN,
+  });
 }
 
+
+// Short display names for the LOADOUT upgrade buttons (long pool names would
+// wrap on the compact buttons).
 // Short display names for the LOADOUT upgrade buttons (long pool names would
 // wrap on the compact buttons).
 const LOADOUT_SHORT_NAMES = {
@@ -538,78 +500,95 @@ const LOADOUT_SHORT_NAMES = {
   'chain_lightning': 'CHAIN', 'dream_fragment': 'DREAM',
 };
 
-function buildLoadoutView(group) {
-  const titleEl = el('loadoutTitle', { x: 0, y: 1.68, fontSize: 52, glyphSize: 0.08, color: 0x44aaff, text: 'LOADOUT — BUILD YOUR ARSENAL' });
-  if (titleEl.visible !== false) makeLabel(group, titleEl.text, titleEl.x, titleEl.y, { fontSize: titleEl.fontSize, color: _hex(titleEl.color), glyphSize: titleEl.glyphSize });
+/**
+ * Build a scrollable upgrade column for one hand.
+ * All upgrades are created once; scrolling only moves/toggles the window
+ * (rebuilding text sprites per scroll step was a stutter source).
+ */
+function buildUpgradeColumn(parent, hand, x, scrollKey) {
+  const allUpgrades = [...UPGRADE_POOL, ...SPECIAL_UPGRADE_POOL]
+    .filter((u, i, arr) => arr.findIndex(v => v.id === u.id) === i);
 
-  const allUpgrades = [...UPGRADE_POOL, ...SPECIAL_UPGRADE_POOL].filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i);
+  const column = new THREE.Group();
+  column.position.set(x, MENU_LIST_TOP, 0.01);
+  parent.add(column);
 
-  const buildHandColumn = (hand, tpl, scrollKey) => {
-    const column1 = new THREE.Group();
-    column1.position.set(tpl.col1X, tpl.y, 0.01);
-    group.add(column1);
-    const column2 = new THREE.Group();
-    column2.position.set(tpl.col2X, tpl.y, 0.01);
-    group.add(column2);
-    let rowIdx = 0;
-    allUpgrades.forEach((u) => {
-      const col = rowIdx % 2 === 0 ? column1 : column2;
-      const y = -Math.floor(rowIdx / 2) * tpl.rowH;
-      const row = new THREE.Group();
-      row.position.set(0, y, 0);
-      col.add(row);
-      const count = game.upgrades?.[hand]?.[u.id] || 0;
-      const label = LOADOUT_SHORT_NAMES[u.id] || u.name.toUpperCase();
-      makeButton(row, label, { type: 'add_upgrade_hand', id: u.id, hand }, tpl.btnDX, 0, {
-        w: tpl.btnW, h: tpl.btnH, color: tpl.color, fontSize: tpl.fontSize, glyphSize: tpl.glyphSize,
-      });
-      const counter = makeDigitalCounter(count);
-      counter.position.set(tpl.ctrDX, 0, 0.02);
-      row.add(counter);
-      rowIdx++;
+  allUpgrades.forEach((u, i) => {
+    const row = new THREE.Group();
+    row.position.set(0, -i * MENU_ROW_H, 0);
+    column.add(row);
+    const count = game.upgrades?.[hand]?.[u.id] || 0;
+    const short = LOADOUT_SHORT_NAMES[u.id] || u.name.toUpperCase();
+    makeButton(row, count > 0 ? `${short} ×${count}` : short, { type: 'add_upgrade_hand', id: u.id, hand }, 0, 0, {
+      w: 1.0, h: MENU_BTN_H, color: 0x44ffaa, fontSize: 36, glyphSize: MENU_GLYPH_BTN,
+      active: count > 0,
     });
-    const maxRows = Math.max(0, Math.ceil(allUpgrades.length / 2) - tpl.visibleRows);
-    for (const [c, key] of [[column1, scrollKey + '-a'], [column2, scrollKey + '-b']]) {
-      c.userData.maxRows = maxRows;
-      c.userData.scrollKey = key;
-      c.userData.baseY = tpl.y;
-      c.userData.rowH = tpl.rowH;
-    }
-  };
-
-  const leftTpl = listTpl('upgradeLeft', { col1X: -2.6, col2X: -1.55, y: 0.76, rowH: 0.205, btnDX: -0.11, ctrDX: 0.38, btnW: 0.6, btnH: 0.16, fontSize: 30, glyphSize: 0.043, color: 0x44ffaa, visibleRows: 9 });
-  const rightTpl = listTpl('upgradeRight', { col1X: 1.55, col2X: 2.6, y: 0.76, rowH: 0.205, btnDX: -0.11, ctrDX: 0.38, btnW: 0.6, btnH: 0.16, fontSize: 30, glyphSize: 0.043, color: 0x44ffaa, visibleRows: 9 });
-
-  // LEFT BLASTER — two upgrade columns with live counters
-  const leftTitle = el('leftTitle', { x: -2.05, y: 0.98, fontSize: 54, glyphSize: 0.075, color: 0x00ffff, text: 'LEFT BLASTER' });
-  makeLabel(group, leftTitle.text, leftTitle.x, leftTitle.y, { fontSize: leftTitle.fontSize, color: _hex(leftTitle.color), glyphSize: leftTitle.glyphSize });
-  buildHandColumn('left', leftTpl, 'loadout-left');
-
-  // RIGHT BLASTER — two upgrade columns with live counters
-  const rightTitle = el('rightTitle', { x: 2.05, y: 0.98, fontSize: 54, glyphSize: 0.075, color: 0x00ffff, text: 'RIGHT BLASTER' });
-  makeLabel(group, rightTitle.text, rightTitle.x, rightTitle.y, { fontSize: rightTitle.fontSize, color: _hex(rightTitle.color), glyphSize: rightTitle.glyphSize });
-  buildHandColumn('right', rightTpl, 'loadout-right');
-
-  // EVOLUTIONS in the center column
-  const evoHeading = el('evoHeading', { x: 0, y: 0.98, fontSize: 54, glyphSize: 0.075, color: 0xffdd00, text: 'EVOLUTIONS' });
-  makeLabel(group, evoHeading.text, evoHeading.x, evoHeading.y, { fontSize: evoHeading.fontSize, color: _hex(evoHeading.color), glyphSize: evoHeading.glyphSize });
-  const evoTpl = listTpl('evolution', { x: 0, y: 0.74, rowH: 0.26, btnW: 1.35, btnH: 0.2, fontSize: 34, glyphSize: 0.052, visibleRows: 6 });
-  let ey = evoTpl.y;
-  Object.entries(WEAPON_EVOLUTIONS).forEach(([weaponId, evo]) => {
-    makeButton(group, evo.name.toUpperCase(), {
-      type: 'evolve', weaponId, evoId: evo.id,
-    }, evoTpl.x, ey, { w: evoTpl.btnW, h: evoTpl.btnH, color: evo.sigColor || 0xffdd00, fontSize: evoTpl.fontSize, glyphSize: evoTpl.glyphSize });
-    ey -= evoTpl.rowH;
   });
 
-  // ── Bottom action bar ──
-  const resetEl = el('resetLoadout', { x: -1.6, y: -1.55, w: 1.4, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0xff8844, text: 'RESET LOADOUT' });
-  makeButton(group, resetEl.text, { type: 'reset_loadout' }, resetEl.x, resetEl.y, { w: resetEl.w, h: resetEl.h, color: resetEl.color, fontSize: resetEl.fontSize, glyphSize: resetEl.glyphSize });
-  const backEl = el('backToCombat', { x: 0, y: -1.55, w: 1.4, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0x44aaff, text: '← COMBAT' });
-  makeButton(group, backEl.text, { type: 'goto_combat' }, backEl.x, backEl.y, { w: backEl.w, h: backEl.h, color: backEl.color, fontSize: backEl.fontSize, glyphSize: backEl.glyphSize });
-  const exit2El = el('exitLoadout', { x: 1.6, y: -1.55, w: 1.4, h: 0.24, fontSize: 38, glyphSize: 0.055, color: 0xff4444, text: 'EXIT TRAINING' });
-  makeButton(group, exit2El.text, { type: 'exit_training' }, exit2El.x, exit2El.y, { w: exit2El.w, h: exit2El.h, color: exit2El.color, fontSize: exit2El.fontSize, glyphSize: exit2El.glyphSize });
+  column.userData.maxRows = Math.max(0, allUpgrades.length - MENU_VISIBLE_ROWS);
+  column.userData.scrollKey = scrollKey;
+  column.userData.baseY = MENU_LIST_TOP;
+  column.userData.rowH = MENU_ROW_H;
+  applyListWindow(column);
+  return column;
 }
+;
+
+function buildLoadoutView(parent) {
+  makeLabel(parent, 'LOADOUT', 0, 0.96, { fontSize: 72, color: '#44aaff', glyphSize: MENU_GLYPH_TITLE });
+  makeLabel(parent, 'CLICK AN UPGRADE TO ADD IT TO THAT HAND — STICK SCROLLS', 0, 0.80, {
+    fontSize: 30, color: '#8f9cc4', glyphSize: 0.038, forceArial: true,
+  });
+
+  // LEFT BLASTER
+  makeLabel(parent, 'LEFT BLASTER', MENU_COL.left, MENU_HEADER_Y, { fontSize: 46, color: '#00ffff', glyphSize: MENU_GLYPH_HEADER });
+  buildUpgradeColumn(parent, 'left', MENU_COL.left, 'loadout-left');
+
+  // EVOLUTIONS (center)
+  makeLabel(parent, 'EVOLUTIONS', MENU_COL.center, MENU_HEADER_Y, { fontSize: 46, color: '#ffdd00', glyphSize: MENU_GLYPH_HEADER });
+  const evoList = new THREE.Group();
+  evoList.position.set(MENU_COL.center, MENU_LIST_TOP, 0.01);
+  parent.add(evoList);
+  const evoEntries = Object.entries(WEAPON_EVOLUTIONS);
+  evoEntries.forEach(([weaponId, evo], i) => {
+    const row = new THREE.Group();
+    row.position.set(0, -i * MENU_ROW_H, 0);
+    evoList.add(row);
+    makeButton(row, evo.name.toUpperCase(), { type: 'evolve', weaponId, evoId: evo.id }, 0, 0, {
+      w: 1.0, h: MENU_BTN_H, color: evo.sigColor || 0xffdd00, fontSize: 36, glyphSize: MENU_GLYPH_BTN,
+    });
+  });
+  evoList.userData.maxRows = Math.max(0, evoEntries.length - MENU_VISIBLE_ROWS);
+  evoList.userData.scrollKey = 'loadout-evo';
+  evoList.userData.baseY = MENU_LIST_TOP;
+  evoList.userData.rowH = MENU_ROW_H;
+  applyListWindow(evoList);
+
+  // RIGHT BLASTER
+  makeLabel(parent, 'RIGHT BLASTER', MENU_COL.right, MENU_HEADER_Y, { fontSize: 46, color: '#00ffff', glyphSize: MENU_GLYPH_HEADER });
+  buildUpgradeColumn(parent, 'right', MENU_COL.right, 'loadout-right');
+
+  // Separator so the action bar reads as chrome, not as another list row
+  const divider = new THREE.Mesh(
+    new THREE.PlaneGeometry(MENU_PANEL.w - 0.5, 0.008),
+    new THREE.MeshBasicMaterial({ color: 0x2a3350, side: THREE.DoubleSide, depthTest: true })
+  );
+  divider.position.set(0, -0.735, 0.015);
+  divider.renderOrder = MENU_TEXT_RO;
+  parent.add(divider);
+
+  // Bottom action bar
+  makeButton(parent, 'RESET', { type: 'reset_loadout' }, MENU_COL.left, -0.9, {
+    w: 1.0, h: 0.26, color: 0xff8844, fontSize: 40, glyphSize: MENU_GLYPH_BTN,
+  });
+  makeButton(parent, '← COMBAT', { type: 'goto_combat' }, MENU_COL.center, -0.9, {
+    w: 1.0, h: 0.26, color: 0x44aaff, fontSize: 40, glyphSize: MENU_GLYPH_BTN,
+  });
+  makeButton(parent, 'EXIT TRAINING', { type: 'exit_training' }, MENU_COL.right, -0.9, {
+    w: 1.0, h: 0.26, color: 0xff4444, fontSize: 40, glyphSize: MENU_GLYPH_BTN,
+  });
+}
+
 
 function disposeMenuGroup(group) {
   group.traverse(child => {
@@ -1155,14 +1134,31 @@ function scrollMenus(delta) {
   });
   lists.forEach(list => {
     const max = list.userData.maxRows || 0;
-    if (max <= 0) return;
-    const baseY = list.userData.baseY ?? 0.86;
-    const rowH = list.userData.rowH ?? 0.17;
+    if (max <= 0) { applyListWindow(list); return; }
+    const baseY = list.userData.baseY ?? 0.34;
+    const rowH = list.userData.rowH ?? MENU_ROW_H;
     let scroll = list.userData._scroll || 0;
     scroll = Math.max(0, Math.min(max, scroll + (delta > 0 ? 1 : -1)));
     list.userData._scroll = scroll;
     list.position.y = baseY + scroll * rowH;
+    applyListWindow(list);
   });
+}
+
+/**
+ * Show only the rows inside the visible band.
+ * Without this the 13-enemy list kept drawing rows 6-13 BELOW the panel and
+ * over the floor (player report: "the menu goes into the floor"). No clipping
+ * planes — just visibility per row, applied only when the window changes.
+ */
+function applyListWindow(list) {
+  const scroll = list.userData._scroll || 0;
+  const visible = list.userData.visibleRows || MENU_VISIBLE_ROWS;
+  const rows = list.children;
+  for (let i = 0; i < rows.length; i++) {
+    const slot = i - scroll;
+    rows[i].visible = slot >= 0 && slot < visible;
+  }
 }
 
 /** Per-frame menu pulse + wave release (called from main.js while training). */
@@ -1171,10 +1167,10 @@ export function updateTrainingMenu(now, dt) {
   // The menu PAUSES the wave: no releases while it's open (player feedback —
   // opening the menu mid-fight should freeze the action).
   if (!_menuOpen) updateWaveRelease(dt);
-  updateCounters(now);
 }
 
 // Test seam: expose wave size for automation.
 export function getTrainingWaveSize() {
   return _waveSize;
 }
+
