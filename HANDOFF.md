@@ -86,6 +86,11 @@ A marathon session — every commit below is verified with its own puppeteer sui
     - New suite `test-menus.cjs` (29th): first-press open after a level change,
       no overlapping buttons (pairwise AABB), panels above the floor/inside the
       panel bounds, bench + evolutions scrolling, windowed training lists.
+    - NOTE: the training menu geometry is now code-defined constants in
+      `training-ground.js` (`MENU_*`), so `layouts/training-ground.json` no
+      longer drives it (the layout editor still drives every other screen).
+      The upgrade-card screens (evolutions/alchemy) keep using
+      `layouts/upgrade-cards.json` lists, whose values were re-synced.
 
 0i. **round-8 feedback batch** (game-crashing upgrade bug + 4 polish items, from
     the player's in-headset session):
