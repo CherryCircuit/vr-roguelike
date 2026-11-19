@@ -83,6 +83,10 @@ let _activeWave = [];         // remaining enemies to release { type, count }
 let _waveReleaseTimer = 0;    // seconds until the next batch
 const WAVE_BATCH_SIZE = 3;    // enemies released per batch
 const WAVE_BATCH_INTERVAL = 1.2; // seconds between batches
+// Spawn-basis scratch vectors (per spawn, not per frame)
+const _trainSpawnFwd = new THREE.Vector3();
+const _trainSpawnRight = new THREE.Vector3();
+const _WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 // Menu render orders: MUST sit above the floor HUD (makeSprite default 999).
 const MENU_BG_RO = 1000;
@@ -1078,15 +1082,22 @@ function spawnEnemyAt(type) {
   if (!_hasDep('spawnEnemy')) return;
   const cfg = _trainingConfig || _deps.getLevelConfig?.() || game._levelConfig;
   const cam = _deps.camera;
-  // STRICT front-arc spawn rule (matches the main game's getSpawnPosition:
-  // ±50° from the player's forward). Player feedback: enemies were spawning
-  // behind the player in the training ground.
+  // STRICT front-arc spawn rule, relative to where the player is LOOKING:
+  // ±50° around the camera's horizontal forward (the holodeck is walk-around,
+  // so a world -Z arc put targets behind the player as soon as they turned).
   const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
   const dist = 10 + Math.random() * 6;
+  cam.getWorldDirection(_trainSpawnFwd);
+  _trainSpawnFwd.y = 0;
+  if (_trainSpawnFwd.lengthSq() < 1e-6) _trainSpawnFwd.set(0, 0, -1);
+  else _trainSpawnFwd.normalize();
+  _trainSpawnRight.crossVectors(_trainSpawnFwd, _WORLD_UP).normalize();
+  const sin = Math.sin(angle) * dist;
+  const cos = Math.cos(angle) * dist;
   const pos = new THREE.Vector3(
-    cam.position.x + Math.sin(angle) * dist,
+    cam.position.x + _trainSpawnFwd.x * cos + _trainSpawnRight.x * sin,
     cam.position.y + 0.1,
-    cam.position.z - Math.cos(angle) * dist,
+    cam.position.z + _trainSpawnFwd.z * cos + _trainSpawnRight.z * sin,
   );
   _deps.spawnEnemy(type, pos, cfg);
 }

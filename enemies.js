@@ -545,6 +545,10 @@ const _frontDir = new THREE.Vector3();
 const _frontRight = new THREE.Vector3();
 const _frontFlat = new THREE.Vector3();
 const _frontUp = new THREE.Vector3(0, 1, 0);
+// Spawn-basis scratch (getSpawnPosition runs on every spawn, never per frame)
+const _spawnFwd = new THREE.Vector3();
+const _spawnRight = new THREE.Vector3();
+const _WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 export function setPlayerForward(forward) {
   if (forward) {
@@ -569,8 +573,22 @@ export function setBossSpawnForward(forward) {
   }
 }
 
-function clampPositionToFrontArc(position, playerPos, minDist = 3, maxDist = 20, arcDeg = 120, forwardOverride = null) {
-  _frontDir.copy(forwardOverride || _playerForwardRef);
+// Enemies must draw ABOVE the biome's transparent overlays (sun reflection at
+// renderOrder 1, horizon glow 0.5) or they get washed out / "vanish behind the
+// scenery". The InstancedMesh pools already use 10; the non-instanced bodies
+// (jelly, bombardier, void anchor/tendril, leech, echo, boss minions) used the
+// default 0, which is why only SOME enemies misbehaved (player report).
+const ENEMY_RENDER_ORDER = 10;
+
+/** Stamp the enemy render order on every mesh in a spawned enemy/minion. */
+function applyEnemyRenderOrder(root) {
+  if (!root) return;
+  root.traverse((c) => {
+    if (c.isMesh) c.renderOrder = ENEMY_RENDER_ORDER;
+  });
+}
+
+function clampPositionToFrontArc(position, playerPos, minDist = 3, maxDist = 20, arcDeg = 120, forwardOverride = null) {  _frontDir.copy(forwardOverride || _playerForwardRef);
   _frontDir.y = 0;
   if (_frontDir.lengthSq() < 0.0001) {
     _frontDir.set(0, 0, -1);
@@ -1894,6 +1912,7 @@ function spawnTrainEnemy(type, position, levelConfig) {
   hitbox.userData.isEnemyHitbox = true;
   hitbox.position.z = -(trainLength * def.voxelSize * 0.75);
   group.add(hitbox);
+  applyEnemyRenderOrder(group);
 
   const enemy = {
     id: nextEnemyId++,
@@ -2379,6 +2398,9 @@ function triggerLeechBurst(e, playerPos) {
     const pos = burstPos.clone().add(
       new THREE.Vector3(Math.cos(angle) * 0.5, 0, Math.sin(angle) * 0.5),
     );
+    // The parent can be latched on the player's back, so bursting in place
+    // used to scatter minions outside the view — clamp to the front arc.
+    clampPositionToFrontArc(pos, playerPos, 2.0, 8, 120);
     const minion = spawnEnemy('leech_minion', pos, { hpMultiplier: 1, speedMultiplier: 1 });
     if (!minion) continue;
     minion.canBurst = false;
@@ -2591,7 +2613,10 @@ function updateBombardier(e, dt, now, playerPos, dist, speedMod) {
     // Fly toward the player until within landing range, then plant
     if (dist <= e.bombardierLandingDist) {
       e.bombardierPlanted = true;
-      e.mesh.position.y = getBiomeFloorY() + 0.2;
+      // Sit the BODY on the floor, not the group origin: the hitbox is centred
+      // on the origin, so floor + 0.2 buried 30cm of the turret under the
+      // ground (player report: "enemies go under the floor").
+      e.mesh.position.y = getBiomeFloorY() + Math.max(0.25, e.hitboxRadius || 0.5);
       e.bombardierSprayTimer = 0.5; // beat before the first spray
       e.bombardierSprayAngle = Math.atan2(playerPos.z - e.mesh.position.z, playerPos.x - e.mesh.position.x);
       e.mesh.lookAt(playerPos);
@@ -3982,6 +4007,9 @@ export function spawnEnemy(type, position, levelConfig) {
 
   if (ENABLE_SPAWN_WARP) applySpawnWarp(enemy);
 
+  // Every enemy body draws above biome overlays (see ENEMY_RENDER_ORDER).
+  applyEnemyRenderOrder(group);
+
   activeEnemies.push(enemy);
   _enemyMeshesDirty = true;  // Invalidate cache
   invalidateEnemyCache();
@@ -4013,6 +4041,11 @@ export function updateEnemies(dt, now, playerPos) {
 
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const e = activeEnemies[i];
+    // Guard: a nested destroyEnemy() from special-death effects can splice the
+    // array while this loop is running, leaving a hole at this index. Without
+    // this the whole render frame throws (the crash reporter caught
+    // "reading '_warpActive' of undefined").
+    if (!e) continue;
 
     // ── Spawn warp-in animation ──
     if (ENABLE_SPAWN_WARP && e._warpActive) {
@@ -13457,6 +13490,8 @@ export function spawnBoss(bossId, levelConfig, camera) {
   }
 
   activeBoss = boss;
+  // Boss bodies draw above biome overlays too (same rule as enemies).
+  applyEnemyRenderOrder(boss.mesh);
   return boss;
 }
 
@@ -13784,6 +13819,11 @@ export function spawnBossMinion(fromPos, playerPos, type = 'basic') {
   }
 
   group.position.copy(fromPos);
+  // Boss minions must respect the same front-arc rule as normal spawns: some
+  // bosses drop them relative to their own body, which could put a minion
+  // behind the player once the level framing and the current facing differ.
+  clampPositionToFrontArc(group.position, playerPos, 2.5, 20, 130);
+  applyEnemyRenderOrder(group);
   group.userData.isBossMinion = true;
   // Perf: Slightly generous hit radius keeps the final-boss minions readable in VR
   // while letting projectile collision use direct math instead of recursive raycasts.
@@ -14373,13 +14413,29 @@ export function getEnemies() {
  * Get a random spawn position in a 100° cone in front of the player.
  */
 export function getSpawnPosition(airSpawns, verticalAngle = 0, distanceRange = null) {
-  const angle = (Math.random() - 0.5) * (100 * Math.PI / 180);
+  // Player-relative placement. The old version laid enemies out around the
+  // world -Z axis, so the moment a VR player physically turned (or the level
+  // framed a different direction) enemies spawned BEHIND them and walked in
+  // out of sight. `_playerForwardRef` is refreshed from the camera every frame
+  // by main.js, so this always uses where the player is actually looking.
+  _spawnFwd.copy(_playerForwardRef);
+  _spawnFwd.y = 0;
+  if (_spawnFwd.lengthSq() < 1e-6) _spawnFwd.set(0, 0, -1);
+  else _spawnFwd.normalize();
+  _spawnRight.crossVectors(_spawnFwd, _WORLD_UP).normalize();
+
+  const angle = (Math.random() - 0.5) * (100 * Math.PI / 180); // ±50° of facing
   const minDist = distanceRange?.min ?? 14.4;
   const maxDist = distanceRange?.max ?? 20.0;
   const distance = minDist + Math.random() * (maxDist - minDist);
 
-  const x = Math.sin(angle) * distance;
-  const z = -Math.cos(angle) * distance;
+  // Origin: the player's horizontal position (room-scale VR can offset it).
+  const ox = cameraRef ? cameraRef.position.x : 0;
+  const oz = cameraRef ? cameraRef.position.z : 0;
+  const sin = Math.sin(angle) * distance;
+  const cos = Math.cos(angle) * distance;
+  const x = ox + _spawnFwd.x * cos + _spawnRight.x * sin;
+  const z = oz + _spawnFwd.z * cos + _spawnRight.z * sin;
   let y = 1.5;
 
   if (airSpawns) {
@@ -14395,6 +14451,20 @@ export function getSpawnPosition(airSpawns, verticalAngle = 0, distanceRange = n
 
   return new THREE.Vector3(x, y, z);
 }
+
+/**
+ * Current player facing as a horizontal unit vector (for other modules that
+ * need to place things in front of the player — breach hazards, training).
+ */
+export function getPlayerForward(target) {
+  const out = target || new THREE.Vector3();
+  out.copy(_playerForwardRef);
+  out.y = 0;
+  if (out.lengthSq() < 1e-6) out.set(0, 0, -1);
+  else out.normalize();
+  return out;
+}
+
 
 /** Get all fast enemies (for proximity alerts) */
 // Cached arrays for fast/swarm enemy lookups (avoid filter() allocation every frame)

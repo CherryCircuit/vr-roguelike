@@ -105,6 +105,7 @@ import {
   initEnemies, spawnEnemy, updateEnemies, updateExplosions, getEnemyMeshes,
   getEnemyByMesh, clearAllEnemies, getEnemyCount, hitEnemy, destroyEnemy,
   applyEffects, getSpawnPosition, getEnemies,
+  getPlayerForward,
   updatePhaseEchoes,
   getBoss, spawnBoss, getBossNameForLevel, hitBoss, updateBoss, clearBoss, hitBossMinion, updateBossMinions,
   getBossMinions,
@@ -2098,6 +2099,8 @@ function init() {
     getEnemies,
     getBoss,
     getPlayerPos: () => camera.position,
+    // Facing (not just position) so hazards can be pinned to the front arc
+    getPlayerForward,
     applyPlayerDamage,
     hitEnemy,
     spawnEnemy,
@@ -4043,7 +4046,16 @@ function handleReadyScreenTrigger(controller) {
 // ============================================================
 // [CORE] Capture level spawn forward direction for boss alignment
 function captureLevelSpawnForward() {
-  _levelSpawnForward.copy(DEFAULT_LEVEL_SPAWN_FORWARD);
+  // Use where the player is ACTUALLY facing when the level starts (VR players
+  // stand and turn — the old hardcoded world -Z framed boss fights behind
+  // them, and their minions then spawned behind the player too).
+  camera.getWorldDirection(_levelSpawnForward);
+  _levelSpawnForward.y = 0;
+  if (_levelSpawnForward.lengthSq() < 1e-6) {
+    _levelSpawnForward.copy(DEFAULT_LEVEL_SPAWN_FORWARD);
+  } else {
+    _levelSpawnForward.normalize();
+  }
   setBossSpawnForward(_levelSpawnForward);
   // Issue #196 Phase 5: flag lives in environment-orchestration.js
   setBiomeClearedForBossCinematic(false);

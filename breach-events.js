@@ -46,6 +46,8 @@ let _asteroids = [];        // { position, impactAt, done }
 let _asteroidTimer = 0;
 let _rift = null;           // { mesh, pullTimer }
 let _riftEchoesSpawned = false;
+// Scratch for hazard placement (per event activation, not per frame)
+const _hazardFwd = new THREE.Vector3();
 let _empActive = false;
 
 const _flareGeo = null;
@@ -173,9 +175,18 @@ function _ensureFlareZoneMesh() {
 function _activateEvent() {
   if (!_event) return;
   const id = _event.id;
+  // Hazards must land where the player can SEE them. These used to pick a
+  // fully random world angle (or world -Z), so a solar flare, meteor shower or
+  // rift could open behind the player and damage them from off-screen.
+  const facing = _hasDep('getPlayerForward')
+    ? _deps.getPlayerForward(_hazardFwd)
+    : _hazardFwd.set(0, 0, -1);
+  const facingAngle = Math.atan2(facing.x, facing.z); // atan2(sin, cos) basis
+
   if (id === 'solar_flare') {
-    // Quarter of the arena: random 120° sector, radius 10
-    const angle = Math.random() * Math.PI * 2;
+    // Quarter of the arena: random 120° sector, radius 10 — but pinned into
+    // the player's forward half so it is always visible when it lights up.
+    const angle = facingAngle + (Math.random() - 0.5) * 1.4; // ±40°
     const center = new THREE.Vector3(Math.cos(angle) * 7, 0, Math.sin(angle) * 7);
     _flareZone = { center, radius: 6 };
     _ensureFlareZoneMesh();
@@ -187,7 +198,7 @@ function _activateEvent() {
     const count = 5 + Math.floor(Math.random() * 4); // 5-8
     const playerPos = _hasDep('getPlayerPos') ? _deps.getPlayerPos() : new THREE.Vector3();
     for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
+      const angle = facingAngle + (Math.random() - 0.5) * 1.6; // ±46°
       const dist = 5 + Math.random() * 8;
       _asteroids.push({
         position: new THREE.Vector3(playerPos.x + Math.cos(angle) * dist, 0, playerPos.z + Math.sin(angle) * dist),
@@ -204,7 +215,12 @@ function _activateEvent() {
         color: 0xaa44ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
         depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
       })),
-      position: new THREE.Vector3(playerPos.x, 0.1, playerPos.z - 5),
+      // 5m dead ahead (the rift echoes spawn around it, so they are in front).
+      position: new THREE.Vector3(
+        playerPos.x + facing.x * 5,
+        0.1,
+        playerPos.z + facing.z * 5,
+      ),
     };
     _rift.mesh.rotation.x = -Math.PI / 2;
     _rift.mesh.position.copy(_rift.position);
@@ -300,6 +316,10 @@ export function updateBreachEvents(dt, now) {
           const e = enemies[i];
           if (!e?.mesh || e.hp <= 0) continue;
           const dir = _riftPull.copy(pullCenter).sub(e.mesh.position);
+          // Horizontal pull only: the rift sits at y=0.1, so the old 3D pull
+          // dragged enemies DOWN and buried them in the floor (audit: tanks
+          // dipping ~0.2m under).
+          dir.y = 0;
           const d = dir.length();
           if (d < 0.001) continue;
           e.mesh.position.addScaledVector(dir.divideScalar(d), Math.min(1.5, d * 0.08) * dt);
