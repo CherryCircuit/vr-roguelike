@@ -141,8 +141,23 @@ async function installProbe(page, cfg) {
           P.born[uid] = performance.now();
           P.spawns++;
           s.spawns++;
-          if (angle > cfg.behind) { s.spawnBehind++; P.spawnBehind++; }
-          else if (angle > cfg.cone) { s.spawnOutsideCone++; P.spawnOutsideCone++; }
+          // Measure the AUTHORED spawn point (enemies move before the first
+          // frame sample; a fast enemy could otherwise look 2-4° off bearing
+          // and fail a placement gate it actually passed).
+          const sp = e._spawnPosition || pos;
+          const sdx = sp.x - cam.position.x;
+          const sdz = sp.z - cam.position.z;
+          const sdist = Math.hypot(sdx, sdz) || 0.0001;
+          const sdot = Math.min(1, Math.max(-1, (sdx * P.fwd.x + sdz * P.fwd.z) / sdist));
+          const spawnAngle = Math.acos(sdot) * 180 / Math.PI;
+          // Leeches latch ON the player and burst into minions radiating from
+          // that point — those spawns are intentionally all around the player,
+          // so the front-cone rule does not apply to them.
+          const radialBurst = e.type === 'leech_minion' || e.isLatched === true || e.spiderState === 'latched';
+          if (!radialBurst) {
+            if (spawnAngle > cfg.behind) { s.spawnBehind++; P.spawnBehind++; }
+            else if (spawnAngle > cfg.cone) { s.spawnOutsideCone++; P.spawnOutsideCone++; }
+          }
         }
 
         // ── body bounds from the enemy's own hitbox ──

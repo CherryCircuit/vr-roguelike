@@ -10,6 +10,7 @@ import {
 } from './hud.js';
 import { getMusicVolume, getSFXVolume, setMusicVolume, setSFXVolume, playMenuClick, playMenuHoverSound, getCurrentTrackName, skipToNextTrack, skipToPrevTrack, getPlaylistInfo } from './audio.js';
 import { resetMastery } from './mastery.js';
+import { applyPanelSkin } from './ui-kit.js';
 
 export const settingsGroup = new THREE.Group();
 settingsGroup.name = 'settings-menu';
@@ -164,6 +165,7 @@ async function buildSettingsPanel() {
   const panelGeo = new THREE.PlaneGeometry(panelEl.w, panelEl.h);
   const panelMesh = new THREE.Mesh(panelGeo, settingsMaterial(panelEl.color, panelEl.opacity || 0.92));
   panelMesh.renderOrder = SETTINGS_RENDER_ORDER - 2;
+  applyPanelSkin(panelMesh, 0x00ffff, { opacity: 0.98 });
   panelMesh.position.set(panelEl.x, panelEl.y, panelEl.z);
   settingsGroup.add(panelMesh);
 
@@ -502,7 +504,7 @@ export function getSettingsHit(raycaster) {
   if (!settingsGroup.visible) return null;
 
   // Only raycast against the actual button meshes for precise hit detection
-  const buttonMeshes = [musicUpBtn, musicDownBtn, sfxUpBtn, sfxDownBtn, prevTrackBtn, nextTrackBtn, backBtn].filter(Boolean);
+  const buttonMeshes = [musicUpBtn, musicDownBtn, sfxUpBtn, sfxDownBtn, prevTrackBtn, nextTrackBtn, resetMasteryBtn, backBtn].filter(Boolean);
   const intersects = raycaster.intersectObjects(buttonMeshes, false);
 
   for (const intersect of intersects) {
@@ -526,7 +528,7 @@ export function getSettingsHit(raycaster) {
 export function updateSettingsHover(raycaster) {
   if (!settingsGroup.visible) return;
 
-  const buttonMeshes = [musicUpBtn, musicDownBtn, sfxUpBtn, sfxDownBtn, prevTrackBtn, nextTrackBtn, backBtn].filter(Boolean);
+  const buttonMeshes = [musicUpBtn, musicDownBtn, sfxUpBtn, sfxDownBtn, prevTrackBtn, nextTrackBtn, resetMasteryBtn, backBtn].filter(Boolean);
   if (buttonMeshes.length === 0) return;
 
   const intersects = raycaster.intersectObjects(buttonMeshes, false);

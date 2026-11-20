@@ -256,7 +256,8 @@ Ask for clarification when:
 1. **No build step** - don't add webpack, babel, etc. Uses browser ES6 modules.
 2. **No external assets** - all audio is Web Audio API, all visuals are procedural
 3. **No npm packages at runtime** - THREE/Supabase load from CDN via the import map
-   in index.html. (Dev/test tooling is the exception: `package.json` declares
+   in index.html (three is pinned to **0.187.0** as of round 11; keep index.html and
+   dev.html in sync). (Dev/test tooling is the exception: `package.json` declares
    `puppeteer` as a devDependency and provides `npm run serve`, `npm test`, and
    `npm run test:suite -- <name>` scripts.)
 4. **VR performance is critical** - 60fps minimum, 72fps target
@@ -276,6 +277,13 @@ Ask for clarification when:
 - **environment-orchestration.js** - biome/theme/fade/star lifecycle (#196 Phase 5); owns
   environment state; main.js READS exported bindings (currentTheme, floorMaterial, …) but
   never writes them
+- **transitions.js** - round-11 cinematic level transitions (camera-attached shader
+  iris + level card). `initTransitions({camera})`. Never replace with an
+  EffectComposer post pass: it breaks/slows the XR render path
+- **menu-presence.js** - re-anchors world-space menus the player has turned away
+  from (`registerMenuPresence` in hud init, `updateMenuPresence` in the render loop)
+- **ui-kit.js** - cached canvas textures for panel/card/meter skins; imported by
+  hud, pause-menu, settings-menu and training-ground (no cycles)
 - **flow-countdowns.js / input-router.js** - ready+pause 3-2-1 state machines and
   state→handler input dispatch tables (#196 Phase 4); deps injected, game.js is the
   only module they import
@@ -437,9 +445,9 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 ## 16. TESTING & VERIFICATION COMMANDS (gate before every commit)
 
 **Server** (tests hit `http://localhost:8001/dev.html`): `python3 -m http.server 8001`
-  (moved off :8000 after an unrelated uvicorn service claimed it — all 29 suites target :8001)
+  (moved off :8000 after an unrelated uvicorn service claimed it — all 30 suites target :8001)
 
-**All 29 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
+**All 30 suites** in `tests/automation/` (puppeteer headless, ~30-90s each):
 - `test-bugfixes.cjs` — boot + 15s gameplay + reset loop
 - `test-timer-cleanup.cjs` — charge cannon + triple-shot timer
 - `test-audio-pack.cjs` — reactive music stems + threat emitters
@@ -480,6 +488,13 @@ Automated nightly review runs against the `nightly-review` branch PR. Codex: foc
 - `test-menus.cjs` — ALCHEMY/EVOLUTIONS open on the FIRST press after a level
   change, panels sit above the floor and inside the view, no two visible
   buttons overlap, long lists scroll, training lists are windowed
+- `test-visuals.cjs` — round-11 presentation/readability audit: cinematic
+  level-transition overlay (camera child, animated cover, teardown), menus
+  re-anchor in front after the player turns away, every menu button's angular
+  size + raycast action, Quest axes[3] thumbstick scrolling, enemy silhouette
+  volume + boss merged bodies/weak-point cap, ground shadows / intent rings /
+  mortar landing markers, projectile core+glow visibility for all pools, and a
+  22-enemy stress sample with frame-time/draw-call ceilings
 
 **Known quirks:**
 - **Run suites individually, not back-to-back in one shell loop** — batch runs flake on
@@ -529,6 +544,7 @@ or verify the live site directly:
   extracting code. The identifier sweep (`verify-module-identifiers.mjs`) automates this.
 - **Extracted modules** (beam-weapons, projectile-system, alt-weapons, boss-death-
   cinematic, eclipse, threat-compass, environment-orchestration, flow-countdowns,
+  transitions, menu-presence, ui-kit,
   input-router, breach-events, void-marks) use the `initX(deps)` dependency-injection
   pattern, called from main.js init. Live-binding exports (arrays, objects) are
   mutated in place, not reassigned.
@@ -564,4 +580,4 @@ or verify the live site directly:
 
 ---
 
-*Updated: 2026-08-04*
+*Updated: 2026-11-20*

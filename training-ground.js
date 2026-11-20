@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { game, State, getLevelConfig, setWeaponEvolution, addUpgrade } from './game.js';
 import { makeSizedText, showHUD, hudGroup, digitalFontFamily, loadLayout } from './hud.js';
 import { WEAPON_EVOLUTIONS, getUpgradeDef, UPGRADE_POOL, SPECIAL_UPGRADE_POOL } from './weapons.js';
+import { applyPanelSkin } from './ui-kit.js';
 
 const DEBUG = false;
 const _log = DEBUG ? console.log.bind(console) : () => {};
@@ -353,6 +354,7 @@ function buildTrainingMenu() {
   );
   bg.position.set(0, 0, 0);
   bg.renderOrder = MENU_BG_RO;
+  applyPanelSkin(bg, 0x00ff88, { opacity: 0.99 });
   group.add(bg);
   const border = new THREE.LineSegments(
     new THREE.EdgesGeometry(bg.geometry),

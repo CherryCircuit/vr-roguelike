@@ -31,6 +31,9 @@ const DEFAULT_FILES = [
   'stasis.js',
   'voxel-debris.js',
   'damage-numbers.js',
+  'transitions.js',
+  'menu-presence.js',
+  'ui-kit.js',
 ];
 
 // ── Global allowlist ──

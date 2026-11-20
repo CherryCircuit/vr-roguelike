@@ -19,12 +19,14 @@ import {
 import {
   showPauseMenu, hidePauseMenu, updatePauseMenu, showPauseCountdown,
   hidePauseCountdown, updatePauseCountdownDisplay, getPauseMenuHit,
-  updatePauseMenuHover
+  updatePauseMenuHover, setPauseMenuAnchor
 } from './pause-menu.js';
 import {
   settingsGroup, showSettings, hideSettings, isSettingsVisible,
   getSettingsHit, executeSettingsAction, getPreviousMenu, updateSettingsHover
 } from './settings-menu.js';
+import { registerMenuPresence } from './menu-presence.js';
+import { getCardTexture, applyPanelSkin, getBarTexture } from './ui-kit.js';
 
 // Re-export so main.js imports still work
 export {
@@ -1022,6 +1024,43 @@ export async function initHUD(camera, scene) {
   }
   bossHealthGroup.frustumCulled = false;  // Prevent disappearing when looking around
   camera.add(bossHealthGroup);
+
+  // ── Menu presence (menu-presence.js) ───────────────────────────────
+  // Every world-space modal menu can be left behind when the player turns
+  // in a headset. These registrations let the presence system glide a lost
+  // panel back into view instead of leaving it behind the player.
+  // `ownerControlsPosition` is for groups that reposition themselves every
+  // frame (the pause menu) — they get an anchor callback instead.
+  registerMenuPresence('upgrade-cards', () => (upgradeGroup.visible ? upgradeGroup : null), {
+    angleLimitDeg: 50, minDistance: 3.0, maxDistance: 5.5,
+  });
+  registerMenuPresence('title-screen', () => (titleGroup.visible ? titleGroup : null), {
+    angleLimitDeg: 55, minDistance: 2.8, maxDistance: 4.6,
+  });
+  registerMenuPresence('game-over', () => (gameOverGroup.visible ? gameOverGroup : null), {
+    angleLimitDeg: 55, minDistance: 3.0, maxDistance: 6.0,
+  });
+  registerMenuPresence('name-entry', () => (nameEntryGroup.visible ? nameEntryGroup : null), {
+    angleLimitDeg: 50, minDistance: 2.8, maxDistance: 5.5,
+  });
+  registerMenuPresence('scoreboard', () => (scoreboardGroup.visible ? scoreboardGroup : null), {
+    angleLimitDeg: 50, minDistance: 3.0, maxDistance: 6.5,
+  });
+  registerMenuPresence('country-select', () => (countrySelectGroup.visible ? countrySelectGroup : null), {
+    angleLimitDeg: 50, minDistance: 3.0, maxDistance: 6.0,
+  });
+  registerMenuPresence('ready-screen', () => (readyGroup.visible ? readyGroup : null), {
+    angleLimitDeg: 55, minDistance: 3.0, maxDistance: 5.5,
+  });
+  registerMenuPresence('settings-menu', () => (settingsGroup.visible ? settingsGroup : null), {
+    angleLimitDeg: 50, minDistance: 2.2, maxDistance: 5.0,
+  });
+  // The pause menu's update() owns its position: pass an anchor callback.
+  registerMenuPresence('pause-menu', () => (pauseMenuGroup.visible ? pauseMenuGroup : null), {
+    angleLimitDeg: 50, minDistance: 2.2, maxDistance: 4.5,
+    ownerControlsPosition: true,
+    onRecenter: (pos, yaw) => setPauseMenuAnchor(pos, yaw),
+  });
 }
 
 export function showBossHealthBar(hp, maxHp, phases = 3) {
@@ -1534,6 +1573,10 @@ export function showBestiary(playerPos) {
   backTextDef.glow = false;
   const backGroup = new THREE.Group();
   backGroup.position.set(backDef.x, backDef.y, backDef.z);
+  // Tilt the back button's face up toward the player: at local y=-2.3 it sits
+  // well below eye level, and a vertical card was only hittable by a ray that
+  // grazed its plane. Tilted -0.55 rad, a natural downward gaze lands on it.
+  backGroup.rotation.x = -0.55;
   backGroup.name = 'bestiary-back';
   const backGeo = new THREE.PlaneGeometry(backDef.w, backDef.h);
   const backMat = new THREE.MeshBasicMaterial({ color: backDef.color, transparent: true, opacity: backDef.opacity, side: THREE.DoubleSide });
@@ -1749,7 +1792,13 @@ async function createHUDElements() {
   const comboBarDef = _fl('combo_bar', { x: -2.202, y: 0.21, z: 0.01, w: 1.65, h: 0.05, color: 0xff8800, visible: true });
   const cooldownGeo = new THREE.PlaneGeometry(comboBarDef.w || 1.65, comboBarDef.h || 0.05);
   cooldownGeo.translate((comboBarDef.w || 1.65) / 2, 0, 0); // left-edge pivot
-  const cooldownMat = new THREE.MeshBasicMaterial({ color: comboBarDef.color, transparent: true, opacity: 0.8 });
+  const cooldownMat = new THREE.MeshBasicMaterial({
+    color: comboBarDef.color,
+    map: getBarTexture(),
+    transparent: true,
+    opacity: 0.8,
+    depthWrite: false,
+  });
   comboCooldownSprite = new THREE.Mesh(cooldownGeo, cooldownMat);
   comboCooldownSprite.position.set(comboBarDef.x, comboBarDef.y, comboBarDef.z);
   comboCooldownSprite.visible = false;
@@ -1945,6 +1994,13 @@ export function hideLevelComplete() {
 
 export function showUpgradeCards(upgrades, playerPos, hand) {
   hideAll();
+  // Clear any UI left from a previous screen. Re-opening the card screen
+  // without this stacked stale card faces inside upgradeGroup: they stayed
+  // visible/raycastable but were no longer in `upgradeCards`, so their
+  // triggers resolved to nothing ("button does not work").
+  if (alchemyBenchOpen) hideAlchemyBench();
+  if (evolutionsOpen) hideEvolutionsMenu();
+  disposeGroupChildren(upgradeGroup);
   upgradeGroup.visible = true;
   upgradeCards = [];
   upgradeChoices = upgrades;
@@ -2453,6 +2509,13 @@ function createUpgradeCard(upgrade, position, hand, style) {
   // Store border color on card for hover glow matching
   card.userData.borderColor = borderColor;
 
+  // AAA card skin: dark glass, accent frame, rails and power cell — generated
+  // once per accent colour and cached in ui-kit.js.
+  cardMat.map = getCardTexture(borderColor);
+  cardMat.color.setHex(0xffffff);
+  cardMat.opacity = 0.97;
+  cardMat.needsUpdate = true;
+
   // Pre-create hover glow mesh (avoids first-hover geometry clone hitch on Quest)
   const glowR = (borderColor >> 16) & 255;
   const glowG = (borderColor >> 8) & 255;
@@ -2628,6 +2691,12 @@ function createSkipCard(position, style) {
   
   // Store border color on card for hover glow matching (green for skip)
   card.userData.borderColor = borderColor;
+
+  // AAA skin for the SKIP card (red accent so it reads as the "out" option).
+  cardMat.map = getCardTexture(0xff3355);
+  cardMat.color.setHex(0xffffff);
+  cardMat.opacity = 0.97;
+  cardMat.needsUpdate = true;
 
   // Pre-create hover glow mesh (avoids first-hover geometry clone hitch on Quest)
   const glowR = (borderColor >> 16) & 255;
@@ -3255,6 +3324,7 @@ function buildEvolutionsMenu() {
     new THREE.MeshBasicMaterial({ color: 0x0a0c18, side: THREE.DoubleSide, depthWrite: true, depthTest: true })
   );
   bg.renderOrder = 1;
+  applyPanelSkin(bg, 0xffdd00);
   group.add(bg);
   const border = new THREE.LineSegments(
     new THREE.EdgesGeometry(bg.geometry),
@@ -3624,6 +3694,7 @@ function rebuildAlchemyBench() {
     new THREE.MeshBasicMaterial({ color: 0x0a0c18, side: THREE.DoubleSide, depthWrite: true, depthTest: true })
   );
   bg.renderOrder = 1;
+  applyPanelSkin(bg, 0xffaa00);
   group.add(bg);
   const border = new THREE.LineSegments(
     new THREE.EdgesGeometry(bg.geometry),

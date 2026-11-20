@@ -92,6 +92,11 @@ export function setSFXVolume(pct) {
   if (sfxMasterGain) {
     sfxMasterGain.gain.value = sfxVolume;
   }
+  // The lightning loop bypasses the Web Audio graph (see startLightningSound),
+  // so it must follow the slider on the element itself.
+  if (lightningAudio) {
+    lightningAudio.volume = Math.min(1, sfxVolume);
+  }
   saveSettings();
   return pct;
 }
@@ -2220,14 +2225,13 @@ export function stopLowHealthWarningSound() {
 
 // ── Lightning beam continuous sound (MP3 loop with Web Audio API) ─────────────
 let lightningAudio = null;
-let lightningSource = null;
-let lightningGain = null;
 let lightningVolumeTimeout = null;
 let lightningPaused = false;  // Track pause/resume state
 
 export function startLightningSound() {
-  // If paused, resume instead of creating new source
-  if (lightningPaused && lightningAudio && lightningSource) {
+  // If paused, resume instead of creating a new element.
+  if (lightningPaused && lightningAudio) {
+    lightningAudio.volume = Math.min(1, sfxVolume);
     lightningAudio.play().catch(err => {
       console.warn('[audio] Lightning loop resume failed:', err);
     });
@@ -2235,35 +2239,24 @@ export function startLightningSound() {
     return;
   }
 
-  if (lightningSource) return;  // Already playing
+  if (lightningAudio) return;  // Already playing
 
-  const ctx = getAudioContext();
-  
-  // Create audio element and source
   lightningAudio = new Audio('https://pub-41b88aefe4524d1bb113747b0e9ba73b.r2.dev/sfx_lightning_loop.mp3');
   lightningAudio.loop = true;
-  lightningAudio.crossOrigin = 'anonymous';
-  
-  // Create MediaElementSource and GainNode for volume control
-  lightningSource = ctx.createMediaElementSource(lightningAudio);
-  lightningGain = ctx.createGain();
-  
-  // Set gain to 1.5 (+50% volume)
-  lightningGain.gain.setValueAtTime(1.5, ctx.currentTime);
-  
-  // Connect: source -> gain -> destination
-  lightningSource.connect(lightningGain);
-  lightningGain.connect(getSfxOutput());
-  
-  // Start playback
+  // NOTE: no crossOrigin / createMediaElementSource here. The R2 bucket does
+  // not send Access-Control-Allow-Origin, so the old Web Audio path failed
+  // with CORS and the lightning beam was SILENT in production. A plain media
+  // element plays cross-origin; volume is controlled on the element instead.
+  lightningAudio.volume = Math.min(1, sfxVolume);
+
   lightningAudio.play().catch(err => {
     console.warn('[audio] Lightning loop playback failed:', err);
   });
 
-  // After 4 seconds of continuous play, ease volume down slightly (1.2 = 0.8 * 1.5)
+  // After 4 seconds of continuous play, ease volume down slightly.
   lightningVolumeTimeout = setTimeout(() => {
-    if (lightningGain) {
-      lightningGain.gain.setValueAtTime(1.2, ctx.currentTime);
+    if (lightningAudio) {
+      lightningAudio.volume = Math.min(1, sfxVolume * 0.8);
       audioInfoLog('[audio] Lightning volume eased (4s continuous)');
     }
   }, 4000);
@@ -2286,14 +2279,7 @@ export function stopLightningSound() {
     lightningAudio.currentTime = 0;
     lightningAudio = null;
   }
-  if (lightningSource) {
-    lightningSource.disconnect();
-    lightningSource = null;
-  }
-  if (lightningGain) {
-    lightningGain.disconnect();
-    lightningGain = null;
-  }
+  lightningPaused = false;
   if (lightningVolumeTimeout) {
     clearTimeout(lightningVolumeTimeout);
     lightningVolumeTimeout = null;

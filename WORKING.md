@@ -1,12 +1,29 @@
 # WORKING.md - SPACE-OMICIDE Active Project State
 
-**Last updated:** 2026-04-05 18:01 PDT
+**Last updated:** 2026-11-20
 
-## Current Version: v2026.04.05.1730
+## Current Version: v2026.11.20
 
-## Recent Work (2026-04-05 session)
+## Recent Work (2026-11-20 session)
 
-### Completed This Session
+### Completed This Session (round 11 — presentation/readability)
+- [x] three.js r160 → r187 (index/dev/tools); compileAsync warm-up per level
+- [x] Cinematic level transitions: iris wipe + LEVEL/BIOME card (camera-attached)
+- [x] Menu presence: pause/cards/settings/title/scoreboard/… re-anchor when you turn away
+- [x] Quest thumbstick scroll fixed (axes[3], frame-rate independent)
+- [x] Settings RESET MASTERY button made hittable; stale upgrade cards cleared on reopen
+- [x] Bestiary BACK tilted toward the player
+- [x] Enemy silhouettes redesigned (10–40 voxels, 2 layers deep) + contact shadows
+- [x] Attack intent rings (mortar/bombardier/leech/barrier/anchor/conductor/mirror)
+- [x] Mortar landing target markers for the whole shell flight
+- [x] 6 base-pattern bosses: 9×9 bodies, merged to 1 draw call, weak points capped 3–6
+- [x] Boss telegraphs share geometry + one flash texture (no per-shot canvas churn)
+- [x] AAA card/panel skins via cached canvas textures (ui-kit.js)
+- [x] New test suite `test-visuals.cjs` (30th) — transitions, menu presence, button
+      size + raycast actions, joystick scroll, enemy readability, projectile
+      visibility, stress perf
+
+### Completed This Session (2026-04-05, archived)
 - [x] Cloud dome seam fix (3D noise for seamless spheres)
 - [x] Phase wraith floating bob + charge telegraph
 - [x] Scoreboard page navigation fix

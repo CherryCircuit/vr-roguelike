@@ -118,7 +118,8 @@ import {
   setVoidAnchorPulseCallback, countActiveVoidAnchors,
   countActiveVoidTendrils, spawnEchoPhantom, countActiveEchoPhantoms,
   setLeechDrainCallback, countActiveLeeches,
-  setMasqueradeMinionHitCallback
+  setMasqueradeMinionHitCallback,
+  getEnemyVoxelStats, getBossVoxelStats, spawnMortarLandingMarker
 } from './enemies.js';
 import { getStasisSlowFactor } from './stasis.js';
 import { initVFX, updateVFX } from './vfx.js';
@@ -248,6 +249,8 @@ import {
 } from './scoreboard.js';
 import { getThemeForLevel, updateAmbientParticles, removeAmbientParticles } from './scenery.js';
 import { SpatialHash } from './spatial-hash.js';
+import { initTransitions, playLevelTransition, updateTransitions, isTransitionActive, getTransitionState, endTransition } from './transitions.js';
+import { updateMenuPresence, getMenuPresenceState, forceMenuRecenter } from './menu-presence.js';
 import { enableTelemetry, disableTelemetry, isTelemetryEnabled, setTelemetryHistoryMs, recordTelemetrySample, getTelemetrySnapshot } from './telemetry.js';
 import { getRuntimeConfig, isDevRuntime, registerRuntimeAction, consumeDebugJump, getSeedSelection } from './runtime-config.js';
 import {
@@ -2151,6 +2154,10 @@ function init() {
     },
   });
   initHUD(camera, scene);
+
+  // Cinematic level-transition overlay (camera-attached, VR-safe).
+  // Must run after the camera exists; the overlay is a child of the camera.
+  initTransitions({ camera });
   initWristHolograms();
   // Evolved weapon systems (Issue #143): deps needed by the update loops
   initEvolutions({
@@ -2265,6 +2272,33 @@ function init() {
     window.__test.getCamera = () => camera;
     window.__test.getRenderer = () => renderer;
     window.__test.getScene = () => scene;
+    // Visual systems (round-11): cinematic transitions + menu presence
+    window.__test.transitions = {
+      play: playLevelTransition,
+      end: endTransition,
+      isActive: isTransitionActive,
+      getState: getTransitionState,
+    };
+    window.__test.menus = {
+      getState: () => getMenuPresenceState(camera),
+      forceRecenter: (name) => forceMenuRecenter(name, camera),
+    };
+    window.__test.enemyReadability = {
+      getEnemyStats: getEnemyVoxelStats,
+      getBossStats: getBossVoxelStats,
+      getMarkers: () => {
+        const scene = window.__test.getScene();
+        const shadow = scene?.getObjectByName('enemy-contact-shadows');
+        const rings = scene?.getObjectByName('enemy-intent-rings');
+        let landing = 0;
+        for (let i = 0; i < 8; i++) {
+          const m = scene?.getObjectByName(`mortar-landing-marker-${i}`);
+          if (m && m.visible) landing++;
+        }
+        return { shadows: shadow ? shadow.count : 0, intentRings: rings ? rings.count : 0, landingMarkers: landing };
+      },
+      spawnMortarMarker: spawnMortarLandingMarker,
+    };
     window.__test.activateNuke = activateNuke;
     window.__test.getNukeCount = () => game.nukes;
     // Synergy Engine (Issue #211): recompute the snapshot after direct
@@ -2509,6 +2543,7 @@ function renderDesktopDebugEffect(tuning) {
 // axis; deadzone + repeat rate so a held stick scrolls continuously but a
 // wobbly stick doesn't fire every frame). No-op outside the evolutions menu.
 let _evoScrollAccum = 0;
+let _evoscrollLastNow = 0;
 let _bestiaryScrollAccum = 0;
 function updateEvolutionsScrollInput(now) {
   if (!isEvolutionsOpen() && !isAlchemyBenchOpen()) return;
@@ -2519,13 +2554,22 @@ function updateEvolutionsScrollInput(now) {
   session.inputSources.forEach(source => {
     const gamepad = source.gamepad;
     if (!gamepad?.axes || gamepad.axes.length < 2) return;
-    // Thumbstick Y (axis 1; some mappings use axis 3 for the second stick)
-    const y = gamepad.axes[1] ?? 0;
-    if (Math.abs(y) > 0.25 && Math.abs(y) > Math.abs(axis)) axis = y;
+    // Meta Quest reports the thumbstick on axes[3] (axes[2]/[3] = second
+    // stick); other mappings use axes[1]. Taking the largest of both means
+    // the bench/evolutions menus scroll on every controller (the old code
+    // only read axes[1], which Quest leaves at 0 — menus looked unscrollable).
+    const y1 = Math.abs(gamepad.axes[1] ?? 0) > 0.25 ? (gamepad.axes[1] ?? 0) : 0;
+    const y3 = gamepad.axes.length > 3 && Math.abs(gamepad.axes[3] ?? 0) > 0.25 ? (gamepad.axes[3] ?? 0) : 0;
+    const y = Math.abs(y3) > Math.abs(y1) ? y3 : y1;
+    if (y !== 0 && Math.abs(y) > Math.abs(axis)) axis = y;
   });
 
   if (axis !== 0) {
-    _evoScrollAccum += axis * 0.02;
+    // Frame-rate independent: a held stick scrolls at the same wall-clock
+    // rate on a 72fps Quest and in a slow headless run. (0.02/frame meant a
+    // 10fps test rig needed 5s per row and looked broken.)
+    const dt = _evoscrollLastNow ? Math.min(0.12, (now - _evoscrollLastNow) / 1000) : 0.016;
+    _evoScrollAccum += axis * dt * 2.2;
     if (Math.abs(_evoScrollAccum) >= 1) {
       const dir = _evoScrollAccum > 0 ? -1 : 1; // stick up → scroll up (content down)
       // Route to whichever panel is open (both scroll the same way).
@@ -2536,6 +2580,7 @@ function updateEvolutionsScrollInput(now) {
   } else {
     _evoScrollAccum = 0;
   }
+  _evoscrollLastNow = now;
 }
 
 function updateVRPauseButton(now) {
@@ -4106,6 +4151,10 @@ function startGame() {
   showReadyScreen(game.level, getAdjustedCameraPosition());
   resetReadyCountdown();
 
+  // Run-start title card: the iris wipe into the first level reads as a
+  // deliberate "drop in" instead of a hard cut from the title screen.
+  playLevelTransition({ level: 1, biomeId: getBiomeForLevel(1), duration: 1.9, eyebrow: 'RUN INITIATED' });
+
   // Setup kills remaining alert for level 1
   setupKillsAlert();
 
@@ -5266,6 +5315,16 @@ function advanceLevelAfterUpgrade() {
       
       game.justBossKill = false;
     }
+
+    // Cinematic inter-level transition. Boss-alert levels keep their own
+    // authored arrival cinematic; everything else gets the iris wipe + card.
+    if (game.state !== State.BOSS_ALERT) {
+      playLevelTransition({
+        level: game.level,
+        biomeId: getBiomeForLevel(game.level),
+        duration: 2.05,
+      });
+    }
   }
 }
 
@@ -6043,6 +6102,28 @@ function spawnEnemyWave(dt) {
 // RISK: Any change here affects frame timing, game feel, audio sync
 // ============================================================
 // [CORE] Main render loop (called every frame)
+// ============================================================
+//  SHADER WARM-UP (three.js r18x compileAsync)
+//  Three compiles a program the first time a material is drawn. On Quest that
+//  first draw costs a visible hitch (often at the exact moment a new biome or
+//  boss appears). compileAsync() compiles the current scene's materials
+//  off the critical path once per level, after the biome has been built.
+// ============================================================
+let _shaderWarmLevel = 0;
+function maybeWarmLevelShaders() {
+  if (!renderer || typeof renderer.compileAsync !== 'function') return;
+  if (game.state !== State.PLAYING && game.state !== State.READY_SCREEN) return;
+  if (game.level === _shaderWarmLevel) return;
+  _shaderWarmLevel = game.level;
+  // Fire-and-forget: a rejected compile must never affect gameplay.
+  try {
+    const p = renderer.compileAsync(scene, camera);
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (e) {
+    // Older/embedded GL contexts can throw synchronously; ignore.
+  }
+}
+
 function render(timestamp) {
   frameCount++;
   const now = timestamp || performance.now();
@@ -7627,6 +7708,14 @@ function render(timestamp) {
   // Update pause countdown BEFORE any early-return render path so desktop debug
   // effects never freeze the countdown.
   updatePauseCountdown(now);
+
+  // ── UI presence + cinematic transition (camera-relative, always visible) ──
+  // Runs after every state's own update so it can correct a menu that the
+  // player has turned away from, and before the render call so the overlay
+  // is submitted in the same frame.
+  updateMenuPresence(camera, now, rawDt);
+  updateTransitions(now, rawDt, camera);
+  maybeWarmLevelShaders();
 
   maybeRecordTelemetry(now, rawDt, dt);
   _mark('telemetry'); // ── end: maybeRecordTelemetry

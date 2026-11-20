@@ -34,6 +34,9 @@ and module architecture rules live in AGENTS.md §16-17.
 | `input-router.js` | ~150 | State→handler dispatch tables for trigger/click/squeeze (#196 P4, reduced) |
 | `breach-events.js` | ~330 | Mid-level arena hazards (#138): 5 seeded events, EMP fire gate |
 | `void-marks.js` | ~330 | Death persistence (#139): localStorage scars, inherit/purge |
+| `transitions.js` | ~430 | Round 11: camera-attached cinematic level transitions (shader iris wipe + level card), VR-safe (no post-processing) |
+| `menu-presence.js` | ~230 | Round 11: re-anchors world-space menus in front of the player when they turn away (pause, cards, settings, title, scoreboard, …) |
+| `ui-kit.js` | ~250 | Round 11: cached canvas textures for AAA panel/card/meter skins (no per-open uploads) |
 | `game.js` | ~616 | Central state (`game` object incl. `game.synergies`), resetGame, hooks |
 | `audio.js`, `hud.js`, `damage-numbers.js`, `voxel-debris.js`, `stasis.js`, `boss-death-cinematic.js` | | Supporting modules |
 
@@ -44,7 +47,76 @@ beam-weapons ↔ enemies (chain arc import), enemies → weapons (synergy).
 ## DONE THIS SESSION (chronological, all pushed to `main`)
 
 A marathon session — every commit below is verified with its own puppeteer suite
-(now 29 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
+(now 30 total) + the deploy-sim gate. All live at spaceomicide.vercel.app.
+
+0l. **round-11: readability / presence / presentation pass** (this session;
+    all verified with the new `test-visuals.cjs` plus the existing suites):
+
+    - **three.js 0.160 → 0.187** in `index.html`, `dev.html` and the layout
+      tools. The game boots, renders and passes the suite on r187. Added a
+      once-per-level `renderer.compileAsync(scene, camera)` warm-up so new
+      biome/boss materials compile off the critical path (Quest hitch).
+    - **Cinematic level transitions** (`transitions.js`): camera-attached
+      shader quad (never a post pass — XR-safe), iris closes with an
+      accent-coloured energy band, a "SECTOR CLEARED / LEVEL N / BIOME" card
+      animates through the black beat, then the iris opens. Runs at run start
+      (`RUN INITIATED`) and every level advance (boss alerts keep their own
+      arrival cinematic). `__test.transitions` exposes state for tests.
+    - **Menus can no longer be lost behind the player** (`menu-presence.js`):
+      every world-space modal (upgrade cards, alchemy/evolutions children,
+      pause, settings, title, game over, name entry, scoreboard, country
+      select, ready screen) re-anchors in front of the camera — preserving its
+      authored distance/height — after ~0.35 s off-gaze (>52°), with a 1.4 s
+      cooldown and a 0.32 s glide. The pause menu gets an anchor callback
+      because its own update() owns its position each frame.
+    - **Quest thumbstick scroll fixed**: `updateEvolutionsScrollInput` only
+      read `axes[1]`; Quest reports the stick on `axes[3]`, so the alchemy
+      bench/evolutions menus looked unscrollable. It now takes the larger of
+      axes[1]/axes[3] and is frame-rate independent (wall-clock accumulation).
+    - **Lightning beam audio was silent in production (CORS)**: the loop used
+      `crossOrigin='anonymous'` + `createMediaElementSource`, but the R2 bucket
+      sends no `Access-Control-Allow-Origin`, so the element was blocked (and
+      every menu test saw the CORS error). It now uses a plain media element
+      with `volume` (synced to the SFX slider), which plays cross-origin.
+    - **All menu buttons audited + two dead paths fixed**: the settings
+      `resetMastery` button was missing from `getSettingsHit`/hover lists
+      (unclickable), and `showUpgradeCards` stacked stale card faces when
+      re-opened (visible but unselectable). Both fixed and covered by
+      `buttons-*-hit` checks that raycast every visible button through the
+      same hit function the trigger path uses. The bestiary BACK button is
+      tilted toward the player so a downward gaze lands on it.
+    - **Enemy silhouettes redesigned** (still voxels): every type now has a
+      recognisable 2D pattern extruded 2 voxels deep — saucer drone, swept
+      dart, armoured sentinel, wasp, launcher, turret, gravity ring, rooted
+      spike, humanoid echo, curled leech, relay, crowned knight. Swarm went
+      from 1 cube → 10 voxels; all combat types are 10–40 voxels.
+    - **Enemy action communication**: one instanced contact-shadow pool under
+      every enemy (depth + pathing), one instanced intent-ring pool that
+      appears only while an enemy is winding up (red mortar, orange
+      bombardier, green leech drain, violet barrier/anchor pulse, pink
+      conductor link, white mirror immunity), and pooled mortar landing
+      markers at the exact impact point for the shell's whole flight.
+    - **Boss fidelity + draw calls**: base-pattern bosses (Scrap Golem, Holo
+      Phantom, Pulse Emitter, Rust Serpent, Static Wisp, The Maw) get 9×9
+      patterns and `mergeBody` — the whole body is one merged BufferGeometry
+      (1 draw call) with 3–6 separate weak-point voxels (was up to 19). Boss
+      death debris rebuilds body cubes from recorded positions instead of
+      cloning the merged slab. The TelegraphingSystem now shares geometries
+      and a single flash texture (was allocating a canvas + texture + geo per
+      boss shot and disposing them a second later).
+    - **UI skin** (`ui-kit.js`): cached canvas textures give cards a dark-glass
+      surface with cut corners, accent frame, header rail, micro-grid and
+      power-cell ticks; menus get a deep-glass panel with accent bloom, corner
+      brackets, vignette and hatch. Applied to upgrade/SKIP cards, pause,
+      settings, alchemy, evolutions, training and the accuracy meter. Cached
+      per accent colour — no per-open texture uploads.
+    - **New suite `test-visuals.cjs` (30th)**: transition lifecycle (camera
+      child, animated cover, teardown), menu recentring + on-screen projection,
+      every menu button's angular size (≥2.5°) and raycast action, Quest
+      axes[3] scrolling, enemy/boss silhouette stats, ground/intent/mortar
+      markers, boss merge + weak-point cap, projectile core+glow visibility
+      for all four pools, hostile projectile pool, and a 22-enemy stress
+      sample with frame-time/draw-call/leak ceilings.
 
 0k. **round-10: enemy spawning is world-fixed again (the pre-alchemy behaviour)**
     — rounds 9/9b made spawning depend on the headset. It must not. Restored

@@ -12,6 +12,7 @@ import {
   ENEMY_DISPLAY_NAMES,
 } from './hud.js';
 import { playMenuHoverSound } from './audio.js';
+import { applyPanelSkin } from './ui-kit.js';
 
 let _lastPauseHovered = null; // track hover state for sound
 
@@ -180,6 +181,19 @@ export function showPauseMenu() {
 }
 
 /**
+ * Re-anchor the pause menu (used by menu-presence.js when the player turns
+ * away from it). The menu's own update() rebuilds its position from
+ * pauseMenuBasePosition every frame, so the base must move, not the group.
+ */
+export function setPauseMenuAnchor(pos, yaw) {
+  if (!pos) return;
+  pauseMenuBasePosition.copy(pos);
+  if (Number.isFinite(yaw)) {
+    pauseMenuGroup.rotation.set(0, yaw, 0);
+  }
+}
+
+/**
  * Hide the pause menu
  */
 export function hidePauseMenu() {
@@ -239,6 +253,7 @@ async function createPauseMenu() {
   const panelMat = createPauseMaterial(0x0a0015, 0.85);
   const panel = new THREE.Mesh(panelGeo, panelMat);
   panel.renderOrder = PAUSE_PANEL_RENDER_ORDER;
+  applyPanelSkin(panel, 0x00ffff, { opacity: 0.98 });
   group.add(panel);
 
   // Neon border (cyan) - no depth interaction

@@ -178,22 +178,51 @@ function markEnemyPoolDirty(pool) {
 }
 
 // ── Voxel patterns (simplified for performance) ───────────
+// Rows are top→bottom, columns left→right, '1' = voxel. Depth (see
+// ENEMY_DEFS) extrudes each pattern into a slab; 2 reads as a solid body
+// from the side without tripling vertex count.
+//
+// READABILITY PASS (round 11): the old patterns were 1–7 voxels (a swarm
+// enemy was literally one cube, a fast enemy two) which read as coloured
+// squares at combat distance. Every silhouette now has a recognisable
+// shape at 8–20m while staying in the same voxel language:
+//   basic   → saucer drone w/ twin antennae + open maw
+//   fast    → swept dart / arrowhead
+//   tank    → wide armoured sentinel with shoulder pads
+//   swarm   → compact wasp diamond
+//   mortar  → squat launcher on a splayed base
+//   bombardier → turret with side pods and a barrel notch
+//   anchor  → hollow gravity ring
+//   tendril → rooted spike with spread feet
+//   echo    → humanoid silhouette
+//   leech   → curled parasite
+//   conductor → plus-shaped relay with antennae
+//   mirror  → crowned knight
 const PATTERNS = {
   basic: [
-    '.1.',
-    '111',
-    '.1.',
+    '.1.1.',
+    '11111',
+    '1.1.1',
+    '.111.',
   ],
   fast: [
-    '1',
-    '1',
+    '..1..',
+    '.111.',
+    '11111',
+    '.111.',
+    '..1..',
   ],
   tank: [
-    '111',
-    '111',
+    '1...1',
+    '11111',
+    '11111',
+    '1.1.1',
+    '.111.',
   ],
   swarm: [
-    '1',
+    '.1.',
+    '111',
+    '.1.',
   ],
   jelly: [
     '1',
@@ -203,36 +232,66 @@ const PATTERNS = {
     '1',
   ],
   mortar: [
-    '.1.',
-    '111',
-    '.1.',
+    '..1..',
+    '.111.',
+    '11111',
+    '.1.1.',
+    '1...1',
   ],
   bombardier: [
-    '111',
-    '1.1',
+    '.111.',
+    '11111',
+    '1.1.1',
+    '.1.1.',
   ],
   void_anchor: [
-    '1.1',
-    '...',
-    '1.1',
+    '.111.',
+    '1...1',
+    '1...1',
+    '1...1',
+    '.111.',
   ],
   void_tendril: [
-    '111',
-    '1.1',
+    '..1..',
+    '..1..',
+    '.111.',
+    '.111.',
+    '11111',
+    '1.1.1',
   ],
   echo_phantom: [
-    '.1.',
-    '111',
-    '111',
-    '.1.',
+    '.111.',
+    '11111',
+    '.1.1.',
+    '11111',
+    '.1.1.',
+    '.1.1.',
   ],
   leech: [
-    '11',
-    '.1',
-    '.1',
+    '.11.',
+    '1111',
+    '.11.',
+    '1..1',
   ],
   leech_minion: [
-    '1',
+    '.1.',
+    '111',
+    '.1.',
+  ],
+  conductor: [
+    '1.1.1',
+    '.1.1.',
+    '11111',
+    '.1.1.',
+    '1.1.1',
+  ],
+  mirror_knight: [
+    '1...1',
+    '11111',
+    '1.1.1',
+    '11111',
+    '.1.1.',
+    '.1.1.',
   ],
 };
 
@@ -282,10 +341,10 @@ function shrinkJelly(enemy) {
 
 // ── Enemy type stats ───────────────────────────────────────
 const ENEMY_DEFS = {
-  basic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.29, baseHp: 30, baseSpeed: 1.5, color: 0x00ff88, depth: 1, scoreValue: 10, hitboxRadius: 0.6 },
-  fast: { pattern: parsePattern(PATTERNS.fast), voxelSize: 0.24, baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 1, scoreValue: 15, hitboxRadius: 0.48, telegraphType: 'flash' },
-  tank: { pattern: parsePattern(PATTERNS.tank), voxelSize: 0.36, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 1, scoreValue: 25, hitboxRadius: 0.84, telegraphType: 'scale' },
-  swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.19, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 1, scoreValue: 5, hitboxRadius: 0.36, telegraphType: 'twitch' },
+  basic: { pattern: parsePattern(PATTERNS.basic), voxelSize: 0.20, baseHp: 30, baseSpeed: 1.5, color: 0x00ff88, depth: 2, scoreValue: 10, hitboxRadius: 0.60 },
+  fast: { pattern: parsePattern(PATTERNS.fast), voxelSize: 0.12, baseHp: 15, baseSpeed: 3.0, color: 0xffff00, depth: 2, scoreValue: 15, hitboxRadius: 0.42, telegraphType: 'flash' },
+  tank: { pattern: parsePattern(PATTERNS.tank), voxelSize: 0.24, baseHp: 80, baseSpeed: 0.8, color: 0x4488ff, depth: 2, scoreValue: 25, hitboxRadius: 0.85, telegraphType: 'scale' },
+  swarm: { pattern: parsePattern(PATTERNS.swarm), voxelSize: 0.14, baseHp: 10, baseSpeed: 3.5, color: 0xff8800, depth: 2, scoreValue: 5, hitboxRadius: 0.32, telegraphType: 'twitch' },
   jelly: {
     pattern: parsePattern(PATTERNS.jelly),
     voxelSize: 0.26,
@@ -311,7 +370,7 @@ const ENEMY_DEFS = {
     baseHp: 22,
     baseSpeed: 1.1,
     color: 0x8855ff,
-    depth: 1,
+    depth: 2,
     scoreValue: 12,
     hitboxRadius: 0.5,
     telegraphType: 'glow',
@@ -326,7 +385,7 @@ const ENEMY_DEFS = {
     baseHp: 260,
     baseSpeed: 0.6,
     color: 0xaa66ff,
-    depth: 1,
+    depth: 2,
     scoreValue: 120,
     hitboxRadius: 0.95,
     telegraphType: 'glow',
@@ -337,16 +396,12 @@ const ENEMY_DEFS = {
 
   // ── Part 2: Advanced enemies (v3.0) ─────────────────────────
   mirror_knight: {
-    pattern: parsePattern([
-      '111',
-      '1.1',
-      '111',
-    ]),
-    voxelSize: 0.32,
+    pattern: parsePattern(PATTERNS.mirror_knight),
+    voxelSize: 0.18,
     baseHp: 160,
     baseSpeed: 1.0,
     color: 0xd0d0d0,
-    depth: 1,
+    depth: 2,
     scoreValue: 40,
     hitboxRadius: 0.7,
     telegraphType: 'flash',
@@ -355,16 +410,12 @@ const ENEMY_DEFS = {
     mirrorImmuneDuration: 1.2,
   },
   conductor: {
-    pattern: parsePattern([
-      '1.1',
-      '.1.',
-      '1.1',
-    ]),
-    voxelSize: 0.28,
+    pattern: parsePattern(PATTERNS.conductor),
+    voxelSize: 0.16,
     baseHp: 140,
     baseSpeed: 0.5,
     color: 0xff66cc,
-    depth: 1,
+    depth: 2,
     scoreValue: 32,
     hitboxRadius: 0.6,
     telegraphType: 'glow',
@@ -377,11 +428,11 @@ const ENEMY_DEFS = {
   },
   mortar: {
     pattern: parsePattern(PATTERNS.mortar),
-    voxelSize: 0.24,
+    voxelSize: 0.17,
     baseHp: 30,
     baseSpeed: 0.6,
     color: 0xff0000,
-    depth: 1,
+    depth: 2,
     scoreValue: 28,
     hitboxRadius: 0.45,
     telegraphType: 'flash',
@@ -398,11 +449,11 @@ const ENEMY_DEFS = {
   // damage cone at the player. Dies in a small flame burst (friendly fire).
   bombardier: {
     pattern: parsePattern(PATTERNS.bombardier),
-    voxelSize: 0.28,
+    voxelSize: 0.18,
     baseHp: 45,
     baseSpeed: 2.0,
     color: 0xcc5500,
-    depth: 1,
+    depth: 2,
     scoreValue: 15,
     hitboxRadius: 0.5,
     telegraphType: 'glow',
@@ -423,11 +474,11 @@ const ENEMY_DEFS = {
   // projectiles curve toward it. Purely tactical; no contact damage.
   void_anchor: {
     pattern: parsePattern(PATTERNS.void_anchor),
-    voxelSize: 0.30,
+    voxelSize: 0.18,
     baseHp: 120,
     baseSpeed: 0.8,
     color: 0x6600aa,
-    depth: 1,
+    depth: 2,
     scoreValue: 18,
     hitboxRadius: 0.55,
     telegraphType: 'glow',
@@ -445,11 +496,11 @@ const ENEMY_DEFS = {
   // firing angles while other enemies close in.
   void_tendril: {
     pattern: parsePattern(PATTERNS.void_tendril),
-    voxelSize: 0.26,
+    voxelSize: 0.15,
     baseHp: 2,             // anchor HP after the barrier breaks
     baseSpeed: 0,
     color: 0x220044,
-    depth: 1,
+    depth: 2,
     scoreValue: 20,
     hitboxRadius: 0.5,
     telegraphType: 'glow',
@@ -467,11 +518,11 @@ const ENEMY_DEFS = {
   // ally). Fades out after 4s. Spawned with aim data by main.js.
   echo_phantom: {
     pattern: parsePattern(PATTERNS.echo_phantom),
-    voxelSize: 0.22,
+    voxelSize: 0.14,
     baseHp: 30,
     baseSpeed: 0,
     color: 0x44aaff,
-    depth: 1,
+    depth: 2,
     scoreValue: 10,
     hitboxRadius: 0.5,
     telegraphType: 'glow',
@@ -484,11 +535,11 @@ const ENEMY_DEFS = {
   // smaller leeches if ignored. Triage threat — kill it or pay.
   leech: {
     pattern: parsePattern(PATTERNS.leech),
-    voxelSize: 0.22,
+    voxelSize: 0.16,
     baseHp: 26,
     baseSpeed: 4.2,
     color: 0x44ff66,
-    depth: 1,
+    depth: 2,
     scoreValue: 12,
     hitboxRadius: 0.45,
     telegraphType: 'glow',
@@ -505,11 +556,11 @@ const ENEMY_DEFS = {
   // Burst minions: smaller, faster, half the HP, no recursive burst
   leech_minion: {
     pattern: parsePattern(PATTERNS.leech_minion),
-    voxelSize: 0.18,
+    voxelSize: 0.13,
     baseHp: 13,
     baseSpeed: 5.2,
     color: 0x66ff88,
-    depth: 1,
+    depth: 2,
     scoreValue: 6,
     hitboxRadius: 0.35,
     telegraphType: 'glow',
@@ -551,6 +602,313 @@ const _frontUp = new THREE.Vector3(0, 1, 0);
 const _spawnFwd = new THREE.Vector3();
 const _spawnRight = new THREE.Vector3();
 const _WORLD_UP = new THREE.Vector3(0, 1, 0);
+
+// ============================================================
+//  GROUND READABILITY (round 11)
+//
+//  In VR the player has no depth-of-field or stereo cue strong enough to
+//  judge where an enemy is relative to the floor, and charging attacks were
+//  only communicated by a subtle emissive pulse. These three pools fix that
+//  with one extra draw call each:
+//    - soft contact shadows under every enemy (depth + pathing)
+//    - an intent ring under any enemy that is winding up an attack
+//      (red mortar, orange bombardier, green leech, violet barrier/anchor,
+//      pink conductor link, white mirror immunity)
+//    - mortar landing markers at the exact target point of a lobbed shell
+//
+//  All three are pre-allocated; the hot path only writes matrices/colors.
+// ============================================================
+const MAX_ENEMY_SHADOWS = 48;
+const MAX_INTENT_RINGS = 16;
+const MAX_MORTAR_MARKERS = 6;
+
+let _enemyShadowMesh = null;
+let _intentRingMesh = null;
+const _mortarMarkers = [];
+
+const _markerMatrix = new THREE.Matrix4();
+const _markerPos = new THREE.Vector3();
+const _markerScale = new THREE.Vector3();
+const _markerQuat = new THREE.Quaternion();
+const _markerColor = new THREE.Color();
+
+// Shared plane rotated flat (local +Z up) for instanced ground quads.
+let _groundQuadGeo = null;
+function getGroundQuadGeo() {
+  if (!_groundQuadGeo) {
+    _groundQuadGeo = new THREE.PlaneGeometry(1, 1);
+    _groundQuadGeo.rotateX(-Math.PI / 2);
+  }
+  return _groundQuadGeo;
+}
+
+function makeShadowTexture() {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const half = size / 2;
+  const grad = ctx.createRadialGradient(half, half, 0, half, half, half);
+  grad.addColorStop(0, 'rgba(0,0,0,0.95)');
+  grad.addColorStop(0.45, 'rgba(0,0,0,0.55)');
+  grad.addColorStop(0.78, 'rgba(0,0,0,0.16)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  return tex;
+}
+
+function makeMortarMarkerTexture() {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const c = size / 2;
+  ctx.clearRect(0, 0, size, size);
+  // Outer target ring
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.arc(c, c, 108, 0, Math.PI * 2);
+  ctx.stroke();
+  // Inner ring
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(c, c, 62, 0, Math.PI * 2);
+  ctx.stroke();
+  // Crosshair ticks
+  ctx.lineWidth = 7;
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(c + Math.cos(a) * 116, c + Math.sin(a) * 116);
+    ctx.lineTo(c + Math.cos(a) * 126, c + Math.sin(a) * 126);
+    ctx.stroke();
+  }
+  // Faint fill so the disc reads on dark floors
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.beginPath();
+  ctx.arc(c, c, 106, 0, Math.PI * 2);
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  return tex;
+}
+
+function initEnemyGroundMarkers() {
+  if (!sceneRef || _enemyShadowMesh) return;
+
+  // Contact shadows -------------------------------------------------
+  const shadowMat = new THREE.MeshBasicMaterial({
+    map: makeShadowTexture(),
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+    toneMapped: false,
+    fog: false,
+  });
+  _enemyShadowMesh = new THREE.InstancedMesh(getGroundQuadGeo(), shadowMat, MAX_ENEMY_SHADOWS);
+  _enemyShadowMesh.name = 'enemy-contact-shadows';
+  _enemyShadowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  _enemyShadowMesh.renderOrder = 6;
+  _enemyShadowMesh.frustumCulled = false;
+  _enemyShadowMesh.count = 0;
+  sceneRef.add(_enemyShadowMesh);
+
+  // Intent rings ----------------------------------------------------
+  const ringGeo = new THREE.RingGeometry(0.74, 1.0, 40);
+  ringGeo.rotateX(-Math.PI / 2);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+    fog: false,
+  });
+  _intentRingMesh = new THREE.InstancedMesh(ringGeo, ringMat, MAX_INTENT_RINGS);
+  _intentRingMesh.name = 'enemy-intent-rings';
+  _intentRingMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  _intentRingMesh.renderOrder = 14;
+  _intentRingMesh.frustumCulled = false;
+  _intentRingMesh.count = 0;
+  sceneRef.add(_intentRingMesh);
+
+  // Mortar landing markers -----------------------------------------
+  const markerTex = makeMortarMarkerTexture();
+  for (let i = 0; i < MAX_MORTAR_MARKERS; i++) {
+    const mat = new THREE.MeshBasicMaterial({
+      map: markerTex,
+      color: 0xff5522,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+      fog: false,
+    });
+    const mesh = new THREE.Mesh(getGroundQuadGeo(), mat);
+    mesh.name = `mortar-landing-marker-${i}`;
+    mesh.visible = false;
+    mesh.renderOrder = 13;
+    mesh.frustumCulled = false;
+    sceneRef.add(mesh);
+    _mortarMarkers.push({ mesh, active: false, start: 0, duration: 1500 });
+  }
+}
+
+/** Place a pulsing target marker where a mortar shell will land. */
+export function spawnMortarLandingMarker(targetPos, durationMs = 1500) {
+  if (!_mortarMarkers.length || !targetPos) return;
+  let slot = null;
+  for (let i = 0; i < _mortarMarkers.length; i++) {
+    if (!_mortarMarkers[i].active) { slot = _mortarMarkers[i]; break; }
+  }
+  // All in use: recycle the oldest.
+  if (!slot) {
+    slot = _mortarMarkers[0];
+    for (let i = 1; i < _mortarMarkers.length; i++) {
+      if (_mortarMarkers[i].start < slot.start) slot = _mortarMarkers[i];
+    }
+  }
+  slot.active = true;
+  slot.start = performance.now();
+  slot.duration = Math.max(350, durationMs);
+  slot.mesh.position.set(targetPos.x, getBiomeFloorY() + 0.035, targetPos.z);
+  slot.mesh.scale.set(1.4, 1, 1.4);
+  slot.mesh.visible = true;
+  slot.mesh.material.opacity = 0.85;
+}
+
+function updateMortarLandingMarkers(now) {
+  for (let i = 0; i < _mortarMarkers.length; i++) {
+    const m = _mortarMarkers[i];
+    if (!m.active) continue;
+    const t = (now - m.start) / m.duration;
+    if (t >= 1) {
+      m.active = false;
+      m.mesh.visible = false;
+      m.mesh.material.opacity = 0;
+      continue;
+    }
+    // Shrink toward the impact point + pulse faster as the shell lands.
+    const pulse = 0.55 + 0.45 * Math.sin(t * 28.0);
+    m.mesh.scale.setScalar(1.4 - t * 0.55);
+    m.mesh.material.opacity = (0.45 + 0.5 * pulse) * (t > 0.85 ? (1 - t) / 0.15 : 1);
+    m.mesh.rotation.y = t * 0.8;
+  }
+}
+
+/**
+ * Update the pooled ground markers. Called once per frame at the end of
+ * updateEnemies; O(activeEnemies) with no allocations.
+ */
+function updateEnemyGroundMarkers(now) {
+  if (!_enemyShadowMesh || !_intentRingMesh) return;
+
+  const floorY = getBiomeFloorY() + 0.02;
+  let shadowCount = 0;
+  let ringCount = 0;
+
+  for (let i = 0; i < activeEnemies.length; i++) {
+    const e = activeEnemies[i];
+    if (!e || !e.mesh || e.hp <= 0) continue;
+    // Skip bodies that are still scaling in (spawn warp) or hidden.
+    if (e.mesh.visible === false) continue;
+    const scaleXY = e.mesh.scale.x;
+    if (!(scaleXY > 0.25)) continue;
+
+    const px = e.mesh.position.x;
+    const pz = e.mesh.position.z;
+
+    // ── Contact shadow ──
+    if (shadowCount < MAX_ENEMY_SHADOWS) {
+      const radius = Math.max(0.5, (e.hitboxRadius || 0.5) * 2.1);
+      const fade = Math.max(0.35, Math.min(1, scaleXY));
+      _markerPos.set(px, floorY, pz);
+      _markerScale.set(radius * fade, 1, radius * fade);
+      _markerMatrix.compose(_markerPos, _markerQuat, _markerScale);
+      _enemyShadowMesh.setMatrixAt(shadowCount, _markerMatrix);
+      shadowCount++;
+    }
+
+    if (ringCount >= MAX_INTENT_RINGS) continue;
+
+    // ── Intent ring: only while the enemy is actually about to act ──
+    let ringHex = 0;
+    let ringRadius = 0;
+    let ringBoost = 0.6;
+
+    if (e.mortarTelegraphing) {
+      const progress = 1 - Math.max(0, e.mortarTelegraphTimer || 0) / Math.max(0.001, e.mortarTelegraphDuration || 2);
+      ringHex = 0xff2200;
+      ringRadius = 1.15 + progress * 0.9;
+      ringBoost = 0.55 + progress * 0.45;
+    } else if (e.bombardierWindup) {
+      ringHex = 0xff8810;
+      ringRadius = Math.max(1.0, (e.sprayRange || 5) * 0.35);
+      ringBoost = 0.9;
+    } else if (e.isLatched) {
+      // Leech draining: fast green heartbeat under the player's feet.
+      ringHex = 0x44ff66;
+      ringRadius = 1.25 + 0.12 * Math.sin(now * 0.018);
+      ringBoost = 0.9;
+    } else if (e.isVoidTendril && e.tendrilBarrierActive) {
+      ringHex = 0x8844ff;
+      ringRadius = 1.4;
+      ringBoost = 0.75;
+    } else if (e.isVoidAnchor && e.anchorPlanted) {
+      const interval = e.pulseDamageInterval || 3;
+      const remain = interval - (e.anchorPulseTimer || 0);
+      if (remain < 0.9) {
+        ringHex = 0xaa44ff;
+        ringRadius = 1.2 + (0.9 - remain) * 0.7;
+        ringBoost = 0.95;
+      }
+    } else if (e.isConductor && e.linkedEnemies && e.linkedEnemies.length > 0) {
+      ringHex = 0xff66cc;
+      ringRadius = 1.0;
+      ringBoost = 0.7;
+    } else if (e.isMirror && e.mirrorImmuneTimer > 0) {
+      ringHex = 0xffffff;
+      ringRadius = 1.1;
+      ringBoost = 0.9;
+    }
+
+    if (!ringHex) continue;
+
+    _markerPos.set(px, floorY + 0.015, pz);
+    _markerScale.set(ringRadius, 1, ringRadius);
+    _markerMatrix.compose(_markerPos, _markerQuat, _markerScale);
+    _intentRingMesh.setMatrixAt(ringCount, _markerMatrix);
+    _markerColor.setHex(ringHex).multiplyScalar(ringBoost);
+    _intentRingMesh.setColorAt(ringCount, _markerColor);
+    ringCount++;
+  }
+
+  _enemyShadowMesh.count = shadowCount;
+  _enemyShadowMesh.instanceMatrix.needsUpdate = true;
+
+  _intentRingMesh.count = ringCount;
+  _intentRingMesh.instanceMatrix.needsUpdate = true;
+  if (_intentRingMesh.instanceColor) _intentRingMesh.instanceColor.needsUpdate = true;
+
+  updateMortarLandingMarkers(now);
+}
+
 
 export function setBossSpawnForward(forward) {
   if (!forward) {
@@ -738,7 +1096,7 @@ function initBasicInstancePool() {
           g.translate(
             (c - cx) * def.voxelSize,
             (cy - r) * def.voxelSize,
-            d * def.voxelSize,
+            (d - (def.depth - 1) / 2) * def.voxelSize,
           );
           geometries.push(g);
         }
@@ -870,7 +1228,7 @@ function initFastInstancePool() {
           g.translate(
             (c - cx) * def.voxelSize,
             (cy - r) * def.voxelSize,
-            d * def.voxelSize,
+            (d - (def.depth - 1) / 2) * def.voxelSize,
           );
           geometries.push(g);
         }
@@ -1003,7 +1361,7 @@ function initTankInstancePool() {
           g.translate(
             (c - cx) * def.voxelSize,
             (cy - r) * def.voxelSize,
-            d * def.voxelSize,
+            (d - (def.depth - 1) / 2) * def.voxelSize,
           );
           geometries.push(g);
         }
@@ -1135,7 +1493,7 @@ function initSwarmInstancePool() {
           g.translate(
             (c - cx) * def.voxelSize,
             (cy - r) * def.voxelSize,
-            d * def.voxelSize,
+            (d - (def.depth - 1) / 2) * def.voxelSize,
           );
           geometries.push(g);
         }
@@ -1263,7 +1621,7 @@ function initConductorInstancePool() {
           g.translate(
             (c - cx) * def.voxelSize,
             (cy - r) * def.voxelSize,
-            d * def.voxelSize,
+            (d - (def.depth - 1) / 2) * def.voxelSize,
           );
           geometries.push(g);
         }
@@ -1499,7 +1857,7 @@ function initMortarInstancePool() {
           g.translate(
             (c - cx) * def.voxelSize,
             (cy - r) * def.voxelSize,
-            d * def.voxelSize,
+            (d - (def.depth - 1) / 2) * def.voxelSize,
           );
           geometries.push(g);
         }
@@ -1614,7 +1972,7 @@ function initMirrorKnightInstancePool() {
           g.translate(
             (c - cx) * def.voxelSize,
             (cy - r) * def.voxelSize,
-            d * def.voxelSize,
+            (d - (def.depth - 1) / 2) * def.voxelSize,
           );
           geometries.push(g);
         }
@@ -3413,6 +3771,9 @@ export function initEnemies(scene) {
     telegraphingSystem = new TelegraphingSystem(scene, null);
   }
 
+  // Ground readability pools (contact shadows, intent rings, mortar markers)
+  initEnemyGroundMarkers();
+
   // Initialize basic enemy InstancedMesh pool
   initBasicInstancePool();
 
@@ -3652,7 +4013,7 @@ export function spawnEnemy(type, position, levelConfig) {
             g.translate(
               (c - cx) * def.voxelSize,
               (cy - r) * def.voxelSize,
-              d * def.voxelSize,
+              (d - (def.depth - 1) / 2) * def.voxelSize,
             );
             geometries.push(g);
           }
@@ -3679,7 +4040,7 @@ export function spawnEnemy(type, position, levelConfig) {
             cube.position.set(
               (c - cx) * def.voxelSize,
               (cy - r) * def.voxelSize,
-              d * def.voxelSize,
+              (d - (def.depth - 1) / 2) * def.voxelSize,
             );
             group.add(cube);
           }
@@ -3696,7 +4057,7 @@ export function spawnEnemy(type, position, levelConfig) {
             cube.position.set(
               (c - cx) * def.voxelSize,
               (cy - r) * def.voxelSize,
-              d * def.voxelSize,
+              (d - (def.depth - 1) / 2) * def.voxelSize,
             );
             group.add(cube);
           }
@@ -4005,6 +4366,12 @@ export function spawnEnemy(type, position, levelConfig) {
   }
 
   if (ENABLE_SPAWN_WARP) applySpawnWarp(enemy);
+
+  // Debug/test record of the AUTHORED spawn point. Enemies move on the very
+  // next frame, so an audit that samples the first rendered frame can measure
+  // a fast enemy a few degrees off its spawn bearing; the placement check must
+  // read this immutable point instead.
+  enemy._spawnPosition = { x: position.x, y: position.y, z: position.z };
 
   // Every enemy body draws above biome overlays (see ENEMY_RENDER_ORDER).
   applyEnemyRenderOrder(group);
@@ -4686,6 +5053,9 @@ export function updateEnemies(dt, now, playerPos) {
 
   // Update conductor glow planes (pink billboard on buffed enemies)
   updateConductorGlows(now);
+
+  // Ground shadows + attack intent rings + mortar landing markers
+  updateEnemyGroundMarkers(now);
 
   return collisions;
 }
@@ -5474,6 +5844,22 @@ export function clearAllEnemies() {
   _enemyMeshesDirty = true;  // Invalidate cache
   _enemyMeshToIndex.clear();
   _cachedEnemyMeshes.length = 0;
+
+  // Ground readability pools: clear immediately so a level transition never
+  // shows stale intent rings/shadows under the next level's spawn point.
+  if (_enemyShadowMesh) {
+    _enemyShadowMesh.count = 0;
+    _enemyShadowMesh.instanceMatrix.needsUpdate = true;
+  }
+  if (_intentRingMesh) {
+    _intentRingMesh.count = 0;
+    _intentRingMesh.instanceMatrix.needsUpdate = true;
+  }
+  for (let i = 0; i < _mortarMarkers.length; i++) {
+    _mortarMarkers[i].active = false;
+    _mortarMarkers[i].mesh.visible = false;
+    _mortarMarkers[i].mesh.material.opacity = 0;
+  }
   invalidateEnemyCache();
 
   for (let i = pulseBomberRings.length - 1; i >= 0; i--) {
@@ -5575,12 +5961,51 @@ export function updateExplosions(dt, now) {
 
 // ── TELEGRAPHING SYSTEM ──────────────────────────────────────
 // Telegraphing system for boss attacks: visual/audio warnings
+
+// Shared muzzle-flash sprite texture for 'projectile' telegraphs. One upload
+// for the whole session instead of one per boss shot.
+function createTelegraphFlashTexture() {
+  const flashSize = 64;
+  const flashCanvas = document.createElement('canvas');
+  flashCanvas.width = flashSize;
+  flashCanvas.height = flashSize;
+  const fCtx = flashCanvas.getContext('2d');
+  const fHalf = flashSize / 2;
+  const fGrad = fCtx.createRadialGradient(fHalf, fHalf, 0, fHalf, fHalf, fHalf);
+  fGrad.addColorStop(0, 'rgba(255,255,255,1)');
+  fGrad.addColorStop(0.2, 'rgba(255,255,255,0.9)');
+  fGrad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
+  fGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  fCtx.fillStyle = fGrad;
+  fCtx.fillRect(0, 0, flashSize, flashSize);
+  const tex = new THREE.CanvasTexture(flashCanvas);
+  tex.minFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  return tex;
+}
+
 class TelegraphingSystem {
   constructor(scene, camera) {
     this.scene = scene;
     this.camera = camera;
     this.activeEffects = [];
     this.maxEffects = 10; // Performance limit
+
+    // Perf: every telegraph used to allocate its geometry + (for 'projectile')
+    // a fresh 64px canvas texture, then dispose them a second later. Boss
+    // attacks fire continuously, so that churned GPU objects all fight.
+    // Geometries and the flash texture are now created once and shared;
+    // only the material (whose opacity animates per effect) is per-instance.
+    this._sharedGeos = {
+      projectile: new THREE.PlaneGeometry(1.0, 1.0),
+      charge: new THREE.SphereGeometry(0.1, 16, 16),
+      minion: new THREE.SphereGeometry(0.3, 16, 16),
+      teleport: new THREE.CircleGeometry(0.8, 32),
+      melee: new THREE.SphereGeometry(0.6, 16, 16),
+      pulse: new THREE.RingGeometry(0.5, 0.75, 40),
+      shockwave: new THREE.RingGeometry(0.7, 1.0, 48),
+    };
+    this._flashTexture = createTelegraphFlashTexture();
   }
 
   // Clear all active telegraph effects (for level transitions)
@@ -5628,23 +6053,8 @@ class TelegraphingSystem {
     switch (effect.type) {
       case 'projectile':
         // Muzzle flash glow plane (quick, bright, non-occluding)
-        const flashSize = 64;
-        const flashCanvas = document.createElement('canvas');
-        flashCanvas.width = flashSize;
-        flashCanvas.height = flashSize;
-        const fCtx = flashCanvas.getContext('2d');
-        const fHalf = flashSize / 2;
-        const fGrad = fCtx.createRadialGradient(fHalf, fHalf, 0, fHalf, fHalf, fHalf);
-        fGrad.addColorStop(0, 'rgba(255,255,255,1)');
-        fGrad.addColorStop(0.2, `rgba(${(effect.color >> 16) & 255},${(effect.color >> 8) & 255},${effect.color & 255},0.9)`);
-        fGrad.addColorStop(0.5, `rgba(${(effect.color >> 16) & 255},${(effect.color >> 8) & 255},${effect.color & 255},0.4)`);
-        fGrad.addColorStop(1, 'rgba(0,0,0,0)');
-        fCtx.fillStyle = fGrad;
-        fCtx.fillRect(0, 0, flashSize, flashSize);
-        const flashTex = new THREE.CanvasTexture(flashCanvas);
-        const projGeo = new THREE.PlaneGeometry(1.0, 1.0);
         const projMat = new THREE.MeshBasicMaterial({
-          map: flashTex,
+          map: this._flashTexture,
           color: effect.color,
           transparent: true,
           opacity: 0.95,
@@ -5652,7 +6062,7 @@ class TelegraphingSystem {
           blending: THREE.AdditiveBlending,
           side: THREE.DoubleSide,
         });
-        effect.mesh = new THREE.Mesh(projGeo, projMat);
+        effect.mesh = new THREE.Mesh(this._sharedGeos.projectile, projMat);
         effect.mesh.name = 'boss-attack-projectile';
         if (position) {
           effect.mesh.position.copy(position);
@@ -5673,7 +6083,7 @@ class TelegraphingSystem {
 
       case 'charge':
         // Large expanding sphere from boss or player
-        const chargeGeo = new THREE.SphereGeometry(0.1, 16, 16);
+        const chargeGeo = this._sharedGeos.charge;
         const chargeMat = new THREE.MeshBasicMaterial({
           color: effect.color,
           transparent: true,
@@ -5698,7 +6108,7 @@ class TelegraphingSystem {
 
       case 'minion':
         // 3D sphere indicating spawn direction
-        const minionGeo = new THREE.SphereGeometry(0.3, 16, 16);
+        const minionGeo = this._sharedGeos.minion;
         const minionMat = new THREE.MeshBasicMaterial({
           color: effect.color,
           transparent: true,
@@ -5719,7 +6129,7 @@ class TelegraphingSystem {
 
       case 'teleport':
         // Spinning eye effect
-        const eyeGeo = new THREE.CircleGeometry(0.8, 32);
+        const eyeGeo = this._sharedGeos.teleport;
         const eyeMat = new THREE.MeshBasicMaterial({
           color: effect.color,
           transparent: true,
@@ -5744,7 +6154,7 @@ class TelegraphingSystem {
 
       case 'melee':
         // Large 3D sphere indicating melee attack
-        const meleeGeo = new THREE.SphereGeometry(0.6, 16, 16);
+        const meleeGeo = this._sharedGeos.melee;
         const meleeMat = new THREE.MeshBasicMaterial({
           color: effect.color,
           transparent: true,
@@ -5764,7 +6174,7 @@ class TelegraphingSystem {
 
       case 'pulse':
         // VR-safe ring pulse centered on the attack origin.
-        const pulseGeo = new THREE.RingGeometry(0.5, 0.75, 40);
+        const pulseGeo = this._sharedGeos.pulse;
         const pulseMat = new THREE.MeshBasicMaterial({
           color: effect.color,
           transparent: true,
@@ -5788,7 +6198,7 @@ class TelegraphingSystem {
 
       case 'shockwave':
         // Ground ring that expands outward to communicate an arena-wide burst.
-        const shockwaveGeo = new THREE.RingGeometry(0.7, 1.0, 48);
+        const shockwaveGeo = this._sharedGeos.shockwave;
         const shockwaveMat = new THREE.MeshBasicMaterial({
           color: effect.color,
           transparent: true,
@@ -5896,9 +6306,9 @@ class TelegraphingSystem {
   removeEffect(effect) {
     if (effect && effect.mesh && this.scene) {
       this.scene.remove(effect.mesh);
-      if (effect.mesh.geometry) {
-        effect.mesh.geometry.dispose();
-      }
+      // Geometry + the flash texture are SHARED per TelegraphingSystem (see
+      // constructor) — disposing them per effect would kill every future
+      // telegraph. Only the animated material is per-instance.
       if (effect.mesh.material) {
         effect.mesh.material.dispose();
       }
@@ -6028,18 +6438,60 @@ class Boss {
     const cols = def.pattern[0].length;
     const cx = (cols - 1) / 2;
     const cy = (rows - 1) / 2;
+    const depth = def.depth || 1;
+    const depthOffset = (depth - 1) / 2;
 
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (def.pattern[r][c]) {
-          const cube = new THREE.Mesh(geo, mat);
-          cube.position.set(
-            (c - cx) * def.voxelSize,
-            (cy - r) * def.voxelSize,
-            0
-          );
-          cube.userData.isBossBody = true;
-          group.add(cube);
+    // ── Merged-body path (round 11) ──────────────────────────────
+    // Bosses that opt in (`mergeBody: true`) pack their whole voxel body
+    // into ONE BufferGeometry / draw call. Before this, a 9x9 boss pattern
+    // meant 50–80 individual meshes and 50–80 draw calls every frame — a
+    // real Quest frame-budget cost. Weak-point voxels stay separate so
+    // raycast targeting is unchanged; their positions are recorded here.
+    if (def.mergeBody) {
+      const bodyGeos = [];
+      const bodyPositions = [];
+      for (let d = 0; d < depth; d++) {
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (!def.pattern[r][c]) continue;
+            const x = (c - cx) * def.voxelSize;
+            const y = (cy - r) * def.voxelSize;
+            const z = (d - depthOffset) * def.voxelSize;
+            const g = geo.clone();
+            g.translate(x, y, z);
+            bodyGeos.push(g);
+            bodyPositions.push({ x, y, z });
+          }
+        }
+      }
+      if (bodyGeos.length > 0) {
+        const merged = mergeGeometries(bodyGeos);
+        bodyGeos.forEach(g => g.dispose());
+        if (merged) {
+          const bodyMesh = new THREE.Mesh(merged, mat);
+          bodyMesh.userData.isBossBody = true;
+          bodyMesh.userData.isMergedBossBody = true;
+          group.add(bodyMesh);
+        }
+      }
+      this._bodyVoxelPositions = bodyPositions;
+    } else {
+      // Legacy path: individual voxel meshes (subclasses that animate or
+      // recolor individual voxels rely on this).
+      for (let d = 0; d < depth; d++) {
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (def.pattern[r][c]) {
+              const cube = new THREE.Mesh(geo, mat);
+              cube.position.set(
+                (c - cx) * def.voxelSize,
+                (cy - r) * def.voxelSize,
+                (d - depthOffset) * def.voxelSize
+              );
+              cube.userData.isBossBody = true;
+              group.add(cube);
+            }
+          }
         }
       }
     }
@@ -6065,7 +6517,42 @@ class Boss {
   }
 
   createWeakPoints() {
-    // Select random voxels as weak points (double damage)
+    // Merged-body bosses have no per-voxel meshes: build the weak points as
+    // separate white voxels at recorded body positions (the merged body stays
+    // one draw call, and raycast targeting is identical to the legacy path).
+    if (this._bodyVoxelPositions && this._bodyVoxelPositions.length > 0) {
+      const positions = this._bodyVoxelPositions;
+      // Cap separate weak-point meshes: each one is a draw call, and 20% of a
+      // 90-voxel merged body was 19 extra draws (more than the old body!).
+      // 4–6 bright marks read better and keep the merged body's 1-draw win.
+      const count = Math.min(6, Math.max(3, Math.floor(positions.length / 12)));
+      const used = new Set();
+      const geo = getGeo((this.def.voxelSize || 0.25) * 1.06);
+      for (let i = 0; i < count; i++) {
+        let idx = Math.floor(Math.random() * positions.length);
+        let guard = 0;
+        while (used.has(idx) && guard++ < 32) idx = Math.floor(Math.random() * positions.length);
+        if (used.has(idx)) continue;
+        used.add(idx);
+        const p = positions[idx];
+        const weak = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+          fog: false,
+        }));
+        weak.position.set(p.x, p.y, p.z);
+        weak.userData.isBossBody = true;
+        weak.userData.weakPoint = true;
+        weak.userData.isSeparateWeakPoint = true;
+        this.mesh.add(weak);
+        this.weakPoints.push(weak);
+      }
+      return;
+    }
+
+    // Legacy path: select random voxels as weak points (double damage)
     const voxels = this.mesh.children.filter(c => c.userData.isBossBody);
     const weakPointCount = Math.min(voxels.length, Math.floor(voxels.length / 5)); // Up to 20%
 
@@ -13004,19 +13491,27 @@ const BOSS_DEFS = {
   // Level 5 bosses (Tier 1 - INTRO)
   scrap_golem: {
     name: 'Scrap Golem',
+    // Round 11: full-body silhouette (was a 4x4 blob). mergeBody packs it
+    // into one draw call, so a 9x8 body costs less than the old 16 meshes.
     pattern: [
-      [0, 1, 1, 0],
-      [1, 1, 1, 1],
-      [1, 1, 1, 1],
-      [0, 1, 1, 0],
+      [0, 1, 1, 0, 0, 0, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 0, 1, 1, 1, 0, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 1, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0, 0, 1, 0, 0],
+      [0, 0, 1, 0, 0, 0, 1, 0, 0],
     ],
-    voxelSize: 0.4,
+    voxelSize: 0.32,
     baseHp: 1100,
     phases: 3,
     color: 0x886644,
     scoreValue: 100,
     behavior: 'golem',
-    hitboxRadius: 0.65,
+    hitboxRadius: 1.2,
+    depth: 2,
+    mergeBody: true,
     slamRate: 3.0,
     minionRate: 6.0,
     contactDamage: 1,
@@ -13027,18 +13522,25 @@ const BOSS_DEFS = {
   holo_phantom: {
     name: 'Holo Phantom',
     pattern: [
-      [0, 1, 0],
-      [1, 1, 1],
-      [1, 1, 1],
-      [0, 1, 0],
+      [0, 0, 1, 1, 1, 1, 1, 0, 0],
+      [0, 1, 1, 0, 0, 0, 1, 1, 0],
+      [0, 1, 1, 0, 0, 0, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [0, 1, 1, 0, 1, 0, 1, 1, 0],
+      [0, 0, 1, 0, 1, 0, 1, 0, 0],
+      [0, 0, 1, 0, 0, 0, 1, 0, 0],
+      [0, 0, 1, 0, 0, 0, 1, 0, 0],
     ],
-    voxelSize: 0.35,
+    voxelSize: 0.2,
     baseHp: 750,
     phases: 3,
     color: 0x00ffff,
     scoreValue: 100,
     behavior: 'phantom',
-    hitboxRadius: 0.55,
+    hitboxRadius: 0.8,
+    depth: 1,
+    mergeBody: true,
     decoyRate: 4.0,
     teleportRate: 2.5,
     projectileRate: 2.4,
@@ -13048,17 +13550,25 @@ const BOSS_DEFS = {
   pulse_emitter: {
     name: 'Pulse Emitter',
     pattern: [
-      [1, 1, 1],
-      [1, 0, 1],
-      [1, 1, 1],
+      [0, 0, 0, 1, 1, 1, 0, 0, 0],
+      [0, 1, 1, 0, 0, 0, 1, 1, 0],
+      [0, 1, 0, 0, 1, 0, 0, 1, 0],
+      [1, 1, 0, 1, 1, 1, 0, 1, 1],
+      [1, 1, 0, 1, 1, 1, 0, 1, 1],
+      [1, 1, 0, 1, 1, 1, 0, 1, 1],
+      [0, 1, 0, 0, 1, 0, 0, 1, 0],
+      [0, 1, 1, 0, 0, 0, 1, 1, 0],
+      [0, 0, 0, 1, 1, 1, 0, 0, 0],
     ],
-    voxelSize: 0.38,
+    voxelSize: 0.2,
     baseHp: 900,
     phases: 3,
     color: 0xff0088,
     scoreValue: 100,
     behavior: 'emitter',
-    hitboxRadius: 0.6,
+    hitboxRadius: 0.85,
+    depth: 2,
+    mergeBody: true,
     pulseRate: 2.0,
     shieldDuration: 3.0,
     projectileRate: 2.8,
@@ -13070,19 +13580,25 @@ const BOSS_DEFS = {
   rust_serpent: {
     name: 'Rust Serpent',
     pattern: [
-      [1, 0, 0, 0, 0],
-      [1, 1, 0, 0, 0],
-      [0, 1, 1, 0, 0],
-      [0, 0, 1, 1, 0],
-      [0, 0, 0, 1, 1],
+      [1, 1, 0, 0, 0, 0, 0, 0, 0],
+      [1, 1, 1, 0, 0, 0, 0, 0, 0],
+      [0, 1, 1, 1, 0, 0, 0, 0, 0],
+      [0, 0, 1, 1, 1, 0, 0, 0, 0],
+      [0, 0, 0, 1, 1, 1, 0, 0, 0],
+      [0, 0, 0, 0, 1, 1, 1, 0, 0],
+      [0, 0, 0, 0, 0, 1, 1, 1, 0],
+      [0, 0, 0, 0, 0, 1, 1, 1, 1],
+      [0, 0, 0, 0, 0, 0, 1, 1, 1],
     ],
-    voxelSize: 0.32,
+    voxelSize: 0.3,
     baseHp: 800,
     phases: 3,
     color: 0xcc4400,
     scoreValue: 100,
     behavior: 'serpent',
-    hitboxRadius: 0.9,
+    hitboxRadius: 1.05,
+    depth: 2,
+    mergeBody: true,
     slitherSpeed: 1.8,
     toxicRate: 1.5,
     projectileRate: 2.2,
@@ -13092,19 +13608,25 @@ const BOSS_DEFS = {
   static_wisp: {
     name: 'Static Wisp',
     pattern: [
-      [0, 0, 1, 0, 0],
-      [0, 1, 1, 1, 0],
-      [1, 1, 0, 1, 1],
-      [0, 1, 1, 1, 0],
-      [0, 0, 1, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0, 0],
+      [0, 0, 0, 1, 1, 1, 0, 0, 0],
+      [0, 0, 1, 1, 1, 1, 1, 0, 0],
+      [0, 1, 1, 1, 0, 1, 1, 1, 0],
+      [1, 1, 1, 0, 1, 0, 1, 1, 1],
+      [0, 1, 1, 1, 0, 1, 1, 1, 0],
+      [0, 0, 1, 1, 1, 1, 1, 0, 0],
+      [0, 0, 0, 1, 1, 1, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0, 0],
     ],
-    voxelSize: 0.3,
+    voxelSize: 0.22,
     baseHp: 700,
     phases: 3,
     color: 0xffff00,
     scoreValue: 100,
     behavior: 'wisp',
-    hitboxRadius: 0.55,
+    hitboxRadius: 0.8,
+    depth: 2,
+    mergeBody: true,
     electricRate: 1.2,
     teleportRate: 3.0,
     projectileRate: 2.0,
@@ -13136,19 +13658,25 @@ const BOSS_DEFS = {
   the_maw: {
     name: 'THE MAW',
     pattern: [
-      [1, 1, 1, 1, 1],
-      [1, 0, 0, 0, 1],
-      [1, 0, 0, 0, 1],
-      [1, 0, 0, 0, 1],
-      [1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 0, 0, 0, 0, 0, 0, 0, 1],
+      [1, 0, 1, 0, 0, 0, 1, 0, 1],
+      [1, 0, 0, 1, 0, 1, 0, 0, 1],
+      [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      [1, 0, 0, 1, 0, 1, 0, 0, 1],
+      [1, 0, 1, 0, 0, 0, 1, 0, 1],
+      [1, 0, 0, 0, 0, 0, 0, 0, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
     ],
-    voxelSize: 0.5,
+    voxelSize: 0.34,
     baseHp: 1500,
     phases: 3,
     color: 0x330066,
     scoreValue: 150,
     behavior: 'maw',
-    hitboxRadius: 1.2,
+    hitboxRadius: 1.4,
+    depth: 2,
+    mergeBody: true,
     weakPoints: false,
     minionSpawnRate: 4.0,
     chompInterval: 5.0,
@@ -13675,51 +14203,90 @@ export function spawnBossDebris(boss) {
   }
 
   // Also spawn the original body voxel debris if any exist
-  const voxels = boss.mesh.children.filter(c => c.userData.isBossBody);
-  const maxVoxels = Math.min(voxels.length, MAX_DEBRIS);
-  const step = Math.max(1, Math.floor(voxels.length / maxVoxels));
+  const mergedBodyBoss = boss.mesh.children.find(c => c.userData && c.userData.isMergedBossBody);
+  if (mergedBodyBoss && boss._bodyVoxelPositions && boss._bodyVoxelPositions.length > 0) {
+    // Merged bodies have no per-voxel meshes to clone. Reconstruct a handful
+    // of individual body cubes from the recorded positions instead — cloning
+    // the merged geometry would spawn one giant slab per debris piece.
+    const positions = boss._bodyVoxelPositions;
+    const maxVoxels = Math.min(positions.length, MAX_DEBRIS);
+    const step = Math.max(1, Math.floor(positions.length / Math.max(1, maxVoxels)));
+    const unit = boss.def.voxelSize || 0.25;
+    const scratch = new THREE.Vector3();
+    for (let i = 0; i < positions.length; i += step) {
+      const p = positions[i];
+      const geo = new THREE.BoxGeometry(unit, unit, unit);
+      const mat = new THREE.MeshBasicMaterial({ color: bossColor, transparent: true, opacity: 0.9 });
+      const debris = new THREE.Mesh(geo, mat);
+      scratch.set(p.x, p.y, p.z);
+      boss.mesh.localToWorld(scratch);
+      debris.position.copy(scratch);
+      debris.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2);
+      debris.userData.velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 4,
+        2 + Math.random() * 3,
+        (Math.random() - 0.5) * 4
+      );
+      debris.userData.angularVel = new THREE.Vector3(
+        (Math.random() - 0.5) * 8,
+        (Math.random() - 0.5) * 8,
+        (Math.random() - 0.5) * 8
+      );
+      debris.userData.bounces = 0;
+      debris.userData.maxBounces = 2;
+      debris.userData.lifetime = 3.0;
+      debris.userData.age = 0;
+      debris.userData.onFloor = false;
+      sceneRef.add(debris);
+      bossDebris.push(debris);
+    }
+  } else {
+    const voxels = boss.mesh.children.filter(c => c.userData.isBossBody);
+    const maxVoxels = Math.min(voxels.length, MAX_DEBRIS);
+    const step = Math.max(1, Math.floor(voxels.length / maxVoxels));
 
-  for (let i = 0; i < voxels.length; i += step) {
-    const voxel = voxels[i];
-    if (!voxel.isMesh) continue;
+    for (let i = 0; i < voxels.length; i += step) {
+      const voxel = voxels[i];
+      if (!voxel.isMesh) continue;
 
-    const geo = voxel.geometry.clone();
-    const mat = new THREE.MeshBasicMaterial({
-      color: voxel.material.color || bossColor,
-      transparent: true,
-      opacity: 0.9,
-    });
+      const geo = voxel.geometry.clone();
+      const mat = new THREE.MeshBasicMaterial({
+        color: voxel.material.color || bossColor,
+        transparent: true,
+        opacity: 0.9,
+      });
 
-    const debris = new THREE.Mesh(geo, mat);
+      const debris = new THREE.Mesh(geo, mat);
 
-    const worldPos = new THREE.Vector3();
-    voxel.getWorldPosition(worldPos);
-    debris.position.copy(worldPos);
+      const worldPos = new THREE.Vector3();
+      voxel.getWorldPosition(worldPos);
+      debris.position.copy(worldPos);
 
-    debris.rotation.set(
-      Math.random() * Math.PI * 2,
-      Math.random() * Math.PI * 2,
-      Math.random() * Math.PI * 2
-    );
+      debris.rotation.set(
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2
+      );
 
-    debris.userData.velocity = new THREE.Vector3(
-      (Math.random() - 0.5) * 4,
-      2 + Math.random() * 3,
-      (Math.random() - 0.5) * 4
-    );
-    debris.userData.angularVel = new THREE.Vector3(
-      (Math.random() - 0.5) * 8,
-      (Math.random() - 0.5) * 8,
-      (Math.random() - 0.5) * 8
-    );
-    debris.userData.bounces = 0;
-    debris.userData.maxBounces = 2;
-    debris.userData.lifetime = 3.0;
-    debris.userData.age = 0;
-    debris.userData.onFloor = false;
+      debris.userData.velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 4,
+        2 + Math.random() * 3,
+        (Math.random() - 0.5) * 4
+      );
+      debris.userData.angularVel = new THREE.Vector3(
+        (Math.random() - 0.5) * 8,
+        (Math.random() - 0.5) * 8,
+        (Math.random() - 0.5) * 8
+      );
+      debris.userData.bounces = 0;
+      debris.userData.maxBounces = 2;
+      debris.userData.lifetime = 3.0;
+      debris.userData.age = 0;
+      debris.userData.onFloor = false;
 
-    sceneRef.add(debris);
-    bossDebris.push(debris);
+      sceneRef.add(debris);
+      bossDebris.push(debris);
+    }
   }
 
   _log(`[boss] Spawned ${bossDebris.length} death voxels (${count} colored + body debris)`);
@@ -14215,6 +14782,11 @@ export function spawnMortarProjectile(fromPos, targetPos, arcHeight = 2.0) {
 
   const lob = computeLobbedVelocity(fromPos, targetPos, arcHeight);
 
+  // Ground target marker: the shell's impact point is fixed at fire time, so
+  // show it immediately — the player gets a full flight-time of warning and
+  // can strafe out of it instead of taking an unexplained hit.
+  spawnMortarLandingMarker(targetPos, 1500);
+
   createBossProjectileRecord(idx, fromPos, lob.velocity, {
     lifetime: 6000,
     homingStrength: 0,
@@ -14402,6 +14974,58 @@ export function getEnemyByMesh(mesh) {
 export function getEnemyCount() {
   return activeEnemies.length;
 }
+
+/**
+ * Read-only silhouette stats per enemy/boss type (tests + bestiary tooling).
+ * Reports the 2D pattern size and the extruded voxel count so a regression in
+ * enemy readability (e.g. someone shrinking a pattern back to a single cube)
+ * fails a test instead of silently shipping.
+ */
+export function getEnemyVoxelStats() {
+  const out = {};
+  for (const [type, def] of Object.entries(ENEMY_DEFS)) {
+    const rows = def.pattern.length;
+    const cols = def.pattern[0] ? def.pattern[0].length : 0;
+    let cells = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < def.pattern[r].length; c++) if (def.pattern[r][c]) cells++;
+    }
+    const depth = def.depth || 1;
+    out[type] = {
+      rows, cols, depth,
+      cells,
+      voxels: cells * depth,
+      voxelSize: def.voxelSize,
+      width: cols * def.voxelSize,
+      height: rows * def.voxelSize,
+    };
+  }
+  return out;
+}
+
+/** Read-only silhouette stats per boss type (pattern area / merged body). */
+export function getBossVoxelStats() {
+  const out = {};
+  for (const [id, def] of Object.entries(BOSS_DEFS)) {
+    const rows = def.pattern.length;
+    const cols = def.pattern[0] ? def.pattern[0].length : 0;
+    let cells = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < def.pattern[r].length; c++) if (def.pattern[r][c]) cells++;
+    }
+    out[id] = {
+      rows, cols,
+      cells,
+      depth: def.depth || 1,
+      mergedBody: !!def.mergeBody,
+      voxelSize: def.voxelSize,
+      width: cols * def.voxelSize,
+      height: rows * def.voxelSize,
+    };
+  }
+  return out;
+}
+
 
 /** Get active enemies array (read-only intent). */
 export function getEnemies() {
